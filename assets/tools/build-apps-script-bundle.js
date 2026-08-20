@@ -65,7 +65,8 @@ var MODULE_ORDER = [
   'supply-execution-handoff',                    // F1-4B-FM6-R2 recommendation→execution handoff (KMREX): KMREC DTO + resolved availabilities → execution-draft DTO; no deps, no formula, no persistence
   'supply-planning-ongoing-order-projection',    // F1-7N-FA-3B0 KMOOP Ongoing-Order site projection (no deps)
   'supply-planning-ongoing-order-tpp-adapter',   // F1-7N-FA-3B2 KMOTA Ongoing→KMTPP timing adapter (no deps)
-  'supply-planning-ongoing-order-runtime'        // F1-7N-FA-3B3a KMOOR single-authority chain (requires source-facts + ongoing-order-projection + ongoing-order-tpp-adapter)
+  'supply-planning-ongoing-order-runtime',       // F1-7N-FA-3B3a KMOOR single-authority chain (requires source-facts + ongoing-order-projection + ongoing-order-tpp-adapter)
+  'supply-planning-surplus-reallocation'         // F1-7N-FA-3A/3B1 KMFSR §41 factory surplus reallocation (requires allocations + calculations)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -118,7 +119,8 @@ var GLOBALS = [
   ['KMREX', 'supply-execution-handoff'],
   ['KMOOP', 'supply-planning-ongoing-order-projection'],
   ['KMOTA', 'supply-planning-ongoing-order-tpp-adapter'],
-  ['KMOOR', 'supply-planning-ongoing-order-runtime']
+  ['KMOOR', 'supply-planning-ongoing-order-runtime'],
+  ['KMFSR', 'supply-planning-surplus-reallocation']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

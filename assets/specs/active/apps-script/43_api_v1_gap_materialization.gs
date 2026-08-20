@@ -447,13 +447,15 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
   }
   var contendedSkus = (contention && contention.contendedSkus) || {};
   var partition = (contention && contention.partition) || {};
+  var partitionBySource = (contention && contention.partitionBySource) || {};   // FA-3B3b source-warehouse grain
   var byCompanySku = {}, byCompanyCountrySku = {};
   (receivers || []).forEach(function (r) {
     var cc = gapCanonCountry_(r.country);   // canonical (UK ≡ GB) so the group key matches the canonical pool key
     (byCompanySku[r.company + '||' + r.sku] = byCompanySku[r.company + '||' + r.sku] || []).push(r);
     (byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] = byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] || []).push(r);
   });
-  function ensure(k) { if (!out[k]) out[k] = { overseasCoveredQty: 0, factoryCoveredQty: 0 }; return out[k]; }
+  function ensure(k) { if (!out[k]) out[k] = { overseasCoveredQty: 0, factoryCoveredQty: 0, factoryBySource: {} }; return out[k]; }
+  function addFactorySource(rec, wh, q) { wh = gapStr_(wh); if (wh && q > 0) rec.factoryBySource[wh] = (rec.factoryBySource[wh] || 0) + q; }   // FA-3B3b: preserve source-warehouse grain from the SAME allocation
   function recvKeyOf(r) { return r.key || gapReceiverKey_(r.company, r.country, r.marketplace, r.sku); }
   function msaReceivers(list, eligiblePoolTypes) {
     return list.map(function (r) {
@@ -469,13 +471,23 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
       list.forEach(function (r) {
         var rk = recvKeyOf(r);
         if (!Object.prototype.hasOwnProperty.call(partition, rk)) throw new RangeError('FACTORY_CONTENTION_PARTITION_MISSING: ' + rk);
-        ensure(rk).factoryCoveredQty += (partition[rk] || 0);
+        var rec = ensure(rk); rec.factoryCoveredQty += (partition[rk] || 0);
+        var bs = partitionBySource[rk] || {};   // FA-3B3b: carry the KMAR source-warehouse grain through the contended consume
+        for (var wh in bs) if (Object.prototype.hasOwnProperty.call(bs, wh)) addFactorySource(rec, wh, bs[wh]);
       });
       return;
     }
     var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: sku, factoryPools: pools, eligibleFactoryWarehouseIds: poolFacts.eligibleFactoryWarehouseIds, receivers: msaReceivers(list) });
     if (!res || res.blocked) { issues.push({ scope: cs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'FACTORY_ALLOCATION_BLOCKED' }); return; }
     for (var k in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k)) ensure(k).factoryCoveredQty += (res.byReceiver[k].allocatedFactoryQty || 0);
+    // FA-3B3b: preserve per-source-warehouse grain from the SAME KMMSA allocation (no rerun, no guess).
+    if (res.factory && Array.isArray(res.factory.allocations)) {                                // multi-receiver: group the FIFO draws
+      res.factory.allocations.forEach(function (a) { if (out[a.demandKey]) addFactorySource(out[a.demandKey], a.sourceWarehouseId, (a.allocatedQty || 0)); });
+    } else if (res.singleReceiver) {                                                            // single receiver got 100% of each eligible pool (KMMSA §3)
+      var eids = {}; (poolFacts.eligibleFactoryWarehouseIds || []).forEach(function (w) { eids[gapStr_(w)] = 1; });
+      var soleKey = recvKeyOf(list[0]), soleRec = out[soleKey];
+      if (soleRec) pools.forEach(function (p) { if (eids[gapStr_(p.warehouseId)]) addFactorySource(soleRec, p.warehouseId, (gapNum_(p.effectiveSupplyQty) || 0)); });
+    }
   });
   Object.keys(byCompanyCountrySku).forEach(function (ccs) {                                   // OVERSEAS — per country (untouched by R2G-B, §21)
     var list = byCompanyCountrySku[ccs], pools = poolFacts.overseasPoolsByKey[ccs] || [];
@@ -485,6 +497,58 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
     for (var k2 in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k2)) ensure(k2).overseasCoveredQty += (res.byReceiver[k2].allocatedOverseasQty || 0);
   });
   return { byReceiverKey: out, issues: issues };
+}
+
+// F1-7N-FA-3B3b — §41 FACTORY SURPLUS REALLOCATION over the ALREADY-allocated, source-attributed coverage. Uses the
+// KMFSR preallocated adapter (NO second §40 allocation — exactly ONE initial Factory allocation remains, KMMSA/KMAR
+// above). PLANNING-ONLY: never mutates factory_stock, never reserves, never moves physical inventory
+// (PHYSICAL_CROSS_COMPANY_RESERVATION_DEFERRED stays true). Scope = per (company, masterSku): always fully visible
+// within a slice (no new cross-company pre-pass), so monolithic == resumable. projectedRequirementQty = the PASS-1 gap
+// (demand − site stock, the existing KMTPP-owned residual) → NOT a second Net Order Need formula. unusedFactorySupplyQty
+// = 0 (§43.6 — unused physical pool is NOT donor surplus). Non-actionable (T4 / out-of-window) receivers are EXCLUDED
+// from §41 (visibility-only) so their coverage is untouched. Mutates allocMap in place: factoryCoveredQty := post-
+// reallocation coverage (initial − out + in); adds reallocationInQty / reallocationOutQty / factoryAvailableQtySnapshot
+// for FA-3B4 diagnostics. Fail-safe: KMFSR/KMCALC unbundled or a group throws → that group's coverage is left unchanged.
+function gapOpApplyFactorySurplusReallocation_(allocMap, receivers, poolFacts, calculationDate) {
+  if (typeof KMFSR === 'undefined' || !KMFSR || typeof KMFSR.reallocatePreallocatedFactorySupply !== 'function') return { applied: false, reason: 'KMFSR_NOT_BUNDLED', groups: 0, transfers: 0 };
+  if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.classifyRequiredByWindow !== 'function') return { applied: false, reason: 'KMCALC_NOT_BUNDLED', groups: 0, transfers: 0 };
+  if (!gapStr_(calculationDate)) return { applied: false, reason: 'CALCULATION_DATE_UNRESOLVED', groups: 0, transfers: 0 };
+  var eids = (poolFacts.eligibleFactoryWarehouseIds || []).slice();
+  var byGroup = {};
+  (receivers || []).forEach(function (r) {
+    if (!allocMap[r.key]) return;
+    var actionable = false;
+    try { actionable = !!KMCALC.classifyRequiredByWindow({ calculationDate: calculationDate, requiredByDate: r.requiredByDate }).engineB.allocationEligible; }
+    catch (e) { actionable = false; }
+    if (!actionable) return;                                   // T4 / out-of-window → visibility-only, coverage untouched
+    var g = r.company + '||' + r.sku;
+    (byGroup[g] = byGroup[g] || { masterSku: r.sku, receivers: [] }).receivers.push(r);
+  });
+  var groups = 0, transfers = 0;
+  Object.keys(byGroup).forEach(function (g) {
+    var grp = byGroup[g];
+    var kmfsrReceivers = grp.receivers.map(function (r) {
+      var a = allocMap[r.key] || {};
+      return { demandKey: r.key, requiredByDate: r.requiredByDate, allocationPriority: r.allocationPriority,
+        projectedRequirementQty: Math.max(0, (r.gapQty != null ? r.gapQty : r.demandQty) || 0),
+        eligibleFactoryWarehouseIds: eids.slice(), initialAllocationBySource: a.factoryBySource || {} };
+    });
+    var totalFactory = 0; kmfsrReceivers.forEach(function (x) { for (var w in x.initialAllocationBySource) if (Object.prototype.hasOwnProperty.call(x.initialAllocationBySource, w)) totalFactory += x.initialAllocationBySource[w]; });
+    if (totalFactory <= 0) return;                             // nothing allocated → no surplus to reallocate
+    var out;
+    try { out = KMFSR.reallocatePreallocatedFactorySupply({ masterSku: grp.masterSku, calculationDate: calculationDate, unusedFactorySupplyQty: 0, receivers: kmfsrReceivers }); }
+    catch (e2) { return; }                                     // fail-safe: leave this group's initial coverage unchanged
+    groups++;
+    (out.receivers || []).forEach(function (f) {
+      var a = allocMap[f.demandKey]; if (!a) return;
+      var initial = f.initialFactoryAllocationQty || 0, inQ = f.reallocatedInQty || 0, outQ = f.reallocatedOutQty || 0;
+      a.factoryAvailableQtySnapshot = initial;                 // pre-reallocation initial coverage (FA-3B4 diagnostic)
+      a.reallocationInQty = inQ; a.reallocationOutQty = outQ;
+      a.factoryCoveredQty = Math.max(0, initial - outQ + inQ);  // POST-reallocation coverage → Architecture-A opening supply
+    });
+    transfers += (out.transferLedger || []).length;
+  });
+  return { applied: true, groups: groups, transfers: transfers };
 }
 
 // ============================================================================================================
@@ -534,7 +598,7 @@ function gapOpFindFactoryContentionCandidates_(ss, poolFacts) {
 // <= 1 company is left to the existing company-local path (uncontended). Returns
 // { contendedSkus:{sku:1}, partition:{receiverKey:factoryQty}, issues, contendedSkuCount, contendedReceiverCount }.
 function gapOpComputeFactoryContention_(receivers, poolFacts) {
-  var contendedSkus = {}, partition = {}, issues = [];
+  var contendedSkus = {}, partition = {}, partitionBySource = {}, issues = [];   // FA-3B3b: partitionBySource preserves the source-warehouse grain KMAR already produced
   if (typeof KMAR === 'undefined' || !KMAR || typeof KMAR.allocateFactoryCrossCompany !== 'function') {
     return { contendedSkus: contendedSkus, partition: partition, issues: [{ code: 'KMAR_NOT_BUNDLED' }], contendedSkuCount: 0, contendedReceiverCount: 0 };
   }
@@ -565,13 +629,16 @@ function gapOpComputeFactoryContention_(receivers, poolFacts) {
     try { res = KMAR.allocateFactoryCrossCompany(sku, perCompany); }
     catch (e) { issues.push({ sku: sku, code: 'FACTORY_CROSS_COMPANY_ALLOCATION_ERROR', message: e && e.message ? String(e.message) : String(e) }); return; }
     contendedSkus[sku] = 1;
-    companies.forEach(function (co) { g.byCompany[co].forEach(function (x) { if (!Object.prototype.hasOwnProperty.call(partition, x.key)) partition[x.key] = 0; }); });   // seed every contended receiver (fail-closed completeness)
+    companies.forEach(function (co) { g.byCompany[co].forEach(function (x) { if (!Object.prototype.hasOwnProperty.call(partition, x.key)) { partition[x.key] = 0; partitionBySource[x.key] = {}; } }); });   // seed every contended receiver (fail-closed completeness)
     (res && res.allocations ? res.allocations : []).forEach(function (a) {
-      if (Object.prototype.hasOwnProperty.call(partition, a.demandKey)) partition[a.demandKey] += (a.allocatedQty || 0);
+      if (!Object.prototype.hasOwnProperty.call(partition, a.demandKey)) return;
+      partition[a.demandKey] += (a.allocatedQty || 0);
+      var wh = gapStr_(a.sourceWarehouseId);   // FA-3B3b: retain the ORIGINAL physical source warehouse (never receiver/company/synthetic)
+      if (wh && (a.allocatedQty || 0) > 0) partitionBySource[a.demandKey][wh] = (partitionBySource[a.demandKey][wh] || 0) + (a.allocatedQty || 0);
     });
   });
   var rc = 0; for (var k in partition) if (Object.prototype.hasOwnProperty.call(partition, k)) rc++;
-  return { contendedSkus: contendedSkus, partition: partition, issues: issues, contendedSkuCount: Object.keys(contendedSkus).length, contendedReceiverCount: rc };
+  return { contendedSkus: contendedSkus, partition: partition, partitionBySource: partitionBySource, issues: issues, contendedSkuCount: Object.keys(contendedSkus).length, contendedReceiverCount: rc };
 }
 
 // §6 FULL PRE-PASS OWNER — discover candidates → (if any) harvest ONLY the candidate scopes' canonical demand
@@ -620,13 +687,14 @@ function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
 function gapOpHarvestReceivers_(scopes, io, ss, poolFacts, opts) {
   opts = opts || {};
   var skuFilter = opts.skuFilter || null;
-  var receivers = [], envByScope = {}, s, scope, env, lines;
+  var receivers = [], envByScope = {}, s, scope, env, lines, calcMonth = '';
   for (s = 0; s < scopes.length; s++) {
     scope = scopes[s];
     var reqBody = { requestId: 'GAP-OP-H-' + (scope.company + '/' + scope.country + '/' + scope.marketplace), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
     try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
     envByScope[scope.company + '||' + scope.country + '||' + scope.marketplace] = env;
     if (!env || env.success !== true) continue;
+    if (!calcMonth && env.meta && env.meta.calculationMonth) calcMonth = gapStr_(env.meta.calculationMonth);   // FA-3B3b: KMFSR §41 calc-window anchor
     lines = (env.data && env.data.lines) ? env.data.lines : [];
     var country = gapCanonCountry_(scope.country), pkey = scope.company + '||' + country + '||' + scope.marketplace;
     lines.forEach(function (L) {
@@ -637,11 +705,12 @@ function gapOpHarvestReceivers_(scopes, io, ss, poolFacts, opts) {
       var mp = L.monthlyProjection; if (!mp || !mp.length || !gapStr_(mp[0].month)) return; // needs a T1 month for required-by
       receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
         demandQty: demandQty, requiredByDate: gapStr_(mp[0].month) + '-01',
+        gapQty: gapNum_(L.calculatedGap),   // FA-3B3b: PASS-1 residual (demand − site stock) = §41 projectedRequirementQty basis
         allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : 0),
         key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
     });
   }
-  return { receivers: receivers, envByScope: envByScope };
+  return { receivers: receivers, envByScope: envByScope, calculationMonth: calcMonth };
 }
 
 // F1-4B-FM7-R2G-B — `contention` (optional) = the pre-computed cross-company Factory partition the resumable
@@ -669,6 +738,10 @@ function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, ma
   var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts, effectiveContention);
   acc.allocationIssues = alloc.issues; acc.receiversConsidered = receivers.length;
   var allocMap = alloc.byReceiverKey, scopeHasAlloc = {};
+  // FA-3B3b — §41 factory surplus reallocation over the source-attributed initial coverage (planning-only; no second
+  // allocation; no physical mutation). Adjusts allocMap[rk].factoryCoveredQty in place + adds reallocation diagnostics.
+  var f41CalcDate = (gapStr_(harvested.calculationMonth) ? harvested.calculationMonth + '-01' : '');
+  acc.factorySurplusReallocation = gapOpApplyFactorySurplusReallocation_(allocMap, receivers, poolFacts, f41CalcDate);
   receivers.forEach(function (r) { var a = allocMap[r.key]; if (a && (a.overseasCoveredQty > 0 || a.factoryCoveredQty > 0)) scopeHasAlloc[r.company + '||' + r.country + '||' + r.marketplace] = 1; });
 
   // ---- PASS 2 + MATERIALIZE: re-project scopes with injected allocation (else reuse harvest), map, UPSERT ----

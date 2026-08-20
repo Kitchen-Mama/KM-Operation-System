@@ -47,7 +47,7 @@ function mpTables() {
 // =============================================================================
 section('bundle registration');
 ok(H.hasKMHP, 'KMHP bundled + callable');
-ok(H.bundleInfo && H.bundleInfo.modules.length === 49 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO = 49 modules incl. horizon-projection (F1-7N weekly modules + FA-3B3a KMOOP/KMOTA/KMOOR added)');
+ok(H.bundleInfo && H.bundleInfo.modules.length === 50 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO = 50 modules incl. horizon-projection (F1-7N weekly + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR added)');
 
 section('calc-DATE authority (Script Property; fail-closed; no clock)');
 ok(H.calcDate(io('2026-08', '', null)).error.code === 'RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'missing → NOT_CONFIGURED');

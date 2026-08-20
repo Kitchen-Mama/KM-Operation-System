@@ -660,6 +660,11 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   var composition = recoWsComposeOpeningSupply_(siteStockQty, rAlloc ? rAlloc.overseasCoveredQty : 0, rAlloc ? rAlloc.factoryCoveredQty : 0);
   var mProj = recoWsBuildMonthlyProjection_(months, composition.openingSupplyQty, (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date);
   if (mProj) { mLine.monthlyProjection = mProj; mLine.openingSupplyComposition = composition; }   // §7 auditable opening-supply facts
+  // F1-7N-FA-3B3b: §41 factory-reallocation diagnostics (runtime DTO only; persistence is FA-3B4). composition.allocatedFactoryQty
+  // above is ALREADY the POST-reallocation coverage (43_ mutated allocMap in place); these expose the pre/in/out facts.
+  if (rAlloc && (rAlloc.reallocationInQty != null || rAlloc.reallocationOutQty != null || rAlloc.factoryAvailableQtySnapshot != null)) {
+    mLine.factorySurplusReallocation = { factoryAvailableQtySnapshot: recoWsNum_(rAlloc.factoryAvailableQtySnapshot), reallocationInQtySnapshot: recoWsNum_(rAlloc.reallocationInQty), reallocationOutQtySnapshot: recoWsNum_(rAlloc.reallocationOutQty) };
+  }
   if (cmr && cmr.ready) mLine.currentMonthRemaining = { requiredByDate: cmr.requiredByDate, month: cmr.ym, remainingDays: cmr.remainingDays, demandQty: Math.round(cmr.demand) };   // PRE-T1 audit (not a writable tier)
   // F1-4B-FM4a + FM3f-1 + FM5-R4UI-R3: additive day-horizon projection on Site Stock opening. Demand authority now
   // splits on the SKU's canonical Planning Model — sales_driven consumes the §22 run-rate (NOT regular FC / Target%),
