@@ -66,6 +66,7 @@
 
 ## F1-6 — Monthly Request Order Calculation Runtime
 
+- **Status (F1-7N-FA-3A, 2026-08-20):** the pure post-reallocation **producer** landed — `assets/js/core/supply-planning-surplus-reallocation.js` (`KMFSR.projectSurplusReallocation`), **PURE_RUNTIME_IMPLEMENTED_NOT_CONNECTED** (§41 / §41.5A / §43; 270 unit assertions). It computes protected/releasable-surplus, legal §32A cross-site/analysis netting, and the post-reallocation Net Order Need via §12 `sumRemainingShortages`. **Still pending (the wiring below):** live source invocation, `net_order_need_snapshot`/`recommended_qty` persistence, and `request-order.js` hydration — NOT done here (Phase-2 / FA-3B / FA-3H).
 - **Scope:** the same wiring for MONTHLY_ORDER — invoke Engine A/B + reallocation primitives from live source, persist `net_order_need_snapshot`/`recommended_qty` + source snapshots into `request_order_allocation_draft_lines`, and hydrate `request-order.js` so the analysis page shows real Suggested/Recommended instead of `--` and rehydrates `order_qty` on reload. Enforce the §SC-1M full-carton / missing-UPC gate at Send.
 - **Allowed files:** `source-facts.js` (monthly resolver wiring), `24_/25_*.gs`, `15_request_allocation_handlers.gs`, `operation-system-db-api.js`, `request-order.js`; bundle regenerate; tests.
 - **DB tables (Verification Copy):** `request_order_allocation_drafts(+_lines)`, `recommendation_calculation_runs`.
