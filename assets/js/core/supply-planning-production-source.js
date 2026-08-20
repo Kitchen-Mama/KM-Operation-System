@@ -65,7 +65,12 @@
     // fc_special_events (already read above) supplies the event selling window. Read-only; a MISSING campaigns source
     // is NOT silently "no contamination" — the Sales-Driven horizon fail-closes (CONTAMINATION_SOURCE_UNAVAILABLE).
     { key: 'campaigns', sheet: 'campaigns', required: false },
-    { key: 'campaignSkuLines', sheet: 'campaign_sku_lines', required: false }
+    { key: 'campaignSkuLines', sheet: 'campaign_sku_lines', required: false },
+    // F1-7N-FA-3B3a: Ongoing-PO future-factory supply canonical READS (Analysis-Layer, read-only). purchase_order_lines
+    // supplies the frozen lifecycle qty partition (ordered/completed) + expected_completion_date; request_order_line_sources
+    // supplies A1 immutable site provenance. NO write/mutation/reservation/new source-of-truth. Missing → fail-closed.
+    { key: 'purchaseOrderLines', sheet: 'purchase_order_lines', required: false },
+    { key: 'requestOrderLineSources', sheet: 'request_order_line_sources', required: false }
   ];
 
   function tablesFor(config) {

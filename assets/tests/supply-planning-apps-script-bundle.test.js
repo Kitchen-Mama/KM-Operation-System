@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 46, 'A: manifest lists all 46 canonical modules (incl. KMREC + KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA)');
+  eq(b1.manifest.length, 49, 'A: manifest lists all 49 canonical modules (incl. KMREC + KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + F1-7N-FA-3B3a KMOOP/KMOTA/KMOOR)');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -67,7 +67,10 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(typeof ctx.KMPR.applyPersistencePlan === 'function' && typeof ctx.KMPR.loadActiveDraftContext === 'function', 'C: KMPR repository API available');
   ok(typeof ctx.KMPL.executeLockedPersistence === 'function', 'C: KMPL.executeLockedPersistence available');
   ok(typeof ctx.KMPC.generateRecommendationDraft === 'function', 'C: KMPC Persistence Core available');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 46, 'C: KM_BUNDLE_INFO manifest present in runtime (46 modules incl. KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA)');
+  ok(ctx.KMOOP && typeof ctx.KMOOP.projectOngoingOrderSupply === 'function', 'C: KMOOP ongoing-order site projection available in bundle (F1-7N-FA-3B0)');
+  ok(ctx.KMOTA && typeof ctx.KMOTA.projectOngoingOrderIncoming === 'function' && ctx.KMOTA.VERSION === 'kmota-fa3b2-1', 'C: KMOTA ongoing→KMTPP timing adapter available in bundle (F1-7N-FA-3B2)');
+  ok(ctx.KMOOR && typeof ctx.KMOOR.projectOngoingIncomingForSku === 'function' && ctx.KMOOR.VERSION === 'kmoor-fa3b3a-1', 'C: KMOOR single-authority ongoing runtime available in bundle (F1-7N-FA-3B3a)');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 49, 'C: KM_BUNDLE_INFO manifest present in runtime (49 modules incl. KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR)');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');

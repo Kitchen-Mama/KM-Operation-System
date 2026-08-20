@@ -62,7 +62,10 @@ var MODULE_ORDER = [
   'supply-planning-production-writer',         // requires production-source + orchestrator + locking + repository + safety (Round 1S-P3 writer)
   'supply-planning-verification-diagnostics',  // requires repository + production-writer (Round 1S-P4-U read-only diagnostics)
   'supply-recommendation',                      // F1-4B-FM6 Phase-1 recommendation generator (KMREC): reads MATERIALIZED gap rows → DTO; no deps, no formula
-  'supply-execution-handoff'                     // F1-4B-FM6-R2 recommendation→execution handoff (KMREX): KMREC DTO + resolved availabilities → execution-draft DTO; no deps, no formula, no persistence
+  'supply-execution-handoff',                    // F1-4B-FM6-R2 recommendation→execution handoff (KMREX): KMREC DTO + resolved availabilities → execution-draft DTO; no deps, no formula, no persistence
+  'supply-planning-ongoing-order-projection',    // F1-7N-FA-3B0 KMOOP Ongoing-Order site projection (no deps)
+  'supply-planning-ongoing-order-tpp-adapter',   // F1-7N-FA-3B2 KMOTA Ongoing→KMTPP timing adapter (no deps)
+  'supply-planning-ongoing-order-runtime'        // F1-7N-FA-3B3a KMOOR single-authority chain (requires source-facts + ongoing-order-projection + ongoing-order-tpp-adapter)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -112,7 +115,10 @@ var GLOBALS = [
   ['KMPW', 'supply-planning-production-writer'],
   ['KMVD', 'supply-planning-verification-diagnostics'],
   ['KMREC', 'supply-recommendation'],
-  ['KMREX', 'supply-execution-handoff']
+  ['KMREX', 'supply-execution-handoff'],
+  ['KMOOP', 'supply-planning-ongoing-order-projection'],
+  ['KMOTA', 'supply-planning-ongoing-order-tpp-adapter'],
+  ['KMOOR', 'supply-planning-ongoing-order-runtime']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

@@ -556,6 +556,37 @@ function recoWsRows_(read, key) {
   return read.__rowCache[key];
 }
 
+// F1-7N-FA-3B3a — Ongoing-PO future-factory incoming for ONE receiver (company/country/marketplace/siteSku), via the
+// single-authority chain KMSF (lifecycle/count-once admission) → KMOOP (site allocation) → KMOTA (Phase-1 timing),
+// orchestrated by KMOOR. Read-only (purchase_order_lines + request_order_line_sources canonical snapshots; NO write,
+// NO shipment/transit/destination read). Returns [] when KMOOR is unbundled or nothing is admitted for the receiver.
+// The events are the exact { incomingId, eta, qty, sourceType } shape mIncoming already carries → injected into the
+// SAME KMTPP incoming list (no second KMTPP call). received (completed) qty and shipped qty are excluded upstream by
+// the frozen MAX(0, ordered−completed) admission, so factory-current opening supply is never double-counted.
+function recoWsOngoingIncomingForReceiver_(read, scope, sku, siteSku, months) {
+  if (typeof KMOOR === 'undefined' || !KMOOR || typeof KMOOR.projectOngoingIncomingForSku !== 'function') return [];
+  var poRows = recoWsRows_(read, 'purchaseOrderLines');
+  if (!poRows.length) return [];
+  var srcRows = recoWsRows_(read, 'requestOrderLineSources');
+  var fcRows = recoWsRows_(read, 'fcRegularForecast');
+  var mskRows = recoWsRows_(read, 'marketplaceSkus');
+  // A2 basis: the company's sites selling THIS sku (marketplace_skus) × Σ Regular FC over the frozen M+1..M+4 window.
+  var siteFc = [], seenSite = {};
+  mskRows.forEach(function (m) {
+    if (recoWsStr_(m.company) !== scope.company || recoWsStr_(m.sku) !== sku) return;
+    var country = recoWsStr_(m.country), marketplace = recoWsStr_(m.marketplace), ssk = recoWsStr_(m.site_sku);
+    var key = country + '||' + marketplace + '||' + ssk; if (seenSite[key]) return; seenSite[key] = 1;
+    var byM = recoWsRegularForecastByMonth_(fcRows, { company: scope.company, country: country, marketplace: marketplace }, sku, months);
+    var basis = 0; (months || []).forEach(function (ym) { var v = byM[ym]; if (typeof v === 'number' && isFinite(v)) basis += v; });
+    siteFc.push({ company: scope.company, country: country, marketplace: marketplace, siteSku: ssk, siteFcBasis: basis });
+  });
+  var res;
+  try { res = KMOOR.projectOngoingIncomingForSku({ masterSku: sku, company: scope.company, purchaseOrderLines: poRows, requestOrderLineSources: srcRows, monthlySiteFcFacts: siteFc, months: months }); }
+  catch (e) { return []; }
+  var rk = [scope.company, scope.country, scope.marketplace, siteSku].join('||');
+  return (res && res.byReceiver && res.byReceiver[rk]) ? res.byReceiver[rk] : [];
+}
+
 function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supplyAllocationByReceiver) {
   var snaps = read.snapshots || {};
   var mktRows = recoWsRows_(read, 'marketplaces'), whRows = recoWsRows_(read, 'warehouses');
@@ -610,6 +641,11 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // now available+transfer+processing, Authority A); demand = adjusted regular + special (E+F); PRE-T1 current-month
   // remaining consumed first (D); incoming = FM3c-1 line.qualifiedEvents. destinationGap/residualOrderNeed additive.
   var mIncoming = (L.qualifiedEvents || []).map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
+  // F1-7N-FA-3B3a: additively inject Ongoing-PO future-factory incoming (single-authority KMSF→KMOOP→KMOTA) into the
+  // SAME KMTPP incoming list. eta = expected_completion_date; tier is derived by recoWsBuildMonthlyProjection_ from the
+  // eta month via the SAME tierByMonth (M+1..M+4). Blank/invalid completion date → no event (fail-closed, diagnostic).
+  var mOngoing = recoWsOngoingIncomingForReceiver_(read, scope, sku, siteSku, months);
+  if (mOngoing.length) mIncoming = mIncoming.concat(mOngoing);
   var cmr = (useKMPD && calc.calculationDate) ? KMPD.currentMonthRemainingDemand({ calculationDate: calc.calculationDate, fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta }) : null;
   var preT1Demand = (cmr && cmr.ready) ? Math.round(cmr.demand) : null;   // rounded once at emission (KMPD carries full precision)
   var preT1Date = (cmr && cmr.ready) ? cmr.requiredByDate : null;
