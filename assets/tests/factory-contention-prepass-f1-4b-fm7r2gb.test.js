@@ -171,7 +171,7 @@ var pp = H.cont('ORDER_PLANNING', e1);   // pre-pass worker
 eq([pp.phase, e1._prepassCalls, e1._processed.length], [H.PHASES.COMPANY_SLICES, 1, 0], 'M2 the first worker runs the pre-pass ONCE (no slice yet) then advances to COMPANY_SLICES');
 var stored1 = JSON.parse(e1._store[H.PROP_KEYS.ORDER_PLANNING]);
 eq([stored1.factoryContendedCount, stored1.factoryContendedReceiverCount], [1, 2], 'M3 contention diagnostics persisted (counts)');
-ok(stored1.factoryContention && stored1.factoryContention.partition['A||US||AMAZON_US||X'] === 60, 'M4 the compact partition is persisted in job state');
+ok(stored1.factoryContention === null && stored1.factoryContentionMeta && stored1.factoryContentionMeta.chunkCount >= 1, 'M4 the partition is persisted via multi-property chunked storage (META in state; not inline) — content round-trip proven by N2');
 ok(stored1.factoryPartitionBytes > 0 && stored1.factoryPartitionBytes <= H.SAFE_BYTES, 'M5 partition serialized bytes recorded within the safe budget');
 // next workers run the company slices, consuming the injected partition
 var slice1 = H.cont('ORDER_PLANNING', e1);
@@ -194,13 +194,19 @@ eq(bLast.status, 'FAILED', 'the pre-pass failing across bounded attempts → ter
 ok(/FACTORY_PREPASS_FAILED|CONTENDED_FACTORY_PREPASS_EXCEEDS_WORKER_BUDGET/.test(bLast.lastError || ''), 'the terminal reason names the pre-pass budget/failure gate');
 ok(eBudget._processed.length === 0, 'no company slice ran when the pre-pass never produced a partition (fail closed)');
 
-section('§9 — an oversize partition → truthful terminal CONTENDED_FACTORY_PARTITION_SIZE_LIMIT (never auto-split)');
+section('§9 — F1-7N-FA-3C-PRE1: an oversize partition is stored via MULTI-PROPERTY chunks (authorized) — no size terminal, no auto-split of allocation');
 var bigPartition = {}; for (var r = 0; r < 500; r++) bigPartition['CO||US||AMAZON_US||SKU-LONG-IDENTIFIER-' + r] = r;
 var eSize = fakeEnv({ scopes: opScopes(), prepass: { contention: { contendedSkus: { X: 1 }, partition: bigPartition }, candidateSkuCount: 1, contendedSkuCount: 1, contendedReceiverCount: 500 } });
 H.start('ORDER_PLANNING', eSize);
 var sizeRes = H.cont('ORDER_PLANNING', eSize);
-eq(sizeRes.status, 'FAILED', 'a partition above the safe per-value budget → terminal FAILED');
-ok(/CONTENDED_FACTORY_PARTITION_SIZE_LIMIT/.test(sizeRes.lastError || ''), 'the terminal reason names the size gate (multi-property split is a separate authorized design)');
+ok(sizeRes.status !== 'FAILED', '§9 oversize partition no longer terminates (single-property size limit superseded by authorized multi-property storage)');
+var sizeStored = JSON.parse(eSize._store[H.PROP_KEYS.ORDER_PLANNING]);
+eq(sizeStored.phase, H.PHASES.COMPANY_SLICES, '§9 pre-pass ADVANCES to COMPANY_SLICES after chunked persist (partition intact, no double-use)');
+ok(sizeStored.factoryContentionMeta && sizeStored.factoryContentionMeta.chunkCount > 1, '§9 partition stored as MULTIPLE safe chunks');
+var partPrefix9 = H.PROP_KEYS.ORDER_PLANNING + ':PART:';
+var chunkKs9 = Object.keys(eSize._store).filter(function (k) { return k.indexOf(partPrefix9) === 0; });
+eq(chunkKs9.length, sizeStored.factoryContentionMeta.chunkCount, '§9 exactly one property per chunk');
+chunkKs9.forEach(function (k) { ok(String(eSize._store[k]).length <= H.SAFE_BYTES, '§9 chunk within safe per-value budget: ' + k); });
 
 section('§22/§X — INVENTORY has NO pre-pass phase (unchanged); it starts directly in COMPANY_SLICES');
 var eInv = fakeEnv({ scopes: [{ company: 'KM', country: 'US', marketplace: 'AMAZON_US' }] });

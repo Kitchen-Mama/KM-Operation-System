@@ -216,7 +216,70 @@ function gapJobReadState_(env, product) {
   try { return JSON.parse(raw); } catch (e) { return null; }
 }
 function gapJobWriteState_(env, product, state) { env.props.set(GAP_JOB_PROP_KEYS_[product], JSON.stringify(state)); }
-function gapJobClearState_(env, product) { if (env.props.del) env.props.del(GAP_JOB_PROP_KEYS_[product]); }
+function gapJobClearState_(env, product) { if (env.props.del) env.props.del(GAP_JOB_PROP_KEYS_[product]); gapJobPartitionPurge_(env, product); }
+
+// F1-7N-FA-3C-PRE1 — MULTI-PROPERTY chunked storage for the ONE canonical contended-Factory partition. STORAGE
+// TRANSPORT ONLY: the logical partition object + all allocation/conservation/§41 semantics are unchanged; this only
+// supersedes the single-Script-Property physical limit (~9216 B/value). Each chunk stays <= the EXISTING safe budget
+// GAP_JOB_PARTITION_SAFE_BYTES_. Atomic generation: chunks are written under generation-specific keys; the META (in
+// job state) is persisted LAST by the caller's gapJobWriteState_; stale generations are pruned by exact key prefix
+// AFTER the swap. Reader FAILS CLOSED on any missing chunk / count / checksum / byte mismatch — never a partial mix.
+var GAP_JOB_PARTITION_VERSION_ = 2;                         // v1 = legacy inline state.factoryContention (still readable)
+function gapJobPartitionPrefix_(product) { return GAP_JOB_PROP_KEYS_[product] + ':PART'; }
+function gapJobPad4_(n) { return ('0000' + n).slice(-4); }
+function gapJobUtf8Len_(s) { var n = 0; for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } else n += 3; } return n; }
+function gapJobFnv1a_(s) { var h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); }
+// Deterministic UTF-8-safe string chunking: each chunk's UTF-8 length <= maxBytes; a surrogate pair is never split.
+function gapJobChunkString_(s, maxBytes) {
+  var chunks = [], cur = '', curBytes = 0, i = 0;
+  while (i < s.length) {
+    var c = s.charCodeAt(i), pair = (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length);
+    var add = pair ? 4 : (c < 0x80 ? 1 : (c < 0x800 ? 2 : 3));
+    if (curBytes + add > maxBytes && cur !== '') { chunks.push(cur); cur = ''; curBytes = 0; }
+    cur += s.charAt(i); if (pair) { cur += s.charAt(i + 1); i += 2; } else { i += 1; }
+    curBytes += add;
+  }
+  if (cur !== '' || !chunks.length) chunks.push(cur);
+  return chunks;
+}
+// Write the partition as generation-specific chunks; return the META the caller stores in state (persisted LAST).
+function gapJobPartitionWrite_(env, product, contention, generationId) {
+  var json = JSON.stringify(contention || {});
+  var chunks = gapJobChunkString_(json, GAP_JOB_PARTITION_SAFE_BYTES_);
+  var prefix = gapJobPartitionPrefix_(product);
+  for (var i = 0; i < chunks.length; i++) env.props.set(prefix + ':' + generationId + ':' + gapJobPad4_(i), chunks[i]);
+  return { version: GAP_JOB_PARTITION_VERSION_, generationId: generationId, chunkCount: chunks.length, byteLength: gapJobUtf8Len_(json), checksum: gapJobFnv1a_(json) };
+}
+// Reconstruct the ONE logical partition. Backward-compatible with v1 inline state.factoryContention. Fail-closed.
+function gapJobPartitionRead_(env, product, state) {
+  if (state && state.factoryContention !== undefined && state.factoryContention !== null) return state.factoryContention;   // v1 inline
+  var meta = state && state.factoryContentionMeta;
+  if (!meta) return null;                                                                     // no contention persisted (empty pre-pass)
+  var prefix = gapJobPartitionPrefix_(product), parts = [];
+  for (var i = 0; i < meta.chunkCount; i++) {
+    var v = env.props.get(prefix + ':' + meta.generationId + ':' + gapJobPad4_(i));
+    if (v === null || v === undefined) throw new Error('CONTENDED_FACTORY_PARTITION_CHUNK_MISSING: gen ' + meta.generationId + ' chunk ' + i + '/' + meta.chunkCount);
+    parts.push(v);
+  }
+  var json = parts.join('');
+  if (gapJobUtf8Len_(json) !== meta.byteLength || gapJobFnv1a_(json) !== meta.checksum) throw new Error('CONTENDED_FACTORY_PARTITION_CHECKSUM_MISMATCH: gen ' + meta.generationId);
+  return JSON.parse(json);
+}
+// Delete stale-generation chunks (keep the active generation). Bounded strictly to the canonical partition key prefix.
+function gapJobPartitionCleanup_(env, product, keepGenerationId) {
+  if (!env.props.keys) return 0;
+  var prefix = gapJobPartitionPrefix_(product) + ':', keep = prefix + keepGenerationId + ':';
+  var all = env.props.keys() || [], removed = 0;
+  for (var i = 0; i < all.length; i++) { var k = all[i]; if (k.indexOf(prefix) === 0 && k.indexOf(keep) !== 0) { try { env.props.del(k); removed++; } catch (_e) {} } }
+  return removed;
+}
+// Purge ALL partition chunks for a product (job clear/done). Bounded to the exact partition key prefix.
+function gapJobPartitionPurge_(env, product) {
+  if (!env.props.keys) return 0;
+  var prefix = gapJobPartitionPrefix_(product) + ':', all = env.props.keys() || [], removed = 0;
+  for (var i = 0; i < all.length; i++) { if (all[i].indexOf(prefix) === 0) { try { env.props.del(all[i]); removed++; } catch (_e) {} } }
+  return removed;
+}
 function gapJobMarkDone_(env, product, state) {
   state.status = 'DONE'; state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt;
   state.lastWorkerFinishedAt = state.finishedAt;
@@ -417,12 +480,16 @@ function gapJobContinue_(product, env) {
         return state;
       }
       var contention = pre.contention || { contendedSkus: {}, partition: {} };
-      var partitionBytes = JSON.stringify(contention).length;                                 // §9 measure ACTUAL serialized bytes (not entry count)
-      if (partitionBytes > GAP_JOB_PARTITION_SAFE_BYTES_) {                                    // truthful terminal; never auto-split, never fall back to double-use
-        try { env.clearContinuationTriggers(product); } catch (_pp4) {}
-        return gapJobMarkFailed_(env, product, state, 'CONTENDED_FACTORY_PARTITION_SIZE_LIMIT: ' + partitionBytes + ' bytes > safe ' + GAP_JOB_PARTITION_SAFE_BYTES_ + ' (contended receivers=' + (pre.contendedReceiverCount || 0) + '); multi-property partition storage is a separate authorized design');
-      }
-      state.factoryContention = contention;
+      // F1-7N-FA-3C-PRE1 — persist the ONE canonical partition via MULTI-PROPERTY chunked storage (each chunk <= the
+      // existing safe budget); the single-property size limit is superseded (never auto-split allocation, never double-use).
+      // Chunks are written FIRST under a generation-specific prefix; the META is stored in state and persisted LAST by the
+      // gapJobWriteState_ below; stale generations are pruned after. No allocation/conservation change.
+      var partitionBytes = gapJobUtf8Len_(JSON.stringify(contention));                          // §9 ACTUAL serialized UTF-8 bytes
+      state.factoryPartitionRev = (state.factoryPartitionRev || 0) + 1;                         // monotonic per write (crash-safe: unpersisted rev is simply reused → same keys overwritten)
+      var partitionGen = state.runId + '-' + state.factoryPartitionRev;
+      state.factoryContentionMeta = gapJobPartitionWrite_(env, product, contention, partitionGen);
+      state.factoryContention = null;                                                           // no longer stored inline in the state property
+      gapJobPartitionCleanup_(env, product, partitionGen);                                      // prune prior generations (prefix-bounded)
       state.factoryCandidateCount = pre.candidateSkuCount || 0;
       state.factoryContendedCount = pre.contendedSkuCount || 0;
       state.factoryContendedReceiverCount = pre.contendedReceiverCount || 0;
@@ -436,7 +503,10 @@ function gapJobContinue_(product, env) {
       gapJobWriteState_(env, product, state); gapJobLog_('PREPASS_DONE', state);
       return state;
     }
-    ctx.factoryContention = state.factoryContention || null;                                   // R2G-B — the per-company slice consumes the persisted pre-pass partition
+    // R2G-B — the per-company slice consumes the persisted pre-pass partition. FA-3C-PRE1: reconstruct from the ONE
+    // canonical multi-property partition (v1 inline still readable); FAIL CLOSED on a missing/corrupt chunk (never partial).
+    try { ctx.factoryContention = gapJobPartitionRead_(env, product, state); }
+    catch (rdErr) { try { env.clearContinuationTriggers(product); } catch (_rd) {} return gapJobMarkFailed_(env, product, state, String(rdErr && rdErr.message ? rdErr.message : rdErr)); }
     var scopes = gapJobOrderedScopes_(gapJobSelectScopes_(env.enumerateScopes(ss) || [], state.requestedScope, product).scopes);   // §13 same bounded scope every slice
     state.scopesTotal = scopes.length;
     if (state.scopeCursor >= scopes.length) { try { env.clearContinuationTriggers(product); } catch (_c2) {} return gapJobMarkDone_(env, product, state); }
@@ -604,7 +674,8 @@ function gapJobRunFactoryPrepass_(product, ss, ctx) {
 // ---- PRODUCTION side-effect adapters (Apps Script globals; not exercised by Node tests) ----------------------
 function gapJobScriptProps_() {
   var sp = PropertiesService.getScriptProperties();
-  return { get: function (k) { return sp.getProperty(k); }, set: function (k, v) { sp.setProperty(k, v); }, del: function (k) { sp.deleteProperty(k); } };
+  return { get: function (k) { return sp.getProperty(k); }, set: function (k, v) { sp.setProperty(k, v); }, del: function (k) { sp.deleteProperty(k); },
+    keys: function () { return sp.getKeys() || []; } };   // F1-7N-FA-3C-PRE1 — prefix-bounded stale-chunk cleanup
 }
 function gapJobScriptLock_() {
   var l = null; try { l = LockService.getScriptLock(); } catch (e) { l = null; }
