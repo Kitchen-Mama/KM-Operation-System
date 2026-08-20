@@ -536,8 +536,13 @@
 #factory-stock-section .ovs-form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 #factory-stock-section .ovs-form-group { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; }
 #factory-stock-section .ovs-form-group label { font-size: 12px; font-weight: 600; color: #475569; }
-#factory-stock-section .ovs-form-group input { height: 36px; padding: 6px 10px; border: 1px solid var(--filter-border-color, #cbd5e0); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
-#factory-stock-section .ovs-form-group input:disabled { background: #f1f5f9; color: #94a3b8; }
+/* F1-7N-UX-FACTORY-IMPORT-SELECT-VISUAL-PARITY-R1 — the Factory import <select> reuses the EXACT Overseas modal select
+   box styling (overseas-stock.css: `.ovs-form-group input, .ovs-form-group select`) so the Factory selector matches the
+   Company/Country/Warehouse selects (height 36 / 1px #cbd5e0 border / radius 6 / 13px / 6px 10px padding). */
+#factory-stock-section .ovs-form-group input,
+#factory-stock-section .ovs-form-group select { height: 36px; padding: 6px 10px; border: 1px solid var(--filter-border-color, #cbd5e0); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+#factory-stock-section .ovs-form-group input:disabled,
+#factory-stock-section .ovs-form-group select:disabled { background: #f1f5f9; color: #94a3b8; }
 #factory-stock-section .ovs-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 /* ---- Factory-specific content (modifier classes; not part of the shared shell) ---- */
 #factory-stock-section .fii-parsestat { margin-top: 6px; font-size: 12px; color: #64748B; }
