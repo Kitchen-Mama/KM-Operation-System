@@ -1197,6 +1197,7 @@ var _fiiRows = null;         // parsed rows (client)
 var _fiiValidated = null;    // last server validate response.data
 var _fiiBatchId = null;      // stable import batch id (generated at validate; REUSED on commit + retry — idempotency)
 var _fiiSubmitting = false;  // commit double-submit guard (one commit per click)
+var _fiiCompleted = false;   // F1-7N: after a successful commit the primary button becomes "Done" (closes; never re-imports)
 var _fiiKeyBound = false;
 // F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — the user MUST explicitly select a factory before import.
 var _fiiFactory = { warehouseId: '', warehouseCode: '' };
@@ -1271,7 +1272,7 @@ function _fiiParseError(msg) {
 function openFactoryImportModal() {
   var overlay = _fiiEl('factory-import-overlay'), modal = _fiiEl('factory-import-modal');
   if (!modal || !overlay) return;
-  _fiiRows = null; _fiiValidated = null; _fiiBatchId = null; _fiiSubmitting = false;
+  _fiiRows = null; _fiiValidated = null; _fiiBatchId = null; _fiiSubmitting = false; _fiiCompleted = false;
   _fiiFactory = { warehouseId: '', warehouseCode: '' };
   _fiiPopulateFactories();
   var roEl = _fiiEl('factory-import-scope-readout'); if (roEl) { roEl.style.display = 'none'; roEl.innerHTML = ''; }
@@ -1287,31 +1288,33 @@ function openFactoryImportModal() {
 }
 function closeFactoryImportModal() { var o = _fiiEl('factory-import-overlay'), m = _fiiEl('factory-import-modal'); if (o) o.classList.remove('is-open'); if (m) m.classList.remove('is-open'); }
 
-// Download the .xlsx template via the shared generic builder. Helper reference SHEETS are not supported by
-// the builder, so canonical warehouse_id values are offered as a dropdown and both identity columns carry a
-// comment stating they must match canonical values (F0-HOTFIX-FI1 §5 fallback).
+function _fiiSanitizeFilePart_(s) { return String(s || '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA'; }
+// F1-7N-UX-FACTORY-IMPORT-TEMPLATE-SCOPE-AND-DONE-FIX-R1 — the template is SCOPED to the CURRENTLY selected factory
+// (mirrors the Overseas scoped template): warehouse_id dropdown = the selected id only, example row prefilled with the
+// selected factory. Regenerated fresh from _fiiFactory on every click (no Blob cache), so switching factories without a
+// reload always yields the selected factory's template. If no factory is selected, do NOT emit an unscoped/default
+// template — use the existing notice convention. Column contract + SET_CURRENT_STOCK semantics are unchanged.
 function downloadFactoryImportTemplate() {
   if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { alert('Template engine (ExcelJS) not available.'); return; }
-  var whs = (_fsGet('warehouses') || [])
-    .filter(function (w) { return w && w.isFactoryWarehouse === true && w.isActive !== false; });
-  var whIds = whs.map(function (w) { return w.warehouseId; }).filter(Boolean);
+  if (!_fiiFactory.warehouseId) { alert('Select a factory first.'); return; }
+  var selId = _fiiFactory.warehouseId, selCode = _fiiFactory.warehouseCode || '';
   var skus = (_fsGet('skuDetails') || []).map(function (s) { return s.sku; }).filter(Boolean);
   var columns = [
-    { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 22, comment: 'REQUIRED. Canonical factory warehouse_id (dropdown). Identity — warehouse_code never overrides it.', dropdown: whIds.slice(0, 200) },
-    { key: 'warehouse_code', header: 'warehouse_code', kind: 'business', width: 18, comment: 'Optional human-readable check. Conflicting with warehouse_id rejects the row (WAREHOUSE_ID_CODE_MISMATCH).' },
+    { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 22, comment: 'REQUIRED. Prefilled with the selected factory (' + selId + '). Do NOT change — one file = one factory; the server rejects any other warehouse_id.', dropdown: [selId] },
+    { key: 'warehouse_code', header: 'warehouse_code', kind: 'business', width: 18, comment: 'Optional human-readable check — must be the selected factory code' + (selCode ? ' (' + selCode + ')' : '') + '. Conflicting with warehouse_id rejects the row (WAREHOUSE_ID_CODE_MISMATCH).' },
     { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU from SKU Details (NOT site_sku).' },
     { key: 'current_stock_qty', header: 'current_stock_qty', kind: 'business', width: 18, comment: 'REQUIRED non-negative whole number. 0 valid; BLANK = missing (not 0); negatives/decimals rejected. SETS current stock.' },
     { key: 'effective_date', header: 'effective_date', kind: 'business', width: 15, comment: 'Optional ISO date YYYY-MM-DD (audit only). Blank → server write date.' },
     { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note (max 500 chars).' }
   ];
   var spec = {
-    filename: 'Factory_Inventory_Import_Template.xlsx',
+    filename: 'Factory_Inventory_' + _fiiSanitizeFilePart_(selId) + '_Import_Template.xlsx',
     sheetName: 'Factory Inventory Import',
-    instructionRow: 'SET_CURRENT_STOCK — imported current_stock_qty BECOMES the factory current stock for warehouse_id + sku (it does NOT add). Reserved / in-production / pending shipout / orders / shipments are never changed. warehouse_id and sku must match canonical values.',
+    instructionRow: 'This import updates ONE factory only — Factory: ' + selId + (selCode ? ' / ' + selCode : '') + '. warehouse_id is prefilled; do not mix factories. SET_CURRENT_STOCK — imported current_stock_qty BECOMES the factory current stock for warehouse_id + sku (it does NOT add). Reserved / in-production / pending shipout / orders / shipments are never changed. The server rejects any other / non-factory / inactive warehouse.',
     masterTemplate: true,
     columns: columns,
-    exampleRow: { warehouse_id: (whIds[0] || 'WH-FACTORY-CN'), warehouse_code: (whs[0] && whs[0].warehouseCode) || '', sku: (skus[0] || 'CO1100-R'), current_stock_qty: 0, effective_date: '', note: 'initial import' },
-    system: { template_id: 'factory_inventory_import', template_name: 'Factory Inventory Import', template_version: '1', module: 'factory_inventory', export_mode: 'import', source_system: 'operation-system' }
+    exampleRow: { warehouse_id: selId, warehouse_code: selCode, sku: (skus[0] || 'CO1100-R'), current_stock_qty: 0, effective_date: '', note: 'initial import' },
+    system: { template_id: 'factory_inventory_import', template_name: 'Factory Inventory Import', template_version: '2', module: 'factory_inventory', export_mode: 'import', source_system: 'operation-system', scope_warehouse_id: selId }
   };
   window.KM.templateExport.buildAndDownload(spec).catch(function (err) { alert('Template download failed: ' + (err && err.message ? err.message : err)); });
 }
@@ -1516,7 +1519,15 @@ function _fiiRenderPreview(data) {
     (((s.createRows || 0) + (s.updateRows || 0)) === 0 ? 'Nothing to import (all rows unchanged).' : 'This import will SET Factory Current Stock to the imported quantities. It will NOT add. It will NOT change reserved / in-production / pending shipout / orders / shipments.');
 }
 
+// F1-7N: the primary button is relabeled "Done" after a successful commit; clicking it then closes (never re-imports).
+function _fiiDone() {
+  _fiiCompleted = false; _fiiSubmitting = false;
+  _fiiRows = null; _fiiValidated = null; _fiiBatchId = null;
+  _fiiHide('factory-import-result'); _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap');
+  closeFactoryImportModal();                                      // clears the overlay + modal is-open state (no invisible backdrop)
+}
 function confirmFactoryImport() {
+  if (_fiiCompleted) { _fiiDone(); return; }                     // the button is now "Done" → close, do NOT re-import
   if (_fiiSubmitting) return;                                     // double-click → ONE commit
   if (!_fiiValidated || !_fiiBatchId) return;
   if ((_fiiValidated.summary && _fiiValidated.summary.invalidRows) > 0) return;   // never commit a blocking batch
@@ -1529,8 +1540,10 @@ function confirmFactoryImport() {
         _fiiRenderResult(resp, true); return;
       }
       _fiiRenderResult(resp, false);
-      if (btn) btn.textContent = 'Done';
-      return _fiiRefreshAfterCommit();                            // decoupled targeted readback (never whole-DB reload)
+      // F1-7N: commit succeeded — the primary button becomes an enabled "Done" that CLOSES (via _fiiCompleted branch).
+      _fiiCompleted = true; _fiiSubmitting = false;
+      if (btn) { btn.textContent = 'Done'; btn.disabled = false; }
+      return _fiiRefreshAfterCommit();                            // decoupled targeted readback (never whole-DB reload) — runs exactly once here
     })
     .catch(function (err) {
       // Commit ACK unknown (transport error) — reassure, do NOT resend automatically.
@@ -1579,6 +1592,7 @@ window.downloadFactoryImportTemplate = downloadFactoryImportTemplate;
 window._fiiOnFileChosen = _fiiOnFileChosen;
 window._fiiOnFactoryChosen = _fiiOnFactoryChosen;
 window.confirmFactoryImport = confirmFactoryImport;
+window._fiiDone = _fiiDone;
 
 // ========================================
 // Lifecycle 註冊

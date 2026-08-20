@@ -79,8 +79,12 @@ ok(/templateExport\.buildAndDownload/.test(ovsTplFn) && /dropdown:\s*\[sc\.wareh
 var ovsEligFn = OVS_JS.slice(OVS_JS.indexOf('function _ovsEligibleWarehouses'), OVS_JS.indexOf('function _ovsWhById'));
 ok(/isFactoryWarehouse === true\) return false/.test(ovsEligFn) && /isActive === false\) return false/.test(ovsEligFn) && /excludedTypes\[t\]\) return false/.test(ovsEligFn) && /FBA: 1, RETURN: 1, FACTORY: 1/.test(ovsEligFn), 'Overseas picker excludes inactive + factory + FBA/RETURN/FACTORY execution types (active Overseas/3PL only)');
 ok(!/a\.download = 'overseas_inventory_snapshot_import_template\.csv'[\s\S]{0,80}csv \+/.test(OVS_JS), 'the free-text CSV template is no longer the primary generated format (xlsx dropdown is)');
-// Factory template (regression): dropdown of ACTIVE FACTORY warehouse ids.
-ok(/downloadFactoryImportTemplate[\s\S]{0,600}isFactoryWarehouse === true && \w+\.isActive !== false[\s\S]{0,600}dropdown:\s*whIds/.test(FAC_JS), 'Factory template dropdown filtered to active FACTORY warehouses (regression)');
+// Factory template (F1-7N-UX-FACTORY-IMPORT-TEMPLATE-SCOPE-AND-DONE-FIX-R1): the template is now SCOPED to the CURRENTLY
+// selected factory (dropdown = the selected warehouse_id only), replacing the former all-active-factory dropdown. It is
+// gated on a selected factory (no unscoped default). Still factory-only (the picker/server enforce is_factory_warehouse).
+var facTplFn = FAC_JS.slice(FAC_JS.indexOf('function downloadFactoryImportTemplate'), FAC_JS.indexOf('function _fiiSplitCsvLine'));
+ok(/if \(!_fiiFactory\.warehouseId\)[\s\S]{0,60}Select a factory first/.test(facTplFn), 'Factory template gated on a selected factory (no unscoped/default template)');
+ok(/dropdown: \[selId\]/.test(facTplFn) && /exampleRow: \{ warehouse_id: selId/.test(facTplFn), 'Factory template scoped to the SELECTED factory warehouse_id (dropdown + example)');
 
 section('§10/§12 — Overseas import accepts the new .xlsx AND legacy .csv (backward compatible)');
 ok(/function _parseOverseasXlsx\(file\)/.test(OVS_JS) && /wb\.xlsx\.load/.test(OVS_JS), 'Overseas import gains an .xlsx parser (ExcelJS)');
