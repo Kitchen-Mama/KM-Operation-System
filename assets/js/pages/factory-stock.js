@@ -1702,6 +1702,7 @@ function runFactoryAction(kind) {
     _factoryActionsClose(false);
     if (kind === 'import' && typeof openFactoryImportModal === 'function') return openFactoryImportModal();
     if (kind === 'adjust' && typeof openFactoryInventoryAdjustModal === 'function') return openFactoryInventoryAdjustModal();
+    if (kind === 'twSettings' && typeof openTwFactorySettingsModal === 'function') return openTwFactorySettingsModal();
 }
 // Bind outside-click + keyboard ONCE (guarded — repeated open/close never stacks listeners). Acts only while open.
 function _factoryBindActionsMenuGlobal() {
@@ -1729,3 +1730,85 @@ function _factoryBindActionsMenuGlobal() {
 }
 window.toggleFactoryActionsMenu = toggleFactoryActionsMenu;
 window.runFactoryAction = runFactoryAction;
+
+// ============================================================================
+// F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1 — TW Factory Settings modal. Two Phase-1 TW operational-policy toggles
+// (New SKU Participation, General Allocation) persisted in the KM_FACTORY_OPERATION_CONFIG Script-Property blob via
+// factoryOperationConfig.get / .save. READ-only on open; SAVE changes operational policy ONLY (no inventory write,
+// no Sheet tab, no row create/delete). Missing config → both OFF. No localStorage.
+// ============================================================================
+var _twSettingsSubmitting = false;
+var _twSettingsKeyBound = false;
+function _twSettingsEls() {
+    return {
+        overlay: document.getElementById('tw-factory-settings-overlay'),
+        modal: document.getElementById('tw-factory-settings-modal'),
+        newsku: document.getElementById('tw-setting-newsku'),
+        genalloc: document.getElementById('tw-setting-genalloc'),
+        result: document.getElementById('tw-factory-settings-result'),
+        saveBtn: document.getElementById('tw-factory-settings-save-btn')
+    };
+}
+function closeTwFactorySettingsModal() {
+    var e = _twSettingsEls();
+    if (e.overlay) e.overlay.classList.remove('is-open');
+    if (e.modal) e.modal.classList.remove('is-open');
+    _twSettingsSubmitting = false;
+}
+// Open + READ-BACK the current policy from the backend config (never localStorage). Absent config → both OFF.
+function openTwFactorySettingsModal() {
+    var e = _twSettingsEls();
+    if (!e.overlay || !e.modal) return;
+    if (e.result) { e.result.hidden = true; e.result.innerHTML = ''; }
+    // fail-safe defaults shown immediately; the async read overwrites them with the persisted policy.
+    if (e.newsku) e.newsku.checked = false;
+    if (e.genalloc) e.genalloc.checked = false;
+    if (e.saveBtn) { e.saveBtn.disabled = false; e.saveBtn.textContent = 'Save'; }
+    _twSettingsSubmitting = false;
+    e.overlay.classList.add('is-open');
+    e.modal.classList.add('is-open');
+    if (!_twSettingsKeyBound) {
+        document.addEventListener('keydown', function (ev) {
+            var els = _twSettingsEls();
+            if (!els.modal || !els.modal.classList.contains('is-open')) return;
+            if (ev.key === 'Escape') { ev.preventDefault(); closeTwFactorySettingsModal(); }
+        });
+        _twSettingsKeyBound = true;
+    }
+    if (window.KM && window.KM.DB && typeof window.KM.DB.getFactoryOperationConfig === 'function') {
+        window.KM.DB.getFactoryOperationConfig().then(function (data) {
+            var tw = (data && data.tw) || {};
+            var els = _twSettingsEls();
+            if (els.newsku) els.newsku.checked = tw.newSkuParticipationEnabled === true;
+            if (els.genalloc) els.genalloc.checked = tw.generalAllocationEnabled === true;
+        }).catch(function (err) {
+            console.warn('[FactoryStock] TW settings read failed:', err);
+        });
+    }
+}
+// SAVE = operational policy ONLY. Sends the two booleans; no inventory payload, no row mutation.
+function saveTwFactorySettings() {
+    if (_twSettingsSubmitting) return;
+    var e = _twSettingsEls();
+    if (!e.modal) return;
+    var payload = { tw: {
+        newSkuParticipationEnabled: !!(e.newsku && e.newsku.checked),
+        generalAllocationEnabled: !!(e.genalloc && e.genalloc.checked)
+    } };
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.saveFactoryOperationConfig === 'function')) {
+        if (e.result) { e.result.hidden = false; e.result.textContent = 'API not configured — settings not saved.'; }
+        return;
+    }
+    _twSettingsSubmitting = true;
+    if (e.saveBtn) { e.saveBtn.disabled = true; e.saveBtn.textContent = 'Saving…'; }
+    window.KM.DB.saveFactoryOperationConfig(payload).then(function () {
+        closeTwFactorySettingsModal();
+    }).catch(function (err) {
+        _twSettingsSubmitting = false;
+        if (e.saveBtn) { e.saveBtn.disabled = false; e.saveBtn.textContent = 'Save'; }
+        if (e.result) { e.result.hidden = false; e.result.textContent = 'Save failed: ' + ((err && err.message) || err); }
+    });
+}
+window.openTwFactorySettingsModal = openTwFactorySettingsModal;
+window.closeTwFactorySettingsModal = closeTwFactorySettingsModal;
+window.saveTwFactorySettings = saveTwFactorySettings;

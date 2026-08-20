@@ -2863,6 +2863,47 @@ window.KM.DB.getWarehouseAllocationConfig = async function(scope) {
     return json.data;
 };
 
+// F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1 — TW factory operational-policy config READ (Factory Inventory → More
+// Options → TW Factory Settings modal hydrate). Reads the KM_FACTORY_OPERATION_CONFIG Script-Property blob (NOT a DB
+// sheet). READ-ONLY (opening the modal mutates nothing). Absent config → both policies false. Returns
+// { version, tw:{ newSkuParticipationEnabled, generalAllocationEnabled }, updatedAt, updatedBy }.
+window.KM.DB.getFactoryOperationConfig = async function() {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, getFactoryOperationConfig skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'factoryOperationConfig.get' })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Read failed');
+    return json.data;
+};
+
+// F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1 — TW factory operational-policy config SAVE. Writes ONLY the
+// KM_FACTORY_OPERATION_CONFIG Script-Property blob (no inventory mutation, no Sheet tab). payload =
+// { tw:{ newSkuParticipationEnabled:boolean, generalAllocationEnabled:boolean }, updated_by? }.
+window.KM.DB.saveFactoryOperationConfig = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, saveFactoryOperationConfig skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'factoryOperationConfig.save', payload: payload || {} })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Save failed');
+    return json.data;
+};
+
 window.KM.DB.upsertMarketplaceSku = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, upsertMarketplaceSku skipped');

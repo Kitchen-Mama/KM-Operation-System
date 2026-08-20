@@ -26,8 +26,12 @@ ok(ojs && ojs[1] !== 'whimport-20260811', 'overseas-stock.js token bumped off th
 var fcss = INDEX.match(/assets\/css\/pages\/factory-stock\.css\?v=([A-Za-z0-9_-]+)/);
 ok(fcss && fcss[1] !== 'donenotice-20260811', 'factory-stock.css token bumped off the stale donenotice-20260811 (select parity deploys)');
 
-section('B every inventory-import asset that changed shares the new token (consistent cache bust)');
-ok(fjs && ojs && fcss && fjs[1] === ojs[1] && ojs[1] === fcss[1], 'factory-stock.js / overseas-stock.js / factory-stock.css all carry the SAME bumped token');
+section('B each inventory-import asset is independently cache-versioned (bumped when it changes)');
+// F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1 — factory-stock.js + factory-stock.css change together this round and share
+// the new token; overseas-stock.js is versioned independently (bumped in its own rounds). The invariant is "present +
+// non-stale + the co-changed factory pair matches", NOT "all three forever identical".
+ok(fjs && fcss && fjs[1] === fcss[1], 'the co-changed factory pair (factory-stock.js + factory-stock.css) share the SAME bumped token');
+ok(ojs && /^[A-Za-z0-9_-]+$/.test(ojs[1]), 'overseas-stock.js carries its own valid ?v= token (independently versioned)');
 
 section('C single template owner + factory-scoped source (no duplicate live path)');
 var defs = (F_JS.match(/function downloadFactoryImportTemplate\(/g) || []).length;

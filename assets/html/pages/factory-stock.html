@@ -123,6 +123,8 @@
                                  aria-label="Factory inventory actions" hidden>
                                 <button type="button" role="menuitem" class="fs-actions-menu__item" onclick="runFactoryAction('import')">Import Inventory</button>
                                 <button type="button" role="menuitem" class="fs-actions-menu__item" onclick="runFactoryAction('adjust')">Inventory Adjustment</button>
+                                <div class="fs-actions-menu__divider" role="separator"></div>
+                                <button type="button" role="menuitem" class="fs-actions-menu__item" onclick="runFactoryAction('twSettings')">TW Factory Settings</button>
                             </div>
                         </div>
                     </div>
@@ -354,6 +356,42 @@
                         <div class="fia-modal-actions">
                             <button type="button" class="btn btn-secondary" onclick="closeFactoryInventoryAdjustModal()">Cancel</button>
                             <button type="button" class="btn btn-primary" id="factory-adjust-confirm-btn" onclick="confirmFactoryInventoryAdjustment()" disabled>Confirm Adjustment</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ TW Factory Settings Modal (F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1) ============
+                     Two temporary Phase-1 TW-factory OPERATIONAL POLICIES (NOT inventory quantities). Persisted in the
+                     KM_FACTORY_OPERATION_CONFIG Script-Property blob via factoryOperationConfig.get / .save (no Sheet
+                     tab, no inventory write). Both default OFF; a missing config resolves to OFF. These change FUTURE
+                     planning/initialization behavior only — they NEVER move or delete physical stock. -->
+                <div class="fia-modal-overlay" id="tw-factory-settings-overlay" onclick="closeTwFactorySettingsModal()"></div>
+                <div class="fia-modal" id="tw-factory-settings-modal" role="dialog" aria-modal="true" aria-labelledby="tw-factory-settings-title">
+                    <div class="fia-modal-content">
+                        <h3 id="tw-factory-settings-title">TW Factory Settings</h3>
+                        <div class="fia-modal-body">
+                            <p class="fia-hint"><strong>These settings affect FUTURE planning &amp; new-SKU initialization behavior — they do NOT change physical stock quantities.</strong> Both default to <strong>Off</strong>.</p>
+                            <div class="tw-settings-group">
+                                <label class="tw-settings-row">
+                                    <input type="checkbox" id="tw-setting-newsku" class="tw-settings-toggle">
+                                    <span class="tw-settings-text">
+                                        <span class="tw-settings-name">TW New SKU Participation <span class="tw-settings-default">(Default: Off)</span></span>
+                                        <span class="tw-settings-help">When <strong>On</strong>, a newly-Running SKU may auto-create TW factory participation during canonical new-SKU initialization. When <strong>Off</strong>, TW is not auto-added for new SKUs. Existing TW records (e.g. CO1100-series) are never deleted, and turning this On does not retroactively backfill past SKUs.</span>
+                                    </span>
+                                </label>
+                                <label class="tw-settings-row">
+                                    <input type="checkbox" id="tw-setting-genalloc" class="tw-settings-toggle">
+                                    <span class="tw-settings-text">
+                                        <span class="tw-settings-name">TW General Allocation <span class="tw-settings-default">(Default: Off)</span></span>
+                                        <span class="tw-settings-help">When <strong>Off</strong>, TW is excluded from the general shared factory-allocation pool and its planning is restricted to <strong>ResUS / US / Amazon</strong> (CN continues normal general allocation). When <strong>On</strong>, TW joins the same canonical factory-allocation framework.</span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="fia-result" id="tw-factory-settings-result" hidden></div>
+                        </div>
+                        <div class="fia-modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeTwFactorySettingsModal()">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="tw-factory-settings-save-btn" onclick="saveTwFactorySettings()">Save</button>
                         </div>
                     </div>
                 </div>
