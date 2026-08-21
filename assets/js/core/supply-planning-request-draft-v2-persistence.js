@@ -262,6 +262,105 @@
     };
   }
 
+  // ---- direct-row load + plan-for-a-transformed-row (shared by edit / submit / cancel) -------------------------
+  function loadFlatById(sheetSet, draftId) {
+    var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'loadFlatById: missing ' + HEADER_TABLE);
+    var f = findByDraftId_(t, draftId);
+    if (f.dup > 1) return { status: 'BLOCKED_CONFLICT', row: null };
+    if (f.target === -1) return { status: 'NOT_FOUND', row: null };
+    return { status: 'FOUND', row: rowObj_(t.headers, t.rows[f.target]) };
+  }
+  // build the UPDATE plan for a row transformed IN PLACE by a KMRDV2 lifecycle op (edit/submit/cancel). The token
+  // guards against the row as it was BEFORE the transform (existingRow); the client may override with its own token.
+  function planForRow_(newRow, existingRow, opts) {
+    opts = opts || {};
+    var draftVersion = (num(newRow.draft_version) !== null) ? num(newRow.draft_version) : 1;
+    var token = opts.expectedToken || expectedTokenForExisting(existingRow, draftVersion);
+    var calcRunId = str(newRow.calculation_run_id) || ('RUN::' + newRow.request_allocation_draft_id + '::v' + draftVersion);
+    newRow.calculation_run_id = calcRunId;
+    return {
+      persist: true, recommendationType: RECOMMENDATION_TYPE, op: 'UPDATE', action: opts.action || 'edit',
+      draftId: str(newRow.request_allocation_draft_id), draftVersion: draftVersion,
+      calculationRunId: calcRunId, expectedToken: token, row: newRow,
+      runMeta: { planning_cycle: str(newRow.planning_cycle), business_scope_key: opts.businessScopeKey || '',
+        formulaVersion: str(newRow.formula_version), sourceDataAsOf: str(newRow.source_data_as_of) }
+    };
+  }
+
+  // ---- read-only concurrency token for a flat draft (client obtains it before an edit write) -------------------
+  function tokenForDraft(sheetSet, draftId) {
+    var r = loadFlatById(sheetSet, draftId);
+    if (r.status !== 'FOUND') return { found: false, status: r.status };
+    return { found: true, status: str(r.row.status) || 'draft', expectedToken: expectedTokenForExisting(r.row, r.row.draft_version) };
+  }
+
+  // ---- per-tier EDIT (order_qty / carton_qty / note) via KMRDV2.applyTierEdit; recommended_qty NEVER rewritten --
+  // command = { draftId, edits:[{ naturalKey:{request_bucket[,request_month]}, fields:{order_qty?,carton_qty?,note?} }],
+  //             expectedToken?, actor, now }.  deps = { loadById(draftId)->{status,row}, lockedApply(plan,token,opts) }
+  function editMonthlyFlat(command, deps) {
+    aType(isObj(command) && Array.isArray(command.edits), 'editMonthlyFlat: command.edits required');
+    aType(isObj(deps) && typeof deps.loadById === 'function' && typeof deps.lockedApply === 'function', 'editMonthlyFlat: deps.loadById/lockedApply required');
+    var ld = deps.loadById(str(command.draftId));
+    if (!ld || ld.status !== 'FOUND' || !ld.row) return { success: false, error: (ld && ld.status) || 'DRAFT_NOT_FOUND', stage: 'load' };
+    var before = ld.row, working = before, results = [];
+    for (var i = 0; i < command.edits.length; i++) {
+      var e = command.edits[i] || {}, nk = e.naturalKey || {}, tier = str(nk.request_bucket).toUpperCase();
+      if (TIERS.indexOf(tier) === -1) { results.push({ tier: tier || '(none)', ok: false, reason: 'UNKNOWN_TIER' }); continue; }
+      var f = e.fields || {}, patch = {};
+      if (f.order_qty !== undefined) patch.order_qty = f.order_qty;
+      if (f.carton_qty !== undefined) patch.carton_qty = f.carton_qty;
+      if (f.note !== undefined) patch.note = f.note;
+      var res = KMRDV2.applyTierEdit(working, tier, patch, command.actor || 'user', command.now);
+      if (!res.ok) { results.push({ tier: tier, ok: false, reason: res.reason }); continue; }
+      working = res.row; results.push({ tier: tier, ok: true });
+    }
+    var anyApplied = results.some(function (r) { return r.ok; });
+    if (!anyApplied) return { success: false, error: 'NO_EDIT_APPLIED', stage: 'apply', results: results };
+    var plan = planForRow_(working, before, { expectedToken: command.expectedToken, action: 'edit' });
+    var out = deps.lockedApply(plan, plan.expectedToken, { now: command.now, actor: command.actor || 'user' });
+    var wrote = !!(out && out.wrote === true && out.runStatus === 'COMPLETED');
+    return { success: !!(out && out.runStatus === 'COMPLETED'), wrote: wrote, outcome: out && out.conflict ? 'CONFLICT' : (wrote ? 'EDITED' : 'NOT_EXECUTED'),
+      draftId: plan.draftId, results: results, result: out };
+  }
+
+  // ---- per-tier SUBMIT via KMRDV2.applySubmit; header status re-derived by KMRDV2.deriveHeaderStatus ------------
+  // command = { draftId, buckets?:['T1',...] (default: all submittable tiers), actor, now, expectedToken? }
+  function submitMonthlyFlat(command, deps) {
+    aType(isObj(command), 'submitMonthlyFlat: command required');
+    aType(isObj(deps) && typeof deps.loadById === 'function' && typeof deps.lockedApply === 'function', 'submitMonthlyFlat: deps.loadById/lockedApply required');
+    var ld = deps.loadById(str(command.draftId));
+    if (!ld || ld.status !== 'FOUND' || !ld.row) return { success: false, error: (ld && ld.status) || 'DRAFT_NOT_FOUND', stage: 'load' };
+    var before = ld.row;
+    if (str(before.status) === 'cancelled') return { success: false, error: 'HEADER_CANCELLED', stage: 'input' };
+    var buckets = (command.buckets && command.buckets.length) ? command.buckets
+      : TIERS.filter(function (t) { return KMRDV2.tierSubmittable(before, t); });   // default: every submittable tier
+    var sub = KMRDV2.applySubmit(before, buckets, command.actor || 'user', command.now);
+    var anySubmitted = Object.keys(sub.results).some(function (k) { return sub.results[k] === 'SUBMITTED'; });
+    if (!anySubmitted) return { success: false, error: 'NO_TIER_SUBMITTED', stage: 'apply', results: sub.results, headerStatus: sub.row.status };
+    var plan = planForRow_(sub.row, before, { expectedToken: command.expectedToken, action: 'submit' });
+    var out = deps.lockedApply(plan, plan.expectedToken, { now: command.now, actor: command.actor || 'user' });
+    var wrote = !!(out && out.wrote === true && out.runStatus === 'COMPLETED');
+    return { success: !!(out && out.runStatus === 'COMPLETED'), wrote: wrote, outcome: out && out.conflict ? 'CONFLICT' : (wrote ? 'SUBMITTED' : 'NOT_EXECUTED'),
+      draftId: plan.draftId, results: sub.results, headerStatus: sub.row.status, result: out };
+  }
+
+  // ---- whole-draft CANCEL via KMRDV2.applyCancel (header + all tiers terminal; no line deletion) ---------------
+  function cancelMonthlyFlat(command, deps) {
+    aType(isObj(command), 'cancelMonthlyFlat: command required');
+    aType(isObj(deps) && typeof deps.loadById === 'function' && typeof deps.lockedApply === 'function', 'cancelMonthlyFlat: deps.loadById/lockedApply required');
+    var ld = deps.loadById(str(command.draftId));
+    if (!ld || ld.status !== 'FOUND' || !ld.row) return { success: false, error: (ld && ld.status) || 'DRAFT_NOT_FOUND', stage: 'load' };
+    var before = ld.row;
+    var cancelled = KMRDV2.applyCancel(before, command.actor || 'user', command.now, command.reason);
+    var plan = planForRow_(cancelled, before, { expectedToken: command.expectedToken, action: 'cancel' });
+    var out = deps.lockedApply(plan, plan.expectedToken, { now: command.now, actor: command.actor || 'user' });
+    var wrote = !!(out && out.wrote === true && out.runStatus === 'COMPLETED');
+    return { success: !!(out && out.runStatus === 'COMPLETED'), wrote: wrote, outcome: out && out.conflict ? 'CONFLICT' : (wrote ? 'CANCELLED' : 'NOT_EXECUTED'), draftId: plan.draftId, result: out };
+  }
+
+  // ---- Send Request body from a flat readback DTO (delegates the eligible-tier authority to KMRDV2) -------------
+  function buildSendRequestLines(dto) { return KMRDV2.explodeSendRequestLinesFromDto(dto); }
+
   // ---- flat readback DTO (reads request_order_allocation_drafts ONLY — no join to child lines) ------------------
   function tierDto_(row, t) {
     var p = t.toLowerCase() + '_';
@@ -301,9 +400,11 @@
     RECOMMENDATION_TYPE: RECOMMENDATION_TYPE, HEADER_TABLE: HEADER_TABLE,
     v2TableSpecs: v2TableSpecs, v2ExpectedHeaderCount: v2ExpectedHeaderCount,
     tierTuples: tierTuples, expectedTokenForExisting: expectedTokenForExisting,
-    tiersFromFactLines: tiersFromFactLines, loadActiveFlat: loadActiveFlat,
+    tiersFromFactLines: tiersFromFactLines, loadActiveFlat: loadActiveFlat, loadFlatById: loadFlatById,
     planFlat: planFlat, applyFlat: applyFlat, generateMonthlyFlat: generateMonthlyFlat,
+    tokenForDraft: tokenForDraft, editMonthlyFlat: editMonthlyFlat, submitMonthlyFlat: submitMonthlyFlat,
+    cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
-    VERSION: 'kmrdv2p-fa3c-r2b2-1'
+    VERSION: 'kmrdv2p-fa3c-r2b3-1'
   };
 });

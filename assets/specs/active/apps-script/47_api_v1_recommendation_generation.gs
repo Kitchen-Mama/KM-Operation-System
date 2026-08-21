@@ -449,5 +449,9 @@ function recGenFlatReadback_(ss, scope3, sku, planningCycle) {
   }
   var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,
     businessScope: { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' } });
-  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all } };
+  // Same envelope keys as the legacy scope readback so the frontend normalizer is coherent under cutover ON.
+  // submittedSkus = flat drafts whose header is submitted; conflicts left [] (readActiveFlatForScope returns one
+  // active row per natural scope; a duplicate is surfaced per-SKU via the one-SKU BLOCKED_CONFLICT path).
+  var submitted = all.filter(function (d) { return String(d.status) === 'submitted'; }).map(function (d) { return d.scope.sku; });
+  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all, conflicts: [], noDraftSkus: [], submittedSkus: submitted } };
 }

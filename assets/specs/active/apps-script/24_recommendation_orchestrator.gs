@@ -135,43 +135,69 @@ function rpoFlatBundle_() {
     throw new Error('MONTHLY_ORDER flat V2 bundle (KMRDV2/KMRDV2P) is not present — 90_generated_supply_planning_bundle.gs must be loaded.');
   }
 }
+// Shared MONTHLY flat helpers (reused by generation 24_, edit/token 25_, submit 15_ — one governance path, no forks).
+function rpoFlatTables_() { return [KMRDV2P.HEADER_TABLE, KMPR.RUN_JOURNAL_TABLE]; }
+function rpoFlatSchemaGate_(ss) {   // Production Safety S0 — flat V2 authorized-table set (53-col drafts + run journal only); throws fail-closed.
+  var expectedId = (typeof RECOMMENDATION_TARGET_SPREADSHEET_ID_ !== 'undefined') ? RECOMMENDATION_TARGET_SPREADSHEET_ID_ : '';
+  return KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId, tableSpecsOverride: KMRDV2P.v2TableSpecs() });
+}
+function rpoFlatLoadActive_(ss, query) { var b = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]); return KMRDV2P.loadActiveFlat(b.set, query); }
+function rpoFlatLoadById_(ss, draftId) { var b = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]); return KMRDV2P.loadFlatById(b.set, draftId); }
+function rpoFlatTokenForDraft_(ss, draftId) { var b = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]); return KMRDV2P.tokenForDraft(b.set, draftId); }
+// The ONE flat locked-apply: LockService → reload flat set UNDER the lock → KMRDV2P.applyFlat (single row + shared
+// run journal, NO child lines) → keyed-delta write-back. Mirrors the line engine's governance exactly.
+function rpoFlatLockedApply_(ss, plan, expectedToken, opts) {
+  var tables = rpoFlatTables_();
+  var lock = LockService.getScriptLock();
+  var got = lock.tryLock(30000);
+  if (!got) return { runStatus: 'FAILED', wrote: false, reason: 'LOCK_NOT_ACQUIRED' };
+  try {
+    var built = rprBuildSheetSet_(ss, tables);
+    var before = {}; for (var i = 0; i < tables.length; i++) before[tables[i]] = built.set[tables[i]].rows.map(function (r) { return r.slice(); });
+    var resR = KMRDV2P.applyFlat(built.set, plan, expectedToken, opts || {});
+    if (resR && resR.wrote === true && resR.runStatus === 'COMPLETED') { rpoKeyedDeltaWrite_(built.meta, built.set, before, tables); }
+    return resR;
+  } finally { lock.releaseLock(); }
+}
+// deps object shared by generateMonthlyFlat / editMonthlyFlat / submitMonthlyFlat / cancelMonthlyFlat.
+function rpoFlatDeps_(ss, body) {
+  return {
+    loadActiveContext: function (q) { return rpoFlatLoadActive_(ss, q); },
+    loadById: function (id) { return rpoFlatLoadById_(ss, id); },
+    computeFacts: function () { return rpoResolveFacts_(body || {}); },
+    lockedApply: function (plan, expectedToken, o) { return rpoFlatLockedApply_(ss, plan, expectedToken, o); }
+  };
+}
 function rpoGenerateMonthlyFlatResult_(body, opts) {
   rpoBundle_(); rpoFlatBundle_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var headerTable = KMRDV2P.HEADER_TABLE, journal = KMPR.RUN_JOURNAL_TABLE, tables = [headerTable, journal];
-  // Production Safety S0: validate the FLAT V2 authorized-table set (53-col drafts + run journal) — NOT the retired
-  // child-line table, NOT any shipping table. Fail closed before any lock/write when the target is wrong or the V2
-  // schema is not provisioned (this is exactly why an early cutover cannot corrupt data — it simply refuses).
   if (!(opts && opts.skipSchemaValidation === true)) {
-    var expectedId = (typeof RECOMMENDATION_TARGET_SPREADSHEET_ID_ !== 'undefined') ? RECOMMENDATION_TARGET_SPREADSHEET_ID_ : '';
-    try { KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId, tableSpecsOverride: KMRDV2P.v2TableSpecs() }); }
+    try { rpoFlatSchemaGate_(ss); }
     catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }; }
   }
-
-  var deps = {
-    loadActiveContext: function (q) { var b = rprBuildSheetSet_(ss, [headerTable]); return KMRDV2P.loadActiveFlat(b.set, q); },
-    computeFacts: function () { return rpoResolveFacts_(body); },
-    lockedApply: function (plan, expectedToken, o) {
-      var lock = LockService.getScriptLock();
-      var got = lock.tryLock(30000);
-      if (!got) return { runStatus: 'FAILED', wrote: false, reason: 'LOCK_NOT_ACQUIRED' };
-      try {
-        var built = rprBuildSheetSet_(ss, tables);
-        var before = {}; for (var i = 0; i < tables.length; i++) before[tables[i]] = built.set[tables[i]].rows.map(function (r) { return r.slice(); });
-        var resR = KMRDV2P.applyFlat(built.set, plan, expectedToken, o || {});
-        if (resR && resR.wrote === true && resR.runStatus === 'COMPLETED') { rpoKeyedDeltaWrite_(built.meta, built.set, before, tables); }
-        return resR;
-      } finally { lock.releaseLock(); }
-    }
-  };
-
   var result = KMRDV2P.generateMonthlyFlat({
     recommendationType: 'MONTHLY_ORDER', mode: body.mode, action: body.action, planningCycle: body.planningCycle,
     businessScope: body.businessScope, generationType: body.generationType,
     confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
     actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()
-  }, deps);
+  }, rpoFlatDeps_(ss, body));
   return { success: result.success, data: result };
+}
+// Cutover-gated flat EDIT + SUBMIT + CANCEL locked cores (used by the 25_/15_ handlers when MONTHLY + cutover ON).
+function rpoEditMonthlyFlatResult_(body) {
+  rpoBundle_(); rpoFlatBundle_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try { rpoFlatSchemaGate_(ss); } catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation' }; }
+  return KMRDV2P.editMonthlyFlat({
+    draftId: String((body && body.draftId) || '').trim(), edits: (body && body.edits) || [],
+    expectedToken: body && body.expectedToken, actor: String((body && (body.actor || body.updated_by)) || 'user'), now: procurementTimestamp_()
+  }, rpoFlatDeps_(ss, body));
+}
+function rpoSubmitMonthlyFlatResult_(draftId, buckets, actor) {
+  rpoBundle_(); rpoFlatBundle_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try { rpoFlatSchemaGate_(ss); } catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation' }; }
+  return KMRDV2P.submitMonthlyFlat({ draftId: String(draftId || '').trim(), buckets: buckets || null, actor: actor || 'request-order', now: procurementTimestamp_() }, rpoFlatDeps_(ss, {}));
 }
 
 // KEYED-DELTA write-back (§25): write ONLY the rows that changed + rows appended, via targeted setValues. Never

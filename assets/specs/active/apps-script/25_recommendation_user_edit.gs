@@ -26,6 +26,13 @@ function handleGetRecommendationDraftToken_(body) {
   if (!KMPR.TABLES[type]) return jsonResponse_({ success: false, error: 'unknown recommendationType' });
   var draftId = String((body && body.draftId) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'draftId required' });
+  // F1-7N-FA-3C-R2b-3 — MONTHLY flat V2 token (cutover-gated, DEFAULT OFF). Fingerprint = flat per-tier
+  // (order_qty,user_edited); reads the flat drafts table only. Line-path behavior unchanged when the flag is off.
+  if (type === 'MONTHLY_ORDER' && typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_() && typeof KMRDV2P !== 'undefined') {
+    var ft = rpoFlatTokenForDraft_(SpreadsheetApp.getActiveSpreadsheet(), draftId);
+    if (!ft.found) return jsonResponse_({ success: false, error: 'DRAFT_NOT_FOUND' });
+    return jsonResponse_({ success: true, data: { recommendationType: type, draftId: draftId, status: ft.status, expectedToken: ft.expectedToken } });
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet(), cfg = KMPR.TABLES[type];
   var b = rprBuildSheetSet_(ss, [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE]);
   var snap = KMPR.loadDraftSnapshot(b.set, draftId, type);
@@ -42,6 +49,13 @@ function handleUpdateRecommendationDecisionLocked_(body) {
   if (!KMPR.TABLES[type]) return jsonResponse_({ success: false, error: 'unknown recommendationType', stage: 'input' });
   var draftId = String((body && body.draftId) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'draftId required', stage: 'input' });
+  // F1-7N-FA-3C-R2b-3 — MONTHLY flat V2 per-tier edit (cutover-gated, DEFAULT OFF). Each edit's naturalKey.request_
+  // bucket -> tier; fields {order_qty,carton_qty,note} -> KMRDV2.applyTierEdit (recommended_qty NEVER rewritten;
+  // user_edited stamped); persisted as ONE flat row via the shared lock + token + run journal. NO child-line write.
+  if (type === 'MONTHLY_ORDER' && typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_() && typeof KMRDV2P !== 'undefined') {
+    var flatRes = rpoEditMonthlyFlatResult_(body);
+    return jsonResponse_({ success: flatRes.success, data: flatRes });
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet(), cfg = KMPR.TABLES[type], tables = [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE];
   var linesSheet = procurementEnsureSheet_(ss, cfg.lines, RPR_TABLE_HEADERS_[cfg.lines]);
   sheetEnsureColumns_(linesSheet, KMPR.LINE_ADDITIVE_HEADERS);

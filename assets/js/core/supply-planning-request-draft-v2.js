@@ -221,6 +221,23 @@
     });
     return out;   // T4 impossible (tier set is fixed T1/T2/T3)
   }
+  // Same Send authority, driven from the flat READBACK DTO (KMRDV2P.flatReadbackDto) the frontend holds — so the UI
+  // never re-derives tier eligibility. Output is byte-identical to explodeSendRequestLines(row) (proven by test).
+  function explodeSendRequestLinesFromDto(dto) {
+    aType(isObj(dto) && Array.isArray(dto.tiers) && isObj(dto.scope), 'explodeSendRequestLinesFromDto: flat readback DTO required');
+    var out = [];
+    dto.tiers.forEach(function (t) {
+      var q = nn(t.orderQty);
+      if (q <= 0) return;                                          // zero-qty skipped
+      if (t.status === 'cancelled') return;                        // cancelled tier excluded
+      out.push({ sku: str(dto.scope.sku), company: str(dto.scope.company), country: str(dto.scope.country), marketplace: str(dto.scope.marketplace),
+        request_bucket: t.tier, request_month: str(t.month), requested_qty: q,
+        units_per_carton: (dto.unitsPerCarton === null || dto.unitsPerCarton === undefined) ? '' : dto.unitsPerCarton,
+        carton_qty: (t.cartonQty === null || t.cartonQty === undefined) ? '' : t.cartonQty,
+        request_allocation_draft_id: str(dto.draftId) });          // NO request_allocation_line_id
+    });
+    return out;
+  }
 
   // ---- MIGRATION classifier + flattener (legacy header + child lines → one v2 row) ---------------------------
   function idFamily(id) { var s = str(id); if (/^RD::/.test(s)) return 'RD'; if (/^RAD-/.test(s)) return 'RAD'; if (/^RAL-/.test(s)) return 'RAL'; return s ? 'UNKNOWN' : 'BLANK'; }
@@ -326,6 +343,7 @@
     projectFlatDraftRow: projectFlatDraftRow, deriveHeaderStatus: deriveHeaderStatus, tierSubmittable: tierSubmittable,
     applyTierEdit: applyTierEdit, applySubmit: applySubmit, applyCancel: applyCancel,
     reuse: reuse, refresh: refresh, regenerate: regenerate, explodeSendRequestLines: explodeSendRequestLines,
+    explodeSendRequestLinesFromDto: explodeSendRequestLinesFromDto,
     classifyLegacyDraft: classifyLegacyDraft, detectActiveConflicts: detectActiveConflicts, flattenLegacy: flattenLegacy,
     summarizeMigration: summarizeMigration,
     VERSION: 'kmrdv2-fa3c-r2-1'

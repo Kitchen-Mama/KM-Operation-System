@@ -3604,6 +3604,48 @@ function _roBuildOrderQtyEditCommand_(draftId, requestMonth, requestBucket, orde
     expectedToken: expectedToken, actor: 'request-order'
   };
 }
+// F1-7N-FA-3C-R2b-3 — the ONE MONTHLY flat-V2 DTO normalization seam. getActive returns EITHER the legacy
+// {header, lines[]} shape (cutover OFF, live) OR the flat readback DTO with a `tiers` array (cutover ON). The
+// frontend adapts to whatever shape the backend actually sent, so there is never a destructive read-model/
+// write-model mismatch. A flat DTO is PROJECTED into the exact same {draftId, draftVersion, status, lines:{T1..}}
+// UI model the legacy path produces — so ALL downstream render/edit/Send code stays unchanged and t1_/t2_/t3_
+// access is confined to this one function. No child-line id is ever synthesized.
+function _roV2IsFlatDraft_(d) { return !!(d && Array.isArray(d.tiers) && d.scope); }
+function _roV2NormalizeFlatDraft_(d) {
+  var lines = {};
+  (d.tiers || []).forEach(function (t) {
+    var b = String(t.tier);
+    lines[b] = {
+      request_bucket: b, request_month: (t.month == null ? '' : String(t.month)),
+      order_qty: t.orderQty, recommended_qty: t.recommendedQty,
+      carton_qty: (t.cartonQty == null ? '' : t.cartonQty), note: (t.note == null ? '' : String(t.note)),
+      line_status: (t.status == null ? 'draft' : String(t.status)),
+      user_edited: t.userEdited === true, submitted_by: t.submittedBy, submitted_at: t.submittedAt
+      // NO request_allocation_line_id — the flat model has no child-line identity.
+    };
+  });
+  return {
+    sku: (d.scope && d.scope.sku) || '', draftId: d.draftId, draftVersion: d.draftVersion,
+    expectedToken: null, status: d.status, conflict: false, model: 'flat_v2', lines: lines
+  };
+}
+// PURE Send-line builder from the flat DTO — delegates the eligible-tier authority to KMRDV2 (window.KM.requestDraftV2)
+// when present, else an identical local projection (proven byte-equal by test). Zero/cancelled tiers skipped; no line id.
+function _roV2BuildSendLinesFromFlat_(d) {
+  try {
+    var K = (typeof window !== 'undefined' && window.KM && window.KM.requestDraftV2) || (typeof KM !== 'undefined' && KM.requestDraftV2);
+    if (K && typeof K.explodeSendRequestLinesFromDto === 'function') return K.explodeSendRequestLinesFromDto(d);
+  } catch (e) {}
+  var out = [];
+  (d.tiers || []).forEach(function (t) {
+    var q = Number(t.orderQty); if (!(q > 0)) return; if (t.status === 'cancelled') return;
+    out.push({ sku: (d.scope && d.scope.sku) || '', company: (d.scope && d.scope.company) || '', country: (d.scope && d.scope.country) || '', marketplace: (d.scope && d.scope.marketplace) || '',
+      request_bucket: t.tier, request_month: (t.month == null ? '' : String(t.month)), requested_qty: q,
+      units_per_carton: (d.unitsPerCarton == null ? '' : d.unitsPerCarton), carton_qty: (t.cartonQty == null ? '' : t.cartonQty),
+      request_allocation_draft_id: String(d.draftId) });
+  });
+  return out;
+}
 // __RO_EDIT_PURE_END__
 // restrained toast (reuse the gap-recalc toast owner; alert fallback). No large new UI.
 function _roNotify_(msg) {
@@ -3619,6 +3661,10 @@ function _roLoadCanonicalDraftsForScope_(scope) {
     var data = (res && res.data) || {};
     var next = {};
     (data.drafts || []).forEach(function (d) {
+      if (_roV2IsFlatDraft_(d)) {   // cutover ON — flat readback DTO projected into the same UI model
+        var fv = _roV2NormalizeFlatDraft_(d); var fsku = _roCanonKey_(fv.sku); if (!fsku) return;
+        next[fsku] = fv; return;
+      }
       var h = d.header || {}; var sku = _roCanonKey_(h.sku); if (!sku) return;
       var lines = {}; (d.lines || []).forEach(function (l) { lines[String(l.request_bucket)] = l; });
       next[sku] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false, lines: lines };
@@ -3681,6 +3727,9 @@ function _roSaveOrderQtyToCanonicalDraft_(sku, bucket, orderQty, input) {
 }
 if (typeof window !== 'undefined') {
   window._roBuildOrderQtyEditCommand_ = _roBuildOrderQtyEditCommand_;
+  window._roV2IsFlatDraft_ = _roV2IsFlatDraft_;                     // F1-7N-FA-3C-R2b-3 — flat-DTO normalization seam
+  window._roV2NormalizeFlatDraft_ = _roV2NormalizeFlatDraft_;
+  window._roV2BuildSendLinesFromFlat_ = _roV2BuildSendLinesFromFlat_;
   window._roRowOrderQtyDisplay_ = _roRowOrderQtyDisplay_;
   window._roLoadCanonicalDraftsForScope_ = _roLoadCanonicalDraftsForScope_;
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;

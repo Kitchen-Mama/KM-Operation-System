@@ -279,6 +279,21 @@ function handleUpsertRequestOrderAllocationDraftLines_(body) {
 function handleSubmitRequestOrderAllocationDrafts_(body) {
   var ids = (body && body.draft_ids) || [];
   if (!ids.length) return jsonResponse_({ success: false, error: 'draft_ids required' });
+  // F1-7N-FA-3C-R2b-3 — MONTHLY flat V2 submit (cutover-gated, DEFAULT OFF). Per draft: KMRDV2.applySubmit over the
+  // flat tiers (submit_buckets, or every submittable tier), header re-derived by KMRDV2.deriveHeaderStatus, persisted
+  // as ONE flat row via the shared lock/token/journal. NO Draft-Line row is touched. Legacy line path stays live when off.
+  if (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_() && typeof KMRDV2P !== 'undefined' && typeof rpoSubmitMonthlyFlatResult_ === 'function') {
+    var vActor = String((body && body.submitted_by) || 'request-order').trim();
+    var vBuckets = (body && body.submit_buckets) || null;
+    var vN = 0, vResults = [];
+    for (var vi = 0; vi < ids.length; vi++) {
+      var vid = String(ids[vi] || '').trim(); if (!vid) continue;
+      var vr = rpoSubmitMonthlyFlatResult_(vid, vBuckets, vActor);
+      vResults.push({ draftId: vid, success: vr.success, outcome: vr.outcome, headerStatus: vr.headerStatus });
+      if (vr && vr.wrote) vN++;
+    }
+    return jsonResponse_({ success: true, data: { submitted: vN, model: 'flat_v2', results: vResults } });
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'request_order_allocation_drafts', REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_);
   var lsh = procurementEnsureSheet_(ss, 'request_order_allocation_draft_lines', REQUEST_ORDER_ALLOCATION_DRAFT_LINES_HEADERS_);
