@@ -68,9 +68,13 @@ var beforeH = JSON.stringify(f.headers), beforeL = JSON.stringify(f.lbd);
 P.planMigration(f.headers, f.lbd, { expect: EXPECT });
 ok(JSON.stringify(f.headers) === beforeH && JSON.stringify(f.lbd) === beforeL, 'planMigration never mutates the source header/line inputs');
 
-section('staging validator READY_FOR_SWAP');
+section('staging validator — structural gates on the verbatim (no-authority) path');
+// This legacy fixture uses non-canonical marketplace (AMAZON_US) and no authority/identities, so the R4C canonical
+// gates (PLANNING_CYCLE_AUTHORITY_OK / CANONICAL_MARKETPLACE_OK / ACTIVE_SCOPE_REUSABLE) are NOT satisfied and
+// READY_FOR_SWAP=NO by design. The full-canonical READY_FOR_SWAP=YES is proven in the R4C validator test.
 var v = P.validateStaging(plan.stagingHeaders, plan.stagingRows, f.headers, f.lbd, { expectRows: 26 });
-eq(v, { SCHEMA_OK: true, ROW_COUNT_OK: true, ID_SET_OK: true, SUBMITTED_SET_OK: true, TIER_VALUES_OK: true, NATURAL_SCOPE_OK: true, READY_FOR_SWAP: 'YES' }, 'validator: all OK, READY_FOR_SWAP=YES');
+ok(v.SCHEMA_OK === true && v.ROW_COUNT_OK === true && v.ID_SET_OK === true && v.ID_PRESERVATION_OK === true && v.SUBMITTED_SET_OK === true && v.TIER_VALUES_OK === true && v.NATURAL_SCOPE_OK === true && v.PLANNING_CYCLE_FORMAT_OK === true && v.HEADER_STATUS_OK === true && v.DRAFT_PURPOSE_OK === true && v.OLD_LINE_TABLE_UNTOUCHED === true, 'structural gates all OK on the verbatim path');
+ok(v.PLANNING_CYCLE_AUTHORITY_OK === false && v.CANONICAL_MARKETPLACE_OK === false && v.ACTIVE_SCOPE_REUSABLE === false && v.READY_FOR_SWAP === 'NO', 'R4C canonical gates NO without authority/canonical marketplace/identities → READY_FOR_SWAP=NO');
 // tamper: drop a submitted id -> SUBMITTED_SET_OK false
 var missingSubmitted = plan.stagingRows.filter(function (r) { return r.status !== 'submitted' || r.request_allocation_draft_id !== 'RAD-s0'; });
 ok(P.validateStaging(plan.stagingHeaders, missingSubmitted, f.headers, f.lbd, {}).SUBMITTED_SET_OK === false, 'validator flags a missing submitted id');

@@ -299,6 +299,34 @@
     return row;
   }
 
+  // ---- R4C MIGRATION-ONLY canonical maps + one-row transform (applied ONLY in the one-time migration; NOT a runtime
+  // alias layer — runtime scopeMatches_/normalizePlanningCycleMonthly are unchanged and stay strict) ---------------
+  var CANONICAL_CYCLE_RE = /^\d{4}-(0[1-9]|1[0-2])$/;                                          // exact bare YYYY-MM
+  var MIGRATION_STATUS_MAP = { draft: 'draft', partially_submitted: 'partially_submitted', submitted: 'submitted', cancelled: 'cancelled', site_confirmed: 'draft' };
+  var MIGRATION_MARKETPLACE_MAP = { 'Amazon': 'Amazon', 'Shopify': 'Shopify', 'KM Walmart': 'Walmart', 'Walmart': 'Walmart' };
+  var MIGRATION_DRAFT_PURPOSE_ALLOWED = { 'regular': 1 };                                       // blank→regular; else HALT
+  // Pure ONE-row migration transform: flattenLegacy (ids/tiers/run-id preserved verbatim, source objects untouched)
+  // then apply the frozen canonical maps. Requires an explicit authorized cycle (bare YYYY-MM — never derived, clock,
+  // or UTC slice). Returns { ok:true, row, normalized:{...} } or { ok:false, halt, id, ... }. Fails closed.
+  function migrateLegacyToCanonical(header, lines, opts) {
+    opts = opts || {}; header = header || {};
+    var row = flattenLegacy(header, lines);                                                     // fresh row; inputs never mutated
+    var id = str(row.request_allocation_draft_id);
+    var cyc = str(opts.cycle);
+    if (!cyc) return { ok: false, halt: 'MIGRATION_CYCLE_MAPPING_MISSING', id: id };
+    if (!CANONICAL_CYCLE_RE.test(cyc)) return { ok: false, halt: 'MIGRATION_CYCLE_MAPPING_INVALID', id: id, cycle: cyc };
+    var st = MIGRATION_STATUS_MAP[str(header.status)];
+    if (st === undefined) return { ok: false, halt: 'MIGRATION_STATUS_UNSUPPORTED', id: id, status: str(header.status) };
+    var dpRaw = str(header.draft_purpose), dp = (dpRaw === '') ? 'regular' : dpRaw;
+    if (MIGRATION_DRAFT_PURPOSE_ALLOWED[dp] !== 1) return { ok: false, halt: 'MIGRATION_DRAFT_PURPOSE_UNSUPPORTED', id: id, draft_purpose: dpRaw };
+    var mk = MIGRATION_MARKETPLACE_MAP[str(header.marketplace)];
+    if (mk === undefined) return { ok: false, halt: 'MIGRATION_MARKETPLACE_UNSUPPORTED', id: id, marketplace: str(header.marketplace) };
+    row.planning_cycle = cyc; row.status = st; row.draft_purpose = dp; row.marketplace = mk;
+    return { ok: true, row: row, normalized: {
+      cycle_changed: str(header.planning_cycle) !== cyc, status_changed: str(header.status) !== st,
+      purpose_changed: dpRaw !== dp, marketplace_changed: str(header.marketplace) !== mk } };
+  }
+
   // ---- pure aggregation behind the READ-ONLY migration diagnostic (the .gs wrapper only feeds it live rows) ---
   function summarizeMigration(headers, linesByDraftId) {
     headers = headers || []; linesByDraftId = linesByDraftId || {};
@@ -346,6 +374,8 @@
     explodeSendRequestLinesFromDto: explodeSendRequestLinesFromDto,
     classifyLegacyDraft: classifyLegacyDraft, detectActiveConflicts: detectActiveConflicts, flattenLegacy: flattenLegacy,
     summarizeMigration: summarizeMigration,
-    VERSION: 'kmrdv2-fa3c-r2-1'
+    CANONICAL_CYCLE_RE: CANONICAL_CYCLE_RE, MIGRATION_STATUS_MAP: MIGRATION_STATUS_MAP,
+    MIGRATION_MARKETPLACE_MAP: MIGRATION_MARKETPLACE_MAP, migrateLegacyToCanonical: migrateLegacyToCanonical,
+    VERSION: 'kmrdv2-fa3c-r4c-1'
   };
 });

@@ -218,7 +218,7 @@ section('Fixture J — enumeration = READY gap rows only, SKU ASC; recommended v
   var el = recGenEnumerateEligibleGapRows_(rows, { company: 'KM', country: 'US', marketplace: 'AMAZON_US' });
   eq(el.map(function (e) { return e.sku; }), ['AA', 'ZZ'], 'J1 only READY in-scope SKUs, sorted ASC (BLOCKED + other-scope excluded)');
   var b = recGenBuildGapDraftBody_({ company: 'KM', country: 'US', marketplace: 'AMAZON_US', sku: 'AA' },
-    { sku: 'AA', calculation_status: 'READY', calculated_at: 'T0', t1_month: '2026-08', t1_gap_qty: 3884, t1_suggested_qty: 3920, t2_month: '2026-09', t2_gap_qty: 0, t2_suggested_qty: 0, t3_month: '2026-10', t3_gap_qty: 0, t3_suggested_qty: 0 }, 40, {});
+    { sku: 'AA', calculation_status: 'READY', calculated_at: 'T0', calculation_month: '2026-08', t1_month: '2026-08', t1_gap_qty: 3884, t1_suggested_qty: 3920, t2_month: '2026-09', t2_gap_qty: 0, t2_suggested_qty: 0, t3_month: '2026-10', t3_gap_qty: 0, t3_suggested_qty: 0 }, 40, {});
   eq(b.body.facts.lines[0].recommendedQty, 3920, 'J2 recommended_qty VERBATIM from gap suggested (no re-cartonization)');
   eq(b.body.facts.formulaVersion, 'ORDER_PLANNING_GAP', 'J3 gap-backed authority marker');
 })();

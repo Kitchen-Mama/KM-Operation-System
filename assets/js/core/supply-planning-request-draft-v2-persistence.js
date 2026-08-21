@@ -420,22 +420,60 @@
     if (summary.NEEDS_MANUAL_REVIEW > 0 || summary.BLOCKED_CONFLICT > 0) drift.push({ field: 'UNSAFE_ROWS', expected: 0, live: summary.NEEDS_MANUAL_REVIEW + summary.BLOCKED_CONFLICT });
     if (drift.length) return { ok: false, halt: 'R4_LIVE_DATA_DRIFT_FROM_R3', summary: summary, drift: drift };
 
-    // ---- select actionable headers + flatten (ids verbatim) ----
-    var stagingRows = [], preservedIds = 0, convertedIds = 0, rd = 0, rad = 0, submittedMigrated = 0, hasLines = 0;
-    var submittedExpected = 0, seenId = {}, dupSelect = 0;
+    // ---- R4C: explicit per-ID authority map (id → canonical YYYY-MM). When provided, the migration NORMALIZES each
+    // staging row via KMRDV2.migrateLegacyToCanonical and enforces that the authorized id-set EXACTLY equals the
+    // actionable id-set (no prefix logic; unknown/missing/extra id → HALT). When absent, the legacy verbatim
+    // selection is preserved (used by the read-only ALL-26 diagnostic and pre-R4C callers). ----
+    var authority = opts.authorizedCycleById || null;
+    // first pass: identify the actionable id-set (ids with actionable lines) — the migration cohort
+    var actionableIds = [], hasLines = 0, submittedExpected = 0;
     headers.forEach(function (h) {
       var id = str(h.request_allocation_draft_id), lines = linesByDraftId[id] || [];
       if (str(h.status) === 'submitted') submittedExpected++;
       if (lines.length > 0) hasLines++;
-      if (!draftActionable_(lines)) return;   // drop non-actionable (all-zero) from V2
-      var row = KMRDV2.flattenLegacy(h, lines);
+      if (draftActionable_(lines)) actionableIds.push(id);
+    });
+    if (authority) {
+      var authIds = Object.keys(authority);
+      var actSet = {}; actionableIds.forEach(function (id) { actSet[id] = 1; });
+      var authSet = {}; authIds.forEach(function (id) { authSet[id] = 1; });
+      var missing = authIds.filter(function (id) { return !actSet[id]; });          // authorized but not actionable in source
+      var extra = actionableIds.filter(function (id) { return !authSet[id]; });      // actionable in source but not authorized
+      if (missing.length || extra.length) return { ok: false, halt: 'MIGRATION_AUTHORIZED_ID_SET_MISMATCH', summary: summary,
+        authorized_count: authIds.length, actionable_count: actionableIds.length, missing_ids: missing, extra_actionable_ids: extra };
+    }
+
+    // second pass: build staging rows (normalized when authority present; verbatim otherwise)
+    var stagingRows = [], preservedIds = 0, convertedIds = 0, rd = 0, rad = 0, submittedMigrated = 0;
+    var seenId = {}, dupSelect = 0;
+    var norm = { CYCLE_NORMALIZED: 0, STATUS_NORMALIZED: 0, PURPOSE_NORMALIZED: 0, MARKETPLACE_NORMALIZED: 0 };
+    var dist = { cycle: {}, status: {}, purpose: {}, marketplace: {} };
+    for (var hi = 0; hi < headers.length; hi++) {
+      var h = headers[hi], id = str(h.request_allocation_draft_id), lines = linesByDraftId[id] || [];
+      if (!draftActionable_(lines)) continue;   // drop non-actionable (all-zero) from V2
+      var row;
+      if (authority) {
+        var mig = KMRDV2.migrateLegacyToCanonical(h, lines, { cycle: str(authority[id]) });
+        if (!mig.ok) return { ok: false, halt: mig.halt, summary: summary, id: mig.id, detail: mig };
+        row = mig.row;
+        if (mig.normalized.cycle_changed) norm.CYCLE_NORMALIZED++;
+        if (mig.normalized.status_changed) norm.STATUS_NORMALIZED++;
+        if (mig.normalized.purpose_changed) norm.PURPOSE_NORMALIZED++;
+        if (mig.normalized.marketplace_changed) norm.MARKETPLACE_NORMALIZED++;
+      } else {
+        row = KMRDV2.flattenLegacy(h, lines);
+      }
+      dist.cycle[str(row.planning_cycle)] = (dist.cycle[str(row.planning_cycle)] || 0) + 1;
+      dist.status[str(row.status)] = (dist.status[str(row.status)] || 0) + 1;
+      dist.purpose[str(row.draft_purpose)] = (dist.purpose[str(row.draft_purpose)] || 0) + 1;
+      dist.marketplace[str(row.marketplace)] = (dist.marketplace[str(row.marketplace)] || 0) + 1;
       if (str(row.request_allocation_draft_id) === id && id !== '') preservedIds++; else convertedIds++;
       if (seenId[id]) dupSelect++; seenId[id] = 1;
       var fam = /^RD::/.test(id) ? 'RD' : (/^RAD-/.test(id) ? 'RAD' : 'OTHER');
       if (fam === 'RD') rd++; else if (fam === 'RAD') rad++;
       if (str(row.status) === 'submitted') submittedMigrated++;
       stagingRows.push(row);
-    });
+    }
     // ---- hard gates ----
     if (convertedIds !== 0) return { ok: false, halt: 'MIGRATION_ID_CONVERTED', summary: summary, convertedIds: convertedIds };
     if (dupSelect !== 0) return { ok: false, halt: 'MIGRATION_DUPLICATE_ID', summary: summary };
@@ -449,18 +487,22 @@
       NON_ACTIONABLE_DROPPED_FROM_V2: summary.ALL_ZERO, MIGRATE_ROWS: stagingRows.length,
       SUBMITTED_SOURCE: submittedExpected, SUBMITTED_MIGRATED: submittedMigrated,
       RD_MIGRATED: rd, RAD_MIGRATED: rad, PRESERVED_IDS: preservedIds, CONVERTED_IDS: convertedIds,
-      TARGET_HEADERS: KMRDV2.V2_HEADERS.length, TARGET_ROWS: stagingRows.length
+      TARGET_HEADERS: KMRDV2.V2_HEADERS.length, TARGET_ROWS: stagingRows.length,
+      AUTHORITY_APPLIED: !!authority, NORMALIZATION_COUNTS: norm, NORMALIZED_DISTRIBUTIONS: dist
     };
     return { ok: true, summary: summary, report: report, stagingHeaders: KMRDV2.V2_HEADERS.slice(), stagingRows: stagingRows };
   }
 
-  // ---- R4 READ-ONLY staging validator: independently verify request_order_allocation_drafts_v2 before the swap ---
+  // ---- R4C READ-ONLY staging validator: independently verify request_order_allocation_drafts_v2 before the swap ---
   // stagingHeaders/stagingRows = the written staging tab; sourceHeaders/sourceLinesByDraftId = the untouched legacy.
+  // opts.authorizedCycleById = id→canonical YYYY-MM (PLANNING_CYCLE_AUTHORITY_OK); opts.canonicalActiveIdentities =
+  // the frozen R4B5 active identities [{company,country,marketplace,sku,draft_purpose,planning_cycle}] (ACTIVE_SCOPE
+  // _REUSABLE); opts.oldLineWriteCount = the execute-phase legacy-line write count (OLD_LINE_TABLE_UNTOUCHED; default 0).
+  var CANONICAL_STATUSES = { draft: 1, partially_submitted: 1, submitted: 1, cancelled: 1 };
   function validateStaging(stagingHeaders, stagingRows, sourceHeaders, sourceLinesByDraftId, opts) {
     opts = opts || {}; sourceHeaders = sourceHeaders || []; sourceLinesByDraftId = sourceLinesByDraftId || {};
     var V = KMRDV2.V2_HEADERS;
     var schemaOk = Array.isArray(stagingHeaders) && stagingHeaders.length === V.length && stagingHeaders.join('|') === V.join('|');
-    // no retired columns present
     var retired = ['request_allocation_line_id', 'category_snapshot', 'series_snapshot', 't4_month', 't4_order_qty', 'net_order_need_snapshot', 'factory_available_qty_snapshot'];
     var noRetired = (stagingHeaders || []).every(function (h) { return retired.indexOf(h) === -1 && !/^t4_/.test(h); });
     schemaOk = schemaOk && noRetired;
@@ -469,10 +511,30 @@
     // id set + uniqueness
     var ids = {}, idDup = 0; stagingRows.forEach(function (r) { var id = str(r.request_allocation_draft_id); if (ids[id]) idDup++; ids[id] = 1; });
     var idSetOk = idDup === 0 && Object.keys(ids).length === stagingRows.length;
-    // submitted present: every source submitted id appears in staging
+    // id preservation: every staging id exists byte-verbatim in the source headers (never re-minted/converted)
+    var srcIds = {}; sourceHeaders.forEach(function (h) { srcIds[str(h.request_allocation_draft_id)] = 1; });
+    var idPreservationOk = stagingRows.every(function (r) { return srcIds[str(r.request_allocation_draft_id)] === 1; });
+    // submitted present + preserved-as-submitted: every source submitted id appears in staging AS submitted
     var srcSubmitted = sourceHeaders.filter(function (h) { return str(h.status) === 'submitted'; }).map(function (h) { return str(h.request_allocation_draft_id); });
-    var submittedSetOk = srcSubmitted.every(function (id) { return ids[id] === 1; });
-    // natural-scope uniqueness among ACTIVE migrated rows (no duplicate active scope)
+    var stagingById = {}; stagingRows.forEach(function (r) { stagingById[str(r.request_allocation_draft_id)] = r; });
+    var submittedSetOk = srcSubmitted.every(function (id) { return stagingById[id] && str(stagingById[id].status) === 'submitted'; });
+    // cycle format + authority (format-valid 2026-07 still FAILS authority when the map says 2026-08)
+    var cycleFormatOk = stagingRows.every(function (r) { return KMRDV2.CANONICAL_CYCLE_RE.test(str(r.planning_cycle)); });
+    var authority = opts.authorizedCycleById || null;
+    var cycleAuthorityOk = !!authority && stagingRows.every(function (r) { return str(r.planning_cycle) === str(authority[str(r.request_allocation_draft_id)]); });
+    // header status vocab
+    var headerStatusOk = stagingRows.every(function (r) { return CANONICAL_STATUSES[str(r.status)] === 1; });
+    // draft_purpose (this cohort: exactly regular)
+    var draftPurposeOk = stagingRows.every(function (r) { return str(r.draft_purpose) === 'regular'; });
+    // canonical marketplace: no KM Walmart survives; each equals the migration-map image of its source token
+    var srcById = {}; sourceHeaders.forEach(function (h) { srcById[str(h.request_allocation_draft_id)] = h; });
+    var marketplaceOk = stagingRows.every(function (r) {
+      var mk = str(r.marketplace); if (mk === 'KM Walmart') return false;
+      var src = srcById[str(r.request_allocation_draft_id)];
+      var expected = src ? KMRDV2.MIGRATION_MARKETPLACE_MAP[str(src.marketplace)] : undefined;
+      return expected !== undefined && mk === expected;
+    });
+    // natural-scope uniqueness among ACTIVE migrated rows (no duplicate COMPLETE active scope)
     var scopeSeen = {}, scopeDup = 0;
     stagingRows.forEach(function (r) {
       if (ACTIVE_FLAT_STATUSES[str(r.status)] !== 1) return;
@@ -480,7 +542,15 @@
       if (scopeSeen[k]) scopeDup++; scopeSeen[k] = 1;
     });
     var naturalScopeOk = scopeDup === 0;
-    // tier values match the source lines (order/recommended/status per bucket) for each migrated id
+    // active-scope reusable: every ACTIVE migrated row's full natural key is one of the frozen R4B5 canonical
+    // identities (marketplace is part of the key; a BLOCKED gap does NOT invalidate a valid future identity — the
+    // validator never reads the gap). If no identities supplied → gate cannot pass (fail closed).
+    var idents = opts.canonicalActiveIdentities || [];
+    var identKey = function (o) { return [str(o.company), str(o.country), str(o.marketplace), str(o.sku), str(o.draft_purpose), str(o.planning_cycle)].join('|'); };
+    var identSet = {}; idents.forEach(function (o) { identSet[identKey(o)] = 1; });
+    var activeRows = stagingRows.filter(function (r) { return ACTIVE_FLAT_STATUSES[str(r.status)] === 1; });
+    var activeScopeReusable = idents.length > 0 && activeRows.every(function (r) { return identSet[identKey(r)] === 1; });
+    // tier values match the source lines (order/recommended/carton/month/note/status per bucket) for each migrated id
     var tierOk = true;
     stagingRows.forEach(function (r) {
       var id = str(r.request_allocation_draft_id), lines = sourceLinesByDraftId[id] || [], byB = {};
@@ -490,11 +560,21 @@
         if (!l) { if (nn(r[p + 'order_qty']) !== 0 || nn(r[p + 'recommended_qty']) !== 0) tierOk = false; return; }
         if (nn(r[p + 'order_qty']) !== nn(l.order_qty)) tierOk = false;
         if (nn(r[p + 'recommended_qty']) !== nn(l.recommended_qty)) tierOk = false;
+        if (str(r[p + 'month']) !== str(l.request_month)) tierOk = false;
       });
     });
-    var ready = schemaOk && rowCountOk && idSetOk && submittedSetOk && naturalScopeOk && tierOk;
-    return { SCHEMA_OK: schemaOk, ROW_COUNT_OK: rowCountOk, ID_SET_OK: idSetOk, SUBMITTED_SET_OK: submittedSetOk,
-      TIER_VALUES_OK: tierOk, NATURAL_SCOPE_OK: naturalScopeOk, READY_FOR_SWAP: ready ? 'YES' : 'NO' };
+    // the legacy line table must be untouched by the execute phase (write count injected by the caller; default 0)
+    var oldLineTableUntouched = (opts.oldLineWriteCount === undefined) ? true : (Number(opts.oldLineWriteCount) === 0);
+    var gates = {
+      SCHEMA_OK: schemaOk, ROW_COUNT_OK: rowCountOk, PLANNING_CYCLE_FORMAT_OK: cycleFormatOk,
+      PLANNING_CYCLE_AUTHORITY_OK: cycleAuthorityOk, HEADER_STATUS_OK: headerStatusOk, DRAFT_PURPOSE_OK: draftPurposeOk,
+      CANONICAL_MARKETPLACE_OK: marketplaceOk, ID_PRESERVATION_OK: idPreservationOk, ID_SET_OK: idSetOk,
+      SUBMITTED_SET_OK: submittedSetOk, TIER_VALUES_OK: tierOk, NATURAL_SCOPE_OK: naturalScopeOk,
+      ACTIVE_SCOPE_REUSABLE: activeScopeReusable, OLD_LINE_TABLE_UNTOUCHED: oldLineTableUntouched
+    };
+    var ready = Object.keys(gates).every(function (k) { return gates[k] === true; });
+    gates.READY_FOR_SWAP = ready ? 'YES' : 'NO';
+    return gates;
   }
 
   return {
@@ -507,6 +587,6 @@
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fa3c-r4-1'
+    VERSION: 'kmrdv2p-fa3c-r4c-1'
   };
 });

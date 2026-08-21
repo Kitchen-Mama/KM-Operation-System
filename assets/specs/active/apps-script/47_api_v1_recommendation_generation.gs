@@ -212,17 +212,50 @@ function recGenMapGapRowToFacts_(gapRow, upc) {
   return { ready: true, lines: lines, sku: sku };
 }
 
+// F1-7N-FA-3C-DRAFT-MODEL-R4C — the authorized runtime cycle-transport seam. PURE/testable, no business calc.
+// order_planning_gap.calculation_month is read from the sheet as an Apps Script DATE object (2026-08-01 00:00
+// Asia/Taipei == 2026-07-31T16:00:00Z). This normalizes it to the PROJECT-calendar bare YYYY-MM (Aug 1 Taipei →
+// 2026-08, NEVER the UTC-July slice). Fails CLOSED — no clock, no default, no UTC slicing, no locale guessing. The
+// strict downstream KMRDV2.normalizePlanningCycleMonthly is unchanged; this only produces a value it will accept.
+function recGenProjectTz_() { try { var ss = SpreadsheetApp.getActiveSpreadsheet(); return ss ? r4e2Str_(ss.getSpreadsheetTimeZone()) : ''; } catch (e) { return ''; } }
+function recGenIsDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' || (v && typeof v === 'object' && typeof v.getTime === 'function' && typeof v.getFullYear === 'function'); }
+function recGenProjectCalendarMonth_(value, tz) {
+  var CANON = /^\d{4}-(0[1-9]|1[0-2])$/;
+  if (value === null || value === undefined || r4e2Str_(value) === '') return { ok: false, error: 'PLANNING_CYCLE_REQUIRED' };
+  if (recGenIsDate_(value)) {
+    if (!tz) return { ok: false, error: 'PLANNING_CYCLE_TIMEZONE_REQUIRED' };
+    try { var m = Utilities.formatDate(value, tz, 'yyyy-MM'); return CANON.test(m) ? { ok: true, cycle: m } : { ok: false, error: 'PLANNING_CYCLE_PROJECT_TZ_NORMALIZATION_FAILED' }; }
+    catch (e) { return { ok: false, error: 'PLANNING_CYCLE_PROJECT_TZ_NORMALIZATION_FAILED' }; }
+  }
+  var s = r4e2Str_(value);
+  if (CANON.test(s)) return { ok: true, cycle: s };
+  var ym = /^(\d{4})-(\d{1,2})$/.exec(s);   // single-digit month → zero-pad (still bare, deterministic)
+  if (ym) { var mo = Number(ym[2]); return (mo >= 1 && mo <= 12) ? { ok: true, cycle: ym[1] + '-' + (mo < 10 ? '0' + mo : '' + mo) } : { ok: false, error: 'PLANNING_CYCLE_INVALID' }; }
+  // explicit-timezone ISO/datetime string (carries Z or ±HH:MM) → deterministic reparse into the project tz
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+    if (!tz) return { ok: false, error: 'PLANNING_CYCLE_TIMEZONE_REQUIRED' };
+    try { var d = new Date(s); if (isNaN(d.getTime())) return { ok: false, error: 'PLANNING_CYCLE_INVALID' }; var mm = Utilities.formatDate(d, tz, 'yyyy-MM'); return CANON.test(mm) ? { ok: true, cycle: mm } : { ok: false, error: 'PLANNING_CYCLE_PROJECT_TZ_NORMALIZATION_FAILED' }; }
+    catch (e2) { return { ok: false, error: 'PLANNING_CYCLE_INVALID' }; }
+  }
+  return { ok: false, error: 'PLANNING_CYCLE_INVALID' };   // year-only, slash date, tz-less datetime, ambiguous locale
+}
+
 // PURE: build the exact body the locked generate core consumes for one gap-backed SKU. Returns { ok:true, body } or
 // { ok:false, reason }. recommendation quantity + snapshot come VERBATIM from the gap row (recGenMapGapRowToFacts_);
-// this only shapes the persister command (scope + mode + facts). No DB, no formula.
+// this only shapes the persister command (scope + mode + facts). No DB, no formula. R4C: planning_cycle is normalized
+// to the canonical project-calendar YYYY-MM (fail-closed) so a Date-typed calculation_month can never leak downstream.
 function recGenBuildGapDraftBody_(scope1, gapRow, upc, opts) {
   var built = recGenMapGapRowToFacts_(gapRow, upc);
   if (!built.ready) return { ok: false, reason: built.reason || 'ORDER_PLANNING_GAP_NOT_READY' };
   var sourceCalculatedAt = r4e2Str_(gapRow.calculated_at) || r4e2Str_(gapRow.updated_at);
+  var tz = (opts && r4e2Str_(opts.timezone)) || recGenProjectTz_();
+  var cycleInput = (opts && (opts.planningCycle !== undefined && opts.planningCycle !== null && r4e2Str_(opts.planningCycle) !== '')) ? opts.planningCycle : gapRow.calculation_month;
+  var pc = recGenProjectCalendarMonth_(cycleInput, tz);
+  if (!pc.ok) return { ok: false, reason: pc.error };
   return { ok: true, body: {
     recommendationType: 'MONTHLY_ORDER',
     mode: (opts && opts.mode) || 'MANUAL_REGENERATE',
-    planningCycle: (opts && opts.planningCycle) || r4e2Str_(gapRow.calculation_month) || '',
+    planningCycle: pc.cycle,
     businessScope: { company: scope1.company, country: scope1.country, marketplace: scope1.marketplace, sku: scope1.sku,
       draft_purpose: (opts && opts.draft_purpose) || 'regular' },
     confirmRegenerateOverUserEdits: !!(opts && opts.confirmRegenerateOverUserEdits === true),

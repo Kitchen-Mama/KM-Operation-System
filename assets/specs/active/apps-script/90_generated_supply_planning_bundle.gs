@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = dfe2680998d3f12079a9987eaf886830f0cadfbf93d2f57a85b1b2928a733405
+// bundle_sha256 = c0240a59612dcc199686312febbf9db77862b5f05db59596102b0e2f9a8be318
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -55,8 +55,8 @@
 //   supply-planning-ongoing-order-tpp-adapter  d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5
 //   supply-planning-ongoing-order-runtime  37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2
 //   supply-planning-surplus-reallocation  283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c
-//   supply-planning-request-draft-v2  b74e75a7404c33ad7a1880a61a79aa2ea9be27d9225d32f22ff93c69c357e1a6
-//   supply-planning-request-draft-v2-persistence  8c5d41ece08190f2f5a4687fb80639f19ff4381de9f72a396ae8432cf111014d
+//   supply-planning-request-draft-v2  20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505
+//   supply-planning-request-draft-v2-persistence  287f5a5b11c7c96f3f0930540eaaa4e1579a3875dc9b2b429d2eb7cf12a30154
 // ============================================================================
 
 var __kmModules = {};
@@ -13356,6 +13356,34 @@ function __kmRequire(p) {
     return row;
   }
 
+  // ---- R4C MIGRATION-ONLY canonical maps + one-row transform (applied ONLY in the one-time migration; NOT a runtime
+  // alias layer — runtime scopeMatches_/normalizePlanningCycleMonthly are unchanged and stay strict) ---------------
+  var CANONICAL_CYCLE_RE = /^\d{4}-(0[1-9]|1[0-2])$/;                                          // exact bare YYYY-MM
+  var MIGRATION_STATUS_MAP = { draft: 'draft', partially_submitted: 'partially_submitted', submitted: 'submitted', cancelled: 'cancelled', site_confirmed: 'draft' };
+  var MIGRATION_MARKETPLACE_MAP = { 'Amazon': 'Amazon', 'Shopify': 'Shopify', 'KM Walmart': 'Walmart', 'Walmart': 'Walmart' };
+  var MIGRATION_DRAFT_PURPOSE_ALLOWED = { 'regular': 1 };                                       // blank→regular; else HALT
+  // Pure ONE-row migration transform: flattenLegacy (ids/tiers/run-id preserved verbatim, source objects untouched)
+  // then apply the frozen canonical maps. Requires an explicit authorized cycle (bare YYYY-MM — never derived, clock,
+  // or UTC slice). Returns { ok:true, row, normalized:{...} } or { ok:false, halt, id, ... }. Fails closed.
+  function migrateLegacyToCanonical(header, lines, opts) {
+    opts = opts || {}; header = header || {};
+    var row = flattenLegacy(header, lines);                                                     // fresh row; inputs never mutated
+    var id = str(row.request_allocation_draft_id);
+    var cyc = str(opts.cycle);
+    if (!cyc) return { ok: false, halt: 'MIGRATION_CYCLE_MAPPING_MISSING', id: id };
+    if (!CANONICAL_CYCLE_RE.test(cyc)) return { ok: false, halt: 'MIGRATION_CYCLE_MAPPING_INVALID', id: id, cycle: cyc };
+    var st = MIGRATION_STATUS_MAP[str(header.status)];
+    if (st === undefined) return { ok: false, halt: 'MIGRATION_STATUS_UNSUPPORTED', id: id, status: str(header.status) };
+    var dpRaw = str(header.draft_purpose), dp = (dpRaw === '') ? 'regular' : dpRaw;
+    if (MIGRATION_DRAFT_PURPOSE_ALLOWED[dp] !== 1) return { ok: false, halt: 'MIGRATION_DRAFT_PURPOSE_UNSUPPORTED', id: id, draft_purpose: dpRaw };
+    var mk = MIGRATION_MARKETPLACE_MAP[str(header.marketplace)];
+    if (mk === undefined) return { ok: false, halt: 'MIGRATION_MARKETPLACE_UNSUPPORTED', id: id, marketplace: str(header.marketplace) };
+    row.planning_cycle = cyc; row.status = st; row.draft_purpose = dp; row.marketplace = mk;
+    return { ok: true, row: row, normalized: {
+      cycle_changed: str(header.planning_cycle) !== cyc, status_changed: str(header.status) !== st,
+      purpose_changed: dpRaw !== dp, marketplace_changed: str(header.marketplace) !== mk } };
+  }
+
   // ---- pure aggregation behind the READ-ONLY migration diagnostic (the .gs wrapper only feeds it live rows) ---
   function summarizeMigration(headers, linesByDraftId) {
     headers = headers || []; linesByDraftId = linesByDraftId || {};
@@ -13403,7 +13431,9 @@ function __kmRequire(p) {
     explodeSendRequestLinesFromDto: explodeSendRequestLinesFromDto,
     classifyLegacyDraft: classifyLegacyDraft, detectActiveConflicts: detectActiveConflicts, flattenLegacy: flattenLegacy,
     summarizeMigration: summarizeMigration,
-    VERSION: 'kmrdv2-fa3c-r2-1'
+    CANONICAL_CYCLE_RE: CANONICAL_CYCLE_RE, MIGRATION_STATUS_MAP: MIGRATION_STATUS_MAP,
+    MIGRATION_MARKETPLACE_MAP: MIGRATION_MARKETPLACE_MAP, migrateLegacyToCanonical: migrateLegacyToCanonical,
+    VERSION: 'kmrdv2-fa3c-r4c-1'
   };
 });
   __kmRegister("supply-planning-request-draft-v2", module.exports);
@@ -13836,22 +13866,60 @@ function __kmRequire(p) {
     if (summary.NEEDS_MANUAL_REVIEW > 0 || summary.BLOCKED_CONFLICT > 0) drift.push({ field: 'UNSAFE_ROWS', expected: 0, live: summary.NEEDS_MANUAL_REVIEW + summary.BLOCKED_CONFLICT });
     if (drift.length) return { ok: false, halt: 'R4_LIVE_DATA_DRIFT_FROM_R3', summary: summary, drift: drift };
 
-    // ---- select actionable headers + flatten (ids verbatim) ----
-    var stagingRows = [], preservedIds = 0, convertedIds = 0, rd = 0, rad = 0, submittedMigrated = 0, hasLines = 0;
-    var submittedExpected = 0, seenId = {}, dupSelect = 0;
+    // ---- R4C: explicit per-ID authority map (id → canonical YYYY-MM). When provided, the migration NORMALIZES each
+    // staging row via KMRDV2.migrateLegacyToCanonical and enforces that the authorized id-set EXACTLY equals the
+    // actionable id-set (no prefix logic; unknown/missing/extra id → HALT). When absent, the legacy verbatim
+    // selection is preserved (used by the read-only ALL-26 diagnostic and pre-R4C callers). ----
+    var authority = opts.authorizedCycleById || null;
+    // first pass: identify the actionable id-set (ids with actionable lines) — the migration cohort
+    var actionableIds = [], hasLines = 0, submittedExpected = 0;
     headers.forEach(function (h) {
       var id = str(h.request_allocation_draft_id), lines = linesByDraftId[id] || [];
       if (str(h.status) === 'submitted') submittedExpected++;
       if (lines.length > 0) hasLines++;
-      if (!draftActionable_(lines)) return;   // drop non-actionable (all-zero) from V2
-      var row = KMRDV2.flattenLegacy(h, lines);
+      if (draftActionable_(lines)) actionableIds.push(id);
+    });
+    if (authority) {
+      var authIds = Object.keys(authority);
+      var actSet = {}; actionableIds.forEach(function (id) { actSet[id] = 1; });
+      var authSet = {}; authIds.forEach(function (id) { authSet[id] = 1; });
+      var missing = authIds.filter(function (id) { return !actSet[id]; });          // authorized but not actionable in source
+      var extra = actionableIds.filter(function (id) { return !authSet[id]; });      // actionable in source but not authorized
+      if (missing.length || extra.length) return { ok: false, halt: 'MIGRATION_AUTHORIZED_ID_SET_MISMATCH', summary: summary,
+        authorized_count: authIds.length, actionable_count: actionableIds.length, missing_ids: missing, extra_actionable_ids: extra };
+    }
+
+    // second pass: build staging rows (normalized when authority present; verbatim otherwise)
+    var stagingRows = [], preservedIds = 0, convertedIds = 0, rd = 0, rad = 0, submittedMigrated = 0;
+    var seenId = {}, dupSelect = 0;
+    var norm = { CYCLE_NORMALIZED: 0, STATUS_NORMALIZED: 0, PURPOSE_NORMALIZED: 0, MARKETPLACE_NORMALIZED: 0 };
+    var dist = { cycle: {}, status: {}, purpose: {}, marketplace: {} };
+    for (var hi = 0; hi < headers.length; hi++) {
+      var h = headers[hi], id = str(h.request_allocation_draft_id), lines = linesByDraftId[id] || [];
+      if (!draftActionable_(lines)) continue;   // drop non-actionable (all-zero) from V2
+      var row;
+      if (authority) {
+        var mig = KMRDV2.migrateLegacyToCanonical(h, lines, { cycle: str(authority[id]) });
+        if (!mig.ok) return { ok: false, halt: mig.halt, summary: summary, id: mig.id, detail: mig };
+        row = mig.row;
+        if (mig.normalized.cycle_changed) norm.CYCLE_NORMALIZED++;
+        if (mig.normalized.status_changed) norm.STATUS_NORMALIZED++;
+        if (mig.normalized.purpose_changed) norm.PURPOSE_NORMALIZED++;
+        if (mig.normalized.marketplace_changed) norm.MARKETPLACE_NORMALIZED++;
+      } else {
+        row = KMRDV2.flattenLegacy(h, lines);
+      }
+      dist.cycle[str(row.planning_cycle)] = (dist.cycle[str(row.planning_cycle)] || 0) + 1;
+      dist.status[str(row.status)] = (dist.status[str(row.status)] || 0) + 1;
+      dist.purpose[str(row.draft_purpose)] = (dist.purpose[str(row.draft_purpose)] || 0) + 1;
+      dist.marketplace[str(row.marketplace)] = (dist.marketplace[str(row.marketplace)] || 0) + 1;
       if (str(row.request_allocation_draft_id) === id && id !== '') preservedIds++; else convertedIds++;
       if (seenId[id]) dupSelect++; seenId[id] = 1;
       var fam = /^RD::/.test(id) ? 'RD' : (/^RAD-/.test(id) ? 'RAD' : 'OTHER');
       if (fam === 'RD') rd++; else if (fam === 'RAD') rad++;
       if (str(row.status) === 'submitted') submittedMigrated++;
       stagingRows.push(row);
-    });
+    }
     // ---- hard gates ----
     if (convertedIds !== 0) return { ok: false, halt: 'MIGRATION_ID_CONVERTED', summary: summary, convertedIds: convertedIds };
     if (dupSelect !== 0) return { ok: false, halt: 'MIGRATION_DUPLICATE_ID', summary: summary };
@@ -13865,18 +13933,22 @@ function __kmRequire(p) {
       NON_ACTIONABLE_DROPPED_FROM_V2: summary.ALL_ZERO, MIGRATE_ROWS: stagingRows.length,
       SUBMITTED_SOURCE: submittedExpected, SUBMITTED_MIGRATED: submittedMigrated,
       RD_MIGRATED: rd, RAD_MIGRATED: rad, PRESERVED_IDS: preservedIds, CONVERTED_IDS: convertedIds,
-      TARGET_HEADERS: KMRDV2.V2_HEADERS.length, TARGET_ROWS: stagingRows.length
+      TARGET_HEADERS: KMRDV2.V2_HEADERS.length, TARGET_ROWS: stagingRows.length,
+      AUTHORITY_APPLIED: !!authority, NORMALIZATION_COUNTS: norm, NORMALIZED_DISTRIBUTIONS: dist
     };
     return { ok: true, summary: summary, report: report, stagingHeaders: KMRDV2.V2_HEADERS.slice(), stagingRows: stagingRows };
   }
 
-  // ---- R4 READ-ONLY staging validator: independently verify request_order_allocation_drafts_v2 before the swap ---
+  // ---- R4C READ-ONLY staging validator: independently verify request_order_allocation_drafts_v2 before the swap ---
   // stagingHeaders/stagingRows = the written staging tab; sourceHeaders/sourceLinesByDraftId = the untouched legacy.
+  // opts.authorizedCycleById = id→canonical YYYY-MM (PLANNING_CYCLE_AUTHORITY_OK); opts.canonicalActiveIdentities =
+  // the frozen R4B5 active identities [{company,country,marketplace,sku,draft_purpose,planning_cycle}] (ACTIVE_SCOPE
+  // _REUSABLE); opts.oldLineWriteCount = the execute-phase legacy-line write count (OLD_LINE_TABLE_UNTOUCHED; default 0).
+  var CANONICAL_STATUSES = { draft: 1, partially_submitted: 1, submitted: 1, cancelled: 1 };
   function validateStaging(stagingHeaders, stagingRows, sourceHeaders, sourceLinesByDraftId, opts) {
     opts = opts || {}; sourceHeaders = sourceHeaders || []; sourceLinesByDraftId = sourceLinesByDraftId || {};
     var V = KMRDV2.V2_HEADERS;
     var schemaOk = Array.isArray(stagingHeaders) && stagingHeaders.length === V.length && stagingHeaders.join('|') === V.join('|');
-    // no retired columns present
     var retired = ['request_allocation_line_id', 'category_snapshot', 'series_snapshot', 't4_month', 't4_order_qty', 'net_order_need_snapshot', 'factory_available_qty_snapshot'];
     var noRetired = (stagingHeaders || []).every(function (h) { return retired.indexOf(h) === -1 && !/^t4_/.test(h); });
     schemaOk = schemaOk && noRetired;
@@ -13885,10 +13957,30 @@ function __kmRequire(p) {
     // id set + uniqueness
     var ids = {}, idDup = 0; stagingRows.forEach(function (r) { var id = str(r.request_allocation_draft_id); if (ids[id]) idDup++; ids[id] = 1; });
     var idSetOk = idDup === 0 && Object.keys(ids).length === stagingRows.length;
-    // submitted present: every source submitted id appears in staging
+    // id preservation: every staging id exists byte-verbatim in the source headers (never re-minted/converted)
+    var srcIds = {}; sourceHeaders.forEach(function (h) { srcIds[str(h.request_allocation_draft_id)] = 1; });
+    var idPreservationOk = stagingRows.every(function (r) { return srcIds[str(r.request_allocation_draft_id)] === 1; });
+    // submitted present + preserved-as-submitted: every source submitted id appears in staging AS submitted
     var srcSubmitted = sourceHeaders.filter(function (h) { return str(h.status) === 'submitted'; }).map(function (h) { return str(h.request_allocation_draft_id); });
-    var submittedSetOk = srcSubmitted.every(function (id) { return ids[id] === 1; });
-    // natural-scope uniqueness among ACTIVE migrated rows (no duplicate active scope)
+    var stagingById = {}; stagingRows.forEach(function (r) { stagingById[str(r.request_allocation_draft_id)] = r; });
+    var submittedSetOk = srcSubmitted.every(function (id) { return stagingById[id] && str(stagingById[id].status) === 'submitted'; });
+    // cycle format + authority (format-valid 2026-07 still FAILS authority when the map says 2026-08)
+    var cycleFormatOk = stagingRows.every(function (r) { return KMRDV2.CANONICAL_CYCLE_RE.test(str(r.planning_cycle)); });
+    var authority = opts.authorizedCycleById || null;
+    var cycleAuthorityOk = !!authority && stagingRows.every(function (r) { return str(r.planning_cycle) === str(authority[str(r.request_allocation_draft_id)]); });
+    // header status vocab
+    var headerStatusOk = stagingRows.every(function (r) { return CANONICAL_STATUSES[str(r.status)] === 1; });
+    // draft_purpose (this cohort: exactly regular)
+    var draftPurposeOk = stagingRows.every(function (r) { return str(r.draft_purpose) === 'regular'; });
+    // canonical marketplace: no KM Walmart survives; each equals the migration-map image of its source token
+    var srcById = {}; sourceHeaders.forEach(function (h) { srcById[str(h.request_allocation_draft_id)] = h; });
+    var marketplaceOk = stagingRows.every(function (r) {
+      var mk = str(r.marketplace); if (mk === 'KM Walmart') return false;
+      var src = srcById[str(r.request_allocation_draft_id)];
+      var expected = src ? KMRDV2.MIGRATION_MARKETPLACE_MAP[str(src.marketplace)] : undefined;
+      return expected !== undefined && mk === expected;
+    });
+    // natural-scope uniqueness among ACTIVE migrated rows (no duplicate COMPLETE active scope)
     var scopeSeen = {}, scopeDup = 0;
     stagingRows.forEach(function (r) {
       if (ACTIVE_FLAT_STATUSES[str(r.status)] !== 1) return;
@@ -13896,7 +13988,15 @@ function __kmRequire(p) {
       if (scopeSeen[k]) scopeDup++; scopeSeen[k] = 1;
     });
     var naturalScopeOk = scopeDup === 0;
-    // tier values match the source lines (order/recommended/status per bucket) for each migrated id
+    // active-scope reusable: every ACTIVE migrated row's full natural key is one of the frozen R4B5 canonical
+    // identities (marketplace is part of the key; a BLOCKED gap does NOT invalidate a valid future identity — the
+    // validator never reads the gap). If no identities supplied → gate cannot pass (fail closed).
+    var idents = opts.canonicalActiveIdentities || [];
+    var identKey = function (o) { return [str(o.company), str(o.country), str(o.marketplace), str(o.sku), str(o.draft_purpose), str(o.planning_cycle)].join('|'); };
+    var identSet = {}; idents.forEach(function (o) { identSet[identKey(o)] = 1; });
+    var activeRows = stagingRows.filter(function (r) { return ACTIVE_FLAT_STATUSES[str(r.status)] === 1; });
+    var activeScopeReusable = idents.length > 0 && activeRows.every(function (r) { return identSet[identKey(r)] === 1; });
+    // tier values match the source lines (order/recommended/carton/month/note/status per bucket) for each migrated id
     var tierOk = true;
     stagingRows.forEach(function (r) {
       var id = str(r.request_allocation_draft_id), lines = sourceLinesByDraftId[id] || [], byB = {};
@@ -13906,11 +14006,21 @@ function __kmRequire(p) {
         if (!l) { if (nn(r[p + 'order_qty']) !== 0 || nn(r[p + 'recommended_qty']) !== 0) tierOk = false; return; }
         if (nn(r[p + 'order_qty']) !== nn(l.order_qty)) tierOk = false;
         if (nn(r[p + 'recommended_qty']) !== nn(l.recommended_qty)) tierOk = false;
+        if (str(r[p + 'month']) !== str(l.request_month)) tierOk = false;
       });
     });
-    var ready = schemaOk && rowCountOk && idSetOk && submittedSetOk && naturalScopeOk && tierOk;
-    return { SCHEMA_OK: schemaOk, ROW_COUNT_OK: rowCountOk, ID_SET_OK: idSetOk, SUBMITTED_SET_OK: submittedSetOk,
-      TIER_VALUES_OK: tierOk, NATURAL_SCOPE_OK: naturalScopeOk, READY_FOR_SWAP: ready ? 'YES' : 'NO' };
+    // the legacy line table must be untouched by the execute phase (write count injected by the caller; default 0)
+    var oldLineTableUntouched = (opts.oldLineWriteCount === undefined) ? true : (Number(opts.oldLineWriteCount) === 0);
+    var gates = {
+      SCHEMA_OK: schemaOk, ROW_COUNT_OK: rowCountOk, PLANNING_CYCLE_FORMAT_OK: cycleFormatOk,
+      PLANNING_CYCLE_AUTHORITY_OK: cycleAuthorityOk, HEADER_STATUS_OK: headerStatusOk, DRAFT_PURPOSE_OK: draftPurposeOk,
+      CANONICAL_MARKETPLACE_OK: marketplaceOk, ID_PRESERVATION_OK: idPreservationOk, ID_SET_OK: idSetOk,
+      SUBMITTED_SET_OK: submittedSetOk, TIER_VALUES_OK: tierOk, NATURAL_SCOPE_OK: naturalScopeOk,
+      ACTIVE_SCOPE_REUSABLE: activeScopeReusable, OLD_LINE_TABLE_UNTOUCHED: oldLineTableUntouched
+    };
+    var ready = Object.keys(gates).every(function (k) { return gates[k] === true; });
+    gates.READY_FOR_SWAP = ready ? 'YES' : 'NO';
+    return gates;
   }
 
   return {
@@ -13923,7 +14033,7 @@ function __kmRequire(p) {
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fa3c-r4-1'
+    VERSION: 'kmrdv2p-fa3c-r4c-1'
   };
 });
   __kmRegister("supply-planning-request-draft-v2-persistence", module.exports);
@@ -13984,4 +14094,4 @@ var KMRDV2 = __kmModules["supply-planning-request-draft-v2"];
 var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"dfe2680998d3f12079a9987eaf886830f0cadfbf93d2f57a85b1b2928a733405","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"3240450385fa0ec3de20c3707a594fba4f363817778026f126724d05b7b3e6e9"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"a11c314acafcddba4cc32f4b8ba2ca43626689128ce471e3a6abdaef42f8fa73"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"b74e75a7404c33ad7a1880a61a79aa2ea9be27d9225d32f22ff93c69c357e1a6"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8c5d41ece08190f2f5a4687fb80639f19ff4381de9f72a396ae8432cf111014d"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"c0240a59612dcc199686312febbf9db77862b5f05db59596102b0e2f9a8be318","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"3240450385fa0ec3de20c3707a594fba4f363817778026f126724d05b7b3e6e9"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"a11c314acafcddba4cc32f4b8ba2ca43626689128ce471e3a6abdaef42f8fa73"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"287f5a5b11c7c96f3f0930540eaaa4e1579a3875dc9b2b429d2eb7cf12a30154"}]};

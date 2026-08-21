@@ -103,9 +103,11 @@ eq(res.summary.READY_FOR_R4C_DECISION, 'YES', 'all 26 diagnosed → READY_FOR_R4
 section('tier months are informational only (labeled non-authority)');
 ok(res.rows.every(function (r) { return r.cycle_evidence.tier_months.source === 'TIER_INFORMATIONAL_NOT_AUTHORITY'; }), 'tier months explicitly labeled non-authority');
 
-section('dry-run migration behavior unchanged (no regression from adding the diagnostic)');
+section('dry-run now fail-closes under the R4C frozen authority (synthetic ids ≠ authorized cohort)');
 var dryOut = makeSandbox().sandbox.TEMP_R4_DRY_RUN_RequestOrderDraftV2();
-eq([dryOut.mode, dryOut.report.MIGRATE_ROWS, dryOut.report.SUBMITTED_MIGRATED], ['DRY_RUN', 26, 20], 'dry-run still 26 migrate / 20 submitted');
+// The ALL-26 diagnostic above uses planMigration WITHOUT authority (unaffected); the dry-run wrapper now applies the
+// frozen R4C per-ID authority, so this synthetic fixture (whose ids are not the authorized cohort) HALTs fail-closed.
+eq(dryOut.halt, 'MIGRATION_AUTHORIZED_ID_SET_MISMATCH', 'dry-run halts on the R4C per-ID authority mismatch (26 synthetic ids unauthorized)');
 
 // ==========================================================================
 console.log('\n' + '-'.repeat(40));

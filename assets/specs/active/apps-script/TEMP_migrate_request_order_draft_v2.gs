@@ -73,8 +73,9 @@ function TEMP_buildSource_() {
 function TEMP_migrateRequestOrderDraftV2_(opts) {
   TEMP_r4Bundle_();
   var execute = !!(opts && opts.execute === true);   // DEFAULT dry-run
+  var authority = (opts && opts.authorizedCycleById) || TEMP_R4C_AUTHORIZED_CYCLE_BY_ID_;   // R4C: explicit per-ID cycle map
   var src = TEMP_buildSource_();
-  var plan = KMRDV2P.planMigration(src.headers, src.linesByDraftId, { expect: TEMP_R4_EXPECT_ });
+  var plan = KMRDV2P.planMigration(src.headers, src.linesByDraftId, { expect: TEMP_R4_EXPECT_, authorizedCycleById: authority });
   if (!plan.ok) { Logger.log('MIGRATION HALTED: ' + plan.halt + '\n' + JSON.stringify(plan.drift || plan, null, 2)); return plan; }
 
   // sample source->target mappings (1 active RD / 1 active RAD / 1 submitted RD / 1 submitted RAD when available)
@@ -83,8 +84,15 @@ function TEMP_migrateRequestOrderDraftV2_(opts) {
     var key = (String(r.status) === 'submitted' ? 'SUBMITTED_' : 'ACTIVE_') + fam(r.request_allocation_draft_id);
     if (!samples[key]) samples[key] = { id: r.request_allocation_draft_id, status: r.status, planning_cycle: r.planning_cycle, sku: r.sku, t1_order_qty: r.t1_order_qty, t2_order_qty: r.t2_order_qty, t3_order_qty: r.t3_order_qty };
   });
+  // R4C dry-run closure: preview every validator gate + the exact normalized distributions + the six canonical
+  // active identities, entirely read-only (no staging is created in dry-run).
+  var identities = TEMP_r4cCanonicalActiveIdentities_();
+  var gatePrecheck = KMRDV2P.validateStaging(plan.stagingHeaders, plan.stagingRows, src.headers, src.linesByDraftId,
+    { expectRows: TEMP_R4_EXPECT_.ACTIONABLE, authorizedCycleById: authority, canonicalActiveIdentities: identities, oldLineWriteCount: 0 });
   var out = { mode: execute ? 'EXECUTE' : 'DRY_RUN', SOURCE_HEADERS: src.headers.length, SOURCE_LINES: src.lineTab.rows.length,
-    report: plan.report, samples: samples, staging_tab: TEMP_V2_STAGING_TAB_ };
+    report: plan.report, normalization_counts: plan.report.NORMALIZATION_COUNTS, normalized_distributions: plan.report.NORMALIZED_DISTRIBUTIONS,
+    gate_precheck: gatePrecheck, canonical_active_identities: identities, authorized_id_count: Object.keys(authority).length,
+    samples: samples, staging_tab: TEMP_V2_STAGING_TAB_, zero_write_confirmed: !execute };
 
   if (!execute) { Logger.log('DRY RUN — no mutation.\n' + JSON.stringify(out, null, 2)); return out; }
 
@@ -110,12 +118,14 @@ function TEMP_migrateRequestOrderDraftV2_(opts) {
   return out;
 }
 
-function TEMP_validateRequestOrderDraftV2Staging_() {
+function TEMP_validateRequestOrderDraftV2Staging_(opts) {
   TEMP_r4Bundle_();
+  var authority = (opts && opts.authorizedCycleById) || TEMP_R4C_AUTHORIZED_CYCLE_BY_ID_;
   var stg = TEMP_readObjects_(TEMP_V2_STAGING_TAB_);
   if (!stg.present) { Logger.log('staging tab absent'); return { READY_FOR_SWAP: 'NO', reason: 'STAGING_ABSENT' }; }
   var src = TEMP_buildSource_();
-  var v = KMRDV2P.validateStaging(stg.headers, stg.rows, src.headers, src.linesByDraftId, { expectRows: TEMP_R4_EXPECT_.ACTIONABLE });
+  var v = KMRDV2P.validateStaging(stg.headers, stg.rows, src.headers, src.linesByDraftId,
+    { expectRows: TEMP_R4_EXPECT_.ACTIONABLE, authorizedCycleById: authority, canonicalActiveIdentities: TEMP_r4cCanonicalActiveIdentities_(), oldLineWriteCount: 0 });
   Logger.log(JSON.stringify(v, null, 2));
   return v;
 }
@@ -244,6 +254,27 @@ var TEMP_V2_MARKETPLACE_SKUS_TAB_ = 'marketplace_skus';
 var TEMP_R4B5_EXPECTED_CYCLE_ = '2026-08';   // architect-frozen historical migration cycle for ALL six rows
 // Frozen source→migrated marketplace map — applies ONLY to this known legacy migration input (NOT a global alias).
 var TEMP_R4B5_MKT_MAP_ = { 'Amazon': 'Amazon', 'KM Walmart': 'Walmart' };
+
+// R4C EXPLICIT per-ID migration authority map (exact request_allocation_draft_id → canonical YYYY-MM). NOT prefix
+// logic; unknown/missing/extra actionable id → planMigration HALTs MIGRATION_AUTHORIZED_ID_SET_MISMATCH. The whole
+// authorized cohort maps to 2026-08 (the frozen historical migration cycle). The 6 architect-confirmed ids (5 active
+// RAD + the sole RD) are seeded below; the remaining 20 SUBMITTED RAD ids from the R4B2 log MUST be pasted here (each
+// → '2026-08') before a LIVE dry-run/execute can pass — until then the migration fail-closes on the 20 unknown ids.
+var TEMP_R4C_AUTHORIZED_CYCLE_BY_ID_ = {
+  'RAD-A92D17B1-8': '2026-08',
+  'RAD-3A0A8227-F': '2026-08',
+  'RAD-06053044-1': '2026-08',
+  'RAD-72ABD506-3': '2026-08',
+  'RAD-17DC0322-0': '2026-08',
+  'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R': '2026-08'
+  // <<< USER: paste the 20 submitted RAD ids from the R4B2 DIAG log here, each mapped to '2026-08' >>>
+};
+// The SIX frozen canonical ACTIVE identities (R4B5) — migrated marketplace + canonical 2026-08 — for ACTIVE_SCOPE_REUSABLE.
+function TEMP_r4cCanonicalActiveIdentities_() {
+  return TEMP_R4B4_ACTIVE_KEYS_.map(function (k) {
+    return { company: k.company, country: k.country, marketplace: k.migrated_marketplace, sku: k.sku, draft_purpose: k.draft_purpose, planning_cycle: k.planning_cycle };
+  });
+}
 
 // The SIX post-normalization active keys (R4B5 architect input). planning_cycle = frozen canonical 2026-08.
 // source_marketplace = the LEGACY token; migrated_marketplace = the canonical token after the frozen map. id #6 (RD)
