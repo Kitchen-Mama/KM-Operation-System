@@ -5,17 +5,31 @@
  * have the R4 bundle 90_ synced so KMRDV2 / KMRDV2P are present) and runs them ONCE during the R4 maintenance window
  * to build the flat V2 staging tab — WITHOUT hand-transforming 26 records. After the swap + acceptance they are removed.
  *
- * Two functions:
- *   TEMP_migrateRequestOrderDraftV2_({execute})   — build request_order_allocation_drafts_v2 from the legacy tabs.
- *       execute:false (DEFAULT) = DRY RUN: reads only, logs the plan/report, writes NOTHING.
- *       execute:true            = write the staging tab ONLY (53 headers + the 26 flat rows). Nothing else.
- *   TEMP_validateRequestOrderDraftV2Staging_()      — READ-ONLY: independently verify the staging tab before the swap.
+ * RUN THESE from the Apps Script Run dropdown (no arguments; the three public entrypoints below do NOT end with
+ * `_`, so they appear in the Run menu — the private core ends with `_` and is intentionally hidden):
+ *   TEMP_R4_DRY_RUN_RequestOrderDraftV2()          — DRY RUN (execute:false): reads only, logs plan/report, writes NOTHING.
+ *   TEMP_R4_EXECUTE_RequestOrderDraftV2()          — EXECUTE (execute:true): writes request_order_allocation_drafts_v2 ONLY.
+ *   TEMP_R4_VALIDATE_RequestOrderDraftV2Staging()  — READ-ONLY: independently verify the staging tab before the swap.
+ * Run order: DRY RUN → (architect verifies the log) → EXECUTE → VALIDATE. Never jump straight to EXECUTE.
+ *
+ * Private core (trailing `_`, hidden from the Run menu):
+ *   TEMP_migrateRequestOrderDraftV2_({execute})    — build request_order_allocation_drafts_v2 from the legacy tabs.
+ *       execute:false (DEFAULT — any missing/omitted opts stays DRY RUN) = reads only, writes NOTHING.
+ *       execute:true = write the staging tab ONLY (53 headers + the 26 flat rows). Nothing else.
+ *   TEMP_validateRequestOrderDraftV2Staging_()      — READ-ONLY staging validator.
  *
  * SAFETY (enforced in code): it reads only request_order_allocation_drafts + request_order_allocation_draft_lines and
  * writes only request_order_allocation_drafts_v2. It NEVER mutates the legacy tabs, NEVER renames/deletes any tab,
  * NEVER flips the cutover flag, NEVER deploys/syncs. All migration/flatten/classify semantics come from the frozen
  * KMRDV2 / KMRDV2P authority (no second algorithm). The final canonical tab rename stays a USER step.
  */
+
+// ---- USER-runnable public entrypoints (no arguments; visible in the Apps Script Run dropdown) -----------------
+// EXECUTE is the ONLY path that can enter a staging write, and it passes execute:true explicitly — so a Run with a
+// forgotten argument can never silently fall into an ambiguous mode.
+function TEMP_R4_DRY_RUN_RequestOrderDraftV2() { return TEMP_migrateRequestOrderDraftV2_({ execute: false }); }
+function TEMP_R4_EXECUTE_RequestOrderDraftV2() { return TEMP_migrateRequestOrderDraftV2_({ execute: true }); }
+function TEMP_R4_VALIDATE_RequestOrderDraftV2Staging() { return TEMP_validateRequestOrderDraftV2Staging_(); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
