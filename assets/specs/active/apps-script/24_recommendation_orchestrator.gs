@@ -69,6 +69,13 @@ function rpoGenerateRecommendationDraftLockedResult_(body, opts) {
   rpoBundle_();
   var type = body && body.recommendationType;
   if (!KMPR.TABLES[type]) return { success: false, error: 'unknown recommendationType', stage: 'input' };
+  // F1-7N-FA-3C-R2b-2 — MONTHLY_ORDER flat V2 cutover dispatch (DEFAULT OFF). When the cutover flag is on (R4 only),
+  // MONTHLY_ORDER routes through the KMRDV2/KMRDV2P flat SHAPE ADAPTER (ONE 53-col row, no child lines) reusing the
+  // SAME shared governance (LockService + recommendation_calculation_runs journal + optimistic token). WEEKLY_SHIPPING
+  // and the flag-off MONTHLY line path are byte-identical to before this round.
+  if (type === 'MONTHLY_ORDER' && typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_()) {
+    return rpoGenerateMonthlyFlatResult_(body, opts);
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   // Production Safety Round S0: fail closed BEFORE any lock/write if the target Spreadsheet is wrong or any
   // authorized table schema is missing/blank/malformed. Never creates or repairs a Sheet (RULE S0-2/S0-5).
@@ -112,6 +119,55 @@ function rpoGenerateRecommendationDraftLockedResult_(body, opts) {
   // (KMPW wraps KMORCH.runRecommendationGeneration + labels the persistence outcome). No algorithm is authored here.
   var result = KMPW.persistProductionRecommendation({
     recommendationType: type, mode: body.mode, planningCycle: body.planningCycle, businessScope: body.businessScope,
+    confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
+    actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()
+  }, deps);
+  return { success: result.success, data: result };
+}
+
+// F1-7N-FA-3C-R2b-2 — MONTHLY_ORDER flat V2 locked generate core (cutover-gated; see rpoGenerateRecommendationDraft-
+// LockedResult_). Mirrors the line path's governance EXACTLY — validate the flat V2 schema, resolve facts, then run
+// LockService + optimistic token + recommendation_calculation_runs journal + keyed-delta write — but persists ONE
+// flat 53-col request_order_allocation_drafts row via the KMRDV2P SHAPE ADAPTER and NEVER touches the child-line
+// table. WEEKLY_SHIPPING never reaches here. No algorithm is authored here — shape/lifecycle delegate to KMRDV2(P).
+function rpoFlatBundle_() {
+  if (typeof KMRDV2 === 'undefined' || typeof KMRDV2P === 'undefined') {
+    throw new Error('MONTHLY_ORDER flat V2 bundle (KMRDV2/KMRDV2P) is not present — 90_generated_supply_planning_bundle.gs must be loaded.');
+  }
+}
+function rpoGenerateMonthlyFlatResult_(body, opts) {
+  rpoBundle_(); rpoFlatBundle_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var headerTable = KMRDV2P.HEADER_TABLE, journal = KMPR.RUN_JOURNAL_TABLE, tables = [headerTable, journal];
+  // Production Safety S0: validate the FLAT V2 authorized-table set (53-col drafts + run journal) — NOT the retired
+  // child-line table, NOT any shipping table. Fail closed before any lock/write when the target is wrong or the V2
+  // schema is not provisioned (this is exactly why an early cutover cannot corrupt data — it simply refuses).
+  if (!(opts && opts.skipSchemaValidation === true)) {
+    var expectedId = (typeof RECOMMENDATION_TARGET_SPREADSHEET_ID_ !== 'undefined') ? RECOMMENDATION_TARGET_SPREADSHEET_ID_ : '';
+    try { KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId, tableSpecsOverride: KMRDV2P.v2TableSpecs() }); }
+    catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }; }
+  }
+
+  var deps = {
+    loadActiveContext: function (q) { var b = rprBuildSheetSet_(ss, [headerTable]); return KMRDV2P.loadActiveFlat(b.set, q); },
+    computeFacts: function () { return rpoResolveFacts_(body); },
+    lockedApply: function (plan, expectedToken, o) {
+      var lock = LockService.getScriptLock();
+      var got = lock.tryLock(30000);
+      if (!got) return { runStatus: 'FAILED', wrote: false, reason: 'LOCK_NOT_ACQUIRED' };
+      try {
+        var built = rprBuildSheetSet_(ss, tables);
+        var before = {}; for (var i = 0; i < tables.length; i++) before[tables[i]] = built.set[tables[i]].rows.map(function (r) { return r.slice(); });
+        var resR = KMRDV2P.applyFlat(built.set, plan, expectedToken, o || {});
+        if (resR && resR.wrote === true && resR.runStatus === 'COMPLETED') { rpoKeyedDeltaWrite_(built.meta, built.set, before, tables); }
+        return resR;
+      } finally { lock.releaseLock(); }
+    }
+  };
+
+  var result = KMRDV2P.generateMonthlyFlat({
+    recommendationType: 'MONTHLY_ORDER', mode: body.mode, action: body.action, planningCycle: body.planningCycle,
+    businessScope: body.businessScope, generationType: body.generationType,
     confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
     actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()
   }, deps);

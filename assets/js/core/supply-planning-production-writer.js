@@ -148,7 +148,12 @@
     aType(isObj(opts) && str(opts.expectedSpreadsheetId) !== '', 'validateAuthorizedRecommendationSchemas: opts.expectedSpreadsheetId required (exact-ID gate)');
     var idCheck = KMSAFE.checkExpectedSpreadsheetId(spreadsheet, opts.expectedSpreadsheetId);
     var tables = {}, blockers = [];
-    authorizedTableSpecs(opts.recommendationType).forEach(function (spec) {   // F1-7N-FA-3C-PRE3-R3 — scope to the type being generated (else all)
+    // F1-7N-FA-3C-R2b-2 — a caller (the MONTHLY_ORDER flat-V2 shape adapter) may inject the exact authorized-table
+    // specs to validate (e.g. the 53-col flat request_order_allocation_drafts + run journal, EXCLUDING the retired
+    // child-line table and both shipping tables). When absent, behavior is byte-identical to PRE3-R3 (type-scoped
+    // or all-tables). This narrows/redirects the validation SET only; it weakens no fail-closed guard.
+    var specs = (Array.isArray(opts.tableSpecsOverride) && opts.tableSpecsOverride.length) ? opts.tableSpecsOverride : authorizedTableSpecs(opts.recommendationType);
+    specs.forEach(function (spec) {   // F1-7N-FA-3C-PRE3-R3 — scope to the type being generated (else all)
       var report;
       if (!idCheck.ok) {
         report = { ready: false, sheetName: spec.sheetName, schemaStatus: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET, issues: [{ reason: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET }] };

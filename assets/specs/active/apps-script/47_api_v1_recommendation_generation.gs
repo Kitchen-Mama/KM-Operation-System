@@ -406,6 +406,13 @@ function handleGetActiveRequestOrderDraftReadback_(body) {
     }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var scope3 = { company: company, country: country, marketplace: marketplace };
+    // F1-7N-FA-3C-R2b-2 — flat V2 readback (cutover-gated, DEFAULT OFF). When enabled (R4), read the flat 53-col
+    // request_order_allocation_drafts ONLY (NO join to the retired child-line table) and return the canonical flat
+    // MONTHLY draft DTO via KMRDV2P. When off (the only live state), the existing line-join readback below is used
+    // verbatim. Not yet consumed by production frontend (R2b-3 owns the flat DTO consumer).
+    if (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_() && typeof KMRDV2P !== 'undefined') {
+      return jsonResponse_(recGenFlatReadback_(ss, scope3, sku, planningCycle));
+    }
     var headerRows = gapReadObjects_(ss, 'request_order_allocation_drafts');   // [] when absent
     var lineRows = gapReadObjects_(ss, 'request_order_allocation_draft_lines');
     if (sku) {   // one-SKU (backward compatible with R4E2)
@@ -424,4 +431,23 @@ function handleGetActiveRequestOrderDraftReadback_(body) {
   } catch (e) {
     return jsonResponse_({ success: false, error: 'READBACK_ERROR', message: String(e && e.message ? e.message : e) });
   }
+}
+
+// F1-7N-FA-3C-R2b-2 — flat V2 readback body (cutover only). Reads request_order_allocation_drafts ONLY via the
+// KMRDV2P shape adapter; NEVER joins request_order_allocation_draft_lines. draft_purpose defaults to 'regular'.
+function recGenFlatReadback_(ss, scope3, sku, planningCycle) {
+  var cycle;
+  try { cycle = KMRDV2.normalizePlanningCycleMonthly(planningCycle); }
+  catch (e) { return { success: false, error: 'INVALID_PLANNING_CYCLE', message: 'flat V2 readback requires planningCycle=YYYY-MM' }; }
+  var built = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]);
+  if (sku) {
+    var one = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,
+      businessScope: { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, sku: sku, draft_purpose: 'regular' } });
+    if (one.length === 0) return { success: true, data: { status: 'NO_ACTIVE_DRAFT', draft: null } };
+    if (one.length > 1) return { success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, conflictIds: one.map(function (d) { return d.draftId; }) } };
+    return { success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: one[0] } };
+  }
+  var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,
+    businessScope: { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' } });
+  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all } };
 }

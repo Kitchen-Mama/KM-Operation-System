@@ -23,3 +23,13 @@ var PRODUCTION_DB_SPREADSHEET_ID_ = '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-K
 
 // Recommendation targets the same canonical bound database (S0.5 unifies the id — no separate per-domain ids).
 var RECOMMENDATION_TARGET_SPREADSHEET_ID_ = PRODUCTION_DB_SPREADSHEET_ID_;
+
+// F1-7N-FA-3C-R2b-2 — MONTHLY_ORDER flat V2 cutover flag. DEFAULT OFF. When false (the only supported state until
+// the USER-owned R4 cutover has provisioned the 53-col flat request_order_allocation_drafts schema and deployed the
+// R2b-3 frontend), MONTHLY_ORDER generation + readback stay on the EXISTING line-oriented engine — live behavior is
+// unchanged even if this bundle is synced for an unrelated reason. When true (set ONLY at R4), MONTHLY_ORDER routes
+// through the KMRDV2/KMRDV2P flat SHAPE ADAPTER (ONE 53-col row, no child lines). WEEKLY_SHIPPING is never affected
+// either way (it never reads this flag). The flat path fails closed against a non-V2 schema, so an early flip never
+// corrupts data — but the flag must remain OFF until R4 so users' MONTHLY AI Plan is never interrupted.
+var REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = false;
+function requestOrderDraftV2FlatCutoverEnabled_() { return REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ === true; }

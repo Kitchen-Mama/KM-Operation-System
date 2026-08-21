@@ -67,7 +67,8 @@ var MODULE_ORDER = [
   'supply-planning-ongoing-order-tpp-adapter',   // F1-7N-FA-3B2 KMOTA Ongoing→KMTPP timing adapter (no deps)
   'supply-planning-ongoing-order-runtime',       // F1-7N-FA-3B3a KMOOR single-authority chain (requires source-facts + ongoing-order-projection + ongoing-order-tpp-adapter)
   'supply-planning-surplus-reallocation',        // F1-7N-FA-3A/3B1 KMFSR §41 factory surplus reallocation (requires allocations + calculations)
-  'supply-planning-request-draft-v2'             // F1-7N-FA-3C-DRAFT-MODEL KMRDV2 flat MONTHLY_ORDER draft core (SELF-CONTAINED; no deps; not yet called by any handler)
+  'supply-planning-request-draft-v2',            // F1-7N-FA-3C-DRAFT-MODEL KMRDV2 flat MONTHLY_ORDER draft core (SELF-CONTAINED; no deps; not yet called by any handler)
+  'supply-planning-request-draft-v2-persistence' // F1-7N-FA-3C-R2b-2 KMRDV2P MONTHLY_ORDER flat persistence SHAPE ADAPTER (requires KMRDV2 + KMPR; reuses shared governance)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -122,7 +123,8 @@ var GLOBALS = [
   ['KMOTA', 'supply-planning-ongoing-order-tpp-adapter'],
   ['KMOOR', 'supply-planning-ongoing-order-runtime'],
   ['KMFSR', 'supply-planning-surplus-reallocation'],
-  ['KMRDV2', 'supply-planning-request-draft-v2']
+  ['KMRDV2', 'supply-planning-request-draft-v2'],
+  ['KMRDV2P', 'supply-planning-request-draft-v2-persistence']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

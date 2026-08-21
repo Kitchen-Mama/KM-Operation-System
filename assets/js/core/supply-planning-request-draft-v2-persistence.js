@@ -1,0 +1,309 @@
+// Kitchen Mama Operation System — Request Order Allocation Draft V2 (FLATTEN) — MONTHLY_ORDER persistence SHAPE ADAPTER (F1-7N-FA-3C-DRAFT-MODEL-R2b-2).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC MONTHLY_ORDER flat-persistence SHAPE ADAPTER. It realizes the frozen coexistence contract
+// (docs/planning/REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md §17–18): MONTHLY_ORDER persists ONE flat
+// 53-column request_order_allocation_drafts row (NO child lines) while WEEKLY_SHIPPING keeps the existing line engine.
+//
+// This module is a SHAPE ADAPTER, NOT a parallel governance engine. It REUSES the shared governance primitives from
+// the canonical repository (KMPR): the optimistic-concurrency token {draft_version,userEditFingerprint} and its
+// FNV-1a fingerprint, and the exact 16-column recommendation_calculation_runs journal row shape. It DELEGATES every
+// business/shape/lifecycle decision to KMRDV2 (the frozen flat-draft authority: YYYY-MM normalization, deterministic
+// RD identity, natural scope key, non-actionable gate, flat row projection, header-status derivation, REUSE/REFRESH/
+// REGENERATE, terminal + user-edit protection, Send-Request explosion). It owns NO carton/recommendation/§41 formula,
+// NO Sheets/LockService/Date.now/Math.random/locale (the caller injects now/actor + a locked apply); input never
+// mutated. It NEVER reads or writes request_order_allocation_draft_lines and NEVER touches any WEEKLY table.
+//
+// The flat fingerprint is taken over the three per-tier decision tuples (tN_order_qty, tN_user_edited) — the flat
+// analogue of the line engine's (lineKey,userQty,userEdited) tuples — so concurrency protection is preserved without
+// weakening it and WEEKLY's fingerprint semantics are entirely unchanged (WEEKLY never calls this module).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-request-draft-v2.js') : (root.KMRDV2 || (root.KM && root.KM.requestDraftV2)),
+    req ? req('./supply-planning-persistence-repository.js') : (root.KMPR || (root.KM && root.KM.persistenceRepository))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.requestDraftV2Persistence = api; }
+})(this, function (KMRDV2, KMPR) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function num(v) { var n = Number(v); return (typeof n === 'number' && isFinite(n)) ? n : null; }
+  function nn(v) { var n = num(v); return (n !== null && n > 0) ? n : 0; }
+
+  var RECOMMENDATION_TYPE = 'MONTHLY_ORDER';
+  var HEADER_TABLE = 'request_order_allocation_drafts';
+  var TIERS = ['T1', 'T2', 'T3'];
+  var SCOPE_FIELDS = ['company', 'country', 'marketplace', 'sku', 'draft_purpose'];
+  // A flat header is the ACTIVE workspace while it can still change (never once fully submitted/cancelled).
+  var ACTIVE_FLAT_STATUSES = { draft: 1, partially_submitted: 1, site_confirmed: 1 };
+
+  // ---- schema authority: derived from KMRDV2.V2_HEADERS (no hand-maintained 53-col copy → cannot drift) ---------
+  // The MONTHLY_ORDER V2 authorized-table set is EXACTLY the flat drafts table + the shared run journal. It
+  // explicitly EXCLUDES request_order_allocation_draft_lines and BOTH shipping tables (a stale/missing legacy line
+  // schema or a stale shipping schema must never gate MONTHLY V2). A drift test pins expectedHeaders===V2_HEADERS.
+  function v2TableSpecs() {
+    return [
+      { sheetName: HEADER_TABLE, expectedHeaders: KMRDV2.V2_HEADERS.slice(), required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: KMPR.RUN_JOURNAL_TABLE, expectedHeaders: KMPR.RUN_JOURNAL_HEADERS.slice(), required: true, extraColumnsPolicy: 'ALLOW' }
+    ];
+  }
+  function v2ExpectedHeaderCount() { return KMRDV2.V2_HEADERS.length; }
+
+  // ---- shared-token reuse: flat fingerprint over the per-tier decision tuples (tN_order_qty, tN_user_edited) -----
+  function tierTuples(row) {
+    row = row || {};
+    return TIERS.map(function (t) {
+      var p = t.toLowerCase() + '_';
+      return { lineKey: t, userQty: row[p + 'order_qty'], userEdited: row[p + 'user_edited'] };
+    });
+  }
+  // expected token guards against the CURRENTLY persisted state: existing row's version + its tier fingerprint
+  // (empty tuple set when the draft does not yet exist — mirrors the line engine's INSERT case).
+  function expectedTokenForExisting(existingRow, newVersionIfInsert) {
+    if (existingRow) return KMPR.computeExpectedToken(existingRow.draft_version, tierTuples(existingRow));
+    return KMPR.computeExpectedToken(newVersionIfInsert, []);
+  }
+
+  // ---- MONTHLY fact-line → KMRDV2 tiers input (the gap facts carry request_bucket T1/T2/T3 rows) ----------------
+  function tiersFromFactLines(lines) {
+    var tiers = {}, upc = null;
+    (lines || []).forEach(function (l) {
+      var b = str(l.request_bucket || l.requestBucket).toUpperCase();
+      if (TIERS.indexOf(b) === -1) return;   // T4 / unknown buckets are never persisted in the flat model
+      var rec = (l.recommendedQty !== undefined) ? l.recommendedQty : l.recommended_qty;
+      tiers[b] = { month: str(l.request_month || l.requestMonth), recommendedQty: nn(rec) };
+      var u = num((l.snapshotRow && l.snapshotRow.units_per_carton) !== undefined ? l.snapshotRow.units_per_carton : (l.units_per_carton !== undefined ? l.units_per_carton : l.unitsPerCarton));
+      if (u !== null && upc === null) upc = u;
+    });
+    return { tiers: tiers, unitsPerCarton: upc };
+  }
+
+  // ---- active-draft resolution over the FLAT header table (CREATE / REUSE / BLOCKED_CONFLICT) ------------------
+  // cycle is always compared; a scope field is compared ONLY when the query supplies a non-blank value (so a
+  // scope-level readback that omits sku/draft_purpose matches every active row for the company/country/marketplace,
+  // while generation — which always supplies the full scope — still resolves the ONE exact active draft).
+  function scopeMatches_(row, scope, cycle) {
+    if (str(row.planning_cycle) !== str(cycle)) return false;
+    for (var i = 0; i < SCOPE_FIELDS.length; i++) {
+      var f = SCOPE_FIELDS[i], q = str(scope[f]);
+      if (q !== '' && str(row[f]) !== q) return false;
+    }
+    return true;
+  }
+  function loadActiveFlat(sheetSet, query) {
+    aType(isObj(query) && isObj(query.businessScope), 'loadActiveFlat: query.businessScope required');
+    var cycle = KMRDV2.normalizePlanningCycleMonthly(query.planningCycle);
+    var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers) && Array.isArray(t.rows), 'loadActiveFlat: missing ' + HEADER_TABLE);
+    var scope = query.businessScope;
+    var scopeKey = KMPR.buildBusinessScopeKey(RECOMMENDATION_TYPE, {
+      planning_cycle: cycle, company: str(scope.company), country: str(scope.country),
+      marketplace: str(scope.marketplace), draft_purpose: str(scope.draft_purpose), sku: str(scope.sku)
+    });
+    var matches = t.rows.map(function (r) { return rowObj_(t.headers, r); }).filter(function (o) {
+      return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle);
+    });
+    if (matches.length === 0) return { status: 'CREATE', activeKey: RECOMMENDATION_TYPE + '::' + scopeKey, draftId: null, businessScopeKey: scopeKey };
+    if (matches.length === 1) return { status: 'REUSE', activeKey: RECOMMENDATION_TYPE + '::' + scopeKey, draftId: str(matches[0].request_allocation_draft_id), draft: matches[0], businessScopeKey: scopeKey };
+    return { status: 'BLOCKED_CONFLICT', activeKey: RECOMMENDATION_TYPE + '::' + scopeKey, matchCount: matches.length, businessScopeKey: scopeKey };
+  }
+
+  // ---- plan: decide op + project the next flat row (delegating shape/lifecycle entirely to KMRDV2) -------------
+  // input = { existingRow|null, scope, planningCycle, tiers|factLines, unitsPerCarton, provenance,
+  //           generationType, mode, action?, confirmRegenerateOverUserEdits, actor, now, businessScopeKey }
+  // mode: 'ai_plan' (AI; non-actionable CREATE is gated) | 'manual' (all-zero CREATE allowed)
+  // action (existing draft): 'reuse' | 'refresh' | 'regenerate' (default 'refresh')
+  function planFlat(input) {
+    aType(isObj(input) && isObj(input.scope), 'planFlat: scope required');
+    var cycle = KMRDV2.normalizePlanningCycleMonthly(input.planningCycle);
+    var manual = input.mode === 'manual';
+    var factTiers = input.tiers ? { tiers: input.tiers, unitsPerCarton: input.unitsPerCarton } : tiersFromFactLines(input.factLines);
+    var tiers = factTiers.tiers;
+    var upc = (input.unitsPerCarton !== undefined && input.unitsPerCarton !== null) ? input.unitsPerCarton : factTiers.unitsPerCarton;
+    var existing = input.existingRow || null;
+
+    var row, op, action;
+    if (!existing) {
+      action = 'create'; op = 'INSERT';
+      row = KMRDV2.projectFlatDraftRow({
+        scope: input.scope, planningCycle: cycle, tiers: tiers, unitsPerCarton: upc,
+        provenance: input.provenance || {}, generationType: input.generationType || (manual ? 'manual' : 'ai_plan'),
+        draftVersion: 1, actor: input.actor, now: input.now
+      });
+      // Non-actionable gate: AI never creates an all-zero draft; manual may.
+      var gate = KMRDV2.nonActionableGate(row, { manual: manual });
+      if (!gate.persist) return { persist: false, reason: gate.reason, action: action, op: op, draftId: row.request_allocation_draft_id };
+    } else {
+      action = str(input.action).toLowerCase() || 'refresh';
+      op = 'UPDATE';
+      if (action === 'reuse') { row = KMRDV2.reuse(existing); }
+      else if (action === 'regenerate') { row = KMRDV2.regenerate(existing, tiers, { confirmRegenerateOverUserEdits: input.confirmRegenerateOverUserEdits === true }, input.now); }
+      else { action = 'refresh'; row = KMRDV2.refresh(existing, tiers, input.now); }
+      // provenance refresh on the flat row (never re-mints identity; created_at preserved by KMRDV2)
+      if (isObj(input.provenance)) {
+        if (str(input.provenance.calculationRunId)) row.calculation_run_id = str(input.provenance.calculationRunId);
+        if (str(input.provenance.formulaVersion)) row.formula_version = str(input.provenance.formulaVersion);
+        if (str(input.provenance.calculatedAt)) row.calculated_at = str(input.provenance.calculatedAt);
+        if (str(input.provenance.sourceDataAsOf)) row.source_data_as_of = str(input.provenance.sourceDataAsOf);
+      }
+      row.updated_by = str(input.actor) || row.updated_by;
+    }
+
+    var draftVersion = (num(row.draft_version) !== null) ? num(row.draft_version) : 1;
+    var expectedToken = expectedTokenForExisting(existing, draftVersion);
+    var calcRunId = str((input.provenance && input.provenance.calculationRunId) || row.calculation_run_id) || ('RUN::' + row.request_allocation_draft_id + '::v' + draftVersion);
+    row.calculation_run_id = calcRunId;
+    return {
+      persist: true, recommendationType: RECOMMENDATION_TYPE, action: action, op: op,
+      draftId: row.request_allocation_draft_id, draftVersion: draftVersion,
+      calculationRunId: calcRunId, expectedToken: expectedToken, row: row,
+      runMeta: {
+        planning_cycle: cycle, business_scope_key: input.businessScopeKey || '',
+        formulaVersion: str(row.formula_version), sourceDataAsOf: str(row.source_data_as_of)
+      }
+    };
+  }
+
+  // ---- pure flat apply: token-guard → single-row upsert (NO child lines) → shared run-journal COMPLETED row -----
+  function rowObj_(headers, row) { var o = {}; for (var i = 0; i < headers.length; i++) o[headers[i]] = row[i]; return o; }
+  function objRow_(headers, obj) { return headers.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; }); }
+  function findByDraftId_(t, draftId) {
+    var target = -1, dup = 0;
+    for (var i = 0; i < t.rows.length; i++) { var o = rowObj_(t.headers, t.rows[i]); if (str(o.request_allocation_draft_id) === str(draftId)) { dup++; if (target === -1) target = i; } }
+    return { target: target, dup: dup };
+  }
+  function applyFlat(sheetSet, plan, expectedToken, opts) {
+    aType(isObj(plan) && plan.recommendationType === RECOMMENDATION_TYPE, 'applyFlat: MONTHLY_ORDER plan required');
+    aType(isObj(plan.row) && str(plan.row.request_allocation_draft_id) !== '', 'applyFlat: plan.row with draft id required');
+    opts = opts || {};
+    var now = opts.now !== undefined ? opts.now : '', actor = opts.actor !== undefined ? opts.actor : '';
+    var hT = sheetSet[HEADER_TABLE]; aType(hT && Array.isArray(hT.headers) && Array.isArray(hT.rows), 'applyFlat: missing ' + HEADER_TABLE);
+    var rT = sheetSet[KMPR.RUN_JOURNAL_TABLE]; aType(rT && Array.isArray(rT.headers) && Array.isArray(rT.rows), 'applyFlat: missing ' + KMPR.RUN_JOURNAL_TABLE);
+
+    // ---- token revalidation against the currently persisted flat row (no write on mismatch) ----
+    var found = findByDraftId_(hT, plan.draftId);
+    if (found.dup > 1) return { runStatus: 'FAILED', wrote: false, reason: 'DUPLICATE_HEADER' };
+    var existing = found.target === -1 ? null : rowObj_(hT.headers, hT.rows[found.target]);
+    var liveVersion = existing ? existing.draft_version : expectedToken.draft_version;
+    var liveToken = { draft_version: liveVersion, userEditFingerprint: KMPR.buildUserEditFingerprint(existing ? tierTuples(existing) : []) };
+    if (!KMPR.tokensMatch(liveToken, expectedToken)) {
+      return { runStatus: 'CONFLICT', conflict: true, wrote: false, reason: 'TOKEN_MISMATCH', expected: expectedToken, live: liveToken };
+    }
+
+    // ---- single-row upsert (never a child-line write) ----
+    var writeRow = objRow_(hT.headers, plan.row);
+    var action;
+    if (found.target === -1) { hT.rows.push(writeRow); action = 'INSERT'; }
+    else { hT.rows[found.target] = writeRow; action = 'UPDATE'; }
+
+    // ---- shared run journal: same 16-col recommendation_calculation_runs row shape as the line engine ----
+    var prev = null, ri;
+    for (ri = 0; ri < rT.rows.length; ri++) { var ro = rowObj_(rT.headers, rT.rows[ri]); if (str(ro.calculation_run_id) === str(plan.calculationRunId)) { prev = ro; break; } }
+    var attempt = prev ? ((parseInt(prev.attempt_count, 10) || 1) + 1) : 1;
+    var runRow = {
+      calculation_run_id: plan.calculationRunId, recommendation_type: RECOMMENDATION_TYPE, draft_id: plan.draftId,
+      planning_cycle: (plan.runMeta && plan.runMeta.planning_cycle) || '', business_scope_key: (plan.runMeta && plan.runMeta.business_scope_key) || '',
+      draft_version: plan.draftVersion, run_status: 'COMPLETED', current_stage: 'COMPLETED',
+      formula_version: (plan.runMeta && plan.runMeta.formulaVersion) || '', source_data_as_of: (plan.runMeta && plan.runMeta.sourceDataAsOf) || '',
+      started_by: prev ? prev.started_by : actor, started_at: prev ? prev.started_at : now,
+      completed_by: actor, completed_at: now, error_summary: '', attempt_count: attempt
+    };
+    if (ri < rT.rows.length && prev) rT.rows[ri] = objRow_(rT.headers, runRow); else rT.rows.push(objRow_(rT.headers, runRow));
+
+    return { runStatus: 'COMPLETED', wrote: true, action: action, draftId: plan.draftId, draftVersion: plan.draftVersion, writtenTables: [HEADER_TABLE, KMPR.RUN_JOURNAL_TABLE] };
+  }
+
+  // ---- end-to-end driver mirroring KMPW.persistProductionRecommendation(command, deps) — governance stays shared -
+  // deps = { loadActiveContext(query)->{status,draft|null}, computeFacts()->{ready,reason,tiers|lines,unitsPerCarton,provenance},
+  //          lockedApply(plan, expectedToken, opts)->applyResult }   (the .gs injects LockService + keyed-delta write)
+  function generateMonthlyFlat(command, deps) {
+    aType(isObj(command), 'generateMonthlyFlat: command required');
+    aType(isObj(deps) && typeof deps.computeFacts === 'function' && typeof deps.lockedApply === 'function', 'generateMonthlyFlat: deps.computeFacts/lockedApply required');
+    if (command.recommendationType !== RECOMMENDATION_TYPE) return { success: false, error: 'generateMonthlyFlat handles MONTHLY_ORDER only', stage: 'input' };
+    var cycle;
+    try { cycle = KMRDV2.normalizePlanningCycleMonthly(command.planningCycle); }
+    catch (e) { return { success: false, error: (e && e.message) || 'INVALID_PLANNING_CYCLE', stage: 'input' }; }
+
+    var rawScope = command.businessScope || {};
+    var scope = { company: str(rawScope.company), country: str(rawScope.country), marketplace: str(rawScope.marketplace), sku: str(rawScope.sku), draft_purpose: str(rawScope.draft_purpose) || 'regular' };
+    var query = { recommendationType: RECOMMENDATION_TYPE, planningCycle: cycle, businessScope: scope };
+    var active = (typeof deps.loadActiveContext === 'function') ? deps.loadActiveContext(query) : { status: 'CREATE' };
+    if (active && active.status === 'BLOCKED_CONFLICT') return { success: false, error: 'BLOCKED_CONFLICT', stage: 'active', matchCount: active.matchCount };
+
+    var facts = deps.computeFacts();
+    if (facts && facts.ready === false) return { success: false, error: facts.reason || 'FACTS_NOT_READY', stage: 'facts' };
+
+    var manual = command.mode === 'manual' || command.mode === 'MANUAL';
+    var action = command.action || (/REGENERATE/i.test(str(command.mode)) ? 'regenerate' : 'refresh');
+    var plan = planFlat({
+      existingRow: (active && active.draft) ? active.draft : null,
+      scope: { company: str(scope.company), country: str(scope.country), marketplace: str(scope.marketplace), sku: str(scope.sku), draft_purpose: str(scope.draft_purpose) || 'regular' },
+      planningCycle: cycle, factLines: facts && facts.lines, tiers: facts && facts.tiers,
+      unitsPerCarton: facts && facts.unitsPerCarton,
+      provenance: (facts && facts.provenance) || { formulaVersion: facts && facts.formulaVersion, sourceDataAsOf: facts && facts.sourceDataAsOf },
+      generationType: command.generationType || (manual ? 'manual' : 'ai_plan'), mode: manual ? 'manual' : 'ai_plan',
+      action: action, confirmRegenerateOverUserEdits: command.confirmRegenerateOverUserEdits === true,
+      actor: command.actor || 'system', now: command.now, businessScopeKey: active && active.businessScopeKey
+    });
+
+    if (!plan.persist) return { success: true, wrote: false, persisted: false, outcome: 'NON_ACTIONABLE', reason: plan.reason, draftId: plan.draftId };
+
+    var res = deps.lockedApply(plan, plan.expectedToken, { now: command.now, actor: command.actor || 'system', generationType: plan.row.generation_type });
+    var wrote = !!(res && res.wrote === true && res.runStatus === 'COMPLETED');
+    return {
+      success: !!(res && (res.runStatus === 'COMPLETED')), wrote: wrote, persisted: wrote,
+      outcome: res && res.conflict ? 'CONFLICT' : (wrote ? plan.action.toUpperCase() : 'NOT_EXECUTED'),
+      draftId: plan.draftId, draftVersion: plan.draftVersion, action: plan.action,
+      writtenTables: wrote ? [HEADER_TABLE, KMPR.RUN_JOURNAL_TABLE] : [], result: res
+    };
+  }
+
+  // ---- flat readback DTO (reads request_order_allocation_drafts ONLY — no join to child lines) ------------------
+  function tierDto_(row, t) {
+    var p = t.toLowerCase() + '_';
+    return {
+      tier: t, month: str(row[p + 'month']), recommendedQty: nn(row[p + 'recommended_qty']),
+      orderQty: nn(row[p + 'order_qty']), cartonQty: (row[p + 'carton_qty'] === '' || row[p + 'carton_qty'] === undefined) ? null : nn(row[p + 'carton_qty']),
+      status: str(row[p + 'status']) || 'draft', submittedBy: str(row[p + 'submitted_by']), submittedAt: str(row[p + 'submitted_at']),
+      userEdited: (row[p + 'user_edited'] === true || str(row[p + 'user_edited']).toUpperCase() === 'TRUE'),
+      userEditedBy: str(row[p + 'user_edited_by']), note: str(row[p + 'note'])
+    };
+  }
+  function flatReadbackDto(row) {
+    aType(isObj(row), 'flatReadbackDto: row required');
+    return {
+      recommendationType: RECOMMENDATION_TYPE,
+      draftId: str(row.request_allocation_draft_id), planningCycle: str(row.planning_cycle),
+      scope: { company: str(row.company), country: str(row.country), marketplace: str(row.marketplace), sku: str(row.sku), draftPurpose: str(row.draft_purpose) || 'regular' },
+      status: str(row.status) || 'draft', generationType: str(row.generation_type), draftVersion: (num(row.draft_version) !== null) ? num(row.draft_version) : 1,
+      provenance: { calculationRunId: str(row.calculation_run_id), formulaVersion: str(row.formula_version), calculatedAt: str(row.calculated_at), sourceDataAsOf: str(row.source_data_as_of) },
+      unitsPerCarton: (num(row.units_per_carton) !== null) ? num(row.units_per_carton) : null,
+      tiers: TIERS.map(function (t) { return tierDto_(row, t); }),
+      audit: { createdBy: str(row.created_by), createdAt: str(row.created_at), updatedBy: str(row.updated_by), updatedAt: str(row.updated_at), cancelledBy: str(row.cancelled_by), cancelledAt: str(row.cancelled_at), cancelReason: str(row.cancel_reason) },
+      note: str(row.note)
+    };
+  }
+  // scope-level flat readback: active flat rows for a query → DTOs (header table only, NEVER the child-line table)
+  function readActiveFlatForScope(sheetSet, query) {
+    var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readActiveFlatForScope: missing ' + HEADER_TABLE);
+    var cycle = KMRDV2.normalizePlanningCycleMonthly(query.planningCycle);
+    var scope = query.businessScope || {};
+    return t.rows.map(function (r) { return rowObj_(t.headers, r); })
+      .filter(function (o) { return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle); })
+      .map(flatReadbackDto);
+  }
+
+  return {
+    RECOMMENDATION_TYPE: RECOMMENDATION_TYPE, HEADER_TABLE: HEADER_TABLE,
+    v2TableSpecs: v2TableSpecs, v2ExpectedHeaderCount: v2ExpectedHeaderCount,
+    tierTuples: tierTuples, expectedTokenForExisting: expectedTokenForExisting,
+    tiersFromFactLines: tiersFromFactLines, loadActiveFlat: loadActiveFlat,
+    planFlat: planFlat, applyFlat: applyFlat, generateMonthlyFlat: generateMonthlyFlat,
+    flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
+    VERSION: 'kmrdv2p-fa3c-r2b2-1'
+  };
+});
