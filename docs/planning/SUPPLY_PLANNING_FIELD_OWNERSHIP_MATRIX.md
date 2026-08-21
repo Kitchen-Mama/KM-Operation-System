@@ -1,5 +1,7 @@
 # Supply Planning — End-to-End Field Ownership Matrix (Phase F1-0)
 
+> **⚠️ DRAFT-MODEL UPDATE (F1-7N-FA-3C-DRAFT-MODEL-R1, 2026-08-21):** the `request_order_allocation_draft_lines` rows in this matrix are `DEPRECATED_PENDING_MIGRATION`. The MONTHLY_ORDER decision workspace flattens to a single `request_order_allocation_drafts` row with fixed `t1_/t2_/t3_` decision + provenance columns; the 14 line calculation snapshots and `category_snapshot`/`series_snapshot`/`request_allocation_line_id` are removed/retired (calculation evidence stays in `order_planning_gap` + `recommendation_calculation_runs`). Canonical: [`REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md`](./REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md). No live-DB/runtime change yet.
+>
 > **READ-ONLY audit artifact.** No formula invented, no business logic / DB / deploy change. Companion to `SUPPLY_PLANNING_FORMULA_RUNTIME_RECONCILIATION.md`. Baseline HEAD `9324086`, 2026-08-05. Tests: 80/80 files PASS; Golden 39/1/0; #34 Pending.
 >
 > **Column legend (the round's required matrix fields):** each row carries **Runtime module:fn · Output DTO · DB table.column · Writer · Reader · UI · Test · Status · Gap→Next-owner**. To keep rows terse, the shared columns are factored per section:
