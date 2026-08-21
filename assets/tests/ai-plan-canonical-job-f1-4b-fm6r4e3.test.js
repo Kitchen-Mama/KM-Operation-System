@@ -36,6 +36,7 @@ function _roCanonicalScope_() { return _canonScope; }
 // module-scope driver state + tunables (mirror the source; the eval'd functions read/assign these bindings)
 var _roAiPlanBusy = false, _roAiPlanRunId = null, _roAiPlanTotal = 0, _roAiPlanCancelRequested = false;
 var _RO_AI_PLAN_CONTINUE_DELAY_MS = 0, _RO_AI_PLAN_BUSY_RETRY_MS = 0;
+var _roAiPlanResult = null;   // F1-7N-FA-3C-PRE3-R2 — persistent result state (render no-ops in Node: no `document`)
 
 // ---- eval the pure dispositions + the async driver into module scope (top-level eval so the bindings persist) ----
 eval(extractFn(RO, '_roAiPlanStartDisposition_'));
@@ -48,6 +49,13 @@ eval(extractFn(RO, '_roAiPlanSetProgress_'));
 eval(extractFn(RO, '_roAiPlanResetUi_'));
 eval(extractFn(RO, '_roAiPlanDelay_'));
 eval(extractFn(RO, '_roAiPlanDoneMsg_'));   // F1-7N-FA-3C-PRE3-R1 — terminal-count message builder used by _roAiPlanFinishDone_
+eval(extractFn(RO, '_roAiPlanScopeKey_'));  // F1-7N-FA-3C-PRE3-R2 — persistent result panel helpers used by the driver
+eval(extractFn(RO, '_roAiPlanNum_'));
+eval(extractFn(RO, '_roAiPlanResultVisibleFor_'));
+eval(extractFn(RO, '_roClearAiPlanResult_'));
+eval(extractFn(RO, '_roSetAiPlanResult_'));
+eval(extractFn(RO, '_roAiPlanResultEl_'));
+eval(extractFn(RO, '_roRenderAiPlanResult_'));
 eval(extractFn(RO, '_roRunAiPlanJob_'));
 eval(extractFn(RO, '_roAiPlanDriveContinue_'));
 eval(extractFn(RO, '_roAiPlanFinishDone_'));
@@ -64,9 +72,9 @@ eq(_roAiPlanStartDisposition_({ success: true, data: { runId: 'R1', status: 'RUN
 eq(_roAiPlanStartDisposition_({ success: true, data: { alreadyRunning: true, busy: true, sameScope: false } }).action, 'BUSY', '§3 another scope owns the single slot → BUSY (never a duplicate start)');
 eq(_roAiPlanStartDisposition_({ success: false, error: { code: 'ORDER_PLANNING_GAP_NOT_READY' } }), { action: 'FAIL', code: 'ORDER_PLANNING_GAP_NOT_READY' }, 'START error surfaces the truthful code');
 // CONTINUE — terminal handling (§4)
-eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'DONE', cursor: 3, total: 3, hasMore: false } }), { action: 'DONE', done: 3, total: 3, counts: null }, 'CONTINUE DONE (carries counts; null when the terminal state omits them)');
+eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'DONE', cursor: 3, total: 3, hasMore: false } }), { action: 'DONE', done: 3, total: 3, counts: null, reasonCounts: null, reasonSamples: null }, 'CONTINUE DONE (carries counts + reason distribution; null when the terminal state omits them)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'RUNNING', cursor: 25, total: 93, hasMore: true } }), { action: 'MORE', done: 25, total: 93 }, 'CONTINUE hasMore → MORE (keep driving)');
-eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'FAILED', lastError: 'GAP_GENERATION_CHANGED' } }), { action: 'FAILED', code: 'GAP_GENERATION_CHANGED' }, 'H CONTINUE FAILED carries lastError (fail closed)');
+eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'FAILED', lastError: 'GAP_GENERATION_CHANGED' } }), { action: 'FAILED', code: 'GAP_GENERATION_CHANGED', counts: null, reasonCounts: null, reasonSamples: null }, 'H CONTINUE FAILED carries lastError + reason distribution (fail closed)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'CANCELLED' } }).action, 'CANCELLED', 'I CONTINUE CANCELLED is its own terminal (not FAILED)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { busy: true } }).action, 'BUSY', '§3 a live lease → BUSY (wait, do not fan out)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'NONE' } }).action, 'NONE', 'vanished job → NONE');
@@ -158,7 +166,7 @@ ok(!_roAiPlanScopeMatches_({ company: 'KM', country: 'US', marketplace: 'AMAZON_
   // §5/§13/§14 AI Plan drives the job from the concrete scope; KMREC render stays display-only
   ok(/_roRunAiPlanJob_\(_cs\)/.test(RO) && /DISPLAY-ONLY/.test(RO), '§14 handleRequestOrderAiPlan drives the job for a concrete scope; KMREC labelled DISPLAY-ONLY');
   // §7 DONE → getActive read-back is the ONLY place the drafts are read on completion (one scope read)
-  ok(/_roAiPlanFinishDone_[\s\S]{0,240}_roLoadCanonicalDraftsForScope_\(scope\)/.test(RO), '§6/§7 DONE handler performs ONE scope getActive read-back (render from DB draft)');
+  ok(/_roAiPlanFinishDone_[\s\S]{0,600}_roLoadCanonicalDraftsForScope_\(scope\)/.test(RO), '§6/§7 DONE handler performs ONE scope getActive read-back (render from DB draft)');   // window widened for the FA-3C-PRE3-R2 persistent-result set before the read-back
   // no per-SKU fan-out: the continue loop is a single self-chained step (setTimeout), never Promise.all over SKUs
   var driver = extractFn(RO, '_roAiPlanDriveContinue_');
   ok(!/Promise\.all/.test(driver) && /_roAiPlanDelay_\(step/.test(driver), '§3/§25 continue loop is self-chained (one at a time) — no Promise.all / per-SKU fan-out');

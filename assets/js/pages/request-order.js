@@ -519,6 +519,7 @@ function _roRenderAll() {
   syncRequestOrderScroll();
   initRequestOrderDropdowns();
   _roUpdateConfirmStatus();
+  if (typeof _roRenderAiPlanResult_ === 'function') _roRenderAiPlanResult_();   // F1-7N-FA-3C-PRE3-R2 — keep the AI Plan result visible across re-renders + hide it on a scope change
 }
 
 // Canonical marketplace key for a row: marketplace_id when present (live), else the display string (demo).
@@ -3685,6 +3686,7 @@ if (typeof window !== 'undefined') {
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
   window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;
   window._roIsNoDraftSku_ = _roIsNoDraftSku_;
+  window._roClearAiPlanResult_ = _roClearAiPlanResult_;   // F1-7N-FA-3C-PRE3-R2 — dismiss button + scope-change/new-run clear
 }
 
 // ============================================================
@@ -3715,12 +3717,12 @@ function _roAiPlanContinueDisposition_(res) {
   if (!res || !res.success) return { action: 'FAIL', code: (res && res.error && res.error.code) || 'AI_PLAN_CONTINUE_FAILED' };
   var d = res.data || {};
   if (d.busy) return { action: 'BUSY' };
-  if (d.status === 'DONE') return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null };
-  if (d.status === 'FAILED') return { action: 'FAILED', code: d.lastError || 'FAILED' };   // GAP_GENERATION_CHANGED, etc.
-  if (d.status === 'CANCELLED') return { action: 'CANCELLED' };
+  if (d.status === 'DONE') return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null, reasonCounts: d.reasonCounts || null, reasonSamples: d.reasonSamples || null };
+  if (d.status === 'FAILED') return { action: 'FAILED', code: d.lastError || 'FAILED', counts: d.counts || null, reasonCounts: d.reasonCounts || null, reasonSamples: d.reasonSamples || null };   // GAP_GENERATION_CHANGED, etc.
+  if (d.status === 'CANCELLED') return { action: 'CANCELLED', counts: d.counts || null, reasonCounts: d.reasonCounts || null, reasonSamples: d.reasonSamples || null };
   if (d.status === 'NONE') return { action: 'NONE' };
   if (d.hasMore || (d.cursor != null && d.total != null && d.cursor < d.total)) return { action: 'MORE', done: d.cursor || 0, total: d.total || 0 };
-  return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null };
+  return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null, reasonCounts: d.reasonCounts || null, reasonSamples: d.reasonSamples || null };
 }
 // PURE truthful terminal-count message (§ observability, F1-7N-FA-3C-PRE3-R1). Consumes the job's canonical terminal
 // `counts` bucket ({created,reused,regenerated,needsConfirmation,blockedConflict,notReady,failed}) and NEVER reports a
@@ -3780,6 +3782,73 @@ function _roAiPlanResetUi_() {
   var c = _roAiPlanCancelBtn_(); if (c) { c.style.display = 'none'; c.disabled = false; }
 }
 
+// --- PERSISTENT AI Plan result panel (F1-7N-FA-3C-PRE3-R2) — a transient toast was not reliably seen; keep a durable
+// truthful terminal summary (counts + bounded reason distribution) near AI Support until the next run or scope change.
+var _roAiPlanResult = null;   // { kind, processed, total, counts, reasonCounts, reasonSamples, code, scopeKey }
+function _roAiPlanScopeKey_(scope) {
+  function n(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  return scope ? (n(scope.company) + '||' + n(scope.country) + '||' + n(scope.marketplace)) : '';
+}
+function _roAiPlanNum_(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0; }
+// PURE — a stored result is shown ONLY for the currently-displayed AI Plan scope (so a scope change hides a stale result).
+function _roAiPlanResultVisibleFor_(result, scope) {
+  return !!(result && result.scopeKey && result.scopeKey === _roAiPlanScopeKey_(scope));
+}
+function _roClearAiPlanResult_() { _roAiPlanResult = null; _roRenderAiPlanResult_(); }
+function _roSetAiPlanResult_(kind, disp, scope) {
+  var c = (disp && disp.counts) || {};
+  _roAiPlanResult = {
+    kind: kind,
+    processed: (disp && typeof disp.done === 'number') ? disp.done : ((disp && disp.total) || 0),
+    total: (disp && disp.total) || 0,
+    counts: { created: _roAiPlanNum_(c.created), reused: _roAiPlanNum_(c.reused), regenerated: _roAiPlanNum_(c.regenerated),
+      needsConfirmation: _roAiPlanNum_(c.needsConfirmation), blockedConflict: _roAiPlanNum_(c.blockedConflict),
+      notReady: _roAiPlanNum_(c.notReady), failed: _roAiPlanNum_(c.failed) },
+    reasonCounts: (disp && disp.reasonCounts && typeof disp.reasonCounts === 'object') ? disp.reasonCounts : {},
+    reasonSamples: (disp && disp.reasonSamples && typeof disp.reasonSamples === 'object') ? disp.reasonSamples : {},
+    code: (disp && disp.code) || null,
+    scopeKey: _roAiPlanScopeKey_(scope)
+  };
+  _roRenderAiPlanResult_();
+}
+function _roAiPlanResultEl_() {
+  if (typeof document === 'undefined' || !document.getElementById) return null;
+  var el = document.getElementById('ro-ai-plan-result');
+  if (!el) {   // create-if-missing next to the AI Support menu (no HTML/layout dependency)
+    var host = document.getElementById('roAiSupportMenu');
+    if (host && host.parentNode) { el = document.createElement('div'); el.id = 'ro-ai-plan-result'; el.className = 'ro-ai-plan-result'; el.setAttribute('aria-live', 'polite'); el.hidden = true; host.parentNode.insertBefore(el, host.nextSibling); }
+  }
+  return el || null;
+}
+function _roRenderAiPlanResult_() {
+  var el = _roAiPlanResultEl_(); if (!el) return;
+  var r = _roAiPlanResult, scope = (typeof _roCanonicalScope_ === 'function') ? _roCanonicalScope_() : null;
+  if (!_roAiPlanResultVisibleFor_(r, scope)) { el.hidden = true; el.innerHTML = ''; return; }
+  var c = r.counts, success = c.created + c.reused + c.regenerated, total = r.total || r.processed || 0;
+  var tone = success > 0 ? ((total && success >= total) ? 'ok' : 'warn') : 'bad';
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); };
+  var rows = [['Processed', total], ['Created', c.created], ['Reused', c.reused], ['Regenerated', c.regenerated],
+    ['Needs confirmation', c.needsConfirmation], ['Blocked', c.blockedConflict], ['Not ready', c.notReady], ['Failed', c.failed]];
+  var html = '<div class="ro-ai-plan-result__head"><span>AI Plan Result</span>' +
+    '<button type="button" class="ro-ai-plan-result__x" onclick="_roClearAiPlanResult_()" aria-label="Dismiss">×</button></div>';
+  html += '<div class="ro-ai-plan-result__grid">';
+  rows.forEach(function (kv) { html += '<span class="k">' + esc(kv[0]) + '</span><span class="v">' + esc(kv[1]) + '</span>'; });
+  html += '</div>';
+  var reasons = (r.reasonCounts && typeof r.reasonCounts === 'object') ? Object.keys(r.reasonCounts) : [];
+  if (reasons.length) {
+    html += '<div class="ro-ai-plan-result__reasons"><div class="rh">Reasons</div>';
+    html += reasons.map(function (code) {
+      var samp = (r.reasonSamples && r.reasonSamples[code]) || [];
+      var s = samp.length ? ' (' + esc(samp.slice(0, 5).join(', ')) + (samp.length >= 5 ? '…' : '') + ')' : '';
+      return '<div>' + esc(code) + ': ' + esc(r.reasonCounts[code]) + s + '</div>';
+    }).join('');
+    html += '</div>';
+  }
+  if (success === 0) html += '<div class="ro-ai-plan-result__note">0 drafts created — Order Allocation was not updated.</div>';
+  el.className = 'ro-ai-plan-result ro-ai-plan-result--' + tone;
+  el.innerHTML = html; el.hidden = false;
+}
+
 // --- the driver: START (once) → CONTINUE loop (one at a time) → DONE → getActive (once) → render ---------------
 function _roAiPlanDelay_(fn, ms) { if (typeof setTimeout === 'function') setTimeout(fn, ms); else fn(); }
 function _roRunAiPlanJob_(scope) {
@@ -3788,6 +3857,7 @@ function _roRunAiPlanJob_(scope) {
   if (!db || typeof db.startRequestOrderDraftJob !== 'function' || typeof db.continueRequestOrderDraftJob !== 'function') return Promise.resolve(null);
   if (!scope || !scope.company || !scope.country || !scope.marketplace) return Promise.resolve(null);   // scopeless → KMREC-only
   _roAiPlanBusy = true; _roAiPlanCancelRequested = false; _roAiPlanRunId = null; _roAiPlanTotal = 0;
+  _roClearAiPlanResult_();   // F1-7N-FA-3C-PRE3-R2 — a new run replaces any prior terminal result
   _roAiPlanSetProgress_('AI Plan · Starting…', true);
   return Promise.resolve(db.startRequestOrderDraftJob(scope)).then(function (res) {
     var disp = _roAiPlanStartDisposition_(res);
@@ -3808,9 +3878,9 @@ function _roAiPlanDriveContinue_(scope) {
       if (disp.action === 'BUSY') { _roAiPlanDelay_(step, _RO_AI_PLAN_BUSY_RETRY_MS); return; }   // §3 respect a live lease
       if (disp.action === 'MORE') { _roAiPlanSetProgress_('AI Plan · ' + disp.done + ' / ' + (_roAiPlanTotal || disp.total || 0), true); _roAiPlanDelay_(step, _RO_AI_PLAN_CONTINUE_DELAY_MS); return; }
       if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope, disp); return; }
-      if (disp.action === 'CANCELLED') { _roAiPlanFinishCancelled_(scope, true); return; }   // externally cancelled → announce (the user-cancel path returned early above)
-      if (disp.action === 'FAILED' || disp.action === 'FAIL') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return; }   // §4 fail closed
-      _roAiPlanResetUi_();   // NONE / unknown → stop silently (no success claim)
+      if (disp.action === 'CANCELLED') { _roSetAiPlanResult_('CANCELLED', disp, scope); _roAiPlanFinishCancelled_(scope, true); return; }   // externally cancelled → announce (the user-cancel path returned early above)
+      if (disp.action === 'FAILED' || disp.action === 'FAIL') { _roSetAiPlanResult_('FAILED', disp, scope); _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return; }   // §4 fail closed
+      _roSetAiPlanResult_('INCOMPLETE', disp, scope); _roAiPlanResetUi_();   // NONE / unknown → surface a truthful result instead of returning to idle silently
     }).catch(function () { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_('AI_PLAN_CONTINUE_ERROR')); });
   }
   step();
@@ -3820,9 +3890,10 @@ function _roAiPlanDriveContinue_(scope) {
 function _roAiPlanFinishDone_(scope, disp) {
   _roAiPlanSetProgress_('AI Plan · Reading drafts…', true);
   var msg = _roAiPlanDoneMsg_(disp && disp.counts);
+  _roSetAiPlanResult_('DONE', disp, scope);   // F1-7N-FA-3C-PRE3-R2 — durable terminal result (set BEFORE read-back so it survives the re-render)
   return Promise.resolve(_roLoadCanonicalDraftsForScope_(scope)).then(function () {
-    _roAiPlanResetUi_(); _roNotify_(msg);
-  }).catch(function () { _roAiPlanResetUi_(); _roNotify_(msg); });
+    _roAiPlanResetUi_(); _roRenderAiPlanResult_(); _roNotify_(msg);
+  }).catch(function () { _roAiPlanResetUi_(); _roRenderAiPlanResult_(); _roNotify_(msg); });
 }
 // §18 — CANCELLED is NOT a failure: stop polling, reload the canonical drafts already created (preserved), notify once.
 function _roAiPlanFinishCancelled_(scope, announce) {

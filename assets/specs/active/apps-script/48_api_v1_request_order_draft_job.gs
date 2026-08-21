@@ -51,6 +51,34 @@ function reqDraftJobFoldCount_(counts, status) {
   else if (status === 'NOT_READY') counts.notReady++;
   else counts.failed++;
 }
+// F1-7N-FA-3C-PRE3-R2 — bounded DIAGNOSTIC reason aggregation. The coarse `counts` cannot distinguish WHY a SKU was
+// NOT_READY/FAILED (e.g. UNITS_PER_CARTON_UNAVAILABLE vs ORDER_PLANNING_GAP_NOT_READY vs RECOMMENDATION_SCHEMA_NOT_READY).
+// This folds each non-success SKU's canonical reason code into a size-bounded histogram + a small SKU sample, stored in
+// the SAME Script-Property job state and surfaced on the public envelope. Diagnostic only: it NEVER alters outcome
+// classification, invents codes, or grows unbounded (distinct codes capped → OTHER; samples capped per code).
+var REQ_DRAFT_JOB_MAX_REASON_CODES_ = 16;      // distinct reason codes retained; overflow folds into 'OTHER'
+var REQ_DRAFT_JOB_MAX_REASON_SAMPLES_ = 5;     // affected-SKU sample retained per reason code
+var REQ_DRAFT_JOB_REASON_CODE_MAXLEN_ = 48;    // truncate a long code so the state stays well under the safe budget
+function reqDraftJobReasonCode_(outcome) {
+  var s = outcome && outcome.status;
+  if (s === 'CREATED' || s === 'REUSED' || s === 'REGENERATED') return '';   // success carries no diagnostic reason
+  var code = (outcome && outcome.code != null && String(outcome.code) !== '') ? String(outcome.code) : String(s || 'UNKNOWN');
+  code = code.replace(/\s+/g, ' ').trim();
+  if (code.length > REQ_DRAFT_JOB_REASON_CODE_MAXLEN_) code = code.slice(0, REQ_DRAFT_JOB_REASON_CODE_MAXLEN_);
+  return code || 'UNKNOWN';
+}
+function reqDraftJobFoldReason_(state, outcome) {
+  var code = reqDraftJobReasonCode_(outcome);
+  if (!code) return;
+  if (!state.reasonCounts) state.reasonCounts = {};
+  if (!state.reasonSamples) state.reasonSamples = {};
+  var rc = state.reasonCounts;
+  if (!Object.prototype.hasOwnProperty.call(rc, code) && Object.keys(rc).length >= REQ_DRAFT_JOB_MAX_REASON_CODES_) code = 'OTHER';
+  rc[code] = (rc[code] || 0) + 1;
+  var samples = state.reasonSamples[code] || (state.reasonSamples[code] = []);
+  var sku = outcome && outcome.sku ? String(outcome.sku) : '';
+  if (sku && samples.length < REQ_DRAFT_JOB_MAX_REASON_SAMPLES_ && samples.indexOf(sku) === -1) samples.push(sku);
+}
 function reqDraftJobNewState_(runId, scope, skuList, gapBinding, nowStr, nowMs, planningCycle, opts) {
   var statuses = []; for (var i = 0; i < skuList.length; i++) statuses.push('');
   return {
@@ -59,6 +87,7 @@ function reqDraftJobNewState_(runId, scope, skuList, gapBinding, nowStr, nowMs, 
     cursor: 0, total: skuList.length, skuList: skuList, statuses: statuses,
     gapBinding: { jobRunId: (gapBinding && gapBinding.jobRunId) || null, jobStatus: (gapBinding && gapBinding.jobStatus) || 'NONE' },
     counts: { created: 0, reused: 0, regenerated: 0, needsConfirmation: 0, blockedConflict: 0, notReady: 0, failed: 0 },
+    reasonCounts: {}, reasonSamples: {},   // F1-7N-FA-3C-PRE3-R2 — bounded diagnostic reason histogram + SKU samples
     startedAt: nowStr, updatedAt: nowStr, startedAtMs: nowMs || 0, updatedAtMs: nowMs || 0, finishedAt: null, cancelledAt: null, lastError: null,
     lease: null,
     mode: (opts && opts.mode) || 'MANUAL_REGENERATE', draft_purpose: (opts && opts.draft_purpose) || 'regular',
@@ -69,6 +98,7 @@ function reqDraftJobNewState_(runId, scope, skuList, gapBinding, nowStr, nowMs, 
 function reqDraftJobPublicState_(s) {
   return { runId: s.runId, scope: s.scope, planningCycle: s.planningCycle, status: s.status,
     cursor: s.cursor, total: s.total, counts: s.counts,
+    reasonCounts: s.reasonCounts || {}, reasonSamples: s.reasonSamples || {},   // F1-7N-FA-3C-PRE3-R2 diagnostic distribution
     startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, cancelledAt: s.cancelledAt, lastError: s.lastError,
     hasMore: (!reqDraftJobIsTerminal_(s.status) && s.cursor < s.total) };
 }
@@ -211,6 +241,7 @@ function reqDraftJobContinue_(env, requestedRunId) {
       if (s.cursor !== idx) return { skip: true };                                              // durable cursor already past → idempotent no-op
       s.statuses[idx] = reqDraftJobCodeForStatus_(outcome.status);
       reqDraftJobFoldCount_(s.counts, outcome.status);
+      reqDraftJobFoldReason_(s, outcome);   // F1-7N-FA-3C-PRE3-R2 — bounded diagnostic reason distribution (why non-success)
       s.cursor = idx + 1;
       var nm = env.nowMs ? env.nowMs() : 0;
       s.lease = { owner: token, expiresAtMs: nm + REQ_DRAFT_JOB_LEASE_MS_ };                    // renew lease each SKU
