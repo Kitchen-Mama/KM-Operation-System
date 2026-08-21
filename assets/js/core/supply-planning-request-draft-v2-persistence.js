@@ -396,6 +396,107 @@
       .map(flatReadbackDto);
   }
 
+  // ---- R4 one-time MIGRATION planner (pure; orchestrates the frozen KMRDV2 authority — no second algorithm) -----
+  // Legacy {headers[], linesByDraftId} → the exact staging population for request_order_allocation_drafts_v2:
+  //   * drift-gate against the accepted R3 shape (halt on any change),
+  //   * select ONLY actionable headers (frozen classifier notion; proven == has-lines for the accepted set),
+  //   * flatten each via KMRDV2.flattenLegacy (ids PRESERVED VERBATIM — never re-minted),
+  //   * hard-gate the submitted population.
+  // Returns { ok, halt?, summary, report, stagingHeaders, stagingRows }. Mutates nothing.
+  function draftActionable_(lines) { var a = false; (lines || []).forEach(function (l) { if (nn(l.recommended_qty) > 0 || nn(l.order_qty) > 0) a = true; }); return a; }
+  function planMigration(headers, linesByDraftId, opts) {
+    headers = headers || []; linesByDraftId = linesByDraftId || {}; opts = opts || {};
+    var expect = opts.expect || {};
+    var summary = KMRDV2.summarizeMigration(headers, linesByDraftId);
+    // ---- drift gate: the live set must still match the accepted R3 shape ----
+    var checks = [
+      ['TOTAL_HEADERS', summary.TOTAL_HEADERS], ['ACTIONABLE', summary.ACTIONABLE], ['ALL_ZERO', summary.ALL_ZERO],
+      ['NEEDS_MANUAL_REVIEW', summary.NEEDS_MANUAL_REVIEW], ['BLOCKED_CONFLICT', summary.BLOCKED_CONFLICT],
+      ['ORPHAN_LINES', summary.ORPHAN_LINES], ['DUPLICATE_T1', summary.DUPLICATE_T1], ['DUPLICATE_T2', summary.DUPLICATE_T2],
+      ['DUPLICATE_T3', summary.DUPLICATE_T3], ['T4_PRESENT', summary.T4_PRESENT]
+    ];
+    var drift = [];
+    checks.forEach(function (c) { if (expect[c[0]] !== undefined && Number(expect[c[0]]) !== Number(c[1])) drift.push({ field: c[0], expected: expect[c[0]], live: c[1] }); });
+    if (summary.NEEDS_MANUAL_REVIEW > 0 || summary.BLOCKED_CONFLICT > 0) drift.push({ field: 'UNSAFE_ROWS', expected: 0, live: summary.NEEDS_MANUAL_REVIEW + summary.BLOCKED_CONFLICT });
+    if (drift.length) return { ok: false, halt: 'R4_LIVE_DATA_DRIFT_FROM_R3', summary: summary, drift: drift };
+
+    // ---- select actionable headers + flatten (ids verbatim) ----
+    var stagingRows = [], preservedIds = 0, convertedIds = 0, rd = 0, rad = 0, submittedMigrated = 0, hasLines = 0;
+    var submittedExpected = 0, seenId = {}, dupSelect = 0;
+    headers.forEach(function (h) {
+      var id = str(h.request_allocation_draft_id), lines = linesByDraftId[id] || [];
+      if (str(h.status) === 'submitted') submittedExpected++;
+      if (lines.length > 0) hasLines++;
+      if (!draftActionable_(lines)) return;   // drop non-actionable (all-zero) from V2
+      var row = KMRDV2.flattenLegacy(h, lines);
+      if (str(row.request_allocation_draft_id) === id && id !== '') preservedIds++; else convertedIds++;
+      if (seenId[id]) dupSelect++; seenId[id] = 1;
+      var fam = /^RD::/.test(id) ? 'RD' : (/^RAD-/.test(id) ? 'RAD' : 'OTHER');
+      if (fam === 'RD') rd++; else if (fam === 'RAD') rad++;
+      if (str(row.status) === 'submitted') submittedMigrated++;
+      stagingRows.push(row);
+    });
+    // ---- hard gates ----
+    if (convertedIds !== 0) return { ok: false, halt: 'MIGRATION_ID_CONVERTED', summary: summary, convertedIds: convertedIds };
+    if (dupSelect !== 0) return { ok: false, halt: 'MIGRATION_DUPLICATE_ID', summary: summary };
+    if (expect.SUBMITTED !== undefined && submittedExpected !== Number(expect.SUBMITTED)) return { ok: false, halt: 'R4_LIVE_DATA_DRIFT_FROM_R3', summary: summary, drift: [{ field: 'SUBMITTED', expected: expect.SUBMITTED, live: submittedExpected }] };
+    if (submittedMigrated !== submittedExpected) return { ok: false, halt: 'SUBMITTED_NOT_FULLY_MIGRATED', summary: summary, submittedExpected: submittedExpected, submittedMigrated: submittedMigrated };
+    if (stagingRows.length !== summary.ACTIONABLE) return { ok: false, halt: 'ACTIONABLE_SELECTION_MISMATCH', summary: summary, selected: stagingRows.length };
+    if (hasLines !== summary.ACTIONABLE) return { ok: false, halt: 'HAS_LINES_NE_ACTIONABLE', summary: summary, hasLines: hasLines };   // proves the R3 equivalence still holds
+
+    var report = {
+      SOURCE_HEADERS: headers.length, ACTIONABLE: summary.ACTIONABLE,
+      NON_ACTIONABLE_DROPPED_FROM_V2: summary.ALL_ZERO, MIGRATE_ROWS: stagingRows.length,
+      SUBMITTED_SOURCE: submittedExpected, SUBMITTED_MIGRATED: submittedMigrated,
+      RD_MIGRATED: rd, RAD_MIGRATED: rad, PRESERVED_IDS: preservedIds, CONVERTED_IDS: convertedIds,
+      TARGET_HEADERS: KMRDV2.V2_HEADERS.length, TARGET_ROWS: stagingRows.length
+    };
+    return { ok: true, summary: summary, report: report, stagingHeaders: KMRDV2.V2_HEADERS.slice(), stagingRows: stagingRows };
+  }
+
+  // ---- R4 READ-ONLY staging validator: independently verify request_order_allocation_drafts_v2 before the swap ---
+  // stagingHeaders/stagingRows = the written staging tab; sourceHeaders/sourceLinesByDraftId = the untouched legacy.
+  function validateStaging(stagingHeaders, stagingRows, sourceHeaders, sourceLinesByDraftId, opts) {
+    opts = opts || {}; sourceHeaders = sourceHeaders || []; sourceLinesByDraftId = sourceLinesByDraftId || {};
+    var V = KMRDV2.V2_HEADERS;
+    var schemaOk = Array.isArray(stagingHeaders) && stagingHeaders.length === V.length && stagingHeaders.join('|') === V.join('|');
+    // no retired columns present
+    var retired = ['request_allocation_line_id', 'category_snapshot', 'series_snapshot', 't4_month', 't4_order_qty', 'net_order_need_snapshot', 'factory_available_qty_snapshot'];
+    var noRetired = (stagingHeaders || []).every(function (h) { return retired.indexOf(h) === -1 && !/^t4_/.test(h); });
+    schemaOk = schemaOk && noRetired;
+    var expectRows = (opts.expectRows !== undefined) ? Number(opts.expectRows) : null;
+    var rowCountOk = expectRows === null ? (stagingRows.length > 0) : (stagingRows.length === expectRows);
+    // id set + uniqueness
+    var ids = {}, idDup = 0; stagingRows.forEach(function (r) { var id = str(r.request_allocation_draft_id); if (ids[id]) idDup++; ids[id] = 1; });
+    var idSetOk = idDup === 0 && Object.keys(ids).length === stagingRows.length;
+    // submitted present: every source submitted id appears in staging
+    var srcSubmitted = sourceHeaders.filter(function (h) { return str(h.status) === 'submitted'; }).map(function (h) { return str(h.request_allocation_draft_id); });
+    var submittedSetOk = srcSubmitted.every(function (id) { return ids[id] === 1; });
+    // natural-scope uniqueness among ACTIVE migrated rows (no duplicate active scope)
+    var scopeSeen = {}, scopeDup = 0;
+    stagingRows.forEach(function (r) {
+      if (ACTIVE_FLAT_STATUSES[str(r.status)] !== 1) return;
+      var k = SCOPE_FIELDS.map(function (f) { return str(r[f]); }).join('|') + '|' + str(r.planning_cycle);
+      if (scopeSeen[k]) scopeDup++; scopeSeen[k] = 1;
+    });
+    var naturalScopeOk = scopeDup === 0;
+    // tier values match the source lines (order/recommended/status per bucket) for each migrated id
+    var tierOk = true;
+    stagingRows.forEach(function (r) {
+      var id = str(r.request_allocation_draft_id), lines = sourceLinesByDraftId[id] || [], byB = {};
+      lines.forEach(function (l) { byB[str(l.request_bucket).toUpperCase()] = l; });
+      TIERS.forEach(function (t) {
+        var p = t.toLowerCase() + '_', l = byB[t];
+        if (!l) { if (nn(r[p + 'order_qty']) !== 0 || nn(r[p + 'recommended_qty']) !== 0) tierOk = false; return; }
+        if (nn(r[p + 'order_qty']) !== nn(l.order_qty)) tierOk = false;
+        if (nn(r[p + 'recommended_qty']) !== nn(l.recommended_qty)) tierOk = false;
+      });
+    });
+    var ready = schemaOk && rowCountOk && idSetOk && submittedSetOk && naturalScopeOk && tierOk;
+    return { SCHEMA_OK: schemaOk, ROW_COUNT_OK: rowCountOk, ID_SET_OK: idSetOk, SUBMITTED_SET_OK: submittedSetOk,
+      TIER_VALUES_OK: tierOk, NATURAL_SCOPE_OK: naturalScopeOk, READY_FOR_SWAP: ready ? 'YES' : 'NO' };
+  }
+
   return {
     RECOMMENDATION_TYPE: RECOMMENDATION_TYPE, HEADER_TABLE: HEADER_TABLE,
     v2TableSpecs: v2TableSpecs, v2ExpectedHeaderCount: v2ExpectedHeaderCount,
@@ -405,6 +506,7 @@
     tokenForDraft: tokenForDraft, editMonthlyFlat: editMonthlyFlat, submitMonthlyFlat: submitMonthlyFlat,
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
-    VERSION: 'kmrdv2p-fa3c-r2b3-1'
+    planMigration: planMigration, validateStaging: validateStaging,
+    VERSION: 'kmrdv2p-fa3c-r4-1'
   };
 });
