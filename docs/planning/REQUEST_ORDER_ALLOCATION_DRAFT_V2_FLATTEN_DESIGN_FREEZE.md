@@ -265,4 +265,32 @@ Net Order Need · Suggested Qty · FLOOR / ≤100% proportional · §41 factory 
 
 **HALTED → R2b (CANONICAL BLOCKER, not resolved by R1):** the live-path wiring (route MONTHLY_ORDER generation/readback/edit/submit/Send through KMRDV2 in `47_`/`24_`/`15_`/`request-order.js`; bundle rebuild) is deferred because the recommendation-persistence engine (`KMPB`/`KMPPB`/`KMPR`/`KMPC`) and the shared draft-id/scope core are **shared with WEEKLY_SHIPPING**, which has genuine variable per-source lines and a **`YYYY-Www`** planning_cycle — so the flat MONTHLY model cannot be implemented by modifying the shared engine or shared id core (YYYY-MM normalization there would break WEEKLY). **R2b must first decide the coexistence contract:** MONTHLY_ORDER routes to the KMRDV2 flat path while WEEKLY_SHIPPING stays on the line engine; divergent readback DTOs; type-scoped schema-gate expectations for the flat table. Until then, no runtime write path targets the flat table and the live model is unchanged.
 
-**PRE3-R3 note:** the type-scoped authorized-schema gate is already present in HEAD by content (no forward-port needed); the outstanding item is the USER Apps Script *sync/deploy* of `24_`+`90_`, plus `recommendation_calculation_runs` provisioning — both still required by the eventual V2 wiring.
+**PRE3-R3 note:** the type-scoped authorized-schema gate is already present in HEAD by content (no forward-port needed); the outstanding item is the USER Apps Script *sync/deploy* of `24_`+`90_`.
+
+**`recommendation_calculation_runs` — LIVE SCHEMA VERIFIED PRESENT (2026-08-21, USER):** live schema EXPECTED=16, ACTUAL=16, MISSING=[], DUPLICATE=[], FIRST_ORDER_MISMATCH_INDEX=-1. The token `RECOMMENDATION_CALCULATION_RUNS_LIVE_PROVISION_PENDING` is **STALE — cleared**; superseded by `RECOMMENDATION_CALCULATION_RUNS_LIVE_SCHEMA_VERIFIED_PRESENT`. Do NOT re-provision. The V2 wiring audits code compatibility only.
+
+---
+
+## 18. Coexistence contract freeze (F1-7N-FA-3C-DRAFT-MODEL-R2b, 2026-08-21)
+
+**This is a PERSISTENCE-MODEL split, NOT a formula-engine split.** One recommendation orchestration/governance; two type-scoped persistence SHAPES.
+
+| Type | Persistence model | Cycle | Runtime shape owner | Tables written |
+|---|---|---|---|---|
+| **MONTHLY_ORDER** | ONE flat `request_order_allocation_drafts` row / SKU scope | `YYYY-MM` | **KMRDV2** (shape/lifecycle/id) | `request_order_allocation_drafts` + `recommendation_calculation_runs` — **NEVER** `request_order_allocation_draft_lines` |
+| **WEEKLY_SHIPPING** | existing header + variable per-source lines | `YYYY-Www` | existing line engine (KMPB/KMPPB/KMPR line path) | `shipping_allocation_drafts` + `_draft_lines` + `recommendation_calculation_runs` — **unchanged** |
+
+**Responsibility classification (audit of the shared engine):**
+- **SHARED_GOVERNANCE (stays in KMPW/KMORCH/KMPR/KMPL — reused by both, NOT duplicated):** recommendation_type dispatch, `calculation_run_id`, `formula_version`, `source_data_as_of`, LockService/concurrency, optimistic-token authority, run journal (`recommendation_calculation_runs`), schema-safety framework, actor/timestamps, error envelope.
+- **TYPE-SCOPED SHAPE (must NOT stay shared; MONTHLY→KMRDV2, WEEKLY→line path):** Draft row projection, tier persistence, cycle normalization, line natural keys, user-edit fingerprint, schema-gate expected tables/headers, readback DTO.
+
+**FROZEN DESIGN DECISION — shared-governance + type-scoped SHAPE ADAPTER (NOT a parallel persister).** The eventual wiring injects, per `recommendationType`, a shape adapter (projector + table spec + readback) into the SHARED governance path: MONTHLY_ORDER → KMRDV2 flat adapter; WEEKLY_SHIPPING → the existing line adapter. This satisfies §20 (KMRDV2 remains the single authority for flat status-derivation / deterministic id / lifecycle / tier protection — no `.gs` copy) and keeps the hard, risky governance (locking, journaling, active-draft resolution, optimistic token) unchanged for BOTH types. **One production dispatcher owns type→shape; no scattered `if (MONTHLY_ORDER)` branches.**
+
+**Type-scoped schema gate:** for MONTHLY_ORDER the authorized set becomes `{request_order_allocation_drafts (V2 53-col), recommendation_calculation_runs}` — the line table and the shipping_allocation tables MUST NOT be required. WEEKLY_SHIPPING keeps its existing required set. (Builds on the PRE3-R3 type-scope; adds a V2 flat spec for MONTHLY.)
+
+### R2b implementation status & decomposition (HALTED before live flip)
+R2b did **not** land the live flip: the flip is atomic (schema-gate + persister + readback must change together, else the live path breaks) and it edits the shared engine (WEEKLY blast radius) — too large to implement AND verify to the 0-regression bar in one turn without a partial, live-breaking half-state. Decomposition (each its own bounded, tests-only, no-live-DB slice):
+- **R2b-1** — bundle KMRDV2 via the sanctioned manifest (MODULE_ORDER + GLOBALS) so Apps Script can call the single authority; `--check` + bundle-sync test. (No runtime behavior change; additive namespace.)
+- **R2b-2** — shared-governance SHAPE-ADAPTER injection for MONTHLY (projector=KMRDV2, flat table spec, flat readback) + MONTHLY-V2 schema-gate spec + generation wiring in `24_`/`47_`; WEEKLY path untouched. Tests-only, no live DB. This is the atomic backend flip.
+- **R2b-3** — frontend `request-order.js` flat DTO read / per-tier edit / submit_buckets / Send Request explosion via `KMRDV2.explodeSendRequestLines`. Frontend-only.
+- **R3** — USER runs the read-only diagnostic; resolve conflicts. **R4** — USER-authorized DB provision + cutover.
