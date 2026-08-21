@@ -487,17 +487,22 @@ function doPost(e) {
     // START snapshots eligible READY-gap SKUs; the client polls CONTINUE (bounded slice each) until DONE; STATUS is
     // read-only; CANCEL is terminal (created drafts preserved). No time trigger / scheduler / browser fan-out. The
     // per-SKU authority is the SAME R4E2 locked persister (recommended_qty verbatim from order_planning_gap).
+    // F1-7N-FA-3C-PRE2-R2 — the 48_ job handlers return a RAW gapBatchEnvelope_ object (same convention as the 46_
+    // gap-job family); the router MUST serialize it through jsonResponse_ (ContentService.JSON) so the Web App emits
+    // a CORS-readable response via the googleusercontent redirect. Returning the raw object made doPost emit a
+    // non-ContentService HTML page with no Access-Control-Allow-Origin → the browser fetch CORS-rejected it and the
+    // client surfaced HTTP_TRANSPORT_ERROR. Mirror the known-good orderPlanningGap.job.start dispatch above.
     if (action === 'requestOrderDraft.job.start') {
-      return handleStartRequestOrderDraftJob_(body);
+      return jsonResponse_(handleStartRequestOrderDraftJob_(body));
     }
     if (action === 'requestOrderDraft.job.continue') {
-      return handleContinueRequestOrderDraftJob_(body);
+      return jsonResponse_(handleContinueRequestOrderDraftJob_(body));
     }
     if (action === 'requestOrderDraft.job.status') {
-      return handleGetRequestOrderDraftJobStatus_(body);
+      return jsonResponse_(handleGetRequestOrderDraftJobStatus_(body));
     }
     if (action === 'requestOrderDraft.job.cancel') {
-      return handleCancelRequestOrderDraftJob_(body);
+      return jsonResponse_(handleCancelRequestOrderDraftJob_(body));
     }
 
     // Phase 2C Round 1H — LOCKED user-decision-edit boundary (25_): edit planned_qty/order_qty/etc under
