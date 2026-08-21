@@ -47,6 +47,7 @@ eval(extractFn(RO, '_roAiPlanCancelBtn_'));
 eval(extractFn(RO, '_roAiPlanSetProgress_'));
 eval(extractFn(RO, '_roAiPlanResetUi_'));
 eval(extractFn(RO, '_roAiPlanDelay_'));
+eval(extractFn(RO, '_roAiPlanDoneMsg_'));   // F1-7N-FA-3C-PRE3-R1 — terminal-count message builder used by _roAiPlanFinishDone_
 eval(extractFn(RO, '_roRunAiPlanJob_'));
 eval(extractFn(RO, '_roAiPlanDriveContinue_'));
 eval(extractFn(RO, '_roAiPlanFinishDone_'));
@@ -63,7 +64,7 @@ eq(_roAiPlanStartDisposition_({ success: true, data: { runId: 'R1', status: 'RUN
 eq(_roAiPlanStartDisposition_({ success: true, data: { alreadyRunning: true, busy: true, sameScope: false } }).action, 'BUSY', '§3 another scope owns the single slot → BUSY (never a duplicate start)');
 eq(_roAiPlanStartDisposition_({ success: false, error: { code: 'ORDER_PLANNING_GAP_NOT_READY' } }), { action: 'FAIL', code: 'ORDER_PLANNING_GAP_NOT_READY' }, 'START error surfaces the truthful code');
 // CONTINUE — terminal handling (§4)
-eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'DONE', cursor: 3, total: 3, hasMore: false } }), { action: 'DONE', done: 3, total: 3 }, 'CONTINUE DONE');
+eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'DONE', cursor: 3, total: 3, hasMore: false } }), { action: 'DONE', done: 3, total: 3, counts: null }, 'CONTINUE DONE (carries counts; null when the terminal state omits them)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'RUNNING', cursor: 25, total: 93, hasMore: true } }), { action: 'MORE', done: 25, total: 93 }, 'CONTINUE hasMore → MORE (keep driving)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'FAILED', lastError: 'GAP_GENERATION_CHANGED' } }), { action: 'FAILED', code: 'GAP_GENERATION_CHANGED' }, 'H CONTINUE FAILED carries lastError (fail closed)');
 eq(_roAiPlanContinueDisposition_({ success: true, data: { status: 'CANCELLED' } }).action, 'CANCELLED', 'I CONTINUE CANCELLED is its own terminal (not FAILED)');

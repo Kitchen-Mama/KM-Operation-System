@@ -3715,12 +3715,36 @@ function _roAiPlanContinueDisposition_(res) {
   if (!res || !res.success) return { action: 'FAIL', code: (res && res.error && res.error.code) || 'AI_PLAN_CONTINUE_FAILED' };
   var d = res.data || {};
   if (d.busy) return { action: 'BUSY' };
-  if (d.status === 'DONE') return { action: 'DONE', done: d.cursor || 0, total: d.total || 0 };
+  if (d.status === 'DONE') return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null };
   if (d.status === 'FAILED') return { action: 'FAILED', code: d.lastError || 'FAILED' };   // GAP_GENERATION_CHANGED, etc.
   if (d.status === 'CANCELLED') return { action: 'CANCELLED' };
   if (d.status === 'NONE') return { action: 'NONE' };
   if (d.hasMore || (d.cursor != null && d.total != null && d.cursor < d.total)) return { action: 'MORE', done: d.cursor || 0, total: d.total || 0 };
-  return { action: 'DONE', done: d.cursor || 0, total: d.total || 0 };
+  return { action: 'DONE', done: d.cursor || 0, total: d.total || 0, counts: d.counts || null };
+}
+// PURE truthful terminal-count message (§ observability, F1-7N-FA-3C-PRE3-R1). Consumes the job's canonical terminal
+// `counts` bucket ({created,reused,regenerated,needsConfirmation,blockedConflict,notReady,failed}) and NEVER reports a
+// blanket success: success is created+reused+regenerated. When that is 0 it states 0 drafts were created and that
+// Order Allocation was not updated; a partial run surfaces both the successful and the unsuccessful buckets. A null
+// counts (older backend that does not expose counts) falls back to the prior neutral completion message.
+function _roAiPlanDoneMsg_(counts) {
+  if (!counts) return 'AI Plan completed. Order Allocation has been updated.';
+  function n(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0; }
+  var created = n(counts.created), reused = n(counts.reused), regenerated = n(counts.regenerated);
+  var needsConfirmation = n(counts.needsConfirmation), blockedConflict = n(counts.blockedConflict);
+  var notReady = n(counts.notReady), failed = n(counts.failed);
+  var success = created + reused + regenerated;
+  var parts = [created + ' created'];
+  if (reused) parts.push(reused + ' reused');
+  if (regenerated) parts.push(regenerated + ' regenerated');
+  if (needsConfirmation) parts.push(needsConfirmation + ' need confirmation');
+  if (blockedConflict) parts.push(blockedConflict + ' blocked');
+  if (notReady) parts.push(notReady + ' not ready');
+  if (failed) parts.push(failed + ' failed');
+  var summary = parts.join(', ');
+  if (success === 0) return 'AI Plan completed but created 0 drafts (' + summary + '). Order Allocation was not updated.';
+  if (needsConfirmation + blockedConflict + notReady + failed > 0) return 'AI Plan completed with issues: ' + summary + '. Review Order Allocation.';
+  return 'AI Plan completed: ' + summary + '. Order Allocation has been updated.';
 }
 // PURE truthful terminal message (never converts a backend failure into a success — §4).
 function _roAiPlanFailMsg_(code) {
@@ -3783,7 +3807,7 @@ function _roAiPlanDriveContinue_(scope) {
       var disp = _roAiPlanContinueDisposition_(res);
       if (disp.action === 'BUSY') { _roAiPlanDelay_(step, _RO_AI_PLAN_BUSY_RETRY_MS); return; }   // §3 respect a live lease
       if (disp.action === 'MORE') { _roAiPlanSetProgress_('AI Plan · ' + disp.done + ' / ' + (_roAiPlanTotal || disp.total || 0), true); _roAiPlanDelay_(step, _RO_AI_PLAN_CONTINUE_DELAY_MS); return; }
-      if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope); return; }
+      if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope, disp); return; }
       if (disp.action === 'CANCELLED') { _roAiPlanFinishCancelled_(scope, true); return; }   // externally cancelled → announce (the user-cancel path returned early above)
       if (disp.action === 'FAILED' || disp.action === 'FAIL') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return; }   // §4 fail closed
       _roAiPlanResetUi_();   // NONE / unknown → stop silently (no success claim)
@@ -3791,12 +3815,14 @@ function _roAiPlanDriveContinue_(scope) {
   }
   step();
 }
-// §6/§7/§17 — DONE: ONE scope getActive read-back → render Order Allocation from persisted drafts → one success toast.
-function _roAiPlanFinishDone_(scope) {
+// §6/§7/§17 — DONE: ONE scope getActive read-back → render Order Allocation from persisted drafts → ONE truthful toast
+// that surfaces the real terminal counts (never a blanket success when 0 drafts were created — F1-7N-FA-3C-PRE3-R1).
+function _roAiPlanFinishDone_(scope, disp) {
   _roAiPlanSetProgress_('AI Plan · Reading drafts…', true);
+  var msg = _roAiPlanDoneMsg_(disp && disp.counts);
   return Promise.resolve(_roLoadCanonicalDraftsForScope_(scope)).then(function () {
-    _roAiPlanResetUi_(); _roNotify_('AI Plan completed. Order Allocation has been updated.');
-  }).catch(function () { _roAiPlanResetUi_(); });
+    _roAiPlanResetUi_(); _roNotify_(msg);
+  }).catch(function () { _roAiPlanResetUi_(); _roNotify_(msg); });
 }
 // §18 — CANCELLED is NOT a failure: stop polling, reload the canonical drafts already created (preserved), notify once.
 function _roAiPlanFinishCancelled_(scope, announce) {
