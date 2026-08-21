@@ -228,143 +228,166 @@ function TEMP_auditAll26RequestOrderDraftV2_() {
 }
 
 // ================================================================================================================
-// F1-7N-FA-3C-DRAFT-MODEL-R4B4 — LIVE ACTIVE-SCOPE TOKEN DIAGNOSTIC (strictly READ-ONLY)
+// F1-7N-FA-3C-DRAFT-MODEL-R4B4/R4B5 — LIVE ACTIVE-SCOPE TOKEN + PRODUCTION-CYCLE-TRANSPORT DIAGNOSTIC (READ-ONLY)
 // ----------------------------------------------------------------------------------------------------------------
-// Reads ONLY order_planning_gap + marketplace_skus. For each of the SIX architect-frozen active source keys it:
-//   (1) finds every order_planning_gap candidate by company+country+sku (marketplace NOT filtered → all raw tokens
-//       exposed), projecting each candidate into the CURRENT flat-V2 AI-Plan query scope (byte-equivalent to
-//       recGenBuildGapDraftBody_ 47_:225-227, or that pure function itself when present & facts-ready);
-//   (2) finds every marketplace_skus master candidate by country+master-sku (company optional per the tab's own
-//       country+marketplace+sku uniqueness), exposing every raw marketplace token;
-//   (3) simulates reuse with the REAL KMRDV2P.loadActiveFlat / scopeMatches_ (exact trim-only, case-sensitive) —
-//       never case-folding, trimming-equivalence, aliasing, or a marketplace map.
-// It NEVER writes, inserts, renames, clears, deletes, mutates the legacy/line/staging tabs, flips the flag, or
-// deploys. If either required tab is absent it reports and HALTs without creating it.
+// R4B5 correction (supersedes the R4B4 verdict logic): MARKETPLACE IS PART OF THE NATURAL KEY. Candidate selection
+// matches company+country+sku+CANONICAL MIGRATED marketplace (all exact) — so a SKU sold on several marketplaces is
+// NOT ambiguous; ONLY ≥2 candidates matching the COMPLETE canonical scope are ambiguous. Token-scope match,
+// current-query eligibility (calculation_status), and would-be reuse are reported SEPARATELY (a BLOCKED row can
+// still carry the correct future identity). The production cycle transport is traced explicitly: a Date-typed
+// calculation_month is stringified by r4e2Str_ (47_:174) → normalizePlanningCycleMonthly REJECTS it, so production
+// does NOT canonicalize the Date — a RUNTIME_DATE_CYCLE_TRANSPORT_DEFECT surfaced per row (project-tz month IS
+// 2026-08, never the UTC-July slice). Reads ONLY order_planning_gap + marketplace_skus; writes NOTHING. The ONLY
+// marketplace mapping is the two frozen source→migrated entries below, applied to the LEGACY input — NOT a global alias.
 var TEMP_V2_GAP_TAB_ = 'order_planning_gap';
 var TEMP_V2_MARKETPLACE_SKUS_TAB_ = 'marketplace_skus';
+var TEMP_R4B5_EXPECTED_CYCLE_ = '2026-08';   // architect-frozen historical migration cycle for ALL six rows
+// Frozen source→migrated marketplace map — applies ONLY to this known legacy migration input (NOT a global alias).
+var TEMP_R4B5_MKT_MAP_ = { 'Amazon': 'Amazon', 'KM Walmart': 'Walmart' };
 
-// The SIX exact post-normalization active source keys (R4B4 architect input). planning_cycle is the canonical
-// YYYY-MM FIELD (independent of the legacy id string). id #6 (RD) is embedded BYTE-FOR-BYTE — never re-minted.
+// The SIX post-normalization active keys (R4B5 architect input). planning_cycle = frozen canonical 2026-08.
+// source_marketplace = the LEGACY token; migrated_marketplace = the canonical token after the frozen map. id #6 (RD)
+// is embedded BYTE-FOR-BYTE — never re-minted (its legacy cycle text + scopeKey ordering are preserved verbatim).
 var TEMP_R4B4_ACTIVE_KEYS_ = [
-  { seq: 1, id: 'RAD-A92D17B1-8', planning_cycle: '2026-07', company: 'ResUS', country: 'US', marketplace: 'Amazon',     sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
-  { seq: 2, id: 'RAD-3A0A8227-F', planning_cycle: '2026-07', company: 'ResTW', country: 'CA', marketplace: 'Amazon',     sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
-  { seq: 3, id: 'RAD-06053044-1', planning_cycle: '2026-07', company: 'KM',    country: 'US', marketplace: 'KM Walmart', sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
-  { seq: 4, id: 'RAD-72ABD506-3', planning_cycle: '2026-07', company: 'ResUS', country: 'US', marketplace: 'Amazon',     sku: 'CO5600-R', draft_purpose: 'regular', status: 'draft' },
-  { seq: 5, id: 'RAD-17DC0322-0', planning_cycle: '2026-07', company: 'ResUS', country: 'US', marketplace: 'Amazon',     sku: 'CO5600-W', draft_purpose: 'regular', status: 'draft' },
-  { seq: 6, id: 'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R', planning_cycle: '2026-08', company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'SP5120-R', draft_purpose: 'regular', status: 'draft' }
+  { seq: 1, id: 'RAD-A92D17B1-8', planning_cycle: '2026-08', company: 'ResUS', country: 'US', source_marketplace: 'Amazon',     migrated_marketplace: 'Amazon',  sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
+  { seq: 2, id: 'RAD-3A0A8227-F', planning_cycle: '2026-08', company: 'ResTW', country: 'CA', source_marketplace: 'Amazon',     migrated_marketplace: 'Amazon',  sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
+  { seq: 3, id: 'RAD-06053044-1', planning_cycle: '2026-08', company: 'KM',    country: 'US', source_marketplace: 'KM Walmart', migrated_marketplace: 'Walmart', sku: 'CO1200-O', draft_purpose: 'regular', status: 'draft' },
+  { seq: 4, id: 'RAD-72ABD506-3', planning_cycle: '2026-08', company: 'ResUS', country: 'US', source_marketplace: 'Amazon',     migrated_marketplace: 'Amazon',  sku: 'CO5600-R', draft_purpose: 'regular', status: 'draft' },
+  { seq: 5, id: 'RAD-17DC0322-0', planning_cycle: '2026-08', company: 'ResUS', country: 'US', source_marketplace: 'Amazon',     migrated_marketplace: 'Amazon',  sku: 'CO5600-W', draft_purpose: 'regular', status: 'draft' },
+  { seq: 6, id: 'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R', planning_cycle: '2026-08', company: 'ResUS', country: 'US', source_marketplace: 'Amazon', migrated_marketplace: 'Amazon', sku: 'SP5120-R', draft_purpose: 'regular', status: 'draft' }
 ];
 
 function TEMP_str_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function TEMP_ciEq_(a, b) { return TEMP_str_(a).toLowerCase() === TEMP_str_(b).toLowerCase(); }
+function TEMP_projectTz_() { try { return SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone() || 'Etc/GMT'; } catch (e) { return 'Etc/GMT'; } }
 
-// Project ONE order_planning_gap row into the CURRENT flat-V2 AI-Plan query scope. Prefers the proven-pure
-// recGenBuildGapDraftBody_ (47_) when present AND facts-ready; otherwise falls back to the byte-equivalent scope
-// shape (verbatim company/country/marketplace/sku + calculation_month + draft_purpose 'regular' — 47_:225-227).
-// Read-only either way (recGenBuildGapDraftBody_ is inside the __GAPDRAFT_PURE__ block; no DB, no write).
-function TEMP_projectAiQueryScope_(gapRow) {
-  var s = { company: gapRow.company, country: gapRow.country, marketplace: gapRow.marketplace, sku: gapRow.sku };
-  if (typeof recGenBuildGapDraftBody_ === 'function') {
-    try {
-      var b = recGenBuildGapDraftBody_(s, gapRow, null, { draft_purpose: 'regular' });
-      if (b && b.ok && b.body) return { planningCycle: b.body.planningCycle, businessScope: b.body.businessScope, via: 'recGenBuildGapDraftBody_' };
-    } catch (e) { /* facts-not-ready is unrelated to scope tokens → fall through to the scope-only projection */ }
-  }
-  return { planningCycle: TEMP_str_(gapRow.calculation_month),
-    businessScope: { company: s.company, country: s.country, marketplace: s.marketplace, sku: s.sku, draft_purpose: 'regular' },
-    via: 'byte_equivalent_scope_projection' };
+// Project-timezone calendar month of a raw calculation_month → { ok, cycle, via, note }. A Date OBJECT uses
+// Utilities.formatDate in the PROJECT timezone (so 2026-08-01 00:00 Asia/Taipei → 2026-08, NEVER the UTC-July slice);
+// a bare YYYY-MM string is already canonical; an ISO/datetime string is re-parsed in the project tz. Never a clock.
+function TEMP_projectTzCycle_(raw, tz) {
+  if (TEMP_isDate_(raw)) { try { return { ok: true, cycle: Utilities.formatDate(raw, tz, 'yyyy-MM'), via: 'formatDate(project_tz)' }; } catch (e) { return { ok: false, cycle: null, via: 'formatDate_error', note: String(e && e.message || e) }; } }
+  var s = TEMP_str_(raw);
+  var m = /^(\d{4})-(\d{1,2})$/.exec(s);
+  if (m) { var mo = Number(m[2]); if (mo >= 1 && mo <= 12) return { ok: true, cycle: m[1] + '-' + TEMP_pad2_(mo), via: 'already_canonical' }; return { ok: false, cycle: null, via: 'month_out_of_range' }; }
+  var iso = /^(\d{4})-(\d{2})-(\d{2})[T ]/.exec(s);
+  if (iso) { try { return { ok: true, cycle: Utilities.formatDate(new Date(s), tz, 'yyyy-MM'), via: 'iso_string_reparsed(project_tz)', note: 'naive UTC slice would give ' + iso[1] + '-' + iso[2] + ' — NOT authoritative' }; } catch (e2) { return { ok: false, cycle: null, via: 'iso_parse_error' }; } }
+  return { ok: false, cycle: null, via: 'unrecognized' };
 }
 
-// Build the SINGLE proposed migrated V2 row (in canonical V2_HEADERS order) for one frozen key, wrapped as a
-// KMRDV2P sheetSet, so KMRDV2P.loadActiveFlat can decide REUSE/CREATE/BLOCKED_CONFLICT against a live query.
+// The ACTUAL production query cycle for a gap row. Prefers the proven-pure production projector recGenBuildGapDraftBody_
+// (47_) so this is REAL production behavior, NOT a re-implementation; falls back to String(calculation_month) — which
+// is EXACTLY what production's r4e2Str_ (47_:174) does — only when that function is absent (an isolated harness).
+function TEMP_actualProductionQueryCycle_(gapRow) {
+  var scope = { company: gapRow.company, country: gapRow.country, marketplace: gapRow.marketplace, sku: gapRow.sku };
+  if (typeof recGenBuildGapDraftBody_ === 'function') {
+    try { var b = recGenBuildGapDraftBody_(scope, gapRow, null, { draft_purpose: 'regular' }); if (b && b.ok && b.body) return { value: b.body.planningCycle, via: 'recGenBuildGapDraftBody_' }; } catch (e) { /* facts-not-ready ≠ the cycle question */ }
+  }
+  return { value: TEMP_str_(gapRow.calculation_month), via: 'String(calculation_month)==r4e2Str_(47_:174)' };
+}
+function TEMP_normalizesTo_(value, expected) { try { return KMRDV2.normalizePlanningCycleMonthly(value) === expected; } catch (e) { return false; } }
+
+// Build the SINGLE proposed migrated V2 row (canonical V2_HEADERS order) for one key using the MIGRATED marketplace,
+// wrapped as a KMRDV2P sheetSet, so the REAL KMRDV2P.loadActiveFlat can decide REUSE against a canonical query.
 function TEMP_migratedSheetSetFor_(key) {
   var o = {}; KMRDV2.V2_HEADERS.forEach(function (h) { o[h] = ''; });
   o.request_allocation_draft_id = key.id; o.planning_cycle = key.planning_cycle;
-  o.company = key.company; o.country = key.country; o.marketplace = key.marketplace; o.sku = key.sku;
+  o.company = key.company; o.country = key.country; o.marketplace = key.migrated_marketplace; o.sku = key.sku;
   o.draft_purpose = key.draft_purpose; o.status = key.status;
   var row = KMRDV2.V2_HEADERS.map(function (h) { return o[h]; });
   var set = {}; set[KMRDV2P.HEADER_TABLE] = { headers: KMRDV2.V2_HEADERS.slice(), rows: [row] };
   return set;
 }
-// Authoritative reuse verdict via the REAL persistence lookup (exact scopeMatches_ semantics; cycle normalized).
-function TEMP_simReuse_(key, queryCycle, queryScope) {
+// Would the migrated row be REUSED if the AI Plan queried it with the CANONICAL cycle (2026-08) + canonical migrated
+// scope? Independent of the live transport defect — answers "reusable once the R4C seam lands". Uses REAL loadActiveFlat.
+function TEMP_reusableIfQueried_(key) {
   try {
-    var res = KMRDV2P.loadActiveFlat(TEMP_migratedSheetSetFor_(key), { recommendationType: 'MONTHLY_ORDER', planningCycle: queryCycle, businessScope: queryScope });
-    return res.status;   // REUSE (exact match) | CREATE (no match) | BLOCKED_CONFLICT
-  } catch (e) { return 'CYCLE_UNNORMALIZABLE'; }
-}
-// Field-level diff mirroring scopeMatches_ exactly (cycle normalized on both sides; other fields trim-exact).
-function TEMP_scopeFieldDiff_(key, aiQueryKey) {
-  var diffs = [], kc, qc;
-  try { kc = KMRDV2.normalizePlanningCycleMonthly(key.planning_cycle); } catch (e) { kc = '<<' + TEMP_str_(key.planning_cycle) + '>>'; }
-  try { qc = KMRDV2.normalizePlanningCycleMonthly(aiQueryKey.planning_cycle); } catch (e2) { qc = '<<' + TEMP_str_(aiQueryKey.planning_cycle) + '>>'; }
-  if (kc !== qc) diffs.push('planning_cycle');
-  ['company', 'country', 'marketplace', 'sku', 'draft_purpose'].forEach(function (f) { if (TEMP_str_(key[f]) !== TEMP_str_(aiQueryKey[f])) diffs.push(f); });
-  return diffs;
+    var res = KMRDV2P.loadActiveFlat(TEMP_migratedSheetSetFor_(key), { recommendationType: 'MONTHLY_ORDER', planningCycle: TEMP_R4B5_EXPECTED_CYCLE_,
+      businessScope: { company: key.company, country: key.country, marketplace: key.migrated_marketplace, sku: key.sku, draft_purpose: key.draft_purpose } });
+    return res.status === 'REUSE';
+  } catch (e) { return false; }
 }
 
-function TEMP_auditOneActiveScopeKey_(key, gapRows, mpsRows) {
-  // (1) order_planning_gap candidates by company+country+sku (case-insensitive net; marketplace NOT filtered).
-  var gapCands = [];
+function TEMP_auditOneActiveScopeKey_(key, gapRows, mpsRows, tz) {
+  // frozen legacy→migrated marketplace map check (must resolve to the migrated token; unknown legacy → flag)
+  var mappedFromSource = TEMP_R4B5_MKT_MAP_[TEMP_str_(key.source_marketplace)];
+  var mapKnown = (mappedFromSource !== undefined);
+  var tokenMappingApplied = mapKnown && (TEMP_str_(key.source_marketplace) !== TEMP_str_(key.migrated_marketplace));
+
+  // company+country+sku net (case-insensitive) purely to EXPOSE every raw marketplace token; the FULL canonical-scope
+  // exact set additionally requires trim-exact company/country/sku AND marketplace === migrated marketplace. Marketplace
+  // is part of the key, so other-marketplace rows for the same SKU are correctly excluded (NOT ambiguity).
+  var allSkuGap = [], exactGap = [];
   gapRows.forEach(function (r, idx) {
     if (!(TEMP_ciEq_(r.company, key.company) && TEMP_ciEq_(r.country, key.country) && TEMP_ciEq_(r.sku, key.sku))) return;
-    var proj = TEMP_projectAiQueryScope_(r);
-    var aiKey = { planning_cycle: proj.planningCycle, company: proj.businessScope.company, country: proj.businessScope.country, marketplace: proj.businessScope.marketplace, sku: proj.businessScope.sku, draft_purpose: proj.businessScope.draft_purpose };
-    gapCands.push({
-      rowNumber: idx + 2, projectionVia: proj.via,
-      raw: { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, calculation_month: r.calculation_month, calculation_status: r.calculation_status },
-      trimmed: { company: TEMP_str_(r.company), country: TEMP_str_(r.country), marketplace: TEMP_str_(r.marketplace), sku: TEMP_str_(r.sku) },
-      current_ai_query_key: aiKey,
-      marketplace_exact: TEMP_str_(r.marketplace) === TEMP_str_(key.marketplace),
-      marketplace_ci: TEMP_ciEq_(r.marketplace, key.marketplace),
-      scope_field_diff: TEMP_scopeFieldDiff_(key, aiKey),
-      reuse: TEMP_simReuse_(key, proj.planningCycle, proj.businessScope)
-    });
+    var pc = TEMP_projectTzCycle_(r.calculation_month, tz);
+    var apc = TEMP_actualProductionQueryCycle_(r);
+    var cand = {
+      rowNumber: idx + 2, raw_marketplace: r.marketplace, trimmed_marketplace: TEMP_str_(r.marketplace),
+      raw_gap_cycle_value: r.calculation_month, raw_gap_cycle_type: (TEMP_isDate_(r.calculation_month) ? 'Date' : (r.calculation_month === null || r.calculation_month === undefined ? 'null' : typeof r.calculation_month)),
+      gap_cycle_in_project_timezone: pc.cycle, gap_cycle_tz_via: pc.via, gap_cycle_tz_note: pc.note || '',
+      actual_production_query_cycle: apc.value, production_projection_via: apc.via,
+      production_cycle_equal: TEMP_normalizesTo_(apc.value, TEMP_R4B5_EXPECTED_CYCLE_),
+      project_tz_cycle_equal: (pc.cycle === TEMP_R4B5_EXPECTED_CYCLE_),
+      calculation_status: TEMP_str_(r.calculation_status)
+    };
+    allSkuGap.push(cand);
+    var fullExact = TEMP_str_(r.company) === TEMP_str_(key.company) && TEMP_str_(r.country) === TEMP_str_(key.country) &&
+      TEMP_str_(r.sku) === TEMP_str_(key.sku) && TEMP_str_(r.marketplace) === TEMP_str_(key.migrated_marketplace);
+    if (fullExact) exactGap.push(cand);
   });
-  // (2) marketplace_skus master candidates by company+country+master-sku (per the task's identity keys; marketplace
-  //     NOT filtered → every raw master token exposed). A country+sku hit whose company differs is reported too so a
-  //     company-token mismatch is never hidden, but it does NOT feed the authoritative master-token set.
-  var mpsCands = [];
+
+  // FULL canonical-scope master candidates (company+country+sku ci net; marketplace === migrated marketplace exact).
+  var exactMaster = [];
   mpsRows.forEach(function (r, idx) {
-    if (!(TEMP_ciEq_(r.country, key.country) && TEMP_ciEq_(r.sku, key.sku))) return;
-    mpsCands.push({
-      rowNumber: idx + 2,
-      raw: { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, site_sku: r.site_sku, marketplace_sku_status: r.marketplace_sku_status },
-      companyMatch: TEMP_ciEq_(r.company, key.company),
-      marketplace_exact: TEMP_str_(r.marketplace) === TEMP_str_(key.marketplace),
-      marketplace_ci: TEMP_ciEq_(r.marketplace, key.marketplace)
-    });
+    if (!(TEMP_ciEq_(r.company, key.company) && TEMP_ciEq_(r.country, key.country) && TEMP_ciEq_(r.sku, key.sku))) return;
+    if (TEMP_str_(r.marketplace) !== TEMP_str_(key.migrated_marketplace)) return;
+    exactMaster.push({ rowNumber: idx + 2, raw_marketplace: r.marketplace, marketplace_sku_status: TEMP_str_(r.marketplace_sku_status), site_sku: r.site_sku });
   });
-  // authoritative master identity = the company+country+sku subset (the task's three master keys).
-  var mpsIdentity = mpsCands.filter(function (c) { return c.companyMatch; });
-  var masterTokens = {}; mpsIdentity.forEach(function (c) { var t = TEMP_str_(c.raw.marketplace); if (t) masterTokens[t] = (masterTokens[t] || 0) + 1; });
-  var distinctMaster = Object.keys(masterTokens);
 
-  // (3) verdict — fail closed; never claim reusable when the live candidate is missing/ambiguous/case-only.
-  var exactReuse = gapCands.filter(function (c) { return c.reuse === 'REUSE'; });
-  var ciOnly = gapCands.filter(function (c) { return c.marketplace_ci && !c.marketplace_exact; });
-  var verdict, reusable, reason;
-  if (gapCands.length === 0) { verdict = 'NO_LIVE_CANDIDATE'; reusable = 'NO'; reason = 'no order_planning_gap row for company+country+sku'; }
-  else if (exactReuse.length === 1) { verdict = 'EXACT_MATCH'; reusable = 'YES'; reason = 'unique exact scopeMatches_ REUSE'; }
-  else if (exactReuse.length > 1) { verdict = 'AMBIGUOUS_CANDIDATE'; reusable = 'NO'; reason = exactReuse.length + ' gap rows each REUSE (duplicate-active hazard)'; }
-  else if (ciOnly.length > 0) { verdict = 'TOKEN_MAPPING_REQUIRED'; reusable = 'NO'; reason = 'marketplace matches only case/format-insensitively; scopeMatches_ is exact trim-only, case-sensitive'; }
-  else { verdict = 'NO_LIVE_CANDIDATE'; reusable = 'NO'; reason = 'gap rows exist for company+country+sku but NO marketplace token matches (exact or case-insensitive)'; }
+  var tokenScopeMatch = exactGap.length >= 1;                                   // company+country+sku+migrated-marketplace present
+  var currentQueryEligible = exactGap.some(function (c) { return c.calculation_status.toUpperCase() === 'READY'; });
+  var multipleExact = exactGap.length > 1;
+  var reusableIfQueried = tokenScopeMatch && !multipleExact && TEMP_reusableIfQueried_(key);
+  // cycle-transport defect: the true project-tz month IS canonical 2026-08 but production stringifies it non-canonically.
+  var cycleTransportDefect = exactGap.some(function (c) { return c.project_tz_cycle_equal === true && c.production_cycle_equal === false; });
 
-  // Proposed one-time legacy marketplace mapping — ONLY when master proves EXACTLY ONE token that differs from the
-  // legacy token. This is a PROPOSAL for architect R4C review; the diagnostic never applies it.
-  var proposedMapping = null;
-  if (distinctMaster.length === 1 && distinctMaster[0] !== TEMP_str_(key.marketplace)) {
-    proposedMapping = { from: TEMP_str_(key.marketplace), to: distinctMaster[0], evidence: 'marketplace_skus proves exactly one token for country+sku', masterRowCount: masterTokens[distinctMaster[0]] };
-  }
-  var representative = exactReuse[0] || ciOnly[0] || gapCands[0] || null;
+  var classification;
+  if (!tokenScopeMatch) classification = 'NO_EXACT_CANDIDATE';
+  else if (multipleExact) classification = 'MULTIPLE_EXACT_CANDIDATES';
+  else if (cycleTransportDefect) classification = 'CYCLE_TRANSPORT_DEFECT';
+  else if (!currentQueryEligible) classification = 'BLOCKED_BUT_SCOPE_MATCH';
+  else classification = 'EXACT_SCOPE_MATCH';
+
+  var mismatch = [];
+  if (!tokenScopeMatch) mismatch.push('marketplace/company/country/sku (no full canonical-scope candidate)');
+  else if (cycleTransportDefect) mismatch.push('planning_cycle (production transport defect — scope tokens match)');
+
+  var e0 = exactGap[0] || null;
+  var reason;
+  if (!tokenScopeMatch) reason = 'no gap row matches the FULL canonical scope company+country+sku+' + key.migrated_marketplace + ' (other-marketplace rows for this SKU are correctly excluded, not ambiguous)';
+  else if (multipleExact) reason = exactGap.length + ' gap rows match the COMPLETE canonical scope → genuine ambiguity';
+  else if (cycleTransportDefect) reason = 'scope tokens match exactly; project-tz month IS ' + TEMP_R4B5_EXPECTED_CYCLE_ + ' but production stringifies the Date to "' + e0.actual_production_query_cycle + '" → R4C runtime transport seam 47_:225';
+  else if (!currentQueryEligible) reason = 'exact scope + cycle identity correct, but calculation_status is not READY (currently blocked; future identity still valid)';
+  else reason = 'exact full-scope match, READY, production cycle canonical → reusable';
+
   return {
     seq: key.seq, source_id: key.id, id_family: TEMP_idFamily_(key.id),
-    proposed_migrated_key: { planning_cycle: key.planning_cycle, company: key.company, country: key.country, marketplace: key.marketplace, sku: key.sku, draft_purpose: key.draft_purpose, status: key.status },
-    gap_candidate_count: gapCands.length, master_candidate_count: mpsCands.length,
-    gap_candidates: gapCands, master_candidates: mpsCands,
-    distinct_master_marketplace_tokens: distinctMaster, distinct_master_token_conflict: distinctMaster.length > 1,
-    representative_field_diff: representative ? representative.scope_field_diff : ['<<no live candidate>>'],
-    proposed_marketplace_mapping: proposedMapping,
-    verdict: verdict, reusable_by_active_lookup: reusable, reason: reason
+    proposed_migrated_key: { planning_cycle: key.planning_cycle, company: key.company, country: key.country, marketplace: key.migrated_marketplace, sku: key.sku, draft_purpose: key.draft_purpose, status: key.status },
+    SOURCE_MARKETPLACE: key.source_marketplace, MIGRATED_MARKETPLACE: key.migrated_marketplace,
+    marketplace_map_known: mapKnown, TOKEN_MAPPING_APPLIED: tokenMappingApplied, mapped_to: (mapKnown ? mappedFromSource : null),
+    RAW_GAP_CYCLE_VALUE: (e0 ? e0.raw_gap_cycle_value : (allSkuGap[0] ? allSkuGap[0].raw_gap_cycle_value : null)),
+    RAW_GAP_CYCLE_TYPE: (e0 ? e0.raw_gap_cycle_type : (allSkuGap[0] ? allSkuGap[0].raw_gap_cycle_type : 'none')),
+    GAP_CYCLE_IN_PROJECT_TIMEZONE: (e0 ? e0.gap_cycle_in_project_timezone : null),
+    ACTUAL_PRODUCTION_QUERY_CYCLE: (e0 ? e0.actual_production_query_cycle : null),
+    EXPECTED_CANONICAL_CYCLE: TEMP_R4B5_EXPECTED_CYCLE_,
+    PRODUCTION_CYCLE_EQUAL: (e0 ? e0.production_cycle_equal : false),
+    EXACT_GAP_MARKETPLACE_CANDIDATES: exactGap.length, EXACT_MASTER_MARKETPLACE_CANDIDATES: exactMaster.length,
+    all_sku_gap_marketplace_tokens: allSkuGap.map(function (c) { return c.trimmed_marketplace; }),
+    exact_gap_candidates: exactGap, exact_master_candidates: exactMaster,
+    TOKEN_SCOPE_MATCH: tokenScopeMatch, CURRENT_QUERY_ELIGIBLE: currentQueryEligible,
+    ACTIVE_LOOKUP_REUSABLE_IF_QUERIED: reusableIfQueried,
+    CYCLE_TRANSPORT_DEFECT: cycleTransportDefect, MULTIPLE_EXACT_CANDIDATES: multipleExact,
+    mismatch_fields: mismatch, classification: classification, reason: reason
   };
 }
 
@@ -376,40 +399,39 @@ function TEMP_auditActiveScopeTokens_() {
     Logger.log('ACTIVE_SCOPE_DIAG HALTED — required tab absent (no tab created): ' + JSON.stringify(halt));
     return halt;
   }
+  var tz = TEMP_projectTz_();
   var rows = [], seenId = {}, dup = 0;
   TEMP_R4B4_ACTIVE_KEYS_.forEach(function (k) { if (seenId[k.id]) dup++; seenId[k.id] = 1; });
   TEMP_R4B4_ACTIVE_KEYS_.forEach(function (k, i) {
-    var rec = TEMP_auditOneActiveScopeKey_(k, gap.rows, mps.rows);
+    var rec = TEMP_auditOneActiveScopeKey_(k, gap.rows, mps.rows, tz);
     rows.push(rec);
     Logger.log('ACTIVE_SCOPE_ROW_' + TEMP_pad2_(i + 1) + '_OF_06 ' + JSON.stringify(rec));
   });
 
-  function count(v) { return rows.filter(function (r) { return r.verdict === v; }).length; }
-  var reusableRows = rows.filter(function (r) { return r.reusable_by_active_lookup === 'YES'; }).length;
-  var conflictRows = rows.filter(function (r) { return r.verdict === 'AMBIGUOUS_CANDIDATE' || r.distinct_master_token_conflict; });
-
-  var tokenMap = {};
-  rows.forEach(function (r) {
-    var legacy = TEMP_str_(r.proposed_migrated_key.marketplace);
-    if (!tokenMap[legacy]) tokenMap[legacy] = { legacy_token: legacy, gap_tokens: {}, master_tokens: {}, proposed_mapping: null };
-    r.gap_candidates.forEach(function (c) { var t = TEMP_str_(c.raw.marketplace); if (t) tokenMap[legacy].gap_tokens[t] = 1; });
-    (r.distinct_master_marketplace_tokens || []).forEach(function (t) { if (t) tokenMap[legacy].master_tokens[t] = 1; });
-    if (r.proposed_marketplace_mapping) tokenMap[legacy].proposed_mapping = r.proposed_marketplace_mapping;
-  });
-  var tokenMapArr = Object.keys(tokenMap).map(function (k) { var e = tokenMap[k]; return { legacy_token: e.legacy_token, gap_tokens: Object.keys(e.gap_tokens), master_tokens: Object.keys(e.master_tokens), proposed_mapping: e.proposed_mapping }; });
-
+  function cnt(pred) { return rows.filter(pred).length; }
   var summary = {
     EXPECTED_ROWS: 6, DIAGNOSTIC_ROWS: rows.length, UNIQUE_SOURCE_IDS: Object.keys(seenId).length,
-    MISSING_ROWS: 6 - rows.length, GAP_TAB_PRESENT: true, MARKETPLACE_SKUS_TAB_PRESENT: true,
-    EXACT_MATCH: count('EXACT_MATCH'), TOKEN_MAPPING_REQUIRED: count('TOKEN_MAPPING_REQUIRED'),
-    NO_LIVE_CANDIDATE: count('NO_LIVE_CANDIDATE'), AMBIGUOUS_CANDIDATE: count('AMBIGUOUS_CANDIDATE'),
-    REUSABLE_ROWS: reusableRows, NON_REUSABLE_ROWS: rows.length - reusableRows, CONFLICT_ROWS: conflictRows.length,
-    DUPLICATE_SOURCE_IDS: dup,
-    READY_FOR_R4C_SCOPE_DECISION: (rows.length === 6 && dup === 0) ? 'YES' : 'NO'   // completeness only — NOT an execute authorization
+    MISSING_ROWS: 6 - rows.length, DUPLICATE_SOURCE_IDS: dup, PROJECT_TIMEZONE: tz,
+    GAP_TAB_PRESENT: true, MARKETPLACE_SKUS_TAB_PRESENT: true,
+    EXACT_SCOPE_MATCH: cnt(function (r) { return r.classification === 'EXACT_SCOPE_MATCH'; }),
+    BLOCKED_BUT_SCOPE_MATCH: cnt(function (r) { return r.classification === 'BLOCKED_BUT_SCOPE_MATCH'; }),
+    CYCLE_TRANSPORT_DEFECT: cnt(function (r) { return r.CYCLE_TRANSPORT_DEFECT === true; }),
+    TOKEN_MAPPING_APPLIED: cnt(function (r) { return r.TOKEN_MAPPING_APPLIED === true; }),
+    NO_EXACT_CANDIDATE: cnt(function (r) { return r.classification === 'NO_EXACT_CANDIDATE'; }),
+    MULTIPLE_EXACT_CANDIDATES: cnt(function (r) { return r.MULTIPLE_EXACT_CANDIDATES === true; }),
+    TOKEN_SCOPE_MATCH_ROWS: cnt(function (r) { return r.TOKEN_SCOPE_MATCH === true; }),
+    REUSABLE_IF_QUERIED_ROWS: cnt(function (r) { return r.ACTIVE_LOOKUP_REUSABLE_IF_QUERIED === true; }),
+    NON_REUSABLE_ROWS: cnt(function (r) { return r.ACTIVE_LOOKUP_REUSABLE_IF_QUERIED !== true; }),
+    // completeness only — NOT an execute authorization. YES iff all six resolve to exactly one intended identity
+    // (token scope matches, ≤1 exact candidate each, marketplace map known for the legacy token).
+    READY_FOR_R4C_SCOPE_DECISION: (rows.length === 6 && dup === 0 &&
+      rows.every(function (r) { return r.TOKEN_SCOPE_MATCH === true && r.MULTIPLE_EXACT_CANDIDATES === false && r.marketplace_map_known === true; })) ? 'YES' : 'NO'
   };
+  var conflicts = rows.filter(function (r) { return r.MULTIPLE_EXACT_CANDIDATES === true || r.TOKEN_SCOPE_MATCH === false || r.marketplace_map_known === false; })
+    .map(function (r) { return { seq: r.seq, source_id: r.source_id, classification: r.classification, reason: r.reason }; });
   Logger.log('ACTIVE_SCOPE_DIAG_SUMMARY ' + JSON.stringify(summary, null, 2));
-  Logger.log('ACTIVE_SCOPE_TOKEN_MAP ' + JSON.stringify(tokenMapArr, null, 2));
-  Logger.log('ACTIVE_SCOPE_CONFLICTS ' + JSON.stringify(conflictRows.map(function (r) { return { seq: r.seq, source_id: r.source_id, verdict: r.verdict, reason: r.reason, distinct_master_token_conflict: r.distinct_master_token_conflict, distinct_master_marketplace_tokens: r.distinct_master_marketplace_tokens }; }), null, 2));
+  Logger.log('ACTIVE_SCOPE_TOKEN_MAP ' + JSON.stringify(TEMP_R4B5_MKT_MAP_, null, 2));
+  Logger.log('ACTIVE_SCOPE_CONFLICTS ' + JSON.stringify(conflicts, null, 2));
   Logger.log('ACTIVE_SCOPE_CHECKSUM ' + JSON.stringify({ EXPECTED_ROWS: 6, DIAGNOSTIC_ROWS: rows.length, UNIQUE_SOURCE_IDS: Object.keys(seenId).length, MISSING_ROWS: 6 - rows.length, GAP_TAB_PRESENT: true, MARKETPLACE_SKUS_TAB_PRESENT: true }));
-  return { summary: summary, rows: rows, tokenMap: tokenMapArr, conflicts: conflictRows };
+  return { summary: summary, rows: rows, tokenMap: TEMP_R4B5_MKT_MAP_, conflicts: conflicts };
 }

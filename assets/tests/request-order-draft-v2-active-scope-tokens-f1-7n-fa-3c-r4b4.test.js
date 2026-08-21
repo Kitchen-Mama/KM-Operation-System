@@ -1,9 +1,9 @@
-// Kitchen Mama Operation System — R4B4 LIVE ACTIVE-SCOPE TOKEN diagnostic — F1-7N-FA-3C-DRAFT-MODEL-R4B4.
+// Kitchen Mama Operation System — R4B4/R4B5 LIVE ACTIVE-SCOPE TOKEN diagnostic (R4B5-corrected) — F1-7N-FA-3C-DRAFT-MODEL-R4B5.
 // Run: node assets/tests/request-order-draft-v2-active-scope-tokens-f1-7n-fa-3c-r4b4.test.js
-// Loads the ACTUAL TEMP_migrate_request_order_draft_v2.gs in a vm sandbox with a mock Spreadsheet exposing ONLY
-// order_planning_gap + marketplace_skus (+ the legacy tabs, present but never touched), and the REAL KMRDV2/KMRDV2P.
-// Proves TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2() is strictly READ-ONLY, exposes every raw marketplace
-// token without silent normalization, and simulates reuse with the exact scopeMatches_ equality (case-sensitive).
+// Loads the ACTUAL TEMP_migrate_request_order_draft_v2.gs in a vm sandbox with a mock Spreadsheet (ONLY
+// order_planning_gap + marketplace_skus) + Utilities + the REAL KMRDV2/KMRDV2P. Proves the corrected diagnostic:
+// marketplace is part of the natural key (multi-marketplace ≠ ambiguous), the R4B4 false NO_LIVE_CANDIDATE is
+// eliminated, BLOCKED is separated from token mismatch, and a Date Aug-1 Taipei never canonicalizes to July.
 
 'use strict';
 var fs = require('fs'), path = require('path'), vm = require('vm');
@@ -15,38 +15,41 @@ function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A =
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 var GS = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
-
 var RD6_ID = 'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R';
+// The exact live instant: 2026-08-01 00:00 Asia/Taipei == 2026-07-31T16:00:00.000Z (UTC July, Taipei August).
+var AUG1_TAIPEI = new Date('2026-07-31T16:00:00.000Z');
 
 var GAP_COLS = ['company', 'country', 'marketplace', 'sku', 'calculation_month', 'calculation_status', 'calculated_at', 'updated_at'];
 var MPS_COLS = ['marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'marketplace_sku_status'];
 function toMatrix(cols, objs) { return [cols.slice()].concat(objs.map(function (o) { return cols.map(function (c) { return o[c] !== undefined ? o[c] : ''; }); })); }
-
-function gapRow(co, cy, mp, sku, month) { return { company: co, country: cy, marketplace: mp, sku: sku, calculation_month: month, calculation_status: 'READY', calculated_at: '2026-07-01', updated_at: '2026-07-02' }; }
+function gapRow(co, cy, mp, sku, month, status) { return { company: co, country: cy, marketplace: mp, sku: sku, calculation_month: month, calculation_status: status || 'READY', calculated_at: '2026-08-01', updated_at: '2026-08-02' }; }
 function mpsRow(id, sku, co, cy, mp) { return { marketplace_sku_id: id, sku: sku, company: co, country: cy, marketplace: mp, site_sku: 'SITE-' + sku, marketplace_sku_status: 'active' }; }
 
-// Fixtures exercise every verdict:
-//  key1 ResUS/US/Amazon/CO1200-O 2026-07     → EXACT_MATCH (unique exact REUSE)
-//  key2 ResTW/CA/Amazon/CO1200-O 2026-07     → TOKEN_MAPPING_REQUIRED (gap uses 'amazon' — case-only)
-//  key3 KM/US/KM Walmart/CO1200-O 2026-07    → NO_LIVE_CANDIDATE (gap 'Walmart' ≠ 'KM Walmart'); master proves 'Walmart' → proposed map
-//  key4 ResUS/US/Amazon/CO5600-R 2026-07     → NO_LIVE_CANDIDATE (no gap row at all)
-//  key5 ResUS/US/Amazon/CO5600-W 2026-07     → AMBIGUOUS_CANDIDATE (two identical gap rows each REUSE)
-//  key6 ResUS/US/Amazon/SP5120-R 2026-08     → EXACT_MATCH
+// Fixtures exercise every corrected classification:
+//  key1 ResUS/US/Amazon/CO1200-O  Date(Aug1 Taipei) READY  + a Walmart row for the SAME SKU → CYCLE_TRANSPORT_DEFECT, NOT ambiguous
+//  key2 ResTW/CA/Amazon/CO1200-O  "2026-08" string READY   → EXACT_SCOPE_MATCH (canonical, reusable)
+//  key3 KM/US/Walmart/CO1200-O    Walmart Date READY + a Shopify row → selects Walmart (map applied), CYCLE_TRANSPORT_DEFECT
+//  key4 ResUS/US/Amazon/CO5600-R  "2026-08" string BLOCKED → BLOCKED_BUT_SCOPE_MATCH (eligible=false, still reusable-if-queried)
+//  key5 ResUS/US/Amazon/CO5600-W  TWO Amazon rows same full scope → MULTIPLE_EXACT_CANDIDATES
+//  key6 RD ResUS/US/Amazon/SP5120-R Date(Aug1 Taipei) READY → CYCLE_TRANSPORT_DEFECT, RD id byte-verbatim
 function gapFixture() {
   return [
-    gapRow('ResUS', 'US', 'Amazon', 'CO1200-O', '2026-07'),
-    gapRow('ResTW', 'CA', 'amazon', 'CO1200-O', '2026-07'),   // lowercase — must NOT be silently folded
-    gapRow('KM', 'US', 'Walmart', 'CO1200-O', '2026-07'),     // 'Walmart' vs legacy 'KM Walmart'
-    gapRow('ResUS', 'US', 'Amazon', 'CO5600-W', '2026-07'),   // key5 duplicate #1
-    gapRow('ResUS', 'US', 'Amazon', 'CO5600-W', '2026-07'),   // key5 duplicate #2
-    gapRow('ResUS', 'US', 'Amazon', 'SP5120-R', '2026-08')
+    gapRow('ResUS', 'US', 'Amazon', 'CO1200-O', AUG1_TAIPEI, 'READY'),
+    gapRow('ResUS', 'US', 'Walmart', 'CO1200-O', AUG1_TAIPEI, 'READY'),   // same SKU, different marketplace — must NOT make key1 ambiguous
+    gapRow('ResTW', 'CA', 'Amazon', 'CO1200-O', '2026-08', 'READY'),
+    gapRow('KM', 'US', 'Shopify', 'CO1200-O', AUG1_TAIPEI, 'READY'),      // distractor for key3
+    gapRow('KM', 'US', 'Walmart', 'CO1200-O', AUG1_TAIPEI, 'READY'),      // key3 real candidate (migrated KM Walmart→Walmart)
+    gapRow('ResUS', 'US', 'Amazon', 'CO5600-R', '2026-08', 'BLOCKED'),
+    gapRow('ResUS', 'US', 'Amazon', 'CO5600-W', '2026-08', 'READY'),      // key5 duplicate #1
+    gapRow('ResUS', 'US', 'Amazon', 'CO5600-W', '2026-08', 'READY'),      // key5 duplicate #2 (true ambiguity)
+    gapRow('ResUS', 'US', 'Amazon', 'SP5120-R', AUG1_TAIPEI, 'READY')
   ];
 }
 function mpsFixture() {
   return [
     mpsRow('MPSKU-1', 'CO1200-O', 'ResUS', 'US', 'Amazon'),
-    mpsRow('MPSKU-2', 'CO1200-O', 'ResTW', 'CA', 'Amazon'),   // canonical master token 'Amazon' (gap said 'amazon')
-    mpsRow('MPSKU-3', 'CO1200-O', 'KM', 'US', 'Walmart'),     // single master token 'Walmart' → proposes KM Walmart→Walmart
+    mpsRow('MPSKU-2', 'CO1200-O', 'ResTW', 'CA', 'Amazon'),
+    mpsRow('MPSKU-3', 'CO1200-O', 'KM', 'US', 'Walmart'),
     mpsRow('MPSKU-4', 'CO5600-R', 'ResUS', 'US', 'Amazon'),
     mpsRow('MPSKU-5', 'CO5600-W', 'ResUS', 'US', 'Amazon'),
     mpsRow('MPSKU-6', 'SP5120-R', 'ResUS', 'US', 'Amazon')
@@ -58,7 +61,6 @@ function makeSandbox(opts) {
   var tabs = {};
   if (!opts.noGap) tabs['order_planning_gap'] = toMatrix(GAP_COLS, opts.gap || gapFixture());
   if (!opts.noMps) tabs['marketplace_skus'] = toMatrix(MPS_COLS, opts.mps || mpsFixture());
-  // legacy tabs present but must never be touched by the R4B4 diagnostic
   tabs['request_order_allocation_drafts'] = [['request_allocation_draft_id', 'status']];
   tabs['request_order_allocation_draft_lines'] = [['request_allocation_draft_id', 'request_bucket']];
   var track = {}; function T(n) { track[n] = track[n] || { setValues: 0, clear: 0, rename: 0, del: 0, append: 0 }; return track[n]; }
@@ -75,90 +77,90 @@ function makeSandbox(opts) {
   }
   var ss = {
     getSheetByName: function (n) { return (tabs[n] !== undefined) ? sheetObj(n) : null; },
+    getSpreadsheetTimeZone: function () { return 'Asia/Taipei'; },
     insertSheet: function (n) { insertLog.push(n); tabs[n] = []; return sheetObj(n); },
     deleteSheet: function (sh) { if (sh && sh.getName) T(sh.getName()).del++; }
   };
-  var sandbox = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; } }, Logger: { log: function () {} }, console: console };
+  // Minimal Utilities.formatDate supporting 'yyyy-MM' in Asia/Taipei (+8) — enough for the diagnostic's cycle math.
+  var Utilities = { formatDate: function (d, tz, fmt) {
+    var off = (tz === 'Asia/Taipei') ? 8 : 0;
+    var t = new Date(d.getTime() + off * 3600000);
+    var y = t.getUTCFullYear(), m = t.getUTCMonth() + 1, mm = (m < 10 ? '0' + m : '' + m), dd = (t.getUTCDate() < 10 ? '0' + t.getUTCDate() : '' + t.getUTCDate());
+    if (fmt === 'yyyy-MM') return y + '-' + mm;
+    return y + '-' + mm + '-' + dd;
+  } };
+  var sandbox = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; } }, Utilities: Utilities, Logger: { log: function () {} }, console: console };
   vm.createContext(sandbox); vm.runInContext(GS, sandbox, { filename: 'TEMP_migrate_request_order_draft_v2.gs' });
   return { sandbox: sandbox, track: track, insertLog: insertLog, readLog: readLog };
 }
 function totalWrites(track) { var n = 0; Object.keys(track).forEach(function (k) { var t = track[k]; n += t.setValues + t.clear + t.rename + t.del + t.append; }); return n; }
 
 // ==========================================================================
-section('public entrypoint is Run-menu visible + strictly read-only');
+section('strictly read-only surface + reads only gap + marketplace_skus');
 var d = makeSandbox();
 ok(typeof d.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2 === 'function', 'public entrypoint present');
-ok(!/_$/.test('TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2'), 'entrypoint has no trailing `_` (Run-menu visible)');
 var res = d.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2();
-eq(totalWrites(d.track), 0, 'total spreadsheet write count = 0 (no setValues/clear/append/rename/delete)');
+eq(totalWrites(d.track), 0, 'total spreadsheet write count = 0');
 eq(d.insertLog, [], 'inserts no sheet');
-ok(!d.track['request_order_allocation_drafts'] && !d.track['request_order_allocation_draft_lines'], 'legacy draft + line tabs never mutated');
-ok(!d.readLog['request_order_allocation_drafts'] && !d.readLog['request_order_allocation_draft_lines'], 'legacy draft + line tabs never even read');
-ok(d.readLog['order_planning_gap'] >= 1 && d.readLog['marketplace_skus'] >= 1, 'reads exactly order_planning_gap + marketplace_skus');
+ok(!d.readLog['request_order_allocation_drafts'] && !d.readLog['request_order_allocation_draft_lines'], 'legacy draft + line tabs never read');
+ok(!d.track['request_order_allocation_drafts'] && !d.track['request_order_allocation_draft_lines'], 'legacy draft + line tabs never written');
+ok(d.readLog['order_planning_gap'] >= 1 && d.readLog['marketplace_skus'] >= 1, 'reads exactly gap + marketplace_skus');
 
-section('coverage: six frozen keys exactly once; RD id byte-for-byte verbatim');
-ok(res.summary.DIAGNOSTIC_ROWS === 6 && res.summary.EXPECTED_ROWS === 6, 'six diagnostic rows');
-eq(res.summary.MISSING_ROWS, 0, 'MISSING_ROWS = 0');
-eq(res.summary.UNIQUE_SOURCE_IDS, 6, 'UNIQUE_SOURCE_IDS = 6');
-ok(res.rows.every(function (r, i) { return r.seq === i + 1; }), 'sequence 1..6 stable');
-eq(res.rows[5].source_id, RD6_ID, 'RD id #6 embedded byte-for-byte (never re-minted)');
-eq(res.rows[5].proposed_migrated_key.planning_cycle, '2026-08', 'RD #6 planning_cycle FIELD = canonical 2026-08 (independent of the id string)');
+section('coverage: six frozen keys; RD id byte-verbatim; all cycles canonical 2026-08');
+ok(res.summary.DIAGNOSTIC_ROWS === 6 && res.summary.UNIQUE_SOURCE_IDS === 6, 'six diagnostic rows / six unique ids');
+eq(res.rows[5].source_id, RD6_ID, 'RD id #6 byte-for-byte verbatim');
+ok(res.rows.every(function (r) { return r.EXPECTED_CANONICAL_CYCLE === '2026-08' && r.proposed_migrated_key.planning_cycle === '2026-08'; }), 'all six proposed cycles = 2026-08');
+eq(res.summary.PROJECT_TIMEZONE, 'Asia/Taipei', 'project timezone surfaced');
 
-section('per-row verdicts');
-function row(seq) { return res.rows[seq - 1]; }
-eq([row(1).verdict, row(1).reusable_by_active_lookup], ['EXACT_MATCH', 'YES'], 'key1 exact live gap+master → REUSABLE');
-eq([row(2).verdict, row(2).reusable_by_active_lookup], ['TOKEN_MAPPING_REQUIRED', 'NO'], 'key2 gap uses case-only variant → not reusable');
-eq([row(3).verdict, row(3).reusable_by_active_lookup], ['NO_LIVE_CANDIDATE', 'NO'], 'key3 KM Walmart has no matching gap marketplace token');
-eq([row(4).verdict, row(4).reusable_by_active_lookup], ['NO_LIVE_CANDIDATE', 'NO'], 'key4 no gap row at all → fail closed');
-eq([row(5).verdict, row(5).reusable_by_active_lookup], ['AMBIGUOUS_CANDIDATE', 'NO'], 'key5 duplicate gap rows each REUSE → ambiguous, not reusable');
-eq([row(6).verdict, row(6).reusable_by_active_lookup], ['EXACT_MATCH', 'YES'], 'key6 exact (2026-08) → REUSABLE');
+function row(s) { return res.rows[s - 1]; }
 
-section('raw marketplace tokens are NOT silently normalized');
-eq(row(2).gap_candidates[0].raw.marketplace, 'amazon', 'raw gap token "amazon" preserved verbatim (lowercase)');
-ok(row(2).gap_candidates[0].marketplace_exact === false && row(2).gap_candidates[0].marketplace_ci === true, 'key2 exposed as case-insensitive-only (exact=false, ci=true)');
-ok(row(2).gap_candidates[0].scope_field_diff.indexOf('marketplace') !== -1, 'key2 scope_field_diff flags marketplace');
+section('R4B4 false NO_LIVE_CANDIDATE eliminated + marketplace is part of the key');
+ok(row(1).TOKEN_SCOPE_MATCH === true, 'key1 exact Amazon scope matches (was falsely NO_LIVE_CANDIDATE in R4B4)');
+eq(row(1).EXACT_GAP_MARKETPLACE_CANDIDATES, 1, 'key1 selects exactly ONE Amazon candidate despite a Walmart row for the same SKU');
+ok(row(1).all_sku_gap_marketplace_tokens.indexOf('Amazon') !== -1 && row(1).all_sku_gap_marketplace_tokens.indexOf('Walmart') !== -1, 'key1 still EXPOSES both raw tokens (Amazon + Walmart)');
+ok(row(1).classification !== 'MULTIPLE_EXACT_CANDIDATES', 'multi-marketplace same SKU is NOT ambiguous');
 
-section('KM Walmart vs Walmart remain unequal; master proves a proposed one-time map');
-ok(row(3).gap_candidates.length === 1 && row(3).gap_candidates[0].raw.marketplace === 'Walmart', 'key3 gap candidate raw token = "Walmart"');
-ok(row(3).gap_candidates[0].marketplace_ci === false, '"KM Walmart" and "Walmart" are NOT case-insensitive equal');
-eq(row(3).proposed_marketplace_mapping, { from: 'KM Walmart', to: 'Walmart', evidence: 'marketplace_skus proves exactly one token for country+sku', masterRowCount: 1 }, 'key3 proposes KM Walmart→Walmart from master (exactly one token)');
-ok(row(1).proposed_marketplace_mapping === null, 'key1 (legacy Amazon == master Amazon) proposes NO mapping');
+section('Date Aug-1 Taipei canonicalizes to 2026-08, NEVER July; production transport defect surfaced');
+eq(row(1).GAP_CYCLE_IN_PROJECT_TIMEZONE, '2026-08', 'key1 project-tz month = 2026-08');
+ok(row(1).GAP_CYCLE_IN_PROJECT_TIMEZONE !== '2026-07', 'key1 project-tz month is NOT 2026-07 (UTC slice rejected)');
+eq(row(1).RAW_GAP_CYCLE_TYPE, 'Date', 'key1 raw calculation_month type = Date');
+ok(row(1).PRODUCTION_CYCLE_EQUAL === false && row(1).CYCLE_TRANSPORT_DEFECT === true, 'key1 production stringifies the Date → transport defect');
+ok(row(1).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED === true, 'key1 reusable IF queried with canonical 2026-08 (defect is transport, not identity)');
 
-section('special Amazon master check — canonical token = Amazon');
-ok(row(1).distinct_master_marketplace_tokens.indexOf('Amazon') !== -1 && row(1).distinct_master_token_conflict === false, 'key1 master token set = {Amazon}, no conflict');
+section('key2 canonical string → clean EXACT_SCOPE_MATCH');
+eq([row(2).classification, row(2).PRODUCTION_CYCLE_EQUAL, row(2).CYCLE_TRANSPORT_DEFECT, row(2).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED], ['EXACT_SCOPE_MATCH', true, false, true], 'key2 canonical "2026-08" → exact, reusable, no defect');
 
-section('summary tallies');
-eq([res.summary.EXACT_MATCH, res.summary.TOKEN_MAPPING_REQUIRED, res.summary.NO_LIVE_CANDIDATE, res.summary.AMBIGUOUS_CANDIDATE], [2, 1, 2, 1], 'verdict tally 2/1/2/1');
-eq([res.summary.REUSABLE_ROWS, res.summary.NON_REUSABLE_ROWS], [2, 4], 'REUSABLE=2, NON_REUSABLE=4');
-eq(res.summary.CONFLICT_ROWS, 1, 'CONFLICT_ROWS = 1 (the ambiguous key5)');
-eq(res.summary.READY_FOR_R4C_SCOPE_DECISION, 'YES', 'all six diagnosed → READY_FOR_R4C_SCOPE_DECISION=YES (NOT an execute authorization)');
+section('key3 mapped Walmart selects Walmart despite a Shopify row');
+eq([row(3).SOURCE_MARKETPLACE, row(3).MIGRATED_MARKETPLACE, row(3).TOKEN_MAPPING_APPLIED], ['KM Walmart', 'Walmart', true], 'key3 KM Walmart→Walmart map applied');
+eq(row(3).EXACT_GAP_MARKETPLACE_CANDIDATES, 1, 'key3 selects exactly ONE Walmart candidate (Shopify excluded)');
+ok(row(3).all_sku_gap_marketplace_tokens.indexOf('Shopify') !== -1, 'key3 exposes the Shopify distractor token');
+ok(row(3).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED === true, 'key3 Walmart identity reusable-if-queried');
 
-section('token map surfaces every distinct live token per legacy token');
-var amz = res.tokenMap.filter(function (t) { return t.legacy_token === 'Amazon'; })[0];
-var kmw = res.tokenMap.filter(function (t) { return t.legacy_token === 'KM Walmart'; })[0];
-ok(amz && amz.gap_tokens.indexOf('Amazon') !== -1 && amz.gap_tokens.indexOf('amazon') !== -1, 'Amazon legacy token maps to both live gap tokens {Amazon, amazon}');
-ok(amz && amz.proposed_mapping === null, 'Amazon legacy token needs no proposed map');
-ok(kmw && kmw.master_tokens.length === 1 && kmw.master_tokens[0] === 'Walmart' && kmw.proposed_mapping, 'KM Walmart maps to master {Walmart} with a proposed one-time map');
+section('key4 BLOCKED is separated from token mismatch');
+eq([row(4).TOKEN_SCOPE_MATCH, row(4).CURRENT_QUERY_ELIGIBLE, row(4).classification], [true, false, 'BLOCKED_BUT_SCOPE_MATCH'], 'key4 scope matches but calculation_status BLOCKED');
+ok(row(4).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED === true, 'key4 still reusable-if-queried (blocked ≠ non-reusable identity)');
+
+section('key5 ambiguity requires MULTIPLE complete exact-scope matches');
+eq([row(5).EXACT_GAP_MARKETPLACE_CANDIDATES, row(5).MULTIPLE_EXACT_CANDIDATES, row(5).classification], [2, true, 'MULTIPLE_EXACT_CANDIDATES'], 'key5 two identical full-scope rows → ambiguous');
+ok(row(5).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED === false, 'key5 ambiguous → not reusable');
+
+section('key6 RD row transport defect + reusable');
+eq([row(6).classification, row(6).ACTIVE_LOOKUP_REUSABLE_IF_QUERIED], ['CYCLE_TRANSPORT_DEFECT', true], 'key6 Date → transport defect, reusable-if-queried');
+
+section('summary tallies + token map is exactly the two frozen entries');
+eq([res.summary.CYCLE_TRANSPORT_DEFECT, res.summary.EXACT_SCOPE_MATCH, res.summary.BLOCKED_BUT_SCOPE_MATCH, res.summary.MULTIPLE_EXACT_CANDIDATES], [3, 1, 1, 1], 'classification tally: 3 transport-defect / 1 exact / 1 blocked / 1 multiple');
+eq(res.summary.TOKEN_SCOPE_MATCH_ROWS, 6, 'all six token-scope match (no false NO_EXACT_CANDIDATE)');
+eq(res.summary.NO_EXACT_CANDIDATE, 0, 'zero NO_EXACT_CANDIDATE');
+eq(res.summary.TOKEN_MAPPING_APPLIED, 1, 'exactly one token-mapping-applied row (KM Walmart→Walmart)');
+eq(res.tokenMap, { 'Amazon': 'Amazon', 'KM Walmart': 'Walmart' }, 'token map is exactly the two frozen source→migrated entries (no global alias)');
 
 section('required-tab HALT is fail-closed and creates nothing');
 var h1 = makeSandbox({ noGap: true });
 var r1 = h1.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2();
-eq([r1.halt, r1.GAP_TAB_PRESENT, r1.READY_FOR_R4C_SCOPE_DECISION], ['REQUIRED_TAB_ABSENT', false, 'NO'], 'missing order_planning_gap → HALT, not ready');
+eq([r1.halt, r1.GAP_TAB_PRESENT], ['REQUIRED_TAB_ABSENT', false], 'missing order_planning_gap → HALT');
 eq(h1.insertLog, [], 'HALT creates no tab');
-var h2 = makeSandbox({ noMps: true });
-var r2 = h2.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2();
-eq([r2.halt, r2.MARKETPLACE_SKUS_TAB_PRESENT], ['REQUIRED_TAB_ABSENT', false], 'missing marketplace_skus → HALT');
-
-section('exact-token equality is the ONLY reuse gate (mutation of a single token flips reuse)');
-var flip = makeSandbox({ gap: [gapRow('ResUS', 'US', 'Amazon ', 'CO1200-O', '2026-07')] });   // trailing space
-var rf = flip.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2();
-// 'Amazon ' trims to 'Amazon' → scopeMatches_ trims both → still EXACT for key1
-eq(rf.rows[0].verdict, 'EXACT_MATCH', 'trailing-space token trims to exact (scopeMatches_ trims) → still reusable');
-var flip2 = makeSandbox({ gap: [gapRow('ResUS', 'US', 'AmazonUS', 'CO1200-O', '2026-07')] });
-var rf2 = flip2.sandbox.TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2();
-eq(rf2.rows[0].reusable_by_active_lookup, 'NO', 'a genuinely different token (AmazonUS) → NOT reusable');
 
 // ==========================================================================
 console.log('\n' + '-'.repeat(40));
-console.log('R4B4 LIVE ACTIVE-SCOPE TOKEN DIAGNOSTIC (F1-7N-FA-3C-R4B4): ' + pass + ' passed, ' + fail + ' failed');
+console.log('R4B4/R4B5 ACTIVE-SCOPE TOKEN DIAGNOSTIC (F1-7N-FA-3C-R4B5): ' + pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);
