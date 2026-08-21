@@ -33,9 +33,12 @@ function rpoBundle_() {
 // via the bundled KMPW/KMSAFE. Throws fail-closed (RECOMMENDATION_SCHEMA_NOT_READY / WRONG_SPREADSHEET_TARGET) so
 // the generate path performs ZERO mutation when the target is wrong or any table is missing/blank/malformed. The
 // old auto-creating ensure helpers are INTENTIONALLY removed from this path (validate, never repair).
-function rpoValidateSchema_(ss) {
+function rpoValidateSchema_(ss, recommendationType) {
   var expectedId = (typeof RECOMMENDATION_TARGET_SPREADSHEET_ID_ !== 'undefined') ? RECOMMENDATION_TARGET_SPREADSHEET_ID_ : '';
-  return KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId });   // throws if not provisioned/valid
+  // F1-7N-FA-3C-PRE3-R3 — scope the authorized-schema gate to the tables THIS type writes (+ run journal). Without a
+  // type it still validates all authorized tables (unchanged). This stops an unrelated WEEKLY_SHIPPING
+  // (shipping_allocation_*) schema from hard-gating a MONTHLY_ORDER request-order draft that never touches it.
+  return KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId, recommendationType: recommendationType });   // throws if not provisioned/valid
 }
 
 // Production source-fact reader — WIRED (Round 1S-P2). Resolved facts come from the bundled read-only production
@@ -70,7 +73,7 @@ function rpoGenerateRecommendationDraftLockedResult_(body, opts) {
   // Production Safety Round S0: fail closed BEFORE any lock/write if the target Spreadsheet is wrong or any
   // authorized table schema is missing/blank/malformed. Never creates or repairs a Sheet (RULE S0-2/S0-5).
   if (!(opts && opts.skipSchemaValidation === true)) {
-    try { rpoValidateSchema_(ss); }
+    try { rpoValidateSchema_(ss, type); }
     catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }; }
   }
   var cfg = KMPR.TABLES[type], tables = [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE];

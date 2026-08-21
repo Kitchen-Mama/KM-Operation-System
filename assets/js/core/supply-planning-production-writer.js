@@ -118,14 +118,26 @@
   // The five authorized Recommendation persistence tables, each with its frozen expected Header. Line tables carry
   // ADDITIVE columns (user_edited/user_edited_by) beyond DRAFT_HEADERS.lines, so extra columns are ALLOWed (the
   // table's additive contract) while missing/blank/duplicate/reordered required Headers still fail closed.
-  function authorizedTableSpecs() {
+  // F1-7N-FA-3C-PRE3-R3 — validate ONLY the tables the requested recommendationType actually writes (its own
+  // header+lines) plus the shared run journal. A given type never reads or writes the OTHER type's draft tables
+  // (the write set is exactly [cfg.header, cfg.lines, RUN_JOURNAL] — see the orchestrator), so a stale UNRELATED
+  // schema (e.g. a WEEKLY_SHIPPING shipping_allocation_* sheet) must NOT hard-gate a MONTHLY_ORDER draft. An absent
+  // or unknown recommendationType validates ALL authorized tables (backward-compatible with any type-agnostic
+  // caller). This narrows the validation SCOPE only — it changes no header contract and weakens no fail-closed
+  // guard for a table that IS written.
+  function draftTableSpecs_(type) {
+    var t = KMPR.TABLES[type], h = DRAFT_HEADERS[type];
     return [
-      { sheetName: KMPR.TABLES.WEEKLY_SHIPPING.header, expectedHeaders: DRAFT_HEADERS.WEEKLY_SHIPPING.header, required: true, extraColumnsPolicy: 'ALLOW' },
-      { sheetName: KMPR.TABLES.WEEKLY_SHIPPING.lines, expectedHeaders: DRAFT_HEADERS.WEEKLY_SHIPPING.lines, required: true, extraColumnsPolicy: 'ALLOW' },
-      { sheetName: KMPR.TABLES.MONTHLY_ORDER.header, expectedHeaders: DRAFT_HEADERS.MONTHLY_ORDER.header, required: true, extraColumnsPolicy: 'ALLOW' },
-      { sheetName: KMPR.TABLES.MONTHLY_ORDER.lines, expectedHeaders: DRAFT_HEADERS.MONTHLY_ORDER.lines, required: true, extraColumnsPolicy: 'ALLOW' },
-      { sheetName: KMPR.RUN_JOURNAL_TABLE, expectedHeaders: KMPR.RUN_JOURNAL_HEADERS, required: true, extraColumnsPolicy: 'ALLOW' }
+      { sheetName: t.header, expectedHeaders: h.header, required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: t.lines, expectedHeaders: h.lines, required: true, extraColumnsPolicy: 'ALLOW' }
     ];
+  }
+  function authorizedTableSpecs(recommendationType) {
+    var journal = { sheetName: KMPR.RUN_JOURNAL_TABLE, expectedHeaders: KMPR.RUN_JOURNAL_HEADERS, required: true, extraColumnsPolicy: 'ALLOW' };
+    if (recommendationType && KMPR.TABLES[recommendationType] && DRAFT_HEADERS[recommendationType]) {
+      return draftTableSpecs_(recommendationType).concat([journal]);
+    }
+    return draftTableSpecs_('WEEKLY_SHIPPING').concat(draftTableSpecs_('MONTHLY_ORDER')).concat([journal]);
   }
 
   // Validate all five authorized Draft/journal table schemas against a live-shaped Spreadsheet BEFORE any
@@ -136,7 +148,7 @@
     aType(isObj(opts) && str(opts.expectedSpreadsheetId) !== '', 'validateAuthorizedRecommendationSchemas: opts.expectedSpreadsheetId required (exact-ID gate)');
     var idCheck = KMSAFE.checkExpectedSpreadsheetId(spreadsheet, opts.expectedSpreadsheetId);
     var tables = {}, blockers = [];
-    authorizedTableSpecs().forEach(function (spec) {
+    authorizedTableSpecs(opts.recommendationType).forEach(function (spec) {   // F1-7N-FA-3C-PRE3-R3 — scope to the type being generated (else all)
       var report;
       if (!idCheck.ok) {
         report = { ready: false, sheetName: spec.sheetName, schemaStatus: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET, issues: [{ reason: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET }] };
