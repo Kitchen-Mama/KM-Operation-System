@@ -16,7 +16,7 @@ window.KM = {
      * updated in this release matches it, and debug output surfaces it so "is the deployed correction the code actually
      * running?" is answerable at a glance. Bump this (and the matching `?v=` on changed assets) once per release.
      */
-    RELEASE: 'r6e1-flags-shipping-20260822',
+    RELEASE: 'r6e1a-shipping-release-20260822',
 
     /**
      * 頁面模組

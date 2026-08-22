@@ -3436,7 +3436,8 @@ window.__kmCapabilities = function() {
     var verdict = source === 'backend' ? 'CAPABILITY_FROM_BACKEND'
         : source === 'failsafe-default' ? 'CAPABILITY_FAILSAFE_BACKEND_UNAVAILABLE'
         : 'CAPABILITY_NOT_LOADED';
-    return { snapshot: snap, source: source, verdict: verdict };
+    var release = (window.KM && window.KM.RELEASE) ? window.KM.RELEASE : null;   // agrees with __roDebug/__kmLifecycleDebug + loaded token
+    return { release: release, snapshot: snap, source: source, verdict: verdict };
 };
 // Re-fetch and compare backend vs the applied runtime snapshot — detects source/runtime disagreement (HALT signal).
 window.__kmVerifyCapabilities = async function() {

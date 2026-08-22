@@ -263,54 +263,88 @@ function shippingPlanSnapshotValue_(v) {
   return v;
 }
 
-/**
- * F1-7N-FA-3C-R6E1-R1 — PURE payload-equivalence signature for one Submit batch. Computed over the line-level facts
- * shared by BOTH the incoming payload AND the persisted rows: [country, ship_from, destination, shipping_method,
- * marketplace, sku, requested_qty]. Order-independent (tuples sorted). company is EXCLUDED (it is server-resolved, so
- * it must never affect equivalence). Deterministic — no clock / no uuid.
- */
-function shippingPlanBatchSignature_(tuples) {
-  var norm = (tuples || []).map(function (t) {
-    return [t.country, t.ship_from, t.destination, t.shipping_method, t.marketplace, t.sku]
-      .map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); })
-      .concat([String(shippingPlanNum_(t.requested_qty))]).join('|');
-  }).sort();
-  return norm.join(';');
+// F1-7N-FA-3C-R6E1A — COMPLETE canonical payload fingerprint. The R6E1 signature ([country|ship_from|destination|
+// method|marketplace|sku|requested_qty]) was too narrow to prove semantic equivalence (a changed carrier / last-mile /
+// customs / cost / note / snapshot would have compared EQUAL). The fingerprint below covers every persisted user/
+// business field on BOTH the header and each line — but EXCLUDES server-generated identity/audit fields
+// (shipping_plan_id, shipping_plan_line_id, created_at/updated_at, created_by/updated_by, submission timestamps,
+// status/plan_version/batch fields). It is computed identically from (a) the server-DERIVED would-be batch on the
+// incoming side (company already resolved, quote/logistics/carton already computed — the SAME objects that get
+// written) and (b) the persisted rows on the existing side, so a true retry hashes equal while any material change
+// diverges. Canonical JSON (fixed key order + sorted lines/headers), typed canonicalization (numbers coerced so
+// 400 === "400"; blank/null unified to null; objects already serialized to JSON strings by shippingPlanSnapshotValue_),
+// then an FNV-1a hash prefixed with a version tag. Deterministic — no clock / no uuid.
+var SHIPPING_PLAN_FINGERPRINT_VERSION_ = 'spfp-1';
+var SP_HDR_FP_STR_ = ['company', 'country', 'marketplace', 'ship_from', 'source_warehouse_id', 'ship_from_type',
+  'destination', 'destination_warehouse_id', 'destination_type', 'shipping_method', 'last_mile_delivery', 'customs_type',
+  'carrier_id', 'carrier_rate_type', 'import_duty_treatment', 'currency', 'plan_name', 'note', 'source'];
+var SP_HDR_FP_NUM_ = ['carrier_unit_rate', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee', 'estimated_total_cost'];
+var SP_LINE_FP_STR_ = ['sku', 'site_sku', 'marketplace', 'source_page', 'source_reason', 'inventory_snapshot_date', 'note',
+  'snapshot_avg_sales_source', 'snapshot_avg_sales_warning', 'snapshot_fc_context', 'snapshot_event_context'];
+var SP_LINE_FP_NUM_ = ['requested_qty', 'approved_qty', 'plan_carton_qty', 'units_per_carton', 'carton_cbm', 'cbm',
+  'gross_weight', 'net_weight', 'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
+  'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_normal_days_count', 'snapshot_excluded_event_days_count'];
+
+function shippingPlanFpStr_(v) { if (v === undefined || v === null) return null; var s = String(v).trim(); return s === '' ? null : s; }
+function shippingPlanFpNum_(v) { if (v === undefined || v === null || String(v).trim() === '') return null; var n = Number(v); return isFinite(n) ? n : String(v).trim(); }
+function shippingPlanFnv_(s) { var h = 0x811c9dc5; s = String(s); for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); }
+function shippingPlanHdrSortKey_(h) { return [h.company, h.country, h.ship_from, h.destination, h.shipping_method, h.marketplace].map(function (x) { return x == null ? '' : String(x); }).join(''); }
+function shippingPlanLineSortKey_(l) { return [l.sku, l.site_sku, l.marketplace, l.requested_qty].map(function (x) { return x == null ? '' : String(x); }).join(''); }
+
+// PURE projector: flat plan/line row objects → canonical, sorted, fixed-key-order structure (ids/audit excluded).
+function shippingPlanProjectBatch_(planObjs, lineObjs) {
+  var linesByPlan = {};
+  (lineObjs || []).forEach(function (l) { var pid = String(l.shipping_plan_id || '').trim(); (linesByPlan[pid] = linesByPlan[pid] || []).push(l); });
+  var headers = (planObjs || []).map(function (p) {
+    var h = {}; SP_HDR_FP_STR_.forEach(function (f) { h[f] = shippingPlanFpStr_(p[f]); }); SP_HDR_FP_NUM_.forEach(function (f) { h[f] = shippingPlanFpNum_(p[f]); });
+    var pid = String(p.shipping_plan_id || '').trim();
+    var ls = (linesByPlan[pid] || []).map(function (l) { var o = {}; SP_LINE_FP_STR_.forEach(function (f) { o[f] = shippingPlanFpStr_(l[f]); }); SP_LINE_FP_NUM_.forEach(function (f) { o[f] = shippingPlanFpNum_(l[f]); }); return o; });
+    ls.sort(function (a, b) { var ka = shippingPlanLineSortKey_(a), kb = shippingPlanLineSortKey_(b); return ka < kb ? -1 : (ka > kb ? 1 : 0); });
+    return { header: h, lines: ls };
+  });
+  headers.sort(function (a, b) { var ka = shippingPlanHdrSortKey_(a.header), kb = shippingPlanHdrSortKey_(b.header); return ka < kb ? -1 : (ka > kb ? 1 : 0); });
+  return headers;
+}
+function shippingPlanCanonicalFingerprint_(planObjs, lineObjs) {
+  return SHIPPING_PLAN_FINGERPRINT_VERSION_ + ':' + shippingPlanFnv_(JSON.stringify(shippingPlanProjectBatch_(planObjs, lineObjs)));
+}
+// A persisted line row can be completely fingerprinted only if it carries every canonical fingerprint field as an own
+// key. A pre-migration (23-col) row LACKS marketplace + the 7 snapshot columns → not completely comparable.
+function shippingPlanLinesSchemaComplete_(lineObjs) {
+  if (!lineObjs || !lineObjs.length) return true;
+  var req = SP_LINE_FP_STR_.concat(SP_LINE_FP_NUM_);
+  for (var i = 0; i < lineObjs.length; i++) { for (var k = 0; k < req.length; k++) { if (!Object.prototype.hasOwnProperty.call(lineObjs[i], req[k])) return false; } }
+  return true;
 }
 
 /**
- * F1-7N-FA-3C-R6E1-R1 — PURE find-or-reuse classifier for a provided execution key over already-read plans/lines row
- * objects (keyed by header). Returns { found, planIds[], lineCount, signature, state } where state is one of:
+ * F1-7N-FA-3C-R6E1A — PURE find-or-reuse classifier over already-read plan/line row objects for one execution key.
+ * Returns { state, planIds[], lineCount, fingerprint }. States:
  *   CREATE               — no plan header carries this key → proceed to create exactly one batch.
- *   REUSED               — headers + lines exist and the persisted signature equals the incoming one → zero writes.
- *   CONFLICT             — headers + lines exist but the signature differs → SUBMIT_EXECUTION_DUPLICATE_CONFLICT.
- *   COMMITTED_UNVERIFIED — header(s) exist but zero lines while the incoming payload has lines → no blind retry.
- * Cancelled plans still occupy the key (a re-Submit under the same key is intentionally blocked; a new intention mints
- * a new key). Deterministic; reads nothing (arrays passed in).
+ *   DUPLICATE_CONFLICT   — two headers under the key share a route group (a corrupt double-write; the lock+reuse
+ *                          normally prevents this) → fail closed, do not reconstruct.
+ *   COMMITTED_UNVERIFIED — header(s) exist but zero lines while the payload has lines → no blind retry.
+ *   RECONCILIATION_REQUIRED — persisted lines are schema-incomplete (e.g. pre-migration rows lacking canonical fields)
+ *                          so a COMPLETE fingerprint cannot be computed → never a false REUSE.
+ *   REUSED               — complete persisted fingerprint EQUALS the incoming canonical fingerprint → zero writes.
+ *   CONFLICT             — complete fingerprint DIFFERS (any material header/line change) → SUBMIT_EXECUTION_DUPLICATE_CONFLICT.
+ * Deterministic; reads nothing (arrays passed in).
  */
-function shippingPlanClassifyBatch_(planRows, lineRows, batchId, incomingSignature, incomingLineCount) {
+function shippingPlanClassifyBatch_(persistedPlans, persistedLines, batchId, incomingFingerprint, incomingLineCount) {
   var key = String(batchId || '').trim();
-  var planIds = {}, planIdList = [];
-  (planRows || []).forEach(function (p) {
-    if (String(p.submit_batch_id || '').trim() !== key) return;
-    var id = String(p.shipping_plan_id || '').trim(); if (!id) return;
-    planIds[id] = { country: p.country, ship_from: p.ship_from, destination: p.destination, shipping_method: p.shipping_method };
-    planIdList.push(id);
-  });
-  if (!planIdList.length) return { found: false, planIds: [], lineCount: 0, signature: '', state: 'CREATE' };
-  var tuples = [], lineCount = 0;
-  (lineRows || []).forEach(function (l) {
-    var pid = String(l.shipping_plan_id || '').trim();
-    if (!planIds[pid]) return;
-    lineCount++;
-    var r = planIds[pid];
-    tuples.push({ country: r.country, ship_from: r.ship_from, destination: r.destination, shipping_method: r.shipping_method,
-      marketplace: l.marketplace, sku: l.sku, requested_qty: l.requested_qty });
-  });
-  if (lineCount === 0 && incomingLineCount > 0) return { found: true, planIds: planIdList, lineCount: 0, signature: '', state: 'COMMITTED_UNVERIFIED' };
-  var sig = shippingPlanBatchSignature_(tuples);
-  if (sig === incomingSignature) return { found: true, planIds: planIdList, lineCount: lineCount, signature: sig, state: 'REUSED' };
-  return { found: true, planIds: planIdList, lineCount: lineCount, signature: sig, state: 'CONFLICT' };
+  var plansForKey = [], planIdSet = {};
+  (persistedPlans || []).forEach(function (p) { if (String(p.submit_batch_id || '').trim() === key) { plansForKey.push(p); var id = String(p.shipping_plan_id || '').trim(); if (id) planIdSet[id] = 1; } });
+  var planIds = Object.keys(planIdSet);
+  if (!plansForKey.length) return { state: 'CREATE', planIds: [], lineCount: 0, fingerprint: '' };
+  var routes = {}, dupRoute = false;
+  plansForKey.forEach(function (p) { var r = [p.company, p.country, p.ship_from, p.destination, p.shipping_method].map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }).join('||'); if (routes[r]) dupRoute = true; routes[r] = 1; });
+  if (dupRoute) return { state: 'DUPLICATE_CONFLICT', planIds: planIds, lineCount: 0, fingerprint: '' };
+  var linesForKey = (persistedLines || []).filter(function (l) { return planIdSet[String(l.shipping_plan_id || '').trim()]; });
+  if (linesForKey.length === 0 && incomingLineCount > 0) return { state: 'COMMITTED_UNVERIFIED', planIds: planIds, lineCount: 0, fingerprint: '' };
+  if (!shippingPlanLinesSchemaComplete_(linesForKey)) return { state: 'RECONCILIATION_REQUIRED', planIds: planIds, lineCount: linesForKey.length, fingerprint: '' };
+  var fp = shippingPlanCanonicalFingerprint_(plansForKey, linesForKey);
+  if (fp === incomingFingerprint) return { state: 'REUSED', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
+  return { state: 'CONFLICT', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
 }
 
 /** Read a sheet's rows as header-keyed objects (values only; no mutation). Used by the idempotency find. */
@@ -347,20 +381,10 @@ function handleCreateShippingPlansBatch_(body) {
 
   var source = String((body && body.source) || 'inventory_replenishment_submit_plan').trim();
   var createdBy = String((body && body.created_by) || 'inventory_replenishment').trim();
-  // F1-7N-FA-3C-R6E1-R1 — stable client execution key (idempotency). When present, one Submit intention maps to ONE
-  // batch: a retry with the same key + equivalent payload REUSES (zero writes); a different payload → CONFLICT. Absent
-  // → mint one (legacy per-call behavior). The incoming signature/count are computed up front (sku-nonblank lines only,
-  // matching what the create loop persists) so the classifier compares like-for-like.
+  // F1-7N-FA-3C-R6E1/R6E1A — stable client execution key (idempotency). When present, one Submit intention maps to ONE
+  // batch: a retry with the same key + an IDENTICAL canonical payload fingerprint REUSES (zero writes); any material
+  // difference → CONFLICT. Absent → mint one (legacy per-call behavior).
   var providedKey = String((body && (body.submit_batch_id || body.execution_key)) || '').trim();
-  var incomingTuples = [];
-  for (var ti = 0; ti < lines.length; ti++) {
-    var tl = lines[ti] || {};
-    if (!String(tl.sku || '').trim()) continue;
-    incomingTuples.push({ country: tl.country, ship_from: tl.ship_from, destination: tl.destination,
-      shipping_method: tl.shipping_method, marketplace: tl.marketplace, sku: tl.sku, requested_qty: tl.requested_qty });
-  }
-  var incomingSignature = shippingPlanBatchSignature_(incomingTuples);
-  var incomingLineCount = incomingTuples.length;
 
   // Serialize the whole check-then-act under the canonical ScriptLock (project convention: 30 000 ms, try/finally).
   var _spLock = LockService.getScriptLock();
@@ -384,26 +408,6 @@ function handleCreateShippingPlansBatch_(body) {
     'customs_type', 'carrier_id', 'carrier_unit_rate', 'carrier_rate_type',
     'import_duty_treatment', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee',
     'estimated_total_cost', 'currency', 'rejected_comment']);
-
-  // Idempotency find-or-reuse (only when a stable execution key was provided) — re-read INSIDE the lock.
-  if (providedKey) {
-    var existingPlans = shippingPlanReadObjects_(planSheet);
-    var existingLines = shippingPlanReadObjects_(lineSheet);
-    var cls = shippingPlanClassifyBatch_(existingPlans, existingLines, providedKey, incomingSignature, incomingLineCount);
-    if (cls.state === 'REUSED') {
-      return jsonResponse_({ success: true, data: { submit_batch_id: providedKey, outcome: 'REUSED', reused: true,
-        plan_count: cls.planIds.length, line_count: cls.lineCount, plans: cls.planIds } });
-    }
-    if (cls.state === 'CONFLICT') {
-      return jsonResponse_({ success: false, error: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT', code: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length } });
-    }
-    if (cls.state === 'COMMITTED_UNVERIFIED') {
-      return jsonResponse_({ success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount } });
-    }
-    // state === 'CREATE' → no header carries this key yet → proceed to create exactly one batch under it.
-  }
 
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
@@ -446,8 +450,10 @@ function handleCreateShippingPlansBatch_(body) {
     groups[key].lines.push(ln);
   }
 
-  var created = [];
-  var totalLines = 0;
+  // ---- BUILD the derived batch (company already resolved; quote/logistics/carton computed) WITHOUT writing. The exact
+  // objects below are what get appended; the incoming canonical fingerprint is computed from them, so a true retry
+  // (identical payload → identical derived objects) hashes equal → REUSED, while any material change diverges.
+  var derivedHeaderObjs = [], derivedLineObjs = [], created = [], totalLines = 0;
 
   for (var g = 0; g < order.length; g++) {
     var grp = groups[order[g]];
@@ -465,7 +471,7 @@ function handleCreateShippingPlansBatch_(body) {
     // Rough carrier/cost snapshot (only when a carrier is chosen for this route). Never throws.
     var quote = shippingPlanRoughQuote_(ss, meta, grp.lines, today);
 
-    shippingPlanAppendByHeader_(planSheet, {
+    derivedHeaderObjs.push({
       shipping_plan_id: planId,
       parent_shipping_plan_id: planId, // MVP: parent = self
       shipping_plan_no: planNo,
@@ -514,7 +520,7 @@ function handleCreateShippingPlansBatch_(body) {
       var logi = shippingPlanLineLogistics_(logisticsMap[sku2], approved, carton);
       var siteSku = String(l.site_sku || '').trim() || siteSkuMap[lc(l.country) + '||' + lc(lineMk) + '||' + lc(sku2)] || '';
 
-      shippingPlanAppendByHeader_(lineSheet, {
+      derivedLineObjs.push({
         shipping_plan_line_id: 'SPL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
         shipping_plan_id: planId,
         sku: sku2,
@@ -553,7 +559,48 @@ function handleCreateShippingPlansBatch_(body) {
     created.push({ shipping_plan_id: planId, shipping_plan_no: planNo, marketplace: headerMarketplace, shipping_method: meta.shipping_method, line_count: grp.lines.length });
   }
 
-  return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false, plan_count: created.length, line_count: totalLines, plans: created } });
+  // COMPLETE canonical payload fingerprint over the derived (would-be-persisted) batch.
+  var incomingFingerprint = shippingPlanCanonicalFingerprint_(derivedHeaderObjs, derivedLineObjs);
+
+  // Idempotency find-or-reuse (only when a stable execution key was provided) — re-read INSIDE the lock, compare the
+  // COMPLETE fingerprint. Never reconstruct an incomplete/legacy persisted payload and call it equivalent.
+  if (providedKey) {
+    var existingPlans = shippingPlanReadObjects_(planSheet);
+    var existingLines = shippingPlanReadObjects_(lineSheet);
+    var cls = shippingPlanClassifyBatch_(existingPlans, existingLines, providedKey, incomingFingerprint, totalLines);
+    if (cls.state === 'REUSED') {
+      return jsonResponse_({ success: true, data: { submit_batch_id: providedKey, outcome: 'REUSED', reused: true,
+        fingerprint: cls.fingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+        plan_count: cls.planIds.length, line_count: cls.lineCount, plans: cls.planIds } });
+    }
+    if (cls.state === 'CONFLICT') {
+      return jsonResponse_({ success: false, error: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT', code: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+        incoming_fingerprint: incomingFingerprint, existing_fingerprint: cls.fingerprint, existing_plan_count: cls.planIds.length } });
+    }
+    if (cls.state === 'DUPLICATE_CONFLICT') {
+      return jsonResponse_({ success: false, error: 'DUPLICATE_CONFLICT', code: 'DUPLICATE_CONFLICT',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length } });
+    }
+    if (cls.state === 'COMMITTED_UNVERIFIED') {
+      return jsonResponse_({ success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount } });
+    }
+    if (cls.state === 'RECONCILIATION_REQUIRED') {
+      return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED', code: 'RECONCILIATION_REQUIRED',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount,
+        reason: 'persisted rows are schema-incomplete / an unknown fingerprint version — cannot prove equivalence' } });
+    }
+    // state === 'CREATE' → no header carries this key yet → proceed to write exactly one batch under it.
+  }
+
+  // WRITE the derived batch (what was fingerprinted == what is written → a subsequent identical retry REUSES).
+  derivedHeaderObjs.forEach(function (h) { shippingPlanAppendByHeader_(planSheet, h); });
+  derivedLineObjs.forEach(function (ln2) { shippingPlanAppendByHeader_(lineSheet, ln2); });
+
+  return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false,
+    fingerprint: incomingFingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+    plan_count: created.length, line_count: totalLines, plans: created } });
   } finally { try { _spLock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }
 
