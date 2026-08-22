@@ -1273,6 +1273,9 @@ function handleRequestOrderSearch() {
   requestOrderState.page = 1;
   requestOrderState.searched = true;   // F1-7M-UX: explicit Search → reveal the current scoped result rows
   renderRequestOrderTable();
+  // F1-7N-FA-3C-R6B — hydrate the persisted flat Draft for the searched scope(s) so Order Allocation shows the saved
+  // order_qty/carton/note WITHOUT running AI Plan (read-only; silent; never opens the AI Plan Result popup).
+  if (typeof _roHydratePersistedDraftsForLoadedScopes_ === 'function') { try { _roHydratePersistedDraftsForLoadedScopes_(); } catch (e) {} }
 }
 
 // ---- F1-4B-FM5-R4J · "Recalculate All Sites" (Order Planning Gap) — BACKEND-OWNED RESUMABLE JOB -------------
@@ -1906,7 +1909,10 @@ function renderExpandPanel(item) {
     // otherwise the frozen effective value. _roEffectiveOrderQty (the Send Request payload owner) is UNCHANGED.
     var eff = _roRowOrderQtyDisplay_(item, i, t, e);
     var cb = _roCartonBreak(eff == null ? '' : eff, box);
-    var note = e.note != null ? String(e.note).replace(/"/g, '&quot;') : '';
+    // F1-7N-FA-3C-R6B — Note DISPLAY: a touched local edit wins (so typing/clearing is never clobbered by a re-render);
+    // otherwise the PERSISTED canonical-draft note (reload authority). Blank local edit ('') deliberately shows blank.
+    var noteRaw = (e.note !== undefined) ? String(e.note) : _roRowNoteDisplay_(item, t);
+    var note = noteRaw.replace(/"/g, '&quot;');
     var qtyVal = (eff == null) ? '' : eff;
     // FM3d: Suggested column ← canonical monthlyProjection.suggestedOrderQty when the workspace is ON (server
     // KMCALC carton owner; NO page-side carton math). Legacy page-Suggested only on the workspace-OFF fallback.
@@ -1917,11 +1923,12 @@ function renderExpandPanel(item) {
       sugCell +
       '<td><input type="number" min="0" step="1" class="ro-alloc-qty" value="' + qtyVal + '" ' +
         'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
-        'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
+        'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-field="qty" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
       '<td class="ro-carton-cell" data-cell="carton">' + _roCartonCellHtml(cb, box) + '</td>' +
       '<td><input type="text" class="ro-alloc-note" value="' + note + '" ' +
         'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" ' +
-        'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" onchange="_roAllocEditNote(this)"></td></tr>';
+        'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" data-field="note" data-month="' + _roYm(mo) + '" ' +
+        'oninput="_roAllocEditNote(this)" onblur="_roAllocNoteFlush(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"></td></tr>';
   }).join('');
   var firstShortBadge = (firstShort != null)
     ? '<span class="ro-first-shortage-badge">First Shortage: ' + RO_TIER_LABELS[firstShort] + ' · ' + next3[firstShort].label + '</span>'
@@ -2096,12 +2103,32 @@ function _roCartonCellHtml(cb, box) {
 }
 // (2026-07-24) The per-row Reason prose was removed from the UI — the panel now shows only labels, values,
 // carton breakdown, a compact partial warning, and a single First-Shortage badge. No _roBuildReason.
+// F1-7N-FA-3C-R6B — Note edit → local state + DEBOUNCED autosave to the canonical Draft (no Save button). A blank note
+// is a DELIBERATE empty-string replace (rec.note stays '' → the edit command sends note:''). oninput debounces; blur/
+// Enter flush. For a NO_DRAFT/conflict SKU the note stays in-memory only (never a canonical write, never a new Draft).
 function _roAllocEditNote(input) {
   var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
   var bucket = input.dataset.bucket;
   var rec = _roAllocEnsure(key);
   if (!rec[bucket]) rec[bucket] = {};
-  rec[bucket].note = String(input.value || '');
+  rec[bucket].note = String(input.value == null ? '' : input.value);   // '' is a real value, not "omitted"
+  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset.sku)) {
+    _roAutosaveDebounce_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset.sku, bucket, { note: rec[bucket].note }, input); });
+  }
+}
+function _roAllocNoteFlush(input) {
+  var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
+  var bucket = input.dataset.bucket;
+  var rec = _roAllocEnsure(key); if (!rec[bucket]) rec[bucket] = {};
+  rec[bucket].note = String(input.value == null ? '' : input.value);
+  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset.sku)) {
+    _roAutosaveFlush_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset.sku, bucket, { note: rec[bucket].note }, input); });
+  }
+}
+// PERSISTED note projection for the Order Allocation Note field (reload authority): the canonical-draft tier note, else ''.
+function _roRowNoteDisplay_(item, bucket) {
+  var ref = _roCanonicalRowFor_(item && item.sku, bucket);
+  return (ref && ref.line && ref.line.note != null) ? String(ref.line.note) : '';
 }
 
 function toggleRequestOrderSkuExpand(sku, country, marketplace, company) {
@@ -3386,6 +3413,7 @@ window.initRequestOrderSection = initRequestOrderSection;
 window.toggleRequestOrderSkuExpand = toggleRequestOrderSkuExpand;
 window._roAllocEdit = _roAllocEdit;
 window._roAllocEditNote = _roAllocEditNote;
+window._roAllocNoteFlush = _roAllocNoteFlush;   // F1-7N-FA-3C-R6B — inline note blur/Enter flush
 window.handleEditTargetPct = handleEditTargetPct;
 window.handleFcUpdate = handleFcUpdate;
 window._roCloseModal = _roCloseModal;
@@ -3549,12 +3577,25 @@ function _roCanonKey_(sku) { return String(sku == null ? '' : sku).trim().toUppe
 // frontend recompute fallback). Only true AFTER a getActive read-back — a SKU with no canonical draft and no read-back
 // keeps the ordinary planning view (the whole page is not "no draft" before AI Plan is ever run).
 function _roIsNoDraftSku_(sku) { return !!_roNoDraftSkus[_roCanonKey_(sku)]; }
-// A concrete scope for the scope-level getActive read. Best-effort (§18/§21): the last AI Plan scope when it carries
-// a concrete company/country/marketplace; otherwise null (skip — full page-filter derivation is a later R4E3 concern).
+// F1-7N-FA-3C-R6B — a concrete scope for the scope-level getActive read. The prior version returned a scope ONLY from
+// window._roAiPlanScope (set only when AI Plan runs THIS session) → after a browser refresh it was null → the persisted
+// Draft was never read back → Order Allocation blanked (root cause). Now it ALSO derives the concrete scope from the
+// currently-loaded/searched rows, so a persisted flat Draft hydrates on refresh WITHOUT running AI Plan.
+function _roScopeStr_(v) { return String(v == null ? '' : v).trim(); }
+function _roScopesFromLoadedData_() {
+  var seen = {}, out = [];
+  (requestOrderState.data || []).forEach(function (r) {
+    var c = _roScopeStr_(r && r.company), co = _roScopeStr_(r && r.country), m = _roScopeStr_(r && r.marketplace);
+    if (!c || !co || !m || c === 'All' || co === 'All' || m === 'All') return;   // only fully-concrete scopes
+    var k = c + '|' + co + '|' + m; if (seen[k]) return; seen[k] = 1; out.push({ company: c, country: co, marketplace: m });
+  });
+  return out;
+}
 function _roCanonicalScope_() {
   var s = window._roAiPlanScope;
   if (s && s.company && s.country && s.marketplace) return { company: s.company, country: s.country, marketplace: s.marketplace };
-  return null;
+  var d = _roScopesFromLoadedData_();
+  return d.length === 1 ? d[0] : null;   // exactly one concrete scope on screen → hydrate it (ambiguous → the multi-scope hydrator)
 }
 // Is this SKU an ACTIVE persisted-draft execution authority (edits go to the canonical writer, not in-memory only)?
 function _roIsCanonicalDraftSku_(sku) {
@@ -3601,6 +3642,19 @@ function _roBuildOrderQtyEditCommand_(draftId, requestMonth, requestBucket, orde
   return {
     recommendationType: 'MONTHLY_ORDER', draftId: String(draftId),
     edits: [{ naturalKey: { request_month: String(requestMonth), request_bucket: String(requestBucket) }, fields: { order_qty: Number(orderQty) } }],
+    expectedToken: expectedToken, actor: 'request-order'
+  };
+}
+// F1-7N-FA-3C-R6B — general per-tier edit command carrying order_qty and/or note. `note` is included ONLY when the
+// patch provides the key (a BLANK note is a deliberate empty-string overwrite, NEVER "field omitted"). carton_qty is
+// NEVER authored by the frontend — the backend (KMRDV2.applyTierEdit) recomputes it from units_per_carton.
+function _roBuildTierEditCommand_(draftId, requestMonth, requestBucket, patch, expectedToken) {
+  var fields = {};
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'order_qty') && patch.order_qty != null && patch.order_qty !== '') fields.order_qty = Number(patch.order_qty);
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'note')) fields.note = String(patch.note == null ? '' : patch.note);   // blank → '' (deliberate replace)
+  return {
+    recommendationType: 'MONTHLY_ORDER', draftId: String(draftId),
+    edits: [{ naturalKey: { request_month: String(requestMonth), request_bucket: String(requestBucket) }, fields: fields }],
     expectedToken: expectedToken, actor: 'request-order'
   };
 }
@@ -3652,35 +3706,61 @@ function _roNotify_(msg) {
   try { var gr = window.KM && window.KM.gapRecalc; if (gr && typeof gr.announceManualDone === 'function') { gr.announceManualDone(null, String(msg), null); return; } } catch (e) {}
   try { if (typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(String(msg)); } catch (e2) {}
 }
-// Populate _roCanonicalDraftBySku from ONE scope-level getActive read. Best-effort: on failure keep the existing
-// planning view (§15). Never creates a draft. Re-renders so persisted order_qty shows immediately.
-function _roLoadCanonicalDraftsForScope_(scope) {
+// F1-7N-FA-3C-R6B — monotonic hydration guard: a LATE read-back response must never clobber a NEWER hydration or a
+// user's in-progress edit. Each hydration start bumps the seq; a response applies only if it is still the newest.
+var _roHydrateSeq = 0;
+// Read ONE scope's active drafts and ACCUMULATE into the passed maps (never a Draft write; never creates/regenerates a
+// Draft; never a Draft-Line read/write — getActive reads request_order_allocation_drafts ONLY). Projects the flat DTO
+// into the exact UI model (id/version/status/tier month/recommended/order/carton/status/note/user_edited/submitted).
+function _roReadActiveDraftsForScope_(scope, accDrafts, accNoDraft, accSubmitted) {
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.getActiveRequestOrderDrafts !== 'function' || !scope || !scope.company) return Promise.resolve(null);
   return Promise.resolve(db.getActiveRequestOrderDrafts(scope)).then(function (res) {
     var data = (res && res.data) || {};
-    var next = {};
     (data.drafts || []).forEach(function (d) {
-      if (_roV2IsFlatDraft_(d)) {   // cutover ON — flat readback DTO projected into the same UI model
-        var fv = _roV2NormalizeFlatDraft_(d); var fsku = _roCanonKey_(fv.sku); if (!fsku) return;
-        next[fsku] = fv; return;
-      }
+      if (_roV2IsFlatDraft_(d)) { var fv = _roV2NormalizeFlatDraft_(d); var fsku = _roCanonKey_(fv.sku); if (fsku) accDrafts[fsku] = fv; return; }
       var h = d.header || {}; var sku = _roCanonKey_(h.sku); if (!sku) return;
       var lines = {}; (d.lines || []).forEach(function (l) { lines[String(l.request_bucket)] = l; });
-      next[sku] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false, lines: lines };
+      accDrafts[sku] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false, lines: lines };
     });
-    (data.conflicts || []).forEach(function (c) { var sku = _roCanonKey_(c.sku); if (sku) next[sku] = { conflict: true, conflictIds: c.conflictIds || [] }; });
-    _roCanonicalDraftBySku = next;
-    // §12 — record the scope's NO_DRAFT SKUs from THIS read-back so the grid can mark them "No active AI Plan draft"
-    // (never a silent second quantity authority / frontend recompute fallback). Set is per-read (replaced each time).
-    _roNoDraftSkus = {}; (data.noDraftSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) _roNoDraftSkus[k] = true; });
-    // R4E5B §14/§18/§20 — record already-executed (terminal submitted) SKUs so a re-send excludes them.
-    _roSubmittedSkus = {}; (data.submittedSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) _roSubmittedSkus[k] = true; });
-    if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
-    return next;
+    // fail closed on duplicate active matches — the natural-scope conflict is surfaced, never silently coalesced.
+    (data.conflicts || []).forEach(function (c) { var sku = _roCanonKey_(c.sku); if (sku) accDrafts[sku] = { conflict: true, conflictIds: c.conflictIds || [] }; });
+    (data.noDraftSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) accNoDraft[k] = true; });
+    (data.submittedSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) accSubmitted[k] = true; });
+    return data;
   }).catch(function () { return null; });
 }
-function _roLoadCanonicalDraftsOnMount_() { return _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
+// Populate _roCanonicalDraftBySku from ONE scope-level getActive read (used by the AI Plan DONE path — REPLACES the
+// map for that scope). Best-effort; never creates a draft; re-renders so the persisted Draft shows immediately.
+function _roLoadCanonicalDraftsForScope_(scope) {
+  if (!scope || !scope.company) return Promise.resolve(null);
+  var mySeq = ++_roHydrateSeq, drafts = {}, noDraft = {}, submitted = {};
+  return Promise.resolve(_roReadActiveDraftsForScope_(scope, drafts, noDraft, submitted)).then(function (data) {
+    if (data == null) return null;
+    if (mySeq !== _roHydrateSeq) return null;   // a newer hydration/edit started → drop this late response
+    _roCanonicalDraftBySku = drafts; _roNoDraftSkus = noDraft; _roSubmittedSkus = submitted;
+    if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
+    return drafts;
+  });
+}
+// F1-7N-FA-3C-R6B — hydrate the persisted flat Draft for EVERY concrete scope currently on screen (survives a refresh;
+// requires NO AI Plan run). Read-only: zero Draft writes, zero version change, zero updated_at change, never opens the
+// AI Plan Result popup. Accumulates across scopes, then applies under the seq guard.
+function _roHydratePersistedDraftsForLoadedScopes_() {
+  var scopes = _roScopesFromLoadedData_();
+  if (!scopes.length) { var s = _roCanonicalScope_(); if (s) scopes = [s]; }
+  if (!scopes.length) return Promise.resolve(null);
+  var mySeq = ++_roHydrateSeq, drafts = {}, noDraft = {}, submitted = {};
+  return scopes.reduce(function (p, scope) {
+    return p.then(function () { return _roReadActiveDraftsForScope_(scope, drafts, noDraft, submitted); });
+  }, Promise.resolve()).then(function () {
+    if (mySeq !== _roHydrateSeq) return null;   // a newer hydration/edit superseded this run → drop the late result
+    _roCanonicalDraftBySku = drafts; _roNoDraftSkus = noDraft; _roSubmittedSkus = submitted;
+    if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
+    return drafts;
+  }).catch(function () { return null; });
+}
+function _roLoadCanonicalDraftsOnMount_() { return _roHydratePersistedDraftsForLoadedScopes_(); }
 // Fetch + cache the optimistic-lock token for a draft (§3). Returns {draft_version, userEditFingerprint} or null.
 function _roEnsureDraftToken_(sku) {
   var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
@@ -3696,34 +3776,65 @@ function _roEnsureDraftToken_(sku) {
 // CONCURRENCY/VERSION conflict → reload the latest draft + notify (never overwrite newer state); terminal/blocked →
 // mark the row blocked. Success → update the local execution value + force a token refresh (version bumped).
 function _roSaveOrderQtyToCanonicalDraft_(sku, bucket, orderQty, input) {
+  return _roSaveTierEditToCanonicalDraft_(sku, bucket, { order_qty: orderQty }, input);
+}
+// F1-7N-FA-3C-R6B — subtle per-field autosave state without layout change (classes only; no modal, no reflow).
+function _roSetFieldState_(input, state, title) {
+  if (!input || !input.classList) return;
+  ['is-saving', 'is-saved', 'is-conflict', 'is-invalid'].forEach(function (c) { input.classList.remove(c); });
+  if (state) input.classList.add(state);
+  if (title !== undefined) input.title = title;
+}
+// F1-7N-FA-3C-R6B — the ONE inline autosave writer for a canonical-draft tier. patch = {order_qty?, note?}. Uses the
+// existing optimistic token/version contract via the LOCKED decision writer. Success → update the local DTO field +
+// null the token so the NEXT edit re-fetches the advanced token (one successful edit ⇒ one token advance). Stale token
+// → NO silent overwrite: inline Conflict/Retry state + re-read the latest Draft; the caller preserves the typed value.
+function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
   var ref = _roCanonicalRowFor_(sku, bucket);
-  if (!ref) return;   // NO_DRAFT / conflict → existing in-memory behavior only (no canonical write)
+  if (!ref) return Promise.resolve(null);   // NO_DRAFT / conflict → in-memory behavior only (never a canonical write / never a new Draft)
   var db = window.KM && window.KM.DB;
-  if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return;
+  if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return Promise.resolve(null);
   var month = ref.line.request_month;
-  if (input && input.classList) { input.classList.add('is-saving'); input.title = 'Saving…'; }
+  _roSetFieldState_(input, 'is-saving', 'Saving…');
   return _roEnsureDraftToken_(sku).then(function (tok) {
-    if (!tok) { if (input && input.classList) input.classList.remove('is-saving'); return; }
-    var cmd = _roBuildOrderQtyEditCommand_(ref.draft.draftId, month, bucket, orderQty, tok);
+    if (!tok) { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); return null; }
+    var cmd = _roBuildTierEditCommand_(ref.draft.draftId, month, bucket, patch, tok);
     return Promise.resolve(db.updateRecommendationDecisionLocked(cmd)).then(function (res) {
       var d = (res && res.data) || (res && res.error && res.error.details) || {};
       var okv = res && res.success && d.status === 'COMPLETED';
       var reason = d.reason || (res && res.error && res.error.code) || '';
-      if (input && input.classList) input.classList.remove('is-saving');
       if (okv) {
-        ref.line.order_qty = Number(orderQty);   // local execution authority updated
-        ref.draft.expectedToken = null;           // version bumped → refresh before the next edit
-        if (input) { input.title = 'Saved'; if (input.classList) input.classList.remove('is-invalid'); }
+        if (Object.prototype.hasOwnProperty.call(patch, 'order_qty') && patch.order_qty != null && patch.order_qty !== '') ref.line.order_qty = Number(patch.order_qty);
+        if (Object.prototype.hasOwnProperty.call(patch, 'note')) ref.line.note = String(patch.note == null ? '' : patch.note);   // blank persists as ''
+        if (d.draftVersion != null) ref.draft.draftVersion = d.draftVersion;   // adopt the confirmed advanced version
+        ref.draft.expectedToken = null;   // one successful edit ⇒ next edit re-fetches the advanced token
+        _roSetFieldState_(input, 'is-saved', 'Saved');
       } else if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(String(reason))) {
-        _roNotify_('Order Planning data changed while editing — reloading the latest draft.');
-        _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());
-      } else if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(reason))) {
-        if (input && input.classList) input.classList.add('is-invalid'); if (input) input.title = 'Draft conflict — review required';
+        _roSetFieldState_(input, 'is-conflict', 'Changed elsewhere — press Enter to retry');   // NO silent DB overwrite
+        ref.draft.expectedToken = null;                                   // force a fresh token on retry
+        _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());            // re-read the current Draft (typed value preserved by the caller)
+      } else if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT|TIER_TERMINAL/.test(String(reason))) {
+        _roSetFieldState_(input, 'is-invalid', 'Draft conflict — review required');
       } else {
-        if (input && input.classList) input.classList.add('is-invalid'); if (input) input.title = 'Save failed — retry';
+        _roSetFieldState_(input, 'is-invalid', 'Save failed — retry');
       }
+      return { ok: okv, reason: reason };
     });
-  }).catch(function () { if (input && input.classList) input.classList.remove('is-saving'); });
+  }).catch(function () { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); return null; });
+}
+// F1-7N-FA-3C-R6B — per-input debounce (avoid one write per keystroke) + immediate flush on blur/Enter. The debounced
+// callback always sends the LATEST intended value (the closure reads the input live at fire time).
+var _roAutosaveTimers_ = {};
+function _roAutosaveKey_(input) { return [input && input.dataset && input.dataset.sku, input && input.dataset && input.dataset.bucket, input && input.dataset && input.dataset.field].join('|'); }
+function _roAutosaveDebounce_(input, fn, ms) {
+  var k = _roAutosaveKey_(input);
+  if (_roAutosaveTimers_[k]) { clearTimeout(_roAutosaveTimers_[k]); }
+  _roAutosaveTimers_[k] = setTimeout(function () { delete _roAutosaveTimers_[k]; fn(); }, (typeof ms === 'number' ? ms : 600));
+}
+function _roAutosaveFlush_(input, fn) {
+  var k = _roAutosaveKey_(input);
+  if (_roAutosaveTimers_[k]) { clearTimeout(_roAutosaveTimers_[k]); delete _roAutosaveTimers_[k]; }
+  fn();
 }
 if (typeof window !== 'undefined') {
   window._roBuildOrderQtyEditCommand_ = _roBuildOrderQtyEditCommand_;
@@ -3732,6 +3843,11 @@ if (typeof window !== 'undefined') {
   window._roV2BuildSendLinesFromFlat_ = _roV2BuildSendLinesFromFlat_;
   window._roRowOrderQtyDisplay_ = _roRowOrderQtyDisplay_;
   window._roLoadCanonicalDraftsForScope_ = _roLoadCanonicalDraftsForScope_;
+  window._roHydratePersistedDraftsForLoadedScopes_ = _roHydratePersistedDraftsForLoadedScopes_;   // F1-7N-FA-3C-R6B reload hydration
+  window._roScopesFromLoadedData_ = _roScopesFromLoadedData_;
+  window._roBuildTierEditCommand_ = _roBuildTierEditCommand_;
+  window._roSaveTierEditToCanonicalDraft_ = _roSaveTierEditToCanonicalDraft_;
+  window._roRowNoteDisplay_ = _roRowNoteDisplay_;
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
   window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;
   window._roIsNoDraftSku_ = _roIsNoDraftSku_;

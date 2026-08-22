@@ -130,7 +130,7 @@ section('WIRING — adapter wrappers + edit routing + Send Request untouched + n
   ok(/_roIsCanonicalDraftSku_\(input\.dataset\.sku\)[\s\S]{0,120}_roSaveOrderQtyToCanonicalDraft_/.test(ro), 'W5 _roAllocEdit routes persisted-draft rows to the canonical save');
   ok(/oninput="_roRecomputeAllocRow\(this\)"/.test(RO_JS) && /onchange="_roAllocEdit\(this\)"/.test(RO_JS), 'W6 canonical save rides onchange (commit), not oninput (no per-keystroke write)');
   // NO_DRAFT / conflict fail closed (no canonical write)
-  ok(/if \(!ref\) return;/.test(ro), 'W7 _roSaveOrderQtyToCanonicalDraft_ no-ops when the row has no persisted draft (never auto-creates)');
+  ok(/if \(!ref\) return Promise\.resolve\(null\);/.test(ro), 'W7 the canonical tier save no-ops when the row has no persisted draft (never auto-creates)');
   // optimistic-lock conflict + terminal handling
   ok(/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT/.test(ro) && /IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(ro), 'W8 conflict + terminal states handled');
   // DISPLAY overlay leaves the Send Request payload owner untouched

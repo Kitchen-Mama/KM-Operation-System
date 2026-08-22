@@ -56,6 +56,8 @@ function TEMP_R6A_VALIDATE_AFTER_PARTIAL_SUBMIT() { return TEMP_r6aValidateStage
 function TEMP_R6A_VALIDATE_AFTER_FULL_SUBMIT() { return TEMP_r6aValidateStage_('FULL_SUBMIT'); }
 function TEMP_R6A_VALIDATE_AFTER_SEND() { return TEMP_r6aValidateStage_('SEND'); }
 function TEMP_R6A_VALIDATE_RESEND_IDEMPOTENCY() { return TEMP_r6aValidateStage_('RESEND'); }
+// F1-7N-FA-3C-R6B — READ-ONLY persisted-draft hydration diagnostic for the frozen CO1100-R scope. Writes NOTHING.
+function TEMP_R6B_DIAGNOSE_PERSISTED_DRAFT_HYDRATION() { return TEMP_r6bDiagnosePersistedDraftHydration_(); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
@@ -1199,5 +1201,74 @@ function TEMP_r6aValidateStage_(stage) {
     DRAFT_LINE_DEPENDENCY_ZERO: 'YES', checks: checks, R6A_ZERO_WRITE_CONFIRMED: 'YES',
     verdict: pass ? ('STAGE_VALIDATED_' + stage) : ('STAGE_VALIDATION_FAILED_' + stage) };
   Logger.log('R6A_VALIDATE ' + stage + ' ' + out.verdict + '\n' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6B — READ-ONLY persisted-draft hydration diagnostic (writes NOTHING). Proves the frozen
+// CO1100-R flat Draft reads back from the canonical table into the exact frontend-projection DTO WITHOUT running AI
+// Plan: DB row values == readback DTO values, zero writes, zero version change, zero Draft-Line dependency.
+// ================================================================================================================
+function TEMP_r6bTierFromDto_(dto, tier) {
+  var out = null; (dto && dto.tiers || []).forEach(function (t) { if (String(t.tier) === tier) out = t; }); return out;
+}
+function TEMP_r6bDiagnosePersistedDraftHydration_() {
+  if (typeof KMRDV2 === 'undefined' || !KMRDV2 || !Array.isArray(KMRDV2.V2_HEADERS) || typeof KMRDV2P === 'undefined' || !KMRDV2P) {
+    return { ok: false, halt: 'V2_BUNDLE_ABSENT', R6B_ZERO_WRITE_CONFIRMED: 'YES' };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  var flagOn = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') && requestOrderDraftV2FlatCutoverEnabled_() === true;
+  var read = TEMP_readObjects_(TEMP_R5C_CANON_), v2 = KMRDV2.V2_HEADERS;
+  var schemaExact = (read.present && (read.headers || []).length === v2.length && (read.headers || []).join('|') === v2.join('|')) ? 'YES' : 'NO';
+  var draftLineCount = (TEMP_readObjects_(TEMP_R5C_LINES_).rows || []).length;
+  var TARGET = TEMP_R6A_TARGET_ID_, p = TEMP_r5c1ParseId_(TARGET), scope = p.scope || {};
+  var matches = (read.rows || []).filter(function (r) { return TEMP_str_(r.request_allocation_draft_id) === TARGET; });
+  var row = matches.length === 1 ? matches[0] : null;
+  // build a sheetSet the flat readback authority consumes (rows as arrays in V2 header order) — read-only projection.
+  var arr = (read.rows || []).map(function (o) { return v2.map(function (h) { return o[h] !== undefined ? o[h] : ''; }); });
+  var set = {}; set[KMRDV2P.HEADER_TABLE] = { headers: v2.slice(), rows: arr };
+  var dtos = [];
+  try { dtos = KMRDV2P.readActiveFlatForScope(set, { planningCycle: TEMP_str_(row && row.planning_cycle) || p.cycle, businessScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: scope.sku, draft_purpose: scope.draft_purpose } }) || []; } catch (e2) { dtos = []; }
+  var dto = null; dtos.forEach(function (d) { if (String(d.draftId) === TARGET) dto = d; });
+  var tiers = {}, dbVsDto = {}, allEqual = true;
+  ['t1', 't2', 't3'].forEach(function (pfx) {
+    var T = pfx.toUpperCase(), dt = dto ? TEMP_r6bTierFromDto_(dto, T) : null;
+    var db = row ? { month: TEMP_str_(row[pfx + '_month']), recommended_qty: TEMP_r6aNum_(row[pfx + '_recommended_qty']), order_qty: TEMP_r6aNum_(row[pfx + '_order_qty']), carton_qty: TEMP_r6aNum_(row[pfx + '_carton_qty']), status: TEMP_str_(row[pfx + '_status']), note: TEMP_str_(row[pfx + '_note']) } : null;
+    var projected = dt ? { month: TEMP_str_(dt.month), recommended_qty: TEMP_r6aNum_(dt.recommendedQty), order_qty: TEMP_r6aNum_(dt.orderQty), carton_qty: TEMP_r6aNum_(dt.cartonQty), status: TEMP_str_(dt.status), note: TEMP_str_(dt.note) } : null;
+    tiers[T] = { db: db, readback_dto: projected };
+    var eq = !!(db && projected && db.month === projected.month && db.recommended_qty === projected.recommended_qty && db.order_qty === projected.order_qty && db.carton_qty === projected.carton_qty && db.status === projected.status && db.note === projected.note);
+    dbVsDto[T] = eq ? 'EQUAL' : 'MISMATCH'; if (!eq) allEqual = false;
+  });
+  // active natural-key duplicate count for the target scope
+  var key = row ? TEMP_r5cNatKey_(row.company, row.country, row.marketplace, row.sku, row.draft_purpose, row.planning_cycle) : '';
+  var dup = 0; if (row) (read.rows || []).forEach(function (r) { var s = TEMP_str_(r.status); if (s !== 'draft' && s !== 'partially_submitted' && s !== 'site_confirmed') return; if (TEMP_r5cNatKey_(r.company, r.country, r.marketplace, r.sku, r.draft_purpose, r.planning_cycle) === key) dup++; });
+  var checksum = TEMP_r5bHash_([TARGET, TEMP_str_(row && row.status), row && row.draft_version, JSON.stringify(tiers)].join('|'));
+  var verdict = (!row) ? (matches.length === 0 ? 'TARGET_ABSENT' : 'DUPLICATE_ACTIVE_MATCH')
+    : (schemaExact !== 'YES') ? 'SCHEMA_MISMATCH'
+    : (!flagOn) ? 'FLAG_OFF'
+    : (dup > 1) ? 'DUPLICATE_ACTIVE_MATCH'
+    : (!dto) ? 'READBACK_EMPTY'
+    : (allEqual ? 'HYDRATION_FIDELITY_OK' : 'DB_DTO_MISMATCH');
+  var out = {
+    ok: verdict === 'HYDRATION_FIDELITY_OK',
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, active_flag: flagOn,
+    CANONICAL_V2_SCHEMA_EXACT: schemaExact, canonical_headers_hash: TEMP_r5bHash_((read.headers || []).join('|')),
+    target_id: TARGET, natural_scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: scope.sku, draft_purpose: scope.draft_purpose },
+    planning_cycle: TEMP_str_(row && row.planning_cycle), target_present: matches.length > 0 ? 'YES' : 'NO', target_count: matches.length,
+    draft_status: TEMP_str_(row && row.status), draft_version: row && row.draft_version,
+    tiers: tiers,
+    frontend_projection_field_names: { draftId: 'draftId', draftVersion: 'draftVersion', status: 'status', tier_month: 'month', recommended_qty: 'recommendedQty', order_qty: 'orderQty', carton_qty: 'cartonQty', tier_status: 'status', note: 'note', user_edited: 'userEdited', submitted_by: 'submittedBy', submitted_at: 'submittedAt' },
+    db_vs_dto: dbVsDto, db_vs_dto_all_equal: allEqual ? 'YES' : 'NO',
+    active_natural_key_duplicate_count: dup > 1 ? dup : 0,
+    hydration_write_count: 0,
+    DRAFT_LINE_DEPENDENCY_ZERO: 'YES (readback reads request_order_allocation_drafts ONLY; never request_order_allocation_draft_lines)',
+    draft_line_row_count: draftLineCount,
+    R6B_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + KMRDV2P.readActiveFlatForScope over an in-memory set; no setValues/appendRow/setNumberFormat/insertSheet/rename)',
+    R6B_DIAGNOSTIC_CHECKSUM: checksum, verdict: verdict, R6B_DIAGNOSTIC_READY: 'YES'
+  };
+  Logger.log('R6B_PERSISTED_DRAFT_HYDRATION ' + JSON.stringify(out, null, 2));
   return out;
 }

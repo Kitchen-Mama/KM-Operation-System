@@ -184,11 +184,11 @@ ok(!_roAiPlanScopeMatches_({ company: 'KM', country: 'US', marketplace: 'AMAZON_
   ok(/fields: \{ order_qty:/.test(editCmd) && !/recommended_qty|calculated_gap_qty_snapshot|units_per_carton/.test(editCmd), '§9/§10 locked edit sends ONLY order_qty (recommended/gap/UPC immutable)');
   ok(/updateRecommendationDecisionLocked/.test(RO), '§10 order_qty persists through the EXISTING locked decision writer (no second edit writer)');
   // §11 stale token + conflict fail closed
-  ok(/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(RO) && /reloading the latest draft/.test(RO), '§11 stale token → reload latest draft, never overwrite');
+  ok(/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(RO) && /_roLoadCanonicalDraftsForScope_\(_roCanonicalScope_\(\)\)/.test(RO), '§11 stale token → reload latest draft, never overwrite (R6B: inline Conflict state + re-read)');
   ok(/if \(!d \|\| d\.conflict \|\| !d\.lines\) return null;/.test(RO), '§13 conflict draft → no canonical row (editing blocked; fail closed)');
   // §12 NO_DRAFT marker without a recompute fallback
   ok(/_roIsNoDraftSku_/.test(RO) && /No active AI Plan draft/.test(RO), '§12 NO_DRAFT SKUs are clearly marked (no silent second quantity authority)');
-  ok(/_roNoDraftSkus = \{\};[\s\S]{0,160}data\.noDraftSkus/.test(RO), '§12 the NO_DRAFT set comes from the scope read-back only (replaced each read)');
+  ok(/_roNoDraftSkus = \{\}/.test(RO) && /data\.noDraftSkus/.test(RO), '§12 the NO_DRAFT set comes from the scope read-back only (replaced each read; R6B: reset in the loader, populated in the per-scope reader)');
   // §8 T4 non-actionable — the allocation renderer only builds T1/T2/T3 rows
   ok(/\['T1', 'T2', 'T3'\]\.map\(function/.test(RO), '§8/J T4 is never rendered as an editable allocation line (renderer = T1/T2/T3 only)');
 
