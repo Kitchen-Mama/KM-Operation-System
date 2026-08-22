@@ -38,6 +38,9 @@ function TEMP_R4_AUDIT_ALL_26_RequestOrderDraftV2() { return TEMP_auditAll26Requ
 function TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2() { return TEMP_auditActiveScopeTokens_(); }
 // F1-7N-FA-3C-R5B-P0 — READ-ONLY live canonical-table + header-authority diagnostic. Writes NOTHING.
 function TEMP_R5B_DIAGNOSE_CANONICAL_DRAFT_TABLE() { return TEMP_r5bDiagnoseCanonicalDraftTable_(); }
+// F1-7N-FA-3C-R5C-P0 — READ-ONLY permanent-write incident audit: enumerates every Date/coerced planning_cycle row,
+// the deterministic-id cycle, projected duplicate groups + unresolvable ids. Writes NOTHING. Freezes the R5C1 set.
+function TEMP_R5C_AUDIT_DRAFT_WRITE_INCIDENT() { return TEMP_r5cAuditDraftWriteIncident_(); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
@@ -624,5 +627,136 @@ function TEMP_r5bDiagnoseCanonicalDraftTable_() {
     R5B_DIAGNOSTIC_READY: 'YES'
   };
   Logger.log('R5B_CANONICAL_TABLE_DIAGNOSTIC ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R5C-P0 — READ-ONLY permanent-write incident audit (writes NOTHING). Enumerates the live
+// canonical request_order_allocation_drafts, its planning_cycle JS-type/value distribution, EVERY noncanonical
+// (Date/coerced) row with full identity + the cycle encoded in its deterministic id, active natural-key duplicate
+// groups (raw cycles) and PROJECTED duplicate groups if offenders were canonicalized, plus ids that cannot be
+// repaired deterministically — so the USER can FREEZE the exact offender set for the R5C1 repair. It NEVER writes,
+// formats, renames or repairs anything. "Missing ≠ 0": absent evidence is reported as absent, never inferred.
+// ================================================================================================================
+var TEMP_R5C_CANON_ = 'request_order_allocation_drafts';
+var TEMP_R5C_LINES_ = 'request_order_allocation_draft_lines';
+var TEMP_R5C_CANON_RE_ = /^\d{4}-(0[1-9]|1[0-2])$/;
+// parse the cycle segment ::YYYY-MM:: from a deterministic RD:: id (safe: only a strict YYYY-MM between :: markers)
+function TEMP_r5cCycleFromId_(id) {
+  var s = String(id || ''), m = s.match(/::(\d{4}-(?:0[1-9]|1[0-2]))(?:::|$)/);
+  return m ? { ok: true, cycle: m[1] } : { ok: false, cycle: '' };
+}
+function TEMP_r5cActive_(status) { var s = TEMP_str_(status).toLowerCase(); return s === 'draft' || s === 'site_confirmed'; }
+function TEMP_r5cNatKey_(company, country, marketplace, sku, purpose, cycle) {
+  return [TEMP_str_(company), TEMP_str_(country), TEMP_str_(marketplace), TEMP_str_(sku), TEMP_str_(purpose) || 'regular', String(cycle)].join('||');
+}
+function TEMP_r5cRawCycleStr_(cv) {
+  if (TEMP_isDate_(cv)) { try { return cv.toISOString(); } catch (e) { return String(cv); } }
+  return String(cv);
+}
+function TEMP_r5cDupGroups_(groups) {   // {key:[ids]} → [{natural_key, count, ids}] for count>1, sorted
+  var out = [];
+  Object.keys(groups).forEach(function (k) { if (groups[k].length > 1) out.push({ natural_key: k, count: groups[k].length, ids: groups[k].slice().sort() }); });
+  out.sort(function (a, b) { return a.natural_key < b.natural_key ? -1 : (a.natural_key > b.natural_key ? 1 : 0); });
+  return out;
+}
+function TEMP_r5cAuditDraftWriteIncident_() {
+  if (typeof KMRDV2 === 'undefined' || !KMRDV2 || !Array.isArray(KMRDV2.V2_HEADERS)) {
+    return { halt: 'V2_BUNDLE_ABSENT', message: 'KMRDV2 not present — sync 90_ bundle first', R5C_INCIDENT_AUDIT_READY: 'NO' };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 1 target fingerprint
+  var runtimeId = '', runtimeName = '';
+  try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  try { runtimeName = ss ? String(ss.getName()) : ''; } catch (e2) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN(no PRODUCTION_DB_SPREADSHEET_ID_ configured)' : 'NO');
+
+  // 2-3 canonical tab + exact schema vs KMRDV2.V2_HEADERS
+  var read = TEMP_readObjects_(TEMP_R5C_CANON_);
+  var present = read.present, headers = read.headers || [], rows = read.rows || [], v2 = KMRDV2.V2_HEADERS;
+  var headerCount = headers.length;
+  var schemaExact = present && headerCount === v2.length && headers.join('|') === v2.join('|');
+
+  // 4-5 row counts (canonical + Draft Lines)
+  var canonicalRowCount = rows.length;
+  var linesRead = TEMP_readObjects_(TEMP_R5C_LINES_);
+  var draftLineRowCount = (linesRead.rows || []).length;
+
+  // 6-14 cycle type/value distribution, offenders, deterministic-id cycle
+  var cycleTypes = {}, cycleValues = {}, canonicalStringCount = 0, nonCanonicalCount = 0, offenders = [], unresolvable = [];
+  var rawGroups = {}, projGroups = {};
+  rows.forEach(function (r, i) {
+    var cv = r.planning_cycle, isD = TEMP_isDate_(cv);
+    var t = isD ? 'Date' : (cv === null || cv === undefined ? 'null' : typeof cv);
+    var vk = TEMP_r5cRawCycleStr_(cv);
+    cycleTypes[t] = (cycleTypes[t] || 0) + 1;
+    cycleValues[vk] = (cycleValues[vk] || 0) + 1;
+    var id = TEMP_str_(r.request_allocation_draft_id);
+    var idc = TEMP_r5cCycleFromId_(id);
+    var isCanon = (t === 'string') && TEMP_R5C_CANON_RE_.test(String(cv));
+    // active natural-key duplicate accounting: RAW cycles now; PROJECTED cycles (canonical string kept; offender →
+    // its deterministic-id cycle when parsable) to detect a collision that canonicalization would create.
+    if (TEMP_r5cActive_(r.status)) {
+      var rawKey = TEMP_r5cNatKey_(r.company, r.country, r.marketplace, r.sku, r.draft_purpose, vk);
+      (rawGroups[rawKey] = rawGroups[rawKey] || []).push(id);
+      var projCycle = isCanon ? String(cv) : (idc.ok ? idc.cycle : null);
+      if (projCycle !== null) { var pk = TEMP_r5cNatKey_(r.company, r.country, r.marketplace, r.sku, r.draft_purpose, projCycle); (projGroups[pk] = projGroups[pk] || []).push(id); }
+    }
+    if (isCanon) { canonicalStringCount++; return; }
+    nonCanonicalCount++;
+    offenders.push({
+      row_number: i + 2, request_allocation_draft_id: id, id_family: TEMP_idFamily_(id),
+      raw_planning_cycle: vk, js_type: t, is_date: isD ? 'YES' : 'NO', iso: isD ? vk : '',
+      company: TEMP_str_(r.company), country: TEMP_str_(r.country), marketplace: TEMP_str_(r.marketplace),
+      sku: TEMP_str_(r.sku), draft_purpose: TEMP_str_(r.draft_purpose) || 'regular',
+      status: TEMP_str_(r.status), generation_type: TEMP_str_(r.generation_type),
+      created_at: TEMP_r5cRawCycleStr_(r.created_at), updated_at: TEMP_r5cRawCycleStr_(r.updated_at),
+      id_encoded_cycle: idc.cycle, id_cycle_parsable: idc.ok ? 'YES' : 'NO'
+    });
+    if (!idc.ok) unresolvable.push(id);
+  });
+  offenders.sort(function (a, b) { return a.request_allocation_draft_id < b.request_allocation_draft_id ? -1 : (a.request_allocation_draft_id > b.request_allocation_draft_id ? 1 : 0); });
+  var offenderIds = offenders.map(function (o) { return o.request_allocation_draft_id; }).sort();
+  unresolvable = unresolvable.slice().sort();
+  var rawDupGroups = TEMP_r5cDupGroups_(rawGroups), projDupGroups = TEMP_r5cDupGroups_(projGroups);
+
+  var out = {
+    // 1 target
+    runtime_spreadsheet_name: runtimeName, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    runtime_acquisition_path: 'getActiveSpreadsheet', expected_db_id_fingerprint: TEMP_r5bIdFingerprint_(expectedId),
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+    // 2-3 tab + schema
+    canonical_tab_present: present ? 'YES' : 'NO', canonical_header_count: headerCount, expected_v2_header_count: v2.length,
+    canonical_headers_hash: TEMP_r5bHash_(headers.join('|')), expected_v2_headers_hash: TEMP_r5bHash_(v2.join('|')),
+    CANONICAL_V2_SCHEMA_EXACT: schemaExact ? 'YES' : 'NO',
+    // 4-5 counts
+    R5C_CANONICAL_ROW_COUNT: canonicalRowCount, R5C_DRAFT_LINE_ROW_COUNT: draftLineRowCount,
+    // 6-9 cycle distribution
+    R5C_CYCLE_TYPE_DISTRIBUTION: cycleTypes, planning_cycle_value_distribution: cycleValues,
+    canonical_string_cycle_count: canonicalStringCount, R5C_NONCANONICAL_CYCLE_COUNT: nonCanonicalCount,
+    // 10-12 offenders
+    noncanonical_rows: offenders, R5C_OFFENDER_IDS: offenderIds, offender_id_count: offenderIds.length,
+    // 13-14 incident vs pre-existing (evidence-derived: Date/coerced = incident-written; canonical string = migrated)
+    incident_created_offender_count: nonCanonicalCount, pre_existing_migrated_id_count: canonicalStringCount,
+    // 15-16 duplicates
+    active_raw_cycle_duplicate_groups: rawDupGroups, active_raw_cycle_duplicate_group_count: rawDupGroups.length,
+    projected_canonicalized_duplicate_groups: projDupGroups, R5C_PROJECTED_DUPLICATE_COUNT: projDupGroups.length,
+    // 17 unresolvable
+    unresolvable_offender_ids: unresolvable, R5C_UNRESOLVABLE_COUNT: unresolvable.length,
+    // 18 draft-line delta authority
+    draft_line_delta_authority: draftLineRowCount, draft_line_expected_note: 'expected 65 (unchanged this incident; the flat write NEVER touches request_order_allocation_draft_lines)',
+    // 19 zero-write proof
+    R5C_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + getSheetByName only; no setValues/appendRow/setNumberFormat/insertSheet/rename)',
+    // 20 checksum over sorted offender ids
+    R5C_INCIDENT_AUDIT_CHECKSUM: TEMP_r5bHash_(offenderIds.join('|')),
+    // comparison expectations (NOT truth — observed values above are authoritative)
+    comparison_expectations: { likely_total_rows: 67, likely_noncanonical_incident_rows: 41, draft_lines: 65 },
+    verdict: (!present ? 'CANONICAL_TAB_ABSENT_OR_WRONG_TARGET'
+      : (nonCanonicalCount === 0 ? 'NO_COERCED_CYCLE_ROWS'
+        : (projDupGroups.length > 0 ? 'OFFENDERS_PRESENT_PROJECTED_DUPLICATES' : 'OFFENDERS_PRESENT_NO_PROJECTED_DUPLICATES'))),
+    R5C_INCIDENT_AUDIT_READY: 'YES'
+  };
+  Logger.log('R5C_INCIDENT_AUDIT ' + JSON.stringify(out, null, 2));
   return out;
 }

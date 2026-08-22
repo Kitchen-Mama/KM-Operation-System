@@ -40,7 +40,7 @@ function reqDraftJobScopeKey_(scope) { return [reqDraftJobStr_(scope && scope.co
 function reqDraftJobCodeForStatus_(status) {
   return status === 'CREATED' ? 'C' : status === 'REUSED' ? 'U' : status === 'REGENERATED' ? 'R'
     : status === 'REGENERATE_NEEDS_CONFIRMATION' ? 'N' : status === 'BLOCKED_CONFLICT' ? 'B'
-    : status === 'NOT_READY' ? 'G' : 'F';
+    : status === 'NOT_READY' ? 'G' : status === 'WRITE_COMMITTED_READBACK_FAILED' ? 'X' : 'F';   // F1-7N-FA-3C-R5C-P0 'X' = committed-but-unverified
 }
 function reqDraftJobFoldCount_(counts, status) {
   if (status === 'CREATED') counts.created++;
@@ -49,6 +49,7 @@ function reqDraftJobFoldCount_(counts, status) {
   else if (status === 'REGENERATE_NEEDS_CONFIRMATION') counts.needsConfirmation++;
   else if (status === 'BLOCKED_CONFLICT') counts.blockedConflict++;
   else if (status === 'NOT_READY') counts.notReady++;
+  else if (status === 'WRITE_COMMITTED_READBACK_FAILED') counts.committedUnverified++;   // F1-7N-FA-3C-R5C-P0 — persisted but readback-unverified (needs reconciliation; NOT a clean failure, NOT a create)
   else counts.failed++;
 }
 // F1-7N-FA-3C-PRE3-R2 — bounded DIAGNOSTIC reason aggregation. The coarse `counts` cannot distinguish WHY a SKU was
@@ -86,7 +87,7 @@ function reqDraftJobNewState_(runId, scope, skuList, gapBinding, nowStr, nowMs, 
     planningCycle: planningCycle || '', status: 'RUNNING',
     cursor: 0, total: skuList.length, skuList: skuList, statuses: statuses,
     gapBinding: { jobRunId: (gapBinding && gapBinding.jobRunId) || null, jobStatus: (gapBinding && gapBinding.jobStatus) || 'NONE' },
-    counts: { created: 0, reused: 0, regenerated: 0, needsConfirmation: 0, blockedConflict: 0, notReady: 0, failed: 0 },
+    counts: { created: 0, reused: 0, regenerated: 0, needsConfirmation: 0, blockedConflict: 0, notReady: 0, committedUnverified: 0, failed: 0 },
     reasonCounts: {}, reasonSamples: {},   // F1-7N-FA-3C-PRE3-R2 — bounded diagnostic reason histogram + SKU samples
     startedAt: nowStr, updatedAt: nowStr, startedAtMs: nowMs || 0, updatedAtMs: nowMs || 0, finishedAt: null, cancelledAt: null, lastError: null,
     lease: null,

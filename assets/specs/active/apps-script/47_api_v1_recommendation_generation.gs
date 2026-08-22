@@ -269,6 +269,30 @@ function recGenBuildGapDraftBody_(scope1, gapRow, upc, opts) {
 // COMPLETED→CREATED/REUSED/REGENERATED (by coreAction); BLOCKED_CONFLICT with reason DUPLICATE/FOREIGN/CONFIRMATION.
 function recGenSummarizeDraftResult_(sku, res) {
   var d = (res && res.data) || {};
+  // F1-7N-FA-3C-R5C-P0 — FLAT V2 result shape (marked resultShape='FLAT_V2' by rpoGenerateMonthlyFlatResult_). It has
+  // NO data.status/coreAction (the legacy line shape); it carries { wrote, persisted, outcome, action, draftId, result }
+  // and, on a post-write roundtrip failure, result.writeOutcome. The pre-R5C code fell through to the line branch below
+  // and misclassified EVERY committed flat write as GENERATION_FAILED (the live Failed 99 with 41 rows committed).
+  // Classify the flat shape truthfully here — a committed write is CREATED/REUSED/REGENERATED; a committed-but-unverified
+  // write surfaces the committed id + requiresReconciliation (never a clean success, never a silent GENERATION_FAILED).
+  if (d.resultShape === 'FLAT_V2') {
+    var wo = d.result && d.result.writeOutcome;
+    if (wo === 'WRITE_COMMITTED_READBACK_FAILED') {
+      return { sku: sku, status: 'WRITE_COMMITTED_READBACK_FAILED', code: 'WRITE_COMMITTED_READBACK_FAILED',
+        draftId: d.draftId || (d.result && d.result.committedDraftId) || null, requiresReconciliation: true };
+    }
+    if (d.wrote === true) {
+      var fst = (d.outcome === 'CREATE') ? 'CREATED' : (d.outcome === 'REFRESH') ? 'REUSED' : (d.outcome === 'REGENERATE') ? 'REGENERATED' : 'GENERATED';
+      return { sku: sku, status: fst, draftId: d.draftId || null };
+    }
+    if (d.conflict === true || d.outcome === 'CONFLICT' || d.error === 'BLOCKED_CONFLICT' || d.reason === 'DUPLICATE_ACTIVE_DRAFT') {
+      return { sku: sku, status: 'BLOCKED_CONFLICT', code: String(d.reason || d.error || 'BLOCKED_CONFLICT') };
+    }
+    if (d.outcome === 'NON_ACTIONABLE') return { sku: sku, status: 'NOT_READY', code: String(d.reason || 'NON_ACTIONABLE_ZERO_RECOMMENDATION'), draftId: d.draftId || null };
+    var freason = d.reason || d.error || 'GENERATION_FAILED';
+    if (String(freason).indexOf('SOURCE_NOT_READY') === 0 || freason === 'FACTS_NOT_READY' || /NOT_READY$/.test(String(freason))) return { sku: sku, status: 'NOT_READY', code: String(freason), draftId: d.draftId || null };
+    return { sku: sku, status: 'FAILED', code: String(freason), draftId: d.draftId || null };
+  }
   if (res && res.success === true && d.status === 'COMPLETED') {
     var st = (d.coreAction === 'CREATE') ? 'CREATED' : (d.coreAction === 'REFRESH') ? 'REUSED' : (d.coreAction === 'REGENERATE') ? 'REGENERATED' : 'GENERATED';
     return { sku: sku, status: st, draftId: d.draftId || null };

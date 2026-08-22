@@ -74,7 +74,7 @@ section('Fixture A — 3-SKU scope job: START → CONTINUE → DONE (create/reus
   eq([s.success, s.data.status, s.data.total], [true, 'RUNNING', 3], 'A1 START RUNNING total 3');
   var c = reqDraftJobContinue_(env, null);
   eq([c.data.status, c.data.cursor, c.data.processedThisRun, c.data.hasMore], ['DONE', 3, 3, false], 'A2 one CONTINUE processes all 3 → DONE');
-  eq(c.data.counts, { created: 2, reused: 1, regenerated: 0, needsConfirmation: 0, blockedConflict: 0, notReady: 0, failed: 0 }, 'A3 truthful mixed counts');
+  eq(c.data.counts, { created: 2, reused: 1, regenerated: 0, needsConfirmation: 0, blockedConflict: 0, notReady: 0, committedUnverified: 0, failed: 0 }, 'A3 truthful mixed counts');
 })();
 
 section('Fixture B — forced multi-continuation (maxSkus=2): cursor advances, resumes, no duplicate');

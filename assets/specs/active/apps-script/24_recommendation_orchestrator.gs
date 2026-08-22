@@ -146,16 +146,37 @@ function rpoFlatLoadById_(ss, draftId) { var b = rprBuildSheetSet_(ss, [KMRDV2P.
 function rpoFlatTokenForDraft_(ss, draftId) { var b = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]); return KMRDV2P.tokenForDraft(b.set, draftId); }
 // The ONE flat locked-apply: LockService → reload flat set UNDER the lock → KMRDV2P.applyFlat (single row + shared
 // run journal, NO child lines) → keyed-delta write-back. Mirrors the line engine's governance exactly.
+// F1-7N-FA-3C-R5C-P0 — TRUTHFUL WRITE-RESULT SEMANTICS. Attach an explicit writeOutcome to the applyFlat result so a
+// COMMITTED-but-unverified write (post-write roundtrip failed) is NEVER reported as a clean success and NEVER as a
+// silent GENERATION_FAILED: WRITE_NOT_STARTED (no lock / nothing persisted) · WRITE_REJECTED (token/dup conflict, no
+// write) · WRITE_COMMITTED_VERIFIED (row written + id/cycle roundtrip-verified) · WRITE_COMMITTED_READBACK_FAILED
+// (row committed but readback failed → surface the committed id + requiresReconciliation; blind retry is prohibited,
+// the deterministic id keeps a re-run idempotent). The keyed-delta writer performs the id/cycle text-format + roundtrip.
 function rpoFlatLockedApply_(ss, plan, expectedToken, opts) {
   var tables = rpoFlatTables_();
   var lock = LockService.getScriptLock();
   var got = lock.tryLock(30000);
-  if (!got) return { runStatus: 'FAILED', wrote: false, reason: 'LOCK_NOT_ACQUIRED' };
+  if (!got) return { runStatus: 'FAILED', wrote: false, reason: 'LOCK_NOT_ACQUIRED', writeOutcome: 'WRITE_NOT_STARTED' };
   try {
     var built = rprBuildSheetSet_(ss, tables);
     var before = {}; for (var i = 0; i < tables.length; i++) before[tables[i]] = built.set[tables[i]].rows.map(function (r) { return r.slice(); });
     var resR = KMRDV2P.applyFlat(built.set, plan, expectedToken, opts || {});
-    if (resR && resR.wrote === true && resR.runStatus === 'COMPLETED') { rpoKeyedDeltaWrite_(built.meta, built.set, before, tables); }
+    if (resR && resR.wrote === true && resR.runStatus === 'COMPLETED') {
+      var wres = rpoKeyedDeltaWrite_(built.meta, built.set, before, tables);
+      if (wres && wres.verified === false) {
+        resR.writeOutcome = 'WRITE_COMMITTED_READBACK_FAILED';
+        resR.requiresReconciliation = true;
+        resR.committedDraftId = plan.draftId;
+        resR.readbackFailures = wres.readbackFailures || [];
+      } else {
+        resR.writeOutcome = 'WRITE_COMMITTED_VERIFIED';
+        resR.committedDraftId = plan.draftId;
+      }
+    } else if (resR && resR.conflict) {
+      resR.writeOutcome = 'WRITE_REJECTED';
+    } else if (resR) {
+      resR.writeOutcome = resR.writeOutcome || 'WRITE_NOT_STARTED';
+    }
     return resR;
   } finally { lock.releaseLock(); }
 }
@@ -173,7 +194,7 @@ function rpoGenerateMonthlyFlatResult_(body, opts) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!(opts && opts.skipSchemaValidation === true)) {
     try { rpoFlatSchemaGate_(ss); }
-    catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }; }
+    catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null, resultShape: 'FLAT_V2' }; }
   }
   var result = KMRDV2P.generateMonthlyFlat({
     recommendationType: 'MONTHLY_ORDER', mode: body.mode, action: body.action, planningCycle: body.planningCycle,
@@ -181,6 +202,10 @@ function rpoGenerateMonthlyFlatResult_(body, opts) {
     confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
     actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()
   }, rpoFlatDeps_(ss, body));
+  // F1-7N-FA-3C-R5C-P0 — mark the FLAT V2 result shape (no data.status/coreAction; carries outcome/action/wrote and,
+  // on a post-write roundtrip failure, result.writeOutcome). The per-SKU batch summarizer (recGenSummarizeDraftResult_)
+  // routes on this marker so a committed flat write is classified truthfully (CREATED/…), never GENERATION_FAILED.
+  if (result && typeof result === 'object') result.resultShape = 'FLAT_V2';
   return { success: result.success, data: result };
 }
 // Cutover-gated flat EDIT + SUBMIT + CANCEL locked cores (used by the 25_/15_ handlers when MONTHLY + cutover ON).
@@ -202,13 +227,68 @@ function rpoSubmitMonthlyFlatResult_(draftId, buckets, actor) {
 
 // KEYED-DELTA write-back (§25): write ONLY the rows that changed + rows appended, via targeted setValues. Never
 // a full-table rewrite. Preserves row order; unrelated rows are not touched.
+// F1-7N-FA-3C-R5C-P0 — PERMANENT TEXT-FORMAT WRITE FIX. The flat V2 drafts table's request_allocation_draft_id and
+// planning_cycle are STRING identity/cycle fields; a General-format cell coerces the canonical string "2026-08" into
+// a Date (the R5C partial-commit incident: rows committed with planning_cycle as a Date). For ONLY the V2 drafts
+// table under cutover=ON, force plain-text "@" on ONLY those two columns of ONLY the cells being written (updates +
+// appends) BEFORE setValues, then flush + roundtrip-verify. Every other column (numeric qty/carton/version/tier) keeps
+// its natural format; the legacy line path and every other table are byte-identical (isV2 stays false). No apostrophe
+// prefixes; the primitive canonical string is written and verified to persist byte-verbatim.
 function rpoKeyedDeltaWrite_(meta, set, before, tableNames) {
+  var writeResult = { verified: true, table: null, committedDraftIds: [], readbackFailures: [] };
+  var flatOn = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') && requestOrderDraftV2FlatCutoverEnabled_() === true;
+  var V2TABLE = (typeof KMRDV2P !== 'undefined' && KMRDV2P) ? KMRDV2P.HEADER_TABLE : null;
   for (var i = 0; i < tableNames.length; i++) {
     var name = tableNames[i], sh = meta[name], t = set[name], width = t.headers.length;
     var delta = KMORCH.computeKeyedDeltaWrites(before[name], t.rows);
-    for (var u = 0; u < delta.updates.length; u++) {
-      sh.getRange(delta.updates[u].rowIndex + 2, 1, 1, width).setValues([delta.updates[u].values]);
+    var isV2 = flatOn && V2TABLE && name === V2TABLE;
+    var idCol = -1, cycleCol = -1;
+    if (isV2) {
+      idCol = t.headers.indexOf('request_allocation_draft_id');
+      cycleCol = t.headers.indexOf('planning_cycle');
+      if (idCol === -1 || cycleCol === -1) { isV2 = false; writeResult.verified = false; writeResult.table = name; writeResult.readbackFailures.push({ reason: 'V2_ID_OR_CYCLE_COLUMN_MISSING' }); }
     }
-    if (delta.appends.length) { sh.getRange(before[name].length + 2, 1, delta.appends.length, width).setValues(delta.appends); }
+    for (var u = 0; u < delta.updates.length; u++) {
+      var rowIdx1 = delta.updates[u].rowIndex + 2;
+      if (isV2) { sh.getRange(rowIdx1, idCol + 1, 1, 1).setNumberFormat('@'); sh.getRange(rowIdx1, cycleCol + 1, 1, 1).setNumberFormat('@'); }
+      sh.getRange(rowIdx1, 1, 1, width).setValues([delta.updates[u].values]);
+    }
+    if (delta.appends.length) {
+      var appendStart1 = before[name].length + 2;
+      if (isV2) { sh.getRange(appendStart1, idCol + 1, delta.appends.length, 1).setNumberFormat('@'); sh.getRange(appendStart1, cycleCol + 1, delta.appends.length, 1).setNumberFormat('@'); }
+      sh.getRange(appendStart1, 1, delta.appends.length, width).setValues(delta.appends);
+    }
+    // POST-WRITE ROUNDTRIP (V2 only): flush, re-read the written id/cycle cells, require id byte-verbatim + cycle a
+    // primitive canonical YYYY-MM string equal to the intended value. A committed row that fails readback is surfaced
+    // (verified=false + committed ids) so the caller reports WRITE_COMMITTED_READBACK_FAILED — never a clean success,
+    // never a silent GENERATION_FAILED. The write already committed; the deterministic id keeps a re-run idempotent.
+    if (isV2 && (delta.updates.length || delta.appends.length)) {
+      writeResult.table = name;
+      try { SpreadsheetApp.flush(); } catch (e) {}
+      rpoFlatVerifyWrittenRows_(sh, idCol, cycleCol, before[name].length, delta, writeResult);
+    }
   }
+  return writeResult;
+}
+// R5C-P0 post-write roundtrip verifier for the flat V2 drafts table — reads back ONLY the written id/cycle cells.
+function rpoFlatVerifyWrittenRows_(sh, idCol, cycleCol, beforeCount, delta, writeResult) {
+  var CANON = /^\d{4}-(0[1-9]|1[0-2])$/;
+  function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]'; }
+  function checkRow_(rowIdx1, intendedId, intendedCycle) {
+    var idCell = sh.getRange(rowIdx1, idCol + 1, 1, 1).getValues()[0][0];
+    var cyCell = sh.getRange(rowIdx1, cycleCol + 1, 1, 1).getValues()[0][0];
+    var idOk = (typeof idCell === 'string') && idCell === String(intendedId);
+    var cyOk = (typeof cyCell === 'string') && CANON.test(cyCell) && cyCell === String(intendedCycle);
+    if (idOk && cyOk) { writeResult.committedDraftIds.push(String(intendedId)); return; }
+    writeResult.verified = false;
+    writeResult.readbackFailures.push({
+      draftId: String(intendedId), intendedCycle: String(intendedCycle),
+      idType: (idCell === null || idCell === undefined) ? 'null' : (isDate_(idCell) ? 'Date' : typeof idCell),
+      cycleType: (cyCell === null || cyCell === undefined) ? 'null' : (isDate_(cyCell) ? 'Date' : typeof cyCell),
+      cycleRaw: isDate_(cyCell) ? (function () { try { return cyCell.toISOString(); } catch (e) { return String(cyCell); } })() : cyCell
+    });
+  }
+  for (var u = 0; u < delta.updates.length; u++) { var vals = delta.updates[u].values; checkRow_(delta.updates[u].rowIndex + 2, vals[idCol], vals[cycleCol]); }
+  for (var a = 0; a < delta.appends.length; a++) { checkRow_(beforeCount + 2 + a, delta.appends[a][idCol], delta.appends[a][cycleCol]); }
+  return writeResult;
 }
