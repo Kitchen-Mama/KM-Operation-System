@@ -176,19 +176,30 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
     plan.blocked.forEach(function (b) { blockedTotal.push({ marketplace: M, block: b.block }); });
     conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved });
     plan.groups.forEach(function (g) {
+      // G — each K2 group is INDIVIDUALLY atomic (one lock inside the atomic endpoint). The overall job reports a
+      // truthful per-group outcome; whole-job success is claimed ONLY when every group committed. A retry uses the
+      // SAME deterministic identity (SADH-K2-…) so a committed group REUSEs (zero writes), never duplicates.
       var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: g.header, lines: g.lines, enforce_k2_grouping: true }));
+      var d = (resp && resp.data) ? resp.data : {};
+      var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (d.outcome || 'CREATED')) : ((d && d.reason) ? d.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));
       if (resp && resp.success) anyOk = true; else anyFail = true;
-      groupsWritten.push({ marketplace: M, groupNo: g.groupNo, allocation_draft_id: (resp && resp.data) ? resp.data.allocation_draft_id : null, line_count: (resp && resp.data) ? resp.data.line_count : 0, ok: !!(resp && resp.success), error: (resp && !resp.success) ? resp.error : null });
+      groupsWritten.push({ marketplace: M, groupNo: g.groupNo, outcome: outcome, allocation_draft_id: d.allocation_draft_id || null, draft_version: d.draft_version || null, line_count: d.line_count || 0, ok: !!(resp && resp.success), error: (resp && !resp.success) ? resp.error : null });
     });
   });
+  var outcomeCounts = {};
+  groupsWritten.forEach(function (g) { outcomeCounts[g.outcome] = (outcomeCounts[g.outcome] || 0) + 1; });
+  // job-level status: COMPLETED only if every group ok; else PARTIAL (never claim whole-job success on partial commit).
+  var jobStatus = groupsWritten.length === 0 ? (blockedTotal.length ? 'ALL_BLOCKED' : 'NO_DEMAND') : (anyFail ? (anyOk ? 'PARTIAL' : 'FAILED') : 'COMPLETED');
   return jsonResponse_({
     success: anyOk && !anyFail,
     data: {
-      mode: 'K2_ROUTE_GROUP', planningCycle: request.planningCycle, businessScope: scope0,
-      groups_written: groupsWritten.length, groups: groupsWritten, blocked_count: blockedTotal.length, blocked: blockedTotal,
-      conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal
+      mode: 'K2_ROUTE_GROUP', job_status: jobStatus, planningCycle: request.planningCycle, businessScope: scope0,
+      groups_written: groupsWritten.length, per_group_outcome_counts: outcomeCounts, groups: groupsWritten,
+      blocked_count: blockedTotal.length, blocked: blockedTotal,
+      conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal,
+      atomicity_note: 'Each K2 group is atomic under its own lock; the job is NOT a single all-or-nothing transaction across groups — a PARTIAL job is reported truthfully per group, and a retry REUSEs committed groups by deterministic identity (no duplicates).'
     },
-    errors: anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups failed the atomic write; see data.groups')] : []
+    errors: anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups did not commit; see data.groups (per-group outcome)')] : []
   });
 }
 

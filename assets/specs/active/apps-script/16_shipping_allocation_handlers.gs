@@ -157,20 +157,29 @@ function sadUpsertDraftHeaderCore_(body) {
     return jsonResponse_({ success: false, error: 'PLAN_HEADER_INCOMPLETE — a Draft route context requires From + To + Method (zero rows written)' });
   }
 
+  var allowReconcile = (body && body.allow_legacy_reconcile === true);
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
 
-  // F1-7N-FA-3C-R6F2: UNIFIED active-draft resolution (the SAME identity generation uses). A route-complete header
-  // keys on the 10-dim K2 group identity (CREATE returns the deterministic SADH-K2- id); a no-route scratchpad falls
-  // back to the landed K3 scope (planning_cycle+company+country+marketplace+source_page). 0→CREATE · 1→REUSE/UPDATE ·
-  // >1→CONFLICT (zero mutation, conflict IDs). draft_version stays version/lineage, never part of the key.
+  // F1-7N-FA-3C-R6F2A: UNIFIED active-draft resolution (the SAME identity generation uses). Route-complete → K2
+  // (CREATE deterministic SADH-K2- id / REUSE / CONFLICT). Route-INCOMPLETE new Draft NEVER creates a K3 header:
+  // BLOCK with ROUTE_INCOMPLETE_NEW_DRAFT, or LEGACY_ROUTE_RECONCILIATION_REQUIRED when an existing legacy row matches
+  // (unless an explicit USER migration sets allow_legacy_reconcile). draft_version stays version/lineage, not the key.
   if (!id) {
-    var res = sadResolveActiveDraftK2OrK3_(sh, body);
+    var res = sadResolveActiveDraftK2OrK3_(sh, body, { allowLegacyReconcile: allowReconcile });
     if (res.status === 'CONFLICT') {
       return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + '; resolve manually (zero rows written)', data: { status: 'BLOCKED_CONFLICT', conflictIds: res.conflictIds, k2: res.k2 } });
     }
+    if (res.status === 'BLOCK') {
+      return jsonResponse_({ success: false, error: res.reason + ' — ' + (res.reason === 'ROUTE_INCOMPLETE_NEW_DRAFT' ? 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route' : 'this scope has an existing route-incomplete/legacy Draft — reconcile via an explicit USER migration') + ' (zero rows written)', data: { status: res.reason, existing_id: res.id || null } });
+    }
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(sh, 'allocation_draft_id', id); }
     else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id (found stays null → INSERT with it)
+  }
+  // A: editing an existing route-INCOMPLETE (legacy) row by explicit id is fail-closed unless an explicit USER migration.
+  if (found) {
+    var legR = sadLegacyReconcileReason_(sh, found, allowReconcile);
+    if (legR) return jsonResponse_({ success: false, error: legR + ' — this existing Draft has an incomplete route; reconcile via an explicit USER migration before editing (zero rows written)', data: { status: legR, existing_id: id } });
   }
 
   if (found) {
@@ -407,6 +416,52 @@ function sadK2PartitionLinesIntoGroups_(scope, lines) {
 }
 // ================================================================================================================
 
+// ================================================================================================================
+// F1-7N-FA-3C-R6F2A (B/C) — payload fingerprint (REUSE vs REGENERATE) + user-edit ownership rule.
+// Fingerprint covers the persisted BUSINESS fields (header route + status + each line's business fields, natural-key
+// sorted); it EXCLUDES server ids / audit / draft_version. Equal fingerprint ⇒ REUSE (zero writes); different +
+// editable ⇒ REGENERATE (update + draft_version++ once + adopt new calc evidence).
+var SAD_K2_HEADER_FP_ = ['status', 'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery'];
+var SAD_K2_LINE_FP_ = ['sku', 'site_sku', 'window_code', 'window_start_date', 'window_end_date', 'required_by_date',
+  'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot', 'qualified_incoming_snapshot',
+  'approved_supply_snapshot', 'calculated_gap_qty', 'source_initial_available_qty_snapshot',
+  'source_available_before_allocation_snapshot', 'allocation_sequence', 'recommendation_reason', 'recommendation_flags',
+  'recommended_qty', 'source_warehouse_id', 'source_warehouse_code_snapshot', 'planned_qty', 'units_per_carton',
+  'route_no', 'line_status'];
+function sadFpVal_(v) { return String(v == null ? '' : v).trim(); }
+function sadK2PayloadFingerprint_(headerObj, linesArr) {
+  headerObj = headerObj || {};
+  var h = SAD_K2_HEADER_FP_.map(function (f) { return f + '=' + sadFpVal_(headerObj[f]); }).join('|');
+  var ls = (linesArr || []).map(function (l) { return SAD_K2_LINE_FP_.map(function (f) { return sadFpVal_(l[f]); }).join('~'); });
+  ls.sort();
+  return 'k2fp-' + sadFnv1a_(h + '||' + ls.join('||')).toUpperCase();
+}
+
+// C — user-edit ownership: given the EXISTING persisted line + the incoming (regenerated) line, decide the fields to
+// write on REGENERATE. recommended_qty + calculation snapshots = SYSTEM-owned (always adopt). note = USER-owned
+// (preserved — a regeneration never restores an old AI note). planned_qty = USER-owned when override_reason is nonblank
+// OR planned_qty differs from the PRIOR recommended_qty; otherwise it follows the newly regenerated recommended_qty.
+// route/source/units are system route context. Returns a { field: value } patch to setValue on the existing row.
+function sadRegenerateLinePatch_(existing, incoming) {
+  existing = existing || {}; incoming = incoming || {};
+  var patch = {};
+  // system-owned: recommended_qty + snapshots + route context
+  SAD_RECOMMENDATION_FIELDS_.forEach(function (f) { if (incoming[f] != null && incoming[f] !== '') patch[f] = String(incoming[f]); });
+  ['route_no', 'units_per_carton', 'source_warehouse_id', 'source_warehouse_code_snapshot'].forEach(function (f) { if (incoming[f] != null) patch[f] = String(incoming[f]); });
+  // planned_qty ownership
+  var priorRec = sadFpVal_(existing.recommended_qty);
+  var priorPlanned = sadFpVal_(existing.planned_qty);
+  var overridden = sadFpVal_(existing.override_reason) !== '' || (priorPlanned !== '' && priorPlanned !== priorRec);
+  if (!overridden) {
+    var newRec = (incoming.recommended_qty != null && incoming.recommended_qty !== '') ? String(incoming.recommended_qty) : priorRec;
+    patch.planned_qty = newRec;                                    // follows the new recommendation
+  } // else: preserve the user's planned_qty (omit → no write)
+  // note is USER-owned → never overwritten by regeneration (omit)
+  return patch;
+}
+
 // Private keyed shipping-line upsert core (reached ONLY under lock via the public handler above).
 function sadUpsertLinesKeyedCore_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
@@ -582,23 +637,47 @@ function sadAtomicUpsertCore_(body) {
   // resolve the header id: explicit id, else the UNIFIED K2-or-K3 active-draft resolution (R6F2) — a route-complete
   // header keys on the 10-dim K2 group identity (CREATE returns the deterministic SADH-K2- id); a no-route scratchpad
   // falls back to K3. Fail closed on CONFLICT with ZERO mutation. This is the SAME identity generation uses.
+  var allowReconcile = (body.allow_legacy_reconcile === true);
   var id = String(header.allocation_draft_id || '').trim();
   var found = id ? procurementFindRow_(hSh, 'allocation_draft_id', id) : null;
   if (!id) {
-    var res = sadResolveActiveDraftK2OrK3_(hSh, header);
+    var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile });
     if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
+    if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + (res.reason === 'ROUTE_INCOMPLETE_NEW_DRAFT' ? 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route' : 'this scope has an existing route-incomplete/legacy Draft — reconcile it via an explicit USER migration') + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
     else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id → INSERT with it (found stays null)
   }
   if (found) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
     if (st === 'submitted' || st === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
+    // A: editing an existing route-INCOMPLETE (legacy) row is fail-closed unless an explicit USER migration is requested.
+    var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile);
+    if (legR) return jsonResponse_({ success: false, error: legR + ' — this existing Draft has an incomplete route; reconcile via an explicit USER migration before editing (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
   }
 
   var now = procurementTimestamp_();
   var actor = String(header.created_by || 'inventory-replenishment').trim();
   var status = String(header.status || 'draft').trim(); if (!SAD_STATUSES_[status]) status = 'draft';
   var newHeaderCreated = false;
+
+  // ---- F1-7N-FA-3C-R6F2A (B): REUSE vs REGENERATE vs CONFLICT for an existing K2 group ----------------------
+  var outcome = 'CREATE', priorVersion = '', nextVersion = '';
+  if (found) {
+    var priorHeaderObj = sadRowToObject_(hSh, found.row);
+    priorVersion = sadFpVal_(priorHeaderObj.draft_version);
+    // optimistic token (stale → CONFLICT, zero write)
+    if (header.expected_draft_version != null && sadFpVal_(header.expected_draft_version) !== priorVersion) {
+      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN — expected draft_version ' + sadFpVal_(header.expected_draft_version) + ' but current is ' + priorVersion + ' (zero rows written)', stage: 'conflict', zero_write: true, data: { expected: sadFpVal_(header.expected_draft_version), current: priorVersion } });
+    }
+    var priorLines = sadReadLinesForDraft_(lSh, id);
+    var priorFp = sadK2PayloadFingerprint_(priorHeaderObj, priorLines);
+    var incFp = sadK2PayloadFingerprint_(header, lines);
+    if (priorFp === incFp) {
+      return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true } });
+    }
+    outcome = 'REGENERATE';
+    nextVersion = String((parseInt(priorVersion, 10) || 1) + 1);   // increment EXACTLY once
+  }
 
   // ---- WRITE PHASE (header first, then all lines) — one lock is already held by the public handler ------------
   if (found) {
@@ -608,7 +687,9 @@ function sadAtomicUpsertCore_(body) {
       ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',
         'recommended_destination_warehouse_code_snapshot', 'recommendation_group_no', 'recommended_shipping_method',
         'recommended_last_mile_delivery'].forEach(function (f) { if (header[f] != null) setCol(f, String(header[f])); });
-      if (header.note != null) setCol('note', String(header.note));
+      // REGENERATE: adopt new calculation evidence + bump draft_version EXACTLY once. note is USER-owned (not overwritten).
+      ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'].forEach(function (f) { if (header[f] != null && String(header[f]).trim() !== '') setCol(f, String(header[f])); });
+      if (nextVersion) setCol('draft_version', nextVersion);
       setCol('updated_by', actor); setCol('updated_at', now);
     })();
   } else {
@@ -654,9 +735,16 @@ function sadAtomicUpsertCore_(body) {
         var cId0 = lf.col('allocation_draft_line_id');
         if (cId0 !== -1) { var curId0 = String(lSh.getRange(lf.row, cId0 + 1).getValue()).trim(); if (!curId0) lSh.getRange(lf.row, cId0 + 1).setValue(sadDeterministicLineId_(id, l)); }
         (function (found2, line) {
-          function setU(name) { if (line[name] != null) { var c = found2.col(name); if (c !== -1) lSh.getRange(found2.row, c + 1).setValue(String(line[name])); } }
-          EXEC_FIELDS.forEach(setU);
-          SAD_RECOMMENDATION_FIELDS_.forEach(function (f) { if (line[f] != null && line[f] !== '') setU(f); });
+          function put(name, val) { var c = found2.col(name); if (c !== -1) lSh.getRange(found2.row, c + 1).setValue(String(val)); }
+          if (outcome === 'REGENERATE') {
+            // C: system fields adopted; planned_qty per ownership; note + user override PRESERVED (never restore an old AI note).
+            var patch = sadRegenerateLinePatch_(sadRowToObject_(lSh, found2.row), line);
+            for (var pk in patch) if (patch.hasOwnProperty(pk)) put(pk, patch[pk]);
+          } else {
+            // manual edit through the atomic endpoint: the user's Execution-Plan fields overwrite when provided.
+            EXEC_FIELDS.forEach(function (name) { if (line[name] != null) put(name, line[name]); });
+            SAD_RECOMMENDATION_FIELDS_.forEach(function (f) { if (line[f] != null && line[f] !== '') put(f, line[f]); });
+          }
           var uc = found2.col('updated_at'); if (uc !== -1) lSh.getRange(found2.row, uc + 1).setValue(now);
         })(lf, l);
         updated++;
@@ -681,7 +769,7 @@ function sadAtomicUpsertCore_(body) {
     }
     return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED — existing Draft; a line write failed and existing data was preserved (no delete). ' + (writeErr.message || writeErr), stage: 'lines', data: { allocation_draft_id: id, lines_committed: created + updated } });
   }
-  return jsonResponse_({ success: true, data: { allocation_draft_id: id, created_header: newHeaderCreated, line_count: created + updated, created: created, updated: updated, skipped: skipped } });
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped } });
 }
 
 // ---- submitShippingAllocationDrafts -------------------------------
@@ -773,8 +861,14 @@ function sadReadActiveHeaderRows_(sh) {
 // A COMPLETE route (From+To+Method present) resolves by the 10-dim K2 group key (route-level identity);
 // a no-route scratchpad falls back to the landed K3 scope. Returns { status:'CREATE'|'REUSE'|'CONFLICT', id,
 // conflictIds, k2:bool }. CREATE under K2 returns the DETERMINISTIC header id (SADH-K2-…); CREATE under K3 returns ''.
-function sadResolveActiveDraftK2OrK3_(sh, header) {
-  header = header || {};
+// F1-7N-FA-3C-R6F2A (A — NO NEW K3 WRITES): route-complete → K2 (CREATE deterministic id / REUSE / CONFLICT). A
+// route-INCOMPLETE new Draft NEVER creates a K3 header: if it would match an EXISTING active K3 row, editing that
+// legacy row is fail-closed with LEGACY_ROUTE_RECONCILIATION_REQUIRED (unless opts.allowLegacyReconcile — a separate,
+// explicit, USER-owned migration); otherwise the new write is BLOCKed with ROUTE_INCOMPLETE_NEW_DRAFT. Legacy K3 rows
+// may be READ (readback/cancel) but never become the identity of a new K2 write.
+// Returns { status:'CREATE'|'REUSE'|'CONFLICT'|'BLOCK', reason?, id, conflictIds, k2:bool, legacyReconcile? }.
+function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
+  header = header || {}; opts = opts || {};
   if (sadHeaderRouteIsComplete_(header)) {
     var r = sadK2ResolveActiveDraft_(sadReadActiveHeaderRows_(sh), header);
     if (r.status === 'CREATE') return { status: 'CREATE', id: r.allocation_draft_id, conflictIds: [], k2: true };
@@ -784,8 +878,20 @@ function sadResolveActiveDraftK2OrK3_(sh, header) {
   var k3 = sadResolveActiveDraft_(sh, { planning_cycle: header.planning_cycle, company: header.company,
     country: header.country, marketplace: header.marketplace, source_page: header.source_page });
   if (k3.status === 'BLOCKED_CONFLICT') return { status: 'CONFLICT', id: '', conflictIds: k3.conflictIds || [], k2: false };
-  if (k3.status === 'ACTIVE_DRAFT_FOUND') return { status: 'REUSE', id: k3.id, conflictIds: [], k2: false };
-  return { status: 'CREATE', id: '', conflictIds: [], k2: false };
+  if (k3.status === 'ACTIVE_DRAFT_FOUND') {
+    if (opts.allowLegacyReconcile === true) return { status: 'REUSE', id: k3.id, conflictIds: [], k2: false, legacyReconcile: true };
+    return { status: 'BLOCK', reason: 'LEGACY_ROUTE_RECONCILIATION_REQUIRED', id: k3.id, conflictIds: [], k2: false };
+  }
+  return { status: 'BLOCK', reason: 'ROUTE_INCOMPLETE_NEW_DRAFT', id: '', conflictIds: [], k2: false };
+}
+
+// F1-7N-FA-3C-R6F2A — guard for editing an EXISTING row resolved by explicit id: a route-incomplete existing/legacy
+// row is fail-closed (LEGACY_ROUTE_RECONCILIATION_REQUIRED) unless allowReconcile. Reads the row's recommended_* via a
+// header-keyed object. Returns a typed reason string to BLOCK, or '' to proceed.
+function sadLegacyReconcileReason_(sh, found, allowReconcile) {
+  if (!found || allowReconcile === true) return '';
+  var o = sadRowToObject_(sh, found.row);
+  return sadHeaderRouteIsComplete_(o) ? '' : 'LEGACY_ROUTE_RECONCILIATION_REQUIRED';
 }
 
 // Read one sheet row (1-based) into a header-keyed object (read-only).

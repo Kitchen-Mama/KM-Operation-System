@@ -59,9 +59,9 @@ section('B. sadResolveActiveDraftK2OrK3_ — route-complete → K2 (CREATE/REUSE
 
 // ============================================================ C — atomic core + manual core use the unified resolver
 section('C. both the atomic core and the manual header core resolve via the unified K2-or-K3 resolver');
-ok(/function sadAtomicUpsertCore_[\s\S]*?sadResolveActiveDraftK2OrK3_\(hSh, header\)/.test(G16), 'C1. atomic core uses sadResolveActiveDraftK2OrK3_');
+ok(/function sadAtomicUpsertCore_[\s\S]*?sadResolveActiveDraftK2OrK3_\(hSh, header/.test(G16), 'C1. atomic core uses sadResolveActiveDraftK2OrK3_');
 var manualCore = extractFn(G16, 'sadUpsertDraftHeaderCore_');
-ok(/sadResolveActiveDraftK2OrK3_\(sh, body\)/.test(manualCore), 'C2. manual header core uses the SAME unified resolver (generation + manual share K2 identity)');
+ok(/sadResolveActiveDraftK2OrK3_\(sh, body/.test(manualCore), 'C2. manual header core uses the SAME unified resolver (generation + manual share K2 identity)');
 ok(/else if \(res\.status === 'CREATE' && res\.id\)/.test(manualCore), 'C3. manual CREATE adopts the deterministic K2 id when present');
 
 // ============================================================ D — 61_ generation wired to K2 (gated OFF)

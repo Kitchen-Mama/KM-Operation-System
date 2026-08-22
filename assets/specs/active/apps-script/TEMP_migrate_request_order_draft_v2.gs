@@ -2276,6 +2276,19 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
   if (dupK2 > 0) blockers.push('DUPLICATE_ACTIVE_K2_GROUP');
   if (flagOn !== false) blockers.push('INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ not false');
 
+  // F1-7N-FA-3C-R6F2A (D) — run the REAL generation assembly in DRY (read-only) mode against the latest live gap/source
+  // authority, and gate READY on actual route coverage (not just table presence).
+  var dry = TEMP_r6f2aDryAssembly_();
+  var authorityReady = blockers.length === 0;
+  var g = dry && dry.global ? dry.global : null;
+  var dryGlobalClean = !!(dry && dry.available && g && g.gap_usable && g.fully_routed_lines > 0 && g.positive_recommendation_count > 0 &&
+    g.blocked_positive_lines === 0 && g.route_unresolved_count === 0 && g.route_ambiguous_count === 0 && g.cost_not_comparable_count === 0 &&
+    g.deterministic_id_duplicate_count === 0 && g.conservation_ok === true && g.over_allocation_count === 0);
+  var verdict;
+  if (authorityReady && dryGlobalClean) verdict = 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN';
+  else if (dry && dry.safe_scope) verdict = 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN';
+  else verdict = 'HALT';
+
   var out = {
     tool: 'TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY', RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
     header_schema_exact_30: (hdrAuth && (H.headers || []).length === 30 && hExact) ? 'YES' : 'NO',
@@ -2291,10 +2304,12 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
     generation_wired_k2: (kmwrrReady && kmwrbK2) ? 'YES (61_ weeklyAiPlanGenerateK2_ → KMWRR → atomic endpoint; gated by the flag)' : 'NO',
     duplicate_active_k2_group_count: dupK2,
     empty_header_classification: cls.headers, empty_header_classification_checksum: cls.checksum,
+    dry_assembly: dry,
+    safe_controlled_scope: (dry && dry.safe_scope) ? dry.safe_scope : null,
     inventory_flag_remains_false: flagOn === false ? 'YES' : (flagOn === null ? 'UNKNOWN' : 'NO'),
-    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)',
-    blockers: blockers,
-    verdict: blockers.length ? 'HALT' : 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN'
+    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only; the DRY assembly never calls the atomic write endpoint)',
+    authority_blockers: blockers,
+    verdict: verdict
   };
   Logger.log('R6F2_PREFLIGHT ' + JSON.stringify(out, null, 2));
   return out;
@@ -2326,6 +2341,135 @@ function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE() {
     verdict: (orphanLines === 0 && dupSkuWindowInHeader === 0) ? 'K2_PACKAGE_CONSISTENT' : 'RECONCILIATION_REQUIRED'
   };
   Logger.log('R6F2_VALIDATE_PACKAGE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// F1-7N-FA-3C-R6F2A (D) — LIVE DRY ASSEMBLY: run the REAL production generation assembly READ-ONLY against the latest
+// live gap/source authority (latest GAP_JOB_INVENTORY → harvest → buildWeeklySourceLines → weeklyAiPlanK2AllocatedLines
+// → KMWRR.buildK2GenerationPlan → conservation → proposed atomic payloads). NEVER calls the atomic write endpoint.
+// Iterates the (company,country) scopes from marketplaces, aggregates route-coverage metrics, and picks ONE safe scope
+// when the global set has blockers. Fully defensive (try/catch → UNAVAILABLE), so PREFLIGHT never throws.
+function TEMP_r6f2aDryAssembly_() {
+  var res = { available: false, scopes: [], global: null, safe_scope: null };
+  try {
+    if (typeof gapCalcResolveContext_ !== 'function' || typeof weeklyAiPlanHarvest_ !== 'function'
+      || typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined'
+      || typeof weeklyAiPlanK2AllocatedLines_ !== 'function' || typeof weeklyAiPlanReadCarrierAuthorities_ !== 'function') {
+      res.reason = 'ASSEMBLY_FUNCTIONS_UNAVAILABLE'; return res;
+    }
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ctx = gapCalcResolveContext_('INVENTORY');
+    var gapUsable = !!(ctx && ctx.ok && String(ctx.status || '').toUpperCase() === 'DONE');
+    res.gap_job = ctx ? { ok: !!ctx.ok, status: ctx.status || null, planning_cycle: ctx.planningCycle || null, calculation_date: ctx.calculationDate || ctx.calcDate || null, run_id_fingerprint: TEMP_r5bIdFingerprint_(ctx.runId || ctx.jobId || '') } : null;
+    var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
+    // enumerate (company,country) scopes from marketplaces
+    var MK = TEMP_readObjects_('marketplaces');
+    var scopeSet = {}, scopeList = [];
+    (MK.rows || []).forEach(function (m) { var c = TEMP_str_(m.company), ct = TEMP_str_(m.country); if (!c || !ct) return; var k = c + '||' + ct; if (!scopeSet[k]) { scopeSet[k] = 1; scopeList.push({ company: c, country: ct }); } });
+    var G = { gap_usable: gapUsable, harvested_source_lines: 0, positive_recommendation_count: 0, source_resolved: 0, source_unresolved: 0,
+      destination_concrete: 0, destination_logical: 0, destination_unresolved: 0, route_unresolved_count: 0, route_ambiguous_count: 0,
+      no_on_time_count: 0, cost_not_comparable_count: 0, last_mile_unresolved_count: 0, last_mile_ambiguous_count: 0,
+      fully_routed_lines: 0, blocked_lines: 0, blocked_by_reason: {}, proposed_k2_groups: 0, proposed_headers: 0, proposed_lines: 0,
+      deterministic_id_duplicate_count: 0, conservation_ok: true, over_allocation_count: 0,
+      projected_CREATE: 0, projected_REUSE_OR_REGENERATE: 0, projected_CONFLICT: 0 };
+    var idSeen = {};
+    var MAXSCOPES = 40, truncated = false;
+    for (var si = 0; si < scopeList.length; si++) {
+      if (si >= MAXSCOPES) { truncated = true; break; }
+      var sc = scopeList[si], perScope = { company: sc.company, country: sc.country, fully_routed_lines: 0, blocked_lines: 0, positive: 0, clean: false };
+      try {
+        var h = weeklyAiPlanHarvest_(ss, { company: sc.company, country: sc.country, planningCycle: (ctx && ctx.planningCycle) || '' });
+        if (!h || !h.ok) { perScope.reason = 'HARVEST_NOT_OK'; res.scopes.push(perScope); continue; }
+        var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: (ctx && ctx.planningCycle) || '', businessScope: { company: sc.company, country: sc.country, source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined' ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment') }, mode: 'MANUAL_REGENERATE', actor: 'preflight', now: procurementTimestamp_(), sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null), warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+        if (!mapped || !mapped.ready) { perScope.reason = 'HARVEST_NOT_READY'; res.scopes.push(perScope); continue; }
+        var src = KMWRB.buildWeeklySourceLines(mapped.request);
+        if (!src || !src.ok) { perScope.reason = (src && src.reason) || 'SOURCE_LINES_BLOCKED'; res.scopes.push(perScope); continue; }
+        G.harvested_source_lines += (src.lines || []).length;
+        var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h);
+        G.positive_recommendation_count += allocated.length; perScope.positive = allocated.length;
+        // per-marketplace K2 plan
+        var byMkt = {}; allocated.forEach(function (a) { var m = TEMP_str_(a.marketplace); (byMkt[m] = byMkt[m] || []).push(a); });
+        Object.keys(byMkt).forEach(function (M) {
+          var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: (ctx && ctx.planningCycle) || '', company: sc.company, country: sc.country, marketplace: M, source_page: 'inventory_replenishment' }, allocatedLines: byMkt[M], warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })(), authorizedBySkuWindow: (function () { var a = {}; byMkt[M].forEach(function (x) { var k = TEMP_str_(x.sku).toLowerCase() + '|' + TEMP_str_(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(), sourceCeilingById: {} });
+          (plan.blocked || []).forEach(function (b) {
+            G.blocked_lines++; perScope.blocked_lines++;
+            var tok = b.block || 'UNKNOWN'; G.blocked_by_reason[tok] = (G.blocked_by_reason[tok] || 0) + 1;
+            if (tok === 'ROUTE_NO_ON_TIME_OPTION') G.no_on_time_count++;
+            else if (tok === 'ROUTE_COST_NOT_COMPARABLE') G.cost_not_comparable_count++;
+            else if (tok === 'LAST_MILE_AMBIGUOUS') { G.route_ambiguous_count++; G.last_mile_ambiguous_count++; }
+            else if (tok === 'LAST_MILE_UNRESOLVED') G.last_mile_unresolved_count++;
+            else if (tok === 'DESTINATION_MISSING' || tok === 'DESTINATION_INACTIVE') G.destination_unresolved++;
+            else if (tok === 'ROUTE_SOURCE_UNKNOWN' || tok === 'ROUTE_SOURCE_INACTIVE') G.source_unresolved++;
+            else G.route_unresolved_count++;
+          });
+          (plan.groups || []).forEach(function (grp) {
+            G.proposed_k2_groups++; G.proposed_headers++; G.proposed_lines += (grp.lines || []).length; G.fully_routed_lines += (grp.lines || []).length; perScope.fully_routed_lines += (grp.lines || []).length;
+            G.source_resolved += (grp.lines || []).length;
+            if (TEMP_str_(grp.header.recommended_destination_warehouse_id)) G.destination_concrete++; else if (TEMP_str_(grp.header.destination_marketplace)) G.destination_logical++;
+            var hid = (typeof sadK2DeterministicHeaderId_ === 'function') ? sadK2DeterministicHeaderId_(grp.header) : null;
+            if (hid) { if (idSeen[hid]) G.deterministic_id_duplicate_count++; else idSeen[hid] = 1; }
+            // projected CREATE/REUSE/REGENERATE/CONFLICT vs existing active headers
+            if (typeof sadK2GroupKey_ === 'function') {
+              var wantKey = sadK2GroupKey_(grp.header), H0 = TEMP_readObjects_('shipping_allocation_drafts'), n = 0;
+              (H0.rows || []).forEach(function (r) { if (TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()] && sadK2GroupKey_(r) === wantKey) n++; });
+              if (n === 0) G.projected_CREATE++; else if (n === 1) G.projected_REUSE_OR_REGENERATE++; else G.projected_CONFLICT++;
+            }
+          });
+          if (!plan.conservation || plan.conservation.conserved !== true) { G.conservation_ok = false; G.over_allocation_count += ((plan.conservation && plan.conservation.over_source) ? plan.conservation.over_source.length : 0); }
+        });
+        perScope.clean = (perScope.fully_routed_lines > 0 && perScope.blocked_lines === 0);
+        if (perScope.clean && !res.safe_scope) res.safe_scope = { company: sc.company, country: sc.country, fully_routed_lines: perScope.fully_routed_lines };
+      } catch (e2) { perScope.reason = 'SCOPE_THREW:' + (e2 && e2.message ? e2.message : e2); }
+      res.scopes.push(perScope);
+    }
+    G.scopes_evaluated = res.scopes.length; G.scopes_truncated = truncated;
+    res.available = true; res.global = G;
+  } catch (e) { res.reason = 'DRY_ASSEMBLY_THREW:' + (e && e.message ? e.message : e); }
+  return res;
+}
+
+// R6F2A alias — the upgraded live dry-assembly preflight (same body as the R6F2 PREFLIGHT, which now runs the dry assembly).
+function TEMP_R6F2A_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() { return TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY(); }
+
+// F1-7N-FA-3C-R6F2A (E) — freeze exactly ONE safe controlled scope (from PREFLIGHT or an explicit arg) with the exact
+// proposed K2 identities + expected DB deltas + a checksum. READ-ONLY (never writes; never calls the atomic endpoint).
+function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) {
+  var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+  var scope = scopeArg || pre.safe_controlled_scope || null;
+  if (!scope || !scope.company || !scope.country) {
+    return { tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: false, reason: 'NO_SAFE_SCOPE_AVAILABLE (Preflight returned no clean scope; nothing to freeze)', preflight_verdict: pre.verdict };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ctx = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+  var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
+  var h = weeklyAiPlanHarvest_(ss, { company: scope.company, country: scope.country, planningCycle: (ctx && ctx.planningCycle) || '' });
+  var groups = [], checksumParts = [];
+  try {
+    var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: (ctx && ctx.planningCycle) || '', businessScope: { company: scope.company, country: scope.country, source_page: 'inventory_replenishment' }, mode: 'MANUAL_REGENERATE', actor: 'freeze', now: procurementTimestamp_(), sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null), warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+    var src = KMWRB.buildWeeklySourceLines(mapped.request);
+    var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h);
+    var byMkt = {}; allocated.forEach(function (a) { if (scopeArg && scopeArg.marketplace && TEMP_str_(a.marketplace) !== TEMP_str_(scopeArg.marketplace)) return; var m = TEMP_str_(a.marketplace); (byMkt[m] = byMkt[m] || []).push(a); });
+    Object.keys(byMkt).sort().forEach(function (M) {
+      var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: (ctx && ctx.planningCycle) || '', company: scope.company, country: scope.country, marketplace: M, source_page: 'inventory_replenishment' }, allocatedLines: byMkt[M], warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })() });
+      (plan.groups || []).forEach(function (grp) {
+        var hid = sadK2DeterministicHeaderId_(grp.header);
+        var lineIds = (grp.lines || []).map(function (l) { return sadK2DeterministicLineId_(hid, l); });
+        groups.push({ marketplace: M, group_no: grp.header.recommendation_group_no, expected_header_id: hid, k2_key_fingerprint: TEMP_r5bHash_(sadK2GroupKey_(grp.header)),
+          source_warehouse_id: grp.header.recommended_source_warehouse_id, destination_warehouse_id: grp.header.recommended_destination_warehouse_id, destination_marketplace: grp.header.destination_marketplace,
+          shipping_method: grp.header.recommended_shipping_method, last_mile_delivery: grp.header.recommended_last_mile_delivery,
+          expected_line_count: (grp.lines || []).length, expected_line_ids: lineIds,
+          expected_deltas: { header: '+1', lines: '+' + (grp.lines || []).length } });
+        checksumParts.push(hid + ':' + lineIds.join(','));
+      });
+    });
+  } catch (e) { return { tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: false, reason: 'FREEZE_THREW:' + (e && e.message ? e.message : e) }; }
+  var out = {
+    tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: true, mode: 'read-only (no write, no atomic call)',
+    scope: { company: scope.company, country: scope.country, planning_cycle: (ctx && ctx.planningCycle) || null },
+    group_count: groups.length, groups: groups, scope_checksum: TEMP_r5bHash_(checksumParts.sort().join('|')),
+    R6F2A_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
+  };
+  Logger.log('R6F2A_FREEZE ' + JSON.stringify(out, null, 2));
   return out;
 }
 
