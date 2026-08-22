@@ -255,19 +255,24 @@ var TEMP_R4B5_EXPECTED_CYCLE_ = '2026-08';   // architect-frozen historical migr
 // Frozen source→migrated marketplace map — applies ONLY to this known legacy migration input (NOT a global alias).
 var TEMP_R4B5_MKT_MAP_ = { 'Amazon': 'Amazon', 'KM Walmart': 'Walmart' };
 
-// R4C EXPLICIT per-ID migration authority map (exact request_allocation_draft_id → canonical YYYY-MM). NOT prefix
-// logic; unknown/missing/extra actionable id → planMigration HALTs MIGRATION_AUTHORIZED_ID_SET_MISMATCH. The whole
-// authorized cohort maps to 2026-08 (the frozen historical migration cycle). The 6 architect-confirmed ids (5 active
-// RAD + the sole RD) are seeded below; the remaining 20 SUBMITTED RAD ids from the R4B2 log MUST be pasted here (each
-// → '2026-08') before a LIVE dry-run/execute can pass — until then the migration fail-closes on the 20 unknown ids.
+// R4C/R4C1 EXPLICIT per-ID migration authority map (exact request_allocation_draft_id → canonical YYYY-MM). NOT prefix
+// logic; unknown/missing/extra actionable id → planMigration HALTs MIGRATION_AUTHORIZED_ID_SET_MISMATCH. The COMPLETE
+// authorized cohort is the exact 26 actionable ids (5 active RAD + the sole RD + 20 submitted RAD), ALL → 2026-08 (the
+// frozen historical migration cycle). Package-complete — no runtime completion, no USER hand-edit placeholder.
 var TEMP_R4C_AUTHORIZED_CYCLE_BY_ID_ = {
+  // 5 active RAD + the sole RD (the 6 R4B5 canonical identities)
   'RAD-A92D17B1-8': '2026-08',
   'RAD-3A0A8227-F': '2026-08',
   'RAD-06053044-1': '2026-08',
   'RAD-72ABD506-3': '2026-08',
   'RAD-17DC0322-0': '2026-08',
-  'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R': '2026-08'
-  // <<< USER: paste the 20 submitted RAD ids from the R4B2 DIAG log here, each mapped to '2026-08' >>>
+  'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R': '2026-08',
+  // 20 submitted RAD (exact ids from the R4B2 DIAG log)
+  'RAD-206A5904-7': '2026-08', 'RAD-5A9B633B-E': '2026-08', 'RAD-8C957E9D-B': '2026-08', 'RAD-DD3DD40E-E': '2026-08',
+  'RAD-645D0B43-B': '2026-08', 'RAD-094C315F-D': '2026-08', 'RAD-C95E2E4C-A': '2026-08', 'RAD-EC60DBAC-5': '2026-08',
+  'RAD-01252D00-1': '2026-08', 'RAD-1D7C5E4F-C': '2026-08', 'RAD-1DC89A6D-6': '2026-08', 'RAD-8E10C337-4': '2026-08',
+  'RAD-BF3FA670-3': '2026-08', 'RAD-1441A13A-7': '2026-08', 'RAD-6F1B8DEE-1': '2026-08', 'RAD-CC8B7647-7': '2026-08',
+  'RAD-7DD15438-5': '2026-08', 'RAD-D1E1806E-D': '2026-08', 'RAD-79C5A694-B': '2026-08', 'RAD-358E2CAE-9': '2026-08'
 };
 // The SIX frozen canonical ACTIVE identities (R4B5) — migrated marketplace + canonical 2026-08 — for ACTIVE_SCOPE_REUSABLE.
 function TEMP_r4cCanonicalActiveIdentities_() {

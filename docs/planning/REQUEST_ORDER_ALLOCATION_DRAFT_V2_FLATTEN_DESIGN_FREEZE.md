@@ -433,3 +433,27 @@ The USER-executed cutover no longer requires hand-transforming 26 records. Tooli
 **E — bundle.** `KMRDV2` (`kmrdv2-fa3c-r4c-1`) + `KMRDV2P` (`kmrdv2p-fa3c-r4c-1`) regenerated into `90_generated_supply_planning_bundle.gs` (52 modules, reproducible; `--check` gate passes). 47_ and the TEMP helper are standalone `.gs` (not bundled). Cutover flag stays `false`; nothing synced or deployed this round.
 
 **Permanent Apps Script sync set (USER-owned, when releasing):** `47_api_v1_recommendation_generation.gs` (runtime cycle fix) + `90_generated_supply_planning_bundle.gs` (KMRDV2/KMRDV2P R4C). The paste-ready `TEMP_migrate_request_order_draft_v2.gs` is synced only for the one-time migration run. `00_config.gs` unchanged (flag stays false); no frontend change. Tests: R4 35 / R4A 50 / R4B2 23 / R4B4 36 / R4B5-runtime 19 / R4C-migration+validator 53 / bundle 68; full sweep 294 pass / 4 pre-existing baseline / 0 new.
+
+## 25. R4C1 — complete 26-ID authority, full-cohort fidelity, release-order correction (2026-08-22)
+
+**Complete 26-ID authority.** `TEMP_R4C_AUTHORIZED_CYCLE_BY_ID_` now holds the exact **26** actionable ids — 5 active RAD + the sole RD (byte-verbatim) + the **20 submitted RAD ids from the R4B2 log** — each → `2026-08`. The USER hand-edit placeholder (`<<< USER: paste … >>>`) is removed; the map is package-complete (no runtime completion, no manual edit). No prefix matching, no generic RAD rule.
+
+**Full-cohort fidelity (frozen expected — do not change to make a test pass).** The complete live 26-row actionable cohort migrates to exactly: cycle `{2026-08: 26}`; status `{submitted: 20, draft: 6}` (site_confirmed: 0); draft_purpose `{regular: 26}` (blank: 0, monthly: 0); marketplace `{Amazon: 18, Shopify: 3, Walmart: 5}` (KM Walmart: 0). Normalization counts: cycle 26 · site_confirmed→draft 5 · blank→regular 25 · KM Walmart→Walmart 5 · ID converted 0 · ID preserved 26 · submitted source/migrated 20/20 · target 53 headers / 26 rows. Source: 124 headers / 65 lines / 26 actionable / 98 dropped. Proven in `request-order-draft-v2-authority-full-cohort-f1-7n-fa-3c-r4c1.test.js` (33 assertions), including authority mutation halts (delete/add/prefix-equivalent → `MIGRATION_AUTHORIZED_ID_SET_MISMATCH`; a `2026-07` staging cycle is format-valid but fails `PLANNING_CYCLE_AUTHORITY_OK`), and a package-complete public Dry Run (no manual source edit) with all 14 gates and zero writes.
+
+**47_ flag-false reachability audit.** The R4C runtime seam lives in `recGenBuildGapDraftBody_`, called at 47_:380 (`recGenGenerateOneSkuCompact_`, used by the 48_ scope job) and 47_:419 (`handleGenerateRequestOrderDraftFromGap_`, reachable via 01_router:472). These are the **live, non-flag-gated** gap-backed generation path (the cutover flag at 47_:446 gates only the flat *readback*). So syncing the new 47_ while `flag=false` **WOULD** change reachable legacy behavior: a Date `calculation_month` now yields canonical `2026-08` (previously a raw localized Date string — the origin of the RD id's Date text), and a blank/invalid cycle now fails closed instead of building a blank-cycle draft. Both are correctness improvements, but they are reachable behavior changes. → **`SYNC_47_ONLY_DURING_CONTROLLED_CUTOVER`.** Regardless of harm assessment, 47_ is kept OUT of the pre-Dry-Run minimum sync because the read-only migration planner/validator do not require it.
+
+**Release order (corrected).**
+- **A — PRE-DRY-RUN minimum sync (USER):** `90_generated_supply_planning_bundle.gs` (KMRDV2/KMRDV2P R4C) + the completed `TEMP_migrate_request_order_draft_v2.gs`. That is ALL the read-only Dry Run + staging validator need. **47_ is NOT synced here.**
+- **B — MIGRATION EXECUTE:** not authorized this round.
+- **C — POST-STAGING-VALIDATION / CONTROLLED CUTOVER — cumulative permanent Apps Script manifest** (reconciled against the frozen R4 manifest 00/15/24/25/47/48/90):
+  - `00_config.gs` — CHANGED (V2 cutover flag + helper); flag stays `false` in source.
+  - `15_request_allocation_handlers.gs` — CHANGED (cutover-gated flat submit branch).
+  - `24_recommendation_orchestrator.gs` — CHANGED (cutover-gated flat dispatch + rpoFlat* helpers).
+  - `25_recommendation_user_edit.gs` — CHANGED (cutover-gated flat token/edit branches).
+  - `47_api_v1_recommendation_generation.gs` — CHANGED (cutover-gated flat readback + the R4C runtime cycle seam); `SYNC_47_ONLY_DURING_CONTROLLED_CUTOVER`.
+  - `48_api_v1_request_order_draft_job.gs` — **UNCHANGED by V2** (0 flag/KMRDV2/seam references); it is only the runtime CONSUMER of 47_'s gap generation. No new V2 content to sync; required in the manifest solely as the already-deployed caller — USER confirms its deployed copy is current.
+  - `90_generated_supply_planning_bundle.gs` — CHANGED (KMRDV2 `kmrdv2-fa3c-r4c-1` + KMRDV2P `kmrdv2p-fa3c-r4c-1`).
+  The cutover flag flips to `true` only in the deployed project during controlled cutover — never in repository source.
+- **D — FRONTEND cutover (cumulative, not now):** `assets/js/pages/request-order.js` (flat DTO consumption / Send explosion — R2b-3) + `assets/css/pages/request-order.css`. R4C1 itself made no frontend change, but the overall R4 release still requires these; do NOT report "none". No frontend deploys this round.
+
+Cutover flag stays `false`; bundle unchanged this round (`c0240a59…`, 52 modules); no core/runtime edit in R4C1 (only the TEMP authority + tests + this doc). Tests: R4 35 / R4A 50 / R4B2 23 / R4B4 36 / R4B5-runtime 19 / R4C 53 / R4C1 33 / bundle 68; full sweep 295 pass / 4 pre-existing baseline / 0 new.
