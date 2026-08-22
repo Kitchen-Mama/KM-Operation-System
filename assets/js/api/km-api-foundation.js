@@ -356,6 +356,12 @@
     var _siteConfirmRequired = (typeof deps.requestOrderSiteConfirmRequired === 'boolean') ? deps.requestOrderSiteConfirmRequired : false;
     function requestOrderSiteConfirmRequired() { return _siteConfirmRequired === true; }
     function setRequestOrderSiteConfirmRequired(on) { _siteConfirmRequired = (on === true); return _siteConfirmRequired; }
+    // F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation capability (backend-owned flag mirror; same pattern). Default
+    // OFF: the "Generate AI Plan" button stays page-state-only (no DB write) until the USER enables it for the controlled
+    // Stage-3 run. Keep in sync with 00_config.gs INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ (one logical flag). Reversible.
+    var _invAiPlanDbGen = (typeof deps.inventoryAiPlanDbGenerationEnabled === 'boolean') ? deps.inventoryAiPlanDbGenerationEnabled : false;
+    function inventoryAiPlanDbGenerationEnabled() { return _invAiPlanDbGen === true; }
+    function setInventoryAiPlanDbGenerationEnabled(on) { _invAiPlanDbGen = (on === true); return _invAiPlanDbGen; }
     function workspaceApiActive(name) {
       var n = normName(name);
       var d = getWorkspace(n); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
@@ -810,6 +816,8 @@
       workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode, isCanonicalWorkspace: isCanonicalWorkspace,
       // F1-7N-FA-3C-R6E-P0 — Request Order Site Confirm capability (backend-owned flag mirror; reversible).
       requestOrderSiteConfirmRequired: requestOrderSiteConfirmRequired, setRequestOrderSiteConfirmRequired: setRequestOrderSiteConfirmRequired,
+      // F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation capability (backend-owned flag mirror; default OFF; reversible).
+      inventoryAiPlanDbGenerationEnabled: inventoryAiPlanDbGenerationEnabled, setInventoryAiPlanDbGenerationEnabled: setInventoryAiPlanDbGenerationEnabled,
       // Weekly workspace helpers (API-2)
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // Recommendation workspace helpers (F1-4B-A)

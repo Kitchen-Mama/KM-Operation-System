@@ -217,6 +217,8 @@ ok(/release:/.test(RO) && /dbProviderState:/.test(RO), 'I: __roDebug includes re
 ok(/RELEASE:\s*'r6c-navlifecycle-20260822'/.test(fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8')), 'D: namespace.js defines the centralized KM.RELEASE signature');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 ok(/request-order\.js\?v=r6c-navlifecycle-20260822/.test(INDEX), 'D: request-order.js cache-bust token bumped off the stale donenotice-20260811 (the R6B/R6B2 fix now actually loads)');
-ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /operation-system-db-api\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /namespace\.js\?v=r6c-navlifecycle-20260822/.test(INDEX), 'D: all R6C-changed assets carry the centralized release token');
+// lifecycle.js + namespace.js still carry the R6C release token; operation-system-db-api.js was RE-BUMPED to the R6D1
+// token when R6D1 re-edited it (per-asset cache-bust — the changed file must reload). Both are valid deployed states.
+ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /namespace\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /operation-system-db-api\.js\?v=r6[cd]/.test(INDEX), 'D: R6C framework assets carry a release token (db-api re-bumped by a later round is accepted)');
 
 setTimeout(done, 50);   // allow the provider whenReady/retry promises to settle before the summary

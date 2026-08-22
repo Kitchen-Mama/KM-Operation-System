@@ -1374,17 +1374,34 @@ function TEMP_r6dSchemaMatch_(actual, auth) {
 function TEMP_r6dDist_(rows, field) { var d = {}; rows.forEach(function (r) { var k = TEMP_str_(r[field]) || '(blank)'; d[k] = (d[k] || 0) + 1; }); return d; }
 function TEMP_r6dCycleTypeDist_(rows) { var d = {}; rows.forEach(function (r) { var t = TEMP_isDate_(r.planning_cycle) ? 'Date' : (r.planning_cycle === null || r.planning_cycle === undefined || r.planning_cycle === '' ? 'blank' : typeof r.planning_cycle); d[t] = (d[t] || 0) + 1; }); return d; }
 function TEMP_r6dLatestInventoryRun_() {
-  // best-effort, read-only peek at the calculation-run journal for an INVENTORY/WEEKLY row (absent tab → UNAVAILABLE)
+  // F1-7N-FA-3C-R6D1 — CORRECTED Inventory-run authority. The AUTHORITATIVE Inventory gap run lives in the Script
+  // Property GAP_JOB_INVENTORY (46_ gap job; runId 'GAP-INV-*'), NOT in recommendation_calculation_runs (that journal
+  // holds MONTHLY_ORDER / WEEKLY draft-persistence runs, e.g. RUN::RD::MONTHLY_ORDER…, recommendation_type=MONTHLY_ORDER).
+  // The pre-R6D1 finder wrongly fell back to the journal's latest row (a MONTHLY_ORDER run) and reported it FOUND. This
+  // reads the real authority; a MONTHLY_ORDER run is NEVER an Inventory run; when no GAP-INV run exists → NOT_FOUND.
   try {
+    var raw = null;
+    try { raw = PropertiesService.getScriptProperties().getProperty('GAP_JOB_INVENTORY'); } catch (e0) { raw = null; }
+    if (raw) {
+      var st = null; try { st = JSON.parse(raw); } catch (ep) { st = null; }
+      if (st && String(st.product || '').toUpperCase() === 'INVENTORY' && /^GAP-INV-/.test(String(st.runId || ''))) {
+        return { status: 'FOUND', source: 'GAP_JOB_INVENTORY(script_property)', run_id: TEMP_str_(st.runId), product: 'INVENTORY',
+          run_status: TEMP_str_(st.status), calculation_date: TEMP_str_(st.calculationDate), calculation_month: TEMP_str_(st.calculationMonth),
+          planning_cycle: TEMP_str_(st.planningCycle), requested_scope: (st.requestedScope || null), applied_scope: (st.appliedScope || null),
+          started_at: TEMP_str_(st.startedAt), finished_at: TEMP_str_(st.finishedAt), updated_at: TEMP_str_(st.updatedAt) };
+      }
+    }
+    // No GAP-INV run. PROVE the MONTHLY_ORDER exclusion (the invalid prior source), never report it as the Inventory run.
+    var excluded = null;
     var jr = TEMP_readObjects_('recommendation_calculation_runs');
-    if (!jr || !jr.present) return { status: 'JOURNAL_TAB_ABSENT' };
-    var inv = (jr.rows || []).filter(function (r) { var blob = JSON.stringify(r).toUpperCase(); return blob.indexOf('INVENTORY') !== -1 || blob.indexOf('WEEKLY') !== -1 || blob.indexOf('SHIPPING') !== -1; });
-    var pool = inv.length ? inv : (jr.rows || []);
-    if (!pool.length) return { status: 'NO_RUNS', journal_row_count: (jr.rows || []).length };
-    var last = pool[pool.length - 1];
-    return { status: 'FOUND', inventory_matched_rows: inv.length, journal_row_count: (jr.rows || []).length,
-      last_run_id: TEMP_str_(last.calculation_run_id || last.run_id || last.id), last_status: TEMP_str_(last.run_status || last.status), last_updated_at: TEMP_str_(last.updated_at || last.created_at) };
-  } catch (e) { return { status: 'UNAVAILABLE', error: String(e && e.message || e) }; }
+    if (jr && jr.present && (jr.rows || []).length) {
+      var lastJ = jr.rows[jr.rows.length - 1];
+      var isMonthly = String(lastJ.recommendation_type || '').toUpperCase() === 'MONTHLY_ORDER' || /MONTHLY_ORDER/.test(JSON.stringify(lastJ).toUpperCase());
+      excluded = { latest_journal_run_id: TEMP_str_(lastJ.calculation_run_id || lastJ.run_id || lastJ.id), recommendation_type: TEMP_str_(lastJ.recommendation_type),
+        is_monthly_order_excluded: isMonthly ? 'YES' : 'NO', note: 'recommendation_calculation_runs is NOT the Inventory gap-run authority' };
+    }
+    return { status: 'NOT_FOUND', source: 'GAP_JOB_INVENTORY(script_property)', note: 'no GAP-INV-* run in the GAP_JOB_INVENTORY script property', monthly_order_exclusion: excluded };
+  } catch (e) { return { status: 'UNAVAILABLE', source: 'GAP_JOB_INVENTORY(script_property)', error: String(e && e.message || e) }; }
 }
 function TEMP_r6dDiagnoseInventoryAiPlanConnection_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1557,5 +1574,130 @@ function TEMP_r6eDiagnoseShippingPlanSchema_() {
     R6E_DIAGNOSTIC_READY: 'YES'
   };
   Logger.log('R6E_SHIPPING_PLAN_SCHEMA ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6D1 — READ-ONLY Inventory AI Plan readiness validator (writes NOTHING). Freezes the one
+// blank-cycle orphan header (all 30 fields + JS types + row), the corrected GAP-INV run authority, schema hashes,
+// header→line linkage, duplicates, and the manual-generation connection + staged flag state. Zero writes: TEMP_readObjects_
+// + PropertiesService.getProperty + typeof-guarded getters only; no setValues/appendRow/insertSheet/rename/repair.
+// ================================================================================================================
+var TEMP_R6D1_DRAFTS_TAB_ = 'shipping_allocation_drafts';
+var TEMP_R6D1_LINES_TAB_ = 'shipping_allocation_draft_lines';
+var TEMP_R6D1_ACTIVE_ = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+function TEMP_R6D1_VALIDATE_INVENTORY_AI_PLAN_READY() { return TEMP_r6d1ValidateInventoryAiPlanReady_(); }
+// Full read-only audit of ONE header row: every 30 field + raw JS type + row index + linked line count + classification.
+function TEMP_r6d1FreezeHeader_(row, rowIndex, lines) {
+  var fields = {}, types = {};
+  Object.keys(row).forEach(function (k) { fields[k] = row[k]; types[k] = TEMP_r5bTypeOf_(row[k]); });
+  var id = TEMP_str_(row.allocation_draft_id);
+  var linked = (lines || []).filter(function (l) { return TEMP_str_(l.allocation_draft_id) === id && TEMP_str_(l.line_status).toLowerCase() !== 'cancelled'; }).length;
+  var cycleBlank = TEMP_str_(row.planning_cycle) === '';
+  var genType = TEMP_str_(row.generation_type);
+  var status = TEMP_str_(row.status);
+  // downstream refs: shipping_allocation_drafts has no transfer FK column; a best-effort check for the id referenced in
+  // shipping_plans (no known FK) — reported as not-traced rather than fabricated.
+  var downstream = 'NOT_TRACED (no known downstream FK from shipping_allocation_drafts to shipping_plans/shipment)';
+  var classification =
+      (linked > 0 && cycleBlank) ? 'VALID_MANUAL_DRAFT_MISSING_CYCLE'
+    : (linked > 0) ? 'LINKED_DRAFT_REQUIRES_RECONCILIATION'
+    : (cycleBlank && linked === 0) ? 'EMPTY_ORPHAN_SAFE_TO_CANCEL'
+    : (linked === 0 && !cycleBlank) ? 'EMPTY_ORPHAN_SAFE_TO_CANCEL'
+    : 'AMBIGUOUS_HALT';
+  return {
+    row_number: rowIndex + 2, allocation_draft_id: id, planning_cycle: TEMP_str_(row.planning_cycle),
+    planning_cycle_blank: cycleBlank ? 'YES' : 'NO', source_page: TEMP_str_(row.source_page),
+    company: TEMP_str_(row.company), country: TEMP_str_(row.country), marketplace: TEMP_str_(row.marketplace),
+    status: status, recommended_source_warehouse_id: TEMP_str_(row.recommended_source_warehouse_id),
+    recommended_destination_warehouse_id: TEMP_str_(row.recommended_destination_warehouse_id),
+    recommendation_group_no: TEMP_str_(row.recommendation_group_no), generation_type: genType,
+    calculation_run_id: TEMP_str_(row.calculation_run_id), draft_version: row.draft_version,
+    created_by: TEMP_str_(row.created_by), created_at: TEMP_str_(row.created_at), updated_by: TEMP_str_(row.updated_by),
+    updated_at: TEMP_str_(row.updated_at), note: TEMP_str_(row.note),
+    linked_line_count: linked, downstream_references: downstream,
+    all_fields: fields, field_types: types, classification: classification
+  };
+}
+function TEMP_r6d1ValidateInventoryAiPlanReady_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+
+  var H = TEMP_readObjects_(TEMP_R6D1_DRAFTS_TAB_), L = TEMP_readObjects_(TEMP_R6D1_LINES_TAB_);
+  var headers = H.rows || [], lines = L.rows || [];
+  var hHash = TEMP_r5bHash_((H.headers || []).join('|')), lHash = TEMP_r5bHash_((L.headers || []).join('|'));
+
+  // corrected GAP-INV run authority + MONTHLY_ORDER exclusion proof
+  var latestRun = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : { status: 'UNAVAILABLE' };
+
+  // freeze every active header (A) — including the one blank-cycle orphan
+  var frozen = headers.map(function (r, i) { return TEMP_r6d1FreezeHeader_(r, i, lines); });
+  var orphanBlankCycle = frozen.filter(function (f) { return f.planning_cycle_blank === 'YES'; });
+  var validCanonical = frozen.filter(function (f) { return f.planning_cycle_blank === 'NO' && TEMP_R6D1_ACTIVE_[f.status] === 1; });
+
+  // planning_cycle type/value distribution
+  var cycleTypeDist = {}, cycleValDist = {};
+  headers.forEach(function (r) { var t = TEMP_r5bTypeOf_(r.planning_cycle); cycleTypeDist[t] = (cycleTypeDist[t] || 0) + 1; var v = TEMP_str_(r.planning_cycle) || '(blank)'; cycleValDist[v] = (cycleValDist[v] || 0) + 1; });
+
+  // header → line linkage + orphan lines + duplicates + duplicate active natural keys
+  var headerIds = {}; headers.forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) headerIds[id] = (headerIds[id] || 0) + 1; });
+  var dupHeaderIds = Object.keys(headerIds).filter(function (id) { return headerIds[id] > 1; });
+  var linkage = {}, orphanLines = 0;
+  lines.forEach(function (l) { var id = TEMP_str_(l.allocation_draft_id); linkage[id] = (linkage[id] || 0) + 1; if (!headerIds[id]) orphanLines++; });
+  var nk = {}; headers.forEach(function (r) { if (TEMP_R6D1_ACTIVE_[TEMP_str_(r.status)] !== 1) return; var k = [TEMP_str_(r.planning_cycle), TEMP_str_(r.company), TEMP_str_(r.country), TEMP_str_(r.marketplace), TEMP_str_(r.source_page)].join('|'); nk[k] = (nk[k] || 0) + 1; });
+  var dupActiveNk = Object.keys(nk).filter(function (k) { return nk[k] > 1; }).length;
+
+  // staged manual-generation flag + auto-generation verdict
+  var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : false;
+
+  // known code reconciliation gaps discovered in R6D1 (STATIC facts — the validator reads DB only, these gate the run)
+  var codeGaps = [
+    'HYDRATION_FIELD_MAP: the frontend hydrate reads selected_source_warehouse_id/selected_destination_warehouse_id/selected_shipping_method — not in the 30-col line schema — so generated-line From/To/Method hydrate blank (pre-existing for all lines).',
+    'GENERATED_LINE_ID: 61_ writes lines by natural key with an empty allocation_draft_line_id; the frontend edit upserts by SADL id → editing a generated line would DUPLICATE. Editing generated lines is blocked until reconciled.',
+    'WEEKLY_WRITER_TEXTFORMAT: the shipping-allocation writer has no @-textformat/flush/roundtrip (isV2-only) — but the weekly id/cycle values (RD::…, RECO-YYYY-MM) are NOT coercion-prone, so the R5C incident class does not apply.'
+  ];
+
+  var schemaExact = H.present && L.present && (H.headers || []).length === 30 && (L.headers || []).length === 30;
+  var ambiguous = frozen.some(function (f) { return f.classification === 'AMBIGUOUS_HALT'; });
+  var reconRequired = frozen.some(function (f) { return f.classification === 'LINKED_DRAFT_REQUIRES_RECONCILIATION'; });
+  var verdict = !H.present || !L.present ? 'INVENTORY_AI_PLAN_NOT_READY'
+    : ambiguous ? 'HALT'
+    : reconRequired ? 'ORPHAN_RECONCILIATION_REQUIRED'
+    // Manual generation is STAGED behind a default-OFF flag AND two generated-line reconciliation gaps remain →
+    // the controlled AI Plan run is NOT ready this round even though the DB itself is clean.
+    : (!flagOn || codeGaps.length) ? 'INVENTORY_AI_PLAN_NOT_READY'
+    : 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN';
+
+  var out = {
+    ok: verdict === 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN',
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    shipping_allocation_drafts_headers_hash: hHash, shipping_allocation_draft_lines_headers_hash: lHash,
+    drafts_col_count: (H.headers || []).length, lines_col_count: (L.headers || []).length, schema_exact_30_30: schemaExact ? 'YES' : 'NO',
+    latest_inventory_gap_run: latestRun,
+    monthly_order_exclusion_proof: (latestRun && latestRun.monthly_order_exclusion) || (latestRun && latestRun.status === 'FOUND' ? 'N/A (a real GAP-INV run was found)' : null),
+    header_row_count: headers.length, line_row_count: lines.length,
+    blank_cycle_orphan_count: orphanBlankCycle.length, blank_cycle_orphans: orphanBlankCycle,
+    valid_canonical_draft_count: validCanonical.length,
+    planning_cycle_type_distribution: cycleTypeDist, planning_cycle_value_distribution: cycleValDist,
+    header_to_line_linkage: linkage, orphan_line_count: orphanLines,
+    duplicate_allocation_draft_id_count: dupHeaderIds.length, duplicate_active_natural_key_count: dupActiveNk,
+    natural_key_definition: 'planning_cycle|company|country|marketplace|source_page (source_page=inventory_replenishment)',
+    writer_available: 'YES (backend 61_ handleGenerateWeeklyAiPlanDraft_ via router weeklyAiPlan.generate; KMPR upsert; LockService; deterministic RD::WEEKLY_SHIPPING::<cycle>::<scopeKey> reuse; blank-cycle never matched)',
+    readback_available: 'YES (getShippingAllocationDrafts / getShippingAllocationDraftLines + _hydrateAllocationDraftFromDb)',
+    frontend_caller: 'CONNECTED (KM.DB.generateWeeklyAiPlanDraft + handleReplenAiPlan, gated by INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_)',
+    manual_generation_connection: flagOn ? 'CONNECTED_AND_ENABLED' : 'CONNECTED_BUT_FLAG_OFF (staged)',
+    automatic_generation_verdict: 'AUTOMATIC_GENERATION_DEFERRED_SPEC_AUTHORITY_MISSING (GAP-DONE is a fail-closed precondition gate only; inventory auto-persist is explicitly a forbidden second engine)',
+    planned_qty_edit_connection: 'EXISTING (manual routes; debounced upsert). Generated-line edit BLOCKED by GENERATED_LINE_ID gap.',
+    line_note_edit_connection: 'NOT_CONNECTED (no line-note UI; buildDraftLinePayload omits note; blocked by GENERATED_LINE_ID gap)',
+    submit_disabled: 'YES (no Submit wired this round)', shipment_handoff_disabled: 'YES (no handoff wired this round)',
+    staged_flag_INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_: flagOn ? 'ON' : 'OFF',
+    known_code_reconciliation_gaps: codeGaps,
+    R6D1_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + PropertiesService.getProperty + typeof-guarded flag getters only; no setValues/appendRow/setNumberFormat/insertSheet/rename)',
+    R6D1_VALIDATOR_CHECKSUM: TEMP_r5bHash_([hHash, lHash, headers.length, lines.length, orphanBlankCycle.length, dupHeaderIds.length, orphanLines, verdict].join('|')),
+    verdict: verdict
+  };
+  Logger.log('R6D1_INVENTORY_AI_PLAN_READY ' + JSON.stringify(out, null, 2));
   return out;
 }

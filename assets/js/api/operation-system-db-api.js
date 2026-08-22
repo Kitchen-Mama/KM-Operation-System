@@ -3595,6 +3595,12 @@ window.KM.DB.upsertShippingAllocationDraft = function(payload) { return _kmWeekl
 // UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
 window.KM.DB.upsertShippingAllocationDraftLines = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftLines', payload); };
 window.KM.DB.submitShippingAllocationDrafts = function(payload) { return _kmWeeklyCommand_('submitShippingAllocationDrafts', payload); };
+// F1-7N-FA-3C-R6D1 — Inventory AI Plan generation (canonical 61_ handleGenerateWeeklyAiPlanDraft_ via router action
+// weeklyAiPlan.generate). Persists ONLY shipping_allocation_drafts / _lines. Payload = { company, country, mode?,
+// planningCycle?(auto-resolved server-side when blank), confirmRegenerateOverUserEdits?, currentMarketplace?, actor? }.
+// Scope is company+country ONLY (marketplace is readback context; the batch fans out per-marketplace). Deterministic
+// natural-key reuse + LockService live in the backend; a blank-cycle orphan can never be matched (literal scope match).
+window.KM.DB.generateWeeklyAiPlanDraft = function(payload) { return _kmWeeklyCommand_('weeklyAiPlan.generate', payload); };
 // C2-D2 §13: whole-Draft Cancel (soft-cancel; idempotent — repeat returns benign already-cancelled).
 window.KM.DB.cancelShippingAllocationDraft = function(payload) { return _kmWeeklyCommand_('cancelShippingAllocationDraft', payload); };
 // C2-D2 §9: targeted READ-ONLY Allocation-Draft readback — reads ONLY the two draft tables server-side (never

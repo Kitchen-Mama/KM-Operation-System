@@ -43,3 +43,13 @@ function requestOrderDraftV2FlatCutoverEnabled_() { return REQUEST_ORDER_DRAFT_V
 // affects Request Order ONLY — never Weekly Shipping Plan / shipping allocation / Shipment Draft / any other Submit rule.
 var REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false;
 function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ === true; }
+
+// F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation feature flag (backend owner-of-record). DEFAULT OFF. When false
+// (the R6D1 staged state), the Inventory "Generate AI Plan" button keeps its existing page-state-only behavior and
+// performs NO DB write — deploying R6D1 changes NO live behavior. When true (set ONLY for the USER-owned controlled
+// Stage-3 verification, after the generation→hydration reconciliation gaps are closed), the manual button routes to the
+// canonical 61_ weeklyAiPlan.generate writer (shipping_allocation_drafts / _lines). The frontend mirrors this via
+// KM.api.inventoryAiPlanDbGenerationEnabled() (km-api-foundation.js) — ONE logical flag, same value across layers.
+// Reversible: set back to false to restore the page-state-only behavior exactly. Affects Inventory only.
+var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;
+function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; }

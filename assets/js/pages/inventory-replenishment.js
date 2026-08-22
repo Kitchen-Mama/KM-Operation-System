@@ -4355,15 +4355,104 @@ function handleReplenAiPlan(scope) {
             _irMatState.rows.forEach(function (r) { var dto = window.KMREC.generateInventoryRecommendation(r, { now: now }); if (dto) _irRecoByKey[String(r.sku)] = dto; });
         }
         renderReplenishment();   // re-render surfaces the Recommended Action block (does NOT run Submit Plan)
-        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); }
     } catch (err) {
-        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); if (btn) btn.disabled = false; }
         console.error('[AI Plan] recommendation generation failed:', err);
-    } finally {
-        if (btn) btn.disabled = false;
+        return;
     }
+    // F1-7N-FA-3C-R6D1 — DB-BACKED GENERATION (staged behind a backend-owned flag; DEFAULT OFF). handleReplenAiPlan is the
+    // MANUAL-CLICK path only (no background/resume caller), so a result popup here is inherently manual-only. When the flag
+    // is ON and cloud write is eligible, this routes the manual click to the canonical 61_ weeklyAiPlan.generate writer,
+    // then hydrates from the DB readback and reveals atomically. When OFF (this round's default) it keeps the page-state-
+    // only behavior above (zero DB write) — deploying R6D1 changes NO live behavior until the USER enables the flag.
+    if (_irInventoryAiPlanDbGenerationEnabled_() && _irAiPlanDbGenEligible_()) {
+        _irRunInventoryAiPlanGeneration_(btn);   // async — owns btn state + result popup + hydration
+        return;
+    }
+    if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); btn.disabled = false; }
 }
 window.handleReplenAiPlan = handleReplenAiPlan;
+// R6D1 — the DB-generation feature flag (mirrors the backend owner-of-record via KM.api). Default OFF (fail-safe: if the
+// capability is unavailable → OFF, page-state-only).
+function _irInventoryAiPlanDbGenerationEnabled_() {
+    try { if (window.KM && window.KM.api && typeof window.KM.api.inventoryAiPlanDbGenerationEnabled === 'function') return window.KM.api.inventoryAiPlanDbGenerationEnabled() === true; } catch (e) {}
+    return false;
+}
+function _irAiPlanDbGenEligible_() {
+    return !!(window.KM && window.KM.DB && typeof window.KM.DB.generateWeeklyAiPlanDraft === 'function' &&
+        (typeof isOperationDbApiConfigured !== 'function' || isOperationDbApiConfigured()));
+}
+// R6D1 — classify the 61_ generation envelope truthfully (never conceal committed rows). status ∈ COMPLETED | PARTIAL |
+// NO_DEMAND | BLOCKED_INPUT | FAILED; per-marketplace results carry draftId/draftVersion/lineCount/status/reason.
+function _irClassifyGenerationResult_(res) {
+    var d = (res && res.data) || {};
+    var status = String(d.status || (res && res.success ? 'COMPLETED' : 'FAILED'));
+    var mkts = Array.isArray(d.marketplaceResults) ? d.marketplaceResults : [];
+    var lineTotal = mkts.reduce(function (s, m) { return s + (Number(m && m.lineCount) || 0); }, 0);
+    var draftIds = mkts.map(function (m) { return m && m.draftId; }).filter(Boolean);
+    var blocked = mkts.filter(function (m) { return m && (m.status === 'BLOCKED_CONFLICT' || m.success === false); });
+    var backendOk = !!(res && res.success) && (status === 'COMPLETED' || status === 'PARTIAL');
+    return {
+        ok: backendOk, status: status,
+        marketplaceCount: (d.marketplaceCount != null ? d.marketplaceCount : mkts.length),
+        skuCount: (d.skuCount != null ? d.skuCount : null),
+        lineTotal: lineTotal, draftIds: draftIds, blockedCount: blocked.length,
+        marketplaceResults: mkts,
+        errors: (res && res.errors) || [],
+        reason: status === 'NO_DEMAND' ? 'no allocation needed'
+            : status === 'BLOCKED_INPUT' ? 'blocked (input)'
+            : (blocked.length ? 'blocked/conflict on ' + blocked.length + ' marketplace(s)' : '')
+    };
+}
+// R6D1 (Objective B/D/E) — run the manual DB generation, then hydrate from the DB readback + reveal atomically, then show
+// a manual (dismissible) result popup. Fail-closed: a reported failure never conceals committed rows (the popup lists the
+// per-marketplace draftIds/lineCounts the backend returned). NOTE: this path is gated OFF by default this round; the
+// generated-line hydration field-mapping + line-id reconciliation are Stage-3 controlled-run prerequisites (see docs §40).
+function _irRunInventoryAiPlanGeneration_(btn) {
+    var ctx = _replenCtx();
+    var payload = { company: ctx.company, country: ctx.country, mode: 'MANUAL_REGENERATE', currentMarketplace: ctx.marketplace, actor: 'inventory-replenishment' };
+    return Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)).then(function (res) {
+        var cls = _irClassifyGenerationResult_(res);
+        if (cls.ok) {
+            // Atomic hydration from the DB readback (E) — mirror the mount's hydrate-then-render sequence.
+            return Promise.resolve(window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']))
+                .then(function () { try { _hydrateAllocationDraftFromDb(_replenCtx()); } catch (e) {} renderReplenishment(); })
+                .then(function () { _irShowAiPlanResult_(cls); if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); } });
+        }
+        _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds
+        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+    }).catch(function (err) {
+        _irShowAiPlanResult_({ ok: false, status: 'FAILED', marketplaceResults: [], draftIds: [], lineTotal: 0, errors: [{ message: String(err && err.message || err) }], reason: 'request failed' });
+        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+    }).then(function () { if (btn) btn.disabled = false; });
+}
+// R6D1 — MANUAL-ONLY dismissible result popup (business-readable + a collapsed Technical-details disclosure; no raw tokens
+// in the headline). Reuses the R6E structured-disclosure template. Background/resume never call this (manual-click only).
+function _irShowAiPlanResult_(cls) {
+    if (typeof document === 'undefined') return;
+    var esc = (typeof escapeReplenHtml === 'function') ? escapeReplenHtml : function (v) { return String(v == null ? '' : v); };
+    var headline = cls.ok
+        ? ('AI Plan generated — ' + (cls.marketplaceCount || 0) + ' marketplace(s), ' + (cls.lineTotal || 0) + ' line(s).')
+        : (cls.status === 'NO_DEMAND' ? 'AI Plan: no allocation needed for the current scope.'
+            : cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready.'
+            : ('AI Plan could not complete' + (cls.reason ? ' — ' + esc(cls.reason) : '') + '.'));
+    var rows = '<div><strong>Status:</strong> ' + esc(cls.status || '') + '</div>';
+    (cls.marketplaceResults || []).forEach(function (m) {
+        rows += '<div><strong>' + esc(m && m.marketplace) + ':</strong> ' + esc(m && m.status) + ' — ' + (Number(m && m.lineCount) || 0) + ' line(s)' + ((m && m.draftId) ? ' · draft ' + esc(m.draftId) : '') + ((m && m.reason) ? ' · ' + esc(m.reason) : '') + '</div>';
+    });
+    (cls.errors || []).forEach(function (e) { rows += '<div><strong>Error:</strong> ' + esc(e && (e.message || e.code || e)) + '</div>'; });
+    var host = document.getElementById('replen-ai-plan-result');
+    if (!host) {
+        host = document.createElement('div'); host.id = 'replen-ai-plan-result'; host.className = 'replen-ai-plan-result';
+        host.setAttribute('role', 'status'); host.style.cssText = 'position:fixed;right:16px;bottom:16px;max-width:420px;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:12px 14px;font-size:13px;';
+        (document.body || document.documentElement).appendChild(host);
+    }
+    host.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">' +
+        '<div class="replen-ai-plan-result__msg">' + esc(headline) + '</div>' +
+        '<button type="button" class="replen-ai-plan-result__close" aria-label="Dismiss" onclick="var h=document.getElementById(\'replen-ai-plan-result\'); if(h&&h.remove)h.remove();" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;">×</button></div>' +
+        '<details class="replen-ai-plan-result__detail" style="margin-top:6px;"><summary>Technical details</summary>' + rows + '</details>';
+    host.style.borderColor = cls.ok ? '#16a34a' : '#dc2626';
+}
 
 // ========================================
 // Cloud mapping (Demo OFF): Inventory Table Phase 1 mapping via IRMap
