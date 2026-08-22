@@ -101,8 +101,8 @@ ok(/EMPTY_ORPHAN_SAFE_TO_CANCEL/.test(TEMP), 'G. blank-cycle orphan classified E
 
 section('H. unified release token (R6F)');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
-ok(/RELEASE:\s*'r6f-groupmodel-20260822'/.test(NS), 'H. KM.RELEASE = r6f-groupmodel-20260822');
+ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'H. KM.RELEASE = r6a1-request-send-20260822');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/inventory-replenishment\.js\?v=r6f-groupmodel-20260822/.test(INDEX), 'H. changed inventory-replenishment.js carries the R6F token (hydration fix cache-busts)');
+ok(/inventory-replenishment\.js\?v=r6a1-request-send-20260822/.test(INDEX), 'H. changed inventory-replenishment.js carries the R6F token (hydration fix cache-busts)');
 
 done();

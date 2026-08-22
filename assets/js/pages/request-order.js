@@ -3157,6 +3157,33 @@ function _roFcForItemMonth(item, mo) {
 // Live → persist allocation drafts + lines (with snapshots), create request_orders / request_order_lines
 // (grouped by series; bucket PRESERVED per line — never merged), then mark drafts submitted.
 // Demo → in-memory simulation only. NO shortage formula.
+// F1-7N-FA-3C-R6A1 (G) — structured Send error message. Extracts a clean business message + the technical code/affected
+// table from a canonical "PRODUCTION_SAFETY:<CODE> [table]" / leading-token error; NEVER renders "[object Object]".
+// It makes NO "DB Draft retained" claim: a pre-write schema/gate/token failure wrote nothing (page inputs intact, safe
+// to retry); a committed-unverified result explicitly says DO NOT retry + reload. Used by the Send catch below.
+function _roSendErrorMessage_(err) {
+  var raw = (err && err.message != null) ? String(err.message) : (typeof err === 'string' ? err : '');
+  if (raw === '' || raw === '[object Object]') { try { raw = JSON.stringify(err); } catch (e) { raw = String(err); } }
+  var m = raw.match(/PRODUCTION_SAFETY:([A-Z_]+)(?:\s*\[([^\]]+)\])?/);
+  var code = m ? m[1] : (/^([A-Z_]{3,})/.test(raw) ? RegExp.$1 : 'SEND_FAILED');
+  var table = (m && m[2]) ? m[2] : '';
+  var business;
+  if (/HEADER_MISSING|HEADER_ORDER_MISMATCH|SCHEMA|MISSING_REQUIRED_HEADER/.test(code)) {
+    business = 'Send 無法完成：資料表結構不符（schema）。未寫入任何 Request Order，頁面輸入已保留，請聯繫維運確認後再試。';
+  } else if (/DUPLICATE_CONFLICT/.test(code)) {
+    business = 'Send 偵測到相同執行金鑰但內容不同（重複保護）。未重複建立，請重新載入後確認。';
+  } else if (/COMMITTED_UNVERIFIED|RECONCILIATION/.test(code)) {
+    business = 'Send 已送出但尚未確認完成 — 請勿重試。請重新載入頁面確認結果。';
+  } else if (/TOKEN_MISMATCH|VERSION_CONFLICT|CONCURRENCY|IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(code)) {
+    business = 'Send 已停止：方案在您檢視後有變動。最新方案已重新載入，請確認後再送出。（未寫入任何 Request Order。）';
+  } else {
+    business = 'Send Request 失敗。頁面輸入已保留；請重新載入頁面確認是否已建立，再決定是否重試。';
+  }
+  var tech = 'Technical: ' + code + (table ? (' [' + table + ']') : '') + ((raw && raw !== code) ? (' — ' + raw) : '');
+  return business + '\n\n▸ ' + tech;
+}
+window._roSendErrorMessage_ = _roSendErrorMessage_;
+
 async function handleSendRequest() {
   const requestType = document.getElementById('ro-request-type').value;
   const buckets = _roBucketsForType(requestType);
@@ -3243,7 +3270,9 @@ async function handleSendRequest() {
   // Order−Suggested diff) but never rounded back to a full carton (task H). No full-carton Gate here.
 
   if (!drafts.length) {
-    alert('No positive Order Qty in ' + typeLabel + '.\n\nOpen a confirmed SKU’s Order Allocation and enter Order Qty (T1/T2/T3) first.');
+    // R6A1 (C.7) — NO_ELIGIBLE_SUBMITTED_DRAFTS: a clean zero-write result (returns BEFORE any DB call), never a
+    // HEADER_MISSING / generic failure. Only submitted positive tiers (order_qty > 0) produce downstream lines.
+    alert('No eligible submitted tiers to send (NO_ELIGIBLE_SUBMITTED_DRAFTS) — ' + typeLabel + '.\n\nOpen a confirmed SKU’s Order Allocation and enter a positive Order Qty (T1/T2/T3) first. (No Request Order was created.)');
     return;
   }
 
@@ -3391,7 +3420,9 @@ async function handleSendRequest() {
       '\n\n請到 Request Order Draft 頁面進行 Approve / Convert to PO。');
     renderRequestOrderTable();
   } catch (err) {
-    alert('Send Request 失敗：' + (err && err.message ? err.message : err) + '\n\n（未完成的寫入請重試；已建立的 Draft 仍保留。）');
+    // R6A1 (G) — structured error surface: business message + technical code/affected table (never [object Object]);
+    // the failed Send does NOT clear the working Draft (page inputs intact); no false "DB Draft retained" claim.
+    alert(_roSendErrorMessage_(err));
   }
 }
 

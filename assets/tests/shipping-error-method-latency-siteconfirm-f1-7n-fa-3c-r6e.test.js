@@ -99,7 +99,9 @@ function runE() {
   ok(/_roSiteConfirmRequired\(\)\s*\?\s*_applyRequestOrderFilters[\s\S]{0,120}filter\(_roIsRowConfirmed\)\s*:\s*_applyRequestOrderFilters/.test(RO), 'E(false). the confirmation row-filter is dropped when Site Confirm is not required');
   ok(/!_roSiteConfirmRequired\(\)\) \{[\s\S]{0,160}display = 'none'/.test(RO), 'E(false). "No site confirmed yet" label is hidden when Site Confirm is not required');
   // OTHER Send gates remain mandatory (unchanged, still present)
-  ok(/_roIsSubmittedSku_\(item\.sku\)/.test(RO) && /No positive Order Qty/.test(RO) && /expectedToken/.test(RO), 'E. other Send gates (submitted-status, positive line, optimistic token) remain MANDATORY');
+  // R6A1 reworded the empty-eligible message to NO_ELIGIBLE_SUBMITTED_DRAFTS (still proves the positive-line gate — it
+  // requires a "positive Order Qty"); the submitted-status + optimistic-token gates are unchanged.
+  ok(/_roIsSubmittedSku_\(item\.sku\)/.test(RO) && /positive Order Qty/.test(RO) && /expectedToken/.test(RO), 'E. other Send gates (submitted-status, positive line, optimistic token) remain MANDATORY');
   // backend flag of record exists with the config convention
   var CFG = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '00_config.gs'), 'utf8');
   ok(/var REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false;/.test(CFG) && /function requestOrderSiteConfirmRequired_\(\)/.test(CFG), 'E. backend owner-of-record flag REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ (+ getter) follows the 00_config convention');

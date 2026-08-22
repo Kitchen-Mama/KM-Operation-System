@@ -112,6 +112,23 @@ function raDeleteLinesByDraft_(sheet, draftId) {
  * are written ONLY when the body supplies a real value — never faked.
  * Returns { request_allocation_draft_id }.
  */
+// F1-7N-FA-3C-R6A1 — Flat V2 cutover AUTHORITY SELECTOR for request_order_allocation_drafts. Under the cutover the
+// live canonical tab is the 53-column Flat V2 schema (KMRDV2.V2_HEADERS), which EXCLUDES the retired category_snapshot/
+// series_snapshot — so validating that tab against the legacy 26-col REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_ makes
+// KMSAFE report those two legacy-expected columns MISSING → PRODUCTION_SAFETY:HEADER_MISSING (the observed Send
+// failure). Select the V2 authority BEFORE any prodRequireSheet_ (mirrors the sibling loader 23_ rprReadTable_). The
+// header upsert writes ONLY by header NAME (procurementAppendByHeader_/setCol), so category_snapshot/series_snapshot
+// simply drop against the V2 tab (never required, never written) and NO request_order_allocation_draft_lines row is
+// touched. flag=false → byte-identical legacy authority (the legacy line engine path, unchanged). A genuinely non-V2
+// live schema STILL fails closed (V2_HEADERS columns missing). No silent fallback to the legacy engine while flag=true.
+function raDraftsHeadersAuthority_() {
+  if (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_()
+      && typeof KMRDV2 !== 'undefined' && KMRDV2 && Array.isArray(KMRDV2.V2_HEADERS)) {
+    return KMRDV2.V2_HEADERS;
+  }
+  return REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_;
+}
+
 // Round 1H enforcement: the PUBLIC header route now acquires the ScriptLock + terminal-guards an existing
 // header before delegating to the (private) single-keyed-row upsert core. No unlocked/terminal-bypass path.
 function handleUpsertRequestOrderAllocationDraft_(body) {
@@ -122,7 +139,7 @@ function handleUpsertRequestOrderAllocationDraft_(body) {
     var ss0 = SpreadsheetApp.getActiveSpreadsheet();
     var id0 = String((body && body.request_allocation_draft_id) || '').trim();
     if (id0) {
-      var sh0 = procurementEnsureSheet_(ss0, 'request_order_allocation_drafts', REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_);
+      var sh0 = procurementEnsureSheet_(ss0, 'request_order_allocation_drafts', raDraftsHeadersAuthority_());
       var f0 = procurementFindRow_(sh0, 'request_allocation_draft_id', id0);
       if (f0) {
         var cS0 = f0.col('status');
@@ -160,7 +177,7 @@ function raVerifyDraftToken_(draftId, expectedToken) {
 // Private single-keyed-row header upsert core (reached ONLY under lock via the public handler above).
 function raUpsertDraftHeaderCore_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = procurementEnsureSheet_(ss, 'request_order_allocation_drafts', REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_);
+  var sh = procurementEnsureSheet_(ss, 'request_order_allocation_drafts', raDraftsHeadersAuthority_());
   var now = procurementTimestamp_();
   var actor = String((body && body.created_by) || 'request-order').trim();
   var status = String((body && body.status) || 'draft').trim();

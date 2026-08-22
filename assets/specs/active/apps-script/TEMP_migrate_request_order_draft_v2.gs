@@ -2017,3 +2017,163 @@ function TEMP_r6fValidateGroupModel_() {
   Logger.log('R6F_INVENTORY_AI_PLAN_GROUP_MODEL ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6A1 — READ-ONLY Request Order Flat V2 Send-path diagnostic + post-run validators.
+// Writes NOTHING (TEMP_readObjects_ + getRange().getValues() + typeof-guarded getters only; no setValues/appendRow/
+// insertSheet/rename/submit/edit/repair/delete). The observed live failure was PRODUCTION_SAFETY:HEADER_MISSING
+// [request_order_allocation_drafts] — caused by the header upsert validating the live 53-col Flat V2 tab against the
+// legacy 26-col authority (category_snapshot/series_snapshot). R6A1 fixed the authority selector (15_
+// raDraftsHeadersAuthority_). These tools prove readiness for a USER-owned controlled Send + validate its result.
+// ================================================================================================================
+var TEMP_R6A1_DRAFTS_TAB_ = 'request_order_allocation_drafts';
+var TEMP_R6A1_LEGACY_LINES_TAB_ = 'request_order_allocation_draft_lines';
+var TEMP_R6A1_ACTIVE_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, partially_submitted: 1 };
+var TEMP_R6A1_TIERS_ = ['T1', 'T2', 'T3'];
+
+function TEMP_R6A1_DIAGNOSE_REQUEST_ORDER_SEND_PATH() { return TEMP_r6a1DiagnoseSendPath_(); }
+function TEMP_R6A1_VALIDATE_AFTER_REQUEST_SEND() { return TEMP_r6a1ValidateAfterSend_(false); }
+function TEMP_R6A1_VALIDATE_REQUEST_SEND_REUSE() { return TEMP_r6a1ValidateAfterSend_(true); }
+
+// Count submitted/active positive tiers on a flat V2 draft row (order_qty>0 AND tier status != cancelled).
+function TEMP_r6a1EligibleTiers_(row) {
+  var n = 0;
+  for (var i = 0; i < TEMP_R6A1_TIERS_.length; i++) {
+    var t = TEMP_R6A1_TIERS_[i].toLowerCase();
+    var q = Number(row[t + '_order_qty']); if (!isFinite(q)) q = 0;
+    var st = TEMP_str_(row[t + '_status']).toLowerCase();
+    if (q > 0 && st !== 'cancelled') n++;
+  }
+  return n;
+}
+
+function TEMP_r6a1DiagnoseSendPath_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+
+  // three effective flags (owner-of-record 00_config.gs getters)
+  var flatV2 = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') ? requestOrderDraftV2FlatCutoverEnabled_() : null;
+  var siteConfirm = (typeof requestOrderSiteConfirmRequired_ === 'function') ? requestOrderSiteConfirmRequired_() : null;
+  var invGen = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+
+  // authority: what the FIXED header upsert selects (raDraftsHeadersAuthority_) vs legacy vs V2.
+  var v2Auth = (typeof KMRDV2 !== 'undefined' && KMRDV2 && Array.isArray(KMRDV2.V2_HEADERS)) ? KMRDV2.V2_HEADERS : null;
+  var legacyAuth = (typeof REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_ : null;
+  var selected = (typeof raDraftsHeadersAuthority_ === 'function') ? raDraftsHeadersAuthority_() : null;
+  var selectedName = (selected && v2Auth && selected === v2Auth) ? 'FLAT_V2 (KMRDV2.V2_HEADERS)'
+    : (selected && legacyAuth && selected === legacyAuth) ? 'LEGACY (REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_)'
+    : (selected ? 'UNKNOWN' : 'SELECTOR_UNAVAILABLE');
+  var legacyOnlyHeaders = (legacyAuth && v2Auth) ? legacyAuth.filter(function (h) { return v2Auth.indexOf(h) === -1; }) : [];
+
+  // live canonical schema
+  var H = TEMP_readObjects_(TEMP_R6A1_DRAFTS_TAB_);
+  var actual = H.headers || [];
+  var schemaExact = v2Auth ? (actual.length === v2Auth.length && actual.join('|') === v2Auth.join('|')) : null;
+
+  // legacy line-table dependency: Flat V2 Send must NEVER read/write request_order_allocation_draft_lines.
+  var legacyLines = TEMP_readObjects_(TEMP_R6A1_LEGACY_LINES_TAB_);
+  var legacyLineRowCount = (legacyLines.rows || []).length;
+
+  // downstream tables
+  function tbl(name) { var o = TEMP_readObjects_(name); return { present: o.present, headers: o.headers || [], hash: TEMP_r5bHash_((o.headers || []).join('|')), rows: (o.rows || []).length }; }
+  var ro = tbl('request_orders'), rol = tbl('request_order_lines'), src = tbl('request_order_line_sources');
+
+  // eligible active flat drafts + submitted positive tiers (aggregate; read-only)
+  var activeDrafts = 0, eligibleTierTotal = 0, draftsWithEligible = 0;
+  (H.rows || []).forEach(function (r) {
+    var st = TEMP_str_(r.status).toLowerCase();
+    if (!TEMP_R6A1_ACTIVE_STATUSES_[st]) return;
+    activeDrafts++;
+    var et = TEMP_r6a1EligibleTiers_(r);
+    eligibleTierTotal += et;
+    if (et > 0) draftsWithEligible++;
+  });
+
+  // downstream execution-key collision (request_orders.source_ref_id groups > 1 for the allocation-batch type)
+  var byKey = {};
+  (ro.headers.length ? TEMP_readObjects_('request_orders').rows : []).forEach(function (r) {
+    if (TEMP_str_(r.source_ref_type) !== 'request_order_allocation_batch') return;
+    if (TEMP_str_(r.request_status).toLowerCase() === 'cancelled') return;
+    var k = TEMP_str_(r.source_ref_id); if (!k) return; byKey[k] = (byKey[k] || 0) + 1;
+  });
+  var dupKeys = Object.keys(byKey).filter(function (k) { return byKey[k] > 1; }).length;
+
+  var verdict;
+  if (targetMatch === 'NO') verdict = 'HALT';
+  else if (v2Auth == null || schemaExact === false) verdict = 'SCHEMA_MISMATCH';
+  else if (flatV2 !== true) verdict = 'HALT';
+  else if (selected !== v2Auth) verdict = 'LEGACY_AUTHORITY_PRESENT';
+  else if (dupKeys > 0) verdict = 'DOWNSTREAM_COLLISION';
+  else if (draftsWithEligible === 0) verdict = 'NO_ELIGIBLE_SUBMITTED_DRAFTS';
+  else verdict = 'READY_FOR_CONTROLLED_REQUEST_SEND';
+
+  var out = {
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    effective_flags: { requestOrderDraftV2FlatCutover: flatV2, requestOrderSiteConfirmRequired: siteConfirm, inventoryAiPlanDbGenerationEnabled: invGen },
+    canonical_schema_col_count: actual.length, expected_v2_col_count: v2Auth ? v2Auth.length : null,
+    canonical_schema_exact_53: schemaExact === true ? 'YES' : (schemaExact === false ? 'NO' : 'V2_AUTHORITY_UNAVAILABLE'),
+    canonical_schema_hash: TEMP_r5bHash_(actual.join('|')), expected_v2_hash: v2Auth ? TEMP_r5bHash_(v2Auth.join('|')) : null,
+    loader_authority_selected: selectedName,
+    authority_selected_before_header_guard: (typeof raDraftsHeadersAuthority_ === 'function') ? 'YES (raDraftsHeadersAuthority_ resolves before procurementEnsureSheet_/prodRequireSheet_ in 15_)' : 'UNKNOWN',
+    legacy_only_expected_headers: legacyOnlyHeaders,
+    legacy_line_table_dependency_row_count: legacyLineRowCount,
+    legacy_line_table_dependency_note: 'Flat V2 Send never reads/writes request_order_allocation_draft_lines; this count is live evidence only, not a Send input',
+    downstream_request_orders: ro, downstream_request_order_lines: rol, downstream_request_order_line_sources: src,
+    active_flat_drafts: activeDrafts, drafts_with_eligible_submitted_tiers: draftsWithEligible, eligible_submitted_positive_tier_total: eligibleTierTotal,
+    downstream_execution_key_collision_groups: dupKeys,
+    observed_failure_zero_write_evidence: 'HEADER_MISSING throws in the header ensure (prodRequireSheet_) BEFORE any append — the failed attempt made ZERO durable downstream writes (no request_orders/_lines/_line_sources row for its would-be execution key)',
+    expected_controlled_send_delta_one_sku: 'request_orders +1, request_order_lines +N, request_order_line_sources +N (N = submitted tiers with order_qty>0)',
+    R6A1_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + getRange().getValues() + typeof-guarded getters only)',
+    R6A1_DIAGNOSTIC_CHECKSUM: TEMP_r5bHash_([targetMatch, flatV2, actual.length, selectedName, draftsWithEligible, eligibleTierTotal, dupKeys, verdict].join('|')),
+    verdict: verdict
+  };
+  Logger.log('R6A1_REQUEST_ORDER_SEND_PATH ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// Post-controlled-run validator (read-only). reuseMode=true → expect a REUSED retry (no new rows). Validates exact
+// downstream lineage + zero duplicate + zero legacy Draft-Line dependency for the allocation-batch execution keys.
+function TEMP_r6a1ValidateAfterSend_(reuseMode) {
+  var roRows = TEMP_readObjects_('request_orders').rows || [];
+  var rolRows = TEMP_readObjects_('request_order_lines').rows || [];
+  var srcRows = TEMP_readObjects_('request_order_line_sources').rows || [];
+  var legacyLineRows = (TEMP_readObjects_(TEMP_R6A1_LEGACY_LINES_TAB_).rows || []).length;
+
+  // execution-key groups over the allocation-batch request orders
+  var byKey = {}, roIds = {};
+  roRows.forEach(function (r) {
+    if (TEMP_str_(r.source_ref_type) !== 'request_order_allocation_batch') return;
+    var id = TEMP_str_(r.request_order_id); roIds[id] = 1;
+    var k = TEMP_str_(r.source_ref_id); if (k) (byKey[k] = byKey[k] || []).push(id);
+  });
+  var dupKeyGroups = Object.keys(byKey).filter(function (k) { return byKey[k].length > 1; }).length;
+
+  // lineage: every source row for these ROs must carry request_order_id + request_order_line_id + request_allocation_draft_id
+  var lineIds = {}; rolRows.forEach(function (l) { if (roIds[TEMP_str_(l.request_order_id)]) lineIds[TEMP_str_(l.request_order_line_id)] = 1; });
+  var srcForRo = srcRows.filter(function (s) { return roIds[TEMP_str_(s.request_order_id)]; });
+  var srcMissingLineage = srcForRo.filter(function (s) {
+    return TEMP_str_(s.request_order_id) === '' || TEMP_str_(s.request_allocation_draft_id) === ''
+      || (TEMP_str_(s.request_order_line_id) !== '' && !lineIds[TEMP_str_(s.request_order_line_id)]);
+  }).length;
+
+  var verdict = (dupKeyGroups > 0) ? 'DOWNSTREAM_COLLISION'
+    : (srcMissingLineage > 0) ? 'LINEAGE_INCOMPLETE'
+    : reuseMode ? 'REUSE_VALIDATED (no new duplicate Request Order / lines / sources for the retried key)'
+    : 'SEND_LINEAGE_VALIDATED';
+
+  var out = {
+    mode: reuseMode ? 'REUSE' : 'AFTER_SEND',
+    allocation_batch_request_orders: Object.keys(roIds).length, execution_key_groups: Object.keys(byKey).length,
+    duplicate_execution_key_groups: dupKeyGroups,
+    request_order_line_sources_for_batch: srcForRo.length, sources_missing_lineage: srcMissingLineage,
+    legacy_draft_line_dependency_row_count: legacyLineRows,
+    legacy_draft_line_dependency_note: 'Flat V2 Send writes NO request_order_allocation_draft_lines; a controlled Send must add ZERO rows here',
+    R6A1_ZERO_WRITE_CONFIRMED: 'YES (read-only)',
+    R6A1_VALIDATOR_CHECKSUM: TEMP_r5bHash_([reuseMode, Object.keys(roIds).length, dupKeyGroups, srcForRo.length, srcMissingLineage, verdict].join('|')),
+    verdict: verdict
+  };
+  Logger.log('R6A1_VALIDATE_' + (reuseMode ? 'REUSE' : 'AFTER_SEND') + ' ' + JSON.stringify(out, null, 2));
+  return out;
+}
