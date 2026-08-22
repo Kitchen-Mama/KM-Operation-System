@@ -463,8 +463,11 @@ function _opLoadFirstLayerComposer_(refGate) {
       requestOrderState.data = (res.data && res.data.rows) || [];
       var _render = function () {
         if (my !== _opFirstLayerSeq) return;   // a newer composer load superseded this one → drop the stale render
+        _roBaseDataStatus = requestOrderState.data.length ? 'LOADED' : 'EMPTY';   // R6B1 — real state (not a disconnect)
         if (rg) rg.set(requestOrderState.data.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
         _roRenderAll();
+        // R6B1 — base rows are in; hydrate the persisted Draft(s) for the loaded scope(s) in the shortest safe order.
+        if (typeof _roHydratePersistedDraftsForLoadedScopes_ === 'function') { try { _roHydratePersistedDraftsForLoadedScopes_(); } catch (e) {} }
       };
       if (refGate) { Promise.resolve(refGate).then(_render); } else { _render(); }
     } else {
@@ -474,6 +477,7 @@ function _opLoadFirstLayerComposer_(refGate) {
 }
 function _opFirstLayerError_(err) {
   requestOrderState.data = [];
+  _roBaseDataStatus = 'ERROR';   // R6B1 — a real API/read error (distinct from a legitimate empty result)
   var rg = _opFirstLayerRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
   var fixedBody = (typeof document !== 'undefined') ? document.getElementById('ro-fixed-body') : null;
   var scrollBody = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
@@ -481,9 +485,18 @@ function _opFirstLayerError_(err) {
   if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" style="color:#B91C1C;">AI Plan read error: ' + _roEsc((err && err.message) || 'failed') + ' [' + _roEsc((err && err.code) || 'READ_FAILED') + ']</div>';
 }
 
+// F1-7N-FA-3C-R6B1 — SPA remount lifecycle. Each mount bumps _roMountEpoch and REBINDS the composer region to the
+// CURRENT DOM (the cached _opFirstLayerRegion pointed at the prior mount's detached node → remount showed zero rows +
+// a false "Connect the Operation DB"). _roBaseDataStatus distinguishes LOADING / LOADED / EMPTY / ERROR so the empty
+// message never claims a disconnect during a transient remount race.
+var _roMountEpoch = 0;
+var _roBaseDataStatus = 'IDLE';   // IDLE | LOADING | LOADED | EMPTY | ERROR
 function initRequestOrderSection() {
+  _roMountEpoch++;
+  _opFirstLayerRegion = null;   // rebind the loadState region to the CURRENT (remounted) DOM element
   // Data source priority: live DB (google-sheet) → Demo Data → empty. NEVER the Inventory DOM.
   if (_roUseDb()) {
+    _roBaseDataStatus = 'LOADING';
     // F1-7E-PREREQ-5: canonical first-layer = scoped composer (no broad Operation DB for first-layer assembly).
     // F1-7J-A2 + F1-7M-A1: the bounded marketplace reference and the first-layer composer are INDEPENDENT scoped reads.
     // Fire BOTH in the SAME synchronous wave (both HTTP requests in flight together, no longer marketplace-then-composer
@@ -502,12 +515,16 @@ function initRequestOrderSection() {
   } else {
     requestOrderState.data = [];
   }
+  _roBaseDataStatus = (requestOrderState.data && requestOrderState.data.length) ? 'LOADED' : 'EMPTY';
   _roRenderAll();
+  if (typeof _roHydratePersistedDraftsForLoadedScopes_ === 'function') { try { _roHydratePersistedDraftsForLoadedScopes_(); } catch (e) {} }
 }
 
 function _roInitWithData() {
   requestOrderState.data = _buildRequestOrderRowsFromDb();
+  _roBaseDataStatus = (requestOrderState.data && requestOrderState.data.length) ? 'LOADED' : 'EMPTY';
   _roRenderAll();
+  if (typeof _roHydratePersistedDraftsForLoadedScopes_ === 'function') { try { _roHydratePersistedDraftsForLoadedScopes_(); } catch (e) {} }
 }
 
 function _roRenderAll() {
@@ -1272,6 +1289,12 @@ function handleRequestOrderSearch() {
   requestOrderState.filters.sku = input ? String(input.value || '').trim() : '';
   requestOrderState.page = 1;
   requestOrderState.searched = true;   // F1-7M-UX: explicit Search → reveal the current scoped result rows
+  // F1-7N-FA-3C-R6B1 — Search recovers a remount-empty page WITHOUT a hard refresh: if the DB is available but base
+  // data is missing (and not already loading), deterministically re-run the base load; else render + hydrate.
+  if (_roUseDb() && (!requestOrderState.data || !requestOrderState.data.length) && _roBaseDataStatus !== 'LOADING') {
+    initRequestOrderSection();
+    return;
+  }
   renderRequestOrderTable();
   // F1-7N-FA-3C-R6B — hydrate the persisted flat Draft for the searched scope(s) so Order Allocation shows the saved
   // order_qty/carton/note WITHOUT running AI Plan (read-only; silent; never opens the AI Plan Result popup).
@@ -1606,15 +1629,17 @@ function renderRequestOrderTable() {
     if (typeof _roRenderPagination === 'function') _roRenderPagination(0, 1, 0, 0);
     return;
   }
-  // 如果沒有數據，顯示提示訊息
+  // 如果沒有數據，顯示提示訊息 — F1-7N-FA-3C-R6B1: state-aware. Only claim a DB disconnect when the DB is genuinely
+  // unavailable (!_roUseDb) — NEVER for a transient remount race, an in-flight load, or a legitimate empty result.
   if (!requestOrderState.data || requestOrderState.data.length === 0) {
     const fixedBody = document.getElementById('ro-fixed-body');
     const scrollBody = document.getElementById('ro-scroll-body');
-
-    if (fixedBody && scrollBody) {
-      fixedBody.innerHTML = '';
-      scrollBody.innerHTML = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>';
-    }
+    var _emptyMsg;
+    if (_roBaseDataStatus === 'LOADING') _emptyMsg = '<div class="ro-empty-state ro-loading-state">Loading Request Order data…</div>';
+    else if (!_roUseDb()) _emptyMsg = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>';
+    else if (_roBaseDataStatus === 'ERROR') _emptyMsg = '<div class="ro-empty-state ro-error-state">Could not load Request Order data. <button type="button" class="ro-alloc-retry" onclick="initRequestOrderSection()">Retry</button></div>';
+    else _emptyMsg = '<div class="ro-empty-state">No results for the current scope. Adjust filters and press Search.</div>';
+    if (fixedBody && scrollBody) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _emptyMsg; }
     return;
   }
 
@@ -1900,6 +1925,13 @@ function renderExpandPanel(item) {
   // No visible Recommended column (the engine gap remains in runtime/audit). Order Qty defaults to Suggested;
   // manual partial carton is non-blocking; editing Order Qty never rewrites Suggested.
   var anySuggested = false;
+  // F1-7N-FA-3C-R6B1 — per-SKU Order Allocation hydration state. Editable inputs appear ONLY when the Draft + token are
+  // resolved (LOADED) or for an ordinary MANUAL SKU. LOADING → disabled skeleton (never a blank editable field);
+  // NO_SAVED_DRAFT / DRAFT_CONFLICT / DRAFT_LOAD_ERROR → disabled + explicit state (never a Suggested→Order Qty fallback).
+  var _allocState = (typeof _roDraftUiState_ === 'function') ? _roDraftUiState_(sku) : 'MANUAL';
+  var _editable = (_allocState === 'DRAFT_LOADED' || _allocState === 'MANUAL');
+  var _dis = _editable ? '' : ' disabled';
+  var _stCls = (_allocState === 'DRAFT_LOADING') ? ' is-loading' : ((_allocState === 'DRAFT_CONFLICT' || _allocState === 'DRAFT_LOAD_ERROR') ? ' is-invalid' : '');
   var allocRows = ['T1', 'T2', 'T3'].map(function (t, i) {
     var mo = next3[i];
     var sug = _roTierSuggested(item, i);
@@ -1913,7 +1945,10 @@ function renderExpandPanel(item) {
     // otherwise the PERSISTED canonical-draft note (reload authority). Blank local edit ('') deliberately shows blank.
     var noteRaw = (e.note !== undefined) ? String(e.note) : _roRowNoteDisplay_(item, t);
     var note = noteRaw.replace(/"/g, '&quot;');
-    var qtyVal = (eff == null) ? '' : eff;
+    // R6B1 — during LOADING/NO_SAVED/CONFLICT/ERROR the editable fields are NOT populated (no blank-editable, no Suggested fallback).
+    var qtyVal = (!_editable) ? '' : ((eff == null) ? '' : eff);
+    var noteVal = (!_editable) ? '' : note;
+    var cartonHtml = (_editable) ? _roCartonCellHtml(cb, box) : (_allocState === 'DRAFT_LOADING' ? '<span class="ro-muted">…</span>' : '<span class="ro-muted">--</span>');
     // FM3d: Suggested column ← canonical monthlyProjection.suggestedOrderQty when the workspace is ON (server
     // KMCALC carton owner; NO page-side carton math). Legacy page-Suggested only on the workspace-OFF fallback.
     var sugCell = recoOn
@@ -1921,15 +1956,23 @@ function renderExpandPanel(item) {
       : '<td>' + (sug == null ? '--' : sug.toLocaleString()) + '</td>';
     return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
       sugCell +
-      '<td><input type="number" min="0" step="1" class="ro-alloc-qty" value="' + qtyVal + '" ' +
+      '<td><input type="number" min="0" step="1" class="ro-alloc-qty' + _stCls + '" value="' + qtyVal + '"' + _dis + ' ' +
         'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
         'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-field="qty" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
-      '<td class="ro-carton-cell" data-cell="carton">' + _roCartonCellHtml(cb, box) + '</td>' +
-      '<td><input type="text" class="ro-alloc-note" value="' + note + '" ' +
+      '<td class="ro-carton-cell" data-cell="carton">' + cartonHtml + '</td>' +
+      '<td><input type="text" class="ro-alloc-note' + _stCls + '" value="' + noteVal + '"' + _dis + ' ' +
         'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" ' +
         'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" data-field="note" data-month="' + _roYm(mo) + '" ' +
         'oninput="_roAllocEditNote(this)" onblur="_roAllocNoteFlush(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"></td></tr>';
   }).join('');
+  // R6B1 — a compact, non-layout-shifting state banner ROW above the allocation rows for the non-editable states
+  // (valid table markup: a colspan row, never a bare <div> between <tr>s).
+  var _bannerTxt = (_allocState === 'DRAFT_LOADING') ? ['ro-alloc-state--loading', 'Loading saved allocation…']
+    : (_allocState === 'NO_SAVED_DRAFT') ? ['ro-alloc-state--none', 'No saved allocation draft — run AI Plan to create one.']
+    : (_allocState === 'DRAFT_CONFLICT') ? ['ro-alloc-state--conflict', 'Duplicate active draft — review required.']
+    : (_allocState === 'DRAFT_LOAD_ERROR') ? ['ro-alloc-state--error', 'Could not load saved allocation. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>']
+    : null;
+  if (_bannerTxt) allocRows = '<tr class="ro-alloc-state-row ' + _bannerTxt[0] + '"><td colspan="5">' + _bannerTxt[1] + '</td></tr>' + allocRows;
   var firstShortBadge = (firstShort != null)
     ? '<span class="ro-first-shortage-badge">First Shortage: ' + RO_TIER_LABELS[firstShort] + ' · ' + next3[firstShort].label + '</span>'
     : '';
@@ -3571,7 +3614,24 @@ if (window.KM && window.KM.lifecycle) {
 // ============================================================
 var _roCanonicalDraftBySku = {};   // sku(UPPER) → { draftId, draftVersion, expectedToken, status, conflict, lines:{ 'T1':{request_month, order_qty, recommended_qty, ...} } }
 var _roNoDraftSkus = {};           // §12 — sku(UPPER) → true for SKUs the last scope read-back reported as NO_DRAFT
-
+// F1-7N-FA-3C-R6B1 — Order Allocation hydration state (fixes the misleading async gap: Suggested rendered while the
+// editable allocation was blank). IDLE (nothing to hydrate) | LOADING (a scope read-back is in flight) | LOADED |
+// ERROR. Per-scope confirmed-DTO cache (session) dedupes identical scopes and lets Search/expand render immediately.
+var _roHydrationStatus = 'IDLE';
+var _roDraftDtoCache = {};         // scopeKey → { drafts:{sku→dto}, noDraft:{sku→true}, submitted:{sku→true} } (confirmed, session)
+function _roScopeKey3_(s) { return [String((s && s.company) || '').trim().toUpperCase(), String((s && s.country) || '').trim().toUpperCase(), String((s && s.marketplace) || '').trim().toUpperCase()].join('|'); }
+// Per-SKU Order Allocation UI state. LOADED shows DB order_qty/carton/note (enabled); NO_SAVED_DRAFT / DRAFT_CONFLICT /
+// DRAFT_LOAD_ERROR disable the inputs (never a blank editable field, never a Suggested→Order Qty fallback); DRAFT_LOADING
+// is the in-flight skeleton. A SKU outside any AI read-back (not a draft, not NO_DRAFT) keeps the ordinary MANUAL flow.
+function _roDraftUiState_(sku) {
+  var k = _roCanonKey_(sku), d = _roCanonicalDraftBySku[k];
+  if (d && d.conflict) return 'DRAFT_CONFLICT';
+  if (d && d.draftId) return 'DRAFT_LOADED';
+  if (_roNoDraftSkus[k]) return 'NO_SAVED_DRAFT';
+  if (_roHydrationStatus === 'LOADING') return 'DRAFT_LOADING';
+  if (_roHydrationStatus === 'ERROR') return 'DRAFT_LOAD_ERROR';
+  return 'MANUAL';   // no AI read-back touched this SKU → the ordinary in-memory planning flow (unchanged)
+}
 function _roCanonKey_(sku) { return String(sku == null ? '' : sku).trim().toUpperCase(); }
 // §12 — this SKU was explicitly reported NO_DRAFT by the scope read-back (execution row unavailable; NEVER a silent
 // frontend recompute fallback). Only true AFTER a getActive read-back — a SKU with no canonical draft and no read-back
@@ -3708,13 +3768,22 @@ function _roNotify_(msg) {
 }
 // F1-7N-FA-3C-R6B — monotonic hydration guard: a LATE read-back response must never clobber a NEWER hydration or a
 // user's in-progress edit. Each hydration start bumps the seq; a response applies only if it is still the newest.
-var _roHydrateSeq = 0;
+var _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null;
+// F1-7N-FA-3C-R6B1 — read-only, non-persistent debug snapshot (no secrets, no raw token). Exposed via window.__roDebug().
+function _roDebugSnapshot_() {
+  return { mountEpoch: _roMountEpoch, baseDataStatus: _roBaseDataStatus, hydrationStatus: _roHydrationStatus,
+    uniqueScopeCount: (typeof _roScopesFromLoadedData_ === 'function' ? _roScopesFromLoadedData_().length : 0),
+    hydrationRequestCount: _roHydrateReqCount, cachedScopeCount: Object.keys(_roDraftDtoCache).length,
+    canonicalDraftCount: Object.keys(_roCanonicalDraftBySku).length, pendingAutosaveCount: Object.keys(_roAutosaveTimers_ || {}).length,
+    lastAutosaveOutcome: _roLastAutosaveOutcome, baseRowCount: (requestOrderState.data || []).length };
+}
 // Read ONE scope's active drafts and ACCUMULATE into the passed maps (never a Draft write; never creates/regenerates a
 // Draft; never a Draft-Line read/write — getActive reads request_order_allocation_drafts ONLY). Projects the flat DTO
 // into the exact UI model (id/version/status/tier month/recommended/order/carton/status/note/user_edited/submitted).
 function _roReadActiveDraftsForScope_(scope, accDrafts, accNoDraft, accSubmitted) {
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.getActiveRequestOrderDrafts !== 'function' || !scope || !scope.company) return Promise.resolve(null);
+  _roHydrateReqCount++;   // one getActive per unique scope (scope-based, NEVER per SKU)
   return Promise.resolve(db.getActiveRequestOrderDrafts(scope)).then(function (res) {
     var data = (res && res.data) || {};
     (data.drafts || []).forEach(function (d) {
@@ -3747,18 +3816,41 @@ function _roLoadCanonicalDraftsForScope_(scope) {
 // requires NO AI Plan run). Read-only: zero Draft writes, zero version change, zero updated_at change, never opens the
 // AI Plan Result popup. Accumulates across scopes, then applies under the seq guard.
 function _roHydratePersistedDraftsForLoadedScopes_() {
-  var scopes = _roScopesFromLoadedData_();
-  if (!scopes.length) { var s = _roCanonicalScope_(); if (s) scopes = [s]; }
-  if (!scopes.length) return Promise.resolve(null);
-  var mySeq = ++_roHydrateSeq, drafts = {}, noDraft = {}, submitted = {};
-  return scopes.reduce(function (p, scope) {
-    return p.then(function () { return _roReadActiveDraftsForScope_(scope, drafts, noDraft, submitted); });
-  }, Promise.resolve()).then(function () {
+  // F1-7N-FA-3C-R6B1 — dedupe identical scopes (scope-based, NEVER one request per SKU); run the reads in parallel (no
+  // serial per-scope chain); a session cache lets a re-entry render the confirmed DTO immediately while a fresh read
+  // refreshes in the background. Sets the LOADING/LOADED/ERROR status so the render shows a skeleton (never a blank
+  // editable field) until the Draft resolves.
+  var raw = _roScopesFromLoadedData_();
+  if (!raw.length) { var s = _roCanonicalScope_(); if (s) raw = [s]; }
+  var seenK = {}, scopes = [];
+  raw.forEach(function (sc) { var k = _roScopeKey3_(sc); if (!seenK[k]) { seenK[k] = 1; scopes.push(sc); } });   // dedupe
+  if (!scopes.length) { _roHydrationStatus = 'IDLE'; return Promise.resolve(null); }
+  var mySeq = ++_roHydrateSeq, anyError = false;
+  // INSTANT DISPLAY seed from the session cache (so a re-entry shows confirmed DTOs immediately). This seeds only the
+  // rendered view — the FINAL applied state is rebuilt from the FRESH reads below, so a re-read that returns FEWER
+  // drafts (a draft consumed/removed) correctly drops the stale cached row (never a merge-only stale keep).
+  var seedD = {}, seedN = {}, seedS = {};
+  scopes.forEach(function (sc) { var c = _roDraftDtoCache[_roScopeKey3_(sc)]; if (c) { Object.keys(c.drafts || {}).forEach(function (k) { seedD[k] = c.drafts[k]; }); Object.keys(c.noDraft || {}).forEach(function (k) { seedN[k] = c.noDraft[k]; }); Object.keys(c.submitted || {}).forEach(function (k) { seedS[k] = c.submitted[k]; }); } });
+  var hadCache = Object.keys(seedD).length > 0 || Object.keys(seedN).length > 0;
+  if (hadCache) { _roCanonicalDraftBySku = seedD; _roNoDraftSkus = seedN; _roSubmittedSkus = seedS; }
+  _roHydrationStatus = hadCache ? 'LOADED' : 'LOADING';
+  if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }   // show skeleton (fresh) or cached (instant)
+  return Promise.all(scopes.map(function (scope) {
+    var d = {}, n = {}, sub = {};
+    return Promise.resolve(_roReadActiveDraftsForScope_(scope, d, n, sub)).then(function (data) {
+      if (data == null) { anyError = true; return null; }
+      _roDraftDtoCache[_roScopeKey3_(scope)] = { drafts: d, noDraft: n, submitted: sub };   // replace this scope's confirmed DTOs
+      return { d: d, n: n, sub: sub };
+    });
+  })).then(function (results) {
     if (mySeq !== _roHydrateSeq) return null;   // a newer hydration/edit superseded this run → drop the late result
+    var drafts = {}, noDraft = {}, submitted = {};   // FINAL = the fresh reads ONLY (authoritative; drops removed drafts)
+    results.forEach(function (r) { if (!r) return; Object.keys(r.d).forEach(function (k) { drafts[k] = r.d[k]; }); Object.keys(r.n).forEach(function (k) { noDraft[k] = r.n[k]; }); Object.keys(r.sub).forEach(function (k) { submitted[k] = r.sub[k]; }); });
     _roCanonicalDraftBySku = drafts; _roNoDraftSkus = noDraft; _roSubmittedSkus = submitted;
+    _roHydrationStatus = (anyError && !Object.keys(drafts).length && !Object.keys(noDraft).length) ? 'ERROR' : 'LOADED';
     if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
     return drafts;
-  }).catch(function () { return null; });
+  }).catch(function () { if (mySeq === _roHydrateSeq) { _roHydrationStatus = 'ERROR'; if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} } } return null; });
 }
 function _roLoadCanonicalDraftsOnMount_() { return _roHydratePersistedDraftsForLoadedScopes_(); }
 // Fetch + cache the optimistic-lock token for a draft (§3). Returns {draft_version, userEditFingerprint} or null.
@@ -3789,9 +3881,22 @@ function _roSetFieldState_(input, state, title) {
 // existing optimistic token/version contract via the LOCKED decision writer. Success → update the local DTO field +
 // null the token so the NEXT edit re-fetches the advanced token (one successful edit ⇒ one token advance). Stale token
 // → NO silent overwrite: inline Conflict/Retry state + re-read the latest Draft; the caller preserves the typed value.
+// F1-7N-FA-3C-R6B1 — per-Draft edit SERIALIZATION: concurrent edits for the SAME draft (e.g. Order Qty then Note)
+// run strictly one-after-another so an earlier cached token can never race a later one into a self-conflict. Each
+// save chains onto the prior save for that draftId; the queue self-cleans when idle.
+var _roDraftEditQueue_ = {};
 function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
+  var ref0 = _roCanonicalRowFor_(sku, bucket);
+  if (!ref0) return Promise.resolve(null);   // NO_DRAFT / conflict → in-memory behavior only (never a canonical write / never a new Draft)
+  var qk = String(ref0.draft.draftId);
+  var prior = _roDraftEditQueue_[qk] || Promise.resolve();
+  var run = prior.then(function () { return _roSaveTierEditCore_(sku, bucket, patch, input); }, function () { return _roSaveTierEditCore_(sku, bucket, patch, input); });
+  _roDraftEditQueue_[qk] = run.catch(function () {});   // the NEXT edit for this draft chains after this one settles (success or failure)
+  return run;
+}
+function _roSaveTierEditCore_(sku, bucket, patch, input) {
   var ref = _roCanonicalRowFor_(sku, bucket);
-  if (!ref) return Promise.resolve(null);   // NO_DRAFT / conflict → in-memory behavior only (never a canonical write / never a new Draft)
+  if (!ref) return Promise.resolve(null);
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return Promise.resolve(null);
   var month = ref.line.request_month;
@@ -3808,19 +3913,19 @@ function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
         if (Object.prototype.hasOwnProperty.call(patch, 'note')) ref.line.note = String(patch.note == null ? '' : patch.note);   // blank persists as ''
         if (d.draftVersion != null) ref.draft.draftVersion = d.draftVersion;   // adopt the confirmed advanced version
         ref.draft.expectedToken = null;   // one successful edit ⇒ next edit re-fetches the advanced token
-        _roSetFieldState_(input, 'is-saved', 'Saved');
+        _roSetFieldState_(input, 'is-saved', 'Saved'); _roLastAutosaveOutcome = 'SAVED';
       } else if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(String(reason))) {
-        _roSetFieldState_(input, 'is-conflict', 'Changed elsewhere — press Enter to retry');   // NO silent DB overwrite
+        _roSetFieldState_(input, 'is-conflict', 'Changed elsewhere — press Enter to retry'); _roLastAutosaveOutcome = 'CONFLICT';   // NO silent DB overwrite
         ref.draft.expectedToken = null;                                   // force a fresh token on retry
         _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());            // re-read the current Draft (typed value preserved by the caller)
       } else if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT|TIER_TERMINAL/.test(String(reason))) {
-        _roSetFieldState_(input, 'is-invalid', 'Draft conflict — review required');
+        _roSetFieldState_(input, 'is-invalid', 'Draft conflict — review required'); _roLastAutosaveOutcome = 'BLOCKED';
       } else {
-        _roSetFieldState_(input, 'is-invalid', 'Save failed — retry');
+        _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); _roLastAutosaveOutcome = 'FAILED';
       }
       return { ok: okv, reason: reason };
     });
-  }).catch(function () { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); return null; });
+  }).catch(function () { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); _roLastAutosaveOutcome = 'ERROR'; return null; });
 }
 // F1-7N-FA-3C-R6B — per-input debounce (avoid one write per keystroke) + immediate flush on blur/Enter. The debounced
 // callback always sends the LATEST intended value (the closure reads the input live at fire time).
@@ -3845,6 +3950,8 @@ if (typeof window !== 'undefined') {
   window._roLoadCanonicalDraftsForScope_ = _roLoadCanonicalDraftsForScope_;
   window._roHydratePersistedDraftsForLoadedScopes_ = _roHydratePersistedDraftsForLoadedScopes_;   // F1-7N-FA-3C-R6B reload hydration
   window._roScopesFromLoadedData_ = _roScopesFromLoadedData_;
+  window._roDraftUiState_ = _roDraftUiState_;   // F1-7N-FA-3C-R6B1 per-SKU allocation state
+  window.__roDebug = _roDebugSnapshot_;          // F1-7N-FA-3C-R6B1 read-only observability (no secrets/token)
   window._roBuildTierEditCommand_ = _roBuildTierEditCommand_;
   window._roSaveTierEditToCanonicalDraft_ = _roSaveTierEditToCanonicalDraft_;
   window._roRowNoteDisplay_ = _roRowNoteDisplay_;

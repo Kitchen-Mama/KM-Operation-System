@@ -2103,6 +2103,17 @@
 .ro-alloc-qty.is-saved, .ro-alloc-note.is-saved { border-color: #6EE7B7; background: #ECFDF5; transition: border-color .4s ease, background .4s ease; }
 .ro-alloc-qty.is-conflict, .ro-alloc-note.is-conflict { border-color: #F59E0B; background: #FFFBEB; outline: 1px solid #FCD34D; }
 .ro-alloc-qty.is-invalid, .ro-alloc-note.is-invalid { border-color: #DC2626; background: #FEF2F2; }
+/* F1-7N-FA-3C-R6B1 — hydration skeleton + per-SKU allocation state (no layout shift; disabled inputs during load). */
+.ro-alloc-qty.is-loading, .ro-alloc-note.is-loading { background: repeating-linear-gradient(90deg, #F1F5F9, #F1F5F9 8px, #E2E8F0 8px, #E2E8F0 16px); border-color: #E2E8F0; color: transparent; }
+.ro-alloc-qty:disabled, .ro-alloc-note:disabled { background: #F8FAFC; color: #94A3B8; cursor: not-allowed; }
+.ro-alloc-state-row td { padding: 4px 6px; font-size: 11px; }
+.ro-alloc-state { font-size: 11px; }
+.ro-alloc-state-row.ro-alloc-state--loading td { color: #2563EB; }
+.ro-alloc-state-row.ro-alloc-state--none td { color: #64748B; }
+.ro-alloc-state-row.ro-alloc-state--conflict td { color: #B45309; }
+.ro-alloc-state-row.ro-alloc-state--error td { color: #B91C1C; }
+.ro-alloc-retry { border: 1px solid #CBD5E1; background: #fff; border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; margin-left: 6px; }
+.ro-loading-state { color: #2563EB; } .ro-error-state { color: #B91C1C; }
 #request-order-section .ro-carton-cell { white-space: nowrap; }
 #request-order-section .ro-partial-badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
 #request-order-section .ro-invalid-tag { font-size: 9.5px; font-weight: 700; color: #B91C1C; }

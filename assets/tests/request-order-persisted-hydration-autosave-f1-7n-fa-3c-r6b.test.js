@@ -27,10 +27,12 @@ var window = {}, renderCount = 0;
 function renderRequestOrderTable() { renderCount++; }
 function _roEffectiveOrderQty() { return ''; }   // fallback → empty when there is no canonical draft (missing-draft = blank)
 var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roAutosaveTimers_ = {};
+var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roDraftEditQueue_ = {};   // F1-7N-FA-3C-R6B1 additions
 var _timers = [];
 function setTimeout(fn) { _timers.push(fn); return _timers.length; }
 function clearTimeout(id) { if (id) _timers[id - 1] = null; }
 function flushTimers() { var t = _timers.slice(); _timers = []; t.forEach(function (fn) { if (fn) fn(); }); }
+function _r6bDrain_() { flushTimers(); var p = Promise.resolve(); for (var k = 0; k < 20; k++) p = p.then(function () { flushTimers(); }); return p; }
 var lastCmd = null, dbWrites = { count: 0 }, draftLineCalls = { count: 0 };
 var getActiveResponse = null, updateResponse = null;
 var db = {
@@ -41,10 +43,10 @@ var db = {
 };
 window.KM = { DB: db };
 // eval ONE joined string at top level (eval inside a callback would scope the declarations to the callback)
-var _r6bFns = [ '_roScopeStr_', '_roScopesFromLoadedData_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_', '_roIsCanonicalDraftSku_',
+var _r6bFns = [ '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_', '_roIsCanonicalDraftSku_',
   '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_', '_roReadActiveDraftsForScope_',
   '_roLoadCanonicalDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roBuildTierEditCommand_', '_roBuildOrderQtyEditCommand_',
-  '_roSetFieldState_', '_roSaveTierEditToCanonicalDraft_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
+  '_roSetFieldState_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
   '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_' ].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_r6bFns);
 
@@ -118,7 +120,7 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     eq(pending, 1, '10. rapid note input debounces to ONE pending write');
     eq(dbWrites.count, 0, '10. no write before debounce fires');
     flushTimers();
-    return new Promise(function (r) { setTimeout(r); flushTimers(); });   // let the save promise settle
+    return _r6bDrain_();
   }).then(function () {
     eq(dbWrites.count, 1, '10. debounce fired exactly ONE logical write');
     eq(lastCmd.edits[0].fields.note, 'abc', '10. the LATEST intended note value was sent');
@@ -126,7 +128,7 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     _timers = []; dbWrites.count = 0;
     var inp2 = fakeInput('note', 'CO1100-R', 'T2', ''); _roAllocEditNote(inp2);   // debounced (pending)
     _roAllocNoteFlush(inp2);                                                       // blur → immediate flush
-    return new Promise(function (r) { setTimeout(r); flushTimers(); });
+    return _r6bDrain_();
   }).then(function () {
     eq(dbWrites.count, 1, '11. blur/Enter flushes the pending note write immediately');
     eq(lastCmd.edits[0].fields.note, '', '12. blank note persists as empty string');

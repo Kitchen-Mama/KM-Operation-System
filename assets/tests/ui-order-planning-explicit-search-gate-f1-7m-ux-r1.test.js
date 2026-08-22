@@ -27,6 +27,8 @@ function runRender(state) {
   var document = makeDoc();
   var requestOrderState = state;
   function _roRenderPagination() {}
+  var _roBaseDataStatus = 'IDLE';               // F1-7N-FA-3C-R6B1 — state-aware empty message dependency
+  function _roUseDb() { return false; }          // stub: unavailable → the "Connect Operation DB" empty branch
   var renderRequestOrderTable;
   eval(extractFn(RO, 'renderRequestOrderTable') + '\nrenderRequestOrderTable = renderRequestOrderTable;');
   renderRequestOrderTable();
