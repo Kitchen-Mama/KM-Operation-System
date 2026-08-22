@@ -302,20 +302,51 @@
   }
   // row = a working-draft route row; opts.scope = planning context; opts.system = true for a
   // system-recommended line (sends recommended_qty), false for a user edit / manual add.
+  //
+  // F1-7N-FA-3C-R6F2B (H) — USER-EDIT OWNERSHIP CONTRACT (closes the deferred R6F2A frontend gap):
+  //   • A confirmed planned_qty edit (qty moved away from the system recommendation) sets
+  //     override_reason = 'USER_EDITED_QTY'  → the backend then preserves that qty across a regeneration.
+  //   • An explicit "Reset to Recommendation" (opts.resetToRecommendation) CLEARS the override
+  //     (override_reason='') and restores planned_qty = recommended_qty.
+  //   • A Note-only edit (qty unchanged from the recommendation) NEVER marks the quantity overridden.
+  //   • Note is ALWAYS user-owned: passed through verbatim when the row carries one (blank stays blank — never
+  //     backfilled with a system/AI note). No new DB column is introduced (exact-30 line schema unchanged).
+  //   • recommended_qty is sent ONLY for a system line (protects the immutable snapshot).
+  var OVERRIDE_QTY = 'USER_EDITED_QTY';
   function buildDraftLinePayload(sku, row, opts) {
     row = row || {}; opts = opts || {};
-    // C2-D1R: the approved 28-col line carries SKU + qty (route context is on the header). No selected_*.
+    // C2-D1R: the approved 30-col line carries SKU + qty (route context is on the header). No selected_*.
+    var isSystem = opts.system === true;
+    var plannedQty = (row.planned_qty != null ? Number(row.planned_qty) : (Number(row.qty) || 0));
+    var recRaw = (row.recommended_qty != null) ? Number(row.recommended_qty) : null;
+    var hasRec = recRaw != null && isFinite(recRaw);
     var p = {
       allocation_draft_line_id: row.allocation_draft_line_id || undefined,  // omit → new line (Manual Add)
       sku: sku,
-      planned_qty: (row.planned_qty != null ? Number(row.planned_qty) : (Number(row.qty) || 0)),
-      generation_type: opts.system ? 'system_generated' : (row.generation_type || 'user_created')
+      planned_qty: plannedQty,
+      generation_type: isSystem ? 'system_generated' : (row.generation_type || 'user_created')
     };
     if (row.site_sku != null) p.site_sku = row.site_sku;
     if (row.route_no != null) p.route_no = row.route_no;
     if (row.units_per_carton != null) p.units_per_carton = row.units_per_carton;
+    // Note is user-owned — send it through only when the row actually carries one (never clobber with undefined).
+    if (row.note != null) p.note = String(row.note);
     // recommended_qty ONLY for a system-generated line — never on a user edit (protects the snapshot).
-    if (opts.system && row.recommended_qty != null) p.recommended_qty = Number(row.recommended_qty);
+    if (isSystem) {
+      if (hasRec) p.recommended_qty = recRaw;
+    } else if (opts.resetToRecommendation === true) {
+      // explicit Reset to Recommendation → clear the override and restore the recommended qty.
+      p.override_reason = '';
+      if (hasRec) p.planned_qty = recRaw;
+    } else {
+      // user edit: mark the quantity override iff the qty genuinely differs from the recommendation (or the caller
+      // explicitly flags a confirmed qty edit / carries an existing marker). A Note-only edit leaves qty == rec → no mark.
+      var qtyOverridden = opts.qtyEdited === true
+        || String(row.override_reason || '') === OVERRIDE_QTY
+        || (hasRec && plannedQty !== recRaw);
+      if (qtyOverridden) p.override_reason = OVERRIDE_QTY;
+      else if (row.override_reason != null) p.override_reason = String(row.override_reason);   // passthrough (incl. '')
+    }
     return p;
   }
   // Delete = soft cancel one line (never hard delete). cancel_reason optional/blank allowed.

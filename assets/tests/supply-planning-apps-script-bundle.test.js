@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 53, 'A: manifest lists all 53 canonical modules (incl. KMREC + KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR route-derivation)');
+  eq(b1.manifest.length, 54, 'A: manifest lists all 54 canonical modules (incl. KMREC + KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR route-derivation + R6F2B KMRA route-authority)');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -73,7 +73,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(ctx.KMFSR && typeof ctx.KMFSR.reallocatePreallocatedFactorySupply === 'function' && typeof ctx.KMFSR.projectSurplusReallocation === 'function', 'C: KMFSR §41 factory surplus reallocation available in bundle (F1-7N-FA-3B3b live)');
   ok(ctx.KMRDV2 && ctx.KMRDV2.VERSION === 'kmrdv2-fa3c-r4c-1' && Array.isArray(ctx.KMRDV2.V2_HEADERS) && ctx.KMRDV2.V2_HEADERS.length === 53 && typeof ctx.KMRDV2.normalizePlanningCycleMonthly === 'function' && typeof ctx.KMRDV2.projectFlatDraftRow === 'function' && typeof ctx.KMRDV2.explodeSendRequestLines === 'function' && typeof ctx.KMRDV2.migrateLegacyToCanonical === 'function' && ctx.KMRDV2.MIGRATION_MARKETPLACE_MAP['KM Walmart'] === 'Walmart', 'C: KMRDV2 flat MONTHLY_ORDER draft core + R4C migration transform available in bundle (F1-7N-FA-3C-DRAFT-MODEL R4C)');
   ok(ctx.KMRDV2P && ctx.KMRDV2P.VERSION === 'kmrdv2p-fa3c-r5a-1' && ctx.KMRDV2P.RECOMMENDATION_TYPE === 'MONTHLY_ORDER' && typeof ctx.KMRDV2P.generateMonthlyFlat === 'function' && typeof ctx.KMRDV2P.applyFlat === 'function' && typeof ctx.KMRDV2P.editMonthlyFlat === 'function' && typeof ctx.KMRDV2P.submitMonthlyFlat === 'function' && typeof ctx.KMRDV2P.flatReadbackDto === 'function' && typeof ctx.KMRDV2P.planMigration === 'function' && typeof ctx.KMRDV2P.validateStaging === 'function' && ctx.KMRDV2P.v2ExpectedHeaderCount() === 53, 'C: KMRDV2P MONTHLY_ORDER flat persistence + edit/submit + R4C migration planner/validator available in bundle (F1-7N-FA-3C-R4C; cutover-gated, default off)');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 53, 'C: KM_BUNDLE_INFO manifest present in runtime (53 modules incl. KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR)');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 54, 'C: KM_BUNDLE_INFO manifest present in runtime (54 modules incl. KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR + R6F2B KMRA)');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');

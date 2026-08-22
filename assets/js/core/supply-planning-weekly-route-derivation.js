@@ -1,5 +1,7 @@
 // Kitchen Mama Operation System — WEEKLY_SHIPPING deterministic ROUTE DERIVATION + K2 partition (KMWRR).
-// F1-7N-FA-3C-DRAFT-MODEL-R6F2. PURE / DETERMINISTIC / SELF-CONTAINED (no deps, no clock, no random, no I/O).
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2 (route derivation) · R6F2B (candidate selection delegated to the shared KMRA authority).
+// PURE / DETERMINISTIC (no clock, no random, no I/O). Depends ONLY on KMRA (supply-planning-route-authority) for the
+// shared candidate-method set + lead-time join; all other logic is self-contained.
 // -----------------------------------------------------------------------------
 // Supplies the route-derivation authority the Inventory AI Plan needs to generate ONE shipping_allocation_drafts
 // header per REAL shipment route/group (K2), with N SKU/window lines under it. It NEVER guesses a value: any
@@ -22,6 +24,17 @@
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.weeklyRouteDerivation = api; }
 })(this, function () {
   'use strict';
+
+  // F1-7N-FA-3C-R6F2B — the SHARED CANONICAL ROUTE AUTHORITY (KMRA). Candidate-method selection + the lead-time
+  // (transit-day) join are OWNED by KMRA so the Inventory AI Plan and the Execution Plan UI cannot diverge. Resolved
+  // lazily (Node require → Apps Script bundle global → browser window.KM.routeAuthority). KMWRR keeps only the
+  // ranking (on-time → lowest comparable cost → last-mile) OVER the shared candidate set — it never re-derives the set.
+  function getKMRA() {
+    try { if (typeof require === 'function') return require('./supply-planning-route-authority'); } catch (e) {}
+    if (typeof KMRA !== 'undefined' && KMRA) return KMRA;
+    try { if (typeof window !== 'undefined' && window.KM && window.KM.routeAuthority) return window.KM.routeAuthority; } catch (e2) {}
+    return null;
+  }
 
   function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function low(v) { return s(v).toLowerCase(); }
@@ -112,62 +125,48 @@
       return blocked('DESTINATION_MISSING');
     }
 
-    // (3) SHIPPING METHOD — candidate methods = ACTIVE, in-effective-window carrier_rate_cards for the exact lane
-    // (origin_country → destination_country [+ marketplace/dest warehouse code]); joined with lead-time evidence;
-    // restrict to on-time; among on-time choose lowest COMPARABLE cost. Manual override validated against the lane.
-    var lane = (input.rateCards || []).filter(function (rc) {
-      if (!statusActive(rc)) return false;
-      if (!inEffectiveWindow(rc, asOf)) return false;
-      if (low(rc.origin_country) !== low(originCountry)) return false;
-      if (destKind === 'WAREHOUSE') {
-        var dcOk = destCountry ? low(rc.destination_country) === low(destCountry) : true;
-        var wcOk = destWhCode ? (low(rc.destination_warehouse_code) === low(destWhCode) || s(rc.destination_warehouse_code) === '') : true;
-        return dcOk && wcOk;
-      }
-      // MARKETPLACE destination: match the marketplace lane
-      return low(rc.marketplace) === low(destMarketplace) && (destCountry ? (low(rc.destination_country) === low(destCountry) || s(rc.destination_country) === '') : true);
-    });
+    // (3) SHIPPING METHOD — the CANDIDATE set is owned by the shared KMRA authority (identical predicate to the
+    // Execution Plan UI method dropdown: origin_country → destination_country → marketplace, blank card axis = wildcard,
+    // non-blank card axis matched exactly; status + effective window). KMWRR then RANKS within that set (on-time →
+    // lowest COMPARABLE cost → last-mile). A manual override is validated against the SAME shared set. KMRA returns
+    // NORMALIZED camelCase DTOs (shippingMethod / lastMileDelivery / unitRate / minCharge / currency / chargeType /
+    // chargeUnit); the lead-time (transit-day) join is KMRA's too, so AI-Plan ETA == Execution-Plan ETA.
+    var kmra = getKMRA();
+    if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED');
+    var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '' };
+    var lane = kmra.laneCards(routeQuery, input.rateCards, { asOfOrdinal: asOf });
     if (!lane.length) return blocked('ROUTE_METHOD_UNRESOLVED');
 
     var reqOrd = dateToOrdinal(input.requiredByDate);
     function leadDaysFor(method, lastMile) {
-      var lt = (input.leadTimes || []).filter(function (t) {
-        return low(t.origin_country) === low(originCountry)
-          && (destCountry ? (low(t.destination_country) === low(destCountry) || s(t.destination_country) === '') : true)
-          && low(t.shipping_method) === low(method)
-          && (s(lastMile) === '' || low(t.last_mile_delivery) === low(lastMile) || s(t.last_mile_delivery) === '');
-      });
-      if (!lt.length) return null;
-      // conservative feasibility uses avg_days when present, else max_days, else min_days.
-      var d = num(lt[0].avg_days); if (!isFinite(d)) d = num(lt[0].max_days); if (!isFinite(d)) d = num(lt[0].min_days);
-      return isFinite(d) ? d : null;
+      var r = kmra.leadDays({ originCountry: originCountry, destinationCountry: destCountry, lastMile: lastMile }, input.leadTimes, method, { fallback: true });
+      return (r && isFinite(r.days)) ? r.days : null;
     }
     function onTime(days) { return reqOrd == null || asOf == null || days == null ? (days != null) : (asOf + days <= reqOrd); }
-    function estCost(rc) {
-      // comparable estimate = unit_rate (+ min_charge as a floor proxy). Only comparable across identical currency +
-      // charge_type + charge_unit (a per-kg vs per-carton vs flat rate is NOT comparable without shipment dims).
-      var r = num(rc.unit_rate); var mc = num(rc.min_charge);
-      var base = isFinite(r) ? r : (isFinite(mc) ? mc : NaN);
-      return base;
+    function estCost(dto) {
+      // comparable estimate = unitRate (+ minCharge as a floor proxy). Only comparable across identical currency +
+      // chargeType + chargeUnit (a per-kg vs per-carton vs flat rate is NOT comparable without shipment dims).
+      var r = num(dto.unitRate); var mc = num(dto.minCharge);
+      return isFinite(r) ? r : (isFinite(mc) ? mc : NaN);
     }
 
-    // manual override path
+    // manual override path — the override method must be in the SHARED candidate set (never a fabricated method).
     if (s(override.shipping_method)) {
-      var ovLane = lane.filter(function (rc) { return low(rc.shipping_method) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(rc.last_mile_delivery) === low(override.last_mile_delivery)); });
+      var ovLane = lane.filter(function (dto) { return low(dto.shippingMethod) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(dto.lastMileDelivery) === low(override.last_mile_delivery)); });
       if (!ovLane.length) return blocked('OVERRIDE_INVALID');
       var ovLm = resolveLastMile(ovLane, override.last_mile_delivery);
       if (ovLm.block) return blocked(ovLm.block);
       return okRoute(srcId, destKind, destWarehouseId, destMarketplace, s(override.shipping_method), ovLm.value, { override: true });
     }
 
-    // build candidate methods (distinct shipping_method) with cost + on-time evidence
+    // build candidate methods (distinct shippingMethod) with cost + on-time evidence
     var byMethod = {}, order = [];
-    lane.forEach(function (rc) { var mkey = low(rc.shipping_method); if (!mkey) return; if (!byMethod[mkey]) { byMethod[mkey] = { method: s(rc.shipping_method), cards: [] }; order.push(mkey); } byMethod[mkey].cards.push(rc); });
+    lane.forEach(function (dto) { var mkey = low(dto.shippingMethod); if (!mkey) return; if (!byMethod[mkey]) { byMethod[mkey] = { method: s(dto.shippingMethod), cards: [] }; order.push(mkey); } byMethod[mkey].cards.push(dto); });
     var candidates = order.map(function (mk) {
       var g = byMethod[mk];
       var days = leadDaysFor(g.method, '');
       var c0 = g.cards[0];
-      return { method: g.method, days: days, onTime: onTime(days), cost: estCost(c0), currency: s(c0.currency), chargeType: low(c0.charge_type), chargeUnit: low(c0.charge_unit), card: c0 };
+      return { method: g.method, days: days, onTime: onTime(days), cost: estCost(c0), currency: s(c0.currency), chargeType: low(c0.chargeType), chargeUnit: low(c0.chargeUnit), card: c0 };
     });
 
     var onTimeCands = candidates.filter(function (c) { return c.onTime === true; });
@@ -205,16 +204,17 @@
   // last-mile resolution over a method's cards: distinct non-blank last_mile values → 1 choose / 0 or >1 BLOCK
   // (an explicit valid override short-circuits upstream). A blank last-mile is a valid single value only if it is the
   // sole option AND the lane genuinely has no last-mile dimension.
+  // cards here are NORMALIZED KMRA DTOs (lastMileDelivery), not raw rows.
   function resolveLastMile(cards, override) {
     if (s(override)) {
-      var ok = cards.some(function (rc) { return low(rc.last_mile_delivery) === low(override); });
+      var ok = cards.some(function (rc) { return low(rc.lastMileDelivery) === low(override); });
       return ok ? { value: s(override) } : { block: 'OVERRIDE_INVALID' };
     }
-    var vals = uniq(cards.map(function (rc) { return s(rc.last_mile_delivery); }).filter(function (v) { return v !== ''; }));
+    var vals = uniq(cards.map(function (rc) { return s(rc.lastMileDelivery); }).filter(function (v) { return v !== ''; }));
     if (vals.length === 1) return { value: vals[0] };
     if (vals.length === 0) {
       // no last-mile dimension on the lane at all → treat as a single implicit value only if every card is blank
-      var allBlank = cards.every(function (rc) { return s(rc.last_mile_delivery) === ''; });
+      var allBlank = cards.every(function (rc) { return s(rc.lastMileDelivery) === ''; });
       return allBlank ? { value: '' } : { block: 'LAST_MILE_UNRESOLVED' };
     }
     return { block: 'LAST_MILE_AMBIGUOUS' };
@@ -348,7 +348,7 @@
   }
 
   return {
-    VERSION: 'kmwrr-r6f2-1',
+    VERSION: 'kmwrr-r6f2b-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'DESTINATION_MISSING', 'DESTINATION_INACTIVE',
       'ROUTE_METHOD_UNRESOLVED', 'ROUTE_NO_ON_TIME_OPTION', 'ROUTE_COST_NOT_COMPARABLE', 'LAST_MILE_UNRESOLVED',
