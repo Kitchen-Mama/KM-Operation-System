@@ -59,6 +59,12 @@ function TEMP_R6A_VALIDATE_RESEND_IDEMPOTENCY() { return TEMP_r6aValidateStage_(
 // F1-7N-FA-3C-R6B — READ-ONLY persisted-draft hydration diagnostic for the frozen CO1100-R scope. Writes NOTHING.
 function TEMP_R6B_DIAGNOSE_PERSISTED_DRAFT_HYDRATION() { return TEMP_r6bDiagnosePersistedDraftHydration_(); }
 
+// F1-7N-FA-3C-R6B2 — READ-ONLY all-tier Note incident audit. Reports per-tier note + user_edited + version/updated_at,
+// the last relevant calculation-run journal row, canonical/Draft-Line counts, duplicate count, zero-write proof, verdict/
+// checksum. Run BEFORE any new note attempt (the current live state — v3, T2 user_edited=true, all notes empty — is
+// EVIDENCE and MUST NOT be repaired in source). Writes NOTHING (TEMP_readObjects_ only; no mutation bypass).
+function TEMP_R6B2_AUDIT_ALL_TIER_NOTES() { return TEMP_r6b2AuditAllTierNotes_(); }
+
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
   ORPHAN_LINES: 0, DUPLICATE_T1: 0, DUPLICATE_T2: 0, DUPLICATE_T3: 0, T4_PRESENT: 0, SUBMITTED: 20 };
@@ -1270,5 +1276,67 @@ function TEMP_r6bDiagnosePersistedDraftHydration_() {
     R6B_DIAGNOSTIC_CHECKSUM: checksum, verdict: verdict, R6B_DIAGNOSTIC_READY: 'YES'
   };
   Logger.log('R6B_PERSISTED_DRAFT_HYDRATION ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6B2 — READ-ONLY all-tier Note incident audit (writes NOTHING). Surfaces the exact live
+// state that R6B2 diagnoses: per-tier tN_note + tN_user_edited, header version/updated_at, the most recent
+// recommendation_calculation_runs row for the target draft, canonical/Draft-Line counts, active duplicate count, a
+// zero-write proof and a checksum. It does NOT repair the live draft (the incomplete state is EVIDENCE) and adds NO
+// mutation path. Reuses the R6A read-only state reader.
+// ================================================================================================================
+function TEMP_r6b2LastRunForDraft_(draftId) {
+  // best-effort, read-only peek at the calculation-run journal (absent tab → 'UNAVAILABLE'; never throws)
+  try {
+    var jr = TEMP_readObjects_('recommendation_calculation_runs');
+    if (!jr || !jr.present) return { status: 'JOURNAL_TAB_ABSENT' };
+    var rows = (jr.rows || []).filter(function (r) {
+      return TEMP_str_(r.draft_id) === draftId || TEMP_str_(r.request_allocation_draft_id) === draftId || TEMP_str_(r.draftId) === draftId;
+    });
+    if (!rows.length) return { status: 'NO_RUN_FOR_DRAFT', journal_row_count: (jr.rows || []).length };
+    var last = rows[rows.length - 1];
+    return { status: 'FOUND', matched_run_count: rows.length,
+      last_run: { run_status: TEMP_str_(last.run_status || last.status), action: TEMP_str_(last.action),
+        write_outcome: TEMP_str_(last.write_outcome || last.writeOutcome), draft_version: last.draft_version,
+        updated_at: TEMP_str_(last.updated_at || last.created_at) } };
+  } catch (e) { return { status: 'UNAVAILABLE', error: String(e && e.message || e) }; }
+}
+function TEMP_r6b2AuditAllTierNotes_() {
+  var st = TEMP_r6aReadState_();
+  if (st.halt) return { ok: false, halt: st.halt, R6B2_ZERO_WRITE_CONFIRMED: 'YES' };
+  var row = st.target_row, snap = st.target_tier_snapshot || {};
+  var notes = {}, userEdited = {};
+  ['T1', 'T2', 'T3'].forEach(function (T) {
+    var t = snap[T] || {};
+    notes[T] = TEMP_str_(t.note);
+    userEdited[T] = (t.user_edited === true || TEMP_str_(t.user_edited).toUpperCase() === 'TRUE');
+  });
+  var lastRun = TEMP_r6b2LastRunForDraft_(TEMP_R6A_TARGET_ID_);
+  var checksum = TEMP_r5bHash_([TEMP_R6A_TARGET_ID_, TEMP_str_(row && row.status), row && row.draft_version,
+    notes.T1, notes.T2, notes.T3, userEdited.T1, userEdited.T2, userEdited.T3].join('|'));
+  var anyNote = !!(notes.T1 || notes.T2 || notes.T3);
+  var verdict = st.halt ? 'HALT'
+    : (st.target_present !== 'YES' || st.target_count !== 1) ? 'TARGET_ABSENT_OR_DUPLICATE'
+    : (st.CANONICAL_V2_SCHEMA_EXACT !== 'YES') ? 'SCHEMA_MISMATCH'
+    : (!st.active_flag) ? 'FLAG_OFF'
+    : anyNote ? 'NOTES_PRESENT'
+    : 'ALL_TIER_NOTES_EMPTY';   // the current live evidence state (pre-fix): notes empty
+  var out = {
+    ok: true,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: st.RUNTIME_SPREADSHEET_TARGET_MATCH, active_flag: st.active_flag,
+    CANONICAL_V2_SCHEMA_EXACT: st.CANONICAL_V2_SCHEMA_EXACT,
+    target_id: TEMP_R6A_TARGET_ID_, target_present: st.target_present, target_count: st.target_count,
+    draft_status: st.target_status, draft_version: st.target_draft_version, updated_at: TEMP_str_(row && row.updated_at),
+    t1_note: notes.T1, t2_note: notes.T2, t3_note: notes.T3,
+    t1_user_edited: userEdited.T1, t2_user_edited: userEdited.T2, t3_user_edited: userEdited.T3,
+    last_calculation_run: lastRun,
+    canonical_row_count: st.canonical_row_count, draft_line_row_count: st.draft_line_row_count,
+    active_natural_key_duplicate_count: st.active_natural_key_duplicate_count,
+    DRAFT_LINE_DEPENDENCY_ZERO: 'YES (reads request_order_allocation_drafts + recommendation_calculation_runs ONLY; never request_order_allocation_draft_lines)',
+    R6B2_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ only; no setValues/appendRow/setNumberFormat/insertSheet/rename; NO repair of the live evidence)',
+    R6B2_AUDIT_CHECKSUM: checksum, verdict: verdict, R6B2_AUDIT_READY: 'YES'
+  };
+  Logger.log('R6B2_ALL_TIER_NOTES ' + JSON.stringify(out, null, 2));
   return out;
 }

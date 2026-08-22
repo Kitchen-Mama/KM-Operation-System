@@ -20,7 +20,7 @@ var requestOrderState = { data: [], filters: {}, allocEdits: {} };
 var window = {}, renderCount = 0;
 function renderRequestOrderTable() { renderCount++; }
 function _roEffectiveOrderQty() { return ''; }
-var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null;
+var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roLastEmptyReason = null;
 var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roDraftEditQueue_ = {}, _roAutosaveTimers_ = {};
 var _timers = [];
 function setTimeout(fn) { _timers.push(fn); return _timers.length; }
@@ -41,7 +41,7 @@ window.KM = { DB: db };
 var _r6bFns = ['_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_',
   '_roIsCanonicalDraftSku_', '_roDraftUiState_', '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_',
   '_roReadActiveDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roLoadCanonicalDraftsForScope_', '_roBuildTierEditCommand_',
-  '_roSetFieldState_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_',
+  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_',
   '_roAutosaveFlush_', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_', '_roDebugSnapshot_'].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_r6bFns);
 

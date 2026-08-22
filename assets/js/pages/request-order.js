@@ -1635,10 +1635,13 @@ function renderRequestOrderTable() {
     const fixedBody = document.getElementById('ro-fixed-body');
     const scrollBody = document.getElementById('ro-scroll-body');
     var _emptyMsg;
-    if (_roBaseDataStatus === 'LOADING') _emptyMsg = '<div class="ro-empty-state ro-loading-state">Loading Request Order data…</div>';
-    else if (!_roUseDb()) _emptyMsg = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>';
-    else if (_roBaseDataStatus === 'ERROR') _emptyMsg = '<div class="ro-empty-state ro-error-state">Could not load Request Order data. <button type="button" class="ro-alloc-retry" onclick="initRequestOrderSection()">Retry</button></div>';
-    else _emptyMsg = '<div class="ro-empty-state">No results for the current scope. Adjust filters and press Search.</div>';
+    // F1-7N-FA-3C-R6B2 — IDLE is a TRANSIENT pre-load state (mount has not yet flipped the status); treat it like LOADING
+    // so a render that lands in the remount gap NEVER shows a settled "connect DB" / "no results" message. The disconnect
+    // message is reserved for a GENUINE unavailability (!_roUseDb — audited stable across remount, never a transient flip).
+    if (_roBaseDataStatus === 'LOADING' || _roBaseDataStatus === 'IDLE') { _emptyMsg = '<div class="ro-empty-state ro-loading-state">Loading Request Order data…</div>'; _roLastEmptyReason = 'LOADING'; }
+    else if (!_roUseDb()) { _emptyMsg = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>'; _roLastEmptyReason = 'DB_UNAVAILABLE'; }
+    else if (_roBaseDataStatus === 'ERROR') { _emptyMsg = '<div class="ro-empty-state ro-error-state">Could not load Request Order data. <button type="button" class="ro-alloc-retry" onclick="initRequestOrderSection()">Retry</button></div>'; _roLastEmptyReason = 'ERROR'; }
+    else { _emptyMsg = '<div class="ro-empty-state">No results for the current scope. Adjust filters and press Search.</div>'; _roLastEmptyReason = 'EMPTY_SCOPE'; }
     if (fixedBody && scrollBody) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _emptyMsg; }
     return;
   }
@@ -3768,10 +3771,14 @@ function _roNotify_(msg) {
 }
 // F1-7N-FA-3C-R6B — monotonic hydration guard: a LATE read-back response must never clobber a NEWER hydration or a
 // user's in-progress edit. Each hydration start bumps the seq; a response applies only if it is still the newest.
-var _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null;
+var _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roLastEmptyReason = null;
 // F1-7N-FA-3C-R6B1 — read-only, non-persistent debug snapshot (no secrets, no raw token). Exposed via window.__roDebug().
+// R6B2 — adds useDb / searched / firstLayerSeq / lastEmptyReason so a live SPA-remount empty page can be pinpointed to
+// the EXACT branch (LOADING transient · DB_UNAVAILABLE genuine disconnect · ERROR API failure · EMPTY_SCOPE real empty).
 function _roDebugSnapshot_() {
   return { mountEpoch: _roMountEpoch, baseDataStatus: _roBaseDataStatus, hydrationStatus: _roHydrationStatus,
+    useDb: (typeof _roUseDb === 'function') ? !!_roUseDb() : null, searched: !!(requestOrderState && requestOrderState.searched),
+    firstLayerSeq: (typeof _opFirstLayerSeq === 'number') ? _opFirstLayerSeq : null, lastEmptyReason: _roLastEmptyReason,
     uniqueScopeCount: (typeof _roScopesFromLoadedData_ === 'function' ? _roScopesFromLoadedData_().length : 0),
     hydrationRequestCount: _roHydrateReqCount, cachedScopeCount: Object.keys(_roDraftDtoCache).length,
     canonicalDraftCount: Object.keys(_roCanonicalDraftBySku).length, pendingAutosaveCount: Object.keys(_roAutosaveTimers_ || {}).length,
@@ -3885,6 +3892,37 @@ function _roSetFieldState_(input, state, title) {
 // run strictly one-after-another so an earlier cached token can never race a later one into a self-conflict. Each
 // save chains onto the prior save for that draftId; the queue self-cleans when idle.
 var _roDraftEditQueue_ = {};
+// F1-7N-FA-3C-R6B2 — SHAPE-AGNOSTIC edit-result classifier. The live MONTHLY_ORDER cutover routes edits to the FLAT V2
+// core (KMRDV2P.editMonthlyFlat) whose result is { success, wrote, outcome:'EDITED'|'CONFLICT'|'NOT_EXECUTED',
+// results:[{tier,ok,reason}], result:{writeOutcome} } — it carries NO `status:'COMPLETED'` field. The pre-R6B2 core
+// gated success SOLELY on `d.status === 'COMPLETED'`, so under the live cutover EVERY committed flat edit was misread as
+// "Save failed": the note/version was never adopted AND the cached token was never nulled — so a following edit reused a
+// stale token and the backend rejected it as a CONFLICT (root cause: notes never persisted, version stuck). This reads
+// BOTH shapes truthfully: LEGACY { status:'COMPLETED'|'CONFLICT'|'BLOCKED_CONFLICT'|'FAILED', reason } and FLAT
+// { wrote, outcome, results[], result.writeOutcome }. A committed-but-unverified flat write (WRITE_COMMITTED_READBACK_
+// FAILED) is NEVER reported as a clean Saved (truthful write semantics, R5C) — it triggers a reconciling re-read.
+function _roClassifyEditResult_(res) {
+  var d = (res && res.data) || (res && res.error && res.error.details) || {};
+  var out = (d && d.result) || {};
+  var status = String(d.status || '');
+  var outcome = String(d.outcome || '');
+  var writeOutcome = String(out.writeOutcome || '');
+  var tierReason = '';
+  if (Array.isArray(d.results)) { for (var i = 0; i < d.results.length; i++) { var rr = d.results[i]; if (rr && rr.ok === false && rr.reason) { tierReason = String(rr.reason); break; } } }
+  var reason = String(d.reason || tierReason || (res && res.error && res.error.code) || d.error || '');
+  var wroteFlat = d.wrote === true && outcome === 'EDITED';
+  var okLegacy = status === 'COMPLETED';
+  var backendOk = !!(res && res.success) && (okLegacy || wroteFlat);
+  var committedUnverified = backendOk && writeOutcome === 'WRITE_COMMITTED_READBACK_FAILED';
+  var cleanSaved = backendOk && !committedUnverified && (writeOutcome === '' || writeOutcome === 'WRITE_COMMITTED_VERIFIED');
+  var conflict = !backendOk && (outcome === 'CONFLICT' || status === 'CONFLICT' || /CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(reason));
+  var terminal = !backendOk && (status === 'BLOCKED_CONFLICT' || /IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT|TIER_TERMINAL/.test(reason));
+  // adopt-forward token: the confirmed response may carry the NEXT valid optimistic token (skips the pre-write fetch on
+  // the next edit). Absent → the caller nulls the cached token so the next edit re-fetches the advanced token.
+  var nextToken = d.expectedToken || (out && out.expectedToken) || null;
+  return { cleanSaved: cleanSaved, committedUnverified: committedUnverified, conflict: conflict, terminal: terminal,
+    reason: reason, draftVersion: d.draftVersion, nextToken: nextToken };
+}
 function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
   var ref0 = _roCanonicalRowFor_(sku, bucket);
   if (!ref0) return Promise.resolve(null);   // NO_DRAFT / conflict → in-memory behavior only (never a canonical write / never a new Draft)
@@ -3905,25 +3943,33 @@ function _roSaveTierEditCore_(sku, bucket, patch, input) {
     if (!tok) { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); return null; }
     var cmd = _roBuildTierEditCommand_(ref.draft.draftId, month, bucket, patch, tok);
     return Promise.resolve(db.updateRecommendationDecisionLocked(cmd)).then(function (res) {
-      var d = (res && res.data) || (res && res.error && res.error.details) || {};
-      var okv = res && res.success && d.status === 'COMPLETED';
-      var reason = d.reason || (res && res.error && res.error.code) || '';
-      if (okv) {
+      // F1-7N-FA-3C-R6B2 — interpret BOTH the legacy AND the live flat-V2 edit result shapes (see _roClassifyEditResult_).
+      var cls = _roClassifyEditResult_(res);
+      var reason = cls.reason;
+      if (cls.cleanSaved) {
         if (Object.prototype.hasOwnProperty.call(patch, 'order_qty') && patch.order_qty != null && patch.order_qty !== '') ref.line.order_qty = Number(patch.order_qty);
         if (Object.prototype.hasOwnProperty.call(patch, 'note')) ref.line.note = String(patch.note == null ? '' : patch.note);   // blank persists as ''
-        if (d.draftVersion != null) ref.draft.draftVersion = d.draftVersion;   // adopt the confirmed advanced version
-        ref.draft.expectedToken = null;   // one successful edit ⇒ next edit re-fetches the advanced token
+        if (cls.draftVersion != null) ref.draft.draftVersion = cls.draftVersion;   // adopt the confirmed advanced version (when supplied)
+        ref.draft.expectedToken = cls.nextToken || null;   // adopt the next token if returned; else null → next edit re-fetches
         _roSetFieldState_(input, 'is-saved', 'Saved'); _roLastAutosaveOutcome = 'SAVED';
-      } else if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(String(reason))) {
+      } else if (cls.committedUnverified) {
+        // R5C truthful semantics — the row committed but its post-write readback failed. NEVER a clean "Saved". Adopt the
+        // value locally (it IS committed; the deterministic id keeps a re-run idempotent) but reconcile via a fresh read.
+        if (Object.prototype.hasOwnProperty.call(patch, 'note')) ref.line.note = String(patch.note == null ? '' : patch.note);
+        if (Object.prototype.hasOwnProperty.call(patch, 'order_qty') && patch.order_qty != null && patch.order_qty !== '') ref.line.order_qty = Number(patch.order_qty);
+        ref.draft.expectedToken = null; _roLastAutosaveOutcome = 'COMMITTED_UNVERIFIED';
+        _roSetFieldState_(input, 'is-conflict', 'Saved — verifying…');
+        _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());
+      } else if (cls.conflict) {
         _roSetFieldState_(input, 'is-conflict', 'Changed elsewhere — press Enter to retry'); _roLastAutosaveOutcome = 'CONFLICT';   // NO silent DB overwrite
         ref.draft.expectedToken = null;                                   // force a fresh token on retry
         _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());            // re-read the current Draft (typed value preserved by the caller)
-      } else if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT|TIER_TERMINAL/.test(String(reason))) {
+      } else if (cls.terminal) {
         _roSetFieldState_(input, 'is-invalid', 'Draft conflict — review required'); _roLastAutosaveOutcome = 'BLOCKED';
       } else {
         _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); _roLastAutosaveOutcome = 'FAILED';
       }
-      return { ok: okv, reason: reason };
+      return { ok: cls.cleanSaved, reason: reason };
     });
   }).catch(function () { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); _roLastAutosaveOutcome = 'ERROR'; return null; });
 }
@@ -3954,6 +4000,7 @@ if (typeof window !== 'undefined') {
   window.__roDebug = _roDebugSnapshot_;          // F1-7N-FA-3C-R6B1 read-only observability (no secrets/token)
   window._roBuildTierEditCommand_ = _roBuildTierEditCommand_;
   window._roSaveTierEditToCanonicalDraft_ = _roSaveTierEditToCanonicalDraft_;
+  window._roClassifyEditResult_ = _roClassifyEditResult_;   // F1-7N-FA-3C-R6B2 — shape-agnostic edit-result classifier
   window._roRowNoteDisplay_ = _roRowNoteDisplay_;
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
   window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;

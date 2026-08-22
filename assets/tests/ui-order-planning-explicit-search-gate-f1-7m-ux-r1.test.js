@@ -23,11 +23,14 @@ function makeDoc() {
   return { getElementById: function (id) { return els[id] || null; }, _els: els };
 }
 // Run renderRequestOrderTable against a stubbed document + requestOrderState (early-return branches only).
-function runRender(state) {
+function runRender(state, status) {
   var document = makeDoc();
   var requestOrderState = state;
   function _roRenderPagination() {}
-  var _roBaseDataStatus = 'IDLE';               // F1-7N-FA-3C-R6B1 — state-aware empty message dependency
+  // F1-7N-FA-3C-R6B2 — a SETTLED empty state ('EMPTY' by default). IDLE/LOADING are now treated as a transient loading
+  // state (never a settled disconnect during a remount race), so the disconnect assertion uses a settled status.
+  var _roBaseDataStatus = status || 'EMPTY';
+  var _roLastEmptyReason = null;                 // R6B2 diagnostic sink (set by the empty branch)
   function _roUseDb() { return false; }          // stub: unavailable → the "Connect Operation DB" empty branch
   var renderRequestOrderTable;
   eval(extractFn(RO, 'renderRequestOrderTable') + '\nrenderRequestOrderTable = renderRequestOrderTable;');
@@ -46,6 +49,10 @@ ok(/ro-presearch-state/.test(preHtml), 'PRE_SEARCH uses a distinct state class (
 var emptyHtml = runRender({ searched: true, data: [], filters: {} });
 ok(!/Select filters and press Search/.test(emptyHtml), 'searched=true + zero rows → NOT the PRE_SEARCH message');
 ok(/No Request Order data|No matching/.test(emptyHtml), 'searched=true + zero rows → a distinct EMPTY/data state');
+
+// F1-7N-FA-3C-R6B2 — a TRANSIENT IDLE/LOADING status never shows a settled disconnect/empty (remount-race guard).
+var loadingHtml = runRender({ searched: true, data: [], filters: {} }, 'IDLE');
+ok(/Loading Request Order data/.test(loadingHtml) && !/Connect the Operation DB/.test(loadingHtml), 'R6B2: transient IDLE renders "Loading…", never the "Connect Operation DB" disconnect');
 
 // ===================================================================================================================
 console.log('\n== state + transitions ==');

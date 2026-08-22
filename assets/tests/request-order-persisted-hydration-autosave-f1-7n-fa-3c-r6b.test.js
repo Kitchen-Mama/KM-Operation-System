@@ -46,7 +46,7 @@ window.KM = { DB: db };
 var _r6bFns = [ '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_', '_roIsCanonicalDraftSku_',
   '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_', '_roReadActiveDraftsForScope_',
   '_roLoadCanonicalDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roBuildTierEditCommand_', '_roBuildOrderQtyEditCommand_',
-  '_roSetFieldState_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
+  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
   '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_' ].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_r6bFns);
 
