@@ -26,7 +26,8 @@ eval(G16.match(/var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = \[[\s\S]*?\];/)[0
 
 section('A. canonical model + schema (30 header / 31 line; route on header; no selected_*)');
 ok(SHIPPING_ALLOCATION_DRAFTS_HEADERS_.length === 30, 'A1. header schema = 30 cols');
-ok(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.length === 31, 'A1. line schema = 31 cols (28 + R3C2 source_warehouse_id/code/allocated_qty)');
+ok(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.length === 30, 'A1. line schema = 30 cols (R6F1: canonical live schema; accidental R3C2 source_allocated_qty_snapshot removed)');
+ok(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.indexOf('source_allocated_qty_snapshot') < 0, 'A1. accidental 31st field source_allocated_qty_snapshot removed');
 ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'].forEach(function (c) {
   ok(SHIPPING_ALLOCATION_DRAFTS_HEADERS_.indexOf(c) >= 0, 'A2. route/group dimension is a HEADER column: ' + c);
 });
@@ -91,7 +92,7 @@ ok(/PHASE2_K2_SHIPMENT_GROUP_MODEL_DEFERRED|K2_SHIPMENT_GROUP_MODEL_DEFERRED|PHA
 section('F. validator present + zero-write');
 ok(/function TEMP_R6F_VALIDATE_INVENTORY_AI_PLAN_GROUP_MODEL\(\)/.test(TEMP), 'F. TEMP_R6F_VALIDATE_INVENTORY_AI_PLAN_GROUP_MODEL present');
 ok(/R6F_ZERO_WRITE_CONFIRMED/.test(TEMP) && /INVENTORY_AI_PLAN_NOT_READY|READY_FOR_CONTROLLED_INVENTORY_AI_PLAN/.test(TEMP), 'F. validator asserts zero-write + emits a verdict');
-ok(/line_id_completeness/.test(TEMP) && /active_k3_group_duplicate_count/.test(TEMP) && /orphan_line_count/.test(TEMP), 'F. validator reports line-id completeness + active-group duplicates + orphan lines');
+ok(/line_id_completeness/.test(TEMP) && /active_group_duplicate_count/.test(TEMP) && /orphan_line_count/.test(TEMP), 'F. validator reports line-id completeness + active-group duplicates + orphan lines');
 
 section('G. flags frozen + no Shipment/Submit; blank orphan never reused');
 ok(/var\s+REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true\s*;/.test(CONFIG), 'G. flat V2 cutover = true');

@@ -56,14 +56,17 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
   // recommendation reason/flags + immutable recommended qty snapshot
   'recommendation_reason', 'recommendation_flags', 'recommended_qty',
+  // F1-7N-FA-3C-R6F1 — per-source axis, at the CANONICAL LIVE position (immediately after recommended_qty, BEFORE the
+  // user Execution Plan). This is the exact byte-for-byte live production order (djb2 '|' fingerprint = e4880646, 30
+  // cols). Under the K2 shipment-group model the source warehouse is a HEADER grouping dimension; on the line these
+  // are the denormalized per-line source snapshot carried for the natural key. The prior R3C2 per-source-qty column
+  // `source_allocated_qty_snapshot` is NOT present in the live schema — it was an accidental source-only 31st field
+  // (never live-verified) and is REMOVED here so the runtime authority equals the live 30-col schema exactly.
+  'source_warehouse_id', 'source_warehouse_code_snapshot',
   // user Execution Plan (qty grain — route context is on the Draft header)
   'planned_qty', 'units_per_carton', 'route_no',
   // status / audit
-  'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
-  // F1-4B-FM6-R3C2 — additive per-source execution columns (appended; order-agnostic name-based writer). One
-  // shipping line per physical source; source_allocated_qty_snapshot = KMALLOC per-source qty. recommended_qty
-  // stays the SKU/window aggregate (do NOT sum across source lines). Blank source = unsourced (not a warehouse).
-  'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot'
+  'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
 ];
 
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };
@@ -289,6 +292,120 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
   return null;
 }
 
+// ================================================================================================================
+// F1-7N-FA-3C-R6F1 — K2 SHIPMENT-GROUP CONTRACT (FROZEN, DETERMINISTIC MACHINERY — NOT LIVE-WIRED THIS ROUND)
+// ----------------------------------------------------------------------------------------------------------------
+// The latest USER business decision supersedes the Phase-1 K3 freeze: ONE shipping_allocation_drafts Header ==
+// ONE shipment group sharing the 10-dimension route grouping key below. Different source warehouse / destination /
+// shipping method / last-mile / recommendation_group_no => a SEPARATE Header. Lines carry SKU + window (+ their own
+// route evidence) UNDER that Header. A Header must never contain lines with incompatible route grouping values.
+//
+// These are the FROZEN, TESTED contract functions (key · deterministic Header id · deterministic Line id ·
+// CREATE/REUSE/CONFLICT · incompatible-route guard · split/regroup). They are DELIBERATELY NOT wired into the live
+// active-draft resolution: the live save path keeps resolving on the landed K3 scope (sadResolveActiveDraft_) so the
+// current save<->generation key AGREEMENT is preserved. LIVE K2 ACTIVATION IS HALTED — the bundled AI-Plan generation
+// engine (KMWRB/KMPB/KMPPB) does NOT derive four of the ten K2 dimensions (recommended_shipping_method,
+// recommended_last_mile_delivery, recommended_destination_warehouse_id, recommendation_group_no are BLANK at
+// generation; grep-verified). Grouping on blank dims would collapse every route into ONE group. Activation requires
+// the Route-Derivation Input Matrix (design-freeze §45) + INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ flip + live
+// verification — all USER-owned. Until then: K2_CONTRACT_AND_MACHINERY_READY = YES · K2_LIVE_GENERATION_ACTIVATED = NO.
+
+// The 10 canonical K2 grouping dimensions, in frozen order. Route context is HEADER-level (read from recommended_*).
+var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
+  'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'];
+
+// Canonical K2 group key from a header-shaped object. Trimmed + lowercased, '|'-joined in the frozen dim order.
+// Accepts either the persisted recommended_* names OR the short route aliases (source_warehouse_id /
+// destination_warehouse_id / shipping_method / last_mile_delivery) so a caller can key off either shape.
+function sadK2GroupKey_(h) {
+  h = h || {};
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  function pick(canon, alias) { var a = h[canon]; if (a == null || a === '') a = h[alias]; return s(a); }
+  return [s(h.planning_cycle), s(h.company), s(h.country), s(h.marketplace), s(h.source_page || 'inventory_replenishment'),
+    pick('recommended_source_warehouse_id', 'source_warehouse_id'),
+    pick('recommended_destination_warehouse_id', 'destination_warehouse_id'),
+    pick('recommended_shipping_method', 'shipping_method'),
+    pick('recommended_last_mile_delivery', 'last_mile_delivery'),
+    s(h.recommendation_group_no)].join('|');
+}
+// Deterministic K2 Header id: SADH-K2-<upper FNV1a hex of the K2 group key>. Same shipment group => same id (stable).
+function sadK2DeterministicHeaderId_(h) { return 'SADH-K2-' + sadFnv1a_(sadK2GroupKey_(h)).toUpperCase(); }
+
+// K2 LINE natural key: sku + site_sku + window_code ONLY (source/route are HEADER dims under K2, not line identity).
+function sadK2LineNaturalKey_(draftId, l) {
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  l = l || {};
+  return [s(draftId), s(l.sku), s(l.site_sku), s(l.window_code)].join('|');
+}
+// Deterministic K2 LINE id: SADL-K2-<upper FNV1a hex of the K2 line natural key>.
+function sadK2DeterministicLineId_(draftId, l) { return 'SADL-K2-' + sadFnv1a_(sadK2LineNaturalKey_(draftId, l)).toUpperCase(); }
+
+// CREATE / REUSE / CONFLICT over the K2 group key among ACTIVE headers (draft/site_confirmed/partially_submitted).
+// rows = header-shaped objects (each carrying allocation_draft_id + the K2 dims + status). Pure; no sheet access.
+//   0 active match => CREATE (deterministic id) · 1 => REUSE (that id) · >1 => BLOCKED_CONFLICT (all ids; zero mutation).
+function sadK2ResolveActiveDraft_(rows, wantHeader) {
+  var ACTIVE = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+  var want = sadK2GroupKey_(wantHeader), matches = [];
+  (rows || []).forEach(function (r) {
+    if (!ACTIVE[String(r && r.status == null ? '' : r.status).trim().toLowerCase()]) return;
+    if (sadK2GroupKey_(r) === want) matches.push(String(r.allocation_draft_id == null ? '' : r.allocation_draft_id).trim());
+  });
+  if (matches.length === 0) return { status: 'CREATE', k2Key: want, allocation_draft_id: sadK2DeterministicHeaderId_(wantHeader) };
+  if (matches.length === 1) return { status: 'REUSE', k2Key: want, allocation_draft_id: matches[0] };
+  return { status: 'BLOCKED_CONFLICT', k2Key: want, conflictIds: matches };
+}
+
+// Incompatible-route guard: EVERY line's route grouping values must match the Header's shipment group. A line whose
+// source/destination/method/last-mile/group_no differs from the Header belongs under a DIFFERENT K2 Header. A line
+// that OMITS a dim inherits the Header (blank line dim is NOT a violation). Pure. Returns
+// { compatible, violations:[{ index, field, headerValue, lineValue }] }.
+function sadK2LinesRouteCompatibleWithHeader_(headerRow, lines) {
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  headerRow = headerRow || {};
+  var dims = [
+    ['recommended_source_warehouse_id', 'source_warehouse_id'],
+    ['recommended_destination_warehouse_id', 'destination_warehouse_id'],
+    ['recommended_shipping_method', 'shipping_method'],
+    ['recommended_last_mile_delivery', 'last_mile_delivery'],
+    ['recommendation_group_no', 'recommendation_group_no']
+  ];
+  var violations = [];
+  (lines || []).forEach(function (l, i) {
+    l = l || {};
+    dims.forEach(function (d) {
+      var lv = l[d[1]]; if (lv == null || lv === '') return;              // omitted => inherits header (not a violation)
+      var hv = s(headerRow[d[0]]);
+      if (s(lv) !== hv) violations.push({ index: i, field: d[1], headerValue: hv, lineValue: s(lv) });
+    });
+  });
+  return { compatible: violations.length === 0, violations: violations };
+}
+
+// SPLIT / REGROUP: partition a flat set of route-bearing lines into K2 group buckets keyed by each line's own route
+// dims. Each bucket => ONE K2 Header (deterministic id from the bucket route). This is the frozen regroup contract for
+// when route fields change: a re-grouping NEVER merges incompatible routes into one Header. Pure. Returns an ordered
+// [{ k2Key, allocation_draft_id, header, lines }].
+function sadK2PartitionLinesIntoGroups_(scope, lines) {
+  scope = scope || {};
+  var buckets = {}, order = [];
+  (lines || []).forEach(function (l) {
+    l = l || {};
+    var header = {
+      planning_cycle: scope.planning_cycle, company: scope.company, country: scope.country,
+      marketplace: scope.marketplace, source_page: scope.source_page,
+      recommended_source_warehouse_id: l.source_warehouse_id, recommended_destination_warehouse_id: l.destination_warehouse_id,
+      recommended_shipping_method: l.shipping_method, recommended_last_mile_delivery: l.last_mile_delivery,
+      recommendation_group_no: l.recommendation_group_no
+    };
+    var key = sadK2GroupKey_(header);
+    if (!buckets[key]) { buckets[key] = { k2Key: key, allocation_draft_id: sadK2DeterministicHeaderId_(header), header: header, lines: [] }; order.push(key); }
+    buckets[key].lines.push(l);
+  });
+  return order.map(function (k) { return buckets[k]; });
+}
+// ================================================================================================================
+
 // Private keyed shipping-line upsert core (reached ONLY under lock via the public handler above).
 function sadUpsertLinesKeyedCore_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
@@ -379,6 +496,190 @@ function sadHeaderRouteIsComplete_(b) {
   var method = String(b.recommended_shipping_method == null ? '' : b.recommended_shipping_method).trim();
   var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
   return !!from && hasTo && methodOk;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-R6F1 — ATOMIC Header + Lines write (Section C). ONE controlled ScriptLock; validate EVERYTHING before
+// the first write; Header + all Lines committed together from the caller's perspective.
+//   Body: { header:{...}, lines:[...], expected_draft_version?, enforce_k2_grouping? }
+// PRE-WRITE (any failure => ZERO mutation, zero_write:true): both sheet schemas EXACT (30 header / 30 line,
+//   order-sensitive — rule 9, no order-agnostic tolerance) · header route-completeness when route intent present ·
+//   every manual line complete (SKU + Qty>0) · no duplicate line identity within the batch · FK grouping (all lines
+//   belong to this ONE header) · OPTIONAL K2 incompatible-route guard (enforce_k2_grouping:true — the frozen K2
+//   contract; OFF by default while live K2 activation is HALTed).
+// NEW draft: append Header, then all Lines. If a line write THROWS after a NEW Header was created, COMPENSATE by
+//   soft-cancelling (NEVER hard-delete) that exact Header and return COMMITTED_UNVERIFIED + reconciliation evidence —
+//   never a generic clean failure.
+// EXISTING draft: never delete existing data; a line-write failure fails closed with RECONCILIATION_REQUIRED evidence.
+function handleUpsertShippingAllocationDraftAtomic_(body) {
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try { return sadAtomicUpsertCore_(body); }
+  finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// EXACT (order-sensitive) header-row check against a canonical authority. '' when OK, else a reason string. Trailing
+// all-blank cells are not real columns. Pure over a sheet-like object exposing getDataRange().getValues().
+function sadExactSchemaReason_(sh, authority) {
+  var data = sh.getDataRange().getValues();
+  var actual = (data && data.length ? data[0] : []).map(function (h) { return String(h == null ? '' : h).trim(); });
+  while (actual.length && actual[actual.length - 1] === '') actual.pop();
+  if (actual.length !== authority.length) return 'COL_COUNT_' + actual.length + '_EXPECTED_' + authority.length;
+  for (var i = 0; i < authority.length; i++) if (actual[i] !== authority[i]) return 'COL' + i + '_IS_' + (actual[i] || '(blank)') + '_EXPECTED_' + authority[i];
+  return '';
+}
+
+// Pure pre-write validation for the atomic path. Returns { ok:true, lines:[aliased] } or { ok:false, error, stage,
+// data? }. No sheet access, no mutation. `existingHeaders` = { drafts:[...], lines:[...] } actual header rows (for the
+// EXACT schema check); when omitted the schema check is skipped (caller validated it).
+function sadAtomicValidateBatch_(header, rawLines, enforceK2) {
+  header = header || {};
+  var status = String(header.status || 'draft').trim(); if (!SAD_STATUSES_[status]) status = 'draft';
+  var hasRouteIntent = !!(String(header.recommended_source_warehouse_id || '').trim() ||
+    String(header.recommended_shipping_method || '').trim() || String(header.recommended_destination_warehouse_id || '').trim());
+  if (hasRouteIntent && status !== 'cancelled' && !sadHeaderRouteIsComplete_(header)) {
+    return { ok: false, stage: 'header', error: 'PLAN_HEADER_INCOMPLETE — route requires From + To + Method (zero rows written)' };
+  }
+  var lines = [], seen = {};
+  for (var i = 0; i < (rawLines || []).length; i++) {
+    var l = sadApplyLineAliases_(rawLines[i] || {});
+    var isCancel = String(l.line_status || '').trim().toLowerCase() === 'cancelled';
+    var isSystem = String(l.generation_type || '').trim().toLowerCase() === 'system_generated';
+    if (!isCancel && !isSystem && !sadLineIsComplete_(l)) return { ok: false, stage: 'lines', error: 'PLAN_LINE_INCOMPLETE — a manual line requires SKU + Qty>0 (zero rows written)' };
+    var lineId = String(l.allocation_draft_line_id || '').trim();
+    var nk = lineId || sadLineNaturalKey_('__ATOMIC__', l);
+    if (seen[nk]) return { ok: false, stage: 'lines', error: 'DUPLICATE_LINE_IN_BATCH — two lines resolve to the same identity (zero rows written): ' + nk };
+    seen[nk] = 1;
+    lines.push(l);
+  }
+  if (enforceK2 === true) {
+    var g = sadK2LinesRouteCompatibleWithHeader_(header, lines);
+    if (!g.compatible) return { ok: false, stage: 'grouping', error: 'K2_ROUTE_INCOMPATIBLE — a line carries route values incompatible with the header shipment group (zero rows written)', data: { violations: g.violations } };
+  }
+  return { ok: true, lines: lines };
+}
+
+function sadAtomicUpsertCore_(body) {
+  body = body || {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var header = body.header || {};
+
+  // ensure both sheets, then validate BOTH schemas EXACT (rule 9 — no order-agnostic tolerance).
+  var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  if (hR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_drafts] ' + hR, stage: 'schema', zero_write: true });
+  var lR = sadExactSchemaReason_(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+  if (lR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_draft_lines] ' + lR, stage: 'schema', zero_write: true });
+
+  // pure batch validation (header completeness + line completeness + batch dedup + optional K2 guard).
+  var vb = sadAtomicValidateBatch_(header, body.lines || [], body.enforce_k2_grouping === true);
+  if (!vb.ok) return jsonResponse_({ success: false, error: vb.error, stage: vb.stage, zero_write: true, data: vb.data || null });
+  var lines = vb.lines;
+
+  // resolve the header id: explicit id, else the landed K3 active-draft (LIVE K2 resolution is HALTed). Fail closed
+  // on a >1 active-draft conflict with ZERO mutation.
+  var id = String(header.allocation_draft_id || '').trim();
+  var found = id ? procurementFindRow_(hSh, 'allocation_draft_id', id) : null;
+  if (!id) {
+    var k3 = sadResolveActiveDraft_(hSh, { planning_cycle: header.planning_cycle, company: header.company,
+      country: header.country, marketplace: header.marketplace, source_page: header.source_page });
+    if (k3.status === 'BLOCKED_CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this scope (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: k3.conflictIds } });
+    if (k3.status === 'ACTIVE_DRAFT_FOUND') { id = k3.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
+  }
+  if (found) {
+    var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
+    if (st === 'submitted' || st === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
+  }
+
+  var now = procurementTimestamp_();
+  var actor = String(header.created_by || 'inventory-replenishment').trim();
+  var status = String(header.status || 'draft').trim(); if (!SAD_STATUSES_[status]) status = 'draft';
+  var newHeaderCreated = false;
+
+  // ---- WRITE PHASE (header first, then all lines) — one lock is already held by the public handler ------------
+  if (found) {
+    (function () {
+      function setCol(name, val) { var c = found.col(name); if (c !== -1) hSh.getRange(found.row, c + 1).setValue(val); }
+      setCol('status', status);
+      ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',
+        'recommended_destination_warehouse_code_snapshot', 'recommendation_group_no', 'recommended_shipping_method',
+        'recommended_last_mile_delivery'].forEach(function (f) { if (header[f] != null) setCol(f, String(header[f])); });
+      if (header.note != null) setCol('note', String(header.note));
+      setCol('updated_by', actor); setCol('updated_at', now);
+    })();
+  } else {
+    if (!id) id = 'SAD-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+    procurementAppendByHeader_(hSh, {
+      allocation_draft_id: id, planning_cycle: String(header.planning_cycle || '').trim(),
+      source_page: String(header.source_page || 'inventory_replenishment').trim(),
+      company: String(header.company || '').trim(), country: String(header.country || '').trim(),
+      marketplace: String(header.marketplace || '').trim(), status: status,
+      recommended_source_warehouse_id: String(header.recommended_source_warehouse_id || '').trim(),
+      recommended_destination_warehouse_id: String(header.recommended_destination_warehouse_id || '').trim(),
+      recommended_source_warehouse_code_snapshot: String(header.recommended_source_warehouse_code_snapshot || '').trim(),
+      recommended_destination_warehouse_code_snapshot: String(header.recommended_destination_warehouse_code_snapshot || '').trim(),
+      recommendation_group_no: String(header.recommendation_group_no || '').trim(),
+      recommended_shipping_method: String(header.recommended_shipping_method || '').trim(),
+      recommended_last_mile_delivery: String(header.recommended_last_mile_delivery || '').trim(),
+      generation_type: String(header.generation_type || 'user_created').trim(),
+      calculation_run_id: String(header.calculation_run_id || '').trim(),
+      formula_version: String(header.formula_version || '').trim(),
+      calculated_at: String(header.calculated_at || '').trim(),
+      source_data_as_of: String(header.source_data_as_of || '').trim(),
+      draft_version: String(header.draft_version || '1').trim(),
+      created_by: actor, created_at: now, updated_by: actor, updated_at: now,
+      submitted_by: '', submitted_at: '', cancelled_by: '', cancelled_at: '', cancel_reason: '',
+      note: String(header.note || '').trim()
+    });
+    newHeaderCreated = true;
+  }
+
+  // lines — reuse the frozen per-line contract (heal blank id / EXEC_FIELDS / deterministic insert / terminal-skip),
+  // mirroring sadUpsertLinesKeyedCore_. Wrapped so a write throw AFTER a new header triggers compensation.
+  var created = 0, updated = 0, skipped = 0, writeErr = null;
+  try {
+    var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      var lineId = String(l.allocation_draft_line_id || '').trim();
+      var lf = lineId ? procurementFindRow_(lSh, 'allocation_draft_line_id', lineId) : sadFindLineByNaturalKey_(lSh, id, l);
+      if (!lf && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
+      if (lf) {
+        var cLS = lf.col('line_status'); var curLS = cLS !== -1 ? String(lSh.getRange(lf.row, cLS + 1).getValue()).trim().toLowerCase() : '';
+        if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
+        var cId0 = lf.col('allocation_draft_line_id');
+        if (cId0 !== -1) { var curId0 = String(lSh.getRange(lf.row, cId0 + 1).getValue()).trim(); if (!curId0) lSh.getRange(lf.row, cId0 + 1).setValue(sadDeterministicLineId_(id, l)); }
+        (function (found2, line) {
+          function setU(name) { if (line[name] != null) { var c = found2.col(name); if (c !== -1) lSh.getRange(found2.row, c + 1).setValue(String(line[name])); } }
+          EXEC_FIELDS.forEach(setU);
+          SAD_RECOMMENDATION_FIELDS_.forEach(function (f) { if (line[f] != null && line[f] !== '') setU(f); });
+          var uc = found2.col('updated_at'); if (uc !== -1) lSh.getRange(found2.row, uc + 1).setValue(now);
+        })(lf, l);
+        updated++;
+      } else {
+        if (!lineId) lineId = sadDeterministicLineId_(id, l);
+        var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
+        var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty) : (recQty !== '' ? recQty : '');
+        var rowObj = { allocation_draft_line_id: lineId, allocation_draft_id: id, created_at: now, updated_at: now, planned_qty: planned, recommended_qty: recQty };
+        SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.forEach(function (h) { if (h in rowObj) return; if (l[h] != null) rowObj[h] = String(l[h]); });
+        procurementAppendByHeader_(lSh, rowObj);
+        created++;
+      }
+    }
+  } catch (e3) { writeErr = e3; }
+
+  if (writeErr) {
+    if (newHeaderCreated) {
+      // COMPENSATE the just-created header (soft-cancel; NEVER hard-delete) + COMMITTED_UNVERIFIED.
+      var cf = procurementFindRow_(hSh, 'allocation_draft_id', id);
+      if (cf) { (function () { function setC(n, v) { var c = cf.col(n); if (c !== -1) hSh.getRange(cf.row, c + 1).setValue(v); } setC('status', 'cancelled'); setC('cancelled_by', actor); setC('cancelled_at', now); setC('cancel_reason', 'R6F1_ATOMIC_COMPENSATION_LINE_WRITE_FAILED'); setC('updated_at', now); })(); }
+      return jsonResponse_({ success: false, error: 'COMMITTED_UNVERIFIED — new Header created then a line write failed; the exact Header was soft-cancelled for audit (no hard delete). ' + (writeErr.message || writeErr), stage: 'lines', data: { allocation_draft_id: id, compensated: true, lines_committed: created + updated } });
+    }
+    return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED — existing Draft; a line write failed and existing data was preserved (no delete). ' + (writeErr.message || writeErr), stage: 'lines', data: { allocation_draft_id: id, lines_committed: created + updated } });
+  }
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, created_header: newHeaderCreated, line_count: created + updated, created: created, updated: updated, skipped: skipped } });
 }
 
 // ---- submitShippingAllocationDrafts -------------------------------

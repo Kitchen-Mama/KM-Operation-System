@@ -46,12 +46,15 @@
         'window_end_date', 'required_by_date', 'regular_demand_snapshot', 'special_event_demand_snapshot',
         'destination_stock_snapshot', 'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
         'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
-        'recommendation_reason', 'recommendation_flags', 'recommended_qty', 'planned_qty', 'units_per_carton',
-        'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
-        // F1-4B-FM6-R3C2 additive per-source execution columns (appended; name-based writers are order-agnostic,
-        // the schema validator allows trailing extras). source_allocated_qty_snapshot = KMALLOC per-source qty;
-        // recommended_qty remains the SKU/window aggregate (do NOT sum across source lines).
-        'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot']
+        'recommendation_reason', 'recommendation_flags', 'recommended_qty',
+        // F1-7N-FA-3C-R6F1 — per-source axis at the CANONICAL LIVE position (after recommended_qty, BEFORE the user
+        // Execution Plan). Byte-for-byte live 30-col order (djb2 '|' = e4880646). The prior R3C2 tail column
+        // `source_allocated_qty_snapshot` is NOT in the live schema (accidental source-only 31st field) and is REMOVED
+        // so the seed/ensure authority equals the live 30-col schema exactly. KMPB still computes the per-source
+        // allocated qty internally to drive planned_qty; it is simply NOT persisted (the name-based writer drops any
+        // key absent from this canonical header). The shipping-line validator is EXACT (no trailing-extra tolerance).
+        'source_warehouse_id', 'source_warehouse_code_snapshot',
+        'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at']
     },
     MONTHLY_ORDER: {
       header: ['request_allocation_draft_id', 'planning_cycle', 'company', 'country', 'marketplace', 'sku',
@@ -127,6 +130,12 @@
   // guard for a table that IS written.
   function draftTableSpecs_(type) {
     var t = KMPR.TABLES[type], h = DRAFT_HEADERS[type];
+    // F1-7N-FA-3C-R6F1 (rule 9): the 30-vs-31 line drift is fixed AT THE AUTHORITY — DRAFT_HEADERS.WEEKLY_SHIPPING.lines
+    // is now the EXACT live 30-col schema (accidental R3C2 source_allocated_qty_snapshot removed), so the phantom column
+    // can never be written and the mismatch is not concealed by a tolerant gate. EXACT enforcement (order-sensitive) is
+    // delivered by the runtime validator (TEMP_R6F line_schema_exact_30) + the atomic write gate (sadExactSchemaReason_,
+    // 16_). This write-gate keeps extraColumnsPolicy 'ALLOW' SOLELY to honor the canonical, DECLARED line-additive
+    // contract (KMPR.LINE_ADDITIVE_HEADERS = user_edited/user_edited_by) — a documented optional extension, NOT the drift.
     return [
       { sheetName: t.header, expectedHeaders: h.header, required: true, extraColumnsPolicy: 'ALLOW' },
       { sheetName: t.lines, expectedHeaders: h.lines, required: true, extraColumnsPolicy: 'ALLOW' }

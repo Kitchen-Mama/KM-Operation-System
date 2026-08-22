@@ -26,21 +26,25 @@ var EXPECTED_DRAFTS = ['allocation_draft_id', 'planning_cycle', 'source_page', '
   'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
   'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of', 'draft_version',
   'created_by', 'created_at', 'updated_by', 'updated_at', 'submitted_by', 'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'];
+// F1-7N-FA-3C-R6F1: the CANONICAL LIVE 30-col line schema (djb2 '|' fingerprint = e4880646). The per-source axis
+// (source_warehouse_id / source_warehouse_code_snapshot) sits at its live position — immediately after recommended_qty,
+// BEFORE the user Execution Plan. The prior R3C2 tail column source_allocated_qty_snapshot was an accidental
+// source-only 31st field (never in the live DB) and has been REMOVED so the runtime authority == live schema exactly.
 var EXPECTED_LINES = ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku',
   'window_code', 'window_start_date', 'window_end_date', 'required_by_date',
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
   'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
   'recommendation_reason', 'recommendation_flags', 'recommended_qty',
-  'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
-  // F1-4B-FM6-R3C2 additive per-source execution columns (appended)
-  'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot'];
+  'source_warehouse_id', 'source_warehouse_code_snapshot',
+  'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at'];
 
 // =====================================================================================================
 section('Constants byte-for-byte = approved 30/28 (§11.1, §11.2, §11.3, §11.4)');
 ok(DRAFTS.length === 30 && JSON.stringify(DRAFTS) === JSON.stringify(EXPECTED_DRAFTS), 'R1 Draft Header constant is EXACTLY the approved 30 columns, in order');
-ok(LINES.length === 31 && JSON.stringify(LINES) === JSON.stringify(EXPECTED_LINES), 'R2 Line Header constant is EXACTLY the approved 31 columns (28 + R3C2 source_warehouse_id/code/allocated_qty), in order');
+ok(LINES.length === 30 && JSON.stringify(LINES) === JSON.stringify(EXPECTED_LINES), 'R2 Line Header constant is EXACTLY the canonical LIVE 30 columns (R6F1: source_warehouse_id/code at the live position; accidental R3C2 source_allocated_qty_snapshot removed), in order');
 ok(DRAFTS.length !== 23, 'R3 no 23-column Draft Header expectation remains');
+ok(LINES.indexOf('source_allocated_qty_snapshot') < 0, 'R4a accidental 31st field source_allocated_qty_snapshot is REMOVED (not in the live 30-col schema)');
 ok(LINES.length !== 52 && LINES.indexOf('selected_source_warehouse_id') < 0 && LINES.indexOf('selected_destination_warehouse_id') < 0 &&
    LINES.indexOf('selected_shipping_method') < 0 && LINES.indexOf('user_edited') < 0 && LINES.indexOf('recommended_route_rule_id') < 0,
   'R4 no 52-column / selected_* / carrier-cost / user_edited Line expectation remains');

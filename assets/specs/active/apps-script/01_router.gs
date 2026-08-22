@@ -450,6 +450,12 @@ function doPost(e) {
       return handleUpsertShippingAllocationDraftLines_(body);
     }
 
+    // F1-7N-FA-3C-R6F1 — ATOMIC Header + Lines write (one lock; validate-all-before-write; compensation/COMMITTED_
+    // UNVERIFIED/fail-closed). Additive; the legacy two-call path above stays available.
+    if (action === 'upsertShippingAllocationDraftAtomic') {
+      return handleUpsertShippingAllocationDraftAtomic_(body);
+    }
+
     if (action === 'submitShippingAllocationDrafts') {
       return handleSubmitShippingAllocationDrafts_(body);
     }
