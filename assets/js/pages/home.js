@@ -93,16 +93,26 @@ function renderGoal() {
 }
 
 function showHome() {
-    // Home markup is partial-loaded (Phase 1); ensure it exists, then show. Null-guarded so an
-    // early click (before the partial resolves) cannot crash — markup re-renders when ready.
-    _ensureHomeMarkup().then(function() {
-        // Restore the ENTIRE Home shell (mount wrapper + world-time bar + section) — the exact mirror of
-        // setHomeShellVisible(false) in showSection, so Home ⇄ page navigation is symmetric and idempotent.
-        if (window.setHomeShellVisible) window.setHomeShellVisible(true);
-        document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
-        document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-        renderHomepage();
-    });
+    // F1-7N-FA-3C-R6C1 — LOGO HOME FIX. Route the Logo through the SINGLE SPA navigation authority (the exact path the
+    // sidebar menu uses), NOT a direct .active toggle. Before R6C1 this bypassed KM.lifecycle.switchTo, so after R6C the
+    // latest-navigation-wins single-visible-section enforcer (which assumes ALL navigation sets _activeSectionId via
+    // switchTo) still had _activeSectionId on the PRIOR page → enforceSingleActiveSection re-activated that page and
+    // re-hid the Home shell, so the Logo appeared dead. switchTo('home-section') now unmounts the current page, mounts
+    // Home (its mount restores the shell + renders), sets _activeSectionId='home-section', and enforce keeps ONLY Home
+    // visible. No location.reload, no hard navigation, no second router; re-click while already Home early-returns in
+    // switchTo (no duplicate mount/listeners); latest-navigation-wins + activeVisibleSectionCount=1 stay true.
+    if (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.switchTo === 'function') {
+        window.KM.lifecycle.switchTo('home-section');
+    } else {
+        // Fallback only when the lifecycle authority is unavailable (never the primary path) — legacy direct show.
+        _ensureHomeMarkup().then(function() {
+            if (window.setHomeShellVisible) window.setHomeShellVisible(true);
+            document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
+            renderHomepage();
+        });
+    }
+    // Home has no sidebar menu item → clear any highlighted menu item (mirrors the pre-R6C1 behavior; idempotent).
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
 }
 
 // Ensure the Home section markup is present in the DOM before Home logic runs.

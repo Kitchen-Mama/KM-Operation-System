@@ -39,7 +39,7 @@
     <!-- 新 Header 列 - Stage 1 結構宣告 -->
     <header class="top-header">
         <div class="header-left">
-            <div class="logo-text" onclick="showHome()" style="cursor: pointer;"><img src="assets/img/KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 172px;"></div>
+            <div class="logo-text" role="button" tabindex="0" aria-label="Kitchen Mama — go to Home" onclick="showHome()" onkeydown="if(event.key==='Enter'||event.key===' '||event.key==='Spacebar'){event.preventDefault();showHome();}" style="cursor: pointer;"><img src="assets/img/KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 172px;"></div>
         </div>
         <div class="header-right">
             <span class="notification-bell">🔔</span>
@@ -430,7 +430,7 @@
     <script src="assets/js/api/km-api-foundation.js?v=f17b-20260813"></script>
 
     <!-- Pages -->
-    <script src="assets/js/pages/home.js?v=donenotice-20260811"></script>
+    <script src="assets/js/pages/home.js?v=r6c-navlifecycle-20260822"></script>
     <script src="assets/js/pages/inventory-replenishment.js?v=colorder-20260820"></script>
     <script src="assets/js/pages/factory-stock.js?v=catseries-20260820"></script>
     <script src="assets/js/pages/overseas-stock.js?v=whmoreopts-20260820"></script>

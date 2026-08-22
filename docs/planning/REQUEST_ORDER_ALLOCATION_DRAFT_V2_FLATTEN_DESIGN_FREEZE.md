@@ -841,3 +841,45 @@ R5D manual-only popup, R6A lifecycle paused, R6B/R6B1/R6B2 flat-result classifie
 3. Rapidly click Order Planning → FC Summary → Order Planning several times → `window.__kmLifecycleDebug().activeVisibleSectionCount === 1` at all times; FC Summary never shows Order Planning content and vice-versa; `lastDiscarded` shows superseded navs were dropped.
 4. Repeat the away/back cycle 3×; run the Inventory/Cargo AI Plan page through the same sequence → it also restores and never shows a false disconnect.
 5. Read-only `TEMP_R6B2_AUDIT_ALL_TIER_NOTES()` still shows the evidence state (v-unchanged, T2 note `123`, T3 empty) — navigation caused NO Draft write/version change. HALT if: two sections are ever visible at once, a false "Connect the Operation DB" appears after navigation, `activeVisibleSectionCount > 1`, base rows do not restore without a hard refresh, an AI Plan Result popup opens from navigation/hydration, a Draft write/version change is caused by navigation, or any Draft-Line read/write.
+
+## 38. R6C1 / R6D — Logo→Home navigation fix + Inventory AI Plan connection PREFLIGHT (2026-08-22)
+
+Two items: a small Logo→Home routing fix, and an AUDIT-FIRST read-only preflight of whether the Inventory/Cargo (WEEKLY_SHIPPING) AI Plan flow persists to `shipping_allocation_drafts` / `_lines`. Source/test/doc only; NO live DB mutation, NO AI Plan execution, NO Submit/Send/Shipment-Draft, NO Request-Order legacy mutation. Files: `assets/js/pages/home.js`, `index.html`, `assets/specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs` (read-only diagnostic). **No bundled core module changed → bundle unchanged (`6c47f4358e…`, 52 modules).** Full sweep 307 pass / 4 baseline / 0 new.
+
+### 38.1 Logo→Home root cause + fix (B)
+The Logo (`index.html` `.logo-text` `onclick="showHome()"`) bypassed the SPA navigation authority: `showHome()` toggled `.active` directly and NEVER called `KM.lifecycle.switchTo`. After R6C, the latest-navigation-wins single-visible-section enforcer (which assumes ALL navigation sets `_activeSectionId` via `switchTo`) still had `_activeSectionId` on the PRIOR page, so `enforceSingleActiveSection()` (and the MutationObserver) re-activated that page and re-hid the Home shell → the Logo appeared dead. **Fix:** `showHome()` now calls `KM.lifecycle.switchTo('home-section')` (the exact path the sidebar menu uses) — the current page unmounts, Home mounts (its lifecycle mount restores the shell + renders), `_activeSectionId='home-section'`, and enforce keeps ONLY Home visible. No `location.reload`/hard nav, no second router; re-click on Home early-returns in `switchTo` (no duplicate mount/listeners); latest-navigation-wins + `activeVisibleSectionCount=1` preserved. The Logo is now keyboard-accessible (`role="button"` + `tabindex="0"` + Enter/Space `onkeydown`, `event.preventDefault()` on Space) and visually unchanged (same `div`+`img`). `home.js` `?v=` bumped to the R6C release token so the fix loads.
+
+### 38.2 Inventory AI Plan connection — runtime trace verdict (C/D)
+Traced the live path (frontend `inventory-replenishment.js`, adapter `operation-system-db-api.js`, backend `16_/61_/01_router`). **Verdict = INVENTORY_AI_PLAN_PARTIAL.** The decisive finding: the Inventory "Generate AI Plan" button (`handleReplenAiPlan`) is a PURE page-state recommendation computation — it writes NEITHER table. Draft rows exist ONLY after a USER manually edits a route (`_saveAllocationDraftFromDom → _flushDraftDbPersist → KM.DB.upsertShippingAllocationDraft / upsertShippingAllocationDraftLines → 16_ handlers, router-bound 01_:434/438`). `"[GapJob] INVENTORY DONE"` is a gap materialization (`inventory_replenishment_gap`) with ZERO Draft-row persistence. A backend writer that WOULD make AI Plan persist Drafts — `weeklyAiPlan.generate → handleGenerateWeeklyAiPlanDraft_` (61_, router 01_:482) — exists but has NO frontend caller (the single owning seam for "AI Plan persists Drafts").
+
+**13-item verdict matrix:**
+| Item | Verdict | Owning function | Table(s) |
+|---|---|---|---|
+| AI Plan trigger | CONNECTED (page-state only; no DB) | `handleReplenAiPlan` | none |
+| gap calculation | CONNECTED (gap table only) | `handleRecalcAllInventoryGap → startInventoryReplenishmentGapJob` | `inventory_replenishment_gap` |
+| Draft header creation | PARTIAL (user manual edit only, not AI Plan) | `_flushDraftDbPersist → handleUpsertShippingAllocationDraft_` | `shipping_allocation_drafts` |
+| Draft line creation | PARTIAL (user manual edit only) | `_flushDraftDbPersist → handleUpsertShippingAllocationDraftLines_` | `shipping_allocation_draft_lines` |
+| deterministic reuse | CONNECTED (natural-key K3 dedupe) | `sadResolveActiveDraft_` (16_) | drafts |
+| reload hydration | CONNECTED | `_restoreAllocationDraftFromSession → _hydrateAllocationDraftFromDb` | both |
+| SPA remount hydration | CONNECTED | `mount() → _restoreAllocationDraftFromSession` | both |
+| planned_qty edit | CONNECTED | `_saveAllocationDraftFromDom → _flushDraftDbPersist` | lines |
+| line note edit | NOT CONNECTED (builder omits note) | `buildDraftLinePayload`; `updateReplenNote` page-local | none |
+| header note edit | NOT CONNECTED (builder omits note) | `buildDraftHeaderPayload` | none |
+| submit | NOT CONNECTED (no frontend caller) | backend `handleSubmitShippingAllocationDrafts_` exists | n/a |
+| Shipment Draft handoff | NOT CONNECTED (comments only) | — | n/a |
+| background result suppression | CONNECTED (gap-job resume silent) / N/A (AI Plan has no popup) | `_irResumeGapJobOnMount_` done() silent | n/a |
+
+### 38.3 Owning seams (identified, DEFERRED to a future authorized round)
+Fixing the PARTIAL/NOT-CONNECTED items requires WRITE-path wiring — explicitly outside this round's safety envelope (no AI Plan execution, no writes, `USER MAY_RUN_INVENTORY_AI_PLAN = NO`). Enumerated for a future round: (1) AI-Plan-persists-Drafts = wire `handleReplenAiPlan` → `weeklyAiPlan.generate` (single seam); (2) note persistence = add `note` to `buildDraftLinePayload`/`buildDraftHeaderPayload` (backend already accepts it, 16_:184/280); (3) Submit = wire `submitShippingAllocationDrafts`; (4) Shipment Draft handoff. None wired this round.
+
+### 38.4 Read-only diagnostic (F)
+`TEMP_R6D_DIAGNOSE_INVENTORY_AI_PLAN_CONNECTION()` (in the TEMP diagnostics file; not bundled). Reports runtime fingerprint/match; exact header hashes + schema match for BOTH shipping tables vs the frozen authority (HALTs `INVENTORY_SCHEMA_MISMATCH` if different — Objective G); header/line counts; active Draft count + status distribution; planning_cycle type/value distribution; orphan lines; duplicate `allocation_draft_id`; duplicate active natural keys; latest INVENTORY calc run (best-effort); `calculation_run_id`→header linkage; header→lines linkage; generation_type distribution; the runtime callers (edit/submit/handoff, read-only strings); zero-write confirmation; verdict `INVENTORY_AI_PLAN_{CONNECTED|PARTIAL|NOT_CONNECTED}`. Zero writes.
+
+### 38.5 UX consistency note (E)
+Inventory ALREADY matches Order Planning on the wired contracts: DB-first hydration on load/remount (no rerun of AI Plan), manual-only result behavior (its AI Plan shows no popup; gap-job resume is silent), Qty edits persist without a Save button, envelope-`.success` confirmation, natural-key dedupe (no duplicate active Draft), navigate-away/back restores DB values. The GAPS (AI-Plan-persists-Drafts, note persistence, atomic loading skeleton, conflict-safe note save) are the deferred write-path work in §38.3 — this round does NOT force the two pages to share tables/models; it shares only the lifecycle/UX contracts already in place.
+
+### 38.6 Preserved contracts + safety
+R6C navigation/provider fixes intact (`KM.RELEASE=r6c-navlifecycle-20260822`, single-visible-section, DB provider READY). R5D manual-only popup unchanged. Request-Order legacy DB / `request_order_allocation_draft_lines` untouched. No live DB mutation, no AI Plan run, no Submit/Send/Shipment-Draft, no tab rename/delete/clear. Current Request-Order Note evidence (T2 `123`, T3 empty) preserved.
+
+### 38.7 USER verification
+1. Hard-refresh once (loads `home.js?v=r6c-navlifecycle-20260822`). Navigate Home → Order Planning → click the Kitchen Mama Logo → returns to Home without a hard reload; `window.__kmLifecycleDebug().currentSection === 'home-section'` and `activeVisibleSectionCount === 1`; Tab to the Logo + Enter/Space also returns Home. 2. Run `TEMP_R6D_DIAGNOSE_INVENTORY_AI_PLAN_CONNECTION()` (read-only) → confirm `drafts_schema_exact=YES`, `lines_schema_exact=YES` (else it HALTs on a schema mismatch), the counts/linkage, and `verdict=INVENTORY_AI_PLAN_PARTIAL`, `R6D_ZERO_WRITE_CONFIRMED=YES`. Do NOT run the Inventory AI Plan or any write this round. HALT if: the Logo does not return Home through `switchTo`, two sections become visible, the diagnostic reports a schema mismatch, or any write is observed.

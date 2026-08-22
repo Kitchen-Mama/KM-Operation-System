@@ -1340,3 +1340,136 @@ function TEMP_r6b2AuditAllTierNotes_() {
   Logger.log('R6B2_ALL_TIER_NOTES ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6C1 / R6D — READ-ONLY Inventory/Cargo AI Plan connection diagnostic (writes NOTHING).
+// Proves whether the Inventory (WEEKLY_SHIPPING) flow persists to shipping_allocation_drafts / _lines, using the
+// EXACT live authority schemas the task froze. HALTs (verdict INVENTORY_SCHEMA_MISMATCH) if the live headers differ.
+// Zero writes: TEMP_readObjects_ only; no setValues/appendRow/insertSheet/rename. Adds NO mutation path.
+// ================================================================================================================
+var TEMP_R6D_DRAFTS_TAB_ = 'shipping_allocation_drafts';
+var TEMP_R6D_LINES_TAB_ = 'shipping_allocation_draft_lines';
+var TEMP_R6D_HDR_AUTH_ = ['allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace', 'status',
+  'recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',
+  'recommended_destination_warehouse_code_snapshot', 'recommendation_group_no', 'recommended_shipping_method',
+  'recommended_last_mile_delivery', 'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at',
+  'source_data_as_of', 'draft_version', 'created_by', 'created_at', 'updated_by', 'updated_at', 'submitted_by',
+  'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'];
+var TEMP_R6D_LINE_AUTH_ = ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'window_code',
+  'window_start_date', 'window_end_date', 'required_by_date', 'regular_demand_snapshot', 'special_event_demand_snapshot',
+  'destination_stock_snapshot', 'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
+  'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
+  'recommendation_reason', 'recommendation_flags', 'recommended_qty', 'source_warehouse_id',
+  'source_warehouse_code_snapshot', 'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason',
+  'note', 'created_at', 'updated_at'];
+var TEMP_R6D_ACTIVE_ = { draft: 1, site_confirmed: 1, partially_submitted: 1 };   // non-terminal (cancelled/submitted excluded)
+function TEMP_R6D_DIAGNOSE_INVENTORY_AI_PLAN_CONNECTION() { return TEMP_r6dDiagnoseInventoryAiPlanConnection_(); }
+function TEMP_r6dSchemaMatch_(actual, auth) {
+  var a = (actual || []).map(function (h) { return TEMP_str_(h); });
+  var exact = a.length === auth.length && a.join('|') === auth.join('|');
+  var missing = auth.filter(function (h) { return a.indexOf(h) === -1; });
+  var extra = a.filter(function (h) { return auth.indexOf(h) === -1; });
+  return { exact: exact, hash: TEMP_r5bHash_(a.join('|')), auth_hash: TEMP_r5bHash_(auth.join('|')), col_count: a.length, auth_col_count: auth.length, missing: missing, extra: extra };
+}
+function TEMP_r6dDist_(rows, field) { var d = {}; rows.forEach(function (r) { var k = TEMP_str_(r[field]) || '(blank)'; d[k] = (d[k] || 0) + 1; }); return d; }
+function TEMP_r6dCycleTypeDist_(rows) { var d = {}; rows.forEach(function (r) { var t = TEMP_isDate_(r.planning_cycle) ? 'Date' : (r.planning_cycle === null || r.planning_cycle === undefined || r.planning_cycle === '' ? 'blank' : typeof r.planning_cycle); d[t] = (d[t] || 0) + 1; }); return d; }
+function TEMP_r6dLatestInventoryRun_() {
+  // best-effort, read-only peek at the calculation-run journal for an INVENTORY/WEEKLY row (absent tab → UNAVAILABLE)
+  try {
+    var jr = TEMP_readObjects_('recommendation_calculation_runs');
+    if (!jr || !jr.present) return { status: 'JOURNAL_TAB_ABSENT' };
+    var inv = (jr.rows || []).filter(function (r) { var blob = JSON.stringify(r).toUpperCase(); return blob.indexOf('INVENTORY') !== -1 || blob.indexOf('WEEKLY') !== -1 || blob.indexOf('SHIPPING') !== -1; });
+    var pool = inv.length ? inv : (jr.rows || []);
+    if (!pool.length) return { status: 'NO_RUNS', journal_row_count: (jr.rows || []).length };
+    var last = pool[pool.length - 1];
+    return { status: 'FOUND', inventory_matched_rows: inv.length, journal_row_count: (jr.rows || []).length,
+      last_run_id: TEMP_str_(last.calculation_run_id || last.run_id || last.id), last_status: TEMP_str_(last.run_status || last.status), last_updated_at: TEMP_str_(last.updated_at || last.created_at) };
+  } catch (e) { return { status: 'UNAVAILABLE', error: String(e && e.message || e) }; }
+}
+function TEMP_r6dDiagnoseInventoryAiPlanConnection_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+
+  var H = TEMP_readObjects_(TEMP_R6D_DRAFTS_TAB_), L = TEMP_readObjects_(TEMP_R6D_LINES_TAB_);
+  var hSchema = TEMP_r6dSchemaMatch_(H.headers, TEMP_R6D_HDR_AUTH_), lSchema = TEMP_r6dSchemaMatch_(L.headers, TEMP_R6D_LINE_AUTH_);
+  // Objective G — HALT if the live schema differs from the supplied authority (never guess/migrate).
+  if (!H.present || !L.present || !hSchema.exact || !lSchema.exact) {
+    var out0 = {
+      ok: false, verdict: (!H.present || !L.present) ? 'INVENTORY_TABLE_ABSENT' : 'INVENTORY_SCHEMA_MISMATCH',
+      RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+      drafts_present: H.present, lines_present: L.present,
+      drafts_schema: hSchema, lines_schema: lSchema,
+      R6D_ZERO_WRITE_CONFIRMED: 'YES (read-only TEMP_readObjects_ only)', R6D_DIAGNOSTIC_READY: 'YES'
+    };
+    Logger.log('R6D_INVENTORY_AI_PLAN ' + JSON.stringify(out0, null, 2));
+    return out0;
+  }
+  var headers = H.rows || [], lines = L.rows || [];
+  // active headers + status distribution
+  var statusDist = TEMP_r6dDist_(headers, 'status');
+  var active = headers.filter(function (r) { return TEMP_R6D_ACTIVE_[TEMP_str_(r.status)] === 1; });
+  // planning_cycle type/value distribution
+  var cycleTypeDist = TEMP_r6dCycleTypeDist_(headers), cycleValDist = TEMP_r6dDist_(headers, 'planning_cycle');
+  // duplicate allocation_draft_id (headers)
+  var idCounts = {}; headers.forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) idCounts[id] = (idCounts[id] || 0) + 1; });
+  var dupHeaderIds = Object.keys(idCounts).filter(function (id) { return idCounts[id] > 1; });
+  // duplicate active natural keys (planning_cycle|company|country|marketplace|source_page)
+  var nkCounts = {}; active.forEach(function (r) { var k = [TEMP_str_(r.planning_cycle), TEMP_str_(r.company), TEMP_str_(r.country), TEMP_str_(r.marketplace), TEMP_str_(r.source_page)].join('|'); nkCounts[k] = (nkCounts[k] || 0) + 1; });
+  var dupActiveNaturalKeys = Object.keys(nkCounts).filter(function (k) { return nkCounts[k] > 1; }).length;
+  // orphan lines (line.allocation_draft_id with no matching header)
+  var headerIdSet = {}; headers.forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) headerIdSet[id] = 1; });
+  var linesByHeader = {}, orphanLines = 0;
+  lines.forEach(function (l) { var id = TEMP_str_(l.allocation_draft_id); linesByHeader[id] = (linesByHeader[id] || 0) + 1; if (!headerIdSet[id]) orphanLines++; });
+  // header → lines linkage
+  var headersWithLines = 0, headersWithoutLines = 0;
+  headers.forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (linesByHeader[id]) headersWithLines++; else headersWithoutLines++; });
+  // calculation_run_id → header linkage
+  var runLinked = headers.filter(function (r) { return TEMP_str_(r.calculation_run_id) !== ''; }).length;
+  var distinctRunIds = {}; headers.forEach(function (r) { var cr = TEMP_str_(r.calculation_run_id); if (cr) distinctRunIds[cr] = 1; });
+  // generated vs reused (generation_type distribution)
+  var genTypeDist = TEMP_r6dDist_(headers, 'generation_type');
+  var latestRun = TEMP_r6dLatestInventoryRun_();
+  var checksum = TEMP_r5bHash_([hSchema.hash, lSchema.hash, headers.length, lines.length, active.length, dupHeaderIds.length, orphanLines].join('|'));
+
+  var out = {
+    ok: true,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    // schema (both tables) vs the frozen authority
+    drafts_schema_exact: hSchema.exact ? 'YES' : 'NO', drafts_headers_hash: hSchema.hash, drafts_col_count: hSchema.col_count,
+    lines_schema_exact: lSchema.exact ? 'YES' : 'NO', lines_headers_hash: lSchema.hash, lines_col_count: lSchema.col_count,
+    // counts
+    header_row_count: headers.length, line_row_count: lines.length,
+    active_draft_count: active.length, status_distribution: statusDist,
+    planning_cycle_type_distribution: cycleTypeDist, planning_cycle_value_distribution: cycleValDist,
+    // integrity
+    orphan_line_count: orphanLines, duplicate_allocation_draft_id_count: dupHeaderIds.length, duplicate_allocation_draft_ids: dupHeaderIds.slice(0, 20),
+    duplicate_active_natural_key_count: dupActiveNaturalKeys,
+    // linkage
+    latest_inventory_calculation_run: latestRun,
+    headers_with_calculation_run_id: runLinked, distinct_calculation_run_id_count: Object.keys(distinctRunIds).length,
+    headers_with_lines: headersWithLines, headers_without_lines: headersWithoutLines,
+    generation_type_distribution: genTypeDist,
+    // runtime connection facts (from the R6D trace; strings, not live reads)
+    runtime_callers: {
+      ai_plan_trigger: 'handleReplenAiPlan (inventory-replenishment.js) — PAGE-STATE ONLY, writes NEITHER table',
+      writer: 'user route edit → _saveAllocationDraftFromDom → _flushDraftDbPersist → KM.DB.upsertShippingAllocationDraft / upsertShippingAllocationDraftLines → 16_ handlers (router 01_:434/438) — WRITES both tables',
+      readback_hydration: 'mount → _restoreAllocationDraftFromSession → refreshCacheTables([drafts,lines]) → _hydrateAllocationDraftFromDb (reads both tables) — initial load AND SPA remount',
+      planned_qty_edit: 'CONNECTED (buildDraftLinePayload.planned_qty → lines upsert)',
+      line_note_edit: 'NOT CONNECTED (buildDraftLinePayload omits note; updateReplenNote is page-local)',
+      header_note_edit: 'NOT CONNECTED (buildDraftHeaderPayload omits note)',
+      submit: 'NOT CONNECTED from the page (backend handleSubmitShippingAllocationDrafts_ exists, uncalled)',
+      shipment_draft_handoff: 'NOT CONNECTED (comments only)',
+      unwired_ai_plan_writer: 'weeklyAiPlan.generate → handleGenerateWeeklyAiPlanDraft_ (61_) is router-bound (01_:482) but has NO frontend caller — this is the single owning seam for "AI Plan persists Drafts"'
+    },
+    hydration_readback_available: 'YES (getShippingAllocationDrafts / getShippingAllocationDraftLines via _opDbCache)',
+    R6D_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ only; no setValues/appendRow/setNumberFormat/insertSheet/rename)',
+    R6D_DIAGNOSTIC_CHECKSUM: checksum, R6D_DIAGNOSTIC_READY: 'YES',
+    // Verdict: hydration/writer/edit/idempotency CONNECTED; AI-Plan-generation persistence + note + submit + handoff NOT.
+    verdict: 'INVENTORY_AI_PLAN_PARTIAL',
+    verdict_detail: 'Manual route allocation persists to both tables and hydrates on load/remount (CONNECTED). AI Plan generation does NOT persist Draft rows (the weeklyAiPlan.generate writer is unwired); line/header note edits, Submit, and Shipment Draft handoff are NOT wired.'
+  };
+  Logger.log('R6D_INVENTORY_AI_PLAN ' + JSON.stringify(out, null, 2));
+  return out;
+}
