@@ -473,3 +473,74 @@ Cutover flag stays `false`; bundle unchanged this round (`c0240a59…`, 52 modul
 **Retry policy (fail-closed retained).** The corrected helper still HALTs `STAGING_TAB_NOT_EMPTY` on the existing non-empty (failed) staging tab and performs no format/write. The failed tab is retained for evidence. **USER-owned retry runbook (after R4C2 acceptance):** (1) sync the completed `TEMP_migrate_request_order_draft_v2.gs` (and, already-synced from R4C1, `90_`); (2) in the spreadsheet, manually **rename** the failed tab to an evidence name, e.g. `request_order_allocation_drafts_v2_failed_20260822_083419` (the helper never renames); (3) run `TEMP_R4_EXECUTE_RequestOrderDraftV2` to create a fresh canonical staging tab; (4) confirm the Execute log shows all-string cycles, `{2026-08:26}`, 14 gates true, `POST_WRITE_READY_FOR_SWAP=YES`; (5) optionally re-run `TEMP_R4_VALIDATE_RequestOrderDraftV2Staging`. This does NOT authorize a tab swap. No permanent runtime (`47_`) is required for the retry — only `90_` + the completed TEMP helper (per §25 `SYNC_47_ONLY_DURING_CONTROLLED_CUTOVER`).
 
 No permanent KMRDV2/KMRDV2P/90_ change and no 47_ change this round (no core defect). Bundle unchanged (`c0240a59…`, 52 modules). Cutover flag stays `false`. Tests: R4 35 / R4A 56 / R4B2 23 / R4B4 36 / R4B5-runtime 19 / R4C 53 / R4C1 33 / R4C2 34 / bundle 68; full sweep 296 pass / 4 pre-existing baseline / 0 new.
+
+## 27. R4D — production cutover final preflight + FROZEN runbook (2026-08-22, read-only)
+
+Read-only preflight; no live/source mutation. Freezes the USER-owned cutover, rollback, and acceptance sequence. **Verdict: `R4D_CUTOVER_PREFLIGHT_READY = YES`.**
+
+### 27.1 Git / release integrity
+`HEAD = origin/main = c6221e4563b245263887ce850a40522aee242c9d` (0 ahead / 0 behind, working tree clean; USER pushed R4C2). R4C2 commit present. Bundle reproducible (`--check` = `c0240a59612dcc199686312febbf9db77862b5f05db59596102b0e2f9a8be318`, 52 modules). Repository `00_config.gs` flag `REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = false`. Authority map = exactly 26 ids, all `2026-08`; no `<<<` / "USER: paste" placeholder. TEMP helper is tracked source but NOT in the bundle `MODULE_ORDER` (paste-run-remove tooling, not permanent runtime). Full sweep 296 pass / 4 pre-existing baseline (`gap-job-done-notice`, `order-planning-monthly-projection-consumer`, `replen-header-toggle`, `supply-planning-route-inventory`) / 0 new. Focused: R4 35 · R4A 56 · R4B2 23 · R4B4 36 · R4B5-runtime 19 · R4C 53 · R4C1 33 · R4C2 34 · bundle 68.
+
+### 27.2 FROZEN permanent backend manifest — sync ALL SEVEN from the ONE accepted commit `c6221e4` (git blob ids)
+1. `00_config.gs` — `415a2554e5d326f4d2c2f5d6a6bfe80e28dfc92d` (flag stays `false` in source; flipped live only in step C11 AFTER the DB swap)
+2. `15_request_allocation_handlers.gs` — `0279fdcb7e4484618e9f29771a8fba16c8092ac5`
+3. `24_recommendation_orchestrator.gs` — `e0602f217a0e238f0cf20b950dd9750de99d5978`
+4. `25_recommendation_user_edit.gs` — `af6327a9a13b874eb1d901443250a91871acb03e`
+5. `47_api_v1_recommendation_generation.gs` — `0267791895ae9dd48b04ec1712255f7999aba60e` (**cutover-only**: its project-tz cycle seam is reachable on the live non-flag-gated gap path — `SYNC_47_ONLY_DURING_CONTROLLED_CUTOVER`)
+6. `48_api_v1_request_order_draft_job.gs` — `17e14bc7938e5c978ed1c90f181da0c71383459e` (**remains in the list; do NOT assume the deployed copy is current — sync it**)
+7. `90_generated_supply_planning_bundle.gs` — `73254043997cda05871820d5652bde2adbee5384`
+
+The **TEMP** helper (`TEMP_migrate_request_order_draft_v2.gs`) is paste-run-remove migration tooling — it is NOT part of the permanent runtime and must not be left deployed. All seven bind to commit `c6221e4`; if any live file diverges from these blob ids, re-sync from `c6221e4`.
+
+### 27.3 FROZEN frontend manifest (deploy in step D; not now)
+- `assets/js/pages/request-order.js` — flat V2 DTO consumption / per-tier edit-submit / Send explosion (R2b-3)
+- `assets/css/pages/request-order.css`
+
+No other frontend file is required for the flat V2 cutover (the flat-path frontend changes are confined to these two; the shared page shell/router is already deployed). If a review finds a third dependency, HALT and add it before deploy.
+
+### 27.4 Live tab inventory + collision-safe names
+Present: `request_order_allocation_drafts` (legacy canonical, 124), `request_order_allocation_drafts_v2` (staging, 53h/26r), `request_order_allocation_draft_lines` (history, 65 — NEVER touched), `request_order_allocation_drafts_v2_failed_20260822_083419` (retained evidence), plus possible earlier backups. **Collision-safe legacy backup name:** `request_order_allocation_drafts_legacy_pre_v2_20260822_0851`. USER MUST confirm this exact name does not already exist; if it does → HALT and pick a unique `_rN` suffix before any rename. **Atomic rename order:** (1) `request_order_allocation_drafts` → `request_order_allocation_drafts_legacy_pre_v2_20260822_0851`; (2) `request_order_allocation_drafts_v2` → `request_order_allocation_drafts`. NEVER rename/delete `request_order_allocation_draft_lines`, the failed staging evidence, or other backups. No helper performs these renames.
+
+### 27.5 Maintenance-freeze checklist (before rename)
+- Stop all Request Order / Recommendation / AI Plan user actions.
+- Identify + pause every time-driven trigger that can generate/edit/submit/dispatch Request Order drafts (record each trigger name + prior enabled state for restore): the gap-materialization scheduler (44_) and the request-order-draft / weekly-recommendation job schedulers (48_/49_) and any recommendation-generation trigger. Confirm none fire during the window.
+- Block API/job calls for the window.
+- Capture a FULL Spreadsheet backup (file-level copy).
+- Re-run `TEMP_R4_VALIDATE_RequestOrderDraftV2Staging` immediately before rename → require all 14 gates true + `READY_FOR_SWAP=YES`.
+- Record: legacy header count = 124; legacy line count = 65; staging rows = 26 / headers = 53; flag = false.
+- If any user/job/trigger activity or source drift occurs after validation → HALT, do NOT rename.
+
+### 27.6 Final validator checkpoint (accepted evidence, re-confirmed live in 27.7-A5)
+Staging: 53 headers / 26 rows; cycle types string=26; id types string=26; cycle `{2026-08:26}`; status `{submitted:20,draft:6}`; purpose `{regular:26}`; marketplace `{Amazon:18,Shopify:3,Walmart:5}`; all 14 gates true; `POST_WRITE_READY_FOR_SWAP=YES`; independent `READY_FOR_SWAP=YES`; legacy header + Draft Lines untouched; flag false.
+
+### 27.7 FROZEN controlled-cutover runbook (USER-owned; Claude runs none of it)
+**A. Maintenance freeze** — A1 stop users/jobs/triggers; A2 full Spreadsheet backup; A3 confirm unique backup tab names (27.4); A4 run `TEMP_R4_VALIDATE_RequestOrderDraftV2Staging`; A5 require all 14 gates true + `READY_FOR_SWAP=YES`.
+**B. DB swap** — B6 rename legacy canonical → `request_order_allocation_drafts_legacy_pre_v2_20260822_0851`; B7 rename `request_order_allocation_drafts_v2` → `request_order_allocation_drafts`; B8 confirm canonical = 53h/26r, legacy backup still 124, Draft Lines still 65, failed-staging evidence still present, flag still false.
+**C. Permanent Apps Script sync** — C9 sync all SEVEN `.gs` (27.2) from commit `c6221e4`; C10 verify NO TEMP helper deployed as permanent runtime; C11 in the bound live `00_config.gs` change ONLY `REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true`; C12 save; C13 create a new Apps Script deployment version; C14 record the `/exec` URL + deployment id.
+**D. Frontend** — D15 deploy `request-order.js` + `request-order.css`; D16 await cache propagation; D17 hard refresh + verify asset version.
+**E. Smoke** — E18 run the 27.8 R5 smoke matrix; E19 restore paused triggers/users ONLY after every smoke test passes.
+
+Ordering invariant: never leave a window where jobs/triggers run against the swapped DB with the old runtime, or the old DB with flag=true. (The flag flips at C11 only after the B swap and immediately before the C13 deployment version, so the new runtime + flag + swapped DB go live together.)
+
+### 27.8 FROZEN R5 smoke matrix (record per test: input scope · before counts · action · API response · after counts · expected · actual · PASS/FAIL · cleanup/rollback impact)
+1 non-actionable gap → no draft. 2 actionable gap → exactly one flat row (create/reuse). 3 no new Draft-Line row. 4 deterministic id + bare `YYYY-MM` cycle. 5 correct T1/T2/T3 recommended qty. 6 edit one tier w/o changing recommended or created_at. 7 updated_at advances on edit. 8 carton qty + note persist after refresh. 9 partial submit → `partially_submitted`. 10 full submit → `submitted` (zero-qty tiers ignored). 11 Send → correct order + order lines + line sources. 12 re-Send idempotent. 13 refresh/recalc does not overwrite user-edited approved qty. 14 calc-run journal remains linked where applicable. 15 the 20 submitted historical records remain readable. 16 all six migrated active identities reused, no duplicates. 17 Draft-Line count remains exactly 65. 18 API/UI refresh returns the Flat V2 DTO. 19 no legacy fallback/write while flag=true. 20 frontend: no console/network error. **Any failure → immediate HALT + rollback evaluation.**
+
+### 27.9 FROZEN rollback runbook (no tab overwrite at any step)
+R1 pause users/jobs/triggers; R2 set live flag=false; R3 restore the previous Apps Script deployment version; R4 restore previous frontend assets/version; R5 rename the failed/new V2 canonical → unique `request_order_allocation_drafts_v2_failed_cutover_20260822` (confirm not existing; else `_rN`); R6 rename the legacy backup back → `request_order_allocation_drafts`; R7 confirm Draft Lines unchanged (65); R8 validate the legacy path; R9 restore triggers only after validation; R10 retain failed V2 data for diagnosis — never auto-delete.
+
+### 27.10 R6 acceptance requirements
+Stabilization window with the flag live: monitor for legacy fallback/writes (must be zero), duplicate-active drafts (zero), cycle/type regressions; confirm at least one real end-to-end AI Plan → Edit → Submit → Send lifecycle; keep the rollback window open until R6 is explicitly closed.
+
+### 27.11 R7 archive/delete prerequisites (NOT in R4/R5/R6; no auto-deletion ever)
+All must hold: R5 smoke all PASS; R6 closed; ≥1 real full lifecycle PASS; zero new Draft-Line writes; a repo/runtime/API/UI/trigger scan showing zero legacy dependency; rollback window explicitly closed; an immutable external backup/export completed; explicit USER final deletion approval. Prefer archive/export before any physical deletion. Legacy header backup + Draft Lines + failed staging evidence are all retained through R6.
+
+### 27.12 Remaining risks
+- **Manual rename fat-finger / name collision** — mitigated by 27.4 pre-check + exact atomic order; HALT on collision.
+- **Trigger fires mid-window** — mitigated by 27.5 pause + record/restore; HALT on any activity after validation.
+- **Partial sync (e.g. 48_ or 47_ skipped)** — mitigated by the 7-file blob binding to `c6221e4`; verify each live blob matches.
+- **Flag flipped before swap / wrong order** — mitigated by the 27.7 ordering invariant (flag at C11 only, post-swap, pre-deployment-version).
+- **Frontend cache serving old asset** — mitigated by D16/D17 propagation + version verify.
+- **Sheets re-coercion on a future manual staging edit** — the R4C2 text-format persists on the tab; avoid manual General-format edits to `planning_cycle`.
+
+### 27.13 Verdict
+`R4D_CUTOVER_PREFLIGHT_READY = YES`. No production mutation performed. All actions above are USER-owned; Claude executes none of them.
