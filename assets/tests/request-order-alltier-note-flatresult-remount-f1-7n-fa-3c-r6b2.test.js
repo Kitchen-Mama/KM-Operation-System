@@ -28,7 +28,7 @@ function _roEffectiveOrderQty() { return ''; }
 function _roUseDb() { return true; }
 var _opFirstLayerSeq = 0;
 var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roLastEmptyReason = null;
-var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roDraftEditQueue_ = {}, _roAutosaveTimers_ = {};
+var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roDraftEditQueue_ = {}, _roAutosaveTimers_ = {}, _roAutosavePending_ = {};
 var _timers = [];
 function setTimeout(fn) { _timers.push(fn); return _timers.length; }
 function clearTimeout(id) { if (id) _timers[id - 1] = null; }
@@ -239,7 +239,7 @@ function legacyOk() { return { success: true, data: { status: 'COMPLETED', reaso
 
       section('Objective C — source: real mount wiring + IDLE-as-loading guard');
       ok(/KM\.lifecycle\.register\('request-order-section'/.test(RO), 'C: request-order registers a real lifecycle section');
-      ok(/mount\(\)\s*\{[\s\S]{0,700}window\.initRequestOrderSection\(\)/.test(RO), 'C: mount() re-runs initRequestOrderSection each entry');
+      ok(/mount\(navEpoch\)/.test(RO) && /window\.initRequestOrderSection\(\)/.test(RO), 'C: mount(navEpoch) re-runs initRequestOrderSection each entry (R6C epoch-guarded)');
       ok(/_roMountEpoch\+\+;\s*\n\s*_opFirstLayerRegion = null;/.test(RO), 'C: each mount bumps epoch AND rebinds the composer region');
       ok(/_roBaseDataStatus === 'LOADING' \|\| _roBaseDataStatus === 'IDLE'/.test(RO), 'C: IDLE is treated as a transient loading state (never a settled disconnect during the remount gap)');
       ok(/useDb:/.test(RO) && /lastEmptyReason:/.test(RO) && /firstLayerSeq:/.test(RO), 'C: __roDebug exposes useDb/searched/firstLayerSeq/lastEmptyReason to pinpoint a live remount empty');

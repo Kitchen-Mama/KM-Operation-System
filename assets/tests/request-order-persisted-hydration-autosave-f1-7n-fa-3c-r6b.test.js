@@ -26,7 +26,7 @@ var requestOrderState = { data: [], filters: {}, allocEdits: {} };
 var window = {}, renderCount = 0;
 function renderRequestOrderTable() { renderCount++; }
 function _roEffectiveOrderQty() { return ''; }   // fallback → empty when there is no canonical draft (missing-draft = blank)
-var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roAutosaveTimers_ = {};
+var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roAutosaveTimers_ = {}, _roAutosavePending_ = {};
 var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roDraftEditQueue_ = {};   // F1-7N-FA-3C-R6B1 additions
 var _timers = [];
 function setTimeout(fn) { _timers.push(fn); return _timers.length; }

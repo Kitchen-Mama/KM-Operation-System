@@ -9,6 +9,16 @@
  */
 window.KM = {
     /**
+     * F1-7N-FA-3C-R6C — CENTRALIZED RELEASE SIGNATURE (asset cache/version authority). Before R6C the frontend had NO
+     * central release id: every `?v=` cache-bust token was hand-typed per file in index.html, so a corrected asset could
+     * silently keep serving a stale cached copy (the R6B1/R6B2 request-order.js fixes were pinned at `?v=donenotice-
+     * 20260811` and may never have loaded live). This is the ONE deterministic release id; the `?v=` token on every asset
+     * updated in this release matches it, and debug output surfaces it so "is the deployed correction the code actually
+     * running?" is answerable at a glance. Bump this (and the matching `?v=` on changed assets) once per release.
+     */
+    RELEASE: 'r6c-navlifecycle-20260822',
+
+    /**
      * 頁面模組
      * 每個頁面的初始化、渲染、狀態管理函式
      */

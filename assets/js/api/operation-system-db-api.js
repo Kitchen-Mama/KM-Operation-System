@@ -17,7 +17,15 @@ function isOperationDbApiConfigured() {
 
 function getOperationDbDataSourceMode() {
     if (!window._opDbCache) return 'not-loaded';
-    return window._opDbCache._sourceMode || 'mock';
+    // F1-7N-FA-3C-R6C — SCOPED-CACHE POISONING FIX. A scoped-table refresh (refreshCacheTables / refreshFactoryStockTables)
+    // used to CREATE window._opDbCache WITHOUT a _sourceMode, so this default silently coerced a populated live cache into
+    // the 'mock' posture → isScopedReadEligible() then returned false for the rest of the session → after SPA navigation
+    // _roUseDb() was false and Order Planning showed a FALSE "No Request Order data available" (the R6C live incident:
+    // useDb=false, lastEmptyReason=DB_UNAVAILABLE, while KM.DB itself was intact). The ABSENCE of an explicit marker is
+    // NOT a mock posture — only an EXPLICIT 'mock' (unconfigured API / a real fetch-failure fallback, set at the load
+    // paths below) is. Default an unmarked-but-populated cache to 'not-loaded' (scoped-read ELIGIBLE); writes still
+    // require an explicit 'google-sheet' (isCloudWriteEnabled), so this never opens a write on an unconfirmed source.
+    return window._opDbCache._sourceMode || 'not-loaded';
 }
 
 var OperationDbState = {
@@ -2673,6 +2681,34 @@ window.KM.DB.isScopedReadEligible = function() {
     return isOperationDbApiConfigured() && getOperationDbDataSourceMode() !== 'mock';
 };
 
+// F1-7N-FA-3C-R6C — CANONICAL DB PROVIDER READINESS authority (shell-permanent). window.KM.DB and its config
+// (OP_DB_API_BASE_URL const) are created ONCE at shell load and NEVER torn down on SPA navigation, so readiness is a
+// pure function of configuration + eligibility — exposed here as ONE idempotent, retryable authority so a page mount can
+// wait for READY before EVER declaring the DB unavailable (no false "disconnect" during a transient), and can recover
+// without a hard browser refresh. READ-ONLY / no secrets: only an enum + booleans + a generation counter are exposed.
+// A stale/failed state can NEVER poison a future mount — whenReady()/state() RECOMPUTE from live config every call, and
+// retry() just bumps the generation (there is no cached rejected promise to get stuck). State machine:
+//   READY  = configured AND not an explicit 'mock' posture (scoped reads allowed);
+//   ERROR  = a real provider failure (unconfigured API, or an explicit 'mock' fallback set by a failed load);
+//   IDLE/LOADING are reserved for symmetry — a resident synchronous provider resolves to READY/ERROR immediately.
+(function () {
+    var _providerGen = 0;
+    function _providerState() {
+        if (!isOperationDbApiConfigured()) return 'ERROR';                    // genuinely unconfigured provider
+        return (getOperationDbDataSourceMode() === 'mock') ? 'ERROR' : 'READY'; // explicit mock = unavailable; else ready
+    }
+    window.KM.dbProvider = {
+        state: function () { return _providerState(); },
+        isReady: function () { return _providerState() === 'READY'; },
+        generation: function () { return _providerGen; },
+        // resolve true when READY (immediately for a resident provider), false on a real provider ERROR — the caller then
+        // shows a genuine provider error, NEVER a false "no data". Always RESOLVES (never rejects) so no promise poisons a mount.
+        whenReady: function () { return Promise.resolve(_providerState() === 'READY'); },
+        // safe retry: recompute readiness (a scoped read elsewhere may have restored eligibility); bump the generation.
+        retry: function () { _providerGen++; return this.whenReady(); }
+    };
+})();
+
 // ── Batch F (F1-7K) — WRITE_FORCES_FULL_RELOAD retirement ─────────────────────────────────────────
 // A successful write no longer refreshes the WHOLE Operation DB. Canonical/scoped consumer pages own their
 // bounded post-write readback (getWorkspace / loadScopedTables / _xAfterWrite / targeted re-read), so the
@@ -2746,6 +2782,10 @@ async function _kmRefreshCacheTables_(tableNames) {
         var key = _KM_TABLE_CACHE_KEY_[n];
         if (key && Object.prototype.hasOwnProperty.call(norm, key)) window._opDbCache[key] = norm[key];
     });
+    // F1-7N-FA-3C-R6C — a scoped refresh that got here fetched LIVE sheet tables (getOperationDbTableFromSheet), so the
+    // cache's data source IS the live sheet. Stamp 'google-sheet' so a later isScopedReadEligible() stays true across SPA
+    // navigation (never coerced to 'mock' by the missing-marker default). Do NOT override an explicit 'mock' posture.
+    if (window._opDbCache._sourceMode !== 'mock') window._opDbCache._sourceMode = 'google-sheet';
 }
 // F1-7L: exposed bounded scoped loader for the remaining secondary surfaces (RO 2nd-layer expand, FC builder/
 // import modals) + the IR allocation-draft hydrate — the replacement for the retired whole-DB startup prime.
@@ -4171,6 +4211,9 @@ window.KM.DB.refreshFactoryStockTables = async function() {
     if (!window._opDbCache) window._opDbCache = {};
     window._opDbCache.factoryStock = (stockRows || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; });
     window._opDbCache.factoryStockMovements = (movementRows || []).map(normalizeFactoryStockMovementRecord).filter(function(r) { return r.movementId || r.sku; });
+    // F1-7N-FA-3C-R6C — same scoped-cache-poisoning fix: this readback fetched live sheet tables, so mark the source
+    // (never leave a populated cache unmarked → the missing-marker default would strip scoped-read eligibility).
+    if (window._opDbCache._sourceMode !== 'mock') window._opDbCache._sourceMode = 'google-sheet';
     return { success: true, factoryStock: window._opDbCache.factoryStock.length, factoryStockMovements: window._opDbCache.factoryStockMovements.length };
 };
 

@@ -1639,7 +1639,15 @@ function renderRequestOrderTable() {
     // so a render that lands in the remount gap NEVER shows a settled "connect DB" / "no results" message. The disconnect
     // message is reserved for a GENUINE unavailability (!_roUseDb — audited stable across remount, never a transient flip).
     if (_roBaseDataStatus === 'LOADING' || _roBaseDataStatus === 'IDLE') { _emptyMsg = '<div class="ro-empty-state ro-loading-state">Loading Request Order data…</div>'; _roLastEmptyReason = 'LOADING'; }
-    else if (!_roUseDb()) { _emptyMsg = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>'; _roLastEmptyReason = 'DB_UNAVAILABLE'; }
+    else if (!_roUseDb()) {
+      // F1-7N-FA-3C-R6C — only claim a DB disconnect on a GENUINE provider failure (KM.dbProvider state ERROR:
+      // unconfigured / explicit mock). If the shared provider is READY but _roUseDb() is momentarily false (a transient),
+      // show loading, never a false "Connect the Operation DB". The R6C root cause (scoped-cache poisoning that coerced
+      // the source to 'mock') is fixed at the provider, so a READY provider now keeps _roUseDb() true across navigation.
+      var _prov = (typeof window !== 'undefined' && window.KM && window.KM.dbProvider && typeof window.KM.dbProvider.state === 'function') ? window.KM.dbProvider.state() : 'ERROR';
+      if (_prov === 'ERROR') { _emptyMsg = '<div class="ro-empty-state">No Request Order data available. Connect the Operation DB or enable Demo Data to view rows.</div>'; _roLastEmptyReason = 'DB_UNAVAILABLE'; }
+      else { _emptyMsg = '<div class="ro-empty-state ro-loading-state">Loading Request Order data…</div>'; _roLastEmptyReason = 'PROVIDER_TRANSIENT'; }
+    }
     else if (_roBaseDataStatus === 'ERROR') { _emptyMsg = '<div class="ro-empty-state ro-error-state">Could not load Request Order data. <button type="button" class="ro-alloc-retry" onclick="initRequestOrderSection()">Retry</button></div>'; _roLastEmptyReason = 'ERROR'; }
     else { _emptyMsg = '<div class="ro-empty-state">No results for the current scope. Adjust filters and press Search.</div>'; _roLastEmptyReason = 'EMPTY_SCOPE'; }
     if (fixedBody && scrollBody) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _emptyMsg; }
@@ -3580,11 +3588,17 @@ function _ensureRequestOrderMarkup() {
 
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('request-order-section', {
-        mount() {
+        mount(navEpoch) {
             console.log('[RequestOrder] mount');
             // Markup is partial-loaded (Phase 3-5). Ensure it exists, then (re)apply the .active
             // class (showSection ran before the async injection on first open) and init.
             _ensureRequestOrderMarkup().then(function() {
+                // F1-7N-FA-3C-R6C — LATEST-NAVIGATION-WINS: if a newer navigation superseded this one while the markup
+                // was loading, DISCARD this stale mount — do NOT re-activate the (now background) section and do NOT
+                // re-run init/hydration. This closes both the two-visible-pages race AND the wasteful re-hydration that
+                // repeatedly hit the DB (the R6C incident: hydrationRequestCount climbing across superseded remounts).
+                if (navEpoch != null && window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.commitGuard === 'function'
+                    && !window.KM.lifecycle.commitGuard(navEpoch, 'request-order-section')) return;
                 var sec = document.getElementById('request-order-section');
                 if (sec) sec.classList.add('active');
                 if (window.initRequestOrderSection) {
@@ -3602,6 +3616,12 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[RequestOrder] unmount');
+            // F1-7N-FA-3C-R6C (Objective E) — a route change must NOT silently drop a pending autosave. Flush any pending
+            // debounced Note write immediately (fire-and-forget through the SAME serialized writer + optimistic token, so
+            // a failed edit is never shown as Saved and a stale page response cannot overwrite the next page — the write
+            // targets the Draft by id, not the DOM). Navigation is never frozen. Blur/Enter already flush on a real click;
+            // this covers a programmatic nav with no blur.
+            if (typeof _roFlushPendingAutosaveOnUnmount_ === 'function') { try { _roFlushPendingAutosaveOnUnmount_(); } catch (e) {} }
         }
     });
 }
@@ -3782,7 +3802,11 @@ function _roDebugSnapshot_() {
     uniqueScopeCount: (typeof _roScopesFromLoadedData_ === 'function' ? _roScopesFromLoadedData_().length : 0),
     hydrationRequestCount: _roHydrateReqCount, cachedScopeCount: Object.keys(_roDraftDtoCache).length,
     canonicalDraftCount: Object.keys(_roCanonicalDraftBySku).length, pendingAutosaveCount: Object.keys(_roAutosaveTimers_ || {}).length,
-    lastAutosaveOutcome: _roLastAutosaveOutcome, baseRowCount: (requestOrderState.data || []).length };
+    lastAutosaveOutcome: _roLastAutosaveOutcome, baseRowCount: (requestOrderState.data || []).length,
+    // F1-7N-FA-3C-R6C — release signature + shared DB-provider state (so "is the deployed fix the code actually running,
+    // and is the provider healthy after navigation?" is answerable from __roDebug alone). No secrets / no raw token.
+    release: (typeof window !== 'undefined' && window.KM && window.KM.RELEASE) || null,
+    dbProviderState: (typeof window !== 'undefined' && window.KM && window.KM.dbProvider && typeof window.KM.dbProvider.state === 'function') ? window.KM.dbProvider.state() : null };
 }
 // Read ONE scope's active drafts and ACCUMULATE into the passed maps (never a Draft write; never creates/regenerates a
 // Draft; never a Draft-Line read/write — getActive reads request_order_allocation_drafts ONLY). Projects the flat DTO
@@ -3980,12 +4004,28 @@ function _roAutosaveKey_(input) { return [input && input.dataset && input.datase
 function _roAutosaveDebounce_(input, fn, ms) {
   var k = _roAutosaveKey_(input);
   if (_roAutosaveTimers_[k]) { clearTimeout(_roAutosaveTimers_[k]); }
-  _roAutosaveTimers_[k] = setTimeout(function () { delete _roAutosaveTimers_[k]; fn(); }, (typeof ms === 'number' ? ms : 600));
+  _roAutosavePending_[k] = fn;   // R6C — recorded so an unmount can flush a still-pending write (Objective E)
+  _roAutosaveTimers_[k] = setTimeout(function () { delete _roAutosaveTimers_[k]; delete _roAutosavePending_[k]; fn(); }, (typeof ms === 'number' ? ms : 600));
 }
 function _roAutosaveFlush_(input, fn) {
   var k = _roAutosaveKey_(input);
   if (_roAutosaveTimers_[k]) { clearTimeout(_roAutosaveTimers_[k]); delete _roAutosaveTimers_[k]; }
+  delete _roAutosavePending_[k];
   fn();
+}
+// F1-7N-FA-3C-R6C (Objective E) — on navigation/unmount, immediately fire every PENDING debounced autosave so a route
+// change never silently drops a pending Note write. Each stored callback reads the input live + goes through the SAME
+// serialized writer + optimistic token, so a failed edit is never shown as Saved and no duplicate write is created. This
+// is fire-and-forget (navigation is never blocked). `_roAutosavePending_` maps the timer key → its callback.
+var _roAutosavePending_ = {};
+function _roFlushPendingAutosaveOnUnmount_() {
+  var keys = Object.keys(_roAutosaveTimers_ || {});
+  keys.forEach(function (k) {
+    var t = _roAutosaveTimers_[k]; if (t) { try { clearTimeout(t); } catch (e) {} }
+    delete _roAutosaveTimers_[k];
+    var fn = _roAutosavePending_[k]; delete _roAutosavePending_[k];
+    if (typeof fn === 'function') { try { fn(); } catch (e2) {} }
+  });
 }
 if (typeof window !== 'undefined') {
   window._roBuildOrderQtyEditCommand_ = _roBuildOrderQtyEditCommand_;

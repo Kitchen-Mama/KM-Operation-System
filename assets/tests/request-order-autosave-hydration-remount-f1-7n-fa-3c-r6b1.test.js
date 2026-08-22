@@ -21,7 +21,7 @@ var window = {}, renderCount = 0;
 function renderRequestOrderTable() { renderCount++; }
 function _roEffectiveOrderQty() { return ''; }
 var _roCanonicalDraftBySku = {}, _roNoDraftSkus = {}, _roSubmittedSkus = {}, _roHydrateSeq = 0, _roHydrateReqCount = 0, _roLastAutosaveOutcome = null, _roLastEmptyReason = null;
-var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roDraftEditQueue_ = {}, _roAutosaveTimers_ = {};
+var _roHydrationStatus = 'IDLE', _roDraftDtoCache = {}, _roMountEpoch = 0, _roBaseDataStatus = 'IDLE', _roDraftEditQueue_ = {}, _roAutosaveTimers_ = {}, _roAutosavePending_ = {};
 var _timers = [];
 function setTimeout(fn) { _timers.push(fn); return _timers.length; }
 function clearTimeout(id) { if (id) _timers[id - 1] = null; }
@@ -152,7 +152,7 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     section('D3 (source) — remount recovery + state-aware empty message');
     ok(/_roMountEpoch\+\+;\s*\n\s*_opFirstLayerRegion = null;/.test(RO), 'D3: each mount bumps epoch AND rebinds the composer region to the current DOM');
     ok(/_roBaseDataStatus === 'LOADING'[\s\S]{0,120}Loading Request Order data/.test(RO), 'D3: LOADING shows a loading message (not a disconnect)');
-    ok(/else if \(!_roUseDb\(\)\)[\s\S]{0,140}Connect the Operation DB/.test(RO), 'D3: the "Connect Operation DB" message ONLY when the DB is genuinely unavailable');
+    ok(/else if \(!_roUseDb\(\)\)[\s\S]{0,900}Connect the Operation DB/.test(RO), 'D3: the "Connect Operation DB" message ONLY when the DB is genuinely unavailable (R6C: now provider-ERROR-gated)');
     ok(/No results for the current scope/.test(RO), 'D3: legitimate empty result has a distinct message');
     ok(/_roUseDb\(\) && \(!requestOrderState\.data[\s\S]{0,120}initRequestOrderSection\(\);/.test(RO), 'D3/D6: Search recovers a remount-empty page by re-running the base load (no hard refresh)');
     ok(/_roBaseDataStatus = 'ERROR'/.test(RO) && /ro-error-state/.test(RO), 'D3: a real API error is distinct from an empty result');
