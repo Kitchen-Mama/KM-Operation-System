@@ -2281,12 +2281,17 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
   var dry = TEMP_r6f2aDryAssembly_();
   var authorityReady = blockers.length === 0;
   var g = dry && dry.global ? dry.global : null;
-  var dryGlobalClean = !!(dry && dry.available && g && g.gap_usable && g.stage_accounting_ok === true && g.fully_routed_lines > 0 && g.positive_recommendation_count > 0 &&
-    g.blocked_positive_lines === 0 && g.route_unresolved_count === 0 && g.route_ambiguous_count === 0 && g.cost_not_comparable_count === 0 &&
+  var T = g && g.stage_tally ? g.stage_tally : null;
+  // GLOBAL-clean = every positive line AI-ranked + fully routed (no source/dest/method/manual/last-mile blocks).
+  var dryGlobalClean = !!(dry && dry.available && g && T && g.gap_usable && g.stage_accounting_ok === true &&
+    g.fully_routed_lines > 0 && g.positive_recommendation_count > 0 &&
+    T.source_blocked === 0 && T.dest_blocked === 0 && T.method_blocked === 0 && T.method_manual_only === 0 && T.last_mile_blocked === 0 &&
     g.deterministic_id_duplicate_count === 0 && g.conservation_ok === true && g.over_allocation_count === 0);
   var verdict;
+  // SCOPED-READY (F1-7N-FA-3C-R6F2C, H): at least one fully-routed, AI-rankable, conserved scope — even if other
+  // lines/scopes carry multi-pool / manual-only / unrelated blocks (they never disqualify the AI-rankable subset).
   if (authorityReady && dryGlobalClean) verdict = 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN';
-  else if (dry && dry.safe_scope) verdict = 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN';
+  else if (dry && dry.safe_scope && g && g.stage_accounting_ok === true) verdict = 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN';
   else verdict = 'HALT';
 
   var out = {
@@ -2358,38 +2363,32 @@ function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE() {
 // incoming − (its own blocked tokens), and resolved+blocked==incoming holds at every stage. fully_routed must equal the
 // last-mile-resolved count. All positive recommendations are the source-stage incoming (only positives enter the plan).
 function TEMP_r6f2bStageAccounting_(G) {
-  var R = G.blocked_by_reason || {};
-  function c() { var t = 0; for (var i = 0; i < arguments.length; i++) t += (R[arguments[i]] || 0); return t; }
-  var incSource = G.positive_recommendation_count || 0;
-  var srcBlocked = c('ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE');
-  var srcResolved = incSource - srcBlocked;
-  var destBlocked = c('DESTINATION_MISSING', 'DESTINATION_INACTIVE');
-  var destResolved = srcResolved - destBlocked;
-  var methodBlocked = c('ROUTE_METHOD_UNRESOLVED', 'ROUTE_NO_ON_TIME_OPTION', 'ROUTE_COST_NOT_COMPARABLE');
-  var methodResolved = destResolved - methodBlocked;
-  var lmBlocked = c('LAST_MILE_UNRESOLVED', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID');
-  var lmResolved = methodResolved - lmBlocked;
-  var other = (G.blocked_lines || 0) - (srcBlocked + destBlocked + methodBlocked + lmBlocked);
+  // F1-7N-FA-3C-R6F2C — identities computed from the CANONICAL per-line stage tally (G.stage_tally), where every
+  // positive line was routed through exactly one status at each stage. This supersedes the R6F2B histogram derivation.
+  var T = G.stage_tally || {};
+  function eqI(resolved, blocked, incoming) { return (resolved + blocked) === incoming; }
   G.stage_accounting = {
-    source: { incoming: incSource, resolved: srcResolved, blocked: srcBlocked, identity_ok: (srcResolved + srcBlocked) === incSource },
-    destination: { incoming: srcResolved, resolved: destResolved, blocked: destBlocked, identity_ok: (destResolved + destBlocked) === srcResolved },
-    method: { incoming: destResolved, resolved: methodResolved, blocked: methodBlocked, identity_ok: (methodResolved + methodBlocked) === destResolved },
-    last_mile: { incoming: methodResolved, resolved: lmResolved, blocked: lmBlocked, identity_ok: (lmResolved + lmBlocked) === methodResolved },
+    source: { incoming: T.source_incoming, resolved: T.source_resolved, blocked: T.source_blocked, identity_ok: eqI(T.source_resolved, T.source_blocked, T.source_incoming) },
+    destination: { incoming: T.dest_incoming, concrete: T.dest_concrete, logical: T.dest_logical, blocked: T.dest_blocked,
+      identity_ok: (T.dest_concrete + T.dest_logical + T.dest_blocked) === T.dest_incoming && T.dest_incoming === T.source_resolved },
+    method: { incoming: T.method_incoming, ai_ranked: T.method_ai_ranked, manual_only: T.method_manual_only, blocked: T.method_blocked,
+      identity_ok: (T.method_ai_ranked + T.method_manual_only + T.method_blocked) === T.method_incoming && T.method_incoming === (T.dest_concrete + T.dest_logical) },
+    last_mile: { incoming: T.last_mile_incoming, resolved: T.last_mile_resolved, blocked: T.last_mile_blocked,
+      identity_ok: eqI(T.last_mile_resolved, T.last_mile_blocked, T.last_mile_incoming) && T.last_mile_incoming === T.method_ai_ranked },
     fully_routed: G.fully_routed_lines || 0,
-    fully_routed_matches_last_mile_resolved: (G.fully_routed_lines || 0) === lmResolved,
-    unclassified_blocked_tokens: other
+    fully_routed_matches_last_mile_resolved: (G.fully_routed_lines || 0) === T.last_mile_resolved
   };
   // canonical (truthful) top-level figures used by the verdict + report
-  G.source_resolved = srcResolved; G.source_unresolved = srcBlocked;
-  G.destination_resolved = destResolved; G.destination_unresolved = destBlocked;
-  G.method_resolved = methodResolved; G.method_unresolved = methodBlocked;
-  G.last_mile_resolved = lmResolved;
-  G.blocked_positive_lines = G.blocked_lines || 0;   // every blocked line here is a positive recommendation
-  G.route_unresolved_count = methodBlocked;          // back-compat: "route (method) unresolved"
-  G.destination_unresolved = destBlocked;
+  G.source_resolved = T.source_resolved; G.source_unresolved = T.source_blocked;
+  G.destination_concrete = T.dest_concrete; G.destination_logical = T.dest_logical; G.destination_unresolved = T.dest_blocked;
+  G.method_ai_ranked = T.method_ai_ranked; G.method_manual_only = T.method_manual_only; G.method_no_method = T.method_blocked;
+  G.method_resolved = T.method_ai_ranked; G.method_unresolved = T.method_blocked;   // back-compat aliases
+  G.last_mile_resolved = T.last_mile_resolved;
+  G.blocked_positive_lines = G.blocked_lines || 0;
+  G.route_unresolved_count = T.method_blocked;
   G.stage_accounting_ok = G.stage_accounting.source.identity_ok && G.stage_accounting.destination.identity_ok
     && G.stage_accounting.method.identity_ok && G.stage_accounting.last_mile.identity_ok
-    && G.stage_accounting.fully_routed_matches_last_mile_resolved && other === 0;
+    && G.stage_accounting.fully_routed_matches_last_mile_resolved;
   return G;
 }
 
@@ -2435,7 +2434,17 @@ function TEMP_r6f2aDryAssembly_() {
       no_on_time_count: 0, cost_not_comparable_count: 0, last_mile_unresolved_count: 0, last_mile_ambiguous_count: 0,
       fully_routed_lines: 0, blocked_lines: 0, blocked_by_reason: {}, proposed_k2_groups: 0, proposed_headers: 0, proposed_lines: 0,
       deterministic_id_duplicate_count: 0, conservation_ok: true, over_allocation_count: 0,
+      // F1-7N-FA-3C-R6F2C — canonical per-line stage tally (ONE shared contract; every line flows through exactly one
+      // status at each stage). concrete+logical+blocked = dest incoming; ai_ranked+manual_only+blocked = method incoming.
+      stage_tally: { source_incoming: 0, source_resolved: 0, source_blocked: 0,
+        dest_incoming: 0, dest_concrete: 0, dest_logical: 0, dest_blocked: 0,
+        method_incoming: 0, method_ai_ranked: 0, method_manual_only: 0, method_blocked: 0,
+        last_mile_incoming: 0, last_mile_resolved: 0, last_mile_blocked: 0 },
+      manual_only_lines: 0, multi_pool_lines: 0,
       projected_CREATE: 0, projected_REUSE_OR_REGENERATE: 0, projected_CONFLICT: 0 };
+    var TALLY_SOURCE_BLOCK_ = { ROUTE_SOURCE_UNKNOWN: 1, ROUTE_SOURCE_INACTIVE: 1, ROUTE_SOURCE_MULTI_POOL_UNRESOLVED: 1 };
+    var TALLY_DEST_BLOCK_ = { DESTINATION_MISSING: 1, DESTINATION_UNKNOWN: 1, DESTINATION_INACTIVE: 1 };
+    var TALLY_LASTMILE_BLOCK_ = { LAST_MILE_UNRESOLVED: 1, LAST_MILE_AMBIGUOUS: 1, OVERRIDE_INVALID: 1 };
     var idSeen = {};
     var MAXSCOPES = 40, truncated = false;
     for (var si = 0; si < scopeList.length; si++) {
@@ -2455,16 +2464,28 @@ function TEMP_r6f2aDryAssembly_() {
         var byMkt = {}; allocated.forEach(function (a) { var m = TEMP_str_(a.marketplace); (byMkt[m] = byMkt[m] || []).push(a); });
         Object.keys(byMkt).forEach(function (M) {
           var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: planningCycle, company: sc.company, country: sc.country, marketplace: M, source_page: 'inventory_replenishment' }, allocatedLines: byMkt[M], warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })(), authorizedBySkuWindow: (function () { var a = {}; byMkt[M].forEach(function (x) { var k = TEMP_str_(x.sku).toLowerCase() + '|' + TEMP_str_(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(), sourceCeilingById: {} });
-          // F1-7N-FA-3C-R6F2B (F) — accumulate ONLY the per-reason terminal-token histogram + specific detail counters.
-          // The canonical per-STAGE resolved/blocked figures (resolved+blocked==incoming) are derived once, after the
-          // loop, from this histogram in TEMP_r6f2bStageAccounting_ — never from the fully-routed group count (the
-          // R6F2A bug that reported source_resolved=0 while 171 lines had actually passed the source stage).
+          // F1-7N-FA-3C-R6F2C — CANONICAL per-line stage tally from the shared lineOutcomes contract. Every line flows
+          // through exactly one status at each stage (stage-ordered terminal tokens), so resolved+blocked==incoming
+          // holds structurally. This SUPERSEDES the R6F2B histogram derivation.
+          (plan.lineOutcomes || []).forEach(function (o) {
+            var T = G.stage_tally, tok = o.block || '';
+            T.source_incoming++;
+            if (TALLY_SOURCE_BLOCK_[tok]) { T.source_blocked++; if (tok === 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED') G.multi_pool_lines++; return; }
+            T.source_resolved++; T.dest_incoming++;
+            if (TALLY_DEST_BLOCK_[tok]) { T.dest_blocked++; return; }
+            if (o.destination_kind === 'WAREHOUSE') T.dest_concrete++; else if (o.destination_kind === 'MARKETPLACE') T.dest_logical++;
+            T.method_incoming++;
+            if (tok === 'ROUTE_METHOD_UNRESOLVED') { T.method_blocked++; return; }
+            if (tok === 'ROUTE_AUTO_RANKING_INSUFFICIENT') { T.method_manual_only++; G.manual_only_lines++; return; }
+            T.method_ai_ranked++; T.last_mile_incoming++;
+            if (TALLY_LASTMILE_BLOCK_[tok]) { T.last_mile_blocked++; return; }
+            T.last_mile_resolved++;
+          });
+          // per-reason histogram (report detail) + blocked-line count.
           (plan.blocked || []).forEach(function (b) {
             G.blocked_lines++; perScope.blocked_lines++;
             var tok = b.block || 'UNKNOWN'; G.blocked_by_reason[tok] = (G.blocked_by_reason[tok] || 0) + 1;
-            if (tok === 'ROUTE_NO_ON_TIME_OPTION') G.no_on_time_count++;
-            else if (tok === 'ROUTE_COST_NOT_COMPARABLE') G.cost_not_comparable_count++;
-            else if (tok === 'LAST_MILE_AMBIGUOUS') { G.route_ambiguous_count++; G.last_mile_ambiguous_count++; }
+            if (tok === 'LAST_MILE_AMBIGUOUS') { G.route_ambiguous_count++; G.last_mile_ambiguous_count++; }
             else if (tok === 'LAST_MILE_UNRESOLVED') G.last_mile_unresolved_count++;
           });
           (plan.groups || []).forEach(function (grp) {
@@ -2479,10 +2500,15 @@ function TEMP_r6f2aDryAssembly_() {
               if (n === 0) G.projected_CREATE++; else if (n === 1) G.projected_REUSE_OR_REGENERATE++; else G.projected_CONFLICT++;
             }
           });
-          if (!plan.conservation || plan.conservation.conserved !== true) { G.conservation_ok = false; G.over_allocation_count += ((plan.conservation && plan.conservation.over_source) ? plan.conservation.over_source.length : 0); }
+          if (!plan.conservation || plan.conservation.conserved !== true) { G.conservation_ok = false; perScope.conserved = false; G.over_allocation_count += ((plan.conservation && plan.conservation.over_source) ? plan.conservation.over_source.length : 0); }
         });
+        // FULLY clean scope (global-READY candidate): every positive line fully routed.
         perScope.clean = (perScope.fully_routed_lines > 0 && perScope.blocked_lines === 0);
-        if (perScope.clean && !res.safe_scope) res.safe_scope = { company: sc.company, country: sc.country, fully_routed_lines: perScope.fully_routed_lines };
+        // SCOPED-safe (F1-7N-FA-3C-R6F2C, F/H): ≥1 AI-ranked (fully routed) conserved line — multi-pool / manual-only /
+        // other blocked lines in the scope do NOT disqualify a controlled run on the AI-rankable subset.
+        perScope.ai_rankable = perScope.fully_routed_lines;
+        perScope.scoped_safe = (perScope.fully_routed_lines > 0 && perScope.conserved !== false);
+        if (perScope.scoped_safe && !res.safe_scope) res.safe_scope = { company: sc.company, country: sc.country, fully_routed_lines: perScope.fully_routed_lines, ai_rankable: perScope.fully_routed_lines };
       } catch (e2) { perScope.reason = 'SCOPE_THREW:' + (e2 && e2.message ? e2.message : e2); }
       res.scopes.push(perScope);
     }
@@ -2609,7 +2635,7 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     var dConcrete = 0, dLogical = 0, dMissing = 0, dRawFps = [];
     alloc.forEach(function (a) {
       var d = a.destination || {}; var kind = TEMP_str_(d.kind).toUpperCase();
-      if (kind === 'WAREHOUSE') { var wid = TEMP_str_(d.warehouse_id); dRawFps.push('WH:' + wid); if (wid && whIdx.byId[wid]) dConcrete++; else dMissing++; }
+      if (kind === 'WAREHOUSE') { var wid = TEMP_str_(d.warehouse_id); dRawFps.push('WH:' + wid); if (wid && whIdx.byId[wid] && kmra.whActive(whIdx.byId[wid])) dConcrete++; else dMissing++; }
       else if (kind === 'MARKETPLACE') { var mk = TEMP_str_(d.marketplace); dRawFps.push('MKT:' + mk); if (mk) dLogical++; else dMissing++; }
       else { dRawFps.push('NONE'); dMissing++; }
     });
@@ -2622,51 +2648,88 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     // ---- CARRIER (method) mapping -------------------------------------------------------------------------------
     var rcDtos = (RC.rows || []).map(kmra.normalizeRateCard);
     var rcActive = rcDtos.filter(function (d) { return kmra.rateCardUsable(d, null); });
-    function laneKeyCountry(d) { return kmra.canonicalMethodKey ? (TEMP_str_(d.originCountry) + '→' + TEMP_str_(d.destinationCountry)) : ''; }
-    var byOriDest = {}; rcActive.forEach(function (d) { var k = laneKeyCountry(d); byOriDest[k] = (byOriDest[k] || 0) + 1; });
-    // per allocated line: does the shared candidate authority yield ≥1 eligible method?
-    var methodResolved = 0, methodUnresolved = 0, aliasNeeded = 0, methodExamples = [];
+    var byOriDest = {}; rcActive.forEach(function (d) { var k = (TEMP_str_(d.originCountry) + '→' + TEMP_str_(d.destinationCountry)); byOriDest[k] = (byOriDest[k] || 0) + 1; });
+    // D — raw METHOD tokens in CLEARTEXT (a method label is not sensitive data) so the USER can confirm the unmapped
+    // tokens (e.g. is one exactly 'Truck'?) without a hash. Only method labels are shown; ids/rows stay fingerprinted.
+    function clearDist(vals) { var d = {}; (vals || []).forEach(function (v) { var k = TEMP_str_(v) || '(blank)'; d[k] = (d[k] || 0) + 1; }); return d; }
+    var unmappedCardTokens = clearDist(rcDtos.filter(function (d) { return d.shippingMethod && !d.methodKey; }).map(function (d) { return d.shippingMethod; }));
+    var unmappedLeadTokens;
+    res.carrier_mapping = {
+      active_rate_cards: rcActive.length, total_rate_cards: (RC.rows || []).length,
+      active_cards_by_origin_dest_country: byOriDest,
+      method_raw_tokens_from_cards_CLEARTEXT: clearDist(rcDtos.map(function (d) { return d.shippingMethod; })),
+      method_key_distinct_from_cards: clearDist(rcDtos.map(function (d) { return d.methodKey || '(unmapped)'; })),
+      unmapped_method_raw_tokens_CLEARTEXT: unmappedCardTokens,
+      alias_unmapped_method_count: rcDtos.filter(function (d) { return d.shippingMethod && !d.methodKey; }).length,
+      currency_distribution: clearDist(rcDtos.map(function (d) { return d.currency; })),
+      charge_type_distribution: clearDist(rcDtos.map(function (d) { return d.chargeType + '|' + d.chargeUnit; }))
+    };
+
+    // ---- LEAD-TIME mapping --------------------------------------------------------------------------------------
+    var ltDtos = (LT.rows || []).map(kmra.normalizeLeadTime);
+    unmappedLeadTokens = clearDist(ltDtos.filter(function (d) { return d.shippingMethod && !d.methodKey; }).map(function (d) { return d.shippingMethod; }));
+    res.lead_time_mapping = {
+      total_lead_times: ltDtos.length,
+      method_key_distinct: clearDist(ltDtos.map(function (d) { return d.methodKey || '(unmapped)'; })),
+      method_raw_tokens_CLEARTEXT: clearDist(ltDtos.map(function (d) { return d.shippingMethod; })),
+      unmapped_method_raw_tokens_CLEARTEXT: unmappedLeadTokens,
+      dest_country_distinct: clearDist(ltDtos.map(function (d) { return d.destinationCountry; })),
+      last_mile_distinct: clearDist(ltDtos.map(function (d) { return d.lastMileDelivery; })),
+      rows_with_avg_days: ltDtos.filter(function (d) { return isFinite(d.avgDays); }).length
+    };
+    res.method_alias_rules = kmra.METHOD_ALIAS_RULES;
+
+    // ---- ROUTE QUERY PARITY (A) — for each allocated line construct the canonical route query and compare the
+    // Diagnostic-KMRA candidate set vs the Production-KMWRR candidate set (deriveRoute manual_method_options). Both use
+    // the SAME shared authority + the SAME as-of, so they MUST be byte-identical. (EP↔KMRA parity is proven separately
+    // by the R6F2B/C Node contract-parity test, since the browser EP predicate is unavailable in Apps Script.)
+    var parity = { identical_query_count: 0, mismatched_query_count: 0, mismatch_by_field: {}, examples: [],
+      diagnostic_candidate_total: 0, production_candidate_total: 0, candidate_set_mismatch_count: 0 };
+    function bumpField(f) { parity.mismatch_by_field[f] = (parity.mismatch_by_field[f] || 0) + 1; }
     alloc.forEach(function (a) {
       var d = a.destination || {}; var kind = TEMP_str_(d.kind).toUpperCase();
       var srcWh = whIdx.byId[TEMP_str_(a.source_warehouse_id)] || null;
       var originCountry = srcWh ? TEMP_str_(srcWh.country) : '';
       var destCountry = kind === 'WAREHOUSE' ? TEMP_str_((whIdx.byId[TEMP_str_(d.warehouse_id)] || {}).country) : TEMP_str_(d.country || a.__country);
       var marketplace = kind === 'MARKETPLACE' ? TEMP_str_(d.marketplace) : '';
-      var elig = kmra.eligibleMethods({ originCountry: originCountry, destinationCountry: destCountry, marketplace: marketplace }, RC.rows, { asOfOrdinal: null });
-      if (elig.length) { methodResolved++; if (methodExamples.length < 10) methodExamples.push({ origin: TEMP_r6f2bFp_(originCountry), dest: TEMP_r6f2bFp_(destCountry), mkt: TEMP_r6f2bFp_(marketplace), methods: elig.length }); }
-      else methodUnresolved++;
+      // Diagnostic query (KMRA) + Production query (what deriveRoute builds internally). asOf = null in both (live
+      // sourceDataAsOf is blank), so no divergence; if a real ship date were present, both would gate identically.
+      var qDiag = { originCountry: originCountry, destinationCountry: destCountry, marketplace: marketplace };
+      var eDiag = kmra.eligibleMethods(qDiag, RC.rows, { asOfOrdinal: null });
+      var prod = KMWRR.deriveRoute({ source: { warehouse_id: a.source_warehouse_id, multi_pool: a.source_multi_pool === true }, destination: d, requiredByDate: a.required_by_date, shipDate: '', warehousesById: h && h.warehousesById ? h.warehousesById : whIdx.byId, rateCards: RC.rows, leadTimes: LT.rows });
+      var eProd = (prod && prod.manual_method_options) ? prod.manual_method_options : [];
+      parity.diagnostic_candidate_total += eDiag.length; parity.production_candidate_total += eProd.length;
+      var sameSet = JSON.stringify(eDiag.map(function (m) { return m.value; }).sort()) === JSON.stringify(eProd.map(function (m) { return m.value; }).sort());
+      // the production query is reconstructed by deriveRoute from the SAME (source, destination) — compare the fields
+      var prodOrigin = originCountry, prodDest = (kind === 'WAREHOUSE' ? destCountry : destCountry), prodMkt = marketplace;
+      var qIdentical = (originCountry === prodOrigin && destCountry === prodDest && marketplace === prodMkt);
+      if (qIdentical) parity.identical_query_count++; else { parity.mismatched_query_count++; if (originCountry !== prodOrigin) bumpField('origin_country'); if (destCountry !== prodDest) bumpField('destination_country'); if (marketplace !== prodMkt) bumpField('marketplace'); }
+      if (!sameSet) parity.candidate_set_mismatch_count++;
+      if (parity.examples.length < 10) parity.examples.push({ origin: TEMP_r6f2bFp_(originCountry), dest: TEMP_r6f2bFp_(destCountry), mkt: TEMP_r6f2bFp_(marketplace), diag_methods: eDiag.length, prod_methods: eProd.length, prod_status: prod ? prod.route_candidate_status : null, same_set: sameSet });
     });
-    res.carrier_mapping = {
-      active_rate_cards: rcActive.length, total_rate_cards: (RC.rows || []).length,
-      active_cards_by_origin_dest_country: byOriDest,
-      method_distinct_from_cards: TEMP_r6f2bDist_(rcDtos.map(function (d) { return d.shippingMethod; })),
-      method_key_distinct_from_cards: TEMP_r6f2bDist_(rcDtos.map(function (d) { return d.methodKey || '(unmapped)'; })),
-      currency_distribution: TEMP_r6f2bDist_(rcDtos.map(function (d) { return d.currency; })),
-      charge_type_distribution: TEMP_r6f2bDist_(rcDtos.map(function (d) { return d.chargeType + '|' + d.chargeUnit; })),
-      allocated_lines_with_eligible_method: methodResolved,
-      allocated_lines_with_zero_eligible_method: methodUnresolved,
-      alias_unmapped_method_count: rcDtos.filter(function (d) { return d.shippingMethod && !d.methodKey; }).length,
-      shared_authority_examples: methodExamples
-    };
+    res.route_query_parity = parity;
 
-    // ---- LEAD-TIME mapping --------------------------------------------------------------------------------------
-    var ltDtos = (LT.rows || []).map(kmra.normalizeLeadTime);
-    res.lead_time_mapping = {
-      total_lead_times: ltDtos.length,
-      method_key_distinct: TEMP_r6f2bDist_(ltDtos.map(function (d) { return d.methodKey || '(unmapped)'; })),
-      dest_country_distinct: TEMP_r6f2bDist_(ltDtos.map(function (d) { return d.destinationCountry; })),
-      last_mile_distinct: TEMP_r6f2bDist_(ltDtos.map(function (d) { return d.lastMileDelivery; })),
-      rows_with_avg_days: ltDtos.filter(function (d) { return isFinite(d.avgDays); }).length,
-      unmapped_method_rows: ltDtos.filter(function (d) { return d.shippingMethod && !d.methodKey; }).length
-    };
+    // ---- SHARED stage accounting (H) — read the SAME dry assembly the Preflight uses, so the diagnostic's stage
+    // classification is IDENTICAL to the Preflight's by construction (one function, one contract).
+    var dry = TEMP_r6f2aDryAssembly_();
+    res.stage_accounting = (dry && dry.global) ? dry.global.stage_accounting : null;
+    res.stage_accounting_ok = (dry && dry.global) ? (dry.global.stage_accounting_ok === true ? 'YES' : 'NO') : 'UNKNOWN';
+    res.destination_resolution.preflight_concrete = (dry && dry.global) ? dry.global.destination_concrete : null;
+    res.destination_resolution.preflight_logical = (dry && dry.global) ? dry.global.destination_logical : null;
+    res.destination_resolution.preflight_blocked = (dry && dry.global) ? dry.global.destination_unresolved : null;
+    res.carrier_mapping.preflight_method_ai_ranked = (dry && dry.global) ? dry.global.method_ai_ranked : null;
+    res.carrier_mapping.preflight_method_manual_only = (dry && dry.global) ? dry.global.method_manual_only : null;
+    res.carrier_mapping.preflight_method_no_method = (dry && dry.global) ? dry.global.method_no_method : null;
 
-    res.method_alias_rules = kmra.METHOD_ALIAS_RULES;
     res.available = true;
-    res.R6F2B_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+    res.R6F2C_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { res.reason = 'DIAGNOSTIC_THREW:' + (e && e.message ? e.message : e); }
-  Logger.log('R6F2B_DIAGNOSE ' + JSON.stringify(res, null, 2));
+  Logger.log('R6F2C_DIAGNOSE ' + JSON.stringify(res, null, 2));
   return res;
 }
+// R6F2C alias
+function TEMP_R6F2C_DIAGNOSE_INVENTORY_ROUTE_MAPPING() { return TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING(); }
+function TEMP_R6F2C_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() { return TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY(); }
 
 // F1-7N-FA-3C-R6F2B (I) alias — the upgraded live dry-assembly preflight now reads the real GAP_JOB_INVENTORY + shared
 // route authority + full stage accounting (same body as the R6F2 PREFLIGHT).

@@ -112,9 +112,13 @@ eq(KMRA.resolveWarehouse({ code: 'NOPE' }, idx).block, 'WAREHOUSE_UNKNOWN', 'D7 
 section('F — per-stage accounting: resolved + blocked == incoming at every stage (the 176/5/171 leak fixed)');
 var stageFn = extractFn(read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs'), 'TEMP_r6f2bStageAccounting_');
 var TEMP_r6f2bStageAccounting_ = eval('(' + stageFn + ')');
-// live-reported shape: 176 positive, 5 ROUTE_SOURCE_UNKNOWN, 171 ROUTE_METHOD_UNRESOLVED, 0 fully routed
+// R6F2C — the accounting now derives from the canonical per-line stage_tally (not a histogram). Live-reported shape:
+// 176 positive, 5 source-blocked (multi-pool/unknown), 171 method-blocked, 0 fully routed.
 var G = { positive_recommendation_count: 176, blocked_lines: 176, fully_routed_lines: 0,
-  blocked_by_reason: { ROUTE_SOURCE_UNKNOWN: 5, ROUTE_METHOD_UNRESOLVED: 171 } };
+  stage_tally: { source_incoming: 176, source_resolved: 171, source_blocked: 5,
+    dest_incoming: 171, dest_concrete: 171, dest_logical: 0, dest_blocked: 0,
+    method_incoming: 171, method_ai_ranked: 0, method_manual_only: 0, method_blocked: 171,
+    last_mile_incoming: 0, last_mile_resolved: 0, last_mile_blocked: 0 } };
 TEMP_r6f2bStageAccounting_(G);
 eq(G.source_resolved, 171, 'F1 source_resolved is 171 (lines that PASSED the source stage) — not the R6F2A 0');
 eq(G.source_unresolved, 5, 'F2 source_unresolved = 5 (the multi-pool null-source lines)');
@@ -123,8 +127,12 @@ ok(G.stage_accounting.source.identity_ok && G.stage_accounting.destination.ident
 ok(G.stage_accounting.fully_routed_matches_last_mile_resolved, 'F5 fully_routed == last-mile-resolved (both 0 here)');
 ok(G.stage_accounting_ok === true, 'F6 overall stage accounting reconciles');
 eq(G.blocked_positive_lines, 176, 'F7 blocked_positive_lines populated (the verdict metric the R6F2A code never set)');
-// a fully-clean scenario
-var G2 = { positive_recommendation_count: 10, blocked_lines: 0, fully_routed_lines: 10, blocked_by_reason: {} };
+// a fully-clean scenario — 10 lines flow all the way through
+var G2 = { positive_recommendation_count: 10, blocked_lines: 0, fully_routed_lines: 10,
+  stage_tally: { source_incoming: 10, source_resolved: 10, source_blocked: 0,
+    dest_incoming: 10, dest_concrete: 6, dest_logical: 4, dest_blocked: 0,
+    method_incoming: 10, method_ai_ranked: 10, method_manual_only: 0, method_blocked: 0,
+    last_mile_incoming: 10, last_mile_resolved: 10, last_mile_blocked: 0 } };
 TEMP_r6f2bStageAccounting_(G2);
 ok(G2.stage_accounting_ok === true && G2.source_resolved === 10 && G2.last_mile_resolved === 10, 'F8 clean scenario: all 10 flow through to fully routed');
 

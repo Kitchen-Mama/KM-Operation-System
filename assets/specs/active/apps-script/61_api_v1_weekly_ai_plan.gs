@@ -105,7 +105,17 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // read-only TEMP_R6F2_PREFLIGHT reports resolution/availability counts BEFORE any controlled live run.
 // ================================================================================================================
 function weeklyAiPlanReadCarrierAuthorities_(ss) {
-  function rows(name) { try { var o = (typeof gapReadObjects_ === 'function') ? gapReadObjects_(ss, name) : null; return (o && o.rows) ? o.rows : []; } catch (e) { return []; } }
+  // F1-7N-FA-3C-R6F2B → R6F2C FIX: gapReadObjects_ returns a BARE ARRAY of row objects (not { rows: [...] }). The
+  // prior `(o && o.rows) ? o.rows : []` therefore silently discarded EVERY carrier row (an array has no `.rows`),
+  // feeding KMWRR an empty rateCards/leadTimes set → ROUTE_METHOD_UNRESOLVED for every line while the diagnostic
+  // (which reads via TEMP_readObjects_ → { rows }) saw the full set. Accept both shapes so the transport can never
+  // diverge from the diagnostic again.
+  function rows(name) {
+    try {
+      var o = (typeof gapReadObjects_ === 'function') ? gapReadObjects_(ss, name) : null;
+      return Array.isArray(o) ? o : ((o && Array.isArray(o.rows)) ? o.rows : []);
+    } catch (e) { return []; }
+  }
   return { rateCards: rows('carrier_rate_cards'), leadTimes: rows('carrier_lead_times') };
 }
 function weeklyAiPlanShipDate_(harvest) {
@@ -115,6 +125,30 @@ function weeklyAiPlanShipDate_(harvest) {
 // Map the per-source WSA lines → KMWRR allocatedLines. Confirmed fact fields: masterSku, marketplace,
 // sourceWarehouseId, recommendedQty, unitsPerCarton, demandKey. window/required_by joined from horizonsByDemandRef;
 // destination resolved via KMWHA.resolveWorkspaceLineDestination when available, else the line's own dest fields.
+// F1-7N-FA-3C-R6F2C — CANONICAL destination classification for a WSA line. The prior code called
+// KMWHA.resolveWorkspaceLineDestination(l) with the WRONG field names (it reads warehouseId/destinationRefId/
+// marketplaceId/destinationType; the WSA line has destinationWarehouseId/marketplace/country) and then read the
+// result via `d.destinationKind` (the resolver returns `destinationType`), so it ALWAYS fell back to a WAREHOUSE
+// default carrying l.destinationWarehouseId — which for platform_fulfilled/FBA lines is a MARKETPLACE_ID, never a
+// real warehouse (→ concrete=0/logical=0/missing=176). We classify at the adapter from the signals the WSA line
+// actually carries: `destinationWarehouseId` is a concrete WAREHOUSE only if it is a genuine ACTIVE warehouse in the
+// harvested index; otherwise, if a canonical marketplace token exists, it is a LOGICAL MARKETPLACE; otherwise BLOCK.
+// A string that merely looks like a warehouse id is NEVER auto-resolved — it must match an active warehouse row.
+function weeklyAiPlanWhActive_(w) {
+  if (!w) return false;
+  var a = String(w.is_active == null ? '' : w.is_active).trim().toLowerCase();
+  return !(a === 'false' || a === 'no' || a === '0' || w.is_active === false);
+}
+function weeklyAiPlanClassifyDestination_(l, whById) {
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var ref = s(l.destinationWarehouseId), mkt = s(l.marketplace), country = s(l.country);
+  if (ref) {
+    var w = whById[ref];
+    if (w && weeklyAiPlanWhActive_(w)) return { kind: 'WAREHOUSE', warehouse_id: ref, country: country || s(w.country), matched_by: 'active_warehouse_id' };
+  }
+  if (mkt) return { kind: 'MARKETPLACE', marketplace: mkt, marketplace_ref: ref, country: country, matched_by: 'marketplace_token' };
+  return { kind: '', reason: 'DESTINATION_UNRESOLVED' };
+}
 function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
   var horizons = (harvest && harvest.horizonsByDemandRef) || {};
   var whById = (harvest && harvest.warehousesById) || {};
@@ -132,20 +166,20 @@ function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
       var wins = Object.keys(hz.requiredByByWindow).sort(function (a, b) { return String(hz.requiredByByWindow[a]) < String(hz.requiredByByWindow[b]) ? -1 : 1; });
       if (wins.length) { windowCode = wins[0]; requiredBy = String(hz.requiredByByWindow[wins[0]]); }
     }
-    // destination
-    var destination = { kind: 'WAREHOUSE', warehouse_id: s(l.destinationWarehouseId), country: '' };
-    try {
-      if (typeof KMWHA !== 'undefined' && KMWHA && typeof KMWHA.resolveWorkspaceLineDestination === 'function') {
-        var d = KMWHA.resolveWorkspaceLineDestination(l);
-        if (d && s(d.destinationKind) === 'MARKETPLACE') destination = { kind: 'MARKETPLACE', marketplace: s(l.marketplace), country: s(l.country) };
-        else if (d && s(d.destinationRef)) destination = { kind: 'WAREHOUSE', warehouse_id: s(d.destinationRef), country: s(l.country) };
-      }
-    } catch (e) { /* defensive: fall back to the line's own destination fields */ }
-    var srcWh = whById[s(l.sourceWarehouseId)] || {};
+    // CANONICAL destination classification (concrete active warehouse | logical marketplace | BLOCK).
+    var destination = weeklyAiPlanClassifyDestination_(l, whById);
+    // SOURCE: single-pool → concrete id; multi-pool (breakdown has ≥1 concrete source but no single winner) is a
+    // TRUTHFUL distinct block (never guessed). F1-7N-FA-3C-R6F2C (F): a deterministic per-source whole-carton split
+    // from allocationBreakdown is possible but changes the generated line grain (floored shipped qty), so it is
+    // DEFERRED to a controlled generation round; here the line is fail-closed as ROUTE_SOURCE_MULTI_POOL_UNRESOLVED.
+    var srcId = s(l.sourceWarehouseId), srcWh = whById[srcId] || {};
+    var bd = Array.isArray(l.allocationBreakdown) ? l.allocationBreakdown : [];
+    var multiPool = !srcId && bd.some(function (b) { return s(b.sourceWarehouseId) !== ''; });
     out.push({
       sku: s(l.masterSku), site_sku: s(l.siteSku || l.site_sku), window_code: windowCode,
       window_start_date: '', window_end_date: '', required_by_date: requiredBy,
-      source_warehouse_id: s(l.sourceWarehouseId), source_warehouse_code_snapshot: s(srcWh.warehouse_code),
+      source_warehouse_id: srcId, source_warehouse_code_snapshot: s(srcWh.warehouse_code),
+      source_multi_pool: multiPool ? true : false,
       planned_qty: qty, recommended_qty: qty, units_per_carton: (l.unitsPerCarton != null ? l.unitsPerCarton : ''),
       marketplace: s(l.marketplace), destination: destination
     });

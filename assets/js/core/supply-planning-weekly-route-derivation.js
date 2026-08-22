@@ -55,6 +55,21 @@
     var doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
     return era * 146097 + doe - 719468;
   }
+  // inverse (day ordinal → 'yyyy-mm-dd'); deterministic, no Date object — for the shared expected_arrival contract.
+  function ordinalToDate(z) {
+    if (z == null || !isFinite(z)) return '';
+    z += 719468;
+    var era = Math.floor((z >= 0 ? z : z - 146096) / 146097);
+    var doe = z - era * 146097;
+    var yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+    var y = yoe + era * 400;
+    var doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+    var mp = Math.floor((5 * doy + 2) / 153);
+    var d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+    var m = mp + (mp < 10 ? 3 : -9);
+    y += (m <= 2 ? 1 : 0);
+    return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+  }
 
   // ---- active-status helpers (schemas differ: warehouses use is_active; carrier rows use a free-text status) ----
   var INACTIVE_STATUS = { inactive: 1, disabled: 1, archived: 1, expired: 1, void: 1, deleted: 1 };
@@ -100,22 +115,28 @@
     var override = input.override || {};
     var asOf = dateToOrdinal(input.shipDate);
 
-    // (1) SOURCE — must exist + be active; identity is the warehouse_id (never a display label).
+    // (1) SOURCE — must exist + be active; identity is the warehouse_id (never a display label). A genuine multi-pool
+    // line (no single winning source) is a TRUTHFUL distinct block (F1-7N-FA-3C-R6F2C), never a fabricated source.
     var srcId = s(input.source && input.source.warehouse_id);
-    if (!srcId) return blocked('ROUTE_SOURCE_UNKNOWN');
+    if (!srcId) return blocked((input.source && input.source.multi_pool) ? 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED' : 'ROUTE_SOURCE_UNKNOWN');
     var srcWh = whById[srcId];
     if (!srcWh) return blocked('ROUTE_SOURCE_UNKNOWN');
     if (!whActive(srcWh)) return blocked('ROUTE_SOURCE_INACTIVE');
     var originCountry = s(srcWh.country);
 
-    // (2) DESTINATION — prefer a concrete active warehouse; else a deterministic logical marketplace token; else BLOCK.
+    // (2) DESTINATION — a concrete WAREHOUSE must resolve to ONE ACTIVE warehouse row; else a deterministic logical
+    // MARKETPLACE token; else BLOCK. F1-7N-FA-3C-R6F2C: a WAREHOUSE id that is NOT a real active warehouse now BLOCKS
+    // (DESTINATION_UNKNOWN) instead of silently "resolving" (the false destination_resolved=171 metric) — a string
+    // that merely looks like a warehouse id is never auto-resolved.
     var dest = input.destination || {};
     var destKind, destWarehouseId = '', destMarketplace = '', destCountry = s(dest.country), destWhCode = '';
     if (low(dest.kind) === 'warehouse') {
       destWarehouseId = s(dest.warehouse_id);
       if (!destWarehouseId) return blocked('DESTINATION_MISSING');
       var destWh = whById[destWarehouseId];
-      if (destWh) { if (!whActive(destWh)) return blocked('DESTINATION_INACTIVE'); destCountry = destCountry || s(destWh.country); destWhCode = s(destWh.warehouse_code); }
+      if (!destWh) return blocked('DESTINATION_UNKNOWN');
+      if (!whActive(destWh)) return blocked('DESTINATION_INACTIVE');
+      destCountry = destCountry || s(destWh.country); destWhCode = s(destWh.warehouse_code);
       destKind = 'WAREHOUSE';
     } else if (low(dest.kind) === 'marketplace') {
       destMarketplace = s(dest.marketplace);
@@ -159,27 +180,30 @@
       return okRoute(srcId, destKind, destWarehouseId, destMarketplace, s(override.shipping_method), ovLm.value, { override: true });
     }
 
-    // build candidate methods (distinct shippingMethod) with cost + on-time evidence
+    // build candidate methods (distinct shippingMethod) with cost + on-time evidence. The lane is NON-EMPTY, so ≥1
+    // VALID (manual) method exists — the only question (F1-7N-FA-3C-R6F2C, E) is whether the AI has enough evidence
+    // to AUTO-RANK. A visible-but-unrankable method is MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT, never the
+    // "no method exists" token ROUTE_METHOD_UNRESOLVED (which is reserved for an EMPTY lane, above).
     var byMethod = {}, order = [];
-    lane.forEach(function (dto) { var mkey = low(dto.shippingMethod); if (!mkey) return; if (!byMethod[mkey]) { byMethod[mkey] = { method: s(dto.shippingMethod), cards: [] }; order.push(mkey); } byMethod[mkey].cards.push(dto); });
+    lane.forEach(function (dto) { var mkey = low(dto.shippingMethod); if (!mkey) return; if (!byMethod[mkey]) { byMethod[mkey] = { method: s(dto.shippingMethod), label: s(dto.shippingMethodLabel) || s(dto.shippingMethod), cards: [] }; order.push(mkey); } byMethod[mkey].cards.push(dto); });
     var candidates = order.map(function (mk) {
       var g = byMethod[mk];
       var days = leadDaysFor(g.method, '');
       var c0 = g.cards[0];
-      return { method: g.method, days: days, onTime: onTime(days), cost: estCost(c0), currency: s(c0.currency), chargeType: low(c0.chargeType), chargeUnit: low(c0.chargeUnit), card: c0 };
+      return { method: g.method, label: g.label, days: days, onTime: onTime(days), cost: estCost(c0), currency: s(c0.currency), chargeType: low(c0.chargeType), chargeUnit: low(c0.chargeUnit), card: c0 };
     });
+    var manualOptions = candidates.map(function (c) { return { value: c.method, label: c.label }; }).sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
 
     var onTimeCands = candidates.filter(function (c) { return c.onTime === true; });
+    var anyDays = candidates.some(function (c) { return c.days != null; });
     if (!onTimeCands.length) {
-      // do NOT silently pick the cheapest — advisory fastest only.
       var fastest = candidates.slice().filter(function (c) { return c.days != null; }).sort(function (a, b) { return a.days - b.days; })[0] || null;
-      return { ok: false, block: 'ROUTE_NO_ON_TIME_OPTION', advisory: fastest ? { fastest_method: fastest.method, fastest_days: fastest.days } : null, candidates: candidates.map(evi) };
+      return manualOnly(anyDays ? 'NO_ON_TIME' : 'NO_LEAD_TIME', manualOptions, candidates.map(evi), fastest);
     }
-
-    // among on-time, choose lowest COMPARABLE cost; costs are comparable only across one currency+chargeType+chargeUnit.
+    // among on-time, cost is comparable ONLY across one currency+chargeType+chargeUnit; else the AI cannot rank (manual valid).
     var currencies = uniq(onTimeCands.map(function (c) { return c.currency; }).filter(Boolean));
     var units = uniq(onTimeCands.map(function (c) { return c.chargeType + '|' + c.chargeUnit; }));
-    if (currencies.length > 1 || units.length > 1) return { ok: false, block: 'ROUTE_COST_NOT_COMPARABLE', candidates: onTimeCands.map(evi) };
+    if (currencies.length > 1 || units.length > 1) return manualOnly('COST_NOT_COMPARABLE', manualOptions, onTimeCands.map(evi), null);
     var priced = onTimeCands.filter(function (c) { return isFinite(c.cost); });
     var chosen;
     if (!priced.length) { chosen = onTimeCands.slice().sort(function (a, b) { return a.method < b.method ? -1 : (a.method > b.method ? 1 : 0); })[0]; }
@@ -188,16 +212,34 @@
     // (4) LAST-MILE — must be valid for the chosen destination + method. 1 match → choose; 0/multi → BLOCK.
     var lm = resolveLastMile(byMethod[low(chosen.method)].cards, '');
     if (lm.block) return blocked(lm.block);
-    return okRoute(srcId, destKind, destWarehouseId, destMarketplace, chosen.method, lm.value, { cost: chosen.cost, currency: chosen.currency, days: chosen.days });
+    var autoRankable = onTimeCands.map(function (c) { return { method: c.method, days: c.days, cost: c.cost, currency: c.currency }; });
+    return okRoute(srcId, destKind, destWarehouseId, destMarketplace, chosen.method, lm.value,
+      { cost: chosen.cost, currency: chosen.currency, days: chosen.days },
+      { status: 'AI_RANKED', manual_method_options: manualOptions, auto_rankable_methods: autoRankable });
 
-    function blocked(tok) { return { ok: false, block: tok }; }
-    function okRoute(sourceId, dk, dwid, dmk, method, lastMile, ev) {
+    function blocked(tok) { return { ok: false, block: tok, route_candidate_status: 'BLOCKED' }; }
+    // MANUAL_ONLY — a valid manual method exists but the AI lacks evidence to auto-rank (no lead time / none on-time /
+    // cost not comparable). This is NOT a "no method" block; the scope can still be scoped-READY on its AI-rankable lines.
+    function manualOnly(reason, manualOpts, cands, fastest) {
+      return { ok: false, block: 'ROUTE_AUTO_RANKING_INSUFFICIENT', route_candidate_status: 'MANUAL_ONLY',
+        auto_ranking_insufficient_reason: reason, manual_method_options: manualOpts || [], auto_rankable_methods: [],
+        candidates: cands || [], advisory: fastest ? { fastest_method: fastest.method, fastest_days: fastest.days } : null };
+    }
+    function okRoute(sourceId, dk, dwid, dmk, method, lastMile, ev, dto) {
+      dto = dto || {}; ev = ev || {};
+      var days = isFinite(ev.days) ? ev.days : null;
+      var eta = (days != null && asOf != null) ? ordinalToDate(asOf + days) : '';
       return { ok: true, route: {
         source_warehouse_id: sourceId, destination_kind: dk, destination_warehouse_id: dwid, destination_marketplace: dmk,
         recommended_source_warehouse_id: sourceId, recommended_destination_warehouse_id: dwid,
         recommended_shipping_method: method, recommended_last_mile_delivery: lastMile,
         destination_marketplace: dmk
-      }, evidence: ev || {} };
+      }, evidence: ev,
+      route_candidate_status: dto.status || 'AI_RANKED',
+      manual_method_options: dto.manual_method_options || [{ value: method, label: method }],
+      auto_rankable_methods: dto.auto_rankable_methods || [],
+      selected_method: method, selected_last_mile: lastMile,
+      expected_arrival: eta, estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
     }
   }
 
@@ -239,7 +281,7 @@
     scope = scope || {};
     var buckets = {}, order = [], blocked = [];
     (routedLines || []).forEach(function (rl) {
-      if (!rl || !rl.route || rl.block) { if (rl && rl.block) blocked.push({ line: rl.line, block: rl.block, advisory: rl.advisory || null }); return; }
+      if (!rl || !rl.route || rl.block) { if (rl && rl.block) blocked.push({ line: rl.line, block: rl.block, advisory: rl.advisory || null, route_candidate_status: rl.route_candidate_status || 'BLOCKED', auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null, manual_method_options: rl.manual_method_options || [] }); return; }
       var key = routeTuple(rl.route);
       if (!buckets[key]) { buckets[key] = { routeKey: key, route: rl.route, lines: [] }; order.push(key); }
       buckets[key].lines.push(rl.line);
@@ -326,7 +368,7 @@
       al = al || {};
       var lineKey = planLineKey(al);
       var r = deriveRoute({
-        source: { warehouse_id: al.source_warehouse_id },
+        source: { warehouse_id: al.source_warehouse_id, multi_pool: al.source_multi_pool === true },
         destination: al.destination || {},
         requiredByDate: al.required_by_date, shipDate: input.shipDate,
         warehousesById: whById, rateCards: input.rateCards, leadTimes: input.leadTimes,
@@ -340,20 +382,38 @@
         source_warehouse_id: s(al.source_warehouse_id), source_warehouse_code_snapshot: s(al.source_warehouse_code_snapshot),
         planned_qty: al.planned_qty, recommended_qty: al.recommended_qty, units_per_carton: al.units_per_carton
       };
-      return r.ok ? { line: line, route: r.route } : { line: line, block: r.block, advisory: r.advisory || null };
+      var destKind = (al.destination && low(al.destination.kind)) === 'marketplace' ? 'MARKETPLACE' : ((al.destination && low(al.destination.kind)) === 'warehouse' ? 'WAREHOUSE' : '');
+      // carry the shared Route Candidate DTO fields (G) so partition/preflight/diagnostic all read ONE contract.
+      return r.ok
+        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_rankable_methods: r.auto_rankable_methods, manual_method_options: r.manual_method_options, expected_arrival: r.expected_arrival, estimated_cost: r.estimated_cost, currency: r.currency }
+        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, manual_method_options: r.manual_method_options || [], advisory: r.advisory || null };
     });
     var part = partitionRoutedLines(scope, routed);
     var conservation = checkConservation(input.authorizedBySkuWindow, part.groups, input.sourceCeilingById);
-    return { ok: conservation.conserved, groups: part.groups, blocked: part.blocked, conservation: conservation };
+    // flat per-line outcomes (ONE shared contract for stage accounting in the dry assembly + diagnostic + preflight).
+    var lineOutcomes = routed.map(function (rl) {
+      return {
+        source_warehouse_id: rl.line.source_warehouse_id, destination_kind: rl.destination_kind || '',
+        route_candidate_status: rl.route_candidate_status || (rl.route ? 'AI_RANKED' : 'BLOCKED'),
+        block: rl.block || null, auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null,
+        selected_method: rl.route ? rl.route.recommended_shipping_method : null, expected_arrival: rl.expected_arrival || null
+      };
+    });
+    return { ok: conservation.conserved, groups: part.groups, blocked: part.blocked, conservation: conservation, lineOutcomes: lineOutcomes };
   }
 
   return {
-    VERSION: 'kmwrr-r6f2b-1',
+    VERSION: 'kmwrr-r6f2c-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
-    BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'DESTINATION_MISSING', 'DESTINATION_INACTIVE',
-      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_NO_ON_TIME_OPTION', 'ROUTE_COST_NOT_COMPARABLE', 'LAST_MILE_UNRESOLVED',
-      'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
-    dateToOrdinal: dateToOrdinal, indexWarehouses: indexWarehouses,
+    // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane); MANUAL_ONLY lines
+    // carry ROUTE_AUTO_RANKING_INSUFFICIENT (a valid manual method exists, AI lacks ranking evidence); source
+    // multi-pool = ROUTE_SOURCE_MULTI_POOL_UNRESOLVED; a WAREHOUSE dest that isn't a real active warehouse = DESTINATION_UNKNOWN.
+    BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED',
+      'DESTINATION_MISSING', 'DESTINATION_UNKNOWN', 'DESTINATION_INACTIVE',
+      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'ROUTE_NO_ON_TIME_OPTION', 'ROUTE_COST_NOT_COMPARABLE',
+      'LAST_MILE_UNRESOLVED', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
+    ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'BLOCKED'],
+    dateToOrdinal: dateToOrdinal, ordinalToDate: ordinalToDate, indexWarehouses: indexWarehouses,
     deriveRoute: deriveRoute, routeTuple: routeTuple,
     partitionRoutedLines: partitionRoutedLines, buildGroupHeader: buildGroupHeader,
     checkConservation: checkConservation

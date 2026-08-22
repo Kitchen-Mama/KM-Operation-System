@@ -47,20 +47,24 @@ section('C3 method selection — on-time + lowest comparable cost');
   eq(r.route.recommended_destination_warehouse_id, 'WH-US', 'C3 destination carried');
 })();
 
-section('C3 no on-time option → ROUTE_NO_ON_TIME_OPTION + advisory fastest (never silent cheapest)');
+section('C3 no on-time option → MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT (R6F2C: a valid manual method still exists)');
 (function () {
   // required in 10 days → SEA(35) and AIR(7)... AIR is on-time (7<=10). Make required 5 days → neither on-time.
   var r = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-08-05', warehousesById: whById, rateCards: [RATE_SEA, RATE_AIR], leadTimes: [LT_SEA, LT_AIR] });
-  eq(r.block, 'ROUTE_NO_ON_TIME_OPTION', 'neither meets a 4-day window → ROUTE_NO_ON_TIME_OPTION');
-  eq(r.advisory.fastest_method, 'AIR', 'advisory names the fastest (AIR 7d) — evidence only, not chosen');
-  ok(!r.route, 'no route returned on block');
+  eq(r.block, 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'R6F2C: none on-time → AI cannot auto-rank (a valid manual method still exists), NOT a hard no-method block');
+  eq(r.route_candidate_status, 'MANUAL_ONLY', 'status MANUAL_ONLY');
+  eq(r.auto_ranking_insufficient_reason, 'NO_ON_TIME', 'reason NO_ON_TIME');
+  ok(r.manual_method_options && r.manual_method_options.length >= 1, 'manual method options are still offered');
+  eq(r.advisory.fastest_method, 'AIR', 'advisory names the fastest (AIR 7d) — evidence only, not auto-chosen');
+  ok(!r.route, 'no auto route returned');
 })();
 
-section('C3 incomparable currency → ROUTE_COST_NOT_COMPARABLE');
+section('C3 incomparable currency → MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT (COST_NOT_COMPARABLE)');
 (function () {
   var airEUR = JSON.parse(JSON.stringify(RATE_AIR)); airEUR.currency = 'EUR';
   var r = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [RATE_SEA, airEUR], leadTimes: [LT_SEA, LT_AIR] });
-  eq(r.block, 'ROUTE_COST_NOT_COMPARABLE', 'two on-time methods, different currency → BLOCK');
+  eq(r.block, 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'two on-time methods, different currency → AI cannot rank (manual valid)');
+  eq(r.auto_ranking_insufficient_reason, 'COST_NOT_COMPARABLE', 'reason COST_NOT_COMPARABLE');
 })();
 
 section('C3 no lane / no method → ROUTE_METHOD_UNRESOLVED');
