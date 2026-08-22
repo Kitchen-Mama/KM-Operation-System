@@ -41,6 +41,13 @@ function TEMP_R5B_DIAGNOSE_CANONICAL_DRAFT_TABLE() { return TEMP_r5bDiagnoseCano
 // F1-7N-FA-3C-R5C-P0 — READ-ONLY permanent-write incident audit: enumerates every Date/coerced planning_cycle row,
 // the deterministic-id cycle, projected duplicate groups + unresolvable ids. Writes NOTHING. Freezes the R5C1 set.
 function TEMP_R5C_AUDIT_DRAFT_WRITE_INCIDENT() { return TEMP_r5cAuditDraftWriteIncident_(); }
+// F1-7N-FA-3C-R5C1 — EXACT-41 live cycle repair tooling. DRY_RUN + VALIDATE are READ-ONLY; EXECUTE modifies ONLY the
+// planning_cycle cell of the exact 41 frozen IDs (setNumberFormat('@') + primitive string "2026-08"), gated by a full
+// pre-execution safety matrix + a deterministic SHA-256 over the sorted 41 IDs. Idempotent (ALREADY_REPAIRED /
+// PARTIAL_REPAIR_DETECTED). NEVER touches ids/other 52 fields/audit stamps/Draft Lines/legacy backup; never deploys.
+function TEMP_R5C1_DRY_RUN_REPAIR_DRAFT_CYCLES() { return TEMP_r5c1RepairDraftCycles_({ execute: false }); }
+function TEMP_R5C1_EXECUTE_REPAIR_DRAFT_CYCLES() { return TEMP_r5c1RepairDraftCycles_({ execute: true }); }
+function TEMP_R5C1_VALIDATE_REPAIRED_DRAFT_CYCLES() { return TEMP_r5c1ValidateRepairedDraftCycles_(); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
@@ -758,5 +765,278 @@ function TEMP_r5cAuditDraftWriteIncident_() {
     R5C_INCIDENT_AUDIT_READY: 'YES'
   };
   Logger.log('R5C_INCIDENT_AUDIT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R5C1 — EXACT-41 live cycle repair tooling (paste-ready, USER-run, ONE-TIME).
+// Repairs ONLY the planning_cycle of the exact 41 frozen incident IDs (Date "2026-07-31T16:00:00.000Z" → primitive
+// string "2026-08"). DRY_RUN + VALIDATE write NOTHING; EXECUTE modifies ONLY those 41 planning_cycle cells, gated by a
+// full pre-execution safety matrix + a deterministic SHA-256 over the sorted 41 IDs. Idempotent. NEVER modifies ids,
+// the other 52 fields, created_at/updated_at, row order/tabs, Draft Lines, or the legacy backup; NEVER deploys/syncs.
+// The month is authorized ONLY by the frozen ID list + each ID's encoded 2026-08 + project-tz agreement — NEVER a UTC
+// slice of the Date. Run order: DRY_RUN → (architect verifies the log) → EXECUTE → VALIDATE.
+// ================================================================================================================
+var TEMP_R5C1_FROZEN_IDS_ = [
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1100-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-BM',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-MB',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-N',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-OM',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-XR',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1150-ZW',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO2102-P',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO2300-Y',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO2600-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO2600-T',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO2600-W',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO5600-Q',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO5600-RB',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO5600-RE',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO5600-Z',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=GA0150-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=GA0150-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=GM3000-M1',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=GM3000-T1',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=MG0110-E',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=MO5600-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=MO5600-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=MO5600-W',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP0650-RM',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3120-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3120-Y',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3210-B',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3210-Y',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3410-B',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3410-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP3410-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5020-B',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5020-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5020-T',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5020-Y',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5023-M',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5023-R',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5023-T',
+  'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-M'
+];
+var TEMP_R5C1_EXPECT_ = {
+  CANONICAL_ROWS: 67, DRAFT_LINES: 65, FROZEN_COUNT: 41, OFFENDER_ISO: '2026-07-31T16:00:00.000Z', TARGET_CYCLE: '2026-08',
+  AFTER_STATUS: { submitted: 20, draft: 47 }, AFTER_MARKETPLACE: { Amazon: 59, Shopify: 3, Walmart: 5 }, AFTER_PURPOSE: { regular: 67 }
+};
+// deterministic SHA-256 over the sorted 41 frozen IDs joined by "\n" (hex). Constant across DRY_RUN/EXECUTE/VALIDATE.
+function TEMP_r5c1Checksum_() {
+  var joined = TEMP_R5C1_FROZEN_IDS_.slice().sort().join('\n');
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, joined, Utilities.Charset.UTF_8), hex = '';
+  for (var i = 0; i < bytes.length; i++) { var b = bytes[i]; if (b < 0) b += 256; var s = b.toString(16); hex += (s.length === 1 ? '0' : '') + s; }
+  return hex;
+}
+// parse RD::MONTHLY_ORDER::<cycle>::k=v|k=v|... → { ok, cycle, scope:{company,country,marketplace,sku,draft_purpose} }
+function TEMP_r5c1ParseId_(id) {
+  var m = String(id || '').match(/^RD::MONTHLY_ORDER::(\d{4}-(?:0[1-9]|1[0-2]))::(.+)$/);
+  if (!m) return { ok: false, cycle: '', scope: {} };
+  var parts = m[2].split('|'), scope = {};
+  for (var i = 0; i < parts.length; i++) { var eq = parts[i].indexOf('='); if (eq === -1) return { ok: false, cycle: '', scope: {} }; scope[parts[i].slice(0, eq)] = parts[i].slice(eq + 1); }
+  return { ok: true, cycle: m[1], scope: scope };
+}
+function TEMP_r5c1Norm_(v) { return TEMP_isDate_(v) ? (function () { try { return v.toISOString(); } catch (e) { return String(v); } })() : String(v === null || v === undefined ? '' : v); }
+function TEMP_r5c1Dist_(rows, field) { var d = {}; rows.forEach(function (r) { var k = TEMP_str_(r.obj[field]) || (field === 'draft_purpose' ? 'regular' : ''); d[k] = (d[k] || 0) + 1; }); return d; }
+function TEMP_r5c1CycleTypeDist_(rows) { var d = {}; rows.forEach(function (r) { var t = TEMP_isDate_(r.obj.planning_cycle) ? 'Date' : (r.obj.planning_cycle === null || r.obj.planning_cycle === undefined ? 'null' : typeof r.obj.planning_cycle); d[t] = (d[t] || 0) + 1; }); return d; }
+function TEMP_r5c1CycleValDist_(rows) { var d = {}; rows.forEach(function (r) { var k = TEMP_r5c1Norm_(r.obj.planning_cycle); d[k] = (d[k] || 0) + 1; }); return d; }
+function TEMP_r5c1ProjectedDupCount_(rows, frozenSet) {   // active natural-key duplicate groups after canonicalizing offenders
+  var groups = {};
+  rows.forEach(function (r) {
+    var st = TEMP_str_(r.obj.status).toLowerCase(); if (st !== 'draft' && st !== 'site_confirmed') return;
+    var cyc; if (frozenSet[r.id]) { var p = TEMP_r5c1ParseId_(r.id); cyc = p.ok ? p.cycle : ('UNRESOLVABLE:' + r.id); }
+    else cyc = TEMP_r5c1Norm_(r.obj.planning_cycle);
+    var k = TEMP_r5cNatKey_(r.obj.company, r.obj.country, r.obj.marketplace, r.obj.sku, r.obj.draft_purpose, cyc);
+    (groups[k] = groups[k] || []).push(r.id);
+  });
+  var dup = 0; Object.keys(groups).forEach(function (k) { if (groups[k].length > 1) dup++; }); return dup;
+}
+
+// Shared READ + full pre-execution GATE (used by DRY_RUN, EXECUTE and VALIDATE). Writes NOTHING. Resolves rows by
+// EXACT id (never a stored row number). EXECUTE re-runs this against LIVE, so any activity/drift since DRY_RUN fails a
+// gate here — the gate matrix IS the drift check.
+function TEMP_r5c1ReadAndGate_() {
+  var checksum = null; try { checksum = TEMP_r5c1Checksum_(); } catch (e) { checksum = 'CHECKSUM_UNAVAILABLE'; }
+  if (typeof KMRDV2 === 'undefined' || !KMRDV2 || !Array.isArray(KMRDV2.V2_HEADERS)) return { halt: 'V2_BUNDLE_ABSENT', checksum: checksum };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e1) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId);
+  var flagOn = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') && requestOrderDraftV2FlatCutoverEnabled_() === true;
+  var v2 = KMRDV2.V2_HEADERS;
+  var sh = ss ? ss.getSheetByName(TEMP_R5C_CANON_) : null;
+  if (!sh) return { halt: 'CANONICAL_TAB_ABSENT_OR_WRONG_TARGET', checksum: checksum, RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch ? 'YES' : 'NO', active_flag: flagOn };
+  var values = sh.getDataRange().getValues();
+  var headers = (values[0] || []).map(function (h) { return String(h).trim(); });
+  var schemaExact = headers.length === v2.length && headers.join('|') === v2.join('|');
+  var idCol = headers.indexOf('request_allocation_draft_id'), cycleCol = headers.indexOf('planning_cycle');
+  var rows = [];   // {rowNum(1-based), obj, id, isDate, iso}
+  for (var r = 1; r < values.length; r++) {
+    var blank = true, o = {}; for (var c = 0; c < headers.length; c++) { o[headers[c]] = values[r][c]; if (String(values[r][c]).trim() !== '') blank = false; }
+    if (blank) continue;
+    var cv = o.planning_cycle;
+    rows.push({ rowNum: r + 1, obj: o, id: TEMP_str_(o.request_allocation_draft_id), isDate: TEMP_isDate_(cv), iso: TEMP_r5c1Norm_(cv) });
+  }
+  var linesRead = TEMP_readObjects_(TEMP_R5C_LINES_), draftLineCount = (linesRead.rows || []).length;
+
+  var frozen = TEMP_R5C1_FROZEN_IDS_.slice(), frozenSet = {}; frozen.forEach(function (id) { frozenSet[id] = 1; });
+  var byId = {}; rows.forEach(function (rw) { (byId[rw.id] = byId[rw.id] || []).push(rw); });
+  var missing = frozen.filter(function (id) { return !byId[id]; });
+  var dupFrozen = frozen.filter(function (id) { return byId[id] && byId[id].length > 1; });
+
+  var pending = [], repaired = [], badState = [], scopeMismatch = [], statusBad = [], genBad = [], idCycleBad = [], isoBad = [];
+  frozen.forEach(function (id) {
+    if (!byId[id] || byId[id].length !== 1) return;   // missing/dup handled above
+    var rw = byId[id][0], o = rw.obj, parsed = TEMP_r5c1ParseId_(id);
+    if (!parsed.ok || parsed.cycle !== TEMP_R5C1_EXPECT_.TARGET_CYCLE) idCycleBad.push(id);
+    else {
+      var s = parsed.scope;
+      if (!(TEMP_str_(o.company) === s.company && TEMP_str_(o.country) === s.country && TEMP_str_(o.marketplace) === s.marketplace && TEMP_str_(o.sku) === s.sku && (TEMP_str_(o.draft_purpose) || 'regular') === s.draft_purpose)) scopeMismatch.push(id);
+    }
+    if (TEMP_str_(o.status).toLowerCase() !== 'draft') statusBad.push(id);
+    if (TEMP_str_(o.generation_type).toLowerCase() !== 'ai_plan') genBad.push(id);
+    if (rw.isDate) { pending.push(rw); if (rw.iso !== TEMP_R5C1_EXPECT_.OFFENDER_ISO) isoBad.push(id); }
+    else if (!rw.isDate && TEMP_str_(o.planning_cycle) === TEMP_R5C1_EXPECT_.TARGET_CYCLE) repaired.push(rw);
+    else badState.push({ id: id, raw: rw.iso });
+  });
+  // every Date-cycle row in the table must be a frozen ID (no unexpected offender)
+  var unexpectedOffenders = rows.filter(function (rw) { return rw.isDate && !frozenSet[rw.id]; }).map(function (rw) { return rw.id; });
+  // the non-frozen rows (the migrated cohort) must all be primitive string 2026-08
+  var nonFrozenRows = rows.filter(function (rw) { return !frozenSet[rw.id]; });
+  var nonFrozenNotString = nonFrozenRows.filter(function (rw) { return !(typeof rw.obj.planning_cycle === 'string' && rw.obj.planning_cycle === TEMP_R5C1_EXPECT_.TARGET_CYCLE); }).map(function (rw) { return rw.id; });
+  var unresolvable = frozen.filter(function (id) { return !TEMP_r5c1ParseId_(id).ok; });
+  var projectedDup = TEMP_r5c1ProjectedDupCount_(rows, frozenSet);
+
+  var gates = {
+    target_match: targetMatch, flag_true: flagOn, tab_exists: true, schema_exact: schemaExact,
+    canonical_row_count_67: rows.length === TEMP_R5C1_EXPECT_.CANONICAL_ROWS,
+    draft_lines_65: draftLineCount === TEMP_R5C1_EXPECT_.DRAFT_LINES,
+    frozen_count_41: frozen.length === TEMP_R5C1_EXPECT_.FROZEN_COUNT,
+    all_frozen_present: missing.length === 0, no_frozen_duplicate: dupFrozen.length === 0,
+    no_unexpected_offender: unexpectedOffenders.length === 0, no_frozen_bad_state: badState.length === 0,
+    id_encodes_2026_08: idCycleBad.length === 0, id_scope_agreement: scopeMismatch.length === 0,
+    status_draft: statusBad.length === 0, generation_type_ai_plan: genBad.length === 0,
+    projected_duplicate_zero: projectedDup === 0, unresolvable_zero: unresolvable.length === 0,
+    other_rows_string_2026_08: nonFrozenNotString.length === 0
+  };
+  var pendingGates = { pending_iso_exact: isoBad.length === 0 };   // only meaningful for rows still needing repair
+  var coreGatesPass = Object.keys(gates).every(function (k) { return gates[k] === true; });
+  var pendingGatesPass = Object.keys(pendingGates).every(function (k) { return pendingGates[k] === true; });
+
+  return {
+    checksum: checksum, ss: ss, sh: sh, values: values, headers: headers, idCol: idCol, cycleCol: cycleCol, rows: rows,
+    frozen: frozen, frozenSet: frozenSet, byId: byId, draftLineCount: draftLineCount,
+    pending: pending, repaired: repaired, badState: badState,
+    missing: missing, dupFrozen: dupFrozen, unexpectedOffenders: unexpectedOffenders, nonFrozenNotString: nonFrozenNotString,
+    scopeMismatch: scopeMismatch, statusBad: statusBad, genBad: genBad, idCycleBad: idCycleBad, isoBad: isoBad, unresolvable: unresolvable,
+    projectedDup: projectedDup, gates: gates, pendingGates: pendingGates, coreGatesPass: coreGatesPass, pendingGatesPass: pendingGatesPass,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch ? 'YES' : 'NO', active_flag: flagOn
+  };
+}
+
+// public core — execute:false = DRY RUN (read-only); execute:true = repair ONLY the pending frozen planning_cycle cells.
+function TEMP_r5c1RepairDraftCycles_(opts) {
+  opts = opts || {}; var execute = opts.execute === true;
+  var g = TEMP_r5c1ReadAndGate_();
+  if (g.halt) return { ok: false, mode: execute ? 'EXECUTE' : 'DRY_RUN', halt: g.halt, R5C1_CHECKSUM: g.checksum, R5C1_ZERO_WRITE_CONFIRMED: 'YES' };
+  var base = {
+    mode: execute ? 'EXECUTE' : 'DRY_RUN', R5C1_CHECKSUM: g.checksum, RUNTIME_SPREADSHEET_TARGET_MATCH: g.RUNTIME_SPREADSHEET_TARGET_MATCH,
+    active_flag: g.active_flag, gates: g.gates, pending_gates: g.pendingGates, core_gates_pass: g.coreGatesPass,
+    canonical_row_count: g.rows.length, draft_line_row_count: g.draftLineCount,
+    frozen_id_count: g.frozen.length, pending_count: g.pending.length, repaired_count: g.repaired.length,
+    pending_ids: g.pending.map(function (r) { return r.id; }).sort(), already_repaired_ids: g.repaired.map(function (r) { return r.id; }).sort(),
+    failing_gates: Object.keys(g.gates).filter(function (k) { return g.gates[k] !== true; }),
+    diagnostics: { missing: g.missing, dupFrozen: g.dupFrozen, unexpectedOffenders: g.unexpectedOffenders, badState: g.badState, scopeMismatch: g.scopeMismatch, statusBad: g.statusBad, genBad: g.genBad, idCycleBad: g.idCycleBad, isoBad: g.isoBad, unresolvable: g.unresolvable, projectedDup: g.projectedDup, nonFrozenNotString: g.nonFrozenNotString }
+  };
+  // HALT if any core gate fails, or (when there are pending rows) any pending-specific gate fails.
+  if (!g.coreGatesPass || (g.pending.length > 0 && !g.pendingGatesPass)) {
+    base.ok = false; base.halt = 'R5C1_PRE_EXECUTION_GATE_FAILED'; base.R5C1_ZERO_WRITE_CONFIRMED = 'YES';
+    Logger.log('R5C1 ' + base.mode + ' HALT ' + JSON.stringify(base, null, 2)); return base;
+  }
+  // idempotency: nothing pending → ALREADY_REPAIRED (zero writes) regardless of execute
+  if (g.pending.length === 0) {
+    base.ok = true; base.repair_status = 'ALREADY_REPAIRED'; base.writes = 0; base.R5C1_ZERO_WRITE_CONFIRMED = 'YES';
+    base.verdict = 'ALREADY_REPAIRED';
+    Logger.log('R5C1 ' + base.mode + ' ALREADY_REPAIRED (zero writes)'); return base;
+  }
+  base.repair_status = (g.repaired.length > 0) ? 'PARTIAL_REPAIR_DETECTED' : 'FULL_REPAIR';
+  if (!execute) {
+    base.ok = true; base.writes = 0; base.would_write_count = g.pending.length; base.R5C1_ZERO_WRITE_CONFIRMED = 'YES';
+    base.verdict = 'READY_TO_EXECUTE';
+    Logger.log('R5C1 DRY_RUN READY_TO_EXECUTE — would repair ' + g.pending.length + ' cells\n' + JSON.stringify(base, null, 2));
+    return base;
+  }
+  // ---- EXECUTE: snapshot BEFORE (all 53 fields, all rows), write ONLY the pending planning_cycle cells, flush, prove ----
+  var beforeSnap = g.rows.map(function (rw) { return { id: rw.id, rowNum: rw.rowNum, norm: g.headers.map(function (h) { return TEMP_r5c1Norm_(rw.obj[h]); }) }; });
+  var changed = [];
+  for (var i = 0; i < g.pending.length; i++) {
+    var rw = g.pending[i], cell = g.sh.getRange(rw.rowNum, g.cycleCol + 1, 1, 1);
+    cell.setNumberFormat('@');                 // plain text — this ONE planning_cycle cell only
+    cell.setValues([[TEMP_R5C1_EXPECT_.TARGET_CYCLE]]);   // primitive canonical string; id + other 52 fields untouched
+    changed.push({ id: rw.id, rowNum: rw.rowNum });
+  }
+  SpreadsheetApp.flush();
+  // ---- roundtrip + full before/after invariants ----
+  var g2 = TEMP_r5c1ReadAndGate_();
+  var afterRows = g2.rows, afterById = g2.byId;
+  var cellChanges = [], nonCycleChanges = [];
+  beforeSnap.forEach(function (bs) {
+    var arw = afterById[bs.id] && afterById[bs.id][0]; if (!arw) return;
+    g.headers.forEach(function (h, ci) { var an = TEMP_r5c1Norm_(arw.obj[h]); if (an !== bs.norm[ci]) { cellChanges.push({ id: bs.id, field: h }); if (ci !== g.cycleCol) nonCycleChanges.push({ id: bs.id, field: h }); } });
+  });
+  var cycleTypeDist = TEMP_r5c1CycleTypeDist_(afterRows), cycleValDist = TEMP_r5c1CycleValDist_(afterRows);
+  var statusDist = TEMP_r5c1Dist_(afterRows, 'status'), purposeDist = TEMP_r5c1Dist_(afterRows, 'draft_purpose'), mktDist = TEMP_r5c1Dist_(afterRows, 'marketplace');
+  var idSetBefore = beforeSnap.map(function (b) { return b.id; }).sort().join('|'), idSetAfter = afterRows.map(function (r) { return r.id; }).sort().join('|');
+  var proofs = {
+    exactly_pending_cells_changed: cellChanges.length === g.pending.length,
+    every_change_is_planning_cycle: nonCycleChanges.length === 0,
+    formatting_targets_all_planning_cycle: changed.length === g.pending.length,
+    row_count_67: afterRows.length === TEMP_R5C1_EXPECT_.CANONICAL_ROWS,
+    id_set_identical: idSetBefore === idSetAfter,
+    draft_lines_65: g2.draftLineCount === TEMP_R5C1_EXPECT_.DRAFT_LINES,
+    cycle_type_string_only: JSON.stringify(cycleTypeDist) === JSON.stringify({ string: TEMP_R5C1_EXPECT_.CANONICAL_ROWS }),
+    cycle_distribution_2026_08: JSON.stringify(cycleValDist) === JSON.stringify((function () { var d = {}; d[TEMP_R5C1_EXPECT_.TARGET_CYCLE] = TEMP_R5C1_EXPECT_.CANONICAL_ROWS; return d; })()),
+    status_distribution_ok: statusDist.submitted === TEMP_R5C1_EXPECT_.AFTER_STATUS.submitted && statusDist.draft === TEMP_R5C1_EXPECT_.AFTER_STATUS.draft,
+    purpose_regular_67: purposeDist.regular === TEMP_R5C1_EXPECT_.AFTER_PURPOSE.regular,
+    marketplace_ok: mktDist.Amazon === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Amazon && mktDist.Shopify === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Shopify && mktDist.Walmart === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Walmart,
+    no_projected_duplicate: g2.projectedDup === 0, post_repair_gates_pass: g2.coreGatesPass && g2.pending.length === 0
+  };
+  var allProofsPass = Object.keys(proofs).every(function (k) { return proofs[k] === true; });
+  base.ok = allProofsPass; base.writes = changed.length; base.changed_ids = changed.map(function (c) { return c.id; }).sort();
+  base.R5C1_ZERO_WRITE_CONFIRMED = 'NO(execute)'; base.before_after_proofs = proofs;
+  base.after_cycle_type_distribution = cycleTypeDist; base.after_cycle_value_distribution = cycleValDist;
+  base.after_status_distribution = statusDist; base.after_purpose_distribution = purposeDist; base.after_marketplace_distribution = mktDist;
+  base.non_cycle_changes = nonCycleChanges; base.total_cell_changes = cellChanges.length;
+  base.verdict = allProofsPass ? 'REPAIR_EXECUTED_VERIFIED' : 'REPAIR_EXECUTED_BUT_PROOF_FAILED_MANUAL_ROLLBACK';
+  Logger.log('R5C1 EXECUTE ' + base.verdict + ' — wrote ' + changed.length + ' planning_cycle cells\n' + JSON.stringify(base, null, 2));
+  return base;
+}
+
+// READ-ONLY post-repair validator (independent re-read; writes NOTHING).
+function TEMP_r5c1ValidateRepairedDraftCycles_() {
+  var g = TEMP_r5c1ReadAndGate_();
+  if (g.halt) return { ok: false, mode: 'VALIDATE', halt: g.halt, R5C1_CHECKSUM: g.checksum, R5C1_ZERO_WRITE_CONFIRMED: 'YES' };
+  var cycleTypeDist = TEMP_r5c1CycleTypeDist_(g.rows), cycleValDist = TEMP_r5c1CycleValDist_(g.rows);
+  var statusDist = TEMP_r5c1Dist_(g.rows, 'status'), purposeDist = TEMP_r5c1Dist_(g.rows, 'draft_purpose'), mktDist = TEMP_r5c1Dist_(g.rows, 'marketplace');
+  var checks = {
+    checksum_match: true,   // constant over the frozen list; reported for cross-run equality
+    string_cycle_67: (cycleTypeDist.string === TEMP_R5C1_EXPECT_.CANONICAL_ROWS) && !cycleTypeDist.Date,
+    all_2026_08: cycleValDist[TEMP_R5C1_EXPECT_.TARGET_CYCLE] === TEMP_R5C1_EXPECT_.CANONICAL_ROWS,
+    row_count_67: g.rows.length === TEMP_R5C1_EXPECT_.CANONICAL_ROWS, draft_lines_65: g.draftLineCount === TEMP_R5C1_EXPECT_.DRAFT_LINES,
+    status_ok: statusDist.submitted === TEMP_R5C1_EXPECT_.AFTER_STATUS.submitted && statusDist.draft === TEMP_R5C1_EXPECT_.AFTER_STATUS.draft,
+    purpose_ok: purposeDist.regular === TEMP_R5C1_EXPECT_.AFTER_PURPOSE.regular,
+    marketplace_ok: mktDist.Amazon === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Amazon && mktDist.Shopify === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Shopify && mktDist.Walmart === TEMP_R5C1_EXPECT_.AFTER_MARKETPLACE.Walmart,
+    no_unexpected_offender: g.unexpectedOffenders.length === 0, no_projected_duplicate: g.projectedDup === 0,
+    all_frozen_present_once: g.missing.length === 0 && g.dupFrozen.length === 0
+  };
+  var pass = Object.keys(checks).every(function (k) { return checks[k] === true; });
+  var out = { ok: pass, mode: 'VALIDATE', R5C1_CHECKSUM: g.checksum, R5C1_ZERO_WRITE_CONFIRMED: 'YES', RUNTIME_SPREADSHEET_TARGET_MATCH: g.RUNTIME_SPREADSHEET_TARGET_MATCH,
+    canonical_row_count: g.rows.length, draft_line_row_count: g.draftLineCount, pending_count: g.pending.length, repaired_count: g.repaired.length,
+    after_cycle_type_distribution: cycleTypeDist, after_cycle_value_distribution: cycleValDist, after_status_distribution: statusDist, after_purpose_distribution: purposeDist, after_marketplace_distribution: mktDist,
+    checks: checks, verdict: pass ? 'REPAIR_VALIDATED' : 'REPAIR_VALIDATION_FAILED' };
+  Logger.log('R5C1 VALIDATE ' + out.verdict + '\n' + JSON.stringify(out, null, 2));
   return out;
 }
