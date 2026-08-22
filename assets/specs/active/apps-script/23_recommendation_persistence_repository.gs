@@ -50,9 +50,19 @@ function rprPureModule_() {
 // Read a Sheet into the pure module's { headers, rows } shape (deterministic row order preserved).
 function rprReadTable_(ss, name) {
   var headers = RPR_TABLE_HEADERS_[name];
+  // F1-7N-FA-3C-R5B-P0: under the flat V2 cutover, request_order_allocation_drafts IS the canonical 53-col KMRDV2
+  // schema (the legacy authority requires the retired category_snapshot/series_snapshot columns → HEADER_MISSING on
+  // the V2 tab). Route on the cutover flag BEFORE schema validation so this ONE shared loader — used by the AI-Plan
+  // generation writer, flat readback, edit, submit and Send — converges on KMRDV2.V2_HEADERS. flag=false keeps the
+  // legacy authority for rollback. No other table's authority changes.
+  if (name === 'request_order_allocation_drafts'
+      && typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function' && requestOrderDraftV2FlatCutoverEnabled_()
+      && typeof KMRDV2 !== 'undefined' && KMRDV2 && Array.isArray(KMRDV2.V2_HEADERS)) {
+    headers = KMRDV2.V2_HEADERS;
+  }
   if (!headers) throw new Error('unknown recommendation table: ' + name);
   var sh = procurementEnsureSheet_(ss, name, headers);
-  sheetEnsureColumns_(sh, headers);   // additive ensure (never reorders/removes)
+  sheetEnsureColumns_(sh, headers);   // additive ensure (never reorders/removes) — V2 headers all present → no append
   var values = sh.getDataRange().getValues();
   var head = (values[0] || headers).map(function (h) { return String(h).trim(); });
   return { sheet: sh, headers: head, rows: values.slice(1) };

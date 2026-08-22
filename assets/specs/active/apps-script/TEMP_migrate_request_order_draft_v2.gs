@@ -36,6 +36,8 @@ function TEMP_R4_AUDIT_ALL_26_RequestOrderDraftV2() { return TEMP_auditAll26Requ
 // order_planning_gap + marketplace_skus; exposes every raw live marketplace token; simulates active-lookup reuse with
 // the REAL KMRDV2P.loadActiveFlat / scopeMatches_ equality. Writes NOTHING; applies no silent normalization/aliasing.
 function TEMP_R4_AUDIT_ACTIVE_SCOPE_TOKENS_RequestOrderDraftV2() { return TEMP_auditActiveScopeTokens_(); }
+// F1-7N-FA-3C-R5B-P0 — READ-ONLY live canonical-table + header-authority diagnostic. Writes NOTHING.
+function TEMP_R5B_DIAGNOSE_CANONICAL_DRAFT_TABLE() { return TEMP_r5bDiagnoseCanonicalDraftTable_(); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
@@ -523,4 +525,104 @@ function TEMP_auditActiveScopeTokens_() {
   Logger.log('ACTIVE_SCOPE_CONFLICTS ' + JSON.stringify(conflicts, null, 2));
   Logger.log('ACTIVE_SCOPE_CHECKSUM ' + JSON.stringify({ EXPECTED_ROWS: 6, DIAGNOSTIC_ROWS: rows.length, UNIQUE_SOURCE_IDS: Object.keys(seenId).length, MISSING_ROWS: 6 - rows.length, GAP_TAB_PRESENT: true, MARKETPLACE_SKUS_TAB_PRESENT: true }));
   return { summary: summary, rows: rows, tokenMap: TEMP_R4B5_MKT_MAP_, conflicts: conflicts };
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R5B-P0 — READ-ONLY canonical-table + header-authority diagnostic (writes NOTHING).
+// Reports the live runtime Spreadsheet target, the canonical request_order_allocation_drafts tab, its exact headers
+// vs KMRDV2.V2_HEADERS, the selected loader authority (LEGACY vs FLAT_V2), and the flag — so the USER can confirm the
+// HEADER_MISSING root cause and the fix before any retry. It NEVER writes / renames / repairs anything.
+// ================================================================================================================
+var TEMP_R5B_CANONICAL_TAB_ = 'request_order_allocation_drafts';
+
+function TEMP_r5bHash_(s) {   // small deterministic non-crypto fingerprint (not an id/credential)
+  var h = 5381; s = String(s); for (var i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+function TEMP_r5bIdFingerprint_(id) {   // partial, non-reversible-ish — never the full id
+  id = String(id || ''); if (!id) return '(blank)';
+  return 'len' + id.length + ':' + id.slice(0, 4) + '…' + id.slice(-4) + ':h' + TEMP_r5bHash_(id);
+}
+function TEMP_r5bTypeOf_(v) { return TEMP_isDate_(v) ? 'Date' : (v === null || v === undefined ? 'null' : typeof v); }
+
+function TEMP_r5bDiagnoseCanonicalDraftTable_() {
+  if (typeof KMRDV2 === 'undefined' || !KMRDV2 || !Array.isArray(KMRDV2.V2_HEADERS)) {
+    return { halt: 'V2_BUNDLE_ABSENT', message: 'KMRDV2 not present — sync 90_ bundle first', R5B_DIAGNOSTIC_READY: 'NO' };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = '', runtimeName = '';
+  try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  try { runtimeName = ss ? String(ss.getName()) : ''; } catch (e2) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN(no PRODUCTION_DB_SPREADSHEET_ID_ configured)' : 'NO');
+
+  var flagOn = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') && requestOrderDraftV2FlatCutoverEnabled_() === true;
+  var V2 = KMRDV2.V2_HEADERS;
+
+  var sh = ss ? ss.getSheetByName(TEMP_R5B_CANONICAL_TAB_) : null;
+  var present = !!sh, exactName = '', headerCount = 0, actualHeaders = [], dataRows = 0;
+  var first10 = [], cycleTypes = {}, idTypes = {};
+  if (present) {
+    // exact name incl. any hidden whitespace
+    try { exactName = String(sh.getName()); } catch (e3) { exactName = TEMP_R5B_CANONICAL_TAB_; }
+    var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow >= 1 && lastCol >= 1) {
+      var hv = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+      actualHeaders = hv.map(function (h) { return String(h).trim(); });
+      headerCount = actualHeaders.length;
+      for (var i = 0; i < Math.min(10, hv.length); i++) first10.push({ index: i, raw: String(hv[i]), type: TEMP_r5bTypeOf_(hv[i]) });
+      dataRows = Math.max(0, lastRow - 1);
+      if (dataRows > 0) {
+        var body = sh.getRange(2, 1, dataRows, lastCol).getValues();
+        var ci = actualHeaders.indexOf('planning_cycle'), ii = actualHeaders.indexOf('request_allocation_draft_id');
+        body.forEach(function (r) {
+          if (ci !== -1) { var t = TEMP_r5bTypeOf_(r[ci]); cycleTypes[t] = (cycleTypes[t] || 0) + 1; }
+          if (ii !== -1) { var t2 = TEMP_r5bTypeOf_(r[ii]); idTypes[t2] = (idTypes[t2] || 0) + 1; }
+        });
+      }
+    }
+  }
+  var actualSet = {}; actualHeaders.forEach(function (h) { actualSet[h] = (actualSet[h] || 0) + 1; });
+  var v2Set = {}; V2.forEach(function (h) { v2Set[h] = 1; });
+  var missing = V2.filter(function (h) { return !actualSet[h]; });
+  var extra = actualHeaders.filter(function (h) { return !v2Set[h]; });
+  var duplicates = Object.keys(actualSet).filter(function (h) { return actualSet[h] > 1; });
+  var schemaExact = present && headerCount === V2.length && actualHeaders.join('|') === V2.join('|');
+
+  // the loader authority rprReadTable_ WOULD select for this tab (post-R5B: flag routes BEFORE the header guard)
+  var loaderAuthority = flagOn ? 'FLAT_V2' : 'LEGACY';
+  var v2AuthorityBeforeGuard = flagOn ? 'YES' : 'NO';
+
+  var out = {
+    // 1 runtime target
+    runtime_spreadsheet_name: runtimeName, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    runtime_acquisition_path: 'getActiveSpreadsheet', expected_db_id_fingerprint: TEMP_r5bIdFingerprint_(expectedId),
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+    // 2-3 tab
+    CANONICAL_TAB_PRESENT: present ? 'YES' : 'NO', canonical_tab_exact_name: exactName,
+    canonical_tab_name_has_whitespace: (exactName !== exactName.trim()) ? 'YES' : 'NO',
+    // 4-11 headers
+    header_count: headerCount, expected_v2_header_count: V2.length,
+    actual_headers: actualHeaders, expected_v2_headers_hash: TEMP_r5bHash_(V2.join('|')), actual_headers_hash: TEMP_r5bHash_(actualHeaders.join('|')),
+    missing_v2_headers: missing, extra_headers: extra, duplicate_headers: duplicates, first_10_raw_headers: first10,
+    // 12-14 data
+    data_row_count: dataRows, planning_cycle_type_distribution: cycleTypes, id_type_distribution: idTypes,
+    // 15 sheetSet include convergence (static design fact — all V2 consumers share rprBuildSheetSet_ → rprReadTable_)
+    sheetset_include_note: 'AI-Plan job / generation writer / flat readback / edit / submit / Send all build via the ONE shared rprBuildSheetSet_→rprReadTable_ loader; after R5B that loader selects V2 authority under flag=true.',
+    AI_PLAN_SHEETSET_INCLUDES_V2: flagOn ? 'YES' : 'N/A(flag off)', READBACK_SHEETSET_INCLUDES_V2: flagOn ? 'YES' : 'N/A(flag off)',
+    // 16-18 authority
+    active_flag: flagOn, legacy_header_guard_before_flag_branch: 'NO (R5B routes on the flag BEFORE prodRequireSheet_ validation)',
+    loader_authority_selected: loaderAuthority, V2_AUTHORITY_SELECTED_BEFORE_HEADER_GUARD: v2AuthorityBeforeGuard,
+    // 19 draft-line
+    DRAFT_LINE_DEPENDENCY_ZERO: 'YES (flat V2 reads request_order_allocation_drafts ONLY; never request_order_allocation_draft_lines)',
+    // 6/others tokens
+    CANONICAL_V2_SCHEMA_EXACT: schemaExact ? 'YES' : 'NO',
+    // 20 verdict
+    verdict: (!present ? 'CANONICAL_TAB_ABSENT_OR_WRONG_TARGET'
+      : (!schemaExact ? (missing.length ? 'V2_SCHEMA_MISMATCH_MISSING_HEADERS' : 'V2_SCHEMA_MISMATCH')
+        : (!flagOn ? 'SCHEMA_OK_BUT_FLAG_OFF' : 'V2_TABLE_READY'))),
+    R5B_DIAGNOSTIC_READY: 'YES'
+  };
+  Logger.log('R5B_CANONICAL_TABLE_DIAGNOSTIC ' + JSON.stringify(out, null, 2));
+  return out;
 }
