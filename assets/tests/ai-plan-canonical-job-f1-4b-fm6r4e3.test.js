@@ -37,6 +37,7 @@ function _roCanonicalScope_() { return _canonScope; }
 var _roAiPlanBusy = false, _roAiPlanRunId = null, _roAiPlanTotal = 0, _roAiPlanCancelRequested = false;
 var _RO_AI_PLAN_CONTINUE_DELAY_MS = 0, _RO_AI_PLAN_BUSY_RETRY_MS = 0;
 var _roAiPlanResult = null;   // F1-7N-FA-3C-PRE3-R2 — persistent result state (render no-ops in Node: no `document`)
+var _roAiPlanManualToken = 0, _roAiPlanKeydownBound = false;   // F1-7N-FA-3C-R5D — manual-only result authority state used by the driver
 
 // ---- eval the pure dispositions + the async driver into module scope (top-level eval so the bindings persist) ----
 eval(extractFn(RO, '_roAiPlanStartDisposition_'));
@@ -49,6 +50,7 @@ eval(extractFn(RO, '_roAiPlanSetProgress_'));
 eval(extractFn(RO, '_roAiPlanResetUi_'));
 eval(extractFn(RO, '_roAiPlanDelay_'));
 eval(extractFn(RO, '_roAiPlanDoneMsg_'));   // F1-7N-FA-3C-PRE3-R1 — terminal-count message builder used by _roAiPlanFinishDone_
+eval(extractFn(RO, '_roAiPlanShouldShowResult_'));   // F1-7N-FA-3C-R5D — manual-only result authority helper used by the driver
 eval(extractFn(RO, '_roAiPlanScopeKey_'));  // F1-7N-FA-3C-PRE3-R2 — persistent result panel helpers used by the driver
 eval(extractFn(RO, '_roAiPlanNum_'));
 eval(extractFn(RO, '_roAiPlanResultVisibleFor_'));

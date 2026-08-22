@@ -3752,6 +3752,13 @@ var _roAiPlanTotal = 0;             // snapshot SKU total for restrained "N / M"
 var _roAiPlanCancelRequested = false;
 var _RO_AI_PLAN_CONTINUE_DELAY_MS = 350;   // one continuation at a time (never a per-SKU burst)
 var _RO_AI_PLAN_BUSY_RETRY_MS = 900;       // §3 respect a live lease held by another continuation → wait, retry
+// F1-7N-FA-3C-R5D — MANUAL-ONLY result authority. The AI Plan Result popup belongs ONLY to an explicit current-session
+// USER click (handleRequestOrderAiPlan → _roRunAiPlanJob_). A SYSTEM_RESUME/BACKGROUND drive (_roResumeAiPlanJobOnMount_)
+// and any non-manual driver run silently — no popup, no toast, no restored result. `_roAiPlanManualToken` is a monotonic
+// per-manual-run id so a late response from a superseded/older run can never overwrite a newer manual result.
+var _roAiPlanManualToken = 0;              // ++ only on an explicit manual run; a run captures its own token
+var _roAiPlanKeydownBound = false;         // Escape-to-close is bound once (repeated mount/unmount never duplicates it)
+function _roAiPlanShouldShowResult_(ctx) { return !!(ctx && ctx.manual === true && ctx.token === _roAiPlanManualToken); }
 
 // --- PURE dispositions (testable; consume the KM.DB adapter envelope) ---------------------------------------
 // START disposition: RUN (fresh or resumed same-scope) | BUSY (another scope's single-slot job) | FAIL (truthful code).
@@ -3852,7 +3859,7 @@ function _roSetAiPlanResult_(kind, disp, scope) {
     total: (disp && disp.total) || 0,
     counts: { created: _roAiPlanNum_(c.created), reused: _roAiPlanNum_(c.reused), regenerated: _roAiPlanNum_(c.regenerated),
       needsConfirmation: _roAiPlanNum_(c.needsConfirmation), blockedConflict: _roAiPlanNum_(c.blockedConflict),
-      notReady: _roAiPlanNum_(c.notReady), failed: _roAiPlanNum_(c.failed) },
+      notReady: _roAiPlanNum_(c.notReady), committedUnverified: _roAiPlanNum_(c.committedUnverified), failed: _roAiPlanNum_(c.failed) },
     reasonCounts: (disp && disp.reasonCounts && typeof disp.reasonCounts === 'object') ? disp.reasonCounts : {},
     reasonSamples: (disp && disp.reasonSamples && typeof disp.reasonSamples === 'object') ? disp.reasonSamples : {},
     code: (disp && disp.code) || null,
@@ -3863,38 +3870,75 @@ function _roSetAiPlanResult_(kind, disp, scope) {
 function _roAiPlanResultEl_() {
   if (typeof document === 'undefined' || !document.getElementById) return null;
   var el = document.getElementById('ro-ai-plan-result');
-  if (!el) {   // create-if-missing next to the AI Support menu (no HTML/layout dependency)
-    var host = document.getElementById('roAiSupportMenu');
-    if (host && host.parentNode) { el = document.createElement('div'); el.id = 'ro-ai-plan-result'; el.className = 'ro-ai-plan-result'; el.setAttribute('aria-live', 'polite'); el.hidden = true; host.parentNode.insertBefore(el, host.nextSibling); }
+  if (!el) {   // F1-7N-FA-3C-R5D — create-if-missing as a FIXED bottom-right toast on <body> (position:fixed → NO page
+    // reflow / layout shift; independent of the Order Planning table). Single id → repeated mount never duplicates it.
+    var host = (document.body || (document.getElementById('roAiSupportMenu') && document.getElementById('roAiSupportMenu').parentNode));
+    if (host) { el = document.createElement('div'); el.id = 'ro-ai-plan-result'; el.className = 'ro-ai-plan-result'; el.setAttribute('aria-live', 'polite'); el.hidden = true; host.appendChild(el); }
+  }
+  // Escape-to-close, bound ONCE on document (repeated mount/unmount never duplicates the listener).
+  if (!_roAiPlanKeydownBound && typeof document.addEventListener === 'function') {
+    _roAiPlanKeydownBound = true;
+    document.addEventListener('keydown', function (e) {
+      var key = e && (e.key || e.keyCode);
+      if (key === 'Escape' || key === 'Esc' || key === 27) {
+        var node = document.getElementById('ro-ai-plan-result');
+        if (node && !node.hidden) { _roClearAiPlanResult_(); }
+      }
+    });
   }
   return el || null;
+}
+// F1-7N-FA-3C-R5D — user-facing reason mapping (never show a raw technical token as the PRIMARY message).
+var _RO_AI_PLAN_REASON_LABELS_ = { NON_ACTIONABLE_ZERO_RECOMMENDATION: 'No order needed — all recommended quantities are 0.' };
+function _roAiPlanReasonLabel_(code) { return _RO_AI_PLAN_REASON_LABELS_[String(code)] || null; }
+// PURE severity (R5D). error: Failed>0 OR committedUnverified>0 (reconciliation). warn: needsConfirmation>0 OR blocked>0.
+// ok: any successful draft. info (neutral): only "No order needed" (zero-recommendation is NOT an error). Never color the
+// whole result an error merely because No order needed > 0.
+function _roAiPlanSeverity_(c) {
+  c = c || {};
+  function n(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0; }
+  var success = n(c.created) + n(c.reused) + n(c.regenerated);
+  if (n(c.failed) > 0 || n(c.committedUnverified) > 0) return 'bad';
+  if (n(c.needsConfirmation) > 0 || n(c.blockedConflict) > 0) return 'warn';
+  if (success > 0) return 'ok';
+  if (n(c.notReady) > 0) return 'info';
+  return 'ok';
 }
 function _roRenderAiPlanResult_() {
   var el = _roAiPlanResultEl_(); if (!el) return;
   var r = _roAiPlanResult, scope = (typeof _roCanonicalScope_ === 'function') ? _roCanonicalScope_() : null;
   if (!_roAiPlanResultVisibleFor_(r, scope)) { el.hidden = true; el.innerHTML = ''; return; }
   var c = r.counts, success = c.created + c.reused + c.regenerated, total = r.total || r.processed || 0;
-  var tone = success > 0 ? ((total && success >= total) ? 'ok' : 'warn') : 'bad';
+  var tone = _roAiPlanSeverity_(c);
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); };
+  // R5D user-facing rows — "Not ready" is renamed "No order needed" (the zero-recommendation bucket).
   var rows = [['Processed', total], ['Created', c.created], ['Reused', c.reused], ['Regenerated', c.regenerated],
-    ['Needs confirmation', c.needsConfirmation], ['Blocked', c.blockedConflict], ['Not ready', c.notReady], ['Failed', c.failed]];
+    ['Needs confirmation', c.needsConfirmation], ['Blocked', c.blockedConflict], ['No order needed', c.notReady], ['Failed', c.failed]];
   var html = '<div class="ro-ai-plan-result__head"><span>AI Plan Result</span>' +
-    '<button type="button" class="ro-ai-plan-result__x" onclick="_roClearAiPlanResult_()" aria-label="Dismiss">×</button></div>';
+    '<button type="button" class="ro-ai-plan-result__x" onclick="_roClearAiPlanResult_()" aria-label="Close AI Plan result">×</button></div>';
   html += '<div class="ro-ai-plan-result__grid">';
   rows.forEach(function (kv) { html += '<span class="k">' + esc(kv[0]) + '</span><span class="v">' + esc(kv[1]) + '</span>'; });
   html += '</div>';
+  // primary human message (never a raw token). Error case names reconciliation explicitly.
+  var primary = '';
+  if (tone === 'bad') { primary = (c.committedUnverified > 0) ? ('Reconciliation required — ' + c.committedUnverified + ' draft(s) committed but unverified.') : (c.failed + ' failed — no partial result was applied.'); }
+  else if (c.notReady > 0 && success === 0 && c.needsConfirmation === 0 && c.blockedConflict === 0) { primary = _roAiPlanReasonLabel_('NON_ACTIONABLE_ZERO_RECOMMENDATION'); }
+  else if (c.notReady > 0) { primary = c.notReady + ' with no order needed (recommended quantity 0).'; }
+  if (primary) html += '<div class="ro-ai-plan-result__msg">' + esc(primary) + '</div>';
+  // technical tokens stay in a COLLAPSED optional section (diagnostics only) — never the primary message.
   var reasons = (r.reasonCounts && typeof r.reasonCounts === 'object') ? Object.keys(r.reasonCounts) : [];
   if (reasons.length) {
-    html += '<div class="ro-ai-plan-result__reasons"><div class="rh">Reasons</div>';
+    html += '<details class="ro-ai-plan-result__reasons"><summary class="rh">Technical details</summary>';
     html += reasons.map(function (code) {
-      var samp = (r.reasonSamples && r.reasonSamples[code]) || [];
+      var friendly = _roAiPlanReasonLabel_(code), samp = (r.reasonSamples && r.reasonSamples[code]) || [];
       var s = samp.length ? ' (' + esc(samp.slice(0, 5).join(', ')) + (samp.length >= 5 ? '…' : '') + ')' : '';
-      return '<div>' + esc(code) + ': ' + esc(r.reasonCounts[code]) + s + '</div>';
+      return '<div>' + esc(code) + ': ' + esc(r.reasonCounts[code]) + s + (friendly ? ' — ' + esc(friendly) : '') + '</div>';
     }).join('');
-    html += '</div>';
+    html += '</details>';
   }
-  if (success === 0) html += '<div class="ro-ai-plan-result__note">0 drafts created — Order Allocation was not updated.</div>';
   el.className = 'ro-ai-plan-result ro-ai-plan-result--' + tone;
+  el.setAttribute('role', tone === 'bad' ? 'alert' : 'status');            // error → assertive; success/info/warn → polite status
+  el.setAttribute('aria-live', tone === 'bad' ? 'assertive' : 'polite');
   el.innerHTML = html; el.hidden = false;
 }
 
@@ -3906,6 +3950,9 @@ function _roRunAiPlanJob_(scope) {
   if (!db || typeof db.startRequestOrderDraftJob !== 'function' || typeof db.continueRequestOrderDraftJob !== 'function') return Promise.resolve(null);
   if (!scope || !scope.company || !scope.country || !scope.marketplace) return Promise.resolve(null);   // scopeless → KMREC-only
   _roAiPlanBusy = true; _roAiPlanCancelRequested = false; _roAiPlanRunId = null; _roAiPlanTotal = 0;
+  // F1-7N-FA-3C-R5D — this is the ONE explicit-manual entry (the AI Support click → scope modal → handleRequestOrderAiPlan).
+  // Stamp a fresh manual token so ONLY this run may own the result popup, and clear any prior/stale result first.
+  var ctx = { manual: true, token: (++_roAiPlanManualToken) };
   _roClearAiPlanResult_();   // F1-7N-FA-3C-PRE3-R2 — a new run replaces any prior terminal result
   _roAiPlanSetProgress_('AI Plan · Starting…', true);
   return Promise.resolve(db.startRequestOrderDraftJob(scope)).then(function (res) {
@@ -3914,35 +3961,40 @@ function _roRunAiPlanJob_(scope) {
     if (disp.action === 'BUSY') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return null; }
     _roAiPlanRunId = disp.runId; _roAiPlanTotal = disp.total || 0;
     _roAiPlanSetProgress_('AI Plan · ' + (disp.total ? '0 / ' + disp.total : 'Generating…'), true);
-    return _roAiPlanDriveContinue_(scope);
+    return _roAiPlanDriveContinue_(scope, ctx);
   }).catch(function () { _roAiPlanResetUi_(); return null; });
 }
-function _roAiPlanDriveContinue_(scope) {
+// ctx = { manual:boolean, token:number } — the RESULT AUTHORITY. Only a manual ctx whose token is still the newest
+// manual token may open the popup/toast; a SYSTEM_RESUME/BACKGROUND ctx (manual:false) drives the job silently.
+function _roAiPlanDriveContinue_(scope, ctx) {
+  ctx = ctx || { manual: false, token: -1 };
   var db = window.KM && window.KM.DB;
   function step() {
     if (_roAiPlanCancelRequested) return;   // the cancel handler owns the terminal reload
     Promise.resolve(db.continueRequestOrderDraftJob(_roAiPlanRunId)).then(function (res) {
       if (_roAiPlanCancelRequested) return;
       var disp = _roAiPlanContinueDisposition_(res);
+      var show = _roAiPlanShouldShowResult_(ctx);   // manual-only + newest-token → owns the result surface
       if (disp.action === 'BUSY') { _roAiPlanDelay_(step, _RO_AI_PLAN_BUSY_RETRY_MS); return; }   // §3 respect a live lease
       if (disp.action === 'MORE') { _roAiPlanSetProgress_('AI Plan · ' + disp.done + ' / ' + (_roAiPlanTotal || disp.total || 0), true); _roAiPlanDelay_(step, _RO_AI_PLAN_CONTINUE_DELAY_MS); return; }
-      if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope, disp); return; }
-      if (disp.action === 'CANCELLED') { _roSetAiPlanResult_('CANCELLED', disp, scope); _roAiPlanFinishCancelled_(scope, true); return; }   // externally cancelled → announce (the user-cancel path returned early above)
-      if (disp.action === 'FAILED' || disp.action === 'FAIL') { _roSetAiPlanResult_('FAILED', disp, scope); _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return; }   // §4 fail closed
-      _roSetAiPlanResult_('INCOMPLETE', disp, scope); _roAiPlanResetUi_();   // NONE / unknown → surface a truthful result instead of returning to idle silently
-    }).catch(function () { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_('AI_PLAN_CONTINUE_ERROR')); });
+      if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope, disp, ctx); return; }
+      if (disp.action === 'CANCELLED') { if (show) _roSetAiPlanResult_('CANCELLED', disp, scope); _roAiPlanFinishCancelled_(scope, show); return; }   // externally cancelled → announce ONLY for a manual owner
+      if (disp.action === 'FAILED' || disp.action === 'FAIL') { if (show) { _roSetAiPlanResult_('FAILED', disp, scope); _roNotify_(_roAiPlanFailMsg_(disp.code)); } _roAiPlanResetUi_(); return; }   // §4 fail closed (silent for non-manual)
+      if (show) _roSetAiPlanResult_('INCOMPLETE', disp, scope); _roAiPlanResetUi_();   // NONE / unknown → truthful result for a manual owner; silent otherwise
+    }).catch(function () { _roAiPlanResetUi_(); if (_roAiPlanShouldShowResult_(ctx)) _roNotify_(_roAiPlanFailMsg_('AI_PLAN_CONTINUE_ERROR')); });
   }
   step();
 }
 // §6/§7/§17 — DONE: ONE scope getActive read-back → render Order Allocation from persisted drafts → ONE truthful toast
 // that surfaces the real terminal counts (never a blanket success when 0 drafts were created — F1-7N-FA-3C-PRE3-R1).
-function _roAiPlanFinishDone_(scope, disp) {
+function _roAiPlanFinishDone_(scope, disp, ctx) {
   _roAiPlanSetProgress_('AI Plan · Reading drafts…', true);
+  var show = _roAiPlanShouldShowResult_(ctx);   // F1-7N-FA-3C-R5D — popup/toast ONLY for a manual, current-session run
   var msg = _roAiPlanDoneMsg_(disp && disp.counts);
-  _roSetAiPlanResult_('DONE', disp, scope);   // F1-7N-FA-3C-PRE3-R2 — durable terminal result (set BEFORE read-back so it survives the re-render)
+  if (show) _roSetAiPlanResult_('DONE', disp, scope);   // manual only — durable popup (set BEFORE read-back so it survives the re-render)
   return Promise.resolve(_roLoadCanonicalDraftsForScope_(scope)).then(function () {
-    _roAiPlanResetUi_(); _roRenderAiPlanResult_(); _roNotify_(msg);
-  }).catch(function () { _roAiPlanResetUi_(); _roRenderAiPlanResult_(); _roNotify_(msg); });
+    _roAiPlanResetUi_(); if (show) { _roRenderAiPlanResult_(); _roNotify_(msg); }   // SYSTEM_RESUME/AUTOMATION → read-back only, no popup, no toast
+  }).catch(function () { _roAiPlanResetUi_(); if (show) { _roRenderAiPlanResult_(); _roNotify_(msg); } });
 }
 // §18 — CANCELLED is NOT a failure: stop polling, reload the canonical drafts already created (preserved), notify once.
 function _roAiPlanFinishCancelled_(scope, announce) {
@@ -3977,7 +4029,10 @@ function _roResumeAiPlanJobOnMount_() {
     if (d.status === 'RUNNING' && _roAiPlanScopeMatches_(d.scope, scope)) {
       _roAiPlanBusy = true; _roAiPlanCancelRequested = false; _roAiPlanRunId = d.runId || null; _roAiPlanTotal = d.total || 0;
       _roAiPlanSetProgress_('AI Plan · ' + ((d.cursor || 0) + ' / ' + (d.total || 0)), true);
-      _roAiPlanDriveContinue_(scope);
+      // F1-7N-FA-3C-R5D — a RESUMED job is NOT an explicit current-session user click: drive it silently (manual:false).
+      // It never opens or restores the AI Plan Result popup/toast (a manual job re-adopted after reload also stays silent —
+      // only a fresh in-session click owns the result). The getActive read-back still refreshes Order Allocation.
+      _roAiPlanDriveContinue_(scope, { manual: false, token: -1 });
     }
   }).catch(function () {});
 }
@@ -3989,4 +4044,9 @@ if (typeof window !== 'undefined') {
   window._roAiPlanScopeMatches_ = _roAiPlanScopeMatches_;
   window._roResumeAiPlanJobOnMount_ = _roResumeAiPlanJobOnMount_;
   window.handleCancelRequestOrderDraftJob = handleCancelRequestOrderDraftJob;
+  window._roAiPlanShouldShowResult_ = _roAiPlanShouldShowResult_;   // F1-7N-FA-3C-R5D — manual-only result authority
+  window._roAiPlanSeverity_ = _roAiPlanSeverity_;
+  window._roAiPlanReasonLabel_ = _roAiPlanReasonLabel_;
+  window._roSetAiPlanResult_ = _roSetAiPlanResult_;
+  window._roRenderAiPlanResult_ = _roRenderAiPlanResult_;
 }

@@ -2167,16 +2167,26 @@
 #request-order-section .ro-reco-action--stale { color: #92400e; background: #fffbeb; }
 
 /* F1-7N-FA-3C-PRE3-R2 — persistent AI Plan terminal result panel (truthful counts + bounded reason distribution). */
-.ro-ai-plan-result { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-color, #e5e7eb); border-left-width: 4px; border-radius: 8px; background: #f8fafc; font-size: 12px; max-width: 520px; }
+/* F1-7N-FA-3C-R5D — compact, non-modal, dismissible AI Plan Result popup. position:fixed bottom-right → NO page reflow
+   or layout shift; never covers/replaces the Order Planning table. Desktop ~360px; mobile max-width calc(100vw - 32px). */
+.ro-ai-plan-result { position: fixed; right: 16px; bottom: 16px; z-index: 1200; width: 360px; max-width: calc(100vw - 32px);
+  padding: 12px 14px; border: 1px solid var(--border-color, #e5e7eb); border-left-width: 4px; border-radius: 10px;
+  background: var(--surface, #ffffff); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18); font-size: 12px; }
 .ro-ai-plan-result[hidden] { display: none; }
 .ro-ai-plan-result--ok { border-left-color: #10b981; background: #ecfdf5; }
+.ro-ai-plan-result--info { border-left-color: #3b82f6; background: #eff6ff; }
 .ro-ai-plan-result--warn { border-left-color: #f59e0b; background: #fffbeb; }
 .ro-ai-plan-result--bad { border-left-color: #ef4444; background: #fef2f2; }
 .ro-ai-plan-result__head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 6px; }
-.ro-ai-plan-result__x { border: 0; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; color: var(--text-secondary, #6b7280); }
+.ro-ai-plan-result__x { border: 0; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; color: var(--text-secondary, #6b7280); padding: 2px 6px; border-radius: 6px; }
+.ro-ai-plan-result__x:hover { background: rgba(15, 23, 42, 0.06); }
+.ro-ai-plan-result__x:focus-visible { outline: 2px solid var(--brand, #2563eb); outline-offset: 1px; }
 .ro-ai-plan-result__grid { display: grid; grid-template-columns: auto auto; gap: 1px 12px; }
 .ro-ai-plan-result__grid .k { color: var(--text-secondary, #6b7280); }
 .ro-ai-plan-result__grid .v { text-align: right; font-variant-numeric: tabular-nums; }
+.ro-ai-plan-result__msg { margin-top: 8px; font-weight: 600; }
+.ro-ai-plan-result--bad .ro-ai-plan-result__msg { color: #b91c1c; }
+.ro-ai-plan-result--info .ro-ai-plan-result__msg { color: #1d4ed8; }
 .ro-ai-plan-result__reasons { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border-color, #e5e7eb); overflow-wrap: anywhere; }
-.ro-ai-plan-result__reasons .rh { color: var(--text-secondary, #6b7280); font-weight: 600; margin-bottom: 2px; }
-.ro-ai-plan-result__note { margin-top: 8px; font-weight: 600; color: #b45309; }
+.ro-ai-plan-result__reasons .rh { color: var(--text-secondary, #6b7280); font-weight: 600; cursor: pointer; }
+@media (max-width: 640px) { .ro-ai-plan-result { right: 16px; left: 16px; width: auto; } }

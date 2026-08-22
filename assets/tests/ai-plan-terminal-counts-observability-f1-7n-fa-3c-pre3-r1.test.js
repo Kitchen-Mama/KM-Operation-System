@@ -62,8 +62,8 @@ ok(d4.action === 'FAIL', '6d. failure envelope still FAIL (fail-closed unchanged
 
 // ==========================================================================
 section('SOURCE — DONE path builds the message from counts; no unconditional success toast');
-ok(/function _roAiPlanFinishDone_\(scope, disp\)/.test(RO), '7. _roAiPlanFinishDone_ takes (scope, disp)');
-ok(/_roAiPlanFinishDone_\(scope, disp\);/.test(RO), '7. DONE dispatch passes disp to _roAiPlanFinishDone_');
+ok(/function _roAiPlanFinishDone_\(scope, disp, ctx\)/.test(RO), '7. _roAiPlanFinishDone_ takes (scope, disp, ctx)');   // F1-7N-FA-3C-R5D — ctx carries the manual-only result authority
+ok(/_roAiPlanFinishDone_\(scope, disp, ctx\);/.test(RO), '7. DONE dispatch passes disp + ctx to _roAiPlanFinishDone_');
 var doneBody = extractFn(RO, '_roAiPlanFinishDone_');
 ok(/_roAiPlanDoneMsg_\(disp && disp\.counts\)/.test(doneBody), '8. _roAiPlanFinishDone_ derives msg from disp.counts');
 ok(doneBody.indexOf("_roNotify_('AI Plan completed. Order Allocation has been updated.')") === -1,
