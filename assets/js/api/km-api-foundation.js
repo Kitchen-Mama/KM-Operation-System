@@ -347,6 +347,15 @@
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
     function isCanonicalWorkspace(name) { return WORKSPACE_CANONICAL[normName(name)] === true; }
     function setWorkspaceEnabled(name, on) { var n = normName(name); wsEnabled[n] = !!on; return wsEnabled[n]; }
+    // F1-7N-FA-3C-R6E-P0 — Request Order "Site Confirm required" capability. Backend-owned flag (00_config.gs
+    // REQUEST_ORDER_SITE_CONFIRM_REQUIRED_), MIRRORED here so the UI reflects backend authority — the exact pattern used
+    // for the workspace-enabled defaults above. Default-of-record is TRUE; it is set FALSE for the R6E controlled
+    // Request-Order-Send test so Send does not reject SOLELY because Site Confirm is absent (every OTHER Send gate stays
+    // mandatory). Reversible: setRequestOrderSiteConfirmRequired(true) restores the original Site Confirm gate exactly.
+    // ONE logical flag across layers — keep this default in sync with 00_config.gs (same value).
+    var _siteConfirmRequired = (typeof deps.requestOrderSiteConfirmRequired === 'boolean') ? deps.requestOrderSiteConfirmRequired : false;
+    function requestOrderSiteConfirmRequired() { return _siteConfirmRequired === true; }
+    function setRequestOrderSiteConfirmRequired(on) { _siteConfirmRequired = (on === true); return _siteConfirmRequired; }
     function workspaceApiActive(name) {
       var n = normName(name);
       var d = getWorkspace(n); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
@@ -799,6 +808,8 @@
       flags: flags, getFlags: getFlags, setWorkspaceApiEnabled: setWorkspaceApiEnabled,
       getWorkspaceFlags: getWorkspaceFlags, setWorkspaceEnabled: setWorkspaceEnabled,
       workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode, isCanonicalWorkspace: isCanonicalWorkspace,
+      // F1-7N-FA-3C-R6E-P0 — Request Order Site Confirm capability (backend-owned flag mirror; reversible).
+      requestOrderSiteConfirmRequired: requestOrderSiteConfirmRequired, setRequestOrderSiteConfirmRequired: setRequestOrderSiteConfirmRequired,
       // Weekly workspace helpers (API-2)
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // Recommendation workspace helpers (F1-4B-A)

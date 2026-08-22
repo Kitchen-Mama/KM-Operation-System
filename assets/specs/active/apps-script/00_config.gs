@@ -33,3 +33,13 @@ var RECOMMENDATION_TARGET_SPREADSHEET_ID_ = PRODUCTION_DB_SPREADSHEET_ID_;
 // corrupts data — but the flag must remain OFF until R4 so users' MONTHLY AI Plan is never interrupted.
 var REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = false;
 function requestOrderDraftV2FlatCutoverEnabled_() { return REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ === true; }
+
+// F1-7N-FA-3C-R6E-P0 — Request Order "Site Confirm required" feature flag (backend owner-of-record). DEFAULT-OF-RECORD
+// is TRUE; temporarily FALSE this round (USER-authorized) so the Request Order Send push flow can be tested without a
+// prior Site Confirm. The Site Confirm gate is currently enforced FRONTEND-side (request-order.js handleSendRequest);
+// the frontend reads the MIRRORED capability KM.api.requestOrderSiteConfirmRequired() (km-api-foundation.js) — keep both
+// in sync (ONE logical flag, same value). If a backend Send gate is later added it MUST read requestOrderSiteConfirmRequired_()
+// so there is a single authority. Set back to true to restore the original Site Confirm requirement exactly. Reversible;
+// affects Request Order ONLY — never Weekly Shipping Plan / shipping allocation / Shipment Draft / any other Submit rule.
+var REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false;
+function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ === true; }

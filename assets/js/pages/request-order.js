@@ -3067,9 +3067,23 @@ async function saveConfirmSite() {
   }
 }
 
+// F1-7N-FA-3C-R6E-P0 — Site Confirm requirement, mirrored from the backend-owned flag via the KM.api Foundation
+// (KM.api.requestOrderSiteConfirmRequired). FAIL-SAFE default TRUE: if the capability is unavailable, keep the ORIGINAL
+// strict Site Confirm gate. When FALSE (the R6E controlled test), Send must NOT reject solely because Site Confirm is
+// absent — every OTHER Send gate stays mandatory. Reversible: flip the flag back to true to restore the gate exactly.
+function _roSiteConfirmRequired() {
+  try { if (typeof window !== 'undefined' && window.KM && window.KM.api && typeof window.KM.api.requestOrderSiteConfirmRequired === 'function') return window.KM.api.requestOrderSiteConfirmRequired() === true; } catch (e) {}
+  return true;
+}
 function _roUpdateConfirmStatus() {
   var el = document.getElementById('ro-confirm-status');
   if (!el) return;
+  if (typeof _roSiteConfirmRequired === 'function' && !_roSiteConfirmRequired()) {
+    // R6E — Site Confirm not required → remove the "No site confirmed yet" message + hide the status control entirely.
+    el.textContent = ''; el.style.display = 'none'; el.className = 'ro-confirm-status';
+    return;
+  }
+  el.style.display = '';
   var n = (requestOrderState.confirmedSites || []).filter(function(c) { return c.status === 'confirmed'; }).length;
   el.textContent = n ? (n + ' site scope(s) confirmed') : 'No site confirmed yet';
   el.className = 'ro-confirm-status' + (n ? ' is-confirmed' : '');
@@ -3148,16 +3162,21 @@ async function handleSendRequest() {
   const buckets = _roBucketsForType(requestType);
   const typeLabel = { all: 'All Request (T1+T2+T3)', t1: 'T1 Request', t2: 'T2 Request', t3: 'T3 Request' }[requestType];
 
-  // Gate 1: at least one confirmed site must exist, and every required site scope must be confirmed for
-  // ALL requested buckets (Send T1/T2/T3 → that bucket; All → T1+T2+T3). Confirm Site ≠ Send Request.
-  if (!(requestOrderState.confirmedSites || []).some(function(c) { return c.status === 'confirmed'; })) {
-    alert('Please confirm all site scopes before sending this request.');
-    return;
-  }
-  const pendingSites = _roUnconfirmedSites(buckets);
-  if (pendingSites.length) {
-    alert('Please confirm all site scopes before sending this request.\n\nPending (' + buckets.join('+') + '): ' + pendingSites.join(', '));
-    return;
+  // Gate 1 (Site Confirm) — F1-7N-FA-3C-R6E-P0: enforced ONLY when Site Confirm is REQUIRED (backend-owned flag,
+  // KM.api.requestOrderSiteConfirmRequired). When the flag is temporarily false, Send does NOT reject for a missing Site
+  // Confirm; ALL other Send gates below (submitted-status, positive eligible line, quantities, canonical draft +
+  // optimistic lock, execution key / duplicate protection, downstream schema, auth) stay MANDATORY and unchanged.
+  if (_roSiteConfirmRequired()) {
+    // at least one confirmed site must exist, and every required site scope must be confirmed for ALL requested buckets.
+    if (!(requestOrderState.confirmedSites || []).some(function(c) { return c.status === 'confirmed'; })) {
+      alert('Please confirm all site scopes before sending this request.');
+      return;
+    }
+    const pendingSites = _roUnconfirmedSites(buckets);
+    if (pendingSites.length) {
+      alert('Please confirm all site scopes before sending this request.\n\nPending (' + buckets.join('+') + '): ' + pendingSites.join(', '));
+      return;
+    }
   }
 
   // F1-7L: the per-line FC snapshot (_roFcForItemMonth → getFcRegularForecast) reads the broad-cache FC slice.
@@ -3167,7 +3186,11 @@ async function handleSendRequest() {
 
   // Collect eligible allocation lines from the confirmed, filtered rows (only order_qty > 0).
   // Each line carries its bucket/month + the same source snapshots used by the 下單系統 table.
-  const rows = _applyRequestOrderFilters(requestOrderState.data).filter(_roIsRowConfirmed);
+  // R6E — when Site Confirm is required, only confirmed rows are eligible; when not required, the confirmation filter is
+  // dropped (a row is not excluded SOLELY for lacking Site Confirm). Every other per-row eligibility gate still applies below.
+  const rows = _roSiteConfirmRequired()
+    ? _applyRequestOrderFilters(requestOrderState.data).filter(_roIsRowConfirmed)
+    : _applyRequestOrderFilters(requestOrderState.data);
   const sendCycle = String(new Date().getFullYear());   // R4E5B — one stable planning cycle for this Send (manual id + execution key)
   const drafts = [];        // { item, lines:[...], isCanonical, allocDraftId } — allocDraftId is the canonical lineage FK
   let partialCount = 0;     // manual partial-carton lines (allowed — recorded, never blocked)
@@ -4041,6 +4064,7 @@ if (typeof window !== 'undefined') {
   window._roBuildTierEditCommand_ = _roBuildTierEditCommand_;
   window._roSaveTierEditToCanonicalDraft_ = _roSaveTierEditToCanonicalDraft_;
   window._roClassifyEditResult_ = _roClassifyEditResult_;   // F1-7N-FA-3C-R6B2 — shape-agnostic edit-result classifier
+  window._roSiteConfirmRequired = _roSiteConfirmRequired;   // F1-7N-FA-3C-R6E-P0 — Site Confirm requirement (flag mirror)
   window._roRowNoteDisplay_ = _roRowNoteDisplay_;
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
   window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;

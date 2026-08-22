@@ -2492,7 +2492,7 @@ function _flushDraftDbPersist(sku) {
             destination_marketplace: (route0.destination_type === 'MARKETPLACE_DESTINATION') ? (route0.destination_marketplace || route0.destination_country || ctx.marketplace) : undefined
         });
         return window.KM.DB.upsertShippingAllocationDraft(header).then(function (hres) {
-            if (!hres || hres.success === false) throw new Error((hres && hres.error) || 'draft header upsert failed');
+            if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
             var draftId = (hres.data && hres.data.allocation_draft_id) || replenAllocationDraft.allocationDraftId;
             replenAllocationDraft.allocationDraftId = draftId;
             var lines = complete.map(function (r) {
@@ -2500,7 +2500,7 @@ function _flushDraftDbPersist(sku) {
             });
             return window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftId, lines: lines });
         }).then(function (lres) {
-            if (lres && lres.success === false) throw new Error(lres.error || 'draft line upsert failed');
+            if (lres && lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
             _draftDbInFlight[sku] = false;
             if (_draftDbDirty[sku]) { _draftDbDirty[sku] = false; _flushDraftDbPersist(sku); }   // coalesced edit → one more write
         }).catch(function (err) {
@@ -2517,10 +2517,37 @@ window._flushDraftDbPersist = _flushDraftDbPersist;
 function _persistAllocationDraftToDb(sku) { _scheduleDraftDbPersist(sku); }
 window._persistAllocationDraftToDb = _persistAllocationDraftToDb;
 
-// Non-fatal Draft save error surface (never fakes success; keeps the recovery cache).
+// F1-7N-FA-3C-R6E-P0 — normalize a raw save error (a plain string OR the structured envelope {code,message,details}
+// from _kmCmdErr_) into a safe Error carrying a JSON-safe `.structured` view. This is what fixes the "[object Object]"
+// message: the previous `new Error(hres.error)` stringified the envelope OBJECT via String() → "[object Object]".
+function _irMakeDraftSaveError_(raw, table, fallbackMsg) {
+    var info = (raw && typeof raw === 'object') ? raw : { message: (raw == null ? '' : String(raw)) };
+    var det = (info && info.details) || {};
+    var e = new Error(String(info.message || fallbackMsg || 'save failed'));
+    e.structured = {
+        code: String(info.code || 'SAVE_FAILED'),
+        table: String(det.table || det.affectedTable || table || ''),
+        missingHeader: String(det.missingHeader || det.header || ''),
+        requestId: String(det.requestId || det.command || ''),
+        message: String(info.message || fallbackMsg || 'save failed')
+    };
+    return e;
+}
+// F1-7N-FA-3C-R6E-P0 — SAFE STRUCTURED save-error surface. Never fakes success (no "Saved"), never renders
+// "[object Object]", never exposes a stack/token. Concise user line + a COLLAPSED technical disclosure (code /
+// affected table / missing header / request id — all HTML-escaped). Keeps the sessionStorage recovery cache.
 function _irShowDraftSaveError(sku, err) {
     var el = document.getElementById('allocation-carton-error-' + sku);
-    if (el) { el.textContent = 'Draft not saved to DB — ' + (err && err.message ? err.message : 'error') + ' (kept locally; retry).'; el.style.display = 'block'; el.style.color = '#dc2626'; }
+    if (!el) return;
+    var s = (err && err.structured) || {};
+    var esc = (typeof _execEsc === 'function') ? _execEsc : function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
+    var rows = '<div><strong>Error code:</strong> ' + esc(s.code || 'SAVE_FAILED') + '</div>';
+    if (s.table) rows += '<div><strong>Affected table:</strong> ' + esc(s.table) + '</div>';
+    if (s.missingHeader) rows += '<div><strong>Missing header:</strong> ' + esc(s.missingHeader) + '</div>';
+    if (s.requestId) rows += '<div><strong>Request:</strong> ' + esc(s.requestId) + '</div>';
+    el.innerHTML = '<div class="ir-save-error-user">Could not save to the database — kept locally. Please retry after the database configuration is verified.</div>' +
+        '<details class="ir-save-error-detail"><summary>Technical details</summary>' + rows + '</details>';
+    el.style.display = 'block'; el.style.color = '#dc2626';
 }
 // Soft-cancel ONE persisted draft line (Decision E §16) — never hard delete. line_status='cancelled'.
 function _cancelAllocationDraftLine(lineId) {
@@ -2966,7 +2993,14 @@ function _execRateCardMethods(originCountry, destCountry, marketplace) {
 // Build the Method <select> option HTML. Empty match set → single explicit empty-state option (never a
 // fabricated method). A previously-saved method that is no longer in the set is dropped (not re-added).
 function _execMethodOptionsHtml(methods, selected) {
-    if (!methods || !methods.length) return '<option value="">No available methods</option>';
+    if (!methods || !methods.length) {
+        // F1-7N-FA-3C-R6E-P0 — distinguish LOADING from a genuine empty result. NEVER show "No matching method"
+        // before the catalog lookup actually completes (the live "options appear only slowly / momentarily none" bug).
+        var st = (typeof _irMethodsState_ === 'function') ? _irMethodsState_() : 'LOADED';
+        if (st === 'LOADING') return '<option value="">Loading methods…</option>';
+        if (st === 'ERROR') return '<option value="">Unable to load methods — Retry</option>';
+        return '<option value="">No matching method</option>';
+    }
     var html = '<option value="">Method…</option>';
     methods.forEach(function (m) {
         var sel = (String(selected == null ? '' : selected) === m.value) ? ' selected' : '';
@@ -3957,24 +3991,40 @@ function _irWsGet(name) {
 // Legacy mode reads the broad getter unchanged. Reference data only — the page keeps its existing ETA / method logic.
 var _irCarrierModel = null;   // { getCarrierLeadTimes:[...], getCarrierRateCards:[...] } or null (not yet loaded / Legacy)
 var _irCarrierSeq = 0;
+// F1-7N-FA-3C-R6E-P0 — in-flight dedupe + explicit load status so the Method dropdown shows a real "Loading methods…"
+// state (never a false "No available method" before the catalog resolves) and concurrent row-expands share ONE fetch.
+var _irCarrierPending = null;   // the single in-flight catalog promise (dedupe)
+var _irCarrierStatus = 'IDLE';  // IDLE | LOADING | LOADED | ERROR
 function _irCarrierGet(name) {
     if (_irEffectiveWorkspace()) return _irCarrierModel ? (_irCarrierModel[name] || []) : [];   // scoped only — no broad fallback
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];   // Legacy
 }
+// R6E — Method dropdown state: LOADING (catalog in flight) vs LOADED (resolved; empty set = "No matching method") vs
+// ERROR (fetch failed). Legacy mode reads the broad cache synchronously → always LOADED.
+function _irMethodsState_() {
+    if (!_irEffectiveWorkspace()) return 'LOADED';
+    if (_irCarrierModel) return 'LOADED';
+    if (_irCarrierStatus === 'ERROR') return 'ERROR';
+    return 'LOADING';
+}
 function _irLoadCarrierPlanning_() {
     if (!_irEffectiveWorkspace()) return Promise.resolve(null);        // Legacy → carrier from broad getter, no fetch
-    if (_irCarrierModel) return Promise.resolve(_irCarrierModel);      // cache once per page load
+    if (_irCarrierModel) return Promise.resolve(_irCarrierModel);      // cache once per page load (survives SPA remount)
+    if (_irCarrierPending) return _irCarrierPending;                   // R6E: coalesce concurrent expands → ONE fetch
     if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) return Promise.resolve(null);
-    var my = ++_irCarrierSeq;
-    return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } })).then(function (env) {
-        if (my !== _irCarrierSeq) return _irCarrierModel;
+    var my = ++_irCarrierSeq; _irCarrierStatus = 'LOADING';
+    _irCarrierPending = Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } })).then(function (env) {
+        _irCarrierPending = null;
+        if (my !== _irCarrierSeq) return _irCarrierModel;             // a newer load superseded this one → drop stale response
         if (env && env.success && env.data) {
             var adapted = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
             _irCarrierModel = { getCarrierLeadTimes: adapted.getCarrierLeadTimes || [], getCarrierRateCards: adapted.getCarrierRateCards || [] };
+            _irCarrierStatus = 'LOADED';
             return _irCarrierModel;
         }
-        return null;
-    }).catch(function () { return null; });   // reference read: never throw into the panel (bounded unavailable state)
+        _irCarrierStatus = 'ERROR'; return null;
+    }).catch(function () { _irCarrierPending = null; _irCarrierStatus = 'ERROR'; return null; });   // reference read: never throw into the panel
+    return _irCarrierPending;
 }
 
 // Bounded loading/error region for the main table (reuses KM.loadState — no new loading infra).
@@ -6582,6 +6632,11 @@ if (window.KM && window.KM.lifecycle) {
                     // DONE. The original tab does not need to have stayed alive.
                     if (typeof _irResumeGapJobOnMount_ === 'function') { try { _irResumeGapJobOnMount_(); } catch (e) {} }
                 };
+                // F1-7N-FA-3C-R6E-P0 — PRELOAD the carrier/method catalog ONCE per mount, in PARALLEL with the primary
+                // read, so the Execution-Plan Method dropdown is warm before any row expand (the dedupe in
+                // _irLoadCarrierPlanning_ means a later expand reuses this same in-flight/resolved fetch — never N fetches).
+                // Independent of the primary render; never blocks it and never per-SKU.
+                if (typeof _irLoadCarrierPlanning_ === 'function') { try { _irLoadCarrierPlanning_(); } catch (e) {} }
                 if (_irEffectiveWorkspace()) {
                     _irWorkspaceRefresh_().then(_irMountAfterLoad).catch(function (err) { _irRenderError_(err); });
                 } else {

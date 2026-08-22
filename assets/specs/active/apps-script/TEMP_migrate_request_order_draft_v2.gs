@@ -1473,3 +1473,89 @@ function TEMP_r6dDiagnoseInventoryAiPlanConnection_() {
   Logger.log('R6D_INVENTORY_AI_PLAN ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6E-P0 — READ-ONLY Weekly Shipping Plan schema diagnostic (writes NOTHING). Proves the exact
+// shipping_plans / shipping_plan_lines header mismatch that makes Submit Plan throw PRODUCTION_SAFETY:HEADER_MISSING.
+// Compares the LIVE raw headers byte-for-byte against the RUNTIME AUTHORITY constants (SHIPPING_PLANS_HEADERS_ /
+// SHIPPING_PLAN_LINES_HEADERS_ in 11_shipping_plan_handlers.gs) using the SAME missing = expected \ actual rule the
+// production-safety gate uses (29_ prodRequireSheet_ → KMPSAFE validateSchema). Zero writes; no rename/create/repair.
+// ================================================================================================================
+function TEMP_R6E_DIAGNOSE_SHIPPING_PLAN_SCHEMA() { return TEMP_r6eDiagnoseShippingPlanSchema_(); }
+function TEMP_r6eRawHeaderRow_(name) {
+  // RAW (un-trimmed) header row so leading/trailing whitespace is detectable — read-only.
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) return { present: false, raw: [] };
+  var lastCol = sh.getLastColumn(); if (lastCol < 1) return { present: true, raw: [] };
+  var raw = sh.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  return { present: true, raw: raw };
+}
+function TEMP_r6eAnalyzeTable_(name, authority, authorityConst) {
+  var rawRes = TEMP_r6eRawHeaderRow_(name);
+  var obj = TEMP_readObjects_(name);   // trimmed headers + rows
+  var rawHeaders = rawRes.raw, trimmed = (obj.headers || []);
+  var actualWithMeta = rawHeaders.map(function (h, i) { return { index: i, raw: String(h), trimmed: String(h).trim(), type: TEMP_r5bTypeOf_(h) }; });
+  var have = {}; trimmed.forEach(function (h) { if (h !== '') have[h] = 1; });
+  var expSet = {}; (authority || []).forEach(function (h) { expSet[h] = 1; });
+  var missing = (authority || []).filter(function (h) { return !have[h]; });
+  var extra = trimmed.filter(function (h) { return h !== '' && !expSet[h]; });
+  // duplicates
+  var seen = {}, dups = {}; trimmed.forEach(function (h) { if (h === '') return; if (seen[h]) dups[h] = 1; seen[h] = 1; }); var duplicateHeaders = Object.keys(dups);
+  // whitespace: raw cell differs from its trimmed value
+  var whitespaceHeaders = actualWithMeta.filter(function (c) { return c.raw !== c.trimmed; }).map(function (c) { return { index: c.index, raw: JSON.stringify(c.raw) }; });
+  // spelling near-matches: pair a missing authority header with an extra header sharing a >=6-char prefix (surfaces
+  // marketplace <-> marketplace_seperate, avg_sales_per_day typos, etc.). Heuristic only; never auto-applied.
+  var spellingMismatches = [];
+  missing.forEach(function (m) {
+    extra.forEach(function (x) {
+      var p = 0, n = Math.min(m.length, x.length); while (p < n && m[p] === x[p]) p++;
+      if (m !== x && p >= 6) spellingMismatches.push({ expected: m, actual: x, shared_prefix_len: p });
+    });
+  });
+  var exactMatch = missing.length === 0 && extra.length === 0 && duplicateHeaders.length === 0 && whitespaceHeaders.length === 0
+    && trimmed.length === (authority || []).length && trimmed.join('|') === (authority || []).join('|');
+  return {
+    tab: name, present: rawRes.present && obj.present, authority_const: authorityConst,
+    actual_headers: actualWithMeta, actual_col_count: trimmed.length,
+    expected_headers: authority, expected_col_count: (authority || []).length,
+    missing_headers: missing, extra_headers: extra, duplicate_headers: duplicateHeaders, whitespace_headers: whitespaceHeaders,
+    spelling_mismatches: spellingMismatches,
+    first_rejected_header: missing.length ? missing[0] : null,
+    expected_hash: TEMP_r5bHash_((authority || []).join('|')), actual_hash: TEMP_r5bHash_(trimmed.join('|')),
+    row_count: (obj.rows || []).length,
+    schema_exact: exactMatch ? 'YES' : 'NO'
+  };
+}
+function TEMP_r6eDiagnoseShippingPlanSchema_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  // RUNTIME AUTHORITY constants (single source of truth = 11_shipping_plan_handlers.gs). Guarded so the diagnostic
+  // still runs if that file is not loaded (reports AUTHORITY_UNAVAILABLE rather than guessing an authority).
+  var hdrAuth = (typeof SHIPPING_PLANS_HEADERS_ !== 'undefined') ? SHIPPING_PLANS_HEADERS_ : null;
+  var lineAuth = (typeof SHIPPING_PLAN_LINES_HEADERS_ !== 'undefined') ? SHIPPING_PLAN_LINES_HEADERS_ : null;
+  if (!hdrAuth || !lineAuth) {
+    return { ok: false, verdict: 'AUTHORITY_UNAVAILABLE', RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+      note: 'SHIPPING_PLANS_HEADERS_ / SHIPPING_PLAN_LINES_HEADERS_ not loaded in this Apps Script project',
+      R6E_ZERO_WRITE_CONFIRMED: 'YES (read-only)' };
+  }
+  var plans = TEMP_r6eAnalyzeTable_('shipping_plans', hdrAuth, 'SHIPPING_PLANS_HEADERS_ (11_shipping_plan_handlers.gs)');
+  var lines = TEMP_r6eAnalyzeTable_('shipping_plan_lines', lineAuth, 'SHIPPING_PLAN_LINES_HEADERS_ (11_shipping_plan_handlers.gs)');
+  var plansReady = plans.present && plans.schema_exact === 'YES';
+  var linesReady = lines.present && lines.schema_exact === 'YES';
+  var out = {
+    ok: plansReady && linesReady,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    authority_file: 'assets/specs/active/apps-script/11_shipping_plan_handlers.gs',
+    shipping_plans: plans, shipping_plan_lines: lines,
+    shipping_plans_passes: plansReady ? 'YES' : 'NO', shipping_plan_lines_passes: linesReady ? 'YES' : 'NO',
+    exact_rejected_header_shipping_plan_lines: lines.first_rejected_header,
+    R6E_ZERO_WRITE_CONFIRMED: 'YES (read-only: getSheetByName + getRange().getValues() only; no setValues/appendRow/insertSheet/rename/repair)',
+    R6E_DIAGNOSTIC_CHECKSUM: TEMP_r5bHash_([plans.actual_hash, plans.expected_hash, lines.actual_hash, lines.expected_hash].join('|')),
+    verdict: (plansReady && linesReady) ? 'SHIPPING_PLAN_SCHEMA_READY' : 'SHIPPING_PLAN_SCHEMA_MISMATCH',
+    R6E_DIAGNOSTIC_READY: 'YES'
+  };
+  Logger.log('R6E_SHIPPING_PLAN_SCHEMA ' + JSON.stringify(out, null, 2));
+  return out;
+}
