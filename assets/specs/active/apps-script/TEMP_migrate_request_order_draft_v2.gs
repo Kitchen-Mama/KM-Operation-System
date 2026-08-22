@@ -111,10 +111,50 @@ function TEMP_migrateRequestOrderDraftV2_(opts) {
   }
   var sh = existing || ss.insertSheet(TEMP_V2_STAGING_TAB_);
   var headers = plan.stagingHeaders;
+  var nRows = plan.stagingRows.length;
+  // R4C2: force PLAIN-TEXT number format on the two coercion-prone columns' DATA ranges BEFORE the write, so Google
+  // Sheets cannot auto-coerce "2026-08" (and the id) into a Date/number. Only these two staging columns are formatted;
+  // numeric quantity/carton/version/tier columns keep their natural (General) format. HALT if a header is missing.
+  var cycleCol = headers.indexOf('planning_cycle');
+  var idCol = headers.indexOf('request_allocation_draft_id');
+  if (cycleCol === -1) { Logger.log('ABORT: planning_cycle column not found in staging headers.'); return { ok: false, halt: 'STAGING_PLANNING_CYCLE_COLUMN_MISSING' }; }
+  if (idCol === -1) { Logger.log('ABORT: request_allocation_draft_id column not found in staging headers.'); return { ok: false, halt: 'STAGING_ID_COLUMN_MISSING' }; }
+  if (nRows > 0) {
+    sh.getRange(2, cycleCol + 1, nRows, 1).setNumberFormat('@');   // plain text — planning_cycle data cells
+    sh.getRange(2, idCol + 1, nRows, 1).setNumberFormat('@');      // plain text — request_allocation_draft_id data cells
+  }
   var matrix = [headers].concat(plan.stagingRows.map(function (row) { return headers.map(function (h) { return row[h] !== undefined ? row[h] : ''; }); }));
-  sh.getRange(1, 1, matrix.length, headers.length).setValues(matrix);
-  out.written_rows = plan.stagingRows.length; out.written_headers = headers.length;
-  Logger.log('EXECUTE — wrote ' + plan.stagingRows.length + ' rows to ' + TEMP_V2_STAGING_TAB_ + '. Legacy tabs untouched.\n' + JSON.stringify(out, null, 2));
+  sh.getRange(1, 1, matrix.length, headers.length).setValues(matrix);   // single matrix write
+  out.written_rows = nRows; out.written_headers = headers.length;
+
+  // R4C2 POST-WRITE ROUNDTRIP: flush, read back through the getValues()-based reader, verify the persisted TYPES +
+  // values, then run the full 14-gate validator on the read-back rows. Fail closed (no auto rename/clear/retry).
+  SpreadsheetApp.flush();
+  var readback = TEMP_readObjects_(TEMP_V2_STAGING_TAB_), rb = readback.rows || [];
+  var cycleTypes = {}, cycleDist = {}, nonStringCycle = [], idTypes = {}, idNonString = [];
+  rb.forEach(function (r) {
+    var cv = r.planning_cycle, isD = TEMP_isDate_(cv), ct = (isD ? 'Date' : (cv === null || cv === undefined ? 'null' : typeof cv));
+    cycleTypes[ct] = (cycleTypes[ct] || 0) + 1; cycleDist[String(cv)] = (cycleDist[String(cv)] || 0) + 1;
+    if (ct !== 'string' || String(cv) !== '2026-08') nonStringCycle.push({ id: String(r.request_allocation_draft_id), raw: (isD ? (function () { try { return cv.toISOString(); } catch (e) { return String(cv); } })() : cv), type: ct });
+    var iv = r.request_allocation_draft_id, it = (iv === null || iv === undefined ? 'null' : typeof iv);
+    idTypes[it] = (idTypes[it] || 0) + 1; if (it !== 'string') idNonString.push({ id: String(iv), type: it });
+  });
+  var srcIdSet = {}; src.headers.forEach(function (h) { srcIdSet[String(h.request_allocation_draft_id)] = 1; });
+  var idSetOk = rb.length > 0 && rb.every(function (r) { return srcIdSet[String(r.request_allocation_draft_id)] === 1; });
+  var postValidator = KMRDV2P.validateStaging(readback.headers, rb, src.headers, src.linesByDraftId,
+    { expectRows: TEMP_R4_EXPECT_.ACTIONABLE, authorizedCycleById: authority, canonicalActiveIdentities: identities, oldLineWriteCount: 0 });
+  out.POST_WRITE_FLUSHED = true; out.POST_WRITE_ROWS = rb.length;
+  out.POST_WRITE_CYCLE_TYPES = cycleTypes; out.POST_WRITE_CYCLE_DISTRIBUTION = cycleDist; out.POST_WRITE_NON_STRING_CYCLE_IDS = nonStringCycle;
+  out.POST_WRITE_ID_TYPES = idTypes; out.POST_WRITE_ID_SET_OK = idSetOk;
+  out.POST_WRITE_VALIDATOR = postValidator; out.POST_WRITE_READY_FOR_SWAP = postValidator.READY_FOR_SWAP;
+  var roundtripOk = (rb.length === nRows) && nonStringCycle.length === 0 && idNonString.length === 0 && idSetOk === true && postValidator.READY_FOR_SWAP === 'YES';
+  if (!roundtripOk) {
+    out.ok = false; out.halt = 'STAGING_POST_WRITE_ROUNDTRIP_FAILED';
+    out.offenders = { non_string_or_wrong_cycle: nonStringCycle, non_string_id: idNonString };
+    Logger.log('EXECUTE POST-WRITE ROUNDTRIP FAILED — staging retained for evidence; NO auto rename/clear/retry/swap.\n' + JSON.stringify(out, null, 2));
+    return out;
+  }
+  Logger.log('EXECUTE — wrote + roundtrip-verified ' + nRows + ' rows to ' + TEMP_V2_STAGING_TAB_ + '. Legacy tabs untouched.\n' + JSON.stringify(out, null, 2));
   return out;
 }
 
@@ -126,6 +166,19 @@ function TEMP_validateRequestOrderDraftV2Staging_(opts) {
   var src = TEMP_buildSource_();
   var v = KMRDV2P.validateStaging(stg.headers, stg.rows, src.headers, src.linesByDraftId,
     { expectRows: TEMP_R4_EXPECT_.ACTIONABLE, authorizedCycleById: authority, canonicalActiveIdentities: TEMP_r4cCanonicalActiveIdentities_(), oldLineWriteCount: 0 });
+  // R4C2: when a cycle gate fails, diagnose the persisted value per offending row (READ-ONLY — never converts/repairs).
+  if (v.PLANNING_CYCLE_FORMAT_OK === false || v.PLANNING_CYCLE_AUTHORITY_OK === false) {
+    var diag = stg.rows.map(function (r) {
+      var cv = r.planning_cycle, isD = TEMP_isDate_(cv);
+      return { request_allocation_draft_id: String(r.request_allocation_draft_id),
+        raw_planning_cycle: (isD ? String(cv) : cv), js_type: (isD ? 'Date' : (cv === null || cv === undefined ? 'null' : typeof cv)),
+        is_date: isD, iso: (isD ? (function () { try { return cv.toISOString(); } catch (e) { return ''; } })() : ''),
+        format_valid: KMRDV2.CANONICAL_CYCLE_RE.test(String(cv)),
+        authority_valid: String(cv) === String(authority[String(r.request_allocation_draft_id)]) };
+    }).filter(function (d) { return d.format_valid === false || d.authority_valid === false; });
+    Logger.log('CYCLE_GATE_DIAGNOSTIC ' + JSON.stringify(diag, null, 2));
+    v.CYCLE_GATE_DIAGNOSTIC = diag;
+  }
   Logger.log(JSON.stringify(v, null, 2));
   return v;
 }

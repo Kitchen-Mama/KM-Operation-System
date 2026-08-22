@@ -63,13 +63,13 @@ function makeSandbox(preStaging) {
   var fx = fixtureMatrices();
   var tabs = {}; tabs[HDR_TAB] = fx.headerMatrix; tabs[LINE_TAB] = fx.lineMatrix;
   if (preStaging !== undefined) tabs[V2_TAB] = preStaging;
-  var track = {}; function T(n) { track[n] = track[n] || { setValues: 0, clear: 0, rename: 0, del: 0 }; return track[n]; }
-  var insertLog = [];
+  var track = {}; function T(n) { track[n] = track[n] || { setValues: 0, clear: 0, rename: 0, del: 0, fmt: 0 }; return track[n]; }
+  var insertLog = [], flushCount = { n: 0 };
   function sheetObj(name) {
     return {
       getName: function () { return name; },
       getDataRange: function () { return { getValues: function () { return tabs[name] || [[]]; } }; },
-      getRange: function () { return { setValues: function (m) { T(name).setValues++; tabs[name] = m; } }; },
+      getRange: function () { return { setValues: function (m) { T(name).setValues++; tabs[name] = m; }, setNumberFormat: function () { T(name).fmt++; } }; },
       clear: function () { T(name).clear++; tabs[name] = []; },
       setName: function () { T(name).rename++; }
     };
@@ -82,11 +82,11 @@ function makeSandbox(preStaging) {
   };
   var Utilities = { formatDate: function (d, tz, f) { var off = (tz === 'Asia/Taipei') ? 8 : 0; var t = new Date(d.getTime() + off * 3600000); var y = t.getUTCFullYear(), m = t.getUTCMonth() + 1; return y + '-' + (m < 10 ? '0' + m : '' + m); } };
   var logs = [];
-  var sandbox = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; } }, Utilities: Utilities,
+  var sandbox = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; }, flush: function () { flushCount.n++; } }, Utilities: Utilities,
     Logger: { log: function (m) { logs.push(String(m)); } }, console: console };
   vm.createContext(sandbox);
   vm.runInContext(GS, sandbox, { filename: 'TEMP_migrate_request_order_draft_v2.gs' });
-  return { sandbox: sandbox, track: track, insertLog: insertLog, tabs: tabs, T: T, logs: logs };
+  return { sandbox: sandbox, track: track, insertLog: insertLog, tabs: tabs, T: T, logs: logs, flushCount: flushCount };
 }
 function writeCount(track) { var n = 0; Object.keys(track).forEach(function (k) { n += track[k].setValues + track[k].clear + track[k].rename + track[k].del; }); return n; }
 function legacyMutations(track) { var m = 0; [HDR_TAB, LINE_TAB].forEach(function (t) { if (track[t]) m += track[t].setValues + track[t].clear + track[t].rename + track[t].del; }); return m; }
@@ -124,6 +124,13 @@ eq(e.insertLog, [V2_TAB], 'EXECUTE inserts ONLY request_order_allocation_drafts_
 ok(e.track[V2_TAB] && e.track[V2_TAB].setValues === 1, 'EXECUTE setValues once on the staging tab');
 eq(legacyMutations(e.track), 0, 'EXECUTE performs ZERO mutation on the two legacy tabs');
 ok(e.tabs[V2_TAB].length === 27 && e.tabs[V2_TAB][0].length === 53, 'staging matrix = 1 header row (53 cols) + 26 data rows');
+// R4C2 write-boundary: text-format targets ONLY staging (2 columns), legacy zero; flush called; roundtrip verified
+eq(e.track[V2_TAB].fmt, 2, 'setNumberFormat called exactly twice on staging (planning_cycle + request_allocation_draft_id)');
+ok(!e.track[HDR_TAB] || e.track[HDR_TAB].fmt === 0, 'legacy header tab receives ZERO formatting');
+ok(!e.track[LINE_TAB] || e.track[LINE_TAB].fmt === 0, 'legacy line tab receives ZERO formatting');
+ok(e.flushCount.n >= 1, 'SpreadsheetApp.flush() called before roundtrip read');
+eq(exOut.POST_WRITE_READY_FOR_SWAP, 'YES', 'post-write roundtrip → READY_FOR_SWAP=YES');
+ok(exOut.POST_WRITE_CYCLE_TYPES && exOut.POST_WRITE_CYCLE_TYPES.string === 26 && !exOut.POST_WRITE_CYCLE_TYPES.Date, 'all 26 read-back cycle types = string (no Date)');
 
 section('VALIDATE (core + COMPLETE authority): all 14 gates → READY_FOR_SWAP=YES; read-only');
 var executedStaging = e.tabs[V2_TAB];
