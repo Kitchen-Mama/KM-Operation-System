@@ -48,6 +48,14 @@ function TEMP_R5C_AUDIT_DRAFT_WRITE_INCIDENT() { return TEMP_r5cAuditDraftWriteI
 function TEMP_R5C1_DRY_RUN_REPAIR_DRAFT_CYCLES() { return TEMP_r5c1RepairDraftCycles_({ execute: false }); }
 function TEMP_R5C1_EXECUTE_REPAIR_DRAFT_CYCLES() { return TEMP_r5c1RepairDraftCycles_({ execute: true }); }
 function TEMP_R5C1_VALIDATE_REPAIRED_DRAFT_CYCLES() { return TEMP_r5c1ValidateRepairedDraftCycles_(); }
+// F1-7N-FA-3C-R6A — READ-ONLY flat-draft lifecycle preflight + post-stage validators (Edit/Submit/Send). All WRITE
+// NOTHING; each is scoped to the ONE frozen target id and its exact downstream Request-Order lineage.
+function TEMP_R6A_PREFLIGHT_FLAT_DRAFT_LIFECYCLE() { return TEMP_r6aPreflightFlatDraftLifecycle_(); }
+function TEMP_R6A_VALIDATE_AFTER_EDIT() { return TEMP_r6aValidateStage_('EDIT'); }
+function TEMP_R6A_VALIDATE_AFTER_PARTIAL_SUBMIT() { return TEMP_r6aValidateStage_('PARTIAL_SUBMIT'); }
+function TEMP_R6A_VALIDATE_AFTER_FULL_SUBMIT() { return TEMP_r6aValidateStage_('FULL_SUBMIT'); }
+function TEMP_R6A_VALIDATE_AFTER_SEND() { return TEMP_r6aValidateStage_('SEND'); }
+function TEMP_R6A_VALIDATE_RESEND_IDEMPOTENCY() { return TEMP_r6aValidateStage_('RESEND'); }
 
 // Accepted R3 shape — the migration HALTs (R4_LIVE_DATA_DRIFT_FROM_R3) if the live set no longer matches.
 var TEMP_R4_EXPECT_ = { TOTAL_HEADERS: 124, ACTIONABLE: 26, ALL_ZERO: 98, NEEDS_MANUAL_REVIEW: 0, BLOCKED_CONFLICT: 0,
@@ -1038,5 +1046,158 @@ function TEMP_r5c1ValidateRepairedDraftCycles_() {
     after_cycle_type_distribution: cycleTypeDist, after_cycle_value_distribution: cycleValDist, after_status_distribution: statusDist, after_purpose_distribution: purposeDist, after_marketplace_distribution: mktDist,
     checks: checks, verdict: pass ? 'REPAIR_VALIDATED' : 'REPAIR_VALIDATION_FAILED' };
   Logger.log('R5C1 VALIDATE ' + out.verdict + '\n' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6A — READ-ONLY flat-draft lifecycle preflight + post-stage validators (writes NOTHING).
+// Proves the real runtime path for one active flat Draft: Load -> Edit -> Partial Submit -> Full Submit -> Send ->
+// downstream Request Order (request_orders / request_order_lines / request_order_line_sources) -> re-send idempotency.
+// The month/scope authority is the flat 53-field row + its deterministic id; the downstream FK is
+// request_order_line_sources.request_allocation_draft_id. NEVER reads or writes request_order_allocation_draft_lines,
+// never the legacy backup, never a Purchase Order. It NEVER edits/submits/sends anything — those are USER UI actions.
+// ================================================================================================================
+var TEMP_R6A_TARGET_ID_ = 'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1100-R';
+var TEMP_R6A_TIERS_ = ['t1', 't2', 't3'];
+var TEMP_R6A_TIER_FIELDS_ = ['month', 'recommended_qty', 'order_qty', 'carton_qty', 'status', 'submitted_by', 'submitted_at', 'user_edited', 'user_edited_by', 'note'];
+var TEMP_R6A_ACTIVE_ = { draft: 1, partially_submitted: 1, site_confirmed: 1 };
+function TEMP_r6aNum_(v) { var n = parseFloat(v); return (isFinite(n)) ? n : 0; }
+function TEMP_r6aTierSnapshot_(row) {
+  var snap = {};
+  TEMP_R6A_TIERS_.forEach(function (p) { var o = {}; TEMP_R6A_TIER_FIELDS_.forEach(function (f) { o[f] = row[p + '_' + f]; }); snap[p.toUpperCase()] = o; });
+  return snap;
+}
+function TEMP_r6aSubmittable_(row, p) { return TEMP_r6aNum_(row[p + '_order_qty']) > 0 && row[p + '_status'] !== 'submitted' && row[p + '_status'] !== 'cancelled'; }
+function TEMP_r6aReadState_() {
+  var out = { ok: true };
+  if (typeof KMRDV2 === 'undefined' || !KMRDV2 || !Array.isArray(KMRDV2.V2_HEADERS)) return { halt: 'V2_BUNDLE_ABSENT' };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  out.RUNTIME_SPREADSHEET_TARGET_MATCH = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  out.runtime_spreadsheet_id_fingerprint = TEMP_r5bIdFingerprint_(runtimeId);
+  out.active_flag = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') && requestOrderDraftV2FlatCutoverEnabled_() === true;
+  var read = TEMP_readObjects_(TEMP_R5C_CANON_), v2 = KMRDV2.V2_HEADERS;
+  out.canonical_headers_hash = TEMP_r5bHash_((read.headers || []).join('|'));
+  out.CANONICAL_V2_SCHEMA_EXACT = (read.present && (read.headers || []).length === v2.length && (read.headers || []).join('|') === v2.join('|')) ? 'YES' : 'NO';
+  out.canonical_row_count = (read.rows || []).length;
+  out.draft_line_row_count = (TEMP_readObjects_(TEMP_R5C_LINES_).rows || []).length;
+  var matches = (read.rows || []).filter(function (r) { return TEMP_str_(r.request_allocation_draft_id) === TEMP_R6A_TARGET_ID_; });
+  out.target_present = matches.length > 0 ? 'YES' : 'NO'; out.target_count = matches.length;
+  var row = matches.length === 1 ? matches[0] : null; out.target_row = row;
+  if (row) {
+    out.target_status = TEMP_str_(row.status); out.target_draft_version = row.draft_version;
+    out.target_generation_type = TEMP_str_(row.generation_type);
+    out.target_expected_token = { draft_version: row.draft_version, tiers: TEMP_R6A_TIERS_.map(function (p) { return { tier: p.toUpperCase(), order_qty: TEMP_r6aNum_(row[p + '_order_qty']), user_edited: row[p + '_user_edited'] === true || String(row[p + '_user_edited']).toUpperCase() === 'TRUE' }; }) };
+    out.target_tier_snapshot = TEMP_r6aTierSnapshot_(row);
+    var p = TEMP_r5c1ParseId_(TEMP_R6A_TARGET_ID_), s = p.scope || {};
+    out.id_cycle_parsed = p.cycle; out.id_scope_agreement = (p.ok && TEMP_str_(row.company) === s.company && TEMP_str_(row.country) === s.country && TEMP_str_(row.marketplace) === s.marketplace && TEMP_str_(row.sku) === s.sku && (TEMP_str_(row.draft_purpose) || 'regular') === s.draft_purpose && TEMP_str_(row.planning_cycle) === p.cycle) ? 'YES' : 'NO';
+    var key = TEMP_r5cNatKey_(row.company, row.country, row.marketplace, row.sku, row.draft_purpose, row.planning_cycle);
+    var dup = 0; (read.rows || []).forEach(function (r) { if (!TEMP_R6A_ACTIVE_[TEMP_str_(r.status)]) return; if (TEMP_r5cNatKey_(r.company, r.country, r.marketplace, r.sku, r.draft_purpose, r.planning_cycle) === key) dup++; });
+    out.active_natural_key_duplicate_count = dup > 1 ? dup : 0;
+  }
+  var srcRows = (TEMP_readObjects_('request_order_line_sources').rows || []);
+  var srcForTarget = srcRows.filter(function (r) { return TEMP_str_(r.request_allocation_draft_id) === TEMP_R6A_TARGET_ID_; });
+  var roIds = {}; srcForTarget.forEach(function (r) { var id = TEMP_str_(r.request_order_id); if (id) roIds[id] = 1; });
+  var lineRows = (TEMP_readObjects_('request_order_lines').rows || []).filter(function (r) { return roIds[TEMP_str_(r.request_order_id)]; });
+  var orderRows = (TEMP_readObjects_('request_orders').rows || []).filter(function (r) { return roIds[TEMP_str_(r.request_order_id)]; });
+  out.existing_request_order_count = Object.keys(roIds).length;
+  out.existing_request_order_line_count = lineRows.length;
+  out.existing_line_source_count = srcForTarget.length;
+  out.already_sent = (srcForTarget.length > 0 || lineRows.length > 0 || Object.keys(roIds).length > 0) ? 'YES' : 'NO';
+  return out;
+}
+function TEMP_r6aExpectedSendDeltas_(row) {
+  if (!row) return { request_orders: 0, request_order_lines: 0, request_order_line_sources: 0 };
+  var lines = 0;
+  TEMP_R6A_TIERS_.forEach(function (p) { if (TEMP_r6aNum_(row[p + '_order_qty']) > 0 && row[p + '_status'] !== 'cancelled') lines++; });
+  return { request_orders: lines > 0 ? 1 : 0, request_order_lines: lines, request_order_line_sources: lines };
+}
+function TEMP_r6aPreflightFlatDraftLifecycle_() {
+  var st = TEMP_r6aReadState_();
+  if (st.halt) return { ok: false, halt: st.halt, R6A_ZERO_WRITE_CONFIRMED: 'YES' };
+  var row = st.target_row;
+  var submittable = row ? TEMP_R6A_TIERS_.filter(function (p) { return TEMP_r6aSubmittable_(row, p); }).map(function (p) { return p.toUpperCase(); }) : [];
+  var anySubmitted = row ? TEMP_R6A_TIERS_.some(function (p) { return row[p + '_status'] === 'submitted'; }) : false;
+  var status = st.target_status || '';
+  var editable = row && (status === 'draft' || status === 'partially_submitted') && st.target_count === 1;
+  var collision = st.existing_request_order_count > 0 || st.existing_line_source_count > 0;
+  var deltas = TEMP_r6aExpectedSendDeltas_(row);
+  var safe_edit = !!(editable && TEMP_R6A_TIERS_.some(function (p) { return row[p + '_status'] !== 'submitted' && row[p + '_status'] !== 'cancelled'; }));
+  var safe_partial = !!(editable && submittable.length >= 1);
+  var safe_full = !!(editable && submittable.length >= 1);
+  var safe_send = !!(anySubmitted && st.already_sent === 'NO' && !collision);
+  var verdict = st.halt ? 'HALT'
+    : (st.target_present !== 'YES' || st.target_count !== 1) ? 'HALT'
+    : (st.active_natural_key_duplicate_count > 0 || collision) ? 'DOWNSTREAM_COLLISION'
+    : (st.already_sent === 'YES') ? 'TARGET_ALREADY_CONSUMED'
+    : (status === 'submitted' || status === 'cancelled') ? 'TARGET_ALREADY_CONSUMED'
+    : (!editable) ? 'TARGET_NOT_EDITABLE'
+    : 'READY_FOR_CONTROLLED_LIFECYCLE';
+  var checksum = TEMP_r5bHash_([TEMP_R6A_TARGET_ID_, status, st.target_draft_version,
+    TEMP_R6A_TIERS_.map(function (p) { return row ? (p + ':' + TEMP_r6aNum_(row[p + '_order_qty']) + ':' + TEMP_str_(row[p + '_status'])) : p + ':NA'; }).join(',')].join('|'));
+  var out = {
+    ok: true,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: st.RUNTIME_SPREADSHEET_TARGET_MATCH, runtime_spreadsheet_id_fingerprint: st.runtime_spreadsheet_id_fingerprint,
+    active_flag: st.active_flag, CANONICAL_V2_SCHEMA_EXACT: st.CANONICAL_V2_SCHEMA_EXACT, canonical_headers_hash: st.canonical_headers_hash,
+    canonical_row_count: st.canonical_row_count, draft_line_row_count: st.draft_line_row_count,
+    target_id: TEMP_R6A_TARGET_ID_, target_present: st.target_present, target_count: st.target_count,
+    target_status: status, target_draft_version: st.target_draft_version, target_generation_type: st.target_generation_type,
+    target_expected_token: st.target_expected_token, target_tier_snapshot: st.target_tier_snapshot,
+    id_scope_agreement: st.id_scope_agreement, active_natural_key_duplicate_count: st.active_natural_key_duplicate_count,
+    existing_request_order_count: st.existing_request_order_count, existing_request_order_line_count: st.existing_request_order_line_count,
+    existing_line_source_count: st.existing_line_source_count, already_sent: st.already_sent,
+    submittable_tiers: submittable, any_tier_submitted: anySubmitted,
+    safe_for_edit: safe_edit ? 'YES' : 'NO', safe_for_partial_submit: safe_partial ? 'YES' : 'NO',
+    safe_for_full_submit: safe_full ? 'YES' : 'NO', safe_for_send: safe_send ? 'YES' : 'NO',
+    expected_send_downstream_deltas: deltas,
+    DRAFT_LINE_DEPENDENCY_ZERO: 'YES (flat lifecycle reads request_order_allocation_drafts + downstream request_orders/lines/line_sources ONLY; never request_order_allocation_draft_lines)',
+    R6A_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ only; no setValues/appendRow/setNumberFormat/insertSheet/rename)',
+    R6A_PREFLIGHT_CHECKSUM: checksum, verdict: verdict, R6A_PREFLIGHT_READY: 'YES'
+  };
+  Logger.log('R6A_PREFLIGHT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+function TEMP_r6aValidateStage_(stage) {
+  var st = TEMP_r6aReadState_();
+  if (st.halt) return { ok: false, stage: stage, halt: st.halt, R6A_ZERO_WRITE_CONFIRMED: 'YES' };
+  var row = st.target_row, checks = {}, tiers = st.target_tier_snapshot || {};
+  var deltas = TEMP_r6aExpectedSendDeltas_(row);
+  checks.target_unique = st.target_count === 1;
+  checks.id_scope_agreement = st.id_scope_agreement === 'YES';
+  checks.draft_line_count_65 = st.draft_line_row_count === 65;
+  checks.no_active_duplicate = !(st.active_natural_key_duplicate_count > 0);
+  if (stage === 'EDIT') {
+    checks.status_active = !!(row && (st.target_status === 'draft' || st.target_status === 'partially_submitted'));
+    checks.recommended_qty_present = !!(row && TEMP_R6A_TIERS_.every(function (p) { return row[p + '_recommended_qty'] !== undefined; }));
+    checks.no_downstream_yet = st.already_sent === 'NO';
+  } else if (stage === 'PARTIAL_SUBMIT') {
+    checks.header_partially_or_submitted = !!(row && (st.target_status === 'partially_submitted' || st.target_status === 'submitted'));
+    checks.at_least_one_tier_submitted = !!(row && TEMP_R6A_TIERS_.some(function (p) { return row[p + '_status'] === 'submitted'; }));
+    checks.no_downstream_yet = st.already_sent === 'NO';
+  } else if (stage === 'FULL_SUBMIT') {
+    checks.header_submitted = st.target_status === 'submitted';
+    checks.all_submittable_tiers_submitted = !!(row && TEMP_R6A_TIERS_.every(function (p) { return TEMP_r6aNum_(row[p + '_order_qty']) <= 0 || row[p + '_status'] === 'submitted' || row[p + '_status'] === 'cancelled'; }));
+    checks.no_downstream_yet = st.already_sent === 'NO';
+  } else if (stage === 'SEND') {
+    checks.header_submitted = st.target_status === 'submitted';
+    checks.request_orders_created = st.existing_request_order_count >= 1;
+    checks.line_count_matches_tiers = st.existing_request_order_line_count === deltas.request_order_lines;
+    checks.line_source_count_matches = st.existing_line_source_count === deltas.request_order_line_sources;
+    checks.lineage_fk_present = st.existing_line_source_count >= 1;
+  } else if (stage === 'RESEND') {
+    checks.request_orders_still_one = st.existing_request_order_count === 1;
+    checks.line_count_unchanged = st.existing_request_order_line_count === deltas.request_order_lines;
+    checks.line_source_count_unchanged = st.existing_line_source_count === deltas.request_order_line_sources;
+    checks.no_duplicate_request_order = st.existing_request_order_count <= 1;
+  }
+  var pass = Object.keys(checks).every(function (k) { return checks[k] === true; });
+  var out = { ok: pass, stage: stage, target_id: TEMP_R6A_TARGET_ID_, target_status: st.target_status,
+    target_tier_snapshot: tiers, existing_request_order_count: st.existing_request_order_count,
+    existing_request_order_line_count: st.existing_request_order_line_count, existing_line_source_count: st.existing_line_source_count,
+    expected_send_downstream_deltas: deltas, draft_line_row_count: st.draft_line_row_count,
+    DRAFT_LINE_DEPENDENCY_ZERO: 'YES', checks: checks, R6A_ZERO_WRITE_CONFIRMED: 'YES',
+    verdict: pass ? ('STAGE_VALIDATED_' + stage) : ('STAGE_VALIDATION_FAILED_' + stage) };
+  Logger.log('R6A_VALIDATE ' + stage + ' ' + out.verdict + '\n' + JSON.stringify(out, null, 2));
   return out;
 }

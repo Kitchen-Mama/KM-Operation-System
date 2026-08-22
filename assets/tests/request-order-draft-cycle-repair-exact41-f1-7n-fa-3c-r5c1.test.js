@@ -158,7 +158,9 @@ eq([clean.repair_status, clean.pending_count, clean.verdict], ['ALREADY_REPAIRED
 
 section('SOURCE — read-only entrypoints; the write boundary is planning_cycle only');
 ok(/function TEMP_R5C1_DRY_RUN_REPAIR_DRAFT_CYCLES\(\)/.test(GSTEMP) && /function TEMP_R5C1_EXECUTE_REPAIR_DRAFT_CYCLES\(\)/.test(GSTEMP) && /function TEMP_R5C1_VALIDATE_REPAIRED_DRAFT_CYCLES\(\)/.test(GSTEMP), 'all three public entrypoints exist');
-ok(!/appendRow|insertSheet|deleteRow|deleteSheet|\.setName\(|\.clear\(/.test(GSTEMP.split('F1-7N-FA-3C-DRAFT-MODEL-R5C1')[1] || ''), 'R5C1 tooling never appends/inserts/deletes/renames/clears rows or tabs');
+// bound the R5C1 region to end at the next round's marker (later rounds append their own tooling to this file)
+var _r5c1Region = (GSTEMP.split('F1-7N-FA-3C-DRAFT-MODEL-R5C1')[1] || '').split('F1-7N-FA-3C-DRAFT-MODEL-R6A')[0];
+ok(!/appendRow|insertSheet|deleteRow|deleteSheet|\.setName\(|\.clear\(/.test(_r5c1Region), 'R5C1 tooling never appends/inserts/deletes/renames/clears rows or tabs');
 
 // ==========================================================================
 console.log('\n' + '-'.repeat(40));
