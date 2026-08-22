@@ -24,14 +24,17 @@ var PRODUCTION_DB_SPREADSHEET_ID_ = '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-K
 // Recommendation targets the same canonical bound database (S0.5 unifies the id — no separate per-domain ids).
 var RECOMMENDATION_TARGET_SPREADSHEET_ID_ = PRODUCTION_DB_SPREADSHEET_ID_;
 
-// F1-7N-FA-3C-R2b-2 — MONTHLY_ORDER flat V2 cutover flag. DEFAULT OFF. When false (the only supported state until
-// the USER-owned R4 cutover has provisioned the 53-col flat request_order_allocation_drafts schema and deployed the
-// R2b-3 frontend), MONTHLY_ORDER generation + readback stay on the EXISTING line-oriented engine — live behavior is
-// unchanged even if this bundle is synced for an unrelated reason. When true (set ONLY at R4), MONTHLY_ORDER routes
-// through the KMRDV2/KMRDV2P flat SHAPE ADAPTER (ONE 53-col row, no child lines). WEEKLY_SHIPPING is never affected
-// either way (it never reads this flag). The flat path fails closed against a non-V2 schema, so an early flip never
-// corrupts data — but the flag must remain OFF until R4 so users' MONTHLY AI Plan is never interrupted.
-var REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = false;
+// F1-7N-FA-3C-R2b-2 / R6E1 — MONTHLY_ORDER flat V2 cutover flag. PERMANENTLY TRUE (production cutover COMPLETE). The
+// USER-owned R4 cutover has provisioned the flat request_order_allocation_drafts schema (53 V2 headers) and deployed
+// the R2b-3 frontend; this source mirror is aligned to the live posture. MONTHLY_ORDER generation + readback route
+// through the KMRDV2/KMRDV2P flat SHAPE ADAPTER (ONE 53-col row per request order, no child lines) — the canonical
+// authority table is request_order_allocation_drafts. This must NEVER revert to false / the legacy line-oriented
+// authority during an unrelated deployment: a flip to false would silently point the runtime at the retired legacy
+// engine against the live 53-column table. The flat path still fails closed against a non-V2 schema (defense in depth).
+// WEEKLY_SHIPPING never reads this flag. R6E1 note: any frontend that must know the effective authority reads it via
+// the getClientCapabilities transport (03_ handleGetClientCapabilities_ → KM.api) and FAILS CLOSED to FLAT_V2 if it cannot be
+// determined — never silently selecting legacy against the canonical 53-column table.
+var REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true;
 function requestOrderDraftV2FlatCutoverEnabled_() { return REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ === true; }
 
 // F1-7N-FA-3C-R6E-P0 — Request Order "Site Confirm required" feature flag (backend owner-of-record). DEFAULT-OF-RECORD

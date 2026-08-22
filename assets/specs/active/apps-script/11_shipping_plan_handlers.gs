@@ -249,6 +249,86 @@ function shippingPlanResolveCompany_(maps, country, marketplace, sku, payloadCom
   return '';
 }
 
+// ---- R6E1 idempotency + canonical snapshot helpers (PURE where possible) ------------------------------------
+
+/**
+ * F1-7N-FA-3C-R6E1-R1 — canonical snapshot serialization. A context field (snapshot_fc_context /
+ * snapshot_event_context) may arrive as an object/array; a raw appendRow would coerce it to the useless
+ * "[object Object]". Serialize objects/arrays as canonical JSON; pass primitives through unchanged; null/undefined
+ * → ''. NEVER emits "[object Object]".
+ */
+function shippingPlanSnapshotValue_(v) {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'object') { try { return JSON.stringify(v); } catch (e) { return ''; } }
+  return v;
+}
+
+/**
+ * F1-7N-FA-3C-R6E1-R1 — PURE payload-equivalence signature for one Submit batch. Computed over the line-level facts
+ * shared by BOTH the incoming payload AND the persisted rows: [country, ship_from, destination, shipping_method,
+ * marketplace, sku, requested_qty]. Order-independent (tuples sorted). company is EXCLUDED (it is server-resolved, so
+ * it must never affect equivalence). Deterministic — no clock / no uuid.
+ */
+function shippingPlanBatchSignature_(tuples) {
+  var norm = (tuples || []).map(function (t) {
+    return [t.country, t.ship_from, t.destination, t.shipping_method, t.marketplace, t.sku]
+      .map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); })
+      .concat([String(shippingPlanNum_(t.requested_qty))]).join('|');
+  }).sort();
+  return norm.join(';');
+}
+
+/**
+ * F1-7N-FA-3C-R6E1-R1 — PURE find-or-reuse classifier for a provided execution key over already-read plans/lines row
+ * objects (keyed by header). Returns { found, planIds[], lineCount, signature, state } where state is one of:
+ *   CREATE               — no plan header carries this key → proceed to create exactly one batch.
+ *   REUSED               — headers + lines exist and the persisted signature equals the incoming one → zero writes.
+ *   CONFLICT             — headers + lines exist but the signature differs → SUBMIT_EXECUTION_DUPLICATE_CONFLICT.
+ *   COMMITTED_UNVERIFIED — header(s) exist but zero lines while the incoming payload has lines → no blind retry.
+ * Cancelled plans still occupy the key (a re-Submit under the same key is intentionally blocked; a new intention mints
+ * a new key). Deterministic; reads nothing (arrays passed in).
+ */
+function shippingPlanClassifyBatch_(planRows, lineRows, batchId, incomingSignature, incomingLineCount) {
+  var key = String(batchId || '').trim();
+  var planIds = {}, planIdList = [];
+  (planRows || []).forEach(function (p) {
+    if (String(p.submit_batch_id || '').trim() !== key) return;
+    var id = String(p.shipping_plan_id || '').trim(); if (!id) return;
+    planIds[id] = { country: p.country, ship_from: p.ship_from, destination: p.destination, shipping_method: p.shipping_method };
+    planIdList.push(id);
+  });
+  if (!planIdList.length) return { found: false, planIds: [], lineCount: 0, signature: '', state: 'CREATE' };
+  var tuples = [], lineCount = 0;
+  (lineRows || []).forEach(function (l) {
+    var pid = String(l.shipping_plan_id || '').trim();
+    if (!planIds[pid]) return;
+    lineCount++;
+    var r = planIds[pid];
+    tuples.push({ country: r.country, ship_from: r.ship_from, destination: r.destination, shipping_method: r.shipping_method,
+      marketplace: l.marketplace, sku: l.sku, requested_qty: l.requested_qty });
+  });
+  if (lineCount === 0 && incomingLineCount > 0) return { found: true, planIds: planIdList, lineCount: 0, signature: '', state: 'COMMITTED_UNVERIFIED' };
+  var sig = shippingPlanBatchSignature_(tuples);
+  if (sig === incomingSignature) return { found: true, planIds: planIdList, lineCount: lineCount, signature: sig, state: 'REUSED' };
+  return { found: true, planIds: planIdList, lineCount: lineCount, signature: sig, state: 'CONFLICT' };
+}
+
+/** Read a sheet's rows as header-keyed objects (values only; no mutation). Used by the idempotency find. */
+function shippingPlanReadObjects_(sheet) {
+  var out = [];
+  if (!sheet) return out;
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return out;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0].map(function (h) { return String(h).trim(); });
+  for (var r = 1; r < values.length; r++) {
+    var o = {};
+    for (var c = 0; c < headers.length; c++) o[headers[c]] = values[r][c];
+    out.push(o);
+  }
+  return out;
+}
+
 // ---- createShippingPlansBatch -------------------------------------
 
 /**
@@ -267,18 +347,64 @@ function handleCreateShippingPlansBatch_(body) {
 
   var source = String((body && body.source) || 'inventory_replenishment_submit_plan').trim();
   var createdBy = String((body && body.created_by) || 'inventory_replenishment').trim();
+  // F1-7N-FA-3C-R6E1-R1 — stable client execution key (idempotency). When present, one Submit intention maps to ONE
+  // batch: a retry with the same key + equivalent payload REUSES (zero writes); a different payload → CONFLICT. Absent
+  // → mint one (legacy per-call behavior). The incoming signature/count are computed up front (sku-nonblank lines only,
+  // matching what the create loop persists) so the classifier compares like-for-like.
+  var providedKey = String((body && (body.submit_batch_id || body.execution_key)) || '').trim();
+  var incomingTuples = [];
+  for (var ti = 0; ti < lines.length; ti++) {
+    var tl = lines[ti] || {};
+    if (!String(tl.sku || '').trim()) continue;
+    incomingTuples.push({ country: tl.country, ship_from: tl.ship_from, destination: tl.destination,
+      shipping_method: tl.shipping_method, marketplace: tl.marketplace, sku: tl.sku, requested_qty: tl.requested_qty });
+  }
+  var incomingSignature = shippingPlanBatchSignature_(incomingTuples);
+  var incomingLineCount = incomingTuples.length;
 
+  // Serialize the whole check-then-act under the canonical ScriptLock (project convention: 30 000 ms, try/finally).
+  var _spLock = LockService.getScriptLock();
+  try { if (!_spLock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', code: 'LOCK_TIMEOUT', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock' }); }
+  try {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // shipping_plans: strict ORDERED canonical gate (its 49-col live schema is order-valid).
   var planSheet = shippingPlanEnsureSheet_(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_);
-  var lineSheet = shippingPlanEnsureSheet_(ss, 'shipping_plan_lines', SHIPPING_PLAN_LINES_HEADERS_);
-  // Additive migration for the CANONICAL columns on tabs that predate them (no reorder / shift / dup).
+  // shipping_plan_lines: PRESENCE-based gate (order-tolerant) — mirrors the READ owners (40_/60_) and is safe because
+  // shippingPlanAppendByHeader_ writes by header NAME, not position. The R6E1 additive migration appends the 8 missing
+  // canonical columns at the right edge (keeping the legacy `marketplace_seperate` as a tolerated extra); a strict
+  // ORDERED gate would still reject that as HEADER_ORDER_MISMATCH even though every canonical column is present. This
+  // still FAILS CLOSED (MISSING_REQUIRED_HEADER) on any genuinely missing canonical column — so it stays blocked on the
+  // current live 23-col sheet until the USER-owned migration runs. No new permissiveness beyond the READ contract.
+  var lineSheet = prodRequireSheet_(ss, 'shipping_plan_lines', []);
+  prodRequireColumns_(lineSheet, SHIPPING_PLAN_LINES_HEADERS_);
+  // Additive migration for the CANONICAL columns on shipping_plans tabs that predate them (validate-only in Runtime).
   sheetEnsureColumns_(planSheet, ['parent_shipping_plan_id', 'source_warehouse_id', 'ship_from_type',
     'destination_warehouse_id', 'destination_type', 'last_mile_delivery',
     'customs_type', 'carrier_id', 'carrier_unit_rate', 'carrier_rate_type',
     'import_duty_treatment', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee',
     'estimated_total_cost', 'currency', 'rejected_comment']);
-  sheetEnsureColumns_(lineSheet, ['site_sku', 'marketplace', 'plan_carton_qty',
-    'snapshot_avg_sales_source', 'snapshot_normal_days_count', 'snapshot_excluded_event_days_count', 'snapshot_avg_sales_warning']);
+
+  // Idempotency find-or-reuse (only when a stable execution key was provided) — re-read INSIDE the lock.
+  if (providedKey) {
+    var existingPlans = shippingPlanReadObjects_(planSheet);
+    var existingLines = shippingPlanReadObjects_(lineSheet);
+    var cls = shippingPlanClassifyBatch_(existingPlans, existingLines, providedKey, incomingSignature, incomingLineCount);
+    if (cls.state === 'REUSED') {
+      return jsonResponse_({ success: true, data: { submit_batch_id: providedKey, outcome: 'REUSED', reused: true,
+        plan_count: cls.planIds.length, line_count: cls.lineCount, plans: cls.planIds } });
+    }
+    if (cls.state === 'CONFLICT') {
+      return jsonResponse_({ success: false, error: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT', code: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length } });
+    }
+    if (cls.state === 'COMMITTED_UNVERIFIED') {
+      return jsonResponse_({ success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED',
+        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount } });
+    }
+    // state === 'CREATE' → no header carries this key yet → proceed to create exactly one batch under it.
+  }
+
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
@@ -286,7 +412,7 @@ function handleCreateShippingPlansBatch_(body) {
 
   var now = shippingPlanTimestamp_();
   var today = shippingPlanToday_();
-  var submitBatchId = 'SB-' + Utilities.getUuid().substring(0, 12);
+  var submitBatchId = providedKey || ('SB-' + Utilities.getUuid().substring(0, 12));
 
   // Group by the ROUTE key (company + country + ship_from + destination + shipping_method) — NOT marketplace.
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
@@ -417,8 +543,9 @@ function handleCreateShippingPlansBatch_(body) {
         snapshot_days_of_supply: (l.snapshot_days_of_supply === '' || l.snapshot_days_of_supply == null) ? '' : l.snapshot_days_of_supply,
         snapshot_suggested_qty: shippingPlanNum_(l.snapshot_suggested_qty),
         snapshot_target_days: shippingPlanNum_(l.snapshot_target_days),
-        snapshot_fc_context: (l.snapshot_fc_context == null) ? '' : l.snapshot_fc_context,
-        snapshot_event_context: (l.snapshot_event_context == null) ? '' : l.snapshot_event_context
+        // R6E1 (F): canonical serialization — an object/array context becomes canonical JSON, never "[object Object]".
+        snapshot_fc_context: shippingPlanSnapshotValue_(l.snapshot_fc_context),
+        snapshot_event_context: shippingPlanSnapshotValue_(l.snapshot_event_context)
       });
       totalLines++;
     }
@@ -426,7 +553,8 @@ function handleCreateShippingPlansBatch_(body) {
     created.push({ shipping_plan_id: planId, shipping_plan_no: planNo, marketplace: headerMarketplace, shipping_method: meta.shipping_method, line_count: grp.lines.length });
   }
 
-  return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, plan_count: created.length, line_count: totalLines, plans: created } });
+  return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false, plan_count: created.length, line_count: totalLines, plans: created } });
+  } finally { try { _spLock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }
 
 /**

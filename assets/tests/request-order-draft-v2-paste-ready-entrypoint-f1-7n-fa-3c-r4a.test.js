@@ -162,7 +162,11 @@ section('drift guard reachable through the public entrypoint (mismatched live sh
 
 section('flag invariant (read-only)');
 var cfg = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '00_config.gs'), 'utf8');
-ok(/REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*false/.test(cfg), 'cutover flag remains false');
+// R6E1: the flat V2 cutover is COMPLETE — the flag is now permanently true (authority = 00_config.gs). The R4 paste-
+// ready migration tool still NEVER flips it (it is set by config, not by the tool). Assert the completed posture.
+ok(/REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true/.test(cfg), 'cutover flag is true (R6E1 completed the production cutover)');
+var tempSrc = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
+ok(!/REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=/.test(tempSrc), 'the R4 migration tool never assigns/flips the cutover flag');
 
 // ==========================================================================
 console.log('\n' + '-'.repeat(40));

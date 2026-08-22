@@ -87,11 +87,14 @@ section('B. valid schema → exactly one plan + N lines (control)');
 var okWrites = submitWriterModel(PLANS_AUTH.slice(), LINES_AUTH.slice(), 3);
 eq(okWrites, { plans: 1, lines: 3 }, 'B2. valid schema → 1 shipping_plans header + exactly 3 shipping_plan_lines');
 
-section('B. idempotency GAP is documented (writer has NO execution key → repeat Submit would duplicate)');
-// The real writer mints random SB-/SP- UUIDs per call and performs no find-or-reuse. This test PROVES the gap exists
-// (so it is not silently assumed fixed): the .gs writer takes no client execution key / submit_batch_id.
-ok(/Utilities\.getUuid\(\)/.test(GS) && !/execution[_ ]?key|expectedToken|reuseExisting|findActive/i.test(GS.replace(/\/\/[^\n]*/g, '')),
-  'B3/B4. writer is NON-idempotent (random UUID ids, no execution-key/find-or-reuse) — repeat Submit would create a duplicate plan; idempotency is DEFERRED with the schema authority resolution (reported NO)');
+section('B. idempotency is now CLOSED (R6E1): stable execution key + find-or-reuse under a ScriptLock');
+// R6E deferred idempotency; R6E1 closed it. The writer now accepts a client submit_batch_id / execution_key and does
+// find-or-reuse under LockService.getScriptLock (REUSED / SUBMIT_EXECUTION_DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED).
+// A key-absent call still mints a UUID (legacy per-call behavior). See the R6E1 suite for the create/reuse/conflict model.
+ok(/body\.submit_batch_id \|\| body\.execution_key/.test(GS) && /LockService\.getScriptLock\(\)/.test(GS) && /shippingPlanClassifyBatch_\(/.test(GS),
+  'B3/B4. writer is IDEMPOTENT (R6E1): accepts an execution key, find-or-reuse under a ScriptLock — repeat Submit no longer duplicates');
+ok(/SUBMIT_EXECUTION_DUPLICATE_CONFLICT/.test(GS) && /COMMITTED_UNVERIFIED/.test(GS) && /outcome: 'REUSED'/.test(GS),
+  'B3/B4. the three idempotency outcome tokens (REUSED / DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED) are present');
 
 section('B. downstream transfer untouched at Submit stage');
 function fnBody(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }

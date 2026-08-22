@@ -3402,6 +3402,53 @@ window.KM.DB.getOrderPlanningGap = function(scope) { return _kmGapRead_('orderPl
 // (never getOperationDb); composes the 52_/53_/54_/55_ Layer-1 owners + identity. Layer-2 Gap/Recommendation unchanged.
 window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPlanFirstLayer.get', { payload: payload || {} }); };
 
+// F1-7N-FA-3C-R6E1-R1 — CLIENT CAPABILITY read + SINGLE-AUTHORITY bootstrap (three-flag alignment). ---------------
+// The backend 00_config.gs flags are the owner-of-record; getClientCapabilities (01_/03_) is the ONE wire channel
+// that exposes their EFFECTIVE values. This replaces three independently hardcoded frontend booleans with a single
+// read → single apply path (KM.api.applyClientCapabilities). READ-ONLY; never mutates the DB.
+window.KM.DB.getClientCapabilities = function() { return _kmGapRead_('getClientCapabilities', {}); };
+// Fetch the effective backend flags ONCE and apply them through the ONE KM.api apply path. On ANY transport/business
+// failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
+// generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.
+// Never throws. Returns (and caches on window.__kmCapabilitySnapshot) the resolved capability snapshot.
+async function _kmApplyClientCapabilities_() {
+    var applied = null, caps = null, err = null;
+    try {
+        var res = await window.KM.DB.getClientCapabilities();
+        caps = (res && res.success && res.data) ? res.data : null;
+        if (!caps) err = (res && res.error) || { code: 'CAPABILITY_UNAVAILABLE' };
+    } catch (e) { err = { code: 'CAPABILITY_BOOTSTRAP_ERROR', message: e && e.message ? e.message : String(e) }; caps = null; }
+    try {
+        if (window.KM && window.KM.api && typeof window.KM.api.applyClientCapabilities === 'function') {
+            applied = window.KM.api.applyClientCapabilities(caps);   // caps null → fail-safe defaults applied
+        }
+    } catch (e2) { /* apply never throws by contract; guard anyway */ }
+    if (!caps) console.warn('[KM.capabilities] backend capability unavailable — applied fail-safe defaults', err);
+    try { window.__kmCapabilitySnapshot = applied || null; } catch (e3) {}
+    return applied;
+}
+window.KM.DB.applyClientCapabilities = _kmApplyClientCapabilities_;
+// Read-only capability diagnostic (no secrets/ids/row data): the three EFFECTIVE values + provenance + verdict.
+window.__kmCapabilities = function() {
+    var snap = (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
+        ? window.KM.api.getClientCapabilitySnapshot() : null;
+    var source = snap ? snap.source : 'unloaded';
+    var verdict = source === 'backend' ? 'CAPABILITY_FROM_BACKEND'
+        : source === 'failsafe-default' ? 'CAPABILITY_FAILSAFE_BACKEND_UNAVAILABLE'
+        : 'CAPABILITY_NOT_LOADED';
+    return { snapshot: snap, source: source, verdict: verdict };
+};
+// Re-fetch and compare backend vs the applied runtime snapshot — detects source/runtime disagreement (HALT signal).
+window.__kmVerifyCapabilities = async function() {
+    var live = null; try { var r = await window.KM.DB.getClientCapabilities(); live = (r && r.success && r.data) ? r.data : null; } catch (e) { live = null; }
+    var snap = (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function') ? window.KM.api.getClientCapabilitySnapshot() : null;
+    if (!live || !snap) return { agreement: 'INDETERMINATE', backend: live, runtime: snap };
+    var agree = live.requestOrderDraftV2FlatCutover === snap.requestOrderDraftV2FlatCutover
+        && live.requestOrderSiteConfirmRequired === snap.requestOrderSiteConfirmRequired
+        && live.inventoryAiPlanDbGenerationEnabled === snap.inventoryAiPlanDbGenerationEnabled;
+    return { agreement: agree ? 'AGREE' : 'DISAGREE_HALT', backend: live, runtime: snap };
+};
+
 // F1-4B-FM6-R4E2-B2 / R4E3-PRE — Request Order canonical draft: request-driven resumable scope job + scope
 // read-back + LOCKED incremental order_qty edit. The browser drives ONE logical job (START → poll CONTINUE →
 // terminal), reads the whole scope back once (getActive), and persists a single edited order_qty via the EXISTING

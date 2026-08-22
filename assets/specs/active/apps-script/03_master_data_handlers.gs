@@ -10,6 +10,23 @@
 // Action Handlers
 // ========================================
 
+// F1-7N-FA-3C-R6E1-R1 — CLIENT CAPABILITY TRANSPORT (single source of authority for the three feature flags).
+// The 00_config.gs flags are the OWNER-OF-RECORD; this read-only action is the ONE wire channel that exposes their
+// EFFECTIVE values to the frontend, so the browser stops maintaining three independently hardcoded booleans. It
+// returns ONLY booleans + a version tag — no secrets, no Spreadsheet id, no row/PII data — and performs ZERO
+// mutation. The frontend (operation-system-db-api.js _kmApplyClientCapabilities_) applies these via KM.api setters
+// and FAILS CLOSED to the safe defaults (flat V2 = true / FLAT_V2 — never legacy against the 53-col canonical table;
+// site confirm = true; inventory DB generation = false) whenever this action is unavailable or the value is
+// indeterminate. A missing backend getter here also resolves to that same safe default (never an invented value).
+function handleGetClientCapabilities_() {
+  return jsonResponse_({ success: true, data: {
+    capabilitiesVersion: 'r6e1-flags-shipping-20260822',
+    requestOrderDraftV2FlatCutover: (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') ? (requestOrderDraftV2FlatCutoverEnabled_() === true) : true,
+    requestOrderSiteConfirmRequired: (typeof requestOrderSiteConfirmRequired_ === 'function') ? (requestOrderSiteConfirmRequired_() === true) : true,
+    inventoryAiPlanDbGenerationEnabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false
+  } });
+}
+
 function handleGetOperationDb_() {
   // NOTE (2026-07-23): appended logistics_locations / shipment_route_templates /
   // shipment_route_template_nodes / shipment_events as READ-ONLY tabs for the Global Logistics Map.

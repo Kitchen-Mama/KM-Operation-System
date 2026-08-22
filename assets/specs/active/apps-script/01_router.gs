@@ -28,6 +28,11 @@ function doGet(e) {
       return handleGetTable_(table);
     }
 
+    // F1-7N-FA-3C-R6E1-R1 — read-only client capability transport (single flag authority; see 03_).
+    if (action === 'getClientCapabilities') {
+      return handleGetClientCapabilities_();
+    }
+
     return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb or getTable' });
 
   } catch (err) {
@@ -44,6 +49,12 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var action = body.action || '';
+
+    // F1-7N-FA-3C-R6E1-R1 — read-only client capability transport (single flag authority; see 03_). The frontend
+    // reads it via the canonical POST read runner (_kmGapRead_), so it is routed here as well as in doGet.
+    if (action === 'getClientCapabilities') {
+      return handleGetClientCapabilities_();
+    }
 
     if (action === 'updateSkuLifecycle') {
       return handleUpdateSkuLifecycle_(body);

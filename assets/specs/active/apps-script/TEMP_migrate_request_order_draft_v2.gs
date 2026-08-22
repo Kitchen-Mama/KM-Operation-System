@@ -1701,3 +1701,224 @@ function TEMP_r6d1ValidateInventoryAiPlanReady_() {
   Logger.log('R6D1_INVENTORY_AI_PLAN_READY ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6E1-R1 — shipping_plan_lines ADDITIVE schema migration + release preflight (USER-run).
+//   TEMP_R6E1_DRY_RUN_MIGRATE_SHIPPING_PLAN_LINES_SCHEMA()  — READ-ONLY plan/verdict (writes NOTHING).
+//   TEMP_R6E1_EXECUTE_MIGRATE_SHIPPING_PLAN_LINES_SCHEMA()  — append ONLY the 8 missing canonical headers.
+//   TEMP_R6E1_VALIDATE_SHIPPING_PLAN_LINES_SCHEMA()         — READ-ONLY post-migration verification.
+//   TEMP_R6E1_PREFLIGHT_SHIPPING_PLAN_RELEASE()             — READ-ONLY whole-release preflight (writes NOTHING).
+// Run order: DRY_RUN → (architect verifies the log) → EXECUTE → VALIDATE. Never jump straight to EXECUTE.
+// The migration is ADDITIVE ONLY: it appends the 8 missing columns at the right edge via the S0-3 migration-only
+// twin prodMigrateAppendColumns_ (a valid Migration authorization DTO is built here). It keeps the legacy
+// `marketplace_seperate` column as a tolerated extra (never renamed/deleted/repurposed); it NEVER deletes / renames /
+// reorders / clears / inserts a tab / touches a data row. Existing rows + cells stay byte-equivalent (verified by a
+// preserved-region checksum). This does NOT run against production in this task (USER-owned maintenance step).
+// ================================================================================================================
+var TEMP_R6E1_LINES_TAB_ = 'shipping_plan_lines';
+var TEMP_R6E1_PLANS_TAB_ = 'shipping_plans';
+// The exact 8 missing canonical headers (authority order within SHIPPING_PLAN_LINES_HEADERS_).
+var TEMP_R6E1_MISSING_HEADERS_ = ['marketplace', 'snapshot_current_stock', 'snapshot_avg_sales_per_day',
+  'snapshot_days_of_supply', 'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context'];
+var TEMP_R6E1_LEGACY_EXTRA_ = 'marketplace_seperate';
+
+function TEMP_R6E1_DRY_RUN_MIGRATE_SHIPPING_PLAN_LINES_SCHEMA() { return TEMP_r6e1Migrate_({ execute: false }); }
+function TEMP_R6E1_EXECUTE_MIGRATE_SHIPPING_PLAN_LINES_SCHEMA() { return TEMP_r6e1Migrate_({ execute: true }); }
+function TEMP_R6E1_VALIDATE_SHIPPING_PLAN_LINES_SCHEMA() { return TEMP_r6e1ValidateSchema_(); }
+function TEMP_R6E1_PREFLIGHT_SHIPPING_PLAN_RELEASE() { return TEMP_r6e1Preflight_(); }
+
+// Deterministic checksum over the PRESERVED data region (rows 2..n, cols 1..colCount) — proves existing cells are
+// byte-equivalent before/after the append (the append touches only header row 1, cols beyond the original width).
+function TEMP_r6e1PreservedChecksum_(sheet, colCount) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2 || colCount < 1) return TEMP_r5bHash_('EMPTY');
+  var vals = sheet.getRange(2, 1, lastRow - 1, colCount).getValues();
+  return TEMP_r5bHash_(JSON.stringify(vals));
+}
+
+// Shared READ-ONLY preconditions (target + plans-exact + lines-missing-exactly-8 + legacy-extra + no dup/whitespace).
+function TEMP_r6e1Preconditions_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  var hdrAuth = (typeof SHIPPING_PLANS_HEADERS_ !== 'undefined') ? SHIPPING_PLANS_HEADERS_ : null;
+  var lineAuth = (typeof SHIPPING_PLAN_LINES_HEADERS_ !== 'undefined') ? SHIPPING_PLAN_LINES_HEADERS_ : null;
+  if (!hdrAuth || !lineAuth) {
+    return { authorityAvailable: false, readyToExecute: false, RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+      note: 'SHIPPING_PLANS_HEADERS_ / SHIPPING_PLAN_LINES_HEADERS_ not loaded (sync 11_shipping_plan_handlers.gs)' };
+  }
+  var plans = TEMP_r6eAnalyzeTable_(TEMP_R6E1_PLANS_TAB_, hdrAuth, 'SHIPPING_PLANS_HEADERS_ (11_)');
+  var lines = TEMP_r6eAnalyzeTable_(TEMP_R6E1_LINES_TAB_, lineAuth, 'SHIPPING_PLAN_LINES_HEADERS_ (11_)');
+  var missingSorted = (lines.missing_headers || []).slice().sort().join('|');
+  var expectedMissingSorted = TEMP_R6E1_MISSING_HEADERS_.slice().sort().join('|');
+  var missingExactly8 = missingSorted === expectedMissingSorted;
+  var legacyExtraPresent = (lines.extra_headers || []).indexOf(TEMP_R6E1_LEGACY_EXTRA_) !== -1;
+  var extraOnlyLegacy = (lines.extra_headers || []).length === 1 && legacyExtraPresent;
+  var noDup = (lines.duplicate_headers || []).length === 0;
+  var noWhitespace = (lines.whitespace_headers || []).length === 0;
+  var plansExact = plans.present && plans.schema_exact === 'YES';
+  var readyToExecute = targetMatch === 'YES' && plansExact && lines.present
+    && missingExactly8 && extraOnlyLegacy && noDup && noWhitespace;
+  return {
+    authorityAvailable: true, readyToExecute: readyToExecute,
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    shipping_plans_schema_exact: plansExact ? 'YES' : 'NO', shipping_plans_col_count: plans.actual_col_count,
+    shipping_plan_lines_present: lines.present ? 'YES' : 'NO', shipping_plan_lines_col_count: lines.actual_col_count,
+    shipping_plan_lines_row_count: lines.row_count,
+    missing_headers: lines.missing_headers, missing_is_exactly_the_8: missingExactly8 ? 'YES' : 'NO',
+    extra_headers: lines.extra_headers, legacy_extra_present: legacyExtraPresent ? 'YES' : 'NO',
+    extra_is_only_legacy: extraOnlyLegacy ? 'YES' : 'NO',
+    duplicate_headers: lines.duplicate_headers, whitespace_headers: lines.whitespace_headers,
+    no_duplicate_headers: noDup ? 'YES' : 'NO', no_whitespace_headers: noWhitespace ? 'YES' : 'NO',
+    spelling_mismatches: lines.spelling_mismatches
+  };
+}
+
+function TEMP_r6e1Migrate_(opts) {
+  var execute = !!(opts && opts.execute === true);
+  var pre = TEMP_r6e1Preconditions_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var lineSheet = ss.getSheetByName(TEMP_R6E1_LINES_TAB_);
+  var origColCount = lineSheet ? lineSheet.getLastColumn() : 0;
+  var origRowCount = lineSheet ? lineSheet.getLastRow() : 0;
+  var origChecksum = lineSheet ? TEMP_r6e1PreservedChecksum_(lineSheet, origColCount) : TEMP_r5bHash_('NO_SHEET');
+  var out = { mode: execute ? 'EXECUTE' : 'DRY_RUN', preconditions: pre,
+    before_col_count: origColCount, before_row_count: Math.max(0, origRowCount - 1), before_preserved_checksum: origChecksum,
+    zero_write_confirmed: execute ? 'NO (EXECUTE appends 8 header cells)' : 'YES (read-only)' };
+
+  if (!execute) {
+    out.verdict = pre.readyToExecute ? 'READY_TO_EXECUTE' : 'NOT_READY';
+    Logger.log('R6E1_MIGRATE_DRY_RUN ' + JSON.stringify(out, null, 2));
+    return out;
+  }
+
+  // ---- EXECUTE ---- rerun ALL preconditions immediately before mutation; fail closed on any drift.
+  if (!pre.readyToExecute) { out.halt = 'PRECONDITIONS_NOT_MET'; Logger.log('R6E1_MIGRATE_EXECUTE HALT ' + JSON.stringify(out, null, 2)); return out; }
+  if (typeof KMSAFE === 'undefined') { out.halt = 'SAFETY_BUNDLE_MISSING'; return out; }
+  if (typeof prodMigrateAppendColumns_ !== 'function') { out.halt = 'MIGRATION_HELPER_MISSING'; return out; }
+  var liveHeaders = lineSheet.getRange(1, 1, 1, origColCount).getValues()[0].map(function (h) { return String(h).trim(); });
+  var oldHash = KMSAFE.headerHash(liveHeaders);
+  var newHash = KMSAFE.headerHash(liveHeaders.concat(TEMP_R6E1_MISSING_HEADERS_));
+  var actor = 'temp-migration'; try { actor = String(Session.getActiveUser().getEmail() || 'temp-migration'); } catch (e) {}
+  var auth = { migrationId: 'R6E1-SHIPPING-PLAN-LINES-ADDITIVE', expectedSpreadsheetId: String(PRODUCTION_DB_SPREADSHEET_ID_ || ''),
+    expectedSheetName: TEMP_R6E1_LINES_TAB_, expectedOldHeaderHash: oldHash, expectedNewHeaderHash: newHash,
+    backupReference: 'R6E1 additive shipping_plan_lines migration — USER confirms a spreadsheet backup exists before EXECUTE',
+    execute: true, actor: actor };
+  var appended;
+  try { appended = prodMigrateAppendColumns_(lineSheet, TEMP_R6E1_MISSING_HEADERS_, auth); }
+  catch (e) { out.halt = 'APPEND_FAILED'; out.error = String(e && e.message ? e.message : e); return out; }
+  SpreadsheetApp.flush();
+  // reread + verify (fail closed on any drift; no auto rename/clear/retry)
+  var postColCount = lineSheet.getLastColumn();
+  var postRowCount = lineSheet.getLastRow();
+  var postHeaders = lineSheet.getRange(1, 1, 1, postColCount).getValues()[0].map(function (h) { return String(h).trim(); });
+  var postPreservedChecksum = TEMP_r6e1PreservedChecksum_(lineSheet, origColCount);
+  var canonPresent = SHIPPING_PLAN_LINES_HEADERS_.every(function (h) { return postHeaders.indexOf(h) !== -1; });
+  var legacyStill = postHeaders.indexOf(TEMP_R6E1_LEGACY_EXTRA_) !== -1;
+  var drift = !(postColCount === origColCount + 8 && postRowCount === origRowCount && postPreservedChecksum === origChecksum && canonPresent && legacyStill && appended === 8);
+  out.appended_count = appended; out.after_col_count = postColCount; out.after_row_count = Math.max(0, postRowCount - 1);
+  out.after_preserved_checksum = postPreservedChecksum; out.after_headers = postHeaders;
+  out.all_30_canonical_present = canonPresent ? 'YES' : 'NO'; out.legacy_extra_still_present = legacyStill ? 'YES' : 'NO';
+  out.old_header_hash = oldHash; out.new_header_hash = newHash;
+  out.verdict = drift ? 'MIGRATION_DRIFT_DETECTED_HALT' : 'MIGRATION_EXECUTED';
+  Logger.log('R6E1_MIGRATE_EXECUTE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+function TEMP_r6e1ValidateSchema_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  var lineAuth = (typeof SHIPPING_PLAN_LINES_HEADERS_ !== 'undefined') ? SHIPPING_PLAN_LINES_HEADERS_ : null;
+  var sheet = ss.getSheetByName(TEMP_R6E1_LINES_TAB_);
+  if (!lineAuth || !sheet) return { verdict: lineAuth ? 'SHEET_MISSING' : 'AUTHORITY_UNAVAILABLE', RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, R6E1_ZERO_WRITE_CONFIRMED: 'YES (read-only)' };
+  var colCount = sheet.getLastColumn();
+  var rowCount = Math.max(0, sheet.getLastRow() - 1);
+  var headers = sheet.getRange(1, 1, 1, colCount).getValues()[0].map(function (h) { return String(h).trim(); });
+  var canonPresent = lineAuth.every(function (h) { return headers.indexOf(h) !== -1; });
+  var legacyPresent = headers.indexOf(TEMP_R6E1_LEGACY_EXTRA_) !== -1;
+  var count31 = colCount === 31;
+  // Loader (READ) schema gate emulation: existence + non-blank/non-dup (expected=[] ALLOW) AND presence of all canonical.
+  var gate = null, gateValid = false;
+  if (typeof KMSAFE !== 'undefined' && KMSAFE.classifySchemaMismatch) {
+    gate = KMSAFE.classifySchemaMismatch({ exists: true, actualHeaders: headers, expectedHeaders: [], extraColumnsPolicy: 'ALLOW' });
+    gateValid = gate.valid && canonPresent;
+  } else { gateValid = canonPresent; }
+  var preservedChecksum = TEMP_r6e1PreservedChecksum_(sheet, colCount);
+  var verdict = (count31 && canonPresent && legacyPresent && gateValid) ? 'MIGRATION_VALIDATED' : 'MIGRATION_NOT_VALIDATED';
+  var out = {
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, actual_col_count: colCount, actual_col_count_is_31: count31 ? 'YES' : 'NO',
+    all_30_canonical_present: canonPresent ? 'YES' : 'NO', legacy_extra_present: legacyPresent ? 'YES' : 'NO',
+    existing_row_count: rowCount, preserved_region_checksum: preservedChecksum,
+    loader_schema_gate_passes: gateValid ? 'YES' : 'NO', loader_gate_status: gate ? gate.schemaStatus : 'KMSAFE_UNAVAILABLE',
+    headers: headers,
+    R6E1_ZERO_WRITE_CONFIRMED: 'YES (read-only: getRange().getValues() only; no setValues/appendRow/insertSheet/rename)',
+    R6E1_VALIDATE_CHECKSUM: TEMP_r5bHash_([colCount, canonPresent, legacyPresent, gateValid, rowCount, verdict].join('|')),
+    verdict: verdict
+  };
+  Logger.log('R6E1_VALIDATE_SCHEMA ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+function TEMP_r6e1Preflight_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  // Three effective backend flags (owner-of-record = 00_config.gs getters). typeof-guarded; never invented.
+  var flatV2 = (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') ? requestOrderDraftV2FlatCutoverEnabled_() : null;
+  var siteConfirm = (typeof requestOrderSiteConfirmRequired_ === 'function') ? requestOrderSiteConfirmRequired_() : null;
+  var invGen = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+  // Request Order canonical schema = 53 (request_order_allocation_drafts) — evidence.
+  var roDrafts = TEMP_readObjects_('request_order_allocation_drafts');
+  var roCols = (roDrafts.headers || []).length;
+  var roCanonical53 = roCols === 53 ? 'YES' : 'NO';
+  // Shipping Plan schema / line migration state.
+  var pre = TEMP_r6e1Preconditions_();
+  var linesMigrated = pre.authorityAvailable && pre.shipping_plan_lines_col_count === 31 && pre.legacy_extra_present === 'YES';
+  var linesPreMigration = pre.authorityAvailable && pre.missing_is_exactly_the_8 === 'YES';
+  var lineMigrationState = linesMigrated ? 'MIGRATED_31' : (linesPreMigration ? 'PRE_MIGRATION_23_MISSING_8' : 'UNKNOWN');
+  // Submit execution-key readiness (11_ handler contract).
+  var submitKeyReady = 'YES (handleCreateShippingPlansBatch_ reads body.submit_batch_id; find-or-reuse under LockService: REUSED / SUBMIT_EXECUTION_DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED)';
+  // Duplicate submit_batch_id groups + orphan headers/lines (evidence, read-only).
+  var plans = TEMP_readObjects_(TEMP_R6E1_PLANS_TAB_);
+  var linesObj = TEMP_readObjects_(TEMP_R6E1_LINES_TAB_);
+  var byBatch = {}, planIds = {};
+  (plans.rows || []).forEach(function (p) { var b = TEMP_str_(p.submit_batch_id); if (b) byBatch[b] = (byBatch[b] || 0) + 1; planIds[TEMP_str_(p.shipping_plan_id)] = 1; });
+  var distinctBatches = Object.keys(byBatch).length;
+  var maxPlansPerBatch = 0; Object.keys(byBatch).forEach(function (b) { if (byBatch[b] > maxPlansPerBatch) maxPlansPerBatch = byBatch[b]; });
+  var orphanLines = (linesObj.rows || []).filter(function (l) { var pid = TEMP_str_(l.shipping_plan_id); return pid !== '' && !planIds[pid]; }).length;
+  var lineCountByPlan = {}; (linesObj.rows || []).forEach(function (l) { var pid = TEMP_str_(l.shipping_plan_id); if (pid) lineCountByPlan[pid] = (lineCountByPlan[pid] || 0) + 1; });
+  var emptyPlanHeaders = Object.keys(planIds).filter(function (pid) { return pid !== '' && !lineCountByPlan[pid]; }).length;
+  // R6D1 inventory flag preservation.
+  var invStaysFalse = invGen === false ? 'YES' : (invGen === null ? 'UNKNOWN' : 'NO');
+  var configMismatch = (flatV2 === false);   // permanently-true flag must not be false
+  var verdict = configMismatch ? 'CONFIG_AUTHORITY_MISMATCH'
+    : (targetMatch === 'NO') ? 'HALT'
+    : linesMigrated ? 'READY_FOR_CONTROLLED_SHIPPING_SUBMIT'
+    : linesPreMigration ? 'READY_FOR_SCHEMA_MIGRATION'
+    : 'HALT';
+  var out = {
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    effective_flags: { requestOrderDraftV2FlatCutover: flatV2, requestOrderSiteConfirmRequired: siteConfirm, inventoryAiPlanDbGenerationEnabled: invGen },
+    flag_source: 'CONSTANT (00_config.gs *_() getters — owner of record; no Script Property override channel for these three flags)',
+    flag_source_runtime_agreement: 'AGREE (the runtime getters ARE the source; a frontend mirror is fed from getClientCapabilities)',
+    request_order_canonical_schema_53: roCanonical53, request_order_allocation_drafts_col_count: roCols,
+    flat_loader_authority: (flatV2 === true) ? 'FLAT_V2' : (flatV2 === false ? 'LEGACY_UNEXPECTED' : 'UNKNOWN'),
+    shipping_plans_schema_exact: pre.shipping_plans_schema_exact, shipping_plan_lines_col_count: pre.shipping_plan_lines_col_count,
+    shipping_plan_line_migration_state: lineMigrationState,
+    required_missing_headers: pre.missing_headers, extra_headers: pre.extra_headers, legacy_extra_present: pre.legacy_extra_present,
+    submit_execution_key_readiness: submitKeyReady,
+    distinct_submit_batch_id_groups: distinctBatches, max_plans_per_batch: maxPlansPerBatch,
+    orphan_plan_lines: orphanLines, empty_plan_headers: emptyPlanHeaders,
+    unified_release_signature_backend_declared: 'r6e1-flags-shipping-20260822 (getClientCapabilities.capabilitiesVersion)',
+    R6D1_inventory_flag_remains_false: invStaysFalse,
+    R6E1_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + getRange().getValues() + typeof-guarded getters only; no setValues/appendRow/insertSheet/rename)',
+    R6E1_PREFLIGHT_CHECKSUM: TEMP_r5bHash_([targetMatch, flatV2, siteConfirm, invGen, roCols, pre.shipping_plan_lines_col_count, lineMigrationState, verdict].join('|')),
+    verdict: verdict
+  };
+  Logger.log('R6E1_PREFLIGHT_SHIPPING_PLAN_RELEASE ' + JSON.stringify(out, null, 2));
+  return out;
+}

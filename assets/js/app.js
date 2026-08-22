@@ -389,6 +389,16 @@ window.addEventListener('DOMContentLoaded', () => {
             console.warn('[App] Legacy imported SKU records detected in localStorage (' + Object.keys(legacyData).length + ' records). Run debugLegacySkuOverrides() for details.');
         }
     } catch(e) {}
+    // F1-7N-FA-3C-R6E1-R1 — apply the backend's EFFECTIVE feature flags through the ONE capability authority (the
+    // getClientCapabilities read → the single apply path on the DB surface) so the frontend reads backend flag values
+    // instead of three independently hardcoded booleans. app.js calls only the KM.DB legacy surface (never the API
+    // Foundation directly). READ-ONLY, fire-and-forget; on any failure the documented fail-safe defaults apply (flat
+    // V2 = true, site confirm = true, inventory generation = false). Never blocks startup.
+    try {
+        if (window.KM && window.KM.DB && typeof window.KM.DB.applyClientCapabilities === 'function') {
+            window.KM.DB.applyClientCapabilities();
+        }
+    } catch (e) { console.error('[App] capability bootstrap failed:', e); }
     // 設定初始頁面生命週期（首頁）— MUST run before the other startup inits.
     // Home markup is partial-loaded (Phase 1): switchTo('home-section') triggers the Home mount,
     // which loads the partial and renders. Running it first ensures a failure in any later init

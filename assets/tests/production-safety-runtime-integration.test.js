@@ -192,9 +192,13 @@ section('§20/§21 — router + global-init: helpers/adapter never auto-migrate 
   var g07 = gs('07_amazon_import_runner.gs');
   ok(/prodAssertAmazonTarget_\(config && config\.destinationSpreadsheetId\)/.test(g07), 'INIT.3 Amazon runner gates the exact destination id before any write');
   // migration-only twins are not referenced by any router-reachable handler (only defined in the adapter)
-  var files = fs.readdirSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script')).filter(function (f) { return /\.gs$/.test(f) && f !== '29_production_safety_adapter.gs' && f !== '90_generated_supply_planning_bundle.gs'; });
+  // Exclude the adapter (definition), the generated bundle, AND TEMP_ paste-ready migration tools — the twins are
+  // "callable only from an explicitly authorized migration tool" (29_ contract), and a TEMP_ tool is exactly that: a
+  // USER-run Run-menu entrypoint, never router-reachable via doGet/doPost. R6E1 TEMP_R6E1_EXECUTE_MIGRATE_...
+  // legitimately invokes prodMigrateAppendColumns_. The invariant guards RUNTIME handler/router files only.
+  var files = fs.readdirSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script')).filter(function (f) { return /\.gs$/.test(f) && f !== '29_production_safety_adapter.gs' && f !== '90_generated_supply_planning_bundle.gs' && f.indexOf('TEMP_') !== 0; });
   var reachable = files.some(function (f) { var code = gs(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1'); return /prodMigrateCreateSheet_\s*\(|prodMigrateAppendColumns_\s*\(/.test(code); });
-  ok(!reachable, 'INIT.4 migration-only twins are never INVOKED from any handler/router file (migration-only)');
+  ok(!reachable, 'INIT.4 migration-only twins are never INVOKED from any RUNTIME handler/router file (TEMP_ migration tools excluded — the authorized migration-tool exception)');
 })();
 
 // ==========================================================================

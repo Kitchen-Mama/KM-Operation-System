@@ -362,6 +362,44 @@
     var _invAiPlanDbGen = (typeof deps.inventoryAiPlanDbGenerationEnabled === 'boolean') ? deps.inventoryAiPlanDbGenerationEnabled : false;
     function inventoryAiPlanDbGenerationEnabled() { return _invAiPlanDbGen === true; }
     function setInventoryAiPlanDbGenerationEnabled(on) { _invAiPlanDbGen = (on === true); return _invAiPlanDbGen; }
+    // F1-7N-FA-3C-R6E1-R1 — Request Order flat V2 cutover capability (backend-owned flag mirror). 00_config.gs
+    // REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ is PERMANENTLY TRUE (production cutover complete; canonical table
+    // request_order_allocation_drafts, 53 headers). Default TRUE and, per the fail-closed rule, an INDETERMINATE
+    // capability resolves to TRUE (FLAT_V2) — the frontend NEVER silently selects the retired legacy authority against
+    // the 53-col canonical table. (The Request Order read path is additionally shape-agnostic — it adapts to the DTO
+    // shape the backend sends — so this mirror is the DECLARED authority + drives the capability diagnostic; it is not
+    // a second selector.) Kept in sync with 00_config.gs via the getClientCapabilities transport.
+    var _flatV2Cutover = (typeof deps.requestOrderDraftV2FlatCutover === 'boolean') ? deps.requestOrderDraftV2FlatCutover : true;
+    function requestOrderDraftV2FlatCutover() { return _flatV2Cutover === true; }
+    function setRequestOrderDraftV2FlatCutover(on) { _flatV2Cutover = (on === true); return _flatV2Cutover; }
+    // F1-7N-FA-3C-R6E1-R1 — SINGLE-AUTHORITY apply + diagnostic. Backend 00_config.gs is the owner-of-record; the
+    // bootstrap (operation-system-db-api.js _kmApplyClientCapabilities_) reads getClientCapabilities and applies it HERE
+    // through the existing setters — the frontend keeps NO independently hardcoded flag posture, only these mirrors fed
+    // from one place. FAIL-SAFE defaults (spec §B): flat V2 = true (FLAT_V2, never legacy), site confirm = true, inventory
+    // generation = false — applied whenever caps is null/absent or a field is not a strict boolean.
+    var _capabilitySource = 'unloaded', _capabilityVersion = null;
+    function applyClientCapabilities(caps) {
+      var ok = isObj(caps);
+      var flat = (ok && typeof caps.requestOrderDraftV2FlatCutover === 'boolean') ? caps.requestOrderDraftV2FlatCutover : true;
+      var site = (ok && typeof caps.requestOrderSiteConfirmRequired === 'boolean') ? caps.requestOrderSiteConfirmRequired : true;
+      var inv  = (ok && typeof caps.inventoryAiPlanDbGenerationEnabled === 'boolean') ? caps.inventoryAiPlanDbGenerationEnabled : false;
+      setRequestOrderDraftV2FlatCutover(flat);
+      setRequestOrderSiteConfirmRequired(site);
+      setInventoryAiPlanDbGenerationEnabled(inv);
+      _capabilitySource = ok ? 'backend' : 'failsafe-default';
+      _capabilityVersion = (ok && caps.capabilitiesVersion) ? String(caps.capabilitiesVersion) : null;
+      return getClientCapabilitySnapshot();
+    }
+    // Read-only capability diagnostic: the three EFFECTIVE values + provenance. No secrets / ids / row data.
+    function getClientCapabilitySnapshot() {
+      return {
+        source: _capabilitySource, capabilitiesVersion: _capabilityVersion,
+        requestOrderDraftV2FlatCutover: requestOrderDraftV2FlatCutover(),
+        requestOrderSiteConfirmRequired: requestOrderSiteConfirmRequired(),
+        inventoryAiPlanDbGenerationEnabled: inventoryAiPlanDbGenerationEnabled(),
+        failSafeDefaults: { requestOrderDraftV2FlatCutover: true, requestOrderSiteConfirmRequired: true, inventoryAiPlanDbGenerationEnabled: false }
+      };
+    }
     function workspaceApiActive(name) {
       var n = normName(name);
       var d = getWorkspace(n); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
@@ -818,6 +856,9 @@
       requestOrderSiteConfirmRequired: requestOrderSiteConfirmRequired, setRequestOrderSiteConfirmRequired: setRequestOrderSiteConfirmRequired,
       // F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation capability (backend-owned flag mirror; default OFF; reversible).
       inventoryAiPlanDbGenerationEnabled: inventoryAiPlanDbGenerationEnabled, setInventoryAiPlanDbGenerationEnabled: setInventoryAiPlanDbGenerationEnabled,
+      // F1-7N-FA-3C-R6E1-R1 — flat V2 cutover mirror + SINGLE-AUTHORITY apply/diagnostic (backend getClientCapabilities → here).
+      requestOrderDraftV2FlatCutover: requestOrderDraftV2FlatCutover, setRequestOrderDraftV2FlatCutover: setRequestOrderDraftV2FlatCutover,
+      applyClientCapabilities: applyClientCapabilities, getClientCapabilitySnapshot: getClientCapabilitySnapshot,
       // Weekly workspace helpers (API-2)
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // Recommendation workspace helpers (F1-4B-A)
