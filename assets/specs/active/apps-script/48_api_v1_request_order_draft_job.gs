@@ -307,7 +307,14 @@ function reqDraftJobDefaultEnv_() {
     enumerateEligible: function (scope) {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var eligible = recGenEnumerateEligibleGapRows_(gapReadObjects_(ss, OP_GAP_TABLE_), scope);
-      return { skuList: eligible.map(function (e) { return e.sku; }), planningCycle: eligible.length ? r4e2Str_(eligible[0].row.calculation_month) : '' };
+      // R5A-P0: order_planning_gap.calculation_month is an Apps Script DATE object; r4e2Str_(Date) is a localized Date
+      // STRING (e.g. "Sat Aug 01 2026 …") which, threaded as the per-SKU opts.planningCycle (takes precedence at
+      // 47_:252), is rejected by the strict recGenProjectCalendarMonth_ → PLANNING_CYCLE_INVALID for every SKU. Normalize
+      // it to the canonical project-tz YYYY-MM via the SAME seam; if unresolvable, return '' so per-SKU generation falls
+      // back to each gap row's own Date via the R4C seam. Never r4e2Str_ a Date into the cycle.
+      var canonCycle = '';
+      if (eligible.length) { var pc = recGenProjectCalendarMonth_(eligible[0].row.calculation_month, recGenProjectTz_()); canonCycle = (pc && pc.ok) ? pc.cycle : ''; }
+      return { skuList: eligible.map(function (e) { return e.sku; }), planningCycle: canonCycle };
     },
     readGapRowsMap: function (scope) {
       var ss = SpreadsheetApp.getActiveSpreadsheet();

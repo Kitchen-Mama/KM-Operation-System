@@ -469,9 +469,14 @@ function handleGetActiveRequestOrderDraftReadback_(body) {
 // F1-7N-FA-3C-R2b-2 — flat V2 readback body (cutover only). Reads request_order_allocation_drafts ONLY via the
 // KMRDV2P shape adapter; NEVER joins request_order_allocation_draft_lines. draft_purpose defaults to 'regular'.
 function recGenFlatReadback_(ss, scope3, sku, planningCycle) {
-  var cycle;
-  try { cycle = KMRDV2.normalizePlanningCycleMonthly(planningCycle); }
-  catch (e) { return { success: false, error: 'INVALID_PLANNING_CYCLE', message: 'flat V2 readback requires planningCycle=YYYY-MM' }; }
+  // R5A-P0: the frontend readback (getActive) sends scope only — NO planning cycle (the legacy line-join readback
+  // filtered by cycle only when present). So a BLANK cycle here means scope-level readback (no cycle filter), NOT an
+  // error; only a NON-BLANK malformed cycle is rejected. This never loosens persistence (loadActiveFlat stays strict).
+  var raw = r4e2Str_(planningCycle), cycle = '';
+  if (raw !== '') {
+    try { cycle = KMRDV2.normalizePlanningCycleMonthly(raw); }
+    catch (e) { return { success: false, error: 'INVALID_PLANNING_CYCLE', message: 'flat V2 readback requires planningCycle=YYYY-MM' }; }
+  }
   var built = rprBuildSheetSet_(ss, [KMRDV2P.HEADER_TABLE]);
   if (sku) {
     var one = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,

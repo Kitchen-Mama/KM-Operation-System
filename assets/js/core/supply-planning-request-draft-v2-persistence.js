@@ -84,11 +84,14 @@
   }
 
   // ---- active-draft resolution over the FLAT header table (CREATE / REUSE / BLOCKED_CONFLICT) ------------------
-  // cycle is always compared; a scope field is compared ONLY when the query supplies a non-blank value (so a
-  // scope-level readback that omits sku/draft_purpose matches every active row for the company/country/marketplace,
-  // while generation — which always supplies the full scope — still resolves the ONE exact active draft).
+  // A scope field is compared ONLY when the query supplies a non-blank value (so a scope-level readback that omits
+  // sku/draft_purpose matches every active row for the company/country/marketplace). R5A-P0: cycle is likewise
+  // compared ONLY when a non-blank cycle is supplied — a scope-level READBACK with no cycle returns all active rows
+  // for the scope (parity with the legacy line-join readback, which filtered by cycle only when present). The WRITE
+  // path (loadActiveFlat / generation) always supplies a normalized non-blank cycle, so its exact-match is unchanged.
   function scopeMatches_(row, scope, cycle) {
-    if (str(row.planning_cycle) !== str(cycle)) return false;
+    var c = str(cycle);
+    if (c !== '' && str(row.planning_cycle) !== c) return false;
     for (var i = 0; i < SCOPE_FIELDS.length; i++) {
       var f = SCOPE_FIELDS[i], q = str(scope[f]);
       if (q !== '' && str(row[f]) !== q) return false;
@@ -389,7 +392,10 @@
   // scope-level flat readback: active flat rows for a query → DTOs (header table only, NEVER the child-line table)
   function readActiveFlatForScope(sheetSet, query) {
     var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readActiveFlatForScope: missing ' + HEADER_TABLE);
-    var cycle = KMRDV2.normalizePlanningCycleMonthly(query.planningCycle);
+    // R5A-P0: a blank cycle means "no cycle filter" (scope-level readback); a NON-blank cycle is still strictly
+    // normalized (a malformed value throws — the readback caller reports INVALID_PLANNING_CYCLE). Persistence stays strict.
+    var raw = str(query.planningCycle);
+    var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
     var scope = query.businessScope || {};
     return t.rows.map(function (r) { return rowObj_(t.headers, r); })
       .filter(function (o) { return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle); })
@@ -587,6 +593,6 @@
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fa3c-r4c-1'
+    VERSION: 'kmrdv2p-fa3c-r5a-1'
   };
 });
