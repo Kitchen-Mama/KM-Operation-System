@@ -215,12 +215,12 @@ ok(dbg.release === 'r6c-navlifecycle-20260822', 'I: __kmLifecycleDebug exposes t
 ok(!JSON.stringify(dbg).match(/token|secret|password|AKfyc/i), 'I: __kmLifecycleDebug contains no secrets/tokens');
 ok(/release:/.test(RO) && /dbProviderState:/.test(RO), 'I: __roDebug includes release + dbProviderState');
 // R6E1A re-bumped the centralized KM.RELEASE to the CUMULATIVE unified release token; namespace.js now carries it.
-ok(/RELEASE:\s*'r6e1a-shipping-release-20260822'/.test(fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8')), 'D: namespace.js defines the centralized KM.RELEASE signature (R6E1A unified token)');
+ok(/RELEASE:\s*'r6f-groupmodel-20260822'/.test(fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8')), 'D: namespace.js defines the centralized KM.RELEASE signature (R6E1A unified token)');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/request-order\.js\?v=r6e1a-shipping-release-20260822/.test(INDEX), 'D: request-order.js on the unified R6E1A token (R6E1A moved it off the stale r6c token so its R6E Site Confirm fix actually loads)');
-// R6E1A (Objective A): the CUMULATIVE changed frontend assets since R6C1 are unified on r6e1a-shipping-release-20260822
+ok(/request-order\.js\?v=r6f-groupmodel-20260822/.test(INDEX), 'D: request-order.js on the unified R6E1A token (R6E1A moved it off the stale r6c token so its R6E Site Confirm fix actually loads)');
+// R6E1A (Objective A): the CUMULATIVE changed frontend assets since R6C1 are unified on r6f-groupmodel-20260822
 // (namespace, operation-system-db-api, km-api-foundation, inventory-replenishment, request-order, app). lifecycle.js is
 // UNCHANGED so it legitimately keeps its R6C token; the runtime release gate reads KM.RELEASE regardless of any one asset token.
-ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /namespace\.js\?v=r6e1a-shipping-release-20260822/.test(INDEX) && /operation-system-db-api\.js\?v=r6e1a-shipping-release-20260822/.test(INDEX), 'D: framework assets carry a release token (R6E1A unified changed set = r6e1a; unchanged lifecycle.js keeps R6C)');
+ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /namespace\.js\?v=r6f-groupmodel-20260822/.test(INDEX) && /operation-system-db-api\.js\?v=r6f-groupmodel-20260822/.test(INDEX), 'D: framework assets carry a release token (R6E1A unified changed set = r6e1a; unchanged lifecycle.js keeps R6C)');
 
 setTimeout(done, 50);   // allow the provider whenReady/retry promises to settle before the summary

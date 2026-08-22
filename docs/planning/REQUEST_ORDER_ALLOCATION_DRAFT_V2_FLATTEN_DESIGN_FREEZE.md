@@ -1006,3 +1006,67 @@ The R6E1 signature (`[country|ship_from|destination|method|marketplace|sku|reque
 
 ### 42.5 (E–F) Tests + preservation
 New suite `shipping-plan-canonical-fingerprint-cumulative-release-…-r6e1a.test.js` proves all 18 required behaviors (exact-retry REUSE, line-order-only REUSE, numeric-string normalization REUSE, and CONFLICT on each of requested_qty/carrier/method/last-mile/customs/rate-cost/header-note/line-note/snapshot; COMMITTED_UNVERIFIED; RECONCILIATION_REQUIRED; concurrent→one CREATE; request-order token; cumulative manifests; three-flag posture) plus a coverage loop asserting every listed fingerprint field changes the hash. R6D1 staged Inventory state + the frozen three-flag posture (flat V2 true / site confirm false / inventory false) unchanged. Full sweep = known 4-test baseline, 0 new.
+
+## 43. R6F-P0 — Inventory AI Plan canonical shipment-group Draft model + generation/readback/edit reconciliation (2026-08-22)
+
+Closes the two R6D1 deferred blockers and freezes the canonical Draft model. Precondition: clean main containing R6E1A; three flags frozen (flat V2 true / site confirm false / **inventory generation false**). NO live DB mutation, NO migration, NO Inventory AI Plan run, NO Submit, NO orphan repair. Bundle UNCHANGED (fixes are in non-bundled `16_shipping_allocation_handlers.gs` + frontend + TEMP; the bundled `KMWRB`/`KMPR` core is NOT edited). **Schema correction:** the line is **31 columns** (28 base + R3C2 `source_warehouse_id`/`source_warehouse_code_snapshot`/`source_allocated_qty_snapshot`), not 30 — the task's "30+30" is inaccurate; header = 30, line = 31.
+
+### 43.1 (A) FROZEN canonical model
+`shipping_allocation_drafts` = ONE header per shipment group (**never one-header-per-SKU** — already satisfied: the generate path fans out per marketplace and writes one K3 header with N SKU lines). `shipping_allocation_draft_lines` = the SKU + `window_code` + `route_no` detail under that header. Route context (From/To/Method/Last-Mile) is **header-level** (`recommended_source_warehouse_id` / `recommended_destination_warehouse_id` / `recommended_shipping_method` / `recommended_last_mile_delivery`); the line's only source axis is its own `source_warehouse_id` (R3C2).
+
+**Grouping dimensions — landed vs requested (KEY AUTHORITY FINDING / HALT):** the business-approved landed key is **K3** = `planning_cycle | company | country | marketplace | source_page` (`draft_version` and `recommendation_group_no` are NOT in the key). Objective A.2/A.3 asks to also key on `source_warehouse_id` / `destination_warehouse_id` / `shipping_method` / `last_mile_delivery` / `recommendation_group_no` (separate headers per route) — that is exactly the **K2** model that `ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` (owner-of-record) + the 2026-07-27 amendment mark **`PHASE_2_DEFERRED`**. Activating K2 overrides a business-approved DB contract, requires redesigning the bundled `KMWRB` grouping + the `KMPR`/16_ K3 active-draft resolver, and cannot be live-verified with the flag OFF. **HALTED** — see §43.7. This round freezes/verifies the landed **K3** model and closes the reconciliation blockers against it.
+
+**Deterministic ids (frozen):**
+- Header: `RD::WEEKLY_SHIPPING::<planning_cycle>::<scopeKey>` (scopeKey = `planning_cycle|company|country|marketplace|source_page`) — assigned by the bundled generate path (`supply-planning-persistence.js` `draftIdOf`/`activeKeyOf`), find-or-reuse 0→CREATE / 1→REUSE / >1→BLOCKED_CONFLICT.
+- Line: **`SADL-<upper FNV1a-hex of allocation_draft_id|sku|site_sku|window_code|source_warehouse_id|route_no>`** (all lowercased/trimmed) — R6F frozen formula in `16_ sadDeterministicLineId_`. Regeneration/edit of the same logical line resolves to the SAME id → no duplicate.
+
+### 43.2 (B1) GENERATED_LINE_ID — CLOSED
+Root cause: the bundled `KMPR` generate path writes lines by natural key (`sku|site_sku|window_code|source_warehouse_id|route_no`) with a **blank `allocation_draft_line_id`**, while the frontend Save path (`16_ sadUpsertLinesKeyedCore_`) keyed only by `allocation_draft_line_id` → an edited generated line appended a DUPLICATE. Fix (non-bundled, in 16_): when the incoming line has no explicit id, `sadFindLineByNaturalKey_` finds the existing generated row by natural key → UPDATE that exact row (and heal its blank id with the deterministic `sadDeterministicLineId_`, idempotent). A blank-id INSERT now also uses the deterministic id (no random-UUID drift). Explicit frontend ids are still honored as-is → existing Save behavior unchanged. All under the existing 30 s ScriptLock in `handleUpsertShippingAllocationDraftLines_`.
+
+### 43.3 (B2) HYDRATION_FIELD_MAP — CLOSED
+`_hydrateAllocationDraftFromDb` (inventory-replenishment.js) previously read `selected_source_warehouse_id` / `selected_destination_warehouse_id` / `selected_shipping_method` from the LINE — columns that DO NOT EXIST in the 31-col line schema (nor a 30-col header) → From/To/Method always hydrated blank → routeless rows. Fix: hydrate From/To/Method/Last-Mile from the draft **HEADER** `recommended_*` columns (shared by all lines in the Phase-1 single-route model), planned_qty/recommended_qty/note from the line, and the line's own `source_warehouse_id` (overrides header From when present); `generation_type` read from the header. Also carry the natural-key fields (site_sku/window_code/route_no) onto the hydrated row so an edit reconciles the exact generated line. No `selected_*` dependency remains.
+
+### 43.4 (B3) Schema sufficiency verdict
+The current 30-col header / 31-col line **fully support the landed K3 shipment-group model with NO column add/delete/rename** — route dims already exist on the header (`recommended_*`), `recommendation_group_no` is present, the line carries SKU+window+route+qty+snapshots+`source_warehouse_id`. A future K2 activation is ALSO schema-sufficient (same columns; it is a KEY/grouping change, not a schema change). No migration is proposed or executed.
+
+### 43.5 (C) Generation contract (verified by trace; NOT run — flag OFF)
+`handleReplenAiPlan → KM.DB.generateWeeklyAiPlanDraft → weeklyAiPlan.generate (01_) → handleGenerateWeeklyAiPlanDraft_ (61_) → KMWRB batch (per-marketplace K3) → KMPR apply under 30 s ScriptLock → shipping_allocation_drafts (one header per group) + shipping_allocation_draft_lines (N SKU lines) → DB readback (getShippingAllocationDrafts/_Lines) → _hydrateAllocationDraftFromDb → renderReplenishment`. Deterministic `RD::…` header id + find-or-reuse (CREATE/REUSE/BLOCKED_CONFLICT) + ScriptLock already present; blank-cycle orphan never matched (literal nonblank-cycle scope); manual-only result popup, background/resume silent (R6D1). Gated behind `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` = false → inert on deploy.
+
+### 43.6 (D) Edit contract
+Generated-line edits now target the exact `allocation_draft_line_id` (healed deterministically) or reconcile by natural key when blank — planned_qty autosave, line note autosave (blank note = deliberate `''` overwrite via the EXEC_FIELDS setter), all under the ScriptLock; recommendation snapshots preserved (updated only when explicitly supplied); terminal rows (submitted/cancelled/superseded) never mutated; the optimistic token/version + stale-edit CONFLICT stays owned by the KMPR path for generate and by the terminal-guard for edits; reload/remount reads the confirmed DB state via hydration. **Route/group change (moving a line to a different From/To/Method) = a K2 regroup/split** → DEFERRED with §43.7 (Phase-1 blocks multi-route under one header via `MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1`; a safe move/split command belongs to the K2 activation).
+
+### 43.7 (HALT) K2 shipment-group activation
+`PHASE2_K2_SHIPMENT_GROUP_MODEL_DEFERRED`. Requires: (a) a USER decision to un-defer Phase-2 K2 over the business-approved Phase-1 freeze; (b) a bundled-core redesign of `KMWRB` grouping + the K3 active-draft resolver (`KMPR.loadActiveDraftContext` / `16_ sadResolveActiveDraft_`) → bundle rebuild; (c) live verification (a controlled generation with the flag ON). Not doable safely this round (flag OFF, no live gen, bundled core, contradicts a landed business-approved contract).
+
+### 43.8 (E) Downstream mapping table — `shipping_allocation_draft(_lines)` → `shipping_plans(_lines)` (CONTRACT; handoff NOT executed)
+The Submit → Weekly Shipping Plan handoff remains **deferred** (spec/contract only; §9 of the Phase-1 freeze + the 2026-07-27 amendment). Frozen mapping:
+
+**Header → `shipping_plans` (ONE submitted Allocation Draft Header → ONE Shipping Plan Header — never SKU-level):**
+| allocation draft header | shipping_plans |
+|---|---|
+| company / country | company / country |
+| marketplace (single → actual; combined → `MULTI` scope marker per B-2/B-3) | marketplace |
+| recommended_source_warehouse_id (+ code snapshot) | source_warehouse_id + ship_from |
+| recommended_destination_warehouse_id (+ code snapshot) | destination_warehouse_id + destination |
+| recommended_shipping_method | shipping_method |
+| recommended_last_mile_delivery | last_mile_delivery |
+| allocation_draft_id + execution key | submit_batch_id / execution_key lineage (R6E1A idempotency) — preserved |
+| (carrier/rate/cost/customs) | resolved at the Weekly Plan layer (NOT from the Draft) |
+
+**Line → `shipping_plan_lines` (N eligible allocation lines → N Shipping Plan Lines):**
+| allocation draft line | shipping_plan_lines |
+|---|---|
+| sku / site_sku | sku / site_sku |
+| line marketplace (real) | **marketplace** (canonical — never `marketplace_seperate`) |
+| planned_qty (valid) else recommended_qty (SC-1) | requested_qty |
+| units_per_carton | units_per_carton |
+| recommended_qty | snapshot_suggested_qty |
+| destination_stock_snapshot | snapshot_current_stock |
+| (avg-sales evidence on the allocation line) | snapshot_avg_sales_per_day / snapshot_days_of_supply / snapshot_target_days |
+| regular_demand_snapshot / special_event_demand_snapshot | snapshot_fc_context / snapshot_event_context (canonical JSON per R6E1 F) |
+| route_no | (grouping only) |
+
+Proven properties: one header → one plan header (no SKU-level header); N lines → N plan lines; snapshot fields populated from the allocation-line evidence; marketplace writes canonical `marketplace`; submit_batch_id/execution_key lineage preserved (R6E1A); Shipment Draft handoff stays deferred.
+
+### 43.9 (F) Validator + deployment
+`TEMP_R6F_VALIDATE_INVENTORY_AI_PLAN_GROUP_MODEL()` (read-only) reports target, 30/31 schemas+hashes, counts, blank-orphan (EMPTY_ORPHAN_SAFE_TO_CANCEL), active-K3 duplicates, orphan lines, line-id completeness (+ heal-on-edit note), grouping dims (K3 landed / K2 deferred), the deterministic header+line ids, hydration + draft→plan mapping readiness, R6D1 blockers CLOSED, schema sufficiency, flag-stays-false, zero-write, verdict (`INVENTORY_AI_PLAN_NOT_READY` while K2 is deferred + flag OFF). **Deployment manifest:** frontend `inventory-replenishment.js` (hydration) + `index.html` token; backend sync `16_shipping_allocation_handlers.gs` (edit-path reconciliation) + `TEMP_migrate_request_order_draft_v2.gs` (validator). No bundle rebuild; 61_/KMWRB/KMPR untouched. All live steps (generation, edit, Submit, K2) USER-owned and out of scope.

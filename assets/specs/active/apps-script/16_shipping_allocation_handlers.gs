@@ -253,6 +253,42 @@ function handleUpsertShippingAllocationDraftLines_(body) {
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }
 
+// F1-7N-FA-3C-R6F — GENERATED_LINE_ID reconciliation. The KMPR generate path (bundled core, via 61_) writes each
+// AI-Plan line keyed ONLY by its natural key (sku|site_sku|window_code|source_warehouse_id|route_no within one
+// allocation_draft_id — mirrors KMPR TABLES.WEEKLY_SHIPPING.lineKey) and leaves `allocation_draft_line_id` BLANK.
+// The frontend Save path here keys by `allocation_draft_line_id`, so a generated line edited from the UI used to
+// append a DUPLICATE (no id match → INSERT). These helpers let this path (a) find the existing generated row by its
+// natural key when the incoming id is blank, and (b) mint a DETERMINISTIC id so the SAME logical line always resolves
+// to the SAME id (no random-UUID drift). FROZEN id formula:
+//   allocation_draft_line_id = 'SADL-' + upper(FNV1a-hex( allocation_draft_id|sku|site_sku|window_code|source_warehouse_id|route_no ))
+// All lowercased/trimmed. No live DB access here — pure over the row + a single sheet scan under the caller's lock.
+function sadLineNaturalKey_(draftId, l) {
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  return [s(draftId), s(l.sku), s(l.site_sku), s(l.window_code), s(l.source_warehouse_id), s(l.route_no)].join('|');
+}
+function sadFnv1a_(str) { var h = 0x811c9dc5; str = String(str); for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); }
+function sadDeterministicLineId_(draftId, l) { return 'SADL-' + sadFnv1a_(sadLineNaturalKey_(draftId, l)).toUpperCase(); }
+// Scan the lines sheet for an existing row matching the natural key within draftId. Returns a procurementFindRow_-shaped
+// { row (1-based), col(name) } or null. Used ONLY when the incoming line has no explicit allocation_draft_line_id.
+function sadFindLineByNaturalKey_(sh, draftId, l) {
+  var data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return null;
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  function idx(n) { return headers.indexOf(n); }
+  var cDraft = idx('allocation_draft_id'), cSku = idx('sku');
+  if (cDraft === -1 || cSku === -1) return null;
+  var cSite = idx('site_sku'), cWin = idx('window_code'), cSrc = idx('source_warehouse_id'), cRoute = idx('route_no');
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  var want = sadLineNaturalKey_(draftId, l);
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var nk = [s(row[cDraft]), s(row[cSku]), cSite === -1 ? '' : s(row[cSite]), cWin === -1 ? '' : s(row[cWin]),
+      cSrc === -1 ? '' : s(row[cSrc]), cRoute === -1 ? '' : s(row[cRoute])].join('|');
+    if (nk === want) return { row: r + 1, col: function (n) { return idx(n); } };
+  }
+  return null;
+}
+
 // Private keyed shipping-line upsert core (reached ONLY under lock via the public handler above).
 function sadUpsertLinesKeyedCore_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
@@ -282,7 +318,9 @@ function sadUpsertLinesKeyedCore_(body) {
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];
     var lineId = String(l.allocation_draft_line_id || '').trim();
-    var found = lineId ? procurementFindRow_(sh, 'allocation_draft_line_id', lineId) : null;
+    // R6F: explicit id match when present; otherwise reconcile a GENERATED line (blank id, keyed by natural key by the
+    // KMPR generate path) BY NATURAL KEY so an edit updates that exact row instead of appending a duplicate.
+    var found = lineId ? procurementFindRow_(sh, 'allocation_draft_line_id', lineId) : sadFindLineByNaturalKey_(sh, draftId, l);
     // Defensive: a soft-cancel for a line that was never stored (e.g. an incomplete route the user
     // cleared before it was ever persisted) must NOT append a spurious cancelled row — skip it.
     if (!found && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
@@ -291,6 +329,10 @@ function sadUpsertLinesKeyedCore_(body) {
       var cLS = found.col('line_status');
       var curLS = cLS !== -1 ? String(sh.getRange(found.row, cLS + 1).getValue()).trim().toLowerCase() : '';
       if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
+      // R6F: heal a blank generated-line id with the deterministic SADL id so future edits/readback carry a stable id
+      // (idempotent — a nonblank id is never overwritten).
+      var cId0 = found.col('allocation_draft_line_id');
+      if (cId0 !== -1) { var curId0 = String(sh.getRange(found.row, cId0 + 1).getValue()).trim(); if (!curId0) sh.getRange(found.row, cId0 + 1).setValue(sadDeterministicLineId_(draftId, l)); }
       function setU(name) { if (l[name] != null) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(String(l[name])); } }
       // Execution-Plan (user) fields — always update when provided.
       EXEC_FIELDS.forEach(setU);
@@ -299,7 +341,9 @@ function sadUpsertLinesKeyedCore_(body) {
       var uc = found.col('updated_at'); if (uc !== -1) sh.getRange(found.row, uc + 1).setValue(now);
       updated++;
     } else {
-      if (!lineId) lineId = 'SADL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+      // R6F: DETERMINISTIC id (frozen formula) so regeneration/edit of the same logical line reuses the same id
+      // (no random-UUID drift, no duplicate on retry). Explicit ids from the frontend are honored as-is.
+      if (!lineId) lineId = sadDeterministicLineId_(draftId, l);
       var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
       var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty)
         : (recQty !== '' ? recQty : '');   // first creation: planned_qty = recommended_qty

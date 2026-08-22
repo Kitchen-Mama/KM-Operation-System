@@ -1922,3 +1922,98 @@ function TEMP_r6e1Preflight_() {
   Logger.log('R6E1_PREFLIGHT_SHIPPING_PLAN_RELEASE ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F — READ-ONLY Inventory AI Plan shipment-group model validator (writes NOTHING).
+// Freezes the canonical model (header = shipment-group / one route on the header, line = SKU+window+route detail),
+// the exact 30-col header / 31-col line schemas + hashes, counts, blank-orphan classification, active-group
+// duplicates, orphan lines, generated-line-ID completeness, the grouping dimensions (landed K3 + PHASE-2 K2 note),
+// hydration + draft→shipping-plan mapping readiness, the staged flag, and a verdict. Zero writes: TEMP_readObjects_ +
+// getRange().getValues() + typeof-guarded getters only; no setValues/appendRow/insertSheet/rename/repair.
+// ================================================================================================================
+function TEMP_R6F_VALIDATE_INVENTORY_AI_PLAN_GROUP_MODEL() { return TEMP_r6fValidateGroupModel_(); }
+function TEMP_r6fValidateGroupModel_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+
+  // Runtime schema authority (single source = 16_shipping_allocation_handlers.gs). typeof-guarded.
+  var hdrAuth = (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : null;
+  var lineAuth = (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : null;
+  if (!hdrAuth || !lineAuth) {
+    return { ok: false, verdict: 'AUTHORITY_UNAVAILABLE', RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+      note: 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_ / SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ not loaded (sync 16_)',
+      R6F_ZERO_WRITE_CONFIRMED: 'YES (read-only)' };
+  }
+
+  var H = TEMP_readObjects_('shipping_allocation_drafts');
+  var L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var hHeaders = H.headers || [], lHeaders = L.headers || [];
+  var hExact = hHeaders.length === hdrAuth.length && hHeaders.join('|') === hdrAuth.join('|');
+  var lExact = lHeaders.length === lineAuth.length && lHeaders.join('|') === lineAuth.join('|');
+
+  // Blank orphan + active-group duplicates + orphan lines + line-id completeness.
+  var ACTIVE = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+  var headerIds = {}; (H.rows || []).forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) headerIds[id] = 1; });
+  var blankOrphan = [], activeByK3 = {}, dupActiveK3 = 0;
+  (H.rows || []).forEach(function (r) {
+    var id = TEMP_str_(r.allocation_draft_id), cyc = TEMP_str_(r.planning_cycle), status = TEMP_str_(r.status).toLowerCase();
+    var linked = (L.rows || []).filter(function (x) { return TEMP_str_(x.allocation_draft_id) === id && TEMP_str_(x.line_status).toLowerCase() !== 'cancelled'; }).length;
+    if (cyc === '' && linked === 0) blankOrphan.push({ allocation_draft_id_fingerprint: TEMP_r5bIdFingerprint_(id), status: status, classification: 'EMPTY_ORPHAN_SAFE_TO_CANCEL' });
+    if (ACTIVE[status]) {
+      // K3 landed key = planning_cycle|company|country|marketplace|source_page (NEVER draft_version / recommendation_group_no).
+      var k3 = [cyc, TEMP_str_(r.company), TEMP_str_(r.country), TEMP_str_(r.marketplace), TEMP_str_(r.source_page)].join('||');
+      activeByK3[k3] = (activeByK3[k3] || 0) + 1;
+    }
+  });
+  Object.keys(activeByK3).forEach(function (k) { if (activeByK3[k] > 1) dupActiveK3++; });
+  var orphanLines = 0, blankLineIds = 0, totalLines = (L.rows || []).length;
+  (L.rows || []).forEach(function (x) {
+    var fk = TEMP_str_(x.allocation_draft_id);
+    if (fk && !headerIds[fk]) orphanLines++;
+    if (TEMP_str_(x.allocation_draft_line_id) === '') blankLineIds++;
+  });
+
+  var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+
+  var blockers = [];
+  // Objective A K2: grouping by source/destination warehouse + method + last-mile + recommendation_group_no is the
+  // PHASE-2 K2 model — explicitly deferred by the business-approved Phase-1 freeze (K3). NOT activated this round.
+  blockers.push('PHASE2_K2_SHIPMENT_GROUP_MODEL_DEFERRED (route dims are on the header; landed key is K3 — activating K2 overrides ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE + needs bundled-core redesign + live verification)');
+  if (flagOn !== false) blockers.push('INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ not false');
+  if (!hExact) blockers.push('HEADER_SCHEMA_DRIFT');
+  if (!lExact) blockers.push('LINE_SCHEMA_DRIFT');
+  if (dupActiveK3 > 0) blockers.push('DUPLICATE_ACTIVE_K3_GROUP');
+  if (orphanLines > 0) blockers.push('ORPHAN_LINES_PRESENT');
+
+  var out = {
+    RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch, runtime_spreadsheet_id_fingerprint: TEMP_r5bIdFingerprint_(runtimeId),
+    canonical_model: 'ONE header per shipment group (never one-header-per-SKU); lines = SKU + window_code + route_no detail under that header',
+    header_schema_col_count: hHeaders.length, header_schema_exact_30: (hHeaders.length === 30 && hExact) ? 'YES' : 'NO',
+    line_schema_col_count: lHeaders.length, line_schema_exact_31: (lHeaders.length === 31 && lExact) ? 'YES' : 'NO',
+    header_schema_hash: TEMP_r5bHash_(hHeaders.join('|')), header_authority_hash: TEMP_r5bHash_(hdrAuth.join('|')),
+    line_schema_hash: TEMP_r5bHash_(lHeaders.join('|')), line_authority_hash: TEMP_r5bHash_(lineAuth.join('|')),
+    header_row_count: (H.rows || []).length, line_row_count: totalLines,
+    blank_orphan_count: blankOrphan.length, blank_orphan: blankOrphan,
+    active_k3_group_duplicate_count: dupActiveK3, orphan_line_count: orphanLines,
+    line_id_blank_count: blankLineIds,
+    line_id_completeness: blankLineIds === 0 ? 'ALL_LINES_HAVE_IDS'
+      : 'BLANK_ON_' + blankLineIds + '_LINES (generated by the KMPR path with a natural-key-only id; HEALED to the deterministic SADL id on the first frontend edit via sadFindLineByNaturalKey_ / sadDeterministicLineId_ — no duplicate)',
+    grouping_dimensions_landed_K3: ['planning_cycle', 'company', 'country', 'marketplace', 'source_page'],
+    grouping_dimensions_phase2_K2_deferred: ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'],
+    deterministic_header_id: 'RD::WEEKLY_SHIPPING::<planning_cycle>::<scopeKey>  (scopeKey = planning_cycle|company|country|marketplace|source_page)',
+    deterministic_line_id: "SADL-<upper FNV1a hex of allocation_draft_id|sku|site_sku|window_code|source_warehouse_id|route_no>",
+    generated_line_hydration_readiness: 'READY (R6F: From/To/Method/Last-Mile hydrate from the header recommended_* columns; planned_qty/note/source_warehouse_id from the line; NO selected_* dependency)',
+    draft_to_shipping_plan_mapping_readiness: 'MAPPING_FROZEN_HANDOFF_DEFERRED (see design-freeze §43; Submit → shipping_plans is spec/contract only — not executed)',
+    r6d1_blockers_closed: { GENERATED_LINE_ID: 'CLOSED (natural-key reconcile + deterministic id in 16_)', HYDRATION_FIELD_MAP: 'CLOSED (header recommended_* + line source_warehouse_id)' },
+    schema_sufficiency: 'SUFFICIENT for the landed K3 shipment-group model WITHOUT any column add/delete/rename (route dims already exist on the header as recommended_*; recommendation_group_no present). A K2 activation would also be schema-sufficient but is DEFERRED.',
+    inventory_flag_remains_false: flagOn === false ? 'YES' : (flagOn === null ? 'UNKNOWN' : 'NO'),
+    R6F_ZERO_WRITE_CONFIRMED: 'YES (read-only: TEMP_readObjects_ + getRange().getValues() + typeof-guarded getters only; no setValues/appendRow/insertSheet/rename)',
+    R6F_VALIDATOR_CHECKSUM: TEMP_r5bHash_([targetMatch, hHeaders.length, lHeaders.length, hExact, lExact, blankOrphan.length, dupActiveK3, orphanLines, blankLineIds, flagOn, blockers.length].join('|')),
+    blockers: blockers,
+    verdict: blockers.length ? 'INVENTORY_AI_PLAN_NOT_READY' : 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN'
+  };
+  Logger.log('R6F_INVENTORY_AI_PLAN_GROUP_MODEL ' + JSON.stringify(out, null, 2));
+  return out;
+}

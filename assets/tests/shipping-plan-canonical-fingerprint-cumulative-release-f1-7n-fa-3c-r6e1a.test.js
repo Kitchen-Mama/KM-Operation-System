@@ -113,17 +113,17 @@ ok(store.plans.filter(function (p) { return p.submit_batch_id === 'SB-CC'; }).le
 
 section('A/16. request-order.js on the unified release token');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/request-order\.js\?v=r6e1a-shipping-release-20260822/.test(INDEX), '16. request-order.js carries the unified R6E1A token (off the stale r6c token)');
+ok(/request-order\.js\?v=r6f-groupmodel-20260822/.test(INDEX), '16. request-order.js carries the unified R6E1A token (off the stale r6c token)');
 
 section('17. cumulative frontend + backend manifests complete');
 var FE = ['core/namespace.js', 'api/operation-system-db-api.js', 'api/km-api-foundation.js', 'pages/inventory-replenishment.js', 'pages/request-order.js', 'app.js'];
-FE.forEach(function (a) { ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6e1a-shipping-release-20260822').test(INDEX), '17. cumulative FE asset on unified token: ' + a); });
+FE.forEach(function (a) { ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6f-groupmodel-20260822').test(INDEX), '17. cumulative FE asset on unified token: ' + a); });
 // none of the 6 cumulative-changed assets may be stranded on an older token (lifecycle.js/home.js are unchanged and
 // legitimately keep r6c — so we check the cumulative set by name, not a blanket r6c scan).
 FE.forEach(function (a) { ok(!new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6[cd]').test(INDEX), '17. cumulative FE asset NOT stranded on r6c/r6d: ' + a); });
 ok(!/\?v=r6e1-flags-shipping-20260822/.test(INDEX) && !/\?v=r6d1-invplan-20260822/.test(INDEX), '17. no asset remains on the superseded r6e1/r6d1 tokens');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
-ok(/RELEASE:\s*'r6e1a-shipping-release-20260822'/.test(NS), '17. KM.RELEASE is the unified token (agrees with the asset tokens)');
+ok(/RELEASE:\s*'r6f-groupmodel-20260822'/.test(NS), '17. KM.RELEASE is the unified token (agrees with the asset tokens)');
 var apiDir = path.join(ROOT, 'specs', 'active', 'apps-script');
 ['00_config.gs', '01_router.gs', '03_master_data_handlers.gs', '11_shipping_plan_handlers.gs', 'TEMP_migrate_request_order_draft_v2.gs'].forEach(function (f) {
   ok(fs.existsSync(path.join(apiDir, f)), '17. cumulative BE manifest file present: ' + f);

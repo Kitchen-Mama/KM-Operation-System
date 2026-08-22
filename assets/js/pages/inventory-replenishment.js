@@ -2601,6 +2601,17 @@ function _hydrateAllocationDraftFromDb(ctx) {
         }).sort(function (a, b) { return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1; })[0];
         if (myToken !== _replenHydrateToken) return false;   // a newer context request superseded this one
         if (!draft) return false;
+        // R6F HYDRATION_FIELD_MAP fix: route context (From / To / Method / Last-Mile) is HEADER-level (recommended_*),
+        // NOT on the 30/31-col line, and there are NO selected_* columns. Read the route from the draft HEADER (shared
+        // by every line in the Phase-1 single-route model) and per-line qty/note/source from the line row. The line's
+        // only source axis is its own `source_warehouse_id` (R3C2 col 29), which overrides the header From when present.
+        var dh = draft.raw || draft || {};
+        function hstr(snake, camel) { var v = (dh[snake] != null && dh[snake] !== '') ? dh[snake] : (draft[camel] != null ? draft[camel] : ''); return String(v == null ? '' : v).trim(); }
+        var hFrom = hstr('recommended_source_warehouse_id', 'recommendedSourceWarehouseId');
+        var hTo = hstr('recommended_destination_warehouse_id', 'recommendedDestinationWarehouseId');
+        var hMethod = hstr('recommended_shipping_method', 'recommendedShippingMethod');
+        var hLastMile = hstr('recommended_last_mile_delivery', 'recommendedLastMileDelivery');
+        var hGenType = hstr('generation_type', 'generationType') || 'user_created';
         var bySku = {};
         lines.filter(function (l) {
             return l.allocationDraftId === draft.allocationDraftId && lo(l.lineStatus || l.line_status) !== 'cancelled';
@@ -2608,18 +2619,24 @@ function _hydrateAllocationDraftFromDb(ctx) {
             var raw = l.raw || l;
             var sku = raw.sku;
             if (!sku) return;
+            var lineSrc = String(raw.source_warehouse_id == null ? '' : raw.source_warehouse_id).trim();
             (bySku[sku] = bySku[sku] || []).push({
-                allocation_draft_line_id: raw.allocation_draft_line_id,
+                allocation_draft_line_id: raw.allocation_draft_line_id || '',
                 sku: sku,
+                site_sku: raw.site_sku || '',           // R6F: carry the natural-key fields so an edit reconciles the
+                window_code: raw.window_code || '',     //      exact generated line by natural key (16_ fallback).
+                route_no: raw.route_no || '',
                 planned_qty: Number(raw.planned_qty) || 0,
                 qty: Number(raw.planned_qty) || 0,
                 recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
-                source_warehouse_id: raw.selected_source_warehouse_id || '',
-                destination_warehouse_id: raw.selected_destination_warehouse_id || '',
-                destination_type: (raw.destination_marketplace ? 'MARKETPLACE_DESTINATION' : ''),
-                destination_marketplace: raw.destination_marketplace || '',
-                shipping_method: raw.selected_shipping_method || '',
-                generation_type: raw.generation_type || 'user_created'
+                note: raw.note == null ? '' : String(raw.note),
+                source_warehouse_id: lineSrc || hFrom,  // line-level source wins; else the header From (route on header)
+                destination_warehouse_id: hTo,          // To — header route (shared by all lines, Phase-1 single route)
+                destination_type: '',
+                destination_marketplace: '',
+                shipping_method: hMethod,               // Method — header route
+                last_mile_delivery: hLastMile,          // Last-Mile — header route
+                generation_type: hGenType               // generation_type is a HEADER column, not a line column
             });
         });
         replenAllocationDraft = { context: ctx, allocationDraftId: draft.allocationDraftId, targetDays: replenAllocationDraft.targetDays || '', bySku: bySku };

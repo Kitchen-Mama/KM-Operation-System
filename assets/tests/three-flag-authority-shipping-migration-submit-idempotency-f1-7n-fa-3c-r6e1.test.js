@@ -170,10 +170,10 @@ ok(/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false/.test(CONFIG), 'G3. invento
 // ==================================================================================================================
 section('H. Unified release authority (R6E1A cumulative changed assets on one token)');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
-ok(/RELEASE:\s*'r6e1a-shipping-release-20260822'/.test(NS), 'H1. KM.RELEASE = r6e1a-shipping-release-20260822');
+ok(/RELEASE:\s*'r6f-groupmodel-20260822'/.test(NS), 'H1. KM.RELEASE = r6f-groupmodel-20260822');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 ['namespace.js', 'api/operation-system-db-api.js', 'api/km-api-foundation.js', 'pages/inventory-replenishment.js', 'pages/request-order.js', 'app.js'].forEach(function (a) {
-  ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6e1a-shipping-release-20260822').test(INDEX), 'H2. cumulative changed asset on the unified token: ' + a);
+  ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6f-groupmodel-20260822').test(INDEX), 'H2. cumulative changed asset on the unified token: ' + a);
 });
 ok(!/\?v=r6d1-invplan-20260822/.test(INDEX) && !/\?v=r6e1-flags-shipping-20260822/.test(INDEX), 'H3. no cumulative changed asset remains on a stale r6d1/r6e1 token');
 
