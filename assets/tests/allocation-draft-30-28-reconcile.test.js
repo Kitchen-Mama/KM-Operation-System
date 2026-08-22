@@ -68,7 +68,11 @@ ok(/PLAN_LINE_INCOMPLETE/.test(GS), 'R11 partial line → PLAN_LINE_INCOMPLETE')
 
 // =====================================================================================================
 section('K3 idempotency + cancel-preserves-history + no reserve/deduct (§4, §9, §12)');
-ok(/planning_cycle[\s\S]{0,40}company[\s\S]{0,40}country[\s\S]{0,40}marketplace/.test(GS.match(/if \(!id\) \{[\s\S]*?\n  \}/)[0] || ''), 'R12 header idempotent-matches on the scope key (reuse one Active Draft)');
+// R6F2: the manual header core now delegates active-draft matching to the UNIFIED K2-or-K3 resolver (a route-complete
+// header keys on the K2 group identity; a no-route scratchpad falls back to the K3 scope key). The K3 scope match
+// (planning_cycle+company+country+marketplace+source_page) lives in sadResolveActiveDraft_ (reused unchanged).
+ok(/sadResolveActiveDraftK2OrK3_\(sh, body\)/.test(GS), 'R12 header idempotency delegates to the unified K2-or-K3 resolver (reuse one Active Draft)');
+ok(/planning_cycle[\s\S]{0,80}company[\s\S]{0,80}country[\s\S]{0,80}marketplace/.test(GS.match(/function sadResolveActiveDraft_\(sh, scope\)[\s\S]*?\n}/)[0] || ''), 'R12b the K3 scope-key match still keys on planning_cycle+company+country+marketplace');
 // no hard delete of drafts/lines anywhere in the handler (cancel is soft = status/line_status)
 ok(GS.indexOf('.deleteRow(') < 0 && GS.indexOf('deleteRows(') < 0, 'R13 handler never hard-deletes a Draft/line row (cancel is soft)');
 ok(/setCol\('status', 'submitted'\)/.test(GS) && /submitted_by/.test(GS), 'R14 submit marks status=submitted + submitted_by/at (never deletes)');

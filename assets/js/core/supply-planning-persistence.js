@@ -51,7 +51,17 @@
     var s = sortedScope(scope);
     return Object.keys(s).map(function (k) { return k + '=' + String(s[k]); }).join('|');
   }
-  function activeKeyOf(type, cycle, scope) { return type + '::' + cycle + '::' + scopeKey(scope); }
+  function activeKeyOf(type, cycle, scope) {
+    // F1-7N-FA-3C-R6F2: planning_cycle is serialized EXACTLY ONCE — as the leading `::<cycle>::` segment. Defensively
+    // strip any `planning_cycle` key from the scope object so a caller that (now or later) includes it in businessScope
+    // can never double-count it in scopeKey(scope). No-op for the current callers (WEEKLY mScope has no planning_cycle;
+    // MONTHLY uses KMRDV2P's own key), so the deterministic RD:: id format is unchanged.
+    var sc = scope;
+    if (scope && Object.prototype.hasOwnProperty.call(scope, 'planning_cycle')) {
+      sc = {}; for (var k in scope) if (scope.hasOwnProperty(k) && k !== 'planning_cycle') sc[k] = scope[k];
+    }
+    return type + '::' + cycle + '::' + scopeKey(sc);
+  }
   function draftIdOf(activeKey) { return 'RD::' + activeKey; }
   function runIdOf(draftId, version) { return 'RUN::' + draftId + '::v' + version; }
   function lineIdOf(draftId, lineKey) { return 'RL::' + draftId + '::' + lineKey; }

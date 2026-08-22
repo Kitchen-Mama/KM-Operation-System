@@ -52,6 +52,58 @@
   //     skus:[ { masterSku, overseasSupplyPools[], factoryPools[], lanes[] } ]   // lanes carry marketplace + §7 demandWeight
   //   }
   //   deps = { loadActiveContext(query), loadPriorSnapshot?(draftId), lockedApply(plan, token, opts) }  // KMPR + KMPL
+  // F1-7N-FA-3C-R6F2 — steps 1-3 EXTRACTED as a behavior-preserving pure helper so BOTH the frozen per-marketplace
+  // K3 batch AND the new K2 route-group generation path reuse the SAME per-source line production (shared pool
+  // rationed ONCE per sku). Returns { ok, status?, reason?, issues, lines, skuCount, unresolvedTotal, meta }.
+  function buildWeeklySourceLines(request) {
+    aType(isObj(request), 'request must be an object');
+    var scope = isObj(request.businessScope) ? request.businessScope : {};
+    var company = str(scope.company), country = str(scope.country), sourcePage = str(scope.source_page);
+    var planningCycle = str(request.planningCycle);
+    var mode = nonEmpty(request.mode) ? str(request.mode) : 'SCHEDULED_REFRESH';
+    var formulaVersion = nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : DEFAULT_FORMULA_VERSION;
+    var sourceDataAsOf = request.sourceDataAsOf === undefined ? null : request.sourceDataAsOf;
+    var meta = { company: company, country: country, sourcePage: sourcePage, planningCycle: planningCycle, mode: mode, formulaVersion: formulaVersion, sourceDataAsOf: sourceDataAsOf };
+
+    // ---- 1. Scope validation (fail closed; NO persist) --------------------------------------------------------
+    var missing = [];
+    if (!nonEmpty(company)) missing.push('businessScope.company');
+    if (!nonEmpty(country)) missing.push('businessScope.country');
+    if (!nonEmpty(sourcePage)) missing.push('businessScope.source_page');
+    if (!nonEmpty(planningCycle)) missing.push('planningCycle');
+    if (!Array.isArray(request.skus) || request.skus.length === 0) missing.push('skus');
+    if (missing.length) return { ok: false, status: 'BLOCKED_INPUT', reason: 'MISSING_SCOPE:' + missing.join(','), issues: [], lines: [], skuCount: 0, unresolvedTotal: 0, meta: meta };
+
+    // ---- 2. Factory identity: validate ONCE (fail-closed HARD block for the whole batch) ----------------------
+    var fv = WIA.validateFactoryConfig(request.factoryIdentityConfig, request.warehousesById);
+    if (!fv.ok) return { ok: false, status: 'BLOCKED_INPUT', reason: fv.reason, issues: [{ kind: 'FACTORY_IDENTITY', reason: fv.reason }], lines: [], skuCount: 0, unresolvedTotal: 0, meta: meta };
+
+    // ---- 3. Per masterSku: assemble + build ONCE across all marketplaces (shared pool rationed once) ----------
+    var issues = [], allLines = [], unresolvedTotal = 0, skuCount = 0;
+    var skus = request.skus.slice().sort(function (a, b) { return cmp(str(a.masterSku), str(b.masterSku)); });
+    for (var si = 0; si < skus.length; si++) {
+      var s = skus[si];
+      if (!isObj(s) || !nonEmpty(s.masterSku)) { issues.push({ kind: 'INPUT', reason: 'INVALID_SKU_ENTRY:' + si }); continue; }
+      var asm;
+      try {
+        asm = WIA.assembleWeeklySourceAllocationInput({
+          planningCycle: planningCycle, businessScope: { company: company, country: country }, masterSku: s.masterSku,
+          formulaVersion: formulaVersion, sourceDataAsOf: sourceDataAsOf,
+          factoryIdentityConfig: request.factoryIdentityConfig, warehousesById: request.warehousesById,
+          overseasSupplyPools: s.overseasSupplyPools || [], factoryPools: s.factoryPools || [], lanes: s.lanes || []
+        });
+      } catch (e) { issues.push({ kind: 'SKU', reason: 'ASSEMBLER_ERROR:' + s.masterSku }); continue; }
+      if (!asm.ready) { issues.push({ kind: 'SKU', reason: (asm.issues && asm.issues[0] && asm.issues[0].reason) || 'ASSEMBLER_NOT_READY', key: str(s.masterSku) }); continue; }
+      if (asm.issues && asm.issues.length) asm.issues.forEach(function (x) { issues.push(x); });
+      var built = WSA.buildWeeklySourceAllocation(asm.builderInput);   // overseas pool rationed ONCE across the sku's sites
+      skuCount++;
+      (built.weeklyFacts && built.weeklyFacts.lines ? built.weeklyFacts.lines : []).forEach(function (l) { allLines.push(l); });
+      var sp = built.sourcePriority || {};
+      if (typeof sp.unresolvedProductionNeedQty === 'number') unresolvedTotal += sp.unresolvedProductionNeedQty;
+    }
+    return { ok: true, issues: issues, lines: allLines, skuCount: skuCount, unresolvedTotal: unresolvedTotal, meta: meta };
+  }
+
   function generateWeeklyShippingRecommendationBatch(request, deps) {
     aType(isObj(request), 'request must be an object');
     aType(isObj(deps) && typeof deps.loadActiveContext === 'function' && typeof deps.lockedApply === 'function', 'deps.loadActiveContext/lockedApply required');
@@ -74,42 +126,10 @@
       return base;
     }
 
-    // ---- 1. Scope validation (fail closed; NO persist) ----------------------------------------------------------
-    var missing = [];
-    if (!nonEmpty(company)) missing.push('businessScope.company');
-    if (!nonEmpty(country)) missing.push('businessScope.country');
-    if (!nonEmpty(sourcePage)) missing.push('businessScope.source_page');
-    if (!nonEmpty(planningCycle)) missing.push('planningCycle');
-    if (!Array.isArray(request.skus) || request.skus.length === 0) missing.push('skus');
-    if (missing.length) return envelope({ status: 'BLOCKED_INPUT', reason: 'MISSING_SCOPE:' + missing.join(',') });
-
-    // ---- 2. Factory identity: validate ONCE (fail-closed HARD block for the whole batch) ------------------------
-    var fv = WIA.validateFactoryConfig(request.factoryIdentityConfig, request.warehousesById);
-    if (!fv.ok) return envelope({ status: 'BLOCKED_INPUT', reason: fv.reason, issues: [{ kind: 'FACTORY_IDENTITY', reason: fv.reason }] });
-
-    // ---- 3. Per masterSku: assemble + build ONCE across all marketplaces (shared pool rationed once) ------------
-    var issues = [], allLines = [], recTotal = 0, unresolvedTotal = 0, skuCount = 0;
-    var skus = request.skus.slice().sort(function (a, b) { return cmp(str(a.masterSku), str(b.masterSku)); });
-    for (var si = 0; si < skus.length; si++) {
-      var s = skus[si];
-      if (!isObj(s) || !nonEmpty(s.masterSku)) { issues.push({ kind: 'INPUT', reason: 'INVALID_SKU_ENTRY:' + si }); continue; }
-      var asm;
-      try {
-        asm = WIA.assembleWeeklySourceAllocationInput({
-          planningCycle: planningCycle, businessScope: { company: company, country: country }, masterSku: s.masterSku,
-          formulaVersion: formulaVersion, sourceDataAsOf: sourceDataAsOf,
-          factoryIdentityConfig: request.factoryIdentityConfig, warehousesById: request.warehousesById,
-          overseasSupplyPools: s.overseasSupplyPools || [], factoryPools: s.factoryPools || [], lanes: s.lanes || []
-        });
-      } catch (e) { issues.push({ kind: 'SKU', reason: 'ASSEMBLER_ERROR:' + s.masterSku }); continue; }
-      if (!asm.ready) { issues.push({ kind: 'SKU', reason: (asm.issues && asm.issues[0] && asm.issues[0].reason) || 'ASSEMBLER_NOT_READY', key: str(s.masterSku) }); continue; }
-      if (asm.issues && asm.issues.length) asm.issues.forEach(function (x) { issues.push(x); });
-      var built = WSA.buildWeeklySourceAllocation(asm.builderInput);   // overseas pool rationed ONCE across the sku's sites
-      skuCount++;
-      (built.weeklyFacts && built.weeklyFacts.lines ? built.weeklyFacts.lines : []).forEach(function (l) { allLines.push(l); });
-      var sp = built.sourcePriority || {};
-      if (typeof sp.unresolvedProductionNeedQty === 'number') unresolvedTotal += sp.unresolvedProductionNeedQty;
-    }
+    // ---- 1-3. Scope + factory identity + per-source lines (extracted; K2 path reuses the SAME production) -------
+    var srcRes = buildWeeklySourceLines(request);
+    if (!srcRes.ok) return envelope({ status: srcRes.status, reason: srcRes.reason, issues: srcRes.issues || [] });
+    var issues = srcRes.issues, allLines = srcRes.lines, recTotal = 0, unresolvedTotal = srcRes.unresolvedTotal, skuCount = srcRes.skuCount;
 
     // ---- 4. Group lines by marketplace (the K3 fan-out axis) -----------------------------------------------------
     var byMkt = {};
@@ -164,6 +184,7 @@
 
   return {
     generateWeeklyShippingRecommendationBatch: generateWeeklyShippingRecommendationBatch,
+    buildWeeklySourceLines: buildWeeklySourceLines,   // F1-7N-FA-3C-R6F2 — per-source lines (K2 path reuses this)
     _version: 'f1-7n-d-2a-r1'
   };
 });

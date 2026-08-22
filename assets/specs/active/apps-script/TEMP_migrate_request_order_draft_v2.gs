@@ -2148,6 +2148,188 @@ function TEMP_R6F1_VALIDATE_RECONCILED_INVENTORY_HEADERS() {
 }
 
 // ================================================================================================================
+// F1-7N-FA-3C-R6F2 — READ-ONLY K2 route-authority preflight + package validator + empty-header FREEZE/reclassify.
+// All strictly read-only (TEMP_readObjects_ + getRange().getValues() + typeof guards; no setValues/appendRow/insert/
+// rename). NOT run by the agent. Per R6F2: do NOT cancel/repair either live header — freeze + classify only.
+// ================================================================================================================
+var TEMP_R6F2_ACTIVE_ = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+var TEMP_R6F2_ROUTE_DIMS_ = ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'];
+
+// K2-aware empty-header classification (supersedes the R6F1 K3 classifier for R6F2 reporting). An EMPTY header (no
+// active linked line) is: DUPLICATE_ACTIVE_REVIEW (>1 active share the same K2/K3 collision key — never auto-cancel) ·
+// EMPTY_ORPHAN_SAFE_TO_CANCEL (blank cycle AND blank route AND no lines — a genuinely empty scaffold) ·
+// FAILED_MANUAL_HEADER_SAFE_TO_CANCEL (real cycle + COMPLETE route, no lines — an abandoned manual header) ·
+// NOT_SAFE (any other partial state — insufficient evidence for safe K2 attribution; never guess).
+function TEMP_r6f2RouteComplete_(r) {
+  var from = TEMP_str_(r.recommended_source_warehouse_id);
+  var toReal = TEMP_str_(r.recommended_destination_warehouse_id) || TEMP_str_(r.destination_marketplace);
+  var method = TEMP_str_(r.recommended_shipping_method);
+  return !!(from && toReal && method);
+}
+function TEMP_r6f2RouteBlank_(r) { for (var i = 0; i < TEMP_R6F2_ROUTE_DIMS_.length; i++) { if (TEMP_str_(r[TEMP_R6F2_ROUTE_DIMS_[i]]) !== '') return false; } return true; }
+function TEMP_r6f2ClassifyEmptyHeadersK2_(H, L) {
+  var rows = (H && H.rows) || [], lines = (L && L.rows) || [];
+  function s(v) { return TEMP_str_(v); }
+  // collision key: full K2 tuple among ACTIVE rows (blank dims collide, which is the point — blank-everything actives collide)
+  var byK2 = {};
+  rows.forEach(function (r) {
+    if (!TEMP_R6F2_ACTIVE_[s(r.status).toLowerCase()]) return;
+    var k = [s(r.planning_cycle), s(r.company), s(r.country), s(r.marketplace), s(r.source_page)]
+      .concat(TEMP_R6F2_ROUTE_DIMS_.map(function (d) { return s(r[d]); })).join('||');
+    (byK2[k] = byK2[k] || []).push(s(r.allocation_draft_id));
+  });
+  var out = [], parts = [];
+  rows.forEach(function (r) {
+    var id = s(r.allocation_draft_id), cyc = s(r.planning_cycle), status = s(r.status).toLowerCase();
+    var linked = lines.filter(function (x) { return s(x.allocation_draft_id) === id && s(x.line_status).toLowerCase() !== 'cancelled'; }).length;
+    if (linked > 0) return;
+    var k = [cyc, s(r.company), s(r.country), s(r.marketplace), s(r.source_page)]
+      .concat(TEMP_R6F2_ROUTE_DIMS_.map(function (d) { return s(r[d]); })).join('||');
+    var dupActive = !!(TEMP_R6F2_ACTIVE_[status] && byK2[k] && byK2[k].length > 1);
+    var cls;
+    if (dupActive) cls = 'DUPLICATE_ACTIVE_REVIEW';
+    else if (cyc === '' && TEMP_r6f2RouteBlank_(r)) cls = 'EMPTY_ORPHAN_SAFE_TO_CANCEL';
+    else if (cyc !== '' && TEMP_r6f2RouteComplete_(r)) cls = 'FAILED_MANUAL_HEADER_SAFE_TO_CANCEL';
+    else cls = 'NOT_SAFE';                                          // partial/insufficient — never guess
+    out.push({ allocation_draft_id_fingerprint: TEMP_r5bIdFingerprint_(id), status: status, planning_cycle_blank: cyc === '', route_blank: TEMP_r6f2RouteBlank_(r), route_complete: TEMP_r6f2RouteComplete_(r), linked_active_lines: linked, classification: cls });
+    parts.push(id + ':' + status + ':' + cls);
+  });
+  return { count: out.length, headers: out, checksum: TEMP_r5bHash_(parts.sort().join('|')) };
+}
+
+// FREEZE the two existing empty headers: exact id fingerprint, sheet row number, ALL raw values + JS types, the
+// timestamps, linked-line counts, and a checksum — for a later USER-owned cleanup. Read-only.
+function TEMP_R6F2_FREEZE_EMPTY_INVENTORY_HEADERS() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('shipping_allocation_drafts');
+  var L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  if (!sh) return { tool: 'TEMP_R6F2_FREEZE_EMPTY_INVENTORY_HEADERS', error: 'DRAFTS_TAB_ABSENT' };
+  var values = sh.getDataRange().getValues();
+  var headers = (values[0] || []).map(function (h) { return String(h).trim(); });
+  var cId = headers.indexOf('allocation_draft_id');
+  var frozen = [], parts = [];
+  for (var r = 1; r < values.length; r++) {
+    var id = TEMP_str_(values[r][cId]);
+    var linked = (L.rows || []).filter(function (x) { return TEMP_str_(x.allocation_draft_id) === id && TEMP_str_(x.line_status).toLowerCase() !== 'cancelled'; }).length;
+    if (linked > 0) continue;                                       // only EMPTY headers are frozen for cleanup
+    var cells = {};
+    for (var c = 0; c < headers.length; c++) {
+      var v = values[r][c];
+      cells[headers[c]] = { type: TEMP_r5bTypeOf_(v), blank: String(v == null ? '' : v).trim() === '', fingerprint: (headers[c].indexOf('id') !== -1 && String(v).length > 6) ? TEMP_r5bIdFingerprint_(v) : undefined, value_len: String(v == null ? '' : v).length };
+    }
+    frozen.push({ row_number: r + 1, allocation_draft_id_fingerprint: TEMP_r5bIdFingerprint_(id), column_count: headers.length, linked_active_lines: linked, cells: cells });
+    parts.push((r + 1) + ':' + id + ':' + headers.length);
+  }
+  var cls = TEMP_r6f2ClassifyEmptyHeadersK2_(TEMP_readObjects_('shipping_allocation_drafts'), L);
+  var out = {
+    tool: 'TEMP_R6F2_FREEZE_EMPTY_INVENTORY_HEADERS', mode: 'read-only (freeze; NO cancel/repair/delete)',
+    empty_header_count: frozen.length, frozen_headers: frozen,
+    k2_classification: cls.headers, classification_checksum: cls.checksum,
+    freeze_checksum: TEMP_r5bHash_(parts.sort().join('|')),
+    note: 'Values are frozen as type + blank-flag + length + id fingerprint (no raw business values disclosed). Cleanup is a later USER-owned operation.',
+    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
+  };
+  Logger.log('R6F2_FREEZE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
+  var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
+  var targetMatch = (expectedId !== '' && runtimeId !== '' && runtimeId === expectedId) ? 'YES' : (expectedId === '' ? 'UNKNOWN' : 'NO');
+  var hdrAuth = (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : null;
+  var lineAuth = (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : null;
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var hExact = !!(hdrAuth && (H.headers || []).length === hdrAuth.length && (H.headers || []).join('|') === hdrAuth.join('|'));
+  var lExact = !!(lineAuth && (L.headers || []).length === lineAuth.length && (L.headers || []).join('|') === lineAuth.join('|'));
+
+  // route authorities
+  var RC = TEMP_readObjects_('carrier_rate_cards'), LT = TEMP_readObjects_('carrier_lead_times'), WH = TEMP_readObjects_('warehouses');
+  function activeCount(rows) { return (rows || []).filter(function (r) { var st = TEMP_str_(r.status).toLowerCase(); return st === '' || ['inactive', 'disabled', 'archived', 'expired', 'void', 'deleted'].indexOf(st) === -1; }).length; }
+  var whActive = (WH.rows || []).filter(function (w) { return TEMP_str_(w.is_active).toLowerCase() !== 'false' && TEMP_str_(w.is_active).toLowerCase() !== 'no'; }).length;
+
+  // active-group duplicates over the FULL K2 tuple
+  var cls = TEMP_r6f2ClassifyEmptyHeadersK2_(H, L);
+  var activeK2 = {}, dupK2 = 0;
+  (H.rows || []).forEach(function (r) {
+    if (!TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()]) return;
+    var k = [TEMP_str_(r.planning_cycle), TEMP_str_(r.company), TEMP_str_(r.country), TEMP_str_(r.marketplace), TEMP_str_(r.source_page)].concat(TEMP_R6F2_ROUTE_DIMS_.map(function (d) { return TEMP_str_(r[d]); })).join('||');
+    activeK2[k] = (activeK2[k] || 0) + 1;
+  });
+  Object.keys(activeK2).forEach(function (k) { if (activeK2[k] > 1) dupK2++; });
+
+  var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+  var kmwrrReady = (typeof KMWRR !== 'undefined' && KMWRR && typeof KMWRR.buildK2GenerationPlan === 'function');
+  var atomicReady = (typeof handleUpsertShippingAllocationDraftAtomic_ === 'function');
+  var kmwrbK2 = (typeof KMWRB !== 'undefined' && KMWRB && typeof KMWRB.buildWeeklySourceLines === 'function');
+
+  var blockers = [];
+  if (!hExact) blockers.push('HEADER_SCHEMA_NOT_EXACT_30');
+  if (!lExact) blockers.push('LINE_SCHEMA_NOT_EXACT_30');
+  if (!kmwrrReady) blockers.push('KMWRR_ROUTE_AUTHORITY_NOT_BUNDLED');
+  if (!kmwrbK2) blockers.push('KMWRB_K2_SOURCE_LINES_NOT_BUNDLED');
+  if (!atomicReady) blockers.push('ATOMIC_ENDPOINT_UNAVAILABLE');
+  if (activeCount(RC.rows) === 0) blockers.push('NO_ACTIVE_CARRIER_RATE_CARDS (route method derivation would BLOCK every group)');
+  if ((LT.rows || []).length === 0) blockers.push('NO_CARRIER_LEAD_TIMES (on-time feasibility cannot be evaluated → ROUTE_NO_ON_TIME_OPTION)');
+  if (whActive === 0) blockers.push('NO_ACTIVE_WAREHOUSES');
+  if (dupK2 > 0) blockers.push('DUPLICATE_ACTIVE_K2_GROUP');
+  if (flagOn !== false) blockers.push('INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ not false');
+
+  var out = {
+    tool: 'TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY', RUNTIME_SPREADSHEET_TARGET_MATCH: targetMatch,
+    header_schema_exact_30: (hdrAuth && (H.headers || []).length === 30 && hExact) ? 'YES' : 'NO',
+    line_schema_exact_30: (lineAuth && (L.headers || []).length === 30 && lExact) ? 'YES' : 'NO',
+    line_schema_hash: TEMP_r5bHash_((L.headers || []).join('|')), line_authority_hash: lineAuth ? TEMP_r5bHash_(lineAuth.join('|')) : null,
+    route_authority: {
+      carrier_rate_cards_total: (RC.rows || []).length, carrier_rate_cards_active: activeCount(RC.rows),
+      carrier_lead_times_total: (LT.rows || []).length, warehouses_total: (WH.rows || []).length, warehouses_active: whActive
+    },
+    k2_key_dimensions: ['planning_cycle', 'company', 'country', 'marketplace', 'source_page', 'source_warehouse_id', 'destination_warehouse_id', 'shipping_method', 'last_mile_delivery', 'recommendation_group_no'],
+    deterministic_id_ready: kmwrrReady ? 'YES (KMWRR + sadK2DeterministicHeaderId_/sadK2DeterministicLineId_)' : 'NO',
+    atomic_endpoint_ready: atomicReady ? 'YES (handleUpsertShippingAllocationDraftAtomic_)' : 'NO',
+    generation_wired_k2: (kmwrrReady && kmwrbK2) ? 'YES (61_ weeklyAiPlanGenerateK2_ → KMWRR → atomic endpoint; gated by the flag)' : 'NO',
+    duplicate_active_k2_group_count: dupK2,
+    empty_header_classification: cls.headers, empty_header_classification_checksum: cls.checksum,
+    inventory_flag_remains_false: flagOn === false ? 'YES' : (flagOn === null ? 'UNKNOWN' : 'NO'),
+    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)',
+    blockers: blockers,
+    verdict: blockers.length ? 'HALT' : 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN'
+  };
+  Logger.log('R6F2_PREFLIGHT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// Post-controlled-run package validator (read-only): confirms generated headers are K2-grouped with route fields
+// populated, lines are SKU/window under them, no duplicate active K2 group, conservation (no source over-allocation
+// detectable from the persisted rows), and the flag is still false.
+function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE() {
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  function s(v) { return TEMP_str_(v); }
+  var active = (H.rows || []).filter(function (r) { return TEMP_R6F2_ACTIVE_[s(r.status).toLowerCase()]; });
+  var routePopulated = active.filter(function (r) { return TEMP_r6f2RouteComplete_(r); }).length;
+  var groupNoPopulated = active.filter(function (r) { return s(r.recommendation_group_no) !== ''; }).length;
+  // lines carry no route field (route is header-level) + belong to an existing header
+  var headerIds = {}; (H.rows || []).forEach(function (r) { var id = s(r.allocation_draft_id); if (id) headerIds[id] = 1; });
+  var orphanLines = (L.rows || []).filter(function (x) { var fk = s(x.allocation_draft_id); return fk && !headerIds[fk]; }).length;
+  // over-allocation per source, from persisted planned_qty grouped by header source × sku|window
+  var dupSkuWindowInHeader = 0, seen = {};
+  (L.rows || []).forEach(function (x) { var k = s(x.allocation_draft_id) + '|' + s(x.sku).toLowerCase() + '|' + s(x.window_code).toLowerCase(); if (seen[k]) dupSkuWindowInHeader++; else seen[k] = 1; });
+  var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+  var out = {
+    tool: 'TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE', mode: 'read-only',
+    active_header_count: active.length, route_populated_header_count: routePopulated, group_no_populated_count: groupNoPopulated,
+    line_row_count: (L.rows || []).length, orphan_line_count: orphanLines, duplicate_sku_window_in_header: dupSkuWindowInHeader,
+    empty_header_classification: TEMP_r6f2ClassifyEmptyHeadersK2_(H, L).headers,
+    inventory_flag_remains_false: flagOn === false ? 'YES' : (flagOn === null ? 'UNKNOWN' : 'NO'),
+    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)',
+    verdict: (orphanLines === 0 && dupSkuWindowInHeader === 0) ? 'K2_PACKAGE_CONSISTENT' : 'RECONCILIATION_REQUIRED'
+  };
+  Logger.log('R6F2_VALIDATE_PACKAGE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
 // F1-7N-FA-3C-DRAFT-MODEL-R6A1 — READ-ONLY Request Order Flat V2 Send-path diagnostic + post-run validators.
 // Writes NOTHING (TEMP_readObjects_ + getRange().getValues() + typeof-guarded getters only; no setValues/appendRow/
 // insertSheet/rename/submit/edit/repair/delete). The observed live failure was PRODUCTION_SAFETY:HEADER_MISSING

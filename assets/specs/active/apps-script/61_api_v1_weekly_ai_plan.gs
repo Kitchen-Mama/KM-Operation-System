@@ -45,8 +45,17 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
     if (mode !== 'MANUAL_REGENERATE' && mode !== 'SCHEDULED_REFRESH') return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('INVALID_MODE', 'mode must be MANUAL_REGENERATE|SCHEDULED_REFRESH')] });
     if (!company || !country) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('INVALID_SCOPE', 'company + country required (generation universe is company,country)')] });
 
-    if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMAF === 'undefined') {
-      return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('WEEKLY_AI_PLAN_NOT_BUNDLED', 'weekly AI plan core not present in bundle')] });
+    if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMAF === 'undefined' || typeof KMWRR === 'undefined') {
+      return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('WEEKLY_AI_PLAN_NOT_BUNDLED', 'weekly AI plan core not present in bundle (KMWHA/KMWRB/KMAF/KMWRR)')] });
+    }
+
+    // F1-7N-FA-3C-R6F2 — generation is STAGED OFF. When INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is false, run NOTHING
+    // (neither the legacy K3 batch NOR the K2 path) — this is the canonical staged-off posture (the frontend also gates
+    // the button). When true, generation uses the K2 route-group path (route derivation → K2 partition → atomic write),
+    // NEVER the legacy K3 per-marketplace persistence. So generation and manual save share the SAME K2 identity.
+    var genEnabled = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') && inventoryAiPlanDbGenerationEnabled_() === true;
+    if (!genEnabled) {
+      return jsonResponse_({ success: false, disabled: true, errors: [weeklyAiPlanErr_('INVENTORY_AI_PLAN_DB_GENERATION_DISABLED', 'Inventory AI Plan DB generation is staged OFF (INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false); zero rows written. Run TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() before any controlled enablement.')] });
     }
 
     var ss = SpreadsheetApp.openById(prodExpectedDbId_());
@@ -75,28 +84,112 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
     });
     if (!mapped.ready) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('HARVEST_NOT_READY', 'canonical §7 facts not ready (fail closed)', { issues: mapped.issues })] });
 
-    // ---- REAL persistence deps (mirror 24_ rpoGenerateRecommendationDraftLockedResult_) --------------------
+    // ---- REAL persistence deps --------------------------------------------------------------------------------
     var deps = weeklyAiPlanPersistenceDeps_(ss);
 
-    // ---- GENERATE (PURE, Node-verified): shared pool once → per-marketplace K3 drafts ----------------------
-    var res = KMWRB.generateWeeklyShippingRecommendationBatch(mapped.request, deps);
-
-    var success = res && (res.status === 'COMPLETED' || res.status === 'PARTIAL') && (res.marketplaceCount > 0);
-    return jsonResponse_({
-      success: !!(res && res.success),
-      data: {
-        status: res.status, planningCycle: res.planningCycle, businessScope: res.businessScope,
-        currentMarketplace: weeklyAiPlanStr_(body.currentMarketplace || body.requestedMarketplace) || null, // readback context only
-        skuCount: res.skuCount, marketplaceCount: res.marketplaceCount,
-        marketplaceResults: res.marketplaceResults, recommendedQtyTotal: res.recommendedQtyTotal,
-        unresolvedProductionNeedQty: res.unresolvedProductionNeedQty,
-        formulaVersion: res.formulaVersion, sourceDataAsOf: res.sourceDataAsOf, issues: res.issues
-      },
-      errors: (res && res.success) ? [] : [weeklyAiPlanErr_(res ? res.status : 'GENERATION_FAILED', res ? res.reason : 'weekly AI plan generation failed')]
-    });
+    // ---- GENERATE via the K2 route-group path: per-source lines → route derivation → K2 partition → ATOMIC
+    // Header+Lines write (the SAME endpoint + identity manual save uses). Reached ONLY when the flag is true.
+    return weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps, body);
   } catch (e) {
     return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('WEEKLY_AI_PLAN_ERROR', (e && e.message) ? String(e.message) : String(e))] });
   }
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
+// per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
+// ATOMIC Header+Lines write (handleUpsertShippingAllocationDraftAtomic_ — the SAME endpoint + K2 identity manual save
+// uses) → readback summary. Route authorities (carrier_rate_cards + carrier_lead_times) are harvested here (the
+// legacy K3 harvest did NOT load them). The per-source-line → allocatedLine assembly (window/required-by join +
+// destination) is defensive: any line whose route cannot be resolved BLOCKS that group (no header/lines), and the
+// read-only TEMP_R6F2_PREFLIGHT reports resolution/availability counts BEFORE any controlled live run.
+// ================================================================================================================
+function weeklyAiPlanReadCarrierAuthorities_(ss) {
+  function rows(name) { try { var o = (typeof gapReadObjects_ === 'function') ? gapReadObjects_(ss, name) : null; return (o && o.rows) ? o.rows : []; } catch (e) { return []; } }
+  return { rateCards: rows('carrier_rate_cards'), leadTimes: rows('carrier_lead_times') };
+}
+function weeklyAiPlanShipDate_(harvest) {
+  var v = harvest && harvest.sourceDataAsOf ? String(harvest.sourceDataAsOf) : '';
+  var m = v.match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : '';
+}
+// Map the per-source WSA lines → KMWRR allocatedLines. Confirmed fact fields: masterSku, marketplace,
+// sourceWarehouseId, recommendedQty, unitsPerCarton, demandKey. window/required_by joined from horizonsByDemandRef;
+// destination resolved via KMWHA.resolveWorkspaceLineDestination when available, else the line's own dest fields.
+function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
+  var horizons = (harvest && harvest.horizonsByDemandRef) || {};
+  var whById = (harvest && harvest.warehousesById) || {};
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var out = [];
+  (lines || []).forEach(function (l) {
+    if (!l || s(l.blockedReason)) return;                              // blocked upstream → no line
+    var qty = (typeof l.recommendedQty === 'number') ? l.recommendedQty : Number(l.recommendedQty);
+    if (!isFinite(qty) || qty <= 0) return;                           // zero recommendation → no line
+    var dk = s(l.demandKey);
+    var hz = horizons[dk] || null;
+    // primary (earliest) window from the horizon's requiredByByWindow, if present
+    var windowCode = '', requiredBy = '';
+    if (hz && hz.requiredByByWindow) {
+      var wins = Object.keys(hz.requiredByByWindow).sort(function (a, b) { return String(hz.requiredByByWindow[a]) < String(hz.requiredByByWindow[b]) ? -1 : 1; });
+      if (wins.length) { windowCode = wins[0]; requiredBy = String(hz.requiredByByWindow[wins[0]]); }
+    }
+    // destination
+    var destination = { kind: 'WAREHOUSE', warehouse_id: s(l.destinationWarehouseId), country: '' };
+    try {
+      if (typeof KMWHA !== 'undefined' && KMWHA && typeof KMWHA.resolveWorkspaceLineDestination === 'function') {
+        var d = KMWHA.resolveWorkspaceLineDestination(l);
+        if (d && s(d.destinationKind) === 'MARKETPLACE') destination = { kind: 'MARKETPLACE', marketplace: s(l.marketplace), country: s(l.country) };
+        else if (d && s(d.destinationRef)) destination = { kind: 'WAREHOUSE', warehouse_id: s(d.destinationRef), country: s(l.country) };
+      }
+    } catch (e) { /* defensive: fall back to the line's own destination fields */ }
+    var srcWh = whById[s(l.sourceWarehouseId)] || {};
+    out.push({
+      sku: s(l.masterSku), site_sku: s(l.siteSku || l.site_sku), window_code: windowCode,
+      window_start_date: '', window_end_date: '', required_by_date: requiredBy,
+      source_warehouse_id: s(l.sourceWarehouseId), source_warehouse_code_snapshot: s(srcWh.warehouse_code),
+      planned_qty: qty, recommended_qty: qty, units_per_carton: (l.unitsPerCarton != null ? l.unitsPerCarton : ''),
+      marketplace: s(l.marketplace), destination: destination
+    });
+  });
+  return out;
+}
+function weeklyAiPlanParseResp_(resp) { try { return JSON.parse(resp && resp.getContent ? resp.getContent() : (typeof resp === 'string' ? resp : '{}')); } catch (e) { return { success: false, parse_error: true }; } }
+
+function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
+  var src = KMWRB.buildWeeklySourceLines(request);
+  if (!src.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(src.status || 'BLOCKED_INPUT', src.reason || 'source lines blocked')] });
+  var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
+  var shipDate = weeklyAiPlanShipDate_(harvest);
+  var scope0 = request.businessScope || {};
+  var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, harvest);
+  // group by marketplace (each K2 group is within one marketplace); route dims further split within.
+  var byMkt = {};
+  allocated.forEach(function (a) { var m = String(a.marketplace || '').trim(); (byMkt[m] = byMkt[m] || []).push(a); });
+  var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
+  Object.keys(byMkt).sort().forEach(function (M) {
+    var plan = KMWRR.buildK2GenerationPlan({
+      scope: { planning_cycle: request.planningCycle, company: scope0.company, country: scope0.country, marketplace: M, source_page: scope0.source_page },
+      allocatedLines: byMkt[M], warehousesById: harvest.warehousesById,
+      rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: shipDate,
+      authorizedBySkuWindow: (function () { var a = {}; byMkt[M].forEach(function (x) { var k = String(x.sku).toLowerCase() + '|' + String(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(),
+      sourceCeilingById: {}
+    });
+    plan.blocked.forEach(function (b) { blockedTotal.push({ marketplace: M, block: b.block }); });
+    conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved });
+    plan.groups.forEach(function (g) {
+      var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: g.header, lines: g.lines, enforce_k2_grouping: true }));
+      if (resp && resp.success) anyOk = true; else anyFail = true;
+      groupsWritten.push({ marketplace: M, groupNo: g.groupNo, allocation_draft_id: (resp && resp.data) ? resp.data.allocation_draft_id : null, line_count: (resp && resp.data) ? resp.data.line_count : 0, ok: !!(resp && resp.success), error: (resp && !resp.success) ? resp.error : null });
+    });
+  });
+  return jsonResponse_({
+    success: anyOk && !anyFail,
+    data: {
+      mode: 'K2_ROUTE_GROUP', planningCycle: request.planningCycle, businessScope: scope0,
+      groups_written: groupsWritten.length, groups: groupsWritten, blocked_count: blockedTotal.length, blocked: blockedTotal,
+      conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal
+    },
+    errors: anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups failed the atomic write; see data.groups')] : []
+  });
 }
 
 /**

@@ -160,16 +160,17 @@ function sadUpsertDraftHeaderCore_(body) {
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
 
-  // C2-D2 §3: centralized K3 Active-Draft resolution when no explicit id (key = planning_cycle + company +
-  // country + marketplace + source_page; NEVER draft_version, NEVER recommendation_group_no).
-  //   0 Active → CREATE · 1 Active → REUSE/UPDATE · >1 Active → BLOCKED_CONFLICT (zero mutation, conflict IDs).
+  // F1-7N-FA-3C-R6F2: UNIFIED active-draft resolution (the SAME identity generation uses). A route-complete header
+  // keys on the 10-dim K2 group identity (CREATE returns the deterministic SADH-K2- id); a no-route scratchpad falls
+  // back to the landed K3 scope (planning_cycle+company+country+marketplace+source_page). 0→CREATE · 1→REUSE/UPDATE ·
+  // >1→CONFLICT (zero mutation, conflict IDs). draft_version stays version/lineage, never part of the key.
   if (!id) {
-    var k3 = sadResolveActiveDraft_(sh, { planning_cycle: (body && body.planning_cycle), company: (body && body.company),
-      country: (body && body.country), marketplace: (body && body.marketplace), source_page: (body && body.source_page) });
-    if (k3.status === 'BLOCKED_CONFLICT') {
-      return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this scope; resolve manually (zero rows written)', data: { status: 'BLOCKED_CONFLICT', conflictIds: k3.conflictIds } });
+    var res = sadResolveActiveDraftK2OrK3_(sh, body);
+    if (res.status === 'CONFLICT') {
+      return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + '; resolve manually (zero rows written)', data: { status: 'BLOCKED_CONFLICT', conflictIds: res.conflictIds, k2: res.k2 } });
     }
-    if (k3.status === 'ACTIVE_DRAFT_FOUND') { id = k3.id; found = procurementFindRow_(sh, 'allocation_draft_id', id); }
+    if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(sh, 'allocation_draft_id', id); }
+    else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id (found stays null → INSERT with it)
   }
 
   if (found) {
@@ -578,15 +579,16 @@ function sadAtomicUpsertCore_(body) {
   if (!vb.ok) return jsonResponse_({ success: false, error: vb.error, stage: vb.stage, zero_write: true, data: vb.data || null });
   var lines = vb.lines;
 
-  // resolve the header id: explicit id, else the landed K3 active-draft (LIVE K2 resolution is HALTed). Fail closed
-  // on a >1 active-draft conflict with ZERO mutation.
+  // resolve the header id: explicit id, else the UNIFIED K2-or-K3 active-draft resolution (R6F2) — a route-complete
+  // header keys on the 10-dim K2 group identity (CREATE returns the deterministic SADH-K2- id); a no-route scratchpad
+  // falls back to K3. Fail closed on CONFLICT with ZERO mutation. This is the SAME identity generation uses.
   var id = String(header.allocation_draft_id || '').trim();
   var found = id ? procurementFindRow_(hSh, 'allocation_draft_id', id) : null;
   if (!id) {
-    var k3 = sadResolveActiveDraft_(hSh, { planning_cycle: header.planning_cycle, company: header.company,
-      country: header.country, marketplace: header.marketplace, source_page: header.source_page });
-    if (k3.status === 'BLOCKED_CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this scope (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: k3.conflictIds } });
-    if (k3.status === 'ACTIVE_DRAFT_FOUND') { id = k3.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
+    var res = sadResolveActiveDraftK2OrK3_(hSh, header);
+    if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
+    if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
+    else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id → INSERT with it (found stays null)
   }
   if (found) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
@@ -746,6 +748,44 @@ function sadResolveActiveDraft_(sh, scope) {
   if (!matches.length) return empty;
   if (matches.length > 1) return { status: 'BLOCKED_CONFLICT', id: '', row: 0, conflictIds: matches.map(function (m) { return m.id; }) };
   return { status: 'ACTIVE_DRAFT_FOUND', id: matches[0].id, row: matches[0].row, conflictIds: [] };
+}
+
+// F1-7N-FA-3C-R6F2 — read ACTIVE (draft/site_confirmed/partially_submitted) header rows as objects (read-only) for
+// K2 CREATE/REUSE/CONFLICT resolution.
+function sadReadActiveHeaderRows_(sh) {
+  var data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var headers = data[0].map(function (x) { return String(x).trim(); });
+  var cStatus = headers.indexOf('status');
+  var ACTIVE = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+  var out = [];
+  for (var r = 1; r < data.length; r++) {
+    var st = cStatus !== -1 ? String(data[r][cStatus]).trim().toLowerCase() : '';
+    if (!ACTIVE[st]) continue;
+    var o = {}; for (var c = 0; c < headers.length; c++) if (headers[c]) o[headers[c]] = data[r][c];
+    o.status = st;
+    out.push(o);
+  }
+  return out;
+}
+
+// F1-7N-FA-3C-R6F2 — the SINGLE active-draft resolution used by BOTH generation (atomic endpoint) AND manual save.
+// A COMPLETE route (From+To+Method present) resolves by the 10-dim K2 group key (route-level identity);
+// a no-route scratchpad falls back to the landed K3 scope. Returns { status:'CREATE'|'REUSE'|'CONFLICT', id,
+// conflictIds, k2:bool }. CREATE under K2 returns the DETERMINISTIC header id (SADH-K2-…); CREATE under K3 returns ''.
+function sadResolveActiveDraftK2OrK3_(sh, header) {
+  header = header || {};
+  if (sadHeaderRouteIsComplete_(header)) {
+    var r = sadK2ResolveActiveDraft_(sadReadActiveHeaderRows_(sh), header);
+    if (r.status === 'CREATE') return { status: 'CREATE', id: r.allocation_draft_id, conflictIds: [], k2: true };
+    if (r.status === 'REUSE') return { status: 'REUSE', id: r.allocation_draft_id, conflictIds: [], k2: true };
+    return { status: 'CONFLICT', id: '', conflictIds: r.conflictIds || [], k2: true };
+  }
+  var k3 = sadResolveActiveDraft_(sh, { planning_cycle: header.planning_cycle, company: header.company,
+    country: header.country, marketplace: header.marketplace, source_page: header.source_page });
+  if (k3.status === 'BLOCKED_CONFLICT') return { status: 'CONFLICT', id: '', conflictIds: k3.conflictIds || [], k2: false };
+  if (k3.status === 'ACTIVE_DRAFT_FOUND') return { status: 'REUSE', id: k3.id, conflictIds: [], k2: false };
+  return { status: 'CREATE', id: '', conflictIds: [], k2: false };
 }
 
 // Read one sheet row (1-based) into a header-keyed object (read-only).

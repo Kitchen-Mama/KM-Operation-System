@@ -112,7 +112,7 @@ section('G determinism + single-owner surface + provenance');
 var g1 = BATCH.generateWeeklyShippingRecommendationBatch(request(), fakeDeps({ plans: [] }));
 var g2 = BATCH.generateWeeklyShippingRecommendationBatch(request(), fakeDeps({ plans: [] }));
 eq(g1, g2, 'G identical request -> identical bounded batch result');
-eq(Object.keys(BATCH).sort(), ['_version', 'generateWeeklyShippingRecommendationBatch'], 'G owner exposes ONE batch generation fn');
+eq(Object.keys(BATCH).sort(), ['_version', 'buildWeeklySourceLines', 'generateWeeklyShippingRecommendationBatch'], 'G owner exposes the batch generation fn + the R6F2 per-source-line extraction reused by the K2 path');
 eq(g1.formulaVersion, 'WEEKLY_AI_PLAN_V1', 'G formulaVersion WEEKLY_AI_PLAN_V1');
 eq(g1.sourceDataAsOf, '2026-08-18T00:00:00Z', 'G sourceDataAsOf carried (never a clock)');
 eq(BATCH._version, 'f1-7n-d-2a-r1', 'G version tag');
