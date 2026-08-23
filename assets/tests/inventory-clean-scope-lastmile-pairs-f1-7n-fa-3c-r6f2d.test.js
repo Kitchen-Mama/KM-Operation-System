@@ -114,7 +114,7 @@ ok(/method_failure_breakdown/.test(TEMP), 'D2e the dry assembly + preflight repo
 
 // =====================================================================================================
 section('G — scoped validator accepts the frozen scope/checksum (source contract)');
-ok(/function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen\)/.test(TEMP), 'G1 the validator accepts a frozen-scope argument');
+ok(/function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen, opts\)/.test(TEMP), 'G1 the validator accepts a frozen-scope argument');
 ok(/scoped_validation/.test(TEMP) && /FROZEN_SCOPE_VALIDATED/.test(TEMP), 'G2 scoped validation verdict FROZEN_SCOPE_VALIDATED');
 ok(/unexpected_headers_in_scope/.test(TEMP) && /unexpected_lines_in_scope/.test(TEMP) && /out_of_scope_active_header_count/.test(TEMP), 'G3 verifies only the frozen headers/lines changed + no unrelated scope changed');
 ok(/duplicate_active_k2_group_count/.test(TEMP) && /empty_header_classification_checksum/.test(TEMP), 'G4 verifies no duplicate K2 groups + the two NOT_SAFE legacy headers unchanged (checksum)');

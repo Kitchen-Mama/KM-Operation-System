@@ -116,9 +116,9 @@ eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ duplicate_ids: 1 }), EXP).drift_reaso
 eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ projected_conflict: 1 }), EXP).drift_reasons.indexOf('PROJECTED_CONFLICT') >= 0, true, 'C11 projected conflict refused');
 eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ conservation_ok: false }), EXP).drift_reasons.indexOf('CONSERVATION_NOT_OK') >= 0, true, 'C12 non-conservation refused');
 // C source contracts
-ok(/function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE\(\)/.test(TEMP), 'C13 zero-arg freeze entrypoint present');
+ok(/function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE\(opts\)/.test(TEMP), 'C13 zero-arg freeze entrypoint present (opts optional; dropdown passes nothing)');
 ok(/FREEZE_REFUSED_LIVE_DRIFT/.test(TEMP), 'C14 refuses drift with FREEZE_REFUSED_LIVE_DRIFT');
-ok(/TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE\(\{ company: e\.company, country: e\.country, marketplace: e\.marketplace \}\)/.test(TEMP), 'C15 calls the canonical parameterized freeze internally with the EXACT expected scope');
+ok(/TEMP_r6f2eFreezeCore_\(\{ company: e\.company, country: e\.country, marketplace: e\.marketplace \}, \{ quiet: true \}\)/.test(TEMP), 'C15 calls the canonical freeze core internally with the EXACT expected scope (quiet)');
 ok(/CONTROLLED_SCOPE_FROZEN_READ_ONLY/.test(TEMP) && /freeze_version/.test(TEMP), 'C16 emits the compact freeze envelope + freeze_version');
 ok(/pre_run_db_header_rows/.test(TEMP) && /pre_run_db_line_rows/.test(TEMP) && /unrelated_scope_active_row_checksum/.test(TEMP), 'C17 envelope carries pre-run DB counts + unrelated-scope checksum');
 ok(/expected_header_ids_sorted/.test(TEMP) && /expected_line_ids_sorted/.test(TEMP), 'C18 envelope carries sorted expected header + line ids');
@@ -149,7 +149,7 @@ var freezeReadOnly = extractFn(TEMP, 'TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVE
 ok(!/setProperty/.test(freezeReadOnly), 'D11 the read-only freeze never writes a Script Property (write is separate/explicit)');
 var valFn = extractFn(TEMP, 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE');
 ok(!/setProperty|deleteProperty|setValue/.test(valFn) && /getProperty/.test(valFn), 'D12 validator is read-only (reads the stored token; never writes)');
-ok(/scope_widening_possible = false/.test(valFn) && /TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen\)/.test(valFn), 'D13 validator cannot widen scope; delegates to the canonical parameterized validator');
+ok(/scope_widening_possible = false/.test(valFn) && /TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen, \{ quiet: true \}\)/.test(valFn), 'D13 validator cannot widen scope; delegates to the canonical parameterized validator (quiet)');
 ok(/NO_FROZEN_SCOPE_STORED/.test(valFn), 'D14 validator reports NO_FROZEN_SCOPE_STORED before a token exists');
 var clearFn = extractFn(TEMP, 'TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE');
 ok(/deleteProperty/.test(clearFn), 'D15 cleanup deletes the stored token');

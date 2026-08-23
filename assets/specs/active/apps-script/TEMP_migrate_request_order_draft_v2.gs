@@ -2233,7 +2233,12 @@ function TEMP_R6F2_FREEZE_EMPTY_INVENTORY_HEADERS() {
   return out;
 }
 
-function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
+// F1-7N-FA-3C-R6F2E1 — ONE canonical preflight calculation, quiet-capable. opts.quiet suppresses ONLY the verbose
+// R6F2_PREFLIGHT Logger entry; the returned object is byte-identical in both modes (no forked/duplicated logic). The
+// public entrypoint keeps the full log; the R6F2E gate/freeze wrappers call this core with quiet:true so their compact
+// primary entry is not preceded by a large nested log (which Apps Script truncates).
+function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() { return TEMP_r6f2ePreflightCore_({ quiet: false }); }
+function TEMP_r6f2ePreflightCore_(opts) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var runtimeId = ''; try { runtimeId = ss ? String(ss.getId()) : ''; } catch (e) {}
   var expectedId = (typeof PRODUCTION_DB_SPREADSHEET_ID_ !== 'undefined') ? String(PRODUCTION_DB_SPREADSHEET_ID_ || '') : '';
@@ -2326,7 +2331,7 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
     authority_blockers: blockers,
     verdict: verdict
   };
-  Logger.log('R6F2_PREFLIGHT ' + JSON.stringify(out, null, 2));
+  if (!(opts && opts.quiet)) Logger.log('R6F2_PREFLIGHT ' + JSON.stringify(out, null, 2));
   return out;
 }
 
@@ -2335,7 +2340,7 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
 // expected counts, route identity, planning cycle, quantities, no orphan/dup — that the two NOT_SAFE legacy headers are
 // unchanged, and that NO unrelated (non-frozen) active K2 scope changed shape. Without a frozen arg it does the generic
 // K2-consistency check. Read-only; never writes.
-function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen) {
+function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen, opts) {
   var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
   function s(v) { return TEMP_str_(v); }
   var active = (H.rows || []).filter(function (r) { return TEMP_R6F2_ACTIVE_[s(r.status).toLowerCase()]; });
@@ -2384,7 +2389,7 @@ function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen) {
   } else {
     out.verdict = (orphanLines === 0 && dupSkuWindowInHeader === 0 && dupK2 === 0) ? 'K2_PACKAGE_CONSISTENT' : 'RECONCILIATION_REQUIRED';
   }
-  Logger.log('R6F2_VALIDATE_PACKAGE ' + JSON.stringify(out, null, 2));
+  if (!(opts && opts.quiet)) Logger.log('R6F2_VALIDATE_PACKAGE ' + JSON.stringify(out, null, 2));
   return out;
 }
 function TEMP_R6F2D_VALIDATE_CONTROLLED_SCOPE(frozen) { return TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen); }
@@ -2574,8 +2579,13 @@ function TEMP_R6F2A_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() { return TEMP_R6F2_
 // partial), an aggregated company/country when >1 marketplace exists, or any scope carrying a non-AI_RANKED / parity-
 // mismatched line. The frozen tuple (company|country|marketplace) is exactly what the controlled run must request.
 var TEMP_R6F2A_FREEZE_TOOL_ = 'TEMP_R6F2D_FREEZE_CONTROLLED_INVENTORY_SCOPE';
-function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) {
-  var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+// F1-7N-FA-3C-R6F2E1 — quiet-capable canonical freeze. opts.quiet suppresses ONLY the verbose R6F2D_FREEZE Logger
+// entry AND makes the internal preflight run quiet, so the R6F2E envelope-first log is never preceded by a large
+// nested log. Same computation/gates either way; the public entrypoint keeps the full log.
+function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) { return TEMP_r6f2eFreezeCore_(scopeArg, { quiet: false }); }
+function TEMP_r6f2eFreezeCore_(scopeArg, opts) {
+  var quiet = !!(opts && opts.quiet);
+  var pre = TEMP_r6f2ePreflightCore_({ quiet: quiet });
   var cleanList = (pre && pre.clean_marketplace_scopes) ? pre.clean_marketplace_scopes : [];
   var scope = scopeArg || pre.safe_controlled_scope || null;
   if (!scope || !scope.company || !scope.country || !scope.marketplace) {
@@ -2636,7 +2646,7 @@ function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) {
     scope_checksum: TEMP_r5bHash_(checksumParts.sort().join('|')),
     R6F2D_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
   };
-  Logger.log('R6F2D_FREEZE ' + JSON.stringify(out, null, 2));
+  if (!quiet) Logger.log('R6F2D_FREEZE ' + JSON.stringify(out, null, 2));
   return out;
 }
 function TEMP_R6F2D_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) { return TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg); }
@@ -2702,10 +2712,13 @@ function TEMP_r6f2eFreezeGate_(sel, checks, expected) {
 
 // ---- OBJECTIVE B — compact zero-argument gate summary (read-only) ----------------------------------------------
 function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
-  var out = { tool: 'TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE', mode: 'STRICTLY READ-ONLY' };
+  var out = { tool: 'TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE', mode: 'STRICTLY READ-ONLY',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
   try {
-    var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
-    var diag = TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING();
+    // R6F2E1 — call the canonical preflight + diagnostic QUIETLY so no large nested R6F2_PREFLIGHT / R6F2C_DIAGNOSE log
+    // precedes (and truncates) the compact gate summary. Same calculation as the verbose public entrypoints.
+    var pre = TEMP_r6f2ePreflightCore_({ quiet: true });
+    var diag = TEMP_r6f2eDiagnoseCore_({ quiet: true });
     var dry = pre.dry_assembly || {};
     var g = (dry && dry.global) ? dry.global : {};
     var T = g.stage_tally || {};
@@ -2725,7 +2738,8 @@ function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
       real_parity_route_query_field_mismatch: cp.route_query_field_mismatch_count != null ? cp.route_query_field_mismatch_count : null,
       real_parity_ai_pair_mismatch: cp.real_ai_pair_mismatch_count != null ? cp.real_ai_pair_mismatch_count : null,
       real_parity_selected_route_invalid: cp.selected_route_invalid_count != null ? cp.selected_route_invalid_count : null,
-      parity_exclusions: cp.exclusion_reason_counts || {},
+      parity_exclusion_count: (cp.route_query_parity_excluded_by_source != null || cp.route_query_parity_excluded_by_destination != null) ? ((cp.route_query_parity_excluded_by_source || 0) + (cp.route_query_parity_excluded_by_destination || 0)) : null,
+      parity_exclusion_reasons: cp.exclusion_reason_counts || {},
       conservation_ok: g.conservation_ok === true, over_allocation_count: g.over_allocation_count || 0,
       duplicate_deterministic_ids: g.deterministic_id_duplicate_count || 0, projected_conflict: g.projected_CONFLICT || 0,
       header_schema_exact_30: pre.header_schema_exact_30, line_schema_exact_30: pre.line_schema_exact_30,
@@ -2736,15 +2750,56 @@ function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
     };
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.reason = 'GATE_SUMMARY_THREW:' + (e && e.message ? e.message : e); }
-  Logger.log('R6F2E_GATE_SUMMARY ' + JSON.stringify(out, null, 2));   // compact, non-truncated (single object)
+  Logger.log('R6F2E_GATE_SUMMARY ' + JSON.stringify(out, null, 2));   // the ONE primary entry; no nested verbose log precedes it
+  return out;
+}
+
+// ---- OBJECTIVE C (R6F2E1) — compact parity evidence (read-only) ------------------------------------------------
+// Emits ONE compact object with the reconciled parity denominator + the FIVE fingerprinted exclusions ONLY — never
+// the carrier tables / examples / full dry assembly (which truncate). Calls the diagnostic core QUIETLY.
+function TEMP_R6F2E_SUMMARIZE_PARITY_EVIDENCE() {
+  var out = { tool: 'TEMP_R6F2E_SUMMARIZE_PARITY_EVIDENCE', mode: 'STRICTLY READ-ONLY',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
+  try {
+    var diag = TEMP_r6f2eDiagnoseCore_({ quiet: true });
+    var cp = (diag && diag.candidate_parity) ? diag.candidate_parity : {};
+    var realManual = cp.real_manual_method_mismatch_count != null ? cp.real_manual_method_mismatch_count : null;
+    var realAi = cp.real_ai_pair_mismatch_count != null ? cp.real_ai_pair_mismatch_count : null;
+    var selInvalid = cp.selected_route_invalid_count != null ? cp.selected_route_invalid_count : null;
+    var routeQuery = cp.route_query_field_mismatch_count != null ? cp.route_query_field_mismatch_count : null;
+    var exclusionCount = (cp.route_query_parity_excluded_by_source || 0) + (cp.route_query_parity_excluded_by_destination || 0);
+    var reconciled = (realManual === 0 && realAi === 0 && selInvalid === 0 && routeQuery === 0);
+    out.evidence = {
+      global_positive_lines: cp.global_positive_lines != null ? cp.global_positive_lines : null,
+      route_query_parity_eligible: cp.route_query_parity_eligible != null ? cp.route_query_parity_eligible : null,
+      manual_parity_eligible: cp.manual_parity_eligible != null ? cp.manual_parity_eligible : null,
+      ai_pair_parity_eligible: cp.ai_pair_parity_eligible != null ? cp.ai_pair_parity_eligible : null,
+      exclusion_count: exclusionCount,
+      exclusion_reason_counts: cp.exclusion_reason_counts || {},
+      exclusions: cp.exclusions || [],                          // five fingerprinted lines — small enough for one log
+      resolved_lane_mismatch_count: realManual,
+      resolved_lane_mismatches: cp.resolved_lane_mismatches || [],
+      real_ai_pair_mismatch_count: realAi,
+      selected_route_invalid_count: selInvalid,
+      route_query_field_mismatch_count: routeQuery,
+      naive_manual_method_option_mismatch_count: cp.naive_manual_method_option_mismatch_count != null ? cp.naive_manual_method_option_mismatch_count : null
+    };
+    out.verdict = (diag && diag.available && reconciled) ? 'PARITY_EVIDENCE_RECONCILED' : (diag && diag.available ? 'PARITY_EVIDENCE_MISMATCH_PRESENT' : 'PARITY_EVIDENCE_UNAVAILABLE');
+    out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'PARITY_EVIDENCE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2E_PARITY_EVIDENCE ' + JSON.stringify(out, null, 2));   // the ONE primary entry
   return out;
 }
 
 // ---- OBJECTIVE C — zero-argument EXACT-JP controlled-scope freeze (read-only) -----------------------------------
-function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE() {
-  var out = { tool: 'TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE', mode: 'STRICTLY READ-ONLY (no write, no atomic call)' };
+function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE(opts) {
+  var quiet = !!(opts && opts.quiet);   // internal callers (persist) pass quiet:true; the dropdown passes nothing → verbose
+  var out = { tool: 'TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE', mode: 'STRICTLY READ-ONLY (no write, no atomic call)',
+    output_contract: 'ENVELOPE_FIRST_THEN_NUMBERED_CHUNKS', nested_verbose_logs_suppressed: 'YES' };
   try {
-    var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+    // R6F2E1 — quiet cores so the compact envelope is the FIRST Logger entry (never preceded by the full preflight or
+    // full canonical-freeze object). Gates are byte-identical to the verbose path.
+    var pre = TEMP_r6f2ePreflightCore_({ quiet: true });
     var sel = pre.safe_controlled_scope || null;
     var dry = pre.dry_assembly || {};
     var mkList = (dry && dry.mk_scopes) ? dry.mk_scopes : [];
@@ -2768,13 +2823,13 @@ function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE() {
       out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = gate.drift_reasons;
       out.observed = { selected_scope: sel, live_checks: checks, expected_scope: e, expected_planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, expected_legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_ };
       out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
-      Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2));
+      if (!quiet) Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2));
       return out;
     }
-    // gate passed → call the canonical parameterized freeze internally with the EXACT expected scope (never the raw
-    // preflight-selected object, so nothing outside the frozen constant can be substituted).
-    var fr = TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE({ company: e.company, country: e.country, marketplace: e.marketplace });
-    if (!fr || fr.frozen !== true) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = ['CANONICAL_FREEZE_REFUSED:' + (fr && fr.reason ? fr.reason : 'UNKNOWN')]; Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); return out; }
+    // gate passed → call the canonical parameterized freeze internally (QUIET) with the EXACT expected scope (never the
+    // raw preflight-selected object, so nothing outside the frozen constant can be substituted).
+    var fr = TEMP_r6f2eFreezeCore_({ company: e.company, country: e.country, marketplace: e.marketplace }, { quiet: true });
+    if (!fr || fr.frozen !== true) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = ['CANONICAL_FREEZE_REFUSED:' + (fr && fr.reason ? fr.reason : 'UNKNOWN')]; if (!quiet) Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); return out; }
 
     // pre-run DB baselines + unrelated-scope checksum (read-only).
     var H0 = TEMP_readObjects_('shipping_allocation_drafts'), L0 = TEMP_readObjects_('shipping_allocation_draft_lines');
@@ -2800,19 +2855,23 @@ function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE() {
       unrelated_scope_active_row_checksum: TEMP_r5bHash_(unrelatedParts.sort().join('|')),
       legacy_header_checksum: pre.empty_header_classification_checksum || null,
       freeze_checksum: fr.scope_checksum || null,
+      output_contract: 'ENVELOPE_FIRST_THEN_NUMBERED_CHUNKS', nested_verbose_logs_suppressed: 'YES',
       verdict: 'CONTROLLED_SCOPE_FROZEN_READ_ONLY'
     };
     out.envelope = envelope;
     out.groups = fr.groups; out.lines = fr.lines;   // full underlying freeze detail (also logged in chunks below)
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
-    // Compact envelope ALWAYS in one log entry (never truncated), then the full line evidence in numbered chunks.
-    Logger.log('R6F2E_FREEZE_ENVELOPE ' + JSON.stringify(envelope, null, 2));
-    var evidence = (fr.lines || []).map(function (ln) { return { header_id: ln.header_id, line_id: ln.line_id, route_evidence_fp: ln.route_evidence_fp }; });
-    var CHUNK = 20, total = Math.max(1, Math.ceil(evidence.length / CHUNK));
-    for (var c = 0; c < total; c++) {
-      Logger.log('R6F2E_FREEZE_EVIDENCE ' + JSON.stringify({ freeze_checksum: envelope.freeze_checksum, chunk_index: c + 1, chunk_total: total, rows: evidence.slice(c * CHUNK, (c + 1) * CHUNK) }, null, 2));
+    // R6F2E1 — the compact envelope is ALWAYS the FIRST Logger entry (and, being small, is never truncated); the full
+    // line evidence follows in numbered chunks so that even if a later chunk truncates, the envelope stays visible.
+    if (!quiet) {
+      Logger.log('R6F2E_FREEZE_ENVELOPE ' + JSON.stringify(envelope, null, 2));
+      var evidence = (fr.lines || []).map(function (ln) { return { header_id: ln.header_id, line_id: ln.line_id, route_evidence_fp: ln.route_evidence_fp }; });
+      var CHUNK = 20, total = Math.max(1, Math.ceil(evidence.length / CHUNK));
+      for (var c = 0; c < total; c++) {
+        Logger.log('R6F2E_FREEZE_EVIDENCE ' + JSON.stringify({ freeze_checksum: envelope.freeze_checksum, chunk_index: c + 1, chunk_total: total, rows: evidence.slice(c * CHUNK, (c + 1) * CHUNK) }, null, 2));
+      }
     }
-  } catch (e2) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.reason = 'FREEZE_SELECTED_THREW:' + (e2 && e2.message ? e2.message : e2); Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); }
+  } catch (e2) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.reason = 'FREEZE_SELECTED_THREW:' + (e2 && e2.message ? e2.message : e2); if (!quiet) Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); }
   return out;
 }
 
@@ -2832,8 +2891,9 @@ function TEMP_r6f2eReduceFreezeToken_(fr) {
   };
 }
 function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN() {
-  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN', mode: 'DRY_RUN (writes nothing)' };
-  var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE();
+  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN', mode: 'DRY_RUN (writes nothing)',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
+  var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE({ quiet: true });
   if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') {
     out.verdict = 'DRY_RUN_BLOCKED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_DRY_RUN ' + JSON.stringify(out, null, 2)); return out;
   }
@@ -2848,14 +2908,15 @@ function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN() {
   return out;
 }
 function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT() {
-  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT', mode: 'EXPLICIT METADATA WRITE (Script Property only)' };
+  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT', mode: 'EXPLICIT METADATA WRITE (Script Property only)',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
   try {
     var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
     if (flagOn !== false) { out.verdict = 'COMMIT_REFUSED_FLAG_NOT_FALSE'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     if (!TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ || TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ === 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE') {
       out.verdict = 'COMMIT_REFUSED_CONFIRMATION_REQUIRED'; out.hint = 'Run DRY_RUN, copy freeze_checksum_to_confirm into TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_, save, then re-run COMMIT.'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out;
     }
-    var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE();
+    var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE({ quiet: true });
     if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') { out.verdict = 'COMMIT_REFUSED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     if (TEMP_str_(TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_) !== TEMP_str_(fr.envelope.freeze_checksum)) { out.verdict = 'COMMIT_REFUSED_CHECKSUM_MISMATCH'; out.confirmed = TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_; out.live_freeze_checksum = fr.envelope.freeze_checksum; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     var token = TEMP_r6f2eReduceFreezeToken_({ scope: fr.envelope.requested_scope, scope_checksum: fr.envelope.freeze_checksum, groups: fr.groups, lines: fr.lines });
@@ -2869,15 +2930,17 @@ function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT() {
   return out;
 }
 function TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE() {
-  var out = { tool: 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE', mode: 'STRICTLY READ-ONLY' };
+  var out = { tool: 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE', mode: 'STRICTLY READ-ONLY',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
     if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; out.hint = 'Run PERSIST DRY_RUN + COMMIT first (only after a controlled run is authorized).'; Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2)); return out; }
     var frozen = JSON.parse(raw);
     out.loaded_scope = frozen.scope; out.loaded_freeze_checksum = frozen.scope_checksum;
-    // The validator only reads the STORED ids/scope — it cannot select or widen scope. Pre-generation it will report
-    // present_expected_headers=0 → RECONCILIATION_REQUIRED (expected; no generation is authorized yet).
-    out.validation = TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen);
+    // The validator only reads the STORED ids/scope — it cannot select or widen scope. QUIET so no nested
+    // R6F2_VALIDATE_PACKAGE log precedes this compact primary. Pre-generation it reports present_expected_headers=0 →
+    // RECONCILIATION_REQUIRED (expected; no generation is authorized yet).
+    out.validation = TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen, { quiet: true });
     out.scope_widening_possible = false;
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.verdict = 'VALIDATE_FROM_STORE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
@@ -2909,7 +2972,11 @@ function TEMP_r6f2bDist_(values) {          // { fingerprint: count } distributi
   var keys = Object.keys(d).sort(function (a, b) { return d[b] - d[a]; }).slice(0, 25);
   var out = {}; keys.forEach(function (k) { out[k] = d[k]; }); if (Object.keys(d).length > 25) out['…(+' + (Object.keys(d).length - 25) + ' more)'] = 1; return out;
 }
-function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
+// F1-7N-FA-3C-R6F2E1 — quiet-capable diagnostic core. opts.quiet suppresses ONLY the large R6F2C_DIAGNOSE Logger entry
+// (carrier tables + fingerprint distributions); the returned object is identical. The R6F2E gate + parity-evidence
+// wrappers read candidate_parity from the quiet core so their compact primary entry is not preceded by a truncating log.
+function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() { return TEMP_r6f2eDiagnoseCore_({ quiet: false }); }
+function TEMP_r6f2eDiagnoseCore_(opts) {
   var res = { tool: 'TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING', mode: 'STRICTLY READ-ONLY (no write, no atomic call)', available: false };
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3124,7 +3191,7 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     res.available = true;
     res.R6F2D_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { res.reason = 'DIAGNOSTIC_THREW:' + (e && e.message ? e.message : e); }
-  Logger.log('R6F2C_DIAGNOSE ' + JSON.stringify(res, null, 2));
+  if (!(opts && opts.quiet)) Logger.log('R6F2C_DIAGNOSE ' + JSON.stringify(res, null, 2));
   return res;
 }
 // R6F2C alias

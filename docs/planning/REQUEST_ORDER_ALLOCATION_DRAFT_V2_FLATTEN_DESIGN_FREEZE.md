@@ -1321,3 +1321,28 @@ The read-only freeze **never** writes. Persistence is a separate, explicit, conf
 
 ### Tests
 `inventory-global-parity-population-zero-arg-gate-f1-7n-fa-3c-r6f2e.test.js` (72/0): parity-population classifier (multi-pool/source/dest N/A; resolved-lane mismatch stays a blocker), production multi-pool → empty manual options, denominator/exclusion source contract, gate-flag gating (`may_enable_flag` always false), freeze drift gate (JP passes; CA/UK/cycle/count/parity/flag/checksum/over-alloc/dup/conflict/conservation refused), zero-spreadsheet-write freeze, DRY_RUN/COMMIT separation, validator read-only + cannot-widen, no K3 write path. Full sweep = known 4-test baseline, **0 new**.
+
+## §52 — F1-7N-FA-3C-DRAFT-MODEL-R6F2E1-QUIET-GATE — quiet canonical helpers + non-truncated compact output (2026-08-23, staged OFF)
+
+TEMP-tooling + focused tests + this doc only. **No core, no bundle rebuild, no frontend, no 00_config, no DB mutation.** No live write, no freeze, no Script-Property write, no flag flip, no AI Plan, no Submit. `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` stays false.
+
+### Truncation root cause
+`TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE()` called the **public** preflight (and diagnostic), each of which `Logger.log`s its full object first. The preflight object (with the embedded `dry_assembly`) and the diagnostic object (carrier tables + fingerprint distributions) are large; Apps Script then reports *"Logging output too large. Truncating output."* and the compact `R6F2E_GATE_SUMMARY` was not reliably visible. The same risk applied to the zero-arg freeze (nested full preflight + full `R6F2D_FREEZE`), the persist dry-run, and the validator (nested `R6F2_VALIDATE_PACKAGE`).
+
+### Quiet canonical cores (Objective A — one calculation, byte-equivalent)
+Each canonical calculation is now a **single** body with a `opts.quiet` flag that gates **only** its trailing `Logger.log` — no forked/duplicated logic:
+- `TEMP_r6f2ePreflightCore_(opts)` ← `TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY()` (public, verbose) delegates to it.
+- `TEMP_r6f2eDiagnoseCore_(opts)` ← `TEMP_R6F2B/C_DIAGNOSE...` (public, verbose).
+- `TEMP_r6f2eFreezeCore_(scopeArg, opts)` ← `TEMP_R6F2A/D_FREEZE...` (public, verbose); when quiet it also runs the internal preflight quiet.
+- `TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen, opts)` — the validator gained an optional `opts.quiet`.
+
+**Equivalence proof** (runtime, vm sandbox): the preflight core called `{quiet:false}` vs `{quiet:true}` returns byte-identical `verdict / schema gates / dry_assembly (parity, clean scopes, deterministic ids, conservation, conflicts) / legacy checksum / blockers`; the only difference is one suppressed `R6F2_PREFLIGHT` log (verbose=1, quiet=0). The public entrypoint returns the same object as `core({quiet:false})`.
+
+### Compact outputs
+- **B — gate summary:** calls the preflight + diagnostic **cores quietly**; emits exactly **one** primary `R6F2E_GATE_SUMMARY {…}`, no nested `R6F2_PREFLIGHT`/`R6F2C_DIAGNOSE`; carries `output_contract = ONE_PRIMARY_LOG_ENTRY`, `nested_verbose_logs_suppressed = YES`, all gate fields incl. the four real parity counts, `parity_exclusion_count`/`parity_exclusion_reasons`, `may_freeze`, `may_enable_flag=false`.
+- **C — parity evidence:** new `TEMP_R6F2E_SUMMARIZE_PARITY_EVIDENCE()` calls the diagnostic core quietly and emits **one** compact object — `global_positive_lines`, eligible counts, `exclusion_count`, `exclusion_reason_counts`, the five fingerprinted `exclusions`, `resolved_lane_mismatch_count` + `resolved_lane_mismatches`, real ai-pair / selected-route-invalid / route-query counts — verdict **`PARITY_EVIDENCE_RECONCILED`**. No carrier tables / examples / full dry assembly.
+- **D — quiet freeze:** `TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE(opts)` runs the preflight + canonical freeze **cores quietly**, so the compact **envelope is the FIRST `Logger.log`** (`R6F2E_FREEZE_ENVELOPE`), then numbered `R6F2E_FREEZE_EVIDENCE` chunks — envelope stays visible even if a later chunk truncates. `output_contract = ENVELOPE_FIRST_THEN_NUMBERED_CHUNKS`. Gates unchanged (exact ResTW/JP/Amazon, RECO-2026-08, 5/5/5; drift → `FREEZE_REFUSED_LIVE_DRIFT`). Internal `{quiet:true}` calls (from persist) log nothing.
+- **E — persist/validate/clear:** each public zero-arg step calls the freeze/validator **quietly** and emits its own compact primary (`R6F2E_PERSIST_DRY_RUN` / `_COMMIT` / `R6F2E_VALIDATE_FROM_STORE` / `R6F2E_CLEAR`) before any evidence. The read-only freeze still **never** writes a Script Property; the checksum-confirmation gate is unchanged.
+
+### Tests
+`inventory-quiet-gate-nontruncated-f1-7n-fa-3c-r6f2e1.test.js` (42/0): runtime quiet↔verbose byte-equivalence + log-count, gate/parity one-primary-log + no nested verbose, envelope-first ordering, drift refusal, DRY_RUN/COMMIT/validator no-nested-log + zero writes, no generation call. Fact-tests re-pinned to the relocated cores (r6f2, r6f2a, r6f2d, r6f2e). Full sweep = known 4-test baseline, **0 new**.

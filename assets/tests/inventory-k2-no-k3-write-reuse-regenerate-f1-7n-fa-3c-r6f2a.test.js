@@ -100,11 +100,12 @@ var dry = extractFn(TEMP, 'TEMP_r6f2aDryAssembly_');
 ok(/KMWRB\.buildWeeklySourceLines/.test(dry) && /weeklyAiPlanK2AllocatedLines_/.test(dry) && /KMWRR\.buildK2GenerationPlan/.test(dry), 'D1. dry assembly runs the REAL chain');
 ok(dry.indexOf('handleUpsertShippingAllocationDraftAtomic_') < 0 && dry.indexOf('.setValue(') < 0 && dry.indexOf('appendRow(') < 0, 'D2. dry assembly NEVER writes (no atomic endpoint, no setValue/appendRow)');
 ok(/blocked_by_reason/.test(dry) && /fully_routed_lines/.test(dry) && /cost_not_comparable_count/.test(dry) && /over_allocation_count/.test(dry) && /projected_CREATE/.test(dry), 'D3. dry assembly produces the route-coverage + projected CREATE/REUSE/CONFLICT metrics');
-var pre = extractFn(TEMP, 'TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY');
+// R6F2E1 — the public preflight is a thin quiet-capable delegator; the calculation body lives in the core.
+var pre = extractFn(TEMP, 'TEMP_r6f2ePreflightCore_');
 ok(/TEMP_r6f2aDryAssembly_\(\)/.test(pre), 'D4. PREFLIGHT calls the dry assembly');
 ok(/READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN/.test(pre) && /dryGlobalClean/.test(pre), 'D5. scoped READY vs global READY vs HALT (gated on real route coverage)');
 ok(/function TEMP_R6F2A_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY\(\)/.test(TEMP), 'D6. R6F2A preflight alias present');
-var frz = extractFn(TEMP, 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE');
+var frz = extractFn(TEMP, 'TEMP_r6f2eFreezeCore_');
 ok(frz.indexOf('handleUpsertShippingAllocationDraftAtomic_') < 0 && frz.indexOf('.setValue(') < 0 && /expected_header_id/.test(frz) && /scope_checksum/.test(frz) && /expected_line_ids/.test(frz), 'D7. FREEZE is read-only + captures expected K2 ids + deltas + checksum');
 
 // ============================================================ F — empty headers untouched
