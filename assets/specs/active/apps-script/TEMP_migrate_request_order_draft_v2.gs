@@ -2642,6 +2642,257 @@ function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) {
 function TEMP_R6F2D_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) { return TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg); }
 
 // ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2E — CONTROLLED-RUN OPERATIONAL GATE. Zero-argument entrypoints for the Apps Script editor
+// dropdown (which cannot pass function arguments): a compact gate summary (B), an exact-JP-scope zero-arg freeze (C),
+// and a safe zero-arg validator persistence mechanism (D). All read-only EXCEPT the explicit, confirmation-gated
+// Script-Property write in TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT (never a spreadsheet/business-table write, never a
+// flag flip, never generation). The exact controlled scope is FROZEN to constants so nothing is silently substituted.
+// ================================================================================================================
+var TEMP_R6F2E_EXPECTED_SCOPE_ = { company: 'ResTW', country: 'JP', marketplace: 'Amazon' };
+var TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_ = 'RECO-2026-08';
+var TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_ = '8a51b860';
+var TEMP_R6F2E_EXPECTED_CLEAN_COUNT_ = 5;
+var TEMP_R6F2E_STORE_PROP_KEY_ = 'R6F2E_CONTROLLED_FROZEN_SCOPE_V1';
+var TEMP_R6F2E_FREEZE_VERSION_ = 'R6F2E-FREEZE-1';
+// USER confirmation gate for the metadata write (Objective D, option B): the DRY_RUN prints the live freeze checksum;
+// the USER copies it into this constant and re-saves the file before running COMMIT. Until then COMMIT refuses.
+var TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE';
+
+// ---- PURE decision helpers (no Apps Script dependency; unit-tested in the R6F2E test) ---------------------------
+var TEMP_R6F2E_SRC_BLOCKS_ = { ROUTE_SOURCE_UNKNOWN: 1, ROUTE_SOURCE_INACTIVE: 1, ROUTE_SOURCE_MULTI_POOL_UNRESOLVED: 1 };
+var TEMP_R6F2E_DST_BLOCKS_ = { DESTINATION_MISSING: 1, DESTINATION_UNKNOWN: 1, DESTINATION_INACTIVE: 1 };
+// Parity population membership from a production deriveRoute block token. Source/destination blocks → PARITY_NOT_
+// APPLICABLE (excluded); everything else is eligible (a constructible lane the manual set can be compared on).
+function TEMP_r6f2eParityMembership_(prodBlockTok) {
+  var tok = prodBlockTok || '';
+  if (TEMP_R6F2E_SRC_BLOCKS_[tok]) return { eligible: false, layer: 'excluded_by_source', reason: 'PARITY_NOT_APPLICABLE_SOURCE_UNRESOLVED' };
+  if (TEMP_R6F2E_DST_BLOCKS_[tok]) return { eligible: false, layer: 'excluded_by_destination', reason: 'PARITY_NOT_APPLICABLE_DESTINATION_UNRESOLVED' };
+  return { eligible: true, layer: 'eligible', reason: null };
+}
+// A resolved-lane manual-set difference stays a blocker (only eligible lines can be a real mismatch).
+function TEMP_r6f2eResolvedLaneMismatch_(membership, diagSetSorted, prodSetSorted) {
+  if (!membership || !membership.eligible) return false;
+  return JSON.stringify(diagSetSorted || []) !== JSON.stringify(prodSetSorted || []);
+}
+// may_freeze only for the SCOPED-READY verdict AND the exact expected clean marketplace. may_enable_flag ALWAYS false
+// during this task (no generation is authorized).
+function TEMP_r6f2eGateFlags_(verdict, safeScope, expected) {
+  var e = expected || TEMP_R6F2E_EXPECTED_SCOPE_;
+  var may_freeze = (verdict === 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN' && !!safeScope
+    && safeScope.company === e.company && safeScope.country === e.country && safeScope.marketplace === e.marketplace);
+  return { may_freeze: may_freeze, may_enable_flag: false };
+}
+// The exact-scope freeze drift gate. Returns ok + typed reasons; ANY drift → FREEZE_REFUSED_LIVE_DRIFT (nothing frozen).
+function TEMP_r6f2eFreezeGate_(sel, checks, expected) {
+  var e = expected || {};
+  var reasons = [];
+  if (!sel || sel.company !== e.company || sel.country !== e.country || sel.marketplace !== e.marketplace) reasons.push('SCOPE_NOT_EXACT_EXPECTED');
+  if (TEMP_str_(checks.planning_cycle) !== TEMP_str_(e.planning_cycle)) reasons.push('PLANNING_CYCLE_DRIFT');
+  if (!(checks.positive === e.clean_count && checks.ai_ranked === e.clean_count && checks.fully_routed === e.clean_count)) reasons.push('COUNT_DRIFT');
+  if (checks.blocked_total !== 0) reasons.push('SCOPE_NOT_CLEAN');
+  if (checks.parity_mismatch_total !== 0) reasons.push('PARITY_MISMATCH');
+  if (checks.conservation_ok !== true) reasons.push('CONSERVATION_NOT_OK');
+  if (checks.over_allocation !== 0) reasons.push('OVER_ALLOCATION');
+  if (checks.duplicate_ids !== 0) reasons.push('DUPLICATE_DETERMINISTIC_IDS');
+  if (checks.projected_conflict !== 0) reasons.push('PROJECTED_CONFLICT');
+  if (checks.flag_false !== true) reasons.push('INVENTORY_FLAG_NOT_FALSE');
+  if (TEMP_str_(checks.legacy_checksum) !== TEMP_str_(e.legacy_checksum)) reasons.push('LEGACY_HEADER_CHECKSUM_DRIFT');
+  return { ok: reasons.length === 0, verdict: reasons.length === 0 ? 'CONTROLLED_SCOPE_FROZEN_READ_ONLY' : 'FREEZE_REFUSED_LIVE_DRIFT', drift_reasons: reasons };
+}
+
+// ---- OBJECTIVE B — compact zero-argument gate summary (read-only) ----------------------------------------------
+function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
+  var out = { tool: 'TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE', mode: 'STRICTLY READ-ONLY' };
+  try {
+    var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+    var diag = TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING();
+    var dry = pre.dry_assembly || {};
+    var g = (dry && dry.global) ? dry.global : {};
+    var T = g.stage_tally || {};
+    var sel = pre.safe_controlled_scope || null;
+    var cp = (diag && diag.candidate_parity) ? diag.candidate_parity : {};
+    var flags = TEMP_r6f2eGateFlags_(pre.verdict, sel, TEMP_R6F2E_EXPECTED_SCOPE_);
+    out.summary = {
+      verdict: pre.verdict,
+      selected_scope: sel ? { company: sel.company, country: sel.country, marketplace: sel.marketplace } : null,
+      planning_cycle: sel ? sel.planning_cycle : ((pre.gap_job_authority && pre.gap_job_authority.planning_cycle) || null),
+      calculation_run_id_fingerprint: sel ? sel.calculation_run_id_fingerprint : null,
+      selected_positive: sel ? sel.positive : null, selected_ai_ranked: sel ? sel.ai_rankable : null, selected_fully_routed: sel ? sel.fully_routed : null,
+      global_positive: g.positive_recommendation_count || 0, global_ai_ranked: T.method_ai_ranked || 0, global_fully_routed: g.fully_routed_lines || 0,
+      blocked_source: T.source_blocked || 0, blocked_destination: T.dest_blocked || 0, blocked_no_method: T.method_blocked || 0,
+      manual_only: g.manual_only_lines || 0, last_mile_ambiguous: g.authority_required_lines || 0, multi_pool_unresolved: g.multi_pool_lines || 0,
+      real_parity_manual_method_mismatch: cp.real_manual_method_mismatch_count != null ? cp.real_manual_method_mismatch_count : null,
+      real_parity_route_query_field_mismatch: cp.route_query_field_mismatch_count != null ? cp.route_query_field_mismatch_count : null,
+      real_parity_ai_pair_mismatch: cp.real_ai_pair_mismatch_count != null ? cp.real_ai_pair_mismatch_count : null,
+      real_parity_selected_route_invalid: cp.selected_route_invalid_count != null ? cp.selected_route_invalid_count : null,
+      parity_exclusions: cp.exclusion_reason_counts || {},
+      conservation_ok: g.conservation_ok === true, over_allocation_count: g.over_allocation_count || 0,
+      duplicate_deterministic_ids: g.deterministic_id_duplicate_count || 0, projected_conflict: g.projected_CONFLICT || 0,
+      header_schema_exact_30: pre.header_schema_exact_30, line_schema_exact_30: pre.line_schema_exact_30,
+      inventory_flag_value: pre.inventory_flag_remains_false === 'YES' ? 'false' : (pre.inventory_flag_remains_false === 'NO' ? 'true' : 'unknown'),
+      legacy_header_checksum: pre.empty_header_classification_checksum || null,
+      may_freeze: flags.may_freeze, may_enable_flag: flags.may_enable_flag,
+      expected_controlled_scope: TEMP_R6F2E_EXPECTED_SCOPE_
+    };
+    out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.reason = 'GATE_SUMMARY_THREW:' + (e && e.message ? e.message : e); }
+  Logger.log('R6F2E_GATE_SUMMARY ' + JSON.stringify(out, null, 2));   // compact, non-truncated (single object)
+  return out;
+}
+
+// ---- OBJECTIVE C — zero-argument EXACT-JP controlled-scope freeze (read-only) -----------------------------------
+function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE() {
+  var out = { tool: 'TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE', mode: 'STRICTLY READ-ONLY (no write, no atomic call)' };
+  try {
+    var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+    var sel = pre.safe_controlled_scope || null;
+    var dry = pre.dry_assembly || {};
+    var mkList = (dry && dry.mk_scopes) ? dry.mk_scopes : [];
+    var e = TEMP_R6F2E_EXPECTED_SCOPE_;
+    var mk = null;
+    for (var i = 0; i < mkList.length; i++) { var m = mkList[i]; if (m.company === e.company && m.country === e.country && m.marketplace === e.marketplace) { mk = m; break; } }
+    var checks = {
+      planning_cycle: sel ? sel.planning_cycle : null,
+      positive: mk ? mk.positive : (sel ? sel.positive : null), ai_ranked: mk ? mk.ai_ranked : (sel ? sel.ai_rankable : null), fully_routed: mk ? mk.fully_routed : (sel ? sel.fully_routed : null),
+      blocked_total: mk ? ((mk.source_blocked || 0) + (mk.dest_blocked || 0) + (mk.no_method || 0) + (mk.manual_only || 0) + (mk.authority_required || 0)) : 1,
+      parity_mismatch_total: mk ? ((mk.ai_pair_mismatch || 0) + (mk.selected_route_invalid || 0)) : 1,
+      conservation_ok: mk ? (mk.conserved !== false) : false, over_allocation: mk ? (mk.over_allocation || 0) : 1,
+      duplicate_ids: mk ? (mk.dup_id || 0) : 1, projected_conflict: mk ? (mk.projected_conflict || 0) : 1,
+      flag_false: pre.inventory_flag_remains_false === 'YES', legacy_checksum: pre.empty_header_classification_checksum || null
+    };
+    var gate = TEMP_r6f2eFreezeGate_(sel, checks, {
+      company: e.company, country: e.country, marketplace: e.marketplace,
+      planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, clean_count: TEMP_R6F2E_EXPECTED_CLEAN_COUNT_, legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_
+    });
+    if (!gate.ok) {
+      out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = gate.drift_reasons;
+      out.observed = { selected_scope: sel, live_checks: checks, expected_scope: e, expected_planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, expected_legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_ };
+      out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+      Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2));
+      return out;
+    }
+    // gate passed → call the canonical parameterized freeze internally with the EXACT expected scope (never the raw
+    // preflight-selected object, so nothing outside the frozen constant can be substituted).
+    var fr = TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE({ company: e.company, country: e.country, marketplace: e.marketplace });
+    if (!fr || fr.frozen !== true) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = ['CANONICAL_FREEZE_REFUSED:' + (fr && fr.reason ? fr.reason : 'UNKNOWN')]; Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); return out; }
+
+    // pre-run DB baselines + unrelated-scope checksum (read-only).
+    var H0 = TEMP_readObjects_('shipping_allocation_drafts'), L0 = TEMP_readObjects_('shipping_allocation_draft_lines');
+    var fscope = fr.scope || {};
+    var unrelatedParts = [];
+    (H0.rows || []).forEach(function (r) {
+      if (!TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()]) return;
+      var inScope = (TEMP_str_(r.company) === TEMP_str_(fscope.company) && TEMP_str_(r.country) === TEMP_str_(fscope.country) && TEMP_str_(r.marketplace) === TEMP_str_(fscope.marketplace) && TEMP_str_(r.planning_cycle) === TEMP_str_(fscope.planning_cycle));
+      if (inScope) return;   // unrelated = every ACTIVE header NOT in the frozen scope
+      unrelatedParts.push(TEMP_str_(r.allocation_draft_id) + ':' + TEMP_str_(r.status) + ':' + ((typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(r) : ''));
+    });
+    var headerIds = (fr.groups || []).map(function (grp) { return TEMP_str_(grp.expected_header_id); }).sort();
+    var lineIds = (fr.lines || []).map(function (ln) { return TEMP_str_(ln.line_id); }).sort();
+    var envelope = {
+      freeze_version: TEMP_R6F2E_FREEZE_VERSION_,
+      requested_scope: { company: fscope.company, country: fscope.country, marketplace: fscope.marketplace },
+      planning_cycle: fscope.planning_cycle || null,
+      calculation_run_id_fingerprint: sel ? sel.calculation_run_id_fingerprint : null,
+      frozen_line_count: (fr.lines || []).length,
+      expected_k2_header_count: (fr.groups || []).length, expected_k2_line_count: (fr.lines || []).length,
+      expected_header_ids_sorted: headerIds, expected_line_ids_sorted: lineIds,
+      pre_run_db_header_rows: (H0.rows || []).length, pre_run_db_line_rows: (L0.rows || []).length,
+      unrelated_scope_active_row_checksum: TEMP_r5bHash_(unrelatedParts.sort().join('|')),
+      legacy_header_checksum: pre.empty_header_classification_checksum || null,
+      freeze_checksum: fr.scope_checksum || null,
+      verdict: 'CONTROLLED_SCOPE_FROZEN_READ_ONLY'
+    };
+    out.envelope = envelope;
+    out.groups = fr.groups; out.lines = fr.lines;   // full underlying freeze detail (also logged in chunks below)
+    out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+    // Compact envelope ALWAYS in one log entry (never truncated), then the full line evidence in numbered chunks.
+    Logger.log('R6F2E_FREEZE_ENVELOPE ' + JSON.stringify(envelope, null, 2));
+    var evidence = (fr.lines || []).map(function (ln) { return { header_id: ln.header_id, line_id: ln.line_id, route_evidence_fp: ln.route_evidence_fp }; });
+    var CHUNK = 20, total = Math.max(1, Math.ceil(evidence.length / CHUNK));
+    for (var c = 0; c < total; c++) {
+      Logger.log('R6F2E_FREEZE_EVIDENCE ' + JSON.stringify({ freeze_checksum: envelope.freeze_checksum, chunk_index: c + 1, chunk_total: total, rows: evidence.slice(c * CHUNK, (c + 1) * CHUNK) }, null, 2));
+    }
+  } catch (e2) { out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.reason = 'FREEZE_SELECTED_THREW:' + (e2 && e2.message ? e2.message : e2); Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2)); }
+  return out;
+}
+
+// ---- OBJECTIVE D — zero-argument validator persistence mechanism (option B: dedicated Script Property) ----------
+// The read-only freeze (C) NEVER writes. Persisting the frozen token is an EXPLICIT, separate, confirmation-gated
+// metadata write: DRY_RUN prints what would be stored + the checksum the USER must paste into
+// TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_; COMMIT writes ONLY after the pasted checksum matches the live freeze. The
+// stored token holds ids/counts/checksums/scope ONLY — no sku/qty, no spreadsheet cell, no business-table mutation,
+// and never triggers generation. VALIDATE reads the token and calls the canonical parameterized validator; it cannot
+// widen scope (it only reads the stored ids). CLEAR removes the token.
+function TEMP_r6f2eReduceFreezeToken_(fr) {
+  return {
+    frozen: true, freeze_version: TEMP_R6F2E_FREEZE_VERSION_,
+    scope: fr.scope || null, scope_checksum: fr.scope_checksum || null,
+    groups: (fr.groups || []).map(function (grp) { return { expected_header_id: grp.expected_header_id, expected_line_ids: grp.expected_line_ids || [] }; }),
+    lines: (fr.lines || []).map(function (ln) { return { line_id: ln.line_id }; })
+  };
+}
+function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN() {
+  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN', mode: 'DRY_RUN (writes nothing)' };
+  var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE();
+  if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') {
+    out.verdict = 'DRY_RUN_BLOCKED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_DRY_RUN ' + JSON.stringify(out, null, 2)); return out;
+  }
+  var token = TEMP_r6f2eReduceFreezeToken_({ scope: fr.envelope.requested_scope, scope_checksum: fr.envelope.freeze_checksum, groups: fr.groups, lines: fr.lines });
+  out.would_store_property_key = TEMP_R6F2E_STORE_PROP_KEY_;
+  out.would_store_token = token;
+  out.confirmation_required = 'Copy this checksum into the TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ constant, save the file, then run TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT.';
+  out.freeze_checksum_to_confirm = fr.envelope.freeze_checksum;
+  out.stores_spreadsheet_data = false; out.mutates_business_table = false;
+  out.verdict = 'DRY_RUN_READY';
+  Logger.log('R6F2E_PERSIST_DRY_RUN ' + JSON.stringify(out, null, 2));
+  return out;
+}
+function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT() {
+  var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT', mode: 'EXPLICIT METADATA WRITE (Script Property only)' };
+  try {
+    var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
+    if (flagOn !== false) { out.verdict = 'COMMIT_REFUSED_FLAG_NOT_FALSE'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    if (!TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ || TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ === 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE') {
+      out.verdict = 'COMMIT_REFUSED_CONFIRMATION_REQUIRED'; out.hint = 'Run DRY_RUN, copy freeze_checksum_to_confirm into TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_, save, then re-run COMMIT.'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out;
+    }
+    var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE();
+    if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') { out.verdict = 'COMMIT_REFUSED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    if (TEMP_str_(TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_) !== TEMP_str_(fr.envelope.freeze_checksum)) { out.verdict = 'COMMIT_REFUSED_CHECKSUM_MISMATCH'; out.confirmed = TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_; out.live_freeze_checksum = fr.envelope.freeze_checksum; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    var token = TEMP_r6f2eReduceFreezeToken_({ scope: fr.envelope.requested_scope, scope_checksum: fr.envelope.freeze_checksum, groups: fr.groups, lines: fr.lines });
+    PropertiesService.getScriptProperties().setProperty(TEMP_R6F2E_STORE_PROP_KEY_, JSON.stringify(token));   // the ONLY write; metadata only
+    out.stored_property_key = TEMP_R6F2E_STORE_PROP_KEY_; out.stored_freeze_checksum = token.scope_checksum;
+    out.stored_header_ids = token.groups.map(function (g) { return g.expected_header_id; }); out.stored_line_count = token.lines.length;
+    out.stores_spreadsheet_data = false; out.mutates_business_table = false; out.generation_triggered = false;
+    out.verdict = 'CONTROLLED_SCOPE_TOKEN_STORED';
+  } catch (e) { out.verdict = 'COMMIT_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+function TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE() {
+  var out = { tool: 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE', mode: 'STRICTLY READ-ONLY' };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; out.hint = 'Run PERSIST DRY_RUN + COMMIT first (only after a controlled run is authorized).'; Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2)); return out; }
+    var frozen = JSON.parse(raw);
+    out.loaded_scope = frozen.scope; out.loaded_freeze_checksum = frozen.scope_checksum;
+    // The validator only reads the STORED ids/scope — it cannot select or widen scope. Pre-generation it will report
+    // present_expected_headers=0 → RECONCILIATION_REQUIRED (expected; no generation is authorized yet).
+    out.validation = TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen);
+    out.scope_widening_possible = false;
+    out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'VALIDATE_FROM_STORE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+function TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE() {
+  var out = { tool: 'TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE', mode: 'metadata cleanup (Script Property delete only)' };
+  try { PropertiesService.getScriptProperties().deleteProperty(TEMP_R6F2E_STORE_PROP_KEY_); out.cleared_property_key = TEMP_R6F2E_STORE_PROP_KEY_; out.verdict = 'CLEARED'; }
+  catch (e) { out.verdict = 'CLEAR_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2E_CLEAR ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
 // F1-7N-FA-3C-DRAFT-MODEL-R6F2B (C) — STRICTLY READ-ONLY live route-mapping diagnostic. For each mapping stage it
 // reports COUNTS + sanitized distinct-value FINGERPRINTS (never a raw id / full row — length/prefix/suffix/hash only),
 // so the USER can see EXACTLY why lines resolve or block on live data before any controlled run. Reuses the real
@@ -2685,7 +2936,7 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
         var src = KMWRB.buildWeeklySourceLines(mapped.request);
         if (!src || !src.ok) continue;
         harvestOk = true;
-        weeklyAiPlanK2AllocatedLines_(src.lines, h).forEach(function (a) { a.__country = sc.country; alloc.push(a); });
+        weeklyAiPlanK2AllocatedLines_(src.lines, h).forEach(function (a) { a.__country = sc.country; a.__company = sc.company; alloc.push(a); });
       } catch (e2) { /* defensive: skip scope */ }
     }
     res.harvest_reached = harvestOk ? 'YES' : 'NO';
@@ -2761,13 +3012,35 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     //   (2) ai_rankable_route_pairs: every production ai-rankable pair's method ∈ manual_method_options
     //   (3) selected_ai_route: the production selected pair ∈ ai_rankable ∈ manual
     // Plus the route-query FIELD comparison. All four counters must be 0 for a controlled scope.
-    var parity = { route_query_field_mismatch_count: 0, manual_method_option_mismatch_count: 0, ai_rankable_route_pair_mismatch_count: 0, selected_route_invalid_count: 0,
-      mismatch_by_field: {}, examples: [] };
-    function bumpField(f) { parity.mismatch_by_field[f] = (parity.mismatch_by_field[f] || 0) + 1; }
+    // F1-7N-FA-3C-R6F2E (A) — FROZEN PARITY POPULATION RULE. The manual/route-query parity compares ONLY lines whose
+    // PRODUCTION deriveRoute resolved BOTH source and destination (a canonical lane query is genuinely constructible by
+    // both consumers). Source-unresolved (incl. multi-pool → source_warehouse_id null) and destination-unresolved lines
+    // are classified PARITY_NOT_APPLICABLE_* and EXCLUDED — never counted as a mismatch. This closes the R6F2D→E false
+    // positive: for a multi-pool line the diagnostic query origin is blank → axisOk treats it as a WILDCARD → a non-empty
+    // eligible set, while production correctly BLOCKS at source (empty manual_method_options); [non-empty] != [] was
+    // being scored as 5 manual mismatches. A RESOLVED-lane difference REMAINS a real blocker (never concealed).
+    var parity = {
+      population_rule: 'manual/route-query parity population = lines whose production deriveRoute resolved BOTH source and destination; source/destination-unresolved lines are PARITY_NOT_APPLICABLE (excluded, not a mismatch); any resolved-lane difference stays a blocker',
+      global_positive_lines: alloc.length,
+      route_query_parity_eligible: 0, route_query_parity_excluded_by_source: 0, route_query_parity_excluded_by_destination: 0,
+      manual_parity_eligible: 0, manual_parity_excluded_by_source: 0, manual_parity_excluded_by_destination: 0,
+      real_manual_method_mismatch_count: 0,
+      ai_pair_parity_eligible: 0, real_ai_pair_mismatch_count: 0, selected_route_invalid_count: 0,
+      route_query_field_mismatch_count: 0,
+      exclusion_reason_counts: {}, mismatch_by_field: {}, examples: [], exclusions: [], resolved_lane_mismatches: [],
+      // legacy-named keys kept for the before/after reconciliation + continuity with the dry-assembly G.parity contract:
+      // naive_* is the pre-population R6F2D count (conflated the 5 multi-pool lines); manual_method_option_mismatch_count
+      // / ai_rankable_route_pair_mismatch_count are re-pointed to the RECONCILED real counts below.
+      naive_manual_method_option_mismatch_count: 0, manual_method_option_mismatch_count: 0, ai_rankable_route_pair_mismatch_count: 0
+    };
+    function bumpReason(r) { parity.exclusion_reason_counts[r] = (parity.exclusion_reason_counts[r] || 0) + 1; }
+    var R6F2E_SRC_BLOCKS_ = { ROUTE_SOURCE_UNKNOWN: 1, ROUTE_SOURCE_INACTIVE: 1, ROUTE_SOURCE_MULTI_POOL_UNRESOLVED: 1 };
+    var R6F2E_DST_BLOCKS_ = { DESTINATION_MISSING: 1, DESTINATION_UNKNOWN: 1, DESTINATION_INACTIVE: 1 };
     alloc.forEach(function (a) {
       var d = a.destination || {}; var kind = TEMP_str_(d.kind).toUpperCase();
       var srcWh = whIdx.byId[TEMP_str_(a.source_warehouse_id)] || null;
-      var originCountry = srcWh ? TEMP_str_(srcWh.country) : '';
+      var srcActive = !!(srcWh && kmra.whActive(srcWh));
+      var originCountry = srcActive ? TEMP_str_(srcWh.country) : '';
       var destCountry = kind === 'WAREHOUSE' ? TEMP_str_((whIdx.byId[TEMP_str_(d.warehouse_id)] || {}).country) : TEMP_str_(d.country || a.__country);
       var marketplace = kind === 'MARKETPLACE' ? TEMP_str_(d.marketplace) : '';
       var qDiag = { originCountry: originCountry, destinationCountry: destCountry, marketplace: marketplace };
@@ -2775,12 +3048,43 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
       var prod = KMWRR.deriveRoute({ source: { warehouse_id: a.source_warehouse_id, multi_pool: a.source_multi_pool === true }, destination: d, requiredByDate: a.required_by_date, shipDate: '', warehousesById: h && h.warehousesById ? h.warehousesById : whIdx.byId, rateCards: RC.rows, leadTimes: LT.rows });
       var mset = {}; (prod.manual_method_options || []).forEach(function (m) { mset[String(m.value).toLowerCase()] = 1; });
       var eProd = (prod.manual_method_options || []).map(function (m) { return m.value; }).sort();
-      // (query fields — same construction; a mismatch here would mean a code bug)
-      // (1) manual layer
-      if (JSON.stringify(eDiag) !== JSON.stringify(eProd)) parity.manual_method_option_mismatch_count++;
-      // (2) ai-rankable layer — every pair's method must be a manual option
-      (prod.ai_rankable_route_pairs || []).forEach(function (p) { if (!mset[String(p.method).toLowerCase()]) parity.ai_rankable_route_pair_mismatch_count++; });
-      // (3) selected layer — selected ∈ ai ∈ manual (only for AI_RANKED)
+      var prodBlock = prod.block || '';
+      var naiveDiff = JSON.stringify(eDiag) !== JSON.stringify(eProd);
+      if (naiveDiff) parity.naive_manual_method_option_mismatch_count++;   // pre-population count (before/after audit only)
+
+      var srcStatus = (a.source_multi_pool === true) ? 'MULTI_POOL_UNRESOLVED' : (TEMP_str_(a.source_warehouse_id) === '' ? 'MISSING' : (!srcWh ? 'UNKNOWN_ID' : (!srcActive ? 'INACTIVE' : 'RESOLVED')));
+      var destStatus = R6F2E_SRC_BLOCKS_[prodBlock] ? 'N/A_SOURCE_BLOCKED_FIRST' : (R6F2E_DST_BLOCKS_[prodBlock] ? prodBlock : (kind === 'WAREHOUSE' ? 'CONCRETE' : (kind === 'MARKETPLACE' ? 'LOGICAL' : 'NONE')));
+      var excluded = null;
+      if (R6F2E_SRC_BLOCKS_[prodBlock]) { excluded = 'PARITY_NOT_APPLICABLE_SOURCE_UNRESOLVED'; parity.route_query_parity_excluded_by_source++; parity.manual_parity_excluded_by_source++; }
+      else if (R6F2E_DST_BLOCKS_[prodBlock]) { excluded = 'PARITY_NOT_APPLICABLE_DESTINATION_UNRESOLVED'; parity.route_query_parity_excluded_by_destination++; parity.manual_parity_excluded_by_destination++; }
+
+      if (excluded) {
+        bumpReason(excluded);
+        if (parity.exclusions.length < 25) parity.exclusions.push({
+          company: TEMP_r6f2bFp_(a.__company), country: TEMP_str_(a.__country), marketplace: TEMP_r6f2bFp_(marketplace || a.marketplace),
+          sku_window_fp: TEMP_r6f2bFp_(TEMP_str_(a.sku) + '|' + TEMP_str_(a.window_code)),
+          source_resolution_status: srcStatus, destination_resolution_status: destStatus,
+          diagnostic_manual_method_set: eDiag, production_manual_method_set: eProd, production_block: prodBlock,
+          exclusion_reason: excluded });
+        return;   // excluded from ALL parity layers — a lane query cannot be constructed by both consumers
+      }
+
+      // ELIGIBLE — production resolved source + destination → like-for-like; any difference is a REAL blocker.
+      parity.route_query_parity_eligible++; parity.manual_parity_eligible++;
+      if (originCountry === '' || destCountry === '') { parity.route_query_field_mismatch_count++; parity.mismatch_by_field[originCountry === '' ? 'originCountry' : 'destinationCountry'] = (parity.mismatch_by_field[originCountry === '' ? 'originCountry' : 'destinationCountry'] || 0) + 1; }
+      if (naiveDiff) {
+        parity.real_manual_method_mismatch_count++;
+        if (parity.resolved_lane_mismatches.length < 25) parity.resolved_lane_mismatches.push({
+          company: TEMP_r6f2bFp_(a.__company), country: TEMP_str_(a.__country), marketplace: TEMP_r6f2bFp_(marketplace),
+          sku_window_fp: TEMP_r6f2bFp_(TEMP_str_(a.sku) + '|' + TEMP_str_(a.window_code)),
+          source_resolution_status: srcStatus, destination_resolution_status: destStatus,
+          diagnostic_manual_method_set: eDiag, production_manual_method_set: eProd, reason: 'RESOLVED_LANE_MANUAL_SET_DIFFERS (BLOCKER — not concealed)' });
+      }
+      // ai-rankable + selected layers — only for lines that reached route-pair derivation.
+      if (prod.route_candidate_status === 'AI_RANKED' || prod.route_candidate_status === 'AMBIGUOUS') {
+        parity.ai_pair_parity_eligible++;
+        (prod.ai_rankable_route_pairs || []).forEach(function (p) { if (!mset[String(p.method).toLowerCase()]) parity.real_ai_pair_mismatch_count++; });
+      }
       if (prod.route_candidate_status === 'AI_RANKED') {
         var sel = prod.selected_ai_route || {};
         var selInAi = (prod.ai_rankable_route_pairs || []).some(function (p) { return String(p.method).toLowerCase() === String(sel.method).toLowerCase() && String(p.last_mile).toLowerCase() === String(sel.last_mile).toLowerCase(); });
@@ -2788,6 +3092,10 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
       }
       if (parity.examples.length < 12) parity.examples.push({ origin: TEMP_r6f2bFp_(originCountry), dest: TEMP_r6f2bFp_(destCountry), mkt: TEMP_r6f2bFp_(marketplace), manual: eProd.length, ai_pairs: (prod.ai_rankable_route_pairs || []).length, status: prod.route_candidate_status, selected_last_mile: prod.selected_last_mile || null });
     });
+    // re-point the legacy-named counters to the RECONCILED real counts (population-filtered). Gate/report read these.
+    parity.manual_method_option_mismatch_count = parity.real_manual_method_mismatch_count;
+    parity.ai_rankable_route_pair_mismatch_count = parity.real_ai_pair_mismatch_count;
+    parity.R6F2E_GLOBAL_PARITY_RECONCILED = (parity.real_manual_method_mismatch_count === 0 && parity.real_ai_pair_mismatch_count === 0 && parity.selected_route_invalid_count === 0) ? 'YES (source/destination-unresolved excluded as PARITY_NOT_APPLICABLE; zero resolved-lane mismatch)' : 'NO (resolved-lane mismatch present — see resolved_lane_mismatches; a real blocker)';
     res.candidate_parity = parity;
 
     // ---- SHARED stage accounting (H) — read the SAME dry assembly the Preflight uses, so the diagnostic's stage
