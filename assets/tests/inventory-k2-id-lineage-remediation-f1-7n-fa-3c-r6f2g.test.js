@@ -120,7 +120,13 @@ function makeSb(opts) {
     SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; }, openById: function () { return ss; } },
     PropertiesService: { getScriptProperties: function () { return { getProperty: function (k) { return props[k] || null; }, setProperty: function (k, v) { props[k] = v; }, deleteProperty: function (k) { delete props[k]; } }; } },
     LockService: { getScriptLock: function () { return { tryLock: function () { return true; }, releaseLock: function () { } }; } },
-    Utilities: { getUuid: function () { return 'uuid'; } },
+    Utilities: { getUuid: function () { return 'uuid'; }, formatDate: function (date, tz, pattern) {
+      var offMin = (tz === 'Asia/Taipei') ? 480 : 0;                 // deterministic tz-aware format (Apps Script does the real tz)
+      var d = new Date(date.getTime() + offMin * 60000);
+      function p(n) { return (n < 10 ? '0' : '') + n; }
+      var s = d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate());
+      return pattern === 'yyyy-MM-dd' ? s : s + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
+    } },
     JSON: JSON, Math: Math, String: String, Number: Number, Array: Array, Object: Object, Date: Date, isFinite: isFinite, parseFloat: parseFloat, parseInt: parseInt, RegExp: RegExp
   };
   sandbox.global = sandbox; vm.createContext(sandbox);
@@ -371,6 +377,83 @@ var tokWrong = buildToken(sbWrong, oldLineRows(OLD_IDS)); sbWrong.props[sbWrong.
 var vWrong = sbWrong.s.TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION();
 eq(vWrong.verdict, 'RECONCILIATION_REQUIRED', 'C1 arbitrary nonblank source_data_as_of (≠ GAP calculationDate) does NOT validate');
 eq(vWrong.gates.source_data_as_of_lineage, false, 'C1 source_data_as_of gate fails when it differs from the canonical cutoff');
+
+// ================================================================================================================
+// R6F2G4 — canonical Date/timezone lineage normalization + stored-token validator false-positive fix
+section('R6F2G4 A. canonical lineage normalizer (Date-vs-string safe; distinct concepts; fail-closed)');
+var Snorm = makeSb({ sheets: {}, props: {} }).s;
+var norm = Snorm.TEMP_r6f2gNormalizeLineage_;
+// Date object calculated_at (a Taipei-midnight-plus-time) normalizes to yyyy-MM-dd HH:mm:ss
+var dCalc = new Date(Date.UTC(2026, 7, 23, 5, 41, 0));   // 05:41 UTC == 13:41 Asia/Taipei
+eq(norm('calculated_at', dCalc), '2026-08-23 13:41:00', 'A1 Date calculated_at → yyyy-MM-dd HH:mm:ss in Asia/Taipei');
+// string calculated_at (space and ISO forms) normalize
+eq(norm('calculated_at', '2026-08-23 13:41:00'), '2026-08-23 13:41:00', 'A2 string calculated_at (space) normalizes');
+eq(norm('calculated_at', '2026-08-23T13:41:00Z'), '2026-08-23 13:41:00', 'A2 string calculated_at (ISO) normalizes');
+// date-only Date object does not shift the day (Taipei midnight)
+var dDay = new Date(Date.UTC(2026, 7, 22, 16, 0, 0));   // 2026-08-22 16:00 UTC == 2026-08-23 00:00 Asia/Taipei
+eq(norm('source_data_as_of', dDay), '2026-08-23', 'A3 date-only Date → yyyy-MM-dd with NO day shift (Asia/Taipei)');
+eq(norm('source_data_as_of', '2026-08-23'), '2026-08-23', 'A3 string source_data_as_of normalizes');
+eq(norm('source_data_as_of', '2026-08-23 00:00:00'), '2026-08-23', 'A3 datetime string → date-only for source_data_as_of');
+// fail-closed
+eq(norm('source_data_as_of', ''), null, 'A4 blank → null (fail)');
+eq(norm('calculated_at', ''), null, 'A4 blank → null (fail)');
+eq(norm('source_data_as_of', 'not-a-date'), null, 'A4 arbitrary nonblank → null (never a pass)');
+eq(norm('calculated_at', 'RANDOM'), null, 'A4 malformed calculated_at → null');
+// distinct concepts: same instant normalizes to different granularity per field
+ok(norm('calculated_at', '2026-08-23T13:41:00Z') !== norm('source_data_as_of', '2026-08-23T13:41:00Z'), 'A5 calculated_at (timestamp) and source_data_as_of (date) stay DISTINCT');
+// field match: wrong value fails; correct matches
+ok(Snorm.TEMP_r6f2gLineageFieldMatch_('source_data_as_of', dDay, '2026-08-23') === true, 'A6 Date cell == authority date (serialization-only) → match');
+ok(Snorm.TEMP_r6f2gLineageFieldMatch_('source_data_as_of', dDay, '2026-08-24') === false, 'A6 wrong date → no match');
+ok(Snorm.TEMP_r6f2gLineageFieldMatch_('calculated_at', dCalc, '2026-08-23 13:41:00') === true, 'A6 Date calculated_at == authority → match');
+ok(Snorm.TEMP_r6f2gLineageFieldMatch_('calculated_at', dCalc, '2026-08-23 09:00:00') === false, 'A6 wrong timestamp → no match');
+
+section('R6F2G4 B. validator passes when the committed header carries DATE cells (serialization-only)');
+// migrated header with Date cells for the two lineage fields + string ids
+var dateHdr = headerObj({ calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: dCalc, source_data_as_of: dDay });
+var migLines = null;   // built after token
+var sbDate = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [dateHdr]), shipping_allocation_draft_lines: matrix(LINE_COLS, []) }, props: {} });
+var tokDate = buildToken(sbDate, oldLineRows(OLD_IDS));
+migLines = tokDate.expected_line_ids_sorted.map(function (id, i) { return { allocation_draft_line_id: id, allocation_draft_id: HID, sku: 'SKU' + i, site_sku: 'S' + i, window_code: 'W1', line_status: '' }; });
+var sbDate2 = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [dateHdr]), shipping_allocation_draft_lines: matrix(LINE_COLS, migLines) }, props: {} });
+var tokDate2 = buildToken(sbDate2, oldLineRows(OLD_IDS)); sbDate2.props[sbDate2.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokDate2); sbDate2.props.GAP_JOB_INVENTORY = gapProp();
+var vDate = sbDate2.s.TEMP_r6f2gFrozenScopeValidated_(tokDate2);
+eq(vDate.gates.calculated_at_lineage, true, 'B1 Date calculated_at cell now passes the lineage gate (normalized)');
+eq(vDate.gates.source_data_as_of_lineage, true, 'B1 Date source_data_as_of cell now passes the lineage gate (no day shift)');
+eq(vDate.verdict, 'FROZEN_SCOPE_VALIDATED', 'B2 full validator → FROZEN_SCOPE_VALIDATED with Date cells');
+
+section('R6F2G4 C. stored-token validator cannot false-pass a wrong/missing date lineage');
+// wrong calculated_at (a different timestamp) → RECONCILIATION_REQUIRED via the consolidated verdict
+var wrongHdr = headerObj({ calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: '2026-08-23 09:00:00', source_data_as_of: GAP_CUTOFF });
+var sbWrongCa = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [wrongHdr]), shipping_allocation_draft_lines: matrix(LINE_COLS, migLines) }, props: {} });
+var tokWrongCa = buildToken(sbWrongCa, oldLineRows(OLD_IDS)); sbWrongCa.props[sbWrongCa.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokWrongCa); sbWrongCa.props.GAP_JOB_INVENTORY = gapProp();
+eq(sbWrongCa.s.TEMP_r6f2gFrozenScopeValidated_(tokWrongCa).gates.calculated_at_lineage, false, 'C1 wrong calculated_at → gate false');
+var svWrong = sbWrongCa.s.TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE();
+ok(svWrong.verdict !== 'FROZEN_SCOPE_VALIDATED', 'C2 stored-token validator NEVER false-passes a wrong date lineage (got ' + svWrong.verdict + ')');
+// blank calculated_at (write-missing) → gate false
+var missHdr = headerObj({ calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: '', source_data_as_of: GAP_CUTOFF });
+var sbMiss = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [missHdr]), shipping_allocation_draft_lines: matrix(LINE_COLS, migLines) }, props: {} });
+var tokMiss = buildToken(sbMiss, oldLineRows(OLD_IDS)); sbMiss.props[sbMiss.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokMiss); sbMiss.props.GAP_JOB_INVENTORY = gapProp();
+eq(sbMiss.s.TEMP_r6f2gFrozenScopeValidated_(tokMiss).gates.calculated_at_lineage, false, 'C3 blank calculated_at (write-missing) → gate false');
+// source-fact: the stored-token validator now delegates to the consolidated validator (not only the older package)
+var svSrc = extractFn(TEMP, 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE');
+ok(/TEMP_r6f2gFrozenScopeValidated_\(token\)/.test(svSrc) && /out\.verdict = full\.verdict/.test(svSrc), 'C4 stored-token verdict comes from the consolidated four-lineage-gate validator');
+
+section('R6F2G4 D. diagnostic classifies serialization-only + stays read-only');
+var sbDiag = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [dateHdr]), shipping_allocation_draft_lines: matrix(LINE_COLS, migLines) }, props: {} });
+var tokDiag = buildToken(sbDiag, oldLineRows(OLD_IDS)); sbDiag.props[sbDiag.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokDiag); sbDiag.props.GAP_JOB_INVENTORY = gapProp();
+var diag = sbDiag.s.TEMP_R6F2G4_DIAGNOSE_POST_COMMIT_DATE_LINEAGE();
+eq(diag.classification, 'DATE_SERIALIZATION_ONLY', 'D1 Date cells semantically equal after normalization → DATE_SERIALIZATION_ONLY');
+eq(diag.calculated_at.instanceof_date, true, 'D1 calculated_at raw cell is a Date');
+eq(diag.calculated_at.semantic_match, true, 'D1 calculated_at semantic match after normalization');
+eq(diag.source_data_as_of.semantic_match, true, 'D1 source_data_as_of semantic match (no day shift)');
+eq(diag.R6F2G4_ZERO_WRITE_CONFIRMED, 'YES (read-only, no cell mutation)', 'D2 diagnostic is read-only');
+ok(/DATA_CORRECT/.test(diag.policy), 'D2 policy = fix validators/readback only (do not rewrite cells)');
+// wrong value → VALUE_ACTUALLY_WRONG + HALT policy
+var sbDiagW = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj({ calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: '2026-08-23 09:00:00', source_data_as_of: GAP_CUTOFF })]), shipping_allocation_draft_lines: matrix(LINE_COLS, migLines) }, props: {} });
+var tokDiagW = buildToken(sbDiagW, oldLineRows(OLD_IDS)); sbDiagW.props[sbDiagW.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokDiagW); sbDiagW.props.GAP_JOB_INVENTORY = gapProp();
+var diagW = sbDiagW.s.TEMP_R6F2G4_DIAGNOSE_POST_COMMIT_DATE_LINEAGE();
+eq(diagW.classification, 'VALUE_ACTUALLY_WRONG', 'D3 a wrong timestamp → VALUE_ACTUALLY_WRONG');
+ok(/HALT/.test(diagW.policy), 'D3 wrong value → HALT policy (no write/rollback)');
 
 done_report();
 function done_report() { console.log('\n' + '-'.repeat(40)); console.log('R6F2G K2 ID+LINEAGE REMEDIATION: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }

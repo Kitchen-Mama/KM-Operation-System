@@ -3081,15 +3081,17 @@ function TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE() {
     out.expected_post_run_db_rows = { headers: token.expected_post_run_db_header_rows, lines: token.expected_post_run_db_line_rows };
     out.frozen_lineage = { planning_cycle: token.planning_cycle, calculation_run_id_fingerprint: token.calculation_run_id_fingerprint };
     var sv = out.validation && out.validation.scoped_validation ? out.validation.scoped_validation : null;
-    var presentHeaders = sv ? sv.present_expected_headers : 0;
-    var allFrozenPresent = !!(sv && sv.present_expected_headers === token.expected_k2_header_count && sv.unexpected_headers_in_scope === 0 && sv.unexpected_lines_in_scope === 0);
-    if (allFrozenPresent && out.unrelated_scope_checksum_match && out.legacy_header_checksum_match && out.validation.duplicate_active_k2_group_count === 0) {
-      out.verdict = 'FROZEN_SCOPE_VALIDATED';
-    } else if ((presentHeaders || 0) === 0) {
+    // F1-7N-FA-3C-R6F2G4 — the top-level verdict is the CONSOLIDATED post-generation validator (exact five SADL-K2 ids +
+    // FKs + K2 route + ALL FOUR lineage gates incl. calculated_at/source_data_as_of + checksums/dup/orphan/scope/cycle).
+    // It NO LONGER trusts only the older TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE inner verdict (which never checked line
+    // ids/FK/route/lineage and therefore false-passed a run whose two date-lineage gates failed).
+    var full = TEMP_r6f2gFrozenScopeValidated_(token);
+    out.consolidated_gates = full.gates;
+    if (!full.state.header_present) {
       // pre-generation: the expected rows do not exist YET — this is EXPECTED, not token corruption (structure passed).
       out.verdict = 'RECONCILIATION_REQUIRED_PRE_GENERATION'; out.note = 'expected frozen rows not present yet (no generation authorized); the token structure/integrity is intact';
     } else {
-      out.verdict = 'RECONCILIATION_REQUIRED';
+      out.verdict = full.verdict;   // FROZEN_SCOPE_VALIDATED only when EVERY gate (incl. both date-lineage gates) passes; else RECONCILIATION_REQUIRED
     }
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.verdict = 'VALIDATE_FROM_STORE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
@@ -3945,11 +3947,13 @@ function TEMP_r6f2gLineageAuthorities_(token, headerRow) {
   // R6F2G2 — source_data_as_of authority = the GAP run's frozen calculationDate (the SAME field production stamps),
   // reproducible from GAP_JOB_INVENTORY without rerunning GAP. NO harvest dependency (harvest.sourceDataAsOf is blank
   // for this scope and is not the canonical cutoff). calculated_at = finishedAt (distinct completion timestamp).
+  // R6F2G4 — `old_raw` preserves the ACTUAL cell object (a spreadsheet Date for the two date fields) so the canonical
+  // normalizer can format it; `old` stays the stringified form for the checksum serialization + display consumers.
   var fields = {
-    calculation_run_id: { old: TEMP_str_(hdr.calculation_run_id), new: gap.run_id, source: 'GAP_JOB_INVENTORY raw run id (DONE, GAP-INV- prefix)' },
-    formula_version: { old: TEMP_str_(hdr.formula_version), new: 'WEEKLY_AI_PLAN_V1', source: 'WEEKLY_AI_PLAN_V1 (production formula version)' },
-    calculated_at: { old: TEMP_str_(hdr.calculated_at), new: gap.calculated_at, source: 'GAP_JOB_INVENTORY.finishedAt (calculation completion timestamp)' },
-    source_data_as_of: { old: TEMP_str_(hdr.source_data_as_of), new: gap.source_data_as_of, source: 'GAP_JOB_INVENTORY.calculationDate (frozen calculation/input cutoff for the run; NOT current time, NOT harvest)' }
+    calculation_run_id: { old: TEMP_str_(hdr.calculation_run_id), old_raw: hdr.calculation_run_id, new: gap.run_id, source: 'GAP_JOB_INVENTORY raw run id (DONE, GAP-INV- prefix)' },
+    formula_version: { old: TEMP_str_(hdr.formula_version), old_raw: hdr.formula_version, new: 'WEEKLY_AI_PLAN_V1', source: 'WEEKLY_AI_PLAN_V1 (production formula version)' },
+    calculated_at: { old: TEMP_str_(hdr.calculated_at), old_raw: hdr.calculated_at, new: gap.calculated_at, source: 'GAP_JOB_INVENTORY.finishedAt (calculation completion timestamp)' },
+    source_data_as_of: { old: TEMP_str_(hdr.source_data_as_of), old_raw: hdr.source_data_as_of, new: gap.source_data_as_of, source: 'GAP_JOB_INVENTORY.calculationDate (frozen calculation/input cutoff for the run; NOT current time, NOT harvest)' }
   };
   var missing = [];
   if (!(gap.done && gap.prefix_ok && TEMP_str_(fields.calculation_run_id.new) !== '')) missing.push('calculation_run_id');
@@ -4035,6 +4039,50 @@ function TEMP_r6f2gGapLineage_() {
     source_data_as_of: found ? TEMP_str_(job.calculation_date) : '' };
 }
 
+// F1-7N-FA-3C-R6F2G4 — CANONICAL LINEAGE NORMALIZER. The two DATE lineage fields are stored in the header as
+// spreadsheet cells that Google Sheets coerces to Date objects on write, so a raw TEMP_str_(Date) never equals the
+// authority STRING — a serialization mismatch, not a data mismatch. This normalizer canonicalizes BOTH sides before
+// equality so the validator is truthful:
+//   calculated_at     → 'yyyy-MM-dd HH:mm:ss'   (completion timestamp)
+//   source_data_as_of → 'yyyy-MM-dd'            (business-data cutoff DATE)
+// Date objects are formatted in the canonical GAP/spreadsheet timezone (Asia/Taipei) so a date-only Date never shifts a
+// day. Strings are parsed fail-closed. Blank / unparseable / arbitrary-nonblank → null (NEVER a pass). The two concepts
+// stay distinct (different target patterns). Used by the R6F2G readback + validator + the R6F2E stored-token validator.
+var TEMP_R6F2G_CANON_TZ_ = 'Asia/Taipei';
+function TEMP_r6f2gCanonTz_() {
+  if (typeof GAP_CALC_TZ_ !== 'undefined' && GAP_CALC_TZ_) return GAP_CALC_TZ_;   // existing GAP timezone authority
+  try { var ss = SpreadsheetApp.getActiveSpreadsheet(); if (ss && ss.getSpreadsheetTimeZone) { var tz = ss.getSpreadsheetTimeZone(); if (tz) return tz; } } catch (e) {}
+  return TEMP_R6F2G_CANON_TZ_;
+}
+function TEMP_r6f2gNormalizeLineage_(field, value) {
+  var tz = TEMP_r6f2gCanonTz_();
+  if (field === 'source_data_as_of') {
+    if (TEMP_isDate_(value)) { try { return Utilities.formatDate(value, tz, 'yyyy-MM-dd'); } catch (e) { return null; } }
+    var s = TEMP_str_(value); if (s === '') return null;
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})([ T]\d{2}:\d{2}:\d{2}.*)?$/);
+    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : null;          // date (optionally with a time part) → date only; else fail
+  }
+  if (field === 'calculated_at') {
+    if (TEMP_isDate_(value)) { try { return Utilities.formatDate(value, tz, 'yyyy-MM-dd HH:mm:ss'); } catch (e) { return null; } }
+    var s2 = TEMP_str_(value); if (s2 === '') return null;
+    var dt = s2.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);   // 'yyyy-MM-dd HH:mm:ss' or ISO 'yyyy-MM-ddTHH:mm:ss…'
+    if (dt) return dt[1] + ' ' + dt[2];
+    var d0 = s2.match(/^(\d{4}-\d{2}-\d{2})$/);                        // date-only calculated_at (defensive) → midnight
+    return d0 ? (d0[1] + ' 00:00:00') : null;
+  }
+  return null;
+}
+// Field-aware canonical equality for a lineage field (Date-vs-string safe). For the two date fields BOTH sides must
+// normalize to a non-null canonical value AND be equal; for the two id/version fields it is a plain non-blank string
+// equality. Never weakened to "nonblank".
+function TEMP_r6f2gLineageFieldMatch_(field, actual, expected) {
+  if (field === 'calculated_at' || field === 'source_data_as_of') {
+    var na = TEMP_r6f2gNormalizeLineage_(field, actual), ne = TEMP_r6f2gNormalizeLineage_(field, expected);
+    return na !== null && ne !== null && na === ne;
+  }
+  return TEMP_str_(actual) !== '' && TEMP_str_(expected) !== '' && TEMP_str_(actual) === TEMP_str_(expected);
+}
+
 // F — CONSOLIDATED post-generation validator. Uses ONLY the canonical accessors (line id / FK / header id / calc-run
 // lineage) + the K2 route-completeness metric (a logical marketplace destination is valid; the generic warehouse-route
 // metric is untouched). FROZEN_SCOPE_VALIDATED requires: exactly one frozen K2 header · exactly five SADL-K2 ids · all
@@ -4050,7 +4098,9 @@ function TEMP_r6f2gFrozenScopeValidated_(token) {
   // header cell must be non-blank AND equal to its canonical authority. If the source_data_as_of authority is
   // unavailable (harvest not reached) the field cannot validate → RECONCILIATION_REQUIRED (never a blank pass).
   var auth = TEMP_r6f2gLineageAuthorities_(token, hdr);
-  function lineageOk(f) { var a = auth.fields[f]; return TEMP_str_(a.new) !== '' && TEMP_str_(a.old) !== '' && TEMP_str_(a.old) === TEMP_str_(a.new); }
+  // R6F2G4 — canonical, Date-vs-string-safe equality (never weakened to "nonblank"). `a.old` is the live header cell
+  // (a spreadsheet Date for the two date fields); `a.new` is the authority value.
+  function lineageOk(f) { var a = auth.fields[f]; return TEMP_r6f2gLineageFieldMatch_(f, a.old_raw, a.new); }
   var gates = {
     exactly_one_header: st.header_present && st.unexpected_headers_in_scope === 0,
     header_id_match: st.header_present && TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(expHeaderId),
@@ -4301,5 +4351,88 @@ function TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION() {
     out.gates = v.gates; out.verdict = v.verdict; out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.verdict = 'VALIDATE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2G_VALIDATE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2G4 — STRICTLY READ-ONLY post-commit date-lineage diagnostic. Explains why the R6F2G COMMIT
+// returned COMMITTED_UNVERIFIED with calculated_at_lineage / source_data_as_of_lineage = false while all cells were
+// written: it inspects the RAW cell type (Date vs string), display value + number format, canonical normalized value vs
+// the canonical authority, and classifies. No cell mutation.
+function TEMP_R6F2G4_DIAGNOSE_POST_COMMIT_DATE_LINEAGE() {
+  var out = { tool: 'TEMP_R6F2G4_DIAGNOSE_POST_COMMIT_DATE_LINEAGE', mode: 'STRICTLY READ-ONLY (no cell mutation)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
+  try {
+    var token = TEMP_r6f2gLoadToken_();
+    if (!token) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G4_DIAGNOSE ' + JSON.stringify(out, null, 2)); return out; }
+    var st = TEMP_r6f2fReadFrozenScopeState_(token);
+    var hdr = st.header_row || {};
+    var expHeaderId = (token.expected_header_ids_sorted || [])[0] || null;
+    var auth = TEMP_r6f2gLineageAuthorities_(token, hdr);
+    var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+    // (1) exact K2 state
+    out.k2_state = {
+      header_id: st.header_present ? TEMP_r6f2fHeaderId_(hdr) : null, expected_header_id: expHeaderId,
+      actual_line_ids: st.actual_line_ids_for_expected_header, matched: st.matched_line_ids, missing: st.missing_line_ids, unexpected: st.unexpected_line_ids,
+      line_fk_ok: st.line_fk_ok, orphan_lines: st.orphan_lines, dup_line_id: st.dup_line_id, dup_k2: st.dup_k2,
+      db_header_rows: st.db_header_rows, db_line_rows: st.db_line_rows, route_complete_k2: st.route_complete_k2,
+      legacy_checksum_match: TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum),
+      unrelated_checksum_match: TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum)
+    };
+    // read-only probe of the header cell display value + number format
+    var disp = {};
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet(); var sh = ss.getSheetByName('shipping_allocation_drafts');
+      if (sh) {
+        var data = sh.getDataRange().getValues(); var hh = data[0].map(function (x) { return String(x).trim(); });
+        var cId = hh.indexOf('allocation_draft_id'), cCa = hh.indexOf('calculated_at'), cSda = hh.indexOf('source_data_as_of');
+        for (var r = 1; r < data.length; r++) {
+          if (TEMP_str_(data[r][cId]) !== TEMP_str_(expHeaderId)) continue;
+          if (cCa !== -1) disp.calculated_at = { display: sh.getRange(r + 1, cCa + 1).getDisplayValue(), number_format: sh.getRange(r + 1, cCa + 1).getNumberFormat() };
+          if (cSda !== -1) disp.source_data_as_of = { display: sh.getRange(r + 1, cSda + 1).getDisplayValue(), number_format: sh.getRange(r + 1, cSda + 1).getNumberFormat() };
+          break;
+        }
+      }
+    } catch (eD) { disp._error = String(eD && eD.message || eD); }
+    function fieldEvidence(f) {
+      var actual = hdr[f], expected = auth.fields[f].new;
+      var na = TEMP_r6f2gNormalizeLineage_(f, actual), ne = TEMP_r6f2gNormalizeLineage_(f, expected);
+      var e = {
+        raw_type: TEMP_r5bTypeOf_(actual), instanceof_date: TEMP_isDate_(actual),
+        json_repr: (function () { try { return JSON.stringify(actual); } catch (x) { return String(actual); } })(),
+        string_repr: TEMP_str_(actual),
+        spreadsheet_display: disp[f] ? disp[f].display : null, number_format: disp[f] ? disp[f].number_format : null,
+        canonical_normalized: na, expected_canonical: ne, canonical_source: auth.fields[f].source,
+        semantic_match: (na !== null && ne !== null && na === ne)
+      };
+      if (TEMP_str_(actual) === '') e.cause = 'FIELD_WRITE_MISSING';
+      else if (e.semantic_match && e.instanceof_date) e.cause = 'DATE_SERIALIZATION_ONLY';
+      else if (e.semantic_match) e.cause = 'MATCH';
+      else if (na !== null && ne !== null) e.cause = 'VALUE_ACTUALLY_WRONG';
+      else e.cause = 'UNPARSEABLE_OR_UNKNOWN';
+      return e;
+    }
+    out.calculated_at = fieldEvidence('calculated_at');
+    out.source_data_as_of = fieldEvidence('source_data_as_of');
+    out.four_lineage_fields = {};
+    ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'].forEach(function (f) {
+      var a = auth.fields[f];
+      out.four_lineage_fields[f] = { actual_fingerprint: TEMP_r5bIdFingerprint_(TEMP_str_(a.old)), expected_fingerprint: TEMP_r5bIdFingerprint_(TEMP_str_(a.new)), canonical_source: a.source, match: TEMP_r6f2gLineageFieldMatch_(f, a.old_raw, a.new) };
+    });
+    var causes = [out.calculated_at.cause, out.source_data_as_of.cause];
+    var cls;
+    if (causes.indexOf('FIELD_WRITE_MISSING') !== -1) cls = 'FIELD_WRITE_MISSING';
+    else if (causes.indexOf('VALUE_ACTUALLY_WRONG') !== -1) cls = 'VALUE_ACTUALLY_WRONG';
+    else if (causes.indexOf('UNPARSEABLE_OR_UNKNOWN') !== -1) cls = 'UNKNOWN';
+    else if (causes.indexOf('DATE_SERIALIZATION_ONLY') !== -1) cls = 'DATE_SERIALIZATION_ONLY';
+    else cls = (causes[0] === 'MATCH' && causes[1] === 'MATCH') ? 'DATE_SERIALIZATION_ONLY' : 'UNKNOWN';
+    out.classification = cls;
+    out.policy = (cls === 'DATE_SERIALIZATION_ONLY')
+      ? 'DATA_CORRECT — the cells are semantically equal after canonical Date/timezone normalization; fix validators/readback ONLY (now applied), DO NOT rewrite the live cells. Re-run TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE (read-only) to confirm FROZEN_SCOPE_VALIDATED.'
+      : (cls === 'VALUE_ACTUALLY_WRONG' || cls === 'FIELD_WRITE_MISSING')
+        ? 'HALT — a lineage value is semantically wrong/missing (see actual vs expected). Prepare a SEPARATELY gated repair; DO NOT write/rollback in this task.'
+        : 'UNKNOWN — inspect the raw evidence above before any action.';
+    out.revalidation_entrypoint = 'TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE (read-only; now uses the canonical normalizer)';
+    out.R6F2G4_ZERO_WRITE_CONFIRMED = 'YES (read-only, no cell mutation)';
+  } catch (e) { out.classification = 'UNKNOWN'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2G4_DIAGNOSE ' + JSON.stringify(out, null, 2));
   return out;
 }

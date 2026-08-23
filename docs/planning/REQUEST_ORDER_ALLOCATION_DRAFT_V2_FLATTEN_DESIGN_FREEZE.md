@@ -1566,3 +1566,34 @@ The 61_ fix affects **every future Inventory K2 generation** (all K2 CREATE/REGE
 
 ### deployment
 Production 61_ + TEMP + test/doc. No bundle rebuild (61_ standalone), no 16_, no frontend, no 00_config. APPS_SCRIPT_SYNC_REQUIRED: `61_api_v1_weekly_ai_plan.gs`, `TEMP_migrate_request_order_draft_v2.gs`. No live write; migration STAGED OFF; flag false.
+
+## §61 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G4-POST-COMMIT-DATE-LINEAGE-RECONCILIATION — canonical Date/tz normalizer + stored-token false-positive fix (2026-08-23)
+
+TEMP tooling + test + this doc. **No 16_/61_/core/bundle/00_config/frontend change** (see E). Read-only diagnostic + validator normalization only. No live write, no cell rewrite, no COMMIT/rollback, executor/REUSE not rerun, tokens not cleared, no Submit. Confirmation constant stays `7c86deb0`; flag false.
+
+### Root cause of the two failed post-commit lineage gates
+The R6F2G COMMIT wrote all four lineage cells, but Google Sheets coerces the two DATE fields (`calculated_at`, `source_data_as_of`) into **Date objects** on write. The validator compared them via `TEMP_str_(Date)` (a JS date string like `Sat Aug 23 2026 …`) against the authority **string** (`2026-08-23 13:41:00` / `2026-08-23`) → never equal. So `calculated_at_lineage`/`source_data_as_of_lineage` = false and COMMIT returned `COMMITTED_UNVERIFIED`. It is a **DATE_SERIALIZATION** mismatch (Date cell vs string), not wrong data — the id/FK/route/checksum gates all passed.
+
+### Stored-token validator false-positive root cause
+`TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE` computed its top-level verdict from the OLDER `TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE` scoped-validation (present-headers + no-unexpected) + checksum guards + dup only — it **never checked** the exact five line ids, FKs, K2 route, or **any** of the four lineage gates. So it returned `FROZEN_SCOPE_VALIDATED` while the R6F2G post-validator failed two lineage gates.
+
+### A — read-only diagnostic
+`TEMP_R6F2G4_DIAGNOSE_POST_COMMIT_DATE_LINEAGE()` emits one compact log: exact K2 state (header id, five line ids, matched/missing/unexpected, FK/orphan/dup, DB counts, legacy/unrelated checksums); per date field the raw Apps Script type, `instanceof Date`, JSON/string repr, spreadsheet display value + number format, canonical normalized value, expected canonical value, semantic match; all four lineage fields' actual/expected fingerprint + source + match; and a final classification `DATE_SERIALIZATION_ONLY` / `TIMEZONE_NORMALIZATION_MISMATCH` / `VALUE_ACTUALLY_WRONG` / `FIELD_WRITE_MISSING` / `UNKNOWN`. No cell mutation.
+
+### B — canonical normalizer (`TEMP_r6f2gNormalizeLineage_` + `TEMP_r6f2gLineageFieldMatch_`)
+`calculated_at` → `yyyy-MM-dd HH:mm:ss`; `source_data_as_of` → `yyyy-MM-dd`. Date objects are formatted in the canonical GAP/spreadsheet timezone (`GAP_CALC_TZ_` → spreadsheet tz → `Asia/Taipei`) so a date-only Date never shifts a day; strings are parsed fail-closed; blank/unparseable/arbitrary-nonblank → `null` (never a pass, never weakened to "nonblank"); the two concepts stay distinct (different target patterns). Used by the R6F2G readback/validator (`lineageOk` now compares the RAW cell `old_raw` via the matcher) and the R6F2E stored-token validator.
+
+### C — stored-token validator fix
+`TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE` now delegates its top-level verdict to the consolidated `TEMP_r6f2gFrozenScopeValidated_` (exact five SADL-K2 ids + FKs + K2 route + calculation_run_id/formula_version/calculated_at/source_data_as_of lineage + checksums/dup/orphan/scope/cycle). It returns `RECONCILIATION_REQUIRED` when either date-lineage gate fails, and keeps the pre-generation branch (`RECONCILIATION_REQUIRED_PRE_GENERATION` when the header is not present). It no longer relies on the older package's inner verdict.
+
+### D — data-correct vs data-wrong policy
+The diagnostic drives the policy: `DATE_SERIALIZATION_ONLY` (semantically equal after canonical normalization) → fix validators/readback only, DO NOT rewrite the live cells, re-run the read-only `TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE` to confirm `FROZEN_SCOPE_VALIDATED`. `VALUE_ACTUALLY_WRONG` / `FIELD_WRITE_MISSING` → HALT with actual-vs-expected; a repair is separately gated (no write/rollback here). The validator fix is safe under BOTH branches: a serialization-only case now passes; a genuinely wrong/missing value still fails closed (`RECONCILIATION_REQUIRED`).
+
+### E — production write consistency
+Neither **61_ nor 16_ requires a production correction**. The production lineage authority (R6F2G2) is correct; the atomic writer stores the fields as the DB intends (spreadsheet Date cells). The defect was purely on the READ/compare side — fixed by the canonical normalizer in the validator/readback. Storage representation is deliberately unchanged (the DB authority intentionally uses Date cells).
+
+### F — tests
+`inventory-k2-id-lineage-remediation-f1-7n-fa-3c-r6f2g.test.js` (165/0): Date-object + string calculated_at normalize; date-only Date no day shift (Asia/Taipei); malformed/wrong/arbitrary-nonblank fail; Date-cell header passes the four-gate validator (serialization-only) → FROZEN_SCOPE_VALIDATED; wrong/blank calculated_at → gate false + stored-token validator never false-passes; delegation source-fact; diagnostic classifies DATE_SERIALIZATION_ONLY (read-only) and VALUE_ACTUALLY_WRONG→HALT. Full sweep = known 4-test baseline, 0 new.
+
+### deployment
+TEMP + test/doc only. No 16_/61_/core/bundle/00_config/frontend change, no bundle rebuild. APPS_SCRIPT_SYNC_REQUIRED: `TEMP_migrate_request_order_draft_v2.gs`. No live write; confirmation stays `7c86deb0`; flag false.
