@@ -351,6 +351,22 @@ function sadK2LineNaturalKey_(draftId, l) {
 // Deterministic K2 LINE id: SADL-K2-<upper FNV1a hex of the K2 line natural key>.
 function sadK2DeterministicLineId_(draftId, l) { return 'SADL-K2-' + sadFnv1a_(sadK2LineNaturalKey_(draftId, l)).toUpperCase(); }
 
+// F1-7N-FA-3C-R6F2G (B) — K2-AWARE NEW-LINE id authority (wired into the atomic writer below; PERMANENT fix for the
+// R6F2F2 freeze/writer divergence where a K2 CREATE minted generic SADL- ids while the freeze precomputed SADL-K2-).
+// A genuine K2 shipment group mints the K2 line id (SADL-K2-, natural key sku|site_sku|window_code); a generic/legacy
+// draft keeps the SADL- scheme (natural key sku|site_sku|window_code|source_warehouse_id|route_no). K2 CREATE and the
+// missing-line REGENERATE path use the SAME K2 authority. `sadIsK2Group_` classifies from the GROUP authority — the
+// resolver's k2 decision when known, else the header's route completeness (the exact predicate the K2 resolver uses),
+// corroborated by (never solely decided by) a stored SADH-K2- id — so a caller-supplied prefix alone can never
+// reclassify a draft. For a K2 CREATE the new-line id is ALWAYS derived from the canonical K2 natural key, so a
+// caller-supplied arbitrary line id is never trusted to name a new K2 line.
+function sadIsK2Group_(resolvedK2, headerId, header) {
+  if (resolvedK2 === true) return true;
+  if (resolvedK2 === false && !(String(headerId || '').indexOf('SADH-K2-') === 0)) return false;
+  return (String(headerId || '').indexOf('SADH-K2-') === 0) || sadHeaderRouteIsComplete_(header || {});
+}
+function sadNewLineId_(isK2, draftId, l) { return isK2 ? sadK2DeterministicLineId_(draftId, l) : sadDeterministicLineId_(draftId, l); }
+
 // CREATE / REUSE / CONFLICT over the K2 group key among ACTIVE headers (draft/site_confirmed/partially_submitted).
 // rows = header-shaped objects (each carrying allocation_draft_id + the K2 dims + status). Pure; no sheet access.
 //   0 active match => CREATE (deterministic id) · 1 => REUSE (that id) · >1 => BLOCKED_CONFLICT (all ids; zero mutation).
@@ -476,6 +492,10 @@ function sadUpsertLinesKeyedCore_(body) {
   // manual line rejects the request with ZERO mutation (System Repair 2 §4/§8; C2-D1R). A soft-cancel line
   // (line_status='cancelled') and a system-generated recommendation snapshot are exempt; only a manual
   // execution line must carry SKU + Qty>0 (route context is HEADER-level in the 28-col line grain).
+  // R6F2G (B): the resolved draft id itself is the K2 group authority for this keyed path (a real stored SADH-K2- id,
+  // not a caller classification) — a K2 draft heals/mints K2 line ids so no keyed write reintroduces a SADL- line
+  // under a K2 header; a generic/legacy draft is unchanged.
+  var isK2Draft = (String(draftId).indexOf('SADH-K2-') === 0);
   var lines = [];
   for (var m = 0; m < rawLines.length; m++) lines.push(sadApplyLineAliases_(rawLines[m] || {}));
   for (var v = 0; v < lines.length; v++) {
@@ -505,7 +525,7 @@ function sadUpsertLinesKeyedCore_(body) {
       // R6F: heal a blank generated-line id with the deterministic SADL id so future edits/readback carry a stable id
       // (idempotent — a nonblank id is never overwritten).
       var cId0 = found.col('allocation_draft_line_id');
-      if (cId0 !== -1) { var curId0 = String(sh.getRange(found.row, cId0 + 1).getValue()).trim(); if (!curId0) sh.getRange(found.row, cId0 + 1).setValue(sadDeterministicLineId_(draftId, l)); }
+      if (cId0 !== -1) { var curId0 = String(sh.getRange(found.row, cId0 + 1).getValue()).trim(); if (!curId0) sh.getRange(found.row, cId0 + 1).setValue(sadNewLineId_(isK2Draft, draftId, l)); }
       function setU(name) { if (l[name] != null) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(String(l[name])); } }
       // Execution-Plan (user) fields — always update when provided.
       EXEC_FIELDS.forEach(setU);
@@ -515,8 +535,10 @@ function sadUpsertLinesKeyedCore_(body) {
       updated++;
     } else {
       // R6F: DETERMINISTIC id (frozen formula) so regeneration/edit of the same logical line reuses the same id
-      // (no random-UUID drift, no duplicate on retry). Explicit ids from the frontend are honored as-is.
-      if (!lineId) lineId = sadDeterministicLineId_(draftId, l);
+      // (no random-UUID drift, no duplicate on retry). Explicit ids from the frontend are honored as-is for a generic
+      // draft; a K2 draft (R6F2G) ALWAYS mints the canonical K2 line id (never trusts an arbitrary caller id).
+      if (isK2Draft) lineId = sadK2DeterministicLineId_(draftId, l);
+      else if (!lineId) lineId = sadDeterministicLineId_(draftId, l);
       var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
       var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty)
         : (recQty !== '' ? recQty : '');   // first creation: planned_qty = recommended_qty
@@ -640,10 +662,14 @@ function sadAtomicUpsertCore_(body) {
   var allowReconcile = (body.allow_legacy_reconcile === true);
   var id = String(header.allocation_draft_id || '').trim();
   var found = id ? procurementFindRow_(hSh, 'allocation_draft_id', id) : null;
+  // R6F2G (B): K2 group classification from the resolver's authoritative decision (CREATE/REUSE), else — for an
+  // explicit-id edit — from the header's own group authority. Drives the K2-aware NEW-line id scheme below.
+  var isK2Group = id ? sadIsK2Group_(undefined, id, header) : false;
   if (!id) {
     var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile });
     if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
     if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + (res.reason === 'ROUTE_INCOMPLETE_NEW_DRAFT' ? 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route' : 'this scope has an existing route-incomplete/legacy Draft — reconcile it via an explicit USER migration') + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
+    isK2Group = sadIsK2Group_(res.k2, res.id, header);
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
     else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id → INSERT with it (found stays null)
   }
@@ -733,7 +759,7 @@ function sadAtomicUpsertCore_(body) {
         var cLS = lf.col('line_status'); var curLS = cLS !== -1 ? String(lSh.getRange(lf.row, cLS + 1).getValue()).trim().toLowerCase() : '';
         if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
         var cId0 = lf.col('allocation_draft_line_id');
-        if (cId0 !== -1) { var curId0 = String(lSh.getRange(lf.row, cId0 + 1).getValue()).trim(); if (!curId0) lSh.getRange(lf.row, cId0 + 1).setValue(sadDeterministicLineId_(id, l)); }
+        if (cId0 !== -1) { var curId0 = String(lSh.getRange(lf.row, cId0 + 1).getValue()).trim(); if (!curId0) lSh.getRange(lf.row, cId0 + 1).setValue(sadNewLineId_(isK2Group, id, l)); }
         (function (found2, line) {
           function put(name, val) { var c = found2.col(name); if (c !== -1) lSh.getRange(found2.row, c + 1).setValue(String(val)); }
           if (outcome === 'REGENERATE') {
@@ -749,7 +775,10 @@ function sadAtomicUpsertCore_(body) {
         })(lf, l);
         updated++;
       } else {
-        if (!lineId) lineId = sadDeterministicLineId_(id, l);
+        // R6F2G (B): a K2 group ALWAYS mints the canonical K2 line id from the natural key (a caller-supplied arbitrary
+        // id is never trusted to name a new K2 line); a generic/legacy draft honors an explicit id, else mints SADL-.
+        if (isK2Group) lineId = sadK2DeterministicLineId_(id, l);
+        else if (!lineId) lineId = sadDeterministicLineId_(id, l);
         var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
         var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty) : (recQty !== '' ? recQty : '');
         var rowObj = { allocation_draft_line_id: lineId, allocation_draft_id: id, created_at: now, updated_at: now, planned_qty: planned, recommended_qty: recQty };

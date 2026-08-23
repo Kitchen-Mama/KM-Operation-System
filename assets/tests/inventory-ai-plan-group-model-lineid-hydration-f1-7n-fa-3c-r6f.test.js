@@ -59,7 +59,10 @@ ok(typeof foundNk.col === 'function' && foundNk.col('allocation_draft_id') === L
 
 section('B1. 16_ edit path structure (id-or-natural-key, heal blank id, deterministic insert, under lock)');
 ok(/found = lineId \? procurementFindRow_\(sh, 'allocation_draft_line_id', lineId\) : sadFindLineByNaturalKey_\(sh, draftId, l\)/.test(G16), 'B1. edit resolves by explicit id else natural key');
-ok(/if \(!curId0\) sh\.getRange\(found\.row, cId0 \+ 1\)\.setValue\(sadDeterministicLineId_\(draftId, l\)\)/.test(G16), 'B1. blank generated-line id healed with the deterministic id on edit');
+// R6F2G: the heal now routes through the K2-aware sadNewLineId_ (a generic draft still heals to the SADL- id because
+// sadNewLineId_(false, …) delegates to sadDeterministicLineId_; a stored SADH-K2- draft heals to the SADL-K2- id).
+ok(/if \(!curId0\) sh\.getRange\(found\.row, cId0 \+ 1\)\.setValue\(sadNewLineId_\(isK2Draft, draftId, l\)\)/.test(G16), 'B1. blank generated-line id healed with the K2-aware deterministic id on edit');
+ok(/function sadNewLineId_\(isK2, draftId, l\) \{ return isK2 \? sadK2DeterministicLineId_\(draftId, l\) : sadDeterministicLineId_\(draftId, l\); \}/.test(G16), 'B1. sadNewLineId_ delegates to sadDeterministicLineId_ for a generic (non-K2) draft (unchanged behavior)');
 ok(/if \(!lineId\) lineId = sadDeterministicLineId_\(draftId, l\)/.test(G16), 'B1. blank-id INSERT uses the deterministic id (no random UUID)');
 ok(/LockService\.getScriptLock\(\)/.test(G16) && /tryLock\(30000\)/.test(G16), 'B1/D. the public lines handler wraps the check-and-write in a 30s ScriptLock');
 var execBlock = G16.slice(G16.indexOf("var EXEC_FIELDS"), G16.indexOf("var EXEC_FIELDS") + 160);

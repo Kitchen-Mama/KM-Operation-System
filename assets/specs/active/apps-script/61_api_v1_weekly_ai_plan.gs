@@ -223,6 +223,34 @@ function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
 }
 function weeklyAiPlanParseResp_(resp) { try { return JSON.parse(resp && resp.getContent ? resp.getContent() : (typeof resp === 'string' ? resp : '{}')); } catch (e) { return { success: false, parse_error: true }; } }
 
+// F1-7N-FA-3C-R6F2G (C) — authoritative GAP-INV run lineage for a K2 CREATE/REGENERATE. Reads the SAME production
+// authority the gap job writes (the GAP_JOB_INVENTORY script property; 46_ gap-materialization job), never a fresh
+// clock or a fabricated value. A K2 header MUST stamp calculation_run_id from a DONE GAP-INV run whose planning cycle
+// equals the request; a MONTHLY_ORDER run is NEVER used; a missing / non-DONE / wrong-prefix / wrong-cycle run BLOCKS
+// before ANY write (zero rows). calculated_at is carried from the GAP run's finished/calculation timestamp,
+// source_data_as_of from the harvest, formula_version from the request's canonical formula version.
+function weeklyAiPlanResolveGapRunLineage_(planningCycle, harvest, request) {
+  var raw = null;
+  try { raw = PropertiesService.getScriptProperties().getProperty('GAP_JOB_INVENTORY'); } catch (e0) { raw = null; }
+  if (!raw) return { ok: false, reason: 'LINEAGE_GAP_RUN_UNRESOLVED' };
+  var st = null; try { st = JSON.parse(raw); } catch (ep) { st = null; }
+  if (!st) return { ok: false, reason: 'LINEAGE_GAP_RUN_UNPARSEABLE' };
+  if (String(st.product || '').toUpperCase() !== 'INVENTORY') return { ok: false, reason: 'LINEAGE_RUN_NOT_INVENTORY' };   // MONTHLY_ORDER etc. never used
+  var runId = String(st.runId || '').trim();
+  if (!/^GAP-INV-/.test(runId)) return { ok: false, reason: 'LINEAGE_RUN_ID_PREFIX_INVALID' };
+  if (String(st.status || '').toUpperCase() !== 'DONE') return { ok: false, reason: 'LINEAGE_GAP_RUN_NOT_DONE' };
+  var cyc = String(planningCycle || '').trim();
+  if (cyc && String(st.planningCycle || '').trim() !== cyc) return { ok: false, reason: 'LINEAGE_RUN_CYCLE_MISMATCH' };
+  return {
+    ok: true, run_id: runId,
+    calculation_run_id: runId,
+    calculated_at: String(st.finishedAt || st.calculationDate || '').trim(),
+    source_data_as_of: String((harvest && harvest.sourceDataAsOf) || '').trim(),
+    formula_version: String((request && request.formulaVersion) || 'WEEKLY_AI_PLAN_V1').trim(),
+    planning_cycle: String(st.planningCycle || '').trim()
+  };
+}
+
 function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAuth) {
   var src = KMWRB.buildWeeklySourceLines(request);
   if (!src.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(src.status || 'BLOCKED_INPUT', src.reason || 'source lines blocked')] });
@@ -253,6 +281,10 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     var authRes = (typeof WeeklyAiPlanControlledAuthority_ !== 'undefined') ? WeeklyAiPlanControlledAuthority_.verify(controlledAuth, liveScopeSpec) : { ok: false, reason: 'AUTHORITY_MODULE_MISSING' };
     if (!authRes.ok) return jsonResponse_({ success: false, disabled: true, errors: [weeklyAiPlanErr_('CONTROLLED_GENERATION_UNAUTHORIZED', 'global flag is false and no valid INTERNAL controlled authority for this exact scope (' + authRes.reason + '); zero rows written', { auth_reason: authRes.reason })] });
   }
+  // F1-7N-FA-3C-R6F2G (C) — resolve + BLOCK on the authoritative GAP-INV run lineage BEFORE any write. A K2 header must
+  // carry the DONE GAP-INV run id (cycle-matched) as calculation_run_id; without it the run fails closed (zero rows).
+  var lineage = weeklyAiPlanResolveGapRunLineage_(request.planningCycle, harvest, request);
+  if (!lineage.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(lineage.reason, 'K2 generation blocked: authoritative GAP-INV run lineage unavailable or mismatched (' + lineage.reason + '); zero rows written', { planning_cycle: request.planningCycle })] });
   var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
   Object.keys(byMkt).sort().forEach(function (M) {
     var plan = KMWRR.buildK2GenerationPlan({
@@ -268,6 +300,12 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       // G — each K2 group is INDIVIDUALLY atomic (one lock inside the atomic endpoint). The overall job reports a
       // truthful per-group outcome; whole-job success is claimed ONLY when every group committed. A retry uses the
       // SAME deterministic identity (SADH-K2-…) so a committed group REUSEs (zero writes), never duplicates.
+      // R6F2G (C) — stamp the authoritative lineage onto the header before the atomic write. These fields are EXCLUDED
+      // from the REUSE fingerprint (SAD_K2_HEADER_FP_/LINE_FP_), so a committed group still REUSEs (zero writes) here.
+      g.header.calculation_run_id = lineage.calculation_run_id;
+      g.header.formula_version = lineage.formula_version;
+      g.header.calculated_at = lineage.calculated_at;
+      g.header.source_data_as_of = lineage.source_data_as_of;
       var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: g.header, lines: g.lines, enforce_k2_grouping: true }));
       var d = (resp && resp.data) ? resp.data : {};
       var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (d.outcome || 'CREATED')) : ((d && d.reason) ? d.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));

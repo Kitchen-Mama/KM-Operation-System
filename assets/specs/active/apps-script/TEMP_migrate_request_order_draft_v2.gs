@@ -3884,3 +3884,288 @@ function TEMP_r6a1ValidateAfterSend_(reuseMode) {
   Logger.log('R6A1_VALIDATE_' + (reuseMode ? 'REUSE' : 'AFTER_SEND') + ' ' + JSON.stringify(out, null, 2));
   return out;
 }
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2G — K2 ID + LINEAGE REMEDIATION (D read-only preflight · E STAGED migration · F validator
+// consolidation). The PERMANENT writer/lineage fixes live in 16_ (K2-aware line ids) + 61_ (GAP-INV lineage transport);
+// these TEMP tools reconcile the ONE already-committed frozen scope whose five lines were written under the OLD generic
+// SADL- scheme (before the 16_ fix) and whose header calculation_run_id is blank (before the 61_ fix). The migration is
+// PREPARED, NOT EXECUTED: the confirmation checksum stays a placeholder and COMMIT refuses until the USER sets it.
+// K2 identity is canonical (SADH-K2-* / SADL-K2-*); the token is NOT re-derived to accept SADL-*; the validator is NOT
+// weakened. All of D + the DRY_RUN + the post-migration validator are STRICTLY READ-ONLY.
+// ================================================================================================================
+var TEMP_R6F2G_FROZEN_HEADER_ID_ = 'SADH-K2-7F15DD7D';
+var TEMP_R6F2G_EXPECTED_K2_LINE_IDS_ = ['SADL-K2-25BAA672', 'SADL-K2-434B65FA', 'SADL-K2-477B4D96', 'SADL-K2-4ED9AD78', 'SADL-K2-A9F07664'];
+var TEMP_R6F2G_EXPECTED_GAP_FP_HASH_ = 'h9fe21969';        // the ':h…' hash portion of the frozen GAP-run fingerprint
+var TEMP_R6F2G_UNRELATED_CHECKSUM_ = '62b84b14';
+var TEMP_R6F2G_TOKEN_INTEGRITY_ = 'd70cd43d';
+var TEMP_R6F2G_MIGRATION_STORE_KEY_ = 'R6F2G_ID_LINEAGE_ROLLBACK_V1';
+// E — USER confirmation gate for the controlled migration. DRY_RUN prints the live migration-plan checksum; the USER
+// copies it into this constant and re-saves the file before COMMIT. Until then COMMIT refuses. LEFT AT PLACEHOLDER
+// in this task (R6F2G-P0) — do NOT set it here; do NOT run COMMIT.
+var TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE';
+var TEMP_R6F2G_DOWNSTREAM_TABLES_ = ['shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines'];
+
+// Read the persisted frozen token or null.
+function TEMP_r6f2gLoadToken_() {
+  try { var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+// Count how many cells in the given tables equal any of the supplied ids (READ-ONLY full-value scan; robust to unknown
+// FK column names). Returns { table: { id: count } } and a flat total. A table that is absent contributes 0.
+function TEMP_r6f2gScanDownstreamRefs_(ids, tables) {
+  var want = {}; (ids || []).forEach(function (id) { var s = TEMP_str_(id); if (s) want[s] = 1; });
+  var byTable = {}, total = 0;
+  (tables || []).forEach(function (t) {
+    var obj = TEMP_readObjects_(t);
+    var perId = {};
+    if (obj && obj.present && (obj.rows || []).length && (obj.headers || []).length) {
+      obj.rows.forEach(function (r) {
+        obj.headers.forEach(function (h) {
+          var v = TEMP_str_(r[h]); if (v && want[v]) { perId[v] = (perId[v] || 0) + 1; total++; }
+        });
+      });
+    }
+    byTable[t] = { present: !!(obj && obj.present), references: perId };
+  });
+  return { by_table: byTable, total_references: total };
+}
+// Build the migration plan (old→new line-id mapping) from LIVE rows. The NEW id is DERIVED from the canonical K2 line-id
+// authority (sadK2DeterministicLineId_) over each live row — never a hard-coded map. Returns the plan + its checksum.
+function TEMP_r6f2gBuildMigrationPlan_(token) {
+  var expHeaderId = (token && (token.expected_header_ids_sorted || [])[0]) || TEMP_R6F2G_FROZEN_HEADER_ID_;
+  var L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var rows = (L.rows || []).filter(function (x) { return TEMP_r6f2fLineFk_(x) === TEMP_str_(expHeaderId) && TEMP_str_(x.line_status).toLowerCase() !== 'cancelled'; });
+  var mappings = rows.map(function (x, i) {
+    var oldId = TEMP_r6f2fLineId_(x);
+    var newId = (typeof sadK2DeterministicLineId_ === 'function') ? sadK2DeterministicLineId_(TEMP_r6f2fLineFk_(x), x) : null;
+    return { row_position: i, old_line_id: oldId, new_line_id: newId, fk: TEMP_r6f2fLineFk_(x),
+      changes: TEMP_str_(oldId) !== TEMP_str_(newId), sku_window_fp: TEMP_r6f2bFp_(TEMP_str_(x.sku) + '|' + TEMP_str_(x.window_code)) };
+  });
+  var newIds = mappings.map(function (m) { return TEMP_str_(m.new_line_id); }).slice().sort();
+  var oldIds = mappings.map(function (m) { return TEMP_str_(m.old_line_id); }).slice().sort();
+  var distinctNew = {}; var dupTarget = 0; newIds.forEach(function (id) { if (distinctNew[id]) dupTarget++; else distinctNew[id] = 1; });
+  var checksum = TEMP_r5bHash_(JSON.stringify({ h: expHeaderId, m: mappings.map(function (m) { return [m.old_line_id, m.new_line_id, m.fk]; }) }));
+  return { header_id: expHeaderId, mappings: mappings, old_line_ids_sorted: oldIds, new_line_ids_sorted: newIds,
+    duplicate_target_count: dupTarget, all_fk_point_to_header: mappings.every(function (m) { return TEMP_str_(m.fk) === TEMP_str_(expHeaderId); }),
+    new_ids_match_frozen: JSON.stringify(newIds) === JSON.stringify((token && token.expected_line_ids_sorted || []).slice().sort()),
+    migration_plan_checksum: checksum };
+}
+// Live GAP-INV run lineage (READ-ONLY): the raw run id + fingerprint, reusing the corrected R6D authority.
+function TEMP_r6f2gGapLineage_() {
+  var job = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : null;
+  var found = !!(job && job.status === 'FOUND');
+  var runId = found ? TEMP_str_(job.run_id) : '';
+  var fp = (found && typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(runId) : '';
+  return { found: found, run_status: found ? TEMP_str_(job.run_status) : null, run_id: runId, run_id_fingerprint: fp,
+    prefix_ok: /^GAP-INV-/.test(runId), done: found && String(job.run_status || '').toUpperCase() === 'DONE',
+    calculated_at: found ? (TEMP_str_(job.finished_at) || TEMP_str_(job.calculation_date)) : '' };
+}
+
+// F — CONSOLIDATED post-generation validator. Uses ONLY the canonical accessors (line id / FK / header id / calc-run
+// lineage) + the K2 route-completeness metric (a logical marketplace destination is valid; the generic warehouse-route
+// metric is untouched). FROZEN_SCOPE_VALIDATED requires: exactly one frozen K2 header · exactly five SADL-K2 ids · all
+// five correct FKs · exact scope/cycle · authoritative calculation_run_id lineage · K2 route complete · zero
+// unexpected/missing · no orphan/dup · legacy + unrelated checksums unchanged. Returns { validated, gates }.
+function TEMP_r6f2gFrozenScopeValidated_(token) {
+  var st = TEMP_r6f2fReadFrozenScopeState_(token);
+  var hdr = st.header_row || {};
+  var expHeaderId = (token.expected_header_ids_sorted || [])[0] || null;
+  var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+  var calcFp = (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) : '';
+  var gates = {
+    exactly_one_header: st.header_present && st.unexpected_headers_in_scope === 0,
+    header_id_match: st.header_present && TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(expHeaderId),
+    five_k2_lines: st.matched_line_ids.length === token.expected_k2_line_count,
+    no_missing: st.missing_line_ids.length === 0,
+    no_unexpected: st.unexpected_line_ids.length === 0,
+    fk_ok: st.line_fk_ok === true,
+    no_dup: st.dup_line_id === 0 && st.dup_k2 === 0,
+    no_orphan: st.orphan_lines === 0,
+    scope_exact: TEMP_str_(hdr.company) === TEMP_str_(token.scope.company) && TEMP_str_(hdr.country) === TEMP_str_(token.scope.country) && TEMP_str_(hdr.marketplace) === TEMP_str_(token.scope.marketplace),
+    cycle_exact: TEMP_str_(hdr.planning_cycle) === TEMP_str_(token.planning_cycle),
+    calc_run_lineage: TEMP_str_(calcFp) === TEMP_str_(token.calculation_run_id_fingerprint) && TEMP_str_(calcFp) !== '' && TEMP_str_(calcFp) !== TEMP_r5bIdFingerprint_(''),
+    route_complete_k2: st.route_complete_k2 === true,
+    unrelated_match: TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum),
+    legacy_match: TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum)
+  };
+  var validated = Object.keys(gates).every(function (k) { return gates[k] === true; });
+  return { validated: validated, gates: gates, state: st, verdict: validated ? 'FROZEN_SCOPE_VALIDATED' : 'RECONCILIATION_REQUIRED' };
+}
+
+// D — STRICT READ-ONLY repair preflight. Emits ONE compact log. verdict READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION
+// only if every gate passes. HALTs (reports explicitly) if any OLD line id has a downstream reference.
+function TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION() {
+  var out = { tool: 'TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION', mode: 'STRICTLY READ-ONLY (no write/migrate/repair/delete/submit)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
+  try {
+    var token = TEMP_r6f2gLoadToken_();
+    if (!token) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G_PREFLIGHT ' + JSON.stringify(out, null, 2)); return out; }
+    var plan = TEMP_r6f2gBuildMigrationPlan_(token);
+    var st = TEMP_r6f2fReadFrozenScopeState_(token);
+    var hdr = st.header_row || {};
+    var gap = TEMP_r6f2gGapLineage_();
+    var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+    var flagEnabled = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+
+    // downstream references to the OLD line ids + the header id — HALT if any old-line-id reference exists.
+    var refOld = TEMP_r6f2gScanDownstreamRefs_(plan.old_line_ids_sorted, TEMP_R6F2G_DOWNSTREAM_TABLES_);
+    var refHeader = TEMP_r6f2gScanDownstreamRefs_([plan.header_id], TEMP_R6F2G_DOWNSTREAM_TABLES_);
+
+    out.exact_header = { expected_header_id: plan.header_id, header_present: st.header_present, actual_header_id: st.header_present ? TEMP_r6f2fHeaderId_(hdr) : null, header_id_match: st.header_present && TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(plan.header_id) };
+    out.current_five_sadl_rows = plan.mappings.map(function (m) { return { old_line_id: m.old_line_id, fk: m.fk, sku_window_fp: m.sku_window_fp }; });
+    out.old_to_new_mappings = plan.mappings.map(function (m) { return { old_line_id: m.old_line_id, new_line_id: m.new_line_id, changes: m.changes }; });
+    out.no_duplicate_target_ids = plan.duplicate_target_count === 0;
+    out.every_fk_points_to_frozen_header = plan.all_fk_point_to_header;
+    out.new_ids_match_frozen_expected = plan.new_ids_match_frozen;
+    out.no_orphan_or_duplicate_k2_group = (st.orphan_lines === 0 && st.dup_k2 === 0);
+    out.current_header_lineage = { calculation_run_id_fingerprint: (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) : null, calculation_run_id_blank: TEMP_r6f2fHeaderRunId_(hdr) === '', formula_version: TEMP_str_(hdr.formula_version), calculated_at_blank: TEMP_str_(hdr.calculated_at) === '', source_data_as_of_blank: TEMP_str_(hdr.source_data_as_of) === '' };
+    out.raw_gap_run = { found: gap.found, run_status: gap.run_status, run_id_fingerprint: gap.run_id_fingerprint, prefix_ok: gap.prefix_ok, done: gap.done };
+    // authority = the frozen token's calculation_run_id_fingerprint; the known h9fe21969 hash is reported as a
+    // cross-check, not a hard gate (a re-frozen token could legitimately carry a different run fingerprint).
+    out.raw_gap_fp_matches_frozen = TEMP_str_(gap.run_id_fingerprint) !== '' && TEMP_str_(gap.run_id_fingerprint) === TEMP_str_(token.calculation_run_id_fingerprint);
+    out.raw_gap_fp_matches_known_h9fe21969 = TEMP_str_(gap.run_id_fingerprint).indexOf(':' + TEMP_R6F2G_EXPECTED_GAP_FP_HASH_) !== -1;
+    out.expected_lineage_after_repair = { calculation_run_id_fingerprint: token.calculation_run_id_fingerprint, calculation_run_id_source: 'authoritative GAP-INV run id (raw)', formula_version: 'WEEKLY_AI_PLAN_V1' };
+    out.downstream_line_id_reference_counts = refOld.by_table;
+    out.downstream_line_id_reference_total = refOld.total_references;
+    out.downstream_header_id_reference_counts = refHeader.by_table;
+    out.shipping_shipment_reservation_submit_refs = { note: 'reservation/deduction sheets are absent in this DB; shipping_plans/shipping_plan_lines/shipments/shipment_lines scanned above', total: refOld.total_references + refHeader.total_references };
+    out.legacy_checksum_match = TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_);
+    out.unrelated_checksum_match = TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(TEMP_R6F2G_UNRELATED_CHECKSUM_) || TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum);
+    out.inventory_flag_false = (flagEnabled === false);
+    out.token_integrity_match = TEMP_str_(token.token_integrity_checksum) === TEMP_R6F2G_TOKEN_INTEGRITY_;
+    out.freeze_checksum_match = TEMP_str_(token.freeze_checksum) === TEMP_str_(TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_);
+    out.migration_plan_checksum = plan.migration_plan_checksum;
+
+    // HALT explicitly if any OLD line id is referenced downstream (never silently cascade in P0).
+    if (refOld.total_references > 0) {
+      out.verdict = 'HALT_DOWNSTREAM_REFERENCE_TO_OLD_LINE_ID';
+      out.halt_detail = 'one or more OLD SADL- line ids are referenced by a downstream table; a P0 in-place id rewrite would orphan those references. HALT for a USER cascade decision — no migration.';
+      Logger.log('R6F2G_PREFLIGHT ' + JSON.stringify(out, null, 2)); return out;
+    }
+    var allGates = out.exact_header.header_id_match && out.no_duplicate_target_ids && out.every_fk_points_to_frozen_header &&
+      out.new_ids_match_frozen_expected && out.no_orphan_or_duplicate_k2_group && out.raw_gap_run.done && out.raw_gap_run.prefix_ok &&
+      out.raw_gap_fp_matches_frozen && out.legacy_checksum_match && out.unrelated_checksum_match && out.inventory_flag_false &&
+      out.token_integrity_match && out.freeze_checksum_match && refOld.total_references === 0;
+    out.verdict = allGates ? 'READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION' : 'NOT_READY_GATES_UNMET';
+    out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'PREFLIGHT_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2G_PREFLIGHT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// E — DRY_RUN (READ-ONLY): prints the exact plan + its checksum. The USER copies the checksum into
+// TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ and re-saves before COMMIT.
+function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN() {
+  var out = { tool: 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN', mode: 'STRICTLY READ-ONLY (no write)' };
+  try {
+    var token = TEMP_r6f2gLoadToken_();
+    if (!token) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G_DRY_RUN ' + JSON.stringify(out, null, 2)); return out; }
+    var pre = TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION();
+    var plan = TEMP_r6f2gBuildMigrationPlan_(token);
+    var gap = TEMP_r6f2gGapLineage_();
+    out.preflight_verdict = pre.verdict;
+    out.header_id = plan.header_id;
+    out.line_id_cell_updates = plan.mappings.filter(function (m) { return m.changes; }).map(function (m) { return { row_position: m.row_position, from: m.old_line_id, to: m.new_line_id }; });
+    out.line_id_cell_update_count = out.line_id_cell_updates.length;
+    out.header_lineage_updates = { calculation_run_id_from: (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_((TEMP_r6f2fReadFrozenScopeState_(token).header_row) || {})) : null, calculation_run_id_to_fingerprint: gap.run_id_fingerprint, formula_version_to: 'WEEKLY_AI_PLAN_V1' };
+    out.migration_plan_checksum = plan.migration_plan_checksum;
+    out.confirmation_constant_status = (TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ === 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE') ? 'PLACEHOLDER (COMMIT will refuse until the USER sets this constant to the migration_plan_checksum above and re-saves the file)' : 'SET';
+    out.next_step = 'Copy migration_plan_checksum into the TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ constant, save the file, then run TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT only after preflight verdict READY.';
+    out.verdict = 'DRY_RUN_READY';
+    out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'DRY_RUN_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2G_DRY_RUN ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// E — COMMIT (WRITE, controlled). Refuses unless the confirmation constant equals the live migration-plan checksum AND
+// the preflight verdict is READY. Under a script lock: store a rollback token BEFORE the first business-cell mutation,
+// rewrite EXACTLY the five allocation_draft_line_id cells in place (row position + every other value preserved), set
+// only missing/incorrect system-owned lineage on the ONE frozen header, then verify by readback. Never insert/delete/
+// cancel/regenerate a row; never touch unrelated scope, the two NOT_SAFE headers, shipping_plans/shipment/reservation/
+// Submit. Returns COMMITTED_K2_ID_LINEAGE_REMEDIATION only after a verified readback; COMMITTED_UNVERIFIED (no retry) on
+// any partial/uncertain state. STAGED OFF this task — the confirmation constant is a placeholder, so this refuses.
+function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT() {
+  var out = { tool: 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT', mode: 'CONTROLLED WRITE (confirmation + preflight gated)' };
+  var lock = null;
+  try {
+    var token = TEMP_r6f2gLoadToken_();
+    if (!token) { out.verdict = 'REFUSED_NO_FROZEN_SCOPE'; Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    var plan = TEMP_r6f2gBuildMigrationPlan_(token);
+    if (TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ === 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE' || TEMP_str_(TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_) !== TEMP_str_(plan.migration_plan_checksum)) {
+      out.verdict = 'REFUSED_CONFIRMATION_CHECKSUM_NOT_SET_OR_MISMATCH';
+      out.expected_confirmation = plan.migration_plan_checksum; out.current_confirmation = TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_;
+      Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out;
+    }
+    var pre = TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION();
+    if (pre.verdict !== 'READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION') { out.verdict = 'REFUSED_PREFLIGHT_NOT_READY'; out.preflight_verdict = pre.verdict; Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(30000)) { out.verdict = 'REFUSED_LOCK'; Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    // re-run the gate under lock (live drift refuses)
+    var pre2 = TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION();
+    if (pre2.verdict !== 'READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION') { out.verdict = 'REFUSED_PREFLIGHT_DRIFT_UNDER_LOCK'; out.preflight_verdict = pre2.verdict; return out; }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName('shipping_allocation_draft_lines');
+    var hsh = ss.getSheetByName('shipping_allocation_drafts');
+    if (!sh || !hsh) { out.verdict = 'REFUSED_SHEET_ABSENT'; return out; }
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0].map(function (x) { return String(x).trim(); });
+    var cId = hdrs.indexOf('allocation_draft_line_id'), cFk = hdrs.indexOf('allocation_draft_id');
+    if (cId === -1 || cFk === -1) { out.verdict = 'REFUSED_SCHEMA'; return out; }
+    var oldSet = {}; plan.mappings.forEach(function (m) { oldSet[TEMP_str_(m.old_line_id)] = TEMP_str_(m.new_line_id); });
+    // locate the exact cells (row whose FK == header id and current id is an OLD id in the plan)
+    var targets = [];
+    for (var r = 1; r < data.length; r++) {
+      if (TEMP_str_(data[r][cFk]) !== TEMP_str_(plan.header_id)) continue;
+      var cur = TEMP_str_(data[r][cId]);
+      if (oldSet.hasOwnProperty(cur)) targets.push({ sheetRow: r + 1, from: cur, to: oldSet[cur] });
+    }
+    if (targets.length !== 5) { out.verdict = 'REFUSED_TARGET_COUNT_NOT_5'; out.targets_found = targets.length; return out; }
+
+    // rollback token BEFORE the first business-cell mutation
+    var rollback = { version: 'R6F2G-ROLLBACK-1', header_id: plan.header_id, line_id_cells: targets.map(function (t) { return { sheetRow: t.sheetRow, before: t.from, after: t.to }; }), created_context: 'R6F2G_COMMIT' };
+    PropertiesService.getScriptProperties().setProperty(TEMP_R6F2G_MIGRATION_STORE_KEY_, JSON.stringify(rollback));
+
+    // rewrite EXACTLY the five id cells in place (no other cell touched)
+    targets.forEach(function (t) { sh.getRange(t.sheetRow, cId + 1).setValue(t.to); });
+
+    // set only missing/incorrect system-owned lineage on the ONE frozen header
+    var gap = TEMP_r6f2gGapLineage_();
+    var hdata = hsh.getDataRange().getValues(); var hh = hdata[0].map(function (x) { return String(x).trim(); });
+    var hcId = hh.indexOf('allocation_draft_id'), hcRun = hh.indexOf('calculation_run_id'), hcFv = hh.indexOf('formula_version'), hcCa = hh.indexOf('calculated_at'), hcSda = hh.indexOf('source_data_as_of');
+    var lineageSet = {};
+    for (var hr = 1; hr < hdata.length; hr++) {
+      if (TEMP_str_(hdata[hr][hcId]) !== TEMP_str_(plan.header_id)) continue;
+      if (hcRun !== -1 && gap.run_id && TEMP_str_(hdata[hr][hcRun]) === '') { hsh.getRange(hr + 1, hcRun + 1).setValue(gap.run_id); lineageSet.calculation_run_id = true; }
+      if (hcFv !== -1 && TEMP_str_(hdata[hr][hcFv]) === '') { hsh.getRange(hr + 1, hcFv + 1).setValue('WEEKLY_AI_PLAN_V1'); lineageSet.formula_version = true; }
+      if (hcCa !== -1 && gap.calculated_at && TEMP_str_(hdata[hr][hcCa]) === '') { hsh.getRange(hr + 1, hcCa + 1).setValue(gap.calculated_at); lineageSet.calculated_at = true; }
+      break;
+    }
+
+    // verified readback
+    var post = TEMP_r6f2gFrozenScopeValidated_(token);
+    out.line_id_cells_updated = targets.length;
+    out.lineage_fields_set = lineageSet;
+    out.post_validation = post.verdict; out.post_gates = post.gates;
+    out.rollback_token_stored = true; out.rollback_store_key = TEMP_R6F2G_MIGRATION_STORE_KEY_;
+    out.verdict = post.validated ? 'COMMITTED_K2_ID_LINEAGE_REMEDIATION' : 'COMMITTED_UNVERIFIED';
+    if (!post.validated) out.committed_unverified_note = 'cells written but post-readback validation did not fully pass; NO automatic retry — reconcile manually (rollback token stored).';
+  } catch (e) { out.verdict = 'COMMITTED_UNVERIFIED'; out.reason = (e && e.message ? e.message : String(e)); out.committed_unverified_note = 'exception during commit; NO automatic retry.'; }
+  finally { if (lock) { try { lock.releaseLock(); } catch (e2) {} } }
+  Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// E — post-migration validator (READ-ONLY): the consolidated FROZEN_SCOPE_VALIDATED verdict + gate breakdown.
+function TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION() {
+  var out = { tool: 'TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION', mode: 'STRICTLY READ-ONLY' };
+  try {
+    var token = TEMP_r6f2gLoadToken_();
+    if (!token) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G_VALIDATE ' + JSON.stringify(out, null, 2)); return out; }
+    var v = TEMP_r6f2gFrozenScopeValidated_(token);
+    out.gates = v.gates; out.verdict = v.verdict; out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'VALIDATE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2G_VALIDATE ' + JSON.stringify(out, null, 2));
+  return out;
+}
