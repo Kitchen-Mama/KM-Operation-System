@@ -3341,8 +3341,35 @@ function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE() {
   Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2));
   return out;
 }
+// F1-7N-FA-3C-R6F2G6 — read-only CONTENT checksum of the exact frozen header + its 5 lines over ALL persisted cells
+// (INCLUDING updated_at / draft_version). An in-place REGENERATE rewrite (which leaves row counts unchanged) changes
+// this checksum; a true no-op REUSE does not. TEMP_str_ stringifies Dates too, so a rewritten timestamp is detected.
+function TEMP_r6f2gContentChecksum_(token) {
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var expHdr = TEMP_str_((token.expected_header_ids_sorted || [])[0]);
+  var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[TEMP_str_(id)] = 1; });
+  var hCols = (H.headers || []).slice().sort(), lCols = (L.headers || []).slice().sort();
+  function rowStr(r, cols) { return cols.map(function (c) { return c + '=' + TEMP_str_(r[c]); }).join('|'); }
+  var headerRow = null; (H.rows || []).forEach(function (r) { if (TEMP_str_(TEMP_r6f2fHeaderId_(r)) === expHdr) headerRow = r; });
+  var lineRows = (L.rows || []).filter(function (x) { return expL[TEMP_str_(TEMP_r6f2fLineId_(x))]; }).sort(function (a, b) { return TEMP_str_(TEMP_r6f2fLineId_(a)) < TEMP_str_(TEMP_r6f2fLineId_(b)) ? -1 : 1; });
+  var headerStr = headerRow ? rowStr(headerRow, hCols) : '', linesStr = lineRows.map(function (r) { return rowStr(r, lCols); }).join('\n');
+  return { header_present: !!headerRow, header_content_checksum: TEMP_r5bHash_(headerStr), lines_content_checksum: TEMP_r5bHash_(linesStr),
+    combined_content_checksum: TEMP_r5bHash_(headerStr + '\n#\n' + linesStr), header_updated_at: headerRow ? TEMP_str_(headerRow.updated_at) : '',
+    header_draft_version: headerRow ? TEMP_str_(headerRow.draft_version) : '', line_updated_ats: lineRows.map(function (r) { return { id: TEMP_r6f2fLineId_(r), updated_at: TEMP_str_(r.updated_at) }; }) };
+}
+// R6F2G6 — PURE fail-closed REUSE verdict. verdict REUSED ONLY when generation succeeded AND every group outcome is
+// strictly REUSED AND row delta 0/0 AND no dup AND the before/after content checksum is byte-equal. A REGENERATED /
+// UPDATED / CREATED outcome — or an in-place content-checksum change — returns REUSE_UNVERIFIED even at row delta 0/0.
+function TEMP_r6f2gReuseVerdict_(success, perGroup, rowDeltaZero, dupK2Zero, contentSame) {
+  perGroup = perGroup || {};
+  var keys = Object.keys(perGroup);
+  var onlyReused = keys.length > 0 && keys.every(function (k) { return String(k).toUpperCase() === 'REUSED'; });
+  var reused = !!(success && onlyReused && rowDeltaZero && dupK2Zero && contentSame);
+  var reason = reused ? '' : (!success ? 'GENERATION_NOT_SUCCESS' : (!onlyReused ? 'NON_REUSE_GROUP_OUTCOME' : (!contentSame ? 'CONTENT_CHECKSUM_CHANGED_IN_PLACE_WRITE' : (!rowDeltaZero ? 'ROW_DELTA_NONZERO' : (!dupK2Zero ? 'DUP_K2' : 'UNKNOWN')))));
+  return { verdict: reused ? 'REUSED' : 'REUSE_UNVERIFIED', reused: reused, only_reused_outcomes: onlyReused, reason: reason };
+}
 // ZERO-ARG REUSE verifier — used ONLY after the first committed run is reviewed (do not run in this task). It calls the
-// SAME real production path; because the deterministic ids already exist, the atomic writer REUSEs (0/0 delta). It first
+// SAME real production path; a genuine no-op REUSE writes nothing and leaves the content checksum unchanged. It first
 // requires the exact committed 1+5 state to already validate; otherwise it refuses (never a first CREATE here).
 function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
   var out = { tool: 'TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE', mode: 'CONTROLLED REUSE VERIFY (deterministic-id REUSE only)',
@@ -3364,17 +3391,63 @@ function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
     var committed = !!(pre.header_present && pre.lines_present === token.expected_k2_line_count && pre.line_fk_ok === true && pre.missing_line_ids.length === 0 && pre.unexpected_headers_in_scope === 0 && pre.unexpected_lines_in_scope === 0 && pre.dup_k2 === 0 && pre.orphan_lines === 0);
     if (!committed) { out.verdict = 'REUSE_REFUSED_NOT_COMMITTED'; out.generation_called = false; out.state = pre; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
     var before = { headers: pre.db_header_rows, lines: pre.db_line_rows };
+    var beforeC = TEMP_r6f2gContentChecksum_(token);           // R6F2G6 — capture exact content BEFORE the run
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var gen = TEMP_r6f2fRunProductionGeneration_(token, ss);   // same real path; deterministic ids already exist → REUSE
     var data = (gen.resp && gen.resp.data) ? gen.resp.data : {};
     var post = TEMP_r6f2fReadFrozenScopeState_(token);
+    var afterC = TEMP_r6f2gContentChecksum_(token);            // R6F2G6 — capture exact content AFTER the run
     out.generation_called = true; out.production_job_status = data.job_status || null; out.per_group_outcome_counts = data.per_group_outcome_counts || null;
     out.before_db_rows = before; out.after_db_rows = { headers: post.db_header_rows, lines: post.db_line_rows };
     out.delta = { shipping_allocation_drafts: '+' + (post.db_header_rows - before.headers), shipping_allocation_draft_lines: '+' + (post.db_line_rows - before.lines) };
-    var reused = !!(gen.resp && gen.resp.success && (post.db_header_rows - before.headers) === 0 && (post.db_line_rows - before.lines) === 0 && post.dup_k2 === 0);
-    out.verdict = reused ? 'REUSED' : 'REUSE_UNVERIFIED';
+    // R6F2G6 (C) — verdict REUSED only when EVERY group outcome is strictly REUSED AND the before/after CONTENT checksum
+    // is byte-equal (no in-place rewrite) AND row delta 0/0. A REGENERATED/UPDATED/CREATED outcome, or any content change,
+    // is REUSE_UNVERIFIED even at row delta 0/0. Zero-write is NEVER inferred from row counts alone.
+    var rowDeltaZero = (post.db_header_rows - before.headers) === 0 && (post.db_line_rows - before.lines) === 0;
+    var contentSame = TEMP_str_(beforeC.combined_content_checksum) === TEMP_str_(afterC.combined_content_checksum);
+    out.before_content_checksum = beforeC.combined_content_checksum; out.after_content_checksum = afterC.combined_content_checksum;
+    out.content_checksum_unchanged = contentSame; out.audit_before = { header_updated_at: beforeC.header_updated_at, header_draft_version: beforeC.header_draft_version }; out.audit_after = { header_updated_at: afterC.header_updated_at, header_draft_version: afterC.header_draft_version };
+    var vv = TEMP_r6f2gReuseVerdict_(!!(gen.resp && gen.resp.success), out.per_group_outcome_counts, rowDeltaZero, post.dup_k2 === 0, contentSame);
+    out.reuse_gates = { success: !!(gen.resp && gen.resp.success), only_reused_outcomes: vv.only_reused_outcomes, row_delta_zero: rowDeltaZero, dup_k2_zero: post.dup_k2 === 0, content_checksum_unchanged: contentSame };
+    out.verdict = vv.verdict; if (!vv.reused) out.reuse_unverified_reason = vv.reason;
   } catch (e) { out.verdict = 'REUSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2G6 — STRICTLY READ-ONLY post-run diagnostic. Reports the frozen-scope validation, the
+// exact header/line CONTENT checksums, lineage values, updated_at/draft_version audit fields, whether SOURCE proves the
+// old REGENERATED branch performs physical in-place writes, and a classification — WITHOUT inferring zero-write from
+// row counts. No write, no repair, no regenerate, no delete, no Submit.
+// ================================================================================================================
+function TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE() {
+  var out = { tool: 'TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE', mode: 'STRICTLY READ-ONLY (no write/repair/regenerate/delete/submit)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G6_DIAGNOSE ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var val = TEMP_r6f2gFrozenScopeValidated_(token);
+    out.frozen_scope_verdict = val.verdict; out.frozen_scope_gates = val.gates;
+    var cc = TEMP_r6f2gContentChecksum_(token);
+    out.content_checksums = { header: cc.header_content_checksum, lines: cc.lines_content_checksum, combined: cc.combined_content_checksum };
+    out.audit_fields = { header_updated_at: cc.header_updated_at, header_draft_version: cc.header_draft_version, line_updated_ats: cc.line_updated_ats };
+    var hdr = (val.state && val.state.header_row) ? val.state.header_row : {};
+    var auth = TEMP_r6f2gLineageAuthorities_(token, hdr);
+    out.lineage_values = { calculation_run_id: auth.fields.calculation_run_id.old_raw, formula_version: auth.fields.formula_version.old_raw, calculated_at: auth.fields.calculated_at.old_raw, source_data_as_of: auth.fields.source_data_as_of.old_raw };
+    // SOURCE proof (not row-count inference): the pre-R6F2G6 REGENERATE branch physically writes in place.
+    out.regenerated_branch_physical_writes = 'YES — sadAtomicUpsertCore_ REGENERATE branch: header setValue on status/route(recommended_*)/lineage + draft_version++ + updated_by/updated_at (16_:~709-720); EVERY matched line setValue updated_at + sadRegenerateLinePatch_ fields (16_:~763-775). Row-count delta stays 0/0 while cells change — delta 0/0 does NOT prove zero-write.';
+    // The R6F2G6 fix routes an exact representation-equivalent frozen retry to the zero-write REUSE early-return BEFORE
+    // any mutation (sadK2SemanticPayloadEqual_). Its presence is the source-level guarantee; the DEFINITIVE runtime proof
+    // is content-checksum equality across a retry (now enforced by the fixed verifier), never a row-count.
+    var fixPresent = (typeof sadK2SemanticPayloadEqual_ === 'function');
+    out.semantic_reuse_gate_present = fixPresent;
+    out.classification = fixPresent ? 'TRUE_REUSE_ALREADY_NO_WRITE' : 'REGENERATED_IN_PLACE_WRITE_POSSIBLE';
+    out.definitive_proof_method = 'compare content_checksums before vs after a controlled retry; the fixed TEMP_R6F2F_VERIFY returns REUSED only when they are byte-equal AND every group outcome is REUSED (row counts alone are never sufficient).';
+    out.verdict = 'DIAGNOSED';
+  } catch (e) { out.verdict = 'DIAGNOSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  out.R6F2G6_ZERO_WRITE_CONFIRMED = 'YES (read-only: TEMP_readObjects_ + property read; no setValues/appendRow/setProperty/deleteRow)';
+  Logger.log('R6F2G6_DIAGNOSE ' + JSON.stringify(out, null, 2));
   return out;
 }
 

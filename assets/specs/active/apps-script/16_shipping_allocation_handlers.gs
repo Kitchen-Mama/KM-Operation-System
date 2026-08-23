@@ -455,6 +455,47 @@ function sadK2PayloadFingerprint_(headerObj, linesArr) {
   return 'k2fp-' + sadFnv1a_(h + '||' + ls.join('||')).toUpperCase();
 }
 
+// F1-7N-FA-3C-R6F2G6 — TRUE zero-write REUSE. The raw fingerprint above compares sadFpVal_ (plain String().trim()) of
+// each FP field. A persisted cell that Google Sheets coerces (a DATE field read back as a Date object vs an incoming
+// 'yyyy-MM-dd' string; a number vs its numeric string; decimal/format noise) makes priorFp !== incFp even when the
+// business content is byte/semantically identical — so the atomic writer took the REGENERATE branch (physical in-place
+// setValue on the header route/lineage + draft_version++ + every line's updated_at) at row-count delta 0/0, and the
+// controlled retry reported REGENERATED instead of a true no-op. sadK2SemanticPayloadEqual_ re-compares the SAME FP
+// fields through a canonical, representation-robust normalizer so a representation-only difference is recognised as a
+// no-op (REUSE, zero write). It NEVER collapses a genuine value change (dates to day granularity, numbers to canonical
+// numeric form, strings trimmed), so legitimate user-directed MANUAL_REGENERATE for a changed payload is unaffected.
+var SAD_K2_FP_DATE_FIELDS_ = { window_start_date: 1, window_end_date: 1, required_by_date: 1 };
+var SAD_K2_FP_NUMERIC_FIELDS_ = { recommendation_group_no: 1, regular_demand_snapshot: 1, special_event_demand_snapshot: 1,
+  destination_stock_snapshot: 1, qualified_incoming_snapshot: 1, approved_supply_snapshot: 1, calculated_gap_qty: 1,
+  source_initial_available_qty_snapshot: 1, source_available_before_allocation_snapshot: 1, allocation_sequence: 1,
+  recommended_qty: 1, planned_qty: 1, units_per_carton: 1 };
+function sadCanonDate_(v) {
+  if (v == null || v === '') return '';
+  function z(x) { return ('0' + x).slice(-2); }
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    if (isNaN(v.getTime())) return '';
+    var d = new Date(v.getTime() + 8 * 3600000);              // project tz Asia/Taipei (UTC+8) calendar date
+    return d.getUTCFullYear() + '-' + z(d.getUTCMonth() + 1) + '-' + z(d.getUTCDate());
+  }
+  var s = String(v).trim(); var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  var dt = new Date(s); if (!isNaN(dt.getTime())) { var d2 = new Date(dt.getTime() + 8 * 3600000); return d2.getUTCFullYear() + '-' + z(d2.getUTCMonth() + 1) + '-' + z(d2.getUTCDate()); }
+  return s;
+}
+function sadFpNorm_(field, value) {
+  if (SAD_K2_FP_DATE_FIELDS_[field]) return sadCanonDate_(value);
+  if (SAD_K2_FP_NUMERIC_FIELDS_[field]) { var s = String(value == null ? '' : value).trim(); if (s === '') return ''; var n = Number(s); return isFinite(n) ? String(n) : s; }
+  return String(value == null ? '' : value).trim();
+}
+function sadK2SemanticPayloadEqual_(hPrior, lPrior, hInc, lInc) {
+  hPrior = hPrior || {}; hInc = hInc || {};
+  for (var i = 0; i < SAD_K2_HEADER_FP_.length; i++) { var f = SAD_K2_HEADER_FP_[i]; if (sadFpNorm_(f, hPrior[f]) !== sadFpNorm_(f, hInc[f])) return false; }
+  function lkey(l) { return SAD_K2_LINE_FP_.map(function (ff) { return sadFpNorm_(ff, (l || {})[ff]); }).join('~'); }
+  var a = (lPrior || []).map(lkey).sort(), b = (lInc || []).map(lkey).sort();
+  if (a.length !== b.length) return false;
+  for (var j = 0; j < a.length; j++) if (a[j] !== b[j]) return false;
+  return true;
+}
+
 // C — user-edit ownership: given the EXISTING persisted line + the incoming (regenerated) line, decide the fields to
 // write on REGENERATE. recommended_qty + calculation snapshots = SYSTEM-owned (always adopt). note = USER-owned
 // (preserved — a regeneration never restores an old AI note). planned_qty = USER-owned when override_reason is nonblank
@@ -698,8 +739,10 @@ function sadAtomicUpsertCore_(body) {
     var priorLines = sadReadLinesForDraft_(lSh, id);
     var priorFp = sadK2PayloadFingerprint_(priorHeaderObj, priorLines);
     var incFp = sadK2PayloadFingerprint_(header, lines);
-    if (priorFp === incFp) {
-      return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true } });
+    // R6F2G6 — REUSE (zero write) when the raw fingerprints match OR the payload is representation-equivalent (a
+    // Sheets Date/number coercion is NOT a content change). Both return BEFORE the first business-table mutation.
+    if (priorFp === incFp || sadK2SemanticPayloadEqual_(priorHeaderObj, priorLines, header, lines)) {
+      return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true, reuse_basis: (priorFp === incFp ? 'FINGERPRINT_EQUAL' : 'SEMANTIC_EQUIVALENT') } });
     }
     outcome = 'REGENERATE';
     nextVersion = String((parseInt(priorVersion, 10) || 1) + 1);   // increment EXACTLY once

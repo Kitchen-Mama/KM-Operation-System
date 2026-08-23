@@ -131,7 +131,9 @@ section('G — REUSE verifier: separate entrypoint; requires committed state; 0/
 ok(/function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE\(\)/.test(TEMP), 'G20 separate zero-arg REUSE verifier present');
 var reuseFn = fnSlice('TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE', null);
 ok(/REUSE_REFUSED_FLAG_ENABLED/.test(reuseFn) && /REUSE_REFUSED_NOT_COMMITTED/.test(reuseFn), 'G21 REUSE refuses when flag enabled / not already committed (never a first CREATE)');
-ok(/\(post\.db_header_rows - before\.headers\) === 0 && \(post\.db_line_rows - before\.lines\) === 0/.test(reuseFn) && /'REUSED'/.test(reuseFn), 'G22 REUSE expects 0/0 delta → REUSED');
+// R6F2G6 — REUSED is no longer inferred from row-count delta alone: the verdict now also requires every group outcome
+// to be REUSED AND the before/after CONTENT checksum to be byte-equal (via TEMP_r6f2gReuseVerdict_ + content checksum).
+ok(/\(post\.db_header_rows - before\.headers\) === 0 && \(post\.db_line_rows - before\.lines\) === 0/.test(reuseFn) && /TEMP_r6f2gReuseVerdict_\(/.test(reuseFn) && /content_checksum_unchanged/.test(reuseFn), 'G22 REUSE verdict = 0/0 delta AND all-REUSED outcomes AND content checksum unchanged (fail-closed)');
 ok(/weeklyAiPlanGenerateK2_/.test(TEMP.slice(TEMP.indexOf('function TEMP_r6f2fRunProductionGeneration_'))), 'G23 REUSE uses the SAME real production path (deterministic-id REUSE)');
 // runtime: REUSE refuses when nothing committed (empty DB, flag on)
 var ru = makeSandbox({ props: { R6F2E_CONTROLLED_FROZEN_SCOPE_V1: JSON.stringify(TOKEN) } });   // flag false (controlled REUSE path)

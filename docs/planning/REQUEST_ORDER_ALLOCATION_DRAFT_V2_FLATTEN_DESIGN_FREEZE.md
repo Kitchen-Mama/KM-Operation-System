@@ -1628,3 +1628,29 @@ The two NOT_SAFE legacy headers (no `SADH-K2-` id, route-incomplete) still refus
 
 ### deployment
 `16_shipping_allocation_handlers.gs` (standalone) + new test + this doc. No bundle rebuild, no 61_/00_config/core/TEMP/frontend change. APPS_SCRIPT_SYNC_REQUIRED: `16_shipping_allocation_handlers.gs`. No live write; K2 live generation remains HALTed (`INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` false).
+
+## §63 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G6-TRUE-ZERO-WRITE-REUSE — resolve REGENERATED-vs-REUSED + prove physical no-op (2026-08-23)
+
+Production `16_shipping_allocation_handlers.gs` (STANDALONE .gs, NOT bundled → no bundle rebuild) + TEMP verifier/diagnostic + tests + this doc. No core, no 61_, no 00_config, no frontend change. No live write; REUSE/executor/migration/rollback/Submit not run.
+
+### A — exact root cause
+Path: `TEMP_R6F2F_VERIFY…` → `TEMP_r6f2fRunProductionGeneration_` → `weeklyAiPlanGenerateK2_` → `handleUpsertShippingAllocationDraftAtomic_` → `sadAtomicUpsertCore_`.
+1. **Why REGENERATED, not REUSED.** `sadAtomicUpsertCore_` decides REUSE vs REGENERATE by `priorFp === incFp` where the fingerprint `sadK2PayloadFingerprint_` uses `sadFpVal_ = String(v==null?'':v).trim()` with NO type normalization ([16_:449-456](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs)). `SAD_K2_LINE_FP_` includes DATE fields (`window_start_date`/`window_end_date`/`required_by_date`) and numeric snapshot fields. A persisted date cell read back as a **Date object** stringifies to `"Sat Aug 23 2026 …"` while the incoming KMWRR value is `'2026-08-23'` (and a number vs its numeric string / decimal-format noise) → `priorFp !== incFp` → the writer took the REGENERATE branch. The R6F2G4 Date-coercion class, now in the REUSE fingerprint. **MANUAL_REGENERATE did not "force" it** — the fingerprint produced a false negative from cell representation, not a content change.
+2. **Every Sheets mutation on the REGENERATE branch** ([16_:709-720, 763-775](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs)): header `setValue` on `status` + 7 `recommended_*` route fields + the four lineage fields + `draft_version++` + `updated_by`/`updated_at`; EVERY matched line `setValue` `updated_at` + `sadRegenerateLinePatch_` fields. No append/delete on the existing-draft path.
+3. **Could the live run have rewritten the 1 header / 5 lines despite delta 0/0?** YES — the REGENERATE branch physically rewrites cells (at minimum `updated_at` + `draft_version++` on the header and `updated_at` on all 5 lines) while row counts stay 3/3 and 5/5. **Row-count delta 0/0 does NOT prove zero-write.**
+4. **Why the wrapper said REUSED.** `TEMP_R6F2F_VERIFY…` computed `reused` purely from `success && row-delta 0/0 && no dup`, ignoring `per_group_outcome_counts` (`REGENERATED:1`) — so REGENERATED + 0/0 was mislabelled REUSED.
+
+### B — true REUSE contract (narrowest safe change; MANUAL_REGENERATE preserved)
+New `sadK2SemanticPayloadEqual_(hPrior,lPrior,hInc,lInc)` re-compares the SAME FP fields through a representation-robust normalizer (`sadFpNorm_` + `sadCanonDate_`): date fields → canonical `yyyy-MM-dd` (Asia/Taipei, no day shift), numeric fields → canonical numeric form, else trimmed string. The atomic REUSE early-return now fires on `priorFp === incFp || sadK2SemanticPayloadEqual_(…)`, returning `outcome:'REUSED'`, `zero_write:true`, `reuse_basis:'SEMANTIC_EQUIVALENT'` **before the first business-table mutation** ([16_:701-706](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs)). A genuine value change (qty/sku/date/route/line-count) still differs after normalization → REGENERATE — legitimate user-directed regeneration is unaffected. The change is confined to the K2 atomic path; the generic/manual header core is untouched.
+
+### C — fail-closed verifier
+New pure `TEMP_r6f2gReuseVerdict_(success, perGroup, rowDeltaZero, dupK2Zero, contentSame)`: verdict `REUSED` ONLY when generation succeeded AND every group outcome is strictly `REUSED` AND row delta 0/0 AND no dup AND the before/after CONTENT checksum is byte-equal. `REGENERATED`/`UPDATED`/`CREATED`, an empty outcome set, or any content-checksum change → `REUSE_UNVERIFIED` with a typed reason — even at row delta 0/0. `TEMP_R6F2F_VERIFY…` now captures `TEMP_r6f2gContentChecksum_` before and after the run and routes the verdict through the helper.
+
+### D — read-only diagnostic
+`TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE()` (strictly read-only): frozen-scope validation, exact header/line CONTENT checksums, lineage values, `updated_at`/`draft_version` audit fields, a SOURCE proof that the pre-fix REGENERATE branch writes in place, and a classification `TRUE_REUSE_ALREADY_NO_WRITE` (the semantic-equality gate now routes an exact frozen retry to the zero-write early-return) vs `REGENERATED_IN_PLACE_WRITE_POSSIBLE`. It never infers zero-write from row counts; the definitive proof is content-checksum equality across a retry.
+
+### E — tests
+`inventory-k2-true-zero-write-reuse-f1-7n-fa-3c-r6f2g6.test.js` (37/0): Date/number normalization; the Date-cell-vs-string fixture (raw fp differs, semantic-equal true); atomic REUSE return precedes REGENERATE + `updated_at`; genuine qty/sku/date/route/line-count change NOT collapsed; verdict helper (REGENERATED/CREATED/UPDATED/empty/content-changed/nonzero-delta → REUSE_UNVERIFIED); verifier + content-checksum + diagnostic source-facts; generic/manual path untouched. `inventory-controlled-executor-f1-7n-fa-3c-r6f2f.test.js` G22 updated to the new fail-closed contract (53/0). Full sweep = known 4-test baseline, 0 new.
+
+### deployment
+`16_shipping_allocation_handlers.gs` (standalone) + `TEMP_migrate_request_order_draft_v2.gs` + tests + this doc. No bundle rebuild, no 61_/00_config/core/frontend. APPS_SCRIPT_SYNC_REQUIRED: `16_shipping_allocation_handlers.gs`, `TEMP_migrate_request_order_draft_v2.gs`. No live write; K2 live generation remains HALTed.
