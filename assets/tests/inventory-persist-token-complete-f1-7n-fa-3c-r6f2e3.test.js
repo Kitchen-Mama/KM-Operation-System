@@ -143,7 +143,7 @@ eq(vuOut.unrelated_scope_checksum_match, false, 'F/E9 unrelated-scope checksum d
 
 // =====================================================================================================
 section('regression — no generation / no flag flip anywhere');
-ok(!/inventoryAiPlanDbGenerationEnabled_\s*=\s*true|weeklyAiPlanGenerateK2_\(|handleUpsertShippingAllocationDraftAtomic_\(/.test(TEMP), 'R1 no flag flip / no generation / no atomic write call');
+ok(!/inventoryAiPlanDbGenerationEnabled_\s*=\s*true|INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*true|handleUpsertShippingAllocationDraftAtomic_\(/.test(TEMP), 'R1 no flag flip / no direct atomic-write call (the R6F2F controlled generation call is flag-gated)');
 
 console.log('\n----------------------------------------');
 console.log('R6F2E3 PERSIST TOKEN COMPLETE: ' + pass + ' passed, ' + fail + ' failed');

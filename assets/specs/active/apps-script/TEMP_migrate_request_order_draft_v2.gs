@@ -3105,6 +3105,226 @@ function TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE() {
 }
 
 // ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2F — ZERO-ARG CONTROLLED EXECUTOR for the persisted frozen JP Inventory AI Plan. Loads the
+// stored token and calls the REAL production K2 generator (weeklyAiPlanGenerateK2_ → KMWRR → handleUpsertShipping-
+// AllocationDraftAtomic_). It NEVER re-implements a generation engine. Every expectation is derived ONLY from the stored
+// token (never page state / caller args). Fail-closed: the FLAG gate is checked FIRST and returns
+// CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED with zero generation/write while the flag is false; any other drift returns
+// a typed CONTROLLED_EXECUTION_REFUSED_* BEFORE the production call. Idempotency is the production deterministic-id +
+// atomic-writer authority; a second first-run call returns CONTROLLED_EXECUTION_ALREADY_COMMITTED.
+// ================================================================================================================
+// Ordered pre-write gate evaluator (PURE; unit-tested). Returns the FIRST typed refusal, or {ok:true}.
+function TEMP_r6f2fEvaluateGates_(g) {
+  function no(r) { return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_' + r }; }
+  if (g.flag_true !== true) return no('FLAG_DISABLED');
+  if (g.token_present !== true) return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED' };
+  if (g.token_struct_ok !== true) return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_TOKEN_' + (g.token_struct_reason || 'INVALID') };
+  if (g.scope_exact !== true) return no('SCOPE_INVALID');
+  if (g.cycle_exact !== true) return no('CYCLE_DRIFT');
+  if (g.gap_done !== true) return no('GAP_NOT_DONE');
+  if (g.gap_fp_match !== true) return no('GAP_FINGERPRINT_DRIFT');
+  if (g.freeze_reproduces !== true) return no('FREEZE_CHECKSUM_DRIFT');
+  if (g.pre_rows_exact !== true) return no('PREROW_DRIFT');
+  if (g.expected_absent !== true) return no('EXPECTED_ROWS_PRESENT');   // (the executor maps genuine presence to ALREADY_COMMITTED before this)
+  if (g.no_unexpected_in_scope !== true) return no('UNEXPECTED_IN_SCOPE');
+  if (g.unrelated_match !== true) return no('UNRELATED_CHECKSUM_DRIFT');
+  if (g.legacy_match !== true) return no('LEGACY_CHECKSUM_DRIFT');
+  if (g.schema_ok !== true) return no('SCHEMA_NOT_EXACT_30');
+  if (g.dup_k2_zero !== true) return no('DUPLICATE_ACTIVE_K2');
+  if (g.preflight_clean_555 !== true) return no('PREFLIGHT_NOT_CLEAN');
+  if (g.selected_conservation_ok !== true) return no('SELECTED_SCOPE_CONSERVATION_FAILED');
+  if (g.scoped_all_zero !== true) return no('SCOPED_PARITY_OR_BLOCK_NONZERO');
+  return { ok: true, reason: null };
+}
+// Read the live frozen-scope DB state (read-only) — expected-id presence, unexpected rows, FK integrity, dup/orphan.
+function TEMP_r6f2fReadFrozenScopeState_(token) {
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var sc = token.scope || {}, cyc = token.planning_cycle;
+  var expH = {}; (token.expected_header_ids_sorted || []).forEach(function (id) { expH[id] = 1; });
+  var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[id] = 1; });
+  var headerPresent = false, unexpectedHeaders = 0, headerRow = null, headerIds = {};
+  (H.rows || []).forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) headerIds[id] = 1; });
+  (H.rows || []).forEach(function (r) {
+    if (!TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()]) return;
+    var inScope = (TEMP_str_(r.company) === TEMP_str_(sc.company) && TEMP_str_(r.country) === TEMP_str_(sc.country) && TEMP_str_(r.marketplace) === TEMP_str_(sc.marketplace) && TEMP_str_(r.planning_cycle) === TEMP_str_(cyc));
+    if (!inScope) return;
+    if (expH[TEMP_str_(r.allocation_draft_id)]) { headerPresent = true; headerRow = r; } else unexpectedHeaders++;
+  });
+  var linesPresent = 0, lineFkOk = true, unexpectedLinesInScope = 0, orphan = 0;
+  (L.rows || []).forEach(function (x) {
+    var lid = TEMP_str_(x.allocation_draft_line_id), fk = TEMP_str_(x.allocation_draft_id);
+    if (fk && !headerIds[fk]) orphan++;
+    if (expL[lid]) { linesPresent++; if (!expH[fk]) lineFkOk = false; }
+    else if (expH[fk]) unexpectedLinesInScope++;
+  });
+  var k2seen = {}, dupK2 = 0;
+  (H.rows || []).forEach(function (r) { if (TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()] && typeof sadK2GroupKey_ === 'function') { var k = sadK2GroupKey_(r); if (k2seen[k]) dupK2++; else k2seen[k] = 1; } });
+  return { db_header_rows: (H.rows || []).length, db_line_rows: (L.rows || []).length, header_present: headerPresent, header_row: headerRow,
+    lines_present: linesPresent, line_fk_ok: lineFkOk, unexpected_headers_in_scope: unexpectedHeaders, unexpected_lines_in_scope: unexpectedLinesInScope,
+    orphan_lines: orphan, dup_k2: dupK2 };
+}
+// Gather the live gate bag (read-only) from the stored token + the canonical preflight/freeze/guards.
+function TEMP_r6f2fGatherGateBag_(token) {
+  var e = TEMP_R6F2E_EXPECTED_SCOPE_;
+  var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+  var struct = TEMP_r6f2eValidateTokenStructure_(token, e);
+  var job = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : null;
+  var gapDone = !!(job && job.status === 'FOUND' && String(job.run_status || '').toUpperCase() === 'DONE');
+  var liveFp = (job && job.status === 'FOUND' && typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(job.run_id) : '';
+  var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE({ quiet: true });
+  var freezeChecksum = (fr && fr.envelope) ? fr.envelope.freeze_checksum : null;
+  var pre = TEMP_r6f2ePreflightCore_({ quiet: true });
+  var dry = pre.dry_assembly || {};
+  var mk = TEMP_r6f2eSelectedMkScope_(dry, e);
+  var checks = TEMP_r6f2eScopedChecks_(pre, pre.safe_controlled_scope || null, mk);
+  var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+  var st = TEMP_r6f2fReadFrozenScopeState_(token);
+  var scopedAllZero = !!(mk && (mk.source_blocked || 0) === 0 && (mk.dest_blocked || 0) === 0 && (mk.no_method || 0) === 0 && (mk.manual_only || 0) === 0 && (mk.authority_required || 0) === 0 && (mk.ai_pair_mismatch || 0) === 0 && (mk.selected_route_invalid || 0) === 0 && (mk.projected_conflict || 0) === 0 && (mk.over_allocation || 0) === 0 && (mk.dup_id || 0) === 0);
+  return {
+    flag_true: flag, token_present: true, token_struct_ok: struct.ok, token_struct_reason: struct.reason,
+    scope_exact: !!(token.scope && token.scope.company === e.company && token.scope.country === e.country && token.scope.marketplace === e.marketplace),
+    cycle_exact: TEMP_str_(token.planning_cycle) === TEMP_str_(TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_),
+    gap_done: gapDone, gap_fp_match: TEMP_str_(liveFp) === TEMP_str_(token.calculation_run_id_fingerprint),
+    freeze_reproduces: TEMP_str_(freezeChecksum) === TEMP_str_(token.freeze_checksum),
+    pre_rows_exact: (st.db_header_rows === token.pre_run_db_header_rows && st.db_line_rows === token.pre_run_db_line_rows),
+    expected_absent: (st.header_present === false && st.lines_present === 0),
+    no_unexpected_in_scope: (st.unexpected_headers_in_scope === 0 && st.unexpected_lines_in_scope === 0),
+    unrelated_match: TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum),
+    legacy_match: TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum),
+    schema_ok: (pre.header_schema_exact_30 === 'YES' && pre.line_schema_exact_30 === 'YES'),
+    dup_k2_zero: st.dup_k2 === 0,
+    preflight_clean_555: !!(mk && mk.positive === TEMP_R6F2E_EXPECTED_CLEAN_COUNT_ && mk.ai_ranked === TEMP_R6F2E_EXPECTED_CLEAN_COUNT_ && mk.fully_routed === TEMP_R6F2E_EXPECTED_CLEAN_COUNT_),
+    selected_conservation_ok: checks.selected_scope_conservation_ok === true,
+    scoped_all_zero: scopedAllZero,
+    _state: st, _freeze: fr, _mk: mk
+  };
+}
+// Call the REAL production K2 generator with a request whose businessScope carries the frozen marketplace (exact-scope,
+// no widening). Uses ONLY production functions (harvest → map → deps → weeklyAiPlanGenerateK2_ → KMWRR → atomic writer);
+// NO second engine. Reached ONLY after every gate (incl. the flag) passes — i.e. never while staged OFF.
+function TEMP_r6f2fRunProductionGeneration_(token, ss) {
+  if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined' || typeof weeklyAiPlanHarvest_ !== 'function' || typeof weeklyAiPlanGenerateK2_ !== 'function') return { ok: false, stage: 'NOT_BUNDLED', resp: null };
+  var sc = token.scope;
+  var h = weeklyAiPlanHarvest_(ss, { company: sc.company, country: sc.country, planningCycle: token.planning_cycle });
+  if (!h || !h.ok) return { ok: false, stage: 'HARVEST', resp: null };
+  var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: token.planning_cycle,
+    businessScope: { company: sc.company, country: sc.country, marketplace: sc.marketplace, source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined' ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment') },
+    mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false, actor: 'r6f2f_controlled_executor', now: procurementTimestamp_(),
+    sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null),
+    warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+  if (!mapped || !mapped.ready) return { ok: false, stage: 'MAP', resp: null };
+  mapped.request.businessScope = mapped.request.businessScope || {};
+  mapped.request.businessScope.marketplace = sc.marketplace;   // exact-scope: the marketplace-exact production guard engages (APPLIED_SCOPE_WIDENED protects widening)
+  var deps = weeklyAiPlanPersistenceDeps_(ss);
+  var resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps, { company: sc.company, country: sc.country, marketplace: sc.marketplace }));
+  return { ok: true, stage: 'GENERATED', resp: resp };
+}
+function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE() {
+  var out = { tool: 'TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE', mode: 'CONTROLLED ONE-SHOT (production generation via stored frozen token)',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES', generation_engine: 'PRODUCTION weeklyAiPlanGenerateK2_ → KMWRR → handleUpsertShippingAllocationDraftAtomic_ (no second engine)' };
+  try {
+    // GATE 0 — FLAG FIRST, before ANY token load / freeze / generation. Fail-closed while staged OFF.
+    var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+    if (flag !== true) { out.verdict = 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED'; out.generation_called = false; out.rows_written = 0; out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (flag disabled — refused before any production call)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
+
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED'; out.generation_called = false; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var bag = TEMP_r6f2fGatherGateBag_(token);
+    var st = bag._state;
+    // ALREADY_COMMITTED — the exact frozen 1+5 state is already present (retry safety; never regenerate/mutate).
+    if (st.header_present && st.lines_present === token.expected_k2_line_count && st.line_fk_ok && st.unexpected_headers_in_scope === 0 && st.unexpected_lines_in_scope === 0) {
+      out.verdict = 'CONTROLLED_EXECUTION_ALREADY_COMMITTED'; out.generation_called = false; out.rows_written = 0;
+      out.note = 'the exact frozen header+5 lines already exist; do NOT regenerate — use TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE (deterministic-id REUSE) to re-verify.';
+      out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (already committed — no write)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out;
+    }
+    // PRE-WRITE GATES (typed refusal BEFORE any production call).
+    var gate = TEMP_r6f2fEvaluateGates_(bag);
+    out.gate_snapshot = { scope_exact: bag.scope_exact, cycle_exact: bag.cycle_exact, gap_done: bag.gap_done, gap_fp_match: bag.gap_fp_match, freeze_reproduces: bag.freeze_reproduces, pre_rows_exact: bag.pre_rows_exact, expected_absent: bag.expected_absent, no_unexpected_in_scope: bag.no_unexpected_in_scope, unrelated_match: bag.unrelated_match, legacy_match: bag.legacy_match, schema_ok: bag.schema_ok, dup_k2_zero: bag.dup_k2_zero, preflight_clean_555: bag.preflight_clean_555, selected_conservation_ok: bag.selected_conservation_ok, scoped_all_zero: bag.scoped_all_zero };
+    if (!gate.ok) { out.verdict = gate.reason; out.generation_called = false; out.rows_written = 0; out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (gate refused — no production call)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
+
+    // ---- PRODUCTION GENERATION (real engine; reached ONLY when every gate incl. the flag passed) -----------------
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var before = { headers: st.db_header_rows, lines: st.db_line_rows, unrelated: token.unrelated_scope_active_row_checksum, legacy: token.legacy_header_checksum };
+    var gen = TEMP_r6f2fRunProductionGeneration_(token, ss);
+    out.generation_called = true;
+    var resp = gen.resp || {};
+    var data = resp.data || {};
+    out.production_job_status = data.job_status || null;
+    out.per_group_outcome_counts = data.per_group_outcome_counts || null;
+    out.requested_scope = data.requested_scope || null; out.applied_scope = data.applied_scope || null; out.applied_equals_requested = data.applied_equals_requested || null;
+    // exact-scope / no-widening guard on the production response
+    if (!(data.requested_scope && data.requested_scope.marketplace === token.scope.marketplace && data.applied_equals_requested === 'YES')) {
+      out.verdict = 'CONTROLLED_EXECUTION_HALT_SCOPE_WIDENED'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out;
+    }
+    // ---- POST-WRITE READBACK (immediate) -------------------------------------------------------------------------
+    var post = TEMP_r6f2fReadFrozenScopeState_(token);
+    var guardsAfter = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+    var hdr = post.header_row || {};
+    var routeComplete = !!(TEMP_str_(hdr.recommended_source_warehouse_id) && TEMP_str_(hdr.recommended_shipping_method) && TEMP_str_(hdr.recommended_last_mile_delivery));
+    var lineageOk = (TEMP_str_(hdr.planning_cycle) === TEMP_str_(token.planning_cycle) && (typeof TEMP_r5bIdFingerprint_ !== 'function' || TEMP_r5bIdFingerprint_(hdr.calculation_run_id) === token.calculation_run_id_fingerprint));
+    var editableDraft = !!TEMP_R6F2_ACTIVE_[TEMP_str_(hdr.status).toLowerCase()];
+    var readback = {
+      header_present_once: post.header_present && post.unexpected_headers_in_scope === 0,
+      lines_present: post.lines_present, lines_expected: token.expected_k2_line_count, line_fk_ok: post.line_fk_ok,
+      no_unexpected_in_scope: post.unexpected_headers_in_scope === 0 && post.unexpected_lines_in_scope === 0,
+      db_header_rows: post.db_header_rows, db_line_rows: post.db_line_rows,
+      expected_post_headers: token.expected_post_run_db_header_rows, expected_post_lines: token.expected_post_run_db_line_rows,
+      unrelated_checksum_unchanged: TEMP_str_(guardsAfter.unrelated_scope_active_row_checksum) === TEMP_str_(before.unrelated),
+      legacy_checksum_unchanged: TEMP_str_(guardsAfter.legacy_header_checksum) === TEMP_str_(before.legacy),
+      orphan_lines: post.orphan_lines, dup_k2: post.dup_k2, route_complete: routeComplete, lineage_ok: lineageOk, editable_draft: editableDraft
+    };
+    out.before_db_rows = { headers: before.headers, lines: before.lines }; out.after_db_rows = { headers: post.db_header_rows, lines: post.db_line_rows };
+    out.expected_delta = { shipping_allocation_drafts: '+1', shipping_allocation_draft_lines: '+5' };
+    out.actual_delta = { shipping_allocation_drafts: '+' + (post.db_header_rows - before.headers), shipping_allocation_draft_lines: '+' + (post.db_line_rows - before.lines) };
+    out.unrelated_checksum = { before: before.unrelated, after: guardsAfter.unrelated_scope_active_row_checksum };
+    out.legacy_checksum = { before: before.legacy, after: guardsAfter.legacy_header_checksum };
+    out.header_ids = token.expected_header_ids_sorted; out.line_ids = token.expected_line_ids_sorted; out.line_count = post.lines_present;
+    out.readback = readback; out.response_outcome = resp.success ? 'SUCCESS' : 'NOT_SUCCESS';
+    out.no_side_table_write = 'CONFIRMED (executor writes NO shipping_plans / shipment draft / reservation / Submit — only the K2 drafts+lines via the atomic writer)';
+    var fullyVerified = !!(resp.success && readback.header_present_once && readback.lines_present === token.expected_k2_line_count && readback.line_fk_ok && readback.no_unexpected_in_scope &&
+      readback.db_header_rows === token.expected_post_run_db_header_rows && readback.db_line_rows === token.expected_post_run_db_line_rows &&
+      readback.unrelated_checksum_unchanged && readback.legacy_checksum_unchanged && readback.orphan_lines === 0 && readback.dup_k2 === 0 && readback.route_complete && readback.lineage_ok && readback.editable_draft);
+    out.verdict = fullyVerified ? 'CONTROLLED_INVENTORY_AI_PLAN_COMMITTED' : 'COMMITTED_UNVERIFIED';   // fail-closed; never auto-retry
+    out.R6F2F_ZERO_WRITE_CONFIRMED = 'NO (a controlled CREATE was authorized by the flag + gates)';
+  } catch (e) { out.verdict = 'CONTROLLED_EXECUTION_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2));
+  return out;
+}
+// ZERO-ARG REUSE verifier — used ONLY after the first committed run is reviewed (do not run in this task). It calls the
+// SAME real production path; because the deterministic ids already exist, the atomic writer REUSEs (0/0 delta). It first
+// requires the exact committed 1+5 state to already validate; otherwise it refuses (never a first CREATE here).
+function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
+  var out = { tool: 'TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE', mode: 'CONTROLLED REUSE VERIFY (deterministic-id REUSE only)',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
+  try {
+    var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+    if (flag !== true) { out.verdict = 'REUSE_REFUSED_FLAG_DISABLED'; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'REUSE_REFUSED_NO_FROZEN_SCOPE_STORED'; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var struct = TEMP_r6f2eValidateTokenStructure_(token, TEMP_R6F2E_EXPECTED_SCOPE_);
+    if (!struct.ok) { out.verdict = 'REUSE_REFUSED_TOKEN_' + struct.reason; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    var pre = TEMP_r6f2fReadFrozenScopeState_(token);
+    // REUSE requires the exact committed 1+5 state ALREADY validates — never a first CREATE here.
+    var committed = !!(pre.header_present && pre.lines_present === token.expected_k2_line_count && pre.line_fk_ok && pre.unexpected_headers_in_scope === 0 && pre.unexpected_lines_in_scope === 0 && pre.dup_k2 === 0 && pre.orphan_lines === 0);
+    if (!committed) { out.verdict = 'REUSE_REFUSED_NOT_COMMITTED'; out.generation_called = false; out.state = pre; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    var before = { headers: pre.db_header_rows, lines: pre.db_line_rows };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var gen = TEMP_r6f2fRunProductionGeneration_(token, ss);   // same real path; deterministic ids already exist → REUSE
+    var data = (gen.resp && gen.resp.data) ? gen.resp.data : {};
+    var post = TEMP_r6f2fReadFrozenScopeState_(token);
+    out.generation_called = true; out.production_job_status = data.job_status || null; out.per_group_outcome_counts = data.per_group_outcome_counts || null;
+    out.before_db_rows = before; out.after_db_rows = { headers: post.db_header_rows, lines: post.db_line_rows };
+    out.delta = { shipping_allocation_drafts: '+' + (post.db_header_rows - before.headers), shipping_allocation_draft_lines: '+' + (post.db_line_rows - before.lines) };
+    var reused = !!(gen.resp && gen.resp.success && (post.db_header_rows - before.headers) === 0 && (post.db_line_rows - before.lines) === 0 && post.dup_k2 === 0);
+    out.verdict = reused ? 'REUSED' : 'REUSE_UNVERIFIED';
+  } catch (e) { out.verdict = 'REUSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
 // F1-7N-FA-3C-DRAFT-MODEL-R6F2B (C) — STRICTLY READ-ONLY live route-mapping diagnostic. For each mapping stage it
 // reports COUNTS + sanitized distinct-value FINGERPRINTS (never a raw id / full row — length/prefix/suffix/hash only),
 // so the USER can see EXACTLY why lines resolve or block on live data before any controlled run. Reuses the real

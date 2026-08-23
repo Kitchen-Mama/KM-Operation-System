@@ -1395,3 +1395,31 @@ Zero-write; one compact `R6F2E_PERSIST_DRY_RUN`: complete `would_store_token`, `
 
 ### Tests
 `inventory-persist-token-complete-f1-7n-fa-3c-r6f2e3.test.js` (40/0, vm sandbox in-context): complete-token structure + no business data; post-run 3/5; integrity separate from freeze_checksum; old incomplete token rejected; every required field removed one-at-a-time rejected; mutation→integrity failure; duplicate/count/membership/scope/post-run-delta rejected; DRY_RUN zero-write one-log + complete-token/deltas source contract; COMMIT placeholder→zero write + validate-before-write + readback-verify + single setProperty + no cells; VALIDATE from stored complete token → structure ok, guards, `RECONCILIATION_REQUIRED_PRE_GENERATION`, tampered→`FROZEN_TOKEN_INTEGRITY_FAILED` (never reaches DB validator), unrelated-checksum drift detected. Full sweep = known 4-test baseline, **0 new**.
+
+## §55 — F1-7N-FA-3C-DRAFT-MODEL-R6F2F-P0-CONTROLLED-EXECUTOR — zero-arg one-shot executor for the persisted frozen JP AI Plan (2026-08-23, staged OFF)
+
+TEMP-tooling + focused tests + this doc only. **No core, no bundle rebuild, no frontend, no 00_config change.** No live execution, no flag flip, no DB write, no Script-Property write this task. `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` stays false — the executor's flag gate returns before any production call.
+
+### Executor call graph
+`TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE()` → (flag gate) → load `R6F2E_CONTROLLED_FROZEN_SCOPE_V1` token → `TEMP_r6f2fGatherGateBag_` (preflight/freeze/guards/DB state) → `TEMP_r6f2fEvaluateGates_` → **`TEMP_r6f2fRunProductionGeneration_`** → the REAL production `weeklyAiPlanGenerateK2_(ss, request{businessScope.marketplace=Amazon}, harvest, deps)` → `KMWRR` → `handleUpsertShippingAllocationDraftAtomic_` → post-write readback. It reaches the marketplace-exact production K2 generator directly (the handler drops marketplace at [61_:78](../../assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs); the R6F2D exact-scope guard lives in `weeklyAiPlanGenerateK2_`). No second generation engine — KMWRR + the atomic writer remain the sole engine + idempotency authority.
+
+### Pre-write gates (fail-closed, typed, ordered — `TEMP_r6f2fEvaluateGates_`)
+flag=true (**first** → `CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED`, zero work) · token present · token structure/integrity · scope exact ResTW/JP/Amazon · cycle RECO-2026-08 · GAP DONE · GAP run-fingerprint == token · live freeze reproduces `e626e368` · DB rows exactly 2/0 · expected header+lines absent · no unexpected in scope · unrelated checksum `62b84b14` · legacy checksum `8a51b860` · schema exact-30 · dup active-K2 = 0 · scoped preflight 5/5/5 · selected-scope conservation true · all scoped parity/block/conflict/over-alloc = 0. Every expectation derives ONLY from the stored token. Any drift → a typed `CONTROLLED_EXECUTION_REFUSED_*` BEFORE the production call.
+
+### Exact scope / no widening
+The payload is built only from `token.scope` (`sc`); `mapped.request.businessScope.marketplace = token.scope.marketplace`; the production response must carry `requested_scope.marketplace = Amazon` and `applied_equals_requested = 'YES'`, else `CONTROLLED_EXECUTION_HALT_SCOPE_WIDENED`. No ALL_SITES / CA / UK / caller argument.
+
+### Single execution / retry safety
+Before first CREATE the expected rows must be absent (gate). The exact frozen 1+5 state already present → **`CONTROLLED_EXECUTION_ALREADY_COMMITTED`** (no regenerate/mutate; instructs the REUSE verifier). Deterministic ids + the atomic writer are the idempotency authority.
+
+### Compact result + post-write readback (F)
+One primary `R6F2F_CONTROLLED_EXECUTION`: gate snapshot, requested/applied scope, production `job_status` + `per_group_outcome_counts`, header/line ids + count, before/after DB rows, expected vs actual delta (+1/+5), unrelated + legacy checksum before/after, orphan/dup counts, response outcome, verdict. Readback requires: header once, 5 exact line ids, every FK → `SADH-K2-7F15DD7D`, no unexpected in scope, rows 3/5, unrelated + legacy checksums unchanged, no orphan/dup, header planning-cycle + calc-run lineage match, route fields complete, editable-draft status, and no shipping_plans/shipment/reservation/Submit write → **`CONTROLLED_INVENTORY_AI_PLAN_COMMITTED`**; otherwise **`COMMITTED_UNVERIFIED`** (never auto-retry).
+
+### REUSE verifier (G)
+`TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE()` (separate; do not run yet): refuses unless the exact committed 1+5 state already validates (`REUSE_REFUSED_NOT_COMMITTED`), then calls the SAME production path (deterministic ids exist → atomic REUSE) expecting delta 0/0, unchanged version → **`REUSED`**.
+
+### Flag activation / rollback runbook (H — USER-owned, do NOT run this task)
+1. pre-generation validator passes · 2. temporarily set the inventory flag true in `00_config.gs` · 3. create a deployment version · 4. verify `getClientCapabilities` reports inventory=true · 5. run `TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE()` once · 6. immediately restore the flag false · 7. create a rollback deployment version · 8. verify capabilities inventory=false · 9. run `TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE()` · 10. only after review, run the REUSE verifier in another controlled activation window. The repo owner-of-record must end with the flag **false**.
+
+### Tests
+`inventory-controlled-executor-f1-7n-fa-3c-r6f2f.test.js` (49/0, vm sandbox): exhaustive ordered gate evaluator (all 18 typed refusals + flag precedence); runtime flag-disabled refusal (zero work, one primary log, no nested verbose); ALREADY_COMMITTED via a mock committed DB (no call, zero writes, instructs REUSE); source contracts — real generator, exactly one production call, no second engine, token-only payload, exact-scope HALT, readback conjunction (+1/+5/FK/checksums/lineage/route/editable), no side-table write; REUSE verifier requires committed state + 0/0. Re-pinned r6f2e1/e2/e3 "no generation" regression assertions to allow the one flag-gated R6F2F call. Full sweep = known 4-test baseline, **0 new**.

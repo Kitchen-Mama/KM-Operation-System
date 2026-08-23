@@ -132,7 +132,15 @@ ok(/TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'e626e368'/.test(TEMP), 'E9 the chec
 // =====================================================================================================
 section('regression — no generation call, no flag flip, quiet cores are pure log-gating');
 ok(!/inventoryAiPlanDbGenerationEnabled_\s*=\s*true|INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*true/.test(TEMP), 'R1 no flag flip in the TEMP tooling');
-ok(!/weeklyAiPlanGenerateK2_\(|handleUpsertShippingAllocationDraftAtomic_\(/.test(TEMP), 'R2 no AI generation / atomic write call anywhere in the TEMP tooling');
+// R6F2F introduced the ONE flag-gated controlled production call inside TEMP_r6f2fRunProductionGeneration_; assert it is
+// the ONLY generation call and that no direct atomic-write call exists in the TEMP tooling.
+(function () {
+  var gi = TEMP.indexOf('function TEMP_r6f2fRunProductionGeneration_'), ge = TEMP.indexOf('function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE');
+  var helper = TEMP.slice(gi, ge);
+  var allGen = (TEMP.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, helperGen = (helper.match(/weeklyAiPlanGenerateK2_\(/g) || []).length;
+  ok(allGen === helperGen && helperGen >= 1, 'R2 the ONLY production generation call lives in the R6F2F controlled-executor helper');
+  ok(!/handleUpsertShippingAllocationDraftAtomic_\(/.test(TEMP), 'R2b no direct atomic-write call in the TEMP tooling (the atomic writer is reached only inside production)');
+})();
 // the quiet gate is a pure logging flag: exactly one Logger.log in the preflight core, gated by !(opts&&opts.quiet)
 var preCore = extractFn(TEMP, 'TEMP_r6f2ePreflightCore_');
 eq((preCore.match(/Logger\.log\(/g) || []).length, 1, 'R3 preflight core has exactly one Logger.log');

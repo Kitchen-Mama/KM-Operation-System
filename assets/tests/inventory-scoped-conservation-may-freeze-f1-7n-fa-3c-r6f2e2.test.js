@@ -105,7 +105,7 @@ var freezeFn = TEMP.slice(TEMP.indexOf('function TEMP_R6F2E_FREEZE_SELECTED_CONT
 ok(/TEMP_r6f2eScopedChecks_\(pre, sel, mk\)/.test(freezeFn) && /TEMP_r6f2eSelectedMkScope_\(dry, e\)/.test(freezeFn), 'C1 freeze wrapper uses the SHARED selected-scope + scoped-checks helpers');
 ok(/selected_scope_conservation_source/.test(freezeFn), 'C2 freeze reports the scoped-conservation source on refusal + envelope');
 ok(!/setValue|appendRow|setProperty|handleUpsertShippingAllocationDraftAtomic_/.test(freezeFn), 'C3 freeze remains read-only (zero writes)');
-ok(!/inventoryAiPlanDbGenerationEnabled_\s*=\s*true|weeklyAiPlanGenerateK2_\(/.test(TEMP), 'R1 no flag flip / no generation call');
+ok(!/inventoryAiPlanDbGenerationEnabled_\s*=\s*true|INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*true/.test(TEMP), 'R1 no flag flip in the TEMP tooling');
 
 console.log('\n----------------------------------------');
 console.log('R6F2E2 SCOPED CONSERVATION / MAY_FREEZE: ' + pass + ' passed, ' + fail + ' failed');
