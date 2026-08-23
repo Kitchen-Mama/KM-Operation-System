@@ -3903,7 +3903,7 @@ var TEMP_R6F2G_MIGRATION_STORE_KEY_ = 'R6F2G_ID_LINEAGE_ROLLBACK_V1';
 // E — USER confirmation gate for the controlled migration. DRY_RUN prints the live migration-plan checksum; the USER
 // copies it into this constant and re-saves the file before COMMIT. Until then COMMIT refuses. LEFT AT PLACEHOLDER
 // in this task (R6F2G-P0) — do NOT set it here; do NOT run COMMIT.
-var TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE';
+var TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = '7c86deb0';
 var TEMP_R6F2G_DOWNSTREAM_TABLES_ = ['shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines'];
 
 // Read the persisted frozen token or null.

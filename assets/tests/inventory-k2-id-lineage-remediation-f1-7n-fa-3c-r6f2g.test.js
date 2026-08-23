@@ -200,23 +200,26 @@ var pfRef = scRef.sb.s.TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION();
 eq(pfRef.verdict, 'HALT_DOWNSTREAM_REFERENCE_TO_OLD_LINE_ID', 'D7 an OLD line id referenced downstream → HALT (no silent cascade)');
 ok(pfRef.downstream_line_id_reference_total > 0, 'D7 the downstream reference is counted');
 
-section('E. DRY_RUN is read-only + prints the plan checksum; confirmation left at placeholder');
+section('E. DRY_RUN is read-only + prints the plan checksum; confirmation now carries the reviewed checksum');
 var dry = sc.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN();
 eq(dry.verdict, 'DRY_RUN_READY', 'E1 dry-run ready');
 eq(dry.line_id_cell_update_count, 5, 'E1 five id-cell updates planned');
 eq(dry.R6F2G_ZERO_WRITE_CONFIRMED, 'YES (read-only)', 'E1 dry-run writes nothing');
-ok(/PLACEHOLDER/.test(dry.confirmation_constant_status), 'E1 confirmation constant is a placeholder (COMMIT will refuse)');
-ok(/TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE';/.test(TEMP), 'E2 confirmation checksum constant left at placeholder in the file (staged OFF)');
+// R6F2G3 — the confirmation constant is now the USER-reviewed checksum, so status reports SET (no longer PLACEHOLDER).
+eq(dry.confirmation_constant_status, 'SET', 'E1 confirmation constant is SET (USER-reviewed checksum), COMMIT still gated on plan-checksum equality');
+ok(/TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = '7c86deb0';/.test(TEMP), 'E2 confirmation checksum constant set to the reviewed 7c86deb0 in the file');
+ok(/=== 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE'/.test(TEMP), 'E2 the COMMIT refusal guard still checks the placeholder sentinel (staged-OFF safety preserved)');
 
-section('E. COMMIT refuses while the confirmation constant is a placeholder (zero write)');
+section('E. COMMIT refuses while the confirmation constant is the placeholder sentinel (zero write)');
 var scC = scenario();
+scC.sb.s.TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE';   // exercise the placeholder-refusal path deterministically
 var before = JSON.stringify(scC.sb.sheets.shipping_allocation_draft_lines._m());
 var refused = scC.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT();
 eq(refused.verdict, 'REFUSED_CONFIRMATION_CHECKSUM_NOT_SET_OR_MISMATCH', 'E3 placeholder confirmation → COMMIT refuses');
 eq(JSON.stringify(scC.sb.sheets.shipping_allocation_draft_lines._m()), before, 'E3 refused COMMIT wrote nothing');
 ok(!scC.sb.props[scC.sb.s.TEMP_R6F2G_MIGRATION_STORE_KEY_], 'E3 no rollback token stored on refusal');
 
-section('E. COMMIT behavior when confirmation is set (in-test override; file stays placeholder)');
+section('E. COMMIT behavior when confirmation matches the plan checksum (in-test override)');
 var scX = scenario();
 scX.sb.s.TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = scX.sb.s.TEMP_r6f2gBuildMigrationPlan_(scX.token).migration_plan_checksum; // runtime-only override
 var rowsBefore = scX.sb.sheets.shipping_allocation_draft_lines._m().length;
