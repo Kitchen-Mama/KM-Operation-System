@@ -112,7 +112,7 @@ ok(/getProperty\(TEMP_R6F2E_STORE_PROP_KEY_\)/.test(commitFn) && /readbackOk/.te
 ok(/out\.verdict = 'PERSISTED_FROZEN_SCOPE'/.test(commitFn), 'D5 COMMIT returns PERSISTED_FROZEN_SCOPE only after verified readback');
 ok((commitFn.match(/setProperty\(/g) || []).length === 1, 'D6 COMMIT performs exactly ONE Script Property write');
 ok(!/getRange|setValue|appendRow/.test(commitFn), 'D7 COMMIT writes no spreadsheet cells');
-ok(/PASTE_FREEZE_SCOPE_CHECKSUM_HERE/.test(TEMP), 'D8 the confirmation constant is unchanged (still the placeholder)');
+ok(/TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'e626e368'/.test(TEMP), 'D8 the confirmation constant is set to the USER-confirmed freeze checksum e626e368 (R6F2E4)');
 
 // =====================================================================================================
 section('E — VALIDATE from a stored COMPLETE token: structure ok, guards, pre-gen RECONCILIATION (no writes)');

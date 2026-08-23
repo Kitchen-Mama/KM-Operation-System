@@ -127,7 +127,7 @@ var cl = makeSandbox();
 var clr = cl.sandbox.TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE();
 eq(clr.verdict, 'CLEARED', 'E8 cleanup returns CLEARED');
 // confirmation gate unchanged: placeholder constant still present
-ok(/TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE'/.test(TEMP), 'E9 the checksum-confirmation gate constant is unchanged (still the placeholder)');
+ok(/TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'e626e368'/.test(TEMP), 'E9 the checksum-confirmation gate constant is set to the USER-confirmed freeze checksum (R6F2E4)');
 
 // =====================================================================================================
 section('regression — no generation call, no flag flip, quiet cores are pure log-gating');

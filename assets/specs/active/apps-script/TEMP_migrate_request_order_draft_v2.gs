@@ -2666,7 +2666,7 @@ var TEMP_R6F2E_STORE_PROP_KEY_ = 'R6F2E_CONTROLLED_FROZEN_SCOPE_V1';
 var TEMP_R6F2E_FREEZE_VERSION_ = 'R6F2E-FREEZE-1';
 // USER confirmation gate for the metadata write (Objective D, option B): the DRY_RUN prints the live freeze checksum;
 // the USER copies it into this constant and re-saves the file before running COMMIT. Until then COMMIT refuses.
-var TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE';
+var TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ = 'e626e368';
 
 // ---- PURE decision helpers (no Apps Script dependency; unit-tested in the R6F2E test) ---------------------------
 var TEMP_R6F2E_SRC_BLOCKS_ = { ROUTE_SOURCE_UNKNOWN: 1, ROUTE_SOURCE_INACTIVE: 1, ROUTE_SOURCE_MULTI_POOL_UNRESOLVED: 1 };
