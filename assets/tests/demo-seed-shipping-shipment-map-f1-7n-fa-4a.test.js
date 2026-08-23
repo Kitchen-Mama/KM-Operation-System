@@ -1,18 +1,17 @@
-// F1-7N-FA-4A-DEMO-SEED-SHIPPING-SHIPMENT-MAP-V2 — controlled visual-demo seed for the six shipment tables + map.
+// F1-7N-FA-4A-DEMO-SEED-SHIPPING-SHIPMENT-MAP (V3, live-readback hardened).
 // Run: node assets/tests/demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js
-// Proves: exact six-table schema use, exact FK chain, masters never written, missing location/coordinate fails
-// closed, chronological events, latest event agrees with status/current node, future nodes not recorded as completed
-// events, retry REUSED with 0-delta, CLEAR targets only exact DEMO ids, no production/stock/PO/K2/doc/API side effect.
+// Proves: exact existing-state classification (ABSENT_ALL/PRESENT_EXACT_ALL/PARTIAL/CONTENT_DRIFT/DUPLICATE), live-row
+// checksums + validation, real marketplace_skus⋈sku_details SKU pairs (no fabricated site_sku), distinct W/C/E template
+// selection, dynamic counts + checksum, inserted-only rollback, full CLEAR staged OFF, masters/handlers untouched.
 
 var fs = require('fs'), path = require('path');
 var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
-function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
+function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED V3: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
 var ROOT = path.join(__dirname, '..');
 function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing fn ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
-// strip // line-comments first (they can contain apostrophes that would desync quote-pairing), then take quoted tokens
 function arrTokens(literal) { var body = literal.replace(/\[([\s\S]*)\]/, '$1').replace(/\/\/[^\n]*/g, ''); var out = [], re = /'([^']+)'/g, x; while ((x = re.exec(body))) out.push(x[1]); return out; }
 
 var G = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_demo_shipping_shipment_map_seed_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
@@ -21,35 +20,45 @@ var G12 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '12_
 var G22 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '22_shipment_dispatch_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
 var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_shipment_receipt_route_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
 
-// bring the frozen config + pure builders into scope — ONE top-level eval (var-in-callback would not leak to module scope)
 var LOAD = [];
-['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
-['DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_MASTER_TABS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = \\[[\\s\\S]*?\\];'))[0]); });
+['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
-['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_validCoord_',
-  'DEMO4A_indexLocations_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_resolveNode_', 'DEMO4A_templatePref_', 'DEMO4A_selectTemplates_',
-  'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
-  'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_',
-  'DEMO4A_rowForHeaders_', 'DEMO4A_validateLive_', 'DEMO4A_checkChronology_', 'DEMO4A_checkLatestAgreement_', 'DEMO4A_checkCoords_']
-  .forEach(function (n) { LOAD.push(extractFn(G, n)); });
+['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
+  'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
+  'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_resolveNode_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_',
+  'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
+  'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
+  'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
-// ---- synthetic read-only masters (3 active US templates, each 3 nodes, all resolvable to valid coords) ----
-function tpl(id, region) { return { route_template_id: id, route_template_name: 'CN to US ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: 'WH-CN-' + id, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
+// ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
+function tpl(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: 'WH-CN-' + id, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
 function node(tid, seq, loc, evt, type) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: type.toUpperCase() + seq, node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA', logistics_location_id: loc }; }
-function loc(id, lat, lng, country, region, city) { return { logistics_location_id: id, location_code: id + '-C', location_name: id + ' Name', country: country, region: region, city: city, latitude: lat, longitude: lng, warehouse_id: '' }; }
-function mastersFull() {
-  var templates = [tpl('RT-W', 'US West'), tpl('RT-C', 'US Central'), tpl('RT-E', 'US East'), Object.assign(tpl('RT-INACTIVE', 'US West'), { is_active: 'FALSE' })];
-  var nodes = [];
-  ['RT-W', 'RT-C', 'RT-E'].forEach(function (tid) { nodes.push(node(tid, 1, tid + '-L1', 'departure', 'origin'), node(tid, 2, tid + '-L2', 'port_arrival', 'port'), node(tid, 3, tid + '-L3', 'delivery', 'destination')); });
-  var locations = [];
-  ['RT-W', 'RT-C', 'RT-E'].forEach(function (tid, k) { locations.push(loc(tid + '-L1', 31.2 + k, 121.5 + k, 'CN', 'Shanghai', 'Shanghai'), loc(tid + '-L2', 33.7 + k, -118.2 - k, 'US', 'CA', 'LA'), loc(tid + '-L3', 40.7 + k, -74.0 - k, 'US', tpl(tid, '').destination_region, 'City')); });
-  return { templates: templates, nodes: nodes, locations: locations, skus: ['SKU-A', 'SKU-B', 'SKU-C'] };
+function loc(id, lat, lng) { return { logistics_location_id: id, location_code: id + '-C', location_name: id + ' Name', country: 'US', region: 'R', city: 'City', latitude: lat, longitude: lng }; }
+function mastersFull(extraNode) {
+  var templates = [tpl('RT-W', 'US West'), tpl('RT-C', 'US Central'), tpl('RT-E', 'US East'), Object.assign(tpl('RT-INACT', 'US West'), { is_active: 'FALSE' })];
+  var counts = { 'RT-W': 3, 'RT-C': extraNode ? 5 : 4, 'RT-E': 3 };
+  var nodes = [], locations = [];
+  Object.keys(counts).forEach(function (tid, k) { for (var s = 1; s <= counts[tid]; s++) { var lid = tid + '-L' + s; nodes.push(node(tid, s, lid, s === 1 ? 'origin_departure' : (s === counts[tid] ? 'final_delivery' : 'port_transit'), s === 1 ? 'origin' : (s === counts[tid] ? 'destination' : 'port'))); locations.push(loc(lid, 20 + k + s, -70 - k - s)); } });
+  var marketplaceSkus = [
+    { sku: 'KM-001', site_sku: 'B00AAA111', marketplace: 'Amazon', country: 'US', company: 'KM', is_active: 'TRUE' },
+    { sku: 'KM-002', site_sku: 'B00BBB222', marketplace: 'Amazon', country: 'US', company: 'KM', is_active: 'TRUE' },
+    { sku: 'KM-003', site_sku: 'B00CCC333', marketplace: 'Amazon', country: 'US', company: 'KM', is_active: 'TRUE' },
+    { sku: 'KM-004', site_sku: 'B00DDD444', marketplace: 'Amazon', country: 'CA', company: 'KM', is_active: 'TRUE' },
+    { sku: 'KM-INACT', site_sku: 'B00XXX999', marketplace: 'Amazon', country: 'US', company: 'KM', is_active: 'FALSE' }
+  ];
+  var skuDetails = [{ sku: 'KM-001', is_active: 'TRUE' }, { sku: 'KM-002', is_active: 'TRUE' }, { sku: 'KM-003', is_active: 'TRUE' }, { sku: 'KM-004', is_active: 'TRUE' }, { sku: 'KM-INACT', is_active: 'TRUE' }];
+  return { templates: templates, nodes: nodes, locations: locations, marketplaceSkus: marketplaceSkus, skuDetails: skuDetails };
 }
+function liveFromPlan(plan) { var live = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { live[t] = { present: true, headers: Object.keys((plan.tables[t] || [{}])[0] || {}), rows: (plan.tables[t] || []).map(function (r) { return JSON.parse(JSON.stringify(r)); }) }; }); return live; }
+function emptyLive() { var live = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { live[t] = { present: true, headers: [], rows: [] }; }); return live; }
 
-// ============================================================ A — exact schema use (subset of canonical HEADERS)
-section('A. exact six-table schema use');
+var plan = DEMO4A_buildPlan_(mastersFull());
+ok(plan.ok, 'setup. plan builds from real templates + marketplace_skus join');
+
+// ============================================================ schema subset (owned columns are all real)
+section('schema — owned columns ⊆ canonical HEADERS');
 var CANON = {
   shipping_plans: arrTokens(G11.match(/var SHIPPING_PLANS_HEADERS_ = \[[\s\S]*?\];/)[0]),
   shipping_plan_lines: arrTokens(G11.match(/var SHIPPING_PLAN_LINES_HEADERS_ = \[[\s\S]*?\];/)[0]),
@@ -58,107 +67,117 @@ var CANON = {
   shipment_routes: arrTokens(G22.match(/var ROUTE_HEADERS = \[[\s\S]*?\];/)[0]),
   shipment_events: arrTokens(G31.match(/var SHIP_EVENT_HEADERS_ = \[[\s\S]*?\];/)[0])
 };
-eq(DEMO4A_WRITE_ORDER_, ['shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_routes', 'shipment_events'], 'A0. FK-safe write order is the six demo tables');
-DEMO4A_WRITE_ORDER_.forEach(function (t) {
-  var canon = CANON[t], req = DEMO4A_REQUIRED_COLS_[t];
-  var notInCanon = req.filter(function (c) { return canon.indexOf(c) === -1; });
-  eq(notInCanon, [], 'A1. ' + t + ' required columns are all real canonical columns');
-});
+DEMO4A_WRITE_ORDER_.forEach(function (t) { eq(DEMO4A_REQUIRED_COLS_[t].filter(function (c) { return CANON[t].indexOf(c) === -1; }), [], 'schema. ' + t + ' required cols are real'); ok((plan.tables[t] || []).every(function (r) { return Object.keys(r).every(function (k) { return CANON[t].indexOf(k) !== -1; }); }), 'schema. ' + t + ' every written key is a real column'); });
 
-// ============================================================ B — plan build + counts + FK chain
-section('B. deterministic plan + FK chain');
-var plan = DEMO4A_buildPlan_(mastersFull());
-ok(plan.ok, 'B0. plan builds with sufficient active resolvable templates');
-eq(plan.counts, { shipping_plans: 3, shipping_plan_lines: 8, shipments: 3, shipment_lines: 8, shipment_routes: 9, shipment_events: 6 }, 'B1. row counts per table');
-// every id begins with the frozen prefix
-var allIds = DEMO4A_allIds_(plan); var flat = [];
-Object.keys(allIds).forEach(function (t) { flat = flat.concat(allIds[t]); });
-ok(flat.every(function (id) { return String(id).indexOf('DEMO-20260824-') === 0; }), 'B2. every demo id carries the DEMO-20260824- prefix');
-// FK chain resolvable (use the pure validator with live == plan)
-var liveAsPlan = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { liveAsPlan[t] = { present: true, headers: CANON[t], rows: plan.tables[t] }; });
-var checks = DEMO4A_validateLive_(plan, liveAsPlan);
-ok(checks.pk_present.ok, 'B3. every planned PK present');
-ok(checks.fk_chain.ok, 'B3. FK chain fully resolvable (plan→lines→shipment→lines→routes→events)');
-// explicit FK spot-checks
-ok(plan.tables.shipments.every(function (s) { return plan.tables.shipping_plans.some(function (p) { return p.shipping_plan_id === s.shipping_plan_id; }); }), 'B4. shipments.shipping_plan_id → shipping_plans');
-ok(plan.tables.shipment_lines.every(function (l) { return plan.tables.shipments.some(function (s) { return s.shipment_id === l.shipment_id; }) && plan.tables.shipping_plan_lines.some(function (pl) { return pl.shipping_plan_line_id === l.shipping_plan_line_id; }); }), 'B4. shipment_lines FK to shipment + shipping_plan_line');
-ok(plan.tables.shipment_events.every(function (e) { return plan.tables.shipment_routes.some(function (r) { return r.shipment_route_id === e.shipment_route_id; }); }), 'B4. shipment_events.shipment_route_id → shipment_routes');
-// qty consistency: shipment_line.shipment_qty == its shipping_plan_line.approved_qty
-ok(plan.tables.shipment_lines.every(function (l) { var pl = plan.tables.shipping_plan_lines.filter(function (p) { return p.shipping_plan_line_id === l.shipping_plan_line_id; })[0]; return pl && Number(pl.approved_qty) === Number(l.shipment_qty); }), 'B5. shipment_line qty consistent with its shipping_plan_line');
+// ============================================================ 1 — ABSENT_ALL complete insert
+section('1. ABSENT_ALL');
+eq(DEMO4A_classifyState_(plan, emptyLive()).classification, 'ABSENT_ALL', '1. no live rows → ABSENT_ALL (full insert)');
 
-// ============================================================ C — lifecycle / enums / map contract
-section('C. statuses, event tokens, map contract');
-var byStatus = {}; plan.tables.shipments.forEach(function (s) { byStatus[s.status] = s.shipment_id; });
-eq(Object.keys(byStatus).sort(), ['in_transit', 'received', 'shipped'], 'C1. three distinct canonical shipment statuses (shipped/in_transit/received)');
-eq(plan.tables.shipping_plans.map(function (p) { return p.status; }).sort(), ['approved', 'completed', 'pending_approval'], 'C1. three distinct canonical plan statuses');
-// route node statuses use only the map vocabulary
-ok(plan.tables.shipment_routes.every(function (r) { return ['completed', 'current', 'planned'].indexOf(r.status) !== -1; }), 'C2. route node status ∈ {completed,current,planned}');
-// event types + statuses use only canonical tokens
-ok(plan.tables.shipment_events.every(function (e) { return ['departed_origin', 'route_node_reached', 'received'].indexOf(e.event_type) !== -1; }), 'C3. event_type ∈ canonical {departed_origin,route_node_reached,received}');
-ok(plan.tables.shipment_events.every(function (e) { return ['completed', 'current', 'received'].indexOf(e.event_status) !== -1; }), 'C3. event_status ∈ {completed,current,received}');
-// chronology strictly increasing
-ok(DEMO4A_checkChronology_(plan).ok, 'C4. event timestamps strictly increase by sequence');
-// latest event agrees with status/current node; future nodes not recorded as completed events
-var agree = DEMO4A_checkLatestAgreement_(plan);
-ok(agree.ok, 'C5. latest event agrees with status/current node AND no future(planned) node has an event');
-// in-transit is the primary map record + has remaining/future planned nodes
-ok(plan.visibility.primary_map_record && plan.visibility.primary_map_record.status === 'in_transit', 'C6. in_transit is the primary On-the-Way-Map record');
-var itShip = byStatus['in_transit'];
-ok(plan.tables.shipment_routes.some(function (r) { return r.shipment_id === itShip && r.status === 'planned'; }) && plan.tables.shipment_routes.some(function (r) { return r.shipment_id === itShip && r.status === 'current'; }), 'C6. in_transit shipment has a current node AND remaining planned nodes');
-// delivered shipment is not moving (map delivered flag), still appears in Overview
-ok(DEMO4A_mapDelivered_('received') && !DEMO4A_mapMoving_('received'), 'C7. received is delivered (not moving) on the map');
-eq(plan.visibility.shipment_overview.map(function (s) { return s.status; }).sort(), ['in_transit', 'received', 'shipped'], 'C7. all three appear in Shipment Overview');
-eq(plan.visibility.shipment_draft.map(function (s) { return s.status; }), ['shipped'], 'C7. only shipped appears in Shipment Draft');
-// coordinates valid + from master data (no 0,0), events + routes both carry coords
-ok(DEMO4A_checkCoords_(plan).ok, 'C8. every route + event carries a valid non-(0,0) coordinate');
-ok(plan.tables.shipment_routes.every(function (r) { return r.location_ref_type === 'logistics_location' && String(r.location_ref_id) !== ''; }), 'C8. route nodes carry logistics_location lineage (location_ref_id)');
-
-// ============================================================ D — fail-closed on missing location / bad coordinate
-section('D. fail-closed preflight');
-var mMissingLoc = mastersFull(); mMissingLoc.locations = mMissingLoc.locations.filter(function (l) { return l.logistics_location_id !== 'RT-W-L2'; });
-var pMissing = DEMO4A_buildPlan_(mMissingLoc);
-eq([pMissing.ok, pMissing.reason], [false, 'INSUFFICIENT_ACTIVE_RESOLVABLE_TEMPLATES'], 'D1. a node with no resolvable logistics location disqualifies the template → <3 → fail closed');
-var mBadCoord = mastersFull(); mBadCoord.locations.forEach(function (l) { if (l.logistics_location_id === 'RT-C-L1') { l.latitude = 0; l.longitude = 0; } });
-var pBad = DEMO4A_buildPlan_(mBadCoord);
-eq(pBad.ok, false, 'D2. a (0,0) coordinate fails the coord gate → template disqualified → fail closed');
-var pFewSku = DEMO4A_buildPlan_(Object.assign(mastersFull(), { skus: ['ONLY-ONE'] }));
-eq([pFewSku.ok, pFewSku.reason], [false, 'INSUFFICIENT_ACTIVE_SKUS'], 'D3. <2 active SKUs fails closed');
-// resolveNode fail-closed reasons
-eq(DEMO4A_resolveNode_({ logistics_location_id: '' }, {}).reason, 'NODE_NO_LOGISTICS_LOCATION_ID', 'D4. node without logistics_location_id fails');
-eq(DEMO4A_resolveNode_({ logistics_location_id: 'X' }, {}).reason, 'LOGISTICS_LOCATION_NOT_FOUND', 'D4. unknown location fails');
-eq(DEMO4A_resolveNode_({ logistics_location_id: 'X' }, { X: { logistics_location_id: 'X', latitude: '', longitude: '' } }).reason, 'LOCATION_COORDINATE_INVALID_OR_MISSING', 'D4. blank coordinate fails');
-
-// ============================================================ E — determinism + idempotent REUSE (0-delta retry)
-section('E. determinism + idempotent retry');
-eq(DEMO4A_buildPlan_(mastersFull()).checksum, plan.checksum, 'E1. rebuild → identical demo_plan_checksum (deterministic)');
-// simulate COMMIT idempotency: filter planned rows against an existing-PK set (mirrors the COMMIT insert filter).
-var pkOf = { shipping_plans: 'shipping_plan_id', shipping_plan_lines: 'shipping_plan_line_id', shipments: 'shipment_id', shipment_lines: 'shipment_line_id', shipment_routes: 'shipment_route_id', shipment_events: 'shipment_event_id' };
-function simDelta(plan, havePlan) { var d = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { var pk = pkOf[t]; var have = {}; (havePlan ? plan.tables[t] : []).forEach(function (r) { have[r[pk]] = 1; }); d[t] = (plan.tables[t] || []).filter(function (r) { return !have[r[pk]]; }).length; }); return d; }
-eq(simDelta(plan, false), { shipping_plans: 3, shipping_plan_lines: 8, shipments: 3, shipment_lines: 8, shipment_routes: 9, shipment_events: 6 }, 'E2. first COMMIT writes the full plan');
-eq(simDelta(plan, true), { shipping_plans: 0, shipping_plan_lines: 0, shipments: 0, shipment_lines: 0, shipment_routes: 0, shipment_events: 0 }, 'E3. exact retry → 0/0/0/0/0/0 delta (REUSED)');
-// rowForHeaders maps onto live header order, drops unknown keys, blanks missing
-eq(DEMO4A_rowForHeaders_(['a', 'b', 'c'], { a: 1, c: 3, z: 9 }), [1, '', 3], 'E4. rowForHeaders maps to live header order (unknown dropped, missing blank)');
-
-// ============================================================ F — write boundary + CLEAR safety (source-facts)
-section('F. write boundary + CLEAR safety');
-// only the six writable tables are ever appended to; masters are only read
-var appendMatches = (G.match(/getSheetByName\(([^)]+)\)\.appendRow|\.appendRow\(/g) || []);
-ok(/DEMO4A_ss_\(\)\.getSheetByName\(name\)\.appendRow/.test(G) || /sh\.appendRow\(DEMO4A_rowForHeaders_/.test(G), 'F1. COMMIT appends only via the six-table write loop');
-DEMO4A_MASTER_TABS_.forEach(function (m) { ok(new RegExp("getSheetByName\\('" + m + "'\\)\\.appendRow").test(G) === false, 'F1. master ' + m + ' is never appended to'); });
-// no production handler / stock / PO / K2 / document / carrier API / notification / flag calls
-['handleUpsertShippingAllocationDraftAtomic', 'handleCreateShipment', 'handleDispatch', 'confirmAndDispatch', 'handleReceiveShipment', 'handleShipmentReceipt', 'reserveFactoryStock', 'deductFactoryStock', 'consumePurchaseOrder', 'weeklyAiPlanGenerate', 'generateDocument', 'UrlFetchApp', 'MailApp', 'GmailApp', 'setProperty'].forEach(function (banned) {
-  ok(G.indexOf(banned) === -1, 'F2. no reference to banned side-effect API: ' + banned);
-});
-// CLEAR: staged off, reverse-FK order, prefix-only, not implemented in this task
-ok(/CLEAR_REFUSED_STAGED_OFF/.test(G) && /PASTE_DEMO_CLEAR_TOKEN_HERE/.test(G), 'F3. CLEAR is staged OFF behind a placeholder token');
-eq(DEMO4A_CLEAR_ORDER_, ['shipment_events', 'shipment_routes', 'shipment_lines', 'shipments', 'shipping_plan_lines', 'shipping_plans'], 'F3. CLEAR deletion order is reverse-FK');
-ok(DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE', 'F4. COMMIT confirmation constant left at PLACEHOLDER (COMMIT refuses)');
-// COMMIT gate source-facts
+// ============================================================ 2 — PRESENT_EXACT_ALL → REUSED zero delta
+section('2. PRESENT_EXACT_ALL');
+eq(DEMO4A_classifyState_(plan, liveFromPlan(plan)).classification, 'PRESENT_EXACT_ALL', '2. live == plan exactly → PRESENT_EXACT_ALL (REUSED, zero write)');
 var commitFn = extractFn(G, 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED');
-ok(/COMMIT_REFUSED_CONFIRMATION_REQUIRED/.test(commitFn) && /COMMIT_REFUSED_CHECKSUM_MISMATCH/.test(commitFn), 'F5. COMMIT refuses on placeholder + checksum mismatch');
-ok(/LockService\.getScriptLock\(\)/.test(commitFn) && /tryLock\(30000\)/.test(commitFn) && /COMMIT_REFUSED_DRIFT_UNDER_LOCK/.test(commitFn), 'F5. COMMIT takes ScriptLock + re-gates under lock');
-ok(/SpreadsheetApp\.flush\(\)/.test(commitFn) && /readback_all_present/.test(commitFn), 'F5. COMMIT flushes + verifies readback');
-// DEMO tag marker present on rows that have a note/source field (never a new column)
-ok(plan.tables.shipping_plans.every(function (r) { return r.note === 'DEMO ONLY — DO NOT PROCESS'; }) && plan.tables.shipment_events.every(function (r) { return r.note === 'DEMO ONLY — DO NOT PROCESS' && r.source === 'DEMO-4A'; }), 'F6. DEMO-ONLY marker stamped in existing note/source fields');
+ok(/PRESENT_EXACT_ALL[\s\S]*?delta[\s\S]*?verdict = 'REUSED'/.test(commitFn), '2. COMMIT returns REUSED with an explicit six-zero delta for PRESENT_EXACT_ALL');
+ok(/if \(cls\.classification !== 'ABSENT_ALL'\) \{ out\.verdict = 'COMMIT_REFUSED_' \+ cls\.classification/.test(commitFn), '2. COMMIT inserts ONLY for ABSENT_ALL; refuses every other non-exact state');
+
+// ============================================================ 3 — PARTIAL rows refuse
+section('3. PARTIAL_PRESENT');
+var partial = liveFromPlan(plan); partial.shipment_events.rows = [];
+eq(DEMO4A_classifyState_(plan, partial).classification, 'PARTIAL_PRESENT', '3. some tables present, some absent → PARTIAL_PRESENT (COMMIT refuses)');
+var stray = liveFromPlan(plan); stray.shipping_plans.rows.push({ shipping_plan_id: DEMO4A_PREFIX_ + 'SP-STRAY' });
+eq(DEMO4A_classifyState_(plan, stray).classification, 'PARTIAL_PRESENT', '3. an unexpected stray demo id → PARTIAL_PRESENT');
+
+// ============================================================ 4 — CONTENT_DRIFT with exact field evidence
+section('4. CONTENT_DRIFT');
+var drift = liveFromPlan(plan); drift.shipment_lines.rows[0].shipment_qty = 999999;
+var dcls = DEMO4A_classifyState_(plan, drift);
+eq(dcls.classification, 'CONTENT_DRIFT', '4. a changed field → CONTENT_DRIFT');
+var driftRow = dcls.rows.filter(function (r) { return r.state === 'DRIFT'; })[0];
+ok(driftRow && driftRow.mismatched_fields.some(function (m) { return m.field === 'shipment_qty' && m.live === '999999'; }), '4. drift reports the exact mismatched field + live value');
+
+// ============================================================ 5 — DUPLICATE_DEMO_ID refuses
+section('5. DUPLICATE_DEMO_ID');
+var dup = liveFromPlan(plan); dup.shipping_plans.rows.push(JSON.parse(JSON.stringify(dup.shipping_plans.rows[0])));
+var dupCls = DEMO4A_classifyState_(plan, dup);
+eq(dupCls.classification, 'DUPLICATE_DEMO_ID', '5. a duplicate demo PK → DUPLICATE_DEMO_ID');
+ok(dupCls.duplicate_pk_counts.shipping_plans >= 2, '5. duplicate PK count reported');
+
+// ============================================================ 6 — validator catches wrong LIVE FK despite correct planned FK
+section('6. live FK');
+var liveOk = liveFromPlan(plan);
+ok(DEMO4A_validateLiveRows_(plan, liveOk).checks.live_fk_chain.ok, '6. exact live → live FK chain ok');
+var badFk = liveFromPlan(plan); badFk.shipments.rows[0].shipping_plan_id = DEMO4A_PREFIX_ + 'SP-NOEXIST';
+ok(!DEMO4A_validateLiveRows_(plan, badFk).checks.live_fk_chain.ok, '6. a live shipment.shipping_plan_id → missing live plan is caught (plan FK was fine)');
+
+// ============================================================ 7 — validator catches wrong live qty/status/coord/chronology
+section('7. live qty/status/coord/event');
+var badQty = liveFromPlan(plan); badQty.shipment_lines.rows[0].shipment_qty = 7;
+ok(!DEMO4A_validateLiveRows_(plan, badQty).checks.live_line_qty_equals_plan.ok || !DEMO4A_validateLiveRows_(plan, badQty).checks.live_totals_equal_line_sum.ok, '7. wrong live shipment_qty vs plan-line approved_qty is caught');
+var badStatus = liveFromPlan(plan); badStatus.shipment_routes.rows[0].status = 'bogus';
+ok(!DEMO4A_validateLiveRows_(plan, badStatus).checks.live_route_lineage_seq_coord.ok, '7. a route status outside {completed,current,planned} is caught');
+var badCoord = liveFromPlan(plan); badCoord.shipment_routes.rows[0].latitude = 0; badCoord.shipment_routes.rows[0].longitude = 0;
+ok(!DEMO4A_validateLiveRows_(plan, badCoord).checks.live_route_lineage_seq_coord.ok, '7. a (0,0) live route coordinate is caught');
+var badChrono = liveFromPlan(plan);
+(function () { var byShip = {}; badChrono.shipment_events.rows.forEach(function (e) { (byShip[e.shipment_id] = byShip[e.shipment_id] || []).push(e); }); var multi = Object.keys(byShip).filter(function (s) { return byShip[s].length >= 2; })[0]; var evs = byShip[multi].sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); }); evs[0].event_time = '2030-01-01 10:00:00'; })();
+ok(!DEMO4A_validateLiveRows_(plan, badChrono).checks.live_event_fk_chrono_agreement.ok, '7. broken live event chronology (seq1 later than seq2) on a multi-event shipment is caught');
+ok(DEMO4A_validateLiveRows_(plan, liveOk).checks.live_event_fk_chrono_agreement.ok && DEMO4A_validateLiveRows_(plan, liveOk).checks.live_ui_visibility.ok, '7. exact live passes event + UI-visibility checks');
+
+// ============================================================ 8 — real marketplace SKU/site-SKU pair (no fabrication)
+section('8. real SKU/site-SKU');
+ok(plan.scope.marketplace === 'Amazon' && plan.scope.country === 'US' && plan.scope.company === 'KM', '8. scope derived from marketplace_skus (US/Amazon/KM)');
+var siteSkus = plan.tables.shipping_plan_lines.map(function (r) { return r.site_sku; });
+ok(siteSkus.every(function (s) { return /^B00/.test(s); }), '8. site_sku comes from marketplace_skus (real ASIN-like), never sku+"-US"');
+ok(plan.tables.shipping_plan_lines.every(function (r) { return r.site_sku !== r.sku + '-US'; }), '8. no fabricated site_sku = sku+"-US"');
+var few = DEMO4A_buildPlan_(Object.assign(mastersFull(), { marketplaceSkus: [{ sku: 'KM-001', site_sku: 'B00AAA111', marketplace: 'Amazon', country: 'US', company: 'KM', is_active: 'TRUE' }], skuDetails: [{ sku: 'KM-001', is_active: 'TRUE' }] }));
+eq([few.ok, few.reason], [false, 'INSUFFICIENT_ACTIVE_MARKETPLACE_SKUS'], '8. <2 active joined pairs → INSUFFICIENT_ACTIVE_MARKETPLACE_SKUS');
+
+// ============================================================ 9 — distinct West/Central/East
+section('9. distinct W/C/E');
+eq(plan.region_selection_mode, 'DISTINCT_WCE', '9. one template per US West/Central/East');
+eq(plan.chosen_templates.map(function (c) { return c.region; }).sort(), ['US_CENTRAL', 'US_EAST', 'US_WEST'], '9. the three distinct regions are selected');
+ok(plan.visibility.primary_map_record && plan.visibility.primary_map_record.status === 'in_transit', '9. the richest route is the PRIMARY in-transit record');
+var noEast = mastersFull(); noEast.templates = noEast.templates.filter(function (t) { return DEMO4A_regionOf_(t) !== 'US_EAST'; }).concat([tpl('RT-W2', 'US West')]); noEast.nodes = noEast.nodes.filter(function (n) { return n.route_template_id !== 'RT-E'; }); for (var s = 1; s <= 3; s++) { noEast.nodes.push(node('RT-W2', s, 'RT-W2-L' + s, 'e', 't')); noEast.locations.push(loc('RT-W2-L' + s, 40 + s, -80 - s)); }
+var fb = DEMO4A_buildPlan_(noEast);
+ok(fb.ok && fb.region_selection_mode === 'FALLBACK_TRUTHFUL_TOP3', '9. no East available → truthful FALLBACK flag (never falsely claims W/C/E)');
+
+// ============================================================ 10 — dynamic counts + checksum binding
+section('10. dynamic counts + checksum');
+ok(plan.per_shipment.every(function (s) { return s.route_rows === s.nodes; }), '10. route rows per shipment = its template node count');
+eq(plan.counts.total, plan.counts.shipping_plans + plan.counts.shipping_plan_lines + plan.counts.shipments + plan.counts.shipment_lines + plan.counts.shipment_routes + plan.counts.shipment_events, '10. total = sum of the six dynamic table counts');
+var planMore = DEMO4A_buildPlan_(mastersFull(true));   // RT-C gains a node
+ok(planMore.counts.shipment_routes !== plan.counts.shipment_routes && planMore.checksum !== plan.checksum, '10. adding a node changes route count AND the plan checksum');
+eq(DEMO4A_buildPlan_(mastersFull()).checksum, plan.checksum, '10. rebuild is deterministic (identical checksum)');
+
+// ============================================================ 11 — inserted-only reverse-FK rollback
+section('11. rollback');
+var rb = DEMO4A_rollbackPlan_({ shipping_plans: ['P1'], shipment_lines: ['L1', 'L2'], shipment_events: ['E1'] });
+eq(rb.map(function (x) { return x.table; }), ['shipment_events', 'shipment_lines', 'shipping_plans'], '11. rollback deletes in reverse-FK order, only tables with inserted rows');
+eq(rb[0].ids, ['E1'], '11. rollback targets ONLY the ids inserted by this execution');
+ok(/DEMO4A_rollbackPlan_\(inserted\)/.test(commitFn) && /DEMO4A_deleteRowsByPk_\(step\.table, set\)/.test(commitFn) && /COMMIT_FAILED_ROLLED_BACK/.test(commitFn) && /COMMIT_FAILED_ROLLBACK_UNVERIFIED/.test(commitFn), '11. COMMIT rolls back inserted rows on write/readback failure + verifies');
+ok(/setProperty\(DEMO4A_JOURNAL_KEY_/.test(commitFn) && /absent_all_proof/.test(commitFn) && /COMMIT_FAILED_JOURNAL_UNVERIFIED/.test(commitFn), '11. durable journal (checksum + ABSENT_ALL proof + intended ids) written + readback-verified before first insert');
+
+// ============================================================ 12 — CLEAR implemented + placeholder-disarmed
+section('12. CLEAR');
+var clearFn = extractFn(G, 'TEMP_DEMO4A_CLEAR_SHIPPING_SHIPMENT_MAP_SEED');
+ok(DEMO4A_CONFIRMED_CLEAR_TOKEN_ === 'PASTE_DEMO_CLEAR_TOKEN_HERE' && /CLEAR_REFUSED_STAGED_OFF/.test(clearFn), '12. CLEAR is staged OFF (placeholder token refuses)');
+ok(/PRESENT_EXACT_ALL/.test(clearFn) && /DEMO4A_nonDemoReferences_\(live\)/.test(clearFn) && /CLEAR_REFUSED_TOKEN_MISMATCH/.test(clearFn) && /CLEAR_REFUSED_SEED_CHECKSUM_MISMATCH/.test(clearFn), '12. CLEAR requires exact state + token + seed checksum + no external reference');
+ok(/DEMO4A_CLEAR_ORDER_\.forEach[\s\S]*?DEMO4A_deleteRowsByPk_/.test(clearFn) && /CLEARED/.test(clearFn) && /CLEAR_UNVERIFIED/.test(clearFn), '12. CLEAR deletes in reverse-FK order + verifies');
+// non-demo reference scan works
+var refLive = liveFromPlan(plan); refLive.shipments.rows.push({ shipment_id: 'REAL-SHIP-1', shipping_plan_id: plan.tables.shipping_plans[0].shipping_plan_id });
+ok(DEMO4A_nonDemoReferences_(refLive).length >= 1, '12. a non-demo row referencing a demo id is detected (would refuse CLEAR)');
+ok(DEMO4A_nonDemoReferences_(liveFromPlan(plan)).length === 0, '12. no external reference in a clean demo set');
+
+// ============================================================ 13 — masters + production handlers untouched
+section('13. write boundary');
+DEMO4A_MASTER_TABS_.forEach(function (m) { ok(new RegExp("getSheetByName\\('" + m + "'\\)\\.(appendRow|deleteRow)").test(G) === false, '13. master ' + m + ' never written/deleted'); });
+['handleUpsertShippingAllocationDraftAtomic', 'handleCreateShipment', 'confirmAndDispatch', 'handleReceiveShipment', 'reserveFactoryStock', 'deductFactoryStock', 'consumePurchaseOrder', 'weeklyAiPlanGenerate', 'generateDocument', 'UrlFetchApp', 'MailApp', 'GmailApp'].forEach(function (b) { ok(G.indexOf(b) === -1, '13. no banned side-effect API: ' + b); });
+ok(/sh\.appendRow\(DEMO4A_rowForHeaders_\(t\.headers, r\)\)/.test(commitFn) && (G.match(/\.appendRow\(/g) || []).length === 1, '13. the ONLY appendRow is the six-table COMMIT insert loop (via live headers)');
+// DEMO-ONLY marker in existing note/source fields (no new column)
+ok(plan.tables.shipping_plans.every(function (r) { return r.note === 'DEMO ONLY — DO NOT PROCESS'; }) && plan.tables.shipment_events.every(function (r) { return r.source === 'DEMO-4A'; }), '13. DEMO marker in existing note/source fields');
+
+// ============================================================ G — event semantics (canonical enum; no conflation)
+section('G. event semantics');
+ok(plan.tables.shipment_events.every(function (e) { return ['departed_origin', 'route_node_reached', 'received', 'partial_receipt'].indexOf(e.event_type) !== -1; }), 'G. event_type ∈ canonical production enum');
+ok(plan.route_event_map.some(function (m) { return m.route_planned_event_type !== m.recorded_event_type; }), 'G. route.planned_event_type (free-text) is reported DISTINCT from the canonical recorded event_type');
 
 done();
