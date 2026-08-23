@@ -3116,7 +3116,9 @@ function TEMP_R6F2E_CLEAR_CONTROLLED_FROZEN_SCOPE() {
 // Ordered pre-write gate evaluator (PURE; unit-tested). Returns the FIRST typed refusal, or {ok:true}.
 function TEMP_r6f2fEvaluateGates_(g) {
   function no(r) { return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_' + r }; }
-  if (g.flag_true !== true) return no('FLAG_DISABLED');
+  // R6F2F1 — the controlled path runs ONLY while the GLOBAL flag is false (it supplies an internal authority instead of
+  // flipping the flag). A flag-enabled invocation is refused (use the normal production path).
+  if (g.flag_false !== true) return no('FLAG_ENABLED');
   if (g.token_present !== true) return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED' };
   if (g.token_struct_ok !== true) return { ok: false, reason: 'CONTROLLED_EXECUTION_REFUSED_TOKEN_' + (g.token_struct_reason || 'INVALID') };
   if (g.scope_exact !== true) return no('SCOPE_INVALID');
@@ -3166,7 +3168,7 @@ function TEMP_r6f2fReadFrozenScopeState_(token) {
 // Gather the live gate bag (read-only) from the stored token + the canonical preflight/freeze/guards.
 function TEMP_r6f2fGatherGateBag_(token) {
   var e = TEMP_R6F2E_EXPECTED_SCOPE_;
-  var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+  var flagEnabled = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
   var struct = TEMP_r6f2eValidateTokenStructure_(token, e);
   var job = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : null;
   var gapDone = !!(job && job.status === 'FOUND' && String(job.run_status || '').toUpperCase() === 'DONE');
@@ -3181,7 +3183,7 @@ function TEMP_r6f2fGatherGateBag_(token) {
   var st = TEMP_r6f2fReadFrozenScopeState_(token);
   var scopedAllZero = !!(mk && (mk.source_blocked || 0) === 0 && (mk.dest_blocked || 0) === 0 && (mk.no_method || 0) === 0 && (mk.manual_only || 0) === 0 && (mk.authority_required || 0) === 0 && (mk.ai_pair_mismatch || 0) === 0 && (mk.selected_route_invalid || 0) === 0 && (mk.projected_conflict || 0) === 0 && (mk.over_allocation || 0) === 0 && (mk.dup_id || 0) === 0);
   return {
-    flag_true: flag, token_present: true, token_struct_ok: struct.ok, token_struct_reason: struct.reason,
+    flag_false: (flagEnabled === false), flag_enabled: flagEnabled, token_present: true, token_struct_ok: struct.ok, token_struct_reason: struct.reason,
     scope_exact: !!(token.scope && token.scope.company === e.company && token.scope.country === e.country && token.scope.marketplace === e.marketplace),
     cycle_exact: TEMP_str_(token.planning_cycle) === TEMP_str_(TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_),
     gap_done: gapDone, gap_fp_match: TEMP_str_(liveFp) === TEMP_str_(token.calculation_run_id_fingerprint),
@@ -3216,16 +3218,23 @@ function TEMP_r6f2fRunProductionGeneration_(token, ss) {
   mapped.request.businessScope = mapped.request.businessScope || {};
   mapped.request.businessScope.marketplace = sc.marketplace;   // exact-scope: the marketplace-exact production guard engages (APPLIED_SCOPE_WIDENED protects widening)
   var deps = weeklyAiPlanPersistenceDeps_(ss);
-  var resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps, { company: sc.company, country: sc.country, marketplace: sc.marketplace }));
+  // R6F2F1 — MINT the internal controlled authority (server-side, in THIS execution) bound to the frozen token, and
+  // pass it as the dedicated positional argument. This authorizes generation while the global flag stays false. It is
+  // NOT part of the request/body and cannot be forged by any public/frontend request.
+  if (typeof WeeklyAiPlanControlledAuthority_ === 'undefined') return { ok: false, stage: 'AUTHORITY_MODULE_MISSING', resp: null };
+  var cap = WeeklyAiPlanControlledAuthority_.mint({ freeze_checksum: token.freeze_checksum, scope: { company: sc.company, country: sc.country, marketplace: sc.marketplace }, planning_cycle: token.planning_cycle, gap_fingerprint: token.calculation_run_id_fingerprint, expected_header_ids: token.expected_header_ids_sorted, expected_line_ids: token.expected_line_ids_sorted });
+  var resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps, { company: sc.company, country: sc.country, marketplace: sc.marketplace }, cap));
   return { ok: true, stage: 'GENERATED', resp: resp };
 }
 function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE() {
   var out = { tool: 'TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE', mode: 'CONTROLLED ONE-SHOT (production generation via stored frozen token)',
-    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES', generation_engine: 'PRODUCTION weeklyAiPlanGenerateK2_ → KMWRR → handleUpsertShippingAllocationDraftAtomic_ (no second engine)' };
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES', generation_engine: 'PRODUCTION weeklyAiPlanGenerateK2_ → KMWRR → handleUpsertShippingAllocationDraftAtomic_ (no second engine)', authority: 'INTERNAL controlled capability (global flag stays FALSE; never flipped)' };
   try {
-    // GATE 0 — FLAG FIRST, before ANY token load / freeze / generation. Fail-closed while staged OFF.
-    var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
-    if (flag !== true) { out.verdict = 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED'; out.generation_called = false; out.rows_written = 0; out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (flag disabled — refused before any production call)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
+    // GATE 0 (R6F2F1) — the controlled path runs ONLY while the GLOBAL flag is FALSE. If the flag is enabled, the normal
+    // production path applies; the controlled internal-authority path refuses. The flag is NEVER flipped here.
+    var flagEnabled = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+    if (flagEnabled === true) { out.verdict = 'CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED'; out.generation_called = false; out.rows_written = 0; out.note = 'global flag is true — use the normal production path; the controlled internal-authority path is for flag-false controlled runs only'; out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (refused — no controlled call)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
+    out.global_flag_is_false = true;
 
     var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
     if (!raw) { out.verdict = 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED'; out.generation_called = false; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out; }
@@ -3298,8 +3307,11 @@ function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
   var out = { tool: 'TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE', mode: 'CONTROLLED REUSE VERIFY (deterministic-id REUSE only)',
     output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
   try {
-    var flag = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
-    if (flag !== true) { out.verdict = 'REUSE_REFUSED_FLAG_DISABLED'; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    // R6F2F1 — REUSE also runs while the GLOBAL flag is FALSE, using the SAME internal controlled authority (minted in
+    // TEMP_r6f2fRunProductionGeneration_). A flag-enabled invocation defers to the normal production path.
+    var flagEnabled = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false;
+    if (flagEnabled === true) { out.verdict = 'REUSE_REFUSED_FLAG_ENABLED'; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
+    out.global_flag_is_false = true;
     var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
     if (!raw) { out.verdict = 'REUSE_REFUSED_NO_FROZEN_SCOPE_STORED'; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
     var token = JSON.parse(raw);

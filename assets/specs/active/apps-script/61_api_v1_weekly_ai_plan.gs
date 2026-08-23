@@ -30,6 +30,41 @@ var WEEKLY_AI_PLAN_SOURCE_PAGE_ = 'inventory_replenishment';
 function weeklyAiPlanStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function weeklyAiPlanErr_(code, message, extra) { var e = { code: code, message: message || code }; if (extra) for (var k in extra) e[k] = extra[k]; return e; }
 
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2F1 — INTERNAL controlled-execution authority. A capability object is MINTED only by the
+// internal R6F2F executor (server-side TEMP tooling) and is passed to weeklyAiPlanGenerateK2_ as a dedicated positional
+// argument — NEVER through request/body fields (actor/mode/businessScope/checksum/token). It authorizes ONE generation
+// while the GLOBAL flag is false, bound to an EXACT (company|country|marketplace|planning_cycle) scope key.
+//
+// Why a public/frontend request can NEVER manufacture it:
+//   (1) The capability is a 6th positional argument. The public router → handleGenerateWeeklyAiPlanDraft_ call site
+//       passes only 5 args (…, body); a client cannot inject a 6th argument, and any capability-shaped object placed in
+//       `body` arrives as the 5th arg, never as `controlledAuth`.
+//   (2) verify() only accepts a nonce present in the closure-private `minted` set, which is populated ONLY by mint().
+//       A public API request runs in its own execution that never calls mint() → the set is empty → every hand-built
+//       capability fails CAPABILITY_NOT_MINTED_IN_EXECUTION. The nonce is unguessable (Utilities.getUuid) and one-shot.
+//   (3) The scope key is re-derived from the ACTUAL request inside the gate and must equal the minted scope key, so a
+//       capability can never authorize a different / widened scope.
+var WeeklyAiPlanControlledAuthority_ = (function () {
+  var minted = {};   // nonce -> scopeKey, private to this IIFE and to the current execution only
+  function scopeKey(spec) { var s = (spec && spec.scope) || {}; return [String(s.company || ''), String(s.country || ''), String(s.marketplace || ''), String((spec && spec.planning_cycle) || '')].join('|'); }
+  return {
+    scopeKey: scopeKey,
+    mint: function (spec) { var nonce = Utilities.getUuid(); minted[nonce] = scopeKey(spec); return { __wap_controlled: true, nonce: nonce, spec: spec }; },
+    verify: function (cap, liveScopeSpec) {
+      if (!cap || cap.__wap_controlled !== true || !cap.nonce) return { ok: false, reason: 'NO_INTERNAL_CAPABILITY' };
+      var stored = minted[cap.nonce];
+      if (stored === undefined) return { ok: false, reason: 'CAPABILITY_NOT_MINTED_IN_EXECUTION' };
+      if (stored !== scopeKey(cap.spec)) return { ok: false, reason: 'CAPABILITY_TAMPERED' };
+      var live = scopeKey(liveScopeSpec);
+      if (scopeKey(cap.spec) !== live) return { ok: false, reason: 'CAPABILITY_SCOPE_MISMATCH' };
+      if (!((liveScopeSpec.scope || {}).marketplace)) return { ok: false, reason: 'CONTROLLED_REQUIRES_EXACT_MARKETPLACE' };
+      delete minted[cap.nonce];   // ONE-SHOT — a capability authorizes exactly one generation
+      return { ok: true, reason: null };
+    }
+  };
+})();
+
 /**
  * Router handler for `weeklyAiPlan.generate`.
  * body = { action, company, country, planningCycle?, mode?, confirmRegenerateOverUserEdits?,
@@ -188,7 +223,7 @@ function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
 }
 function weeklyAiPlanParseResp_(resp) { try { return JSON.parse(resp && resp.getContent ? resp.getContent() : (typeof resp === 'string' ? resp : '{}')); } catch (e) { return { success: false, parse_error: true }; } }
 
-function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
+function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAuth) {
   var src = KMWRB.buildWeeklySourceLines(request);
   if (!src.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(src.status || 'BLOCKED_INPUT', src.reason || 'source lines blocked')] });
   var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
@@ -207,6 +242,16 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
     if (/^all(_sites)?$/i.test(requestedMkt)) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('SCOPE_ALL_SITES_FORBIDDEN', 'a controlled run must target exactly one marketplace, never ALL_SITES')] });
     if (!byMkt[requestedMkt]) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('REQUESTED_SCOPE_EMPTY', 'requested marketplace produced no allocated lines: ' + requestedMkt)] });
     var only = {}; only[requestedMkt] = byMkt[requestedMkt]; byMkt = only;   // fail-closed: never generate outside the frozen marketplace
+  }
+  // F1-7N-FA-3C-R6F2F1 — IMMEDIATE BACKEND GATE. Generation proceeds ONLY when the GLOBAL flag is true (normal
+  // production) OR an INTERNAL controlled capability authorizes THIS exact scope while the flag is false. Every other
+  // flag-false invocation is blocked with a typed CONTROLLED_GENERATION_UNAUTHORIZED (zero writes). The public handler
+  // gates the flag BEFORE reaching here, and never passes controlledAuth — so no public/frontend request can pass.
+  var flagTrue = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') && inventoryAiPlanDbGenerationEnabled_() === true;
+  if (!flagTrue) {
+    var liveScopeSpec = { scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt }, planning_cycle: request.planningCycle };
+    var authRes = (typeof WeeklyAiPlanControlledAuthority_ !== 'undefined') ? WeeklyAiPlanControlledAuthority_.verify(controlledAuth, liveScopeSpec) : { ok: false, reason: 'AUTHORITY_MODULE_MISSING' };
+    if (!authRes.ok) return jsonResponse_({ success: false, disabled: true, errors: [weeklyAiPlanErr_('CONTROLLED_GENERATION_UNAUTHORIZED', 'global flag is false and no valid INTERNAL controlled authority for this exact scope (' + authRes.reason + '); zero rows written', { auth_reason: authRes.reason })] });
   }
   var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
   Object.keys(byMkt).sort().forEach(function (M) {

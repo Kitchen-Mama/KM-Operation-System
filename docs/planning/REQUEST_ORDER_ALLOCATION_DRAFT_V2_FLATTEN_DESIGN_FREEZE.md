@@ -1423,3 +1423,31 @@ One primary `R6F2F_CONTROLLED_EXECUTION`: gate snapshot, requested/applied scope
 
 ### Tests
 `inventory-controlled-executor-f1-7n-fa-3c-r6f2f.test.js` (49/0, vm sandbox): exhaustive ordered gate evaluator (all 18 typed refusals + flag precedence); runtime flag-disabled refusal (zero work, one primary log, no nested verbose); ALREADY_COMMITTED via a mock committed DB (no call, zero writes, instructs REUSE); source contracts — real generator, exactly one production call, no second engine, token-only payload, exact-scope HALT, readback conjunction (+1/+5/FK/checksums/lineage/route/editable), no side-table write; REUSE verifier requires committed state + 0/0. Re-pinned r6f2e1/e2/e3 "no generation" regression assertions to allow the one flag-gated R6F2F call. Full sweep = known 4-test baseline, **0 new**.
+
+## §56 — F1-7N-FA-3C-DRAFT-MODEL-R6F2F1-INTERNAL-CONTROLLED-AUTHORITY — controlled JP run with the global flag staying false (2026-08-23, staged OFF)
+
+Production `61_api_v1_weekly_ai_plan.gs` gains an internal-only controlled-execution authority (explicitly authorized by this round's spec); `TEMP_migrate_request_order_draft_v2.gs` + focused tests + this doc. **No bundle rebuild** (61_ is a standalone `.gs`, not a MODULE_ORDER core module), **no frontend, no 00_config change, no live execution, no flag flip, no DB/Script-Property write** this task. `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` stays false — the controlled path runs *because* the flag is false, via an internal capability.
+
+### Internal authorization call graph
+`TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE()` (flag must be FALSE) → all stored-token/live gates pass → `TEMP_r6f2fRunProductionGeneration_` **mints** `WeeklyAiPlanControlledAuthority_.mint({freeze_checksum, scope, planning_cycle, gap_fingerprint, expected ids})` (server-side, in this execution) → `weeklyAiPlanGenerateK2_(ss, request{businessScope.marketplace=Amazon}, harvest, deps, body, cap)` → the **immediate backend gate** `verify(cap, liveScope)` → `KMWRR` → `handleUpsertShippingAllocationDraftAtomic_`.
+
+### Why a public/frontend request can never manufacture the capability
+1. **6th positional argument.** The public router → `handleGenerateWeeklyAiPlanDraft_` call site passes exactly 5 args (`…, body`); a client cannot inject a 6th argument, and a capability-shaped object in `body` arrives as the 5th arg, never as `controlledAuth` (test B3).
+2. **Closure-private, in-execution minted set.** `verify()` accepts only a nonce present in the IIFE-private `minted` set, populated only by `mint()`. A public API request runs in its own execution that never calls `mint()` → the set is empty → every hand-built capability fails `CAPABILITY_NOT_MINTED_IN_EXECUTION` (test A4). Nonce is `Utilities.getUuid()` and **one-shot** (A3).
+3. **Scope-bound.** The gate re-derives the live scope key (`company|country|marketplace|cycle`) from the ACTUAL request and requires it to equal the minted key → a capability can never authorize a different/widened scope (A7/A8/B5); an empty marketplace is refused (A9).
+4. **Public flag gate unchanged.** `handleGenerateWeeklyAiPlanDraft_` still returns `INVENTORY_AI_PLAN_DB_GENERATION_DISABLED` for any flag-false request before generation (C1).
+
+### Flag contract (immediate backend gate in `weeklyAiPlanGenerateK2_`)
+Generation proceeds iff **`INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true`** (normal production) **OR** (global flag false **AND** a valid internal capability for the exact scope). Every other flag-false invocation → typed **`CONTROLLED_GENERATION_UNAUTHORIZED`**, zero rows. The flag-true production path is unchanged (5-arg call, `controlledAuth` undefined, `flagTrue` branch).
+
+### Executor / REUSE update
+`TEMP_R6F2F_EXECUTE…` now requires the global flag **false** (`CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED` when enabled), mints the internal authority only after every stored-token/live gate passes, calls the same production path, and retains ALREADY_COMMITTED / COMMITTED_UNVERIFIED fail-closed behavior. `TEMP_R6F2F_VERIFY…_REUSE` uses the same internal authority while the flag is false (deterministic-id REUSE → 0/0). Neither mutates `00_config.gs` or the flag, nor calls the public handler.
+
+### Scope / write boundary
+The controlled authority authorizes only the exact `SADH-K2-7F15DD7D` header + the five frozen `SADL-K2` lines, exact ResTW/JP/Amazon, RECO-2026-08 lineage; it never writes/mutates the two NOT_SAFE legacy headers, unrelated scope, shipping_plans, shipment drafts, reservations/order deductions, or Submit state (the atomic writer only upserts the K2 draft+lines; the executor's readback asserts no side-table write).
+
+### Runbook (no flag flip; USER-owned; do NOT run this task)
+1. Deploy the controlled-authority code (sync 61_ + TEMP; new deployment version). 2. Verify global flag = false. 3. Run `TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE()`. 4. Run `TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE()`. 5. Immediately re-run `TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE()`. 6. STOP for review. 7. Run the REUSE verifier only in a later separately-authorized round. The flag never changes.
+
+### Tests
+`inventory-internal-controlled-authority-f1-7n-fa-3c-r6f2f1.test.js` (21/0, 61_ vm sandbox): authority mint/verify (unforgeable, one-shot, tamper/scope/marketplace bound); generateK2 gate (flag false + no cap → UNAUTHORIZED; + valid cap → passes; cap-in-body → UNAUTHORIZED; flag true → passes; CA cap on JP → UNAUTHORIZED); public-path source contracts (5-arg call site, gate trusts only controlledAuth, private minted set, mint only in TEMP). `inventory-controlled-executor-…-r6f2f.test.js` re-pinned to flag-false semantics (53/0). Full sweep = known 4-test baseline, **0 new**.

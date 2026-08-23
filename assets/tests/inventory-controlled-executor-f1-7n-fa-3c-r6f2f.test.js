@@ -41,7 +41,7 @@ var S = makeSandbox().s;
 
 // a fully-clean gate bag (flag on, everything aligned) — override to inject one drift at a time
 function bag(over) {
-  var b = { flag_true: true, token_present: true, token_struct_ok: true, token_struct_reason: null, scope_exact: true, cycle_exact: true,
+  var b = { flag_false: true, token_present: true, token_struct_ok: true, token_struct_reason: null, scope_exact: true, cycle_exact: true,
     gap_done: true, gap_fp_match: true, freeze_reproduces: true, pre_rows_exact: true, expected_absent: true, no_unexpected_in_scope: true,
     unrelated_match: true, legacy_match: true, schema_ok: true, dup_k2_zero: true, preflight_clean_555: true, selected_conservation_ok: true, scoped_all_zero: true };
   if (over) Object.keys(over).forEach(function (k) { b[k] = over[k]; }); return b;
@@ -49,8 +49,8 @@ function bag(over) {
 
 // =====================================================================================================
 section('B — ordered pre-write gate evaluator (exhaustive typed refusals)');
-eq(S.TEMP_r6f2fEvaluateGates_(bag()).ok, true, 'G0 all gates aligned → ok');
-eq(S.TEMP_r6f2fEvaluateGates_(bag({ flag_true: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED', 'G1 flag disabled refused FIRST');
+eq(S.TEMP_r6f2fEvaluateGates_(bag()).ok, true, 'G0 all gates aligned (flag false + internal authority) → ok');
+eq(S.TEMP_r6f2fEvaluateGates_(bag({ flag_false: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED', 'G1 flag ENABLED refused FIRST (controlled path is flag-false only)');
 eq(S.TEMP_r6f2fEvaluateGates_(bag({ token_present: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED', 'G2 missing token refused');
 eq(S.TEMP_r6f2fEvaluateGates_(bag({ token_struct_ok: false, token_struct_reason: 'FROZEN_TOKEN_INTEGRITY_FAILED' })).reason, 'CONTROLLED_EXECUTION_REFUSED_TOKEN_FROZEN_TOKEN_INTEGRITY_FAILED', 'G3 tampered token refused');
 eq(S.TEMP_r6f2fEvaluateGates_(bag({ scope_exact: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_SCOPE_INVALID', 'G4 wrong scope refused');
@@ -69,18 +69,25 @@ eq(S.TEMP_r6f2fEvaluateGates_(bag({ preflight_clean_555: false })).reason, 'CONT
 eq(S.TEMP_r6f2fEvaluateGates_(bag({ selected_conservation_ok: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_SELECTED_SCOPE_CONSERVATION_FAILED', 'G17 selected conservation false refused');
 eq(S.TEMP_r6f2fEvaluateGates_(bag({ scoped_all_zero: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_SCOPED_PARITY_OR_BLOCK_NONZERO', 'G18 scoped parity/block nonzero refused');
 // flag precedence: flag disabled beats every other drift
-eq(S.TEMP_r6f2fEvaluateGates_(bag({ flag_true: false, scope_exact: false, freeze_reproduces: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED', 'G19 flag disabled takes precedence over all other drift');
+eq(S.TEMP_r6f2fEvaluateGates_(bag({ flag_false: false, scope_exact: false, freeze_reproduces: false })).reason, 'CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED', 'G19 flag-enabled takes precedence over all other drift');
 
 // =====================================================================================================
-section('B — runtime: flag disabled (staged OFF) refuses before ANY production call, zero writes');
-var rf = makeSandbox();   // no inventoryAiPlanDbGenerationEnabled_ defined → flag false
+section('B — runtime: flag-false controlled path proceeds past GATE 0; flag-enabled refuses; zero writes');
+// flag ENABLED → controlled path refuses (use normal production); zero work
+var rfEnabled = makeSandbox({ flagTrue: true });
+var execEnabled = rfEnabled.s.TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE();
+eq(execEnabled.verdict, 'CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED', 'B0 flag ENABLED → CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED (never flips the flag)');
+eq(execEnabled.generation_called, false, 'B0b flag-enabled refusal → no production call');
+eq(rfEnabled.setCalls(), 0, 'B0c flag-enabled refusal → zero writes');
+// flag FALSE, no token → passes GATE 0, refuses at token load (controlled path is available, but nothing to run)
+var rf = makeSandbox();   // no inventoryAiPlanDbGenerationEnabled_ defined → flag false; no stored token
 var exec = rf.s.TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE();
-eq(exec.verdict, 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED', 'B1 flag disabled → CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED');
+eq(exec.global_flag_is_false, true, 'B1 GATE 0 confirms the global flag is false (controlled path proceeds)');
+eq(exec.verdict, 'CONTROLLED_EXECUTION_REFUSED_NO_FROZEN_SCOPE_STORED', 'B1b flag false + no token → refuses at token load');
 eq(exec.generation_called, false, 'B2 no production generation call');
 eq(rf.setCalls(), 0, 'B3 zero Script Property writes');
 eq(rf.logs.length, 1, 'B4 one compact primary log');
 ok(rf.logs[0].indexOf('R6F2F_CONTROLLED_EXECUTION ') === 0, 'B5 primary log is R6F2F_CONTROLLED_EXECUTION');
-ok(rf.logs.filter(function (m) { return m.indexOf('R6F2_PREFLIGHT ') === 0 || m.indexOf('R6F2D_FREEZE ') === 0; }).length === 0, 'B6 no nested verbose logs (flag gate returns immediately)');
 
 // =====================================================================================================
 section('D — ALREADY_COMMITTED: the exact frozen 1+5 state present → no regenerate/mutate (retry-safe)');
@@ -96,7 +103,7 @@ var Hhdr = ['allocation_draft_id', 'company', 'country', 'marketplace', 'plannin
 var Hrows = [Hhdr, ['SADH-K2-7F15DD7D', 'ResTW', 'JP', 'Amazon', 'RECO-2026-08', 'draft']];
 var Lhdr = ['allocation_draft_line_id', 'allocation_draft_id'];
 var Lrows = [Lhdr].concat(TOKEN.expected_line_ids_sorted.map(function (id) { return [id, 'SADH-K2-7F15DD7D']; }));
-var ac = makeSandbox({ flagTrue: true, sheets: { shipping_allocation_drafts: Hrows, shipping_allocation_draft_lines: Lrows }, props: { R6F2E_CONTROLLED_FROZEN_SCOPE_V1: JSON.stringify(TOKEN) } });
+var ac = makeSandbox({ sheets: { shipping_allocation_drafts: Hrows, shipping_allocation_draft_lines: Lrows }, props: { R6F2E_CONTROLLED_FROZEN_SCOPE_V1: JSON.stringify(TOKEN) } });   // flag false (controlled path)
 var acOut = ac.s.TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE();
 eq(acOut.verdict, 'CONTROLLED_EXECUTION_ALREADY_COMMITTED', 'D1 committed 1+5 state → CONTROLLED_EXECUTION_ALREADY_COMMITTED');
 eq(acOut.generation_called, false, 'D2 ALREADY_COMMITTED performs no production call');
@@ -123,19 +130,20 @@ ok(!/shipping_plans|createShipment|reservation|Submit/i.test(genFn), 'F5 the pro
 section('G — REUSE verifier: separate entrypoint; requires committed state; 0/0 REUSE');
 ok(/function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE\(\)/.test(TEMP), 'G20 separate zero-arg REUSE verifier present');
 var reuseFn = fnSlice('TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE', null);
-ok(/REUSE_REFUSED_FLAG_DISABLED/.test(reuseFn) && /REUSE_REFUSED_NOT_COMMITTED/.test(reuseFn), 'G21 REUSE refuses when flag off / not already committed (never a first CREATE)');
+ok(/REUSE_REFUSED_FLAG_ENABLED/.test(reuseFn) && /REUSE_REFUSED_NOT_COMMITTED/.test(reuseFn), 'G21 REUSE refuses when flag enabled / not already committed (never a first CREATE)');
 ok(/\(post\.db_header_rows - before\.headers\) === 0 && \(post\.db_line_rows - before\.lines\) === 0/.test(reuseFn) && /'REUSED'/.test(reuseFn), 'G22 REUSE expects 0/0 delta → REUSED');
 ok(/weeklyAiPlanGenerateK2_/.test(TEMP.slice(TEMP.indexOf('function TEMP_r6f2fRunProductionGeneration_'))), 'G23 REUSE uses the SAME real production path (deterministic-id REUSE)');
 // runtime: REUSE refuses when nothing committed (empty DB, flag on)
-var ru = makeSandbox({ flagTrue: true, props: { R6F2E_CONTROLLED_FROZEN_SCOPE_V1: JSON.stringify(TOKEN) } });
+var ru = makeSandbox({ props: { R6F2E_CONTROLLED_FROZEN_SCOPE_V1: JSON.stringify(TOKEN) } });   // flag false (controlled REUSE path)
 var ruOut = ru.s.TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE();
-eq(ruOut.verdict, 'REUSE_REFUSED_NOT_COMMITTED', 'G24 REUSE with no committed rows → REUSE_REFUSED_NOT_COMMITTED (no production call)');
+eq(ruOut.verdict, 'REUSE_REFUSED_NOT_COMMITTED', 'G24 REUSE (flag false) with no committed rows → REUSE_REFUSED_NOT_COMMITTED (no production call)');
 eq(ruOut.generation_called, false, 'G25 REUSE refusal performs no production call');
 
 // =====================================================================================================
 section('regression — no flag flip; flag gate is first in both entrypoints');
 ok(!/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*true|inventoryAiPlanDbGenerationEnabled_\s*=\s*function/.test(TEMP), 'R1 no flag flip / no flag redefinition in TEMP tooling');
-ok(/if \(flag !== true\) \{ out\.verdict = 'CONTROLLED_EXECUTION_REFUSED_FLAG_DISABLED'/.test(execFn), 'R2 executor checks the flag FIRST (before token load / freeze / generation)');
+ok(/if \(flagEnabled === true\) \{ out\.verdict = 'CONTROLLED_EXECUTION_REFUSED_FLAG_ENABLED'/.test(execFn), 'R2 executor checks the flag FIRST — refuses when ENABLED (controlled path requires flag false; never flips it)');
+ok(/mint\(\{ freeze_checksum: token\.freeze_checksum/.test(TEMP) && /weeklyAiPlanGenerateK2_\(ss, mapped\.request, h, deps, \{ company: sc\.company, country: sc\.country, marketplace: sc\.marketplace \}, cap\)/.test(TEMP), 'R3 executor mints the INTERNAL capability from the token and passes it as the dedicated arg (never via request/body)');
 
 console.log('\n----------------------------------------');
 console.log('R6F2F CONTROLLED EXECUTOR: ' + pass + ' passed, ' + fail + ' failed');
