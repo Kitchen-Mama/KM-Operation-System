@@ -1346,3 +1346,29 @@ Each canonical calculation is now a **single** body with a `opts.quiet` flag tha
 
 ### Tests
 `inventory-quiet-gate-nontruncated-f1-7n-fa-3c-r6f2e1.test.js` (42/0): runtime quiet↔verbose byte-equivalence + log-count, gate/parity one-primary-log + no nested verbose, envelope-first ordering, drift refusal, DRY_RUN/COMMIT/validator no-nested-log + zero writes, no generation call. Fact-tests re-pinned to the relocated cores (r6f2, r6f2a, r6f2d, r6f2e). Full sweep = known 4-test baseline, **0 new**.
+
+## §53 — F1-7N-FA-3C-DRAFT-MODEL-R6F2E2-SCOPED-CONSERVATION — global vs selected-scope conservation; JP freeze gate proven scoped (2026-08-23, staged OFF)
+
+TEMP-tooling + focused tests + this doc only. **No core, no bundle rebuild, no frontend, no 00_config, no DB mutation.** No freeze, no Script-Property write, no flag flip, no AI Plan, no Submit. `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` stays false.
+
+### The contradiction resolved
+`R6F2E_GATE_SUMMARY` previously reported a single `conservation_ok` sourced from **global** (`dry_assembly.global.conservation_ok`, `false` because non-selected scopes carry blocked/unresolved positive lines) while `may_freeze` (from `TEMP_r6f2eGateFlags_`, verdict + exact scope only) did **not** consult conservation at all — an ambiguous `conservation_ok=false` + `may_freeze=true`.
+
+### A — two explicit conservation authorities
+The gate summary now reports:
+- `global_conservation_ok` = `dry_assembly.global.conservation_ok === true` (untouched calc; truthful — currently false).
+- `selected_scope_conservation_ok` = the EXACT `dry_assembly.mk_scopes[ResTW|JP|Amazon].conserved` (`true` / `false` / `null`=unavailable), obtained via `TEMP_r6f2eSelectedMkScope_` by exact company|country|marketplace match — never global, never inferred from counts.
+- `selected_scope_conservation_source` = the literal path string `dry_assembly.mk_scopes[ResTW|JP|Amazon].conserved`.
+- `global_scope_has_unresolved_or_blocked_lines` = true when any global blocked/manual/authority/unresolved positive line exists (explains why global conservation is false yet does not authorize/reject the exact JP run).
+
+### B — may_freeze authority (single, scoped)
+`may_freeze = TEMP_r6f2eMayFreeze_(verdict, sel, checks, expected)` = `TEMP_r6f2eGateFlags_` (verdict `READY_FOR_SCOPED…` + exact ResTW/JP/Amazon) **AND** `TEMP_r6f2eFreezeGate_(sel, checks, …).ok`. The scoped `checks` come from the **one** shared builder `TEMP_r6f2eScopedChecks_` — planning_cycle `RECO-2026-08`, positive/ai_ranked/fully_routed = 5, blocked_total = 0, parity_mismatch_total = 0, `selected_scope_conservation_ok` = true, over-allocation/dup-ids/projected-conflict = 0, header+line schema exact-30, flag false, legacy checksum `8a51b860`. Because may_freeze reuses the freeze gate, it can never disagree with what the freeze accepts. Global conservation is **not an input** to may_freeze: a global-false cannot block a marketplace-exact run, and a global-true can never compensate for a selected-false.
+
+### C — freeze gate scoped-conservation proof
+`TEMP_r6f2eFreezeGate_` reads **only** `checks.selected_scope_conservation_ok` (never a global field); a false OR unavailable value emits the new typed refusal **`SELECTED_SCOPE_CONSERVATION_FAILED`** (also added `SCHEMA_NOT_EXACT_30`). `TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE()` builds its checks from the same `TEMP_r6f2eSelectedMkScope_` + `TEMP_r6f2eScopedChecks_`, so it explicitly requires the marketplace-scope `conserved` value (not merely the preflight verdict or `clean=true`), reports `selected_scope_conservation_ok`/`_source` on refusal and in the envelope, and stays read-only + exact ResTW/JP/Amazon.
+
+### D — compact output preserved
+`R6F2E_GATE_SUMMARY` remains one primary log entry, no nested verbose logs (quiet cores), non-truncated; adds the dual conservation fields + `global_scope_has_unresolved_or_blocked_lines`.
+
+### Tests
+`inventory-scoped-conservation-may-freeze-f1-7n-fa-3c-r6f2e2.test.js` (30/0, vm sandbox in-context): global=false/selected=true→may_freeze can be true; selected false/unavailable→may_freeze false (global cannot compensate); freeze `SELECTED_SCOPE_CONSERVATION_FAILED` on false/unavailable; exact mk selection (CA conserved=true cannot substitute for JP); gate one-primary-log + zero writes; global-blocked truthfully computed. Re-pinned r6f2e C12/B6. Full sweep = known 4-test baseline, **0 new**.

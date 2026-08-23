@@ -2684,15 +2684,18 @@ function TEMP_r6f2eResolvedLaneMismatch_(membership, diagSetSorted, prodSetSorte
   if (!membership || !membership.eligible) return false;
   return JSON.stringify(diagSetSorted || []) !== JSON.stringify(prodSetSorted || []);
 }
-// may_freeze only for the SCOPED-READY verdict AND the exact expected clean marketplace. may_enable_flag ALWAYS false
-// during this task (no generation is authorized).
+// R6F2E2 — verdict + exact-scope portion of the may_freeze authority. may_enable_flag ALWAYS false (no generation).
 function TEMP_r6f2eGateFlags_(verdict, safeScope, expected) {
   var e = expected || TEMP_R6F2E_EXPECTED_SCOPE_;
-  var may_freeze = (verdict === 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN' && !!safeScope
+  var scope_ok = (verdict === 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN' && !!safeScope
     && safeScope.company === e.company && safeScope.country === e.country && safeScope.marketplace === e.marketplace);
-  return { may_freeze: may_freeze, may_enable_flag: false };
+  return { may_freeze: scope_ok, may_enable_flag: false };
 }
 // The exact-scope freeze drift gate. Returns ok + typed reasons; ANY drift → FREEZE_REFUSED_LIVE_DRIFT (nothing frozen).
+// R6F2E2 — conservation is read from the EXACT SELECTED marketplace scope (checks.selected_scope_conservation_ok), NOT
+// global. A false OR unavailable scoped conserved value → the typed SELECTED_SCOPE_CONSERVATION_FAILED refusal. Global
+// conservation is never consulted here, so a global-false (from other scopes) cannot block, and a global-true can never
+// compensate for a selected-false.
 function TEMP_r6f2eFreezeGate_(sel, checks, expected) {
   var e = expected || {};
   var reasons = [];
@@ -2701,13 +2704,49 @@ function TEMP_r6f2eFreezeGate_(sel, checks, expected) {
   if (!(checks.positive === e.clean_count && checks.ai_ranked === e.clean_count && checks.fully_routed === e.clean_count)) reasons.push('COUNT_DRIFT');
   if (checks.blocked_total !== 0) reasons.push('SCOPE_NOT_CLEAN');
   if (checks.parity_mismatch_total !== 0) reasons.push('PARITY_MISMATCH');
-  if (checks.conservation_ok !== true) reasons.push('CONSERVATION_NOT_OK');
+  if (checks.selected_scope_conservation_ok !== true) reasons.push('SELECTED_SCOPE_CONSERVATION_FAILED');
   if (checks.over_allocation !== 0) reasons.push('OVER_ALLOCATION');
   if (checks.duplicate_ids !== 0) reasons.push('DUPLICATE_DETERMINISTIC_IDS');
   if (checks.projected_conflict !== 0) reasons.push('PROJECTED_CONFLICT');
+  if (checks.header_schema_ok !== true || checks.line_schema_ok !== true) reasons.push('SCHEMA_NOT_EXACT_30');
   if (checks.flag_false !== true) reasons.push('INVENTORY_FLAG_NOT_FALSE');
   if (TEMP_str_(checks.legacy_checksum) !== TEMP_str_(e.legacy_checksum)) reasons.push('LEGACY_HEADER_CHECKSUM_DRIFT');
   return { ok: reasons.length === 0, verdict: reasons.length === 0 ? 'CONTROLLED_SCOPE_FROZEN_READ_ONLY' : 'FREEZE_REFUSED_LIVE_DRIFT', drift_reasons: reasons };
+}
+// R6F2E2 — the SINGLE may_freeze authority: verdict + exact scope (gate flags) AND every scoped gate (freeze gate). By
+// reusing TEMP_r6f2eFreezeGate_, may_freeze can NEVER disagree with what the freeze itself will accept — including the
+// SELECTED-scope conservation (never global).
+function TEMP_r6f2eMayFreeze_(verdict, sel, checks, expected) {
+  var flags = TEMP_r6f2eGateFlags_(verdict, sel, expected);
+  var gate = TEMP_r6f2eFreezeGate_(sel, checks, expected);
+  return !!(flags.may_freeze && gate.ok);
+}
+// R6F2E2 — the expected-gate constants bundle (scope + cycle + clean count + legacy checksum), one place.
+function TEMP_r6f2eExpectedGate_() {
+  return { company: TEMP_R6F2E_EXPECTED_SCOPE_.company, country: TEMP_R6F2E_EXPECTED_SCOPE_.country, marketplace: TEMP_R6F2E_EXPECTED_SCOPE_.marketplace,
+    planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, clean_count: TEMP_R6F2E_EXPECTED_CLEAN_COUNT_, legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_ };
+}
+// R6F2E2 — the EXACT selected marketplace-scope object by company|country|marketplace match (null if absent). Never
+// falls back to global or to another scope.
+function TEMP_r6f2eSelectedMkScope_(dry, expected) {
+  var list = (dry && dry.mk_scopes) ? dry.mk_scopes : [];
+  for (var i = 0; i < list.length; i++) { var m = list[i]; if (m.company === expected.company && m.country === expected.country && m.marketplace === expected.marketplace) return m; }
+  return null;
+}
+// R6F2E2 — the ONE scoped-checks builder used by BOTH the gate summary (may_freeze) and the freeze wrapper, so they can
+// never diverge. selected_scope_conservation_ok is the exact mk.conserved (true / false / null=unavailable) — never
+// global. When the mk scope is absent, every scoped check fails closed.
+function TEMP_r6f2eScopedChecks_(pre, sel, mk) {
+  return {
+    planning_cycle: sel ? sel.planning_cycle : null,
+    positive: mk ? mk.positive : (sel ? sel.positive : null), ai_ranked: mk ? mk.ai_ranked : (sel ? sel.ai_rankable : null), fully_routed: mk ? mk.fully_routed : (sel ? sel.fully_routed : null),
+    blocked_total: mk ? ((mk.source_blocked || 0) + (mk.dest_blocked || 0) + (mk.no_method || 0) + (mk.manual_only || 0) + (mk.authority_required || 0)) : 1,
+    parity_mismatch_total: mk ? ((mk.ai_pair_mismatch || 0) + (mk.selected_route_invalid || 0)) : 1,
+    selected_scope_conservation_ok: mk ? (mk.conserved === true) : null,
+    over_allocation: mk ? (mk.over_allocation || 0) : 1, duplicate_ids: mk ? (mk.dup_id || 0) : 1, projected_conflict: mk ? (mk.projected_conflict || 0) : 1,
+    header_schema_ok: pre.header_schema_exact_30 === 'YES', line_schema_ok: pre.line_schema_exact_30 === 'YES',
+    flag_false: pre.inventory_flag_remains_false === 'YES', legacy_checksum: pre.empty_header_classification_checksum || null
+  };
 }
 
 // ---- OBJECTIVE B — compact zero-argument gate summary (read-only) ----------------------------------------------
@@ -2724,7 +2763,12 @@ function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
     var T = g.stage_tally || {};
     var sel = pre.safe_controlled_scope || null;
     var cp = (diag && diag.candidate_parity) ? diag.candidate_parity : {};
-    var flags = TEMP_r6f2eGateFlags_(pre.verdict, sel, TEMP_R6F2E_EXPECTED_SCOPE_);
+    // R6F2E2 — the EXACT selected marketplace-scope object (never global, never inferred from counts).
+    var mk = TEMP_r6f2eSelectedMkScope_(dry, TEMP_R6F2E_EXPECTED_SCOPE_);
+    var selConserved = mk ? (mk.conserved === true) : null;   // true / false / null(=unavailable)
+    var checks = TEMP_r6f2eScopedChecks_(pre, sel, mk);
+    var globalBlocked = ((g.blocked_lines || 0) > 0) || (((T.source_blocked || 0) + (T.dest_blocked || 0) + (T.method_blocked || 0) + (g.manual_only_lines || 0) + (g.authority_required_lines || 0)) > 0);
+    var may_freeze = TEMP_r6f2eMayFreeze_(pre.verdict, sel, checks, TEMP_r6f2eExpectedGate_());
     out.summary = {
       verdict: pre.verdict,
       selected_scope: sel ? { company: sel.company, country: sel.country, marketplace: sel.marketplace } : null,
@@ -2740,12 +2784,20 @@ function TEMP_R6F2E_SUMMARIZE_CONTROLLED_INVENTORY_GATE() {
       real_parity_selected_route_invalid: cp.selected_route_invalid_count != null ? cp.selected_route_invalid_count : null,
       parity_exclusion_count: (cp.route_query_parity_excluded_by_source != null || cp.route_query_parity_excluded_by_destination != null) ? ((cp.route_query_parity_excluded_by_source || 0) + (cp.route_query_parity_excluded_by_destination || 0)) : null,
       parity_exclusion_reasons: cp.exclusion_reason_counts || {},
-      conservation_ok: g.conservation_ok === true, over_allocation_count: g.over_allocation_count || 0,
+      // R6F2E2 — TWO EXPLICIT conservation authorities. global is truthful (false when other scopes carry
+      // blocked/unresolved positive lines) but does NOT authorize/reject the marketplace-exact run; selected_scope is
+      // the ONLY one the freeze gate + may_freeze consult, read from the exact mk scope's conserved flag.
+      global_conservation_ok: g.conservation_ok === true,
+      selected_scope_conservation_ok: selConserved,
+      selected_scope_conservation_source: 'dry_assembly.mk_scopes[' + TEMP_R6F2E_EXPECTED_SCOPE_.company + '|' + TEMP_R6F2E_EXPECTED_SCOPE_.country + '|' + TEMP_R6F2E_EXPECTED_SCOPE_.marketplace + '].conserved',
+      global_scope_has_unresolved_or_blocked_lines: globalBlocked,
+      selected_over_allocation: mk ? (mk.over_allocation || 0) : null, selected_duplicate_ids: mk ? (mk.dup_id || 0) : null, selected_projected_conflict: mk ? (mk.projected_conflict || 0) : null,
+      over_allocation_count: g.over_allocation_count || 0,
       duplicate_deterministic_ids: g.deterministic_id_duplicate_count || 0, projected_conflict: g.projected_CONFLICT || 0,
       header_schema_exact_30: pre.header_schema_exact_30, line_schema_exact_30: pre.line_schema_exact_30,
       inventory_flag_value: pre.inventory_flag_remains_false === 'YES' ? 'false' : (pre.inventory_flag_remains_false === 'NO' ? 'true' : 'unknown'),
       legacy_header_checksum: pre.empty_header_classification_checksum || null,
-      may_freeze: flags.may_freeze, may_enable_flag: flags.may_enable_flag,
+      may_freeze: may_freeze, may_enable_flag: false,
       expected_controlled_scope: TEMP_R6F2E_EXPECTED_SCOPE_
     };
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
@@ -2802,25 +2854,17 @@ function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE(opts) {
     var pre = TEMP_r6f2ePreflightCore_({ quiet: true });
     var sel = pre.safe_controlled_scope || null;
     var dry = pre.dry_assembly || {};
-    var mkList = (dry && dry.mk_scopes) ? dry.mk_scopes : [];
     var e = TEMP_R6F2E_EXPECTED_SCOPE_;
-    var mk = null;
-    for (var i = 0; i < mkList.length; i++) { var m = mkList[i]; if (m.company === e.company && m.country === e.country && m.marketplace === e.marketplace) { mk = m; break; } }
-    var checks = {
-      planning_cycle: sel ? sel.planning_cycle : null,
-      positive: mk ? mk.positive : (sel ? sel.positive : null), ai_ranked: mk ? mk.ai_ranked : (sel ? sel.ai_rankable : null), fully_routed: mk ? mk.fully_routed : (sel ? sel.fully_routed : null),
-      blocked_total: mk ? ((mk.source_blocked || 0) + (mk.dest_blocked || 0) + (mk.no_method || 0) + (mk.manual_only || 0) + (mk.authority_required || 0)) : 1,
-      parity_mismatch_total: mk ? ((mk.ai_pair_mismatch || 0) + (mk.selected_route_invalid || 0)) : 1,
-      conservation_ok: mk ? (mk.conserved !== false) : false, over_allocation: mk ? (mk.over_allocation || 0) : 1,
-      duplicate_ids: mk ? (mk.dup_id || 0) : 1, projected_conflict: mk ? (mk.projected_conflict || 0) : 1,
-      flag_false: pre.inventory_flag_remains_false === 'YES', legacy_checksum: pre.empty_header_classification_checksum || null
-    };
-    var gate = TEMP_r6f2eFreezeGate_(sel, checks, {
-      company: e.company, country: e.country, marketplace: e.marketplace,
-      planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, clean_count: TEMP_R6F2E_EXPECTED_CLEAN_COUNT_, legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_
-    });
+    // R6F2E2 — the EXACT selected marketplace scope + the SHARED scoped-checks builder (same one the gate summary's
+    // may_freeze uses). checks.selected_scope_conservation_ok is mk.conserved (true/false/null) — never global — so the
+    // freeze explicitly requires the marketplace-scope conserved value (SELECTED_SCOPE_CONSERVATION_FAILED otherwise).
+    var mk = TEMP_r6f2eSelectedMkScope_(dry, e);
+    var checks = TEMP_r6f2eScopedChecks_(pre, sel, mk);
+    var gate = TEMP_r6f2eFreezeGate_(sel, checks, TEMP_r6f2eExpectedGate_());
     if (!gate.ok) {
       out.verdict = 'FREEZE_REFUSED_LIVE_DRIFT'; out.drift_reasons = gate.drift_reasons;
+      out.selected_scope_conservation_ok = checks.selected_scope_conservation_ok;
+      out.selected_scope_conservation_source = 'dry_assembly.mk_scopes[' + e.company + '|' + e.country + '|' + e.marketplace + '].conserved';
       out.observed = { selected_scope: sel, live_checks: checks, expected_scope: e, expected_planning_cycle: TEMP_R6F2E_EXPECTED_PLANNING_CYCLE_, expected_legacy_checksum: TEMP_R6F2E_EXPECTED_LEGACY_CHECKSUM_ };
       out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
       if (!quiet) Logger.log('R6F2E_FREEZE_SELECTED ' + JSON.stringify(out, null, 2));
@@ -2854,6 +2898,9 @@ function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE(opts) {
       pre_run_db_header_rows: (H0.rows || []).length, pre_run_db_line_rows: (L0.rows || []).length,
       unrelated_scope_active_row_checksum: TEMP_r5bHash_(unrelatedParts.sort().join('|')),
       legacy_header_checksum: pre.empty_header_classification_checksum || null,
+      selected_scope_conservation_ok: checks.selected_scope_conservation_ok,
+      selected_scope_conservation_source: 'dry_assembly.mk_scopes[' + e.company + '|' + e.country + '|' + e.marketplace + '].conserved',
+      global_conservation_ok: (dry && dry.global) ? (dry.global.conservation_ok === true) : null,
       freeze_checksum: fr.scope_checksum || null,
       output_contract: 'ENVELOPE_FIRST_THEN_NUMBERED_CHUNKS', nested_verbose_logs_suppressed: 'YES',
       verdict: 'CONTROLLED_SCOPE_FROZEN_READ_ONLY'

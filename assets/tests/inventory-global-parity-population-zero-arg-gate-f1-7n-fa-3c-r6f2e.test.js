@@ -36,7 +36,7 @@ var TEMP_r6f2eFreezeGate_ = eval('(function(){ var TEMP_str_=' + extractFn(TEMP,
 
 var EXP = { company: 'ResTW', country: 'JP', marketplace: 'Amazon', planning_cycle: 'RECO-2026-08', clean_count: 5, legacy_checksum: '8a51b860' };
 function cleanChecks(over) {
-  var c = { planning_cycle: 'RECO-2026-08', positive: 5, ai_ranked: 5, fully_routed: 5, blocked_total: 0, parity_mismatch_total: 0, conservation_ok: true, over_allocation: 0, duplicate_ids: 0, projected_conflict: 0, flag_false: true, legacy_checksum: '8a51b860' };
+  var c = { planning_cycle: 'RECO-2026-08', positive: 5, ai_ranked: 5, fully_routed: 5, blocked_total: 0, parity_mismatch_total: 0, selected_scope_conservation_ok: true, over_allocation: 0, duplicate_ids: 0, projected_conflict: 0, header_schema_ok: true, line_schema_ok: true, flag_false: true, legacy_checksum: '8a51b860' };
   if (over) Object.keys(over).forEach(function (k) { c[k] = over[k]; });
   return c;
 }
@@ -93,7 +93,7 @@ var f3 = TEMP_r6f2eGateFlags_('HALT', { company: 'ResTW', country: 'JP', marketp
 ok(f3.may_freeze === false, 'B4 HALT verdict → may_freeze false');
 var f4 = TEMP_r6f2eGateFlags_('READY_FOR_CONTROLLED_INVENTORY_AI_PLAN', { company: 'ResTW', country: 'JP', marketplace: 'Amazon' }, JP);
 ok(f4.may_freeze === false, 'B5 may_freeze ONLY for the SCOPED-ready verdict');
-ok(/may_enable_flag: flags\.may_enable_flag/.test(TEMP) && /may_enable_flag: false/.test(TEMP), 'B6 gate summary reports may_enable_flag (helper hard-codes false)');
+ok(/may_enable_flag: false/.test(TEMP) && /return \{ may_freeze: scope_ok, may_enable_flag: false \}/.test(TEMP), 'B6 gate summary + gate-flags helper both hard-code may_enable_flag=false');
 ok(/legacy_header_checksum: pre\.empty_header_classification_checksum/.test(TEMP), 'B7 gate summary carries the legacy-header checksum');
 ok(/calculation_run_id_fingerprint/.test(TEMP) && /planning_cycle/.test(TEMP), 'B8 gate summary carries planning_cycle + calc-run-id fingerprint');
 
@@ -114,7 +114,7 @@ eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ legacy_checksum: 'deadbeef' }), EXP).
 eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ over_allocation: 2 }), EXP).drift_reasons.indexOf('OVER_ALLOCATION') >= 0, true, 'C9 over-allocation refused');
 eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ duplicate_ids: 1 }), EXP).drift_reasons.indexOf('DUPLICATE_DETERMINISTIC_IDS') >= 0, true, 'C10 duplicate id refused');
 eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ projected_conflict: 1 }), EXP).drift_reasons.indexOf('PROJECTED_CONFLICT') >= 0, true, 'C11 projected conflict refused');
-eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ conservation_ok: false }), EXP).drift_reasons.indexOf('CONSERVATION_NOT_OK') >= 0, true, 'C12 non-conservation refused');
+eq(TEMP_r6f2eFreezeGate_(JP, cleanChecks({ selected_scope_conservation_ok: false }), EXP).drift_reasons.indexOf('SELECTED_SCOPE_CONSERVATION_FAILED') >= 0, true, 'C12 selected-scope non-conservation refused (SELECTED_SCOPE_CONSERVATION_FAILED)');
 // C source contracts
 ok(/function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE\(opts\)/.test(TEMP), 'C13 zero-arg freeze entrypoint present (opts optional; dropdown passes nothing)');
 ok(/FREEZE_REFUSED_LIVE_DRIFT/.test(TEMP), 'C14 refuses drift with FREEZE_REFUSED_LIVE_DRIFT');
