@@ -3942,25 +3942,21 @@ function TEMP_r6f2gScanDownstreamRefs_(ids, tables) {
 function TEMP_r6f2gLineageAuthorities_(token, headerRow) {
   var hdr = headerRow || (TEMP_r6f2fReadFrozenScopeState_(token).header_row) || {};
   var gap = TEMP_r6f2gGapLineage_();
-  var sda = '', harvestReached = false;
-  if (typeof weeklyAiPlanHarvest_ === 'function') {
-    try {
-      var h = weeklyAiPlanHarvest_(SpreadsheetApp.getActiveSpreadsheet(), { company: token.scope.company, country: token.scope.country, planningCycle: token.planning_cycle });
-      if (h && h.ok) { harvestReached = true; sda = TEMP_str_(h.sourceDataAsOf); }
-    } catch (e) { /* unavailable → missing (never silent blank) */ }
-  }
+  // R6F2G2 — source_data_as_of authority = the GAP run's frozen calculationDate (the SAME field production stamps),
+  // reproducible from GAP_JOB_INVENTORY without rerunning GAP. NO harvest dependency (harvest.sourceDataAsOf is blank
+  // for this scope and is not the canonical cutoff). calculated_at = finishedAt (distinct completion timestamp).
   var fields = {
     calculation_run_id: { old: TEMP_str_(hdr.calculation_run_id), new: gap.run_id, source: 'GAP_JOB_INVENTORY raw run id (DONE, GAP-INV- prefix)' },
     formula_version: { old: TEMP_str_(hdr.formula_version), new: 'WEEKLY_AI_PLAN_V1', source: 'WEEKLY_AI_PLAN_V1 (production formula version)' },
-    calculated_at: { old: TEMP_str_(hdr.calculated_at), new: gap.calculated_at, source: 'GAP run finishedAt||calculationDate' },
-    source_data_as_of: { old: TEMP_str_(hdr.source_data_as_of), new: sda, source: 'weeklyAiPlanHarvest_(scope).sourceDataAsOf' }
+    calculated_at: { old: TEMP_str_(hdr.calculated_at), new: gap.calculated_at, source: 'GAP_JOB_INVENTORY.finishedAt (calculation completion timestamp)' },
+    source_data_as_of: { old: TEMP_str_(hdr.source_data_as_of), new: gap.source_data_as_of, source: 'GAP_JOB_INVENTORY.calculationDate (frozen calculation/input cutoff for the run; NOT current time, NOT harvest)' }
   };
   var missing = [];
   if (!(gap.done && gap.prefix_ok && TEMP_str_(fields.calculation_run_id.new) !== '')) missing.push('calculation_run_id');
   if (TEMP_str_(fields.formula_version.new) === '') missing.push('formula_version');
   if (TEMP_str_(fields.calculated_at.new) === '') missing.push('calculated_at');
   if (TEMP_str_(fields.source_data_as_of.new) === '') missing.push('source_data_as_of');
-  return { ok: missing.length === 0, missing: missing, harvest_reached: harvestReached, gap: gap, fields: fields };
+  return { ok: missing.length === 0, missing: missing, source_data_as_of_authority: 'GAP_JOB_INVENTORY.calculationDate', gap: gap, fields: fields };
 }
 // Build the migration plan (old→new line-id mapping + the four lineage authorities) from LIVE rows + frozen token. The NEW
 // line id is DERIVED from the canonical K2 line-id authority (sadK2DeterministicLineId_) over each live row; the four
@@ -4024,7 +4020,10 @@ function TEMP_r6f2gBuildRollbackToken_(token, plan) {
   rb.integrity_checksum = TEMP_r5bHash_(JSON.stringify([rb.version, rb.header_id, rb.line_id_cells, rb.lineage_before, rb.lineage_after, rb.legacy_checksum, rb.unrelated_scope_checksum, rb.migration_plan_checksum]));
   return rb;
 }
-// Live GAP-INV run lineage (READ-ONLY): the raw run id + fingerprint, reusing the corrected R6D authority.
+// Live GAP-INV run lineage (READ-ONLY): the raw run id + fingerprint, reusing the corrected R6D authority. R6F2G2 —
+// exposes the two DISTINCT date authorities from the SAME run: calculated_at = finishedAt (completion timestamp);
+// source_data_as_of = calculationDate (the frozen calculation/input cutoff DATE — the SAME authority production's
+// weeklyAiPlanResolveGapRunLineage_ now uses; reproducible from the persisted run, never a rerun, never current time).
 function TEMP_r6f2gGapLineage_() {
   var job = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : null;
   var found = !!(job && job.status === 'FOUND');
@@ -4032,7 +4031,8 @@ function TEMP_r6f2gGapLineage_() {
   var fp = (found && typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(runId) : '';
   return { found: found, run_status: found ? TEMP_str_(job.run_status) : null, run_id: runId, run_id_fingerprint: fp,
     prefix_ok: /^GAP-INV-/.test(runId), done: found && String(job.run_status || '').toUpperCase() === 'DONE',
-    calculated_at: found ? (TEMP_str_(job.finished_at) || TEMP_str_(job.calculation_date)) : '' };
+    calculated_at: found ? TEMP_str_(job.finished_at) : '',
+    source_data_as_of: found ? TEMP_str_(job.calculation_date) : '' };
 }
 
 // F — CONSOLIDATED post-generation validator. Uses ONLY the canonical accessors (line id / FK / header id / calc-run
@@ -4116,7 +4116,7 @@ function TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION() {
     };
     out.lineage_authorities_complete = plan.lineage_complete;
     out.lineage_authorities_missing = plan.lineage_missing;
-    out.harvest_authority_reached = lin.harvest_reached;
+    out.source_data_as_of_authority = lin.source_data_as_of_authority;   // R6F2G2: GAP_JOB_INVENTORY.calculationDate
     out.expected_lineage_after_repair = { calculation_run_id_fingerprint: token.calculation_run_id_fingerprint, calculation_run_id_source: 'authoritative GAP-INV run id (raw)', formula_version: 'WEEKLY_AI_PLAN_V1' };
     out.downstream_line_id_reference_counts = refOld.by_table;
     out.downstream_line_id_reference_total = refOld.total_references;

@@ -223,12 +223,19 @@ function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
 }
 function weeklyAiPlanParseResp_(resp) { try { return JSON.parse(resp && resp.getContent ? resp.getContent() : (typeof resp === 'string' ? resp : '{}')); } catch (e) { return { success: false, parse_error: true }; } }
 
-// F1-7N-FA-3C-R6F2G (C) — authoritative GAP-INV run lineage for a K2 CREATE/REGENERATE. Reads the SAME production
-// authority the gap job writes (the GAP_JOB_INVENTORY script property; 46_ gap-materialization job), never a fresh
-// clock or a fabricated value. A K2 header MUST stamp calculation_run_id from a DONE GAP-INV run whose planning cycle
-// equals the request; a MONTHLY_ORDER run is NEVER used; a missing / non-DONE / wrong-prefix / wrong-cycle run BLOCKS
-// before ANY write (zero rows). calculated_at is carried from the GAP run's finished/calculation timestamp,
-// source_data_as_of from the harvest, formula_version from the request's canonical formula version.
+// F1-7N-FA-3C-R6F2G (C) / R6F2G2 (B,C) — authoritative GAP-INV run lineage for a K2 CREATE/REGENERATE. Reads the SAME
+// production authority the gap job writes (the GAP_JOB_INVENTORY script property; 46_ gap-materialization job), never a
+// fresh clock or a fabricated value. A K2 header MUST stamp calculation_run_id from a DONE GAP-INV run whose planning
+// cycle equals the request; a MONTHLY_ORDER run is NEVER used; a missing / non-DONE / wrong-prefix / wrong-cycle run
+// BLOCKS before ANY write (zero rows).
+// R6F2G2 SEMANTIC FREEZE — two DISTINCT concepts, both from the SAME GAP run but different fields:
+//   calculated_at     = st.finishedAt — the wall-clock TIMESTAMP the GAP calculation FINISHED (completion).
+//   source_data_as_of = st.calculationDate — the GAP run's FROZEN calculation/input cutoff DATE (server Taipei calendar
+//                       date resolved at run execution, NOT a browser clock, NOT current time; 43_:27,251,255). This is
+//                       the business-data cutoff the calc consumed. It is persisted on the run and reproducible across
+//                       reads without rerunning GAP. It is deliberately NOT the harvest's sourceDataAsOf (which is
+//                       sourced from the recommendation-workspace line and is blank for scopes whose lines omit it).
+// A blank cutoff BLOCKS before write (never a silent blank, never current time).
 function weeklyAiPlanResolveGapRunLineage_(planningCycle, harvest, request) {
   var raw = null;
   try { raw = PropertiesService.getScriptProperties().getProperty('GAP_JOB_INVENTORY'); } catch (e0) { raw = null; }
@@ -241,11 +248,13 @@ function weeklyAiPlanResolveGapRunLineage_(planningCycle, harvest, request) {
   if (String(st.status || '').toUpperCase() !== 'DONE') return { ok: false, reason: 'LINEAGE_GAP_RUN_NOT_DONE' };
   var cyc = String(planningCycle || '').trim();
   if (cyc && String(st.planningCycle || '').trim() !== cyc) return { ok: false, reason: 'LINEAGE_RUN_CYCLE_MISMATCH' };
+  var sourceDataAsOf = String(st.calculationDate || '').trim();   // R6F2G2: the frozen input cutoff DATE for THIS run
+  if (!sourceDataAsOf) return { ok: false, reason: 'LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE' };   // block, never silent blank
   return {
     ok: true, run_id: runId,
     calculation_run_id: runId,
-    calculated_at: String(st.finishedAt || st.calculationDate || '').trim(),
-    source_data_as_of: String((harvest && harvest.sourceDataAsOf) || '').trim(),
+    calculated_at: String(st.finishedAt || '').trim(),
+    source_data_as_of: sourceDataAsOf,
     formula_version: String((request && request.formulaVersion) || 'WEEKLY_AI_PLAN_V1').trim(),
     planning_cycle: String(st.planningCycle || '').trim()
   };

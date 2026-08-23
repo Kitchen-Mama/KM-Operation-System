@@ -1537,3 +1537,32 @@ COMMIT (still refused — confirmation placeholder) now additionally: refuses `R
 
 ### deployment
 TEMP + tests/doc only. **No 16_/61_ correction required** (R6F2G production transport already correct). No bundle rebuild, no frontend, no `00_config`. APPS_SCRIPT_SYNC_REQUIRED: `TEMP_migrate_request_order_draft_v2.gs`. No live writes; migration STAGED OFF; flag stays false.
+
+## §60 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G2-SOURCE-DATA-AS-OF-AUTHORITY — canonical cutoff = GAP calculationDate (2026-08-23)
+
+Production 61_ (standalone .gs, not bundled) + TEMP tooling + test + this doc. No core, no bundle rebuild, no frontend, no 00_config, no 16_ change. Read-only except the (still-refused) COMMIT; migration STAGED OFF (confirmation constant placeholder); flag false; token not re-derived; validator not weakened. No live write, no GAP rerun.
+
+### A — root cause of the blank source_data_as_of (proven from source)
+`weeklyAiPlanHarvest_.sourceDataAsOf` is assembled from `built.sourceDataAsOf` ([61_:382](../../assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs)) ← `st.sourceDataAsOf` in the KMAF-receiver loop ([61_:548](../../assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs)) ← `sites[].sourceDataAsOf = line.sourceDataAsOf || null` ([61_:508](../../assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs)). The recommendation-workspace line for ResTW/JP/Amazon carries **no** `sourceDataAsOf`, so every site is null → `built.sourceDataAsOf = null` → harvest blank → header `source_data_as_of` blank. It is an **upstream adapter-drop**, and the harvest field was never the right authority anyway (it is not tied to the GAP run).
+
+### B — semantic freeze (two distinct concepts, same GAP run, different fields)
+- **calculated_at** = `GAP_JOB_INVENTORY.finishedAt` — the wall-clock TIMESTAMP the GAP calc finished (live: `2026-08-23 13:41:00`).
+- **source_data_as_of** = `GAP_JOB_INVENTORY.calculationDate` — the run's FROZEN calculation/input cutoff DATE. Proven distinct: `calculationDate = gapCalcTaipeiYmd_(now)` resolved once at run execution and persisted ([43_:251,255](../../assets/specs/active/apps-script/43_api_v1_gap_materialization.gs)); the header comment states it is "from the frozen planning config (server), NOT a browser clock" ([43_:27](../../assets/specs/active/apps-script/43_api_v1_gap_materialization.gs)). It is a day-granular cutoff; `finishedAt` is a full completion timestamp — same run, different fields, different meaning. **`calculationDate` is the canonical cutoff** (preferred authority, confirmed from code). No new additive authority is needed.
+
+### C — production fix (61_ `weeklyAiPlanResolveGapRunLineage_`)
+`source_data_as_of` now = the DONE GAP-INV run's `calculationDate` (same run as `calculation_run_id`, cycle-matched, Inventory-only, deterministic, never current time, never MONTHLY_ORDER); `calculated_at` = `finishedAt` (no longer falls back to calculationDate, so the two never conflate). A blank cutoff BLOCKS before write with typed `LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE` (never a silent blank). The harvest arg is no longer the source_data_as_of authority. REUSE stays zero-write (all four lineage fields are fingerprint-excluded).
+
+### D — existing frozen-run reproducibility
+The frozen run `h9fe21969` reproduces a truthful cutoff **without rerunning GAP**: raw authority `GAP_JOB_INVENTORY.calculationDate` → normalized header value `2026-08-23` (the run's calculation date), stable across repeated reads, cycle-consistent with RECO-2026-08 (its month = the run's `planningCycle` month). No GAP rerun required.
+
+### E/F — migration + validator
+`TEMP_r6f2gGapLineage_` exposes `source_data_as_of = job.calculation_date`; `TEMP_r6f2gLineageAuthorities_` uses it (dropped the blank harvest call). Preflight/DRY_RUN now resolve all four lineage fields → `DRY_RUN_READY`, `header_lineage_cell_update_count = 4`, `total_business_cell_update_count = 9`, complete rollback preview, and a regenerated complete checksum (binds the four lineage new values incl. the cutoff). Both `1c42330d` and `250cde5f` remain retired/invalid; the confirmation constant is NOT set. The consolidated validator's `source_data_as_of_lineage` gate requires the header value to EQUAL the GAP calculationDate — a merely nonblank arbitrary value fails (`RECONCILIATION_REQUIRED`).
+
+### G — tests
+`inventory-k2-id-lineage-remediation-f1-7n-fa-3c-r6f2g.test.js` (134/0): calculationDate cutoff authority mapping; calculated_at vs source_data_as_of distinct; harvest value ignored (adapter cannot drive it); blank cutoff → `LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE`; MONTHLY_ORDER/wrong-prefix/not-DONE/wrong-cycle blocks; production resolver has no clock read; production == migration authority; checksum changes when the cutoff changes; stable across repeated reads (no rerun); DRY_RUN 4/9 counts; validator rejects an arbitrary nonblank cutoff; REUSE zero-write. Full sweep = known 4-test baseline, 0 new.
+
+### H — audit impact
+The 61_ fix affects **every future Inventory K2 generation** (all K2 CREATE/REGENERATE via `weeklyAiPlanGenerateK2_` now stamp `source_data_as_of` from the GAP calculationDate and BLOCK if it is unavailable), not only the controlled JP row. Other consumers of `weeklyAiPlanHarvest_` — the read-only diagnostic `TEMP_r6f2eDiagnoseCore_` and the generation entry `weeklyAiPlanGenerate_`/`handleGenerateWeeklyAiPlanDraft_` — are **unchanged** (the harvest itself was not modified; only the lineage authority moved off the blank harvest field onto the GAP run).
+
+### deployment
+Production 61_ + TEMP + test/doc. No bundle rebuild (61_ standalone), no 16_, no frontend, no 00_config. APPS_SCRIPT_SYNC_REQUIRED: `61_api_v1_weekly_ai_plan.gs`, `TEMP_migrate_request_order_draft_v2.gs`. No live write; migration STAGED OFF; flag false.

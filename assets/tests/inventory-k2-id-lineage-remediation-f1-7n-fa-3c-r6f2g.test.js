@@ -67,18 +67,23 @@ ok(/function sadRegenerateLinePatch_/.test(G16) && /note is USER-owned/.test(G16
 // ================================================================================================================
 section('C. 61_ GAP-INV lineage transport');
 var lineageSrc = extractFn(G61, 'weeklyAiPlanResolveGapRunLineage_');
-function resolver(propVal, cycle) {
+function resolver(propVal, cycle, harvestSda) {
   var PropertiesService = { getScriptProperties: function () { return { getProperty: function () { return propVal; } }; } };
   var f = new Function('PropertiesService', lineageSrc + '\nreturn weeklyAiPlanResolveGapRunLineage_;');
-  return f(PropertiesService)(cycle, { sourceDataAsOf: '2026-08-01' }, { formulaVersion: 'WEEKLY_AI_PLAN_V1' });
+  // R6F2G2 — the harvest arg carries a DELIBERATELY DIFFERENT sourceDataAsOf to prove the resolver IGNORES it.
+  return f(PropertiesService)(cycle, { sourceDataAsOf: harvestSda !== undefined ? harvestSda : 'HARVEST-IGNORED-2099-01-01' }, { formulaVersion: 'WEEKLY_AI_PLAN_V1' });
 }
-var doneRun = JSON.stringify({ product: 'INVENTORY', runId: 'GAP-INV-2026-08-0001', status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: '2026-08-02T00:00:00Z', calculationDate: '2026-08-01' });
+var doneRun = JSON.stringify({ product: 'INVENTORY', runId: 'GAP-INV-2026-08-0001', status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: '2026-08-23T13:41:00Z', calculationDate: '2026-08-23' });
 var rOk = resolver(doneRun, 'RECO-2026-08');
 eq(rOk.ok, true, 'C1 DONE GAP-INV run, cycle match → ok');
 eq(rOk.calculation_run_id, 'GAP-INV-2026-08-0001', 'C1 raw GAP-INV run id reaches calculation_run_id');
 eq(rOk.formula_version, 'WEEKLY_AI_PLAN_V1', 'C1 formula_version carried from the request authority');
-eq(rOk.source_data_as_of, '2026-08-01', 'C1 source_data_as_of carried from the harvest');
-eq(rOk.calculated_at, '2026-08-02T00:00:00Z', 'C1 calculated_at carried from the GAP run (not fabricated)');
+eq(rOk.source_data_as_of, '2026-08-23', 'C1 source_data_as_of = GAP calculationDate (input cutoff), NOT the harvest value');
+eq(rOk.calculated_at, '2026-08-23T13:41:00Z', 'C1 calculated_at = GAP finishedAt (completion timestamp)');
+ok(rOk.source_data_as_of !== rOk.calculated_at, 'C1 source_data_as_of and calculated_at are semantically DISTINCT');
+ok(rOk.source_data_as_of !== 'HARVEST-IGNORED-2099-01-01', 'C1b the harvest sourceDataAsOf is IGNORED (adapter cannot drive it)');
+// blank calculationDate → BLOCK before write (never a silent blank, never current time)
+eq(resolver(JSON.stringify({ product: 'INVENTORY', runId: 'GAP-INV-2', status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: '2026-08-23T13:41:00Z', calculationDate: '' }), 'RECO-2026-08').reason, 'LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE', 'C1c blank calculationDate cutoff → BLOCK LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE');
 eq(resolver(null, 'RECO-2026-08').reason, 'LINEAGE_GAP_RUN_UNRESOLVED', 'C2 missing property → BLOCK LINEAGE_GAP_RUN_UNRESOLVED');
 eq(resolver(JSON.stringify({ product: 'ORDER_PLANNING', runId: 'RUN::RD::MONTHLY_ORDER', status: 'DONE' }), 'RECO-2026-08').reason, 'LINEAGE_RUN_NOT_INVENTORY', 'C3 MONTHLY_ORDER / non-INVENTORY run → BLOCK (never used)');
 eq(resolver(JSON.stringify({ product: 'INVENTORY', runId: 'MONTHLY-1', status: 'DONE', planningCycle: 'RECO-2026-08' }), 'RECO-2026-08').reason, 'LINEAGE_RUN_ID_PREFIX_INVALID', 'C4 wrong prefix → BLOCK');
@@ -122,12 +127,11 @@ function makeSb(opts) {
   vm.runInContext(SAD_ID_HELPERS + '\n' + TEMP, sandbox, { filename: 'R6F2G-sandbox' });
   // deterministic checksum guards (the live-guard computation itself is tested elsewhere; here we isolate the R6F2G gates)
   sandbox.TEMP_r6f2eComputeLiveGuards_ = function () { return { unrelated_scope_active_row_checksum: '62b84b14', legacy_header_checksum: '8a51b860' }; };
-  // R6F2G1 — the source_data_as_of canonical authority = the production harvest. Absent when opts.harvest === false.
-  if (opts.harvest !== false) { var sda = (opts.sourceDataAsOf || '2026-08-01'); sandbox.weeklyAiPlanHarvest_ = function () { return { ok: true, sourceDataAsOf: sda }; }; }
+  // R6F2G2 — source_data_as_of authority = GAP_JOB_INVENTORY.calculationDate (set via gapProp), NOT the harvest.
   return { s: sandbox, logs: logs, props: props, sheets: sheets };
 }
-var HARVEST_SDA = '2026-08-01', GAP_CALC_AT = '2026-08-02T00:00:00Z';
-function lineageHeaderOver() { return { calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: GAP_CALC_AT, source_data_as_of: HARVEST_SDA }; }
+var GAP_CUTOFF = '2026-08-23', GAP_CALC_AT = '2026-08-23T13:41:00Z';   // calculationDate (cutoff) vs finishedAt (completion) — DISTINCT
+function lineageHeaderOver() { return { calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: GAP_CALC_AT, source_data_as_of: GAP_CUTOFF }; }
 function oldLineRows(ids) { return ids.map(function (id, i) { return { allocation_draft_line_id: id, allocation_draft_id: HID, sku: 'SKU' + i, site_sku: 'S' + i, window_code: 'W1', line_status: '' }; }); }
 var OLD_IDS = ['SADL-FCDDD34D', 'SADL-052D41CB', 'SADL-47BE8787', 'SADL-66681C51', 'SADL-F6BF5BC5'];
 function headerObj(over) {
@@ -144,7 +148,15 @@ function buildToken(sb, lineRows) {
     unrelated_scope_active_row_checksum: '62b84b14', legacy_header_checksum: '8a51b860',
     groups: [{ expected_header_id: HID, expected_line_ids: newIds }], token_integrity_checksum: 'd70cd43d' };
 }
-function gapProp() { return JSON.stringify({ product: 'INVENTORY', runId: GAP_RUN_ID, status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: '2026-08-02T00:00:00Z', calculationDate: '2026-08-01' }); }
+// R6F2G2 — the GAP job persists BOTH finishedAt (completion) and calculationDate (frozen input cutoff = the
+// source_data_as_of authority). `gap.noCutoff` omits calculationDate to prove the fail-closed path; `gap.cutoff`
+// overrides it to prove the checksum tracks source_data_as_of.
+function gapProp(gap) {
+  gap = gap || {};
+  var o = { product: 'INVENTORY', runId: GAP_RUN_ID, status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: GAP_CALC_AT };
+  if (!gap.noCutoff) o.calculationDate = gap.cutoff || GAP_CUTOFF;
+  return JSON.stringify(o);
+}
 function scenario(extraSheets, headerOver, sbOpts) {
   var lr = oldLineRows(OLD_IDS);
   var sheets = { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj(headerOver)]), shipping_allocation_draft_lines: matrix(LINE_COLS, lr) };
@@ -153,7 +165,7 @@ function scenario(extraSheets, headerOver, sbOpts) {
   var sb = makeSb(o);
   var token = buildToken(sb, lr);
   sb.props[sb.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(token);
-  sb.props.GAP_JOB_INVENTORY = gapProp();
+  sb.props.GAP_JOB_INVENTORY = gapProp(sbOpts && sbOpts.gap);
   return { sb: sb, token: token };
 }
 
@@ -221,7 +233,7 @@ var hdrRow = scX.sb.sheets.shipping_allocation_drafts._m()[1];
 eq(hdrRow[HDR_COLS.indexOf('calculation_run_id')], GAP_RUN_ID, 'E7 header calculation_run_id set from the authoritative GAP-INV run id');
 eq(hdrRow[HDR_COLS.indexOf('formula_version')], 'WEEKLY_AI_PLAN_V1', 'E7 header formula_version set');
 eq(hdrRow[HDR_COLS.indexOf('calculated_at')], GAP_CALC_AT, 'E7 header calculated_at set from the GAP run timestamp');
-eq(hdrRow[HDR_COLS.indexOf('source_data_as_of')], HARVEST_SDA, 'E7 header source_data_as_of set from the harvest authority');
+eq(hdrRow[HDR_COLS.indexOf('source_data_as_of')], GAP_CUTOFF, 'E7 header source_data_as_of set from the GAP calculationDate cutoff authority');
 eq(committed.lineage_fields_set.calculation_run_id, true, 'E7 all four lineage fields reported set');
 eq(committed.lineage_fields_set.source_data_as_of, true, 'E7 source_data_as_of reported set');
 
@@ -261,17 +273,18 @@ ok(planG1.canonical_field_order.indexOf('legacy checksum') !== -1 && planG1.cano
 eq(planG1.migration_plan_checksum === '1c42330d', false, 'A2 the checksum is NOT the incomplete 1c42330d');
 
 section('R6F2G1 B. canonical lineage authorities');
-eq(planG1.lineage.fields.calculated_at.new, GAP_CALC_AT, 'B1 calculated_at authority = GAP run finishedAt||calculationDate');
-ok(/GAP run finished/i.test(planG1.lineage.fields.calculated_at.source), 'B1 calculated_at source documented');
-eq(planG1.lineage.fields.source_data_as_of.new, HARVEST_SDA, 'B2 source_data_as_of authority = harvest sourceDataAsOf');
-ok(/harvest/i.test(planG1.lineage.fields.source_data_as_of.source), 'B2 source_data_as_of source documented (not calculated_at)');
-ok(planG1.lineage.fields.source_data_as_of.new !== planG1.lineage.fields.calculated_at.new, 'B2 source_data_as_of is distinct from calculated_at (never substituted)');
+eq(planG1.lineage.fields.calculated_at.new, GAP_CALC_AT, 'B1 calculated_at authority = GAP run finishedAt (completion)');
+ok(/finishedAt/i.test(planG1.lineage.fields.calculated_at.source), 'B1 calculated_at source = finishedAt (documented)');
+eq(planG1.lineage.fields.source_data_as_of.new, GAP_CUTOFF, 'B2 source_data_as_of authority = GAP calculationDate (input cutoff), not harvest');
+ok(/calculationDate/i.test(planG1.lineage.fields.source_data_as_of.source), 'B2 source_data_as_of source = GAP_JOB_INVENTORY.calculationDate (documented, not harvest)');
+ok(planG1.lineage.fields.source_data_as_of.new !== planG1.lineage.fields.calculated_at.new, 'B2 source_data_as_of (cutoff DATE) is DISTINCT from calculated_at (completion TIMESTAMP)');
+eq(planG1.lineage.source_data_as_of_authority, 'GAP_JOB_INVENTORY.calculationDate', 'B2 authority label frozen');
 eq(planG1.lineage_complete, true, 'B3 all four authorities resolvable → complete');
 
 section('R6F2G1 C. checksum changes on any lineage-field OR mapping change');
-// change source_data_as_of authority → different checksum
-var scG1b = scenario(null, null, { sourceDataAsOf: '2026-08-09' });
-ok(scG1b.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG1b.token).migration_plan_checksum !== planG1.migration_plan_checksum, 'C1 changing source_data_as_of changes the checksum');
+// change source_data_as_of authority (GAP calculationDate cutoff) → different checksum
+var scG1b = scenario(null, null, { gap: { cutoff: '2026-08-09' } });
+ok(scG1b.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG1b.token).migration_plan_checksum !== planG1.migration_plan_checksum, 'C1 changing source_data_as_of (GAP calculationDate) changes the checksum');
 // change a line mapping (different sku → different K2 new id) → different checksum
 var lrAlt = oldLineRows(OLD_IDS); lrAlt[0].sku = 'DIFFERENT';
 var sbAlt = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj()]), shipping_allocation_draft_lines: matrix(LINE_COLS, lrAlt) }, props: {} });
@@ -289,6 +302,8 @@ eq(Object.keys(dG1.header_lineage_updates).length, 4, 'D1 all four lineage field
 ok('old' in dG1.header_lineage_updates.source_data_as_of && 'new' in dG1.header_lineage_updates.source_data_as_of && 'source' in dG1.header_lineage_updates.source_data_as_of, 'D1 each lineage field has old/new/source');
 eq(dG1.db_row_counts.unchanged, true, 'D1 before/after row counts unchanged');
 eq(dG1.mutates_business_table, false, 'D1 dry-run mutates nothing');
+eq(dG1.header_lineage_cell_update_count, 4, 'D1 header_lineage_cell_update_count = 4 (all four lineage cells blank→set)');
+eq(dG1.total_business_cell_update_count, 9, 'D1 total_business_cell_update_count = 9 (5 line ids + 4 lineage cells)');
 eq(dG1.rollback_evidence_written_before_first_business_mutation, 'YES', 'D1 rollback-evidence-before-mutation asserted');
 ok(dG1.rollback_property_key === scG1.sb.s.TEMP_R6F2G_MIGRATION_STORE_KEY_, 'D1 rollback_property_key exposed');
 
@@ -302,9 +317,9 @@ ok(rbp.lineage_before.source_data_as_of === '' , 'E1 lineage before-values are t
 ok(!!rbp.legacy_checksum && !!rbp.unrelated_scope_checksum && !!rbp.integrity_checksum, 'E1 legacy/unrelated/integrity checksums in the preview');
 
 section('R6F2G1 F. incomplete lineage HALTs dry-run and blocks COMMIT (no silent blank)');
-var scNoHarvest = scenario(null, null, { harvest: false });   // source_data_as_of authority unavailable
+var scNoHarvest = scenario(null, null, { gap: { noCutoff: true } });   // GAP run has no calculationDate → cutoff authority unavailable
 var planNo = scNoHarvest.sb.s.TEMP_r6f2gBuildMigrationPlan_(scNoHarvest.token);
-eq(planNo.lineage_complete, false, 'F1 missing harvest → lineage NOT complete');
+eq(planNo.lineage_complete, false, 'F1 missing GAP calculationDate → lineage NOT complete');
 ok(planNo.lineage_missing.indexOf('source_data_as_of') !== -1, 'F1 source_data_as_of reported missing');
 eq(scNoHarvest.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN().verdict, 'DRY_RUN_INCOMPLETE', 'F2 incomplete lineage → DRY_RUN_INCOMPLETE (not READY)');
 eq(scNoHarvest.sb.s.TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION().verdict, 'NOT_READY_GATES_UNMET', 'F3 incomplete lineage → preflight NOT READY');
@@ -326,6 +341,33 @@ ok(/put\(hcSda, F\.source_data_as_of\.new/.test(commitSrc2), 'G5 COMMIT writes s
 section('R6F2G1 H. rollback token written by COMMIT carries all four lineage before-values');
 eq(rb.lineage_before ? Object.keys(rb.lineage_before).length : 0, 4, 'H1 committed rollback token has all four lineage before-values');
 eq(rb.integrity_checksum ? true : false, true, 'H1 committed rollback token carries an integrity checksum');
+
+// ================================================================================================================
+// R6F2G2 — source_data_as_of canonical authority (GAP calculationDate cutoff, distinct from finishedAt)
+section('R6F2G2 A. current time is never used; production & migration share one authority');
+ok(!/Date\.now|new Date|gapCalcNowMs_|Utilities\.formatDate/.test(lineageSrc), 'A1 production lineage resolver never reads a clock (reads persisted GAP run fields only)');
+var gapSrc = extractFn(TEMP, 'TEMP_r6f2gGapLineage_');
+ok(!/Date\.now|new Date/.test(gapSrc), 'A1 TEMP GAP-lineage helper never reads a clock');
+// production resolver source_data_as_of == migration plan source_data_as_of for the SAME run
+var scG2 = scenario();
+var planG2 = scG2.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG2.token);
+eq(planG2.lineage.fields.source_data_as_of.new, rOk.source_data_as_of, 'A2 migration source_data_as_of == production resolver source_data_as_of (same GAP calculationDate authority)');
+eq(planG2.lineage.fields.source_data_as_of.new, GAP_CUTOFF, 'A2 both resolve to the GAP run calculationDate cutoff');
+
+section('R6F2G2 B. retired checksums stay invalid; reproducible without rerunning GAP');
+ok(planG2.migration_plan_checksum !== '1c42330d' && planG2.migration_plan_checksum !== '250cde5f', 'B1 checksum is neither the retired 1c42330d nor 250cde5f');
+// reproducible across repeated reads (no GAP rerun): same token+props → same source_data_as_of + same checksum
+var planG2b = scG2.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG2.token);
+eq(planG2b.lineage.fields.source_data_as_of.new, planG2.lineage.fields.source_data_as_of.new, 'B2 source_data_as_of stable across repeated reads (no GAP rerun)');
+eq(planG2b.migration_plan_checksum, planG2.migration_plan_checksum, 'B2 checksum stable across repeated reads');
+
+section('R6F2G2 C. validator rejects an arbitrary nonblank source_data_as_of');
+var wrongSda = scV.token.expected_line_ids_sorted.map(function (id, i) { return { allocation_draft_line_id: id, allocation_draft_id: HID, sku: 'SKU' + i, site_sku: 'S' + i, window_code: 'W1', line_status: '' }; });
+var sbWrong = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj({ calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: GAP_CALC_AT, source_data_as_of: '1999-01-01' })]), shipping_allocation_draft_lines: matrix(LINE_COLS, wrongSda) }, props: {} });
+var tokWrong = buildToken(sbWrong, oldLineRows(OLD_IDS)); sbWrong.props[sbWrong.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokWrong); sbWrong.props.GAP_JOB_INVENTORY = gapProp();
+var vWrong = sbWrong.s.TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION();
+eq(vWrong.verdict, 'RECONCILIATION_REQUIRED', 'C1 arbitrary nonblank source_data_as_of (≠ GAP calculationDate) does NOT validate');
+eq(vWrong.gates.source_data_as_of_lineage, false, 'C1 source_data_as_of gate fails when it differs from the canonical cutoff');
 
 done_report();
 function done_report() { console.log('\n' + '-'.repeat(40)); console.log('R6F2G K2 ID+LINEAGE REMEDIATION: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
