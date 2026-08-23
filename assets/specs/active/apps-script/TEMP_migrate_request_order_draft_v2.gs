@@ -3929,10 +3929,48 @@ function TEMP_r6f2gScanDownstreamRefs_(ids, tables) {
   });
   return { by_table: byTable, total_references: total };
 }
-// Build the migration plan (old→new line-id mapping) from LIVE rows. The NEW id is DERIVED from the canonical K2 line-id
-// authority (sadK2DeterministicLineId_) over each live row — never a hard-coded map. Returns the plan + its checksum.
+// F1-7N-FA-3C-R6F2G1 — the FOUR canonical lineage authorities for the frozen header, each proven from its production
+// source (never a fresh clock / fabricated value). OLD = the current live header cell; NEW = the authority:
+//   calculation_run_id : raw GAP-INV run id (GAP_JOB_INVENTORY, DONE, GAP-INV- prefix)               [same as 61_ transport]
+//   formula_version    : 'WEEKLY_AI_PLAN_V1'                                                          [61_ request authority]
+//   calculated_at      : the GAP run's finishedAt||calculationDate                                    [61_ lineage.calculated_at]
+//   source_data_as_of  : weeklyAiPlanHarvest_(scope).sourceDataAsOf — the SAME harvest authority production generation
+//                        uses (NOT calculated_at; NOT in the GAP property or the frozen token, so it is reproduced from
+//                        the live harvest). If the harvest cannot yield a non-blank value the authority is UNAVAILABLE
+//                        (missing), NEVER silently blank.
+// Returns { ok, missing:[field...], harvest_reached, fields:{ field:{ old, new, source } } }.
+function TEMP_r6f2gLineageAuthorities_(token, headerRow) {
+  var hdr = headerRow || (TEMP_r6f2fReadFrozenScopeState_(token).header_row) || {};
+  var gap = TEMP_r6f2gGapLineage_();
+  var sda = '', harvestReached = false;
+  if (typeof weeklyAiPlanHarvest_ === 'function') {
+    try {
+      var h = weeklyAiPlanHarvest_(SpreadsheetApp.getActiveSpreadsheet(), { company: token.scope.company, country: token.scope.country, planningCycle: token.planning_cycle });
+      if (h && h.ok) { harvestReached = true; sda = TEMP_str_(h.sourceDataAsOf); }
+    } catch (e) { /* unavailable → missing (never silent blank) */ }
+  }
+  var fields = {
+    calculation_run_id: { old: TEMP_str_(hdr.calculation_run_id), new: gap.run_id, source: 'GAP_JOB_INVENTORY raw run id (DONE, GAP-INV- prefix)' },
+    formula_version: { old: TEMP_str_(hdr.formula_version), new: 'WEEKLY_AI_PLAN_V1', source: 'WEEKLY_AI_PLAN_V1 (production formula version)' },
+    calculated_at: { old: TEMP_str_(hdr.calculated_at), new: gap.calculated_at, source: 'GAP run finishedAt||calculationDate' },
+    source_data_as_of: { old: TEMP_str_(hdr.source_data_as_of), new: sda, source: 'weeklyAiPlanHarvest_(scope).sourceDataAsOf' }
+  };
+  var missing = [];
+  if (!(gap.done && gap.prefix_ok && TEMP_str_(fields.calculation_run_id.new) !== '')) missing.push('calculation_run_id');
+  if (TEMP_str_(fields.formula_version.new) === '') missing.push('formula_version');
+  if (TEMP_str_(fields.calculated_at.new) === '') missing.push('calculated_at');
+  if (TEMP_str_(fields.source_data_as_of.new) === '') missing.push('source_data_as_of');
+  return { ok: missing.length === 0, missing: missing, harvest_reached: harvestReached, gap: gap, fields: fields };
+}
+// Build the migration plan (old→new line-id mapping + the four lineage authorities) from LIVE rows + frozen token. The NEW
+// line id is DERIVED from the canonical K2 line-id authority (sadK2DeterministicLineId_) over each live row; the four
+// lineage NEW values come from TEMP_r6f2gLineageAuthorities_. R6F2G1: migration_plan_checksum binds, in a CANONICAL FIXED
+// ORDER, the header id + the five exact old→new line mappings + all FOUR lineage OLD values + all FOUR lineage NEW values
+// + before/after row counts + the frozen/token checksum + the legacy checksum + the unrelated-scope checksum. Any change
+// to ANY of those fields changes the checksum (the old 1c42330d bound ONLY the header id + line mappings — incomplete).
 function TEMP_r6f2gBuildMigrationPlan_(token) {
   var expHeaderId = (token && (token.expected_header_ids_sorted || [])[0]) || TEMP_R6F2G_FROZEN_HEADER_ID_;
+  var st = TEMP_r6f2fReadFrozenScopeState_(token);
   var L = TEMP_readObjects_('shipping_allocation_draft_lines');
   var rows = (L.rows || []).filter(function (x) { return TEMP_r6f2fLineFk_(x) === TEMP_str_(expHeaderId) && TEMP_str_(x.line_status).toLowerCase() !== 'cancelled'; });
   var mappings = rows.map(function (x, i) {
@@ -3944,11 +3982,47 @@ function TEMP_r6f2gBuildMigrationPlan_(token) {
   var newIds = mappings.map(function (m) { return TEMP_str_(m.new_line_id); }).slice().sort();
   var oldIds = mappings.map(function (m) { return TEMP_str_(m.old_line_id); }).slice().sort();
   var distinctNew = {}; var dupTarget = 0; newIds.forEach(function (id) { if (distinctNew[id]) dupTarget++; else distinctNew[id] = 1; });
-  var checksum = TEMP_r5bHash_(JSON.stringify({ h: expHeaderId, m: mappings.map(function (m) { return [m.old_line_id, m.new_line_id, m.fk]; }) }));
+  var lineage = TEMP_r6f2gLineageAuthorities_(token, st.header_row || {});
+  var LINEAGE_ORDER = ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'];
+  var beforeCounts = { headers: token.expected_post_run_db_header_rows || 0, lines: token.expected_post_run_db_line_rows || 0 };
+  var afterCounts = { headers: beforeCounts.headers, lines: beforeCounts.lines };   // an id/lineage rewrite adds/removes NO row
+  // CANONICAL FIXED-ORDER serialization for the checksum (order is part of the contract; do not reorder).
+  var canonical = [
+    'header_id', expHeaderId,
+    'line_mappings', mappings.map(function (m) { return [TEMP_str_(m.old_line_id), TEMP_str_(m.new_line_id)]; }),
+    'lineage_old', LINEAGE_ORDER.map(function (f) { return TEMP_str_(lineage.fields[f].old); }),
+    'lineage_new', LINEAGE_ORDER.map(function (f) { return TEMP_str_(lineage.fields[f].new); }),
+    'before_counts', [beforeCounts.headers, beforeCounts.lines],
+    'after_counts', [afterCounts.headers, afterCounts.lines],
+    'frozen_token_checksum', TEMP_str_(token.freeze_checksum),
+    'legacy_checksum', TEMP_str_(token.legacy_header_checksum),
+    'unrelated_scope_checksum', TEMP_str_(token.unrelated_scope_active_row_checksum)
+  ];
+  var checksum = TEMP_r5bHash_(JSON.stringify(canonical));
   return { header_id: expHeaderId, mappings: mappings, old_line_ids_sorted: oldIds, new_line_ids_sorted: newIds,
     duplicate_target_count: dupTarget, all_fk_point_to_header: mappings.every(function (m) { return TEMP_str_(m.fk) === TEMP_str_(expHeaderId); }),
     new_ids_match_frozen: JSON.stringify(newIds) === JSON.stringify((token && token.expected_line_ids_sorted || []).slice().sort()),
+    lineage: lineage, lineage_complete: lineage.ok, lineage_missing: lineage.missing,
+    before_counts: beforeCounts, after_counts: afterCounts,
+    canonical_field_order: ['header_id', 'five old→new line mappings', 'four lineage OLD', 'four lineage NEW', 'before row counts', 'after row counts', 'frozen/token checksum', 'legacy checksum', 'unrelated-scope checksum'],
     migration_plan_checksum: checksum };
+}
+// R6F2G1 — the rollback token (built ONCE, used by both the DRY_RUN preview and COMMIT so they can never diverge). Captures
+// the header id, the five line-id before/after pairs, ALL FOUR lineage before-values, the legacy + unrelated checksums, and
+// its own integrity checksum (over every field except the integrity checksum itself).
+function TEMP_r6f2gBuildRollbackToken_(token, plan) {
+  var LINEAGE_ORDER = ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'];
+  var lineageBefore = {}; LINEAGE_ORDER.forEach(function (f) { lineageBefore[f] = TEMP_str_(plan.lineage.fields[f].old); });
+  var lineageAfter = {}; LINEAGE_ORDER.forEach(function (f) { lineageAfter[f] = TEMP_str_(plan.lineage.fields[f].new); });
+  var rb = {
+    version: 'R6F2G-ROLLBACK-1', header_id: plan.header_id,
+    line_id_cells: plan.mappings.map(function (m) { return { old_line_id: TEMP_str_(m.old_line_id), new_line_id: TEMP_str_(m.new_line_id) }; }),
+    lineage_before: lineageBefore, lineage_after: lineageAfter,
+    legacy_checksum: TEMP_str_(token.legacy_header_checksum), unrelated_scope_checksum: TEMP_str_(token.unrelated_scope_active_row_checksum),
+    migration_plan_checksum: plan.migration_plan_checksum
+  };
+  rb.integrity_checksum = TEMP_r5bHash_(JSON.stringify([rb.version, rb.header_id, rb.line_id_cells, rb.lineage_before, rb.lineage_after, rb.legacy_checksum, rb.unrelated_scope_checksum, rb.migration_plan_checksum]));
+  return rb;
 }
 // Live GAP-INV run lineage (READ-ONLY): the raw run id + fingerprint, reusing the corrected R6D authority.
 function TEMP_r6f2gGapLineage_() {
@@ -3972,6 +4046,11 @@ function TEMP_r6f2gFrozenScopeValidated_(token) {
   var expHeaderId = (token.expected_header_ids_sorted || [])[0] || null;
   var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
   var calcFp = (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) : '';
+  // R6F2G1 — the validator requires ALL FOUR lineage fields (not only calculation_run_id + formula_version): each live
+  // header cell must be non-blank AND equal to its canonical authority. If the source_data_as_of authority is
+  // unavailable (harvest not reached) the field cannot validate → RECONCILIATION_REQUIRED (never a blank pass).
+  var auth = TEMP_r6f2gLineageAuthorities_(token, hdr);
+  function lineageOk(f) { var a = auth.fields[f]; return TEMP_str_(a.new) !== '' && TEMP_str_(a.old) !== '' && TEMP_str_(a.old) === TEMP_str_(a.new); }
   var gates = {
     exactly_one_header: st.header_present && st.unexpected_headers_in_scope === 0,
     header_id_match: st.header_present && TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(expHeaderId),
@@ -3984,6 +4063,10 @@ function TEMP_r6f2gFrozenScopeValidated_(token) {
     scope_exact: TEMP_str_(hdr.company) === TEMP_str_(token.scope.company) && TEMP_str_(hdr.country) === TEMP_str_(token.scope.country) && TEMP_str_(hdr.marketplace) === TEMP_str_(token.scope.marketplace),
     cycle_exact: TEMP_str_(hdr.planning_cycle) === TEMP_str_(token.planning_cycle),
     calc_run_lineage: TEMP_str_(calcFp) === TEMP_str_(token.calculation_run_id_fingerprint) && TEMP_str_(calcFp) !== '' && TEMP_str_(calcFp) !== TEMP_r5bIdFingerprint_(''),
+    calculation_run_id_lineage: lineageOk('calculation_run_id'),
+    formula_version_lineage: lineageOk('formula_version'),
+    calculated_at_lineage: lineageOk('calculated_at'),
+    source_data_as_of_lineage: lineageOk('source_data_as_of'),
     route_complete_k2: st.route_complete_k2 === true,
     unrelated_match: TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum),
     legacy_match: TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum)
@@ -4023,6 +4106,17 @@ function TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION() {
     // cross-check, not a hard gate (a re-frozen token could legitimately carry a different run fingerprint).
     out.raw_gap_fp_matches_frozen = TEMP_str_(gap.run_id_fingerprint) !== '' && TEMP_str_(gap.run_id_fingerprint) === TEMP_str_(token.calculation_run_id_fingerprint);
     out.raw_gap_fp_matches_known_h9fe21969 = TEMP_str_(gap.run_id_fingerprint).indexOf(':' + TEMP_R6F2G_EXPECTED_GAP_FP_HASH_) !== -1;
+    // R6F2G1 — ALL FOUR lineage authorities (old/new + fingerprint + canonical source) + completeness.
+    var lin = plan.lineage;
+    out.lineage_authorities = {
+      calculation_run_id: { old_fp: TEMP_r5bIdFingerprint_(lin.fields.calculation_run_id.old), new_fp: TEMP_r5bIdFingerprint_(lin.fields.calculation_run_id.new), source: lin.fields.calculation_run_id.source },
+      formula_version: { old: lin.fields.formula_version.old, new: lin.fields.formula_version.new, source: lin.fields.formula_version.source },
+      calculated_at: { old: lin.fields.calculated_at.old, new: lin.fields.calculated_at.new, source: lin.fields.calculated_at.source },
+      source_data_as_of: { old: lin.fields.source_data_as_of.old, new: lin.fields.source_data_as_of.new, source: lin.fields.source_data_as_of.source }
+    };
+    out.lineage_authorities_complete = plan.lineage_complete;
+    out.lineage_authorities_missing = plan.lineage_missing;
+    out.harvest_authority_reached = lin.harvest_reached;
     out.expected_lineage_after_repair = { calculation_run_id_fingerprint: token.calculation_run_id_fingerprint, calculation_run_id_source: 'authoritative GAP-INV run id (raw)', formula_version: 'WEEKLY_AI_PLAN_V1' };
     out.downstream_line_id_reference_counts = refOld.by_table;
     out.downstream_line_id_reference_total = refOld.total_references;
@@ -4043,7 +4137,7 @@ function TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION() {
     }
     var allGates = out.exact_header.header_id_match && out.no_duplicate_target_ids && out.every_fk_points_to_frozen_header &&
       out.new_ids_match_frozen_expected && out.no_orphan_or_duplicate_k2_group && out.raw_gap_run.done && out.raw_gap_run.prefix_ok &&
-      out.raw_gap_fp_matches_frozen && out.legacy_checksum_match && out.unrelated_checksum_match && out.inventory_flag_false &&
+      out.raw_gap_fp_matches_frozen && out.lineage_authorities_complete && out.legacy_checksum_match && out.unrelated_checksum_match && out.inventory_flag_false &&
       out.token_integrity_match && out.freeze_checksum_match && refOld.total_references === 0;
     out.verdict = allGates ? 'READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION' : 'NOT_READY_GATES_UNMET';
     out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
@@ -4055,22 +4149,50 @@ function TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION() {
 // E — DRY_RUN (READ-ONLY): prints the exact plan + its checksum. The USER copies the checksum into
 // TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ and re-saves before COMMIT.
 function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN() {
-  var out = { tool: 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN', mode: 'STRICTLY READ-ONLY (no write)' };
+  var out = { tool: 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN', mode: 'STRICTLY READ-ONLY (no write)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
   try {
     var token = TEMP_r6f2gLoadToken_();
     if (!token) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G_DRY_RUN ' + JSON.stringify(out, null, 2)); return out; }
     var pre = TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION();
     var plan = TEMP_r6f2gBuildMigrationPlan_(token);
-    var gap = TEMP_r6f2gGapLineage_();
+    var lin = plan.lineage, F = lin.fields;
     out.preflight_verdict = pre.verdict;
     out.header_id = plan.header_id;
-    out.line_id_cell_updates = plan.mappings.filter(function (m) { return m.changes; }).map(function (m) { return { row_position: m.row_position, from: m.old_line_id, to: m.new_line_id }; });
-    out.line_id_cell_update_count = out.line_id_cell_updates.length;
-    out.header_lineage_updates = { calculation_run_id_from: (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_((TEMP_r6f2fReadFrozenScopeState_(token).header_row) || {})) : null, calculation_run_id_to_fingerprint: gap.run_id_fingerprint, formula_version_to: 'WEEKLY_AI_PLAN_V1' };
+    // all five id mappings + count
+    out.id_mappings = plan.mappings.map(function (m) { return { row_position: m.row_position, old_line_id: m.old_line_id, new_line_id: m.new_line_id, changes: m.changes }; });
+    out.line_id_cell_update_count = plan.mappings.filter(function (m) { return m.changes; }).length;
+    // all FOUR lineage fields — old value/fingerprint, new value/fingerprint, canonical source
+    out.header_lineage_updates = {
+      calculation_run_id: { old_fingerprint: TEMP_r5bIdFingerprint_(F.calculation_run_id.old), new_fingerprint: TEMP_r5bIdFingerprint_(F.calculation_run_id.new), source: F.calculation_run_id.source },
+      formula_version: { old: F.formula_version.old, new: F.formula_version.new, source: F.formula_version.source },
+      calculated_at: { old: F.calculated_at.old, new: F.calculated_at.new, source: F.calculated_at.source },
+      source_data_as_of: { old: F.source_data_as_of.old, new: F.source_data_as_of.new, source: F.source_data_as_of.source }
+    };
+    out.header_lineage_cell_update_count = ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'].filter(function (f) { return TEMP_str_(F[f].old) !== TEMP_str_(F[f].new); }).length;
+    out.total_business_cell_update_count = out.line_id_cell_update_count + out.header_lineage_cell_update_count;
+    out.lineage_authorities_complete = plan.lineage_complete;
+    out.lineage_authorities_missing = plan.lineage_missing;
+    // before / expected-after DB row counts (must remain unchanged — an id/lineage rewrite adds/removes NO row)
+    out.db_row_counts = { before: plan.before_counts, expected_after: plan.after_counts, unchanged: (plan.before_counts.headers === plan.after_counts.headers && plan.before_counts.lines === plan.after_counts.lines) };
+    out.migration_plan_canonical_field_order = plan.canonical_field_order;
     out.migration_plan_checksum = plan.migration_plan_checksum;
-    out.confirmation_constant_status = (TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ === 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE') ? 'PLACEHOLDER (COMMIT will refuse until the USER sets this constant to the migration_plan_checksum above and re-saves the file)' : 'SET';
-    out.next_step = 'Copy migration_plan_checksum into the TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ constant, save the file, then run TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT only after preflight verdict READY.';
-    out.verdict = 'DRY_RUN_READY';
+    out.confirmation_constant_status = (TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ === 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';
+    // rollback token preview (built by the SAME builder COMMIT uses)
+    var rb = TEMP_r6f2gBuildRollbackToken_(token, plan);
+    out.rollback_property_key = TEMP_R6F2G_MIGRATION_STORE_KEY_;
+    out.rollback_token_preview = {
+      version: rb.version, header_id: rb.header_id,
+      line_id_before_after: rb.line_id_cells,
+      lineage_before: rb.lineage_before,
+      legacy_checksum: rb.legacy_checksum, unrelated_scope_checksum: rb.unrelated_scope_checksum,
+      integrity_checksum: rb.integrity_checksum
+    };
+    out.rollback_evidence_written_before_first_business_mutation = 'YES';
+    out.mutates_business_table = false;
+    out.next_step = 'Copy migration_plan_checksum into TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_, save the file, then run COMMIT only after preflight verdict READY.';
+    // verdict DRY_RUN_READY only when every field is complete (all four lineage authorities present + preflight READY)
+    out.verdict = (plan.lineage_complete && pre.verdict === 'READY_FOR_CONTROLLED_K2_ID_LINEAGE_REMEDIATION') ? 'DRY_RUN_READY' : 'DRY_RUN_INCOMPLETE';
+    if (!plan.lineage_complete) out.dry_run_incomplete_reason = 'lineage authorities missing: ' + JSON.stringify(plan.lineage_missing) + ' — HALT, do not leave a lineage field blank';
     out.R6F2G_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.verdict = 'DRY_RUN_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2G_DRY_RUN ' + JSON.stringify(out, null, 2));
@@ -4091,6 +4213,9 @@ function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT() {
     var token = TEMP_r6f2gLoadToken_();
     if (!token) { out.verdict = 'REFUSED_NO_FROZEN_SCOPE'; Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     var plan = TEMP_r6f2gBuildMigrationPlan_(token);
+    // R6F2G1 — fail closed BEFORE any mutation if the four lineage authorities are not all resolvable (e.g. the
+    // source_data_as_of harvest authority is unavailable). Never migrate with a lineage field left blank.
+    if (!plan.lineage_complete) { out.verdict = 'REFUSED_LINEAGE_AUTHORITY_UNAVAILABLE'; out.lineage_missing = plan.lineage_missing; Logger.log('R6F2G_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     if (TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ === 'PASTE_MIGRATION_PLAN_CHECKSUM_HERE' || TEMP_str_(TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_) !== TEMP_str_(plan.migration_plan_checksum)) {
       out.verdict = 'REFUSED_CONFIRMATION_CHECKSUM_NOT_SET_OR_MISMATCH';
       out.expected_confirmation = plan.migration_plan_checksum; out.current_confirmation = TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_;
@@ -4113,6 +4238,15 @@ function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT() {
     var hdrs = data[0].map(function (x) { return String(x).trim(); });
     var cId = hdrs.indexOf('allocation_draft_line_id'), cFk = hdrs.indexOf('allocation_draft_id');
     if (cId === -1 || cFk === -1) { out.verdict = 'REFUSED_SCHEMA'; return out; }
+    var hdata = hsh.getDataRange().getValues(); var hh = hdata[0].map(function (x) { return String(x).trim(); });
+    var hcId = hh.indexOf('allocation_draft_id'), hcRun = hh.indexOf('calculation_run_id'), hcFv = hh.indexOf('formula_version'), hcCa = hh.indexOf('calculated_at'), hcSda = hh.indexOf('source_data_as_of');
+    // R6F2G1 — before-drift: the four live lineage cells must still equal the plan's OLD values (else the plan is stale).
+    var F = plan.lineage.fields, hRowIdx = -1;
+    for (var hr0 = 1; hr0 < hdata.length; hr0++) { if (TEMP_str_(hdata[hr0][hcId]) === TEMP_str_(plan.header_id)) { hRowIdx = hr0; break; } }
+    if (hRowIdx === -1) { out.verdict = 'REFUSED_HEADER_ROW_ABSENT'; return out; }
+    var drift = (TEMP_str_(hdata[hRowIdx][hcRun]) !== TEMP_str_(F.calculation_run_id.old)) || (TEMP_str_(hdata[hRowIdx][hcFv]) !== TEMP_str_(F.formula_version.old)) ||
+      (TEMP_str_(hdata[hRowIdx][hcCa]) !== TEMP_str_(F.calculated_at.old)) || (TEMP_str_(hdata[hRowIdx][hcSda]) !== TEMP_str_(F.source_data_as_of.old));
+    if (drift) { out.verdict = 'REFUSED_LINEAGE_BEFORE_DRIFT'; return out; }
     var oldSet = {}; plan.mappings.forEach(function (m) { oldSet[TEMP_str_(m.old_line_id)] = TEMP_str_(m.new_line_id); });
     // locate the exact cells (row whose FK == header id and current id is an OLD id in the plan)
     var targets = [];
@@ -4123,32 +4257,32 @@ function TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT() {
     }
     if (targets.length !== 5) { out.verdict = 'REFUSED_TARGET_COUNT_NOT_5'; out.targets_found = targets.length; return out; }
 
-    // rollback token BEFORE the first business-cell mutation
-    var rollback = { version: 'R6F2G-ROLLBACK-1', header_id: plan.header_id, line_id_cells: targets.map(function (t) { return { sheetRow: t.sheetRow, before: t.from, after: t.to }; }), created_context: 'R6F2G_COMMIT' };
+    // rollback token (complete: five old/new ids + all four lineage before-values + checksums + integrity) stored BEFORE
+    // the first business-cell mutation, then READ BACK to prove it is durable — a non-durable token refuses (no mutation).
+    var rollback = TEMP_r6f2gBuildRollbackToken_(token, plan);
     PropertiesService.getScriptProperties().setProperty(TEMP_R6F2G_MIGRATION_STORE_KEY_, JSON.stringify(rollback));
+    var rbCheck = null; try { rbCheck = JSON.parse(PropertiesService.getScriptProperties().getProperty(TEMP_R6F2G_MIGRATION_STORE_KEY_)); } catch (eR) { rbCheck = null; }
+    if (!rbCheck || TEMP_str_(rbCheck.integrity_checksum) !== TEMP_str_(rollback.integrity_checksum)) { out.verdict = 'REFUSED_ROLLBACK_TOKEN_NOT_DURABLE'; return out; }
 
     // rewrite EXACTLY the five id cells in place (no other cell touched)
     targets.forEach(function (t) { sh.getRange(t.sheetRow, cId + 1).setValue(t.to); });
 
-    // set only missing/incorrect system-owned lineage on the ONE frozen header
-    var gap = TEMP_r6f2gGapLineage_();
-    var hdata = hsh.getDataRange().getValues(); var hh = hdata[0].map(function (x) { return String(x).trim(); });
-    var hcId = hh.indexOf('allocation_draft_id'), hcRun = hh.indexOf('calculation_run_id'), hcFv = hh.indexOf('formula_version'), hcCa = hh.indexOf('calculated_at'), hcSda = hh.indexOf('source_data_as_of');
+    // set ALL FOUR system-owned lineage fields on the ONE frozen header (only where currently missing/incorrect)
     var lineageSet = {};
-    for (var hr = 1; hr < hdata.length; hr++) {
-      if (TEMP_str_(hdata[hr][hcId]) !== TEMP_str_(plan.header_id)) continue;
-      if (hcRun !== -1 && gap.run_id && TEMP_str_(hdata[hr][hcRun]) === '') { hsh.getRange(hr + 1, hcRun + 1).setValue(gap.run_id); lineageSet.calculation_run_id = true; }
-      if (hcFv !== -1 && TEMP_str_(hdata[hr][hcFv]) === '') { hsh.getRange(hr + 1, hcFv + 1).setValue('WEEKLY_AI_PLAN_V1'); lineageSet.formula_version = true; }
-      if (hcCa !== -1 && gap.calculated_at && TEMP_str_(hdata[hr][hcCa]) === '') { hsh.getRange(hr + 1, hcCa + 1).setValue(gap.calculated_at); lineageSet.calculated_at = true; }
-      break;
-    }
+    (function () {
+      function put(col, want, key) { if (col !== -1 && TEMP_str_(want) !== '' && TEMP_str_(hdata[hRowIdx][col]) !== TEMP_str_(want)) { hsh.getRange(hRowIdx + 1, col + 1).setValue(want); lineageSet[key] = true; } }
+      put(hcRun, F.calculation_run_id.new, 'calculation_run_id');
+      put(hcFv, F.formula_version.new, 'formula_version');
+      put(hcCa, F.calculated_at.new, 'calculated_at');
+      put(hcSda, F.source_data_as_of.new, 'source_data_as_of');
+    })();
 
     // verified readback
     var post = TEMP_r6f2gFrozenScopeValidated_(token);
     out.line_id_cells_updated = targets.length;
     out.lineage_fields_set = lineageSet;
     out.post_validation = post.verdict; out.post_gates = post.gates;
-    out.rollback_token_stored = true; out.rollback_store_key = TEMP_R6F2G_MIGRATION_STORE_KEY_;
+    out.rollback_token_stored = true; out.rollback_store_key = TEMP_R6F2G_MIGRATION_STORE_KEY_; out.rollback_token_durable = true;
     out.verdict = post.validated ? 'COMMITTED_K2_ID_LINEAGE_REMEDIATION' : 'COMMITTED_UNVERIFIED';
     if (!post.validated) out.committed_unverified_note = 'cells written but post-readback validation did not fully pass; NO automatic retry — reconcile manually (rollback token stored).';
   } catch (e) { out.verdict = 'COMMITTED_UNVERIFIED'; out.reason = (e && e.message ? e.message : String(e)); out.committed_unverified_note = 'exception during commit; NO automatic retry.'; }

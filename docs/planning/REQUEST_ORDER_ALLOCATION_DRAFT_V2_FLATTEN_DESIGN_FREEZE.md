@@ -1505,3 +1505,35 @@ Closes the R6F2F2 freeze/writer divergence at the SOURCE (permanent) and PREPARE
 
 ### H — deployment
 Permanent core/backend (standalone .gs): `16_shipping_allocation_handlers.gs`, `61_api_v1_weekly_ai_plan.gs`. TEMP tooling: `TEMP_migrate_request_order_draft_v2.gs`. **No bundle rebuild** (no MODULE_ORDER core module changed; KMWRR untouched). No frontend, no `00_config`. APPS_SCRIPT_SYNC_REQUIRED: `16_`, `61_`, `TEMP_migrate_request_order_draft_v2.gs`. No live writes; migration STAGED OFF; global Inventory flag stays false.
+
+## §59 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G1-LINEAGE-PLAN-COMPLETENESS — bind all four lineage fields into the staged migration (2026-08-23)
+
+TEMP tooling + test + this doc only. **No 16_/61_ change** — the R6F2G production lineage transport (`weeklyAiPlanResolveGapRunLineage_` + the header stamp in `weeklyAiPlanGenerateK2_`) already carries all four fields and needs no correction. No core, no bundle rebuild, no frontend, no `00_config`. Read-only except the (still-refused) COMMIT; migration STAGED OFF (confirmation constant left at placeholder); flag stays false; token not re-derived; validator not weakened.
+
+### A — the old checksum `1c42330d` was INCOMPLETE
+Proven from the canonical serialization: it bound ONLY `{ header_id, five [old_line_id, new_line_id, fk] }`. It did **not** bind any lineage old/new value, the before/after row counts, the frozen/token checksum, the legacy checksum, or the unrelated-scope checksum. A change to any lineage field or checksum would NOT have changed `1c42330d`.
+
+### B — the four canonical lineage authorities (`TEMP_r6f2gLineageAuthorities_`)
+Each proven from its production source (never a fresh clock / fabricated value):
+- **calculation_run_id** ← raw `GAP_JOB_INVENTORY` run id (DONE, `GAP-INV-` prefix), the SAME authority `61_` transport uses.
+- **formula_version** ← `WEEKLY_AI_PLAN_V1` (the `61_` request formula version).
+- **calculated_at** ← the GAP run's `finishedAt || calculationDate` (= `61_` `lineage.calculated_at`).
+- **source_data_as_of** ← `weeklyAiPlanHarvest_(scope).sourceDataAsOf` — the SAME harvest authority production generation uses; it is **not** in the GAP property or the frozen token, and is **never** substituted by `calculated_at`. If the harvest cannot yield a non-blank value the authority is UNAVAILABLE (reported in `lineage_missing`), never left silently blank.
+
+### C — complete checksum (canonical fixed order)
+`migration_plan_checksum` now binds, in fixed order: header id · five old→new line mappings · four lineage OLD · four lineage NEW · before row counts · after row counts · frozen/token checksum · legacy checksum · unrelated-scope checksum. Any change to any of these changes the checksum (proven by tests: changing `source_data_as_of`, a line mapping, or a lineage OLD value each changes it). `1c42330d` is NOT preserved. **The final live checksum binds the live GAP run id + harvest snapshot, so it is emitted by the live DRY_RUN and is not computable offline.**
+
+### D — DRY_RUN full contract
+`TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN` emits one compact log: all five id mappings · `line_id_cell_update_count` · `header_lineage_updates` (all four fields with old/new value+fingerprint + canonical source) · `header_lineage_cell_update_count` · `total_business_cell_update_count` · before/expected-after row counts (unchanged) · canonical-field list · checksum · confirmation status PLACEHOLDER · `rollback_property_key` · `rollback_token_preview` (version, header id, five old/new ids, four lineage before-values, legacy/unrelated + integrity checksums) · `rollback_evidence_written_before_first_business_mutation = YES` · `mutates_business_table = false` · verdict `DRY_RUN_READY` only when all four lineage authorities resolve and preflight is READY, else `DRY_RUN_INCOMPLETE`.
+
+### E — COMMIT fail-closed
+COMMIT (still refused — confirmation placeholder) now additionally: refuses `REFUSED_LINEAGE_AUTHORITY_UNAVAILABLE` before any mutation if the four authorities are not all resolvable; refuses `REFUSED_LINEAGE_BEFORE_DRIFT` if any of the four live header lineage cells no longer equals the plan's OLD value; stores the complete rollback token (five old/new ids + four lineage before-values + legacy/unrelated + integrity checksums) **before** the first cell mutation and **reads it back** (`REFUSED_ROLLBACK_TOKEN_NOT_DURABLE` on mismatch); writes **all four** lineage fields on the one header; and keeps the placeholder-confirmation / checksum-mismatch / preflight / lock / exactly-5 / `COMMITTED_UNVERIFIED`-no-retry contracts. Rollback token is built by one shared builder (`TEMP_r6f2gBuildRollbackToken_`) used by both DRY_RUN preview and COMMIT so they cannot diverge.
+
+### F — validator requires all four lineage fields
+`TEMP_r6f2gFrozenScopeValidated_` adds `calculation_run_id_lineage` / `formula_version_lineage` / `calculated_at_lineage` / `source_data_as_of_lineage` gates (each: live cell non-blank AND equal to its canonical authority). `FROZEN_SCOPE_VALIDATED` is unreachable if `calculated_at` or `source_data_as_of` is blank or differs; otherwise `RECONCILIATION_REQUIRED`.
+
+### G — tests
+`inventory-k2-id-lineage-remediation-f1-7n-fa-3c-r6f2g.test.js` (119/0): checksum binds the complete nine-group field set and is not `1c42330d`; checksum changes on any lineage-field or mapping change; `calculated_at`/`source_data_as_of` canonical authorities (distinct); full DRY_RUN contract + rollback preview; incomplete lineage → `DRY_RUN_INCOMPLETE` + preflight NOT READY + `REFUSED_LINEAGE_AUTHORITY_UNAVAILABLE` (zero write); COMMIT before-drift / rollback read-back / writes all four fields; committed rollback token carries all four before-values + integrity checksum; validator four-field gates. Full sweep = known 4-test baseline, **0 new**.
+
+### deployment
+TEMP + tests/doc only. **No 16_/61_ correction required** (R6F2G production transport already correct). No bundle rebuild, no frontend, no `00_config`. APPS_SCRIPT_SYNC_REQUIRED: `TEMP_migrate_request_order_draft_v2.gs`. No live writes; migration STAGED OFF; flag stays false.

@@ -122,8 +122,12 @@ function makeSb(opts) {
   vm.runInContext(SAD_ID_HELPERS + '\n' + TEMP, sandbox, { filename: 'R6F2G-sandbox' });
   // deterministic checksum guards (the live-guard computation itself is tested elsewhere; here we isolate the R6F2G gates)
   sandbox.TEMP_r6f2eComputeLiveGuards_ = function () { return { unrelated_scope_active_row_checksum: '62b84b14', legacy_header_checksum: '8a51b860' }; };
+  // R6F2G1 — the source_data_as_of canonical authority = the production harvest. Absent when opts.harvest === false.
+  if (opts.harvest !== false) { var sda = (opts.sourceDataAsOf || '2026-08-01'); sandbox.weeklyAiPlanHarvest_ = function () { return { ok: true, sourceDataAsOf: sda }; }; }
   return { s: sandbox, logs: logs, props: props, sheets: sheets };
 }
+var HARVEST_SDA = '2026-08-01', GAP_CALC_AT = '2026-08-02T00:00:00Z';
+function lineageHeaderOver() { return { calculation_run_id: GAP_RUN_ID, formula_version: 'WEEKLY_AI_PLAN_V1', calculated_at: GAP_CALC_AT, source_data_as_of: HARVEST_SDA }; }
 function oldLineRows(ids) { return ids.map(function (id, i) { return { allocation_draft_line_id: id, allocation_draft_id: HID, sku: 'SKU' + i, site_sku: 'S' + i, window_code: 'W1', line_status: '' }; }); }
 var OLD_IDS = ['SADL-FCDDD34D', 'SADL-052D41CB', 'SADL-47BE8787', 'SADL-66681C51', 'SADL-F6BF5BC5'];
 function headerObj(over) {
@@ -141,11 +145,12 @@ function buildToken(sb, lineRows) {
     groups: [{ expected_header_id: HID, expected_line_ids: newIds }], token_integrity_checksum: 'd70cd43d' };
 }
 function gapProp() { return JSON.stringify({ product: 'INVENTORY', runId: GAP_RUN_ID, status: 'DONE', planningCycle: 'RECO-2026-08', finishedAt: '2026-08-02T00:00:00Z', calculationDate: '2026-08-01' }); }
-function scenario(extraSheets, headerOver) {
+function scenario(extraSheets, headerOver, sbOpts) {
   var lr = oldLineRows(OLD_IDS);
   var sheets = { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj(headerOver)]), shipping_allocation_draft_lines: matrix(LINE_COLS, lr) };
   if (extraSheets) Object.keys(extraSheets).forEach(function (k) { sheets[k] = extraSheets[k]; });
-  var sb = makeSb({ sheets: sheets, props: {} });
+  var o = { sheets: sheets, props: {} }; if (sbOpts) Object.keys(sbOpts).forEach(function (k) { o[k] = sbOpts[k]; });
+  var sb = makeSb(o);
   var token = buildToken(sb, lr);
   sb.props[sb.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(token);
   sb.props.GAP_JOB_INVENTORY = gapProp();
@@ -211,9 +216,14 @@ var liveIds = scX.sb.sheets.shipping_allocation_draft_lines._m().slice(1).map(fu
 eq(liveIds, scX.token.expected_line_ids_sorted.slice().sort(), 'E5 the five id cells now hold the frozen SADL-K2 ids');
 ok(liveIds.every(function (id) { return id.indexOf('SADL-K2-') === 0; }), 'E5 no old SADL- id remains under the K2 header');
 var rb = JSON.parse(scX.sb.props[scX.sb.s.TEMP_R6F2G_MIGRATION_STORE_KEY_]);
-eq(rb.line_id_cells.map(function (c) { return c.before; }).sort(), OLD_IDS.slice().sort(), 'E6 rollback token captured the OLD ids (stored BEFORE the id cells were overwritten)');
-var hRun = scX.sb.sheets.shipping_allocation_drafts._m()[1][HDR_COLS.indexOf('calculation_run_id')];
-eq(hRun, GAP_RUN_ID, 'E7 header calculation_run_id lineage set from the authoritative GAP-INV run id');
+eq(rb.line_id_cells.map(function (c) { return c.old_line_id; }).sort(), OLD_IDS.slice().sort(), 'E6 rollback token captured the OLD ids (stored BEFORE the id cells were overwritten)');
+var hdrRow = scX.sb.sheets.shipping_allocation_drafts._m()[1];
+eq(hdrRow[HDR_COLS.indexOf('calculation_run_id')], GAP_RUN_ID, 'E7 header calculation_run_id set from the authoritative GAP-INV run id');
+eq(hdrRow[HDR_COLS.indexOf('formula_version')], 'WEEKLY_AI_PLAN_V1', 'E7 header formula_version set');
+eq(hdrRow[HDR_COLS.indexOf('calculated_at')], GAP_CALC_AT, 'E7 header calculated_at set from the GAP run timestamp');
+eq(hdrRow[HDR_COLS.indexOf('source_data_as_of')], HARVEST_SDA, 'E7 header source_data_as_of set from the harvest authority');
+eq(committed.lineage_fields_set.calculation_run_id, true, 'E7 all four lineage fields reported set');
+eq(committed.lineage_fields_set.source_data_as_of, true, 'E7 source_data_as_of reported set');
 
 section('E/F. COMMIT source contract (lock · rollback-before-mutation · fail-closed · no-retry)');
 var commitSrc = extractFn(TEMP, 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT');
@@ -229,13 +239,93 @@ var scV = scenario();
 eq(scV.sb.s.TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION().verdict, 'RECONCILIATION_REQUIRED', 'F7 pre-migration live shape (SADL- ids) → RECONCILIATION_REQUIRED');
 // migrated live shape: lines carry the frozen SADL-K2 ids + header calc-run set
 var migratedLines = scV.token.expected_line_ids_sorted.map(function (id, i) { return { allocation_draft_line_id: id, allocation_draft_id: HID, sku: 'SKU' + i, site_sku: 'S' + i, window_code: 'W1', line_status: '' }; });
-var sbV = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj({ calculation_run_id: GAP_RUN_ID })]), shipping_allocation_draft_lines: matrix(LINE_COLS, migratedLines) }, props: {} });
+var sbV = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj(lineageHeaderOver())]), shipping_allocation_draft_lines: matrix(LINE_COLS, migratedLines) }, props: {} });
 var tokV = buildToken(sbV, oldLineRows(OLD_IDS)); // frozen expected ids identical (same sku/site/window natural keys)
 sbV.props[sbV.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokV); sbV.props.GAP_JOB_INVENTORY = gapProp();
 var vv = sbV.s.TEMP_R6F2G_VALIDATE_K2_ID_LINEAGE_MIGRATION();
 eq(vv.verdict, 'FROZEN_SCOPE_VALIDATED', 'F8 migrated live shape (SADL-K2 ids + lineage + K2 route + checksums) → FROZEN_SCOPE_VALIDATED');
 eq(vv.gates.route_complete_k2, true, 'F8 K2 logical marketplace destination counts as route-complete (generic warehouse metric untouched)');
 eq(vv.gates.calc_run_lineage, true, 'F8 authoritative calculation_run_id lineage gate satisfied');
+eq(vv.gates.formula_version_lineage, true, 'F8 formula_version lineage gate satisfied');
+eq(vv.gates.calculated_at_lineage, true, 'F8 calculated_at lineage gate satisfied');
+eq(vv.gates.source_data_as_of_lineage, true, 'F8 source_data_as_of lineage gate satisfied');
+
+// ================================================================================================================
+// R6F2G1 — LINEAGE-PLAN COMPLETENESS (checksum binds all four lineage fields; canonical authorities; rollback preview)
+section('R6F2G1 A. checksum binds the complete field set (old 1c42330d bound only header+mappings)');
+var scG1 = scenario();
+var planG1 = scG1.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG1.token);
+eq(planG1.canonical_field_order.length, 9, 'A1 checksum canonical order has all nine field groups');
+ok(planG1.canonical_field_order.indexOf('four lineage OLD') !== -1 && planG1.canonical_field_order.indexOf('four lineage NEW') !== -1, 'A1 four-field lineage bound (old+new)');
+ok(planG1.canonical_field_order.indexOf('legacy checksum') !== -1 && planG1.canonical_field_order.indexOf('unrelated-scope checksum') !== -1 && planG1.canonical_field_order.indexOf('frozen/token checksum') !== -1, 'A1 frozen/legacy/unrelated checksums bound');
+eq(planG1.migration_plan_checksum === '1c42330d', false, 'A2 the checksum is NOT the incomplete 1c42330d');
+
+section('R6F2G1 B. canonical lineage authorities');
+eq(planG1.lineage.fields.calculated_at.new, GAP_CALC_AT, 'B1 calculated_at authority = GAP run finishedAt||calculationDate');
+ok(/GAP run finished/i.test(planG1.lineage.fields.calculated_at.source), 'B1 calculated_at source documented');
+eq(planG1.lineage.fields.source_data_as_of.new, HARVEST_SDA, 'B2 source_data_as_of authority = harvest sourceDataAsOf');
+ok(/harvest/i.test(planG1.lineage.fields.source_data_as_of.source), 'B2 source_data_as_of source documented (not calculated_at)');
+ok(planG1.lineage.fields.source_data_as_of.new !== planG1.lineage.fields.calculated_at.new, 'B2 source_data_as_of is distinct from calculated_at (never substituted)');
+eq(planG1.lineage_complete, true, 'B3 all four authorities resolvable → complete');
+
+section('R6F2G1 C. checksum changes on any lineage-field OR mapping change');
+// change source_data_as_of authority → different checksum
+var scG1b = scenario(null, null, { sourceDataAsOf: '2026-08-09' });
+ok(scG1b.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG1b.token).migration_plan_checksum !== planG1.migration_plan_checksum, 'C1 changing source_data_as_of changes the checksum');
+// change a line mapping (different sku → different K2 new id) → different checksum
+var lrAlt = oldLineRows(OLD_IDS); lrAlt[0].sku = 'DIFFERENT';
+var sbAlt = makeSb({ sheets: { shipping_allocation_drafts: matrix(HDR_COLS, [headerObj()]), shipping_allocation_draft_lines: matrix(LINE_COLS, lrAlt) }, props: {} });
+var tokAlt = buildToken(sbAlt, lrAlt); sbAlt.props[sbAlt.s.TEMP_R6F2E_STORE_PROP_KEY_] = JSON.stringify(tokAlt); sbAlt.props.GAP_JOB_INVENTORY = gapProp();
+ok(sbAlt.s.TEMP_r6f2gBuildMigrationPlan_(tokAlt).migration_plan_checksum !== planG1.migration_plan_checksum, 'C2 changing a line mapping changes the checksum');
+// change a lineage OLD value (header already carries a calc_run) → different checksum
+var scG1c = scenario(null, { calculation_run_id: 'GAP-INV-PRESET' });
+ok(scG1c.sb.s.TEMP_r6f2gBuildMigrationPlan_(scG1c.token).migration_plan_checksum !== planG1.migration_plan_checksum, 'C3 changing a lineage OLD value changes the checksum');
+
+section('R6F2G1 D. full dry-run contract');
+var dG1 = scG1.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN();
+eq(dG1.verdict, 'DRY_RUN_READY', 'D1 complete plan → DRY_RUN_READY');
+eq(dG1.id_mappings.length, 5, 'D1 all five id mappings present');
+eq(Object.keys(dG1.header_lineage_updates).length, 4, 'D1 all four lineage fields in header_lineage_updates');
+ok('old' in dG1.header_lineage_updates.source_data_as_of && 'new' in dG1.header_lineage_updates.source_data_as_of && 'source' in dG1.header_lineage_updates.source_data_as_of, 'D1 each lineage field has old/new/source');
+eq(dG1.db_row_counts.unchanged, true, 'D1 before/after row counts unchanged');
+eq(dG1.mutates_business_table, false, 'D1 dry-run mutates nothing');
+eq(dG1.rollback_evidence_written_before_first_business_mutation, 'YES', 'D1 rollback-evidence-before-mutation asserted');
+ok(dG1.rollback_property_key === scG1.sb.s.TEMP_R6F2G_MIGRATION_STORE_KEY_, 'D1 rollback_property_key exposed');
+
+section('R6F2G1 E. rollback token preview contract');
+var rbp = dG1.rollback_token_preview;
+eq(rbp.version, 'R6F2G-ROLLBACK-1', 'E1 rollback version');
+eq(rbp.header_id, HID, 'E1 header id');
+eq(rbp.line_id_before_after.length, 5, 'E1 five old/new id pairs');
+eq(Object.keys(rbp.lineage_before).length, 4, 'E1 all four lineage before-values captured');
+ok(rbp.lineage_before.source_data_as_of === '' , 'E1 lineage before-values are the current (blank) header values');
+ok(!!rbp.legacy_checksum && !!rbp.unrelated_scope_checksum && !!rbp.integrity_checksum, 'E1 legacy/unrelated/integrity checksums in the preview');
+
+section('R6F2G1 F. incomplete lineage HALTs dry-run and blocks COMMIT (no silent blank)');
+var scNoHarvest = scenario(null, null, { harvest: false });   // source_data_as_of authority unavailable
+var planNo = scNoHarvest.sb.s.TEMP_r6f2gBuildMigrationPlan_(scNoHarvest.token);
+eq(planNo.lineage_complete, false, 'F1 missing harvest → lineage NOT complete');
+ok(planNo.lineage_missing.indexOf('source_data_as_of') !== -1, 'F1 source_data_as_of reported missing');
+eq(scNoHarvest.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_DRY_RUN().verdict, 'DRY_RUN_INCOMPLETE', 'F2 incomplete lineage → DRY_RUN_INCOMPLETE (not READY)');
+eq(scNoHarvest.sb.s.TEMP_R6F2G_PREFLIGHT_K2_ID_LINEAGE_REMEDIATION().verdict, 'NOT_READY_GATES_UNMET', 'F3 incomplete lineage → preflight NOT READY');
+// even with confirmation set, COMMIT refuses before any mutation
+scNoHarvest.sb.s.TEMP_R6F2G_CONFIRMED_MIGRATION_CHECKSUM_ = planNo.migration_plan_checksum;
+var beforeNo = JSON.stringify(scNoHarvest.sb.sheets.shipping_allocation_draft_lines._m());
+var refNo = scNoHarvest.sb.s.TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT();
+eq(refNo.verdict, 'REFUSED_LINEAGE_AUTHORITY_UNAVAILABLE', 'F4 incomplete lineage → COMMIT refuses before mutation');
+eq(JSON.stringify(scNoHarvest.sb.sheets.shipping_allocation_draft_lines._m()), beforeNo, 'F4 refused COMMIT wrote nothing');
+
+section('R6F2G1 G. COMMIT fail-closed source contract (before-drift · rollback read-back · lineage gate)');
+var commitSrc2 = extractFn(TEMP, 'TEMP_R6F2G_MIGRATE_K2_ID_LINEAGE_COMMIT');
+ok(/REFUSED_LINEAGE_AUTHORITY_UNAVAILABLE/.test(commitSrc2), 'G1 COMMIT refuses when lineage authority unavailable');
+ok(/REFUSED_LINEAGE_BEFORE_DRIFT/.test(commitSrc2), 'G2 COMMIT refuses on lineage before-value drift');
+ok(/REFUSED_ROLLBACK_TOKEN_NOT_DURABLE/.test(commitSrc2) && /integrity_checksum/.test(commitSrc2), 'G3 COMMIT reads the rollback token back and refuses if not durable');
+ok(commitSrc2.indexOf('setProperty(TEMP_R6F2G_MIGRATION_STORE_KEY_') < commitSrc2.indexOf('targets.forEach(function (t) { sh.getRange'), 'G4 rollback stored before the first id-cell mutation');
+ok(/put\(hcSda, F\.source_data_as_of\.new/.test(commitSrc2), 'G5 COMMIT writes source_data_as_of (all four lineage fields)');
+
+section('R6F2G1 H. rollback token written by COMMIT carries all four lineage before-values');
+eq(rb.lineage_before ? Object.keys(rb.lineage_before).length : 0, 4, 'H1 committed rollback token has all four lineage before-values');
+eq(rb.integrity_checksum ? true : false, true, 'H1 committed rollback token carries an integrity checksum');
 
 done_report();
 function done_report() { console.log('\n' + '-'.repeat(40)); console.log('R6F2G K2 ID+LINEAGE REMEDIATION: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
