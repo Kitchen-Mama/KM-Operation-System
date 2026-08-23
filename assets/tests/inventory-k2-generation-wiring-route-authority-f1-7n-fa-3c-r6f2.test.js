@@ -105,7 +105,7 @@ section('E. K2-aware empty-header classifier — DUPLICATE_ACTIVE_REVIEW / EMPTY
 
 section('F. R6F2 read-only diagnostics present + zero-write; freeze does not disclose raw values');
 ok(/function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY\(\)/.test(TEMP), 'F1. PREFLIGHT present');
-ok(/function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(\)/.test(TEMP), 'F2. package VALIDATE present');
+ok(/function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen\)/.test(TEMP), 'F2. package VALIDATE present (R6F2D: accepts a frozen-scope arg)');
 ok(/function TEMP_R6F2_FREEZE_EMPTY_INVENTORY_HEADERS\(\)/.test(TEMP), 'F3. FREEZE present');
 var preflight = extractFn(TEMP, 'TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY');
 ok(preflight.indexOf('.setValue(') < 0 && preflight.indexOf('appendRow(') < 0 && /READY_FOR_CONTROLLED_INVENTORY_AI_PLAN|HALT/.test(preflight), 'F1. PREFLIGHT is zero-write + emits a verdict');

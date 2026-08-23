@@ -38,8 +38,8 @@ eq(rCheap.route.recommended_last_mile_delivery, 'FBA', 'C3 selected last_mile is
 eq(rCheap.ai_rankable_route_pairs.length, 2, 'C4 both pairs are ai-rankable');
 // equal cost + equal transit, materially different → AUTHORITY_REQUIRED (never arbitrary)
 var rTie = der([card('Air', 'FBA', 5), card('Air', 'AWD', 5)], [lt('Air', 'FBA', 7), lt('Air', 'AWD', 7)]);
-eq(rTie.block, 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', 'C5 indistinguishable material pairs → AUTHORITY_REQUIRED');
-eq(rTie.route_candidate_status, 'AUTHORITY_REQUIRED', 'C6 status AUTHORITY_REQUIRED');
+eq(rTie.block, 'LAST_MILE_AMBIGUOUS', 'C5 indistinguishable material pairs → LAST_MILE_AMBIGUOUS');
+eq(rTie.route_candidate_status, 'AMBIGUOUS', 'C6 status AMBIGUOUS');
 // same cost, DIFFERENT transit → transit breaks the tie → AI_RANKED (faster)
 var rFast = der([card('Air', 'FBA', 5), card('Air', 'AWD', 5)], [lt('Air', 'FBA', 5), lt('Air', 'AWD', 9)]);
 eq(rFast.route_candidate_status, 'AI_RANKED', 'C7 equal cost, different transit → AI_RANKED');
@@ -101,6 +101,28 @@ ok(/SCOPE_ALL_SITES_FORBIDDEN/.test(GS61) && /never ALL_SITES/.test(GS61), 'F1 a
 ok(/only\[requestedMkt\] = byMkt\[requestedMkt\]; byMkt = only/.test(GS61), 'F2 generation restricts to exactly the requested marketplace (no fan-out)');
 ok(/APPLIED_SCOPE_WIDENED/.test(GS61) && /applied_equals_requested/.test(GS61), 'F3 applied scope must equal requested scope or the run fails closed');
 ok(/REQUESTED_SCOPE_EMPTY/.test(GS61), 'F4 a requested marketplace that produced no lines fails closed');
+
+// =====================================================================================================
+section('D2 — method-failure classification (typed, never a generic bucket)');
+var noCard = der([], [lt('Air', 'FBA', 7)]);
+eq(noCard.block, 'ROUTE_METHOD_UNRESOLVED', 'D2a no card for the lane → ROUTE_METHOD_UNRESOLVED');
+eq(noCard.method_unresolved_reason, 'NO_CARRIER_CARD_FOR_LANE', 'D2b typed reason NO_CARRIER_CARD_FOR_LANE');
+var inactiveOnly = der([{ origin_country: 'CN', destination_country: 'US', marketplace: '', shipping_method: 'Air', status: 'inactive', last_mile_delivery: 'FBA', unit_rate: '5', currency: 'USD', charge_type: 'per_kg', charge_unit: 'kg' }], [lt('Air', 'FBA', 7)]);
+eq(inactiveOnly.method_unresolved_reason, 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'D2c cards for the lane exist but all inactive → CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
+ok(KMWRR.METHOD_UNRESOLVED_REASONS.indexOf('NO_CARRIER_CARD_FOR_LANE') >= 0, 'D2d the typed reasons are enumerated on KMWRR');
+ok(/method_failure_breakdown/.test(TEMP), 'D2e the dry assembly + preflight report a method_failure_breakdown histogram');
+
+// =====================================================================================================
+section('G — scoped validator accepts the frozen scope/checksum (source contract)');
+ok(/function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE\(frozen\)/.test(TEMP), 'G1 the validator accepts a frozen-scope argument');
+ok(/scoped_validation/.test(TEMP) && /FROZEN_SCOPE_VALIDATED/.test(TEMP), 'G2 scoped validation verdict FROZEN_SCOPE_VALIDATED');
+ok(/unexpected_headers_in_scope/.test(TEMP) && /unexpected_lines_in_scope/.test(TEMP) && /out_of_scope_active_header_count/.test(TEMP), 'G3 verifies only the frozen headers/lines changed + no unrelated scope changed');
+ok(/duplicate_active_k2_group_count/.test(TEMP) && /empty_header_classification_checksum/.test(TEMP), 'G4 verifies no duplicate K2 groups + the two NOT_SAFE legacy headers unchanged (checksum)');
+ok(/function TEMP_R6F2D_VALIDATE_CONTROLLED_SCOPE\(frozen\)/.test(TEMP), 'G5 R6F2D validator alias present');
+
+// =====================================================================================================
+section('E2 — freeze carries planning_cycle + calculation_run_id on the selected scope (source contract)');
+ok(/calculation_run_id_fingerprint/.test(TEMP), 'E5 the selected safe scope carries planning_cycle + calculation_run_id fingerprint');
 
 // =====================================================================================================
 section('regression — deterministic K2 ids + conservation + flag-false zero writes (source contracts)');

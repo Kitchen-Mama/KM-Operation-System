@@ -2314,7 +2314,8 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
     stage_accounting: (g && g.stage_accounting) ? g.stage_accounting : null,
     stage_accounting_ok: g ? (g.stage_accounting_ok === true ? 'YES' : 'NO') : 'UNKNOWN',
     candidate_parity: g ? g.parity : null,
-    method_authority_required_lines: g ? (g.authority_required_lines || 0) : null,
+    method_failure_breakdown: g ? g.method_failure_breakdown : null,
+    last_mile_ambiguous_lines: g ? (g.authority_required_lines || 0) : null,
     manual_only_lines: g ? (g.manual_only_lines || 0) : null,
     clean_marketplace_scopes: (dry && dry.clean_scopes) ? dry.clean_scopes.map(function (m) { return { company: m.company, country: m.country, marketplace: m.marketplace, positive: m.positive, fully_routed: m.fully_routed }; }) : [],
     empty_header_classification: cls.headers, empty_header_classification_checksum: cls.checksum,
@@ -2329,34 +2330,64 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
   return out;
 }
 
-// Post-controlled-run package validator (read-only): confirms generated headers are K2-grouped with route fields
-// populated, lines are SKU/window under them, no duplicate active K2 group, conservation (no source over-allocation
-// detectable from the persisted rows), and the flag is still false.
-function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE() {
+// Post-controlled-run package validator (read-only). F1-7N-FA-3C-R6F2D (G): when passed the FROZEN scope object (the
+// TEMP_R6F2D_FREEZE output), it verifies that ONLY the frozen K2 headers/lines exist for the frozen scope — exact ids,
+// expected counts, route identity, planning cycle, quantities, no orphan/dup — that the two NOT_SAFE legacy headers are
+// unchanged, and that NO unrelated (non-frozen) active K2 scope changed shape. Without a frozen arg it does the generic
+// K2-consistency check. Read-only; never writes.
+function TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen) {
   var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
   function s(v) { return TEMP_str_(v); }
   var active = (H.rows || []).filter(function (r) { return TEMP_R6F2_ACTIVE_[s(r.status).toLowerCase()]; });
   var routePopulated = active.filter(function (r) { return TEMP_r6f2RouteComplete_(r); }).length;
   var groupNoPopulated = active.filter(function (r) { return s(r.recommendation_group_no) !== ''; }).length;
-  // lines carry no route field (route is header-level) + belong to an existing header
   var headerIds = {}; (H.rows || []).forEach(function (r) { var id = s(r.allocation_draft_id); if (id) headerIds[id] = 1; });
   var orphanLines = (L.rows || []).filter(function (x) { var fk = s(x.allocation_draft_id); return fk && !headerIds[fk]; }).length;
-  // over-allocation per source, from persisted planned_qty grouped by header source × sku|window
   var dupSkuWindowInHeader = 0, seen = {};
   (L.rows || []).forEach(function (x) { var k = s(x.allocation_draft_id) + '|' + s(x.sku).toLowerCase() + '|' + s(x.window_code).toLowerCase(); if (seen[k]) dupSkuWindowInHeader++; else seen[k] = 1; });
+  // duplicate active K2 group over the full 10-dim tuple.
+  var k2seen = {}, dupK2 = 0;
+  active.forEach(function (r) { if (typeof sadK2GroupKey_ === 'function') { var k = sadK2GroupKey_(r); if (k2seen[k]) dupK2++; else k2seen[k] = 1; } });
   var flagOn = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null;
   var out = {
     tool: 'TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE', mode: 'read-only',
     active_header_count: active.length, route_populated_header_count: routePopulated, group_no_populated_count: groupNoPopulated,
     line_row_count: (L.rows || []).length, orphan_line_count: orphanLines, duplicate_sku_window_in_header: dupSkuWindowInHeader,
+    duplicate_active_k2_group_count: dupK2,
     empty_header_classification: TEMP_r6f2ClassifyEmptyHeadersK2_(H, L).headers,
     inventory_flag_remains_false: flagOn === false ? 'YES' : (flagOn === null ? 'UNKNOWN' : 'NO'),
-    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)',
-    verdict: (orphanLines === 0 && dupSkuWindowInHeader === 0) ? 'K2_PACKAGE_CONSISTENT' : 'RECONCILIATION_REQUIRED'
+    R6F2_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
   };
+  if (frozen && frozen.frozen === true && frozen.scope) {
+    // SCOPED validation against the frozen expectation.
+    var fscope = frozen.scope, expHeaderIds = {}, expLineIds = {};
+    (frozen.groups || []).forEach(function (grp) { expHeaderIds[s(grp.expected_header_id)] = grp; });
+    (frozen.lines || []).forEach(function (ln) { expLineIds[s(ln.line_id)] = ln; });
+    // frozen-scope headers present in the DB, keyed by id.
+    var inScope = active.filter(function (r) { return s(r.company) === s(fscope.company) && s(r.country) === s(fscope.country) && s(r.marketplace) === s(fscope.marketplace) && s(r.planning_cycle) === s(fscope.planning_cycle); });
+    var unexpectedHeaders = inScope.filter(function (r) { return !expHeaderIds[s(r.allocation_draft_id)]; }).length;
+    var presentExpectedHeaders = Object.keys(expHeaderIds).filter(function (id) { return headerIds[id]; }).length;
+    var scopeLineRows = (L.rows || []).filter(function (x) { return expHeaderIds[s(x.allocation_draft_id)]; });
+    var unexpectedLines = scopeLineRows.filter(function (x) { return !expLineIds[s(x.allocation_draft_line_id)]; }).length;
+    // no UNRELATED scope changed: any active header whose scope != frozen but shares no expected id — count active
+    // out-of-scope headers as a reference (must match the pre-run baseline; the USER compares before/after).
+    var outOfScopeActive = active.filter(function (r) { return !(s(r.company) === s(fscope.company) && s(r.country) === s(fscope.country) && s(r.marketplace) === s(fscope.marketplace) && s(r.planning_cycle) === s(fscope.planning_cycle)); }).length;
+    var emptyCls = TEMP_r6f2ClassifyEmptyHeadersK2_(H, L);
+    out.scoped_validation = {
+      frozen_scope: fscope, expected_header_count: (frozen.groups || []).length, expected_line_count: (frozen.lines || []).length,
+      present_expected_headers: presentExpectedHeaders, unexpected_headers_in_scope: unexpectedHeaders, unexpected_lines_in_scope: unexpectedLines,
+      out_of_scope_active_header_count: outOfScopeActive, empty_header_classification_checksum: emptyCls.checksum,
+      scope_checksum_expected: frozen.scope_checksum,
+      verdict: (unexpectedHeaders === 0 && unexpectedLines === 0 && dupK2 === 0 && orphanLines === 0) ? 'FROZEN_SCOPE_VALIDATED' : 'RECONCILIATION_REQUIRED'
+    };
+    out.verdict = out.scoped_validation.verdict;
+  } else {
+    out.verdict = (orphanLines === 0 && dupSkuWindowInHeader === 0 && dupK2 === 0) ? 'K2_PACKAGE_CONSISTENT' : 'RECONCILIATION_REQUIRED';
+  }
   Logger.log('R6F2_VALIDATE_PACKAGE ' + JSON.stringify(out, null, 2));
   return out;
 }
+function TEMP_R6F2D_VALIDATE_CONTROLLED_SCOPE(frozen) { return TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen); }
 
 // F1-7N-FA-3C-R6F2A (D) — LIVE DRY ASSEMBLY: run the REAL production generation assembly READ-ONLY against the latest
 // live gap/source authority (latest GAP_JOB_INVENTORY → harvest → buildWeeklySourceLines → weeklyAiPlanK2AllocatedLines
@@ -2446,7 +2477,7 @@ function TEMP_r6f2aDryAssembly_() {
         dest_incoming: 0, dest_concrete: 0, dest_logical: 0, dest_blocked: 0,
         method_incoming: 0, method_ai_ranked: 0, method_manual_only: 0, method_authority_required: 0, method_blocked: 0,
         last_mile_incoming: 0, last_mile_resolved: 0, last_mile_blocked: 0 },
-      manual_only_lines: 0, authority_required_lines: 0, multi_pool_lines: 0,
+      manual_only_lines: 0, authority_required_lines: 0, multi_pool_lines: 0, method_failure_breakdown: {},
       // A — the four candidate-parity mismatch counters (all must be 0 for a controlled scope). route_query_field +
       // manual_method_option cross-checks are computed in the diagnostic (needs the raw cards); the two internal-
       // consistency counters (ai pair ∈ manual, selected ∈ ai ∈ manual) are computed here for the verdict gate.
@@ -2483,9 +2514,9 @@ function TEMP_r6f2aDryAssembly_() {
             if (TALLY_DEST_BLOCK_[tok]) { T.dest_blocked++; mk.dest_blocked++; return; }
             if (o.destination_kind === 'WAREHOUSE') T.dest_concrete++; else if (o.destination_kind === 'MARKETPLACE') T.dest_logical++;
             T.method_incoming++;
-            if (tok === 'ROUTE_METHOD_UNRESOLVED') { T.method_blocked++; mk.no_method++; return; }
-            if (tok === 'ROUTE_AUTO_RANKING_INSUFFICIENT') { T.method_manual_only++; G.manual_only_lines++; mk.manual_only++; return; }
-            if (tok === 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED') { T.method_authority_required++; G.authority_required_lines++; mk.authority_required++; return; }
+            if (tok === 'ROUTE_METHOD_UNRESOLVED') { T.method_blocked++; mk.no_method++; var mr = TEMP_str_(o.method_unresolved_reason) || 'UNKNOWN'; G.method_failure_breakdown[mr] = (G.method_failure_breakdown[mr] || 0) + 1; return; }
+            if (tok === 'ROUTE_AUTO_RANKING_INSUFFICIENT') { T.method_manual_only++; G.manual_only_lines++; mk.manual_only++; var ar = TEMP_str_(o.auto_ranking_insufficient_reason) || 'UNKNOWN'; G.method_failure_breakdown['MANUAL_' + ar] = (G.method_failure_breakdown['MANUAL_' + ar] || 0) + 1; return; }
+            if (tok === 'LAST_MILE_AMBIGUOUS') { T.method_authority_required++; G.authority_required_lines++; mk.authority_required++; G.method_failure_breakdown['LAST_MILE_AMBIGUOUS'] = (G.method_failure_breakdown['LAST_MILE_AMBIGUOUS'] || 0) + 1; return; }
             T.method_ai_ranked++; T.last_mile_incoming++; T.last_mile_resolved++; mk.ai_ranked++;
             // A — the three parity layers must be internally consistent for an AI_RANKED line.
             var mset = {}; (o.manual_method_options || []).forEach(function (x) { mset[String(x.value).toLowerCase()] = 1; });
@@ -2529,7 +2560,7 @@ function TEMP_r6f2aDryAssembly_() {
       return ka < kb ? -1 : (ka > kb ? 1 : 0);
     });
     res.clean_scopes = cleanScopes;
-    res.safe_scope = cleanScopes.length ? { company: cleanScopes[0].company, country: cleanScopes[0].country, marketplace: cleanScopes[0].marketplace, positive: cleanScopes[0].positive, fully_routed: cleanScopes[0].fully_routed, ai_rankable: cleanScopes[0].ai_ranked } : null;
+    res.safe_scope = cleanScopes.length ? { company: cleanScopes[0].company, country: cleanScopes[0].country, marketplace: cleanScopes[0].marketplace, positive: cleanScopes[0].positive, fully_routed: cleanScopes[0].fully_routed, ai_rankable: cleanScopes[0].ai_ranked, planning_cycle: planningCycle || null, calculation_run_id_fingerprint: (res.gap_job && res.gap_job.run_id_fingerprint) || null } : null;
     res.available = true; res.global = G;
   } catch (e) { res.reason = 'DRY_ASSEMBLY_THREW:' + (e && e.message ? e.message : e); }
   return res;
@@ -2772,9 +2803,11 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     // lines into AI_RANKED / MANUAL_ONLY / AUTHORITY_REQUIRED / (no-method) BLOCKED, from the canonical stage tally.
     res.route_pair_reclassification = G ? {
       method_ai_ranked: G.method_ai_ranked, method_manual_only: G.method_manual_only,
-      last_mile_selection_authority_required: G.authority_required_lines || 0, method_no_method: G.method_no_method,
-      note: 'former LAST_MILE_AMBIGUOUS lines are re-ranked as {method,last_mile} pairs; a materially-different commercial tie → LAST_MILE_SELECTION_AUTHORITY_REQUIRED (never arbitrarily chosen)'
+      last_mile_ambiguous: G.authority_required_lines || 0, method_no_method: G.method_no_method,
+      note: 'former LAST_MILE_AMBIGUOUS lines are re-ranked as {method,last_mile} pairs; a materially-different commercial tie (equal cost+transit) stays LAST_MILE_AMBIGUOUS (never first-row selected)'
     } : null;
+    // D — typed breakdown of the no-method / manual / ambiguous causes (never a generic bucket when a cause is known).
+    res.method_failure_breakdown = G ? G.method_failure_breakdown : null;
     // D — the ONE clean marketplace scope the controlled run would target (smallest positive; UK partial never appears).
     res.clean_marketplace_scopes = (dry && dry.clean_scopes) ? dry.clean_scopes.map(function (m) { return { company: m.company, country: m.country, marketplace: m.marketplace, positive: m.positive, fully_routed: m.fully_routed }; }) : [];
     res.selected_controlled_scope = (dry && dry.safe_scope) ? dry.safe_scope : null;

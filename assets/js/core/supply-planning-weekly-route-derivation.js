@@ -153,10 +153,18 @@
     // NORMALIZED camelCase DTOs (shippingMethod / lastMileDelivery / unitRate / minCharge / currency / chargeType /
     // chargeUnit); the lead-time (transit-day) join is KMRA's too, so AI-Plan ETA == Execution-Plan ETA.
     var kmra = getKMRA();
-    if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED');
+    if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED', 'KMRA_UNAVAILABLE');
     var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '' };
     var lane = kmra.laneCards(routeQuery, input.rateCards, { asOfOrdinal: asOf });
-    if (!lane.length) return blocked('ROUTE_METHOD_UNRESOLVED');
+    if (!lane.length) {
+      // F1-7N-FA-3C-R6F2D (D) — TYPE the no-method cause precisely (never a generic bucket when a cause is known):
+      // no card for the lane at all vs cards exist for the lane but were inactive / outside the effective window vs the
+      // matching cards carry no shipping_method token.
+      var relaxed = (input.rateCards || []).map(kmra.normalizeRateCard).filter(function (dto) { return kmra.cardMatchesRoute(dto, routeQuery); });
+      var reason = !relaxed.length ? 'NO_CARRIER_CARD_FOR_LANE'
+        : (!relaxed.some(function (dto) { return dto.shippingMethod; }) ? 'NO_CANONICAL_METHOD' : 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
+      return blocked('ROUTE_METHOD_UNRESOLVED', reason);
+    }
 
     var reqOrd = dateToOrdinal(input.requiredByDate);
     function leadDaysFor(method, lastMile) {
@@ -239,11 +247,11 @@
     return okRoute(srcId, destKind, destWarehouseId, destMarketplace, win.method, win.last_mile, { cost: win.cost, currency: win.currency, days: win.days }, { status: 'AI_RANKED', manualOptions: manualOptions, aiPairs: aiPairs.map(pairEvi), selected: pairEvi(win) });
 
     function pairEvi(p) { return { method: p.method, last_mile: p.last_mile, days: p.days, cost: isFinite(p.cost) ? p.cost : null, currency: p.currency, onTime: p.onTime }; }
-    function blocked(tok) { return { ok: false, block: tok, route_candidate_status: 'BLOCKED', manual_method_options: (typeof manualOptions !== 'undefined' && manualOptions) ? manualOptions : [] }; }
-    // AUTHORITY_REQUIRED — ≥2 materially different route pairs are commercially indistinguishable (equal cost+transit)
-    // with no business ranking authority; do NOT arbitrarily choose. A valid AI-rankable set still exists.
+    function blocked(tok, reason) { return { ok: false, block: tok, method_unresolved_reason: reason || null, route_candidate_status: 'BLOCKED', manual_method_options: (typeof manualOptions !== 'undefined' && manualOptions) ? manualOptions : [] }; }
+    // LAST_MILE_AMBIGUOUS — ≥2 materially different route pairs are commercially indistinguishable (equal comparable
+    // cost AND equal transit); do NOT arbitrarily first-row select. A valid manual/AI-rankable set still exists.
     function authorityRequired(manualOpts, tie) {
-      return { ok: false, block: 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', route_candidate_status: 'AUTHORITY_REQUIRED',
+      return { ok: false, block: 'LAST_MILE_AMBIGUOUS', route_candidate_status: 'AMBIGUOUS',
         manual_method_options: manualOpts || [], ai_rankable_route_pairs: tie || [], tie_group: tie || [] };
     }
     // MANUAL_ONLY — a valid manual method exists but the AI lacks evidence to auto-rank (no lead time / none on-time).
@@ -415,7 +423,7 @@
       // carry the THREE parity layers (G/A) so partition/preflight/diagnostic all read ONE contract.
       return r.ok
         ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, estimated_cost: r.estimated_cost, currency: r.currency }
-        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, manual_method_options: r.manual_method_options || [], ai_rankable_route_pairs: r.ai_rankable_route_pairs || [], advisory: r.advisory || null };
+        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, method_unresolved_reason: r.method_unresolved_reason || null, manual_method_options: r.manual_method_options || [], ai_rankable_route_pairs: r.ai_rankable_route_pairs || [], advisory: r.advisory || null };
     });
     var part = partitionRoutedLines(scope, routed);
     var conservation = checkConservation(input.authorizedBySkuWindow, part.groups, input.sourceCeilingById);
@@ -425,6 +433,7 @@
         source_warehouse_id: rl.line.source_warehouse_id, destination_kind: rl.destination_kind || '',
         route_candidate_status: rl.route_candidate_status || (rl.route ? 'AI_RANKED' : 'BLOCKED'),
         block: rl.block || null, auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null,
+        method_unresolved_reason: rl.method_unresolved_reason || null,
         manual_method_options: rl.manual_method_options || [], ai_rankable_route_pairs: rl.ai_rankable_route_pairs || [],
         selected_ai_route: rl.selected_ai_route || null,
         selected_method: rl.route ? rl.route.recommended_shipping_method : null,
@@ -435,18 +444,19 @@
   }
 
   return {
-    VERSION: 'kmwrr-r6f2d-1',
+    VERSION: 'kmwrr-r6f2d-2',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
-    // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane); MANUAL_ONLY lines
-    // carry ROUTE_AUTO_RANKING_INSUFFICIENT (a valid manual method exists, AI lacks ranking evidence); AUTHORITY_REQUIRED
-    // lines carry LAST_MILE_SELECTION_AUTHORITY_REQUIRED (≥2 materially different route pairs tie with no business
-    // authority); source multi-pool = ROUTE_SOURCE_MULTI_POOL_UNRESOLVED; a WAREHOUSE dest that isn't a real active
-    // warehouse = DESTINATION_UNKNOWN. (LAST_MILE_UNRESOLVED/AMBIGUOUS/NO_ON_TIME/COST_NOT_COMPARABLE are retired —
-    // last-mile is now resolved as part of the ranked route pair.)
+    // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane), sub-typed by
+    // method_unresolved_reason (NO_CARRIER_CARD_FOR_LANE / CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE / NO_CANONICAL_METHOD);
+    // MANUAL_ONLY carries ROUTE_AUTO_RANKING_INSUFFICIENT (valid manual method, AI lacks ranking evidence — NO_ON_TIME /
+    // NO_LEAD_TIME / COST_NOT_COMPARABLE); AMBIGUOUS carries LAST_MILE_AMBIGUOUS (≥2 materially different route pairs tie
+    // on cost+transit — never first-row selected); source multi-pool = ROUTE_SOURCE_MULTI_POOL_UNRESOLVED; a WAREHOUSE
+    // dest that isn't a real active warehouse = DESTINATION_UNKNOWN.
     BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED',
       'DESTINATION_MISSING', 'DESTINATION_UNKNOWN', 'DESTINATION_INACTIVE',
-      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', 'OVERRIDE_INVALID'],
-    ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'AUTHORITY_REQUIRED', 'BLOCKED'],
+      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
+    METHOD_UNRESOLVED_REASONS: ['NO_CARRIER_CARD_FOR_LANE', 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'NO_CANONICAL_METHOD', 'KMRA_UNAVAILABLE'],
+    ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'AMBIGUOUS', 'BLOCKED'],
     dateToOrdinal: dateToOrdinal, ordinalToDate: ordinalToDate, indexWarehouses: indexWarehouses,
     deriveRoute: deriveRoute, routeTuple: routeTuple,
     partitionRoutedLines: partitionRoutedLines, buildGroupHeader: buildGroupHeader,

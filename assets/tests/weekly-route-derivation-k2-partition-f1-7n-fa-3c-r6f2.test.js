@@ -83,8 +83,8 @@ section('C4 last-mile ROUTE PAIRS (R6F2D): indistinguishable → AUTHORITY_REQUI
   var ltFBA = LT_SEA, ltMER = JSON.parse(JSON.stringify(LT_SEA)); ltMER.last_mile_delivery = 'MERCHANT';   // same 35 days
   // same method + same cost + same transit, materially different last_mile, no business authority → AUTHORITY_REQUIRED
   var r = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [seaFBA, seaMER], leadTimes: [ltFBA, ltMER] });
-  eq(r.block, 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', 'commercially indistinguishable last-mile pairs → LAST_MILE_SELECTION_AUTHORITY_REQUIRED (never arbitrarily chosen)');
-  eq(r.route_candidate_status, 'AUTHORITY_REQUIRED', 'status AUTHORITY_REQUIRED');
+  eq(r.block, 'LAST_MILE_AMBIGUOUS', 'commercially indistinguishable last-mile pairs → LAST_MILE_AMBIGUOUS (never arbitrarily chosen)');
+  eq(r.route_candidate_status, 'AMBIGUOUS', 'status AMBIGUOUS');
   // make FBA strictly cheaper → the AI ranks the pair and selects FBA
   var seaMER2 = JSON.parse(JSON.stringify(RATE_SEA)); seaMER2.last_mile_delivery = 'MERCHANT'; seaMER2.unit_rate = 99;
   var r2 = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [seaFBA, seaMER2], leadTimes: [ltFBA, ltMER] });
