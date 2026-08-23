@@ -1597,3 +1597,34 @@ Neither **61_ nor 16_ requires a production correction**. The production lineage
 
 ### deployment
 TEMP + test/doc only. No 16_/61_/core/bundle/00_config/frontend change, no bundle rebuild. APPS_SCRIPT_SYNC_REQUIRED: `TEMP_migrate_request_order_draft_v2.gs`. No live write; confirmation stays `7c86deb0`; flag false.
+
+## §62 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G5-K2-REUSE-ROUTE-RECONCILIATION — genuine-K2 REUSE no longer misclassified as legacy-route reconciliation (2026-08-23)
+
+Production `16_shipping_allocation_handlers.gs` (STANDALONE .gs, NOT bundled → no bundle rebuild) + new test + this doc. No core, no 61_, no 00_config, no TEMP, no frontend change. No live write; REUSE/executor/migration/rollback/Submit not run.
+
+### A — root cause (exact comparison that emitted LEGACY_ROUTE_RECONCILIATION_REQUIRED)
+Call path: `TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE` → `TEMP_r6f2fRunProductionGeneration_` → `weeklyAiPlanGenerateK2_` → `handleUpsertShippingAllocationDraftAtomic_` → `sadAtomicUpsertCore_`.
+
+Inside `sadAtomicUpsertCore_` the UNIFIED resolver `sadResolveActiveDraftK2OrK3_` correctly took the **K2 path**: the incoming `g.header` (from `KMWRR.buildGroupHeader`) carries `destination_marketplace='Amazon'`, so `sadHeaderRouteIsComplete_(incoming)` = true; `sadK2ResolveActiveDraft_` matched the frozen header by the 10-dim group key (both incoming and stored use a BLANK `recommended_destination_warehouse_id`) → **REUSE**, id `SADH-K2-7F15DD7D`, delta 0/0. The failure came from the **post-resolution guard** `sadLegacyReconcileReason_` ([16_:920](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs)), called on the `found` (stored) row at [16_:680](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs):
+
+- The persisted 30-col schema `SHIPPING_ALLOCATION_DRAFTS_HEADERS_` ([16_:34](../../assets/specs/active/apps-script/16_shipping_allocation_handlers.gs)) has **no `destination_marketplace` column**. A genuine K2 group whose logical destination is a MARKETPLACE (Amazon) stores `recommended_destination_warehouse_id = ''` and no marketplace-destination column.
+- The old guard re-read the stored row and applied the **generic** `sadHeaderRouteIsComplete_` (From + To + Method), which the persisted header can satisfy only via a warehouse id. Blank warehouse dest + absent `destination_marketplace` → route-INCOMPLETE → `LEGACY_ROUTE_RECONCILIATION_REQUIRED`, `zero_write:true`.
+
+This is EXACTLY the spec's hypothesis: the generic route rule requires `recommended_destination_warehouse_id`, while K2 legitimately uses the marketplace as its logical destination. Actual vs expected: header/group identity, company/country/marketplace, cycle, source warehouse, method, last-mile, `recommendation_group_no`, K2 classification and deterministic ids all MATCH the frozen scope; the ONLY divergence was the guard's generic completeness verdict on a marketplace-logical destination (physical destination warehouse legitimately blank; logical destination = the marketplace). Matches every live fact: 3/3 headers, 5/5 lines, delta 0/0, `route_complete_k2=true`, REUSE_UNVERIFIED (the group BLOCKed, so `resp.success=false`).
+
+### B — fix (strict; legacy protection NOT weakened)
+`sadLegacyReconcileReason_` is now K2-aware by the row's OWN deterministic identity — never the `SADH-K2-` prefix alone:
+- stored id begins `SADH-K2-` **and** `sadK2DeterministicHeaderId_(storedRow) === storedId` → genuine self-consistent K2 group (marketplace-logical destination is legitimately complete) → **proceed** (REUSE).
+- stored id begins `SADH-K2-` but its own group dims do **not** regenerate the id (impostor / route drift) → distinct typed **`K2_ROUTE_RECONCILIATION_REQUIRED`** (never silently reused / healed / overwritten).
+- any other id (generic/legacy) → the **unchanged** generic rule: route-complete proceeds, route-incomplete → `LEGACY_ROUTE_RECONCILIATION_REQUIRED`.
+
+The two NOT_SAFE legacy headers (no `SADH-K2-` id, route-incomplete) still refuse; `allow_legacy_reconcile` (explicit USER migration) still short-circuits; generic and physical-warehouse-K2 behaviour is unchanged. The exhaustive REUSE eligibility (exact five SADL-K2 ids + FKs, no missing/unexpected/orphan/dup, all four lineage fields, unrelated/legacy checksums unchanged) remains owned by `TEMP_r6f2gFrozenScopeValidated_`; this fix only removes the spurious pre-REUSE block.
+
+### C — typed, observable reasons
+`sadReconcileMessage_(reason)` gives each BLOCK a distinct, accurate message; both the atomic and manual cores surface `data.reason` / `data.status`. `K2_ROUTE_RECONCILIATION_REQUIRED` explicitly states "never auto-healed or overwritten" — no blind retry, no automatic overwrite/heal.
+
+### D — tests
+`inventory-k2-reuse-route-reconciliation-f1-7n-fa-3c-r6f2g5.test.js` (45/0): committed K2 fixture → REUSE; logical Amazon blank-warehouse destination is valid K2 (guard proceeds); wrong marketplace/source/method/last-mile/group → different deterministic id → resolver CREATE (never reuse the frozen row); header-prefix-only impostor → `K2_ROUTE_RECONCILIATION_REQUIRED`; two legacy NOT_SAFE headers still refuse; generic + physical-warehouse-K2 unchanged; typed distinct messages; REUSE = equal fingerprint / zero_write (source-fact); missing/unexpected/orphan/dup + four-lineage + checksum + route_complete_k2 gates present in the frozen-scope validator (source-fact). Full sweep = known 4-test baseline (gap-job-done-notice, order-planning-monthly-projection-consumer, replen-header-toggle, supply-planning-route-inventory), 0 new.
+
+### deployment
+`16_shipping_allocation_handlers.gs` (standalone) + new test + this doc. No bundle rebuild, no 61_/00_config/core/TEMP/frontend change. APPS_SCRIPT_SYNC_REQUIRED: `16_shipping_allocation_handlers.gs`. No live write; K2 live generation remains HALTed (`INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` false).

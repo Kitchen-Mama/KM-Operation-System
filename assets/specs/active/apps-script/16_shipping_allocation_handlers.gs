@@ -179,7 +179,7 @@ function sadUpsertDraftHeaderCore_(body) {
   // A: editing an existing route-INCOMPLETE (legacy) row by explicit id is fail-closed unless an explicit USER migration.
   if (found) {
     var legR = sadLegacyReconcileReason_(sh, found, allowReconcile);
-    if (legR) return jsonResponse_({ success: false, error: legR + ' — this existing Draft has an incomplete route; reconcile via an explicit USER migration before editing (zero rows written)', data: { status: legR, existing_id: id } });
+    if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', data: { status: legR, existing_id: id } });
   }
 
   if (found) {
@@ -678,7 +678,7 @@ function sadAtomicUpsertCore_(body) {
     if (st === 'submitted' || st === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
     // A: editing an existing route-INCOMPLETE (legacy) row is fail-closed unless an explicit USER migration is requested.
     var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile);
-    if (legR) return jsonResponse_({ success: false, error: legR + ' — this existing Draft has an incomplete route; reconcile via an explicit USER migration before editing (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
+    if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
   }
 
   var now = procurementTimestamp_();
@@ -914,13 +914,35 @@ function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
   return { status: 'BLOCK', reason: 'ROUTE_INCOMPLETE_NEW_DRAFT', id: '', conflictIds: [], k2: false };
 }
 
-// F1-7N-FA-3C-R6F2A — guard for editing an EXISTING row resolved by explicit id: a route-incomplete existing/legacy
-// row is fail-closed (LEGACY_ROUTE_RECONCILIATION_REQUIRED) unless allowReconcile. Reads the row's recommended_* via a
-// header-keyed object. Returns a typed reason string to BLOCK, or '' to proceed.
+// F1-7N-FA-3C-R6F2A/R6F2G5 — guard for editing an EXISTING row (resolved by explicit id OR by the K2 group authority).
+// A route-incomplete GENERIC/legacy row is fail-closed (LEGACY_ROUTE_RECONCILIATION_REQUIRED) unless allowReconcile.
+// R6F2G5 fix: a GENUINE K2 shipment group uses a MARKETPLACE as its logical destination, so its persisted 30-col header
+// legitimately carries a BLANK recommended_destination_warehouse_id (destination_marketplace is NOT a stored column).
+// The generic From+To+Method completeness rule — which the persisted header can only satisfy via a warehouse id — must
+// therefore NOT reclassify a marketplace-logical K2 row as a legacy collision (the exact defect that made a committed
+// K2 REUSE return LEGACY_ROUTE_RECONCILIATION_REQUIRED with zero writes). Authority for "is this a real K2 group" is the
+// row's stored id EQUALLING the deterministic hash of its OWN K2 group dims (sadK2DeterministicHeaderId_) — the K2
+// grouping authority, NEVER the SADH-K2- prefix alone. A SADH-K2- row whose stored dims do NOT regenerate its id
+// (impostor / route drift) is refused with a DISTINCT typed K2_ROUTE_RECONCILIATION_REQUIRED (never auto-healed or
+// overwritten). Generic (non-SADH-K2-) rows keep the exact original legacy rule unchanged. Returns a typed reason
+// string to BLOCK, or '' to proceed.
 function sadLegacyReconcileReason_(sh, found, allowReconcile) {
   if (!found || allowReconcile === true) return '';
   var o = sadRowToObject_(sh, found.row);
+  var storedId = String(o.allocation_draft_id == null ? '' : o.allocation_draft_id).trim();
+  if (storedId.indexOf('SADH-K2-') === 0) {
+    return sadK2DeterministicHeaderId_(o) === storedId ? '' : 'K2_ROUTE_RECONCILIATION_REQUIRED';
+  }
   return sadHeaderRouteIsComplete_(o) ? '' : 'LEGACY_ROUTE_RECONCILIATION_REQUIRED';
+}
+
+// R6F2G5 — reason-typed reconciliation message for the two BLOCK call sites (atomic + manual). Keeps the outcome
+// observable and distinct: a genuine legacy incomplete-route collision vs a K2 shipment-group identity mismatch.
+function sadReconcileMessage_(reason) {
+  if (reason === 'K2_ROUTE_RECONCILIATION_REQUIRED') {
+    return 'this existing K2 Draft\'s stored id is not the deterministic hash of its own shipment-group route (K2 identity mismatch); reconcile via an explicit USER migration — never auto-healed or overwritten';
+  }
+  return 'this existing Draft has an incomplete route; reconcile via an explicit USER migration before editing';
 }
 
 // Read one sheet row (1-based) into a header-keyed object (read-only).
