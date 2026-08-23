@@ -2929,13 +2929,82 @@ function TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE(opts) {
 // stored token holds ids/counts/checksums/scope ONLY — no sku/qty, no spreadsheet cell, no business-table mutation,
 // and never triggers generation. VALIDATE reads the token and calls the canonical parameterized validator; it cannot
 // widen scope (it only reads the stored ids). CLEAR removes the token.
-function TEMP_r6f2eReduceFreezeToken_(fr) {
-  return {
-    frozen: true, freeze_version: TEMP_R6F2E_FREEZE_VERSION_,
-    scope: fr.scope || null, scope_checksum: fr.scope_checksum || null,
-    groups: (fr.groups || []).map(function (grp) { return { expected_header_id: grp.expected_header_id, expected_line_ids: grp.expected_line_ids || [] }; }),
-    lines: (fr.lines || []).map(function (ln) { return { line_id: ln.line_id }; })
+// R6F2E3 — the COMPLETE reduced token (ids/counts/checksums/scope ONLY; never sku/qty/pricing/spreadsheet cells) + a
+// canonical serialization + a token_integrity_checksum SEPARATE from freeze_checksum. freeze_checksum stays the USER
+// confirmation authority; token_integrity_checksum protects the persisted structure.
+var TEMP_R6F2E_TOKEN_VERSION_ = 'R6F2E-TOKEN-1';
+// canonical field ORDER for serialization + integrity (every persisted field EXCEPT token_integrity_checksum itself).
+var TEMP_R6F2E_TOKEN_ORDER_ = ['token_version', 'frozen', 'freeze_version', 'scope', 'planning_cycle',
+  'calculation_run_id_fingerprint', 'freeze_checksum', 'expected_k2_header_count', 'expected_k2_line_count',
+  'expected_header_ids_sorted', 'expected_line_ids_sorted', 'pre_run_db_header_rows', 'pre_run_db_line_rows',
+  'expected_post_run_db_header_rows', 'expected_post_run_db_line_rows', 'unrelated_scope_active_row_checksum',
+  'legacy_header_checksum', 'groups'];
+function TEMP_r6f2eHasDup_(arr) { var s = {}; for (var i = 0; i < (arr || []).length; i++) { var k = TEMP_str_(arr[i]); if (s[k]) return true; s[k] = 1; } return false; }
+function TEMP_r6f2eCanonicalTokenString_(token) { return TEMP_R6F2E_TOKEN_ORDER_.map(function (k) { return k + '=' + JSON.stringify(token[k]); }).join('|'); }
+function TEMP_r6f2eTokenIntegrity_(token) { return TEMP_r5bHash_(TEMP_r6f2eCanonicalTokenString_(token)); }
+// Build the COMPLETE token from a successful freeze result (envelope + groups). Expected post-run DB rows = pre-run +
+// the CREATE delta (frozen headers/lines) — for the frozen JP CREATE case that is headers 2+1=3, lines 0+5=5.
+function TEMP_r6f2eBuildFrozenToken_(fr) {
+  var env = fr.envelope || {}, rs = env.requested_scope || {};
+  var token = {
+    token_version: TEMP_R6F2E_TOKEN_VERSION_, frozen: true, freeze_version: env.freeze_version || TEMP_R6F2E_FREEZE_VERSION_,
+    scope: { company: rs.company, country: rs.country, marketplace: rs.marketplace },
+    planning_cycle: env.planning_cycle || null, calculation_run_id_fingerprint: env.calculation_run_id_fingerprint || null,
+    freeze_checksum: env.freeze_checksum || null,
+    expected_k2_header_count: env.expected_k2_header_count || 0, expected_k2_line_count: env.expected_k2_line_count || 0,
+    expected_header_ids_sorted: (env.expected_header_ids_sorted || []).slice().sort(),
+    expected_line_ids_sorted: (env.expected_line_ids_sorted || []).slice().sort(),
+    pre_run_db_header_rows: env.pre_run_db_header_rows || 0, pre_run_db_line_rows: env.pre_run_db_line_rows || 0,
+    expected_post_run_db_header_rows: (env.pre_run_db_header_rows || 0) + (env.expected_k2_header_count || 0),
+    expected_post_run_db_line_rows: (env.pre_run_db_line_rows || 0) + (env.expected_k2_line_count || 0),
+    unrelated_scope_active_row_checksum: env.unrelated_scope_active_row_checksum || null,
+    legacy_header_checksum: env.legacy_header_checksum || null,
+    groups: (fr.groups || []).map(function (grp) { return { expected_header_id: grp.expected_header_id, expected_line_ids: (grp.expected_line_ids || []).slice().sort() }; })
   };
+  token.token_integrity_checksum = TEMP_r6f2eTokenIntegrity_(token);
+  return token;
+}
+// Structural + integrity validation of a stored token. NEVER repairs; returns the first typed failure.
+function TEMP_r6f2eValidateTokenStructure_(token, expected) {
+  if (!token || typeof token !== 'object') return { ok: false, reason: 'FROZEN_TOKEN_INCOMPLETE', field: '(root)' };
+  for (var i = 0; i < TEMP_R6F2E_TOKEN_ORDER_.length; i++) { var k = TEMP_R6F2E_TOKEN_ORDER_[i]; if (token[k] === undefined || token[k] === null) return { ok: false, reason: 'FROZEN_TOKEN_INCOMPLETE', field: k }; }
+  if (token.token_integrity_checksum === undefined || token.token_integrity_checksum === null) return { ok: false, reason: 'FROZEN_TOKEN_INCOMPLETE', field: 'token_integrity_checksum' };
+  if (TEMP_str_(TEMP_r6f2eTokenIntegrity_(token)) !== TEMP_str_(token.token_integrity_checksum)) return { ok: false, reason: 'FROZEN_TOKEN_INTEGRITY_FAILED' };
+  var e = expected || TEMP_R6F2E_EXPECTED_SCOPE_;
+  if (!token.scope || token.scope.company !== e.company || token.scope.country !== e.country || token.scope.marketplace !== e.marketplace) return { ok: false, reason: 'FROZEN_TOKEN_SCOPE_INVALID' };
+  var hids = token.expected_header_ids_sorted || [], lids = token.expected_line_ids_sorted || [], member = [];
+  (token.groups || []).forEach(function (g) { (g.expected_line_ids || []).forEach(function (x) { member.push(x); }); });
+  if (TEMP_r6f2eHasDup_(hids) || TEMP_r6f2eHasDup_(lids) || TEMP_r6f2eHasDup_(member)) return { ok: false, reason: 'FROZEN_TOKEN_DUPLICATE_ID' };
+  if (hids.length !== token.expected_k2_header_count || lids.length !== token.expected_k2_line_count) return { ok: false, reason: 'FROZEN_TOKEN_COUNT_MISMATCH' };
+  if ((token.groups || []).length !== token.expected_k2_header_count || member.length !== token.expected_k2_line_count) return { ok: false, reason: 'FROZEN_TOKEN_COUNT_MISMATCH' };
+  if (JSON.stringify(member.slice().sort()) !== JSON.stringify(lids.slice().sort())) return { ok: false, reason: 'FROZEN_TOKEN_COUNT_MISMATCH' };   // header→line membership must equal the flat line set
+  if (token.expected_post_run_db_header_rows !== (token.pre_run_db_header_rows + token.expected_k2_header_count)) return { ok: false, reason: 'FROZEN_TOKEN_COUNT_MISMATCH' };
+  if (token.expected_post_run_db_line_rows !== (token.pre_run_db_line_rows + token.expected_k2_line_count)) return { ok: false, reason: 'FROZEN_TOKEN_COUNT_MISMATCH' };
+  return { ok: true, reason: null };
+}
+// Adapter: the stored token → the shape the canonical parameterized validator expects (frozen.groups[].expected_header_id
+// + frozen.lines[].line_id + frozen.scope{…,planning_cycle} + frozen.scope_checksum). Read-only; cannot widen scope.
+function TEMP_r6f2eTokenToFrozenArg_(token) {
+  return { frozen: true, scope: { company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle },
+    scope_checksum: token.freeze_checksum,
+    groups: (token.groups || []).map(function (g) { return { expected_header_id: g.expected_header_id, expected_line_ids: g.expected_line_ids || [] }; }),
+    lines: (token.expected_line_ids_sorted || []).map(function (id) { return { line_id: id }; }) };
+}
+// Recompute the live read-only scope guards (unrelated-scope active-row checksum + legacy-header checksum + DB counts +
+// active headers already in the frozen scope) — the SAME computation the freeze envelope uses, so the validator can
+// prove they are unchanged.
+function TEMP_r6f2eComputeLiveGuards_(scope) {
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var unrelatedParts = [], inScopeActive = 0;
+  (H.rows || []).forEach(function (r) {
+    if (!TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()]) return;
+    var inScope = (TEMP_str_(r.company) === TEMP_str_(scope.company) && TEMP_str_(r.country) === TEMP_str_(scope.country) && TEMP_str_(r.marketplace) === TEMP_str_(scope.marketplace) && TEMP_str_(r.planning_cycle) === TEMP_str_(scope.planning_cycle));
+    if (inScope) { inScopeActive++; return; }
+    unrelatedParts.push(TEMP_str_(r.allocation_draft_id) + ':' + TEMP_str_(r.status) + ':' + ((typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(r) : ''));
+  });
+  var cls = TEMP_r6f2ClassifyEmptyHeadersK2_(H, L);
+  return { unrelated_scope_active_row_checksum: TEMP_r5bHash_(unrelatedParts.sort().join('|')), legacy_header_checksum: cls.checksum,
+    db_header_rows: (H.rows || []).length, db_line_rows: (L.rows || []).length, active_headers_in_scope: inScopeActive };
 }
 function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN() {
   var out = { tool: 'TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN', mode: 'DRY_RUN (writes nothing)',
@@ -2944,13 +3013,18 @@ function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_DRY_RUN() {
   if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') {
     out.verdict = 'DRY_RUN_BLOCKED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_DRY_RUN ' + JSON.stringify(out, null, 2)); return out;
   }
-  var token = TEMP_r6f2eReduceFreezeToken_({ scope: fr.envelope.requested_scope, scope_checksum: fr.envelope.freeze_checksum, groups: fr.groups, lines: fr.lines });
+  var token = TEMP_r6f2eBuildFrozenToken_(fr);
+  var struct = TEMP_r6f2eValidateTokenStructure_(token, TEMP_R6F2E_EXPECTED_SCOPE_);
   out.would_store_property_key = TEMP_R6F2E_STORE_PROP_KEY_;
   out.would_store_token = token;
-  out.confirmation_required = 'Copy this checksum into the TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ constant, save the file, then run TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT.';
-  out.freeze_checksum_to_confirm = fr.envelope.freeze_checksum;
+  out.token_complete = struct.ok; out.token_structure_reason = struct.reason || null;
+  out.freeze_checksum_to_confirm = fr.envelope.freeze_checksum;   // truthful: whatever the LIVE freeze produced
+  out.token_integrity_checksum = token.token_integrity_checksum;
+  out.expected_post_run_deltas = { shipping_allocation_drafts: '+' + token.expected_k2_header_count, shipping_allocation_draft_lines: '+' + token.expected_k2_line_count };
+  out.expected_post_run_db_rows = { headers: token.expected_post_run_db_header_rows, lines: token.expected_post_run_db_line_rows };
+  out.confirmation_required = 'Copy freeze_checksum_to_confirm into the TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ constant, save the file, then run TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT.';
   out.stores_spreadsheet_data = false; out.mutates_business_table = false;
-  out.verdict = 'DRY_RUN_READY';
+  out.verdict = struct.ok ? 'DRY_RUN_READY' : ('DRY_RUN_TOKEN_' + struct.reason);
   Logger.log('R6F2E_PERSIST_DRY_RUN ' + JSON.stringify(out, null, 2));
   return out;
 }
@@ -2963,15 +3037,22 @@ function TEMP_R6F2E_PERSIST_FROZEN_SCOPE_COMMIT() {
     if (!TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ || TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_ === 'PASTE_FREEZE_SCOPE_CHECKSUM_HERE') {
       out.verdict = 'COMMIT_REFUSED_CONFIRMATION_REQUIRED'; out.hint = 'Run DRY_RUN, copy freeze_checksum_to_confirm into TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_, save, then re-run COMMIT.'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out;
     }
-    var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE({ quiet: true });
+    var fr = TEMP_R6F2E_FREEZE_SELECTED_CONTROLLED_INVENTORY_SCOPE({ quiet: true });   // (1) rerun the exact live freeze QUIETLY
     if (!fr || !fr.envelope || fr.envelope.verdict !== 'CONTROLLED_SCOPE_FROZEN_READ_ONLY') { out.verdict = 'COMMIT_REFUSED_FREEZE_NOT_READY'; out.freeze = fr ? (fr.verdict || fr.reason) : null; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
-    if (TEMP_str_(TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_) !== TEMP_str_(fr.envelope.freeze_checksum)) { out.verdict = 'COMMIT_REFUSED_CHECKSUM_MISMATCH'; out.confirmed = TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_; out.live_freeze_checksum = fr.envelope.freeze_checksum; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
-    var token = TEMP_r6f2eReduceFreezeToken_({ scope: fr.envelope.requested_scope, scope_checksum: fr.envelope.freeze_checksum, groups: fr.groups, lines: fr.lines });
-    PropertiesService.getScriptProperties().setProperty(TEMP_R6F2E_STORE_PROP_KEY_, JSON.stringify(token));   // the ONLY write; metadata only
-    out.stored_property_key = TEMP_R6F2E_STORE_PROP_KEY_; out.stored_freeze_checksum = token.scope_checksum;
-    out.stored_header_ids = token.groups.map(function (g) { return g.expected_header_id; }); out.stored_line_count = token.lines.length;
-    out.stores_spreadsheet_data = false; out.mutates_business_table = false; out.generation_triggered = false;
-    out.verdict = 'CONTROLLED_SCOPE_TOKEN_STORED';
+    if (TEMP_str_(TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_) !== TEMP_str_(fr.envelope.freeze_checksum)) { out.verdict = 'COMMIT_REFUSED_CHECKSUM_MISMATCH'; out.confirmed = TEMP_R6F2E_CONFIRMED_FREEZE_CHECKSUM_; out.live_freeze_checksum = fr.envelope.freeze_checksum; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }   // (2) confirmation == live checksum
+    var token = TEMP_r6f2eBuildFrozenToken_(fr);                                       // (3) construct the COMPLETE token
+    var struct = TEMP_r6f2eValidateTokenStructure_(token, TEMP_R6F2E_EXPECTED_SCOPE_);  // (4) validate completeness/integrity BEFORE write
+    if (!struct.ok) { out.verdict = 'COMMIT_REFUSED_TOKEN_' + struct.reason; out.token_field = struct.field || null; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    var serialized = JSON.stringify(token);
+    PropertiesService.getScriptProperties().setProperty(TEMP_R6F2E_STORE_PROP_KEY_, serialized);   // (5) exactly ONE Script Property write; no spreadsheet cells
+    var back = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);      // (6) readback + verify byte-equivalent canonical token
+    var readback = back ? JSON.parse(back) : null;
+    var readbackOk = !!(readback && TEMP_r6f2eCanonicalTokenString_(readback) === TEMP_r6f2eCanonicalTokenString_(token) && TEMP_str_(readback.token_integrity_checksum) === TEMP_str_(token.token_integrity_checksum));
+    if (!readbackOk) { out.verdict = 'COMMIT_REFUSED_READBACK_MISMATCH'; Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    out.stored_property_key = TEMP_R6F2E_STORE_PROP_KEY_; out.stored_freeze_checksum = token.freeze_checksum; out.stored_token_integrity_checksum = token.token_integrity_checksum;
+    out.stored_header_ids = token.expected_header_ids_sorted; out.stored_line_count = token.expected_line_ids_sorted.length;
+    out.readback_verified = true; out.stores_spreadsheet_data = false; out.mutates_business_table = false; out.generation_triggered = false;
+    out.verdict = 'PERSISTED_FROZEN_SCOPE';                                             // (7) only after verified readback
   } catch (e) { out.verdict = 'COMMIT_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2E_PERSIST_COMMIT ' + JSON.stringify(out, null, 2));
   return out;
@@ -2982,13 +3063,34 @@ function TEMP_R6F2E_VALIDATE_CONTROLLED_SCOPE_FROM_STORE() {
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
     if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; out.hint = 'Run PERSIST DRY_RUN + COMMIT first (only after a controlled run is authorized).'; Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2)); return out; }
-    var frozen = JSON.parse(raw);
-    out.loaded_scope = frozen.scope; out.loaded_freeze_checksum = frozen.scope_checksum;
-    // The validator only reads the STORED ids/scope — it cannot select or widen scope. QUIET so no nested
-    // R6F2_VALIDATE_PACKAGE log precedes this compact primary. Pre-generation it reports present_expected_headers=0 →
-    // RECONCILIATION_REQUIRED (expected; no generation is authorized yet).
+    var token = JSON.parse(raw);
+    // STRUCTURAL + INTEGRITY first — a stored token is NEVER silently repaired; a typed FROZEN_TOKEN_* failure stops here.
+    var struct = TEMP_r6f2eValidateTokenStructure_(token, TEMP_R6F2E_EXPECTED_SCOPE_);
+    out.loaded_scope = token.scope || null; out.loaded_freeze_checksum = token.freeze_checksum || null; out.loaded_token_integrity_checksum = token.token_integrity_checksum || null;
+    out.token_structure_ok = struct.ok;
+    if (!struct.ok) { out.verdict = struct.reason; out.token_field = struct.field || null; out.scope_widening_possible = false; out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)'; Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2)); return out; }
+    // DB comparison via the canonical parameterized validator (QUIET). It only reads the STORED ids/scope — cannot widen.
+    var frozen = TEMP_r6f2eTokenToFrozenArg_(token);
     out.validation = TEMP_R6F2_VALIDATE_INVENTORY_K2_PACKAGE(frozen, { quiet: true });
     out.scope_widening_possible = false;
+    // Token-driven guards: unrelated-scope + legacy checksum unchanged; CREATE delta expectation.
+    var guards = TEMP_r6f2eComputeLiveGuards_(frozen.scope);
+    out.unrelated_scope_checksum_match = TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum);
+    out.legacy_header_checksum_match = TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum);
+    out.expected_create_delta = { shipping_allocation_drafts: '+' + token.expected_k2_header_count, shipping_allocation_draft_lines: '+' + token.expected_k2_line_count };
+    out.expected_post_run_db_rows = { headers: token.expected_post_run_db_header_rows, lines: token.expected_post_run_db_line_rows };
+    out.frozen_lineage = { planning_cycle: token.planning_cycle, calculation_run_id_fingerprint: token.calculation_run_id_fingerprint };
+    var sv = out.validation && out.validation.scoped_validation ? out.validation.scoped_validation : null;
+    var presentHeaders = sv ? sv.present_expected_headers : 0;
+    var allFrozenPresent = !!(sv && sv.present_expected_headers === token.expected_k2_header_count && sv.unexpected_headers_in_scope === 0 && sv.unexpected_lines_in_scope === 0);
+    if (allFrozenPresent && out.unrelated_scope_checksum_match && out.legacy_header_checksum_match && out.validation.duplicate_active_k2_group_count === 0) {
+      out.verdict = 'FROZEN_SCOPE_VALIDATED';
+    } else if ((presentHeaders || 0) === 0) {
+      // pre-generation: the expected rows do not exist YET — this is EXPECTED, not token corruption (structure passed).
+      out.verdict = 'RECONCILIATION_REQUIRED_PRE_GENERATION'; out.note = 'expected frozen rows not present yet (no generation authorized); the token structure/integrity is intact';
+    } else {
+      out.verdict = 'RECONCILIATION_REQUIRED';
+    }
     out.R6F2E_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { out.verdict = 'VALIDATE_FROM_STORE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2E_VALIDATE_FROM_STORE ' + JSON.stringify(out, null, 2));
