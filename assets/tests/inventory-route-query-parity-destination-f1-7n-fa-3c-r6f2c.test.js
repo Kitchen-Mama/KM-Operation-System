@@ -56,10 +56,11 @@ var fUnk = KMWRR.deriveRoute({ source: { warehouse_id: '' }, destination: { kind
 eq(fUnk.block, 'ROUTE_SOURCE_UNKNOWN', 'F2 blank source WITHOUT multi_pool → ROUTE_SOURCE_UNKNOWN (distinct)');
 
 // =====================================================================================================
-section('D — method alias: Truck is NOT fabricated (no runtime evidence supplied to confirm it)');
-eq(KMRA.canonicalMethodKey('Truck'), '', 'D1 Truck is unmapped (fail-closed) — never auto-mapped to Courier');
-eq(KMRA.canonicalMethodKey('truck freight'), '', 'D2 leading truck is unmapped until an explicit reviewed rule is confirmed');
-ok(KMRA.METHOD_ALIAS_RULES.every(function (r) { return r.canonical !== 'Truck'; }), 'D3 no Truck rule was added this round');
+section('D — method alias: Truck now RUNTIME-PROVEN (R6F2D) → mapped to Truck, never Courier');
+eq(KMRA.canonicalMethodKey('Truck'), 'Truck', 'D1 Truck maps to its own canonical bucket');
+eq(KMRA.canonicalMethodKey('truck freight'), 'Truck', 'D2 leading truck token → Truck');
+eq(KMRA.canonicalMethodKey('courier express'), 'Courier', 'D3 Courier is unchanged (Truck is NOT folded into Courier)');
+ok(KMRA.METHOD_ALIAS_RULES.some(function (r) { return r.canonical === 'Truck'; }), 'D4 the Truck rule exists');
 
 // =====================================================================================================
 section('B/A — production candidate set == diagnostic KMRA candidate set for the same normalized query (parity)');
@@ -112,10 +113,10 @@ ok(/source_multi_pool: multiPool/.test(GS61), 'B4 multi-pool null-source lines a
 ok(/var destination = weeklyAiPlanClassifyDestination_\(l, whById\)/.test(GS61) && !/if \(d && s\(d\.destinationKind\)/.test(GS61), 'B5 the allocated-line builder classifies at the adapter (weeklyAiPlanClassifyDestination_), not the broken resolveWorkspaceLineDestination/destinationKind path');
 
 var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
-ok(/route_query_parity/.test(TEMP) && /candidate_set_mismatch_count/.test(TEMP), 'B6 diagnostic reports a route_query_parity section');
+ok(/candidate_parity/.test(TEMP) && /manual_method_option_mismatch_count/.test(TEMP) && /ai_rankable_route_pair_mismatch_count/.test(TEMP) && /selected_route_invalid_count/.test(TEMP), 'B6 diagnostic reports the three-layer candidate_parity mismatch counters (R6F2D)');
 ok(/unmapped_method_raw_tokens_CLEARTEXT/.test(TEMP), 'B7 diagnostic reveals unmapped raw method tokens in cleartext (so Truck etc. can be confirmed)');
 ok(/stage_tally/.test(TEMP) && /method_ai_ranked/.test(TEMP) && /method_manual_only/.test(TEMP), 'B8 dry assembly carries the ai_ranked/manual_only stage tally');
-ok(/perScope\.scoped_safe = \(perScope\.fully_routed_lines > 0 && perScope\.conserved !== false\)/.test(TEMP), 'B9 scoped-safe needs ≥1 AI-rankable conserved line; unrelated blocked lines do not disqualify');
+ok(/res\.mk_scopes\.filter\(function \(m\) \{ return m\.clean === true; \}\)/.test(TEMP) && /mk\.clean = \(mk\.positive > 0 && mk\.ai_ranked === mk\.positive/.test(TEMP), 'B9 R6F2D: only CLEAN marketplace scopes (every positive line AI-ranked, zero blocks/manual/authority) are selectable — a partial scope is never safe');
 
 console.log('\n----------------------------------------');
 console.log('R6F2C ROUTE-QUERY PARITY + DESTINATION IDENTITY: ' + pass + ' passed, ' + fail + ' failed');

@@ -77,11 +77,19 @@ section('C3 manual override — valid + invalid');
   eq(KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [RATE_SEA, RATE_AIR], leadTimes: [LT_SEA, LT_AIR], override: { shipping_method: 'TRUCK' } }).block, 'OVERRIDE_INVALID', 'override method not on lane → OVERRIDE_INVALID');
 })();
 
-section('C4 last-mile — ambiguous / unresolved');
+section('C4 last-mile ROUTE PAIRS (R6F2D): indistinguishable → AUTHORITY_REQUIRED; distinguishable → AI_RANKED');
 (function () {
   var seaFBA = RATE_SEA, seaMER = JSON.parse(JSON.stringify(RATE_SEA)); seaMER.last_mile_delivery = 'MERCHANT';
-  var r = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [seaFBA, seaMER], leadTimes: [LT_SEA] });
-  eq(r.block, 'LAST_MILE_AMBIGUOUS', 'two last-mile options for the chosen method → LAST_MILE_AMBIGUOUS');
+  var ltFBA = LT_SEA, ltMER = JSON.parse(JSON.stringify(LT_SEA)); ltMER.last_mile_delivery = 'MERCHANT';   // same 35 days
+  // same method + same cost + same transit, materially different last_mile, no business authority → AUTHORITY_REQUIRED
+  var r = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [seaFBA, seaMER], leadTimes: [ltFBA, ltMER] });
+  eq(r.block, 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', 'commercially indistinguishable last-mile pairs → LAST_MILE_SELECTION_AUTHORITY_REQUIRED (never arbitrarily chosen)');
+  eq(r.route_candidate_status, 'AUTHORITY_REQUIRED', 'status AUTHORITY_REQUIRED');
+  // make FBA strictly cheaper → the AI ranks the pair and selects FBA
+  var seaMER2 = JSON.parse(JSON.stringify(RATE_SEA)); seaMER2.last_mile_delivery = 'MERCHANT'; seaMER2.unit_rate = 99;
+  var r2 = KMWRR.deriveRoute({ source: { warehouse_id: 'WH-CN' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'WH-US', country: 'US' }, shipDate: '2026-08-01', requiredByDate: '2026-09-30', warehousesById: whById, rateCards: [seaFBA, seaMER2], leadTimes: [ltFBA, ltMER] });
+  ok(r2.ok && r2.route.recommended_last_mile_delivery === 'FBA', 'the cheaper last-mile pair (FBA) is selected; the selected last_mile is on the header');
+  eq(r2.route_candidate_status, 'AI_RANKED', 'distinguishable pair → AI_RANKED');
 })();
 
 section('C2 logical marketplace destination');

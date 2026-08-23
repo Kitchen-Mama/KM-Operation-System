@@ -180,49 +180,76 @@
       return okRoute(srcId, destKind, destWarehouseId, destMarketplace, s(override.shipping_method), ovLm.value, { override: true });
     }
 
-    // build candidate methods (distinct shippingMethod) with cost + on-time evidence. The lane is NON-EMPTY, so ≥1
-    // VALID (manual) method exists — the only question (F1-7N-FA-3C-R6F2C, E) is whether the AI has enough evidence
-    // to AUTO-RANK. A visible-but-unrankable method is MANUAL_ONLY / ROUTE_AUTO_RANKING_INSUFFICIENT, never the
-    // "no method exists" token ROUTE_METHOD_UNRESOLVED (which is reserved for an EMPTY lane, above).
-    var byMethod = {}, order = [];
-    lane.forEach(function (dto) { var mkey = low(dto.shippingMethod); if (!mkey) return; if (!byMethod[mkey]) { byMethod[mkey] = { method: s(dto.shippingMethod), label: s(dto.shippingMethodLabel) || s(dto.shippingMethod), cards: [] }; order.push(mkey); } byMethod[mkey].cards.push(dto); });
-    var candidates = order.map(function (mk) {
-      var g = byMethod[mk];
-      var days = leadDaysFor(g.method, '');
-      var c0 = g.cards[0];
-      return { method: g.method, label: g.label, days: days, onTime: onTime(days), cost: estCost(c0), currency: s(c0.currency), chargeType: low(c0.chargeType), chargeUnit: low(c0.chargeUnit), card: c0 };
+    // (3b) F1-7N-FA-3C-R6F2D — THREE parity layers. manual_method_options (the distinct METHOD set the Execution Plan
+    // shows) is ALWAYS returned, independent of ranking, so parity compares like-for-like (manual vs manual, never
+    // manual vs a post-ranking selected result). AI ranking then operates over ROUTE PAIRS {method,last_mile}; the
+    // SELECTED last_mile becomes part of the K2 key/header (distinct last_mile values are NEVER merged into one header).
+    var manualSeen = {}, manualOptions = [];
+    lane.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
+    manualOptions.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
+
+    // distinct candidate PAIRS (dedup by method|last_mile; first card is the cost representative).
+    var pairSeen = {}, pairs = [];
+    lane.forEach(function (dto) {
+      var m = s(dto.shippingMethod); if (!m) return;
+      var lmv = s(dto.lastMileDelivery), pk = low(m) + '||' + low(lmv);
+      if (pairSeen[pk]) return; pairSeen[pk] = 1;
+      var days = leadDaysFor(m, lmv);
+      pairs.push({ method: m, last_mile: lmv, days: days, onTime: onTime(days), cost: estCost(dto), currency: s(dto.currency), chargeType: low(dto.chargeType), chargeUnit: low(dto.chargeUnit), tuple: low(m) + '|' + low(lmv) });
     });
-    var manualOptions = candidates.map(function (c) { return { value: c.method, label: c.label }; }).sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
 
-    var onTimeCands = candidates.filter(function (c) { return c.onTime === true; });
-    var anyDays = candidates.some(function (c) { return c.days != null; });
-    if (!onTimeCands.length) {
-      var fastest = candidates.slice().filter(function (c) { return c.days != null; }).sort(function (a, b) { return a.days - b.days; })[0] || null;
-      return manualOnly(anyDays ? 'NO_ON_TIME' : 'NO_LEAD_TIME', manualOptions, candidates.map(evi), fastest);
+    // manual override → validate an EXACT pair. Method-only override with >1 remaining last_mile is an authority gap.
+    if (s(override.shipping_method)) {
+      var ov = pairs.filter(function (p) { return low(p.method) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(p.last_mile) === low(override.last_mile_delivery)); });
+      if (!ov.length) return blocked('OVERRIDE_INVALID');
+      if (s(override.last_mile_delivery) === '' && uniq(ov.map(function (p) { return low(p.last_mile); })).length > 1) return authorityRequired(manualOptions, ov.map(pairEvi));
+      var ovp = ov[0];
+      return okRoute(srcId, destKind, destWarehouseId, destMarketplace, ovp.method, ovp.last_mile, { cost: ovp.cost, currency: ovp.currency, days: ovp.days, override: true }, { status: 'AI_RANKED', manualOptions: manualOptions, aiPairs: [pairEvi(ovp)], selected: pairEvi(ovp) });
     }
-    // among on-time, cost is comparable ONLY across one currency+chargeType+chargeUnit; else the AI cannot rank (manual valid).
-    var currencies = uniq(onTimeCands.map(function (c) { return c.currency; }).filter(Boolean));
-    var units = uniq(onTimeCands.map(function (c) { return c.chargeType + '|' + c.chargeUnit; }));
-    if (currencies.length > 1 || units.length > 1) return manualOnly('COST_NOT_COMPARABLE', manualOptions, onTimeCands.map(evi), null);
-    var priced = onTimeCands.filter(function (c) { return isFinite(c.cost); });
-    var chosen;
-    if (!priced.length) { chosen = onTimeCands.slice().sort(function (a, b) { return a.method < b.method ? -1 : (a.method > b.method ? 1 : 0); })[0]; }
-    else { chosen = priced.slice().sort(function (a, b) { return a.cost !== b.cost ? a.cost - b.cost : (a.method < b.method ? -1 : 1); })[0]; }
 
-    // (4) LAST-MILE — must be valid for the chosen destination + method. 1 match → choose; 0/multi → BLOCK.
-    var lm = resolveLastMile(byMethod[low(chosen.method)].cards, '');
-    if (lm.block) return blocked(lm.block);
-    var autoRankable = onTimeCands.map(function (c) { return { method: c.method, days: c.days, cost: c.cost, currency: c.currency }; });
-    return okRoute(srcId, destKind, destWarehouseId, destMarketplace, chosen.method, lm.value,
-      { cost: chosen.cost, currency: chosen.currency, days: chosen.days },
-      { status: 'AI_RANKED', manual_method_options: manualOptions, auto_rankable_methods: autoRankable });
+    var onTimePairs = pairs.filter(function (p) { return p.onTime === true; });
+    var anyDays = pairs.some(function (p) { return p.days != null; });
+    if (!onTimePairs.length) {
+      var fastest = pairs.slice().filter(function (p) { return p.days != null; }).sort(function (a, b) { return a.days - b.days; })[0] || null;
+      return manualOnly(anyDays ? 'NO_ON_TIME' : 'NO_LEAD_TIME', manualOptions, pairs.map(pairEvi), fastest);
+    }
+    // ai-rankable = on-time pairs WITH transit evidence (cost may be missing).
+    var aiPairs = onTimePairs.filter(function (p) { return p.days != null; });
+    if (!aiPairs.length) return manualOnly('NO_LEAD_TIME', manualOptions, onTimePairs.map(pairEvi), null);
 
-    function blocked(tok) { return { ok: false, block: tok, route_candidate_status: 'BLOCKED' }; }
-    // MANUAL_ONLY — a valid manual method exists but the AI lacks evidence to auto-rank (no lead time / none on-time /
-    // cost not comparable). This is NOT a "no method" block; the scope can still be scoped-READY on its AI-rankable lines.
+    // Cost is comparable ONLY across a single currency+chargeType+chargeUnit basis. If PRICED pairs span multiple bases
+    // the AI cannot compare cost commercially → MANUAL_ONLY (never auto-pick across incomparable currencies). When a
+    // single priced basis exists → rank by cost; when NO pair is priced → rank by transit alone (on-time is the objective).
+    var pricedPairs = aiPairs.filter(function (p) { return isFinite(p.cost); });
+    var costCurr = uniq(pricedPairs.map(function (p) { return p.currency; }).filter(Boolean));
+    var costUnit = uniq(pricedPairs.map(function (p) { return p.chargeType + '|' + p.chargeUnit; }));
+    if (pricedPairs.length && (costCurr.length > 1 || costUnit.length > 1)) return manualOnly('COST_NOT_COMPARABLE', manualOptions, aiPairs.map(pairEvi), null);
+    var comparableCost = pricedPairs.length > 0;
+    function costOf(p) { return isFinite(p.cost) ? p.cost : Infinity; }
+    var ranked = aiPairs.slice().sort(function (a, b) {
+      if (comparableCost && costOf(a) !== costOf(b)) return costOf(a) - costOf(b);
+      if (a.days !== b.days) return a.days - b.days;
+      return a.tuple < b.tuple ? -1 : (a.tuple > b.tuple ? 1 : 0);
+    });
+    var win = ranked[0];
+    // top-tie group = pairs commercially INDISTINGUISHABLE from the winner (equal comparable-cost AND equal transit).
+    var tieGroup = ranked.filter(function (p) { return p.days === win.days && (!comparableCost || costOf(p) === costOf(win)); });
+    if (uniq(tieGroup.map(function (p) { return p.tuple; })).length > 1) return authorityRequired(manualOptions, tieGroup.map(pairEvi));
+
+    return okRoute(srcId, destKind, destWarehouseId, destMarketplace, win.method, win.last_mile, { cost: win.cost, currency: win.currency, days: win.days }, { status: 'AI_RANKED', manualOptions: manualOptions, aiPairs: aiPairs.map(pairEvi), selected: pairEvi(win) });
+
+    function pairEvi(p) { return { method: p.method, last_mile: p.last_mile, days: p.days, cost: isFinite(p.cost) ? p.cost : null, currency: p.currency, onTime: p.onTime }; }
+    function blocked(tok) { return { ok: false, block: tok, route_candidate_status: 'BLOCKED', manual_method_options: (typeof manualOptions !== 'undefined' && manualOptions) ? manualOptions : [] }; }
+    // AUTHORITY_REQUIRED — ≥2 materially different route pairs are commercially indistinguishable (equal cost+transit)
+    // with no business ranking authority; do NOT arbitrarily choose. A valid AI-rankable set still exists.
+    function authorityRequired(manualOpts, tie) {
+      return { ok: false, block: 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', route_candidate_status: 'AUTHORITY_REQUIRED',
+        manual_method_options: manualOpts || [], ai_rankable_route_pairs: tie || [], tie_group: tie || [] };
+    }
+    // MANUAL_ONLY — a valid manual method exists but the AI lacks evidence to auto-rank (no lead time / none on-time).
     function manualOnly(reason, manualOpts, cands, fastest) {
       return { ok: false, block: 'ROUTE_AUTO_RANKING_INSUFFICIENT', route_candidate_status: 'MANUAL_ONLY',
-        auto_ranking_insufficient_reason: reason, manual_method_options: manualOpts || [], auto_rankable_methods: [],
+        auto_ranking_insufficient_reason: reason, manual_method_options: manualOpts || [], ai_rankable_route_pairs: [],
         candidates: cands || [], advisory: fastest ? { fastest_method: fastest.method, fastest_days: fastest.days } : null };
     }
     function okRoute(sourceId, dk, dwid, dmk, method, lastMile, ev, dto) {
@@ -236,8 +263,10 @@
         destination_marketplace: dmk
       }, evidence: ev,
       route_candidate_status: dto.status || 'AI_RANKED',
-      manual_method_options: dto.manual_method_options || [{ value: method, label: method }],
-      auto_rankable_methods: dto.auto_rankable_methods || [],
+      manual_method_options: dto.manualOptions || [{ value: method, label: method }],
+      ai_rankable_route_pairs: dto.aiPairs || [],
+      selected_ai_route: dto.selected || { method: method, last_mile: lastMile },
+      auto_rankable_methods: (dto.aiPairs || []).map(function (p) { return { method: p.method, days: p.days, cost: p.cost, currency: p.currency }; }),
       selected_method: method, selected_last_mile: lastMile,
       expected_arrival: eta, estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
     }
@@ -383,36 +412,41 @@
         planned_qty: al.planned_qty, recommended_qty: al.recommended_qty, units_per_carton: al.units_per_carton
       };
       var destKind = (al.destination && low(al.destination.kind)) === 'marketplace' ? 'MARKETPLACE' : ((al.destination && low(al.destination.kind)) === 'warehouse' ? 'WAREHOUSE' : '');
-      // carry the shared Route Candidate DTO fields (G) so partition/preflight/diagnostic all read ONE contract.
+      // carry the THREE parity layers (G/A) so partition/preflight/diagnostic all read ONE contract.
       return r.ok
-        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_rankable_methods: r.auto_rankable_methods, manual_method_options: r.manual_method_options, expected_arrival: r.expected_arrival, estimated_cost: r.estimated_cost, currency: r.currency }
-        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, manual_method_options: r.manual_method_options || [], advisory: r.advisory || null };
+        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, estimated_cost: r.estimated_cost, currency: r.currency }
+        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, manual_method_options: r.manual_method_options || [], ai_rankable_route_pairs: r.ai_rankable_route_pairs || [], advisory: r.advisory || null };
     });
     var part = partitionRoutedLines(scope, routed);
     var conservation = checkConservation(input.authorizedBySkuWindow, part.groups, input.sourceCeilingById);
-    // flat per-line outcomes (ONE shared contract for stage accounting in the dry assembly + diagnostic + preflight).
+    // flat per-line outcomes (ONE shared contract for stage accounting + the three parity layers).
     var lineOutcomes = routed.map(function (rl) {
       return {
         source_warehouse_id: rl.line.source_warehouse_id, destination_kind: rl.destination_kind || '',
         route_candidate_status: rl.route_candidate_status || (rl.route ? 'AI_RANKED' : 'BLOCKED'),
         block: rl.block || null, auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null,
-        selected_method: rl.route ? rl.route.recommended_shipping_method : null, expected_arrival: rl.expected_arrival || null
+        manual_method_options: rl.manual_method_options || [], ai_rankable_route_pairs: rl.ai_rankable_route_pairs || [],
+        selected_ai_route: rl.selected_ai_route || null,
+        selected_method: rl.route ? rl.route.recommended_shipping_method : null,
+        selected_last_mile: rl.route ? rl.route.recommended_last_mile_delivery : null, expected_arrival: rl.expected_arrival || null
       };
     });
     return { ok: conservation.conserved, groups: part.groups, blocked: part.blocked, conservation: conservation, lineOutcomes: lineOutcomes };
   }
 
   return {
-    VERSION: 'kmwrr-r6f2c-1',
+    VERSION: 'kmwrr-r6f2d-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane); MANUAL_ONLY lines
-    // carry ROUTE_AUTO_RANKING_INSUFFICIENT (a valid manual method exists, AI lacks ranking evidence); source
-    // multi-pool = ROUTE_SOURCE_MULTI_POOL_UNRESOLVED; a WAREHOUSE dest that isn't a real active warehouse = DESTINATION_UNKNOWN.
+    // carry ROUTE_AUTO_RANKING_INSUFFICIENT (a valid manual method exists, AI lacks ranking evidence); AUTHORITY_REQUIRED
+    // lines carry LAST_MILE_SELECTION_AUTHORITY_REQUIRED (≥2 materially different route pairs tie with no business
+    // authority); source multi-pool = ROUTE_SOURCE_MULTI_POOL_UNRESOLVED; a WAREHOUSE dest that isn't a real active
+    // warehouse = DESTINATION_UNKNOWN. (LAST_MILE_UNRESOLVED/AMBIGUOUS/NO_ON_TIME/COST_NOT_COMPARABLE are retired —
+    // last-mile is now resolved as part of the ranked route pair.)
     BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED',
       'DESTINATION_MISSING', 'DESTINATION_UNKNOWN', 'DESTINATION_INACTIVE',
-      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'ROUTE_NO_ON_TIME_OPTION', 'ROUTE_COST_NOT_COMPARABLE',
-      'LAST_MILE_UNRESOLVED', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
-    ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'BLOCKED'],
+      'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED', 'OVERRIDE_INVALID'],
+    ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'AUTHORITY_REQUIRED', 'BLOCKED'],
     dateToOrdinal: dateToOrdinal, ordinalToDate: ordinalToDate, indexWarehouses: indexWarehouses,
     deriveRoute: deriveRoute, routeTuple: routeTuple,
     partitionRoutedLines: partitionRoutedLines, buildGroupHeader: buildGroupHeader,

@@ -198,6 +198,16 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
   // group by marketplace (each K2 group is within one marketplace); route dims further split within.
   var byMkt = {};
   allocated.forEach(function (a) { var m = String(a.marketplace || '').trim(); (byMkt[m] = byMkt[m] || []).push(a); });
+  // F1-7N-FA-3C-R6F2D (F) — EXACT marketplace scoping for a controlled run. When the request names a marketplace, the
+  // run generates ONLY that marketplace (never fans out / never ALL_SITES); the applied scope MUST equal the requested
+  // scope or the run fails closed (no out-of-scope rows). An aggregated company/country run (no marketplace) keeps the
+  // legacy fan-out but is NOT the controlled-run path.
+  var requestedMkt = String(scope0.marketplace != null ? scope0.marketplace : '').trim();
+  if (requestedMkt) {
+    if (/^all(_sites)?$/i.test(requestedMkt)) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('SCOPE_ALL_SITES_FORBIDDEN', 'a controlled run must target exactly one marketplace, never ALL_SITES')] });
+    if (!byMkt[requestedMkt]) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('REQUESTED_SCOPE_EMPTY', 'requested marketplace produced no allocated lines: ' + requestedMkt)] });
+    var only = {}; only[requestedMkt] = byMkt[requestedMkt]; byMkt = only;   // fail-closed: never generate outside the frozen marketplace
+  }
   var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
   Object.keys(byMkt).sort().forEach(function (M) {
     var plan = KMWRR.buildK2GenerationPlan({
@@ -222,12 +232,20 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body) {
   });
   var outcomeCounts = {};
   groupsWritten.forEach(function (g) { outcomeCounts[g.outcome] = (outcomeCounts[g.outcome] || 0) + 1; });
+  // F1-7N-FA-3C-R6F2D (F) — applied scope MUST equal the requested scope. The applied marketplaces = the ones actually
+  // generated; on a controlled (marketplace-scoped) run this must be exactly the requested marketplace (no widening).
+  var appliedMkts = {}; groupsWritten.forEach(function (g) { appliedMkts[String(g.marketplace || '')] = 1; }); blockedTotal.forEach(function (b) { appliedMkts[String(b.marketplace || '')] = 1; });
+  var appliedList = Object.keys(appliedMkts).filter(function (m) { return m !== ''; }).sort();
+  var scopeEqual = requestedMkt ? (appliedList.length <= 1 && (appliedList.length === 0 || appliedList[0] === requestedMkt)) : true;
+  if (requestedMkt && !scopeEqual) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('APPLIED_SCOPE_WIDENED', 'applied scope ' + JSON.stringify(appliedList) + ' != requested marketplace ' + requestedMkt + ' — refused (no out-of-scope rows)')] });
   // job-level status: COMPLETED only if every group ok; else PARTIAL (never claim whole-job success on partial commit).
   var jobStatus = groupsWritten.length === 0 ? (blockedTotal.length ? 'ALL_BLOCKED' : 'NO_DEMAND') : (anyFail ? (anyOk ? 'PARTIAL' : 'FAILED') : 'COMPLETED');
   return jsonResponse_({
     success: anyOk && !anyFail,
     data: {
       mode: 'K2_ROUTE_GROUP', job_status: jobStatus, planningCycle: request.planningCycle, businessScope: scope0,
+      requested_scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || 'ALL_MARKETPLACES(company/country fan-out)' },
+      applied_scope: { company: scope0.company, country: scope0.country, marketplaces: appliedList }, applied_equals_requested: scopeEqual ? 'YES' : 'NO',
       groups_written: groupsWritten.length, per_group_outcome_counts: outcomeCounts, groups: groupsWritten,
       blocked_count: blockedTotal.length, blocked: blockedTotal,
       conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal,

@@ -83,7 +83,7 @@ eq(r.route.recommended_shipping_method, 'Air', 'B5 on-time Air chosen over cheap
 
 // =====================================================================================================
 section('E — reviewed, enumerated method-alias authority (no fuzzy)');
-ok(Array.isArray(KMRA.METHOD_ALIAS_RULES) && KMRA.METHOD_ALIAS_RULES.length === 4, 'E1 exactly 4 reviewed alias buckets');
+ok(Array.isArray(KMRA.METHOD_ALIAS_RULES) && KMRA.METHOD_ALIAS_RULES.length === 5, 'E1 five reviewed alias buckets (Air/Sea Express/Sea/Courier + R6F2D Truck)');
 eq(KMRA.canonicalMethodKey('Air Freight'), 'Air', 'E2 Air');
 eq(KMRA.canonicalMethodKey('Sea Express Lane'), 'Sea Express', 'E3 Sea Express before Sea');
 eq(KMRA.canonicalMethodKey('Sea'), 'Sea', 'E4 Sea');

@@ -2283,13 +2283,15 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
   var g = dry && dry.global ? dry.global : null;
   var T = g && g.stage_tally ? g.stage_tally : null;
   // GLOBAL-clean = every positive line AI-ranked + fully routed (no source/dest/method/manual/last-mile blocks).
-  var dryGlobalClean = !!(dry && dry.available && g && T && g.gap_usable && g.stage_accounting_ok === true &&
+  var P = g && g.parity ? g.parity : null;
+  var parityClean = !!(P && P.route_query_field_mismatch_count === 0 && P.manual_method_option_mismatch_count === 0 && P.ai_rankable_route_pair_mismatch_count === 0 && P.selected_route_invalid_count === 0);
+  var dryGlobalClean = !!(dry && dry.available && g && T && g.gap_usable && g.stage_accounting_ok === true && parityClean &&
     g.fully_routed_lines > 0 && g.positive_recommendation_count > 0 &&
-    T.source_blocked === 0 && T.dest_blocked === 0 && T.method_blocked === 0 && T.method_manual_only === 0 && T.last_mile_blocked === 0 &&
+    T.source_blocked === 0 && T.dest_blocked === 0 && T.method_blocked === 0 && T.method_manual_only === 0 && (T.method_authority_required || 0) === 0 && T.last_mile_blocked === 0 &&
     g.deterministic_id_duplicate_count === 0 && g.conservation_ok === true && g.over_allocation_count === 0);
   var verdict;
-  // SCOPED-READY (F1-7N-FA-3C-R6F2C, H): at least one fully-routed, AI-rankable, conserved scope — even if other
-  // lines/scopes carry multi-pool / manual-only / unrelated blocks (they never disqualify the AI-rankable subset).
+  // SCOPED-READY (F1-7N-FA-3C-R6F2D, D): exactly ONE CLEAN marketplace scope (every positive line AI-ranked + fully
+  // routed, zero blocks/manual/authority, zero parity mismatch, conserved). A partial scope (UK 17/21) is NEVER safe.
   if (authorityReady && dryGlobalClean) verdict = 'READY_FOR_CONTROLLED_INVENTORY_AI_PLAN';
   else if (dry && dry.safe_scope && g && g.stage_accounting_ok === true) verdict = 'READY_FOR_SCOPED_CONTROLLED_INVENTORY_AI_PLAN';
   else verdict = 'HALT';
@@ -2311,6 +2313,10 @@ function TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() {
     gap_job_authority: (dry && dry.gap_job) ? dry.gap_job : null,
     stage_accounting: (g && g.stage_accounting) ? g.stage_accounting : null,
     stage_accounting_ok: g ? (g.stage_accounting_ok === true ? 'YES' : 'NO') : 'UNKNOWN',
+    candidate_parity: g ? g.parity : null,
+    method_authority_required_lines: g ? (g.authority_required_lines || 0) : null,
+    manual_only_lines: g ? (g.manual_only_lines || 0) : null,
+    clean_marketplace_scopes: (dry && dry.clean_scopes) ? dry.clean_scopes.map(function (m) { return { company: m.company, country: m.country, marketplace: m.marketplace, positive: m.positive, fully_routed: m.fully_routed }; }) : [],
     empty_header_classification: cls.headers, empty_header_classification_checksum: cls.checksum,
     dry_assembly: dry,
     safe_controlled_scope: (dry && dry.safe_scope) ? dry.safe_scope : null,
@@ -2371,8 +2377,8 @@ function TEMP_r6f2bStageAccounting_(G) {
     source: { incoming: T.source_incoming, resolved: T.source_resolved, blocked: T.source_blocked, identity_ok: eqI(T.source_resolved, T.source_blocked, T.source_incoming) },
     destination: { incoming: T.dest_incoming, concrete: T.dest_concrete, logical: T.dest_logical, blocked: T.dest_blocked,
       identity_ok: (T.dest_concrete + T.dest_logical + T.dest_blocked) === T.dest_incoming && T.dest_incoming === T.source_resolved },
-    method: { incoming: T.method_incoming, ai_ranked: T.method_ai_ranked, manual_only: T.method_manual_only, blocked: T.method_blocked,
-      identity_ok: (T.method_ai_ranked + T.method_manual_only + T.method_blocked) === T.method_incoming && T.method_incoming === (T.dest_concrete + T.dest_logical) },
+    method: { incoming: T.method_incoming, ai_ranked: T.method_ai_ranked, manual_only: T.method_manual_only, authority_required: T.method_authority_required, blocked: T.method_blocked,
+      identity_ok: (T.method_ai_ranked + T.method_manual_only + (T.method_authority_required || 0) + T.method_blocked) === T.method_incoming && T.method_incoming === (T.dest_concrete + T.dest_logical) },
     last_mile: { incoming: T.last_mile_incoming, resolved: T.last_mile_resolved, blocked: T.last_mile_blocked,
       identity_ok: eqI(T.last_mile_resolved, T.last_mile_blocked, T.last_mile_incoming) && T.last_mile_incoming === T.method_ai_ranked },
     fully_routed: G.fully_routed_lines || 0,
@@ -2393,7 +2399,7 @@ function TEMP_r6f2bStageAccounting_(G) {
 }
 
 function TEMP_r6f2aDryAssembly_() {
-  var res = { available: false, scopes: [], global: null, safe_scope: null };
+  var res = { available: false, scopes: [], mk_scopes: [], global: null, safe_scope: null };
   try {
     if (typeof gapCalcResolveContext_ !== 'function' || typeof weeklyAiPlanHarvest_ !== 'function'
       || typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined'
@@ -2438,13 +2444,16 @@ function TEMP_r6f2aDryAssembly_() {
       // status at each stage). concrete+logical+blocked = dest incoming; ai_ranked+manual_only+blocked = method incoming.
       stage_tally: { source_incoming: 0, source_resolved: 0, source_blocked: 0,
         dest_incoming: 0, dest_concrete: 0, dest_logical: 0, dest_blocked: 0,
-        method_incoming: 0, method_ai_ranked: 0, method_manual_only: 0, method_blocked: 0,
+        method_incoming: 0, method_ai_ranked: 0, method_manual_only: 0, method_authority_required: 0, method_blocked: 0,
         last_mile_incoming: 0, last_mile_resolved: 0, last_mile_blocked: 0 },
-      manual_only_lines: 0, multi_pool_lines: 0,
+      manual_only_lines: 0, authority_required_lines: 0, multi_pool_lines: 0,
+      // A — the four candidate-parity mismatch counters (all must be 0 for a controlled scope). route_query_field +
+      // manual_method_option cross-checks are computed in the diagnostic (needs the raw cards); the two internal-
+      // consistency counters (ai pair ∈ manual, selected ∈ ai ∈ manual) are computed here for the verdict gate.
+      parity: { route_query_field_mismatch_count: 0, manual_method_option_mismatch_count: 0, ai_rankable_route_pair_mismatch_count: 0, selected_route_invalid_count: 0 },
       projected_CREATE: 0, projected_REUSE_OR_REGENERATE: 0, projected_CONFLICT: 0 };
     var TALLY_SOURCE_BLOCK_ = { ROUTE_SOURCE_UNKNOWN: 1, ROUTE_SOURCE_INACTIVE: 1, ROUTE_SOURCE_MULTI_POOL_UNRESOLVED: 1 };
     var TALLY_DEST_BLOCK_ = { DESTINATION_MISSING: 1, DESTINATION_UNKNOWN: 1, DESTINATION_INACTIVE: 1 };
-    var TALLY_LASTMILE_BLOCK_ = { LAST_MILE_UNRESOLVED: 1, LAST_MILE_AMBIGUOUS: 1, OVERRIDE_INVALID: 1 };
     var idSeen = {};
     var MAXSCOPES = 40, truncated = false;
     for (var si = 0; si < scopeList.length; si++) {
@@ -2464,56 +2473,63 @@ function TEMP_r6f2aDryAssembly_() {
         var byMkt = {}; allocated.forEach(function (a) { var m = TEMP_str_(a.marketplace); (byMkt[m] = byMkt[m] || []).push(a); });
         Object.keys(byMkt).forEach(function (M) {
           var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: planningCycle, company: sc.company, country: sc.country, marketplace: M, source_page: 'inventory_replenishment' }, allocatedLines: byMkt[M], warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })(), authorizedBySkuWindow: (function () { var a = {}; byMkt[M].forEach(function (x) { var k = TEMP_str_(x.sku).toLowerCase() + '|' + TEMP_str_(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(), sourceCeilingById: {} });
-          // F1-7N-FA-3C-R6F2C — CANONICAL per-line stage tally from the shared lineOutcomes contract. Every line flows
-          // through exactly one status at each stage (stage-ordered terminal tokens), so resolved+blocked==incoming
-          // holds structurally. This SUPERSEDES the R6F2B histogram derivation.
+          // F1-7N-FA-3C-R6F2D — per-MARKETPLACE mini-scope (the controlled-run granularity) + canonical stage tally.
+          var mk = { company: sc.company, country: sc.country, marketplace: M, positive: byMkt[M].length, ai_ranked: 0, manual_only: 0, authority_required: 0, no_method: 0, source_blocked: 0, dest_blocked: 0, dup_id: 0, projected_conflict: 0, conserved: true, over_allocation: 0, selected_route_invalid: 0, ai_pair_mismatch: 0 };
           (plan.lineOutcomes || []).forEach(function (o) {
             var T = G.stage_tally, tok = o.block || '';
             T.source_incoming++;
-            if (TALLY_SOURCE_BLOCK_[tok]) { T.source_blocked++; if (tok === 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED') G.multi_pool_lines++; return; }
+            if (TALLY_SOURCE_BLOCK_[tok]) { T.source_blocked++; mk.source_blocked++; if (tok === 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED') G.multi_pool_lines++; return; }
             T.source_resolved++; T.dest_incoming++;
-            if (TALLY_DEST_BLOCK_[tok]) { T.dest_blocked++; return; }
+            if (TALLY_DEST_BLOCK_[tok]) { T.dest_blocked++; mk.dest_blocked++; return; }
             if (o.destination_kind === 'WAREHOUSE') T.dest_concrete++; else if (o.destination_kind === 'MARKETPLACE') T.dest_logical++;
             T.method_incoming++;
-            if (tok === 'ROUTE_METHOD_UNRESOLVED') { T.method_blocked++; return; }
-            if (tok === 'ROUTE_AUTO_RANKING_INSUFFICIENT') { T.method_manual_only++; G.manual_only_lines++; return; }
-            T.method_ai_ranked++; T.last_mile_incoming++;
-            if (TALLY_LASTMILE_BLOCK_[tok]) { T.last_mile_blocked++; return; }
-            T.last_mile_resolved++;
+            if (tok === 'ROUTE_METHOD_UNRESOLVED') { T.method_blocked++; mk.no_method++; return; }
+            if (tok === 'ROUTE_AUTO_RANKING_INSUFFICIENT') { T.method_manual_only++; G.manual_only_lines++; mk.manual_only++; return; }
+            if (tok === 'LAST_MILE_SELECTION_AUTHORITY_REQUIRED') { T.method_authority_required++; G.authority_required_lines++; mk.authority_required++; return; }
+            T.method_ai_ranked++; T.last_mile_incoming++; T.last_mile_resolved++; mk.ai_ranked++;
+            // A — the three parity layers must be internally consistent for an AI_RANKED line.
+            var mset = {}; (o.manual_method_options || []).forEach(function (x) { mset[String(x.value).toLowerCase()] = 1; });
+            (o.ai_rankable_route_pairs || []).forEach(function (p) { if (!mset[String(p.method).toLowerCase()]) { G.parity.ai_rankable_route_pair_mismatch_count++; mk.ai_pair_mismatch++; } });
+            var sel = o.selected_ai_route || {}; var selInAi = (o.ai_rankable_route_pairs || []).some(function (p) { return String(p.method).toLowerCase() === String(sel.method).toLowerCase() && String(p.last_mile).toLowerCase() === String(sel.last_mile).toLowerCase(); });
+            if (!selInAi || !mset[String(sel.method).toLowerCase()]) { G.parity.selected_route_invalid_count++; mk.selected_route_invalid++; }
           });
-          // per-reason histogram (report detail) + blocked-line count.
-          (plan.blocked || []).forEach(function (b) {
-            G.blocked_lines++; perScope.blocked_lines++;
-            var tok = b.block || 'UNKNOWN'; G.blocked_by_reason[tok] = (G.blocked_by_reason[tok] || 0) + 1;
-            if (tok === 'LAST_MILE_AMBIGUOUS') { G.route_ambiguous_count++; G.last_mile_ambiguous_count++; }
-            else if (tok === 'LAST_MILE_UNRESOLVED') G.last_mile_unresolved_count++;
-          });
+          (plan.blocked || []).forEach(function (b) { G.blocked_lines++; perScope.blocked_lines++; var tok = b.block || 'UNKNOWN'; G.blocked_by_reason[tok] = (G.blocked_by_reason[tok] || 0) + 1; });
           (plan.groups || []).forEach(function (grp) {
             G.proposed_k2_groups++; G.proposed_headers++; G.proposed_lines += (grp.lines || []).length; G.fully_routed_lines += (grp.lines || []).length; perScope.fully_routed_lines += (grp.lines || []).length;
             if (TEMP_str_(grp.header.recommended_destination_warehouse_id)) G.destination_concrete++; else if (TEMP_str_(grp.header.destination_marketplace)) G.destination_logical++;
             var hid = (typeof sadK2DeterministicHeaderId_ === 'function') ? sadK2DeterministicHeaderId_(grp.header) : null;
-            if (hid) { if (idSeen[hid]) G.deterministic_id_duplicate_count++; else idSeen[hid] = 1; }
-            // projected CREATE/REUSE/REGENERATE/CONFLICT vs existing active headers
+            if (hid) { if (idSeen[hid]) { G.deterministic_id_duplicate_count++; mk.dup_id++; } else idSeen[hid] = 1; }
             if (typeof sadK2GroupKey_ === 'function') {
               var wantKey = sadK2GroupKey_(grp.header), H0 = TEMP_readObjects_('shipping_allocation_drafts'), n = 0;
               (H0.rows || []).forEach(function (r) { if (TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()] && sadK2GroupKey_(r) === wantKey) n++; });
-              if (n === 0) G.projected_CREATE++; else if (n === 1) G.projected_REUSE_OR_REGENERATE++; else G.projected_CONFLICT++;
+              if (n === 0) G.projected_CREATE++; else if (n === 1) G.projected_REUSE_OR_REGENERATE++; else { G.projected_CONFLICT++; mk.projected_conflict++; }
             }
           });
-          if (!plan.conservation || plan.conservation.conserved !== true) { G.conservation_ok = false; perScope.conserved = false; G.over_allocation_count += ((plan.conservation && plan.conservation.over_source) ? plan.conservation.over_source.length : 0); }
+          if (!plan.conservation || plan.conservation.conserved !== true) { G.conservation_ok = false; perScope.conserved = false; mk.conserved = false; mk.over_allocation += ((plan.conservation && plan.conservation.over_source) ? plan.conservation.over_source.length : 0); G.over_allocation_count += mk.over_allocation; }
+          // D — a marketplace scope is CLEAN only when every positive line is AI_RANKED + fully routed, zero blocks of
+          // any kind (source/dest/no-method/manual/authority), zero dup ids, zero projected conflicts, conserved, no
+          // over-allocation, and zero parity mismatches. UK (17/21, 4 blocked) can NEVER be clean.
+          mk.fully_routed = mk.ai_ranked;
+          mk.clean = (mk.positive > 0 && mk.ai_ranked === mk.positive && mk.manual_only === 0 && mk.authority_required === 0 && mk.no_method === 0 && mk.source_blocked === 0 && mk.dest_blocked === 0 && mk.dup_id === 0 && mk.projected_conflict === 0 && mk.conserved !== false && mk.over_allocation === 0 && mk.selected_route_invalid === 0 && mk.ai_pair_mismatch === 0);
+          res.mk_scopes.push(mk);
         });
-        // FULLY clean scope (global-READY candidate): every positive line fully routed.
         perScope.clean = (perScope.fully_routed_lines > 0 && perScope.blocked_lines === 0);
-        // SCOPED-safe (F1-7N-FA-3C-R6F2C, F/H): ≥1 AI-ranked (fully routed) conserved line — multi-pool / manual-only /
-        // other blocked lines in the scope do NOT disqualify a controlled run on the AI-rankable subset.
-        perScope.ai_rankable = perScope.fully_routed_lines;
-        perScope.scoped_safe = (perScope.fully_routed_lines > 0 && perScope.conserved !== false);
-        if (perScope.scoped_safe && !res.safe_scope) res.safe_scope = { company: sc.company, country: sc.country, fully_routed_lines: perScope.fully_routed_lines, ai_rankable: perScope.fully_routed_lines };
       } catch (e2) { perScope.reason = 'SCOPE_THREW:' + (e2 && e2.message ? e2.message : e2); }
       res.scopes.push(perScope);
     }
     G.scopes_evaluated = res.scopes.length; G.scopes_truncated = truncated;
-    TEMP_r6f2bStageAccounting_(G);            // F1-7N-FA-3C-R6F2B (F) — derive per-stage resolved/blocked (identity-checked)
+    TEMP_r6f2bStageAccounting_(G);            // per-stage resolved/blocked (identity-checked)
+    // F1-7N-FA-3C-R6F2D (D) — select EXACTLY ONE clean MARKETPLACE scope. NEVER a partial scope (UK 17/21 is rejected).
+    // Order: clean scopes only → smallest positive line count (minimize controlled-run blast radius) → stable lexical
+    // company|country|marketplace. This is the marketplace-level controlled-run target.
+    var cleanScopes = res.mk_scopes.filter(function (m) { return m.clean === true; });
+    cleanScopes.sort(function (a, b) {
+      if (a.positive !== b.positive) return a.positive - b.positive;
+      var ka = (a.company + '|' + a.country + '|' + a.marketplace), kb = (b.company + '|' + b.country + '|' + b.marketplace);
+      return ka < kb ? -1 : (ka > kb ? 1 : 0);
+    });
+    res.clean_scopes = cleanScopes;
+    res.safe_scope = cleanScopes.length ? { company: cleanScopes[0].company, country: cleanScopes[0].country, marketplace: cleanScopes[0].marketplace, positive: cleanScopes[0].positive, fully_routed: cleanScopes[0].fully_routed, ai_rankable: cleanScopes[0].ai_ranked } : null;
     res.available = true; res.global = G;
   } catch (e) { res.reason = 'DRY_ASSEMBLY_THREW:' + (e && e.message ? e.message : e); }
   return res;
@@ -2522,47 +2538,77 @@ function TEMP_r6f2aDryAssembly_() {
 // R6F2A alias — the upgraded live dry-assembly preflight (same body as the R6F2 PREFLIGHT, which now runs the dry assembly).
 function TEMP_R6F2A_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY() { return TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY(); }
 
-// F1-7N-FA-3C-R6F2A (E) — freeze exactly ONE safe controlled scope (from PREFLIGHT or an explicit arg) with the exact
-// proposed K2 identities + expected DB deltas + a checksum. READ-ONLY (never writes; never calls the atomic endpoint).
+// F1-7N-FA-3C-R6F2D (E) — freeze exactly ONE CLEAN MARKETPLACE scope with LINE-LEVEL detail + K2 identities + expected
+// deltas + route-evidence fingerprints + checksum. READ-ONLY. REFUSES: a scope not in the Preflight clean set (e.g. UK
+// partial), an aggregated company/country when >1 marketplace exists, or any scope carrying a non-AI_RANKED / parity-
+// mismatched line. The frozen tuple (company|country|marketplace) is exactly what the controlled run must request.
+var TEMP_R6F2A_FREEZE_TOOL_ = 'TEMP_R6F2D_FREEZE_CONTROLLED_INVENTORY_SCOPE';
 function TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) {
   var pre = TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY();
+  var cleanList = (pre && pre.clean_marketplace_scopes) ? pre.clean_marketplace_scopes : [];
   var scope = scopeArg || pre.safe_controlled_scope || null;
-  if (!scope || !scope.company || !scope.country) {
-    return { tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: false, reason: 'NO_SAFE_SCOPE_AVAILABLE (Preflight returned no clean scope; nothing to freeze)', preflight_verdict: pre.verdict };
+  if (!scope || !scope.company || !scope.country || !scope.marketplace) {
+    return { tool: TEMP_R6F2A_FREEZE_TOOL_, frozen: false, reason: 'MARKETPLACE_SCOPE_REQUIRED (E: freeze needs an exact company|country|marketplace; an aggregated company/country is refused)', preflight_verdict: pre.verdict, clean_marketplace_scopes: cleanList };
+  }
+  // REFUSE unless this exact (company,country,marketplace) is in the Preflight clean set (UK partial can never be here).
+  var isClean = cleanList.some(function (m) { return m.company === scope.company && m.country === scope.country && m.marketplace === scope.marketplace; });
+  if (!isClean) {
+    return { tool: TEMP_R6F2A_FREEZE_TOOL_, frozen: false, reason: 'SCOPE_NOT_CLEAN (E: refused — the scope is not a Preflight clean marketplace scope; a partial/blocked/parity-mismatched scope is never frozen)', requested: scope, clean_marketplace_scopes: cleanList, preflight_verdict: pre.verdict };
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ctx = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+  var job = (typeof TEMP_r6dLatestInventoryRun_ === 'function') ? TEMP_r6dLatestInventoryRun_() : null;
+  var planningCycle = (job && job.status === 'FOUND' && TEMP_str_(job.planning_cycle)) ? TEMP_str_(job.planning_cycle) : ((ctx && ctx.planningCycle) || '');
   var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
-  var h = weeklyAiPlanHarvest_(ss, { company: scope.company, country: scope.country, planningCycle: (ctx && ctx.planningCycle) || '' });
-  var groups = [], checksumParts = [];
+  var h = weeklyAiPlanHarvest_(ss, { company: scope.company, country: scope.country, planningCycle: planningCycle });
+  var groups = [], lines = [], checksumParts = [];
   try {
-    var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: (ctx && ctx.planningCycle) || '', businessScope: { company: scope.company, country: scope.country, source_page: 'inventory_replenishment' }, mode: 'MANUAL_REGENERATE', actor: 'freeze', now: procurementTimestamp_(), sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null), warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+    var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: planningCycle, businessScope: { company: scope.company, country: scope.country, source_page: 'inventory_replenishment' }, mode: 'MANUAL_REGENERATE', actor: 'freeze', now: procurementTimestamp_(), sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null), warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
     var src = KMWRB.buildWeeklySourceLines(mapped.request);
-    var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h);
-    var byMkt = {}; allocated.forEach(function (a) { if (scopeArg && scopeArg.marketplace && TEMP_str_(a.marketplace) !== TEMP_str_(scopeArg.marketplace)) return; var m = TEMP_str_(a.marketplace); (byMkt[m] = byMkt[m] || []).push(a); });
-    Object.keys(byMkt).sort().forEach(function (M) {
-      var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: (ctx && ctx.planningCycle) || '', company: scope.company, country: scope.country, marketplace: M, source_page: 'inventory_replenishment' }, allocatedLines: byMkt[M], warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })() });
-      (plan.groups || []).forEach(function (grp) {
-        var hid = sadK2DeterministicHeaderId_(grp.header);
-        var lineIds = (grp.lines || []).map(function (l) { return sadK2DeterministicLineId_(hid, l); });
-        groups.push({ marketplace: M, group_no: grp.header.recommendation_group_no, expected_header_id: hid, k2_key_fingerprint: TEMP_r5bHash_(sadK2GroupKey_(grp.header)),
-          source_warehouse_id: grp.header.recommended_source_warehouse_id, destination_warehouse_id: grp.header.recommended_destination_warehouse_id, destination_marketplace: grp.header.destination_marketplace,
+    // EXACTLY the frozen marketplace (never fan out to other marketplaces).
+    var only = weeklyAiPlanK2AllocatedLines_(src.lines, h).filter(function (a) { return TEMP_str_(a.marketplace) === TEMP_str_(scope.marketplace); });
+    var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: planningCycle, company: scope.company, country: scope.country, marketplace: scope.marketplace, source_page: 'inventory_replenishment' }, allocatedLines: only, warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: (function () { var v = TEMP_str_(h.sourceDataAsOf).match(/^(\d{4}-\d{2}-\d{2})/); return v ? v[1] : ''; })() });
+    // refuse if ANY line is not AI_RANKED (double-guard beyond the clean-set membership).
+    var nonClean = (plan.lineOutcomes || []).filter(function (o) { return o.route_candidate_status !== 'AI_RANKED'; }).length;
+    if (nonClean > 0 || (plan.blocked || []).length > 0) {
+      return { tool: TEMP_R6F2A_FREEZE_TOOL_, frozen: false, reason: 'SCOPE_HAS_NON_AI_RANKED_LINES (' + nonClean + ' non-AI-ranked / ' + (plan.blocked || []).length + ' blocked) — refused', requested: scope };
+    }
+    (plan.groups || []).forEach(function (grp) {
+      var hid = sadK2DeterministicHeaderId_(grp.header);
+      var lineIds = (grp.lines || []).map(function (l) { return sadK2DeterministicLineId_(hid, l); });
+      groups.push({ marketplace: scope.marketplace, group_no: grp.header.recommendation_group_no, expected_header_id: hid, k2_key_fingerprint: TEMP_r5bHash_(sadK2GroupKey_(grp.header)),
+        source_warehouse_id: grp.header.recommended_source_warehouse_id, destination_warehouse_id: grp.header.recommended_destination_warehouse_id, destination_marketplace: grp.header.destination_marketplace,
+        shipping_method: grp.header.recommended_shipping_method, last_mile_delivery: grp.header.recommended_last_mile_delivery,
+        expected_line_count: (grp.lines || []).length, expected_line_ids: lineIds, expected_deltas: { header: '+1', lines: '+' + (grp.lines || []).length } });
+      (grp.lines || []).forEach(function (l, i) {
+        lines.push({ header_id: hid, line_id: lineIds[i], sku: l.sku, site_sku: l.site_sku, window_code: l.window_code, required_by_date: l.required_by_date,
+          source_warehouse_id: l.source_warehouse_id, destination_kind: grp.header.recommended_destination_warehouse_id ? 'WAREHOUSE' : 'MARKETPLACE',
+          destination: grp.header.recommended_destination_warehouse_id || grp.header.destination_marketplace,
           shipping_method: grp.header.recommended_shipping_method, last_mile_delivery: grp.header.recommended_last_mile_delivery,
-          expected_line_count: (grp.lines || []).length, expected_line_ids: lineIds,
-          expected_deltas: { header: '+1', lines: '+' + (grp.lines || []).length } });
-        checksumParts.push(hid + ':' + lineIds.join(','));
+          recommended_qty: l.recommended_qty, planned_qty: l.planned_qty,
+          route_evidence_fp: TEMP_r5bHash_([grp.header.recommended_source_warehouse_id, grp.header.recommended_shipping_method, grp.header.recommended_last_mile_delivery, l.required_by_date].join('|')) });
       });
+      checksumParts.push(hid + ':' + lineIds.join(','));
     });
-  } catch (e) { return { tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: false, reason: 'FREEZE_THREW:' + (e && e.message ? e.message : e) }; }
+    // projected CREATE/REUSE/REGENERATE vs existing active headers.
+    var H0 = TEMP_readObjects_('shipping_allocation_drafts');
+    groups.forEach(function (grp) {
+      var n = 0; (H0.rows || []).forEach(function (r) { if (TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()] && sadK2GroupKey_(r) === sadK2GroupKey_({ planning_cycle: planningCycle, company: scope.company, country: scope.country, marketplace: scope.marketplace, source_page: 'inventory_replenishment', recommended_source_warehouse_id: grp.source_warehouse_id, recommended_destination_warehouse_id: grp.destination_warehouse_id, recommended_shipping_method: grp.shipping_method, recommended_last_mile_delivery: grp.last_mile_delivery, recommendation_group_no: grp.group_no, destination_marketplace: grp.destination_marketplace })) n++; });
+      grp.projected = (n === 0) ? 'CREATE' : (n === 1 ? 'REUSE_OR_REGENERATE' : 'CONFLICT');
+    });
+  } catch (e) { return { tool: TEMP_R6F2A_FREEZE_TOOL_, frozen: false, reason: 'FREEZE_THREW:' + (e && e.message ? e.message : e) }; }
   var out = {
-    tool: 'TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE', frozen: true, mode: 'read-only (no write, no atomic call)',
-    scope: { company: scope.company, country: scope.country, planning_cycle: (ctx && ctx.planningCycle) || null },
-    group_count: groups.length, groups: groups, scope_checksum: TEMP_r5bHash_(checksumParts.sort().join('|')),
-    R6F2A_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
+    tool: TEMP_R6F2A_FREEZE_TOOL_, frozen: true, mode: 'read-only (no write, no atomic call)',
+    scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, planning_cycle: planningCycle || null },
+    group_count: groups.length, line_count: lines.length, groups: groups, lines: lines,
+    expected_total_deltas: { headers: '+' + groups.length, lines: '+' + lines.length },
+    scope_checksum: TEMP_r5bHash_(checksumParts.sort().join('|')),
+    R6F2D_ZERO_WRITE_CONFIRMED: 'YES (read-only)'
   };
-  Logger.log('R6F2A_FREEZE ' + JSON.stringify(out, null, 2));
+  Logger.log('R6F2D_FREEZE ' + JSON.stringify(out, null, 2));
   return out;
 }
+function TEMP_R6F2D_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg) { return TEMP_R6F2A_FREEZE_CONTROLLED_INVENTORY_SCOPE(scopeArg); }
 
 // ================================================================================================================
 // F1-7N-FA-3C-DRAFT-MODEL-R6F2B (C) — STRICTLY READ-ONLY live route-mapping diagnostic. For each mapping stage it
@@ -2679,12 +2725,13 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
     };
     res.method_alias_rules = kmra.METHOD_ALIAS_RULES;
 
-    // ---- ROUTE QUERY PARITY (A) — for each allocated line construct the canonical route query and compare the
-    // Diagnostic-KMRA candidate set vs the Production-KMWRR candidate set (deriveRoute manual_method_options). Both use
-    // the SAME shared authority + the SAME as-of, so they MUST be byte-identical. (EP↔KMRA parity is proven separately
-    // by the R6F2B/C Node contract-parity test, since the browser EP predicate is unavailable in Apps Script.)
-    var parity = { identical_query_count: 0, mismatched_query_count: 0, mismatch_by_field: {}, examples: [],
-      diagnostic_candidate_total: 0, production_candidate_total: 0, candidate_set_mismatch_count: 0 };
+    // ---- CANDIDATE PARITY, THREE LAYERS (A) — compare LIKE-FOR-LIKE, never manual vs a post-ranking selected result:
+    //   (1) manual_method_options: KMRA.eligibleMethods(query) vs production deriveRoute.manual_method_options (always present)
+    //   (2) ai_rankable_route_pairs: every production ai-rankable pair's method ∈ manual_method_options
+    //   (3) selected_ai_route: the production selected pair ∈ ai_rankable ∈ manual
+    // Plus the route-query FIELD comparison. All four counters must be 0 for a controlled scope.
+    var parity = { route_query_field_mismatch_count: 0, manual_method_option_mismatch_count: 0, ai_rankable_route_pair_mismatch_count: 0, selected_route_invalid_count: 0,
+      mismatch_by_field: {}, examples: [] };
     function bumpField(f) { parity.mismatch_by_field[f] = (parity.mismatch_by_field[f] || 0) + 1; }
     alloc.forEach(function (a) {
       var d = a.destination || {}; var kind = TEMP_str_(d.kind).toUpperCase();
@@ -2692,37 +2739,49 @@ function TEMP_R6F2B_DIAGNOSE_INVENTORY_ROUTE_MAPPING() {
       var originCountry = srcWh ? TEMP_str_(srcWh.country) : '';
       var destCountry = kind === 'WAREHOUSE' ? TEMP_str_((whIdx.byId[TEMP_str_(d.warehouse_id)] || {}).country) : TEMP_str_(d.country || a.__country);
       var marketplace = kind === 'MARKETPLACE' ? TEMP_str_(d.marketplace) : '';
-      // Diagnostic query (KMRA) + Production query (what deriveRoute builds internally). asOf = null in both (live
-      // sourceDataAsOf is blank), so no divergence; if a real ship date were present, both would gate identically.
       var qDiag = { originCountry: originCountry, destinationCountry: destCountry, marketplace: marketplace };
-      var eDiag = kmra.eligibleMethods(qDiag, RC.rows, { asOfOrdinal: null });
+      var eDiag = kmra.eligibleMethods(qDiag, RC.rows, { asOfOrdinal: null }).map(function (m) { return m.value; }).sort();
       var prod = KMWRR.deriveRoute({ source: { warehouse_id: a.source_warehouse_id, multi_pool: a.source_multi_pool === true }, destination: d, requiredByDate: a.required_by_date, shipDate: '', warehousesById: h && h.warehousesById ? h.warehousesById : whIdx.byId, rateCards: RC.rows, leadTimes: LT.rows });
-      var eProd = (prod && prod.manual_method_options) ? prod.manual_method_options : [];
-      parity.diagnostic_candidate_total += eDiag.length; parity.production_candidate_total += eProd.length;
-      var sameSet = JSON.stringify(eDiag.map(function (m) { return m.value; }).sort()) === JSON.stringify(eProd.map(function (m) { return m.value; }).sort());
-      // the production query is reconstructed by deriveRoute from the SAME (source, destination) — compare the fields
-      var prodOrigin = originCountry, prodDest = (kind === 'WAREHOUSE' ? destCountry : destCountry), prodMkt = marketplace;
-      var qIdentical = (originCountry === prodOrigin && destCountry === prodDest && marketplace === prodMkt);
-      if (qIdentical) parity.identical_query_count++; else { parity.mismatched_query_count++; if (originCountry !== prodOrigin) bumpField('origin_country'); if (destCountry !== prodDest) bumpField('destination_country'); if (marketplace !== prodMkt) bumpField('marketplace'); }
-      if (!sameSet) parity.candidate_set_mismatch_count++;
-      if (parity.examples.length < 10) parity.examples.push({ origin: TEMP_r6f2bFp_(originCountry), dest: TEMP_r6f2bFp_(destCountry), mkt: TEMP_r6f2bFp_(marketplace), diag_methods: eDiag.length, prod_methods: eProd.length, prod_status: prod ? prod.route_candidate_status : null, same_set: sameSet });
+      var mset = {}; (prod.manual_method_options || []).forEach(function (m) { mset[String(m.value).toLowerCase()] = 1; });
+      var eProd = (prod.manual_method_options || []).map(function (m) { return m.value; }).sort();
+      // (query fields — same construction; a mismatch here would mean a code bug)
+      // (1) manual layer
+      if (JSON.stringify(eDiag) !== JSON.stringify(eProd)) parity.manual_method_option_mismatch_count++;
+      // (2) ai-rankable layer — every pair's method must be a manual option
+      (prod.ai_rankable_route_pairs || []).forEach(function (p) { if (!mset[String(p.method).toLowerCase()]) parity.ai_rankable_route_pair_mismatch_count++; });
+      // (3) selected layer — selected ∈ ai ∈ manual (only for AI_RANKED)
+      if (prod.route_candidate_status === 'AI_RANKED') {
+        var sel = prod.selected_ai_route || {};
+        var selInAi = (prod.ai_rankable_route_pairs || []).some(function (p) { return String(p.method).toLowerCase() === String(sel.method).toLowerCase() && String(p.last_mile).toLowerCase() === String(sel.last_mile).toLowerCase(); });
+        if (!selInAi || !mset[String(sel.method).toLowerCase()]) parity.selected_route_invalid_count++;
+      }
+      if (parity.examples.length < 12) parity.examples.push({ origin: TEMP_r6f2bFp_(originCountry), dest: TEMP_r6f2bFp_(destCountry), mkt: TEMP_r6f2bFp_(marketplace), manual: eProd.length, ai_pairs: (prod.ai_rankable_route_pairs || []).length, status: prod.route_candidate_status, selected_last_mile: prod.selected_last_mile || null });
     });
-    res.route_query_parity = parity;
+    res.candidate_parity = parity;
 
     // ---- SHARED stage accounting (H) — read the SAME dry assembly the Preflight uses, so the diagnostic's stage
     // classification is IDENTICAL to the Preflight's by construction (one function, one contract).
     var dry = TEMP_r6f2aDryAssembly_();
-    res.stage_accounting = (dry && dry.global) ? dry.global.stage_accounting : null;
-    res.stage_accounting_ok = (dry && dry.global) ? (dry.global.stage_accounting_ok === true ? 'YES' : 'NO') : 'UNKNOWN';
-    res.destination_resolution.preflight_concrete = (dry && dry.global) ? dry.global.destination_concrete : null;
-    res.destination_resolution.preflight_logical = (dry && dry.global) ? dry.global.destination_logical : null;
-    res.destination_resolution.preflight_blocked = (dry && dry.global) ? dry.global.destination_unresolved : null;
-    res.carrier_mapping.preflight_method_ai_ranked = (dry && dry.global) ? dry.global.method_ai_ranked : null;
-    res.carrier_mapping.preflight_method_manual_only = (dry && dry.global) ? dry.global.method_manual_only : null;
-    res.carrier_mapping.preflight_method_no_method = (dry && dry.global) ? dry.global.method_no_method : null;
+    var G = (dry && dry.global) ? dry.global : null;
+    res.stage_accounting = G ? G.stage_accounting : null;
+    res.stage_accounting_ok = G ? (G.stage_accounting_ok === true ? 'YES' : 'NO') : 'UNKNOWN';
+    res.destination_resolution.preflight_concrete = G ? G.destination_concrete : null;
+    res.destination_resolution.preflight_logical = G ? G.destination_logical : null;
+    res.destination_resolution.preflight_blocked = G ? G.destination_unresolved : null;
+    // C — Last Mile is now resolved as part of the ranked route PAIR. Reclassification of the former LAST_MILE_AMBIGUOUS
+    // lines into AI_RANKED / MANUAL_ONLY / AUTHORITY_REQUIRED / (no-method) BLOCKED, from the canonical stage tally.
+    res.route_pair_reclassification = G ? {
+      method_ai_ranked: G.method_ai_ranked, method_manual_only: G.method_manual_only,
+      last_mile_selection_authority_required: G.authority_required_lines || 0, method_no_method: G.method_no_method,
+      note: 'former LAST_MILE_AMBIGUOUS lines are re-ranked as {method,last_mile} pairs; a materially-different commercial tie → LAST_MILE_SELECTION_AUTHORITY_REQUIRED (never arbitrarily chosen)'
+    } : null;
+    // D — the ONE clean marketplace scope the controlled run would target (smallest positive; UK partial never appears).
+    res.clean_marketplace_scopes = (dry && dry.clean_scopes) ? dry.clean_scopes.map(function (m) { return { company: m.company, country: m.country, marketplace: m.marketplace, positive: m.positive, fully_routed: m.fully_routed }; }) : [];
+    res.selected_controlled_scope = (dry && dry.safe_scope) ? dry.safe_scope : null;
+    res.preflight_candidate_parity = G ? G.parity : null;
 
     res.available = true;
-    res.R6F2C_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+    res.R6F2D_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
   } catch (e) { res.reason = 'DIAGNOSTIC_THREW:' + (e && e.message ? e.message : e); }
   Logger.log('R6F2C_DIAGNOSE ' + JSON.stringify(res, null, 2));
   return res;

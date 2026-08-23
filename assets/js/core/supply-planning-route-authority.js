@@ -76,7 +76,10 @@
     { canonical: 'Air', leadingTokens: ['air'] },
     { canonical: 'Sea Express', leadingTokens: ['sea express'] },   // checked BEFORE 'sea'
     { canonical: 'Sea', leadingTokens: ['sea'] },
-    { canonical: 'Courier', leadingTokens: ['express', 'courier'] }
+    { canonical: 'Courier', leadingTokens: ['express', 'courier'] },
+    // F1-7N-FA-3C-R6F2D — RUNTIME-PROVEN (22 carrier_rate_cards + 3 carrier_lead_times rows carry raw method 'truck').
+    // Truck is its OWN canonical bucket — NEVER folded into Courier, never fuzzy-matched.
+    { canonical: 'Truck', leadingTokens: ['truck'] }
     // Rail / anything else → '' (no lead-time mapping) — deliberately unmapped, never guessed.
   ];
   function canonicalMethodKey(method) {
@@ -269,7 +272,7 @@
   }
 
   return {
-    VERSION: 'kmra-r6f2b-1',
+    VERSION: 'kmra-r6f2d-1',
     // date + status primitives
     dateToOrdinal: dateToOrdinal, statusActive: statusActive, inEffectiveWindow: inEffectiveWindow,
     // method alias authority
