@@ -3139,31 +3139,63 @@ function TEMP_r6f2fEvaluateGates_(g) {
   return { ok: true, reason: null };
 }
 // Read the live frozen-scope DB state (read-only) — expected-id presence, unexpected rows, FK integrity, dup/orphan.
+// F1-7N-FA-3C-R6F2F2 — ONE canonical accessor per identity field, matching the exact-30 schema (16_):
+//   line id  = allocation_draft_line_id (idx 0) · line FK = allocation_draft_id (idx 1)
+//   header id = allocation_draft_id (idx 0) · header calc-run lineage = calculation_run_id
+// Both the readback and the diagnostic use these, so they can never diverge on field name.
+function TEMP_r6f2fLineId_(row) { return TEMP_str_(row && row.allocation_draft_line_id); }
+function TEMP_r6f2fLineFk_(row) { return TEMP_str_(row && row.allocation_draft_id); }
+function TEMP_r6f2fHeaderId_(row) { return TEMP_str_(row && row.allocation_draft_id); }
+function TEMP_r6f2fHeaderRunId_(row) { return TEMP_str_(row && row.calculation_run_id); }
+// K2-COMPATIBLE route completeness: a K2 header is route-complete with source + method + last-mile + group-no + a
+// destination that is EITHER a concrete warehouse (recommended_destination_warehouse_id) OR a logical marketplace
+// (the header carries the marketplace as its scope). The package validator's generic TEMP_r6f2RouteComplete_ requires a
+// destination WAREHOUSE id, so a marketplace-destination K2 header shows route_populated=0 there — expected, not a defect.
+function TEMP_r6f2fRouteCompleteK2_(row) {
+  if (!row) return false;
+  var src = TEMP_str_(row.recommended_source_warehouse_id), method = TEMP_str_(row.recommended_shipping_method),
+    lm = TEMP_str_(row.recommended_last_mile_delivery), grp = TEMP_str_(row.recommendation_group_no),
+    destWh = TEMP_str_(row.recommended_destination_warehouse_id), destMkt = TEMP_str_(row.marketplace);
+  return !!(src && method && lm && grp !== '' && (destWh || destMkt));
+}
 function TEMP_r6f2fReadFrozenScopeState_(token) {
   var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
   var sc = token.scope || {}, cyc = token.planning_cycle;
-  var expH = {}; (token.expected_header_ids_sorted || []).forEach(function (id) { expH[id] = 1; });
-  var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[id] = 1; });
+  var expH = {}; (token.expected_header_ids_sorted || []).forEach(function (id) { expH[TEMP_str_(id)] = 1; });
+  var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[TEMP_str_(id)] = 1; });
   var headerPresent = false, unexpectedHeaders = 0, headerRow = null, headerIds = {};
-  (H.rows || []).forEach(function (r) { var id = TEMP_str_(r.allocation_draft_id); if (id) headerIds[id] = 1; });
+  (H.rows || []).forEach(function (r) { var id = TEMP_r6f2fHeaderId_(r); if (id) headerIds[id] = 1; });
   (H.rows || []).forEach(function (r) {
     if (!TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()]) return;
     var inScope = (TEMP_str_(r.company) === TEMP_str_(sc.company) && TEMP_str_(r.country) === TEMP_str_(sc.country) && TEMP_str_(r.marketplace) === TEMP_str_(sc.marketplace) && TEMP_str_(r.planning_cycle) === TEMP_str_(cyc));
     if (!inScope) return;
-    if (expH[TEMP_str_(r.allocation_draft_id)]) { headerPresent = true; headerRow = r; } else unexpectedHeaders++;
+    if (expH[TEMP_r6f2fHeaderId_(r)]) { headerPresent = true; headerRow = r; } else unexpectedHeaders++;
   });
-  var linesPresent = 0, lineFkOk = true, unexpectedLinesInScope = 0, orphan = 0;
+  // ACTUAL line ids read FROM THE DB for the expected (frozen) header — NEVER copied from the token. Reconciliation
+  // sets are computed by comparing the canonical ACTUAL line ids to the frozen expected ids.
+  var actualLineIdsForHeader = [], unexpectedLinesInScope = 0, orphan = 0, matched = [], seenActual = {}, dupLineId = 0;
   (L.rows || []).forEach(function (x) {
-    var lid = TEMP_str_(x.allocation_draft_line_id), fk = TEMP_str_(x.allocation_draft_id);
+    var lid = TEMP_r6f2fLineId_(x), fk = TEMP_r6f2fLineFk_(x);
     if (fk && !headerIds[fk]) orphan++;
-    if (expL[lid]) { linesPresent++; if (!expH[fk]) lineFkOk = false; }
-    else if (expH[fk]) unexpectedLinesInScope++;
+    if (expH[fk]) {                                  // a line that belongs to the frozen header (by FK)
+      if (lid) { if (seenActual[lid]) dupLineId++; else seenActual[lid] = 1; }
+      actualLineIdsForHeader.push(lid);
+      if (expL[lid]) matched.push(lid); else unexpectedLinesInScope++;
+    }
   });
+  var linesPresent = matched.length;
+  var missing = (token.expected_line_ids_sorted || []).filter(function (id) { return matched.indexOf(TEMP_str_(id)) < 0; });
+  var unexpected = actualLineIdsForHeader.filter(function (id) { return !expL[id]; });
+  // FK integrity is only MEANINGFUL for matched lines, and is UNKNOWN (never vacuously true) when zero matched.
+  var lineFkOk = (linesPresent > 0) ? true : null;   // every matched line is under the frozen header by construction (expH[fk])
   var k2seen = {}, dupK2 = 0;
   (H.rows || []).forEach(function (r) { if (TEMP_R6F2_ACTIVE_[TEMP_str_(r.status).toLowerCase()] && typeof sadK2GroupKey_ === 'function') { var k = sadK2GroupKey_(r); if (k2seen[k]) dupK2++; else k2seen[k] = 1; } });
   return { db_header_rows: (H.rows || []).length, db_line_rows: (L.rows || []).length, header_present: headerPresent, header_row: headerRow,
     lines_present: linesPresent, line_fk_ok: lineFkOk, unexpected_headers_in_scope: unexpectedHeaders, unexpected_lines_in_scope: unexpectedLinesInScope,
-    orphan_lines: orphan, dup_k2: dupK2 };
+    orphan_lines: orphan, dup_k2: dupK2, dup_line_id: dupLineId,
+    actual_line_ids_for_expected_header: actualLineIdsForHeader.slice().sort(), matched_line_ids: matched.slice().sort(),
+    missing_line_ids: missing.slice().sort(), unexpected_line_ids: unexpected.slice().sort(),
+    route_complete_k2: TEMP_r6f2fRouteCompleteK2_(headerRow) };
 }
 // Gather the live gate bag (read-only) from the stored token + the canonical preflight/freeze/guards.
 function TEMP_r6f2fGatherGateBag_(token) {
@@ -3242,7 +3274,8 @@ function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE() {
     var bag = TEMP_r6f2fGatherGateBag_(token);
     var st = bag._state;
     // ALREADY_COMMITTED — the exact frozen 1+5 state is already present (retry safety; never regenerate/mutate).
-    if (st.header_present && st.lines_present === token.expected_k2_line_count && st.line_fk_ok && st.unexpected_headers_in_scope === 0 && st.unexpected_lines_in_scope === 0) {
+    // R6F2F2: line_fk_ok must be strictly true (never vacuous), and every frozen line id must be matched (no missing).
+    if (st.header_present && st.lines_present === token.expected_k2_line_count && st.line_fk_ok === true && st.missing_line_ids.length === 0 && st.unexpected_headers_in_scope === 0 && st.unexpected_lines_in_scope === 0) {
       out.verdict = 'CONTROLLED_EXECUTION_ALREADY_COMMITTED'; out.generation_called = false; out.rows_written = 0;
       out.note = 'the exact frozen header+5 lines already exist; do NOT regenerate — use TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE (deterministic-id REUSE) to re-verify.';
       out.R6F2F_ZERO_WRITE_CONFIRMED = 'YES (already committed — no write)'; Logger.log('R6F2F_CONTROLLED_EXECUTION ' + JSON.stringify(out, null, 2)); return out;
@@ -3270,30 +3303,36 @@ function TEMP_R6F2F_EXECUTE_FROZEN_INVENTORY_AI_PLAN_ONCE() {
     var post = TEMP_r6f2fReadFrozenScopeState_(token);
     var guardsAfter = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
     var hdr = post.header_row || {};
-    var routeComplete = !!(TEMP_str_(hdr.recommended_source_warehouse_id) && TEMP_str_(hdr.recommended_shipping_method) && TEMP_str_(hdr.recommended_last_mile_delivery));
-    var lineageOk = (TEMP_str_(hdr.planning_cycle) === TEMP_str_(token.planning_cycle) && (typeof TEMP_r5bIdFingerprint_ !== 'function' || TEMP_r5bIdFingerprint_(hdr.calculation_run_id) === token.calculation_run_id_fingerprint));
+    var routeComplete = post.route_complete_k2;   // R6F2F2: K2-compatible (marketplace OR warehouse destination)
+    var lineageOk = (TEMP_str_(hdr.planning_cycle) === TEMP_str_(token.planning_cycle) && (typeof TEMP_r5bIdFingerprint_ !== 'function' || TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) === token.calculation_run_id_fingerprint));
     var editableDraft = !!TEMP_R6F2_ACTIVE_[TEMP_str_(hdr.status).toLowerCase()];
     var readback = {
       header_present_once: post.header_present && post.unexpected_headers_in_scope === 0,
       lines_present: post.lines_present, lines_expected: token.expected_k2_line_count, line_fk_ok: post.line_fk_ok,
+      missing_line_ids: post.missing_line_ids, unexpected_line_ids: post.unexpected_line_ids,
       no_unexpected_in_scope: post.unexpected_headers_in_scope === 0 && post.unexpected_lines_in_scope === 0,
       db_header_rows: post.db_header_rows, db_line_rows: post.db_line_rows,
       expected_post_headers: token.expected_post_run_db_header_rows, expected_post_lines: token.expected_post_run_db_line_rows,
       unrelated_checksum_unchanged: TEMP_str_(guardsAfter.unrelated_scope_active_row_checksum) === TEMP_str_(before.unrelated),
       legacy_checksum_unchanged: TEMP_str_(guardsAfter.legacy_header_checksum) === TEMP_str_(before.legacy),
-      orphan_lines: post.orphan_lines, dup_k2: post.dup_k2, route_complete: routeComplete, lineage_ok: lineageOk, editable_draft: editableDraft
+      orphan_lines: post.orphan_lines, dup_k2: post.dup_k2, dup_line_id: post.dup_line_id, route_complete: routeComplete, lineage_ok: lineageOk, editable_draft: editableDraft
     };
     out.before_db_rows = { headers: before.headers, lines: before.lines }; out.after_db_rows = { headers: post.db_header_rows, lines: post.db_line_rows };
     out.expected_delta = { shipping_allocation_drafts: '+1', shipping_allocation_draft_lines: '+5' };
     out.actual_delta = { shipping_allocation_drafts: '+' + (post.db_header_rows - before.headers), shipping_allocation_draft_lines: '+' + (post.db_line_rows - before.lines) };
     out.unrelated_checksum = { before: before.unrelated, after: guardsAfter.unrelated_scope_active_row_checksum };
     out.legacy_checksum = { before: before.legacy, after: guardsAfter.legacy_header_checksum };
-    out.header_ids = token.expected_header_ids_sorted; out.line_ids = token.expected_line_ids_sorted; out.line_count = post.lines_present;
+    // R6F2F2 — returned line ids come from the ACTUAL DB rows under the frozen header, NEVER copied from the token.
+    out.header_ids = token.expected_header_ids_sorted; out.actual_line_ids = post.actual_line_ids_for_expected_header;
+    out.matched_line_ids = post.matched_line_ids; out.missing_line_ids = post.missing_line_ids; out.unexpected_line_ids = post.unexpected_line_ids; out.line_count = post.lines_present;
     out.readback = readback; out.response_outcome = resp.success ? 'SUCCESS' : 'NOT_SUCCESS';
     out.no_side_table_write = 'CONFIRMED (executor writes NO shipping_plans / shipment draft / reservation / Submit — only the K2 drafts+lines via the atomic writer)';
-    var fullyVerified = !!(resp.success && readback.header_present_once && readback.lines_present === token.expected_k2_line_count && readback.line_fk_ok && readback.no_unexpected_in_scope &&
+    // FROZEN_SCOPE_VALIDATED (CONTROLLED_INVENTORY_AI_PLAN_COMMITTED) ONLY when exact ids/FKs/lineage/counts/checksums/
+    // route/orphan/dup all pass — including EVERY frozen line id matched (no missing) and NO unexpected line id.
+    var fullyVerified = !!(resp.success && readback.header_present_once && readback.lines_present === token.expected_k2_line_count && readback.line_fk_ok === true &&
+      readback.missing_line_ids.length === 0 && readback.unexpected_line_ids.length === 0 && readback.no_unexpected_in_scope &&
       readback.db_header_rows === token.expected_post_run_db_header_rows && readback.db_line_rows === token.expected_post_run_db_line_rows &&
-      readback.unrelated_checksum_unchanged && readback.legacy_checksum_unchanged && readback.orphan_lines === 0 && readback.dup_k2 === 0 && readback.route_complete && readback.lineage_ok && readback.editable_draft);
+      readback.unrelated_checksum_unchanged && readback.legacy_checksum_unchanged && readback.orphan_lines === 0 && readback.dup_k2 === 0 && readback.dup_line_id === 0 && readback.route_complete && readback.lineage_ok && readback.editable_draft);
     out.verdict = fullyVerified ? 'CONTROLLED_INVENTORY_AI_PLAN_COMMITTED' : 'COMMITTED_UNVERIFIED';   // fail-closed; never auto-retry
     out.R6F2F_ZERO_WRITE_CONFIRMED = 'NO (a controlled CREATE was authorized by the flag + gates)';
   } catch (e) { out.verdict = 'CONTROLLED_EXECUTION_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
@@ -3318,8 +3357,9 @@ function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
     var struct = TEMP_r6f2eValidateTokenStructure_(token, TEMP_R6F2E_EXPECTED_SCOPE_);
     if (!struct.ok) { out.verdict = 'REUSE_REFUSED_TOKEN_' + struct.reason; out.generation_called = false; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
     var pre = TEMP_r6f2fReadFrozenScopeState_(token);
-    // REUSE requires the exact committed 1+5 state ALREADY validates — never a first CREATE here.
-    var committed = !!(pre.header_present && pre.lines_present === token.expected_k2_line_count && pre.line_fk_ok && pre.unexpected_headers_in_scope === 0 && pre.unexpected_lines_in_scope === 0 && pre.dup_k2 === 0 && pre.orphan_lines === 0);
+    // REUSE requires the exact committed 1+5 state ALREADY validates by the canonical post-generation validator — never
+    // a first CREATE here. R6F2F2: line_fk_ok strictly true (non-vacuous) + every frozen line matched (no missing).
+    var committed = !!(pre.header_present && pre.lines_present === token.expected_k2_line_count && pre.line_fk_ok === true && pre.missing_line_ids.length === 0 && pre.unexpected_headers_in_scope === 0 && pre.unexpected_lines_in_scope === 0 && pre.dup_k2 === 0 && pre.orphan_lines === 0);
     if (!committed) { out.verdict = 'REUSE_REFUSED_NOT_COMMITTED'; out.generation_called = false; out.state = pre; Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2)); return out; }
     var before = { headers: pre.db_header_rows, lines: pre.db_line_rows };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3333,6 +3373,108 @@ function TEMP_R6F2F_VERIFY_FROZEN_INVENTORY_AI_PLAN_REUSE() {
     out.verdict = reused ? 'REUSED' : 'REUSE_UNVERIFIED';
   } catch (e) { out.verdict = 'REUSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   Logger.log('R6F2F_REUSE_VERIFY ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2F2 — STRICTLY READ-ONLY diagnostic of the committed-but-unverified controlled scope. Loads
+// ONLY the persisted token; emits ONE compact primary log. No write, no repair, no regenerate, no delete, no Submit.
+// Surfaces the exact field authorities + actual committed header/line ids (cleartext for reconciliation; sku/window
+// fingerprinted) + reconciliation sets + the old-vs-canonical validator comparison, so the USER can classify the
+// contradictions as validator/readback mapping vs a line-id-scheme divergence vs malformed business data.
+// ================================================================================================================
+function TEMP_R6F2F2_DIAGNOSE_COMMITTED_FROZEN_SCOPE() {
+  var out = { tool: 'TEMP_R6F2F2_DIAGNOSE_COMMITTED_FROZEN_SCOPE', mode: 'STRICTLY READ-ONLY (no write/repair/regenerate/delete/submit)',
+    output_contract: 'ONE_PRIMARY_LOG_ENTRY', nested_verbose_logs_suppressed: 'YES' };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2F2_DIAGNOSE ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var hAuth = (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : [];
+    var lAuth = (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : [];
+    var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+    function idx(auth, name) { return auth.indexOf(name); }
+
+    // (1) DB / schema authority
+    out.schema_authority = {
+      header_schema_count: (H.headers || []).length, header_schema_hash: TEMP_r5bHash_((H.headers || []).join('|')),
+      line_schema_count: (L.headers || []).length, line_schema_hash: TEMP_r5bHash_((L.headers || []).join('|')),
+      line_id_field: 'allocation_draft_line_id', line_id_index: idx(lAuth, 'allocation_draft_line_id'),
+      line_fk_field: 'allocation_draft_id', line_fk_index: idx(lAuth, 'allocation_draft_id'),
+      header_id_field: 'allocation_draft_id', header_id_index: idx(hAuth, 'allocation_draft_id'),
+      header_calc_run_field: 'calculation_run_id', header_calc_run_index: idx(hAuth, 'calculation_run_id'),
+      route_fields: { source: idx(hAuth, 'recommended_source_warehouse_id'), dest_warehouse: idx(hAuth, 'recommended_destination_warehouse_id'), method: idx(hAuth, 'recommended_shipping_method'), last_mile: idx(hAuth, 'recommended_last_mile_delivery'), group_no: idx(hAuth, 'recommendation_group_no'), marketplace: idx(hAuth, 'marketplace') }
+    };
+
+    var st = TEMP_r6f2fReadFrozenScopeState_(token);
+    var hdr = st.header_row || {};
+    var expHeaderId = (token.expected_header_ids_sorted || [])[0] || null;
+    // (2) actual committed header
+    out.actual_header = st.header_present ? {
+      actual_header_id: TEMP_r6f2fHeaderId_(hdr), expected_header_id: expHeaderId, header_id_match: TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(expHeaderId),
+      status: TEMP_str_(hdr.status), planning_cycle: TEMP_str_(hdr.planning_cycle), company: TEMP_str_(hdr.company), country: TEMP_str_(hdr.country), marketplace: TEMP_str_(hdr.marketplace), source_page: TEMP_str_(hdr.source_page),
+      source_warehouse_id: TEMP_str_(hdr.recommended_source_warehouse_id),
+      destination_field: TEMP_str_(hdr.recommended_destination_warehouse_id) ? 'recommended_destination_warehouse_id(WAREHOUSE)' : (TEMP_str_(hdr.marketplace) ? 'marketplace(LOGICAL)' : 'NONE'),
+      destination_token_fp: TEMP_r6f2bFp_(TEMP_str_(hdr.recommended_destination_warehouse_id) || TEMP_str_(hdr.marketplace)),
+      shipping_method: TEMP_str_(hdr.recommended_shipping_method), last_mile_delivery: TEMP_str_(hdr.recommended_last_mile_delivery), recommendation_group_no: TEMP_str_(hdr.recommendation_group_no),
+      actual_calculation_run_id_fingerprint: (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) : null,
+      frozen_calculation_run_id_fingerprint: token.calculation_run_id_fingerprint,
+      calc_run_lineage_match: (typeof TEMP_r5bIdFingerprint_ === 'function') && TEMP_r5bIdFingerprint_(TEMP_r6f2fHeaderRunId_(hdr)) === TEMP_str_(token.calculation_run_id_fingerprint),
+      route_complete_k2: st.route_complete_k2, route_populated_generic_validator: (typeof TEMP_r6f2RouteComplete_ === 'function') ? TEMP_r6f2RouteComplete_(hdr) : null
+    } : { header_present: false };
+
+    // (3) actual committed lines linked to the frozen header (cleartext ids; sku/window fingerprinted) + the two id
+    // functions computed for each, to expose the freeze-vs-writer line-id scheme.
+    var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[TEMP_str_(id)] = 1; });
+    var lineRows = (L.rows || []).filter(function (x) { return TEMP_r6f2fLineFk_(x) === TEMP_str_(expHeaderId); });
+    out.actual_lines = lineRows.map(function (x) {
+      return { actual_line_id: TEMP_r6f2fLineId_(x), actual_fk_header_id: TEMP_r6f2fLineFk_(x), expected_membership: !!expL[TEMP_r6f2fLineId_(x)],
+        sku_window_fp: TEMP_r6f2bFp_(TEMP_str_(x.sku) + '|' + TEMP_str_(x.window_code)), status: TEMP_str_(x.line_status || '(blank)'),
+        writer_id_sadDeterministic: (typeof sadDeterministicLineId_ === 'function') ? sadDeterministicLineId_(TEMP_r6f2fLineFk_(x), x) : null,
+        k2_id_sadK2Deterministic: (typeof sadK2DeterministicLineId_ === 'function') ? sadK2DeterministicLineId_(TEMP_r6f2fLineFk_(x), x) : null };
+    });
+
+    // (4) reconciliation sets
+    out.reconciliation = {
+      expected_header_ids: token.expected_header_ids_sorted, actual_header_ids_in_scope: st.header_present ? [TEMP_r6f2fHeaderId_(hdr)] : [],
+      matched_header: st.header_present && TEMP_r6f2fHeaderId_(hdr) === TEMP_str_(expHeaderId), unexpected_headers_in_scope: st.unexpected_headers_in_scope,
+      expected_line_ids: token.expected_line_ids_sorted, actual_line_ids_for_expected_header: st.actual_line_ids_for_expected_header,
+      matched_line_ids: st.matched_line_ids, missing_line_ids: st.missing_line_ids, unexpected_line_ids: st.unexpected_line_ids,
+      fk_mismatch_count: 0, duplicate_line_id_count: st.dup_line_id, orphan_lines: st.orphan_lines
+    };
+
+    // (5) validator comparison — old vs canonical extraction, and WHY each contradiction occurred.
+    var writerScheme = out.actual_lines.length ? out.actual_lines[0].writer_id_sadDeterministic : null;
+    var k2Scheme = out.actual_lines.length ? out.actual_lines[0].k2_id_sadK2Deterministic : null;
+    var idSchemeDivergent = !!(out.actual_lines.length && out.actual_lines.every(function (r) { return !r.expected_membership; }) && st.matched_line_ids.length === 0);
+    out.validator_comparison = {
+      old_returned_line_ids_source: 'token.expected_line_ids_sorted (COPIED expectations — a defect; now replaced by actual DB ids)',
+      canonical_returned_line_ids_source: 'actual DB rows under the frozen header (allocation_draft_line_id)',
+      why_five_classified_unexpected: 'the atomic writer assigns NEW line ids via sadDeterministicLineId_ ("SADL-...", natural key sku|site_sku|window_code|source_warehouse_id|route_no) while the FREEZE precomputed expected ids via sadK2DeterministicLineId_ ("SADL-K2-...", natural key sku|site_sku|window_code) — different prefix AND hash input, so actual != frozen',
+      why_lineage_ok_false: 'header.calculation_run_id fingerprint (' + (out.actual_header.actual_calculation_run_id_fingerprint || 'n/a') + ') vs the frozen GAP-run fingerprint (' + token.calculation_run_id_fingerprint + '); mismatch iff the header stamps a different run id than the frozen GAP run',
+      why_route_populated_zero: 'the generic TEMP_r6f2RouteComplete_ requires recommended_destination_warehouse_id (blank for a LOGICAL marketplace destination) → 0; the K2-compatible rule (route_complete_k2=' + st.route_complete_k2 + ') accepts a marketplace destination',
+      line_id_scheme_divergent: idSchemeDivergent, writer_line_id_scheme_example: writerScheme, k2_line_id_scheme_example: k2Scheme
+    };
+
+    // business-data conclusion (structural): rows present + FK-linked + no orphan/dup ⇒ data is correct-but-mis-keyed vs the frozen expectation; NOT malformed.
+    var structurallySound = !!(st.header_present && lineRows.length === token.expected_k2_line_count && st.orphan_lines === 0 && st.unexpected_headers_in_scope === 0);
+    out.business_data_conclusion = structurallySound
+      ? (idSchemeDivergent ? 'BUSINESS_DATA_PRESENT_AND_LINKED — the committed header + ' + lineRows.length + ' lines are structurally correct and FK-linked; the FROZEN token expected LINE ids from a different id function (sadK2DeterministicLineId_) than the atomic writer uses (sadDeterministicLineId_). This is a FREEZE/WRITER line-id-scheme divergence, NOT malformed DB data. HALT for a USER decision (re-derive the token to the writer scheme, or align the writer to the K2 line-id) — no repair here.'
+        : 'BUSINESS_DATA_PRESENT — committed rows match the frozen authority (or a subset); see reconciliation sets')
+      : 'BUSINESS_DATA_INCOMPLETE_OR_MALFORMED — header/line counts or FK/orphan checks failed; see reconciliation. HALT — do not repair.';
+    // CANONICAL post-generation validation — FROZEN_SCOPE_VALIDATED ONLY when EVERY gate passes: exact header id,
+    // every frozen line id matched (no missing) + none unexpected, non-vacuous FK, counts, no dup/orphan, K2 route,
+    // calc-run lineage, and unrelated + legacy checksums unchanged vs the frozen token.
+    var guards = TEMP_r6f2eComputeLiveGuards_({ company: token.scope.company, country: token.scope.country, marketplace: token.scope.marketplace, planning_cycle: token.planning_cycle });
+    out.checksum_guards = { unrelated_match: TEMP_str_(guards.unrelated_scope_active_row_checksum) === TEMP_str_(token.unrelated_scope_active_row_checksum), legacy_match: TEMP_str_(guards.legacy_header_checksum) === TEMP_str_(token.legacy_header_checksum) };
+    var fullyValidated = !!(structurallySound && out.actual_header && out.actual_header.header_id_match &&
+      st.matched_line_ids.length === token.expected_k2_line_count && st.missing_line_ids.length === 0 && st.unexpected_line_ids.length === 0 &&
+      st.line_fk_ok === true && st.dup_line_id === 0 && st.dup_k2 === 0 &&
+      out.actual_header.calc_run_lineage_match && st.route_complete_k2 && out.checksum_guards.unrelated_match && out.checksum_guards.legacy_match);
+    out.verdict = fullyValidated ? 'FROZEN_SCOPE_VALIDATED' : 'RECONCILIATION_REQUIRED';
+    out.R6F2F2_ZERO_WRITE_CONFIRMED = 'YES (read-only)';
+  } catch (e) { out.verdict = 'DIAGNOSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  Logger.log('R6F2F2_DIAGNOSE ' + JSON.stringify(out, null, 2));
   return out;
 }
 
