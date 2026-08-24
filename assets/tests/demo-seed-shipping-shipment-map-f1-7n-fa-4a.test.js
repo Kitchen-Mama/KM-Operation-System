@@ -26,6 +26,7 @@ LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
 LOAD.push(G.match(/var DEMO4A_LOC_TYPE_CANON_ = \{[\s\S]*?\n\};/)[0]);
+LOAD.push(G.match(/var DEMO4A_LOC_TYPE_ENUM_ = \{[\s\S]*?\};/)[0]);
 ['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
   'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
   'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_indexLocationsByCode_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_nodeLat_', 'DEMO4A_nodeLng_', 'DEMO4A_nodeLocId_',
@@ -35,7 +36,8 @@ LOAD.push(G.match(/var DEMO4A_LOC_TYPE_CANON_ = \{[\s\S]*?\n\};/)[0]);
   'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_rowBindingAt_', 'DEMO4A_slotCurrentIndex_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
   'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
   'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_anyInserted_', 'DEMO4A_journalCanonical_', 'DEMO4A_buildJournal_', 'DEMO4A_verifyJournal_',
-  'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_',
+  'DEMO4A_dxCoordKey_', 'DEMO4A_dxRawRegion_', 'DEMO4A_dxSubdivision_', 'DEMO4A_dxCompatibleRoles_', 'DEMO4A_dxRoleStages_', 'DEMO4A_diagnoseLiveRoleCandidates_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
@@ -457,5 +459,80 @@ var vchecksD = DEMO4A_validateLiveRows_(planD, liveFromPlan(planD), mastersV3D()
 ok(vchecksD.live_bound_type_role_compatible.ok && vchecksD.live_no_unrelated_third_country.ok, 'G. exact V3D live passes the bound-type/role + no-third-country checks');
 (function () { var bad = liveFromPlan(planD); var cur = bad.shipment_routes.rows.filter(function (r) { return r.shipment_id === itD.shipment_id && DEMO4A_low_(r.status) === 'current'; })[0]; if (cur) cur.country = 'FR'; ok(!DEMO4A_validateLiveRows_(planD, bad, mastersV3D()).checks.live_no_unrelated_third_country.ok, 'G. a live current marker relabelled to an unrelated third country (FR) is caught'); })();
 (function () { var bad = liveFromPlan(planD); var m4 = mastersV3D(); var dst = bad.shipment_routes.rows.filter(function (r) { return r.shipment_id === itD.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); }).filter(function (r) { return DEMO4A_str_(r.location_ref_id) !== ''; }); var last = dst[dst.length - 1]; if (last) { m4.locations = m4.locations.map(function (l) { var c = Object.assign({}, l); if (c.logistics_location_id === last.location_ref_id) c.location_type = 'airport'; return c; }); ok(!DEMO4A_validateLiveRows_(planD, bad, m4).checks.live_bound_type_role_compatible.ok, 'G. a sea-route destination whose master location_type is an airport is caught'); } else ok(true, 'G. (no bound destination row to tamper — vacuous)'); })();
+
+// ============================================================ V3E — LIVE LOCATION-TYPE ROLE-CANDIDATE DIAGNOSTIC
+// Read-only instrumentation: per-role/region candidate counts across every filter stage + first-zero stage, exact raw
+// token audit, region authority — WITHOUT changing eligibility/binding/matrix.
+function locE(id, country, region, lat, lng, type, extra) { var o = { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, is_active: 'TRUE' }; for (var k in (extra || {})) o[k] = extra[k]; return o; }
+
+section('V3E-H1/H2. diagnostic is strictly read-only + one compact log');
+var dxEntry = extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES');
+var dxCore = extractFn(G, 'DEMO4A_diagnoseLiveRoleCandidates_') + '\n' + extractFn(G, 'DEMO4A_dxRoleStages_');
+ok(!/\.(appendRow|setValue|deleteRow)\(/.test(dxEntry + dxCore) && !/setProperty\(/.test(dxEntry + dxCore), 'H1. the diagnostic entrypoint + core perform NO write (no appendRow/setValue/deleteRow/setProperty)');
+eq((dxEntry.match(/Logger\.log\(/g) || []).length, 1, 'H2. the entrypoint emits exactly ONE compact primary log');
+ok(/DEMO4A_ZERO_WRITE_CONFIRMED = 'YES'/.test(dxEntry), 'H1/G. entrypoint asserts DEMO4A_ZERO_WRITE_CONFIRMED = YES');
+
+section('V3E-H5. every one of the 12 filter stages is independently reported');
+var LWEST = [locE('W1', 'US', 'US West', 34, -118, 'warehouse'), locE('W2', 'US', 'US West', 37, -122, 'seaport')];
+var stW = DEMO4A_dxRoleStages_(LWEST, { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' });
+var STAGE_KEYS = ['total', 'active', 'valid_coordinate', 'country_exact', 'region_exact', 'raw_type_recognized', 'canonical_type_resolved', 'transport_compatible', 'role_compatible', 'node_role_compatible', 'corridor_compatible', 'distinct_candidate'];
+ok(STAGE_KEYS.every(function (k) { return typeof stW.counts[k] === 'number'; }), 'H5. all 12 cumulative stage counts are present');
+eq(stW.counts.total, 2, 'H4. total counts every input row');
+eq(stW.counts.role_compatible, 1, 'H5. only the warehouse survives as a sea-destination candidate (seaport excluded from destination)');
+
+section('V3E-H6/H9. first-zero stage distinguishes region mismatch from type mismatch');
+eq(DEMO4A_dxRoleStages_([locE('X', 'US', 'US East', 40, -74, 'warehouse')], { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' }).first_zero_stage, 'region_exact', 'H6/H9. right type + wrong region → first zero at region_exact');
+eq(DEMO4A_dxRoleStages_([locE('Y', 'US', 'US West', 34, -118, 'teleporter')], { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' }).first_zero_stage, 'canonical_type_resolved', 'H6/H9. right region + unrecognized type → first zero at canonical_type_resolved (distinct stage)');
+eq(DEMO4A_dxRoleStages_([locE('Z', 'US', 'US West', 34, -118, 'airport')], { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' }).first_zero_stage, 'transport_compatible', 'H6. a non-sea type (airport) → first zero at transport_compatible (not sea-relevant in any role)');
+eq(DEMO4A_dxRoleStages_([locE('P', 'US', 'US West', 34, -118, 'seaport')], { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' }).first_zero_stage, 'role_compatible', 'H6. a sea-relevant-but-wrong-role type (port for a sea destination) → first zero at role_compatible (distinct from transport_compatible)');
+
+section('V3E-H7/H8. unknown stays unknown; no fuzzy/name matching');
+eq(DEMO4A_canonLocType_('teleporter'), 'UNKNOWN', 'H7. an unrecognized token stays UNKNOWN');
+eq(DEMO4A_canonLocType_('Los Angeles Seaport Terminal'), 'UNKNOWN', 'H8. a descriptive name does NOT fuzzy-match → UNKNOWN');
+eq(DEMO4A_dxRoleStages_([locE('N', 'US', 'US West', 34, -118, 'Los Angeles Seaport Terminal')], { role: 'destination', country: 'US', region: 'US West', tclass: 'sea' }).counts.canonical_type_resolved, 0, 'H8. a fuzzy/descriptive type is NOT resolved (no name matching)');
+
+section('V3E-B/C/D/F/G. full diagnostic core over a coherent fixture');
+function mastersE() {
+  var templates = [tplV3C('RT-W', 'US West'), tplV3C('RT-C', 'US Central'), tplV3C('RT-E', 'US East')];
+  var nodes = [];
+  ['RT-W', 'RT-E'].forEach(function (tid) { nodes.push(nAbs(tid, 1, 'origin', 'origin_departure'), nAbs(tid, 2, 'customs', 'customs_clearance'), nAbs(tid, 3, 'port', 'port_transit'), nAbs(tid, 4, 'destination', 'final_delivery')); });
+  nodes.push(nAbs('RT-C', 1, 'origin', 'origin_departure'), nAbs('RT-C', 2, 'customs', 'customs_clearance'), nAbs('RT-C', 3, 'port', 'port_transit'), nAbs('RT-C', 4, 'hub', 'hub_transit'), nAbs('RT-C', 5, 'destination', 'final_delivery'));
+  var locations = [
+    locE('CN-FAC-1', 'CN', '', 31, 121, 'factory', { verification_status: 'verified', record_status: 'active' }),
+    locE('US-W-1', 'US', 'US West', 34, -118, 'warehouse', { verification_status: 'verified' }),
+    locE('US-C-1', 'US', 'US Central', 41, -87, 'warehouse'),
+    locE('US-E-1', 'US', 'US East', 40, -74, 'warehouse'),
+    locE('US-W-AIR', 'US', 'US West', 33, -118, 'airport'),
+    locE('FR-PORT', 'FR', '', 50.9, 1.8, 'port'),
+    locE('CA-WH', 'CA', 'Ontario', 43, -79, 'warehouse')
+  ];
+  return { templates: templates, nodes: nodes, locations: locations };
+}
+var mE = mastersE();
+var dxE = DEMO4A_diagnoseLiveRoleCandidates_(mE.templates, mE.nodes, mE.locations);
+ok(dxE.filter_stage_counts.origin_cn && dxE.filter_stage_counts.destination_by_region.length === 3 && dxE.filter_stage_counts.primary_in_transit_current, 'C. reports origin + 3 destination-by-region + primary current stage sets');
+eq(dxE.filter_stage_counts.origin_cn.counts.role_compatible, 1, 'C. the CN factory is a valid sea-origin candidate');
+eq(dxE.verdict, 'LIVE_LOCATION_TYPES_READY_FOR_MATRIX_ALIGNMENT', 'G. a coherent fixture → READY verdict');
+ok(dxE.raw_type_token_audit.every(function (t) { return t.example_id_fingerprints.length <= 3 && t.example_id_fingerprints.every(function (f) { return /^[0-9a-f]{8}$/.test(f); }); }), 'H3/D. raw-token audit uses ≤3 id FINGERPRINTS (no id / all-row dump)');
+ok(dxE.raw_type_token_audit.some(function (t) { return t.raw_token === 'factory' && t.recognized && t.source_spec_enum_match && t.compatible_roles_sea.indexOf('origin') !== -1; }), 'D. factory token: recognized + enum-matched + origin-compatible under sea');
+ok(dxE.raw_type_token_audit.some(function (t) { return t.raw_token === 'airport' && t.recognized && t.compatible_roles_sea.indexOf('destination') === -1; }), 'D. airport token: recognized but NOT a sea-destination role');
+eq(dxE.location_distribution.other_aggregate, 2, 'B. non-CN/US rows (CA + FR) are counted ONLY in the OTHER aggregate (never per-row)');
+ok(dxE.location_distribution.by_scope['CN'] && dxE.location_distribution.by_scope['US | US West'], 'B. distribution is scoped by country + raw region (CN, US | US West, …)');
+ok(dxE.selected_template_evidence.length === 3 && dxE.selected_template_evidence.every(function (e) { return /^[0-9a-f]{8}$/.test(e.template_fp); }), 'F. 3 candidate templates reported by FINGERPRINT (no master dump)');
+ok(dxE.selected_template_evidence[0].eligible_current_node_types.indexOf('port') !== -1, 'F. eligible current-node types reported (port is transit-compatible)');
+
+section('V3E-E/G. region-authority mismatch is distinguishable from type mismatch');
+var mm = mastersE(); mm.locations = mm.locations.map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (c.country === 'US') { c.region = ''; c.subdivision_code = 'CA'; } return c; });
+var dxMM = DEMO4A_diagnoseLiveRoleCandidates_(mm.templates, mm.nodes, mm.locations);
+eq(dxMM.verdict, 'LIVE_REGION_AUTHORITY_MISMATCH', 'G/E. US region blank + subdivision populated → LIVE_REGION_AUTHORITY_MISMATCH');
+ok(dxMM.region_authority_audit.region_blank_but_subdivision_present >= 1 && dxMM.region_authority_audit.uses_us_west_central_east_tokens === false, 'E. region-blank-but-subdivision counted; WCE region tokens absent');
+
+section('V3E-H10. eligibility / binding / matrix behavior is UNCHANGED');
+eq(DEMO4A_roleCompatibleTypes_('sea', 'destination').slice().sort(), ['carrier_facility', 'distribution_center', 'fulfillment_center', 'parcel_hub', 'rail_terminal', 'transit_hub', 'truck_terminal', 'warehouse'], 'H10. the frozen sea-destination compatibility set is unchanged');
+eq(DEMO4A_buildPlan_(mastersV3C()).checksum, planC.checksum, 'H10. plan build is byte-identical (eligibility + binding selection untouched)');
+
+section('V3E-H11. both confirmation constants remain placeholders');
+eq(DEMO4A_CONFIRMED_SEED_CHECKSUM_, 'PASTE_DEMO_SEED_CHECKSUM_HERE', 'H11. seed confirmation constant remains a placeholder');
+eq(DEMO4A_CONFIRMED_CLEAR_TOKEN_, 'PASTE_DEMO_CLEAR_TOKEN_HERE', 'H11. clear token remains a placeholder');
 
 done();

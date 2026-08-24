@@ -1015,6 +1015,191 @@ function TEMP_DEMO4A_DIAGNOSE_ROUTE_MASTER_RESOLUTION() {
 }
 
 // ================================================================================================================
+// V3E — LIVE LOCATION-TYPE ROLE-CANDIDATE DIAGNOSTIC (strictly read-only; ONE compact log). Exposes, per required role/
+// region, the candidate count surviving EACH of the 12 filter stages + the first stage that hits zero; the exact raw
+// location_type tokens with their current canonical mapping/compatibility; and the live region authority (region vs
+// subdivision/state). It REUSES the frozen V3D selection predicates UNCHANGED (DEMO4A_locActive_/locValid_/locCountry_/
+// locRegion_/locType_, canonLocType_, transportClass_, roleCompatibleTypes_, corridorCountries_, nodeRoleCompat_,
+// pickAnchor_) and NEVER changes eligibility, binding selection or the compatibility matrix. Never dumps all rows
+// (counts + capped fingerprinted examples only). No fuzzy/name matching.
+// ================================================================================================================
+// canonical §5.2 enum membership (source/spec authority) for the raw-token audit's enum-match column.
+var DEMO4A_LOC_TYPE_ENUM_ = { factory: 1, warehouse: 1, fulfillment_center: 1, distribution_center: 1, port: 1, airport: 1, rail_terminal: 1, truck_terminal: 1, border_crossing: 1, customs_facility: 1, transit_hub: 1, parcel_hub: 1, carrier_facility: 1, city_centroid: 1, country_centroid: 1, virtual_transit_point: 1, other: 1 };
+function DEMO4A_dxCoordKey_(l) { return DEMO4A_num_(l.latitude).toFixed(5) + ',' + DEMO4A_num_(l.longitude).toFixed(5); }
+// RAW `region` column ONLY (NO state/subdivision fallback) — the diagnostic must expose region-vs-state authority truthfully.
+function DEMO4A_dxRawRegion_(l) { return DEMO4A_str_(DEMO4A_get_(l, ['region'])); }
+function DEMO4A_dxSubdivision_(l) { return DEMO4A_str_(DEMO4A_get_(l, ['subdivision_code', 'state', 'province', 'state_province'])); }
+// which of origin/current/destination a canonical type is compatible with, for a transport class (reuses the matrix).
+function DEMO4A_dxCompatibleRoles_(canonType, tclass) { return ['origin', 'current', 'destination'].filter(function (r) { return DEMO4A_typeRoleCompat_(canonType, tclass, r) === 'compatible'; }); }
+// per-role CUMULATIVE filter-stage counts. Uses the frozen selection predicates only; adds NO permissiveness. region is
+// filtered only when opts.region is supplied (destination); corridor only when opts.corridor supplied (current marker);
+// distinct only when opts.excludeCoords supplied. node_role is a TEMPLATE-NODE property (reported in F) so it is a
+// pass-through at the location level here.
+function DEMO4A_dxRoleStages_(locations, opts) {
+  opts = opts || {};
+  var role = opts.role, tclass = opts.tclass || 'sea';
+  var compat = DEMO4A_roleCompatibleTypes_(tclass, role);
+  var union = {}; ['origin', 'current', 'destination'].forEach(function (r) { DEMO4A_roleCompatibleTypes_(tclass, r).forEach(function (t) { union[t] = 1; }); });
+  var c = { total: 0, active: 0, valid_coordinate: 0, country_exact: 0, region_exact: 0, raw_type_recognized: 0, canonical_type_resolved: 0, transport_compatible: 0, role_compatible: 0, node_role_compatible: 0, corridor_compatible: 0, distinct_candidate: 0 };
+  var reasons = {}; function rej(k) { reasons[k] = (reasons[k] || 0) + 1; }
+  (locations || []).forEach(function (l) {
+    c.total++;
+    if (!DEMO4A_locActive_(l)) { rej('INACTIVE_OR_RECORD_INVALID'); return; } c.active++;
+    if (!DEMO4A_locValid_(l)) { rej('INVALID_COORDINATE'); return; } c.valid_coordinate++;
+    if (opts.country && DEMO4A_low_(DEMO4A_locCountry_(l)) !== DEMO4A_low_(opts.country)) { rej('COUNTRY_MISMATCH'); return; } c.country_exact++;
+    if (opts.region) { if (DEMO4A_low_(DEMO4A_locRegion_(l)) !== DEMO4A_low_(opts.region)) { rej('REGION_MISMATCH'); return; } } c.region_exact++;
+    var raw = DEMO4A_locType_(l); if (raw === '') { rej('RAW_TYPE_BLANK'); return; } c.raw_type_recognized++;
+    var canon = DEMO4A_canonLocType_(raw); if (canon === '' || canon === 'UNKNOWN') { rej('CANONICAL_TYPE_UNRESOLVED'); return; } c.canonical_type_resolved++;
+    if (!union[canon]) { rej('TRANSPORT_INCOMPATIBLE_TYPE'); return; } c.transport_compatible++;
+    if (compat.indexOf(canon) === -1) { rej('NO_ROLE_COMPATIBLE_' + String(role).toUpperCase() + '_LOCATION'); return; } c.role_compatible++;
+    c.node_role_compatible++;   // node-role governs the TEMPLATE node (F), not the location → pass-through here
+    if (opts.corridor) { if (!opts.corridor[DEMO4A_low_(DEMO4A_locCountry_(l))]) { rej('THIRD_COUNTRY_NOT_IN_ROUTE_CORRIDOR'); return; } } c.corridor_compatible++;
+    if (opts.excludeCoords && opts.excludeCoords[DEMO4A_dxCoordKey_(l)]) { rej('NOT_DISTINCT_FROM_ORIGIN_OR_DESTINATION'); return; } c.distinct_candidate++;
+  });
+  var order = ['total', 'active', 'valid_coordinate', 'country_exact', 'region_exact', 'raw_type_recognized', 'canonical_type_resolved', 'transport_compatible', 'role_compatible', 'node_role_compatible', 'corridor_compatible', 'distinct_candidate'];
+  var firstZero = null; for (var i = 0; i < order.length; i++) { if (c[order[i]] === 0) { firstZero = order[i]; break; } }
+  return { role: role, country: opts.country || '', region: opts.region || '', transit_type: opts.transit_type || '', last_mile: opts.last_mile || '', counts: c, first_zero_stage: firstZero, rejection_reasons: reasons };
+}
+// PURE diagnostic core. Returns a COMPACT object (counts + capped examples; NEVER all rows). Read-only — no GAS globals.
+function DEMO4A_diagnoseLiveRoleCandidates_(templates, nodes, locations) {
+  function s(v) { return DEMO4A_str_(v); } function low(v) { return DEMO4A_low_(v); }
+  var activeTpls = (templates || []).filter(function (t) { return DEMO4A_truthy_(t.is_active); });
+  var byTpl = DEMO4A_nodesByTemplate_(nodes);
+  function nodeCount(t) { return (byTpl[s(t.route_template_id)] || []).length; }
+  function richer(a, b) { var na = nodeCount(a), nb = nodeCount(b); if (nb !== na) return nb - na; return s(a.route_template_id) < s(b.route_template_id) ? -1 : 1; }
+  function richest(region) { var pool = activeTpls.filter(function (t) { return DEMO4A_regionOf_(t) === region; }); pool.sort(richer); return pool[0] || null; }
+  var cand = { US_WEST: richest('US_WEST'), US_CENTRAL: richest('US_CENTRAL'), US_EAST: richest('US_EAST') };
+  var primary = activeTpls.slice().sort(richer)[0] || null;
+  var primaryClass = primary ? DEMO4A_transportClass_(primary.transit_type) : 'sea';
+
+  // ---- B — live location distribution (active + valid-coordinate), scoped to CN + US regions; OTHER as aggregate ----
+  var distribution = { by_scope: {}, verification_status_counts: {}, record_status_counts: {}, other_aggregate: 0, active_valid_total: 0 };
+  function bumpObj(o, k) { o[k] = (o[k] || 0) + 1; }
+  (locations || []).forEach(function (l) {
+    if (!DEMO4A_locActive_(l) || !DEMO4A_locValid_(l)) return;
+    distribution.active_valid_total++;
+    var co = low(DEMO4A_locCountry_(l)), raw = DEMO4A_locType_(l), canon = DEMO4A_canonLocType_(raw);
+    bumpObj(distribution.verification_status_counts, s(DEMO4A_get_(l, ['verification_status'])) || '(blank)');
+    bumpObj(distribution.record_status_counts, s(DEMO4A_get_(l, ['record_status', 'row_status'])) || '(blank)');
+    var scope;
+    if (co === 'cn') scope = 'CN';
+    else if (co === 'us') scope = 'US | ' + (DEMO4A_dxRawRegion_(l) || '(blank-region)');
+    else { distribution.other_aggregate++; return; }
+    distribution.by_scope[scope] = distribution.by_scope[scope] || {};
+    bumpObj(distribution.by_scope[scope], (raw || '(blank)') + ' -> ' + (canon || '(blank)'));
+  });
+
+  // ---- D — exact raw location_type token audit (CN/US only; ≤3 example fingerprints; NO fuzzy matching) ----
+  var tokenAgg = {};
+  (locations || []).forEach(function (l) {
+    var co = low(DEMO4A_locCountry_(l)); if (co !== 'cn' && co !== 'us') return;
+    if (!DEMO4A_locActive_(l) || !DEMO4A_locValid_(l)) return;
+    var raw = DEMO4A_locType_(l) || '(blank)';
+    var e = tokenAgg[raw] || (tokenAgg[raw] = { raw_token: raw, count: 0, examples: [] });
+    e.count++; if (e.examples.length < 3) e.examples.push(DEMO4A_hash_(DEMO4A_locId_(l)));
+  });
+  var rawTokenAudit = Object.keys(tokenAgg).sort().map(function (raw) {
+    var canon = DEMO4A_canonLocType_(raw === '(blank)' ? '' : raw);
+    var recognized = canon !== '' && canon !== 'UNKNOWN';
+    return { raw_token: raw, count: tokenAgg[raw].count, canonical_mapping: canon, recognized: recognized,
+      compatible_roles_sea: recognized ? DEMO4A_dxCompatibleRoles_(canon, 'sea') : [], compatible_roles_truck: recognized ? DEMO4A_dxCompatibleRoles_(canon, 'truck') : [],
+      source_spec_enum_match: recognized && DEMO4A_LOC_TYPE_ENUM_.hasOwnProperty(canon), example_id_fingerprints: tokenAgg[raw].examples };
+  });
+
+  // ---- E — US region authority audit (raw region vs subdivision/state; NO silent fallback) ----
+  var regionRaw = {}, subdivision = {}, effectiveRegion = {}, usActiveValid = 0, regionBlankButSubdivision = 0;
+  var WCE = { us_west: 1, us_central: 1, us_east: 1 };
+  (locations || []).forEach(function (l) {
+    if (low(DEMO4A_locCountry_(l)) !== 'us' || !DEMO4A_locActive_(l) || !DEMO4A_locValid_(l)) return;
+    usActiveValid++;
+    var rr = DEMO4A_dxRawRegion_(l), sub = DEMO4A_dxSubdivision_(l), eff = DEMO4A_locRegion_(l);
+    bumpObj(regionRaw, rr || '(blank)'); bumpObj(subdivision, sub || '(blank)'); bumpObj(effectiveRegion, eff || '(blank)');
+    if (rr === '' && sub !== '') regionBlankButSubdivision++;
+  });
+  var usesWce = Object.keys(regionRaw).some(function (k) { return WCE[low(k)]; });
+  var regionAudit = { us_active_valid: usActiveValid, region_raw_counts: regionRaw, subdivision_counts: subdivision, effective_region_counts: effectiveRegion,
+    region_blank_but_subdivision_present: regionBlankButSubdivision, uses_us_west_central_east_tokens: usesWce };
+
+  // ---- C — per-role filter-stage counts for the required roles ----
+  var originCountry = primary ? s(primary.origin_country) : 'CN';
+  var origin = DEMO4A_dxRoleStages_(locations, { role: 'origin', country: originCountry, tclass: primaryClass, transit_type: primary ? s(primary.transit_type) : '', last_mile: primary ? s(primary.last_mile_delivery) : '' });
+  var destRoles = ['US_WEST', 'US_CENTRAL', 'US_EAST'].map(function (rg) {
+    var t = cand[rg]; if (!t) return { role: 'destination', region_bucket: rg, missing_template: true };
+    var st = DEMO4A_dxRoleStages_(locations, { role: 'destination', country: s(t.destination_country), region: s(t.destination_region), tclass: DEMO4A_transportClass_(t.transit_type), transit_type: s(t.transit_type), last_mile: s(t.last_mile_delivery) });
+    st.region_bucket = rg; st.template_fp = DEMO4A_hash_(s(t.route_template_id)); return st;
+  });
+  // current marker: corridor + distinct-from deterministically-picked origin/destination of the primary template
+  var currentStage = null;
+  if (primary) {
+    var resolvedPrimary = (byTpl[s(primary.route_template_id)] || []).map(function (n) { return { node: n }; });
+    var corridor = DEMO4A_corridorCountries_(primary, resolvedPrimary);
+    var oPick = DEMO4A_pickAnchor_(locations, { country: s(primary.origin_country), role: 'origin', tclass: primaryClass });
+    var dPick = DEMO4A_pickAnchor_(locations, { country: s(primary.destination_country), region: s(primary.destination_region), role: 'destination', tclass: primaryClass });
+    var exclude = {}; if (oPick) exclude[DEMO4A_dxCoordKey_(oPick.loc)] = 1; if (dPick) exclude[DEMO4A_dxCoordKey_(dPick.loc)] = 1;
+    currentStage = DEMO4A_dxRoleStages_(locations, { role: 'current', tclass: primaryClass, corridor: corridor, excludeCoords: exclude, transit_type: s(primary.transit_type), last_mile: s(primary.last_mile_delivery) });
+    currentStage.corridor_countries = Object.keys(corridor);
+  }
+
+  // ---- F — selected/candidate template evidence (fingerprints only; no master dump) ----
+  function tplEvidence(t) {
+    if (!t) return null;
+    var ns = byTpl[s(t.route_template_id)] || [], tclass = DEMO4A_transportClass_(t.transit_type);
+    var eligibleCurrentNodeTypes = {};
+    for (var i = 1; i <= ns.length - 2; i++) { if (DEMO4A_nodeRoleCompat_(s(ns[i].node_type), 'current') !== 'incompatible') eligibleCurrentNodeTypes[low(ns[i].node_type) || '(blank)'] = 1; }
+    var oSt = DEMO4A_dxRoleStages_(locations, { role: 'origin', country: s(t.origin_country), tclass: tclass });
+    var dSt = DEMO4A_dxRoleStages_(locations, { role: 'destination', country: s(t.destination_country), region: s(t.destination_region), tclass: tclass });
+    var resolved = ns.map(function (n) { return { node: n }; });
+    var cSt = DEMO4A_dxRoleStages_(locations, { role: 'current', tclass: tclass, corridor: DEMO4A_corridorCountries_(t, resolved) });
+    return { template_fp: DEMO4A_hash_(s(t.route_template_id)), region_bucket: DEMO4A_regionOf_(t), transit_type: s(t.transit_type), last_mile_delivery: s(t.last_mile_delivery),
+      origin_country: s(t.origin_country), destination_country: s(t.destination_country), destination_region: s(t.destination_region),
+      first_node_type: ns.length ? (low(ns[0].node_type) || '(blank)') : '(none)', last_node_type: ns.length ? (low(ns[ns.length - 1].node_type) || '(blank)') : '(none)',
+      eligible_current_node_types: Object.keys(eligibleCurrentNodeTypes), node_count: ns.length,
+      origin_candidate_count: oSt.counts.role_compatible, destination_candidate_count: dSt.counts.role_compatible, current_candidate_count: cSt.counts.role_compatible,
+      origin_first_zero_stage: oSt.first_zero_stage, destination_first_zero_stage: dSt.first_zero_stage, current_first_zero_stage: cSt.first_zero_stage };
+  }
+  var selectedTemplates = [tplEvidence(cand.US_WEST), tplEvidence(cand.US_CENTRAL), tplEvidence(cand.US_EAST)].filter(Boolean);
+
+  // ---- G — verdict (precedence: region-authority > no-rows > type-authority > ready) ----
+  var destSurvived = destRoles.filter(function (d) { return !d.missing_template; });
+  var anyDestCountry = destSurvived.some(function (d) { return d.counts && d.counts.country_exact > 0; });
+  var anyDestRegion = destSurvived.some(function (d) { return d.counts && d.counts.region_exact > 0; });
+  var anyDestRole = destSurvived.some(function (d) { return d.counts && d.counts.role_compatible > 0; });
+  var anyDestRawType = destSurvived.some(function (d) { return d.counts && d.counts.raw_type_recognized > 0; });
+  var verdict;
+  if (!anyDestCountry && origin.counts.country_exact === 0) verdict = 'NO_VALID_DESTINATION_MASTER_ROWS';
+  else if (origin.counts.country_exact === 0) verdict = 'NO_VALID_ORIGIN_MASTER_ROWS';
+  else if (!anyDestCountry) verdict = 'NO_VALID_DESTINATION_MASTER_ROWS';
+  else if (anyDestCountry && !anyDestRegion && (regionAudit.region_blank_but_subdivision_present > 0 || !regionAudit.uses_us_west_central_east_tokens)) verdict = 'LIVE_REGION_AUTHORITY_MISMATCH';
+  else if (anyDestRawType && !anyDestRole) verdict = 'LOCATION_TYPE_AUTHORITY_UNRESOLVED';
+  else if (origin.counts.role_compatible > 0 && anyDestRole) verdict = 'LIVE_LOCATION_TYPES_READY_FOR_MATRIX_ALIGNMENT';
+  else verdict = 'LOCATION_TYPE_AUTHORITY_UNRESOLVED';
+
+  return {
+    active_template_count: activeTpls.length, location_count: (locations || []).length,
+    required_scope: ['CN', 'US/US_WEST', 'US/US_CENTRAL', 'US/US_EAST', 'OTHER(aggregate)'],
+    location_distribution: distribution,
+    filter_stage_counts: { origin_cn: origin, destination_by_region: destRoles, primary_in_transit_current: currentStage },
+    raw_type_token_audit: rawTokenAudit,
+    region_authority_audit: regionAudit,
+    selected_template_evidence: selectedTemplates,
+    verdict: verdict
+  };
+}
+function TEMP_DEMO4A_DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES() {
+  var out = { tool: 'TEMP_DEMO4A_DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES', mode: 'STRICTLY READ-ONLY (getSheetByName + getValues only)', output_contract: 'ONE_COMPACT_PRIMARY_LOG_ENTRY (per-stage counts + capped fingerprinted examples; NEVER all rows)' };
+  try {
+    var masters = DEMO4A_readMasters_();
+    out.masters_present = masters.present;
+    var d = DEMO4A_diagnoseLiveRoleCandidates_(masters.templates, masters.nodes, masters.locations);
+    Object.keys(d).forEach(function (k) { out[k] = d[k]; });
+    out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';
+  } catch (e) { out.verdict = 'DIAGNOSE_THREW'; out.reason = (e && e.message) ? e.message : String(e); }
+  out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES';
+  Logger.log('DEMO4A_DIAGNOSE_LIVE_ROLE_CANDIDATES ' + JSON.stringify(out));
+  return out;
+}
+
+// ================================================================================================================
 // ENTRYPOINT 1 — PREFLIGHT (strictly read-only)
 // ================================================================================================================
 function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {

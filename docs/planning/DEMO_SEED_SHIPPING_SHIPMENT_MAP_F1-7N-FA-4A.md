@@ -154,3 +154,23 @@ CN→US rejects FR/Calais (H1); explicit FR node re-authorizes it (H2); sea/truc
 
 ## I / J — Files, sync manifest, boundary
 Changed: `assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs` (TEMP demo tool) + `assets/tests/demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` + this planning doc. **No** production / master / frontend / bundle / schema change. `APPS_SCRIPT_SYNC_REQUIRED`: none for production — the TEMP demo tool is user-synced only if/when the demo is exercised (it is not run in this task). No live execution or write; both confirmation constants remain placeholders.
+
+---
+
+# F1-7N-FA-4A — V3E: LIVE LOCATION-TYPE ROLE-CANDIDATE DIAGNOSTIC (read-only instrumentation)
+
+**Status: diagnostic instrumentation only.** No change to template eligibility, binding selection, or the V3D compatibility matrix. No master/production/frontend/schema change. Strictly read-only (`getSheetByName` + `getValues`); no DB/property write; both confirmation constants remain placeholders. Not run by Claude. One local commit; not pushed/deployed.
+
+## New entrypoint
+`TEMP_DEMO4A_DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES()` — emits ONE compact primary log (`DEMO4A_DIAGNOSE_LIVE_ROLE_CANDIDATES`). Pure core: `DEMO4A_diagnoseLiveRoleCandidates_(templates, nodes, locations)`. It REUSES the frozen V3D predicates unchanged (`DEMO4A_locActive_/locValid_/locCountry_/locRegion_/locType_`, `canonLocType_`, `transportClass_`, `roleCompatibleTypes_`, `corridorCountries_`, `nodeRoleCompat_`, `pickAnchor_`). Never dumps rows — counts + capped (≤3) id fingerprints only. No fuzzy/name matching.
+
+## What it emits
+- **B — location distribution** (active + valid-coordinate) by scope `CN` / `US | <raw region>` (+ `verification_status` / `record_status` tallies); non-CN/US collapsed into `other_aggregate`.
+- **C — per-role filter-stage counts** for `origin_cn`, `destination_by_region` (US_WEST/US_CENTRAL/US_EAST), and `primary_in_transit_current`. Each reports the 12 CUMULATIVE stages — total → active → valid_coordinate → country_exact → region_exact → raw_type_recognized → canonical_type_resolved → transport_compatible → role_compatible → node_role_compatible → corridor_compatible → distinct_candidate — plus `first_zero_stage` and `rejection_reasons`. (node_role is a template-node property, reported in F; it is a pass-through at the location level.)
+- **D — raw token audit**: every distinct CN/US `location_type` token with count, current canonical mapping, `recognized`, `compatible_roles_sea` / `compatible_roles_truck`, `source_spec_enum_match` (§5.2 enum), ≤3 example id fingerprints.
+- **E — region authority audit**: US `region_raw_counts` vs `subdivision_counts` vs `effective_region_counts` (the latter reflects the existing `DEMO4A_locRegion_` region→state fallback), `region_blank_but_subdivision_present`, `uses_us_west_central_east_tokens`. The audit EXPOSES the region-vs-subdivision authority without changing selection.
+- **F — selected/candidate template evidence** (richest active per region, by fingerprint): transit_type, last_mile, origin/destination country, destination_region, first/last node type, eligible current-node types, exact origin/current/destination candidate counts, and each role's first rejection stage.
+- **G — verdict** ∈ `LIVE_LOCATION_TYPES_READY_FOR_MATRIX_ALIGNMENT` · `LIVE_REGION_AUTHORITY_MISMATCH` · `NO_VALID_DESTINATION_MASTER_ROWS` · `NO_VALID_ORIGIN_MASTER_ROWS` · `LOCATION_TYPE_AUTHORITY_UNRESOLVED`; always `DEMO4A_ZERO_WRITE_CONFIRMED = YES`.
+
+## Purpose
+The V3D live diagnostic returned eligible-templates = 0 (`NO_ROLE_COMPATIBLE_DESTINATION_LOCATION` = 29, `NO_ROLE_COMPATIBLE_ORIGIN_LOCATION` = 3). V3E pinpoints WHICH stage each candidate dies at (region vs raw-token vs canonical vs transport vs role) and the exact live raw tokens + region authority — the evidence required BEFORE any V3D matrix/region alignment. **No matrix change is made in this task.**
