@@ -1392,7 +1392,43 @@ function DEMO4A_addressAuthority_(w, route) {
 //                       review_version:'<id>' }
 // The bound address_fingerprint MUST equal the warehouse's CURRENT normalized-address fingerprint (a changed address
 // invalidates a stale coordinate), and the accuracy must be a facility-grade class (city/zip/centroid/approximate rejected).
-var DEMO4A_DEST_COORD_AUTHORITY_ = {};
+// V3G3(C) — ARMED with EXACTLY the three USER-APPROVED destination coordinates, and nothing else. The user approved these
+// after the live read-only validator returned THREE_REGION_COORDINATE_PROPOSAL_READY / proposal_entries 3 /
+// authority_armed false / DEMO4A_ZERO_WRITE_CONFIRMED YES, with every per-region gate passing (fingerprint match,
+// coordinate validity, facility-grade accuracy, source reference, identity match, country/region agreement, no
+// gateway/centroid substitution, no duplicate coordinate).
+// Each entry is EXPLICIT and IMMUTABLE in source: it binds warehouse_id + warehouse_code + logistics_location_id + region
+// + the LIVE address_fingerprint + latitude/longitude + the CANONICAL facility accuracy (the stated source vocabulary is
+// kept alongside for review traceability) + source_reference + frozen approval metadata. `approved_at`/`review_version`
+// are FROZEN CONSTANTS, never a runtime timestamp, so demo_plan_checksum stays reproducible. A stale live address
+// fingerprint still fails closed (DEMO4A_deriveDestCoordinate_ compares against the CURRENT normalized address).
+// DEMO4A_DEST_COORD_PROPOSAL_ remains the separate review evidence; only THIS constant is executable authority, and
+// nothing promotes a proposal automatically.
+var DEMO4A_DEST_COORD_AUTHORITY_ = {
+  BFI4: {
+    region: 'US_WEST', warehouse_id: 'WH-KM-US-FBA-BFI4', warehouse_code: 'BFI4', logistics_location_id: 'LOC-WH-KM-US-FBA-BFI4',
+    address_fingerprint: '06a93100', latitude: 47.4145, longitude: -122.25778,
+    accuracy: 'building', stated_accuracy: 'BUILDING_FOOTPRINT',
+    source_type: 'OPENSTREETMAP_BUILDING', source_reference: 'https://mapcarta.com/W500861061',
+    reviewed_by: 'USER_SOURCE_REVIEW', approved_by: 'USER_APPROVED', review_status: 'user_approved', approved_at: '2026-08-24', review_version: 'V3G3-USER-APPROVED-1'
+  },
+  AUS2: {
+    region: 'US_CENTRAL', warehouse_id: 'WH-KM-US-FBA-AUS2', warehouse_code: 'AUS2', logistics_location_id: 'LOC-WH-KM-US-FBA-AUS2',
+    address_fingerprint: '82165c14', latitude: 30.43255, longitude: -97.59852,
+    accuracy: 'building', stated_accuracy: 'BUILDING_FOOTPRINT',
+    source_type: 'OPENSTREETMAP_BUILDING', source_reference: 'https://mapcarta.com/W894331161',
+    // live DB ZIP 78665 stays authoritative (the fingerprint above is built from it); 78660 is a third-party dataset
+    // variant only and is NEVER substituted, and no warehouse master field is modified.
+    reviewed_by: 'USER_SOURCE_REVIEW', approved_by: 'USER_APPROVED', review_status: 'user_approved', approved_at: '2026-08-24', review_version: 'V3G3-USER-APPROVED-1'
+  },
+  ABE2: {
+    region: 'US_EAST', warehouse_id: 'WH-KM-US-FBA-ABE2', warehouse_code: 'ABE2', logistics_location_id: 'LOC-WH-KM-US-FBA-ABE2',
+    address_fingerprint: '9230a81c', latitude: 40.55787890788748, longitude: -75.61500997116448,
+    accuracy: 'address', stated_accuracy: 'ADDRESS_POINT',
+    source_type: 'REVIEWED_FACILITY_ADDRESS_POINT', source_reference: 'https://fba-finder.com/usa/pennsylvania/abe2/',
+    reviewed_by: 'USER_SOURCE_REVIEW', approved_by: 'USER_APPROVED', review_status: 'user_approved', approved_at: '2026-08-24', review_version: 'V3G3-USER-APPROVED-1'
+  }
+};
 var DEMO4A_COORD_ACCURACY_FACILITY_ = { rooftop: 1, parcel: 1, building: 1, premise: 1, address: 1 };
 // V3G2 — EXPLICIT accuracy-token alignment. Reviewed sources state their accuracy in their own vocabulary
 // (BUILDING_FOOTPRINT = an OSM building polygon; ADDRESS_POINT = a reviewed facility address point). Each is mapped to a
@@ -1827,17 +1863,21 @@ function TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY() {
 // warehouse-linked logistics_locations coordinate — it does NOT read inline route/event coords. So an address-derived-only
 // destination renders as a route-node dot (On-The-Way per-shipment view) but NOT as the labeled endpoint fallback.
 var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = {
-  inline_route_node_coordinate_rendered: true,   // resolveNodeCoord reads inline lat/lng first (:261-265) → the planned destination node plots at the coordinate
-  dedicated_destination_endpoint_reads_inline: false,   // resolveDestinationCoord accepts ONLY a warehouse→logistics coord (:267)
-  // V3G1(E) — display-completeness truth. The planned destination route node DOES render at the exact coordinate (node
-  // level). But the frontend can only LABEL it as the destination warehouse (vs a generic gateway/route dot) via the
-  // dedicated endpoint fallback, which needs a warehouse-linked logistics_locations coordinate. So for the master-coordinate
-  // branch the destination is fully labelled; for the ADDRESS-DERIVED branch (no valid logistics master coord) the node
-  // renders but is NOT distinctly labelled as the destination endpoint → MAP_DESTINATION_DISPLAY_NOT_COMPLETE (frontend blocker).
+  inline_route_node_coordinate_rendered: true,   // resolveNodeCoord reads inline lat/lng first → the destination node plots at the coordinate
+  // V3G3(B) — the endpoint consumer is now CLOSED. resolveDestinationCoord keeps the exact warehouse→logistics master
+  // coordinate as its HIGHEST priority and, only when that is absent, consumes THIS shipment's proven final destination
+  // route row (resolveDestinationRouteNode): verified sequence_no ordering with a unique terminal, exact shipment_id, not a
+  // recognized transit gateway, not the current marker, location_ref_type = logistics_location whose location_ref_id
+  // resolves to a logistics_locations row whose warehouse_id IS the shipment's destination warehouse, and a valid
+  // non-(0,0) in-range coordinate. Everything else fails closed. So the ADDRESS-DERIVED destination is now a LABELLED
+  // destination endpoint, not just an unlabelled route dot.
+  dedicated_destination_endpoint_reads_proven_terminal_route_row: true,
+  destination_endpoint_precedence: ['DEST_WAREHOUSE_LOCATION (exact warehouse_id → warehouse-linked logistics coordinate)', 'DEST_ROUTE_TERMINAL_NODE (this shipment\'s proven final destination route row)', 'UNRESOLVED (fail closed)'],
+  destination_route_row_lineage_gates: ['verified_sequence_no_ordering_unique_terminal', 'exact_shipment_id', 'not_recognized_gateway_node', 'not_current_marker', 'location_ref_type_logistics_location', 'location_ref_id_resolves', 'referenced_location_warehouse_id_equals_destination_warehouse', 'valid_non_zero_in_range_coordinate'],
   destination_display_complete_for_master_coordinate_branch: true,
-  destination_display_complete_for_address_derived_branch: false,
-  frontend_blocker: 'MAP_DESTINATION_DISPLAY_NOT_COMPLETE — resolveDestinationCoord (global-logistics-map.js:267) does not consume an inline/address-derived route coordinate for the labelled destination-endpoint marker; the address-derived destination node renders but is not distinctly labelled. Frontend NOT modified (separate authorization required).',
-  note: 'Inline route node renders (resolveNodeCoord); dedicated destination-endpoint fallback does not consume inline coords. Frontend NOT modified in this task.'
+  destination_display_complete_for_address_derived_branch: true,
+  frontend_blocker: '',   // CLOSED in V3G3 (was MAP_DESTINATION_DISPLAY_NOT_COMPLETE)
+  note: 'Inline route node renders (resolveNodeCoord, unchanged); the destination endpoint consumes the master coordinate first and otherwise the PROVEN terminal destination route row. No runtime geocoding, no network call, no second competing resolver.'
 };
 // V3G2(F) — PURE PREFLIGHT failure-reason mapping, extracted so the typed contract is executable WITHOUT a live run.
 // A build that failed while warehouses ARE present but the coordinate authority is NOT armed reports the true root cause
@@ -1854,9 +1894,17 @@ function DEMO4A_preflightFailureReason_(plan, schemaOk) {
 }
 // per-branch expected map display status for a resolved destination authority.
 function DEMO4A_mapDestinationDisplayStatus_(branch) {
+  // V3G3 — both resolved branches now reach a LABELLED destination endpoint: the master-coordinate branch through
+  // DEST_WAREHOUSE_LOCATION, the address-derived branch through the proven DEST_ROUTE_TERMINAL_NODE consumer.
   if (branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') return 'MAP_DESTINATION_DISPLAY_COMPLETE';
-  if (branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') return 'MAP_DESTINATION_DISPLAY_NOT_COMPLETE';   // node renders; endpoint label needs a logistics master coord
+  if (branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') return 'MAP_DESTINATION_DISPLAY_COMPLETE';
   return 'MAP_DESTINATION_NOT_RENDERABLE';
+}
+// the frontend endpoint source a resolved branch is expected to use (source-audited contract, not a runtime call).
+function DEMO4A_mapDestinationEndpointSource_(branch) {
+  if (branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') return 'DEST_WAREHOUSE_LOCATION';
+  if (branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') return 'DEST_ROUTE_TERMINAL_NODE';
+  return '';
 }
 // V3G(F) — SEVEN separate PREFLIGHT gates. Identity/address readiness are reported SEPARATELY from coordinate readiness; a
 // blank master coordinate (ADDRESS_SEEDED_COORDINATES_PENDING) NEVER by itself fails business identity or received-status.

@@ -393,3 +393,70 @@ E1 exactly three entries, one per region · E2/E3/E4 exact BFI4/AUS2/ABE2 values
 
 ## Next step (USER-owned, not run here)
 Run `TEMP_DEMO4A_VALIDATE_DESTINATION_COORDINATE_PROPOSAL` against the live sheets and confirm `THREE_REGION_COORDINATE_PROPOSAL_READY`. Only then, in a separate explicit task, mark the entries `user_approved` and paste the converted result into `DEMO4A_DEST_COORD_AUTHORITY_` → `PREFLIGHT` → `DRY_RUN` → copy `demo_plan_checksum` → `COMMIT` → `VALIDATE`.
+
+---
+
+# F1-7N-FA-4A — V3G3: MAP ENDPOINT CONSUMER + COORDINATE-AUTHORITY CLOSURE
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN (demo-seed 461/0 · new map regression 50/0) · NOT LIVE-VERIFIED · NOT LIVE-RUN.** Follow-up to V3G2 (`e0c8a51`). Frontend destination-endpoint consumer + the TEMP demo tool + its tests + this doc. No master-data, schema, bundle, router/API, production-writer or unrelated-page change; masters strictly read-only; no DB/property write; **`DEMO4A_CONFIRMED_SEED_CHECKSUM_` and `DEMO4A_CONFIRMED_CLEAR_TOKEN_` remain `PASTE_..._HERE`**; CLEAR stays staged OFF; no Apps Script function executed by the agent.
+
+## A — Current live state, reported truthfully
+The live map showing **1 shipment · 0 route nodes · 0 events · 398 logistics locations** is the **expected** state because **no Demo COMMIT has run**. This is a data-completeness fact, not a frontend rendering bug: `buildReadModel` already reports it through `state.partial` when `shipment_routes`/`shipment_events` are empty. No route or event row was attached to the existing production shipment, and nothing was fabricated — the Demo seed stays an isolated six-table FK-consistent dataset that only appears after an explicit, separately-authorized COMMIT.
+
+## B — The destination endpoint consumer, closed
+**Source-cited disconnect (before this change).** `resolveDestinationCoord` (`assets/js/pages/global-logistics-map.js:267`) read **only** `state.idx.locByWh[vm.destWarehouseId]`, and `locByWh` is populated **only for locations that already have a valid coordinate** (`:182` — `if (l.warehouseId && validCoord(l.latitude, l.longitude) && !locByWh[l.warehouseId])`). So for the live condition of BFI4/AUS2/ABE2 — the warehouse-linked `logistics_locations` row exists and joins exactly but carries a **blank** coordinate — the labelled destination endpoint returned `null`, even though `resolveNodeCoord` (`:262`) was already rendering that same facility coordinate as an inline route node. The endpoint marker and the route node were reading different sources.
+
+**Final resolver precedence** (one resolver; no second competing resolver was created):
+1. `DEST_WAREHOUSE_LOCATION` — exact `warehouse_id` → warehouse-linked `logistics_locations` **valid** coordinate. **Unchanged and still highest priority.**
+2. `DEST_ROUTE_TERMINAL_NODE` — only when (1) is absent: **this shipment's proven final destination route row** coordinate.
+3. `null` — unresolved / fail closed (existing behaviour for production shipments without destination evidence).
+
+**Exact lineage gates for the route fallback** (`resolveDestinationRouteNode`; any failure ⇒ `null`):
+| Gate | Rule |
+|---|---|
+| destination authority | `vm.destWarehouseId` must be non-empty |
+| verified ordering | every node needs a numeric `sequenceNo > 0`, the maximum must be **unique**, and the last element of the (`:189`) sequence-sorted array must hold it — **never an arbitrary last-array-element pick** |
+| exact shipment | `terminal.shipmentId === vm.shipmentId` |
+| not a gateway | `nodeType`/`nodeCode`/`plannedEventType` must not match the recognized transit-gateway pattern (port/airport/customs/border/rail/truck terminal/hub/transship/sort/parcel/carrier/**centroid**/waypoint/gateway) |
+| not the current marker | `nodeStatusClass(terminal.status) !== 'current'` |
+| logistics lineage | `locationRefType === 'logistics_location'` **and** a non-empty `locationRefId` |
+| warehouse lineage | `locById[locationRefId]` must exist **and** its `warehouseId` must equal `vm.destWarehouseId` |
+| real coordinate | `validCoord(terminal.latitude, terminal.longitude)` — blank/(0,0)/out-of-range/non-numeric rejected |
+
+Because `locById` (`:181`) indexes **all** locations regardless of coordinate validity, the warehouse-lineage gate works precisely in the blank-master-coordinate case. `resolveNodeCoord` and `resolveCurrentPosition` are untouched. No `fetch`/XHR/WebSocket/geocoder/remote host was added — the consumer reads only rows already loaded and is deterministic.
+
+**Payload sufficiency (audited, not inferred).** `normalizeShipmentRouteRecord` (`assets/js/api/operation-system-db-api.js`) exposes `shipmentId`, `sequenceNo`, `nodeType`, `nodeCode`, `plannedEventType`, `locationRefType`, `locationRefId`, `latitude`, `longitude`, `status` — every field the gates need. A route row carries **no** `warehouse_id`, which is why warehouse lineage is proven through `location_ref_id → logistics_locations.warehouse_id` rather than assumed. **No router/API change was required.**
+
+**Why the role gate is negative, not a whitelist.** The seed itself records that `node_type` is an **unfrozen, user-maintained vocabulary** and that structural position is the role authority (`TEMP_demo_shipping_shipment_map_seed_v2.gs:263-264`). A destination whitelist would fail closed on legitimate live data, so the terminal row is rejected only when it *positively* looks like a gateway; the destination claim itself rests on verified terminal position plus exact warehouse lineage.
+
+**New regression test** `assets/tests/shipment-map-destination-endpoint-f1-7n-fa-4a-v3g3.test.js` (**50/0**) **extracts the real functions from the shipped source** (it does not mirror a copy, unlike the older `global-logistics-map.test.js`), proving: B1 the master coordinate still wins and is not overridden; B2 each approved coordinate supplies a **labelled** `destination` placement; B3 ten gateway/centroid node types and a gateway `planned_event_type` are refused, and the seaport row is never promoted when the destination row is absent; B4 a terminal row flagged `current` is refused while the current marker still resolves for the position layer; B5 another shipment's row is refused; B6 blank/(0,0)/out-of-range/string coordinates fail closed; B7 duplicate/zero/non-numeric `sequence_no`, wrong `location_ref_type`, missing/unresolvable `location_ref_id`, a location not linked to the destination warehouse, a mismatched or absent `warehouse_id`, and a shipment with no destination warehouse all fail closed; B8 a production shipment with no routes stays `pending` and resolves exactly as before once a master coordinate exists; B9 `resolveNodeCoord` is unchanged and the route node and endpoint are numerically identical; B10 no network/geocoder reference and exactly one destination resolver.
+
+## C — The three approved authorities, armed
+`DEMO4A_DEST_COORD_AUTHORITY_` is now an explicit, immutable source literal with **exactly three** entries and no fourth:
+
+| code | region | warehouse_id | logistics_location_id | fingerprint | latitude | longitude | accuracy (canonical / stated) | source_reference |
+|---|---|---|---|---|---|---|---|---|
+| BFI4 | US_WEST | `WH-KM-US-FBA-BFI4` | `LOC-WH-KM-US-FBA-BFI4` | `06a93100` | 47.4145 | -122.25778 | `building` / `BUILDING_FOOTPRINT` | https://mapcarta.com/W500861061 |
+| AUS2 | US_CENTRAL | `WH-KM-US-FBA-AUS2` | `LOC-WH-KM-US-FBA-AUS2` | `82165c14` | 30.43255 | -97.59852 | `building` / `BUILDING_FOOTPRINT` | https://mapcarta.com/W894331161 |
+| ABE2 | US_EAST | `WH-KM-US-FBA-ABE2` | `LOC-WH-KM-US-FBA-ABE2` | `9230a81c` | 40.55787890788748 | -75.61500997116448 | `address` / `ADDRESS_POINT` | https://fba-finder.com/usa/pennsylvania/abe2/ |
+
+Approval metadata on every entry: `review_status: 'user_approved'` · `approved_by: 'USER_APPROVED'` · `reviewed_by: 'USER_SOURCE_REVIEW'` · `approved_at: '2026-08-24'` · `review_version: 'V3G3-USER-APPROVED-1'` — **frozen constants, never a runtime timestamp**, so `demo_plan_checksum` stays reproducible. The canonical facility-grade accuracy is stored, with the stated source vocabulary retained as `stated_accuracy` for review traceability. **Live AUS2 ZIP 78665 remains authoritative and unmutated; 78660 is never substituted.**
+
+**Proposal remains separate from executable authority.** `DEMO4A_DEST_COORD_PROPOSAL_` is retained unchanged as the review evidence with `review_status: 'PROPOSAL_READY_FOR_USER_VALIDATION'`; only `DEMO4A_DEST_COORD_AUTHORITY_` is executable. `DEMO4A_proposalToAuthority_` stays **pure** and converts nothing automatically — converting the shipped proposal still yields **zero** entries — and a test asserts `DEMO4A_DEST_COORD_AUTHORITY_` is **assigned exactly once** in source (its declaration), so no code path re-assigns or auto-promotes into it. A proposal entry can therefore never be consumed by COMMIT.
+
+## D — PREFLIGHT / DRY-RUN contract (offline-proven with the armed authority)
+The live-shaped fixture `mastersV3G3()` uses the **real** warehouse ids/codes/addresses with blank FBA master coordinates and exact logistics joins, and consumes the **real shipped constant** (no fixture authority injected). Proven: the plan **builds**; all three destination identities resolve with exact `warehouse_id` + `logistics_location_id`; each of West/Central/East receives **its own** approved coordinate on its final destination route row, with the approved accuracy, source reference and live fingerprint; the final route row carries `location_ref_type = logistics_location` + the exact `location_ref_id` the frontend endpoint consumer requires; the three coordinates are distinct; all **seven** warehouse gates pass including `route_geography_ready`, `map_consumes_destination_coordinate` and `status_truthfulness_ready`, with **no frontend blocker remaining**; the **received** shipment's event coordinate equals its destination route coordinate and references that route row; the **in-transit** shipment has **no** event on its future destination node (which stays `planned`); `shipped`/`in_transit`/`received` statuses stay truthful; the current-marker coordinate is distinct from **both** origin and destination; no approved coordinate collides with a live gateway/centroid coordinate; identical input reproduces an identical `demo_plan_checksum`; changing an approved **coordinate**, **source reference** or **accuracy** changes the checksum; a **stale fingerprint**, a **removed identity**, or a **live address edit** (the 78660 variant) each **fail closed** as `DESTINATION_ADDRESS_COORDINATE_UNRESOLVED`; the durable journal builds and verifies and the inserted-only rollback plan derives (V3A protections intact); and both confirmation constants remain placeholders with **no live checksum pinned in source**, so `COMMITTED_UNVERIFIED` remains impossible.
+
+Also corrected for truthfulness: `DEMO4A_MAP_DEST_COORD_CONSUMPTION_` now records the closed consumer (precedence + the eight lineage gates, `frontend_blocker: ''`), and `DEMO4A_mapDestinationDisplayStatus_` returns `MAP_DESTINATION_DISPLAY_COMPLETE` for the address-derived branch. The new `DEMO4A_mapDestinationEndpointSource_` reports which endpoint source a branch is expected to use (`DEST_WAREHOUSE_LOCATION` / `DEST_ROUTE_TERMINAL_NODE`). The V3G1 `MAP_DESTINATION_DISPLAY_NOT_COMPLETE` blocker is **closed**.
+
+Arming also sharpened one typed reason: a build whose warehouse is **not** one of the three approved codes now fails as `DESTINATION_ADDRESS_COORDINATE_UNRESOLVED` rather than `..._NOT_ARMED` — arming is a global fact, resolvability is per-warehouse. Fixtures that deliberately exercise the unarmed path now pass an explicitly empty authority.
+
+## E/F — Scope, tests and baseline
+Changed files (5, all within the allowed set): `assets/js/pages/global-logistics-map.js` · `assets/tests/shipment-map-destination-endpoint-f1-7n-fa-4a-v3g3.test.js` (new, narrowly scoped) · `assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs` · `assets/tests/demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` · this doc. No master data, production shipment/dispatch writer, schema, bundle, router/API or unrelated frontend page was touched.
+
+Tests: demo-seed **461/0**; new map regression **50/0**; all **18** suites that read `global-logistics-map.js` pass (`global-logistics-map`, `shipment-map-*`, `shipment-runtime*`, `globe-visual-guard`, `api-shipment-workspace`, `api-bounded-backend-readback-endpoints`, `km-api-foundation-compat`, `nav-ia-site-inventory`, `resizable-columns`, `ui-render-and-interaction-feedback`, `shipment-receipt-route`). Full sweep of **342** suites: the same **5 pre-existing** failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-golden-scenarios`, `supply-planning-route-inventory`), none of which reads any changed file → **0 new failures**.
+
+## Deployment / sync manifest (USER-owned, nothing run here)
+- `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` — synced only if/when the demo is exercised.
+- `FRONTEND_DEPLOY_REQUIRED`: `assets/js/pages/global-logistics-map.js` — served directly (not bundled); `BUNDLE_REBUILD_REQUIRED: NO`.
+- Order after review: push → sync the `.gs` → PREFLIGHT (expect the seven gates green) → DRY_RUN → copy `demo_plan_checksum` into `DEMO4A_CONFIRMED_SEED_CHECKSUM_` → COMMIT → VALIDATE. CLEAR stays staged OFF.

@@ -263,8 +263,52 @@
     if (n.locationRefId) { var loc = state.idx.locById[n.locationRefId]; if (loc && validCoord(loc.latitude, loc.longitude)) return { lat: loc.latitude, lng: loc.longitude, drawable: true, src: 'LOCATION_REF' }; }
     return { lat: null, lng: null, drawable: false, src: 'PENDING' };
   }
-  // Destination endpoint (real coord only): logistics_location bound to the destination warehouse. Never fabricated.
-  function resolveDestinationCoord(vm) { var l = state.idx.locByWh[vm.destWarehouseId]; if (l && validCoord(l.latitude, l.longitude)) return { lat: l.latitude, lng: l.longitude, src: 'DEST_WAREHOUSE_LOCATION', name: l.locationName || vm.destWarehouse }; return null; }
+  // Route nodes that are recognized TRANSIT GATEWAYS are never a destination facility. This is a recognized-INCOMPATIBLE
+  // guard (not a destination whitelist): node_type is an unfrozen user-maintained vocabulary, so a terminal node is
+  // rejected only when it positively looks like a gateway/transit leg. Structural position + lineage prove the destination.
+  var GATEWAY_NODE_RE = /port|airport|air_?cargo|seaport|harbou?r|vessel|customs|clearance|bonded|border|frontier|rail|railway|truck_?terminal|motor_?carrier|cross_?dock|terminal|hub|transship|tranship|sort_?center|sortation|consolidation|parcel|courier|carrier_?facility|centroid|waypoint|midpoint|transit_?point|gateway/i;
+  function isGatewayNode(n) { if (!n) return false; return GATEWAY_NODE_RE.test(String(n.nodeType || '') + ' ' + String(n.nodeCode || '') + ' ' + String(n.plannedEventType || '')); }
+  // The shipment's FINAL destination route row, accepted ONLY when every lineage gate proves it is the destination of THIS
+  // shipment for THIS destination warehouse. No arbitrary last-element pick: sequence_no ordering must be verifiable and the
+  // terminal node unambiguous. Fails closed (null) on any doubt. Reads only rows already loaded — no geocoding, no network.
+  function resolveDestinationRouteNode(vm) {
+    if (!vm || !vm.destWarehouseId) return null;                                   // no destination authority to bind to
+    var nodes = vm.nodes || []; if (!nodes.length) return null;
+    // (a) verified ordering: every node needs a real positive sequence_no and the maximum must be UNIQUE.
+    var maxSeq = -Infinity, maxCount = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var sq = nodes[i].sequenceNo;
+      if (typeof sq !== 'number' || !isFinite(sq) || sq <= 0) return null;          // ambiguous/unordered route → fail closed
+      if (sq > maxSeq) { maxSeq = sq; maxCount = 1; } else if (sq === maxSeq) maxCount++;
+    }
+    if (maxCount !== 1) return null;                                               // duplicate terminal sequence → fail closed
+    var terminal = nodes[nodes.length - 1];                                        // nodesByShip is sorted by sequenceNo asc
+    if (terminal.sequenceNo !== maxSeq) return null;                               // ordering assumption not proven
+    // (b) it must belong to THIS shipment (defensive: the index groups by shipmentId).
+    if (String(terminal.shipmentId) !== String(vm.shipmentId)) return null;
+    // (c) it must not be a recognized transit gateway, and must not be the CURRENT marker.
+    if (isGatewayNode(terminal)) return null;
+    if (nodeStatusClass(terminal.status) === 'current') return null;
+    // (d) exact logistics lineage: location_ref_type = logistics_location + a location_ref_id that resolves to a
+    //     logistics_locations row whose warehouse_id IS this shipment's destination warehouse.
+    if (low(terminal.locationRefType) !== 'logistics_location' || !terminal.locationRefId) return null;
+    var loc = state.idx.locById[terminal.locationRefId];
+    if (!loc || !loc.warehouseId || String(loc.warehouseId) !== String(vm.destWarehouseId)) return null;
+    // (e) the coordinate itself must be real (blank/(0,0)/out-of-range rejected by validCoord).
+    if (!validCoord(terminal.latitude, terminal.longitude)) return null;
+    return { node: terminal, loc: loc };
+  }
+  // Destination endpoint (real coord only). Precedence: (1) the logistics_location bound to the destination warehouse by
+  // exact warehouse_id, when it carries a valid coordinate — UNCHANGED, still highest priority; (2) otherwise this
+  // shipment's proven final destination route row coordinate (full lineage gates above). Never fabricated, never geocoded,
+  // never a gateway/current/origin coordinate, never a centroid.
+  function resolveDestinationCoord(vm) {
+    var l = state.idx.locByWh[vm.destWarehouseId];
+    if (l && validCoord(l.latitude, l.longitude)) return { lat: l.latitude, lng: l.longitude, src: 'DEST_WAREHOUSE_LOCATION', name: l.locationName || vm.destWarehouse };
+    var t = resolveDestinationRouteNode(vm);
+    if (t) return { lat: t.node.latitude, lng: t.node.longitude, src: 'DEST_ROUTE_TERMINAL_NODE', name: t.loc.locationName || t.node.locationName || vm.destWarehouse };
+    return null;
+  }
   function resolveOriginCoord(vm) { if (vm.nodes[0]) { var c = resolveNodeCoord(vm.nodes[0]); if (c.drawable) return { lat: c.lat, lng: c.lng, src: 'ORIGIN_NODE' }; } return null; }
   // Overall placement for the runtime layer. Endpoints are labeled endpoints — NEVER "current position".
   function resolveShipmentPlacement(vm) {
