@@ -335,3 +335,61 @@ G1 live `address_line1`/`address_line2` precedence over the legacy flat column �
 
 ## Live-validation order (NOT run here — USER-owned)
 `TEMP_DEMO4A_DIAGNOSE_DESTINATION_ADDRESS_COORDINATE_CANDIDATES` (read the three actual candidates) → review + fill `DEMO4A_DEST_COORD_PROPOSAL_` from real facility sources → `TEMP_DEMO4A_VALIDATE_DESTINATION_COORDINATE_PROPOSAL` (expect `THREE_REGION_COORDINATE_PROPOSAL_READY`) → mark entries `user_approved` and explicitly paste the authority (`DEMO4A_DEST_COORD_AUTHORITY_`) → `PREFLIGHT` → `DRY_RUN` → copy `demo_plan_checksum` → `COMMIT` → `VALIDATE`.
+
+---
+
+# F1-7N-FA-4A — V3G2: THREE-REGION USER-REVIEWED COORDINATE PROPOSAL
+
+**Status: SOURCE-BOUND PROPOSAL ONLY · TEST-PROVEN (402/0) · NOT AUTHORIZED · NOT LIVE-VERIFIED · NOT LIVE-RUN.** Follow-up to V3G1 (`ecc7d7a`). TEMP demo tool + its offline test + this doc only. No production/master/frontend/schema/bundle change; masters strictly read-only; no DB/property write; **`DEMO4A_DEST_COORD_AUTHORITY_` remains empty**, `DEMO4A_CONFIRMED_SEED_CHECKSUM_` and `DEMO4A_CONFIRMED_CLEAR_TOKEN_` remain placeholders; no Apps Script function executed by the agent.
+
+## Live candidate authority (USER-supplied, from the read-only candidate diagnostic)
+| Region | warehouse_id | code | logistics_location_id | live address | live fingerprint |
+|---|---|---|---|---|---|
+| US_WEST | `WH-KM-US-FBA-BFI4` | BFI4 | `LOC-WH-KM-US-FBA-BFI4` | 21005 64th Ave S, Kent, Washington 98032, US | `06a93100` |
+| US_CENTRAL | `WH-KM-US-FBA-AUS2` | AUS2 | `LOC-WH-KM-US-FBA-AUS2` | 2000 E Pecan St, Pflugerville, Texas 78665, US | `82165c14` |
+| US_EAST | `WH-KM-US-FBA-ABE2` | ABE2 | `LOC-WH-KM-US-FBA-ABE2` | 705 Boulder Dr, Breinigsville, Pennsylvania 18031, US | `9230a81c` |
+
+**Fingerprint reconstruction (verification, not assumption).** Each supplied fingerprint was reproduced from the live field shape through the existing `DEMO4A_normalizeWhAddress_` + `DEMO4A_hash_` pipeline, and each reproduces **uniquely**: `address_line1` as listed, **`address_line2` blank**, `city` as listed, **`state` holding the FULL state name** (`Washington` / `Texas` / `Pennsylvania`), `postal_code` as listed, `country = US`. This confirms the live `state` column stores the spelled-out state (not the two-letter code) and is what the executable fixture `whLive()` encodes, so the tests bind to the real normalized-address shape rather than to a hand-copied hash.
+
+## A — Proposal entries (`DEMO4A_DEST_COORD_PROPOSAL_`, keyed by UPPERCASE warehouse_code)
+| code | latitude | longitude | coordinate_accuracy | coordinate_source_type | coordinate_source_reference |
+|---|---|---|---|---|---|
+| BFI4 | 47.4145 | -122.25778 | `BUILDING_FOOTPRINT` | `OPENSTREETMAP_BUILDING` | https://mapcarta.com/W500861061 |
+| AUS2 | 30.43255 | -97.59852 | `BUILDING_FOOTPRINT` | `OPENSTREETMAP_BUILDING` | https://mapcarta.com/W894331161 |
+| ABE2 | 40.55787890788748 | -75.61500997116448 | `ADDRESS_POINT` | `REVIEWED_FACILITY_ADDRESS_POINT` | https://fba-finder.com/usa/pennsylvania/abe2/ |
+
+Every entry also carries `region`, `warehouse_id`, `warehouse_code`, `logistics_location_id`, `address_fingerprint`, `reviewed_at`, `reviewed_by`, `review_status`, `review_version`. Source evidence: the BFI4 page identifies Amazon BFI4 at 21005 64th Avenue South, Kent WA 98032 and exposes the building coordinate; Mapcarta/OSM identifies the Amazon AUS2 warehouse building at 2000 East Pecan Street (secondary address evidence: https://business.pfchamber.com/members/member/aus2-amazon-549); the ABE2 page identifies ABE2 at 705 Boulder Dr, Breinigsville PA 18031 with the stated coordinate.
+
+**Frozen review markers (no live timestamp).** `reviewed_by = USER_SOURCE_REVIEW`, `review_status = PROPOSAL_READY_FOR_USER_VALIDATION`, `reviewed_at = 2026-08-24` (the deterministic source-review date), `review_version = V3G2-USER-SOURCE-REVIEW-1`. These are **constants in source**, not an execution timestamp — the `demo_plan_checksum` stays reproducible across runs. `review_version` is what a later conversion carries into the authority.
+
+## B — Proposal is not authority (proven, not asserted)
+1. `DEMO4A_DEST_COORD_PROPOSAL_` contains **exactly three** entries, one per region.
+2. `DEMO4A_DEST_COORD_AUTHORITY_` is **still literally `{}`** in source.
+3. No helper copies proposal into authority: `DEMO4A_proposalToAuthority_` is pure, converts **only** entries whose `review_status` is `user_approved`, and is **never called** anywhere in the file. `review_status` here is `PROPOSAL_READY_FOR_USER_VALIDATION`, so converting the shipped proposal yields **zero** authority entries. A test also proves nothing ever assigns to `DEMO4A_DEST_COORD_AUTHORITY_` after its empty declaration.
+4. The typed PREFLIGHT reason stays **`DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED`**.
+5. COMMIT cannot consume proposal rows: with the authority unarmed the build produces **no tables at all**, so no route/event row can be derived from proposal data.
+6. Proposal validation is strictly read-only (`getSheetByName` + `getValues`; `DEMO4A_ZERO_WRITE_CONFIRMED`).
+
+## C — Validator alignment: explicit enum, no weakening
+The reviewed sources state accuracy in their own vocabulary (`BUILDING_FOOTPRINT` = an OSM building polygon; `ADDRESS_POINT` = a reviewed facility address point), which the V3G1 facility table did not contain. Alignment is an **enumerated alias table by name only** — `DEMO4A_COORD_ACCURACY_CANON_` + `DEMO4A_coordAccuracyFacility_` — mapping `building_footprint`/`building_polygon` → `building` and `address_point` → `address` (plus identity entries and `rooftop_point`/`parcel_centroid`/`premise_point`). **No wildcard path was added and facility-grade validation was not weakened:** an unlisted token resolves to `''` and is refused, and `city`/`zip`/`postal`/`centroid`/`city_centroid`/`approximate`/`interpolated`/`FUZZY` are all still absent from the table, so they still fail. The same helper is now used by `DEMO4A_deriveDestCoordinate_` and `DEMO4A_proposalToAuthority_` (which emits the **canonical** class), so a future USER-approved proposal can satisfy the authority's own accuracy gate without any relaxation — the address-fingerprint requirement is untouched and still fails closed.
+
+Identity checking was tightened at the same time: a proposal's declared `warehouse_code` and `region` must now also match the live selected candidate exactly (previously only `warehouse_id` and `logistics_location_id` were compared), and a declared-but-wrong value is an `IDENTITY_MISMATCH` rather than being ignored.
+
+Against a live-shaped fixture the validator returns **`THREE_REGION_COORDINATE_PROPOSAL_READY`** with every per-region gate passing: exact `warehouse_id` / `warehouse_code` / `logistics_location_id` / `region`, current address fingerprint match, valid non-(0,0) coordinates, three distinct coordinates, facility-grade accuracy, country/region agreement, source reference present, and no gateway/centroid coordinate collision. `authority_armed` is reported as `false` in the same result.
+
+## D — AUS2 address evidence (recorded truthfully, nothing changed)
+- The **live DB address fingerprint `82165c14` is built from ZIP 78665** and is authoritative.
+- The Pflugerville Chamber listing supports **78665** (2000 E. Pecan St, Pflugerville TX 78665).
+- Some third-party map/address datasets publish **78660** for this facility.
+- The proposal stays **bound to the live 78665 fingerprint**; the 78660 variant hashes to a *different* fingerprint and is recorded as a public-source discrepancy only.
+- **No warehouse address or master field is modified** — the live ZIP is untouched, and a test asserts no fixture warehouse carries 78660.
+- The discrepancy **does not** produce `ADDRESS_FINGERPRINT_STALE`: staleness is decided solely by comparing the proposal fingerprint to the *current live* normalized address, which is unchanged. A test asserts the US_CENTRAL region validates without a stale status.
+
+## F — Typed PREFLIGHT reason made executable
+The V3G1 not-armed reinterpretation lived inline inside `TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED`, so it could only be proven by a live run. V3G2 extracts it unchanged into the **pure** `DEMO4A_preflightFailureReason_(plan, schemaOk)`, which PREFLIGHT now calls. This matters for the real live condition: with blank live FBA logistics coordinates the destination node is unbindable, so the build fails **early at template selection** (`INSUFFICIENT_STATUS_VALID_DEMO_PLANS`) — it never reaches the destination gate. The pure mapping converts that into `DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED` (verdict `PREFLIGHT_FAILED_COORDINATE_AUTHORITY_NOT_ARMED`) while preserving the raw reason as `underlying_reason`. A genuine identity failure (`DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY`) is **not** reinterpreted, and once the authority is armed the raw build reason is reported unchanged.
+
+## E — Tests (V3G2) — **402 passed / 0 failed**
+E1 exactly three entries, one per region · E2/E3/E4 exact BFI4/AUS2/ABE2 values, each proposal fingerprint equal to the fingerprint recomputed from the live-shaped row, and the frozen review markers · E5 the three coordinates are distinct · E6 every proposal coordinate is valid and matches no live port/airport/centroid coordinate · E7 the accepted accuracy classes are an explicit enum (`BUILDING_FOOTPRINT`→`building`, `ADDRESS_POINT`→`address`; centroid/approximate/unknown all refused; a centroid accuracy on a real entry still refused) · E8 all three source references present as reviewable URLs · E9 the live AUS2 address fingerprints to `82165c14`, the proposal is bound to it, and the 78660 variant differs · E10 the validator returns `THREE_REGION_COORDINATE_PROPOSAL_READY` on the live-shaped fixture, with wrong-location-id / wrong-region / seaport-coordinate variants each refused · E11 the populated proposal cannot arm the authority (zero conversion, no assignment path, and a hypothetically approved copy converts to canonical facility-grade entries without touching the live constant while a stale fingerprint still fails closed) · E12 the build reports `warehouses_present` + unarmed authority and the pure mapping yields `DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED` with no tables built · E13 `warehouses`/`logistics_locations` never written · E14 both confirmation constants remain placeholders and the authority constant is still literally empty. All prior V3A–V3G1 assertions still pass in the same run. Full 341-suite sweep: the same 5 pre-existing failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-golden-scenarios`, `supply-planning-route-inventory`) read none of the three changed files → **0 new failures**.
+
+## Next step (USER-owned, not run here)
+Run `TEMP_DEMO4A_VALIDATE_DESTINATION_COORDINATE_PROPOSAL` against the live sheets and confirm `THREE_REGION_COORDINATE_PROPOSAL_READY`. Only then, in a separate explicit task, mark the entries `user_approved` and paste the converted result into `DEMO4A_DEST_COORD_AUTHORITY_` → `PREFLIGHT` → `DRY_RUN` → copy `demo_plan_checksum` → `COMMIT` → `VALIDATE`.

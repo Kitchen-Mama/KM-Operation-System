@@ -1394,17 +1394,34 @@ function DEMO4A_addressAuthority_(w, route) {
 // invalidates a stale coordinate), and the accuracy must be a facility-grade class (city/zip/centroid/approximate rejected).
 var DEMO4A_DEST_COORD_AUTHORITY_ = {};
 var DEMO4A_COORD_ACCURACY_FACILITY_ = { rooftop: 1, parcel: 1, building: 1, premise: 1, address: 1 };
+// V3G2 — EXPLICIT accuracy-token alignment. Reviewed sources state their accuracy in their own vocabulary
+// (BUILDING_FOOTPRINT = an OSM building polygon; ADDRESS_POINT = a reviewed facility address point). Each is mapped to a
+// FACILITY-GRADE canonical class by NAME ONLY. This is an enumerated alias table, NOT a wildcard: an unlisted token still
+// resolves to '' and is refused (city/zip/postal/centroid/approximate remain absent, so they still fail).
+var DEMO4A_COORD_ACCURACY_CANON_ = {
+  rooftop: 'rooftop', rooftop_point: 'rooftop',
+  parcel: 'parcel', parcel_centroid: 'parcel',
+  building: 'building', building_footprint: 'building', building_polygon: 'building',
+  premise: 'premise', premise_point: 'premise',
+  address: 'address', address_point: 'address'
+};
+// canonical facility-grade class for a stated accuracy token, or '' when the token is not an enumerated facility class.
+function DEMO4A_coordAccuracyFacility_(v) {
+  var t = DEMO4A_low_(v); if (t === '') return '';
+  var canon = DEMO4A_COORD_ACCURACY_CANON_.hasOwnProperty(t) ? DEMO4A_COORD_ACCURACY_CANON_[t] : '';
+  return DEMO4A_COORD_ACCURACY_FACILITY_.hasOwnProperty(canon) ? canon : '';
+}
 function DEMO4A_deriveDestCoordinate_(w, coordAuthority, addressFingerprint) {
   var code = DEMO4A_whCode_(w).toUpperCase(); if (code === '') return { ok: false, reason: 'NO_WAREHOUSE_CODE' };
   var auth = coordAuthority || DEMO4A_DEST_COORD_AUTHORITY_;
   var e = auth[code] || auth[DEMO4A_whCode_(w)];
   if (!e) return { ok: false, reason: 'NO_REVIEWED_COORDINATE_FOR_WAREHOUSE_CODE' };
   if (!DEMO4A_validCoord_(e.latitude, e.longitude)) return { ok: false, reason: 'REVIEWED_COORDINATE_INVALID' };
-  if (!DEMO4A_COORD_ACCURACY_FACILITY_.hasOwnProperty(DEMO4A_low_(e.accuracy))) return { ok: false, reason: 'ACCURACY_NOT_FACILITY_GRADE:' + DEMO4A_str_(e.accuracy) };
+  if (!DEMO4A_coordAccuracyFacility_(e.accuracy)) return { ok: false, reason: 'ACCURACY_NOT_FACILITY_GRADE:' + DEMO4A_str_(e.accuracy) };
   if (DEMO4A_str_(e.address_fingerprint) !== DEMO4A_str_(addressFingerprint)) return { ok: false, reason: 'ADDRESS_FINGERPRINT_STALE' };
   if (!DEMO4A_str_(e.source_reference)) return { ok: false, reason: 'NO_SOURCE_REFERENCE' };
   return { ok: true, latitude: DEMO4A_num_(e.latitude), longitude: DEMO4A_num_(e.longitude), source_type: DEMO4A_str_(e.source_type) || 'reviewed_address_resolution',
-    source_reference: DEMO4A_str_(e.source_reference), accuracy: DEMO4A_low_(e.accuracy), address_fingerprint: DEMO4A_str_(e.address_fingerprint), review_version: DEMO4A_str_(e.review_version) };
+    source_reference: DEMO4A_str_(e.source_reference), accuracy: DEMO4A_coordAccuracyFacility_(e.accuracy), address_fingerprint: DEMO4A_str_(e.address_fingerprint), review_version: DEMO4A_str_(e.review_version) };
 }
 // logistics-location identity/coordinate eligibility: verification_status NOT retired/rejected (33_:61-66) AND is_active
 // not explicitly false. V3G(G.1) — the live frontend reads a `record_status` column (operation-system-db-api.js:1331,
@@ -1571,7 +1588,41 @@ function TEMP_DEMO4A_DIAGNOSE_DESTINATION_ADDRESS_COORDINATE_CANDIDATES() {
 // proposal (via DEMO4A_proposalToAuthority_, which is NOT executed by this tool). No airport/seaport/city/ZIP centroid,
 // no fuzzy name match, valid non-(0,0) coordinate, reviewable source_reference, and it fails if the live fingerprint changes.
 // ================================================================================================================
-var DEMO4A_DEST_COORD_PROPOSAL_ = {};
+// V3G2 — USER-REVIEWED three-region proposal, keyed by UPPERCASE warehouse_code. Each entry is bound to the LIVE
+// address_fingerprint surfaced by TEMP_DEMO4A_DIAGNOSE_DESTINATION_ADDRESS_COORDINATE_CANDIDATES, so a later live address
+// edit invalidates it (ADDRESS_FINGERPRINT_STALE) instead of silently keeping a wrong coordinate. reviewed_at/review_version
+// are FROZEN DETERMINISTIC review markers (the source review date + a version id) — NOT a live execution timestamp, so the
+// demo_plan_checksum stays reproducible. review_status is 'PROPOSAL_READY_FOR_USER_VALIDATION': the validator can report
+// READY, but DEMO4A_proposalToAuthority_ converts ONLY 'user_approved' entries, so this proposal CANNOT arm the authority.
+var DEMO4A_DEST_COORD_PROPOSAL_ = {
+  BFI4: {
+    region: 'US_WEST', warehouse_id: 'WH-KM-US-FBA-BFI4', warehouse_code: 'BFI4', logistics_location_id: 'LOC-WH-KM-US-FBA-BFI4',
+    address_fingerprint: '06a93100',   // live: 21005 64th Ave S | Kent | Washington | 98032 | US
+    latitude: 47.4145, longitude: -122.25778,
+    coordinate_accuracy: 'BUILDING_FOOTPRINT', coordinate_source_type: 'OPENSTREETMAP_BUILDING',
+    coordinate_source_reference: 'https://mapcarta.com/W500861061',
+    reviewed_at: '2026-08-24', reviewed_by: 'USER_SOURCE_REVIEW', review_status: 'PROPOSAL_READY_FOR_USER_VALIDATION', review_version: 'V3G2-USER-SOURCE-REVIEW-1'
+  },
+  AUS2: {
+    region: 'US_CENTRAL', warehouse_id: 'WH-KM-US-FBA-AUS2', warehouse_code: 'AUS2', logistics_location_id: 'LOC-WH-KM-US-FBA-AUS2',
+    address_fingerprint: '82165c14',   // live: 2000 E Pecan St | Pflugerville | Texas | 78665 | US (live ZIP 78665 is authoritative)
+    latitude: 30.43255, longitude: -97.59852,
+    coordinate_accuracy: 'BUILDING_FOOTPRINT', coordinate_source_type: 'OPENSTREETMAP_BUILDING',
+    coordinate_source_reference: 'https://mapcarta.com/W894331161',
+    // secondary address evidence: https://business.pfchamber.com/members/member/aus2-amazon-549 (confirms 2000 E Pecan St,
+    // Pflugerville TX 78665). Some third-party map/address datasets publish 78660 for this facility; the proposal stays bound
+    // to the LIVE 78665 fingerprint and NO warehouse master field is modified.
+    reviewed_at: '2026-08-24', reviewed_by: 'USER_SOURCE_REVIEW', review_status: 'PROPOSAL_READY_FOR_USER_VALIDATION', review_version: 'V3G2-USER-SOURCE-REVIEW-1'
+  },
+  ABE2: {
+    region: 'US_EAST', warehouse_id: 'WH-KM-US-FBA-ABE2', warehouse_code: 'ABE2', logistics_location_id: 'LOC-WH-KM-US-FBA-ABE2',
+    address_fingerprint: '9230a81c',   // live: 705 Boulder Dr | Breinigsville | Pennsylvania | 18031 | US
+    latitude: 40.55787890788748, longitude: -75.61500997116448,
+    coordinate_accuracy: 'ADDRESS_POINT', coordinate_source_type: 'REVIEWED_FACILITY_ADDRESS_POINT',
+    coordinate_source_reference: 'https://fba-finder.com/usa/pennsylvania/abe2/',
+    reviewed_at: '2026-08-24', reviewed_by: 'USER_SOURCE_REVIEW', review_status: 'PROPOSAL_READY_FOR_USER_VALIDATION', review_version: 'V3G2-USER-SOURCE-REVIEW-1'
+  }
+};
 // PURE — convert an APPROVED proposal entry to the exact authorization structure. Does NOT read/write any constant and is
 // NEVER invoked automatically; the USER runs a separate armed task to paste the result into DEMO4A_DEST_COORD_AUTHORITY_.
 function DEMO4A_proposalToAuthority_(proposal) {
@@ -1579,8 +1630,10 @@ function DEMO4A_proposalToAuthority_(proposal) {
   Object.keys(proposal || {}).forEach(function (code) {
     var p = proposal[code]; if (!p) return;
     if (DEMO4A_low_(p.review_status) !== 'user_approved') return;   // only an explicitly USER-approved proposal converts
+    // the canonical facility-grade class is emitted (not the raw source vocabulary) so an approved proposal satisfies the
+    // authority's own accuracy gate; review_version prefers the explicit frozen version id over the review date.
     out[code] = { latitude: DEMO4A_num_(p.latitude), longitude: DEMO4A_num_(p.longitude), source_type: DEMO4A_str_(p.coordinate_source_type) || 'reviewed_address_resolution',
-      source_reference: DEMO4A_str_(p.coordinate_source_reference), accuracy: DEMO4A_low_(p.coordinate_accuracy), address_fingerprint: DEMO4A_str_(p.address_fingerprint), review_version: DEMO4A_str_(p.reviewed_at) || DEMO4A_str_(p.review_status) };
+      source_reference: DEMO4A_str_(p.coordinate_source_reference), accuracy: DEMO4A_coordAccuracyFacility_(p.coordinate_accuracy), address_fingerprint: DEMO4A_str_(p.address_fingerprint), review_version: DEMO4A_str_(p.review_version) || DEMO4A_str_(p.reviewed_at) || DEMO4A_str_(p.review_status) };
   });
   return out;
 }
@@ -1622,9 +1675,15 @@ function DEMO4A_validateCoordProposal_(proposal, warehouses, locations) {
     if (!p) { rec.status = 'PROPOSAL_MISSING_FOR_WAREHOUSE'; perRegion.push(rec); return; }
     rec.proposal_fingerprint_match = DEMO4A_str_(p.address_fingerprint) === na.fingerprint;
     rec.coordinate_valid = DEMO4A_validCoord_(p.latitude, p.longitude);
-    rec.facility_grade_accuracy = DEMO4A_COORD_ACCURACY_FACILITY_.hasOwnProperty(DEMO4A_low_(p.coordinate_accuracy));
+    rec.canonical_accuracy = DEMO4A_coordAccuracyFacility_(p.coordinate_accuracy);
+    rec.facility_grade_accuracy = !!rec.canonical_accuracy;
     rec.source_reference_present = !!DEMO4A_str_(p.coordinate_source_reference);
-    rec.identity_match = (!p.warehouse_id || DEMO4A_low_(p.warehouse_id) === DEMO4A_low_(DEMO4A_whId_(w))) && (!p.logistics_location_id || DEMO4A_low_(p.logistics_location_id) === DEMO4A_low_(c.e.logistics_location_id));
+    // exact declared identity: warehouse_id, warehouse_code, logistics_location_id and region must each match the LIVE
+    // selected candidate when the proposal declares them (a declared-but-wrong value is an IDENTITY_MISMATCH, never ignored).
+    rec.identity_match = (!p.warehouse_id || DEMO4A_low_(p.warehouse_id) === DEMO4A_low_(DEMO4A_whId_(w)))
+      && (!p.warehouse_code || DEMO4A_low_(p.warehouse_code) === DEMO4A_low_(code))
+      && (!p.logistics_location_id || DEMO4A_low_(p.logistics_location_id) === DEMO4A_low_(c.e.logistics_location_id))
+      && (!p.region || DEMO4A_low_(p.region) === DEMO4A_low_(rb));
     // country/region agreement: a declared proposal country must equal the LIVE warehouse country, and the coordinate must
     // fall inside that country's bounding box when one is known (an out-of-country coordinate is never the facility).
     var cty = DEMO4A_whCountry_(w), bounds = DEMO4A_COORD_COUNTRY_BOUNDS_[DEMO4A_low_(cty)] || null;
@@ -1780,6 +1839,19 @@ var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = {
   frontend_blocker: 'MAP_DESTINATION_DISPLAY_NOT_COMPLETE — resolveDestinationCoord (global-logistics-map.js:267) does not consume an inline/address-derived route coordinate for the labelled destination-endpoint marker; the address-derived destination node renders but is not distinctly labelled. Frontend NOT modified (separate authorization required).',
   note: 'Inline route node renders (resolveNodeCoord); dedicated destination-endpoint fallback does not consume inline coords. Frontend NOT modified in this task.'
 };
+// V3G2(F) — PURE PREFLIGHT failure-reason mapping, extracted so the typed contract is executable WITHOUT a live run.
+// A build that failed while warehouses ARE present but the coordinate authority is NOT armed reports the true root cause
+// (DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED) and keeps the raw build reason as underlying_reason — an early
+// template-selection failure caused by blank live FBA coordinates must never be reported as a plan-count problem.
+// An identity failure (DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY) is NOT reinterpreted: it is real regardless of arming.
+function DEMO4A_preflightFailureReason_(plan, schemaOk) {
+  plan = plan || {};
+  var notArmed = plan.warehouses_present === true && plan.coord_authority_armed === false && plan.reason !== 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY';
+  if (notArmed) return { reason: 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED', underlying_reason: plan.reason, coordinate_authority_armed: false, verdict: 'PREFLIGHT_FAILED_COORDINATE_AUTHORITY_NOT_ARMED' };
+  var verdict = (plan.reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY' || plan.reason === 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED') ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY'
+    : (plan.reason === 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED' ? 'PREFLIGHT_FAILED_COORDINATE_AUTHORITY_NOT_ARMED' : (schemaOk ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA'));
+  return { reason: plan.reason, verdict: verdict };
+}
 // per-branch expected map display status for a resolved destination authority.
 function DEMO4A_mapDestinationDisplayStatus_(branch) {
   if (branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') return 'MAP_DESTINATION_DISPLAY_COMPLETE';
@@ -1817,11 +1889,10 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
     if (!plan.ok) {
       out.reason = plan.reason; out.rejection_counts = plan.rejection_counts || null; out.available_regions = plan.available_regions || null; out.detail = plan;
       if (plan.destination_authority) out.warehouse_gates = DEMO4A_warehouseGates_(true, plan.destination_authority, plan.destination_authority_errors || [], plan.binding_gates ? plan.binding_gates.ok : undefined);
-      // V3G1(F) — when warehouses are present but the coordinate authority is NOT armed, an early template-selection failure
-      // (INSUFFICIENT_STATUS_VALID_DEMO_PLANS from blank live FBA coordinates) is misleading — report the true root cause.
-      var notArmed = plan.warehouses_present === true && plan.coord_authority_armed === false && plan.reason !== 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY';
-      if (notArmed) { out.reason = 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED'; out.underlying_reason = plan.reason; out.coordinate_authority_armed = false; out.verdict = 'PREFLIGHT_FAILED_COORDINATE_AUTHORITY_NOT_ARMED'; }
-      else out.verdict = (plan.reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY' || plan.reason === 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED') ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY' : (plan.reason === 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED' ? 'PREFLIGHT_FAILED_COORDINATE_AUTHORITY_NOT_ARMED' : (schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA'));
+      // V3G1(F)/V3G2(F) — typed failure reason via the PURE mapping (unarmed authority is never reported as a plan-count problem).
+      var pf = DEMO4A_preflightFailureReason_(plan, schema.ok);
+      out.reason = pf.reason; out.verdict = pf.verdict;
+      if (pf.underlying_reason !== undefined) { out.underlying_reason = pf.underlying_reason; out.coordinate_authority_armed = pf.coordinate_authority_armed; }
     }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
