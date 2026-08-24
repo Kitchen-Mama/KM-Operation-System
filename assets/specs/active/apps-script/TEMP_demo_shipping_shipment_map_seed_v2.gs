@@ -326,6 +326,74 @@ function DEMO4A_bindingFromLoc_(loc, source, nodeIndex, regionExact) {
 // node. Origin + destination required (distinct coords); a distinct current marker only when opts.requireCurrent. Every
 // role carries { role_compatible, corridor_compatible, canon_type, node_type } evidence; fail-closed with a typed reason.
 function DEMO4A_coordKey_(b) { return DEMO4A_num_(b.latitude).toFixed(5) + ',' + DEMO4A_num_(b.longitude).toFixed(5); }
+
+// ================================================================================================================
+// V3G4(B) — THE SINGLE SHARED DESTINATION-AUTHORITY RULE.
+// Before V3G4 the destination role was bound by DEMO4A_pickAnchor_ (a generic logistics_locations pool that HARD-requires
+// a VALID MASTER COORDINATE and a role-compatible canonical location_type). Live FBA rows carry BLANK coordinates, so the
+// pool was empty and every template died as NO_ROLE_COMPATIBLE_DESTINATION_LOCATION inside DEMO4A_selectTemplates_ —
+// which DEMO4A_buildPlan_ calls BEFORE its warehouse-authority block, so the armed authority was never consumed.
+// This function is now the ONE destination rule, called by template eligibility AND by final plan construction, so a
+// template can never be rejected by one rule and then built by another. It resolves ONLY through the warehouse identity
+// authority (DEMO4A_resolveWarehouseDestination_ + DEMO4A_pickWarehouseForRegion_) — a destination warehouse is NEVER
+// drawn from the gateway/location-type pool, and a port/airport/centroid is NEVER a destination fallback.
+// ================================================================================================================
+var DEMO4A_DEST_READY_BRANCHES_ = { WAREHOUSE_LOCATION_COORDINATE_READY: 1, DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE: 1 };
+function DEMO4A_destAuthorityForTemplate_(tpl, warehouses, locations, coordAuthority, company) {
+  tpl = tpl || {};
+  var whById = {};
+  (warehouses || []).forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id && whById[id] === undefined) whById[id] = w; });
+  var declared = DEMO4A_str_(tpl.destination_warehouse_id);
+  var whRow = declared ? whById[DEMO4A_low_(declared)] : null;
+  var regionBucket = DEMO4A_dxRegionBucket_(DEMO4A_str_(tpl.destination_region));
+  var destCountry = DEMO4A_str_(tpl.destination_country);
+  // C(4) — when the template declares no (or an unknown) destination warehouse, the destination COUNTRY/REGION resolves
+  // to a deterministic eligible warehouse. This is still the warehouse identity rule, never a location-type pool.
+  if (!whRow) {
+    var byRegion = regionBucket === 'OTHER' ? null : DEMO4A_pickWarehouseForRegion_(warehouses, locations, coordAuthority, regionBucket, company, destCountry, '');
+    if (!byRegion) return { branch: 'WAREHOUSE_IDENTITY_MISSING', reason: declared ? 'DESTINATION_WAREHOUSE_ID_NOT_IN_MASTER:' + declared : 'NO_ELIGIBLE_WAREHOUSE_FOR_DESTINATION_REGION', warehouse_id: declared, identity_ready: false, renderable: false, received_allowed: false };
+    var rr = byRegion.resolution; rr.selected_by = 'DESTINATION_REGION_WAREHOUSE_SELECTION'; if (declared) rr.reselected_from_warehouse_id = declared;
+    rr.normalized_address = rr.normalized_address || DEMO4A_normalizeWhAddress_(byRegion.warehouse).normalized;
+    return rr;
+  }
+  // identity / eligibility / scope FIRST (independent of any coordinate).
+  if (!DEMO4A_whDestTypeCompatible_(whRow)) return { branch: 'WAREHOUSE_IDENTITY_INELIGIBLE', reason: 'WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(whRow), warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+  if (DEMO4A_whCompany_(whRow) && company && DEMO4A_low_(DEMO4A_whCompany_(whRow)) !== DEMO4A_low_(company)) return { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COMPANY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+  if (DEMO4A_whCountry_(whRow) && destCountry && DEMO4A_low_(DEMO4A_whCountry_(whRow)) !== DEMO4A_low_(destCountry)) return { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COUNTRY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+  var r = DEMO4A_resolveWarehouseDestination_(whRow, locations, coordAuthority, tpl);
+  if (r.address_status && r.address_status !== 'ADDRESS_AUTHORITY_READY') { r.identity_ready = false; if (!r.reason) r.reason = r.address_status; }
+  // coordinate not ready for this template's own warehouse → deterministic same-region eligible reselection (identity rule).
+  if (!DEMO4A_DEST_READY_BRANCHES_[r.branch] && r.identity_ready) {
+    var alt = DEMO4A_pickWarehouseForRegion_(warehouses, locations, coordAuthority, regionBucket !== 'OTHER' ? regionBucket : DEMO4A_dxRegionBucket_(DEMO4A_whRegion_(whRow)), company, destCountry || DEMO4A_whCountry_(whRow), DEMO4A_whId_(whRow));
+    if (alt) { r = alt.resolution; r.reselected_from_warehouse_id = DEMO4A_whId_(whRow); }
+  }
+  r.normalized_address = r.normalized_address || (r.identity_ready ? DEMO4A_normalizeWhAddress_(whRow).normalized : '');
+  return r;
+}
+// D — the most specific truthful rejection reason for a destination-authority result. Once the warehouse authority is
+// active we NEVER report NO_ROLE_COMPATIBLE_DESTINATION_LOCATION: no generic location-type pool is consulted at all.
+var DEMO4A_DEST_AUTH_REASONS_ = { DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED: 1, DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED: 1, DESTINATION_ADDRESS_COORDINATE_UNRESOLVED: 1 };
+function DEMO4A_destAuthorityReason_(r) {
+  if (!r) return 'DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED';
+  if (r.branch === 'WAREHOUSE_LOCATION_JOIN_CONFLICT') return 'DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED';
+  if (r.identity_ready !== true) return (r.branch === 'WAREHOUSE_LOCATION_JOIN_MISSING' && DEMO4A_str_(r.warehouse_id)) ? 'DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED' : 'DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED';
+  if (!DEMO4A_DEST_READY_BRANCHES_[r.branch]) return 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED';
+  return '';
+}
+// the destination ROLE BINDING built from a resolved authority — ONE construction shared by eligibility and build, so the
+// selected binding and the constructed route row are the same object shape with the same coordinate and lineage.
+function DEMO4A_warehouseDestBinding_(da, destIdx, nodeType) {
+  var derived = da.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE';
+  var b = { source: 'WAREHOUSE_LOCATION_BINDING', node_index: destIdx, region_exact: true, location_ref_id: DEMO4A_str_(da.logistics_location_id),
+    latitude: da.latitude, longitude: da.longitude, location_name: DEMO4A_str_(da.logistics_location_id) || DEMO4A_str_(da.warehouse_id), country: da.country, region: da.region, city: '',
+    canon_type: da.location_type || 'warehouse', location_type: da.location_type || 'warehouse', source_proven: true, role_compatible: true, corridor_compatible: true,
+    warehouse_id: da.warehouse_id, warehouse_code: da.warehouse_code, verification_status: da.verification_status,
+    coordinate_source: da.coordinate_source, coordinate_accuracy: da.coordinate_accuracy || '', coordinate_source_reference: da.coordinate_source_reference || '', address_derived: derived };
+  b.evidence = { role: 'destination', location_id: DEMO4A_str_(da.logistics_location_id), warehouse_id: da.warehouse_id, warehouse_code: da.warehouse_code, country: da.country, region: da.region,
+    location_type: da.location_type || 'warehouse', canon_location_type: da.location_type || 'warehouse', node_type: DEMO4A_str_(nodeType), binding_type: 'WAREHOUSE_LOCATION_BINDING',
+    coordinate_source: da.coordinate_source, coordinate_accuracy: da.coordinate_accuracy || '', address_derived: derived, source_proven: true, role_compatible: true, corridor_compatible: true };
+  return b;
+}
 function DEMO4A_bindTemplateRoles_(template, resolved, locations, opts) {
   opts = opts || {};
   var n = resolved.length, used = {};
@@ -356,8 +424,25 @@ function DEMO4A_bindTemplateRoles_(template, resolved, locations, opts) {
   }
   var origin = roleAt(0, 'origin', { country: DEMO4A_str_(template.origin_country) });
   if (!origin) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_ORIGIN_LOCATION', evidence: evidence, corridor: Object.keys(corridor) };
-  var destination = roleAt(n - 1, 'destination', { country: DEMO4A_str_(template.destination_country), region: DEMO4A_str_(template.destination_region) });
-  if (!destination) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_DESTINATION_LOCATION', evidence: evidence, corridor: Object.keys(corridor) };
+  // V3G4(A/B) — DESTINATION authority. When the `warehouses` master is present the destination is bound by the SHARED
+  // warehouse rule (business identity = warehouses; exact geographic lineage = the warehouse-linked logistics_location;
+  // display coordinate = that row's valid coordinate, else the approved fingerprint-bound authority entry, else fail
+  // closed). The generic role-compatible location_type pool is NOT consulted for the destination at all, so a blank live
+  // FBA master coordinate can no longer masquerade as NO_ROLE_COMPATIBLE_DESTINATION_LOCATION. When `warehouses` is
+  // absent (legacy V3A/V3B/V3C fixtures) the previous logistics-only binding is preserved verbatim.
+  var destination, destAuthority = null;
+  if (opts.warehouses && opts.warehouses.length) {
+    destAuthority = DEMO4A_destAuthorityForTemplate_(template, opts.warehouses, locations, opts.coordAuthority, opts.company);
+    var daReason = DEMO4A_destAuthorityReason_(destAuthority);
+    if (daReason) return { ok: false, reason: daReason, destination_authority: destAuthority, evidence: evidence, corridor: Object.keys(corridor) };
+    destination = DEMO4A_warehouseDestBinding_(destAuthority, n - 1, resolved[n - 1] && resolved[n - 1].node ? resolved[n - 1].node.node_type : '');
+    evidence.destination = destination.evidence;
+    if (destination.location_ref_id) used[destination.location_ref_id] = 1;
+    used[DEMO4A_coordKey_(destination)] = 1;
+  } else {
+    destination = roleAt(n - 1, 'destination', { country: DEMO4A_str_(template.destination_country), region: DEMO4A_str_(template.destination_region) });
+    if (!destination) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_DESTINATION_LOCATION', evidence: evidence, corridor: Object.keys(corridor) };
+  }
   if (DEMO4A_coordKey_(origin) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'ORIGIN_DESTINATION_NOT_DISTINCT', evidence: evidence, corridor: Object.keys(corridor) };
   var roleByIndex = {}; roleByIndex[0] = origin; roleByIndex[n - 1] = destination;
   var current = null, currentIndex = -1;
@@ -370,7 +455,7 @@ function DEMO4A_bindTemplateRoles_(template, resolved, locations, opts) {
     if (DEMO4A_coordKey_(current) === DEMO4A_coordKey_(origin) || DEMO4A_coordKey_(current) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'CURRENT_MARKER_NOT_DISTINCT', evidence: evidence, origin: origin, destination: destination, corridor: Object.keys(corridor) };
     roleByIndex[currentIndex] = current;
   }
-  return { ok: true, origin: origin, destination: destination, current: current, current_index: currentIndex, role_by_index: roleByIndex, evidence: evidence, corridor: Object.keys(corridor), transport_class: tclass };
+  return { ok: true, origin: origin, destination: destination, current: current, current_index: currentIndex, role_by_index: roleByIndex, evidence: evidence, corridor: Object.keys(corridor), transport_class: tclass, destination_authority: destAuthority };
 }
 // region classification for a template (US West / Central / East), else OTHER.
 function DEMO4A_regionOf_(tpl) {
@@ -396,27 +481,53 @@ function DEMO4A_templateEligibility_(t, ns, locations, idIndexes, opts) {
     resolved.push({ node: ns[i], geo: geo });
   }
   var bind = DEMO4A_bindTemplateRoles_(t, resolved, locations, opts);
-  if (!bind.ok) return { eligible: false, reason: bind.reason, resolved: resolved, canonicalCount: canonicalCount, directCount: directCount, abstractCount: abstractCount };
+  if (!bind.ok) return { eligible: false, reason: bind.reason, destination_authority: bind.destination_authority || null, resolved: resolved, canonicalCount: canonicalCount, directCount: directCount, abstractCount: abstractCount };
   return { eligible: true, reason: '', resolved: resolved, binding: bind, canonicalCount: canonicalCount, directCount: directCount, abstractCount: abstractCount };
 }
 // G — select ONE template per US West/Central/East (distinct) with valid Demo bindings; the PRIMARY in-transit must also
 // bind a distinct current marker. Truthful FALLBACK_TRUTHFUL_TOP3 when W/C/E cannot all be built; fail closed (with exact
 // per-reason rejection counts) when fewer than three status-valid Demo plans exist.
-function DEMO4A_selectTemplates_(templates, nodes, locations) {
+// V3G4 — opts = { warehouses, coordAuthority, company } makes the DESTINATION evaluation warehouse-aware for BOTH the
+// eligibility pass and (through the returned binding) the final build. Omitting opts keeps the legacy logistics-only path.
+function DEMO4A_selectTemplates_(templates, nodes, locations, opts) {
+  opts = opts || {};
+  var whOpts = { warehouses: opts.warehouses, coordAuthority: opts.coordAuthority, company: opts.company };
+  var warehouseAware = !!(opts.warehouses && opts.warehouses.length);
   var byTpl = DEMO4A_nodesByTemplate_(nodes), idIndexes = DEMO4A_indexLocationsByIdentifiers_(locations);
-  var qualified = [], rejections = {};
+  var qualified = [], rejections = {}, destAuthErrors = [];
   (templates || []).forEach(function (t) {
     var tid = DEMO4A_str_(t.route_template_id); if (!tid) return;
     var ns = byTpl[tid] || [];
-    var el = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, {});
-    if (!el.eligible) { rejections[el.reason] = (rejections[el.reason] || 0) + 1; return; }
-    var elC = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, { requireCurrent: true });   // can this be the primary in-transit?
+    var el = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, { warehouses: whOpts.warehouses, coordAuthority: whOpts.coordAuthority, company: whOpts.company });
+    if (!el.eligible) {
+      rejections[el.reason] = (rejections[el.reason] || 0) + 1;
+      // D/F — compact per-template destination-authority evidence (first few only; never a full template/location dump).
+      if (el.destination_authority && destAuthErrors.length < 6) { var da = el.destination_authority; destAuthErrors.push({ route_template_id: tid, region: DEMO4A_regionOf_(t), reason_code: el.reason, branch: DEMO4A_str_(da.branch), reason: DEMO4A_str_(da.reason || da.coordinate_unresolved_reason || ''), warehouse_id: DEMO4A_str_(da.warehouse_id), warehouse_code: DEMO4A_str_(da.warehouse_code), logistics_location_id: DEMO4A_str_(da.logistics_location_id), address_status: DEMO4A_str_(da.address_status), address_fingerprint: DEMO4A_str_(da.address_fingerprint) }); }
+      return;
+    }
+    var elC = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, { requireCurrent: true, warehouses: whOpts.warehouses, coordAuthority: whOpts.coordAuthority, company: whOpts.company });   // can this be the primary in-transit?
     qualified.push({ template: t, tid: tid, resolved: el.resolved, nodeCount: ns.length, binding: el.binding, currentCapable: elC.eligible, currentBinding: elC.eligible ? elC.binding : null,
       canonicalCount: el.canonicalCount, directCount: el.directCount, abstractCount: el.abstractCount, region: DEMO4A_regionOf_(t) });
   });
   var availableRegions = {}; qualified.forEach(function (q) { availableRegions[q.region] = (availableRegions[q.region] || 0) + 1; });
   var currentCapable = qualified.filter(function (q) { return q.currentCapable; });
-  if (qualified.length < 3 || !currentCapable.length) return { ok: false, reason: qualified.length < 3 ? 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS' : 'NO_PRIMARY_IN_TRANSIT_CANDIDATE', qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections };
+  // D — when warehouse-aware evaluation rejected templates, report the MOST SPECIFIC truthful reason instead of the
+  // generic plan-count reason: an identity/lineage failure is DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY, a coordinate
+  // failure is DESTINATION_ADDRESS_COORDINATE_UNRESOLVED (armed) / ..._AUTHORITY_NOT_ARMED (unarmed).
+  function specificReason(fallback) {
+    if (!warehouseAware) return fallback;
+    var keys = Object.keys(rejections).filter(function (k) { return rejections[k] > 0; });
+    if (!keys.length) return fallback;
+    if (keys.every(function (k) { return DEMO4A_DEST_AUTH_REASONS_[k]; })) {
+      if (rejections.DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED || rejections.DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED) return 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY';
+      return DEMO4A_coordAuthorityArmed_(whOpts.coordAuthority) ? 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED' : 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED';
+    }
+    // D — a single dominant non-destination cause (a truly unresolved ORIGIN or CURRENT marker) is reported as itself
+    // rather than hidden behind the generic plan-count reason.
+    if (keys.length === 1) return keys[0];
+    return fallback;
+  }
+  if (qualified.length < 3 || !currentCapable.length) return { ok: false, reason: qualified.length < 3 ? specificReason('INSUFFICIENT_STATUS_VALID_DEMO_PLANS') : 'NO_PRIMARY_IN_TRANSIT_CANDIDATE', warehouse_aware_template_evaluation: warehouseAware, qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections, destination_authority_errors: destAuthErrors };
   // richest = most nodes (fuller timeline), tie-break by id.
   function richer(a, b) { if (b.nodeCount !== a.nodeCount) return b.nodeCount - a.nodeCount; return a.tid < b.tid ? -1 : 1; }
   function best(pool, region) { var c = pool.filter(function (q) { return q.region === region; }); c.sort(richer); return c[0] || null; }
@@ -429,8 +540,8 @@ function DEMO4A_selectTemplates_(templates, nodes, locations) {
   var inTransit = chosenCurrentCapable[0];
   if (!inTransit) { inTransit = currentCapable.slice().sort(richer)[0]; chosen = [inTransit].concat(chosen.filter(function (q) { return q.tid !== inTransit.tid; })).slice(0, 3); mode = 'FALLBACK_TRUTHFUL_TOP3'; }
   var rest = chosen.filter(function (x) { return x.tid !== inTransit.tid; }).sort(function (a, b) { return a.tid < b.tid ? -1 : 1; });
-  if (rest.length < 2) return { ok: false, reason: 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS', qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections };
-  return { ok: true, region_selection_mode: mode, available_regions: availableRegions, rejection_counts: rejections,
+  if (rest.length < 2) return { ok: false, reason: specificReason('INSUFFICIENT_STATUS_VALID_DEMO_PLANS'), warehouse_aware_template_evaluation: warehouseAware, qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections, destination_authority_errors: destAuthErrors };
+  return { ok: true, region_selection_mode: mode, warehouse_aware_template_evaluation: warehouseAware, qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections, destination_authority_errors: destAuthErrors,
     assign: { origin: rest[0], in_transit: inTransit, delivered: rest[1] },
     chosen: [rest[0], inTransit, rest[1]].map(function (x) { return { route_template_id: x.tid, region: x.region, node_count: x.nodeCount, canonical_bindings: x.canonicalCount, direct_coordinate_nodes: x.directCount, abstract_nodes: x.abstractCount, name: DEMO4A_str_(x.template.route_template_name) }; }),
     _assignRaw: { origin: rest[0], in_transit: inTransit, delivered: rest[1] } };
@@ -609,12 +720,17 @@ function DEMO4A_buildPlan_(masters) {
   var warehousesPresent = !!(masters.warehouses && masters.warehouses.length);
   var coordAuthority = masters.destCoordAuthority || DEMO4A_DEST_COORD_AUTHORITY_;
   var coordAuthorityArmed = DEMO4A_coordAuthorityArmed_(coordAuthority);
-  var sel = DEMO4A_selectTemplates_(masters.templates, masters.nodes, masters.locations);
+  // V3G4(B) — the destination company gate must be the SAME value for eligibility and build (scope resolution needs a
+  // destination country that only the chosen template can supply, so the company comes from one explicit input and is
+  // re-verified against the resolved scope below; a mismatch fails closed instead of diverging).
+  var destCompany = DEMO4A_str_(masters.company) || DEMO4A_DEFAULT_COMPANY_;
+  var sel = DEMO4A_selectTemplates_(masters.templates, masters.nodes, masters.locations, warehousesPresent ? { warehouses: masters.warehouses, coordAuthority: coordAuthority, company: destCompany } : {});
   if (!sel.ok) { sel.warehouses_present = warehousesPresent; sel.coord_authority_armed = coordAuthorityArmed; return sel; }
   var itPick = sel._assignRaw.in_transit;
   var destCountry = DEMO4A_str_((itPick.template || {}).destination_country) || DEMO4A_str_(itPick.currentBinding.destination.country) || 'US';
   var scope = DEMO4A_resolveScopeAndSkus_(masters.marketplaceSkus, masters.skuDetails, destCountry);
   if (!scope.ok) return scope;
+  if (warehousesPresent && scope.company && DEMO4A_low_(scope.company) !== DEMO4A_low_(destCompany)) return { ok: false, reason: 'DESTINATION_WAREHOUSE_SCOPE_COMPANY_MISMATCH', scope_company: scope.company, evaluated_company: destCompany, warehouses_present: warehousesPresent, coord_authority_armed: coordAuthorityArmed };
 
   // V3G — DESTINATION-WAREHOUSE AUTHORITY GATE (supersedes V3F's coordinate-mandatory gate). Active ONLY when the
   // `warehouses` master is present (legacy fixtures without it keep the logistics-only binding). The real FBA/3PL warehouse
@@ -625,30 +741,16 @@ function DEMO4A_buildPlan_(masters) {
   // fail closed as DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY. NO fabricated coordinate, NO received-at-FBA unless a facility-
   // grade coordinate is truthfully reached. A seaport gateway is NEVER relabelled the FBA.
   var destAuthority = {};
-  var READY_BRANCHES_ = { WAREHOUSE_LOCATION_COORDINATE_READY: 1, DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE: 1 };
+  var READY_BRANCHES_ = DEMO4A_DEST_READY_BRANCHES_;
   if (warehousesPresent) {
-    var whById = {}; masters.warehouses.forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id && whById[id] === undefined) whById[id] = w; });
     var identityErrors = [], coordinateErrors = [];
     DEMO4A_SHIP_LIFECYCLE_.forEach(function (life) {
-      var pick = sel._assignRaw[life.slot], tpl = pick.template, destWh = DEMO4A_str_(tpl.destination_warehouse_id);
-      var whRow = destWh ? whById[DEMO4A_low_(destWh)] : null;
-      var r;
-      // identity / eligibility / scope FIRST (independent of coordinate).
-      if (!whRow) r = { branch: 'WAREHOUSE_IDENTITY_MISSING', reason: 'NO_DESTINATION_WAREHOUSE_IDENTITY', warehouse_id: destWh, identity_ready: false, renderable: false, received_allowed: false };
-      else if (!DEMO4A_whDestTypeCompatible_(whRow)) r = { branch: 'WAREHOUSE_IDENTITY_INELIGIBLE', reason: 'WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(whRow), warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
-      else if (DEMO4A_whCompany_(whRow) && scope.company && DEMO4A_low_(DEMO4A_whCompany_(whRow)) !== DEMO4A_low_(scope.company)) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COMPANY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
-      else if (DEMO4A_whCountry_(whRow) && DEMO4A_str_(tpl.destination_country) && DEMO4A_low_(DEMO4A_whCountry_(whRow)) !== DEMO4A_low_(DEMO4A_str_(tpl.destination_country))) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COUNTRY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
-      else {
-        r = DEMO4A_resolveWarehouseDestination_(whRow, masters.locations, coordAuthority, tpl);
-        // address authority gate (identity) is separate from coordinate readiness.
-        if (r.address_status && r.address_status !== 'ADDRESS_AUTHORITY_READY') { r.identity_ready = false; if (!r.reason) r.reason = r.address_status; }
-        // coordinate not ready for this template's own warehouse → try a same-region eligible reselection.
-        if (!READY_BRANCHES_[r.branch] && r.identity_ready) {
-          var alt = DEMO4A_pickWarehouseForRegion_(masters.warehouses, masters.locations, coordAuthority, DEMO4A_dxRegionBucket_(DEMO4A_str_(tpl.destination_region) || DEMO4A_whRegion_(whRow)), scope.company, DEMO4A_str_(tpl.destination_country) || DEMO4A_whCountry_(whRow), DEMO4A_whId_(whRow));
-          if (alt) { r = alt.resolution; r.reselected_from_warehouse_id = DEMO4A_whId_(whRow); }
-        }
-      }
-      r.normalized_address = r.normalized_address || (whRow && r.identity_ready ? DEMO4A_normalizeWhAddress_(whRow).normalized : '');
+      var pick = sel._assignRaw[life.slot];
+      // V3G4(B) — CONSUME the destination authority already computed by the SHARED evaluator during eligibility. The plan
+      // is built from exactly the evaluation that qualified the template; nothing is re-resolved by a second rule.
+      var usedBinding = (life.slot === 'in_transit') ? (pick.currentBinding || pick.binding) : pick.binding;
+      var r = (usedBinding && usedBinding.destination_authority) ? usedBinding.destination_authority
+        : DEMO4A_destAuthorityForTemplate_(pick.template, masters.warehouses, masters.locations, coordAuthority, destCompany);
       destAuthority[life.slot] = r;
       if (!r.identity_ready) identityErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: r.warehouse_id || destWh });
       else if (!READY_BRANCHES_[r.branch]) coordinateErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || r.coordinate_unresolved_reason || 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', warehouse_id: r.warehouse_id || destWh });
@@ -800,6 +902,8 @@ function DEMO4A_buildPlan_(masters) {
   return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility, binding_gates: binding_gates,
     scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku_pairs: scope.pairs },
     region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
+    // V3G4(F) — warehouse-aware evaluation facts, so PREFLIGHT can confirm WHICH destination rule qualified the templates.
+    warehouse_aware_template_evaluation: sel.warehouse_aware_template_evaluation === true, qualified_count: sel.qualified_count, current_capable_count: sel.current_capable_count, destination_authority_errors: sel.destination_authority_errors || [],
     warehouses_present: warehousesPresent, destination_authority: destAuthority,
     binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
 }
@@ -1944,6 +2048,8 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
     }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
+      out.warehouse_aware_template_evaluation = plan.warehouse_aware_template_evaluation; out.qualified_count = plan.qualified_count; out.current_capable_count = plan.current_capable_count;
+      out.rejection_counts = plan.rejection_counts || null; out.destination_authority_errors = plan.destination_authority_errors || [];
       out.selected_template_ids = plan.chosen_templates.map(function (c) { return c.route_template_id; }); out.rejection_counts = plan.rejection_counts;
       out.scope = plan.scope; out.planned_counts = plan.counts; out.per_shipment = plan.per_shipment; out.demo_plan_checksum = plan.checksum;
       // E — compact per-shipment route-geography evidence + the hard binding gates. READY is unreachable unless every gate is true.
@@ -1977,6 +2083,8 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
     if (!plan.ok) { out.verdict = 'DRY_RUN_BLOCKED'; out.reason = plan.reason; out.detail = plan; }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
+      out.warehouse_aware_template_evaluation = plan.warehouse_aware_template_evaluation; out.qualified_count = plan.qualified_count; out.current_capable_count = plan.current_capable_count;
+      out.rejection_counts = plan.rejection_counts || null; out.destination_authority_errors = plan.destination_authority_errors || [];
       out.scope = plan.scope; out.dynamic_row_counts = plan.counts; out.per_shipment_counts = plan.per_shipment; out.planned_ids = DEMO4A_allIds_(plan);
       out.binding_gates = plan.binding_gates;
       out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined);

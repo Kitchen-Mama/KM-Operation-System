@@ -22,7 +22,7 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
-  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_COORD_ACCURACY_CANON_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_DEST_COORD_AUTHORITY_ = \{[\s\S]*?\n\};/)[0]);
@@ -47,7 +47,7 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
   'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
   'DEMO4A_whCode_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
-  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
@@ -1085,5 +1085,212 @@ section('V3G3-D. V3A protections intact; COMMITTED_UNVERIFIED impossible; nothin
 eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'D. both confirmation constants remain placeholders (COMMIT + CLEAR stay disarmed; no live checksum pinned)');
 ok(/PASTE_DEMO_SEED_CHECKSUM_HERE/.test(G) && /PASTE_DEMO_CLEAR_TOKEN_HERE/.test(G) && new RegExp('DEMO4A_CONFIRMED_SEED_CHECKSUM_ = \'[0-9a-f]{8}').test(G) === false, 'D. no live demo_plan_checksum is pinned in source');
 ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false && new RegExp("getSheetByName\\('logistics_locations'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, 'D. warehouses / logistics_locations masters remain read-only');
+
+// ============================================================ V3G4 — WAREHOUSE-AWARE TEMPLATE ELIGIBILITY PIPELINE
+// Reproduces the ACTUAL live shape that returned NO_ROLE_COMPATIBLE_DESTINATION_LOCATION = 29:
+//   · warehouses present (the three approved live FBA facilities, real addresses)
+//   · each warehouse-linked logistics_location present, joined exactly, with BLANK master latitude/longitude and
+//     verification_status = ADDRESS_SEEDED_COORDINATES_PENDING
+//   · the approved authority holds the exact fingerprint-bound coordinates
+//   · ONLY gateway locations (ports/airport) otherwise carry valid master coordinates
+//   · template timeline nodes carry blank coordinates and NO identifier that matches any location (zero exact matches)
+function locPending(id, whId, country, region) { var l = locWH(id, whId, country, region, '', '', 'fulfillment_center'); l.verification_status = 'ADDRESS_SEEDED_COORDINATES_PENDING'; return l; }
+function liveTpl(id, region, whId) { var t = tplWH(id, region, whId); t.route_template_name = 'CN to ' + region + ' ' + id; return t; }
+function mastersLive(over) {
+  over = over || {};
+  var REG = [['US West', 'WH-KM-US-FBA-BFI4', 10], ['US Central', 'WH-KM-US-FBA-AUS2', 10], ['US East', 'WH-KM-US-FBA-ABE2', 9]];
+  var templates = [], nodes = [], k = 0;
+  REG.forEach(function (r) {
+    for (var i = 1; i <= r[2]; i++) {
+      k++; var tid = 'RT-LIVE-' + k;
+      templates.push(liveTpl(tid, r[0], over.noDestWh ? '' : r[1]));
+      // 4 abstract timeline nodes: blank coordinates, node_codes that match NOTHING in logistics_locations.
+      nodes.push(nAbs(tid, 1, 'origin', 'origin_departure'), nAbs(tid, 2, 'customs', 'customs_clearance'), nAbs(tid, 3, 'port', 'port_transit'), nAbs(tid, 4, 'destination', 'final_delivery'));
+    }
+  });
+  // ONLY gateways carry valid master coordinates (exactly the live condition).
+  var locations = [
+    locWH('CN-PORT-SHA', '', 'CN', 'CN East', 31.23, 121.47, 'port'),
+    locWH('US-PORT-LA', '', 'US', 'US West', 33.74, -118.27, 'port'),
+    locWH('US-PORT-HOU', '', 'US', 'US Central', 29.73, -95.28, 'port'),
+    locWH('US-AIR-EWR', '', 'US', 'US East', 40.69, -74.17, 'airport'),
+    locPending('LOC-WH-KM-US-FBA-BFI4', 'WH-KM-US-FBA-BFI4', 'US', 'US West'),
+    locPending('LOC-WH-KM-US-FBA-AUS2', 'WH-KM-US-FBA-AUS2', 'US', 'US Central'),
+    locPending('LOC-WH-KM-US-FBA-ABE2', 'WH-KM-US-FBA-ABE2', 'US', 'US East')
+  ];
+  if (over.joinConflict) locations.push(locPending('LOC-WH-KM-US-FBA-BFI4-DUP', 'WH-KM-US-FBA-BFI4', 'US', 'US West'));
+  if (over.joinConflictAll) ['BFI4', 'AUS2', 'ABE2'].forEach(function (c) { locations.push(locPending('LOC-' + G2_LIVE_[c].wid + '-DUP', G2_LIVE_[c].wid, 'US', G2_LIVE_[c].region)); });
+  var warehouses = [whLive('BFI4'), whLive('AUS2'), whLive('ABE2')];
+  if (over.staleAddress) warehouses = warehouses.map(function (w) { var c = {}; for (var x in w) c[x] = w[x]; if (c.warehouse_code === 'AUS2') c.address_line1 = c.address_line1 + ' STE 900'; return c; });
+  if (over.staleAddressAll) warehouses = warehouses.map(function (w) { var c = {}; for (var x in w) c[x] = w[x]; c.address_line1 = c.address_line1 + ' STE 900'; return c; });
+  return { templates: templates, nodes: nodes, locations: locations, warehouses: warehouses, marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
+}
+var mL = mastersLive();
+var G4_OPTS_ = { warehouses: mL.warehouses, coordAuthority: DEMO4A_DEST_COORD_AUTHORITY_, company: 'KM' };
+
+section('V3G4-REGRESSION. the exact live evidence: 29 destination rejections BEFORE, three qualified W/C/E AFTER');
+(function () {
+  // the OLD rule (no warehouse opts = the pre-V3G4 generic role-compatible location_type pool) on the SAME evidence
+  var legacy = DEMO4A_selectTemplates_(mL.templates, mL.nodes, mL.locations);
+  eq([legacy.ok, legacy.reason], [false, 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS'], 'REG. the pre-V3G4 generic destination pool rejects every template on the live evidence');
+  eq(legacy.rejection_counts.NO_ROLE_COMPATIBLE_DESTINATION_LOCATION, 29, 'REG. reproduces the EXACT live count NO_ROLE_COMPATIBLE_DESTINATION_LOCATION = 29');
+  eq(legacy.qualified_count, 0, 'REG. qualified_count = 0 under the old rule (matches the live PREFLIGHT)');
+  // the NEW warehouse-aware rule on the SAME evidence, with NO master-data change
+  var sel = DEMO4A_selectTemplates_(mL.templates, mL.nodes, mL.locations, G4_OPTS_);
+  ok(sel.ok === true && sel.warehouse_aware_template_evaluation === true, 'REG. the warehouse-aware evaluation qualifies templates on the SAME evidence (no master data changed)');
+  eq(sel.rejection_counts.NO_ROLE_COMPATIBLE_DESTINATION_LOCATION, undefined, 'D. NO_ROLE_COMPATIBLE_DESTINATION_LOCATION is never reported once the warehouse authority is active');
+  eq(sel.qualified_count, 29, 'REG. all 29 templates now qualify');
+  eq(sel.region_selection_mode, 'DISTINCT_WCE', 'C. three DISTINCT US_WEST / US_CENTRAL / US_EAST plans are still selected');
+  eq([sel.available_regions.US_WEST, sel.available_regions.US_CENTRAL, sel.available_regions.US_EAST], [10, 10, 9], 'REG. every region contributes qualified templates');
+  ok(sel.current_capable_count > 0, 'C/E5. at least one template is CURRENT-CAPABLE (distinct middle current marker resolves)');
+  ok(mL.locations.filter(function (l) { return DEMO4A_locValid_(l); }).every(function (l) { return !DEMO4A_str_(DEMO4A_get_(l, ['warehouse_id'])); }), 'REG. only NON-warehouse gateway locations carry valid master coordinates (live condition preserved)');
+})();
+
+section('V3G4-E1/E2/E3/E4. each approved warehouse makes its region destination-eligible, all three simultaneously');
+[['BFI4', 'US_WEST'], ['AUS2', 'US_CENTRAL'], ['ABE2', 'US_EAST']].forEach(function (r) {
+  var code = r[0], tpl = mL.templates.filter(function (t) { return DEMO4A_str_(t.destination_warehouse_id) === G2_LIVE_[code].wid; })[0];
+  var da = DEMO4A_destAuthorityForTemplate_(tpl, mL.warehouses, mL.locations, DEMO4A_DEST_COORD_AUTHORITY_, 'KM');
+  eq(DEMO4A_destAuthorityReason_(da), '', 'E. ' + code + ' (' + r[1] + ') destination authority resolves with NO rejection reason');
+  eq([da.branch, da.warehouse_id, da.logistics_location_id, da.address_fingerprint], ['DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE', G2_LIVE_[code].wid, 'LOC-' + G2_LIVE_[code].wid, G2_LIVE_[code].fp], 'E. ' + code + ' binds the exact warehouse + logistics lineage + live fingerprint');
+  eq([da.latitude, da.longitude], [G3_APPROVED_[code].lat, G3_APPROVED_[code].lng], 'E. ' + code + ' uses its OWN approved coordinate');
+});
+(function () {
+  var plan = DEMO4A_buildPlan_(mL);
+  ok(plan.ok === true, 'E4. all three regions qualify simultaneously and the live-shaped plan BUILDS');
+  eq(plan.per_shipment.map(function (x) { return x.destination_warehouse_code; }).sort().join(','), 'ABE2,AUS2,BFI4', 'E4. the three shipments land on the three approved warehouses');
+})();
+
+section('V3G4-E6/E7. the destination no longer depends on a generic role-compatible location_type; gateways cannot substitute');
+(function () {
+  // strip EVERY gateway location: the destination still resolves (it never used that pool), and only origin/current break.
+  var noGw = mastersLive(); noGw.locations = noGw.locations.filter(function (l) { return !DEMO4A_locValid_(l); });
+  var tpl = noGw.templates[0];
+  var da = DEMO4A_destAuthorityForTemplate_(tpl, noGw.warehouses, noGw.locations, DEMO4A_DEST_COORD_AUTHORITY_, 'KM');
+  eq(DEMO4A_destAuthorityReason_(da), '', 'E6. with ZERO valid-coordinate locations the destination authority still resolves (no location-type pool dependency)');
+  eq(DEMO4A_selectTemplates_(noGw.templates, noGw.nodes, noGw.locations, { warehouses: noGw.warehouses, coordAuthority: DEMO4A_DEST_COORD_AUTHORITY_, company: 'KM' }).reason, 'NO_ROLE_COMPATIBLE_ORIGIN_LOCATION', 'E6/D. the only remaining failure is the ORIGIN — reported truthfully as NO_ROLE_COMPATIBLE_ORIGIN_LOCATION');
+  // a region with NO eligible warehouse must FAIL CLOSED, never fall back to the airport/seaport in that region
+  var noWh = mastersLive(); noWh.warehouses = noWh.warehouses.filter(function (w) { return w.warehouse_code !== 'ABE2'; });
+  var eastTpl = noWh.templates.filter(function (t) { return DEMO4A_str_(t.destination_warehouse_id) === 'WH-KM-US-FBA-ABE2'; })[0];
+  var daE = DEMO4A_destAuthorityForTemplate_(eastTpl, noWh.warehouses, noWh.locations, DEMO4A_DEST_COORD_AUTHORITY_, 'KM');
+  eq(DEMO4A_destAuthorityReason_(daE), 'DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED', 'E7. a region with no eligible warehouse fails closed as DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED');
+  ok(DEMO4A_str_(daE.logistics_location_id) === '' && daE.latitude === undefined, 'E7. the US East AIRPORT is NOT substituted as the destination facility');
+  // one region unresolvable → V3C's pre-existing FALLBACK_TRUTHFUL_TOP3 builds three status-valid plans from the REMAINING
+  // approved warehouses (the three-plan requirement is NOT lowered) and NEVER relabels the US East airport as a facility.
+  var pNoWh = DEMO4A_buildPlan_(noWh);
+  ok(pNoWh.ok === true && pNoWh.region_selection_mode === 'FALLBACK_TRUTHFUL_TOP3', 'E7. with US East unresolvable the plan still builds three status-valid plans and truthfully reports FALLBACK_TRUTHFUL_TOP3');
+  ok(pNoWh.per_shipment.every(function (x) { return x.destination_warehouse_code === 'BFI4' || x.destination_warehouse_code === 'AUS2'; }), 'E7. only APPROVED, resolvable warehouses are used — no OTHER-region or gateway replacement is fabricated');
+  ok(pNoWh.tables.shipment_routes.every(function (r) { return DEMO4A_str_(r.location_ref_id) !== 'US-AIR-EWR' || DEMO4A_low_(r.node_type) !== 'destination'; }), 'E7. the US East AIRPORT is never the destination route row');
+  // when NO region can resolve its warehouse identity, the plan DOES fail closed on identity.
+  var noneWh = mastersLive(); noneWh.warehouses = [];
+  ok(DEMO4A_buildPlan_(noneWh).reason === 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS' || DEMO4A_buildPlan_(noneWh).reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'E7/D. with the warehouses master emptied the live-shaped evidence cannot build (legacy pool cannot supply a destination either)');
+  var conflictAll = mastersLive({ joinConflictAll: true });
+  eq(DEMO4A_buildPlan_(conflictAll).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'E7/E10/D. when EVERY warehouse↔logistics join conflicts the plan fails closed on lineage/identity');
+})();
+
+section('V3G4-E8/E9/E10. stale fingerprint / missing authority entry / join conflict each fail closed with a typed reason');
+(function () {
+  var stale = mastersLive({ staleAddress: true });
+  var tplC = stale.templates.filter(function (t) { return DEMO4A_str_(t.destination_warehouse_id) === 'WH-KM-US-FBA-AUS2'; })[0];
+  eq(DEMO4A_destAuthorityReason_(DEMO4A_destAuthorityForTemplate_(tplC, stale.warehouses, stale.locations, DEMO4A_DEST_COORD_AUTHORITY_, 'KM')), 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'E8. a live address edit (stale fingerprint) → DESTINATION_ADDRESS_COORDINATE_UNRESOLVED');
+  var pStale = DEMO4A_buildPlan_(stale);
+  ok(pStale.ok === true && pStale.per_shipment.every(function (x) { return x.destination_warehouse_code !== 'AUS2'; }), 'E8. a single stale-fingerprint warehouse is EXCLUDED (never given a stale coordinate); the remaining approved regions still build');
+  eq(DEMO4A_buildPlan_(mastersLive({ staleAddressAll: true })).reason, 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'E8/D. when EVERY live address drifts the plan fails closed as DESTINATION_ADDRESS_COORDINATE_UNRESOLVED');
+  var partial = {}; partial.BFI4 = DEMO4A_DEST_COORD_AUTHORITY_.BFI4; partial.AUS2 = DEMO4A_DEST_COORD_AUTHORITY_.AUS2;   // ABE2 missing
+  var mMissing = mastersLive(); mMissing.destCoordAuthority = partial;
+  var pMissing = DEMO4A_buildPlan_(mMissing);
+  ok(pMissing.ok === true && pMissing.per_shipment.every(function (x) { return x.destination_warehouse_code !== 'ABE2'; }), 'E9. a warehouse with no authority entry is EXCLUDED — no fabricated coordinate and no gateway replacement');
+  ok(pMissing.per_shipment.every(function (x) { return x.destination_coordinate_branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE'; }), 'E9. every built destination still comes from an APPROVED authority entry');
+  var mUnarmed = mastersLive(); mUnarmed.destCoordAuthority = {};
+  eq(DEMO4A_buildPlan_(mUnarmed).reason, 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED', 'E9/D. an entirely unarmed authority is reported as NOT_ARMED, not as a plan-count problem');
+  var conflict = mastersLive({ joinConflict: true });
+  var tplW = conflict.templates.filter(function (t) { return DEMO4A_str_(t.destination_warehouse_id) === 'WH-KM-US-FBA-BFI4'; })[0];
+  eq(DEMO4A_destAuthorityReason_(DEMO4A_destAuthorityForTemplate_(tplW, conflict.warehouses, conflict.locations, DEMO4A_DEST_COORD_AUTHORITY_, 'KM')), 'DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED', 'E10. a >1 warehouse↔logistics join is DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED');
+  var pConf = DEMO4A_buildPlan_(conflict);
+  ok(pConf.ok === true && pConf.per_shipment.every(function (x) { return x.destination_warehouse_code !== 'BFI4'; }), 'E10. a lineage-conflicted warehouse is EXCLUDED from the built plan (fails closed for that region)');
+})();
+
+section('V3G4-E11. origin and current compatibility remain enforced');
+(function () {
+  var m = mastersLive(); m.locations = m.locations.filter(function (l) { return DEMO4A_locId_(l) !== 'CN-PORT-SHA'; });
+  eq(DEMO4A_selectTemplates_(m.templates, m.nodes, m.locations, { warehouses: m.warehouses, coordAuthority: DEMO4A_DEST_COORD_AUTHORITY_, company: 'KM' }).reason, 'NO_ROLE_COMPATIBLE_ORIGIN_LOCATION', 'E11. removing the only in-corridor origin still fails as NO_ROLE_COMPATIBLE_ORIGIN_LOCATION');
+  var sel = DEMO4A_selectTemplates_(mL.templates, mL.nodes, mL.locations, G4_OPTS_);
+  var it = sel._assignRaw.in_transit, cb = it.currentBinding;
+  var ck = function (b) { return DEMO4A_num_(b.latitude).toFixed(5) + ',' + DEMO4A_num_(b.longitude).toFixed(5); };
+  ok(cb && cb.current && ck(cb.current) !== ck(cb.origin) && ck(cb.current) !== ck(cb.destination), 'E11/E17. the current marker is transport/corridor-compatible AND distinct from BOTH origin and destination');
+  ok(ck(cb.origin) !== ck(cb.destination), 'E17. origin and destination remain distinct');
+  eq(DEMO4A_canonLocType_(cb.current.location_type), 'port', 'E11. the current marker is still bound to a transit-compatible gateway (not the warehouse)');
+})();
+
+section('V3G4-E12/E13/E14. selection and build consume the SAME evaluation; the route terminal carries it exactly');
+(function () {
+  var plan = DEMO4A_buildPlan_(mL);
+  DEMO4A_SHIP_LIFECYCLE_.forEach(function (life) {
+    var da = plan.destination_authority[life.slot];
+    var code = DEMO4A_str_(da.warehouse_code), a = G3_APPROVED_[code];
+    var sp = plan.per_shipment.filter(function (x) { return x.slot === life.slot; })[0];
+    var rows = plan.tables.shipment_routes.filter(function (r) { return r.shipment_id === sp.shipment_id; }).sort(function (x, y) { return DEMO4A_num_(x.sequence_no) - DEMO4A_num_(y.sequence_no); });
+    var dr = rows[rows.length - 1];
+    eq([DEMO4A_num_(dr.latitude), DEMO4A_num_(dr.longitude)], [a.lat, a.lng], 'E13. ' + life.slot + ' final route terminal uses the EXACT approved coordinate');
+    eq([dr.location_ref_type, dr.location_ref_id], ['logistics_location', 'LOC-' + G2_LIVE_[code].wid], 'E14. ' + life.slot + ' final location_ref_id is the warehouse-linked logistics_location_id');
+    eq([DEMO4A_num_(dr.latitude), DEMO4A_num_(dr.longitude)], [da.latitude, da.longitude], 'E12. the constructed route row equals the SHARED evaluation used to qualify the template (no second rule)');
+  });
+  // object identity: the authority consumed by build IS the one produced during eligibility
+  var sel = DEMO4A_selectTemplates_(mL.templates, mL.nodes, mL.locations, G4_OPTS_);
+  ok(sel._assignRaw.delivered.binding.destination_authority && sel._assignRaw.delivered.binding.destination.latitude === sel._assignRaw.delivered.binding.destination_authority.latitude, 'E12. the eligibility binding and its destination_authority are the same evaluation');
+})();
+
+section('V3G4-E15/E16. received only at the approved final warehouse; in-transit destination stays planned');
+(function () {
+  var plan = DEMO4A_buildPlan_(mL);
+  var deliv = plan.per_shipment.filter(function (x) { return x.slot === 'delivered'; })[0];
+  var rows = plan.tables.shipment_routes.filter(function (r) { return r.shipment_id === deliv.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+  var dr = rows[rows.length - 1];
+  var rcv = plan.tables.shipment_events.filter(function (e) { return DEMO4A_low_(e.event_type) === 'received'; });
+  eq(rcv.length, 1, 'E15. exactly ONE received event exists across the whole Demo dataset');
+  ok(DEMO4A_str_(rcv[0].shipment_id) === DEMO4A_str_(deliv.shipment_id) && DEMO4A_str_(rcv[0].shipment_route_id) === DEMO4A_str_(dr.shipment_route_id) && DEMO4A_num_(rcv[0].latitude) === DEMO4A_num_(dr.latitude), 'E15. the received event is emitted ONLY at the approved final warehouse route row');
+  var it = plan.per_shipment.filter(function (x) { return x.slot === 'in_transit'; })[0];
+  var itRows = plan.tables.shipment_routes.filter(function (r) { return r.shipment_id === it.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+  var itDest = itRows[itRows.length - 1];
+  eq(DEMO4A_low_(itDest.status), 'planned', 'E16. the in-transit destination route row stays PLANNED');
+  eq(plan.tables.shipment_events.filter(function (e) { return DEMO4A_str_(e.shipment_route_id) === DEMO4A_str_(itDest.shipment_route_id); }).length, 0, 'E16. the in-transit destination has NO event (no received on a planned node)');
+})();
+
+section('V3G4-E18/E19. deterministic W/C/E plan; checksum binds the destination authority evidence');
+(function () {
+  var base = DEMO4A_buildPlan_(mastersLive()).checksum;
+  eq(DEMO4A_buildPlan_(mastersLive()).checksum, base, 'E18. identical live-shaped input → identical demo_plan_checksum (deterministic)');
+  eq(DEMO4A_buildPlan_(mastersLive()).chosen_templates.map(function (c) { return c.region; }).sort().join(','), 'US_CENTRAL,US_EAST,US_WEST', 'E18. the exact W/C/E selection is deterministic');
+  function ck(mut) { var a = JSON.parse(JSON.stringify(DEMO4A_DEST_COORD_AUTHORITY_)); mut(a); var m = mastersLive(); m.destCoordAuthority = a; var pl = DEMO4A_buildPlan_(m); return pl.ok ? pl.checksum : ('FAILED:' + pl.reason); }
+  ok(ck(function (a) { a.BFI4.latitude = 47.5; }) !== base, 'E19. changing an approved coordinate changes the checksum');
+  ok(ck(function (a) { a.AUS2.source_reference = 'https://example.invalid/x'; }) !== base, 'E19. changing an approved source reference changes the checksum');
+  ok(ck(function (a) { a.ABE2.accuracy = 'rooftop'; }) !== base, 'E19. changing an approved accuracy changes the checksum');
+})();
+
+section('V3G4-E20/E21/E22. V3A protections intact; COMMITTED_UNVERIFIED impossible; constants untouched');
+(function () {
+  var plan = DEMO4A_buildPlan_(mL);
+  var j = DEMO4A_buildJournal_(plan, 'DRY_RUN');
+  ok(j && DEMO4A_verifyJournal_(j, DEMO4A_journalCanonical_(j)) !== false, 'E20. the durable journal builds + verifies over the live-shaped armed plan');
+  ok(DEMO4A_rollbackPlan_(DEMO4A_allIds_(plan)).length > 0 && DEMO4A_anyInserted_(DEMO4A_allIds_(plan)) === true, 'E20. inserted-only rollback still derives');
+  eq(DEMO4A_classifyState_(plan, emptyLive()).classification, 'ABSENT_ALL', 'E20. existing-state classification still works on the live-shaped plan');
+})();
+eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'E22. confirmation + clear constants remain placeholders (COMMIT/CLEAR stay disarmed → COMMITTED_UNVERIFIED impossible)');
+eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, 'E22. still exactly three approved authorities (no fourth added, none changed)');
+ok(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).every(function (k) { return DEMO4A_DEST_COORD_AUTHORITY_[k].latitude === G3_APPROVED_[k].lat && DEMO4A_DEST_COORD_AUTHORITY_[k].longitude === G3_APPROVED_[k].lng; }), 'E22. the three approved coordinates are unchanged');
+
+section('V3G4-F. PREFLIGHT-grade compact evidence is exposed without dumping masters');
+(function () {
+  var sel = DEMO4A_selectTemplates_(mL.templates, mL.nodes, mL.locations, G4_OPTS_);
+  ok(sel.warehouse_aware_template_evaluation === true && typeof sel.qualified_count === 'number' && typeof sel.current_capable_count === 'number' && sel.available_regions && sel.rejection_counts && sel.chosen, 'F. selection exposes warehouse-aware flag, qualified/current-capable counts, available regions, rejection counts and chosen templates');
+  eq(sel.chosen.length, 3, 'F. exactly three chosen templates are reported (never all templates)');
+  var mFail = mastersLive({ staleAddressAll: true });
+  var failed = DEMO4A_selectTemplates_(mFail.templates, mFail.nodes, mFail.locations, { warehouses: mFail.warehouses, coordAuthority: DEMO4A_DEST_COORD_AUTHORITY_, company: 'KM' });
+  eq(failed.reason, 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'F/D. the failing evaluation reports the most specific truthful reason');
+  ok(failed.destination_authority_errors.length > 0 && failed.destination_authority_errors.length <= 6, 'F. a failing evaluation reports COMPACT per-template destination-authority evidence (capped, never a full dump)');
+  ok(failed.destination_authority_errors.every(function (e) { return e.route_template_id && e.branch && DEMO4A_str_(e.warehouse_id) !== ''; }), 'F. each evidence row carries the template id, branch and exact warehouse id');
+  var plan = DEMO4A_buildPlan_(mL);
+  ok(plan.per_shipment.every(function (x) { return x.destination_warehouse_id && x.destination_warehouse_code && x.destination_logistics_location_id && x.destination_address_fingerprint && x.destination_coordinate_branch; }), 'F. per-shipment evidence carries the exact warehouse id, code, logistics_location_id, address fingerprint and coordinate branch');
+  ok(plan.per_shipment.every(function (x) { return DEMO4A_mapDestinationEndpointSource_(x.destination_coordinate_branch) === 'DEST_ROUTE_TERMINAL_NODE'; }), 'F. map endpoint consumer readiness is reported per shipment');
+})();
 
 done();

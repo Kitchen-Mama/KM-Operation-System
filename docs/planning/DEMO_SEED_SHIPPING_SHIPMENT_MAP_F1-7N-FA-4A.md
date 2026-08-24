@@ -460,3 +460,77 @@ Tests: demo-seed **461/0**; new map regression **50/0**; all **18** suites that 
 - `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` — synced only if/when the demo is exercised.
 - `FRONTEND_DEPLOY_REQUIRED`: `assets/js/pages/global-logistics-map.js` — served directly (not bundled); `BUNDLE_REBUILD_REQUIRED: NO`.
 - Order after review: push → sync the `.gs` → PREFLIGHT (expect the seven gates green) → DRY_RUN → copy `demo_plan_checksum` into `DEMO4A_CONFIRMED_SEED_CHECKSUM_` → COMMIT → VALIDATE. CLEAR stays staged OFF.
+
+---
+
+# F1-7N-FA-4A — V3G4: WAREHOUSE-AWARE TEMPLATE ELIGIBILITY PIPELINE CLOSURE
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN (demo-seed 535/0 · map regression 50/0) · NOT LIVE-VERIFIED · NOT LIVE-RUN.** Follow-up to V3G3 (`ad5af99`). TEMP demo tool + its offline test + this doc only. No frontend, master-data, schema, bundle, router/API or production-writer change; masters strictly read-only; no DB/property write; the three approved coordinates are unchanged and no fourth was added; `DEMO4A_CONFIRMED_SEED_CHECKSUM_` and `DEMO4A_CONFIRMED_CLEAR_TOKEN_` remain `PASTE_..._HERE`; CLEAR stays staged OFF; no Apps Script function executed by the agent.
+
+## Live evidence being answered
+V3G3 deployed; read-only live results: the coordinate proposal validator returned `THREE_REGION_COORDINATE_PROPOSAL_READY` with `authority_armed = true` and all eight per-region gates green, but PREFLIGHT returned `PREFLIGHT_FAILED` / `INSUFFICIENT_STATUS_VALID_DEMO_PLANS` with `schema_gate.ok = true`, `warehouses_present = true`, `coord_authority_armed = true`, `qualified_count = 0`, `current_capable_count = 0`, and `rejection_counts = { NO_ROLE_COMPATIBLE_DESTINATION_LOCATION: 29, NO_ROLE_COMPATIBLE_ORIGIN_LOCATION: 3 }`; DRY_RUN was `DRY_RUN_BLOCKED` for the same reason. All read-only; no write occurred.
+
+## Root cause — verified, not assumed (source-cited)
+The hypothesis is **confirmed**. The rejection is emitted at `DEMO4A_bindTemplateRoles_` line **360**:
+
+```
+var destination = roleAt(n - 1, 'destination', { country: …destination_country, region: …destination_region });
+if (!destination) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_DESTINATION_LOCATION', … };
+```
+
+`roleAt` → `DEMO4A_pickAnchor_` (line 300) filters the `logistics_locations` pool with two **hard** gates: `DEMO4A_locValid_(l)` at line **305** (a **valid master coordinate is mandatory**) and the role-compatible canonical `location_type` gate at line **311**. Live: the warehouse-linked FBA rows carry **blank** coordinates (`verification_status = ADDRESS_SEEDED_COORDINATES_PENDING`), so they are excluded by the coordinate gate; the only rows with valid coordinates are gateways, and `DEMO4A_roleCompatibleTypes_(sea|truck|rail, 'destination')` deliberately excludes `airport`. The destination pool is therefore **empty for all 29 templates**.
+
+That failure happens inside `DEMO4A_templateEligibility_` (line 400) → `DEMO4A_selectTemplates_` (line 419 returns `INSUFFICIENT_STATUS_VALID_DEMO_PLANS`), which `DEMO4A_buildPlan_` calls at line **612** and returns from at line **613** — i.e. **before** the V3G warehouse-authority block at lines 626-664 ever executes. The armed authority was structurally unreachable, and the two rules disagreed: eligibility used the generic location pool while build used the warehouse authority.
+
+### Old vs final call graph
+| | Old (≤ V3G3) | Final (V3G4) |
+|---|---|---|
+| PREFLIGHT | → `buildPlan_` | → `buildPlan_` |
+| selection | `selectTemplates_(t, n, loc)` — **no warehouses, no authority** | `selectTemplates_(t, n, loc, {warehouses, coordAuthority, company})` |
+| destination rule (eligibility) | `bindTemplateRoles_` → `roleAt` → `pickAnchor_` (valid-coordinate + location_type pool) | `bindTemplateRoles_` → **`DEMO4A_destAuthorityForTemplate_`** (warehouse identity authority) |
+| destination rule (build) | separate inline warehouse block, after selection | **consumes the binding's `destination_authority`** — the same evaluation |
+| result on live evidence | `NO_ROLE_COMPATIBLE_DESTINATION_LOCATION` ×29, `qualified_count 0` | 29 qualified, `DISTINCT_WCE`, three approved destinations |
+
+## B — the single shared eligibility/build evaluator
+`DEMO4A_destAuthorityForTemplate_(tpl, warehouses, locations, coordAuthority, company)` is now **the one destination rule**, called by template eligibility **and** (through the returned binding) by final plan construction. It reuses the existing V3G resolvers verbatim — `DEMO4A_resolveWarehouseDestination_` and `DEMO4A_pickWarehouseForRegion_` — so no approximate copy exists. Supporting pieces: `DEMO4A_destAuthorityReason_` (the typed rejection reason), `DEMO4A_warehouseDestBinding_` (**one** destination-binding construction shared by eligibility and build), and the shared `DEMO4A_DEST_READY_BRANCHES_` branch set.
+
+`DEMO4A_bindTemplateRoles_` now returns `destination_authority`; `DEMO4A_templateEligibility_` propagates it; `DEMO4A_selectTemplates_` carries it on the qualified pick; and `DEMO4A_buildPlan_` **consumes** `usedBinding.destination_authority` (the in-transit slot reads its current-marker binding) instead of re-resolving. The shared result therefore carries: template id + region, origin binding, destination warehouse identity, destination logistics lineage, coordinate branch, coordinate evidence (source/accuracy/reference/fingerprint), current binding + `currentCapable`, failure reason, `eligible`. A template can no longer be rejected by one destination rule and built by another.
+
+**One explicit input, no divergence:** the destination company gate needs a company before scope can resolve (scope needs the chosen template's destination country). `destCompany = masters.company || DEMO4A_DEFAULT_COMPANY_` is passed to **both** passes, and after scope resolves the build re-verifies `scope.company === destCompany`, failing closed as `DESTINATION_WAREHOUSE_SCOPE_COMPANY_MISMATCH` rather than silently using two different values.
+
+## A — final authority matrix (warehouses present)
+| Role | Authority | Coordinate source | Notes |
+|---|---|---|---|
+| **ORIGIN** | route/geographic location pool (unchanged) | valid in-corridor master coordinate | transport + node-role compatibility preserved; no fabricated coordinate |
+| **CURRENT** | corridor-restricted transit location (unchanged) | valid master coordinate on a compatible **middle** node | required only for the primary in-transit shipment; must stay distinct from origin **and** destination |
+| **DESTINATION** | **`warehouses`** (business identity) | (1) valid coordinate on the warehouse-linked `logistics_locations` row → (2) exact approved fingerprint-bound `DEMO4A_DEST_COORD_AUTHORITY_` entry → (3) **fail closed** | exact lineage = the warehouse-linked `logistics_location_id`; the generic gateway/location-type pool is **not consulted at all**; a port/airport/centroid is never a destination fallback and a gateway is never relabelled a warehouse |
+
+When `warehouses` is **absent** (legacy V3A/V3B/V3C fixtures) the previous logistics-only binding is preserved verbatim — the warehouse branch is entered only when `opts.warehouses` is non-empty.
+
+## C — eligibility rules and D — failure reasons
+A template is eligible (warehouse-aware) only when: active · node count + unique sequences pass · origin resolves truthfully · the destination country/region resolves to an **eligible warehouse** (declared `destination_warehouse_id`, else deterministic same-region selection) · the exact warehouse + address fingerprint + coordinate authority resolves · the destination terminal can carry `location_ref_type = logistics_location` + the exact warehouse-linked `logistics_location_id` + the approved coordinate · route-geography and status/event truthfulness gates pass. **Current-capable** additionally requires a valid distinct middle current marker. Three **distinct** `US_WEST`/`US_CENTRAL`/`US_EAST` plans are still preferred (`DISTINCT_WCE`), the three-status-valid-plan requirement is **not** lowered, and no OTHER-region replacement is fabricated (V3C's pre-existing, explicitly-labelled `FALLBACK_TRUTHFUL_TOP3` still applies when a region genuinely cannot resolve).
+
+Typed reasons now emitted: `DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED` · `DESTINATION_WAREHOUSE_LOCATION_LINEAGE_UNRESOLVED` (missing/conflicting join) · `DESTINATION_ADDRESS_COORDINATE_UNRESOLVED` (absent/stale approved coordinate) · `NO_ROLE_COMPATIBLE_ORIGIN_LOCATION` · `NO_ROLE_COMPATIBLE_CURRENT_LOCATION`. **`NO_ROLE_COMPATIBLE_DESTINATION_LOCATION` is never reported once the warehouse authority is active**, because no location-type pool is consulted for the destination. `DEMO4A_selectTemplates_` also surfaces the *most specific* cause instead of the generic count reason: destination identity/lineage failures roll up to `DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY`, coordinate failures to `DESTINATION_ADDRESS_COORDINATE_UNRESOLVED` (armed) / `..._AUTHORITY_NOT_ARMED` (unarmed), and a single dominant origin/current cause is reported as itself. Every prior typed expectation (V3F/V3G/V3G1/V3G2/V3G3) is preserved by this mapping — no existing assertion had to be relaxed.
+
+## E — live-shaped offline proof
+`mastersLive()` reproduces the actual live shape: **29 templates** (10 West / 10 Central / 9 East) whose four timeline nodes carry blank coordinates and node codes matching **no** location (zero exact identifier matches); the three approved warehouses with their real live addresses; each warehouse-linked `logistics_locations` row present and joined exactly with **blank** latitude/longitude and `verification_status = ADDRESS_SEEDED_COORDINATES_PENDING`; and **only** gateway rows (CN/US ports + a US East airport) carrying valid master coordinates.
+
+**The regression, on identical evidence with no master-data change:**
+- old rule → `INSUFFICIENT_STATUS_VALID_DEMO_PLANS`, `rejection_counts.NO_ROLE_COMPATIBLE_DESTINATION_LOCATION = 29`, `qualified_count = 0` (reproducing the live PREFLIGHT exactly);
+- new rule → `ok`, `warehouse_aware_template_evaluation = true`, `qualified_count = 29`, `available_regions = {W:10, C:10, E:9}`, `region_selection_mode = DISTINCT_WCE`, `current_capable_count > 0`, and `NO_ROLE_COMPATIBLE_DESTINATION_LOCATION` absent from the rejection counts.
+
+Also proven: BFI4/AUS2/ABE2 each make their own region destination-eligible with the exact warehouse id, logistics lineage, live fingerprint and **its own** approved coordinate; all three qualify simultaneously and the live-shaped plan builds; with **every** valid-coordinate location stripped the destination still resolves (no location-type dependency) and only the origin fails — reported as `NO_ROLE_COMPATIBLE_ORIGIN_LOCATION`; a region with no eligible warehouse fails closed as `DESTINATION_WAREHOUSE_IDENTITY_UNRESOLVED` and the US East **airport is never** the destination route row; a stale fingerprint, a missing authority entry and a lineage conflict each exclude that warehouse (and, when all three fail, fail the plan closed with the typed reason); origin/current compatibility remains enforced and the current marker stays a transit gateway distinct from both endpoints; selection and build consume the same evaluation (the constructed route row's coordinate equals the qualifying evaluation's); the final terminal carries the exact approved coordinate and the warehouse-linked `location_ref_id`; exactly **one** received event exists and only at the approved final warehouse route row; the in-transit destination stays `planned` with no event; the W/C/E plan and its checksum are deterministic and the checksum changes on any approved coordinate/source/accuracy change; the durable journal builds and verifies, inserted-only rollback derives, and existing-state classification still works; and both confirmation constants remain placeholders so `COMMITTED_UNVERIFIED` stays impossible.
+
+## F — PREFLIGHT output contract
+The plan and both PREFLIGHT/DRY_RUN success paths now expose `warehouse_aware_template_evaluation`, `qualified_count`, `current_capable_count`, `available_regions`, `rejection_counts`, `chosen_templates`, and a **capped (≤6)** `destination_authority_errors` list carrying, per affected template, its `route_template_id`, region, reason code, branch, exact `warehouse_id`/`warehouse_code`, `logistics_location_id`, `address_status` and `address_fingerprint`. Per-shipment evidence continues to report the origin/current/destination authority, coordinate branch, exact warehouse id, exact `logistics_location_id`, address fingerprint, map endpoint readiness (`DEST_ROUTE_TERMINAL_NODE`) and all binding/status/geography gates. No template, node, warehouse or location dump was added.
+
+## Tests, baseline and scope
+demo-seed **535/0** (was 461/0); the V3G3 map regression **50/0** (unchanged, `global-logistics-map.js` untouched); the demo-seed suite is the only suite reading the changed TEMP file. Full sweep of **342** suites: the same **5 pre-existing** failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-golden-scenarios`, `supply-planning-route-inventory`), none of which reads a changed file → **0 new failures**.
+
+Changed files (3, allowed only): `assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs` · `assets/tests/demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` · this doc. **No file outside the allowed three was required** — the fix is entirely inside the seed's own selection pipeline.
+
+## Apps Script sync manifest (USER-owned, nothing run here)
+- `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` (this is the file whose live behaviour changes).
+- `FRONTEND_DEPLOY_REQUIRED`: none this round (V3G3's `global-logistics-map.js` change already shipped).
+- `BUNDLE_REBUILD_REQUIRED`: NO.
+- Order after review: push → sync the `.gs` → PREFLIGHT (expect `warehouse_aware_template_evaluation: true`, `qualified_count > 0`, three W/C/E chosen templates and the seven gates green) → DRY_RUN → copy `demo_plan_checksum` into `DEMO4A_CONFIRMED_SEED_CHECKSUM_` → COMMIT → VALIDATE. CLEAR stays staged OFF.
