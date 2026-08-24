@@ -23,13 +23,15 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
+LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
 ['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
   'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
   'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_resolveNode_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_',
-  'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
+  'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
   'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
-  'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_anyInserted_', 'DEMO4A_journalCanonical_', 'DEMO4A_buildJournal_', 'DEMO4A_verifyJournal_',
+  'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
@@ -153,8 +155,8 @@ section('11. rollback');
 var rb = DEMO4A_rollbackPlan_({ shipping_plans: ['P1'], shipment_lines: ['L1', 'L2'], shipment_events: ['E1'] });
 eq(rb.map(function (x) { return x.table; }), ['shipment_events', 'shipment_lines', 'shipping_plans'], '11. rollback deletes in reverse-FK order, only tables with inserted rows');
 eq(rb[0].ids, ['E1'], '11. rollback targets ONLY the ids inserted by this execution');
-ok(/DEMO4A_rollbackPlan_\(inserted\)/.test(commitFn) && /DEMO4A_deleteRowsByPk_\(step\.table, set\)/.test(commitFn) && /COMMIT_FAILED_ROLLED_BACK/.test(commitFn) && /COMMIT_FAILED_ROLLBACK_UNVERIFIED/.test(commitFn), '11. COMMIT rolls back inserted rows on write/readback failure + verifies');
-ok(/setProperty\(DEMO4A_JOURNAL_KEY_/.test(commitFn) && /absent_all_proof/.test(commitFn) && /COMMIT_FAILED_JOURNAL_UNVERIFIED/.test(commitFn), '11. durable journal (checksum + ABSENT_ALL proof + intended ids) written + readback-verified before first insert');
+ok(/DEMO4A_rollbackInserted_\(inserted\)/.test(commitFn) && /COMMIT_FAILED_ROLLED_BACK/.test(commitFn) && /COMMIT_FAILED_ROLLBACK_UNVERIFIED/.test(commitFn), '11. COMMIT rolls back inserted rows (inserted-only) on failure + verifies');
+ok(/setProperty\(DEMO4A_JOURNAL_KEY_/.test(commitFn) && /DEMO4A_buildJournal_\(plan2\)/.test(commitFn) && /COMMIT_FAILED_JOURNAL_UNVERIFIED/.test(commitFn), '11. durable integrity journal written + full readback-verified before first insert');
 
 // ============================================================ 12 — CLEAR implemented + placeholder-disarmed
 section('12. CLEAR');
@@ -179,5 +181,72 @@ ok(plan.tables.shipping_plans.every(function (r) { return r.note === 'DEMO ONLY 
 section('G. event semantics');
 ok(plan.tables.shipment_events.every(function (e) { return ['departed_origin', 'route_node_reached', 'received', 'partial_receipt'].indexOf(e.event_type) !== -1; }), 'G. event_type ∈ canonical production enum');
 ok(plan.route_event_map.some(function (m) { return m.route_planned_event_type !== m.recorded_event_type; }), 'G. route.planned_event_type (free-text) is reported DISTINCT from the canonical recorded event_type');
+
+// ============================================================ V3A — atomic rollback / journal / scope / external-ref closure
+var pkOf = { shipping_plans: 'shipping_plan_id', shipping_plan_lines: 'shipping_plan_line_id', shipments: 'shipment_id', shipment_lines: 'shipment_line_id', shipment_routes: 'shipment_route_id', shipment_events: 'shipment_event_id' };
+
+section('V3A-1..4. post-write fail-closed rollback (inserted-only, any post-insert failure)');
+// the COMMIT tracks `inserted` in OUTER scope + a single unified catch that rolls back on ANY post-insert failure.
+ok(/var lock = null, inserted = null, phase = 'pre_insert';/.test(commitFn), 'V3A-2/3. inserted + phase are OUTER-scope so the outer catch can roll back after any post-insert exception');
+ok(/phase = 'postcheck';[\s\S]*?if \(post\.classification !== 'PRESENT_EXACT_ALL'\) throw/.test(commitFn), 'V3A-1. a non-PRESENT_EXACT_ALL post-check THROWS into the rollback path (never COMMITTED_UNVERIFIED)');
+ok(!/COMMITTED_UNVERIFIED/.test(commitFn), 'V3A-1. COMMITTED_UNVERIFIED is eliminated — rows are never left behind');
+ok(/if \(inserted && DEMO4A_anyInserted_\(inserted\)\)[\s\S]*?DEMO4A_rollbackInserted_\(inserted\)/.test(commitFn), 'V3A-3. the outer catch rolls back exactly this execution\'s inserts');
+ok(/phase === 'postcheck'[\s\S]*?COMMIT_FAILED_POSTCHECK_ROLLED_BACK[\s\S]*?COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED/.test(commitFn), 'V3A-1. post-check failure → COMMIT_FAILED_POSTCHECK_ROLLED_BACK / _ROLLBACK_UNVERIFIED');
+ok(/COMMIT_FAILED_ROLLED_BACK[\s\S]*?COMMIT_FAILED_ROLLBACK_UNVERIFIED/.test(commitFn), 'V3A-1. insert-phase failure keeps COMMIT_FAILED_ROLLED_BACK / _ROLLBACK_UNVERIFIED');
+// 4 — rollback plan targets ONLY inserted ids, reverse-FK
+var rb = DEMO4A_rollbackPlan_({ shipping_plans: ['P1'], shipment_lines: ['L1', 'L2'], shipment_events: ['E1'] });
+eq(rb.map(function (x) { return x.table; }), ['shipment_events', 'shipment_lines', 'shipping_plans'], 'V3A-4. rollback reverse-FK order, only tables with inserted rows');
+eq(rb[0].ids, ['E1'], 'V3A-4. rollback targets ONLY the ids inserted by this execution');
+eq(DEMO4A_anyInserted_({ shipping_plans: [], shipment_events: [] }), false, 'V3A-4. anyInserted false when nothing inserted (pre-insert failure → COMMIT_THREW, no rollback)');
+eq(DEMO4A_anyInserted_({ shipping_plans: ['P1'] }), true, 'V3A-4. anyInserted true once a row is inserted');
+
+section('V3A-5..6. durable journal integrity');
+var j = DEMO4A_buildJournal_(plan);
+ok(/^[0-9a-f]{8}$/.test(j.journal_integrity_checksum) && j.version === 'V3A' && j.absent_all_proof === true && j.intended_ids && j.scope, 'V3A-5. journal carries version + plan checksum + ABSENT_ALL proof + intended ids + scope + integrity checksum');
+eq(DEMO4A_verifyJournal_(JSON.parse(JSON.stringify(j)), j).ok, true, 'V3A-5. full canonical readback + integrity validates');
+var jTamperIds = JSON.parse(JSON.stringify(j)); jTamperIds.intended_ids.shipping_plans = ['DEMO-20260824-SP-HACK'];
+eq(DEMO4A_verifyJournal_(jTamperIds, j).ok, false, 'V3A-6. tampered intended ids → canonical mismatch (checksum-only readback would miss this)');
+var jTamperCk = JSON.parse(JSON.stringify(j)); jTamperCk.journal_integrity_checksum = 'deadbeef';
+eq(DEMO4A_verifyJournal_(jTamperCk, j).reason, 'JOURNAL_INTEGRITY_MISMATCH', 'V3A-6. corrupt integrity checksum → JOURNAL_INTEGRITY_MISMATCH');
+var jIncomplete = JSON.parse(JSON.stringify(j)); delete jIncomplete.intended_ids.shipment_events;
+eq(DEMO4A_verifyJournal_(jIncomplete, j).ok, false, 'V3A-6. incomplete journal (missing a table\'s ids) → not verified');
+eq(DEMO4A_verifyJournal_(null, j).reason, 'JOURNAL_ABSENT', 'V3A-6. absent journal → JOURNAL_ABSENT');
+ok(/DEMO4A_verifyJournal_\(jrbRaw \? JSON\.parse\(jrbRaw\) : null, journal\)/.test(commitFn) && /COMMIT_FAILED_JOURNAL_UNVERIFIED/.test(commitFn), 'V3A-6. COMMIT validates the journal (full) and fails with zero table writes if unverified');
+ok(commitFn.indexOf('DEMO4A_verifyJournal_') < commitFn.indexOf('phase = \'insert\''), 'V3A-6. journal verification precedes the first insert');
+
+section('V3A-7..8. real scope authority (no fallback) + canonical active');
+// 7 — a marketplace_skus row missing company/country cannot use a fallback → excluded
+var mNoCompany = mastersFull(); mNoCompany.marketplaceSkus = mNoCompany.marketplaceSkus.map(function (r) { return Object.assign({}, r); }); mNoCompany.marketplaceSkus.forEach(function (r) { if (r.sku === 'KM-002' || r.sku === 'KM-003') delete r.company; });
+var pNoCompany = DEMO4A_buildPlan_(mNoCompany);
+eq([pNoCompany.ok, pNoCompany.reason], [false, 'INSUFFICIENT_ACTIVE_MARKETPLACE_SKUS'], 'V3A-7. missing company drops pairs below two → INSUFFICIENT (no default fallback)');
+var mNoCountry = mastersFull(); mNoCountry.marketplaceSkus = mNoCountry.marketplaceSkus.map(function (r) { return Object.assign({}, r); }); mNoCountry.marketplaceSkus.forEach(function (r) { if (r.sku === 'KM-002' || r.sku === 'KM-003') delete r.country; });
+eq(DEMO4A_buildPlan_(mNoCountry).reason, 'INSUFFICIENT_ACTIVE_MARKETPLACE_SKUS', 'V3A-7. missing country cannot fallback either');
+// 8 — canonical active representations
+eq(DEMO4A_activeFlag_({ is_active: true }), true, 'V3A-8. boolean is_active true');
+eq(DEMO4A_activeFlag_({ is_active: 'yes' }), true, 'V3A-8. is_active "yes"');
+eq(DEMO4A_activeFlag_({ is_active: 'FALSE' }), false, 'V3A-8. is_active "FALSE"');
+eq(DEMO4A_activeFlag_({ status: 'active' }), true, 'V3A-8. status "active"');
+eq(DEMO4A_activeFlag_({ status: 'discontinued' }), false, 'V3A-8. an arbitrary status is NOT active');
+eq(DEMO4A_activeFlag_({ sku: 'x' }), null, 'V3A-8. no active indicator → unknown (null)');
+var mStatus = mastersFull(); mStatus.marketplaceSkus = mStatus.marketplaceSkus.map(function (r) { var c = Object.assign({}, r); delete c.is_active; c.status = (r.is_active === 'FALSE') ? 'discontinued' : 'active'; return c; });
+ok(DEMO4A_buildPlan_(mStatus).ok, 'V3A-8. status-column active representation resolves a valid scope');
+
+section('V3A-9. external-reference audit beyond the six demo tables');
+var ids = DEMO4A_allIds_(plan);
+var demoShipLine = ids.shipment_lines[0], demoShip = ids.shipments[0];
+var extClean = { shipment_line_allocations: { present: true, headers: ['shipment_line_allocation_id', 'shipment_line_id'], rows: [{ shipment_line_allocation_id: 'SLA-1', shipment_line_id: 'REAL-LINE-1' }] } };
+eq(DEMO4A_externalRefsIn_(extClean, ids).length, 0, 'V3A-9. a non-demo allocation → no external reference');
+var extRef = { shipment_line_allocations: { present: true, headers: ['shipment_line_allocation_id', 'shipment_line_id'], rows: [{ shipment_line_allocation_id: 'SLA-9', shipment_line_id: demoShipLine }] } };
+ok(DEMO4A_externalRefsIn_(extRef, ids).length >= 1, 'V3A-9. shipment_line_allocations referencing a demo shipment_line_id is detected');
+var extDoc = { generated_documents: { present: true, headers: ['document_id', 'related_entity_id'], rows: [{ document_id: 'DOC-1', related_entity_id: demoShip }] } };
+ok(DEMO4A_externalRefsIn_(extDoc, ids).length >= 1, 'V3A-9. generated_documents.related_entity_id referencing a demo shipment_id is detected');
+ok(Object.keys(DEMO4A_EXTERNAL_REF_).indexOf('shipment_final_output_lines') !== -1 && Object.keys(DEMO4A_EXTERNAL_REF_).indexOf('overseas_inventory_movements') !== -1, 'V3A-9. external map covers SFO lines + movement ledger (not just the six demo tables)');
+ok(/DEMO4A_nonDemoReferences_\(live\)\.concat\(DEMO4A_externalReferences_\(ids\)\)/.test(clearFn), 'V3A-9. CLEAR scans BOTH the six-table FK refs AND external downstream authorities');
+
+section('V3A-10..11. exact success / exact retry');
+eq(DEMO4A_classifyState_(plan, emptyLive()).classification, 'ABSENT_ALL', 'V3A-10. absent → insert path');
+ok(/if \(post\.classification !== 'PRESENT_EXACT_ALL'\) throw[\s\S]*?out\.verdict = 'COMMITTED'/.test(commitFn), 'V3A-10. exact post-check → COMMITTED');
+eq(DEMO4A_classifyState_(plan, liveFromPlan(plan)).classification, 'PRESENT_EXACT_ALL', 'V3A-11. exact retry → PRESENT_EXACT_ALL');
+ok(/PRESENT_EXACT_ALL'\) \{ out\.delta = \{ shipping_plans: 0[\s\S]*?verdict = 'REUSED'/.test(commitFn), 'V3A-11. PRESENT_EXACT_ALL → REUSED with six zero deltas');
 
 done();

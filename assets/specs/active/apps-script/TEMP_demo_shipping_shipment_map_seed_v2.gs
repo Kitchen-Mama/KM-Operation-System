@@ -52,8 +52,22 @@ var DEMO4A_JOURNAL_KEY_ = 'DEMO4A_SEED_JOURNAL_V3';
 var DEMO4A_WRITE_ORDER_ = ['shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_routes', 'shipment_events'];
 var DEMO4A_CLEAR_ORDER_ = ['shipment_events', 'shipment_routes', 'shipment_lines', 'shipments', 'shipping_plan_lines', 'shipping_plans'];
 var DEMO4A_PK_OF_ = { shipping_plans: 'shipping_plan_id', shipping_plan_lines: 'shipping_plan_line_id', shipments: 'shipment_id', shipment_lines: 'shipment_line_id', shipment_routes: 'shipment_route_id', shipment_events: 'shipment_event_id' };
-// FK columns that could hold a demo PK (used by the CLEAR external-reference scan).
+// FK columns WITHIN the six demo tables that could hold a demo PK (a non-demo row pointing INTO the demo set).
 var DEMO4A_FK_INTO_DEMO_ = { shipping_plans: ['transferred_shipment_id', 'parent_shipping_plan_id'], shipping_plan_lines: ['shipping_plan_id'], shipments: ['shipping_plan_id'], shipment_lines: ['shipment_id', 'shipping_plan_line_id'], shipment_routes: ['shipment_id'], shipment_events: ['shipment_id', 'shipment_route_id'] };
+// V3A(D) — EXTERNAL downstream reference authorities audited across the repo that can carry any of the six demo id
+// types (shipping_plan_id / shipping_plan_line_id / shipment_id / shipment_line_id / shipment_route_id /
+// shipment_event_id). Sourced from SHIPMENT_LINE_ALLOCATIONS_HEADERS_ (32_:26), GENERATED_DOCUMENTS_HEADERS_
+// (36_:41, polymorphic related_entity_id), SFO_SNAPSHOT/LINE/LINE_PO_HEADERS_ (34_:33/55/72), SHIP_RECEIPT_OVS_MOV_
+// HEADERS_ (31_:429, polymorphic reference_id). CLEAR scans these (read-only) in addition to the six demo tables; ANY
+// reference to a demo id refuses. The six demo tables are NOT assumed to be the complete downstream universe.
+var DEMO4A_EXTERNAL_REF_ = {
+  shipment_line_allocations: ['shipment_line_id'],
+  generated_documents: ['related_entity_id'],
+  shipment_final_output_snapshots: ['shipment_id'],
+  shipment_final_output_lines: ['shipment_id', 'shipment_line_id'],
+  shipment_final_output_line_pos: ['shipment_id', 'shipment_line_id'],
+  overseas_inventory_movements: ['reference_id']
+};
 
 var DEMO4A_MASTER_TABS_ = ['shipment_route_templates', 'shipment_route_template_nodes', 'logistics_locations', 'marketplace_skus', 'sku_details'];
 
@@ -176,19 +190,32 @@ function DEMO4A_selectTemplates_(templates, nodes, locById) {
     _assignRaw: { origin: rest[0], in_transit: inTransit, delivered: rest[1] } };
 }
 
-// real SKU/site-SKU authority: join marketplace_skus ⋈ sku_details for a derived demo scope. NO fabricated site_sku.
+// V3A(C) — canonical active flag. Boolean-ish `is_active`/`active` (true/false/yes/no/1/0), else an explicit `status`
+// column that must literally equal `active` — an unrelated arbitrary status string is NOT active. Returns true/false, or
+// null when the row carries no active indicator at all (unknown).
+function DEMO4A_activeFlag_(row) {
+  var ia = DEMO4A_get_(row, ['is_active', 'active']);
+  if (DEMO4A_str_(ia) !== '') { var s = DEMO4A_low_(ia); return (s === 'true' || s === 'yes' || s === '1' || s === 'y' || ia === true || ia === 1); }
+  var st = DEMO4A_get_(row, ['status']);
+  if (DEMO4A_str_(st) !== '') return DEMO4A_low_(st) === 'active';
+  return null;   // no active indicator → unknown
+}
+// real SKU/site-SKU authority: join marketplace_skus ⋈ sku_details for a derived demo scope. NO fabricated site_sku,
+// and NO fallback for a missing company/country — every canonical field must be present on the marketplace_skus row
+// (company, country, marketplace, sku, site_sku) AND the master SKU must be active. Fewer than two eligible pairs in any
+// single scope → INSUFFICIENT_ACTIVE_MARKETPLACE_SKUS.
 function DEMO4A_resolveScopeAndSkus_(marketplaceSkus, skuDetails, destCountry) {
-  var active = {}; (skuDetails || []).forEach(function (d) { var s = DEMO4A_str_(DEMO4A_get_(d, ['sku', 'master_sku'])); if (!s) return; var actv = DEMO4A_get_(d, ['is_active', 'active', 'status']); active[s] = (actv === '' ) ? true : DEMO4A_truthy_(actv); });
+  var masterActive = {}; (skuDetails || []).forEach(function (d) { var s = DEMO4A_str_(DEMO4A_get_(d, ['sku', 'master_sku'])); if (!s) return; var a = DEMO4A_activeFlag_(d); masterActive[s] = (a === null) ? true : a; });   // no active column on the master → treat as active
   var scopes = {};   // key company|country|marketplace → [{sku,site_sku}]
   (marketplaceSkus || []).forEach(function (m) {
     var sku = DEMO4A_str_(DEMO4A_get_(m, ['sku', 'master_sku']));
     var site = DEMO4A_str_(DEMO4A_get_(m, ['site_sku', 'seller_sku', 'msku', 'listing_sku']));
     var mkt = DEMO4A_str_(DEMO4A_get_(m, ['marketplace', 'marketplace_name', 'channel']));
-    if (!sku || !site || !mkt) return;
-    var actv = DEMO4A_get_(m, ['is_active', 'active', 'status']); if (actv !== '' && !DEMO4A_truthy_(actv)) return;
-    if (!(sku in active) || active[sku] !== true) return;             // must exist + be active in sku_details
-    var country = DEMO4A_str_(DEMO4A_get_(m, ['country', 'marketplace_country'])) || DEMO4A_str_(destCountry);
-    var company = DEMO4A_str_(DEMO4A_get_(m, ['company'])) || DEMO4A_DEFAULT_COMPANY_;
+    var company = DEMO4A_str_(DEMO4A_get_(m, ['company']));
+    var country = DEMO4A_str_(DEMO4A_get_(m, ['country', 'marketplace_country']));
+    if (!sku || !site || !mkt || !company || !country) return;        // C — every canonical field required; NO default fallback
+    if (DEMO4A_activeFlag_(m) === false) return;                       // explicit inactive excluded; unknown(null) allowed
+    if (masterActive[sku] !== true) return;                            // master SKU must exist + be active
     var key = company + '|' + country + '|' + mkt;
     (scopes[key] = scopes[key] || []).push({ sku: sku, site_sku: site });
   });
@@ -433,6 +460,40 @@ function DEMO4A_validateLiveRows_(plan, live) {
 // H — inserted-only reverse-FK rollback plan (pure): given the ids THIS execution inserted, target only those, reverse FK.
 // ================================================================================================================
 function DEMO4A_rollbackPlan_(insertedIds) { return DEMO4A_CLEAR_ORDER_.map(function (t) { return { table: t, ids: (insertedIds[t] || []).slice() }; }).filter(function (x) { return x.ids.length; }); }
+function DEMO4A_anyInserted_(insertedIds) { return DEMO4A_WRITE_ORDER_.some(function (t) { return ((insertedIds || {})[t] || []).length > 0; }); }
+
+// ================================================================================================================
+// B — durable seed journal. Canonical fixed field order + a journal_integrity_checksum. Written once before the first
+// business-table write, then FULLY read back and validated byte-equivalent (checksum-only readback is insufficient).
+// ================================================================================================================
+function DEMO4A_journalCanonical_(j) {
+  var parts = [];
+  parts.push('version=' + DEMO4A_str_(j.version));
+  parts.push('plan_checksum=' + DEMO4A_str_(j.plan_checksum));
+  parts.push('absent_all_proof=' + (j.absent_all_proof === true ? 'true' : 'false'));
+  DEMO4A_WRITE_ORDER_.forEach(function (t) { parts.push('ids[' + t + ']=' + (((j.intended_ids || {})[t]) || []).map(DEMO4A_str_).join(',')); });
+  var sc = j.scope || {}; parts.push('scope=' + DEMO4A_str_(sc.company) + '|' + DEMO4A_str_(sc.country) + '|' + DEMO4A_str_(sc.marketplace));
+  parts.push('created_marker=' + DEMO4A_str_(j.created_marker));
+  return parts.join('\n');
+}
+function DEMO4A_buildJournal_(plan) {
+  var j = { version: 'V3A', plan_checksum: plan.checksum, absent_all_proof: true, intended_ids: DEMO4A_allIds_(plan),
+    scope: { company: plan.scope.company, country: plan.scope.country, marketplace: plan.scope.marketplace }, created_marker: DEMO4A_SOURCE_ + ':' + DEMO4A_CREATED_AT_ };
+  j.journal_integrity_checksum = DEMO4A_hash_(DEMO4A_journalCanonical_(j));
+  return j;
+}
+// validate a read-back journal against the one we intended to write: byte-equivalent canonical content + recomputed
+// integrity checksum + matching plan checksum. Returns { ok, reason }.
+function DEMO4A_verifyJournal_(stored, expected) {
+  if (!stored) return { ok: false, reason: 'JOURNAL_ABSENT' };
+  var canonExp = DEMO4A_journalCanonical_(expected), canonGot = DEMO4A_journalCanonical_(stored);
+  if (canonGot !== canonExp) return { ok: false, reason: 'JOURNAL_CANONICAL_MISMATCH' };
+  if (DEMO4A_str_(stored.journal_integrity_checksum) !== DEMO4A_hash_(canonGot)) return { ok: false, reason: 'JOURNAL_INTEGRITY_MISMATCH' };
+  if (DEMO4A_str_(stored.journal_integrity_checksum) !== DEMO4A_str_(expected.journal_integrity_checksum)) return { ok: false, reason: 'JOURNAL_INTEGRITY_CHECKSUM_DIFF' };
+  if (DEMO4A_str_(stored.plan_checksum) !== DEMO4A_str_(expected.plan_checksum)) return { ok: false, reason: 'JOURNAL_PLAN_CHECKSUM_MISMATCH' };
+  if (stored.absent_all_proof !== true) return { ok: false, reason: 'JOURNAL_ABSENT_ALL_PROOF_MISSING' };
+  return { ok: true };
+}
 
 // ================================================================================================================
 // GAS-FACING I/O (live sheets). Read-only reads via getSheetByName; writes map onto the LIVE header row order.
@@ -466,6 +527,28 @@ function DEMO4A_deleteRowsByPk_(name, idSet) {
   var toDel = []; for (var r = 1; r < data.length; r++) if (idSet[DEMO4A_str_(data[r][pi])]) toDel.push(r + 1);
   toDel.sort(function (a, b) { return b - a; }); toDel.forEach(function (rowNum) { sh.deleteRow(rowNum); }); return toDel.length;
 }
+// H — inserted-only reverse-FK rollback: remove ONLY the ids this execution inserted, flush, verify absent. Never
+// touches a pre-existing row. Returns { ok, removed }.
+function DEMO4A_rollbackInserted_(inserted) {
+  var removed = {};
+  DEMO4A_rollbackPlan_(inserted).forEach(function (step) { var set = {}; step.ids.forEach(function (id) { set[DEMO4A_str_(id)] = 1; }); removed[step.table] = DEMO4A_deleteRowsByPk_(step.table, set); });
+  SpreadsheetApp.flush();
+  var ok = true;
+  DEMO4A_WRITE_ORDER_.forEach(function (name) { var pk = DEMO4A_PK_OF_[name], after = DEMO4A_readTable_(name), have = {}; after.rows.forEach(function (x) { have[DEMO4A_str_(x[pk])] = 1; }); (inserted[name] || []).forEach(function (id) { if (have[DEMO4A_str_(id)]) ok = false; }); });
+  return { ok: ok, removed: removed };
+}
+// D — external downstream references to a demo id. PURE core over already-read external tables; the GAS wrapper reads
+// each audited tab (skipping absent tabs) and delegates. ANY external row carrying a demo id is an offending reference.
+function DEMO4A_externalRefsIn_(tables, planIds) {
+  var demoSet = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { (planIds[t] || []).forEach(function (id) { demoSet[DEMO4A_str_(id)] = 1; }); });
+  var refs = [];
+  Object.keys(DEMO4A_EXTERNAL_REF_).forEach(function (name) {
+    var t = tables[name]; if (!t || !t.present) return;
+    DEMO4A_EXTERNAL_REF_[name].forEach(function (col) { if ((t.headers || []).indexOf(col) === -1) return; (t.rows || []).forEach(function (r) { if (demoSet[DEMO4A_str_(r[col])]) refs.push(name + '.' + col + '=' + DEMO4A_str_(r[col])); }); });
+  });
+  return refs;
+}
+function DEMO4A_externalReferences_(planIds) { var tables = {}; Object.keys(DEMO4A_EXTERNAL_REF_).forEach(function (name) { tables[name] = DEMO4A_readTable_(name); }); return DEMO4A_externalRefsIn_(tables, planIds); }
 
 // ================================================================================================================
 // ENTRYPOINT 1 — PREFLIGHT (strictly read-only)
@@ -517,8 +600,8 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
 // ENTRYPOINT 3 — COMMIT (gated write; confirmation constant PLACEHOLDER → refuses in this task). Journal + rollback.
 // ================================================================================================================
 function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
-  var out = { tool: 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'GATED WRITE (six demo tables only; journal + inserted-only rollback)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
-  var lock = null;
+  var out = { tool: 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'GATED WRITE (six demo tables only; integrity journal + inserted-only rollback on ANY post-insert failure)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
+  var lock = null, inserted = null, phase = 'pre_insert';   // A — inserted tracked in OUTER scope so the outer catch can roll back after ANY post-insert exception
   try {
     if (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE' || !DEMO4A_str_(DEMO4A_CONFIRMED_SEED_CHECKSUM_)) { out.verdict = 'COMMIT_REFUSED_CONFIRMATION_REQUIRED'; out.note = 'set DEMO4A_CONFIRMED_SEED_CHECKSUM_ to the DRY_RUN demo_plan_checksum first'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     var schema = DEMO4A_schemaGate_(); if (!schema.ok) { out.verdict = 'COMMIT_REFUSED_SCHEMA'; out.schema_gate = schema; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
@@ -536,36 +619,41 @@ function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
     if (cls.classification === 'PRESENT_EXACT_ALL') { out.delta = { shipping_plans: 0, shipping_plan_lines: 0, shipments: 0, shipment_lines: 0, shipment_routes: 0, shipment_events: 0 }; out.verdict = 'REUSED'; out.demo_plan_checksum = plan2.checksum; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     if (cls.classification !== 'ABSENT_ALL') { out.verdict = 'COMMIT_REFUSED_' + cls.classification; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
 
-    // H — durable journal BEFORE the first write + verified readback.
-    var journal = { version: 'V3', demo_plan_checksum: plan2.checksum, absent_all_proof: true, intended_ids: DEMO4A_allIds_(plan2), scope: plan2.scope };
+    // B — durable integrity journal BEFORE the first write: setProperty once, FULL readback, byte-equivalent canonical
+    // + journal_integrity_checksum validation (checksum-only readback is insufficient). Any failure → zero table writes.
+    var journal = DEMO4A_buildJournal_(plan2);
     PropertiesService.getScriptProperties().setProperty(DEMO4A_JOURNAL_KEY_, JSON.stringify(journal));
-    var jrb = PropertiesService.getScriptProperties().getProperty(DEMO4A_JOURNAL_KEY_);
-    if (!jrb || JSON.parse(jrb).demo_plan_checksum !== plan2.checksum) { out.verdict = 'COMMIT_FAILED_JOURNAL_UNVERIFIED'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    var jrbRaw = PropertiesService.getScriptProperties().getProperty(DEMO4A_JOURNAL_KEY_);
+    var jv = DEMO4A_verifyJournal_(jrbRaw ? JSON.parse(jrbRaw) : null, journal);
+    if (!jv.ok) { out.verdict = 'COMMIT_FAILED_JOURNAL_UNVERIFIED'; out.journal_reason = jv.reason; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    out.journal_integrity_checksum = journal.journal_integrity_checksum;
 
-    var inserted = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { inserted[t] = []; });
-    try {
-      DEMO4A_WRITE_ORDER_.forEach(function (name) {
-        var sh = DEMO4A_ss_().getSheetByName(name), t = DEMO4A_readTable_(name), pk = DEMO4A_PK_OF_[name];
-        (plan2.tables[name] || []).forEach(function (r) { sh.appendRow(DEMO4A_rowForHeaders_(t.headers, r)); inserted[name].push(DEMO4A_str_(r[pk])); });
-        SpreadsheetApp.flush();
-        var after = DEMO4A_readTable_(name), have = {}; after.rows.forEach(function (x) { have[DEMO4A_str_(x[pk])] = (have[DEMO4A_str_(x[pk])] || 0) + 1; });
-        inserted[name].forEach(function (id) { if (have[id] !== 1) throw new Error('READBACK_FAILED ' + name + ':' + id + '×' + (have[id] || 0)); });
-      });
-    } catch (werr) {
-      // H — remove ONLY rows inserted by THIS execution, reverse FK order; verify; never touch pre-existing rows.
-      var rbPlan = DEMO4A_rollbackPlan_(inserted), removed = {};
-      rbPlan.forEach(function (step) { var set = {}; step.ids.forEach(function (id) { set[id] = 1; }); removed[step.table] = DEMO4A_deleteRowsByPk_(step.table, set); });
+    // A — INSERT (phase 'insert') then POST-CHECK (phase 'postcheck'). ANY failure in either phase (write, readback,
+    // classification, checksum, output) drops to the single outer catch, which rolls back ONLY this execution's inserts.
+    inserted = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { inserted[t] = []; });
+    phase = 'insert';
+    DEMO4A_WRITE_ORDER_.forEach(function (name) {
+      var sh = DEMO4A_ss_().getSheetByName(name), t = DEMO4A_readTable_(name), pk = DEMO4A_PK_OF_[name];
+      (plan2.tables[name] || []).forEach(function (r) { sh.appendRow(DEMO4A_rowForHeaders_(t.headers, r)); inserted[name].push(DEMO4A_str_(r[pk])); });
       SpreadsheetApp.flush();
-      var rbOk = true; DEMO4A_WRITE_ORDER_.forEach(function (name) { var pk = DEMO4A_PK_OF_[name], after = DEMO4A_readTable_(name), have = {}; after.rows.forEach(function (x) { have[DEMO4A_str_(x[pk])] = 1; }); inserted[name].forEach(function (id) { if (have[id]) rbOk = false; }); });
-      out.write_error = (werr && werr.message) ? werr.message : String(werr); out.rolled_back = removed; out.verdict = rbOk ? 'COMMIT_FAILED_ROLLED_BACK' : 'COMMIT_FAILED_ROLLBACK_UNVERIFIED';
-      Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out;
-    }
-    // success verify: exact present-all.
+      var after = DEMO4A_readTable_(name), have = {}; after.rows.forEach(function (x) { have[DEMO4A_str_(x[pk])] = (have[DEMO4A_str_(x[pk])] || 0) + 1; });
+      inserted[name].forEach(function (id) { if (have[id] !== 1) throw new Error('READBACK_FAILED ' + name + ':' + id + '×' + (have[id] || 0)); });
+    });
+    phase = 'postcheck';
     var post = DEMO4A_classifyState_(plan2, DEMO4A_readLive_());
+    if (post.classification !== 'PRESENT_EXACT_ALL') throw new Error('POSTCHECK_NOT_EXACT:' + post.classification);   // → inserted-only rollback
     out.delta = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { out.delta[t] = inserted[t].length; });
-    out.demo_plan_checksum = plan2.checksum; out.post_state = post.classification;
-    out.verdict = (post.classification === 'PRESENT_EXACT_ALL') ? 'COMMITTED' : 'COMMITTED_UNVERIFIED';
-  } catch (e) { out.verdict = 'COMMIT_THREW'; out.reason = (e && e.message) ? e.message : String(e); }
+    out.demo_plan_checksum = plan2.checksum; out.post_state = post.classification; out.verdict = 'COMMITTED';
+  } catch (e) {
+    // A — fail closed: NEVER leave rows behind. If any insert began, roll back exactly this execution's inserts.
+    if (inserted && DEMO4A_anyInserted_(inserted)) {
+      var rb = DEMO4A_rollbackInserted_(inserted);
+      out.write_error = (e && e.message) ? e.message : String(e); out.rolled_back = rb.removed;
+      out.verdict = (phase === 'postcheck')
+        ? (rb.ok ? 'COMMIT_FAILED_POSTCHECK_ROLLED_BACK' : 'COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED')
+        : (rb.ok ? 'COMMIT_FAILED_ROLLED_BACK' : 'COMMIT_FAILED_ROLLBACK_UNVERIFIED');
+    } else { out.verdict = 'COMMIT_THREW'; out.reason = (e && e.message) ? e.message : String(e); }
+  }
   finally { if (lock) { try { lock.releaseLock(); } catch (e2) { } } }
   Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out;
 }
@@ -609,12 +697,16 @@ function TEMP_DEMO4A_CLEAR_SHIPPING_SHIPMENT_MAP_SEED() {
     if (!plan.ok) { out.verdict = 'CLEAR_REFUSED_PLAN'; out.reason = plan.reason; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
     if (DEMO4A_str_(DEMO4A_CONFIRMED_CLEAR_TOKEN_) !== DEMO4A_str_(plan.checksum)) { out.verdict = 'CLEAR_REFUSED_TOKEN_MISMATCH'; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
     var jr = PropertiesService.getScriptProperties().getProperty(DEMO4A_JOURNAL_KEY_);
-    if (!jr || DEMO4A_str_(JSON.parse(jr).demo_plan_checksum) !== DEMO4A_str_(plan.checksum)) { out.verdict = 'CLEAR_REFUSED_SEED_CHECKSUM_MISMATCH'; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
+    var jv = DEMO4A_verifyJournal_(jr ? JSON.parse(jr) : null, DEMO4A_buildJournal_(plan));   // B — full integrity, not checksum-only
+    if (!jv.ok) { out.verdict = 'CLEAR_REFUSED_SEED_CHECKSUM_MISMATCH'; out.journal_reason = jv.reason; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
     lock = LockService.getScriptLock(); if (!lock.tryLock(30000)) { out.verdict = 'CLEAR_REFUSED_LOCK'; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
     var live = DEMO4A_readLive_(), cls = DEMO4A_classifyState_(plan, live);
     if (cls.classification !== 'PRESENT_EXACT_ALL') { out.verdict = 'CLEAR_REFUSED_' + cls.classification; out.existing_state = cls.classification; Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
-    var refs = DEMO4A_nonDemoReferences_(live); if (refs.length) { out.verdict = 'CLEAR_REFUSED_EXTERNAL_REFERENCE'; out.references = refs.slice(0, 10); Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
-    var ids = DEMO4A_allIds_(plan), removed = {};
+    var ids = DEMO4A_allIds_(plan);
+    // D — complete external-reference audit: the six demo tables' FK columns PLUS every audited downstream authority.
+    var refs = DEMO4A_nonDemoReferences_(live).concat(DEMO4A_externalReferences_(ids));
+    if (refs.length) { out.verdict = 'CLEAR_REFUSED_EXTERNAL_REFERENCE'; out.references = refs.slice(0, 12); Logger.log('DEMO4A_CLEAR ' + JSON.stringify(out, null, 2)); return out; }
+    var removed = {};
     DEMO4A_CLEAR_ORDER_.forEach(function (name) { var set = {}; (ids[name] || []).forEach(function (id) { set[DEMO4A_str_(id)] = 1; }); removed[name] = DEMO4A_deleteRowsByPk_(name, set); });
     SpreadsheetApp.flush();
     var post = DEMO4A_readLive_(), remain = 0; DEMO4A_WRITE_ORDER_.forEach(function (name) { var pk = DEMO4A_PK_OF_[name]; (post[name].rows || []).forEach(function (r) { if (DEMO4A_isDemo_(r[pk])) remain++; }); });
