@@ -898,27 +898,144 @@ function sadAtomicUpsertCore_(body) {
   return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped } });
 }
 
-// ---- submitShippingAllocationDrafts -------------------------------
-/** Mark drafts submitted. Body: { draft_ids: [ ... ], submitted_by? }. Never deletes rows. */
+// ---- submitShippingAllocationDrafts (DEPRECATED alias) ------------
+// F1-7N-FA-4B — the status-only "mark submitted" stub is RETIRED as an independent boundary. There is exactly ONE
+// production Submit authority: handleSubmitAllocationDraftsToShippingPlans_. This name is kept only as a deprecated
+// compatibility alias that DELEGATES to the canonical authority (which now creates the Weekly Shipping Plan and
+// transitions the drafts atomically, instead of merely stamping status). No UI caller exists; remove after controlled
+// live validation.
 function handleSubmitShippingAllocationDrafts_(body) {
-  var ids = (body && body.draft_ids) || [];
-  if (!ids.length) return jsonResponse_({ success: false, error: 'draft_ids required' });
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
-  var now = procurementTimestamp_();
-  var actor = String((body && body.submitted_by) || 'inventory-replenishment').trim();
-  var n = 0;
-  for (var i = 0; i < ids.length; i++) {
-    var id = String(ids[i] || '').trim();
-    if (!id) continue;
-    var found = procurementFindRow_(sh, 'allocation_draft_id', id);
-    if (!found) continue;
-    function setCol(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
-    setCol('status', 'submitted'); setCol('submitted_by', actor); setCol('submitted_at', now);
-    setCol('updated_by', actor); setCol('updated_at', now);
-    n++;
+  body = body || {};
+  return handleSubmitAllocationDraftsToShippingPlans_({ allocation_draft_ids: body.allocation_draft_ids || body.draft_ids || [],
+    expected_versions: body.expected_versions, execution_key: body.execution_key || body.submit_batch_id, submitted_by: body.submitted_by,
+    source: body.source, _deprecated_alias: 'submitShippingAllocationDrafts' });
+}
+
+// ============================================================
+// F1-7N-FA-4B — THE canonical Inventory AI Plan Submit authority: shipping_allocation_drafts → Weekly Shipping Plan.
+// SERVER-OWNED: re-reads shipping_allocation_drafts + shipping_allocation_draft_lines (NEVER trusts frontend-authored
+// plan lines), validates, derives the shipping-plan payload from the persisted drafts, and delegates the WRITE to the
+// single shipping_plans authority shippingPlanCommitFromLines_ (11_). Idempotent (execution key), ScriptLock-serialized,
+// readback-verified. Drafts transition to `submitted` ONLY after the plan is durably committed and read back. Does NOT
+// create shipments (Shipping Plan → Shipment remains a later approval boundary). Body:
+//   { allocation_draft_ids:[], expected_versions?:{id:draft_version}, execution_key?, submitted_by?, source? }
+// ============================================================
+function handleSubmitAllocationDraftsToShippingPlans_(body) {
+  body = body || {};
+  var ids = (body.allocation_draft_ids || body.draft_ids || []).map(function (x) { return String(x || '').trim(); }).filter(String);
+  if (!ids.length) return jsonResponse_({ success: false, error: 'allocation_draft_ids required', code: 'INPUT_MISSING_DRAFT_IDS', stage: 'input', zero_write: true });
+  var lock = LockService.getScriptLock(), locked = false;
+  try { locked = lock.tryLock(30000); } catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock', zero_write: true }); }
+  if (!locked) return jsonResponse_({ success: false, error: 'IN_PROGRESS_SAME_EXECUTION_KEY — another Submit is in progress for this scope; read back by execution key rather than retrying.', code: 'IN_PROGRESS_SAME_EXECUTION_KEY', stage: 'lock', zero_write: true, data: { allocation_draft_ids: ids } });
+  try { return jsonResponse_(sadSubmitToShippingPlansCore_(SpreadsheetApp.getActiveSpreadsheet(), body, ids)); }
+  finally { try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
+}
+
+// PURE-ish orchestration core (assumes the caller holds the ScriptLock). Returns a PLAIN result object.
+function sadSubmitToShippingPlansCore_(ss, body, ids) {
+  var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+  var expectedVersions = body.expected_versions || {};
+  var submittedBy = String(body.submitted_by || 'inventory-replenishment').trim();
+  var source = String(body.source || 'inventory_ai_plan_submit').trim();
+  var execKey = String(body.execution_key || body.submit_batch_id || '').trim();
+  if (!execKey) execKey = 'SADSUB-' + sadFnv1a_(ids.slice().sort().join('|') + '::' + ids.slice().sort().map(function (id) { return String((expectedVersions || {})[id] == null ? '' : expectedVersions[id]); }).join('|')).toUpperCase();
+
+  // ---- READ + VALIDATE every requested draft server-side (13-point gate; NEVER trust the frontend) ------
+  var drafts = [], toTransition = [], alreadySubmitted = [], errors = [];
+  var seenLineIds = {}, natKeys = {};
+  ids.forEach(function (id) {
+    var found = procurementFindRow_(hSh, 'allocation_draft_id', id);
+    if (!found) { errors.push({ allocation_draft_id: id, reason: 'HEADER_NOT_FOUND' }); return; }              // (1) exact header exists
+    var header = sadRowToObject_(hSh, found.row);
+    var status = String(header.status || '').trim().toLowerCase();
+    var isSubmitted = (status === 'submitted');
+    if (status === 'cancelled') { errors.push({ allocation_draft_id: id, reason: 'DRAFT_CANCELLED' }); return; } // (13) not terminal-cancelled
+    if (!isSubmitted && status !== 'draft' && status !== 'site_confirmed' && status !== 'partially_submitted') { errors.push({ allocation_draft_id: id, reason: 'STATUS_NOT_SUBMITTABLE:' + status }); return; } // (2)
+    if (!isSubmitted && expectedVersions && expectedVersions[id] != null && String(expectedVersions[id]).trim() !== String(header.draft_version == null ? '' : header.draft_version).trim()) { errors.push({ allocation_draft_id: id, reason: 'STALE_VERSION', expected: String(expectedVersions[id]), current: String(header.draft_version) }); return; } // (12)
+    if (!String(header.planning_cycle || '').trim()) { errors.push({ allocation_draft_id: id, reason: 'PLANNING_CYCLE_MISSING' }); return; } // (10)
+    if (!isSubmitted && !sadHeaderRouteIsComplete_(header)) { errors.push({ allocation_draft_id: id, reason: 'ROUTE_INCOMPLETE' }); return; }   // (9) complete route (K2-aware)
+    if (!String(header.calculation_run_id || '').trim() || !String(header.formula_version || '').trim()) { errors.push({ allocation_draft_id: id, reason: 'LINEAGE_INCOMPLETE' }); return; } // (11)
+    var lines = sadReadLinesForDraft_(lSh, id);
+    if (!lines.length) { errors.push({ allocation_draft_id: id, reason: 'NO_LINES' }); return; }                // (3) exact linked lines
+    var lineErr = null, shippable = [];
+    for (var j = 0; j < lines.length; j++) {
+      var ln = lines[j], lineId = String(ln.allocation_draft_line_id || '').trim();
+      if (!lineId) { lineErr = 'LINE_ID_MISSING'; break; }
+      if (seenLineIds[lineId]) { lineErr = 'DUPLICATE_LINE_ID:' + lineId; break; }                              // (5) no duplicate line ids
+      seenLineIds[lineId] = 1;
+      if (String(ln.allocation_draft_id || '').trim() !== id) { lineErr = 'FK_MISMATCH:' + lineId; break; }     // (4) FK integrity
+      if (String(ln.line_status || '').trim().toLowerCase() === 'cancelled') continue;                          // (8) non-cancelled only
+      var nat = [id, String(ln.sku || '').trim().toLowerCase(), String(ln.site_sku || '').trim().toLowerCase(), String(ln.window_code || '').trim().toLowerCase()].join('|');
+      if (natKeys[nat]) { lineErr = 'DUPLICATE_NATURAL_KEY:' + nat; break; }                                    // (6) no duplicate natural keys
+      natKeys[nat] = 1;
+      var qty = Number(String(ln.planned_qty == null ? '' : ln.planned_qty).trim());
+      if (!isFinite(qty) || qty <= 0) continue;                                                                 // (7) positive qty (0 → not shipped)
+      shippable.push(ln);
+    }
+    if (lineErr) { errors.push({ allocation_draft_id: id, reason: lineErr }); return; }
+    if (!shippable.length) { errors.push({ allocation_draft_id: id, reason: 'NO_POSITIVE_PLANNED_QTY_LINES' }); return; }
+    drafts.push({ id: id, header: header, lines: shippable });
+    if (isSubmitted) alreadySubmitted.push(id); else toTransition.push(id);
+  });
+  if (errors.length) return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation', zero_write: true, data: { execution_key: execKey, errors: errors.slice(0, 25) } };
+
+  // already-submitted drafts may only be replayed as an IDEMPOTENT reuse of the SAME execution-key plan; a new key over
+  // already-submitted drafts is a CONFLICT (no double submit). (13) no already-submitted conflicting lineage.
+  // read-only shipping_plans lookup (never ENSURE here — the shipping_plans WRITE authority lives in 11_).
+  if (alreadySubmitted.length) {
+    var planSheet0 = ss.getSheetByName('shipping_plans');
+    var keyPlans0 = planSheet0 ? shippingPlanReadObjects_(planSheet0).filter(function (p) { return String(p.submit_batch_id || '').trim() === execKey; }) : [];
+    if (!keyPlans0.length) return { success: false, error: 'SUBMIT_DRAFT_ALREADY_SUBMITTED', code: 'CONFLICT', stage: 'validation', zero_write: true, data: { execution_key: execKey, already_submitted: alreadySubmitted } };
   }
-  return jsonResponse_({ success: true, data: { submitted: n } });
+
+  // ---- DERIVE the normalized shipping-plan lines[] from ALL persisted drafts (server-owned; stable fingerprint) ---
+  var submitLines = [];
+  drafts.forEach(function (d) {
+    var h = d.header;
+    var shipFrom = String(h.recommended_source_warehouse_code_snapshot || h.recommended_source_warehouse_id || '').trim();
+    var destWhId = String(h.recommended_destination_warehouse_id || '').trim();
+    var destination = String(h.recommended_destination_warehouse_code_snapshot || destWhId || h.marketplace || '').trim();
+    var lineageBase = 'allocation_draft:' + d.id + '|run:' + String(h.calculation_run_id || '').trim() + '|fv:' + String(h.formula_version || '').trim() + '|cyc:' + String(h.planning_cycle || '').trim();
+    d.lines.forEach(function (ln) {
+      submitLines.push({
+        company: h.company, country: h.country, marketplace: h.marketplace,
+        ship_from: shipFrom, source_warehouse_id: String(ln.source_warehouse_id || h.recommended_source_warehouse_id || '').trim(), ship_from_type: 'warehouse',
+        destination: destination, destination_warehouse_id: destWhId, destination_type: destWhId ? 'warehouse' : 'marketplace',
+        shipping_method: h.recommended_shipping_method, last_mile_delivery: h.recommended_last_mile_delivery, carrier_id: '', customs_type: '',
+        sku: ln.sku, site_sku: ln.site_sku, requested_qty: ln.planned_qty, units_per_carton: ln.units_per_carton,
+        source_page: String(h.source_page || 'inventory_replenishment').trim(),
+        source_reason: lineageBase + '|line:' + String(ln.allocation_draft_line_id || '').trim(),
+        inventory_snapshot_date: String(h.source_data_as_of || '').trim()
+      });
+    });
+  });
+
+  // ---- WRITE via the SINGLE shipping_plans authority (idempotent + readback-verified inside the core) ----
+  var commit = shippingPlanCommitFromLines_(ss, submitLines, { source: source, createdBy: submittedBy, providedKey: execKey });
+  if (!commit.success) { commit.data = commit.data || {}; commit.data.execution_key = execKey; commit.data.drafts_unsubmitted = toTransition.slice(); return commit; }   // downstream failed → drafts stay unsubmitted
+
+  // ---- TRANSITION not-yet-submitted drafts → submitted (ONLY after durable plan commit) + readback ------
+  var now = procurementTimestamp_();
+  var planIds = ((commit.data && commit.data.plans) || []).map(function (p) { return typeof p === 'string' ? p : String(p.shipping_plan_id || '').trim(); }).filter(String);
+  var planTag = planIds.join(',');
+  toTransition.forEach(function (id) {
+    var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f) return;
+    var prevNote = String(sadRowToObject_(hSh, f.row).note || '').trim();
+    function setCol(name, val) { var c = f.col(name); if (c !== -1) hSh.getRange(f.row, c + 1).setValue(val); }
+    setCol('status', 'submitted'); setCol('submitted_by', submittedBy); setCol('submitted_at', now); setCol('updated_by', submittedBy); setCol('updated_at', now);
+    var appended = '[SUBMITTED @' + now + ' → shipping_plan ' + (planTag || '(reused)') + ' · exec ' + execKey + ']';
+    setCol('note', prevNote ? (prevNote + '\n' + appended) : appended);
+  });
+  SpreadsheetApp.flush();
+  var unverified = [];
+  toTransition.forEach(function (id) { var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f || String(sadRowToObject_(hSh, f.row).status || '').trim().toLowerCase() !== 'submitted') unverified.push(id); });
+  if (unverified.length) return { success: false, error: 'SUBMIT_DRAFT_TRANSITION_UNVERIFIED', code: 'SUBMIT_DRAFT_TRANSITION_UNVERIFIED', stage: 'draft_transition', zero_write: false, data: { execution_key: execKey, outcome: commit.data.outcome, plans: planIds, unverified_drafts: unverified } };
+
+  return { success: true, data: { execution_key: execKey, outcome: commit.data.outcome, reused: !!commit.data.reused,
+    plan_count: (commit.data.plan_count || planIds.length), line_count: (commit.data.line_count || submitLines.length), plans: planIds,
+    submitted_drafts: toTransition.slice(), already_submitted: alreadySubmitted,
+    lineage: drafts.map(function (d) { return { allocation_draft_id: d.id, calculation_run_id: String(d.header.calculation_run_id || '').trim(), formula_version: String(d.header.formula_version || '').trim(), calculated_at: String(d.header.calculated_at || '').trim(), source_data_as_of: String(d.header.source_data_as_of || '').trim(), planning_cycle: String(d.header.planning_cycle || '').trim() }; }) } };
 }
 
 // ============================================================

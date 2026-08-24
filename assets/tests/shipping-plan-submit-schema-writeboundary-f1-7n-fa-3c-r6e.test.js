@@ -87,19 +87,28 @@ section('B. valid schema → exactly one plan + N lines (control)');
 var okWrites = submitWriterModel(PLANS_AUTH.slice(), LINES_AUTH.slice(), 3);
 eq(okWrites, { plans: 1, lines: 3 }, 'B2. valid schema → 1 shipping_plans header + exactly 3 shipping_plan_lines');
 
-section('B. idempotency is now CLOSED (R6E1): stable execution key + find-or-reuse under a ScriptLock');
-// R6E deferred idempotency; R6E1 closed it. The writer now accepts a client submit_batch_id / execution_key and does
-// find-or-reuse under LockService.getScriptLock (REUSED / SUBMIT_EXECUTION_DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED).
-// A key-absent call still mints a UUID (legacy per-call behavior). See the R6E1 suite for the create/reuse/conflict model.
-ok(/body\.submit_batch_id \|\| body\.execution_key/.test(GS) && /LockService\.getScriptLock\(\)/.test(GS) && /shippingPlanClassifyBatch_\(/.test(GS),
-  'B3/B4. writer is IDEMPOTENT (R6E1): accepts an execution key, find-or-reuse under a ScriptLock — repeat Submit no longer duplicates');
+section('B. idempotency is CLOSED + F1-7N-FA-4B compatibility cutover: ONE writer authority, wrapper delegates');
+// F1-7N-FA-4B — the shipping_plans WRITE authority is the extracted lock-free core shippingPlanCommitFromLines_ (11_):
+// it derives the batch, computes the canonical fingerprint, classifies find-or-reuse (REUSED / CONFLICT / DUPLICATE /
+// COMMITTED_UNVERIFIED / RECONCILIATION_REQUIRED) and READBACK-verifies. The stable execution key + ScriptLock intake
+// now live in the ONE canonical Submit authority handleSubmitAllocationDraftsToShippingPlans_ (16_), which re-reads the
+// persisted allocation drafts and feeds the writer. createShippingPlansBatch is a DEPRECATED wrapper (delegates on
+// allocation_draft_ids; refuses legacy frontend lines with SUBMIT_ROUTE_DEPRECATED — no independent writer).
+var GS16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_shipping_allocation_handlers.gs'), 'utf8');
+ok(/function shippingPlanCommitFromLines_\(/.test(GS) && /ctx\.providedKey/.test(GS) && /shippingPlanClassifyBatch_\(/.test(GS),
+  'B3/B4. the ONE shipping_plans writer core accepts an execution key + find-or-reuse (shippingPlanClassifyBatch_)');
 ok(/SUBMIT_EXECUTION_DUPLICATE_CONFLICT/.test(GS) && /COMMITTED_UNVERIFIED/.test(GS) && /outcome: 'REUSED'/.test(GS),
-  'B3/B4. the three idempotency outcome tokens (REUSED / DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED) are present');
+  'B3/B4. the idempotency outcome tokens (REUSED / DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED) remain in the writer core');
+ok(/LockService\.getScriptLock\(\)/.test(GS16) && /IN_PROGRESS_SAME_EXECUTION_KEY/.test(GS16) && /shippingPlanCommitFromLines_\(/.test(GS16),
+  'B3/B4. the canonical Submit authority (16_) holds the ScriptLock, types lock-contention (IN_PROGRESS_SAME_EXECUTION_KEY) + reaches the ONE writer');
+ok(/SUBMIT_ROUTE_DEPRECATED/.test(GS) && /canonical_action: 'submitAllocationDraftsToShippingPlans'/.test(GS),
+  'B3/B4. createShippingPlansBatch is a deprecated wrapper — legacy frontend-line writes are refused (one authority)');
 
 section('B. downstream transfer untouched at Submit stage');
 function fnBody(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
-var createBody = fnBody(GS, 'handleCreateShippingPlansBatch_');
-ok(!/createShipment|transferToShipment|handleTransfer|shipment_drafts|createShipmentDraft/.test(createBody),
-  'B5. createShippingPlansBatch does not create a Shipment Draft / transfer record at Submit stage (write-boundary bounded to the create writer)');
+ok(!/createShipment|transferToShipment|handleTransfer|shipment_drafts|createShipmentDraft/.test(fnBody(GS, 'shippingPlanCommitFromLines_')),
+  'B5. the shipping_plans writer core does not create a Shipment Draft / transfer record at Submit stage');
+ok(!/createShipment|transferToShipment|createShipmentFromApprovedPlan_|shipment_lines/.test(fnBody(GS16, 'sadSubmitToShippingPlansCore_')),
+  'B5. the canonical Submit authority (16_) creates NO shipment at Submit stage (Shipping Plan → Shipment is a later boundary)');
 
 done();

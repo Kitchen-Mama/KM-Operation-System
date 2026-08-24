@@ -3643,6 +3643,22 @@ window.KM.DB.upsertShippingAllocationDraft = function(payload) { return _kmWeekl
 // UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
 window.KM.DB.upsertShippingAllocationDraftLines = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftLines', payload); };
 window.KM.DB.submitShippingAllocationDrafts = function(payload) { return _kmWeeklyCommand_('submitShippingAllocationDrafts', payload); };
+// F1-7N-FA-4B — THE canonical Inventory AI Plan Submit (allocation drafts → Weekly Shipping Plan). Server re-reads the
+// persisted drafts (NEVER trusts frontend-authored lines). Returns the FULL typed envelope (never throws on a business
+// outcome) so the page can branch on CREATED / REUSED / CONFLICT / IN_PROGRESS_SAME_EXECUTION_KEY. Payload =
+// { allocation_draft_ids:[], expected_versions?:{id:draft_version}, execution_key, submitted_by? }.
+window.KM.DB.submitAllocationDraftsToShippingPlans = async function(payload) {
+    if (!isOperationDbApiConfigured()) { return { success: false, error: 'API not configured', code: 'TRANSPORT_NOT_CONFIGURED' }; }
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var resp;
+    try { resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: 'submitAllocationDraftsToShippingPlans' }, payload || {})) }); }
+    catch (netErr) { return { success: false, error: String((netErr && netErr.message) || netErr), code: 'HTTP_TRANSPORT_ERROR' }; }
+    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+    if (!resp.ok) return { success: false, error: 'API HTTP ' + resp.status, code: 'HTTP_TRANSPORT_ERROR' };
+    var json; try { json = JSON.parse(text); } catch (e) { return { success: false, error: 'NON_JSON_RESPONSE', code: 'NON_JSON_RESPONSE' }; }
+    if (json && json.success) { try { await _kmWriterPostWrite_(); } catch (e) { /* readback is the page's job */ } }
+    return json;   // full typed envelope: { success, data:{outcome, plans, execution_key, ...} } | { success:false, code, ... }
+};
 // F1-7N-FA-3C-R6D1 — Inventory AI Plan generation (canonical 61_ handleGenerateWeeklyAiPlanDraft_ via router action
 // weeklyAiPlan.generate). Persists ONLY shipping_allocation_drafts / _lines. Payload = { company, country, mode?,
 // planningCycle?(auto-resolved server-side when blank), confirmRegenerateOverUserEdits?, currentMarketplace?, actor? }.

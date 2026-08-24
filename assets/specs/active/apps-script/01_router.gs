@@ -457,7 +457,12 @@ function doPost(e) {
     }
 
     if (action === 'submitShippingAllocationDrafts') {
-      return handleSubmitShippingAllocationDrafts_(body);
+      return handleSubmitShippingAllocationDrafts_(body);   // F1-7N-FA-4B DEPRECATED alias → canonical Submit authority
+    }
+
+    // F1-7N-FA-4B — the ONE canonical Inventory AI Plan Submit authority (allocation drafts → Weekly Shipping Plan).
+    if (action === 'submitAllocationDraftsToShippingPlans') {
+      return handleSubmitAllocationDraftsToShippingPlans_(body);
     }
 
     if (action === 'getShippingAllocationDraftWorkspace') {

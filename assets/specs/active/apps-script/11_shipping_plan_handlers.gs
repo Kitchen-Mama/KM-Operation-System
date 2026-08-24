@@ -375,23 +375,40 @@ function shippingPlanReadObjects_(sheet) {
  * batch_status=open) + shipping_plan_lines. Carrier/cost snapshot is written only when a carrier is chosen
  * (rough estimate); otherwise carrier + estimated_* stay blank (Not Applied — never 0).
  */
+// F1-7N-FA-4B — DEPRECATED COMPATIBILITY WRAPPER. `createShippingPlansBatch` is no longer an independent writer: it
+// must not trust frontend-authored lines nor write through its old path. The ONE canonical Submit authority is
+// `handleSubmitAllocationDraftsToShippingPlans_` (16_), which re-reads the persisted allocation drafts server-side.
+// This wrapper delegates when the caller supplies `allocation_draft_ids`; the legacy frontend-`lines[]` shape is refused
+// (zero write) with a typed deprecation directing callers to the canonical action. Old API name kept for staged cutover;
+// remove after controlled live validation. See docs/planning/TWO_MAIN_FLOWS_CONNECTIVITY_AUDIT_F1-7N-FA-4A.md.
 function handleCreateShippingPlansBatch_(body) {
-  var lines = (body && body.lines) || [];
-  if (!lines.length) return jsonResponse_({ success: false, error: 'No lines provided' });
+  body = body || {};
+  var draftIds = body.allocation_draft_ids || body.draft_ids || null;
+  if (draftIds && draftIds.length) {
+    // canonical server-owned path (one authority; re-reads drafts). Delegate verbatim.
+    return handleSubmitAllocationDraftsToShippingPlans_(body);
+  }
+  // legacy frontend-authored `lines[]` path — no longer an independent writer.
+  return jsonResponse_({ success: false, error: 'SUBMIT_ROUTE_DEPRECATED — createShippingPlansBatch no longer accepts frontend-authored lines. Persist the allocation draft, then call submitAllocationDraftsToShippingPlans with allocation_draft_ids.',
+    code: 'SUBMIT_ROUTE_DEPRECATED', deprecated: true, canonical_action: 'submitAllocationDraftsToShippingPlans', stage: 'deprecated', zero_write: true });
+}
 
-  var source = String((body && body.source) || 'inventory_replenishment_submit_plan').trim();
-  var createdBy = String((body && body.created_by) || 'inventory_replenishment').trim();
-  // F1-7N-FA-3C-R6E1/R6E1A — stable client execution key (idempotency). When present, one Submit intention maps to ONE
-  // batch: a retry with the same key + an IDENTICAL canonical payload fingerprint REUSES (zero writes); any material
-  // difference → CONFLICT. Absent → mint one (legacy per-call behavior).
-  var providedKey = String((body && (body.submit_batch_id || body.execution_key)) || '').trim();
-
-  // Serialize the whole check-then-act under the canonical ScriptLock (project convention: 30 000 ms, try/finally).
-  var _spLock = LockService.getScriptLock();
-  try { if (!_spLock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', code: 'LOCK_TIMEOUT', stage: 'lock' }); }
-  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock' }); }
-  try {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+// F1-7N-FA-4B — the SINGLE shipping_plans mutation authority (no lock here; the caller holds the ScriptLock). Takes an
+// already-derived normalized `lines[]` (each: sku/company/country/marketplace/ship_from/destination/shipping_method/
+// warehouses/requested_qty/units_per_carton/site_sku/snapshot_*/source_page/source_reason/lineage) — it does NOT know
+// or care whether the lines came from the server re-read of drafts; the ONLY live caller is the canonical draft submit.
+// Groups by route, derives header/line objects, computes the canonical fingerprint, classifies idempotency, and writes.
+// Returns a PLAIN result object (never a ContentService payload) so both public entrypoints can wrap it uniformly.
+//   ctx = { source, createdBy, providedKey }
+function shippingPlanCommitFromLines_(ss, lines, ctx) {
+  lines = lines || [];
+  ctx = ctx || {};
+  if (!lines.length) return { success: false, error: 'No lines provided', stage: 'input', zero_write: true };
+  var source = String(ctx.source || 'inventory_replenishment_submit_plan').trim();
+  var createdBy = String(ctx.createdBy || 'inventory_replenishment').trim();
+  // stable execution key (idempotency): same key + identical canonical fingerprint → REUSED (zero write); differ → CONFLICT.
+  var providedKey = String(ctx.providedKey || '').trim();
+  {
   // shipping_plans: strict ORDERED canonical gate (its 49-col live schema is order-valid).
   var planSheet = shippingPlanEnsureSheet_(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_);
   // shipping_plan_lines: PRESENCE-based gate (order-tolerant) — mirrors the READ owners (40_/60_) and is safe because
@@ -569,27 +586,27 @@ function handleCreateShippingPlansBatch_(body) {
     var existingLines = shippingPlanReadObjects_(lineSheet);
     var cls = shippingPlanClassifyBatch_(existingPlans, existingLines, providedKey, incomingFingerprint, totalLines);
     if (cls.state === 'REUSED') {
-      return jsonResponse_({ success: true, data: { submit_batch_id: providedKey, outcome: 'REUSED', reused: true,
+      return { success: true, data: { submit_batch_id: providedKey, outcome: 'REUSED', reused: true,
         fingerprint: cls.fingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
-        plan_count: cls.planIds.length, line_count: cls.lineCount, plans: cls.planIds } });
+        plan_count: cls.planIds.length, line_count: cls.lineCount, plans: cls.planIds } };
     }
     if (cls.state === 'CONFLICT') {
-      return jsonResponse_({ success: false, error: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT', code: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
-        incoming_fingerprint: incomingFingerprint, existing_fingerprint: cls.fingerprint, existing_plan_count: cls.planIds.length } });
+      return { success: false, error: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT', code: 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT',
+        stage: 'idempotency', zero_write: true, data: { submit_batch_id: providedKey, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+        incoming_fingerprint: incomingFingerprint, existing_fingerprint: cls.fingerprint, existing_plan_count: cls.planIds.length } };
     }
     if (cls.state === 'DUPLICATE_CONFLICT') {
-      return jsonResponse_({ success: false, error: 'DUPLICATE_CONFLICT', code: 'DUPLICATE_CONFLICT',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length } });
+      return { success: false, error: 'DUPLICATE_CONFLICT', code: 'DUPLICATE_CONFLICT',
+        stage: 'idempotency', zero_write: true, data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length } };
     }
     if (cls.state === 'COMMITTED_UNVERIFIED') {
-      return jsonResponse_({ success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount } });
+      return { success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED',
+        stage: 'idempotency', zero_write: true, data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount } };
     }
     if (cls.state === 'RECONCILIATION_REQUIRED') {
-      return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED', code: 'RECONCILIATION_REQUIRED',
-        stage: 'idempotency', data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount,
-        reason: 'persisted rows are schema-incomplete / an unknown fingerprint version — cannot prove equivalence' } });
+      return { success: false, error: 'RECONCILIATION_REQUIRED', code: 'RECONCILIATION_REQUIRED',
+        stage: 'idempotency', zero_write: true, data: { submit_batch_id: providedKey, existing_plan_count: cls.planIds.length, existing_line_count: cls.lineCount,
+        reason: 'persisted rows are schema-incomplete / an unknown fingerprint version — cannot prove equivalence' } };
     }
     // state === 'CREATE' → no header carries this key yet → proceed to write exactly one batch under it.
   }
@@ -598,10 +615,24 @@ function handleCreateShippingPlansBatch_(body) {
   derivedHeaderObjs.forEach(function (h) { shippingPlanAppendByHeader_(planSheet, h); });
   derivedLineObjs.forEach(function (ln2) { shippingPlanAppendByHeader_(lineSheet, ln2); });
 
-  return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false,
+  // J — READBACK verification: re-read the just-written batch by its execution key and confirm every intended plan +
+  // line id is durably present. A shortfall is a typed COMMITTED_UNVERIFIED (never a silent success, never a blind retry).
+  if (providedKey) {
+    var rbPlans = shippingPlanReadObjects_(planSheet), rbLines = shippingPlanReadObjects_(lineSheet);
+    var rbPlanIds = {}; rbPlans.forEach(function (p) { if (String(p.submit_batch_id || '').trim() === providedKey) rbPlanIds[String(p.shipping_plan_id || '').trim()] = 1; });
+    var wantPlanIds = derivedHeaderObjs.map(function (h) { return String(h.shipping_plan_id).trim(); });
+    var missingPlans = wantPlanIds.filter(function (id) { return !rbPlanIds[id]; });
+    var rbLineCount = rbLines.filter(function (l) { return rbPlanIds[String(l.shipping_plan_id || '').trim()]; }).length;
+    if (missingPlans.length || rbLineCount < totalLines) {
+      return { success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED', stage: 'readback', zero_write: false,
+        data: { submit_batch_id: providedKey, missing_plan_ids: missingPlans, expected_line_count: totalLines, readback_line_count: rbLineCount } };
+    }
+  }
+
+  return { success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false,
     fingerprint: incomingFingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
-    plan_count: created.length, line_count: totalLines, plans: created } });
-  } finally { try { _spLock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+    plan_count: created.length, line_count: totalLines, plans: created } };
+  }
 }
 
 /**

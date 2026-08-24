@@ -190,3 +190,63 @@ Deployment: 13_/15_/48_ + request-order.js + KMRDV2/KMRDV2P (bundle rebuild if a
 
 ## Tests / baseline
 Flow-relevant suites pass: `shipping-allocation-draft-persistence`, `shipment-runtime`, `shipping-plan-runtime` (ALL PASS), `shipment-draft-allocation-wiring` 22/0, `request-order-draft-v2-audit-all26` 23/0, `request-order-alltier-…-r6b2` 51/0. **Full sweep = 329 files pass / 4 known baseline failures** (gap-job-done-notice, order-planning-monthly-projection-consumer, replen-header-toggle, supply-planning-route-inventory), 0 new. No production code was modified for this audit.
+
+---
+
+# F1-7N-FA-4B — FLOW A CLOSURE: Inventory AI Plan Submit authority (allocation drafts → Weekly Shipping Plan)
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED.** One local commit; not pushed/deployed; no Submit run; `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` unchanged (false). This section supersedes the Flow-A "STATUS_TRANSITION_MISSING" / "PARTIALLY_CONNECTED" gaps recorded above.
+
+## Final Flow A route (canonical, server-owned)
+materialized Inventory GAP → Weekly Inventory AI Plan → `shipping_allocation_drafts` + `shipping_allocation_draft_lines` → user review/edit → **Submit** → `submitAllocationDraftsToShippingPlans` → `handleSubmitAllocationDraftsToShippingPlans_` (16_) **re-reads the persisted drafts server-side** → derives the plan payload → `shippingPlanCommitFromLines_` (11_, the ONE writer) → `shipping_plans` + `shipping_plan_lines` → drafts transition to `submitted` after readback. Shipping Plan → Shipment remains a later approval boundary (NOT created here).
+
+## Compatibility cutover (one mutation authority; no duplicate writer)
+- **`shippingPlanCommitFromLines_` (11_)** — the SINGLE shipping_plans write authority (lock-free core): derive → canonical fingerprint (`spfp-1`) → find-or-reuse classify (REUSED / CONFLICT / DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED / RECONCILIATION_REQUIRED) → write → **readback-verify** (typed COMMITTED_UNVERIFIED on shortfall). Takes an already-derived, server-owned `lines[]`.
+- **`handleSubmitAllocationDraftsToShippingPlans_` (16_)** — THE canonical Submit authority: ScriptLock (30 000 ms; typed `IN_PROGRESS_SAME_EXECUTION_KEY` on contention) → re-read drafts/lines → 13-point validation → derive `lines[]` → delegate to the writer → transition drafts.
+- **`handleCreateShippingPlansBatch_` (11_)** — DEPRECATED compatibility wrapper: delegates when `allocation_draft_ids` present; refuses legacy frontend-`lines[]` with `SUBMIT_ROUTE_DEPRECATED` (zero write). No independent writer.
+- **`handleSubmitShippingAllocationDrafts_` (16_)** — the orphan status-only stub is RETIRED → deprecated alias delegating to the canonical authority.
+- **Frontend (staged, not deployed)**: `submitReplenishmentPlans` → `_replenCanonicalSubmit` → `submitAllocationDraftsToShippingPlans({ allocation_draft_ids, execution_key })`. Sends only draft ids + a stable execution key — never authored plan lines. Single-flight: one in-flight Promise per execution key.
+
+## DB authority matrix (Flow A)
+| Table | Role | Authority / headers | marketplace |
+|---|---|---|---|
+| shipping_allocation_drafts | Submit SOURCE (header: route/scope/lineage) | `SHIPPING_ALLOCATION_DRAFTS_HEADERS_` (16_) | header-level (`marketplace`) |
+| shipping_allocation_draft_lines | Submit SOURCE (sku/qty/window/snapshots) | `SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_` (16_) | none (via draft header) |
+| shipping_plans | Submit DEST (header) | `SHIPPING_PLANS_HEADERS_` 49 cols (11_) | header `marketplace` (`MULTI` when ≥2 distinct) |
+| shipping_plan_lines | Submit DEST (line) | `SHIPPING_PLAN_LINES_HEADERS_` 30 cols (11_) | **line `marketplace` (real per-line value)** |
+
+## API / button / handler mapping
+| Button / entrypoint | API action | Handler | Status |
+|---|---|---|---|
+| Inventory "Submit Plan" (staged) | `submitAllocationDraftsToShippingPlans` | `handleSubmitAllocationDraftsToShippingPlans_` (16_) | CANONICAL |
+| (legacy name) | `createShippingPlansBatch` | `handleCreateShippingPlansBatch_` (11_) → delegates/refuses | DEPRECATED WRAPPER |
+| (legacy name) | `submitShippingAllocationDrafts` | `handleSubmitShippingAllocationDrafts_` (16_) → delegates | DEPRECATED ALIAS |
+
+## Status transition (Inventory)
+allocation draft `draft`/`site_confirmed`/`partially_submitted` → (Submit; validated + committed + readback) → `submitted`. Shipping plan initial status = `draft`, `plan_version=1`, `batch_status=open`, `parent=self` (existing shipping-plan lifecycle authority; no new enum). Cancelled drafts / cancelled lines excluded. Already-submitted drafts: idempotent REUSED only under the same execution key, else CONFLICT (no double submit). Zero positive-qty lines → typed refusal (zero write). Partial (transition-unverified) → typed `SUBMIT_DRAFT_TRANSITION_UNVERIFIED`, resumable on retry.
+
+## Idempotency + rollback contract
+Execution key = `body.execution_key` (frontend stable key) else derived `SADSUB-<fnv(sorted ids+versions)>`. Same key + identical canonical fingerprint → REUSED (zero new rows, zero status rewrite); changed → CONFLICT (zero write); lock contention → IN_PROGRESS_SAME_EXECUTION_KEY (read back, never blind retry). Multi-table write safety: ScriptLock; full re-gate under lock; deterministic derived rows; readback-verify BOTH the plan write and the draft transition; no COMMITTED_UNVERIFIED terminal (typed instead); a failed plan commit returns before any draft transition (drafts stay unsubmitted); no automatic destructive retry.
+
+## shipping_plan_lines.marketplace conclusion (H)
+CONCLUSION: `marketplace` IS a canonical `shipping_plan_lines` column (production authority `11_:41`, written `11_:528`, fingerprinted). It is REQUIRED — a Combined (MULTI) plan's header marketplace is the scope marker `'MULTI'`, so each line's real marketplace cannot be recovered via the `shipping_plan_id` FK. NO production change and NO DB column added/removed. The demo-seed V3B/V3C "no line marketplace" is a demo-tool-local schema-gate (matching a live sheet that lacked the column at seed time) and does NOT govern the production Submit path. The canonical Submit derives each line's marketplace from its source allocation-draft header (a K2 draft is single-marketplace scope). Pinned by regression test `inventory-ai-plan-submit-authority-f1-7n-fa-4b` (13/H). NOTE: the LIVE sheet's column set is USER-owned; the writer appends by header NAME (a missing live column is silently omitted, never a crash) — a dedicated live migration, if desired, is a separate USER-owned step.
+
+## Lineage handling (no schema migration)
+`shipping_plans`/`_lines` have no dedicated lineage columns and this task forbids a migration. Lineage (allocation_draft_id, allocation_draft_line_id, calculation_run_id, formula_version, planning_cycle, source_data_as_of) is preserved through EXISTING columns — encoded into line `source_reason` (`allocation_draft:<id>|run:<...>|fv:<...>|cyc:<...>|line:<...>`) and stamped bidirectionally on the draft→submitted transition (`note`: `[SUBMITTED → shipping_plan <ids> · exec <key>]`) — and returned in full in the response `data.lineage`. Dedicated lineage COLUMNS on shipping_plan_lines are a proposed later additive-migration batch (NOT executed here).
+
+## Tests / baseline
+`inventory-ai-plan-submit-authority-f1-7n-fa-4b` 31/0 (idempotency REUSED/CONFLICT/CREATE/COMMITTED_UNVERIFIED/RECONCILIATION via the real classifier; server re-read; no-frontend-lines; K2 route; typed lock contention; downstream-failure→unsubmitted; no shipment; one authority; schema-H; frontend single-flight). Updated to the cutover: `shipping-plan-submit-schema-writeboundary-r6e` 19/0, `three-flag-…-submit-idempotency-r6e1` 77/0, `allocation-draft-30-28-reconcile` 26/0. `r6e1a` 96/0 unchanged. **Full sweep = known 4-test baseline (gap-job-done-notice, order-planning-monthly-projection-consumer, replen-header-toggle, supply-planning-route-inventory), 0 new.**
+
+## Controlled live-validation plan (Flow A — USER-owned, after deploy)
+1. Sync the changed `.gs` + a new Web App version. 2. Persist ONE allocation draft (Execution Plan). 3. Call `submitAllocationDraftsToShippingPlans` with that single `allocation_draft_id` + a fresh execution key → expect CREATED + 1 plan + draft `submitted`. 4. Repeat with the SAME key → expect REUSED, zero new rows, draft unchanged. 5. Repeat with a changed qty + same key → expect CONFLICT, zero write. Bulk / multi-draft Submit stays blocked until bounded-job support is added + tested. Do NOT enable `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` as part of this.
+
+## Remaining downstream batches (NOT this task)
+Shipping Plan approval → Shipment; shipment dispatch/receipt; reservation/deduction/reversal; documents; carrier booking; PO issue/receive; dedicated lineage columns (additive migration); bounded multi-draft Submit job.
+
+---
+
+# FLOW B — SOURCE-CURRENT HANDOFF (for the NEXT task F1-7N-FA-4B-FLOW-B; NOT implemented here)
+Exact current state (unchanged by this commit):
+- **Live Send**: `handleSendRequest` (request-order.js:3187) → `createRequestOrderDraft` → `roCreateRequestOrderCore_` (13_:733) writes `request_orders` + `request_order_lines` + `request_order_line_sources`. Idempotent (`ROEXEC-sha256(company|cycle|series|sorted draftIds)` in `request_orders.source_ref_id`), ScriptLock 30 000 ms, compensation delete on write failure.
+- **Canonical source**: 53-col Flat V2 `request_order_allocation_drafts` (`KMRDV2.V2_HEADERS`, in the 90_ bundle — do NOT hand-edit); tier authority `KMRDV2.explodeSendRequestLinesFromDto` (rule `order_qty>0 && status≠cancelled`); persistence `KMRDV2P` (loadActiveFlat/loadFlatById/applyFlat/tokenForDraft). Cutover flag `REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true`.
+- **Remaining scope (next task)**: (1) server-owned Send — `roCreateRequestOrderCore_` currently TRUSTS `body.lines`; re-read Flat V2 + derive tiers via `KMRDV2.explodeSendRequestLinesFromDto` (call the bundle global from 13_/15_; no bundle edit). (2) Frontend single-flight on `handleSendRequest` (currently none; server key only). (3) Bounded "All Request" job (currently one synchronous browser loop over T1+T2+T3) — reuse the `48_` job/cursor/lease pattern. (4) Typed lock contention → `IN_PROGRESS_SAME_EXECUTION_KEY` (currently generic `stage:'lock'`). (5) Remove residual `request_order_allocation_draft_lines` manual-path dependency (do NOT delete the legacy table). Controlled one-SKU Send remains the first live-validation target; "All Request" UI stays blocked until the job path passes source tests.

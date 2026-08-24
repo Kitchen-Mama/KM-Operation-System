@@ -137,14 +137,17 @@ ok(/shippingPlanEnsureSheet_\(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_\)/.t
 section('E. Submit idempotency — writer structure (behavioral fingerprint model → R6E1A suite)');
 // The full create/reuse/conflict/partial + canonical-fingerprint behavioral model lives in the R6E1A suite; here we
 // assert the writer STRUCTURE only (the R6E1 signature helper was replaced by the R6E1A canonical fingerprint).
-ok(/LockService\.getScriptLock\(\)/.test(GS) && /tryLock\(30000\)/.test(GS) && /releaseLock\(\)/.test(GS), 'E7. 11_ serializes the check-then-act under the canonical ScriptLock');
+// F1-7N-FA-4B — the ScriptLock + client execution key intake moved to the ONE canonical Submit authority (16_); the
+// 11_ writer core stays the single find-or-reuse fingerprint writer it delegates to.
+var GS16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_shipping_allocation_handlers.gs'), 'utf8');
+ok(/LockService\.getScriptLock\(\)/.test(GS16) && /tryLock\(30000\)/.test(GS16) && /releaseLock\(\)/.test(GS16), 'E7. the canonical Submit authority (16_) serializes check-then-act under the canonical ScriptLock');
 ok(/shippingPlanCanonicalFingerprint_\(/.test(GS) && /SHIPPING_PLAN_FINGERPRINT_VERSION_/.test(GS), 'E7. writer uses the canonical payload fingerprint (versioned)');
 ok(/SUBMIT_EXECUTION_DUPLICATE_CONFLICT/.test(GS) && /COMMITTED_UNVERIFIED/.test(GS) && /RECONCILIATION_REQUIRED/.test(GS) && /outcome: 'REUSED'/.test(GS), 'E7. all idempotency outcome tokens present (REUSED / DUPLICATE_CONFLICT / COMMITTED_UNVERIFIED / RECONCILIATION_REQUIRED)');
-ok(/body\.submit_batch_id \|\| body\.execution_key/.test(GS), 'E7. writer accepts the client execution key (submit_batch_id / execution_key)');
+ok(/ctx\.providedKey/.test(GS) && /body\.execution_key \|\| body\.submit_batch_id/.test(GS16), 'E7. writer core accepts a passed execution key; the canonical authority intakes execution_key / submit_batch_id');
 
 section('E. frontend generates ONE stable execution key per Submit intention');
 var IR = fs.readFileSync(path.join(ROOT, 'js', 'pages', 'inventory-replenishment.js'), 'utf8');
-ok(/_newSubmitExecutionKey|_replenSubmitExecutionKey/.test(IR) && /submit_batch_id: submitExecutionKey/.test(IR), 'E8. Submit passes a stable submitExecutionKey; stored on the working draft (reused on retry)');
+ok(/_newSubmitExecutionKey|_replenSubmitExecutionKey/.test(IR) && /execution_key: execKey/.test(IR), 'E8. Submit passes a stable execution key to the canonical action (reused on retry)');
 ok(/replenAllocationDraft\.submitExecutionKey/.test(IR), 'E8. key persisted on the working draft (a re-render/navigation does not mint a new key)');
 
 // ==================================================================================================================
