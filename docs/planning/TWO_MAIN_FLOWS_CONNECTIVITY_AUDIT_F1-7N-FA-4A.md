@@ -250,3 +250,67 @@ Exact current state (unchanged by this commit):
 - **Live Send**: `handleSendRequest` (request-order.js:3187) → `createRequestOrderDraft` → `roCreateRequestOrderCore_` (13_:733) writes `request_orders` + `request_order_lines` + `request_order_line_sources`. Idempotent (`ROEXEC-sha256(company|cycle|series|sorted draftIds)` in `request_orders.source_ref_id`), ScriptLock 30 000 ms, compensation delete on write failure.
 - **Canonical source**: 53-col Flat V2 `request_order_allocation_drafts` (`KMRDV2.V2_HEADERS`, in the 90_ bundle — do NOT hand-edit); tier authority `KMRDV2.explodeSendRequestLinesFromDto` (rule `order_qty>0 && status≠cancelled`); persistence `KMRDV2P` (loadActiveFlat/loadFlatById/applyFlat/tokenForDraft). Cutover flag `REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true`.
 - **Remaining scope (next task)**: (1) server-owned Send — `roCreateRequestOrderCore_` currently TRUSTS `body.lines`; re-read Flat V2 + derive tiers via `KMRDV2.explodeSendRequestLinesFromDto` (call the bundle global from 13_/15_; no bundle edit). (2) Frontend single-flight on `handleSendRequest` (currently none; server key only). (3) Bounded "All Request" job (currently one synchronous browser loop over T1+T2+T3) — reuse the `48_` job/cursor/lease pattern. (4) Typed lock contention → `IN_PROGRESS_SAME_EXECUTION_KEY` (currently generic `stage:'lock'`). (5) Remove residual `request_order_allocation_draft_lines` manual-path dependency (do NOT delete the legacy table). Controlled one-SKU Send remains the first live-validation target; "All Request" UI stays blocked until the job path passes source tests.
+
+---
+
+# F1-7N-FA-4B1 — FLOW A RELEASE-GATE & LINEAGE HARDENING (design freeze)
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED.** One local follow-up commit; not pushed/deployed; no live Submit / DB mutation / migration / Shipment / dispatch / document. This section is the current 4B1 authority and supersedes the marketplace claims in `project-current-state.md` §2026-07-28 and `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` (both corrected in place).
+
+## A — Physical vs logical marketplace (reconciled)
+Repo evidence was contradictory: the runtime authority header (`11_:41`), writer (`11_:545`), reader (`operation-system-db-api.js:817`), fingerprint (`SP_LINE_FP_STR_` `11_:282`) and every DTO use the cleanly-spelled **logical** `marketplace`; but the frozen live-header diagnostic in the R6E/R6E1 tests shows the **deployed** `shipping_plan_lines` sheet carries physical `marketplace_seperate` (col 5) and **lacks** `marketplace`. Consequence: on the real live sheet the writer's `prodRequireColumns_(…marketplace…)` failed closed `MISSING_REQUIRED_HEADER` — Flow A Submit could never durably write a line's marketplace. The **USER-frozen authority resolves it: the physical DB column is `marketplace_seperate` (do not spell-correct).**
+
+Divergence type = **(1) physical `marketplace_seperate` vs logical `marketplace`**. Verdict: **PHYSICAL_LOGICAL_ALIAS_REQUIRED — no migration** (`marketplace_seperate` is the frozen physical authority; J branch 1).
+
+| Aspect | Value |
+|---|---|
+| Physical live header | `marketplace_seperate` (deployed, misspelled — retained) |
+| Logical DTO / app field | `marketplace` |
+| Accessor / mapping | `shippingPlanLineMktPhysicalCol_(sheet)` (11_): `marketplace` if present, else `marketplace_seperate`, else '' → fail closed |
+| Writer field | logical `marketplace`, remapped to the resolved physical column at append (`shippingPlanApplyLineMktPhysical_`) — ONE column, never both |
+| Reader field | logical `marketplace` (persisted rows normalized via `shippingPlanNormalizeLineMkt_` in `shippingPlanReadObjects_`) |
+| Fingerprint field | logical `marketplace` (`spfp-1` unchanged; stable across both physical spellings) |
+| Migration | **NOT required** |
+
+## B — Physical/logical authority (frozen)
+Logical `marketplace` ↔ physical `marketplace_seperate` via ONE accessor. No duplicate marketplace columns; the value is written to exactly one physical column; no silent fallback between conflicting nonblank values (a real logical value is never overwritten by the alias); the physical typo is retained as the frozen live contract. Line marketplace always holds the REAL marketplace; the header alone may be `MULTI`.
+
+## C — Shipping-plan grouping authority (frozen)
+Group key (`11_:453`) = **company + country + ship_from + destination + shipping_method** — marketplace is NOT in the key. So physically compatible lines (same route) consolidate into one plan even across marketplaces; conflicting physical route/destination groups create separate plans. Header marketplace is DERIVED from the grouped lines: one distinct → the actual marketplace; ≥2 distinct → `MULTI` (`11_:485`). Every line keeps its own real marketplace (`marketplace: lineMk`, never `MULTI`). NOTE (documented, not changed): `last_mile_delivery` / `carrier_id` / `planning_cycle` are carried from the first line's meta but are NOT part of the group KEY — a candidate refinement for the later Shipping Plan → Shipment batch if last-mile divergence must split plans.
+
+## D — Two-lineage model (audited; corrects the task's own assumptions)
+The system has **two independent lineage axes** — never conflate them:
+
+**A. Planning / marketplace axis:** `shipping_allocation_drafts → shipping_allocation_draft_lines → shipping_plans → shipping_plan_lines → [shipments/shipment_lines]`.
+- The live plan→shipment link is `shipments.shipping_plan_id` (single FK, `12_:31/497`) — operationally **one-to-one** at the header, with plan-side **parent/child fan-in** for Combined plans (`shippingPlanEffectiveOwnerIds_`).
+- **`shipment_plan_links`** (the header many-to-many table) = **SPEC-DEFINED_NOT_IMPLEMENTED** — no `.gs` constant, writer or reader (`SHIPMENT_CENTER_SPEC.md:171-173`).
+- Exact per-plan-line contribution IS recoverable in code via **`shipment_lines.shipping_plan_line_id`** (1:1 plan-line→shipment-line, `12_:68/542`) — the shipped code is MORE granular than the spec's SKU-aggregation/header-only model (a doc/code divergence flagged here; the spec model is not implemented). Whole-plan transfer is guaranteed (no split/partial-transfer code path); therefore Header link + plan lines is exact AND line-level lineage is additionally present → **NOT `MISSING_SHIPPING_PLAN_LINE_CONTRIBUTION_AUTHORITY`**.
+
+**B. Procurement / supply axis:** `purchase_orders → purchase_order_lines → shipment_line_allocations → shipment_lines`.
+- **`shipment_line_allocations`** (`32_:26-37`) is the **PO-line supply bridge** — FK `purchase_order_line_id`, fields `allocated_qty`/`shipped_qty`/`allocation_status`/`released_*`. It does **NOT** carry `shipping_plan_line_id` and is **NOT** the planning bridge. `allocated_qty` is written at the draft-allocation stage; `purchase_order_lines.shipped_qty` is reconciled (SET, not incremented; idempotent) only at **Confirm & Dispatch** (`slaApplyExecution_`, invoked from `22_:240`). Allocation-level `shipped_qty` is a reserved/never-written column.
+
+Classifications: shipment_plan_links = SPEC-DEFINED_NOT_IMPLEMENTED; shipment_lines.shipping_plan_line_id (line bridge) = SOURCE-CONNECTED; shipment_line_allocations (PO bridge) = SOURCE-CONNECTED; PO shipped/remaining reconciliation = SOURCE-CONNECTED (Confirm & Dispatch only); final-output snapshots + generated_documents = SOURCE-CONNECTED (customs family readiness-BLOCKED: no legal importer-of-record owner).
+
+## E — Flow A lineage preserved at Submit
+Each generated `shipping_plan_line` preserves: source `allocation_draft_id` + `allocation_draft_line_id` (encoded in `source_reason`, `16_:1008`), real marketplace (draft header → physical column), sku/site_sku, requested/approved qty, planning_cycle + calculation lineage (`calculation_run_id`/`formula_version`), route/group authority, and a full response `data.lineage`. **Header-level lineage only** is persisted on the plan (dedicated lineage columns remain a later additive-migration batch — not claimed as line-level DB lineage). The exact draft-line FK is preserved as an encoded reference, not a dedicated FK column.
+
+## F — Durable idempotency (proven from source)
+Execution key persisted on `shipping_plans.submit_batch_id`; a fresh execution re-reads the sheet and `shippingPlanClassifyBatch_` compares the COMPLETE canonical `spfp-1` fingerprint of persisted rows → REUSED (zero write, returns before append) / CONFLICT (changed payload, zero write) / DUPLICATE_CONFLICT / RECONCILIATION_REQUIRED. Lock contention → typed `IN_PROGRESS_SAME_EXECUTION_KEY` (`16_:929`). Durable authority (sheet-persisted), **not** in-memory. A different key over already-submitted drafts → `CONFLICT` (`16_`), so a draft cannot be duplicated under a new key.
+
+## G — True multi-table atomicity + rollback (hardened)
+Phases: re-gate → **durable journal** → plan-header insert → plan-line insert → plan readback → draft/line transition → final readback → terminal. Before the first append, `shippingPlanCommitFromLines_` writes a durable Script-Property journal (`SPCFL_JOURNAL_<execKey>`) binding execution key + `spfp-1` fingerprint + intended plan ids + intended line ids + affected draft ids/before-state (via `ctx.journalExtra`) + an integrity checksum. On a plan-write readback shortfall → **inserted-only reverse-FK rollback** (`shippingPlanRollbackBatch_`: delete this batch's lines then headers by id, flush, verify) → typed **COMMIT_FAILED_ROLLED_BACK / COMMIT_FAILED_ROLLBACK_UNVERIFIED**. On a draft-transition readback failure (`16_`) → restore ONLY the draft cells this execution changed + roll back the committed plan rows → typed **POSTCHECK_FAILED_ROLLED_BACK / POSTCHECK_FAILED_ROLLBACK_UNVERIFIED**. The forbidden `COMMITTED_UNVERIFIED` post-write terminal is eliminated (it survives only as an idempotency-classifier state). Rollback is inserted-only — it never deletes a pre-existing / other-batch row (proven: `shippingPlanDeleteRowsByColumn_` targets only ids in the batch set).
+
+## H — Version / token gate
+The under-lock re-gate validates selected `allocation_draft_ids`, `expected_versions[id]` vs live `draft_version` (typed `STALE_VERSION`, zero write), submittable status, complete route/group + lineage, exact line membership, and the current canonical fingerprint. Changed data between UI selection and the under-lock re-gate → CONFLICT / STALE_VERSION, zero write.
+
+## I — Read-only schema/lineage preflight
+`handleFlowASchemaLineagePreflight_` (router action `flowASchemaLineagePreflight`) — strictly read-only; reports shipping_plans/_lines headers + hash, marketplace vs marketplace_seperate presence/index, the physical/logical mapping verdict, real/MULTI/blank line-marketplace counts, plan/line counts, FK integrity, MULTI plan count, `every_line_retains_real_marketplace`, shipment_plan_links + shipment_line_allocations presence/headers, and a `schema_lineage_verdict` ∈ {FLOW_A_SCHEMA_LINEAGE_READY, PHYSICAL_LOGICAL_ALIAS_REQUIRED, SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED, LINE_MARKETPLACE_AMBIGUOUS, DOWNSTREAM_LINEAGE_SPEC_GAP}. Zero-write confirmed.
+
+## J/K — Migration policy + production fail-closed gate
+Migration: **NOT required** (marketplace_seperate is the frozen physical authority; accessor corrects the expectation instead — J branch 1). Fail-closed: when neither physical column resolves, Submit returns typed **SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED** (zero write) before any mutation; compatibility wrappers surface the same result. Never a partial write while schema authority is ambiguous.
+
+## Download-readiness matrix (downstream; Flow A does not build these)
+AVAILABLE: shipment identity, destination, route/method, carrier, SKU, consolidated shipped qty, source PO/PO line, allocated qty, PO-level shipped qty, carton/packaging, generated file + `download_url` (SHIPDETAIL/PL). DERIVABLE: marketplace-separated source (via `shipment_lines.shipping_plan_line_id → shipping_plan_lines.marketplace(_seperate)`), header totals, declared_total_value. NOT_CONNECTED: `shipment_plan_links` multi-plan provenance (spec-only). MISSING/BLOCKED: legal importer-of-record → customs/commercial-invoice document family permanently BLOCKED (`LEGAL_IMPORTER_AUTHORITY_GAP`); only 2 doc types (SHIPDETAIL, PL) implemented. All classifications NOT_LIVE_VERIFIED.
+
+## Flow A boundary (what is / is not this batch)
+**Flow A implemented (this + prior 4B):** Allocation Draft → Shipping Plan / Shipping Plan Lines → draft submitted after verified commit; server-owned Submit; marketplace physical/logical release gate; durable-journal + inserted-only rollback; idempotency + version/token gate; read-only preflight. **Flow A creates NO** Shipment, `shipment_plan_links`, `shipment_line_allocations`, PO allocation/deduction, dispatch, receive or documents — all belong to the later Shipping Plan → Shipment → Dispatch → Document batch. PO shipped deduction never occurs merely because an Allocation Draft is submitted to a Shipping Plan.

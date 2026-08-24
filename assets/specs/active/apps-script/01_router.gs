@@ -465,6 +465,11 @@ function doPost(e) {
       return handleSubmitAllocationDraftsToShippingPlans_(body);
     }
 
+    // F1-7N-FA-4B1(I) — strictly read-only Flow A schema/lineage preflight (marketplace physical/logical + lineage tables).
+    if (action === 'flowASchemaLineagePreflight') {
+      return handleFlowASchemaLineagePreflight_(body);
+    }
+
     if (action === 'getShippingAllocationDraftWorkspace') {
       return handleGetShippingAllocationDraftWorkspace_(body);
     }

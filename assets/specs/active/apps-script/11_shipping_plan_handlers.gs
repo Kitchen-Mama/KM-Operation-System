@@ -358,9 +358,145 @@ function shippingPlanReadObjects_(sheet) {
   for (var r = 1; r < values.length; r++) {
     var o = {};
     for (var c = 0; c < headers.length; c++) o[headers[c]] = values[r][c];
-    out.push(o);
+    out.push(shippingPlanNormalizeLineMkt_(o));   // F1-7N-FA-4B1(B): expose LOGICAL `marketplace` regardless of physical column
   }
   return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-4B1 (A/B/J/K) — PHYSICAL vs LOGICAL marketplace authority for shipping_plan_lines.
+// The LOGICAL application field is `marketplace` (used by the writer, reader, fingerprint and every DTO). The frozen
+// PHYSICAL live DB column is the (misspelled) `marketplace_seperate` on the deployed sheet; a cleanly-migrated sheet
+// instead carries `marketplace`. ONE canonical accessor bridges them — the write/read column is `marketplace` when the
+// sheet has it, else `marketplace_seperate`, else NONE (fail closed with SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED).
+// The line's REAL marketplace is written to EXACTLY ONE physical column (never both, no new column, no rename, no
+// migration). The header alone may be `MULTI`. USER-frozen authority (F1-7N-FA-4B1): marketplace_seperate is the live
+// physical column — do NOT spell-correct it. (Confirmed by the frozen live-header diagnostic in the R6E/R6E1 tests.)
+// ================================================================================================================
+var SP_LINE_MKT_LOGICAL_ = 'marketplace';
+var SP_LINE_MKT_PHYSICAL_ALIAS_ = 'marketplace_seperate';
+// resolve the single physical column that carries a plan line's marketplace on THIS sheet ('' ⇒ neither ⇒ fail closed).
+function shippingPlanLineMktPhysicalCol_(sheet) {
+  if (!sheet || typeof sheet.getLastColumn !== 'function') return '';
+  var lastCol = sheet.getLastColumn(); if (lastCol < 1) return '';
+  var hdr = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+  var have = {}; hdr.forEach(function (h) { have[h] = 1; });
+  if (have[SP_LINE_MKT_LOGICAL_]) return SP_LINE_MKT_LOGICAL_;                 // cleanly-migrated / canonical sheet
+  if (have[SP_LINE_MKT_PHYSICAL_ALIAS_]) return SP_LINE_MKT_PHYSICAL_ALIAS_;   // frozen live physical column (typo retained)
+  return '';                                                                   // neither → SCHEMA_MAPPING_REQUIRED
+}
+// normalize a persisted row so the LOGICAL `marketplace` is readable even when the physical column is the alias. Never
+// overwrites a real logical value; only fills a blank logical field from the alias. Plan rows (no alias) pass through.
+function shippingPlanNormalizeLineMkt_(row) {
+  if (!row) return row;
+  var m = String(row[SP_LINE_MKT_LOGICAL_] == null ? '' : row[SP_LINE_MKT_LOGICAL_]).trim();
+  if (m === '' && row[SP_LINE_MKT_PHYSICAL_ALIAS_] != null && String(row[SP_LINE_MKT_PHYSICAL_ALIAS_]).trim() !== '') row[SP_LINE_MKT_LOGICAL_] = row[SP_LINE_MKT_PHYSICAL_ALIAS_];
+  return row;
+}
+// map a derived (logical-keyed) line object onto the resolved physical column. Writes ONE column; never both. Returns a
+// shallow copy when a remap is needed (leaving the fingerprinted derived object untouched).
+function shippingPlanApplyLineMktPhysical_(lineObj, physicalCol) {
+  if (physicalCol === SP_LINE_MKT_PHYSICAL_ALIAS_) {
+    var row = {}; Object.keys(lineObj).forEach(function (k) { row[k] = lineObj[k]; });
+    row[SP_LINE_MKT_PHYSICAL_ALIAS_] = lineObj[SP_LINE_MKT_LOGICAL_]; delete row[SP_LINE_MKT_LOGICAL_];
+    return row;
+  }
+  return lineObj;   // physical column already IS the logical name
+}
+// inserted-only reverse-FK rollback of ONE Submit batch's plan rows (used when a post-write step fails). Deletes ONLY
+// rows whose submit_batch_id === execKey AND shipping_plan_id ∈ planIds (never a pre-existing / other-batch row).
+function shippingPlanDeleteRowsByColumn_(sheet, colName, idSet) {
+  if (!sheet) return 0;
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return 0;
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0].map(function (h) { return String(h).trim(); }), ci = headers.indexOf(colName);
+  if (ci === -1) return 0;
+  var toDel = []; for (var r = 1; r < values.length; r++) { if (idSet[String(values[r][ci]).trim()]) toDel.push(r + 1); }
+  toDel.sort(function (a, b) { return b - a; }); toDel.forEach(function (n) { sheet.deleteRow(n); }); return toDel.length;
+}
+// remove exactly this execution's committed plan + line rows (reverse FK: lines then headers), flush, verify absent.
+function shippingPlanRollbackBatch_(ss, execKey, planIds) {
+  var planSheet = ss.getSheetByName('shipping_plans'), lineSheet = ss.getSheetByName('shipping_plan_lines');
+  var planSet = {}; (planIds || []).forEach(function (id) { planSet[String(id).trim()] = 1; });
+  var removedLines = lineSheet ? shippingPlanDeleteRowsByColumn_(lineSheet, 'shipping_plan_id', planSet) : 0;
+  var removedPlans = planSheet ? shippingPlanDeleteRowsByColumn_(planSheet, 'shipping_plan_id', planSet) : 0;
+  SpreadsheetApp.flush();
+  var ok = true;
+  if (planSheet) shippingPlanReadObjects_(planSheet).forEach(function (p) { if (planSet[String(p.shipping_plan_id || '').trim()]) ok = false; });
+  return { ok: ok, removed_plans: removedPlans, removed_lines: removedLines };
+}
+
+// ================================================================================================================
+// F1-7N-FA-4B1 (I) — STRICTLY READ-ONLY Flow A schema/lineage preflight. Reports the exact shipping_plans /
+// shipping_plan_lines headers + hash, the physical/logical marketplace resolution, the real/MULTI/blank line-marketplace
+// counts, plan/line counts, FK integrity, and the presence of the downstream lineage tables (shipment_plan_links —
+// spec-only; shipment_line_allocations — the PO-supply bridge). NEVER writes a row/cell/property. PURE core is unit-
+// testable via DEMO/synthetic sheet reads; the GAS entrypoint reads live sheets only.
+// ================================================================================================================
+function shippingPlanRawRows_(sheet) {   // RAW read (no marketplace normalization) — the preflight must see physical truth
+  var out = { headers: [], rows: [] };
+  if (!sheet) return out;
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return out;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+  out.headers = headers;
+  if (lastRow < 2) return out;
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  for (var r = 0; r < values.length; r++) { var o = {}; for (var c = 0; c < headers.length; c++) o[headers[c]] = values[r][c]; out.rows.push(o); }
+  return out;
+}
+// PURE preflight core over already-read raw tables. tables = { shipping_plans, shipping_plan_lines, shipment_plan_links,
+// shipment_line_allocations } each { headers:[], rows:[] } (missing sheet ⇒ headers:[] rows:[] present:false).
+function shippingPlanFlowAPreflightCore_(tables) {
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var plans = tables.shipping_plans || { headers: [], rows: [] };
+  var lines = tables.shipping_plan_lines || { headers: [], rows: [] };
+  var links = tables.shipment_plan_links || { headers: [], rows: [], present: false };
+  var alloc = tables.shipment_line_allocations || { headers: [], rows: [], present: false };
+  var lineHdr = lines.headers || [];
+  var mktIdx = lineHdr.indexOf(SP_LINE_MKT_LOGICAL_), aliasIdx = lineHdr.indexOf(SP_LINE_MKT_PHYSICAL_ALIAS_);
+  var physicalCol = mktIdx !== -1 ? SP_LINE_MKT_LOGICAL_ : (aliasIdx !== -1 ? SP_LINE_MKT_PHYSICAL_ALIAS_ : '');
+  var mappingVerdict = mktIdx !== -1 && aliasIdx !== -1 ? 'BOTH_PRESENT_LOGICAL_WINS'
+    : mktIdx !== -1 ? 'CANONICAL_MARKETPLACE'
+    : aliasIdx !== -1 ? 'PHYSICAL_LOGICAL_ALIAS_REQUIRED'
+    : 'SCHEMA_MAPPING_MISSING';
+  // real/MULTI/blank counts on existing lines using the resolved physical column
+  var realMk = 0, multiMk = 0, blankMk = 0;
+  (lines.rows || []).forEach(function (r) { var v = physicalCol ? s(r[physicalCol]) : (s(r[SP_LINE_MKT_LOGICAL_]) || s(r[SP_LINE_MKT_PHYSICAL_ALIAS_])); if (v === '') blankMk++; else if (v.toUpperCase() === 'MULTI') multiMk++; else realMk++; });
+  var everyLineRealMarketplace = (lines.rows || []).length === 0 ? true : (blankMk === 0 && multiMk === 0);
+  // plan header MULTI count + FK integrity (line.shipping_plan_id → an existing plan)
+  var planIds = {}; (plans.rows || []).forEach(function (p) { planIds[s(p.shipping_plan_id)] = 1; });
+  var multiPlans = (plans.rows || []).filter(function (p) { return s(p.marketplace).toUpperCase() === 'MULTI'; }).length;
+  var fkOrphans = (lines.rows || []).filter(function (l) { return s(l.shipping_plan_id) !== '' && !planIds[s(l.shipping_plan_id)]; }).length;
+  var verdict = physicalCol === '' ? 'SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED'
+    : (multiMk > 0 || blankMk > 0) ? 'LINE_MARKETPLACE_AMBIGUOUS'
+    : mappingVerdict === 'PHYSICAL_LOGICAL_ALIAS_REQUIRED' ? 'PHYSICAL_LOGICAL_ALIAS_REQUIRED'
+    : (!links.present && !alloc.present) ? 'DOWNSTREAM_LINEAGE_SPEC_GAP'
+    : 'FLOW_A_SCHEMA_LINEAGE_READY';
+  return {
+    shipping_plans: { headers: plans.headers, header_hash: shippingPlanFnv_((plans.headers || []).join('|')), row_count: (plans.rows || []).length, multi_plan_count: multiPlans },
+    shipping_plan_lines: { headers: lineHdr, header_hash: shippingPlanFnv_(lineHdr.join('|')), row_count: (lines.rows || []).length,
+      marketplace_index: mktIdx, marketplace_seperate_index: aliasIdx, resolved_physical_marketplace_col: physicalCol,
+      real_marketplace_lines: realMk, multi_marketplace_lines: multiMk, blank_marketplace_lines: blankMk, every_line_retains_real_marketplace: everyLineRealMarketplace },
+    physical_logical_marketplace_verdict: mappingVerdict,
+    fk_integrity: { line_orphans: fkOrphans, ok: fkOrphans === 0 },
+    shipment_plan_links: { present: !!links.present, headers: links.headers || [], note: 'Header consolidation lineage — SPEC-DEFINED, NOT runtime-populated (no .gs writer/reader).' },
+    shipment_line_allocations: { present: !!alloc.present, headers: alloc.headers || [], note: 'PO-line SUPPLY bridge (purchase_order_line_id) — NOT the plan-line→shipment-line planning bridge.' },
+    schema_lineage_verdict: verdict
+  };
+}
+function handleFlowASchemaLineagePreflight_(body) {
+  var out = { tool: 'handleFlowASchemaLineagePreflight_', mode: 'STRICTLY READ-ONLY (getSheetByName + getValues only)' };
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    function rd(name) { var sh = ss.getSheetByName(name); var t = shippingPlanRawRows_(sh); t.present = !!sh; return t; }
+    var pre = shippingPlanFlowAPreflightCore_({ shipping_plans: rd('shipping_plans'), shipping_plan_lines: rd('shipping_plan_lines'), shipment_plan_links: rd('shipment_plan_links'), shipment_line_allocations: rd('shipment_line_allocations') });
+    Object.keys(pre).forEach(function (k) { out[k] = pre[k]; });
+    out.success = true;
+  } catch (e) { out.success = false; out.error = (e && e.message) ? e.message : String(e); out.schema_lineage_verdict = 'PREFLIGHT_THREW'; }
+  out.ZERO_WRITE_CONFIRMED = 'YES (read-only; no row/cell/property write)';
+  return jsonResponse_(out);
 }
 
 // ---- createShippingPlansBatch -------------------------------------
@@ -418,7 +554,12 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
   // still FAILS CLOSED (MISSING_REQUIRED_HEADER) on any genuinely missing canonical column — so it stays blocked on the
   // current live 23-col sheet until the USER-owned migration runs. No new permissiveness beyond the READ contract.
   var lineSheet = prodRequireSheet_(ss, 'shipping_plan_lines', []);
-  prodRequireColumns_(lineSheet, SHIPPING_PLAN_LINES_HEADERS_);
+  // F1-7N-FA-4B1(B/K): validate the canonical line columns EXCEPT marketplace via the rigid gate; resolve marketplace
+  // through the physical/logical accessor so a live sheet carrying only `marketplace_seperate` is ACCEPTED (mapped),
+  // not failed as MISSING_REQUIRED_HEADER. Neither column present ⇒ typed fail-closed SCHEMA_MAPPING_REQUIRED (zero write).
+  prodRequireColumns_(lineSheet, SHIPPING_PLAN_LINES_HEADERS_.filter(function (h) { return h !== SP_LINE_MKT_LOGICAL_; }));
+  var lineMktCol = shippingPlanLineMktPhysicalCol_(lineSheet);
+  if (!lineMktCol) return { success: false, error: 'SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED', code: 'SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED', stage: 'schema', zero_write: true, data: { required_one_of: [SP_LINE_MKT_LOGICAL_, SP_LINE_MKT_PHYSICAL_ALIAS_] } };
   // Additive migration for the CANONICAL columns on shipping_plans tabs that predate them (validate-only in Runtime).
   sheetEnsureColumns_(planSheet, ['parent_shipping_plan_id', 'source_warehouse_id', 'ship_from_type',
     'destination_warehouse_id', 'destination_type', 'last_mile_delivery',
@@ -611,26 +752,46 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     // state === 'CREATE' → no header carries this key yet → proceed to write exactly one batch under it.
   }
 
-  // WRITE the derived batch (what was fingerprinted == what is written → a subsequent identical retry REUSES).
-  derivedHeaderObjs.forEach(function (h) { shippingPlanAppendByHeader_(planSheet, h); });
-  derivedLineObjs.forEach(function (ln2) { shippingPlanAppendByHeader_(lineSheet, ln2); });
-
-  // J — READBACK verification: re-read the just-written batch by its execution key and confirm every intended plan +
-  // line id is durably present. A shortfall is a typed COMMITTED_UNVERIFIED (never a silent success, never a blind retry).
+  // G — DURABLE rollback evidence bound BEFORE the first business mutation: execution key + canonical payload
+  // fingerprint + intended plan ids + intended plan-line ids (+ any caller draft/before-state via ctx.journalExtra) +
+  // an integrity checksum. Persisted to a Script Property so a mid-write crash in a later execution is still
+  // inserted-only recoverable. Absent a stable execution key the writer still rolls back in-execution (no durable id).
+  var wantPlanIds = derivedHeaderObjs.map(function (h) { return String(h.shipping_plan_id).trim(); });
+  var wantLineIds = derivedLineObjs.map(function (l) { return String(l.shipping_plan_line_id).trim(); });
+  var journalKey = '';
   if (providedKey) {
-    var rbPlans = shippingPlanReadObjects_(planSheet), rbLines = shippingPlanReadObjects_(lineSheet);
-    var rbPlanIds = {}; rbPlans.forEach(function (p) { if (String(p.submit_batch_id || '').trim() === providedKey) rbPlanIds[String(p.shipping_plan_id || '').trim()] = 1; });
-    var wantPlanIds = derivedHeaderObjs.map(function (h) { return String(h.shipping_plan_id).trim(); });
-    var missingPlans = wantPlanIds.filter(function (id) { return !rbPlanIds[id]; });
-    var rbLineCount = rbLines.filter(function (l) { return rbPlanIds[String(l.shipping_plan_id || '').trim()]; }).length;
-    if (missingPlans.length || rbLineCount < totalLines) {
-      return { success: false, error: 'COMMITTED_UNVERIFIED', code: 'COMMITTED_UNVERIFIED', stage: 'readback', zero_write: false,
-        data: { submit_batch_id: providedKey, missing_plan_ids: missingPlans, expected_line_count: totalLines, readback_line_count: rbLineCount } };
-    }
+    var journal = { v: 'SPCFL-J1', execution_key: providedKey, fingerprint: incomingFingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+      intended_plan_ids: wantPlanIds, intended_line_ids: wantLineIds, line_marketplace_col: lineMktCol, journal_extra: (ctx.journalExtra || null) };
+    journal.integrity = shippingPlanFnv_(JSON.stringify({ k: journal.execution_key, f: journal.fingerprint, p: journal.intended_plan_ids, l: journal.intended_line_ids }));
+    journalKey = 'SPCFL_JOURNAL_' + providedKey;
+    try { PropertiesService.getScriptProperties().setProperty(journalKey, JSON.stringify(journal)); } catch (eJ) { journalKey = ''; }
   }
+
+  // WRITE the derived batch (what was fingerprinted == what is written → a subsequent identical retry REUSES). The line
+  // marketplace is written to the resolved PHYSICAL column (marketplace | marketplace_seperate); exactly one, never both.
+  derivedHeaderObjs.forEach(function (h) { shippingPlanAppendByHeader_(planSheet, h); });
+  derivedLineObjs.forEach(function (ln2) { shippingPlanAppendByHeader_(lineSheet, shippingPlanApplyLineMktPhysical_(ln2, lineMktCol)); });
+  SpreadsheetApp.flush();
+
+  // J/G — READBACK verification: confirm every intended plan + line id is durably present. A shortfall now triggers an
+  // INSERTED-ONLY reverse-FK ROLLBACK of exactly this batch (never COMMITTED_UNVERIFIED, never an orphan plan): delete
+  // this batch's lines then headers, verify absent, then return COMMIT_FAILED_ROLLED_BACK / _ROLLBACK_UNVERIFIED.
+  var rbPlans = shippingPlanReadObjects_(planSheet), rbLines = shippingPlanReadObjects_(lineSheet);
+  var rbPlanIds = {}; rbPlans.forEach(function (p) { if (!providedKey || String(p.submit_batch_id || '').trim() === providedKey) { if (wantPlanIds.indexOf(String(p.shipping_plan_id || '').trim()) !== -1) rbPlanIds[String(p.shipping_plan_id || '').trim()] = 1; } });
+  var missingPlans = wantPlanIds.filter(function (id) { return !rbPlanIds[id]; });
+  var rbLineCount = rbLines.filter(function (l) { return rbPlanIds[String(l.shipping_plan_id || '').trim()]; }).length;
+  if (missingPlans.length || rbLineCount < totalLines) {
+    var rb = shippingPlanRollbackBatch_(ss, providedKey, wantPlanIds);
+    if (journalKey) try { PropertiesService.getScriptProperties().deleteProperty(journalKey); } catch (eD) { /* best-effort */ }
+    return { success: false, error: rb.ok ? 'COMMIT_FAILED_ROLLED_BACK' : 'COMMIT_FAILED_ROLLBACK_UNVERIFIED',
+      code: rb.ok ? 'COMMIT_FAILED_ROLLED_BACK' : 'COMMIT_FAILED_ROLLBACK_UNVERIFIED', stage: 'readback', zero_write: rb.ok,
+      data: { submit_batch_id: providedKey, missing_plan_ids: missingPlans, expected_line_count: totalLines, readback_line_count: rbLineCount, rolled_back: rb } };
+  }
+  if (journalKey) try { PropertiesService.getScriptProperties().deleteProperty(journalKey); } catch (eD2) { /* success → drop the durable evidence */ }
 
   return { success: true, data: { submit_batch_id: submitBatchId, outcome: 'CREATED', reused: false,
     fingerprint: incomingFingerprint, fingerprint_version: SHIPPING_PLAN_FINGERPRINT_VERSION_,
+    line_marketplace_col: lineMktCol,
     plan_count: created.length, line_count: totalLines, plans: created } };
   }
 }

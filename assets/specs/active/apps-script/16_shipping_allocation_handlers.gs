@@ -1011,8 +1011,18 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     });
   });
 
-  // ---- WRITE via the SINGLE shipping_plans authority (idempotent + readback-verified inside the core) ----
-  var commit = shippingPlanCommitFromLines_(ss, submitLines, { source: source, createdBy: submittedBy, providedKey: execKey });
+  // G — capture the EXACT before-state of every draft this execution will transition (durable rollback evidence +
+  // in-execution restore). Only the cells this execution writes are captured (status/audit/note + draft_version).
+  var draftBefore = {};
+  toTransition.forEach(function (id) {
+    var d0 = drafts.filter(function (x) { return x.id === id; })[0], h0 = d0 ? d0.header : {};
+    draftBefore[id] = { status: String(h0.status == null ? '' : h0.status), submitted_by: String(h0.submitted_by == null ? '' : h0.submitted_by), submitted_at: String(h0.submitted_at == null ? '' : h0.submitted_at), updated_by: String(h0.updated_by == null ? '' : h0.updated_by), updated_at: String(h0.updated_at == null ? '' : h0.updated_at), note: String(h0.note == null ? '' : h0.note), draft_version: String(h0.draft_version == null ? '' : h0.draft_version) };
+  });
+
+  // ---- WRITE via the SINGLE shipping_plans authority (idempotent + durable-journal + readback-verified inside the core).
+  // journalExtra binds the affected draft ids + before-state into the writer's durable rollback evidence (phase 1).
+  var commit = shippingPlanCommitFromLines_(ss, submitLines, { source: source, createdBy: submittedBy, providedKey: execKey,
+    journalExtra: { affected_draft_ids: toTransition.slice(), draft_before: draftBefore } });
   if (!commit.success) { commit.data = commit.data || {}; commit.data.execution_key = execKey; commit.data.drafts_unsubmitted = toTransition.slice(); return commit; }   // downstream failed → drafts stay unsubmitted
 
   // ---- TRANSITION not-yet-submitted drafts → submitted (ONLY after durable plan commit) + readback ------
@@ -1030,7 +1040,21 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   SpreadsheetApp.flush();
   var unverified = [];
   toTransition.forEach(function (id) { var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f || String(sadRowToObject_(hSh, f.row).status || '').trim().toLowerCase() !== 'submitted') unverified.push(id); });
-  if (unverified.length) return { success: false, error: 'SUBMIT_DRAFT_TRANSITION_UNVERIFIED', code: 'SUBMIT_DRAFT_TRANSITION_UNVERIFIED', stage: 'draft_transition', zero_write: false, data: { execution_key: execKey, outcome: commit.data.outcome, plans: planIds, unverified_drafts: unverified } };
+  if (unverified.length) {
+    // G — POSTCHECK failure: restore ONLY the draft cells this execution changed, AND roll back the committed plan rows
+    // (inserted-only, reverse-FK) so we never leave a submitted draft without a verified plan, nor a plan behind.
+    toTransition.forEach(function (id) {
+      var fr = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!fr) return; var b = draftBefore[id] || {};
+      function setCol2(name, val) { var c = fr.col(name); if (c !== -1) hSh.getRange(fr.row, c + 1).setValue(val); }
+      ['status', 'submitted_by', 'submitted_at', 'updated_by', 'updated_at', 'note'].forEach(function (k) { setCol2(k, b[k] == null ? '' : b[k]); });
+    });
+    var planRb = shippingPlanRollbackBatch_(ss, execKey, planIds);
+    SpreadsheetApp.flush();
+    var restoreOk = true;
+    toTransition.forEach(function (id) { var fr2 = procurementFindRow_(hSh, 'allocation_draft_id', id); if (fr2 && String(sadRowToObject_(hSh, fr2.row).status || '').trim().toLowerCase() === 'submitted') restoreOk = false; });
+    var rolledOk = planRb.ok && restoreOk;
+    return { success: false, error: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', code: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', stage: 'draft_transition', zero_write: rolledOk, data: { execution_key: execKey, outcome: commit.data.outcome, plans_rolled_back: planIds, unverified_drafts: unverified, plan_rollback: planRb, draft_restore_ok: restoreOk } };
+  }
 
   return { success: true, data: { execution_key: execKey, outcome: commit.data.outcome, reused: !!commit.data.reused,
     plan_count: (commit.data.plan_count || planIds.length), line_count: (commit.data.line_count || submitLines.length), plans: planIds,

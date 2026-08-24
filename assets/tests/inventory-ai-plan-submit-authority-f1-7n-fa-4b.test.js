@@ -77,7 +77,10 @@ ok(/tryLock\(30000\)/.test(pub) && /IN_PROGRESS_SAME_EXECUTION_KEY/.test(pub) &&
 section('9. downstream failure → draft remains unsubmitted');
 ok(/if \(!commit\.success\)[\s\S]{0,220}drafts_unsubmitted[\s\S]{0,40}return commit/.test(core), '9. a failed shipping_plans commit returns BEFORE the draft→submitted transition (drafts stay unsubmitted)');
 ok(core.indexOf("setCol('status', 'submitted')") > core.indexOf('shippingPlanCommitFromLines_'), '9. the draft→submitted transition happens only AFTER the plan commit');
-ok(/SUBMIT_DRAFT_TRANSITION_UNVERIFIED/.test(core) && /SpreadsheetApp\.flush\(\)/.test(core), '9. draft transition is readback-verified (typed SUBMIT_DRAFT_TRANSITION_UNVERIFIED, never COMMITTED_UNVERIFIED terminal)');
+// F1-7N-FA-4B1(G): the draft transition is readback-verified AND, on failure, ROLLS BACK (restores drafts + removes the
+// committed plan) with a typed POSTCHECK_FAILED_ROLLED_BACK / _ROLLBACK_UNVERIFIED result — never a COMMITTED_UNVERIFIED terminal.
+ok(/POSTCHECK_FAILED_ROLLED_BACK/.test(core) && /POSTCHECK_FAILED_ROLLBACK_UNVERIFIED/.test(core) && /SpreadsheetApp\.flush\(\)/.test(core), '9. draft-transition failure is readback-verified + rolled back (POSTCHECK_FAILED_ROLLED_BACK, never COMMITTED_UNVERIFIED)');
+ok(core.indexOf('COMMITTED_UNVERIFIED') === -1, '9. the Submit core never returns a COMMITTED_UNVERIFIED terminal (forbidden by 4B1-G)');
 
 // ============================================================ 10 — no Shipment creation at Submit
 section('10. Submit creates no Shipment');

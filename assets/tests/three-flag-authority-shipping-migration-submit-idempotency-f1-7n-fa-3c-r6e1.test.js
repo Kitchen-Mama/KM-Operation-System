@@ -130,7 +130,9 @@ ok(presenceGate(MIGRATED, LINES_AUTH).valid === true, 'D2. presence gate PASSES 
 // the strict ORDERED gate would still reject the migrated sheet (append-at-end) — proving why the presence gate is required
 var ordered = KMSAFE.classifySchemaMismatch({ exists: true, actualHeaders: MIGRATED, expectedHeaders: LINES_AUTH, extraColumnsPolicy: 'ALLOW' });
 ok(ordered.valid === false && ordered.schemaStatus === KMSAFE.SCHEMA_STATUS.HEADER_ORDER_MISMATCH, 'D2. a STRICT ordered gate would still reject the migrated sheet (HEADER_ORDER_MISMATCH) — presence gate is the correct fix');
-ok(/prodRequireSheet_\(ss, 'shipping_plan_lines', \[\]\)/.test(GS) && /prodRequireColumns_\(lineSheet, SHIPPING_PLAN_LINES_HEADERS_\)/.test(GS), 'D3. 11_ uses the presence-based (order-tolerant) gate for shipping_plan_lines');
+// F1-7N-FA-4B1(B/K): the presence gate now validates the canonical columns EXCEPT marketplace; marketplace is resolved
+// via the physical/logical accessor (marketplace | marketplace_seperate), so the gate stays presence-based + order-tolerant.
+ok(/prodRequireSheet_\(ss, 'shipping_plan_lines', \[\]\)/.test(GS) && /prodRequireColumns_\(lineSheet, SHIPPING_PLAN_LINES_HEADERS_\.filter\(/.test(GS), 'D3. 11_ uses the presence-based (order-tolerant) gate for shipping_plan_lines (marketplace via accessor)');
 ok(/shippingPlanEnsureSheet_\(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_\)/.test(GS), 'D3. shipping_plans keeps the strict ordered canonical gate');
 
 // ==================================================================================================================
