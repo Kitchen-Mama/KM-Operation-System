@@ -128,21 +128,157 @@ function DEMO4A_canonDateTime_(v) {
   var mo = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (mo) return mo[1] + '-' + mo[2] + '-' + mo[3] + ' 00:00:00';
   return s;
 }
+// ================================================================================================================
+// V3G5(B) — THE ONE SHARED CANONICALIZATION CONTRACT. Used by the intended plan checksum (DEMO4A_rowChecksum_), the
+// post-write readback classification (DEMO4A_classifyState_ / DEMO4A_mismatchedFields_), VALIDATE and the REUSED retry
+// comparison — a single field-class-aware rule, so intended and live values can never be canonicalized asymmetrically.
+//
+// ROOT-CAUSE NOTE (V3G5(A), source-proven): the writer projects intended rows onto the LIVE physical headers
+// (DEMO4A_rowForHeaders_ → sh.appendRow), and the readback compares Object.keys(intendedRow). Two mechanisms therefore
+// produce POSTCHECK_NOT_EXACT:CONTENT_DRIFT after a technically successful setValues/getValues round trip:
+//   (1) WRITER_INTENDED_FIELD_NOT_IN_PHYSICAL_HEADER — an intended field with no physical column is silently DROPPED on
+//       write and reads back absent (canonical ''), while the intended value is non-empty. The schema gate only proves
+//       DEMO4A_REQUIRED_COLS_ presence, so intended fields beyond that list were never verified before writing.
+//   (2) DATE_WALLCLOCK_ASYMMETRY — an intended date/datetime is written as a STRING and read back as a Date OBJECT.
+//       The string path applies no timezone maths while the Date path shifted by a HARDCODED +8h, so the two sides only
+//       agreed when the spreadsheet timezone happened to be exactly UTC+8.
+// Both are repaired below: (1) a pre-write projection gate that fails closed with ZERO writes, and (2) the wall-clock
+// offset is now an EXPLICIT contract value synced from the spreadsheet's own timezone (default 480 = UTC+8, so a +8
+// spreadsheet keeps byte-identical canonical output and an UNCHANGED demo_plan_checksum).
+// ================================================================================================================
+var DEMO4A_CANON_CONTRACT_VERSION_ = 'V3G5-CANON-1';
+// EXPLICIT wall-clock offset (minutes) used to canonicalize a Date OBJECT read from a cell into the spreadsheet's own
+// wall clock. Default 480 (UTC+8) preserves the pre-V3G5 canonical output exactly; live entrypoints sync it from the
+// spreadsheet. Intended plan values are plain strings and NEVER take the Date path, so the plan checksum is unaffected.
+var DEMO4A_CANON_TZ_OFFSET_MIN_ = 480;
+function DEMO4A_setCanonTzOffsetMin_(min) { var n = Number(min); DEMO4A_CANON_TZ_OFFSET_MIN_ = isFinite(n) ? n : 480; return DEMO4A_CANON_TZ_OFFSET_MIN_; }
+function DEMO4A_spreadsheetTzOffsetMin_() {
+  try {
+    var tz = DEMO4A_ss_().getSpreadsheetTimeZone();
+    var probe = new Date(Date.UTC(2026, 0, 15, 12, 0, 0));
+    var local = Utilities.formatDate(probe, tz, 'yyyy-MM-dd HH:mm:ss');
+    var m = local.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/); if (!m) return { ok: false, offset_min: 480, time_zone: DEMO4A_str_(tz) };
+    var asUtc = Date.UTC(+m[1], (+m[2]) - 1, +m[3], +m[4], +m[5], +m[6]);
+    return { ok: true, offset_min: Math.round((asUtc - probe.getTime()) / 60000), time_zone: DEMO4A_str_(tz) };
+  } catch (e) { return { ok: false, offset_min: 480, time_zone: '', reason: (e && e.message) ? e.message : String(e) }; }
+}
+// EXPLICIT field classes for every field the demo writer owns. A field absent from this map falls back to the legacy
+// heuristic and is reported as an UNKNOWN class by the canonicalization diagnostic (never silently reclassified).
+var DEMO4A_FIELD_CLASS_ = {
+  // identifiers — exact text; NEVER numeric-coerced, leading zeros preserved
+  shipping_plan_id: 'identifier', shipping_plan_line_id: 'identifier', shipment_id: 'identifier', shipment_line_id: 'identifier',
+  shipment_route_id: 'identifier', shipment_event_id: 'identifier', route_template_id: 'identifier', route_template_node_id: 'identifier',
+  location_ref_id: 'identifier', logistics_location_id: 'identifier', warehouse_id: 'identifier', source_warehouse_id: 'identifier',
+  destination_warehouse_id: 'identifier', carrier_id: 'identifier', sku: 'identifier', site_sku: 'identifier', asin: 'identifier',
+  transferred_shipment_id: 'identifier', parent_shipping_plan_id: 'identifier', source_event_id: 'identifier', container_no: 'identifier',
+  tracking_number: 'identifier', node_code: 'identifier', location_code: 'identifier', postal_code: 'identifier',
+  shipping_plan_no: 'identifier', shipment_no: 'identifier',
+  // enums / statuses — exact text (never lowercased)
+  status: 'enum', batch_status: 'enum', plan_status: 'enum', event_type: 'enum', event_status: 'enum', raw_status: 'enum',
+  location_ref_type: 'enum', node_type: 'enum', transport_mode: 'enum', planned_event_type: 'enum', shipping_method: 'enum',
+  last_mile_delivery: 'enum', ship_from_type: 'enum', destination_type: 'enum', transit_type: 'enum', marketplace: 'enum',
+  marketplace_seperate: 'enum', company: 'enum', country: 'enum', currency: 'enum', source: 'enum', source_page: 'enum',
+  // free business text — exact, never lowercased
+  location_name: 'text', note: 'text', destination: 'text', ship_from: 'text', region: 'text', city: 'text',
+  created_by: 'text', updated_by: 'text', plan_name: 'text',
+  // numeric business quantities — 0 is a real value; blank is NOT 0
+  plan_carton_qty: 'numeric', shipment_carton_qty: 'numeric', units_per_carton: 'numeric', plan_version: 'numeric',
+  sequence_no: 'numeric', event_sequence: 'numeric', total_qty: 'numeric', qty: 'numeric',
+  requested_qty: 'numeric', approved_qty: 'numeric', shipment_qty: 'numeric', shipment_total_qty: 'numeric',
+  // coordinates — stable canonical decimal, classified separately from business numerics
+  latitude: 'coordinate', longitude: 'coordinate',
+  // dates / datetimes — one wall-clock canonical form per class; never conflated
+  etd: 'date', eta: 'date', actual_departure_date: 'date', actual_arrival_date: 'date', delivered_date: 'date',
+  planned_arrival_date: 'date', planned_departure_date: 'date',
+  created_at: 'datetime', updated_at: 'datetime', event_time: 'datetime',
+  // booleans — declared for contract completeness; the demo writer currently owns none of these, so adding the class
+  // cannot move any intended canonical value or the plan checksum. false is a real value and is NEVER blank.
+  is_active: 'boolean', is_receiving_enabled: 'boolean', is_deleted: 'boolean', is_primary: 'boolean', is_default: 'boolean'
+};
+var DEMO4A_FIELD_CLASSES_ = { identifier: 1, text: 1, enum: 1, numeric: 1, coordinate: 1, boolean: 1, date: 1, datetime: 1 };
+// legacy heuristic retained ONLY as the declared fallback for an unmapped field (reported, never silent).
 function DEMO4A_fieldKind_(f) {
   if (f === 'event_time' || /_at$/.test(f)) return 'datetime';
   if (f === 'etd' || f === 'eta' || /_date$/.test(f)) return 'date';
   if (/(_qty$|^latitude$|^longitude$|sequence|units_per_carton|plan_version|carton|_snapshot$|_rate$|_cost$|_cbm$|weight$)/.test(f)) return 'numeric';
   return 'string';
 }
-function DEMO4A_canon_(field, value) {
+function DEMO4A_fieldClassKnown_(field) { return DEMO4A_FIELD_CLASS_.hasOwnProperty(field); }
+function DEMO4A_fieldClass_(field) {
+  if (DEMO4A_FIELD_CLASS_.hasOwnProperty(field)) return DEMO4A_FIELD_CLASS_[field];
   var k = DEMO4A_fieldKind_(field);
-  if (k === 'datetime') return DEMO4A_canonDateTime_(value);
-  if (k === 'date') return DEMO4A_canonDateOnly_(value);
-  if (k === 'numeric') { var s = DEMO4A_str_(value); if (s === '') return ''; var n = Number(s); return isFinite(n) ? String(n) : s; }
-  return DEMO4A_str_(value);
+  return k === 'numeric' ? 'numeric' : (k === 'date' ? 'date' : (k === 'datetime' ? 'datetime' : 'text'));
+}
+function DEMO4A_isBlankCell_(v) { return v == null || v === '' || (typeof v === 'string' && v.trim() === ''); }
+var DEMO4A_BOOL_TRUE_ = { 'true': 1, 'TRUE': 1, 'True': 1, 'yes': 1, 'YES': 1, 'Yes': 1, 'y': 1, 'Y': 1, '1': 1 };
+var DEMO4A_BOOL_FALSE_ = { 'false': 1, 'FALSE': 1, 'False': 1, 'no': 1, 'NO': 1, 'No': 1, 'n': 1, 'N': 1, '0': 1 };
+// wall-clock parts of a Date OBJECT in the contract timezone (the spreadsheet's own wall clock).
+function DEMO4A_dateWallParts_(v, tzMin) {
+  var d = new Date(v.getTime() + (isFinite(Number(tzMin)) ? Number(tzMin) : DEMO4A_CANON_TZ_OFFSET_MIN_) * 60000);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
+}
+function DEMO4A_isDateObj_(v) { return Object.prototype.toString.call(v) === '[object Date]'; }
+// THE contract. tzMin is explicit; omitted → the module contract value. Invalid values return a typed sentinel so they
+// FAIL CLOSED (a sentinel can never equal a valid canonical form, and blank never equals 0 or false).
+function DEMO4A_canonField_(field, value, tzMin) {
+  var cls = DEMO4A_fieldClass_(field);
+  if (DEMO4A_isDateObj_(value) && isNaN(value.getTime())) return (cls === 'date' ? 'DATE_INVALID:' : cls === 'datetime' ? 'DATETIME_INVALID:' : 'VALUE_INVALID:') + 'InvalidDate';
+  if (DEMO4A_isBlankCell_(value)) return '';                       // blank is ONLY blank — never 0, never false
+  if (cls === 'numeric' || cls === 'coordinate') {
+    if (typeof value === 'boolean') return (cls === 'coordinate' ? 'COORD_INVALID:' : 'NUM_INVALID:') + String(value);
+    var sn = DEMO4A_str_(value), n = Number(sn);
+    if (!isFinite(n) || sn === '') return (cls === 'coordinate' ? 'COORD_INVALID:' : 'NUM_INVALID:') + sn;
+    return String(n);                                              // stable canonical decimal; non-lossy, never rounded
+  }
+  if (cls === 'boolean') {
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    var sb = DEMO4A_str_(value);
+    if (DEMO4A_BOOL_TRUE_[sb]) return 'TRUE';
+    if (DEMO4A_BOOL_FALSE_[sb]) return 'FALSE';
+    return 'BOOL_INVALID:' + sb;
+  }
+  if (cls === 'date') {
+    if (DEMO4A_isDateObj_(value)) { var pd = DEMO4A_dateWallParts_(value, tzMin); return pd.y + '-' + DEMO4A_z2_(pd.mo) + '-' + DEMO4A_z2_(pd.d); }
+    var sd = DEMO4A_str_(value), md = sd.match(/^(\d{4})-(\d{2})-(\d{2})/); if (md) return md[1] + '-' + md[2] + '-' + md[3];
+    var pd2 = new Date(sd); if (!isNaN(pd2.getTime())) { var q = DEMO4A_dateWallParts_(pd2, tzMin); return q.y + '-' + DEMO4A_z2_(q.mo) + '-' + DEMO4A_z2_(q.d); }
+    return 'DATE_INVALID:' + sd;
+  }
+  if (cls === 'datetime') {
+    if (DEMO4A_isDateObj_(value)) { var pt = DEMO4A_dateWallParts_(value, tzMin); return pt.y + '-' + DEMO4A_z2_(pt.mo) + '-' + DEMO4A_z2_(pt.d) + ' ' + DEMO4A_z2_(pt.h) + ':' + DEMO4A_z2_(pt.mi) + ':' + DEMO4A_z2_(pt.s); }
+    var st = DEMO4A_str_(value), mt = st.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (mt) return mt[1] + '-' + mt[2] + '-' + mt[3] + ' ' + mt[4] + ':' + mt[5] + ':' + (mt[6] || '00');
+    var mo2 = st.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (mo2) return mo2[1] + '-' + mo2[2] + '-' + mo2[3] + ' 00:00:00';
+    var pt2 = new Date(st); if (!isNaN(pt2.getTime())) { var w = DEMO4A_dateWallParts_(pt2, tzMin); return w.y + '-' + DEMO4A_z2_(w.mo) + '-' + DEMO4A_z2_(w.d) + ' ' + DEMO4A_z2_(w.h) + ':' + DEMO4A_z2_(w.mi) + ':' + DEMO4A_z2_(w.s); }
+    return 'DATETIME_INVALID:' + st;
+  }
+  return DEMO4A_str_(value);                                       // identifier / enum / text — EXACT, never lowercased
+}
+function DEMO4A_canon_(field, value) { return DEMO4A_canonField_(field, value, DEMO4A_CANON_TZ_OFFSET_MIN_); }
+// the reason class for one canonical mismatch — used by the compact postcheck forensics (never a guess about business intent).
+function DEMO4A_driftReasonCode_(cls, intendedCanon, liveCanon, liveRaw, liveHasKey) {
+  if (!liveHasKey) return 'MISSING_PHYSICAL_FIELD';
+  if (liveCanon === '' && intendedCanon !== '') return 'LIVE_BLANK_INTENDED_VALUE';
+  if (intendedCanon === '' && liveCanon !== '') return 'LIVE_VALUE_INTENDED_BLANK';
+  if (/_INVALID:/.test(liveCanon)) return 'LIVE_CANONICAL_INVALID';
+  if (/_INVALID:/.test(intendedCanon)) return 'INTENDED_CANONICAL_INVALID';
+  if ((cls === 'date' || cls === 'datetime') && DEMO4A_isDateObj_(liveRaw)) return 'DATE_WALLCLOCK_ASYMMETRY';
+  if (cls === 'boolean') return 'BOOLEAN_REPRESENTATION';
+  if (cls === 'numeric' || cls === 'coordinate') return 'NUMERIC_REPRESENTATION_OR_VALUE';
+  return 'VALUE_MUTATION';
 }
 function DEMO4A_rowChecksum_(row, keys) { keys = keys.slice().sort(); return DEMO4A_hash_(keys.map(function (k) { return k + '=' + DEMO4A_canon_(k, (row || {})[k]); }).join('|')); }
-function DEMO4A_mismatchedFields_(exp, live, keys) { var out = []; keys.forEach(function (k) { var e = DEMO4A_canon_(k, exp[k]), l = DEMO4A_canon_(k, (live || {})[k]); if (e !== l) out.push({ field: k, expected: e, live: l }); }); return out; }
+function DEMO4A_rawType_(v) { if (v === undefined) return 'undefined'; if (v === null) return 'null'; if (DEMO4A_isDateObj_(v)) return 'Date'; return typeof v; }
+function DEMO4A_mismatchedFields_(exp, live, keys) {
+  var out = [];
+  keys.forEach(function (k) {
+    var lv = (live || {}), e = DEMO4A_canon_(k, exp[k]), l = DEMO4A_canon_(k, lv[k]);
+    if (e === l) return;
+    var cls = DEMO4A_fieldClass_(k), hasKey = Object.prototype.hasOwnProperty.call(lv, k);
+    out.push({ field: k, expected: e, live: l, field_class: cls, intended_type: DEMO4A_rawType_(exp[k]), live_type: DEMO4A_rawType_(lv[k]),
+      reason_code: DEMO4A_driftReasonCode_(cls, e, l, lv[k], hasKey) });
+  });
+  return out;
+}
 
 function DEMO4A_validCoord_(lat, lng) { var a = DEMO4A_num_(lat), b = DEMO4A_num_(lng); if (isNaN(a) || isNaN(b)) return false; if (a < -90 || a > 90 || b < -180 || b > 180) return false; if (a === 0 && b === 0) return false; return true; }
 function DEMO4A_indexLocations_(locations) { var by = {}; (locations || []).forEach(function (l) { var id = DEMO4A_str_(l.logistics_location_id); if (id) by[id] = l; }); return by; }
@@ -1189,6 +1325,60 @@ function DEMO4A_schemaGate_() {
 }
 function DEMO4A_readLive_() { var live = {}; DEMO4A_WRITE_ORDER_.forEach(function (n) { live[n] = DEMO4A_readTable_(n); }); return live; }
 function DEMO4A_rowForHeaders_(headers, obj) { return headers.map(function (h) { return (obj[h] == null) ? '' : obj[h]; }); }
+// ================================================================================================================
+// V3G5(A/B) — PRE-WRITE WRITER-PROJECTION GATE (pure). DEMO4A_rowForHeaders_ projects an intended row onto the LIVE
+// physical headers, so an intended field with NO physical column is silently dropped and then reads back blank →
+// CONTENT_DRIFT after a technically successful round trip. This proves, BEFORE any write, that every field the writer
+// intends to persist has a real physical column. Fields the writer does NOT own are irrelevant: the comparison only ever
+// uses Object.keys(intendedRow), so extra live physical columns are ignored by contract (reported, never compared).
+// ================================================================================================================
+function DEMO4A_writerProjectionGaps_(plan, headersByTable) {
+  var perTable = {}, missing = [], extraCounts = {}, intendedTotal = 0;
+  DEMO4A_WRITE_ORDER_.forEach(function (name) {
+    var headers = (headersByTable || {})[name] || [];
+    var hset = {}; headers.forEach(function (h) { var k = DEMO4A_str_(h); if (k) hset[k] = 1; });
+    var seen = {};
+    ((plan.tables || {})[name] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); });
+    var intended = Object.keys(seen); intendedTotal += intended.length;
+    var miss = intended.filter(function (k) { return !hset[k]; });
+    var extra = headers.map(function (h) { return DEMO4A_str_(h); }).filter(function (h) { return h && !seen[h]; });
+    perTable[name] = { intended_field_count: intended.length, physical_header_count: headers.length, missing_physical_fields: miss, writer_unowned_physical_columns: extra.length };
+    extraCounts[name] = extra.length;
+    miss.forEach(function (f) { missing.push({ table: name, field: f, field_class: DEMO4A_fieldClass_(f) }); });
+  });
+  return { ok: missing.length === 0, intended_field_total: intendedTotal, missing_total: missing.length, missing_fields: missing.slice(0, 20), per_table: perTable, writer_unowned_column_counts: extraCounts };
+}
+// ================================================================================================================
+// V3G5(C) — COMPACT POSTCHECK DRIFT FORENSICS (pure, in-memory over an ALREADY-computed classification). Never dumps
+// whole rows and never all 73 rows: at most 20 examples, each carrying only table / PK fingerprint / field / class /
+// types / truncated canonical forms / reason code. Cheap enough that it can never delay the rollback.
+// ================================================================================================================
+var DEMO4A_DRIFT_MAX_EXAMPLES_ = 20;
+var DEMO4A_DRIFT_MAX_VALUE_LEN_ = 40;
+function DEMO4A_driftClip_(v) { var s = DEMO4A_str_(v); return s.length <= DEMO4A_DRIFT_MAX_VALUE_LEN_ ? s : (s.slice(0, DEMO4A_DRIFT_MAX_VALUE_LEN_) + '…+' + (s.length - DEMO4A_DRIFT_MAX_VALUE_LEN_)); }
+function DEMO4A_driftEvidence_(cls) {
+  var byTable = {}, byReason = {}, examples = [], mismTables = {}, rowCount = 0, fieldCount = 0;
+  (((cls || {}).rows) || []).forEach(function (r) {
+    if (r.state !== 'DRIFT' && r.state !== 'DUPLICATE' && r.state !== 'ABSENT') return;
+    rowCount++; mismTables[r.table] = 1;
+    byTable[r.table] = (byTable[r.table] || 0) + 1;
+    if (r.state !== 'DRIFT') { byReason[r.state] = (byReason[r.state] || 0) + 1; return; }
+    (r.mismatched_fields || []).forEach(function (m) {
+      fieldCount++;
+      var rc = DEMO4A_str_(m.reason_code) || 'VALUE_MUTATION';
+      byReason[rc] = (byReason[rc] || 0) + 1;
+      if (examples.length < DEMO4A_DRIFT_MAX_EXAMPLES_) {
+        examples.push({ table: r.table, pk_fingerprint: DEMO4A_hash_(DEMO4A_str_(r.pk)), field: m.field, field_class: DEMO4A_str_(m.field_class),
+          intended_type: DEMO4A_str_(m.intended_type), live_type: DEMO4A_str_(m.live_type),
+          intended_canonical: DEMO4A_driftClip_(m.expected), live_canonical: DEMO4A_driftClip_(m.live), reason_code: rc });
+      }
+    });
+  });
+  return { classification: DEMO4A_str_((cls || {}).classification), mismatching_table_count: Object.keys(mismTables).length, mismatching_row_count: rowCount,
+    mismatching_field_count: fieldCount, counts_by_table: byTable, counts_by_reason_class: byReason, example_cap: DEMO4A_DRIFT_MAX_EXAMPLES_, examples: examples };
+}
+// explicit canonicalization-timezone sync: the Date wall clock must be the SPREADSHEET's, never a hardcoded offset.
+function DEMO4A_syncCanonTz_() { var r = DEMO4A_spreadsheetTzOffsetMin_(); DEMO4A_setCanonTzOffsetMin_(r.offset_min); return r; }
 // delete rows whose PK ∈ idSet, bottom-up (never touches other rows). Returns deleted count.
 function DEMO4A_deleteRowsByPk_(name, idSet) {
   var sh = DEMO4A_ss_().getSheetByName(name); if (!sh) return 0;
@@ -2180,6 +2370,7 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
 function TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION() {
   var out = { tool: 'TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION', mode: 'STRICTLY READ-ONLY (getSheetByName + getValues only; no row/cell/property/flag write)', output_contract: 'ONE_COMPACT_LOG_ENTRY (truncation-safe authorization envelope)' };
   try {
+    DEMO4A_syncCanonTz_();
     var schema = DEMO4A_schemaGate_();
     var masters = DEMO4A_readMasters_();
     var plan = DEMO4A_buildPlan_(masters);
@@ -2197,9 +2388,117 @@ function TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION() {
   return out;
 }
 
+// ================================================================================================================
+// V3G5(D) — STRICTLY READ-ONLY PRE-RETRY CANONICALIZATION DIAGNOSTIC. Exactly one compact log. It inspects the real
+// six-table physical headers and the number formats / value types of EXISTING cells, projects the intended plan through
+// the shared canonicalization contract, and predicts round-trip risk. It performs NO Sheet write and therefore performs
+// NO actual write/read round trip — every risk it reports is a STATIC prediction, never an observed round trip.
+// ================================================================================================================
+function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, journalPresent, existingClassification) {
+  var out = { contract_version: DEMO4A_CANON_CONTRACT_VERSION_, round_trip_performed: false };
+  out.schema_ok = !!(schema && schema.ok);
+  out.plan_checksum = DEMO4A_str_(plan && plan.checksum);
+  out.planned_counts = (plan && plan.counts) || null;
+  var classCounts = {}, unknown = [], byClass = { date: [], datetime: [], numeric: [], coordinate: [], boolean: [], identifier: [], enum: [], text: [] }, blanks = [];
+  var risk = [], seenField = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (name) {
+    var rows = ((plan && plan.tables) || {})[name] || [];
+    var fields = {}; rows.forEach(function (r) { Object.keys(r).forEach(function (k) { fields[k] = 1; }); });
+    Object.keys(fields).forEach(function (f) {
+      var cls = DEMO4A_fieldClass_(f), key = name + '.' + f;
+      classCounts[cls] = (classCounts[cls] || 0) + 1;
+      if (!DEMO4A_fieldClassKnown_(f) && unknown.length < 20) unknown.push(key + ':' + cls);
+      if (byClass[cls] && !seenField[cls + ':' + f]) { byClass[cls].push(f); seenField[cls + ':' + f] = 1; }
+      var anyBlank = rows.some(function (r) { return DEMO4A_isBlankCell_(r[f]); });
+      if (anyBlank && blanks.length < 30) blanks.push(key);
+      // static risk prediction: a date/datetime written as a STRING will read back as a Date OBJECT whenever the column
+      // is date-formatted, and the two sides only agree when the canonical wall-clock offset equals the spreadsheet's.
+      if ((cls === 'date' || cls === 'datetime') && rows.some(function (r) { return typeof r[f] === 'string' && DEMO4A_str_(r[f]) !== ''; })) {
+        var colClass = ((columnTypeClasses || {})[name] || {})[f] || 'unknown';
+        // ONLY the source-proven mechanism is a risk: a date-formatted column returning a Date object is exact as long
+        // as the canonical wall-clock offset equals the spreadsheet's (proven by the offline round-trip tests), so a
+        // date-formatted column is reported in live_column_number_format_classes but is NOT invented as a risk.
+        if (tz && tz.ok === true && Number(tz.offset_min) !== Number(DEMO4A_CANON_TZ_OFFSET_MIN_) && risk.length < 20) risk.push({ table: name, field: f, field_class: cls, column_type_class: colClass, reason_code: 'DATE_WALLCLOCK_OFFSET_MISMATCH' });
+      }
+    });
+  });
+  out.field_class_counts = classCounts;
+  out.all_intended_fields_have_class = unknown.length === 0;
+  out.unknown_field_classes = unknown;
+  var proj = DEMO4A_writerProjectionGaps_(plan || { tables: {} }, headersByTable);
+  out.writer_projection_complete = proj.ok;
+  out.writer_projection_missing_total = proj.missing_total;
+  out.writer_projection_missing_fields = proj.missing_fields;
+  out.writer_unowned_column_counts = proj.writer_unowned_column_counts;
+  // physical alias resolution — the demo writer owns `marketplace` semantics ONLY where a physical column exists; the
+  // Flow-A `marketplace_seperate` authority is NEVER redefined here, only reported.
+  var alias = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (name) {
+    var hs = (headersByTable || {})[name] || [];
+    var hasM = hs.indexOf('marketplace') !== -1, hasS = hs.indexOf('marketplace_seperate') !== -1;
+    if (hasM || hasS) alias[name] = { marketplace: hasM, marketplace_seperate: hasS };
+  });
+  out.physical_alias_resolution = alias;
+  out.alias_conflict = Object.keys(alias).some(function (t) { var a = alias[t]; return a.marketplace_seperate === true && a.marketplace === false && (((plan.tables || {})[t] || []).some(function (r) { return Object.prototype.hasOwnProperty.call(r, 'marketplace'); })); });
+  out.date_fields = byClass.date; out.numeric_fields = byClass.numeric; out.boolean_fields = byClass.boolean;
+  out.text_identifier_fields = byClass.identifier.concat(byClass.enum).concat(byClass.text).length;
+  out.coordinate_fields = byClass.coordinate; out.datetime_fields = byClass.datetime; out.blank_optional_fields = blanks;
+  out.live_column_number_format_classes = columnTypeClasses || {};
+  out.predicted_roundtrip_risk_fields = risk; out.risk_count = risk.length;
+  out.canonicalization_tz = { contract_offset_min: DEMO4A_CANON_TZ_OFFSET_MIN_, spreadsheet_offset_min: tz ? tz.offset_min : null, spreadsheet_time_zone: tz ? DEMO4A_str_(tz.time_zone) : '', resolved: !!(tz && tz.ok) };
+  out.journal_status_read_only = journalPresent ? 'PRESENT_FROM_PRIOR_ATTEMPT' : 'ABSENT';
+  out.previous_failed_checksum_matches_current_plan = journalPresent === false ? null : (DEMO4A_str_(journalPresent && journalPresent.plan_checksum) === out.plan_checksum);
+  out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';
+  out.existing_state_classification = DEMO4A_str_(existingClassification);
+  out.verdict = !out.all_intended_fields_have_class ? 'UNKNOWN_FIELD_CLASS'
+    : out.alias_conflict ? 'PHYSICAL_SCHEMA_ALIAS_CONFLICT'
+    : !out.writer_projection_complete ? 'CANONICALIZATION_RISK_REMAINS'
+    : out.risk_count > 0 ? 'CANONICALIZATION_RISK_REMAINS'
+    : (journalPresent && out.previous_failed_checksum_matches_current_plan === false) ? 'JOURNAL_STATE_UNSAFE_FOR_RETRY'
+    : out.existing_state_classification !== 'ABSENT_ALL' ? 'EXISTING_STATE_NOT_ABSENT'
+    : 'READY_FOR_CONTROLLED_RETRY';
+  return out;
+}
+function TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION() {
+  var out = { tool: 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION', mode: 'STRICTLY READ-ONLY (getSheetByName + getValues + number formats only; NO write, NO actual write/read round trip)', output_contract: 'ONE_COMPACT_LOG_ENTRY' };
+  try {
+    var tz = DEMO4A_syncCanonTz_();
+    var schema = DEMO4A_schemaGate_();
+    var masters = DEMO4A_readMasters_();
+    var plan = DEMO4A_buildPlan_(masters);
+    if (!plan.ok) { out.verdict = 'CANONICALIZATION_RISK_REMAINS'; out.plan_blocked_reason = plan.reason; out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES'; Logger.log('DEMO4A_CANONICALIZATION_DIAGNOSTIC ' + JSON.stringify(out)); return out; }
+    var headersByTable = {}, columnTypeClasses = {};
+    DEMO4A_WRITE_ORDER_.forEach(function (name) {
+      var t = DEMO4A_readTable_(name); headersByTable[name] = t.headers;
+      // classify each physical column from EXISTING cells only (no write): date-formatted / numeric / boolean / text / empty.
+      var cc = {}; var sample = t.rows.slice(0, 25);
+      t.headers.forEach(function (h) {
+        var key = DEMO4A_str_(h); if (!key) return;
+        var cls = 'empty';
+        for (var i = 0; i < sample.length; i++) { var v = sample[i][key];
+          if (DEMO4A_isDateObj_(v)) { cls = 'date_formatted'; break; }
+          if (typeof v === 'number') { cls = 'numeric_cell'; continue; }
+          if (typeof v === 'boolean') { cls = 'boolean_cell'; continue; }
+          if (!DEMO4A_isBlankCell_(v) && cls === 'empty') cls = 'text_cell';
+        }
+        cc[key] = cls;
+      });
+      columnTypeClasses[name] = cc;
+    });
+    var jRaw = PropertiesService.getScriptProperties().getProperty(DEMO4A_JOURNAL_KEY_);
+    var jParsed = null; if (jRaw) { try { jParsed = JSON.parse(jRaw); } catch (e2) { jParsed = { plan_checksum: '' }; } }
+    var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
+    var core = DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, jParsed, cls.classification);
+    Object.keys(core).forEach(function (k) { out[k] = core[k]; });
+  } catch (e) { out.verdict = 'CANONICALIZATION_RISK_REMAINS'; out.reason = (e && e.message) ? e.message : String(e); }
+  out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES';
+  Logger.log('DEMO4A_CANONICALIZATION_DIAGNOSTIC ' + JSON.stringify(out)); return out;
+}
+
 function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
   var out = { tool: 'TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'STRICTLY READ-ONLY (no write/create/delete/submit)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
   try {
+    out.canonicalization_tz = DEMO4A_syncCanonTz_();
     var schema = DEMO4A_schemaGate_(); out.schema_gate = schema;
     var masters = DEMO4A_readMasters_(); out.masters_present = masters.present;
     out.master_row_counts = { templates: masters.templates.length, template_nodes: masters.nodes.length, logistics_locations: masters.locations.length, marketplace_skus: masters.marketplaceSkus.length, sku_details: masters.skuDetails.length, warehouses: (masters.warehouses || []).length };
@@ -2240,6 +2539,7 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
 function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
   var out = { tool: 'TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED', mode: 'STRICTLY READ-ONLY (no write)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
   try {
+    out.canonicalization_tz = DEMO4A_syncCanonTz_();
     var plan = DEMO4A_buildPlan_(DEMO4A_readMasters_());
     if (!plan.ok) { out.verdict = 'DRY_RUN_BLOCKED'; out.reason = plan.reason; out.detail = plan; }
     else {
@@ -2268,7 +2568,7 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
 // ================================================================================================================
 function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
   var out = { tool: 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'GATED WRITE (six demo tables only; integrity journal + inserted-only rollback on ANY post-insert failure)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
-  var lock = null, inserted = null, phase = 'pre_insert';   // A — inserted tracked in OUTER scope so the outer catch can roll back after ANY post-insert exception
+  var lock = null, inserted = null, phase = 'pre_insert', driftEvidence = null;   // A — inserted tracked in OUTER scope so the outer catch can roll back after ANY post-insert exception
   try {
     if (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE' || !DEMO4A_str_(DEMO4A_CONFIRMED_SEED_CHECKSUM_)) { out.verdict = 'COMMIT_REFUSED_CONFIRMATION_REQUIRED'; out.note = 'set DEMO4A_CONFIRMED_SEED_CHECKSUM_ to the DRY_RUN demo_plan_checksum first'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     var schema = DEMO4A_schemaGate_(); if (!schema.ok) { out.verdict = 'COMMIT_REFUSED_SCHEMA'; out.schema_gate = schema; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
@@ -2287,6 +2587,15 @@ function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
     out.existing_state = { classification: cls.classification, duplicate_pk_counts: cls.duplicate_pk_counts, unexpected_demo_ids: cls.unexpected_demo_ids, drift: cls.rows.filter(function (r) { return r.state === 'DRIFT'; }).slice(0, 6) };
     if (cls.classification === 'PRESENT_EXACT_ALL') { out.delta = { shipping_plans: 0, shipping_plan_lines: 0, shipments: 0, shipment_lines: 0, shipment_routes: 0, shipment_events: 0 }; out.verdict = 'REUSED'; out.demo_plan_checksum = plan2.checksum; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     if (cls.classification !== 'ABSENT_ALL') { out.verdict = 'COMMIT_REFUSED_' + cls.classification; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+
+    // V3G5(A) — PRE-WRITE WRITER-PROJECTION GATE. Proves every intended field has a real physical column BEFORE anything
+    // is written (not even the journal property): a missing column would otherwise be silently dropped by
+    // DEMO4A_rowForHeaders_ and surface as POSTCHECK_NOT_EXACT:CONTENT_DRIFT after a full insert + rollback cycle.
+    var headersByTable = {}; DEMO4A_WRITE_ORDER_.forEach(function (n2) { headersByTable[n2] = DEMO4A_readTable_(n2).headers; });
+    var projection = DEMO4A_writerProjectionGaps_(plan2, headersByTable);
+    out.writer_projection = { ok: projection.ok, intended_field_total: projection.intended_field_total, missing_total: projection.missing_total, missing_fields: projection.missing_fields };
+    if (!projection.ok) { out.verdict = 'COMMIT_BLOCKED_WRITER_PROJECTION_INCOMPLETE'; out.reason = 'WRITER_INTENDED_FIELD_NOT_IN_PHYSICAL_HEADER'; out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES (blocked before any write)'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    out.canonicalization = { contract_version: DEMO4A_CANON_CONTRACT_VERSION_, tz_offset_min: DEMO4A_CANON_TZ_OFFSET_MIN_ };
 
     // B — durable integrity journal BEFORE the first write: setProperty once, FULL readback, byte-equivalent canonical
     // + journal_integrity_checksum validation (checksum-only readback is insufficient). Any failure → zero table writes.
@@ -2310,7 +2619,12 @@ function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
     });
     phase = 'postcheck';
     var post = DEMO4A_classifyState_(plan2, DEMO4A_readLive_());
-    if (post.classification !== 'PRESENT_EXACT_ALL') throw new Error('POSTCHECK_NOT_EXACT:' + post.classification);   // → inserted-only rollback
+    if (post.classification !== 'PRESENT_EXACT_ALL') {
+      // V3G5(C) — capture COMPACT drift forensics from the already-computed classification (pure, in-memory, no extra
+      // reads) and THEN throw. Rollback is never delayed for diagnostics beyond this single in-memory map.
+      driftEvidence = DEMO4A_driftEvidence_(post);
+      throw new Error('POSTCHECK_NOT_EXACT:' + post.classification);   // → inserted-only rollback
+    }
     out.delta = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { out.delta[t] = inserted[t].length; });
     out.demo_plan_checksum = plan2.checksum; out.post_state = post.classification; out.verdict = 'COMMITTED';
   } catch (e) {
@@ -2318,6 +2632,7 @@ function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
     if (inserted && DEMO4A_anyInserted_(inserted)) {
       var rb = DEMO4A_rollbackInserted_(inserted);
       out.write_error = (e && e.message) ? e.message : String(e); out.rolled_back = rb.removed;
+      if (driftEvidence) out.postcheck_drift_evidence = driftEvidence;
       out.verdict = (phase === 'postcheck')
         ? (rb.ok ? 'COMMIT_FAILED_POSTCHECK_ROLLED_BACK' : 'COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED')
         : (rb.ok ? 'COMMIT_FAILED_ROLLED_BACK' : 'COMMIT_FAILED_ROLLBACK_UNVERIFIED');
