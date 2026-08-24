@@ -22,7 +22,7 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
-  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_COORD_ACCURACY_CANON_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_DEST_COORD_AUTHORITY_ = \{[\s\S]*?\n\};/)[0]);
@@ -47,7 +47,7 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
   'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
   'DEMO4A_whCode_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
-  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_preflightVerdict_', 'DEMO4A_authorizationSummary_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
@@ -1291,6 +1291,141 @@ section('V3G4-F. PREFLIGHT-grade compact evidence is exposed without dumping mas
   var plan = DEMO4A_buildPlan_(mL);
   ok(plan.per_shipment.every(function (x) { return x.destination_warehouse_id && x.destination_warehouse_code && x.destination_logistics_location_id && x.destination_address_fingerprint && x.destination_coordinate_branch; }), 'F. per-shipment evidence carries the exact warehouse id, code, logistics_location_id, address fingerprint and coordinate branch');
   ok(plan.per_shipment.every(function (x) { return DEMO4A_mapDestinationEndpointSource_(x.destination_coordinate_branch) === 'DEST_ROUTE_TERMINAL_NODE'; }), 'F. map endpoint consumer readiness is reported per shipment');
+})();
+
+// ============================================================ V3G4A — COMPACT READ-ONLY AUTHORIZATION ENVELOPE
+// The V3G4 live PREFLIGHT reached the correct warehouse-aware path but its single Logger entry was TRUNCATED before the
+// verdict, existing_state, the full gates, West/Central evidence, demo_plan_checksum and the zero-write marker. These
+// tests prove the compact envelope carries every authorization-bearing fact, stays far below any truncation ceiling, and
+// authorizes DRY_RUN only under the COMPLETE conjunction.
+var A_SRC_ = extractFn(G, 'TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION');
+var A_CORE_ = extractFn(G, 'DEMO4A_authorizationSummary_');
+var A_SCHEMA_OK_ = { ok: true, tables: {} };
+var A_MASTERS_PRESENT_ = { present: { shipment_route_templates: true, shipment_route_template_nodes: true, logistics_locations: true, marketplace_skus: true, sku_details: true, warehouses: true } };
+var A_PROP_ = { verdict: 'THREE_REGION_COORDINATE_PROPOSAL_READY', proposal_entries: 3 };
+var A_PLAN_ = DEMO4A_buildPlan_(mastersLive());
+function envOf(over) {
+  over = over || {};
+  var plan = over.plan || A_PLAN_;
+  return DEMO4A_authorizationSummary_(over.schema || A_SCHEMA_OK_, over.masters || A_MASTERS_PRESENT_, plan, over.planRepeat === undefined ? plan : over.planRepeat, over.live || emptyLive(), over.proposal === undefined ? A_PROP_ : over.proposal);
+}
+function clonePlan(mut) { var p = JSON.parse(JSON.stringify(A_PLAN_)); if (mut) mut(p); return p; }
+var A_ENV_ = envOf();
+var A_JSON_ = JSON.stringify(A_ENV_);
+var A_CEILING_ = 6000;   // fixed SAFE byte ceiling — Apps Script Logger truncates far above this
+
+section('V3G4A-E1/E2/E16. exactly one Logger entry, no nested verbose log, no write API reachable');
+eq((A_SRC_.match(/Logger\.log\(/g) || []).length, 1, 'E1. the entrypoint emits EXACTLY ONE Logger entry');
+ok(/Logger\.log\('DEMO4A_AUTHORIZATION_SUMMARY '/.test(A_SRC_) && /JSON\.stringify\(out\)\)/.test(A_SRC_), 'E1/E3. the single entry is the compact DEMO4A_AUTHORIZATION_SUMMARY envelope (no pretty-printing)');
+ok(/TEMP_DEMO4A_(PREFLIGHT|DRY_RUN|COMMIT|VALIDATE|CLEAR|DIAGNOSE)/.test(A_SRC_) === false, 'E2. it never calls another TEMP entrypoint — no nested/verbose logging is produced');
+ok(/Logger\.log/.test(A_CORE_) === false, 'E2. the pure envelope core logs nothing at all');
+ok(/appendRow|deleteRow|setValue|setValues|insertRow|clearContent|setProperty|deleteProperty|getRange\(/.test(A_SRC_) === false && /appendRow|deleteRow|setValue|setValues|setProperty/.test(A_CORE_) === false, 'E16. no write API is reachable from the summary entrypoint or its core');
+ok(/DEMO4A_buildPlan_|DEMO4A_schemaGate_|DEMO4A_readMasters_|DEMO4A_readLive_|DEMO4A_validateCoordProposal_/.test(A_SRC_), 'A. it invokes the SAME pure schema/master/build/classification/proposal logic used by PREFLIGHT and DRY_RUN');
+ok(/DEMO4A_preflightVerdict_|DEMO4A_warehouseGates_|DEMO4A_classifyState_/.test(A_CORE_), 'A. the core reuses the shared verdict / warehouse-gate / classification rules (no second approximate evaluator)');
+
+section('V3G4A-E3/E8. the envelope is compact and truncation cannot remove the verdict or the checksum');
+ok(A_JSON_.length < A_CEILING_, 'E3. the READY envelope serializes to ' + A_JSON_.length + ' bytes — below the ' + A_CEILING_ + '-byte safe ceiling');
+ok(JSON.stringify(envOf({ plan: DEMO4A_buildPlan_(mastersLive({ staleAddressAll: true })) })).length < A_CEILING_, 'E3. the FAILURE envelope is also compact');
+ok(A_JSON_.indexOf('"preflight_verdict"') < A_CEILING_ && A_JSON_.indexOf('"demo_plan_checksum"') < A_CEILING_ && A_JSON_.indexOf('"may_run_dry_run"') < A_CEILING_ && A_JSON_.indexOf('"DEMO4A_ZERO_WRITE') === -1, 'E8. verdict, checksum and authorization flags all sit well inside the ceiling (cannot be truncated away)');
+ok(/binding_evidence|master_row_counts|route_geography_evidence|destination_authority_errors|planned_ids|sku_pairs|event_chronology/.test(A_JSON_) === false, 'D. no binding_evidence / master dumps / route-event dumps / SKU pairs / error arrays leak into the envelope');
+ok(A_JSON_.indexOf('shipment_routes') !== -1 && A_JSON_.split('shipment_route_id').length === 1, 'D. route ROW COUNTS are present but no route rows are dumped');
+
+section('V3G4A-E4. every required field is present');
+['authority_contract_version', 'schema_ok', 'masters_ok', 'proposal_verdict', 'proposal_entries', 'coordinate_authority_armed', 'coordinate_authority_entries',
+ 'warehouse_aware_template_evaluation', 'qualified_count', 'current_capable_count', 'region_selection_mode', 'available_regions', 'selected_templates', 'scope',
+ 'planned_counts', 'per_shipment', 'gate_summary', 'existing_state', 'demo_plan_checksum', 'preflight_verdict', 'preflight_reason', 'predicted_dry_run_verdict',
+ 'may_run_dry_run', 'may_arm_commit_checksum'].forEach(function (k) { ok(A_ENV_[k] !== undefined, 'E4. envelope carries ' + k); });
+eq(Object.keys(A_ENV_.scope).sort().join(','), 'company,country,marketplace,sku_pair_count', 'E4/B. scope carries exactly company/country/marketplace/sku_pair_count');
+eq(Object.keys(A_ENV_.planned_counts).sort().join(','), 'shipment_events,shipment_lines,shipment_routes,shipments,shipping_plan_lines,shipping_plans,total', 'E4/B. planned_counts carries all six tables + total');
+eq(Object.keys(A_ENV_.existing_state).sort().join(','), 'classification,duplicate_pk_count_total,unexpected_demo_id_count', 'E4/B. existing_state is the three compact fields');
+['all_role_bindings_compatible', 'all_corridor_bindings_compatible', 'primary_current_distinct', 'no_unrelated_third_country', 'sea_truck_destination_not_airport',
+ 'warehouse_business_identity_ready', 'warehouse_address_authority_ready', 'warehouse_location_lineage_ready', 'destination_display_coordinate_ready',
+ 'map_consumes_destination_coordinate', 'status_truthfulness_ready', 'route_geography_ready', 'live_plan_shape_valid', 'all_pass'].forEach(function (k) { eq(A_ENV_.gate_summary[k], true, 'E4/B. gate_summary.' + k + ' present and true'); });
+eq(A_ENV_.authority_contract_version, 'V3G4A-1', 'E4. the authority contract version is stamped');
+ok(/DEMO4A_ZERO_WRITE_CONFIRMED/.test(A_SRC_), 'E4/B. the entrypoint stamps DEMO4A_ZERO_WRITE_CONFIRMED on the envelope');
+
+section('V3G4A-E5/E6. exactly three compact shipment objects; exact W/C/E coverage');
+eq(A_ENV_.per_shipment.length, 3, 'E5. exactly three per-shipment objects');
+eq(Object.keys(A_ENV_.per_shipment[0]).sort().join(','), ['current_location_id', 'destination_address_fingerprint', 'destination_coordinate_accuracy', 'destination_coordinate_branch', 'destination_logistics_location_id', 'destination_renderable', 'destination_warehouse_code', 'destination_warehouse_id', 'event_rows', 'origin_location_id', 'plan_lines', 'region', 'route_rows', 'shipment_id', 'shipment_lines', 'slot', 'status', 'template_id'].join(','), 'E5/B. each shipment object carries ONLY the 18 authorized compact fields');
+eq(A_ENV_.selected_templates.map(function (t) { return t.region; }).sort().join(','), 'US_CENTRAL,US_EAST,US_WEST', 'E6. the three selected templates cover W/C/E exactly once each');
+eq(Object.keys(A_ENV_.selected_templates[0]).sort().join(','), 'node_count,region,template_id', 'E6/B. selected_templates carries only template_id + region + node_count');
+eq(A_ENV_.per_shipment.map(function (x) { return x.destination_warehouse_code; }).sort().join(','), 'ABE2,AUS2,BFI4', 'E6. the three approved destination warehouses appear once each');
+ok(A_ENV_.per_shipment.every(function (x) { return x.destination_renderable === true && x.destination_coordinate_branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE' && /^[0-9a-f]{8}$/.test(x.destination_address_fingerprint); }), 'E6. each shipment reports a renderable approved address-derived destination with its live fingerprint');
+
+section('V3G4A-E7. may_run_dry_run is true ONLY under the complete conjunction');
+eq([A_ENV_.may_run_dry_run, A_ENV_.preflight_verdict, A_ENV_.predicted_dry_run_verdict], [true, 'READY_FOR_DEMO_SEED', 'DRY_RUN_READY'], 'E7. the fully-satisfied envelope authorizes DRY_RUN');
+[['schema not ok', { schema: { ok: false, tables: {} } }],
+ ['a master table absent', { masters: { present: { shipment_route_templates: true, shipment_route_template_nodes: true, logistics_locations: true, marketplace_skus: true, sku_details: true, warehouses: false } } }],
+ ['proposal verdict not READY', { proposal: { verdict: 'COORDINATE_PROPOSAL_STALE', proposal_entries: 3 } }],
+ ['proposal entries != 3', { proposal: { verdict: 'THREE_REGION_COORDINATE_PROPOSAL_READY', proposal_entries: 2 } }],
+ ['live rows already present', { live: liveFromPlan(A_PLAN_) }],
+ ['plan build blocked', { plan: DEMO4A_buildPlan_(mastersLive({ staleAddressAll: true })) }]
+].forEach(function (c) { eq(envOf(c[1]).may_run_dry_run, false, 'E7. ' + c[0] + ' → may_run_dry_run false'); });
+// the dry-run-core determinism re-check gates ARMING (per the C contract), not DRY_RUN itself.
+(function () { var e = envOf({ planRepeat: clonePlan(function (p) { p.checksum = 'deadbeef'; }) });
+  eq([e.may_run_dry_run, e.may_arm_commit_checksum, e.dry_run_core_checksum_reproduced], [true, false, false], 'E7/C. a non-reproducing dry-run core checksum blocks ARMING while DRY_RUN itself stays authorized'); })();
+
+section('V3G4A-E9/E10. ABSENT_ALL is required; PRESENT / PARTIAL / duplicate / unexpected states block');
+eq(A_ENV_.existing_state.classification, 'ABSENT_ALL', 'E9. the authorized envelope requires ABSENT_ALL');
+(function () {
+  var present = envOf({ live: liveFromPlan(A_PLAN_) });
+  eq([present.existing_state.classification, present.preflight_verdict, present.may_run_dry_run], ['PRESENT_EXACT_ALL', 'ALREADY_SEEDED_EXACT', false], 'E10. PRESENT_EXACT_ALL blocks DRY_RUN authorization');
+  var partialLive = liveFromPlan(A_PLAN_); partialLive.shipment_events = { present: true, headers: partialLive.shipment_events.headers, rows: [] };
+  var partial = envOf({ live: partialLive });
+  ok(partial.existing_state.classification !== 'ABSENT_ALL' && partial.may_run_dry_run === false, 'E10. a PARTIAL live state blocks DRY_RUN authorization');
+  var dupLive = liveFromPlan(A_PLAN_); dupLive.shipments.rows = dupLive.shipments.rows.concat([dupLive.shipments.rows[0]]);
+  ok(envOf({ live: dupLive }).may_run_dry_run === false, 'E10. duplicate PKs block DRY_RUN authorization');
+})();
+
+section('V3G4A-E11/E12/E13/E14. one false gate, fallback mode, a missing region and a missing template each block');
+eq(envOf({ plan: clonePlan(function (p) { p.binding_gates.sea_truck_destination_not_airport = false; p.binding_gates.ok = false; }) }).may_run_dry_run, false, 'E11. a single false binding gate blocks (and all_pass goes false)');
+ok(envOf({ plan: clonePlan(function (p) { p.binding_gates.sea_truck_destination_not_airport = false; p.binding_gates.ok = false; }) }).gate_summary.all_pass === false, 'E11. gate_summary.all_pass reflects the single false gate');
+eq(envOf({ plan: clonePlan(function (p) { p.counts.shipment_events = 0; p.counts.total = p.counts.total - 5; }) }).gate_summary.live_plan_shape_valid, false, 'E11. a structurally impossible planned shape fails live_plan_shape_valid');
+eq(envOf({ plan: clonePlan(function (p) { p.region_selection_mode = 'FALLBACK_TRUTHFUL_TOP3'; }) }).may_run_dry_run, false, 'E12. FALLBACK_TRUTHFUL_TOP3 blocks — only DISTINCT_WCE authorizes');
+eq(envOf({ plan: clonePlan(function (p) { p.available_regions.US_EAST = 0; }) }).may_run_dry_run, false, 'E13. a missing available region blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.chosen_templates = p.chosen_templates.slice(0, 2); }) }).may_run_dry_run, false, 'E14. fewer than three selected templates blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.chosen_templates[0].region = 'US_WEST'; p.chosen_templates[1].region = 'US_WEST'; }) }).may_run_dry_run, false, 'E14. three templates that do NOT cover W/C/E once each blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.current_capable_count = 0; }) }).may_run_dry_run, false, 'E14. a current-incapable selection blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.qualified_count = 2; }) }).may_run_dry_run, false, 'E14. fewer than three qualified templates blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.warehouse_aware_template_evaluation = false; }) }).may_run_dry_run, false, 'C. an inactive warehouse-aware evaluation blocks');
+eq(envOf({ plan: clonePlan(function (p) { p.checksum = ''; }) }).may_run_dry_run, false, 'C. an empty demo_plan_checksum blocks');
+
+section('V3G4A-E15. a changed plan is surfaced as a changed checksum');
+(function () {
+  var alt = {}; Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).forEach(function (k) { alt[k] = JSON.parse(JSON.stringify(DEMO4A_DEST_COORD_AUTHORITY_[k])); });
+  alt.BFI4.latitude = 47.5;
+  var mAlt = mastersLive(); mAlt.destCoordAuthority = alt;
+  var envAlt = envOf({ plan: DEMO4A_buildPlan_(mAlt) });
+  ok(envAlt.demo_plan_checksum !== '' && envAlt.demo_plan_checksum !== A_ENV_.demo_plan_checksum, 'E15. a changed approved coordinate surfaces a DIFFERENT demo_plan_checksum in the envelope');
+  eq(envOf({ planRepeat: clonePlan(function (p) { p.checksum = 'deadbeef'; }) }).dry_run_core_checksum_reproduced, false, 'E15. a non-reproducing dry-run core checksum is reported and blocks arming');
+})();
+
+section('V3G4A-E17. the extracted PREFLIGHT verdict rule reproduces the previous behaviour exactly');
+eq(DEMO4A_preflightVerdict_(false, A_PLAN_, { applicable: true, ok: true }, 'ABSENT_ALL'), 'PREFLIGHT_FAILED_SCHEMA', 'E17. schema failure verdict unchanged');
+eq(DEMO4A_preflightVerdict_(true, clonePlan(function (p) { p.binding_gates.ok = false; }), { applicable: true, ok: true }, 'ABSENT_ALL'), 'PREFLIGHT_FAILED_BINDING_GATES', 'E17. binding-gate failure verdict unchanged');
+eq(DEMO4A_preflightVerdict_(true, A_PLAN_, { applicable: true, ok: false }, 'ABSENT_ALL'), 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY', 'E17. warehouse-authority failure verdict unchanged');
+eq(DEMO4A_preflightVerdict_(true, A_PLAN_, { applicable: true, ok: true }, 'ABSENT_ALL'), 'READY_FOR_DEMO_SEED', 'E17. READY verdict unchanged');
+eq(DEMO4A_preflightVerdict_(true, A_PLAN_, { applicable: true, ok: true }, 'PRESENT_EXACT_ALL'), 'ALREADY_SEEDED_EXACT', 'E17. already-seeded verdict unchanged');
+eq(DEMO4A_preflightVerdict_(true, A_PLAN_, { applicable: true, ok: true }, 'CONTENT_DRIFT'), 'BLOCKED_CONTENT_DRIFT', 'E17. blocked-classification verdict unchanged');
+ok(/DEMO4A_preflightVerdict_\(schema\.ok, plan, out\.warehouse_gates, cls\.classification\)/.test(G), 'E17. PREFLIGHT itself now consumes the shared verdict rule (one rule, two callers)');
+
+section('V3G4A-E18/E19. V3A protections and confirmation constants untouched');
+(function () {
+  var j = DEMO4A_buildJournal_(A_PLAN_, 'DRY_RUN');
+  ok(j && DEMO4A_verifyJournal_(j, DEMO4A_journalCanonical_(j)) !== false && DEMO4A_rollbackPlan_(DEMO4A_allIds_(A_PLAN_)).length > 0, 'E18. journal build/verify and inserted-only rollback remain intact');
+})();
+eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'E19. both confirmation constants remain placeholders');
+eq(A_ENV_.confirmation_constant_status, 'PLACEHOLDER', 'E19. the envelope reports the confirmation constant as PLACEHOLDER');
+ok(/DEMO4A_CONFIRMED_SEED_CHECKSUM_\s*=[^=]/.test(A_SRC_) === false && /DEMO4A_CONFIRMED_SEED_CHECKSUM_\s*=[^=]/.test(A_CORE_) === false, 'C/E19. neither the entrypoint nor the core ever assigns the confirmation constant');
+eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, 'G. the coordinate authority still holds exactly the three approved entries');
+ok(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).every(function (k) { return DEMO4A_DEST_COORD_AUTHORITY_[k].latitude === G3_APPROVED_[k].lat && DEMO4A_DEST_COORD_AUTHORITY_[k].longitude === G3_APPROVED_[k].lng; }), 'G. the approved coordinates are unchanged');
+
+section('V3G4A-D. a FAILING envelope stays tiny: reason counts + at most five short codes');
+(function () {
+  var envFail = envOf({ plan: DEMO4A_buildPlan_(mastersLive({ staleAddressAll: true })) });
+  eq([envFail.may_run_dry_run, envFail.may_arm_commit_checksum, envFail.predicted_dry_run_verdict], [false, false, 'DRY_RUN_BLOCKED'], 'D. a blocked plan authorizes nothing');
+  ok(envFail.reason_codes.length <= 5 && envFail.per_shipment.length === 0 && envFail.selected_templates.length === 0, 'D. the failure envelope keeps at most five reason codes and dumps no shipments/templates');
+  eq(envFail.preflight_reason, 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'D. the failure envelope carries the most specific truthful reason');
 })();
 
 done();
