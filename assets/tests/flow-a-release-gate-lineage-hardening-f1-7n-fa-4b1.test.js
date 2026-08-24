@@ -25,7 +25,7 @@ var ROUTER = rd('01_router.gs');
 var LOAD = [];
 LOAD.push(GS11.match(/var SP_LINE_MKT_LOGICAL_ = [^\n]*;/)[0]);
 LOAD.push(GS11.match(/var SP_LINE_MKT_PHYSICAL_ALIAS_ = [^\n]*;/)[0]);
-['shippingPlanFnv_', 'shippingPlanLineMktPhysicalCol_', 'shippingPlanNormalizeLineMkt_', 'shippingPlanApplyLineMktPhysical_',
+['shippingPlanFnv_', 'shippingPlanLineMktPhysicalCol_', 'shippingPlanResolveLineMkt_', 'shippingPlanNormalizeLineMkt_', 'shippingPlanApplyLineMktPhysical_',
   'shippingPlanDeleteRowsByColumn_', 'shippingPlanFlowAPreflightCore_'].forEach(function (n) { LOAD.push(extractFn(GS11, n)); });
 eval(LOAD.join('\n'));
 
@@ -49,7 +49,7 @@ eq(SP_LINE_MKT_LOGICAL_, 'marketplace', 'A. logical application field = marketpl
 eq(SP_LINE_MKT_PHYSICAL_ALIAS_, 'marketplace_seperate', 'A. physical alias retained verbatim (misspelled, not spell-corrected)');
 eq(shippingPlanLineMktPhysicalCol_(fakeSheet(['shipping_plan_line_id', 'marketplace', 'sku'])), 'marketplace', 'L5. a sheet with `marketplace` resolves to marketplace');
 eq(shippingPlanLineMktPhysicalCol_(fakeSheet(['shipping_plan_line_id', 'marketplace_seperate', 'sku'])), 'marketplace_seperate', 'L5. a sheet with only `marketplace_seperate` resolves to the physical alias (no failure, no migration)');
-eq(shippingPlanLineMktPhysicalCol_(fakeSheet(['shipping_plan_line_id', 'marketplace', 'marketplace_seperate'])), 'marketplace', 'L5. both present → logical `marketplace` wins (single accessor, deterministic)');
+eq(shippingPlanLineMktPhysicalCol_(fakeSheet(['shipping_plan_line_id', 'marketplace', 'marketplace_seperate'])), 'marketplace_seperate', 'L5/4B2-B. both present → the PHYSICAL authority marketplace_seperate WINS (never silently prefer marketplace)');
 eq(shippingPlanLineMktPhysicalCol_(fakeSheet(['shipping_plan_line_id', 'sku'])), '', 'L21. neither present → "" (caller fails closed SCHEMA_MAPPING_REQUIRED)');
 
 section('B. normalize + one-column remap (no duplicate marketplace columns)');
@@ -69,8 +69,8 @@ ok(/var headerMarketplace = distinctMk\.length/.test(GS11), 'L1/L2. header marke
 
 // ============================================================ C — shipping plan grouping authority
 section('C/L7/L8. route grouping authority (physical compatibility, not marketplace)');
-ok(/\[company, country, shipFrom, destination, method\]\.join\('\|\|'\)/.test(GS11), 'C/L7. group key = company+country+ship_from+destination+shipping_method (physical route) — conflicting routes → separate plans');
-ok(/Group by the ROUTE key[\s\S]{0,80}NOT marketplace/.test(GS11), 'C/L8. marketplace is NOT part of the group key → compatible multi-marketplace lines CAN share one plan (header MULTI)');
+ok(/var key = shippingPlanRouteGroupKey_\(ln, company\)/.test(GS11) && /\[company, ln\.country, ln\.source_warehouse_id, ln\.ship_from, ln\.destination_warehouse_id, ln\.destination, ln\.shipping_method, ln\.last_mile_delivery, ln\.planning_cycle\]\.map\(lc\)\.join/.test(GS11), 'C/L7 (4B2). group key = company+country+source_wh+ship_from+dest_wh+destination+shipping_method+last_mile+planning_cycle');
+ok(/Marketplace stays EXCLUDED/.test(GS11) && /CARRIER is DEFERRED/.test(GS11), 'C/L8 (4B2). marketplace excluded (→ MULTI header) and carrier deferred (not authoritative at plan creation)');
 
 // ============================================================ K — typed fail-closed release gate
 section('K/L21. schema-mapping fail-closed before any write');
@@ -142,8 +142,8 @@ var preMulti = shippingPlanFlowAPreflightCore_({
   shipment_plan_links: { headers: [], rows: [], present: false }, shipment_line_allocations: { headers: [], rows: [], present: true }
 });
 eq(preMulti.schema_lineage_verdict, 'LINE_MARKETPLACE_AMBIGUOUS', 'L22. a LINE storing MULTI is ambiguous → LINE_MARKETPLACE_AMBIGUOUS (a line must never be MULTI)');
-ok(/present/.test(JSON.stringify(preClean.shipment_plan_links)) && /Header consolidation lineage/.test(preClean.shipment_plan_links.note), 'L9/L11. preflight reports shipment_plan_links as HEADER consolidation lineage (spec-only), never claims line-level qty from it');
-ok(/PO-line SUPPLY bridge/.test(preClean.shipment_line_allocations.note), 'addendum. preflight labels shipment_line_allocations as the PO-line supply bridge (not the planning bridge)');
+ok(preClean.shipment_plan_links.classification === 'SPEC_DEFINED_NOT_IMPLEMENTED' && preClean.shipment_plan_links.runtime_writer_present === false && preClean.shipment_plan_links.runtime_reader_present === false, 'L9/L12 (4B2). shipment_plan_links = SPEC_DEFINED_NOT_IMPLEMENTED (no runtime writer/reader)');
+ok(preClean.shipment_line_allocations.authority === 'PO_LINE_SUPPLY_ONLY', 'addendum/L14. shipment_line_allocations authority = PO_LINE_SUPPLY_ONLY (not planning lineage)');
 ok(/action === 'flowASchemaLineagePreflight'/.test(ROUTER) && /handleFlowASchemaLineagePreflight_/.test(ROUTER), 'I. preflight is wired as a router action');
 ok(/mode: 'STRICTLY READ-ONLY[\s\S]{0,60}getValues only/.test(GS11) && /ZERO_WRITE_CONFIRMED/.test(GS11), 'I. the preflight entrypoint is strictly read-only (zero-write confirmed)');
 

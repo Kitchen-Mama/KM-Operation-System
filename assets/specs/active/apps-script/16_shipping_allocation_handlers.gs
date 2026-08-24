@@ -1003,6 +1003,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
         ship_from: shipFrom, source_warehouse_id: String(ln.source_warehouse_id || h.recommended_source_warehouse_id || '').trim(), ship_from_type: 'warehouse',
         destination: destination, destination_warehouse_id: destWhId, destination_type: destWhId ? 'warehouse' : 'marketplace',
         shipping_method: h.recommended_shipping_method, last_mile_delivery: h.recommended_last_mile_delivery, carrier_id: '', customs_type: '',
+        planning_cycle: String(h.planning_cycle || '').trim(),   // F1-7N-FA-4B2(A): a grouping dimension (also fingerprint-bound via source_reason cyc:)
         sku: ln.sku, site_sku: ln.site_sku, requested_qty: ln.planned_qty, units_per_carton: ln.units_per_carton,
         source_page: String(h.source_page || 'inventory_replenishment').trim(),
         source_reason: lineageBase + '|line:' + String(ln.allocation_draft_line_id || '').trim(),

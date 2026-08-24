@@ -314,3 +314,38 @@ AVAILABLE: shipment identity, destination, route/method, carrier, SKU, consolida
 
 ## Flow A boundary (what is / is not this batch)
 **Flow A implemented (this + prior 4B):** Allocation Draft → Shipping Plan / Shipping Plan Lines → draft submitted after verified commit; server-owned Submit; marketplace physical/logical release gate; durable-journal + inserted-only rollback; idempotency + version/token gate; read-only preflight. **Flow A creates NO** Shipment, `shipment_plan_links`, `shipment_line_allocations`, PO allocation/deduction, dispatch, receive or documents — all belong to the later Shipping Plan → Shipment → Dispatch → Document batch. PO shipped deduction never occurs merely because an Allocation Draft is submitted to a Shipping Plan.
+
+---
+
+# F1-7N-FA-4B2 — GROUPING & LINEAGE-TRUTH CLOSURE (design freeze)
+
+**Status: Flow A Submit = SOURCE_IMPLEMENTED · TEST_PROVEN · NOT_LIVE_VERIFIED** for `Allocation Draft → Shipping Plan / Shipping Plan Lines`. **Downstream `Shipping Plan → Shipment` consolidation is NOT connected** (future batch). One local follow-up commit; not pushed/deployed; no live Submit/write; no Shipment implementation. This section CORRECTS the 4B1 statement that `shipment_lines.shipping_plan_line_id` is a complete line-level bridge.
+
+## A — Final Shipping Plan grouping key (physical shipment compatibility)
+`shippingPlanRouteGroupKey_` (11_): **company + country + source_warehouse_id + ship_from + destination_warehouse_id + destination + shipping_method + last_mile_delivery + planning_cycle** (all lowercased). Marketplace is EXCLUDED so compatible marketplace lines consolidate and the Header may become `MULTI`; each line keeps its real marketplace (never `MULTI`). Non-physical/order metadata (e.g. sku) never splits a group. Proven: different last-mile / planning-cycle / shipping-method / destination / source-warehouse → separate plans; same physical group + multiple marketplaces → one MULTI header.
+
+**Carrier decision:** carrier is NOT authoritative at Shipping Plan creation (it is derived later by the rough-quote / approval-routing layer and is frequently blank), so it is **DEFERRED** — not a grouping dimension and never fabricated into the key.
+
+**Fingerprint:** every grouping dimension is bound into `spfp-1` — the route fields incl. `last_mile_delivery` via the header fingerprint (`SP_HDR_FP_STR_`), and `planning_cycle` via each line's `source_reason` (`cyc:<planning_cycle>`, in `SP_LINE_FP_STR_`). 16_ now passes `planning_cycle` onto each derived submit line. Idempotency: exact retry → REUSED (zero write); a changed grouping/payload under the same execution key → CONFLICT (zero write); a genuinely different group hashes to a new fingerprint.
+
+## B — Marketplace physical/logical accessor (hardened)
+Physical live authority = `marketplace_seperate` (frozen; not renamed/migrated). `shippingPlanLineMktPhysicalCol_`: `marketplace_seperate` present → use it (WINS even when `marketplace` is also present — never silently prefer `marketplace` over the physical authority); only `marketplace` (canonical/legacy/test) → use it; neither → `SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED`. Per-row `shippingPlanResolveLineMkt_`: one blank column → deterministic use of the nonblank value; both nonblank AND equal → ok; both nonblank AND **differ → CONFLICT, fail closed** (`__mkt_conflict`, never silently pick). A new row is written to exactly one column (never both).
+
+## C — Downstream lineage classification (TRUTHFUL — corrects 4B1)
+| Lineage | Authority | Classification |
+|---|---|---|
+| Header (Shipment ↔ Shipping Plan) | `shipment_plan_links` | **SPEC_DEFINED_NOT_IMPLEMENTED** — DB/spec columns exist; NO runtime writer/reader |
+| Legacy/single-source line | `shipment_lines.shipping_plan_line_id` | **ONE_SOURCE_ONLY** — exact only for a 1:1 non-consolidated transfer; a single FK CANNOT represent multiple plan-line contributions (or their quantities) to one consolidated shipment_line |
+| PO supply | `shipment_line_allocations` (`shipment_line_id → purchase_order_line_id`, allocated_qty/shipped_qty) | **PO_LINE_SUPPLY_ONLY** — not Shipping-Plan contribution lineage |
+| Consolidated plan-line contribution (`shipment_line_id + shipping_plan_line_id + contributed_qty`) | none | **MISSING_SHIPPING_PLAN_LINE_CONTRIBUTION_AUTHORITY** |
+
+**CORRECTION of 4B1:** 4B1 stated `shipment_lines.shipping_plan_line_id` makes per-plan-line contribution recoverable and therefore "NOT MISSING." That holds ONLY while transfer is strictly 1:1. Because the frozen authority allows a Shipment to consolidate multiple Shipping Plans and `shipment_lines` may aggregate the same SKU into one total row, a single `shipping_plan_line_id` FK is **insufficient** for multi-plan-line SKU consolidation. Final verdict: **MISSING_SHIPPING_PLAN_LINE_CONTRIBUTION_AUTHORITY** — a required design/implementation decision for the later **Shipping Plan approval → Shipment Draft → consolidated Shipment Lines** batch. No new table is invented in Flow A.
+
+## D — Flow A release claim (truthful boundaries)
+READY in source (Submit-schema): `Allocation Draft → Shipping Plan / Shipping Plan Lines`. Documentation does **NOT** claim: Shipping Plan → Shipment is connected · `shipment_plan_links` runtime is connected · consolidated line contribution is preserved · PO allocation is connected · download readiness is complete. `flow_a_submit_schema_ready` is reported SEPARATELY from `shipment_consolidation_lineage_ready` (false).
+
+## E — Preflight (extended, read-only)
+`flowASchemaLineagePreflight` now also reports: `grouping.dimensions` (+ `last_mile_included`, `planning_cycle_included`, `carrier_deferred`, `marketplace_excluded`, `all_dimensions_fingerprint_bound`), marketplace physical/logical mapping + `conflict_marketplace_lines`, `shipment_plan_links` {present, headers, runtime_writer_present:false, runtime_reader_present:false, classification: SPEC_DEFINED_NOT_IMPLEMENTED}, `shipment_line_shipping_plan_line_id.capability: ONE_SOURCE_ONLY`, `consolidated_contribution_authority: MISSING`, `shipment_line_allocations.authority: PO_LINE_SUPPLY_ONLY`, `downstream_lineage_verdict`, and the separated readiness flags `flow_a_submit_schema_ready` / `shipment_consolidation_lineage_ready` / `downstream_blocker: MISSING_SHIPPING_PLAN_LINE_CONTRIBUTION_AUTHORITY`. Allocation Draft → Shipping Plan is NOT blocked by the downstream gap; the gap is reported truthfully.
+
+## Two-lineage model (unchanged, restated)
+Planning/marketplace axis and procurement/PO-supply axis are independent; `shipment_line_allocations` is PO supply only. PO shipped deduction never occurs at Shipping Plan Submit. Download readiness remains INCOMPLETE (customs/commercial-invoice family blocked; consolidated-contribution authority missing).

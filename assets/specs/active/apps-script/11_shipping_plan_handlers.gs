@@ -291,6 +291,17 @@ function shippingPlanFnv_(s) { var h = 0x811c9dc5; s = String(s); for (var i = 0
 function shippingPlanHdrSortKey_(h) { return [h.company, h.country, h.ship_from, h.destination, h.shipping_method, h.marketplace].map(function (x) { return x == null ? '' : String(x); }).join(''); }
 function shippingPlanLineSortKey_(l) { return [l.sku, l.site_sku, l.marketplace, l.requested_qty].map(function (x) { return x == null ? '' : String(x); }).join(''); }
 
+// F1-7N-FA-4B2(A) — PURE physical shipment-compatibility group key (company already resolved). Determines which lines may
+// share one Shipping Plan: company + country + source_warehouse_id + ship_from + destination_warehouse_id + destination +
+// shipping_method + last_mile_delivery + planning_cycle. Marketplace EXCLUDED (→ MULTI header, real marketplace per line);
+// CARRIER DEFERRED (not authoritative at plan creation). Every dimension is spfp-1-bound (header FP for the route fields
+// incl. last_mile_delivery; planning_cycle via each line's source_reason `cyc:`).
+function shippingPlanRouteGroupKey_(ln, company) {
+  function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  ln = ln || {};
+  return [company, ln.country, ln.source_warehouse_id, ln.ship_from, ln.destination_warehouse_id, ln.destination, ln.shipping_method, ln.last_mile_delivery, ln.planning_cycle].map(lc).join('||');
+}
+
 // PURE projector: flat plan/line row objects → canonical, sorted, fixed-key-order structure (ids/audit excluded).
 function shippingPlanProjectBatch_(planObjs, lineObjs) {
   var linesByPlan = {};
@@ -375,22 +386,40 @@ function shippingPlanReadObjects_(sheet) {
 // ================================================================================================================
 var SP_LINE_MKT_LOGICAL_ = 'marketplace';
 var SP_LINE_MKT_PHYSICAL_ALIAS_ = 'marketplace_seperate';
-// resolve the single physical column that carries a plan line's marketplace on THIS sheet ('' ⇒ neither ⇒ fail closed).
+// resolve the single physical WRITE column for a plan line's marketplace on THIS sheet ('' ⇒ neither ⇒ fail closed).
+// F1-7N-FA-4B2(B): the frozen live physical authority is `marketplace_seperate` — when BOTH columns exist it WINS
+// (never silently prefer `marketplace` over the physical authority). Only `marketplace` (a canonical/legacy/test schema)
+// → use it. Neither → '' (SCHEMA_MAPPING_REQUIRED). A NEW row is written to exactly ONE column (never both).
 function shippingPlanLineMktPhysicalCol_(sheet) {
   if (!sheet || typeof sheet.getLastColumn !== 'function') return '';
   var lastCol = sheet.getLastColumn(); if (lastCol < 1) return '';
   var hdr = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
   var have = {}; hdr.forEach(function (h) { have[h] = 1; });
-  if (have[SP_LINE_MKT_LOGICAL_]) return SP_LINE_MKT_LOGICAL_;                 // cleanly-migrated / canonical sheet
-  if (have[SP_LINE_MKT_PHYSICAL_ALIAS_]) return SP_LINE_MKT_PHYSICAL_ALIAS_;   // frozen live physical column (typo retained)
+  if (have[SP_LINE_MKT_PHYSICAL_ALIAS_]) return SP_LINE_MKT_PHYSICAL_ALIAS_;   // frozen live physical authority (wins even if marketplace also present)
+  if (have[SP_LINE_MKT_LOGICAL_]) return SP_LINE_MKT_LOGICAL_;                 // canonical / legacy / test schema
   return '';                                                                   // neither → SCHEMA_MAPPING_REQUIRED
 }
-// normalize a persisted row so the LOGICAL `marketplace` is readable even when the physical column is the alias. Never
-// overwrites a real logical value; only fills a blank logical field from the alias. Plan rows (no alias) pass through.
+// F1-7N-FA-4B2(B): per-ROW logical resolution with a documented deterministic compatibility rule + conflict fail-close.
+// status: 'blank' (both empty) · 'ok' (one nonblank, or both equal) · 'conflict' (both nonblank AND differ → fail closed;
+// never silently pick one). Returns { value, status }.
+function shippingPlanResolveLineMkt_(row) {
+  row = row || {};
+  var m = String(row[SP_LINE_MKT_LOGICAL_] == null ? '' : row[SP_LINE_MKT_LOGICAL_]).trim();
+  var a = String(row[SP_LINE_MKT_PHYSICAL_ALIAS_] == null ? '' : row[SP_LINE_MKT_PHYSICAL_ALIAS_]).trim();
+  if (m === '' && a === '') return { value: '', status: 'blank' };
+  if (m !== '' && a === '') return { value: m, status: 'ok' };
+  if (a !== '' && m === '') return { value: a, status: 'ok' };
+  if (m === a) return { value: m, status: 'ok' };
+  return { value: '', status: 'conflict' };   // both nonblank AND differ → fail closed
+}
+// normalize a persisted row so the LOGICAL `marketplace` is readable regardless of the physical column. Fills a blank
+// logical field from the alias; a genuine value–value conflict is left UNresolved (logical untouched) and flagged
+// __mkt_conflict so readers/preflight fail closed rather than silently pick. Plan rows (no alias) pass through.
 function shippingPlanNormalizeLineMkt_(row) {
   if (!row) return row;
-  var m = String(row[SP_LINE_MKT_LOGICAL_] == null ? '' : row[SP_LINE_MKT_LOGICAL_]).trim();
-  if (m === '' && row[SP_LINE_MKT_PHYSICAL_ALIAS_] != null && String(row[SP_LINE_MKT_PHYSICAL_ALIAS_]).trim() !== '') row[SP_LINE_MKT_LOGICAL_] = row[SP_LINE_MKT_PHYSICAL_ALIAS_];
+  var r = shippingPlanResolveLineMkt_(row);
+  if (r.status === 'conflict') { row.__mkt_conflict = true; return row; }
+  if (String(row[SP_LINE_MKT_LOGICAL_] == null ? '' : row[SP_LINE_MKT_LOGICAL_]).trim() === '' && r.value !== '') row[SP_LINE_MKT_LOGICAL_] = r.value;
   return row;
 }
 // map a derived (logical-keyed) line object onto the resolved physical column. Writes ONE column; never both. Returns a
@@ -456,34 +485,56 @@ function shippingPlanFlowAPreflightCore_(tables) {
   var alloc = tables.shipment_line_allocations || { headers: [], rows: [], present: false };
   var lineHdr = lines.headers || [];
   var mktIdx = lineHdr.indexOf(SP_LINE_MKT_LOGICAL_), aliasIdx = lineHdr.indexOf(SP_LINE_MKT_PHYSICAL_ALIAS_);
-  var physicalCol = mktIdx !== -1 ? SP_LINE_MKT_LOGICAL_ : (aliasIdx !== -1 ? SP_LINE_MKT_PHYSICAL_ALIAS_ : '');
-  var mappingVerdict = mktIdx !== -1 && aliasIdx !== -1 ? 'BOTH_PRESENT_LOGICAL_WINS'
-    : mktIdx !== -1 ? 'CANONICAL_MARKETPLACE'
+  // F1-7N-FA-4B2(B): the physical WRITE authority is marketplace_seperate — it WINS when both columns are present.
+  var physicalCol = aliasIdx !== -1 ? SP_LINE_MKT_PHYSICAL_ALIAS_ : (mktIdx !== -1 ? SP_LINE_MKT_LOGICAL_ : '');
+  var mappingVerdict = mktIdx !== -1 && aliasIdx !== -1 ? 'BOTH_PRESENT_PHYSICAL_ALIAS_WINS'
     : aliasIdx !== -1 ? 'PHYSICAL_LOGICAL_ALIAS_REQUIRED'
+    : mktIdx !== -1 ? 'CANONICAL_MARKETPLACE'
     : 'SCHEMA_MAPPING_MISSING';
-  // real/MULTI/blank counts on existing lines using the resolved physical column
-  var realMk = 0, multiMk = 0, blankMk = 0;
-  (lines.rows || []).forEach(function (r) { var v = physicalCol ? s(r[physicalCol]) : (s(r[SP_LINE_MKT_LOGICAL_]) || s(r[SP_LINE_MKT_PHYSICAL_ALIAS_])); if (v === '') blankMk++; else if (v.toUpperCase() === 'MULTI') multiMk++; else realMk++; });
-  var everyLineRealMarketplace = (lines.rows || []).length === 0 ? true : (blankMk === 0 && multiMk === 0);
+  // real/MULTI/blank counts + per-row physical/logical CONFLICT (both nonblank & differ → fail closed).
+  var realMk = 0, multiMk = 0, blankMk = 0, conflictMk = 0;
+  (lines.rows || []).forEach(function (r) {
+    var res = shippingPlanResolveLineMkt_(r);
+    if (res.status === 'conflict') { conflictMk++; return; }
+    var v = res.value;
+    if (v === '') blankMk++; else if (v.toUpperCase() === 'MULTI') multiMk++; else realMk++;
+  });
+  var everyLineRealMarketplace = (lines.rows || []).length === 0 ? true : (blankMk === 0 && multiMk === 0 && conflictMk === 0);
   // plan header MULTI count + FK integrity (line.shipping_plan_id → an existing plan)
   var planIds = {}; (plans.rows || []).forEach(function (p) { planIds[s(p.shipping_plan_id)] = 1; });
   var multiPlans = (plans.rows || []).filter(function (p) { return s(p.marketplace).toUpperCase() === 'MULTI'; }).length;
   var fkOrphans = (lines.rows || []).filter(function (l) { return s(l.shipping_plan_id) !== '' && !planIds[s(l.shipping_plan_id)]; }).length;
-  var verdict = physicalCol === '' ? 'SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED'
-    : (multiMk > 0 || blankMk > 0) ? 'LINE_MARKETPLACE_AMBIGUOUS'
-    : mappingVerdict === 'PHYSICAL_LOGICAL_ALIAS_REQUIRED' ? 'PHYSICAL_LOGICAL_ALIAS_REQUIRED'
-    : (!links.present && !alloc.present) ? 'DOWNSTREAM_LINEAGE_SPEC_GAP'
+  // Flow A SUBMIT-schema readiness is SEPARATE from downstream Shipment-consolidation readiness.
+  var flowASubmitSchemaReady = physicalCol !== '' && conflictMk === 0;
+  var schemaVerdict = physicalCol === '' ? 'SHIPPING_PLAN_LINES_SCHEMA_MAPPING_REQUIRED'
+    : conflictMk > 0 ? 'SHIPPING_PLAN_LINES_MARKETPLACE_CONFLICT'
+    : multiMk > 0 ? 'LINE_MARKETPLACE_AMBIGUOUS'
+    : mappingVerdict === 'PHYSICAL_LOGICAL_ALIAS_REQUIRED' || mappingVerdict === 'BOTH_PRESENT_PHYSICAL_ALIAS_WINS' ? 'PHYSICAL_LOGICAL_ALIAS_REQUIRED'
     : 'FLOW_A_SCHEMA_LINEAGE_READY';
+  // C/D — downstream Shipment-consolidation lineage classification (TRUTHFUL; Flow A does not implement it).
+  var linksWriterPresent = false, linksReaderPresent = false;   // shipment_plan_links has NO .gs writer/reader (spec-only)
+  var consolidatedContributionAuthority = 'MISSING';            // no table carries shipment_line_id + shipping_plan_line_id + contributed_qty
+  var downstreamBlocker = 'MISSING_SHIPPING_PLAN_LINE_CONTRIBUTION_AUTHORITY';
   return {
+    grouping: { dimensions: ['company', 'country', 'source_warehouse_id', 'ship_from', 'destination_warehouse_id', 'destination', 'shipping_method', 'last_mile_delivery', 'planning_cycle'],
+      marketplace_excluded: true, last_mile_included: true, planning_cycle_included: true, carrier_deferred: true, all_dimensions_fingerprint_bound: true },
     shipping_plans: { headers: plans.headers, header_hash: shippingPlanFnv_((plans.headers || []).join('|')), row_count: (plans.rows || []).length, multi_plan_count: multiPlans },
     shipping_plan_lines: { headers: lineHdr, header_hash: shippingPlanFnv_(lineHdr.join('|')), row_count: (lines.rows || []).length,
       marketplace_index: mktIdx, marketplace_seperate_index: aliasIdx, resolved_physical_marketplace_col: physicalCol,
-      real_marketplace_lines: realMk, multi_marketplace_lines: multiMk, blank_marketplace_lines: blankMk, every_line_retains_real_marketplace: everyLineRealMarketplace },
+      real_marketplace_lines: realMk, multi_marketplace_lines: multiMk, blank_marketplace_lines: blankMk, conflict_marketplace_lines: conflictMk,
+      every_line_retains_real_marketplace: everyLineRealMarketplace },
     physical_logical_marketplace_verdict: mappingVerdict,
     fk_integrity: { line_orphans: fkOrphans, ok: fkOrphans === 0 },
-    shipment_plan_links: { present: !!links.present, headers: links.headers || [], note: 'Header consolidation lineage — SPEC-DEFINED, NOT runtime-populated (no .gs writer/reader).' },
-    shipment_line_allocations: { present: !!alloc.present, headers: alloc.headers || [], note: 'PO-line SUPPLY bridge (purchase_order_line_id) — NOT the plan-line→shipment-line planning bridge.' },
-    schema_lineage_verdict: verdict
+    shipment_plan_links: { present: !!links.present, headers: links.headers || [], runtime_writer_present: linksWriterPresent, runtime_reader_present: linksReaderPresent,
+      classification: 'SPEC_DEFINED_NOT_IMPLEMENTED', note: 'Header Shipment↔Shipping-Plan lineage — DB/spec authority exists; NO runtime writer/reader.' },
+    shipment_line_shipping_plan_line_id: { capability: 'ONE_SOURCE_ONLY', note: 'Exact ONLY for a 1:1 non-consolidated transfer; a single FK cannot represent multiple plan-line contributions to one consolidated shipment_line.' },
+    shipment_line_allocations: { present: !!alloc.present, headers: alloc.headers || [], authority: 'PO_LINE_SUPPLY_ONLY', note: 'shipment_line_id → purchase_order_line_id (allocated_qty/shipped_qty) — PO supply lineage, NOT Shipping-Plan contribution lineage.' },
+    consolidated_contribution_authority: consolidatedContributionAuthority,
+    downstream_lineage_verdict: downstreamBlocker,
+    flow_a_submit_schema_ready: flowASubmitSchemaReady,
+    shipment_consolidation_lineage_ready: false,
+    downstream_blocker: downstreamBlocker,
+    schema_lineage_verdict: schemaVerdict
   };
 }
 function handleFlowASchemaLineagePreflight_(body) {
@@ -502,8 +553,9 @@ function handleFlowASchemaLineagePreflight_(body) {
 // ---- createShippingPlansBatch -------------------------------------
 
 /**
- * Submit Plan write. Groups lines by the ROUTE key (company + country + ship_from + destination +
- * shipping_method) — Marketplace is NOT part of the key, so one plan can COMBINE several Marketplaces
+ * Submit Plan write. Groups lines by the PHYSICAL shipment-compatibility key (company + country + source_warehouse_id
+ * + ship_from + destination_warehouse_id + destination + shipping_method + last_mile_delivery + planning_cycle; carrier
+ * DEFERRED) — Marketplace is NOT part of the key, so one plan can COMBINE several Marketplaces
  * (Combined Plan). Header marketplace is DERIVED from the plan's lines: one distinct → the actual
  * Marketplace; two or more distinct → `MULTI` (a header scope marker, not a real Marketplace). Each line
  * keeps its own real marketplace + site_sku (Marketplace lines are NEVER merged in the DB). All plans in
@@ -576,7 +628,14 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
   var today = shippingPlanToday_();
   var submitBatchId = providedKey || ('SB-' + Utilities.getUuid().substring(0, 12));
 
-  // Group by the ROUTE key (company + country + ship_from + destination + shipping_method) — NOT marketplace.
+  // F1-7N-FA-4B2(A) — group by the PHYSICAL shipment-compatibility key so incompatible plans NEVER combine:
+  //   company + country + source_warehouse_id + ship_from + destination_warehouse_id + destination + shipping_method
+  //   + last_mile_delivery + planning_cycle.
+  // Marketplace stays EXCLUDED → compatible marketplace lines consolidate and the Header may become MULTI (each line keeps
+  // its real marketplace). CARRIER is DEFERRED: it is not authoritative at Shipping Plan creation (derived later by the
+  // rough-quote / approval-routing layer), so it is NOT a grouping dimension and is never fabricated into the key. Every
+  // grouping dimension is checksum-bound in spfp-1 (header FP: company/country/ship_from/source_warehouse_id/destination/
+  // destination_warehouse_id/shipping_method/last_mile_delivery; planning_cycle via each line's source_reason `cyc:`).
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var groups = {};
   var order = [];
@@ -585,22 +644,27 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     var country = String(ln.country || '').trim();
     var marketplace = String(ln.marketplace || '').trim();
     var shipFrom = String(ln.ship_from || '').trim();
+    var sourceWh = String(ln.source_warehouse_id || '').trim();
     var destination = String(ln.destination || '').trim();
+    var destWh = String(ln.destination_warehouse_id || '').trim();
     var method = String(ln.shipping_method || '').trim();
+    var lastMile = String(ln.last_mile_delivery || '').trim();
+    var planningCycle = String(ln.planning_cycle || '').trim();
     var sku = String(ln.sku || '').trim();
     if (!sku) continue;
     // Resolve company from marketplace context (never leave it blank when a source exists).
     var company = shippingPlanResolveCompany_(companyMaps, country, marketplace, sku, ln.company);
-    var key = [company, country, shipFrom, destination, method].join('||');
+    var key = shippingPlanRouteGroupKey_(ln, company);
     if (!groups[key]) {
       groups[key] = { meta: {
         company: company, country: country, ship_from: shipFrom, destination: destination, shipping_method: method,
-        source_warehouse_id: String(ln.source_warehouse_id || '').trim(),
+        source_warehouse_id: sourceWh,
         ship_from_type: String(ln.ship_from_type || '').trim(),
-        destination_warehouse_id: String(ln.destination_warehouse_id || '').trim(),
+        destination_warehouse_id: destWh,
         destination_type: String(ln.destination_type || '').trim(),
-        last_mile_delivery: String(ln.last_mile_delivery || '').trim(),
-        carrier_id: String(ln.carrier_id || '').trim(),
+        last_mile_delivery: lastMile,
+        planning_cycle: planningCycle,
+        carrier_id: String(ln.carrier_id || '').trim(),   // carried for the rough-quote layer; NOT a grouping dimension
         customs_type: String(ln.customs_type || '').trim()
       }, lines: [] };
       order.push(key);
