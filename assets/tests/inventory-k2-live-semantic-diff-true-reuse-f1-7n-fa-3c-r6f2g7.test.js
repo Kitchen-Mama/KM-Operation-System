@@ -20,8 +20,8 @@ var G16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_
 var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var LOAD = [];
-['SAD_K2_HEADER_FP_', 'SAD_K2_LINE_FP_', 'SAD_K2_FP_DATE_FIELDS_', 'SAD_K2_FP_NUMERIC_FIELDS_', 'SAD_K2_SEM_CONTRACT_', 'SAD_K2_SEM_EXCLUDE_'].forEach(function (n) { LOAD.push(G16.match(new RegExp('var ' + n + ' = [\\[{\'][\\s\\S]*?[\\]}\'];'))[0]); });
-['sadFnv1a_', 'sadFpVal_', 'sadCanonDate_', 'sadFpNorm_', 'sadK2LineIdentity_', 'sadK2SemFieldEqual_', 'sadK2SemanticPayloadEqual_'].forEach(function (n) { LOAD.push(extractFn(G16, n)); });
+['SAD_K2_HEADER_FP_', 'SAD_K2_LINE_FP_', 'SAD_K2_FP_DATE_FIELDS_', 'SAD_K2_FP_NUMERIC_FIELDS_', 'SAD_K2_SEM_CONTRACT_', 'SAD_K2_SEM_EXCLUDE_', 'SAD_K2_SEM_EXCLUDED_LIFECYCLE_', 'SAD_K2_SEM_OPTIONAL_PRESERVE_'].forEach(function (n) { LOAD.push(G16.match(new RegExp('var ' + n + ' = [\\[{\'][\\s\\S]*?[\\]}\'];'))[0]); });
+['sadFnv1a_', 'sadFpVal_', 'sadCanonDate_', 'sadFpNorm_', 'sadK2SemFieldClass_', 'sadK2LineIdentity_', 'sadK2SemFieldVerdict_', 'sadK2SemFieldEqual_', 'sadK2SemanticPayloadEqual_'].forEach(function (n) { LOAD.push(extractFn(G16, n)); });
 // pure TEMP helpers (fingerprint/type/diff/checksum) + their deps
 ['TEMP_r5bHash_', 'TEMP_r5bIdFingerprint_', 'TEMP_isDate_', 'TEMP_r5bTypeOf_', 'TEMP_str_', 'TEMP_r6f2g7SafeVal_', 'TEMP_r6f2g7Type_', 'TEMP_r6f2g7Category_', 'TEMP_r6f2g7FieldRec_', 'TEMP_r6f2g7BuildDiff_', 'TEMP_r6f2g7SemChecksum_'].forEach(function (n) { LOAD.push(extractFn(TEMP, n)); });
 LOAD.push(extractFn(TEMP, 'TEMP_r6f2gReuseVerdict_'));

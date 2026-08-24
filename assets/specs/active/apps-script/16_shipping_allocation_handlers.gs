@@ -486,29 +486,57 @@ function sadFpNorm_(field, value) {
   if (SAD_K2_FP_NUMERIC_FIELDS_[field]) { var s = String(value == null ? '' : value).trim(); if (s === '') return ''; var n = Number(s); return isFinite(n) ? String(n) : s; }
   return String(value == null ? '' : value).trim();
 }
-// F1-7N-FA-3C-R6F2G7 — the SEMANTIC-equivalence comparator (contract SAD_K2_SEM_CONTRACT_) used by the atomic REUSE
-// branch AND by the read-only R6F2G7 live diagnostic (exactly the same comparator). It answers "would a REGENERATE
-// change any persisted BUSINESS field?" It is representation-robust (R6F2G6 dates/numerics) and, additionally, truthful
-// to the writer's omit/default/preserve semantics — so a lifecycle/omitted field cannot force a spurious REGENERATE,
-// WITHOUT weakening genuine business-change detection:
-//   • status / line_status are lifecycle/audit fields the K2 payload authority (KMWRR) never emits, and regeneration
-//     does not treat them as content (line_status is not patched by sadRegenerateLinePatch_; header status is reset to
-//     'draft' by the writer). They are EXCLUDED from equality (SAD_K2_SEM_EXCLUDE_) — REUSE preserves them (a write-free
-//     no-op), which is strictly safer than REGENERATE. This is the exact R6F2G6→live false negative.
-//   • a BLANK incoming value (null/undefined/'') is "not provided": regeneration adopts a field only when the incoming
-//     provides a NONBLANK value (sadRegenerateLinePatch_), so a blank incoming preserves the stored cell = no change.
-//     An incoming '0' or false is NONBLANK and therefore compared (blank≠zero, blank≠false).
-//   • lines are matched by K2 identity (sku|site_sku|window_code); membership must be EXACT (missing/extra ⇒ not equal);
-//     genuine qty/SKU/window/route/snapshot changes are NONBLANK and compared strictly (canonically).
-var SAD_K2_SEM_CONTRACT_ = 'R6F2G7-SEM-V2';
+// F1-7N-FA-3C-R6F2G7A — the SEMANTIC-equivalence comparator (contract SAD_K2_SEM_CONTRACT_) used by the atomic REUSE
+// branch AND by the read-only live authority summary/diagnostic (exactly the same comparator). It answers "would a
+// REGENERATE change any persisted BUSINESS field?" It is representation-robust (R6F2G6 dates/numerics) and truthful to
+// the writer's omit/default/preserve semantics — WITHOUT a wildcard "blank incoming → preserve". Every FP field belongs
+// to exactly ONE explicit, frozen class:
+//   1. EXCLUDED_LIFECYCLE (status, line_status) — audit/lifecycle fields the K2 payload authority (KMWRR) never emits and
+//      regeneration does not treat as content (line_status is not patched by sadRegenerateLinePatch_; header status is
+//      reset to 'draft' by the writer). EXCLUDED from equality and PRESERVED on REUSE (write-free, strictly safer than
+//      REGENERATE). This was the exact R6F2G6→live false negative.
+//   2. OPTIONAL_PRESERVE — business fields PROVEN optional from the writer contract: (a) buildGroupHeader /
+//      buildK2GenerationPlan (KMWRR) structurally OMIT them from the regeneration payload (the K2 header carries no
+//      recommended_*_warehouse_code_snapshot; the K2 line carries only sku/site_sku/window*/required_by_date/
+//      source_warehouse_id/source_warehouse_code_snapshot/planned_qty/recommended_qty/units_per_carton — NOT the demand/
+//      stock/gap/supply/allocation snapshots, recommendation_reason/flags, or the line route_no), and (b) the writer
+//      patches them ONLY when the incoming provides them nonblank (SAD_RECOMMENDATION_FIELDS_ line patch + the header
+//      code-snapshot / route-context patch), so an OMITTED incoming CANNOT change the stored cell. A regeneration
+//      therefore can never alter these — an omitted incoming is a true no-op (equal); a NONBLANK incoming that differs
+//      is still a real change (compared). This whitelist is EXPLICIT — no wildcard/default.
+//   3. REQUIRED_OR_STRICT — everything else: identity/SKU/site-SKU/membership, quantity, window, route method/last-mile,
+//      warehouse and group authorities KMWRR ALWAYS emits. Incoming blank equals stored blank ONLY; incoming blank with
+//      stored nonblank is a MISSING_REQUIRED_INCOMING_FIELD (a blocking difference, never a silent preserve). Zero/false
+//      are real NONBLANK values (blank≠zero, blank≠false); a nonblank unparseable numeric/date is UNKNOWN_UNPARSEABLE.
+//   Lines are matched by K2 identity (sku|site_sku|window_code); membership must be EXACT (missing/extra ⇒ not equal).
+var SAD_K2_SEM_CONTRACT_ = 'R6F2G7A-SEM-V3';
+var SAD_K2_SEM_EXCLUDED_LIFECYCLE_ = { status: 1, line_status: 1 };
+var SAD_K2_SEM_OPTIONAL_PRESERVE_ = { recommended_source_warehouse_code_snapshot: 1, recommended_destination_warehouse_code_snapshot: 1, regular_demand_snapshot: 1, special_event_demand_snapshot: 1, destination_stock_snapshot: 1, qualified_incoming_snapshot: 1, approved_supply_snapshot: 1, calculated_gap_qty: 1, source_initial_available_qty_snapshot: 1, source_available_before_allocation_snapshot: 1, allocation_sequence: 1, recommendation_reason: 1, recommendation_flags: 1, route_no: 1 };
+// back-compat alias (identical membership) for the R6F2G6/G7 excluded-set name still referenced by the diagnostics.
 var SAD_K2_SEM_EXCLUDE_ = { status: 1, line_status: 1 };
+function sadK2SemFieldClass_(field) { if (SAD_K2_SEM_EXCLUDED_LIFECYCLE_[field]) return 'EXCLUDED_LIFECYCLE'; if (SAD_K2_SEM_OPTIONAL_PRESERVE_[field]) return 'OPTIONAL_PRESERVE'; return 'REQUIRED_OR_STRICT'; }
 function sadK2LineIdentity_(l) { function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); } l = l || {}; return s(l.sku) + '|' + s(l.site_sku) + '|' + s(l.window_code); }
-// per-FP-field semantic equality under the contract. excluded ⇒ equal; blank incoming ⇒ preserved (equal); else canon-equal.
-function sadK2SemFieldEqual_(field, storedVal, incVal) {
-  if (SAD_K2_SEM_EXCLUDE_[field]) return true;
-  if (String(incVal == null ? '' : incVal).trim() === '') return true;   // not provided → regeneration preserves → no change
-  return sadFpNorm_(field, storedVal) === sadFpNorm_(field, incVal);
+// per-FP-field semantic verdict under the R6F2G7A contract → { equal, category, blocking }. categories: EXCLUDED_LIFECYCLE
+// | BOTH_BLANK | OPTIONAL_PRESERVE_OMITTED | EQUAL | DATE_REPRESENTATION_EQUAL | NUMERIC_REPRESENTATION_EQUAL |
+// MISSING_REQUIRED_INCOMING_FIELD | UNKNOWN_UNPARSEABLE | TRUE_BUSINESS_DIFFERENCE.
+function sadK2SemFieldVerdict_(field, storedVal, incVal) {
+  if (sadK2SemFieldClass_(field) === 'EXCLUDED_LIFECYCLE') return { equal: true, category: 'EXCLUDED_LIFECYCLE', blocking: false };
+  var sBlank = String(storedVal == null ? '' : storedVal).trim() === '';
+  var iBlank = String(incVal == null ? '' : incVal).trim() === '';
+  if (iBlank) {
+    if (sBlank) return { equal: true, category: 'BOTH_BLANK', blocking: false };                                  // both empty → no change
+    if (sadK2SemFieldClass_(field) === 'OPTIONAL_PRESERVE') return { equal: true, category: 'OPTIONAL_PRESERVE_OMITTED', blocking: false };  // writer preserves; KMWRR omits
+    return { equal: false, category: 'MISSING_REQUIRED_INCOMING_FIELD', blocking: true };                         // required authority vanished from the payload
+  }
+  // incoming NONBLANK (a provided 0 / false is compared) → canonical comparison; fail closed on an unparseable value
+  if (SAD_K2_FP_NUMERIC_FIELDS_[field]) { if (!isFinite(Number(String(incVal).trim()))) return { equal: false, category: 'UNKNOWN_UNPARSEABLE', blocking: true }; if (!sBlank && !isFinite(Number(String(storedVal).trim()))) return { equal: false, category: 'UNKNOWN_UNPARSEABLE', blocking: true }; }
+  if (SAD_K2_FP_DATE_FIELDS_[field]) { if (!/^\d{4}-\d\d-\d\d$/.test(sadCanonDate_(incVal))) return { equal: false, category: 'UNKNOWN_UNPARSEABLE', blocking: true }; if (!sBlank && !/^\d{4}-\d\d-\d\d$/.test(sadCanonDate_(storedVal))) return { equal: false, category: 'UNKNOWN_UNPARSEABLE', blocking: true }; }
+  if (sadFpNorm_(field, storedVal) !== sadFpNorm_(field, incVal)) return { equal: false, category: 'TRUE_BUSINESS_DIFFERENCE', blocking: true };
+  if (SAD_K2_FP_DATE_FIELDS_[field] && String(storedVal == null ? '' : storedVal).trim() !== String(incVal).trim()) return { equal: true, category: 'DATE_REPRESENTATION_EQUAL', blocking: false };
+  if (SAD_K2_FP_NUMERIC_FIELDS_[field] && String(storedVal == null ? '' : storedVal).trim() !== String(incVal).trim()) return { equal: true, category: 'NUMERIC_REPRESENTATION_EQUAL', blocking: false };
+  return { equal: true, category: 'EQUAL', blocking: false };
 }
+function sadK2SemFieldEqual_(field, storedVal, incVal) { return sadK2SemFieldVerdict_(field, storedVal, incVal).equal; }
 function sadK2SemanticPayloadEqual_(hPrior, lPrior, hInc, lInc) {
   hPrior = hPrior || {}; hInc = hInc || {};
   for (var i = 0; i < SAD_K2_HEADER_FP_.length; i++) { var f = SAD_K2_HEADER_FP_[i]; if (!sadK2SemFieldEqual_(f, hPrior[f], hInc[f])) return false; }

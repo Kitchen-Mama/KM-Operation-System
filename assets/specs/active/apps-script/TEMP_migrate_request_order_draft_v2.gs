@@ -3502,8 +3502,12 @@ function TEMP_r6f2g7ReadStored_(token) {
 function TEMP_r6f2g7SafeVal_(field, v) { if (field === 'sku' || field === 'site_sku') return (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_str_(v)) : ('h' + TEMP_r5bHash_(TEMP_str_(v))); return sadFpNorm_(field, v); }
 function TEMP_r6f2g7Type_(v) { return (typeof TEMP_r5bTypeOf_ === 'function') ? TEMP_r5bTypeOf_(v) : (v == null ? 'null' : typeof v); }
 function TEMP_r6f2g7Category_(field, storedV, incV, incBlank, equal) {
-  if (typeof SAD_K2_SEM_EXCLUDE_ !== 'undefined' && SAD_K2_SEM_EXCLUDE_[field]) return 'AUDIT_FIELD_SHOULD_NOT_BE_IN_PAYLOAD';
-  if (incBlank) return 'BLANK_VS_DEFAULT_EQUIVALENT';                       // incoming not provided → regeneration preserves the stored cell
+  if (typeof SAD_K2_SEM_EXCLUDED_LIFECYCLE_ !== 'undefined' && SAD_K2_SEM_EXCLUDED_LIFECYCLE_[field]) return 'AUDIT_FIELD_SHOULD_NOT_BE_IN_PAYLOAD';
+  if (incBlank) {
+    if (String(storedV == null ? '' : storedV).trim() === '') return 'BOTH_BLANK_EQUIVALENT';                          // neither side carries a value
+    if (typeof SAD_K2_SEM_OPTIONAL_PRESERVE_ !== 'undefined' && SAD_K2_SEM_OPTIONAL_PRESERVE_[field]) return 'BLANK_VS_DEFAULT_EQUIVALENT';  // KMWRR omits; writer preserves the stored cell
+    return 'MISSING_REQUIRED_INCOMING_FIELD';                                                                          // a required authority vanished from the payload (blocking)
+  }
   var sCanon = sadFpNorm_(field, storedV), iCanon = sadFpNorm_(field, incV);
   var isDate = (/_date$/.test(field) || field === 'window_start_date' || field === 'window_end_date' || field === 'required_by_date');
   var isNum = (typeof SAD_K2_FP_NUMERIC_FIELDS_ !== 'undefined' && SAD_K2_FP_NUMERIC_FIELDS_[field]);
@@ -3521,20 +3525,23 @@ function TEMP_r6f2g7FieldRec_(field, sv, iv) {
 }
 function TEMP_r6f2g7BuildDiff_(hPrior, lPrior, hInc, lInc) {
   var headerFields = [], lineDiffs = [], diffCount = 0, trueBiz = 0;
-  SAD_K2_HEADER_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, (hPrior || {})[f], (hInc || {})[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE') trueBiz++; } headerFields.push(rec); });
+  SAD_K2_HEADER_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, (hPrior || {})[f], (hInc || {})[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE' || rec.category === 'MISSING_REQUIRED_INCOMING_FIELD') trueBiz++; } headerFields.push(rec); });
   var pById = {}, iById = {}; (lPrior || []).forEach(function (l) { pById[sadK2LineIdentity_(l)] = l; }); (lInc || []).forEach(function (l) { iById[sadK2LineIdentity_(l)] = l; });
   var keys = {}; Object.keys(pById).forEach(function (k) { keys[k] = 1; }); Object.keys(iById).forEach(function (k) { keys[k] = 1; });
   Object.keys(keys).sort().forEach(function (key) {
     var sp = pById[key], si = iById[key];
     if (!sp || !si) { lineDiffs.push({ identity_fp: TEMP_r5bHash_(key), present_stored: !!sp, present_incoming: !!si, category: 'MISSING_OR_EXTRA_LINE' }); diffCount++; trueBiz++; return; }
-    var fields = []; SAD_K2_LINE_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, sp[f], si[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE') trueBiz++; } fields.push(rec); });
+    var fields = []; SAD_K2_LINE_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, sp[f], si[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE' || rec.category === 'MISSING_REQUIRED_INCOMING_FIELD') trueBiz++; } fields.push(rec); });
     lineDiffs.push({ identity_fp: TEMP_r5bHash_(key), fields: fields });
   });
   return { header_fields: headerFields, line_diffs: lineDiffs, diff_count: diffCount, true_business_diff_count: trueBiz };
 }
+// R6F2G7A — the "must-match content" checksum: ONLY the REQUIRED_OR_STRICT fields (both EXCLUDED_LIFECYCLE and
+// OPTIONAL_PRESERVE are omitted, since neither can be changed by a regeneration). stored===incoming here iff every
+// must-match authority is canonically identical — exactly the reuse-authorization condition.
 function TEMP_r6f2g7SemChecksum_(header, lines) {
-  var hp = SAD_K2_HEADER_FP_.filter(function (f) { return !SAD_K2_SEM_EXCLUDE_[f]; }).map(function (f) { return f + '=' + sadFpNorm_(f, (header || {})[f]); }).join('|');
-  var lp = (lines || []).map(function (l) { return sadK2LineIdentity_(l) + '::' + SAD_K2_LINE_FP_.filter(function (f) { return !SAD_K2_SEM_EXCLUDE_[f]; }).map(function (f) { return f + '=' + sadFpNorm_(f, l[f]); }).join('|'); }).sort();
+  var hp = SAD_K2_HEADER_FP_.filter(function (f) { return sadK2SemFieldClass_(f) === 'REQUIRED_OR_STRICT'; }).map(function (f) { return f + '=' + sadFpNorm_(f, (header || {})[f]); }).join('|');
+  var lp = (lines || []).map(function (l) { return sadK2LineIdentity_(l) + '::' + SAD_K2_LINE_FP_.filter(function (f) { return sadK2SemFieldClass_(f) === 'REQUIRED_OR_STRICT'; }).map(function (f) { return f + '=' + sadFpNorm_(f, l[f]); }).join('|'); }).sort();
   return TEMP_r5bHash_(hp + '\n#\n' + lp.join('\n'));
 }
 // the SHARED read-only live evaluation used by the R6F2G7 diagnostic/preflight AND the (fixed) R6F2G6 diagnostic.
@@ -3597,6 +3604,106 @@ function TEMP_R6F2G7_PREFLIGHT_TRUE_ZERO_WRITE_REUSE() {
   } catch (e) { out.verdict = 'PREFLIGHT_THREW'; out.may_run_reuse_verifier = false; out.reason = (e && e.message ? e.message : String(e)); }
   out.R6F2G7_ZERO_WRITE_CONFIRMED = 'YES (read-only; no write, no atomic-writer call)';
   Logger.log('R6F2G7_PREFLIGHT ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2G7A — COMPACT, non-truncated true-zero-write authority summary. Emits EXACTLY ONE
+// compact primary log (counts + short DISTINCT field-name lists — NEVER the full per-field arrays). The authorization
+// decision reads ONLY this compact envelope, so it can never depend on a truncated Logger entry. Every FP field is
+// classified through the R6F2G7A comparator's THREE explicit classes (EXCLUDED_LIFECYCLE / OPTIONAL_PRESERVE /
+// REQUIRED_OR_STRICT); an incoming that omits a REQUIRED authority with a stored nonblank value is a blocking
+// MISSING_REQUIRED_INCOMING_FIELD, an omitted OPTIONAL_PRESERVE field is a proven no-op, and zero/false are real
+// nonblank values. PURE + STRICTLY READ-ONLY.
+// ================================================================================================================
+// canonical proof that the excluded set is EXACTLY status + line_status (no drift).
+function TEMP_r6f2g7aExcludedExactStatusLineStatus_() { return Object.keys(SAD_K2_SEM_EXCLUDED_LIFECYCLE_).sort().join(',') === 'line_status,status'; }
+// pure summary builder over stored + reconstructed-incoming { header, lines }. Returns the compact envelope object.
+function TEMP_r6f2g7aAuthoritySummary_(stored, inc) {
+  stored = stored || {}; inc = inc || {};
+  var sh = stored.header || {}, ih = inc.header || {};
+  var C = { total: 0, exact_equal: 0, both_blank: 0, date_repr: 0, num_repr: 0, excluded: 0, opt_omitted: 0, missing_required: 0, unknown: 0, true_biz: 0, normalized_diff: 0 };
+  var excluded = {}, optOmitted = {}, missReq = {}, unknown = {}, trueBiz = {};
+  function classifyOne(label, field, sv, iv) {
+    C.total++;
+    var v = sadK2SemFieldVerdict_(field, sv, iv);   // RAW field name — class / numeric / date lookups key on it
+    if (v.category === 'EXCLUDED_LIFECYCLE') { C.excluded++; excluded[label] = 1; }
+    else if (v.category === 'BOTH_BLANK') { C.both_blank++; }
+    else if (v.category === 'OPTIONAL_PRESERVE_OMITTED') { C.opt_omitted++; optOmitted[label] = 1; }
+    else if (v.category === 'DATE_REPRESENTATION_EQUAL') { C.date_repr++; }
+    else if (v.category === 'NUMERIC_REPRESENTATION_EQUAL') { C.num_repr++; }
+    else if (v.category === 'EQUAL') { C.exact_equal++; }
+    else if (v.category === 'MISSING_REQUIRED_INCOMING_FIELD') { C.missing_required++; missReq[label] = 1; }
+    else if (v.category === 'UNKNOWN_UNPARSEABLE') { C.unknown++; unknown[label] = 1; }
+    else if (v.category === 'TRUE_BUSINESS_DIFFERENCE') { C.true_biz++; trueBiz[label] = 1; }
+    if (!v.equal) C.normalized_diff++;
+  }
+  SAD_K2_HEADER_FP_.forEach(function (f) { classifyOne('header.' + f, f, sh[f], ih[f]); });
+  var pById = {}, iById = {};
+  (stored.lines || []).forEach(function (l) { pById[sadK2LineIdentity_(l)] = l; });
+  (inc.lines || []).forEach(function (l) { iById[sadK2LineIdentity_(l)] = l; });
+  var keys = {}; Object.keys(pById).forEach(function (k) { keys[k] = 1; }); Object.keys(iById).forEach(function (k) { keys[k] = 1; });
+  var missingOrExtra = 0;
+  Object.keys(keys).forEach(function (key) {
+    var sp = pById[key], si = iById[key];
+    if (!sp || !si) { missingOrExtra++; C.normalized_diff++; return; }
+    SAD_K2_LINE_FP_.forEach(function (f) { classifyOne('line.' + f, f, sp[f], si[f]); });
+  });
+  var membershipExact = (missingOrExtra === 0) && (Object.keys(pById).length === Object.keys(iById).length);
+  var storedChk = TEMP_r6f2g7SemChecksum_(sh, stored.lines), incChk = TEMP_r6f2g7SemChecksum_(ih, inc.lines);
+  var semanticEqual = sadK2SemanticPayloadEqual_(sh, stored.lines, ih, inc.lines);
+  var excludedExact = TEMP_r6f2g7aExcludedExactStatusLineStatus_();
+  var predicted = semanticEqual ? 'REUSED' : 'REGENERATED';
+  var names = function (o) { return Object.keys(o).sort(); };
+  var mayRunLocal = !!(membershipExact && (storedChk === incChk) && C.normalized_diff === 0 && C.true_biz === 0 &&
+    C.missing_required === 0 && C.unknown === 0 && excludedExact && predicted === 'REUSED');
+  return {
+    comparator_contract: SAD_K2_SEM_CONTRACT_,
+    exact_line_membership: membershipExact, missing_or_extra_line_count: missingOrExtra,
+    stored_semantic_checksum: storedChk, incoming_semantic_checksum: incChk, semantic_checksums_equal: storedChk === incChk,
+    total_semantic_fields_examined: C.total,
+    exact_equal_count: C.exact_equal, both_blank_count: C.both_blank,
+    date_representation_equal_count: C.date_repr, numeric_representation_equal_count: C.num_repr,
+    excluded_fields: Object.keys(SAD_K2_SEM_EXCLUDED_LIFECYCLE_).sort(), excluded_field_count: C.excluded,
+    optional_preserve_fields: Object.keys(SAD_K2_SEM_OPTIONAL_PRESERVE_).sort(), optional_preserve_count: Object.keys(SAD_K2_SEM_OPTIONAL_PRESERVE_).length,
+    optional_preserve_omitted_present: names(optOmitted), optional_preserve_omitted_count: C.opt_omitted,
+    stored_nonblank_incoming_omitted_fields: names(missReq), stored_nonblank_incoming_omitted_business_count: C.missing_required,
+    missing_required_incoming_fields: names(missReq), missing_required_incoming_count: C.missing_required,
+    unknown_unparseable_fields: names(unknown), unknown_unparseable_count: C.unknown,
+    true_business_difference_fields: names(trueBiz), true_business_difference_count: C.true_biz,
+    normalized_diff_count: C.normalized_diff,
+    excluded_exactly_status_and_line_status: excludedExact,
+    predicted_production_outcome: predicted,
+    may_run_reuse_verifier_local: mayRunLocal
+  };
+}
+function TEMP_R6F2G7A_SUMMARIZE_TRUE_ZERO_WRITE_AUTHORITY() {
+  var out = { tool: 'TEMP_R6F2G7A_SUMMARIZE_TRUE_ZERO_WRITE_AUTHORITY', mode: 'STRICTLY READ-ONLY authorization summary', output_contract: 'ONE_COMPACT_PRIMARY_LOG_ENTRY (counts + short distinct field lists only; NO full per-field arrays)', comparator_contract: SAD_K2_SEM_CONTRACT_, audit_history: TEMP_R6F2G7_AUDIT_HISTORY_ };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; out.may_run_reuse_verifier = false; Logger.log('R6F2G7A_SUMMARY ' + JSON.stringify(out)); return out; }
+    var token = JSON.parse(raw);
+    var val = TEMP_r6f2gFrozenScopeValidated_(token); var st = val.state || {};
+    var frozenOk = (val.verdict === 'FROZEN_SCOPE_VALIDATED');
+    var fiveLine = !!(st.matched_line_ids && st.matched_line_ids.length === token.expected_k2_line_count && st.missing_line_ids.length === 0 && st.unexpected_line_ids.length === 0);
+    out.frozen_scope_validated = frozenOk; out.frozen_scope_verdict = val.verdict; out.exact_five_line_membership = fiveLine;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var inc = TEMP_r6f2g7ReconstructIncoming_(token, ss);
+    var stored = TEMP_r6f2g7ReadStored_(token);
+    if (!inc.ok || !stored.header) {
+      out.live_comparison_available = false; out.reason = !inc.ok ? inc.reason : 'STORED_HEADER_ABSENT';
+      out.may_run_reuse_verifier = false; out.verdict = 'LIVE_COMPARISON_UNAVAILABLE';
+      out.R6F2G7A_ZERO_WRITE_CONFIRMED = 'YES (read-only reconstruction + comparison; no atomic-writer call, no setValues/appendRow/setProperty/deleteRow)';
+      Logger.log('R6F2G7A_SUMMARY ' + JSON.stringify(out)); return out;
+    }
+    var s = TEMP_r6f2g7aAuthoritySummary_({ header: stored.header, lines: stored.lines }, { header: inc.header, lines: inc.lines });
+    Object.keys(s).forEach(function (k) { out[k] = s[k]; });
+    out.live_comparison_available = true;
+    out.may_run_reuse_verifier = !!(frozenOk && fiveLine && s.may_run_reuse_verifier_local);
+    out.verdict = out.may_run_reuse_verifier ? 'TRUE_ZERO_WRITE_REUSE_AUTHORIZED' : 'TRUE_ZERO_WRITE_REUSE_NOT_AUTHORIZED';
+  } catch (e) { out.verdict = 'SUMMARY_THREW'; out.may_run_reuse_verifier = false; out.reason = (e && e.message ? e.message : String(e)); }
+  out.R6F2G7A_ZERO_WRITE_CONFIRMED = 'YES (read-only reconstruction + comparison; no atomic-writer call, no setValues/appendRow/setProperty/deleteRow)';
+  Logger.log('R6F2G7A_SUMMARY ' + JSON.stringify(out));   // ONE compact primary log — the authorization reads only this envelope
   return out;
 }
 
