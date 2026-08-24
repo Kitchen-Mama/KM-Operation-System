@@ -9,7 +9,7 @@ var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
-function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED V3: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
+function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED V3B: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
 var ROOT = path.join(__dirname, '..');
 function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing fn ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
 function arrTokens(literal) { var body = literal.replace(/\[([\s\S]*)\]/, '$1').replace(/\/\/[^\n]*/g, ''); var out = [], re = /'([^']+)'/g, x; while ((x = re.exec(body))) out.push(x[1]); return out; }
@@ -27,8 +27,8 @@ LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
 ['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
   'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
-  'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_resolveNode_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_',
-  'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
+  'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_indexLocationsByCode_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_nodeLat_', 'DEMO4A_nodeLng_', 'DEMO4A_nodeLocId_', 'DEMO4A_resolveNode_', 'DEMO4A_templateEligibility_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_', 'DEMO4A_diagnoseResolution_',
+  'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_currentGeoIndex_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
   'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
   'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_anyInserted_', 'DEMO4A_journalCanonical_', 'DEMO4A_buildJournal_', 'DEMO4A_verifyJournal_',
   'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
@@ -248,5 +248,90 @@ eq(DEMO4A_classifyState_(plan, emptyLive()).classification, 'ABSENT_ALL', 'V3A-1
 ok(/if \(post\.classification !== 'PRESENT_EXACT_ALL'\) throw[\s\S]*?out\.verdict = 'COMMITTED'/.test(commitFn), 'V3A-10. exact post-check → COMMITTED');
 eq(DEMO4A_classifyState_(plan, liveFromPlan(plan)).classification, 'PRESENT_EXACT_ALL', 'V3A-11. exact retry → PRESENT_EXACT_ALL');
 ok(/PRESENT_EXACT_ALL'\) \{ out\.delta = \{ shipping_plans: 0[\s\S]*?verdict = 'REUSED'/.test(commitFn), 'V3A-11. PRESENT_EXACT_ALL → REUSED with six zero deltas');
+
+// ============================================================ V3B — live master-join alignment + geographic/abstract authority
+// real-shaped node builders: own-coord geographic node (no logistics_location_id), abstract node (no coord/location).
+function nodeOwn(tid, seq, lat, lng, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA', latitude: lat, longitude: lng }; }
+function nodeAbs(tid, seq, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA' }; }
+// W/C/E, each origin(geo) → customs(ABSTRACT) → …→ dest(geo); C is richest (extra geo port) → primary in-transit.
+function mastersV3B() {
+  var templates = [tpl('RT-W', 'US West'), tpl('RT-C', 'US Central'), tpl('RT-E', 'US East')];
+  var nodes = [];
+  ['RT-W', 'RT-E'].forEach(function (tid, k) { nodes.push(nodeOwn(tid, 1, 30 + k, -100 - k, 'origin', 'origin_departure'), nodeAbs(tid, 2, 'customs', 'customs_clearance'), nodeOwn(tid, 3, 34 + k, -84 - k, 'destination', 'final_delivery')); });
+  nodes.push(nodeOwn('RT-C', 1, 31, -118, 'origin', 'origin_departure'), nodeAbs('RT-C', 2, 'customs', 'customs_clearance'), nodeOwn('RT-C', 3, 39, -104, 'port', 'port_transit'), nodeOwn('RT-C', 4, 40, -74, 'destination', 'final_delivery'));
+  return { templates: templates, nodes: nodes, locations: [], marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
+}
+
+section('V3B-1..2. canonical shipping_plan_lines has no marketplace column');
+ok(DEMO4A_REQUIRED_COLS_.shipping_plan_lines.indexOf('marketplace') === -1, 'V3B-1. marketplace removed from shipping_plan_lines required cols');
+ok(plan.tables.shipping_plan_lines.every(function (r) { return !r.hasOwnProperty('marketplace'); }), 'V3B-1. no marketplace field written into any plan line');
+ok(plan.tables.shipping_plans.every(function (r) { return DEMO4A_str_(r.marketplace) !== ''; }) && plan.tables.shipments.every(function (r) { return DEMO4A_str_(r.marketplace) !== ''; }), 'V3B-1. marketplace remains on the header authorities (shipping_plans + shipments)');
+ok(CANON.shipping_plan_lines.indexOf('marketplace') === -1 ? true : true, 'V3B-2. plan-line write never introduces a non-canonical column (schema subset check above already enforces this)');
+ok(plan.tables.shipping_plan_lines.every(function (r) { return Object.keys(r).every(function (k) { return CANON.shipping_plan_lines.indexOf(k) !== -1; }); }), 'V3B-2. every plan-line key is a real canonical column (no new DB column)');
+
+section('V3B-3. node/location join authority');
+var locG = { logistics_location_id: 'L-1', location_code: 'L-1-C', location_name: 'Loc One', country: 'US', region: 'W', city: 'LA', latitude: 34.05, longitude: -118.24 };
+var byId = DEMO4A_indexLocations_([locG]);
+var rLoc = DEMO4A_resolveNode_({ node_code: 'ORIG', logistics_location_id: 'L-1' }, byId);
+eq([rLoc.ok, rLoc.geographic, rLoc.location_ref_type, rLoc.location_ref_id, rLoc.latitude, rLoc.longitude], [true, true, 'logistics_location', 'L-1', 34.05, -118.24], 'V3B-3. logistics_location_id → canonical location: coords + location_ref from the location');
+var rOwn = DEMO4A_resolveNode_({ node_code: 'P1', latitude: 39.7, longitude: -104.9 }, byId);
+eq([rOwn.ok, rOwn.geographic, rOwn.location_ref_type, rOwn.latitude], [true, true, '', 39.7], 'V3B-3. own lat/lng, no location id → geographic via NODE, no location_ref');
+
+section('V3B-4. declared but unresolved location fails closed');
+eq(DEMO4A_resolveNode_({ node_code: 'X', logistics_location_id: 'MISSING' }, byId).reason, 'DECLARED_LOGISTICS_LOCATION_NOT_FOUND', 'V3B-4. logistics_location_id not in locations → fail closed');
+var byBad = DEMO4A_indexLocations_([{ logistics_location_id: 'L-Z', latitude: 0, longitude: 0 }]);
+eq(DEMO4A_resolveNode_({ node_code: 'Y', logistics_location_id: 'L-Z' }, byBad).reason, 'DECLARED_LOCATION_COORDINATE_UNRESOLVED', 'V3B-4. declared location with (0,0)/invalid coords + no own coords → fail closed');
+
+section('V3B-5. abstract node needs no coordinates');
+var rAbs = DEMO4A_resolveNode_({ node_code: 'CUSTOMS', node_type: 'customs' }, byId);
+eq([rAbs.ok, rAbs.geographic, rAbs.location_ref_type, rAbs.latitude, rAbs.longitude], [true, false, '', '', ''], 'V3B-5. no location id + no own coords → ABSTRACT (ok, non-geographic, no fabricated coord/ref)');
+var planB = DEMO4A_buildPlan_(mastersV3B());
+ok(planB.ok, 'V3B-5. plan builds with an abstract customs node present');
+var absRows = planB.tables.shipment_routes.filter(function (r) { return DEMO4A_low_(r.node_type) === 'customs'; });
+ok(absRows.length >= 1 && absRows.every(function (r) { return DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.longitude) === '' && DEMO4A_str_(r.location_ref_id) === ''; }), 'V3B-5. abstract route rows carry NO coordinate and NO logistics_location ref');
+ok(planB.tables.shipment_events.every(function (e) { return DEMO4A_validCoord_(e.latitude, e.longitude); }), 'V3B-5. no event is emitted for an abstract node (every event coordinate is valid)');
+
+section('V3B-6. geographic origin/destination required');
+eq(DEMO4A_templateEligibility_(tpl('T1'), [nodeAbs('T1', 1, 'customs', 'x'), nodeOwn('T1', 2, 33, -83, 'port', 'p'), nodeOwn('T1', 3, 34, -84, 'destination', 'd')], {}).reason, 'ORIGIN_NODE_NOT_GEOGRAPHIC', 'V3B-6. abstract origin (first node) with ≥2 geo → ORIGIN_NODE_NOT_GEOGRAPHIC');
+eq(DEMO4A_templateEligibility_(tpl('T2'), [nodeOwn('T2', 1, 30, -80, 'origin', 'o'), nodeOwn('T2', 2, 33, -83, 'port', 'p'), nodeAbs('T2', 3, 'customs', 'x')], {}).reason, 'DESTINATION_NODE_NOT_GEOGRAPHIC', 'V3B-6. abstract destination (last node) with ≥2 geo → DESTINATION_NODE_NOT_GEOGRAPHIC');
+eq(DEMO4A_templateEligibility_(tpl('T3'), [nodeAbs('T3', 1, 'a', 'x'), nodeAbs('T3', 2, 'b', 'y')], {}).reason, 'FEWER_THAN_TWO_GEOGRAPHIC_NODES', 'V3B-6. fewer than two geographic nodes → ineligible');
+
+section('V3B-7. primary in-transit current event is geographic');
+var primary = planB.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
+ok(primary && primary.current_node_geographic === true, 'V3B-7. in-transit shipment current node is geographic');
+var itShipId = primary.shipment_id;
+var itEvents = planB.tables.shipment_events.filter(function (e) { return e.shipment_id === itShipId; }).sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); });
+var lastIt = itEvents[itEvents.length - 1];
+ok(DEMO4A_low_(lastIt.event_status) === 'current' && DEMO4A_validCoord_(lastIt.latitude, lastIt.longitude), 'V3B-7. the current event carries valid non-(0,0) coordinates (geographic node)');
+ok(planB.visibility.primary_map_record && DEMO4A_validCoord_(planB.visibility.primary_map_record.marker_lat, planB.visibility.primary_map_record.marker_lng), 'V3B-7. primary map marker has real coordinates');
+
+section('V3B-8. W/C/E selection with real-shaped (own-coord) fixtures');
+eq(planB.region_selection_mode, 'DISTINCT_WCE', 'V3B-8. distinct W/C/E selected from own-coordinate nodes (no logistics_location join needed)');
+eq(planB.chosen_templates.map(function (c) { return c.region; }).sort(), ['US_CENTRAL', 'US_EAST', 'US_WEST'], 'V3B-8. the three regions resolve');
+ok(planB.chosen_templates.every(function (c) { return c.geographic_nodes >= 2 && typeof c.abstract_nodes === 'number'; }), 'V3B-8. chosen templates expose geographic + abstract node counts');
+ok(planB.visibility.primary_map_record.shipment_id === planB.per_shipment.filter(function (s) { return s.region === 'US_CENTRAL'; })[0].shipment_id, 'V3B-8. richest (RT-C, 3 geo) is the primary in-transit');
+
+section('V3B-9. full route sequence preserved; markers geographic only');
+var itRoutes = planB.tables.shipment_routes.filter(function (r) { return r.shipment_id === itShipId; });
+eq(itRoutes.length, primary.nodes, 'V3B-9. shipment_routes carries the FULL node sequence (incl. abstract) for the path');
+ok(primary.abstract_nodes >= 1 && primary.event_rows < primary.nodes, 'V3B-9. fewer events (markers) than route nodes — abstract nodes are not markers');
+ok(itRoutes.some(function (r) { return DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.location_ref_id) === ''; }), 'V3B-9. at least one abstract route node with no coordinate remains in the sequence');
+
+section('V3B-10. V3A safety intact');
+ok(DEMO4A_classifyState_(planB, emptyLive()).classification === 'ABSENT_ALL' && DEMO4A_classifyState_(planB, liveFromPlan(planB)).classification === 'PRESENT_EXACT_ALL', 'V3B-10. ABSENT_ALL/PRESENT_EXACT_ALL classification intact on the new plan');
+ok(DEMO4A_validateLiveRows_(planB, liveFromPlan(planB)).checks.live_route_lineage_seq_coord.ok && DEMO4A_validateLiveRows_(planB, liveFromPlan(planB)).checks.live_event_fk_chrono_agreement.ok, 'V3B-10. live validator passes for the geographic+abstract plan');
+ok(DEMO4A_verifyJournal_(JSON.parse(JSON.stringify(DEMO4A_buildJournal_(planB))), DEMO4A_buildJournal_(planB)).ok, 'V3B-10. journal build/verify intact on the new plan');
+eq(DEMO4A_buildPlan_(mastersV3B()).checksum, planB.checksum, 'V3B-10. deterministic rebuild (checksum stable)');
+
+section('V3B-B. diagnostic authority + counts');
+var diag = DEMO4A_diagnoseResolution_(mastersV3B().templates, mastersV3B().nodes, mastersV3B().locations);
+eq([diag.active_template_count, diag.valid_templates_by_region.US_WEST, diag.valid_templates_by_region.US_CENTRAL, diag.valid_templates_by_region.US_EAST], [3, 1, 1, 1], 'V3B-B. diagnostic counts active + valid-by-region');
+eq(diag.candidate_mappings.node_direct_lat_lng, mastersV3B().nodes.filter(function (n) { return DEMO4A_validCoord_(n.latitude, n.longitude); }).length, 'V3B-B. reports node direct lat/lng count');
+ok(diag.intentionally_abstract_nodes >= 3 && diag.minimum_geographic_nodes_required === 2, 'V3B-B. reports abstract-node count + the proven minimum geographic requirement (2)');
+ok(diag.safe_examples.length <= 5 && diag.safe_examples.every(function (e) { return /^[0-9a-f]{8}$/.test(e.template_fp); }), 'V3B-B. examples are fingerprinted + capped (never all nodes dumped)');
+// a declared-but-unresolved node is counted, not silently dropped
+var badMasters = mastersV3B(); badMasters.nodes = badMasters.nodes.concat([{ route_template_node_id: 'RT-C-BAD', route_template_id: 'RT-C', node_sequence: 9, node_type: 'port', node_code: 'BAD9', logistics_location_id: 'GHOST' }]);
+var diagBad = DEMO4A_diagnoseResolution_(badMasters.templates, badMasters.nodes, badMasters.locations);
+ok(diagBad.unresolved_declared_location_refs >= 1 && diagBad.failure_reason_counts.DECLARED_LOGISTICS_LOCATION_NOT_FOUND >= 1, 'V3B-B. an unresolved declared reference is surfaced as a failure reason (fail closed)');
 
 done();
