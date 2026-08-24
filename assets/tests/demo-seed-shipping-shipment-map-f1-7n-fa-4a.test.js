@@ -22,7 +22,7 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
-  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_', 'DEMO4A_APPROVED_REGION_DEST_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_COORD_ACCURACY_CANON_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_FIELD_CLASS_ = \{[\s\S]*?\n\};/)[0]);
@@ -48,11 +48,12 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
   'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
   'DEMO4A_whCode_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
-  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_preflightVerdict_', 'DEMO4A_authorizationSummary_', 'DEMO4A_rowForHeaders_', 'DEMO4A_writerProjectionGaps_', 'DEMO4A_driftClip_', 'DEMO4A_driftEvidence_', 'DEMO4A_canonDiagnosticCore_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_preflightVerdict_', 'DEMO4A_authorizationSummary_', 'DEMO4A_rowForHeaders_', 'DEMO4A_srcDestLineageGate_', 'DEMO4A_writerProjectionGaps_', 'DEMO4A_driftClip_', 'DEMO4A_driftEvidence_', 'DEMO4A_canonDiagnosticCore_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
-function tpl(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: 'WH-CN-' + id, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
+var SRC_WH_ID_ = 'WH-KM-CN-FACTORY-1';   // V3G5A(B) — the SOURCE warehouse identity every fixture template declares
+function tpl(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: SRC_WH_ID_, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
 function node(tid, seq, loc, evt, type) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: type.toUpperCase() + seq, node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA', logistics_location_id: loc }; }
 function loc(id, lat, lng) { return { logistics_location_id: id, location_code: id + '-C', location_name: id + ' Name', country: 'US', region: 'R', city: 'City', latitude: lat, longitude: lng }; }
 function mastersFull(extraNode) {
@@ -269,7 +270,7 @@ ok(/PRESENT_EXACT_ALL'\) \{ out\.delta = \{ shipping_plans: 0[\s\S]*?verdict = '
 // ============================================================ V3C — DEMO-only role-based logistics-location binding
 // Templates provide the TIMELINE; logistics_locations is the COORDINATE authority. Coordinate binding precedence per
 // node: CANONICAL_MASTER_BINDING (exact identifier match) → NODE_DIRECT_COORDINATE → (role anchors) DEMO_SYNTHETIC_RUNTIME_BINDING.
-function tplV3C(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: 'WH-CN-' + id, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
+function tplV3C(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: SRC_WH_ID_, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
 function nAbs(tid, seq, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA' }; }
 function locV3C(id, country, region, lat, lng, type) { return { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, is_active: 'TRUE' }; }
 function locsV3C() {
@@ -556,6 +557,7 @@ function wh(id, type, company, country, region, over) { over = over || {}; var a
   return { warehouse_id: id, warehouse_code: id, warehouse_name: id + ' Facility', warehouse_type: type, company: company, country: country, marketplace: 'Amazon', logistics_region: region, is_active: 'TRUE', is_receiving_enabled: 'TRUE',
     address_line1: over.noAddress ? '' : ('100 Demo Fulfillment Way ' + id), address_line2: over.line2 || '', address: 'LEGACY-FLAT-SHOULD-BE-IGNORED ' + id,
     city: over.noCity ? '' : a.city, state: a.state, subdivision_code: a.state, postal_code: over.noPostal ? '' : a.postal_code }; }
+function srcWhRow() { return { warehouse_id: SRC_WH_ID_, warehouse_code: 'CNFAC1', warehouse_name: 'KM CN Factory 1', warehouse_type: 'FACTORY', company: 'KM', country: 'CN', marketplace: '', logistics_region: 'CN East', is_active: 'TRUE', address_line1: '1 Factory Rd', address_line2: '', city: 'Shanghai', state: 'Shanghai', subdivision_code: 'SH', postal_code: '200000' }; }
 function locWH(id, whId, country, region, lat, lng, type, vs) { return { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, warehouse_id: whId, verification_status: vs || 'verified', is_active: 'TRUE' }; }
 function tplWH(id, region, whId) { var t = tplV3C(id, region); t.destination_warehouse_id = whId; return t; }
 function mastersWH(over) {
@@ -575,7 +577,7 @@ function mastersWH(over) {
     locWH('LOC-WH-KM-US-FBA-E', fe, 'US', 'US East', bl ? '' : 40.7, bl ? '' : -74.0, 'fulfillment_center')
   ];
   if (bl || over.noLocJoin) { locations.push(locWH('US-W-GEN', '', 'US', 'US West', 34.1, -118.3, 'warehouse'), locWH('US-C-GEN', '', 'US', 'US Central', 41.9, -87.7, 'warehouse'), locWH('US-E-GEN', '', 'US', 'US East', 40.8, -74.1, 'warehouse')); }
-  var warehouses = [wh('WH-KM-US-FBA-W', 'FBA', 'KM', 'US', 'US West'), wh('WH-KM-US-FBA-C', 'FBA', 'KM', 'US', 'US Central'), wh('WH-KM-US-FBA-E', 'FBA', 'KM', 'US', 'US East')];
+  var warehouses = [wh('WH-KM-US-FBA-W', 'FBA', 'KM', 'US', 'US West'), wh('WH-KM-US-FBA-C', 'FBA', 'KM', 'US', 'US Central'), wh('WH-KM-US-FBA-E', 'FBA', 'KM', 'US', 'US East'), srcWhRow()];
   if (over.mismatchCompany) warehouses.forEach(function (w) { w.company = 'OTHERCO'; });
   if (over.badType) warehouses.forEach(function (w) { w.warehouse_type = 'FACTORY'; });
   return { templates: templates, nodes: nodes, locations: locations, warehouses: warehouses, marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
@@ -668,7 +670,7 @@ function mastersWHderived(over) {
   var m = mastersWH({ fbaBlank: true });   // exact joins present but BLANK master coords + addresses present → derived path
   var coords = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] };
   var auth = {};
-  m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var c = coords[w.warehouse_code];
+  m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var c = coords[w.warehouse_code]; if (!c) return;   // the CN SOURCE warehouse is never a destination coordinate authority
     auth[w.warehouse_code] = { latitude: c[0], longitude: c[1], source_type: 'reviewed_address_resolution', source_reference: 'DEMO-REVIEW://' + w.warehouse_code, accuracy: over.badAccuracy ? 'city' : 'rooftop', address_fingerprint: over.staleFp ? 'deadbeef' : fp, review_version: 'v1' }; });
   m.destCoordAuthority = auth;
   return m;
@@ -742,7 +744,7 @@ ok(dxRS.warehouse_backed_raw_location_type_audit.some(function (t) { return t.ra
 
 section('V3G-J13. the checksum changes if the address, the coordinate, or the source reference changes');
 var ckBase = planD.checksum;
-(function () { var m = mastersWHderived(); m.warehouses = m.warehouses.map(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (c.warehouse_id === 'WH-KM-US-FBA-C') c.address_line1 = c.address_line1 + ' STE 200'; return c; }); m.destCoordAuthority = {}; m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var co = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] }[w.warehouse_code]; m.destCoordAuthority[w.warehouse_code] = { latitude: co[0], longitude: co[1], source_type: 'reviewed_address_resolution', source_reference: 'DEMO-REVIEW://' + w.warehouse_code, accuracy: 'rooftop', address_fingerprint: fp, review_version: 'v1' }; }); var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing a warehouse address_line1 re-checksums (address fingerprint is bound)'); })();
+(function () { var m = mastersWHderived(); m.warehouses = m.warehouses.map(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (c.warehouse_id === 'WH-KM-US-FBA-C') c.address_line1 = c.address_line1 + ' STE 200'; return c; }); m.destCoordAuthority = {}; m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var co = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] }[w.warehouse_code]; if (!co) return; m.destCoordAuthority[w.warehouse_code] = { latitude: co[0], longitude: co[1], source_type: 'reviewed_address_resolution', source_reference: 'DEMO-REVIEW://' + w.warehouse_code, accuracy: 'rooftop', address_fingerprint: fp, review_version: 'v1' }; }); var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing a warehouse address_line1 re-checksums (address fingerprint is bound)'); })();
 (function () { var m = mastersWHderived(); m.destCoordAuthority['WH-KM-US-FBA-C'].latitude = 42.0; var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing the derived coordinate re-checksums'); })();
 (function () { var m = mastersWHderived(); m.destCoordAuthority['WH-KM-US-FBA-C'].source_reference = 'DEMO-REVIEW://OTHER'; var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing the coordinate source reference re-checksums'); })();
 
@@ -764,7 +766,7 @@ function propFor(masters, over) {
   over = over || {};
   var coords = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] };
   var p = {};
-  masters.warehouses.forEach(function (w) { var loc = DEMO4A_locsForWarehouse_(masters.locations, w.warehouse_id)[0]; var c = coords[w.warehouse_code] || [10, 10];
+  masters.warehouses.forEach(function (w) { var loc = DEMO4A_locsForWarehouse_(masters.locations, w.warehouse_id)[0]; var c = coords[w.warehouse_code]; if (!c) return;   // CN SOURCE warehouse is not a destination authority
     p[w.warehouse_code] = { warehouse_id: w.warehouse_id, warehouse_code: w.warehouse_code, logistics_location_id: loc ? DEMO4A_locId_(loc) : '', address_fingerprint: over.staleFp ? 'deadbeef' : DEMO4A_normalizeWhAddress_(w).fingerprint, latitude: over.dup ? 34.05 : c[0], longitude: over.dup ? -118.25 : c[1], coordinate_accuracy: over.badAcc ? 'city' : 'rooftop', coordinate_source_type: 'reviewed_address_resolution', coordinate_source_reference: over.noSrc ? '' : ('DEMO-REVIEW://' + w.warehouse_code), reviewed_at: '2026-08-24', reviewed_by: 'ops', review_status: over.approved ? 'user_approved' : 'proposed' }; });
   // an AIRPORT/SEAPORT gateway coordinate (the live US West port TR-1) laundered in as the "facility" coordinate.
   if (over.gateway && p['WH-KM-US-FBA-W']) { p['WH-KM-US-FBA-W'].latitude = 37.7; p['WH-KM-US-FBA-W'].longitude = -122.4; }
@@ -869,7 +871,7 @@ function mastersV3G2() {
     locWH('LOC-WH-KM-US-FBA-AUS2', 'WH-KM-US-FBA-AUS2', 'US', 'US Central', '', '', 'fulfillment_center'),
     locWH('LOC-WH-KM-US-FBA-ABE2', 'WH-KM-US-FBA-ABE2', 'US', 'US East', '', '', 'fulfillment_center')
   ];
-  var warehouses = [whLive('BFI4'), whLive('AUS2'), whLive('ABE2')];
+  var warehouses = [whLive('BFI4'), whLive('AUS2'), whLive('ABE2'), srcWhRow()];
   return { templates: templates, nodes: nodes, locations: locations, warehouses: warehouses, marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
 }
 var mG2 = mastersV3G2();
@@ -1121,7 +1123,7 @@ function mastersLive(over) {
   ];
   if (over.joinConflict) locations.push(locPending('LOC-WH-KM-US-FBA-BFI4-DUP', 'WH-KM-US-FBA-BFI4', 'US', 'US West'));
   if (over.joinConflictAll) ['BFI4', 'AUS2', 'ABE2'].forEach(function (c) { locations.push(locPending('LOC-' + G2_LIVE_[c].wid + '-DUP', G2_LIVE_[c].wid, 'US', G2_LIVE_[c].region)); });
-  var warehouses = [whLive('BFI4'), whLive('AUS2'), whLive('ABE2')];
+  var warehouses = [whLive('BFI4'), whLive('AUS2'), whLive('ABE2'), srcWhRow()];
   if (over.staleAddress) warehouses = warehouses.map(function (w) { var c = {}; for (var x in w) c[x] = w[x]; if (c.warehouse_code === 'AUS2') c.address_line1 = c.address_line1 + ' STE 900'; return c; });
   if (over.staleAddressAll) warehouses = warehouses.map(function (w) { var c = {}; for (var x in w) c[x] = w[x]; c.address_line1 = c.address_line1 + ' STE 900'; return c; });
   return { templates: templates, nodes: nodes, locations: locations, warehouses: warehouses, marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
@@ -1347,7 +1349,7 @@ ok(/DEMO4A_ZERO_WRITE_CONFIRMED/.test(A_SRC_), 'E4/B. the entrypoint stamps DEMO
 
 section('V3G4A-E5/E6. exactly three compact shipment objects; exact W/C/E coverage');
 eq(A_ENV_.per_shipment.length, 3, 'E5. exactly three per-shipment objects');
-eq(Object.keys(A_ENV_.per_shipment[0]).sort().join(','), ['current_location_id', 'destination_address_fingerprint', 'destination_coordinate_accuracy', 'destination_coordinate_branch', 'destination_logistics_location_id', 'destination_renderable', 'destination_warehouse_code', 'destination_warehouse_id', 'event_rows', 'origin_location_id', 'plan_lines', 'region', 'route_rows', 'shipment_id', 'shipment_lines', 'slot', 'status', 'template_id'].join(','), 'E5/B. each shipment object carries ONLY the 18 authorized compact fields');
+eq(Object.keys(A_ENV_.per_shipment[0]).sort().join(','), ['current_location_id', 'destination_address_fingerprint', 'destination_coordinate_accuracy', 'destination_coordinate_branch', 'destination_logistics_location_id', 'destination_renderable', 'destination_warehouse_code', 'destination_warehouse_id', 'event_rows', 'origin_location_id', 'plan_lines', 'region', 'route_rows', 'shipment_id', 'shipment_lines', 'slot', 'source_warehouse_id', 'status', 'template_id'].join(','), 'E5/B/V3G5A(I). each shipment object carries ONLY the 19 authorized compact fields (now including source_warehouse_id)');
 eq(A_ENV_.selected_templates.map(function (t) { return t.region; }).sort().join(','), 'US_CENTRAL,US_EAST,US_WEST', 'E6. the three selected templates cover W/C/E exactly once each');
 eq(Object.keys(A_ENV_.selected_templates[0]).sort().join(','), 'node_count,region,template_id', 'E6/B. selected_templates carries only template_id + region + node_count');
 eq(A_ENV_.per_shipment.map(function (x) { return x.destination_warehouse_code; }).sort().join(','), 'ABE2,AUS2,BFI4', 'E6. the three approved destination warehouses appear once each');
@@ -1545,11 +1547,11 @@ section('V3G5-F10/F11. physical alias contract + writer-unowned columns');
 })();
 
 section('V3G5-F12/F13/F14. a real business mutation still drifts and is named exactly');
-[['shipment_lines', 'sku', 'KM-WRONG', 'VALUE_MUTATION'],
+[['shipments', 'source_warehouse_id', 'WH-CN-WRONG', 'VALUE_MUTATION'],
+ ['shipment_lines', 'sku', 'KM-WRONG', 'VALUE_MUTATION'],
  ['shipment_lines', 'shipment_carton_qty', 999, 'NUMERIC_REPRESENTATION_OR_VALUE'],
  ['shipments', 'status', 'cancelled', 'VALUE_MUTATION'],
  ['shipments', 'eta', '2027-01-01', 'VALUE_MUTATION'],
- ['shipments', 'warehouse_id', 'WH-KM-US-FBA-WRONG', 'VALUE_MUTATION'],
  ['shipment_routes', 'location_ref_id', 'LOC-WRONG', 'VALUE_MUTATION'],
  ['shipment_routes', 'latitude', 1.234, 'NUMERIC_REPRESENTATION_OR_VALUE']
 ].forEach(function (c) {
@@ -1621,24 +1623,31 @@ section('V3G5-D. the read-only canonicalization diagnostic contract');
   ok(/TEMP_DEMO4A_(PREFLIGHT|DRY_RUN|COMMIT|VALIDATE|CLEAR)/.test(diagFn) === false, 'D. it calls no other TEMP entrypoint');
   var headers = v5Headers(), colTypes = {};
   DEMO4A_WRITE_ORDER_.forEach(function (t) { var cc = {}; (headers[t] || []).forEach(function (c) { var cls = DEMO4A_fieldClass_(c); cc[c] = (cls === 'date' || cls === 'datetime') ? 'date_formatted' : (cls === 'numeric' || cls === 'coordinate') ? 'numeric_cell' : 'text_cell'; }); colTypes[t] = cc; });
-  var core = DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 480, time_zone: 'Asia/Taipei' }, null, 'ABSENT_ALL');
+  var V5_LINEAGE_ = DEMO4A_srcDestLineageGate_(V5_PLAN_, mastersLive().warehouses);
+  function dcore(over) { over = over || {}; return DEMO4A_canonDiagnosticCore_(over.schema || { ok: true }, mastersLive(), over.plan || V5_PLAN_, over.headers || headers, colTypes, over.tz || { ok: true, offset_min: 480, time_zone: 'Asia/Taipei' }, over.journal === undefined ? null : over.journal, over.state || 'ABSENT_ALL', over.lineage === undefined ? V5_LINEAGE_ : over.lineage, over.clearPlaceholder === undefined ? true : over.clearPlaceholder); }
+  var core = dcore();
   eq(core.round_trip_performed, false, 'D. the diagnostic never claims it performed an actual Sheet write/read round trip');
   ['contract_version', 'schema_ok', 'plan_checksum', 'planned_counts', 'field_class_counts', 'writer_projection_complete', 'all_intended_fields_have_class',
    'unknown_field_classes', 'physical_alias_resolution', 'date_fields', 'numeric_fields', 'boolean_fields', 'text_identifier_fields', 'coordinate_fields',
-   'blank_optional_fields', 'live_column_number_format_classes', 'predicted_roundtrip_risk_fields', 'risk_count', 'journal_status_read_only',
-   'previous_failed_checksum_matches_current_plan', 'confirmation_constant_status', 'existing_state_classification', 'verdict'].forEach(function (k) { ok(core[k] !== undefined, 'D. diagnostic carries ' + k); });
+   'blank_optional_fields', 'number_format_summary_by_table', 'number_format_risk_fields', 'predicted_roundtrip_risk_fields', 'risk_count',
+   'source_destination_warehouse_lineage_ready', 'journal_status_read_only', 'journal_integrity_valid', 'journal_matches_previous_failed_attempt',
+   'journal_previous_checksum', 'corrected_plan_checksum', 'journal_retry_safe', 'journal_retry_reason',
+   'previous_failed_checksum_matches_current_plan', 'confirmation_constant_status', 'existing_state', 'verdict', 'alias_conflict'].forEach(function (k) { ok(core[k] !== undefined, 'D. diagnostic carries ' + k); });
+  eq(core.live_column_number_format_classes, undefined, 'J. the COMPLETE per-column number-format dump is GONE (it truncated the live log)');
+  eq(Object.keys(core.number_format_summary_by_table.shipments).sort().join(','), 'date_formatted_count,empty_or_general_count,numeric_cell_count,text_cell_count', 'J. it is replaced by a per-table COUNT summary');
+  ok(core.number_format_risk_fields.length <= 20 && core.writer_projection_missing_fields.length <= 20 && core.predicted_roundtrip_risk_fields.length <= 20, 'J. every diagnostic list is capped at 20 entries');
   eq(core.verdict, 'READY_FOR_CONTROLLED_RETRY', 'D. a complete schema + matching timezone + ABSENT_ALL + no risk → READY_FOR_CONTROLLED_RETRY');
   eq(core.all_intended_fields_have_class, true, 'D/B. EVERY intended field of all six tables has an explicit field class');
   eq(core.unknown_field_classes.length, 0, 'D. no unknown field classes remain');
   eq(core.confirmation_constant_status, 'PLACEHOLDER', 'D. the diagnostic reports the confirmation constant as PLACEHOLDER');
   // each blocking verdict
-  eq(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, v5Headers({ dropField: { table: 'shipments', field: 'currency' } }), colTypes, { ok: true, offset_min: 480 }, null, 'ABSENT_ALL').verdict, 'CANONICALIZATION_RISK_REMAINS', 'D. a missing physical column → CANONICALIZATION_RISK_REMAINS');
-  eq(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 0 }, null, 'ABSENT_ALL').verdict, 'CANONICALIZATION_RISK_REMAINS', 'D. a spreadsheet timezone that differs from the canonical offset → CANONICALIZATION_RISK_REMAINS');
-  ok(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 0 }, null, 'ABSENT_ALL').predicted_roundtrip_risk_fields.some(function (r) { return r.reason_code === 'DATE_WALLCLOCK_OFFSET_MISMATCH'; }), 'D. the offset mismatch is named as a predicted round-trip risk field');
-  eq(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 480 }, null, 'PRESENT_EXACT_ALL').verdict, 'EXISTING_STATE_NOT_ABSENT', 'D. a non-ABSENT live state → EXISTING_STATE_NOT_ABSENT');
-  eq(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 480 }, { plan_checksum: 'stale123' }, 'ABSENT_ALL').verdict, 'JOURNAL_STATE_UNSAFE_FOR_RETRY', 'D/E. a stale failed-attempt journal whose checksum differs → JOURNAL_STATE_UNSAFE_FOR_RETRY');
-  eq(DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), V5_PLAN_, headers, colTypes, { ok: true, offset_min: 480 }, { plan_checksum: V5_PLAN_.checksum }, 'ABSENT_ALL').previous_failed_checksum_matches_current_plan, true, 'D/E. a journal matching the current plan is reported as safe to supersede');
-  ok(JSON.stringify(core).length < 12000, 'D. the diagnostic envelope is ' + JSON.stringify(core).length + ' bytes — one compact log');
+  eq(dcore({ headers: v5Headers({ dropField: { table: 'shipments', field: 'currency' } }) }).verdict, 'CANONICALIZATION_RISK_REMAINS', 'D. a missing physical column → CANONICALIZATION_RISK_REMAINS');
+  eq(dcore({ tz: { ok: true, offset_min: 0 } }).verdict, 'CANONICALIZATION_RISK_REMAINS', 'D. a spreadsheet timezone that differs from the canonical offset → CANONICALIZATION_RISK_REMAINS');
+  ok(dcore({ tz: { ok: true, offset_min: 0 } }).predicted_roundtrip_risk_fields.some(function (r) { return r.reason_code === 'DATE_WALLCLOCK_OFFSET_MISMATCH'; }), 'D. the offset mismatch is named as a predicted round-trip risk field');
+  eq(dcore({ lineage: { source_destination_warehouse_lineage_ready: false, reasons: ['SHIPMENT_SOURCE_WAREHOUSE_BLANK:X'] } }).verdict, 'CANONICALIZATION_RISK_REMAINS', 'D/G. a broken source→destination warehouse lineage blocks the retry verdict');
+  eq(dcore({ state: 'PRESENT_EXACT_ALL' }).verdict, 'EXISTING_STATE_NOT_ABSENT', 'D. a non-ABSENT live state → EXISTING_STATE_NOT_ABSENT');
+  ok(JSON.stringify(core).length < 6000, 'J. the diagnostic envelope is ' + JSON.stringify(core).length + ' bytes — under the 6000-byte ceiling');
+  ok(JSON.stringify(core).indexOf('"verdict"') < 6000 && JSON.stringify(core).indexOf('"journal_retry_safe"') < 6000 && JSON.stringify(core).indexOf('"corrected_plan_checksum"') < 6000, 'J. the verdict and journal/checksum fields sit inside the ceiling and cannot be truncated away');
 })();
 
 section('V3G5-F24/F25. the shared contract did not change the plan, and the constants remain placeholders');
@@ -1648,5 +1657,185 @@ ok(DEMO4A_buildPlan_(mastersLive()).tables.shipments.every(function (r) { return
 eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'F25. both confirmation constants remain placeholders');
 eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, 'G. the three approved coordinate authorities are untouched');
 DEMO4A_setCanonTzOffsetMin_(480);
+
+// ============================================================ V3G5A — SOURCE/DESTINATION WAREHOUSE LINEAGE + PROJECTION
+// The live diagnostic proved exactly two writer-projection failures: shipments.warehouse_id (identifier) and
+// shipments.updated_by (text). The audit of the intended row showed `warehouse_id: destWh` used the SAME variable as
+// `destination_warehouse_id: destWh` -> CASE B, an exact duplicate of the destination identity, never a source identity.
+// Removing it therefore loses nothing, and source_warehouse_id (= the template's origin_warehouse_id) was already present.
+var A5_PLAN_ = DEMO4A_buildPlan_(mastersLive());
+function v5HeadersA5(over) {
+  over = over || {}; var h = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (t) {
+    var seen = {}; (A5_PLAN_.tables[t] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); });
+    var cols = Object.keys(seen);
+    if (over.dropField && over.dropField.table === t) cols = cols.filter(function (c) { return c !== over.dropField.field; });
+    h[t] = cols;
+  });
+  return h;
+}
+function v5RoundTripA5(headers, opts) {
+  opts = opts || {}; var sheetTz = opts.sheetTzMin === undefined ? 480 : opts.sheetTzMin, live = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (t) {
+    var cols = headers[t] || [], rows = [];
+    (A5_PLAN_.tables[t] || []).forEach(function (r) {
+      var cell = {}, projected = DEMO4A_rowForHeaders_(cols, r);
+      cols.forEach(function (c, i) {
+        var v = projected[i], cls = DEMO4A_fieldClass_(c);
+        if (v === '' || v == null) { cell[c] = ''; return; }
+        if ((cls === 'date' || cls === 'datetime') && typeof v === 'string') {
+          var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+          if (m) { cell[c] = new Date(Date.UTC(+m[1], (+m[2]) - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) - sheetTz * 60000); return; }
+        }
+        if (cls === 'numeric' || cls === 'coordinate') { var n = Number(v); if (isFinite(n)) { cell[c] = n; return; } }
+        cell[c] = v;
+      });
+      if (opts.mutate) opts.mutate(t, cell, r);
+      rows.push(cell);
+    });
+    live[t] = { present: true, headers: cols, rows: rows };
+  });
+  return live;
+}
+
+var A5_SHIPS_ = A5_PLAN_.tables.shipments, A5_PLANS_ = A5_PLAN_.tables.shipping_plans;
+function a5PlanOf(sh) { return A5_PLANS_.filter(function (p) { return p.shipping_plan_id === sh.shipping_plan_id; })[0]; }
+
+section('V3G5A-L1/L2/L3. the old shipments.warehouse_id semantic is classified and its meaning is not lost');
+ok(/REMOVED `warehouse_id`: the audit proved it was assigned the SAME `destWh` variable as destination_warehouse_id/.test(G), 'L1. the source records the CASE B classification (an exact duplicate of the destination identity, not a source identity)');
+ok(A5_SHIPS_.every(function (sh) { return !Object.prototype.hasOwnProperty.call(sh, 'warehouse_id'); }), 'L8. no intended shipment row carries warehouse_id (no third ambiguous warehouse authority)');
+ok(A5_SHIPS_.every(function (sh) { return DEMO4A_str_(sh.destination_warehouse_id) !== ''; }), 'L2. the destination identity the removed field duplicated is still present as destination_warehouse_id');
+ok(A5_SHIPS_.every(function (sh) { return DEMO4A_str_(sh.source_warehouse_id) === SRC_WH_ID_; }), 'L2. the SOURCE identity survives independently as source_warehouse_id (= the template origin_warehouse_id authority)');
+(function () { var g = DEMO4A_srcDestLineageGate_({ tables: { shipping_plans: A5_PLANS_, shipments: A5_SHIPS_.map(function (sh) { var c = {}; for (var k in sh) c[k] = sh[k]; c.warehouse_id = c.destination_warehouse_id; return c; }), shipment_routes: A5_PLAN_.tables.shipment_routes }, per_shipment: A5_PLAN_.per_shipment }, mastersLive().warehouses);
+  ok(g.source_destination_warehouse_lineage_ready === false && g.reasons.some(function (r) { return /^THIRD_WAREHOUSE_AUTHORITY_PRESENT:/.test(r); }), 'L3. re-introducing a shipments.warehouse_id third authority FAILS CLOSED'); })();
+
+section('V3G5A-L4..L10. the final physical plan/shipment contract');
+ok(A5_PLANS_.every(function (p) { return DEMO4A_str_(p.source_warehouse_id) !== ''; }), 'L4. every shipping plan carries a non-blank source_warehouse_id');
+ok(A5_PLANS_.every(function (p) { return DEMO4A_str_(p.destination_warehouse_id) !== ''; }), 'L5. every shipping plan carries a non-blank destination_warehouse_id');
+ok(A5_SHIPS_.every(function (sh) { return DEMO4A_str_(sh.source_warehouse_id) !== ''; }), 'L6. every shipment carries a non-blank source_warehouse_id');
+ok(A5_SHIPS_.every(function (sh) { return DEMO4A_str_(sh.destination_warehouse_id) !== ''; }), 'L7. every shipment carries a non-blank destination_warehouse_id');
+ok(A5_SHIPS_.every(function (sh) { return !Object.prototype.hasOwnProperty.call(sh, 'updated_by'); }), 'L9. no intended shipment row carries updated_by (not a deployed physical column)');
+ok(A5_SHIPS_.every(function (sh) { return DEMO4A_str_(sh.created_by) !== '' && DEMO4A_str_(sh.created_at) !== '' && DEMO4A_str_(sh.updated_at) !== ''; }), 'L10. the physical audit fields created_by / created_at / updated_at are preserved');
+ok(A5_SHIPS_.every(function (sh) { return !Object.prototype.hasOwnProperty.call(sh, 'warehouse_code'); }), 'L18. warehouse_code is NOT added to the shipment row — the tool never carried it, so no production meaning is redefined');
+ok(A5_PLAN_.tables.shipping_plan_lines.length === 8 && A5_PLAN_.tables.shipment_lines.length === 8, 'C. the rest of the six-table shape is unchanged');
+
+section('V3G5A-L11..L17. plan → shipment lineage and no geographic substitution');
+A5_SHIPS_.forEach(function (sh) {
+  var pl = a5PlanOf(sh), sid = DEMO4A_str_(sh.shipment_id);
+  eq(DEMO4A_str_(sh.source_warehouse_id), DEMO4A_str_(pl.source_warehouse_id), 'L11. ' + sid + ' source_warehouse_id is inherited exactly from its parent plan');
+  eq(DEMO4A_str_(sh.destination_warehouse_id), DEMO4A_str_(pl.destination_warehouse_id), 'L12. ' + sid + ' destination_warehouse_id is inherited exactly from its parent plan');
+  ok(DEMO4A_low_(sh.source_warehouse_id) !== DEMO4A_low_(sh.destination_warehouse_id), 'L13. ' + sid + ' source and destination warehouse ids differ');
+});
+(function () {
+  var whIds = {}; mastersLive().warehouses.forEach(function (w) { whIds[DEMO4A_low_(DEMO4A_whId_(w))] = 1; });
+  ok(A5_SHIPS_.every(function (sh) { return whIds[DEMO4A_low_(sh.source_warehouse_id)] === 1; }), 'L14. every source warehouse resolves to an exact warehouses.warehouse_id');
+  ok(A5_SHIPS_.every(function (sh) { return whIds[DEMO4A_low_(sh.destination_warehouse_id)] === 1; }), 'L14. every destination warehouse resolves to an exact warehouses.warehouse_id');
+  var byShip = {}; A5_PLAN_.per_shipment.forEach(function (x) { byShip[DEMO4A_str_(x.shipment_id)] = x; });
+  ok(A5_SHIPS_.every(function (sh) { var ps = byShip[DEMO4A_str_(sh.shipment_id)]; return DEMO4A_str_(sh.destination_warehouse_id) === DEMO4A_APPROVED_REGION_DEST_[DEMO4A_str_(ps.region)]; }), 'L15. each destination warehouse is exactly the approved regional authority (BFI4 / AUS2 / ABE2)');
+  var locIds = {}; A5_PLAN_.tables.shipment_routes.forEach(function (r) { var l = DEMO4A_str_(r.location_ref_id); if (l) locIds[DEMO4A_low_(l)] = 1; });
+  ok(A5_SHIPS_.every(function (sh) { return !locIds[DEMO4A_low_(sh.source_warehouse_id)]; }), 'L16. no origin/route logistics_location_id was written into source_warehouse_id');
+  ok(A5_SHIPS_.every(function (sh) { return !locIds[DEMO4A_low_(sh.destination_warehouse_id)]; }), 'L17. no destination logistics_location_id was written into destination_warehouse_id');
+  ok(A5_SHIPS_.every(function (sh) { var ps = byShip[DEMO4A_str_(sh.shipment_id)]; return DEMO4A_str_(ps.destination_logistics_location_id) === 'LOC-' + DEMO4A_str_(sh.destination_warehouse_id); }), 'D. the destination logistics_location still joins its destination warehouse (separate authority, correct lineage)');
+})();
+
+section('V3G5A-L19/L20/L23. missing source or destination authority fails closed and gates all_pass');
+eq(DEMO4A_srcDestLineageGate_(A5_PLAN_, mastersLive().warehouses).source_destination_warehouse_lineage_ready, true, 'L23. the corrected plan passes the lineage gate');
+eq(A5_PLAN_.binding_gates.source_destination_warehouse_lineage_ready, true, 'L23. the gate is part of binding_gates');
+ok(A5_PLAN_.binding_gates.ok === true, 'L23. binding_gates.ok includes it');
+function a5Mutate(mut) { var p = JSON.parse(JSON.stringify(A5_PLAN_)); mut(p); return DEMO4A_srcDestLineageGate_(p, mastersLive().warehouses); }
+[['blank shipment source', function (p) { p.tables.shipments[0].source_warehouse_id = ''; }, 'SHIPMENT_SOURCE_WAREHOUSE_BLANK'],
+ ['blank shipment destination', function (p) { p.tables.shipments[0].destination_warehouse_id = ''; }, 'SHIPMENT_DESTINATION_WAREHOUSE_BLANK'],
+ ['blank plan source', function (p) { p.tables.shipping_plans[0].source_warehouse_id = ''; }, 'PLAN_SOURCE_WAREHOUSE_BLANK'],
+ ['blank plan destination', function (p) { p.tables.shipping_plans[0].destination_warehouse_id = ''; }, 'PLAN_DESTINATION_WAREHOUSE_BLANK'],
+ ['source == destination', function (p) { p.tables.shipments[0].source_warehouse_id = p.tables.shipments[0].destination_warehouse_id; p.tables.shipping_plans.forEach(function (pl) { if (pl.shipping_plan_id === p.tables.shipments[0].shipping_plan_id) pl.source_warehouse_id = p.tables.shipments[0].source_warehouse_id; }); }, 'SOURCE_EQUALS_DESTINATION'],
+ ['source not inherited', function (p) { p.tables.shipments[0].source_warehouse_id = 'WH-KM-US-FBA-BFI4'; }, 'SOURCE_NOT_INHERITED_FROM_PLAN'],
+ ['destination not inherited', function (p) { p.tables.shipments[0].destination_warehouse_id = 'WH-KM-US-FBA-ABE2'; p.per_shipment[0].region = 'US_EAST'; }, 'DESTINATION_NOT_INHERITED_FROM_PLAN'],
+ ['source not in master', function (p) { p.tables.shipments[0].source_warehouse_id = 'WH-NOT-A-WAREHOUSE'; p.tables.shipping_plans.forEach(function (pl) { if (pl.shipping_plan_id === p.tables.shipments[0].shipping_plan_id) pl.source_warehouse_id = 'WH-NOT-A-WAREHOUSE'; }); }, 'SOURCE_WAREHOUSE_NOT_IN_MASTER'],
+ ['destination not approved for region', function (p) { var sh = p.tables.shipments[0]; sh.destination_warehouse_id = 'WH-KM-US-FBA-BFI4'; p.tables.shipping_plans.forEach(function (pl) { if (pl.shipping_plan_id === sh.shipping_plan_id) pl.destination_warehouse_id = 'WH-KM-US-FBA-BFI4'; }); p.per_shipment.forEach(function (x) { if (x.shipment_id === sh.shipment_id) x.region = 'US_EAST'; }); }, 'DESTINATION_NOT_APPROVED_FOR_REGION'],
+ ['a route location id used as the source warehouse', function (p) { var loc = DEMO4A_str_(p.tables.shipment_routes[0].location_ref_id); p.tables.shipments[0].source_warehouse_id = loc; p.tables.shipping_plans.forEach(function (pl) { if (pl.shipping_plan_id === p.tables.shipments[0].shipping_plan_id) pl.source_warehouse_id = loc; }); }, 'SOURCE_IS_A_ROUTE_LOCATION_ID']
+].forEach(function (c) {
+  var g = a5Mutate(c[1]);
+  ok(g.source_destination_warehouse_lineage_ready === false && g.reasons.some(function (r) { return r.indexOf(c[2]) === 0; }), 'L19/L20. ' + c[0] + ' fails closed with ' + c[2]);
+});
+
+section('V3G5A-L21/L22/L31/L32. lineage is checksum-bound, the corrected checksum is deterministic, 7e4cf9d9 is retired');
+eq(DEMO4A_buildPlan_(mastersLive()).checksum, A5_PLAN_.checksum, 'L31. the corrected plan checksum is deterministic');
+(function () {
+  var m = mastersLive(); m.templates = m.templates.map(function (x) { var c = {}; for (var k in x) c[k] = x[k]; c.origin_warehouse_id = 'WH-KM-CN-FACTORY-2'; return c; });
+  m.warehouses = m.warehouses.concat([{ warehouse_id: 'WH-KM-CN-FACTORY-2', warehouse_code: 'CNFAC2', warehouse_name: 'KM CN Factory 2', warehouse_type: 'FACTORY', company: 'KM', country: 'CN', logistics_region: 'CN East', is_active: 'TRUE', address_line1: '2 Factory Rd', address_line2: '', city: 'Ningbo', state: 'Zhejiang', subdivision_code: 'ZJ', postal_code: '315000' }]);
+  var p2 = DEMO4A_buildPlan_(m);
+  ok(p2.ok === true && p2.checksum !== A5_PLAN_.checksum, 'L21. changing the SOURCE warehouse identity changes demo_plan_checksum');
+})();
+(function () {
+  var alt = {}; Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).forEach(function (k) { alt[k] = JSON.parse(JSON.stringify(DEMO4A_DEST_COORD_AUTHORITY_[k])); });
+  alt.ABE2.latitude = 40.6;
+  var m = mastersLive(); m.destCoordAuthority = alt;
+  ok(DEMO4A_buildPlan_(m).checksum !== A5_PLAN_.checksum, 'L22. changing destination coordinate evidence changes demo_plan_checksum');
+})();
+ok(A5_PLAN_.checksum !== '7e4cf9d9', 'L32. the retired 7e4cf9d9 checksum is NOT reproduced by the corrected intended content');
+ok(/7e4cf9d9/.test(G) === false, 'L32. no retired checksum is pinned anywhere in source');
+eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'L47. both confirmation constants remain placeholders');
+
+section('V3G5A-L24/I. the compact authorization envelope carries the warehouse lineage and requires the gate');
+(function () {
+  var env = DEMO4A_authorizationSummary_({ ok: true }, A_MASTERS_PRESENT_, A5_PLAN_, A5_PLAN_, emptyLive(), A_PROP_);
+  ok(env.per_shipment.every(function (x) { return DEMO4A_str_(x.source_warehouse_id) !== '' && DEMO4A_str_(x.destination_warehouse_id) !== '' && DEMO4A_str_(x.destination_logistics_location_id) !== ''; }), 'I. each compact shipment object carries source + destination warehouse ids and the destination logistics_location_id');
+  eq(env.gate_summary.source_destination_warehouse_lineage_ready, true, 'I. gate_summary exposes source_destination_warehouse_lineage_ready');
+  eq(env.may_run_dry_run, true, 'I. the corrected plan authorizes DRY_RUN');
+  ok(JSON.stringify(env).length < 6000, 'I. the authorization envelope is ' + JSON.stringify(env).length + ' bytes — still under the safe ceiling');
+  var broken = JSON.parse(JSON.stringify(A5_PLAN_)); broken.binding_gates.source_destination_warehouse_lineage_ready = false;
+  var envB = DEMO4A_authorizationSummary_({ ok: true }, A_MASTERS_PRESENT_, broken, broken, emptyLive(), A_PROP_);
+  eq([envB.gate_summary.source_destination_warehouse_lineage_ready, envB.may_run_dry_run, envB.may_arm_commit_checksum], [false, false, false], 'L24. the authorization conjunction REQUIRES the new gate');
+})();
+
+section('V3G5A-L25..L30/H. the pre-write projection gate on the corrected contract');
+(function () {
+  var h = v5HeadersA5();
+  eq(DEMO4A_writerProjectionGaps_(A5_PLAN_, h).ok, true, 'L25. the corrected intended shipment row passes projection against the corrected physical headers');
+  ['source_warehouse_id', 'destination_warehouse_id', 'created_by', 'created_at', 'updated_at', 'shipment_total_qty'].forEach(function (f) {
+    var g = DEMO4A_writerProjectionGaps_(A5_PLAN_, v5HeadersA5({ dropField: { table: 'shipments', field: f } }));
+    ok(g.ok === false && g.missing_fields.some(function (m) { return m.table === 'shipments' && m.field === f; }), 'L26/L27/L28. removing the physical ' + f + ' column BLOCKS with zero writes');
+  });
+  ok(/if \(!projection\.ok\) \{ out\.verdict = 'COMMIT_BLOCKED_WRITER_PROJECTION_INCOMPLETE'/.test(commitFn), 'H. the gate is still enforced in COMMIT');
+  ok(commitFn.indexOf('DEMO4A_writerProjectionGaps_') < commitFn.indexOf('setProperty(DEMO4A_JOURNAL_KEY_') && commitFn.indexOf('DEMO4A_writerProjectionGaps_') < commitFn.indexOf("phase = 'insert'"), 'L29. projection failure occurs BEFORE any journal property write and before the first table write');
+  ok(/blanket|ignoreAllMissing|skipProjection/.test(G) === false, 'H. no blanket-ignore rule exists');
+  ok(/insertColumn|setColumnWidth\(|appendColumn|addColumn|ALTER TABLE|createSheet\(/.test(G) === false, 'L30. no DB column creation / migration code exists anywhere in source');
+})();
+
+section('V3G5A-L37/L38/K. prior failed journal: cannot authorize CLEAR, and retry safety is classified');
+(function () {
+  var lineage = DEMO4A_srcDestLineageGate_(A5_PLAN_, mastersLive().warehouses);
+  var headers = v5HeadersA5(), colTypes = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (t2) { var cc = {}; (headers[t2] || []).forEach(function (c) { var cl = DEMO4A_fieldClass_(c); cc[c] = (cl === 'date' || cl === 'datetime') ? 'date_formatted' : (cl === 'numeric' || cl === 'coordinate') ? 'numeric_cell' : 'text_cell'; }); colTypes[t2] = cc; });
+  function core(journal, state, clearPlaceholder) { return DEMO4A_canonDiagnosticCore_({ ok: true }, mastersLive(), A5_PLAN_, headers, colTypes, { ok: true, offset_min: 480, time_zone: 'Asia/Taipei' }, journal, state || 'ABSENT_ALL', lineage, clearPlaceholder === undefined ? true : clearPlaceholder); }
+  var prior = DEMO4A_buildJournal_(DEMO4A_buildPlan_(mastersWHderived()));   // a DIFFERENT (retired) plan checksum, valid integrity
+  var c1 = core(prior);
+  eq([c1.journal_status_read_only, c1.journal_integrity_valid, c1.journal_matches_previous_failed_attempt], ['PRESENT_FROM_PRIOR_ATTEMPT', true, true], 'K. a prior journal + ABSENT_ALL is classified as a failed rolled-back attempt with valid integrity');
+  eq(c1.previous_failed_checksum_matches_current_plan, false, 'K/L32. the prior checksum legitimately DIFFERS from the corrected plan checksum');
+  eq([c1.journal_retry_safe, c1.verdict], [true, 'READY_FOR_CONTROLLED_RETRY'], 'L38/K. a differing prior checksum is RETRY-SAFE (it will be superseded), not unsafe');
+  eq(c1.corrected_plan_checksum, A5_PLAN_.checksum, 'K. the corrected plan checksum is reported');
+  var bad = JSON.parse(JSON.stringify(prior)); bad.journal_integrity_checksum = 'deadbeef';
+  eq([core(bad).journal_retry_safe, core(bad).verdict, core(bad).journal_retry_reason], [false, 'JOURNAL_STATE_UNSAFE_FOR_RETRY', 'PRIOR_JOURNAL_INTEGRITY_INVALID'], 'L38/K. a corrupt prior journal is UNSAFE for retry');
+  eq(core(prior, 'CONTENT_DRIFT').journal_retry_reason, 'PRIOR_ATTEMPT_LEFT_ROWS_OR_STATE_NOT_ABSENT', 'K. a prior journal with rows still present is unsafe');
+  eq(core(prior, 'ABSENT_ALL', false).journal_retry_reason, 'CLEAR_TOKEN_ARMED_WITH_PRIOR_JOURNAL_PRESENT', 'K/L37. an armed clear token with a prior journal present is unsafe');
+  eq(core(null).journal_retry_reason, 'NO_PRIOR_JOURNAL', 'K. no prior journal is trivially safe');
+  ok(/deleteProperty\(DEMO4A_JOURNAL_KEY_\)/.test(extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION')) === false, 'K. the diagnostic never clears or mutates the journal');
+})();
+
+section('V3G5A-L39..L45. drift, rollback, REUSED and PRESENT_EXACT_ALL remain intact on the corrected contract');
+(function () {
+  var live = v5RoundTripA5(v5HeadersA5(), { sheetTzMin: 480 });
+  eq(DEMO4A_classifyState_(A5_PLAN_, live).classification, 'PRESENT_EXACT_ALL', 'L44. an exact round trip of the CORRECTED intended content is PRESENT_EXACT_ALL');
+  var mutated = v5RoundTripA5(v5HeadersA5(), { sheetTzMin: 480, mutate: function (t2, cell) { if (t2 === 'shipments') cell.source_warehouse_id = 'WH-CN-WRONG'; } });
+  var cls = DEMO4A_classifyState_(A5_PLAN_, mutated);
+  eq(cls.classification, 'CONTENT_DRIFT', 'L39. a mutated source_warehouse_id is still genuine blocking CONTENT_DRIFT');
+  var ev = DEMO4A_driftEvidence_(cls);
+  ok(ev.examples.some(function (x) { return x.table === 'shipments' && x.field === 'source_warehouse_id'; }) && ev.examples.length <= 20, 'L40. the compact forensic evidence names it and remains capped');
+})();
+ok(/rb\.ok \? 'COMMIT_FAILED_POSTCHECK_ROLLED_BACK' : 'COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED'/.test(commitFn), 'L41/L42. inserted-only rollback and mandatory rollback verification remain intact');
+ok(/COMMITTED_UNVERIFIED/.test(G) === false, 'L43. COMMITTED_UNVERIFIED remains impossible');
+ok(/cls\.classification === 'PRESENT_EXACT_ALL'\) \{ out\.delta = \{ shipping_plans: 0, shipping_plan_lines: 0, shipments: 0, shipment_lines: 0, shipment_routes: 0, shipment_events: 0 \}; out\.verdict = 'REUSED'/.test(commitFn), 'L45. an exact retry remains REUSED with six zero deltas');
+eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, 'L48. the three approved coordinate authorities remain unchanged');
+ok(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).every(function (k) { return DEMO4A_DEST_COORD_AUTHORITY_[k].latitude === G3_APPROVED_[k].lat; }), 'L48. their coordinates are untouched');
 
 done();

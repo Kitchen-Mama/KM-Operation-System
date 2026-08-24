@@ -815,6 +815,59 @@ function DEMO4A_lifecycleEvents_(slot, roleByIndex, resolved, currentIndex, endY
   return evs;
 }
 
+// ================================================================================================================
+// V3G5A(G) — PURE SOURCE→DESTINATION WAREHOUSE LINEAGE GATE. The business SOURCE warehouse and the business DESTINATION
+// warehouse are two distinct frozen authorities, and neither may ever be a geographic route/logistics-location id.
+// True only when, for ALL three plans and their three shipments: both warehouse ids are non-blank; the shipment inherits
+// its parent plan's source AND destination exactly; source ≠ destination; both resolve to an exact warehouses.warehouse_id
+// when the warehouses master is present; the destination is the approved regional authority; no route logistics_location
+// id has been substituted into a warehouse field; and no `shipments.warehouse_id` third authority exists.
+// ================================================================================================================
+var DEMO4A_APPROVED_REGION_DEST_ = { US_WEST: 'WH-KM-US-FBA-BFI4', US_CENTRAL: 'WH-KM-US-FBA-AUS2', US_EAST: 'WH-KM-US-FBA-ABE2' };
+function DEMO4A_srcDestLineageGate_(plan, warehouses) {
+  var reasons = [], plans = ((plan || {}).tables || {}).shipping_plans || [], ships = ((plan || {}).tables || {}).shipments || [];
+  var whPresent = !!(warehouses && warehouses.length), whById = {};
+  (warehouses || []).forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id) whById[id] = w; });
+  var locIds = {};
+  (((plan || {}).tables || {}).shipment_routes || []).forEach(function (r) { var l = DEMO4A_str_(r.location_ref_id); if (l) locIds[DEMO4A_low_(l)] = 1; });
+  var perByShip = {}; (((plan || {}).per_shipment) || []).forEach(function (x) { perByShip[DEMO4A_str_(x.shipment_id)] = x; });
+  var planById = {}; plans.forEach(function (pl) { planById[DEMO4A_str_(pl.shipping_plan_id)] = pl; });
+  if (plans.length !== 3 || ships.length !== 3) reasons.push('EXPECTED_THREE_PLANS_AND_THREE_SHIPMENTS');
+  plans.forEach(function (pl) {
+    if (!DEMO4A_str_(pl.source_warehouse_id)) reasons.push('PLAN_SOURCE_WAREHOUSE_BLANK:' + DEMO4A_str_(pl.shipping_plan_id));
+    if (!DEMO4A_str_(pl.destination_warehouse_id)) reasons.push('PLAN_DESTINATION_WAREHOUSE_BLANK:' + DEMO4A_str_(pl.shipping_plan_id));
+  });
+  ships.forEach(function (sh) {
+    var sid = DEMO4A_str_(sh.shipment_id), src = DEMO4A_str_(sh.source_warehouse_id), dst = DEMO4A_str_(sh.destination_warehouse_id);
+    if (Object.prototype.hasOwnProperty.call(sh, 'warehouse_id')) reasons.push('THIRD_WAREHOUSE_AUTHORITY_PRESENT:' + sid);
+    if (!src) reasons.push('SHIPMENT_SOURCE_WAREHOUSE_BLANK:' + sid);
+    if (!dst) reasons.push('SHIPMENT_DESTINATION_WAREHOUSE_BLANK:' + sid);
+    if (src && dst && DEMO4A_low_(src) === DEMO4A_low_(dst)) reasons.push('SOURCE_EQUALS_DESTINATION:' + sid);
+    var pl = planById[DEMO4A_str_(sh.shipping_plan_id)];
+    if (!pl) reasons.push('PARENT_PLAN_MISSING:' + sid);
+    else {
+      if (DEMO4A_low_(src) !== DEMO4A_low_(DEMO4A_str_(pl.source_warehouse_id))) reasons.push('SOURCE_NOT_INHERITED_FROM_PLAN:' + sid);
+      if (DEMO4A_low_(dst) !== DEMO4A_low_(DEMO4A_str_(pl.destination_warehouse_id))) reasons.push('DESTINATION_NOT_INHERITED_FROM_PLAN:' + sid);
+    }
+    if (whPresent) {
+      if (src && !whById[DEMO4A_low_(src)]) reasons.push('SOURCE_WAREHOUSE_NOT_IN_MASTER:' + src);
+      if (dst && !whById[DEMO4A_low_(dst)]) reasons.push('DESTINATION_WAREHOUSE_NOT_IN_MASTER:' + dst);
+    }
+    // a geographic route/logistics-location id must NEVER appear in a warehouse identity field
+    if (src && locIds[DEMO4A_low_(src)]) reasons.push('SOURCE_IS_A_ROUTE_LOCATION_ID:' + src);
+    if (dst && locIds[DEMO4A_low_(dst)]) reasons.push('DESTINATION_IS_A_ROUTE_LOCATION_ID:' + dst);
+    var ps = perByShip[sid], region = ps ? DEMO4A_str_(ps.region) : '';
+    // the approved REGIONAL destination authority is only binding while the warehouse authority itself is active
+    // (legacy logistics-only fixtures without a warehouses master keep their own template destination).
+    var approved = whPresent ? DEMO4A_APPROVED_REGION_DEST_[region] : null;
+    if (approved && dst && DEMO4A_low_(dst) !== DEMO4A_low_(approved)) reasons.push('DESTINATION_NOT_APPROVED_FOR_REGION:' + region + ':' + dst);
+    if (ps && DEMO4A_str_(ps.destination_logistics_location_id) && DEMO4A_low_(ps.destination_logistics_location_id) === DEMO4A_low_(dst)) reasons.push('DESTINATION_LOGISTICS_LOCATION_WRITTEN_AS_WAREHOUSE:' + sid);
+  });
+  var uniq = {}; reasons.forEach(function (r) { uniq[r] = 1; });
+  var list = Object.keys(uniq);
+  return { source_destination_warehouse_lineage_ready: list.length === 0, reasons: list.slice(0, 8), reason_count: list.length,
+    source_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.source_warehouse_id); }), destination_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.destination_warehouse_id); }) };
+}
 // E — per-plan binding gates over the three shipments' role evidence. READY_FOR_DEMO_SEED is unreachable unless all gates
 // are true. A source-proven (canonical/direct) binding satisfies role/corridor by authority; a synthetic binding must have
 // passed the hard gate to exist here, so these gates read the ACTUAL evidence honestly (never hardcoded true).
@@ -960,12 +1013,23 @@ function DEMO4A_buildPlan_(masters) {
         shipping_plan_line_id: planLineId, note: DEMO4A_TAG_, created_at: DEMO4A_CREATED_AT_, updated_at: DEMO4A_CREATED_AT_ });
     }
 
+    // V3G5A(A/C/F) — FROZEN warehouse semantics on the intended physical shipment row:
+    //   source_warehouse_id      = the business ORIGIN warehouse identity, inherited verbatim from the parent shipping
+    //                              plan (both come from the selected route template's origin_warehouse_id).
+    //   destination_warehouse_id = the business FINAL DESTINATION warehouse identity (the approved regional authority).
+    // REMOVED `warehouse_id`: the audit proved it was assigned the SAME `destWh` variable as destination_warehouse_id —
+    // an exact DUPLICATE of the destination identity (CASE B), not a source identity — and it is not a deployed physical
+    // column, so the writer silently dropped it and the readback classified CONTENT_DRIFT. Nothing was lost by removing
+    // it and no third ambiguous warehouse authority is introduced.
+    // REMOVED `updated_by`: also not a deployed physical column. The physical audit fields created_by / created_at /
+    // updated_at are preserved. `warehouse_code` is NOT added — the intended row never carried it, so there is no
+    // existing production meaning for this tool to preserve or redefine.
     tables.shipments.push({ shipment_id: shipId, shipment_no: 'DEMO-SHIP-' + idx, shipping_plan_id: planId,
-      source_warehouse_id: srcWh, warehouse_id: destWh, company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      source_warehouse_id: srcWh, company: scope.company, country: scope.country, marketplace: scope.marketplace,
       ship_from: originCountry, destination: destRegion || scope.country, destination_warehouse_id: destWh, destination_type: 'warehouse',
       carrier_id: carrier, shipping_method: method, last_mile_delivery: lastMile, status: life.status,
       etd: life.etd, eta: life.eta, actual_departure_date: life.etd, actual_arrival_date: life.delivered_date, delivered_date: life.delivered_date,
-      shipment_total_qty: shipTotalQty, currency: 'USD', note: DEMO4A_TAG_, created_by: DEMO4A_ACTOR_, created_at: DEMO4A_CREATED_AT_, updated_at: DEMO4A_CREATED_AT_, updated_by: DEMO4A_ACTOR_ });
+      shipment_total_qty: shipTotalQty, currency: 'USD', note: DEMO4A_TAG_, created_by: DEMO4A_ACTOR_, created_at: DEMO4A_CREATED_AT_, updated_at: DEMO4A_CREATED_AT_ });
     if (DEMO4A_overviewVisible_(life.status)) visibility.shipment_overview.push({ shipment_id: shipId, status: life.status });
     if (DEMO4A_draftVisible_(life.status)) visibility.shipment_draft.push({ shipment_id: shipId, status: life.status });
 
@@ -1019,7 +1083,7 @@ function DEMO4A_buildPlan_(masters) {
 
     per_shipment.push({ shipment_id: shipId, slot: life.slot, status: life.status, template: pick.tid, region: pick.region, nodes: nodeCount,
       canonical_binding_count: canonicalCount, direct_coordinate_count: directCount, demo_synthetic_binding_count: syntheticCount, abstract_rows: abstractRowCount,
-      route_rows: nodeCount, event_rows: evs.length, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
+      route_rows: nodeCount, event_rows: evs.length, source_warehouse_id: srcWh, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
       plan_lines: lineCount, shipment_lines: lineCount,
       transport_class: DEMO4A_str_(binding.transport_class || DEMO4A_transportClass_(method)),
       destination_warehouse_id: da ? DEMO4A_str_(da.warehouse_id) : destWh, destination_warehouse_code: da ? DEMO4A_str_(da.warehouse_code) : '', destination_logistics_location_id: da ? DEMO4A_str_(da.logistics_location_id) : DEMO4A_str_(binding.destination.location_ref_id),
@@ -1035,7 +1099,14 @@ function DEMO4A_buildPlan_(masters) {
   var counts = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { counts[t] = tables[t].length; });
   counts.total = DEMO4A_WRITE_ORDER_.reduce(function (a, t) { return a + tables[t].length; }, 0);
   var binding_gates = DEMO4A_bindingGates_(per_shipment);
+  // V3G5A(G) — the source→destination warehouse lineage gate is part of the HARD binding-gate conjunction, so a broken
+  // lineage can never reach READY, DRY_RUN authorization, COMMIT, VALIDATE or an exact REUSED classification.
+  var sdl = DEMO4A_srcDestLineageGate_({ tables: tables, per_shipment: per_shipment }, masters.warehouses);
+  binding_gates.source_destination_warehouse_lineage_ready = sdl.source_destination_warehouse_lineage_ready;
+  binding_gates.source_destination_warehouse_lineage_reasons = sdl.reasons;
+  binding_gates.ok = binding_gates.ok && sdl.source_destination_warehouse_lineage_ready;
   return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility, binding_gates: binding_gates,
+    source_destination_warehouse_lineage: sdl,
     scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku_pairs: scope.pairs },
     region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
     // V3G4(F) — warehouse-aware evaluation facts, so PREFLIGHT can confirm WHICH destination rule qualified the templates.
@@ -2203,7 +2274,7 @@ function DEMO4A_mapDestinationEndpointSource_(branch) {
 // V3G(F) — SEVEN separate PREFLIGHT gates. Identity/address readiness are reported SEPARATELY from coordinate readiness; a
 // blank master coordinate (ADDRESS_SEEDED_COORDINATES_PENDING) NEVER by itself fails business identity or received-status.
 // READY still requires a real, source-bound display coordinate (logistics OR reviewed address-derived) so the map renders.
-function DEMO4A_warehouseGates_(present, authority, errors, routeGeographyOk) {
+function DEMO4A_warehouseGates_(present, authority, errors, routeGeographyOk, sourceDestLineageOk) {
   if (!present) return { applicable: false, note: 'warehouses master absent — legacy logistics-only binding (no warehouse authority gate)' };
   var slots = Object.keys(authority || {});
   function every(pred) { return slots.length > 0 && slots.every(function (s) { return pred(authority[s] || {}); }); }
@@ -2215,11 +2286,13 @@ function DEMO4A_warehouseGates_(present, authority, errors, routeGeographyOk) {
   var mapConsumes = DEMO4A_MAP_DEST_COORD_CONSUMPTION_.inline_route_node_coordinate_rendered === true;   // node-level inline render (audited)
   var truthful = coord;   // received/facility marker emitted ONLY at a coordinate-ready facility (fail-closed guarantees it)
   var routeGeo = (routeGeographyOk === undefined) ? true : !!routeGeographyOk;
+  var srcDest = (sourceDestLineageOk === undefined) ? true : !!sourceDestLineageOk;   // V3G5A(G)
   return { applicable: true,
     warehouse_business_identity_ready: identity, warehouse_address_authority_ready: address, warehouse_location_lineage_ready: lineage,
     destination_display_coordinate_ready: coord, map_consumes_destination_coordinate: mapConsumes, status_truthfulness_ready: truthful, route_geography_ready: routeGeo,
+    source_destination_warehouse_lineage_ready: srcDest,
     map_destination_coordinate_consumption: DEMO4A_MAP_DEST_COORD_CONSUMPTION_,
-    ok: identity && address && lineage && coord && mapConsumes && truthful && routeGeo, errors: errors || [] };
+    ok: identity && address && lineage && coord && mapConsumes && truthful && routeGeo && srcDest, errors: errors || [] };
 }
 // V3G4A — the PURE PREFLIGHT verdict rule, extracted so PREFLIGHT and the compact authorization envelope share ONE rule
 // (no second approximate evaluator). Inputs are the already-computed schema flag, plan, warehouse gates and classification.
@@ -2289,7 +2362,7 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
   out.per_shipment = (plan.per_shipment || []).map(function (x) {
     return { shipment_id: DEMO4A_str_(x.shipment_id), slot: DEMO4A_str_(x.slot), status: DEMO4A_str_(x.status), template_id: DEMO4A_str_(x.template), region: DEMO4A_str_(x.region),
       destination_warehouse_id: DEMO4A_str_(x.destination_warehouse_id), destination_warehouse_code: DEMO4A_str_(x.destination_warehouse_code),
-      destination_logistics_location_id: DEMO4A_str_(x.destination_logistics_location_id), destination_coordinate_branch: DEMO4A_str_(x.destination_coordinate_branch),
+      source_warehouse_id: DEMO4A_str_(x.source_warehouse_id), destination_logistics_location_id: DEMO4A_str_(x.destination_logistics_location_id), destination_coordinate_branch: DEMO4A_str_(x.destination_coordinate_branch),
       destination_address_fingerprint: DEMO4A_str_(x.destination_address_fingerprint), destination_coordinate_accuracy: DEMO4A_str_(x.destination_coordinate_accuracy),
       destination_renderable: x.destination_facility_marker_renderable === true,
       origin_location_id: DEMO4A_str_(x.origin_location_id), current_location_id: DEMO4A_str_(x.current_location_id),
@@ -2315,6 +2388,7 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     map_consumes_destination_coordinate: wg.map_consumes_destination_coordinate === true,
     status_truthfulness_ready: wg.status_truthfulness_ready === true,
     route_geography_ready: wg.route_geography_ready === true,
+    source_destination_warehouse_lineage_ready: (plan.binding_gates || {}).source_destination_warehouse_lineage_ready === true,
     live_plan_shape_valid: shapeOk
   };
   gs.all_pass = Object.keys(gs).every(function (k) { return k === 'all_pass' || gs[k] === true; });
@@ -2346,6 +2420,7 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     && out.selected_templates.length === 3 && regionsCovered
     && out.per_shipment.length === 3
     && gs.live_plan_shape_valid === true
+    && gs.source_destination_warehouse_lineage_ready === true
     && gs.all_pass === true
     && out.existing_state.classification === 'ABSENT_ALL'
     && out.existing_state.duplicate_pk_count_total === 0
@@ -2394,7 +2469,7 @@ function TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION() {
 // the shared canonicalization contract, and predicts round-trip risk. It performs NO Sheet write and therefore performs
 // NO actual write/read round trip — every risk it reports is a STATIC prediction, never an observed round trip.
 // ================================================================================================================
-function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, journalPresent, existingClassification) {
+function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, journalPresent, existingClassification, lineageGate, clearTokenPlaceholder) {
   var out = { contract_version: DEMO4A_CANON_CONTRACT_VERSION_, round_trip_performed: false };
   out.schema_ok = !!(schema && schema.ok);
   out.plan_checksum = DEMO4A_str_(plan && plan.checksum);
@@ -2424,11 +2499,11 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
   });
   out.field_class_counts = classCounts;
   out.all_intended_fields_have_class = unknown.length === 0;
-  out.unknown_field_classes = unknown;
+  out.unknown_field_classes = unknown.slice(0, 20);
   var proj = DEMO4A_writerProjectionGaps_(plan || { tables: {} }, headersByTable);
   out.writer_projection_complete = proj.ok;
   out.writer_projection_missing_total = proj.missing_total;
-  out.writer_projection_missing_fields = proj.missing_fields;
+  out.writer_projection_missing_fields = proj.missing_fields.slice(0, 20);   // J — capped at 20
   out.writer_unowned_column_counts = proj.writer_unowned_column_counts;
   // physical alias resolution — the demo writer owns `marketplace` semantics ONLY where a physical column exists; the
   // Flow-A `marketplace_seperate` authority is NEVER redefined here, only reported.
@@ -2443,19 +2518,65 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
   out.date_fields = byClass.date; out.numeric_fields = byClass.numeric; out.boolean_fields = byClass.boolean;
   out.text_identifier_fields = byClass.identifier.concat(byClass.enum).concat(byClass.text).length;
   out.coordinate_fields = byClass.coordinate; out.datetime_fields = byClass.datetime; out.blank_optional_fields = blanks;
-  out.live_column_number_format_classes = columnTypeClasses || {};
-  out.predicted_roundtrip_risk_fields = risk; out.risk_count = risk.length;
+  // V3G5A(J) — the previous COMPLETE per-column number-format dump truncated the log before the authorization-bearing
+  // fields. It is replaced by a per-table COUNT summary plus the ACTUAL risky fields only (capped at 20).
+  var fmtSummary = {}, fmtRisk = [];
+  DEMO4A_WRITE_ORDER_.forEach(function (name) {
+    var cc = (columnTypeClasses || {})[name] || {}, sum = { date_formatted_count: 0, numeric_cell_count: 0, text_cell_count: 0, empty_or_general_count: 0 };
+    Object.keys(cc).forEach(function (col) {
+      var c = cc[col];
+      if (c === 'date_formatted') sum.date_formatted_count++;
+      else if (c === 'numeric_cell') sum.numeric_cell_count++;
+      else if (c === 'text_cell' || c === 'boolean_cell') sum.text_cell_count++;
+      else sum.empty_or_general_count++;
+      // an ACTUAL format risk: the physical cell type contradicts the declared field class for a field the writer owns.
+      var fcls = DEMO4A_fieldClass_(col), owned = (((plan || {}).tables || {})[name] || []).some(function (r) { return Object.prototype.hasOwnProperty.call(r, col); });
+      if (!owned || fmtRisk.length >= 20) return;
+      if (c === 'date_formatted' && !(fcls === 'date' || fcls === 'datetime')) fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'DATE_FORMATTED_COLUMN_FOR_NON_DATE_FIELD' });
+      else if (c === 'numeric_cell' && !(fcls === 'numeric' || fcls === 'coordinate')) fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'NUMERIC_COLUMN_FOR_NON_NUMERIC_FIELD' });
+      else if (c === 'boolean_cell' && fcls !== 'boolean') fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'BOOLEAN_COLUMN_FOR_NON_BOOLEAN_FIELD' });
+    });
+    fmtSummary[name] = sum;
+  });
+  out.number_format_summary_by_table = fmtSummary;
+  out.number_format_risk_fields = fmtRisk;
+  out.predicted_roundtrip_risk_fields = risk.slice(0, 20); out.risk_count = risk.length + fmtRisk.length;
   out.canonicalization_tz = { contract_offset_min: DEMO4A_CANON_TZ_OFFSET_MIN_, spreadsheet_offset_min: tz ? tz.offset_min : null, spreadsheet_time_zone: tz ? DEMO4A_str_(tz.time_zone) : '', resolved: !!(tz && tz.ok) };
+  // V3G5A(G) — the source→destination warehouse lineage gate is authorization-bearing and must stay visible.
+  var lg = lineageGate || {};
+  out.source_destination_warehouse_lineage_ready = lg.source_destination_warehouse_lineage_ready === true;
+  out.source_destination_warehouse_lineage_reasons = (lg.reasons || []).slice(0, 8);
+  out.source_warehouse_ids = (lg.source_warehouse_ids || []).slice(0, 3);
+  out.destination_warehouse_ids = (lg.destination_warehouse_ids || []).slice(0, 3);
+  // V3G5A(K) — prior-attempt journal safety. The prior journal is NEVER cleared or mutated here; it is only read.
   out.journal_status_read_only = journalPresent ? 'PRESENT_FROM_PRIOR_ATTEMPT' : 'ABSENT';
-  out.previous_failed_checksum_matches_current_plan = journalPresent === false ? null : (DEMO4A_str_(journalPresent && journalPresent.plan_checksum) === out.plan_checksum);
+  out.journal_previous_checksum = journalPresent ? DEMO4A_str_(journalPresent.plan_checksum) : '';
+  out.corrected_plan_checksum = out.plan_checksum;
+  out.journal_integrity_valid = journalPresent ? (DEMO4A_str_(journalPresent.journal_integrity_checksum) !== '' && DEMO4A_hash_(DEMO4A_journalCanonical_(journalPresent)) === DEMO4A_str_(journalPresent.journal_integrity_checksum)) : null;
+  out.existing_state = DEMO4A_str_(existingClassification);
+  out.existing_state_classification = out.existing_state;
+  // a prior journal + an ABSENT_ALL live state IS the signature of a failed, fully rolled-back attempt.
+  out.journal_matches_previous_failed_attempt = !!journalPresent && out.existing_state === 'ABSENT_ALL';
+  // the prior checksum MAY legitimately differ now that the intended shipment content was corrected (the previously
+  // authorized checksum is RETIRED; the literal is deliberately not named in source so nothing can be pinned to it).
+  out.previous_failed_checksum_matches_current_plan = journalPresent ? (out.journal_previous_checksum === out.plan_checksum) : null;
   out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';
-  out.existing_state_classification = DEMO4A_str_(existingClassification);
+  out.clear_token_status = clearTokenPlaceholder === false ? 'SET' : 'PLACEHOLDER';
+  var jrReason = '';
+  if (!journalPresent) jrReason = 'NO_PRIOR_JOURNAL';
+  else if (out.journal_integrity_valid !== true) jrReason = 'PRIOR_JOURNAL_INTEGRITY_INVALID';
+  else if (out.existing_state !== 'ABSENT_ALL') jrReason = 'PRIOR_ATTEMPT_LEFT_ROWS_OR_STATE_NOT_ABSENT';
+  else if (out.clear_token_status !== 'PLACEHOLDER') jrReason = 'CLEAR_TOKEN_ARMED_WITH_PRIOR_JOURNAL_PRESENT';
+  else jrReason = 'PRIOR_JOURNAL_IS_A_ROLLED_BACK_ATTEMPT_AND_WILL_BE_SUPERSEDED';
+  out.journal_retry_reason = jrReason;
+  out.journal_retry_safe = (jrReason === 'NO_PRIOR_JOURNAL' || jrReason === 'PRIOR_JOURNAL_IS_A_ROLLED_BACK_ATTEMPT_AND_WILL_BE_SUPERSEDED');
   out.verdict = !out.all_intended_fields_have_class ? 'UNKNOWN_FIELD_CLASS'
     : out.alias_conflict ? 'PHYSICAL_SCHEMA_ALIAS_CONFLICT'
     : !out.writer_projection_complete ? 'CANONICALIZATION_RISK_REMAINS'
     : out.risk_count > 0 ? 'CANONICALIZATION_RISK_REMAINS'
-    : (journalPresent && out.previous_failed_checksum_matches_current_plan === false) ? 'JOURNAL_STATE_UNSAFE_FOR_RETRY'
-    : out.existing_state_classification !== 'ABSENT_ALL' ? 'EXISTING_STATE_NOT_ABSENT'
+    : out.source_destination_warehouse_lineage_ready !== true ? 'CANONICALIZATION_RISK_REMAINS'
+    : out.journal_retry_safe !== true ? 'JOURNAL_STATE_UNSAFE_FOR_RETRY'
+    : out.existing_state !== 'ABSENT_ALL' ? 'EXISTING_STATE_NOT_ABSENT'
     : 'READY_FOR_CONTROLLED_RETRY';
   return out;
 }
@@ -2488,7 +2609,8 @@ function TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION() {
     var jRaw = PropertiesService.getScriptProperties().getProperty(DEMO4A_JOURNAL_KEY_);
     var jParsed = null; if (jRaw) { try { jParsed = JSON.parse(jRaw); } catch (e2) { jParsed = { plan_checksum: '' }; } }
     var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
-    var core = DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, jParsed, cls.classification);
+    var lineage = DEMO4A_srcDestLineageGate_(plan, masters.warehouses);
+    var core = DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, columnTypeClasses, tz, jParsed, cls.classification, lineage, DEMO4A_CONFIRMED_CLEAR_TOKEN_ === 'PASTE_DEMO_CLEAR_TOKEN_HERE');
     Object.keys(core).forEach(function (k) { out[k] = core[k]; });
   } catch (e) { out.verdict = 'CANONICALIZATION_RISK_REMAINS'; out.reason = (e && e.message) ? e.message : String(e); }
   out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES';
@@ -2521,7 +2643,7 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
       out.binding_gates = plan.binding_gates;
       // V3G(F) — the SEVEN separate warehouse gates (business identity / address authority / lineage / display coordinate /
       // map consumption / status truthfulness / route geography). Identity/address are reported separately from coordinate.
-      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined);
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined, plan.binding_gates ? plan.binding_gates.source_destination_warehouse_lineage_ready : undefined);
       out.map_destination_coordinate_consumption = DEMO4A_MAP_DEST_COORD_CONSUMPTION_;
       out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_warehouse_code: s.destination_warehouse_code, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_coordinate_source: s.destination_coordinate_source, destination_coordinate_accuracy: s.destination_coordinate_accuracy, destination_address_status: s.destination_address_status, destination_map_display_status: DEMO4A_mapDestinationDisplayStatus_(s.destination_coordinate_branch), destination_facility_marker_renderable: s.destination_facility_marker_renderable, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
@@ -2548,7 +2670,7 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
       out.rejection_counts = plan.rejection_counts || null; out.destination_authority_errors = plan.destination_authority_errors || [];
       out.scope = plan.scope; out.dynamic_row_counts = plan.counts; out.per_shipment_counts = plan.per_shipment; out.planned_ids = DEMO4A_allIds_(plan);
       out.binding_gates = plan.binding_gates;
-      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined);
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined, plan.binding_gates ? plan.binding_gates.source_destination_warehouse_lineage_ready : undefined);
       // V3G — per-shipment destination authority + coordinate branch + source/accuracy + address status + whether the
       // facility marker renders, with the current gateway reported SEPARATELY (a gateway is never the final FBA).
       out.map_destination_coordinate_consumption = DEMO4A_MAP_DEST_COORD_CONSUMPTION_;
