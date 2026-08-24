@@ -226,6 +226,8 @@ function DEMO4A_transportClass_(mode) {
 var DEMO4A_LOC_TYPE_CANON_ = {
   factory: 'factory', plant: 'factory', manufacturer: 'factory', supplier: 'factory',
   warehouse: 'warehouse', wh: 'warehouse', dc_warehouse: 'warehouse',
+  // V3G(G.2) — warehouse-backed 3PL rows: recognized as a warehouse-class destination (never UNKNOWN when present live).
+  third_party_warehouse: 'warehouse', third_party: 'warehouse', '3pl': 'warehouse', '3pl_warehouse': 'warehouse', tpl_warehouse: 'warehouse',
   fulfillment_center: 'fulfillment_center', fulfilment_center: 'fulfillment_center', fc: 'fulfillment_center', fba: 'fulfillment_center', fba_center: 'fulfillment_center',
   distribution_center: 'distribution_center', dc: 'distribution_center', distribution_centre: 'distribution_center', regional_distribution_center: 'distribution_center',
   port: 'port', seaport: 'port', sea_port: 'port', harbor: 'port', harbour: 'port', container_port: 'port', ocean_port: 'port',
@@ -526,7 +528,7 @@ function DEMO4A_resolveScopeAndSkus_(marketplaceSkus, skuDetails, destCountry) {
 // V3C — the ROW coordinate binding at node index i: a ROLE anchor binding if present, else the node's own canonical/
 // direct binding, else null (ABSTRACT — coordinate-blank timeline row). Never manufactures a coordinate.
 function DEMO4A_rowBindingAt_(i, roleByIndex, resolved) {
-  if (roleByIndex && roleByIndex[i]) { var rb = roleByIndex[i]; return { binding_type: rb.source, location_ref_id: rb.location_ref_id, latitude: rb.latitude, longitude: rb.longitude, location_name: rb.location_name, country: rb.country, region: rb.region, city: rb.city }; }
+  if (roleByIndex && roleByIndex[i]) { var rb = roleByIndex[i]; return { binding_type: rb.source, location_ref_id: rb.location_ref_id, latitude: rb.latitude, longitude: rb.longitude, location_name: rb.location_name, country: rb.country, region: rb.region, city: rb.city, address_derived: !!rb.address_derived, coordinate_source: rb.coordinate_source || '' }; }
   var g = resolved[i] && resolved[i].geo;
   if (g && g.bound) return { binding_type: g.binding_type, location_ref_id: g.location_ref_id, latitude: g.latitude, longitude: g.longitude, location_name: g.location_name, country: g.country, region: g.region, city: g.city };
   return null;
@@ -608,29 +610,47 @@ function DEMO4A_buildPlan_(masters) {
   var scope = DEMO4A_resolveScopeAndSkus_(masters.marketplaceSkus, masters.skuDetails, destCountry);
   if (!scope.ok) return scope;
 
-  // V3F — DESTINATION-WAREHOUSE AUTHORITY GATE. Active ONLY when the `warehouses` master is present (legacy/test fixtures
-  // without it keep the logistics-only binding unchanged). Resolves each shipment's destination BUSINESS identity
-  // (template.destination_warehouse_id → warehouses row) then the typed coordinate branch (exact join to a
-  // logistics_locations row via warehouse_id). Fails closed with exact evidence — NO fabricated FBA marker, NO received-
-  // at-FBA — unless EVERY destination is WAREHOUSE_LOCATION_COORDINATE_READY. Identity (company/country) is validated
-  // separately from coordinates.
+  // V3G — DESTINATION-WAREHOUSE AUTHORITY GATE (supersedes V3F's coordinate-mandatory gate). Active ONLY when the
+  // `warehouses` master is present (legacy fixtures without it keep the logistics-only binding). The real FBA/3PL warehouse
+  // is the BUSINESS destination (warehouse_id + warehouse_code + eligible + resolvable ADDRESS); a blank master coordinate
+  // NEVER invalidates it. Coordinate precedence: (1) valid warehouse-linked logistics_locations coordinate; (2) a REVIEWED,
+  // source-bound, address-fingerprint-matched Demo coordinate; else a same-region eligible reselection; else fail closed
+  // (DESTINATION_ADDRESS_COORDINATE_UNRESOLVED — identity ready, no display coordinate). Identity/eligibility/scope failures
+  // fail closed as DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY. NO fabricated coordinate, NO received-at-FBA unless a facility-
+  // grade coordinate is truthfully reached. A seaport gateway is NEVER relabelled the FBA.
   var warehousesPresent = !!(masters.warehouses && masters.warehouses.length);
+  var coordAuthority = masters.destCoordAuthority || DEMO4A_DEST_COORD_AUTHORITY_;
   var destAuthority = {};
+  var READY_BRANCHES_ = { WAREHOUSE_LOCATION_COORDINATE_READY: 1, DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE: 1 };
   if (warehousesPresent) {
     var whById = {}; masters.warehouses.forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id && whById[id] === undefined) whById[id] = w; });
-    var authErrors = [];
+    var identityErrors = [], coordinateErrors = [];
     DEMO4A_SHIP_LIFECYCLE_.forEach(function (life) {
       var pick = sel._assignRaw[life.slot], tpl = pick.template, destWh = DEMO4A_str_(tpl.destination_warehouse_id);
       var whRow = destWh ? whById[DEMO4A_low_(destWh)] : null;
       var r;
-      if (whRow && !DEMO4A_whDestTypeCompatible_(whRow)) r = { branch: 'WAREHOUSE_IDENTITY_INELIGIBLE', reason: 'WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(whRow), warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
-      else if (whRow && DEMO4A_whCompany_(whRow) && scope.company && DEMO4A_low_(DEMO4A_whCompany_(whRow)) !== DEMO4A_low_(scope.company)) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COMPANY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
-      else if (whRow && DEMO4A_whCountry_(whRow) && DEMO4A_str_(tpl.destination_country) && DEMO4A_low_(DEMO4A_whCountry_(whRow)) !== DEMO4A_low_(DEMO4A_str_(tpl.destination_country))) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COUNTRY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
-      else r = DEMO4A_resolveWarehouseDestination_(whRow, masters.locations);
+      // identity / eligibility / scope FIRST (independent of coordinate).
+      if (!whRow) r = { branch: 'WAREHOUSE_IDENTITY_MISSING', reason: 'NO_DESTINATION_WAREHOUSE_IDENTITY', warehouse_id: destWh, identity_ready: false, renderable: false, received_allowed: false };
+      else if (!DEMO4A_whDestTypeCompatible_(whRow)) r = { branch: 'WAREHOUSE_IDENTITY_INELIGIBLE', reason: 'WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(whRow), warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+      else if (DEMO4A_whCompany_(whRow) && scope.company && DEMO4A_low_(DEMO4A_whCompany_(whRow)) !== DEMO4A_low_(scope.company)) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COMPANY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+      else if (DEMO4A_whCountry_(whRow) && DEMO4A_str_(tpl.destination_country) && DEMO4A_low_(DEMO4A_whCountry_(whRow)) !== DEMO4A_low_(DEMO4A_str_(tpl.destination_country))) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COUNTRY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), identity_ready: false, renderable: false, received_allowed: false };
+      else {
+        r = DEMO4A_resolveWarehouseDestination_(whRow, masters.locations, coordAuthority, tpl);
+        // address authority gate (identity) is separate from coordinate readiness.
+        if (r.address_status && r.address_status !== 'ADDRESS_AUTHORITY_READY') { r.identity_ready = false; if (!r.reason) r.reason = r.address_status; }
+        // coordinate not ready for this template's own warehouse → try a same-region eligible reselection.
+        if (!READY_BRANCHES_[r.branch] && r.identity_ready) {
+          var alt = DEMO4A_pickWarehouseForRegion_(masters.warehouses, masters.locations, coordAuthority, DEMO4A_dxRegionBucket_(DEMO4A_str_(tpl.destination_region) || DEMO4A_whRegion_(whRow)), scope.company, DEMO4A_str_(tpl.destination_country) || DEMO4A_whCountry_(whRow), DEMO4A_whId_(whRow));
+          if (alt) { r = alt.resolution; r.reselected_from_warehouse_id = DEMO4A_whId_(whRow); }
+        }
+      }
+      r.normalized_address = r.normalized_address || (whRow && r.identity_ready ? DEMO4A_normalizeWhAddress_(whRow).normalized : '');
       destAuthority[life.slot] = r;
-      if (r.branch !== 'WAREHOUSE_LOCATION_COORDINATE_READY') authErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: r.warehouse_id || destWh });
+      if (!r.identity_ready) identityErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: r.warehouse_id || destWh });
+      else if (!READY_BRANCHES_[r.branch]) coordinateErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || r.coordinate_unresolved_reason || 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', warehouse_id: r.warehouse_id || destWh });
     });
-    if (authErrors.length) return { ok: false, reason: 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', destination_authority_errors: authErrors, destination_authority: destAuthority };
+    if (identityErrors.length) return { ok: false, reason: 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', destination_authority_errors: identityErrors.concat(coordinateErrors), destination_authority: destAuthority };
+    if (coordinateErrors.length) return { ok: false, reason: 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', destination_authority_errors: coordinateErrors, destination_authority: destAuthority };
   }
 
   var P = DEMO4A_PREFIX_;
@@ -644,18 +664,25 @@ function DEMO4A_buildPlan_(masters) {
     var binding = isInTransit ? pick.currentBinding : pick.binding;   // in-transit uses the current-marker binding
     var roleByIndex = binding.role_by_index;
     var planId = P + 'SP-' + idx, shipId = P + 'SHP-' + idx;
-    // V3F — when the warehouse authority is active + READY, the FINAL DESTINATION marker IS the exact warehouse-linked
-    // logistics_location (E): override the last-node binding with that source-proven facility coordinate. The route
-    // lat/lng then equal that exact location row; both identities (warehouse_id + logistics_location_id) are preserved.
+    // V3G — when the warehouse authority is active + a display coordinate is READY (logistics OR address-derived), the
+    // FINAL DESTINATION marker IS the real FBA/3PL facility (D): override the last-node binding with the resolved facility
+    // coordinate. location_ref lineage = the exact logistics_location_id WHEN the join exists (else blank — an address-
+    // derived-only destination has no logistics row but keeps its warehouse identity). Route lat/lng = master coordinate if
+    // present, else the approved Demo address-derived coordinate. Both identities + the coordinate source are preserved. A
+    // gateway (seaport/airport) is NEVER relabelled the FBA. For the in-transit slot the destination node stays 'planned'
+    // (no event) — the address-derived facility coordinate can populate that future node without a received event.
     var da = warehousesPresent ? destAuthority[life.slot] : null;
-    if (da && da.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') {
+    var daReady = da && (da.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || da.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE');
+    if (daReady) {
+      var derived = da.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE';
       var destIdx = resolved.length - 1;
-      var whBind = { source: 'WAREHOUSE_LOCATION_BINDING', node_index: destIdx, region_exact: true, location_ref_id: da.logistics_location_id,
-        latitude: da.latitude, longitude: da.longitude, location_name: da.logistics_location_id, country: da.country, region: da.region, city: '',
-        canon_type: da.location_type, location_type: da.location_type, source_proven: true, role_compatible: true, corridor_compatible: true,
-        warehouse_id: da.warehouse_id, verification_status: da.verification_status };
+      var whBind = { source: 'WAREHOUSE_LOCATION_BINDING', node_index: destIdx, region_exact: true, location_ref_id: DEMO4A_str_(da.logistics_location_id),
+        latitude: da.latitude, longitude: da.longitude, location_name: DEMO4A_str_(da.logistics_location_id) || DEMO4A_str_(da.warehouse_id), country: da.country, region: da.region, city: '',
+        canon_type: da.location_type || 'warehouse', location_type: da.location_type || 'warehouse', source_proven: true, role_compatible: true, corridor_compatible: true,
+        warehouse_id: da.warehouse_id, warehouse_code: da.warehouse_code, verification_status: da.verification_status,
+        coordinate_source: da.coordinate_source, coordinate_accuracy: da.coordinate_accuracy || '', coordinate_source_reference: da.coordinate_source_reference || '', address_derived: derived };
       binding.destination = whBind; roleByIndex[destIdx] = whBind;
-      if (binding.evidence) binding.evidence.destination = { role: 'destination', location_id: da.logistics_location_id, warehouse_id: da.warehouse_id, country: da.country, region: da.region, location_type: da.location_type, canon_location_type: da.location_type, node_type: DEMO4A_str_(resolved[destIdx].node.node_type), binding_type: 'WAREHOUSE_LOCATION_BINDING', source_proven: true, role_compatible: true, corridor_compatible: true };
+      if (binding.evidence) binding.evidence.destination = { role: 'destination', location_id: DEMO4A_str_(da.logistics_location_id), warehouse_id: da.warehouse_id, warehouse_code: da.warehouse_code, country: da.country, region: da.region, location_type: da.location_type || 'warehouse', canon_location_type: da.location_type || 'warehouse', node_type: DEMO4A_str_(resolved[destIdx].node.node_type), binding_type: 'WAREHOUSE_LOCATION_BINDING', coordinate_source: da.coordinate_source, coordinate_accuracy: da.coordinate_accuracy || '', address_derived: derived, source_proven: true, role_compatible: true, corridor_compatible: true };
     }
     var originCountry = DEMO4A_str_(tpl.origin_country) || DEMO4A_str_(binding.origin.country) || 'CN';
     var destRegion = DEMO4A_str_(tpl.destination_region) || DEMO4A_str_(binding.destination.region) || pick.region;
@@ -725,9 +752,10 @@ function DEMO4A_buildPlan_(masters) {
         DEMO4A_str_(b.country), DEMO4A_str_(b.region), DEMO4A_str_(b.canon_type || DEMO4A_canonLocType_(b.location_type || '')),
         (b.role_compatible === true ? '1' : '0'), (b.corridor_compatible === true ? '1' : '0'), DEMO4A_num_(b.latitude), DEMO4A_num_(b.longitude)].join('~'));
     });
-    // V3F — bind the destination BUSINESS identity + coordinate branch into the checksum (both ids + join key + branch +
-    // location_type + verification_status + exact coord), so any change to the warehouse/location authority re-checksums.
-    if (da) bindingManifest.push(['WHDEST', shipId, DEMO4A_str_(da.warehouse_id), DEMO4A_str_(da.logistics_location_id), DEMO4A_str_(da.branch), DEMO4A_str_(da.location_type), DEMO4A_str_(da.verification_status), DEMO4A_num_(da.latitude), DEMO4A_num_(da.longitude)].join('~'));
+    // V3G(H) — bind the FULL destination authority into the checksum: warehouse_id + warehouse_code + logistics_location_id
+    // + normalized-address fingerprint + coordinate branch + derived lat/lng + coordinate source reference + accuracy +
+    // location_type + verification_status + the final status decision. Any change to address/coordinate/source re-checksums.
+    if (da) bindingManifest.push(['WHDEST', shipId, DEMO4A_str_(da.warehouse_id), DEMO4A_str_(da.warehouse_code), DEMO4A_str_(da.logistics_location_id), DEMO4A_str_(da.address_fingerprint), DEMO4A_str_(da.branch), DEMO4A_str_(da.location_type), DEMO4A_str_(da.verification_status), DEMO4A_str_(da.coordinate_source || ''), DEMO4A_str_(da.coordinate_source_reference || ''), DEMO4A_str_(da.coordinate_accuracy || ''), DEMO4A_num_(da.latitude), DEMO4A_num_(da.longitude), DEMO4A_str_(life.status)].join('~'));
 
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
     var evs = DEMO4A_lifecycleEvents_(life.slot, roleByIndex, resolved, currentIndex, life.event_end, life.event_step);
@@ -736,7 +764,7 @@ function DEMO4A_buildPlan_(masters) {
         event_sequence: ei + 1, event_time: e.event_time, event_type: e.event_type, event_status: e.event_status,
         location_name: e.binding.location_name, country: e.binding.country, city: e.binding.city, latitude: e.binding.latitude, longitude: e.binding.longitude,
         source: DEMO4A_SOURCE_, source_event_id: P + 'SE-' + idx + '-' + DEMO4A_z2_(ei + 1), raw_status: e.event_status,
-        note: DEMO4A_TAG_ + (e.binding.binding_type === 'DEMO_SYNTHETIC_RUNTIME_BINDING' ? ' · DEMO-4A-SYNTHETIC-RUNTIME-BINDING' : ''),
+        note: DEMO4A_TAG_ + (e.binding.binding_type === 'DEMO_SYNTHETIC_RUNTIME_BINDING' ? ' · DEMO-4A-SYNTHETIC-RUNTIME-BINDING' : '') + (e.binding.address_derived ? ' · DEMO-4A-ADDRESS-DERIVED-DESTINATION-COORDINATE' : ''),
         created_by: DEMO4A_ACTOR_, created_at: DEMO4A_CREATED_AT_, updated_by: DEMO4A_ACTOR_, updated_at: DEMO4A_CREATED_AT_ });
       // G — explicit route.planned_event_type → canonical recorded event_type mapping (NEVER conflated)
       eventMap.push({ shipment_id: shipId, sequence_no: DEMO4A_str_(resolved[e.nodeIndex].node.node_sequence), route_planned_event_type: e.planned_event_type || '(none)', recorded_event_type: e.event_type, recorded_event_status: e.event_status });
@@ -747,8 +775,10 @@ function DEMO4A_buildPlan_(masters) {
       route_rows: nodeCount, event_rows: evs.length, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
       plan_lines: lineCount, shipment_lines: lineCount,
       transport_class: DEMO4A_str_(binding.transport_class || DEMO4A_transportClass_(method)),
-      destination_warehouse_id: da ? DEMO4A_str_(da.warehouse_id) : destWh, destination_logistics_location_id: da ? DEMO4A_str_(da.logistics_location_id) : DEMO4A_str_(binding.destination.location_ref_id),
+      destination_warehouse_id: da ? DEMO4A_str_(da.warehouse_id) : destWh, destination_warehouse_code: da ? DEMO4A_str_(da.warehouse_code) : '', destination_logistics_location_id: da ? DEMO4A_str_(da.logistics_location_id) : DEMO4A_str_(binding.destination.location_ref_id),
       destination_coordinate_branch: da ? da.branch : 'LOGISTICS_ONLY_BINDING', destination_facility_marker_renderable: da ? !!da.renderable : true, destination_verification_status: da ? DEMO4A_str_(da.verification_status) : '',
+      destination_address_status: da ? DEMO4A_str_(da.address_status || '') : '', destination_address_fingerprint: da ? DEMO4A_str_(da.address_fingerprint || '') : '',
+      destination_coordinate_source: da ? DEMO4A_str_(da.coordinate_source || '') : '', destination_coordinate_source_reference: da ? DEMO4A_str_(da.coordinate_source_reference || '') : '', destination_coordinate_accuracy: da ? DEMO4A_str_(da.coordinate_accuracy || '') : '', destination_reselected_from_warehouse_id: da ? DEMO4A_str_(da.reselected_from_warehouse_id || '') : '',
       binding_evidence: { origin: binding.evidence ? binding.evidence.origin : null, current: binding.evidence ? binding.evidence.current : null, destination: binding.evidence ? binding.evidence.destination : null } });
 
     var onMap = DEMO4A_mapVisible_(life.status, evs.length, nodeCount);
@@ -887,7 +917,15 @@ function DEMO4A_validateLiveRows_(plan, live, masters) {
     var hasRef = DEMO4A_low_(r.location_ref_type) === 'logistics_location' && DEMO4A_str_(r.location_ref_id) !== '';
     var hasCoord = DEMO4A_str_(r.latitude) !== '' || DEMO4A_str_(r.longitude) !== '';
     if (!hasRef && !hasCoord) return;   // abstract row — nothing bound (fine)
-    if (hasRef && locById) { var loc = locById[DEMO4A_str_(r.location_ref_id)]; if (!loc || !DEMO4A_validCoord_(loc.latitude, loc.longitude)) { boundOk = false; boundBad.push('missing_master_loc:' + r.shipment_route_id); } else if (ck(loc.latitude, loc.longitude) !== ck(r.latitude, r.longitude)) { boundOk = false; boundBad.push('coord≠master:' + r.shipment_route_id); } }
+    if (hasRef && locById) { var loc = locById[DEMO4A_str_(r.location_ref_id)];
+      // V3G — a DEMO_ADDRESS_DERIVED destination row references its logistics_location for LINEAGE but carries the reviewed
+      // address-derived coordinate inline (the master coord is blank). Allow: master loc exists + blank master coord + valid
+      // row coord = the derived destination (verified separately against plan.destination_authority below). A master row WITH
+      // a valid coordinate must still match exactly.
+      if (!loc) { boundOk = false; boundBad.push('missing_master_loc:' + r.shipment_route_id); }
+      else if (DEMO4A_validCoord_(loc.latitude, loc.longitude)) { if (ck(loc.latitude, loc.longitude) !== ck(r.latitude, r.longitude)) { boundOk = false; boundBad.push('coord≠master:' + r.shipment_route_id); } }
+      else if (!DEMO4A_validCoord_(r.latitude, r.longitude)) { boundOk = false; boundBad.push('derived_dest_coord_invalid:' + r.shipment_route_id); }   // blank master → row must carry a valid derived coord
+    }
   });
   checks.live_bound_coord_equals_master = { ok: boundOk, checked: !!locById, bad: boundBad.slice(0, 10) };
   // abstract rows (blank ref + blank coord) explicitly carry NO coordinate
@@ -942,6 +980,33 @@ function DEMO4A_validateLiveRows_(plan, live, masters) {
   });
   checks.live_bound_type_role_compatible = { ok: geoOk, checked: !!masters, bad: geoBad.slice(0, 10) };
   checks.live_no_unrelated_third_country = { ok: corrOk, bad: corrBad.slice(0, 10) };
+
+  // V3G(H) — DESTINATION AUTHORITY: the LIVE destination route row (and, for a received shipment, its final event) matches
+  // the approved plan.destination_authority — same warehouse identity, exact logistics lineage when a join exists, route
+  // coordinate == the approved (master or address-derived) coordinate, and received ends at the real destination warehouse.
+  var daOk = true, daBad = [], daChecked = false;
+  var perByShip = {}; (plan.per_shipment || []).forEach(function (s) { perByShip[DEMO4A_str_(s.shipment_id)] = s; });
+  demoRows('shipments').forEach(function (sh) {
+    var sid = DEMO4A_str_(sh.shipment_id), ps = perByShip[sid]; if (!ps || !ps.destination_warehouse_id) return;
+    daChecked = true;
+    var rr = demoRows('shipment_routes').filter(function (r) { return DEMO4A_str_(r.shipment_id) === sid; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+    var destRow = rr[rr.length - 1];
+    if (!destRow) { daOk = false; daBad.push('no_dest_row:' + sid); return; }
+    // route coordinate == approved coordinate (the plan's expected destination row carries the resolved coordinate)
+    var expDestRow = (plan.tables.shipment_routes || []).filter(function (r) { return DEMO4A_str_(r.shipment_id) === sid; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); }).pop();
+    if (expDestRow && (DEMO4A_str_(expDestRow.latitude) !== '' ) && ck(expDestRow.latitude, expDestRow.longitude) !== ck(destRow.latitude, destRow.longitude)) { daOk = false; daBad.push('dest_coord≠approved:' + sid); }
+    // exact logistics lineage when a join exists on the approved authority
+    if (DEMO4A_str_(ps.destination_logistics_location_id) && DEMO4A_str_(destRow.location_ref_id) && DEMO4A_str_(destRow.location_ref_id) !== DEMO4A_str_(ps.destination_logistics_location_id)) { daOk = false; daBad.push('dest_lineage≠authority:' + sid); }
+    // received shipment ends at the real destination warehouse (final event on the destination row, coord == dest row)
+    if (DEMO4A_low_(sh.status) === 'received') {
+      var evs2 = demoRows('shipment_events').filter(function (e) { return DEMO4A_str_(e.shipment_id) === sid; }).sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); });
+      var lastEv = evs2[evs2.length - 1];
+      if (!lastEv || DEMO4A_low_(lastEv.event_type) !== 'received') { daOk = false; daBad.push('received_not_final:' + sid); }
+      else if (DEMO4A_str_(lastEv.shipment_route_id) !== DEMO4A_str_(destRow.shipment_route_id)) { daOk = false; daBad.push('received_not_at_dest_row:' + sid); }
+      else if (ck(lastEv.latitude, lastEv.longitude) !== ck(destRow.latitude, destRow.longitude)) { daOk = false; daBad.push('received_coord≠dest:' + sid); }
+    }
+  });
+  checks.live_destination_authority = { ok: daOk, checked: daChecked, bad: daBad.slice(0, 10) };
 
   var allOk = Object.keys(checks).every(function (k) { return checks[k].ok; });
   return { checks: checks, classification: cls.classification, demo_seed_validated: (cls.classification === 'PRESENT_EXACT_ALL' && allOk) };
@@ -1263,82 +1328,222 @@ function DEMO4A_whRegion_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['logistics_reg
 function DEMO4A_whMarketplace_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['marketplace'])); }
 function DEMO4A_whActive_(w) { return DEMO4A_activeFlag_(w) !== false; }
 function DEMO4A_whDestTypeCompatible_(w) { return DEMO4A_WH_DEST_TYPES_.hasOwnProperty(DEMO4A_whType_(w)); }
+function DEMO4A_whCode_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_code', 'code'])); }
+// V3G(B) — warehouse ADDRESS accessors. Live `warehouses` uses a SINGLE flat `address` line + city/state/postal_code/
+// country (SHIPMENT_CENTER_SPEC.md:59) — NOT address_line1/2 / subdivision_code (those are logistics_locations fields).
+// Read via tolerant candidate lists (the seed's DEMO4A_get_ idiom) so either spelling resolves; NEVER a coordinate.
+function DEMO4A_whAddrLine1_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['address_line1', 'address_line_1', 'address', 'street', 'street_address'])); }
+function DEMO4A_whAddrLine2_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['address_line2', 'address_line_2', 'address2'])); }
+function DEMO4A_whCity_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['city', 'town'])); }
+function DEMO4A_whStateSub_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['state', 'subdivision_code', 'province', 'state_province', 'region_state'])); }
+function DEMO4A_whPostal_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['postal_code', 'postcode', 'zip', 'zip_code'])); }
+// countries where a postal_code is part of a resolvable facility address (US destinations require it).
+var DEMO4A_POSTAL_REQUIRED_ = { us: 1, ca: 1, gb: 1, uk: 1, de: 1, fr: 1, jp: 1, cn: 1, au: 1, it: 1, es: 1, nl: 1, se: 1, pl: 1, mx: 1, br: 1, in: 1 };
+function DEMO4A_postalRequired_(country) { return DEMO4A_POSTAL_REQUIRED_.hasOwnProperty(DEMO4A_low_(country)); }
+// canonical normalized address string + fingerprint (UPPERCASE, whitespace-collapsed, ordered). Stable → checksum-safe.
+function DEMO4A_normAddrPart_(v) { return DEMO4A_str_(v).toUpperCase().replace(/\s+/g, ' ').replace(/[.,#]/g, '').trim(); }
+function DEMO4A_normalizeWhAddress_(w) {
+  var parts = [DEMO4A_whAddrLine1_(w), DEMO4A_whAddrLine2_(w), DEMO4A_whCity_(w), DEMO4A_whStateSub_(w), DEMO4A_whPostal_(w), DEMO4A_whCountry_(w)].map(DEMO4A_normAddrPart_);
+  var normalized = parts.join(' | ');
+  return { parts: parts, normalized: normalized, fingerprint: DEMO4A_hash_(normalized) };
+}
+// V3G(B) — ADDRESS-AUTHORITY gate. Business identity is address-based (NOT coordinate-based). Returns a typed status.
+// route (optional) = the selected route template, for exact country/region scope agreement. Coordinate is NEVER read here.
+function DEMO4A_addressAuthority_(w, route) {
+  if (!w) return { status: 'ADDRESS_INCOMPLETE', reason: 'NO_WAREHOUSE_IDENTITY' };
+  if (!DEMO4A_whActive_(w) || !DEMO4A_whDestTypeCompatible_(w)) return { status: 'WAREHOUSE_NOT_ELIGIBLE', reason: DEMO4A_whActive_(w) ? ('WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(w)) : 'WAREHOUSE_INACTIVE', warehouse_id: DEMO4A_whId_(w), warehouse_code: DEMO4A_whCode_(w) };
+  var id = DEMO4A_whId_(w), code = DEMO4A_whCode_(w), l1 = DEMO4A_whAddrLine1_(w), city = DEMO4A_whCity_(w), country = DEMO4A_whCountry_(w), postal = DEMO4A_whPostal_(w);
+  var missing = [];
+  if (!id) missing.push('warehouse_id'); if (!code) missing.push('warehouse_code'); if (!l1) missing.push('address_line1'); if (!city) missing.push('city'); if (!country) missing.push('country');
+  if (DEMO4A_postalRequired_(country) && !postal) missing.push('postal_code');
+  if (missing.length) return { status: 'ADDRESS_INCOMPLETE', reason: 'MISSING:' + missing.join(','), warehouse_id: id, warehouse_code: code };
+  if (route) {
+    var rc = DEMO4A_str_(route.destination_country);
+    if (rc && DEMO4A_low_(rc) !== DEMO4A_low_(country)) return { status: 'ADDRESS_SCOPE_CONFLICT', reason: 'COUNTRY_ROUTE_MISMATCH:' + country + '≠' + rc, warehouse_id: id, warehouse_code: code };
+    var rr = DEMO4A_str_(route.destination_region), whr = DEMO4A_whRegion_(w);
+    if (rr && whr && DEMO4A_dxRegionBucket_(rr) !== 'OTHER' && DEMO4A_dxRegionBucket_(whr) !== 'OTHER' && DEMO4A_dxRegionBucket_(rr) !== DEMO4A_dxRegionBucket_(whr)) return { status: 'ADDRESS_SCOPE_CONFLICT', reason: 'REGION_ROUTE_MISMATCH:' + whr + '≠' + rr, warehouse_id: id, warehouse_code: code };
+  }
+  var na = DEMO4A_normalizeWhAddress_(w);
+  return { status: 'ADDRESS_AUTHORITY_READY', warehouse_id: id, warehouse_code: code, normalized_address: na.normalized, address_fingerprint: na.fingerprint, country: country, region: DEMO4A_whRegion_(w) };
+}
+
+// V3G(C) — DEMO-ONLY destination-coordinate authority. A reviewable, source-referenced, address-fingerprint-BOUND
+// lookup keyed by UPPERCASE warehouse_code. It SHIPS EMPTY: the operator pastes REVIEWED, source-cited coordinates in a
+// separate, explicit, armed task — until then the address-derived branch fails closed (DESTINATION_ADDRESS_COORDINATE_
+// UNRESOLVED). This is NOT a geocoder, is NEVER called at COMMIT (the coordinate is frozen into the DRY_RUN plan and
+// bound by demo_plan_checksum), and NEVER a city/ZIP/postal centroid, port, airport or invented coordinate. Each entry:
+//   'WAREHOUSE_CODE': { latitude:<n>, longitude:<n>, source_type:'reviewed_address_resolution', source_reference:'<ref>',
+//                       accuracy:'rooftop|parcel|building|premise|address', address_fingerprint:'<djb2 of normalized addr>',
+//                       review_version:'<id>' }
+// The bound address_fingerprint MUST equal the warehouse's CURRENT normalized-address fingerprint (a changed address
+// invalidates a stale coordinate), and the accuracy must be a facility-grade class (city/zip/centroid/approximate rejected).
+var DEMO4A_DEST_COORD_AUTHORITY_ = {};
+var DEMO4A_COORD_ACCURACY_FACILITY_ = { rooftop: 1, parcel: 1, building: 1, premise: 1, address: 1 };
+function DEMO4A_deriveDestCoordinate_(w, coordAuthority, addressFingerprint) {
+  var code = DEMO4A_whCode_(w).toUpperCase(); if (code === '') return { ok: false, reason: 'NO_WAREHOUSE_CODE' };
+  var auth = coordAuthority || DEMO4A_DEST_COORD_AUTHORITY_;
+  var e = auth[code] || auth[DEMO4A_whCode_(w)];
+  if (!e) return { ok: false, reason: 'NO_REVIEWED_COORDINATE_FOR_WAREHOUSE_CODE' };
+  if (!DEMO4A_validCoord_(e.latitude, e.longitude)) return { ok: false, reason: 'REVIEWED_COORDINATE_INVALID' };
+  if (!DEMO4A_COORD_ACCURACY_FACILITY_.hasOwnProperty(DEMO4A_low_(e.accuracy))) return { ok: false, reason: 'ACCURACY_NOT_FACILITY_GRADE:' + DEMO4A_str_(e.accuracy) };
+  if (DEMO4A_str_(e.address_fingerprint) !== DEMO4A_str_(addressFingerprint)) return { ok: false, reason: 'ADDRESS_FINGERPRINT_STALE' };
+  if (!DEMO4A_str_(e.source_reference)) return { ok: false, reason: 'NO_SOURCE_REFERENCE' };
+  return { ok: true, latitude: DEMO4A_num_(e.latitude), longitude: DEMO4A_num_(e.longitude), source_type: DEMO4A_str_(e.source_type) || 'reviewed_address_resolution',
+    source_reference: DEMO4A_str_(e.source_reference), accuracy: DEMO4A_low_(e.accuracy), address_fingerprint: DEMO4A_str_(e.address_fingerprint), review_version: DEMO4A_str_(e.review_version) };
+}
 // logistics-location identity/coordinate eligibility: verification_status NOT retired/rejected (33_:61-66) AND is_active
-// not explicitly false. (There is NO record_status column — lifecycle is verification_status + is_active.)
+// not explicitly false. V3G(G.1) — the live frontend reads a `record_status` column (operation-system-db-api.js:1331,
+// `r.record_status || r.coordinate_status`) even though the canonical spec (§5.1) defines only verification_status; when
+// that column IS present, a clearly-dead lifecycle value excludes the row too. A COORDINATE-pending verification_status
+// (e.g. draft / pending_review / ADDRESS_SEEDED_COORDINATES_PENDING) is NEITHER retired NOR rejected → still eligible for
+// business identity (its blank coordinate never invalidates the warehouse — the V3G core rule).
+var DEMO4A_RECORD_STATUS_DEAD_ = { deleted: 1, archived: 1, void: 1, removed: 1, inactive: 1, obsolete: 1 };
+var DEMO4A_VS_COORDINATE_PENDING_ = { draft: 1, pending_review: 1, address_seeded_coordinates_pending: 1, coordinate_pending: 1, coordinates_pending: 1 };
 function DEMO4A_locVerificationEligible_(loc) {
   if (!DEMO4A_locActive_(loc)) return false;
   var vs = DEMO4A_low_(DEMO4A_get_(loc, ['verification_status']));
-  return vs !== 'retired' && vs !== 'rejected';
+  if (vs === 'retired' || vs === 'rejected') return false;
+  var rs = DEMO4A_low_(DEMO4A_get_(loc, ['record_status', 'row_status']));   // present live; blank when the column is absent
+  if (rs !== '' && DEMO4A_RECORD_STATUS_DEAD_.hasOwnProperty(rs)) return false;
+  return true;
 }
 // EXACT bridge: every ELIGIBLE logistics row whose warehouse_id === wid (NO fuzzy/name/city matching).
 function DEMO4A_locsForWarehouse_(locations, wid) {
   var w = DEMO4A_low_(DEMO4A_str_(wid)); if (w === '') return [];
   return (locations || []).filter(function (l) { return DEMO4A_locVerificationEligible_(l) && DEMO4A_low_(DEMO4A_str_(DEMO4A_get_(l, ['warehouse_id']))) === w; });
 }
-// TYPED coordinate-branch resolver for a destination warehouse business identity. Branch 2
-// (PRODUCTION_WAREHOUSE_COORDINATE_FALLBACK) is NOT source-proven (warehouses hold no coords) → NEVER selected.
-function DEMO4A_resolveWarehouseDestination_(warehouseRow, locations) {
-  if (!warehouseRow) return { branch: 'WAREHOUSE_LOCATION_JOIN_MISSING', reason: 'NO_DESTINATION_WAREHOUSE_IDENTITY', renderable: false, received_allowed: false };
-  var wid = DEMO4A_whId_(warehouseRow);
+// TYPED coordinate-branch resolver for a destination warehouse business identity.
+//   business identity  = warehouse_id + warehouse_code + eligible + resolvable ADDRESS (V3G: NOT coordinate-based)
+//   location lineage   = EXACT logistics_locations.warehouse_id join (0/1; >1 = fail-closed conflict)
+//   display coordinate = (1) valid exact warehouse-linked logistics_locations coordinate, else
+//                        (2) a REVIEWED, source-bound, address-fingerprint-matched Demo coordinate (V3G derived branch)
+// Branch WAREHOUSE_COORDINATE_FALLBACK_FROM_WAREHOUSE_MASTER is NOT source-proven (warehouses hold no coords) → never selected.
+// coordAuthority (optional) enables the derived branch; a 2-arg call (no authority, no route) preserves the V3F branch set
+// (COORDINATE_READY / IDENTITY_READY_COORDINATE_PENDING) so a blank-coordinate warehouse without a reviewed coordinate keeps
+// its identity but stays coordinate-pending — its blank master coordinate NEVER invalidates the warehouse identity.
+function DEMO4A_resolveWarehouseDestination_(warehouseRow, locations, coordAuthority, route) {
+  if (!warehouseRow) return { branch: 'WAREHOUSE_LOCATION_JOIN_MISSING', reason: 'NO_DESTINATION_WAREHOUSE_IDENTITY', identity_ready: false, renderable: false, received_allowed: false };
+  var wid = DEMO4A_whId_(warehouseRow), wcode = DEMO4A_whCode_(warehouseRow);
+  var addr = DEMO4A_addressAuthority_(warehouseRow, route);
+  var identityReady = addr.status === 'ADDRESS_AUTHORITY_READY';
   var joined = DEMO4A_locsForWarehouse_(locations, wid);
-  if (!joined.length) return { branch: 'WAREHOUSE_LOCATION_JOIN_MISSING', warehouse_id: wid, reason: 'NO_ELIGIBLE_LOGISTICS_ROW_FOR_WAREHOUSE_ID', renderable: false, received_allowed: false };
-  if (joined.length > 1) return { branch: 'WAREHOUSE_LOCATION_JOIN_CONFLICT', warehouse_id: wid, candidate_count: joined.length, candidate_fps: joined.slice(0, 5).map(function (l) { return DEMO4A_hash_(DEMO4A_locId_(l)); }), renderable: false, received_allowed: false };
-  var loc = joined[0];
-  var base = { warehouse_id: wid, logistics_location_id: DEMO4A_locId_(loc), location_type: DEMO4A_canonLocType_(DEMO4A_locType_(loc)),
-    country: DEMO4A_locCountry_(loc), region: DEMO4A_locRegion_(loc), verification_status: DEMO4A_str_(DEMO4A_get_(loc, ['verification_status'])), join_key: wid, location: loc };
-  if (DEMO4A_locValid_(loc)) { base.branch = 'WAREHOUSE_LOCATION_COORDINATE_READY'; base.latitude = DEMO4A_num_(loc.latitude); base.longitude = DEMO4A_num_(loc.longitude); base.coordinate_source = 'logistics_location'; base.renderable = true; base.received_allowed = true; return base; }
-  base.branch = 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; base.reason = 'DESTINATION_WAREHOUSE_COORDINATE_PENDING'; base.renderable = false; base.received_allowed = false; return base;   // identity kept; NEVER borrow a gateway coordinate, NEVER received-at-FBA
+  var conflict = joined.length > 1;
+  var loc = joined.length === 1 ? joined[0] : null;
+  var base = { warehouse_id: wid, warehouse_code: wcode, join_key: wid,
+    logistics_location_id: loc ? DEMO4A_locId_(loc) : '', location_type: loc ? DEMO4A_canonLocType_(DEMO4A_locType_(loc)) : '',
+    country: loc ? DEMO4A_locCountry_(loc) : DEMO4A_whCountry_(warehouseRow), region: loc ? DEMO4A_locRegion_(loc) : DEMO4A_whRegion_(warehouseRow),
+    verification_status: loc ? DEMO4A_str_(DEMO4A_get_(loc, ['verification_status'])) : '', address_status: addr.status, address_fingerprint: DEMO4A_str_(addr.address_fingerprint || ''),
+    identity_ready: identityReady, location: loc };
+  // lineage conflict (>1 eligible join) fails closed regardless of coordinate path.
+  if (conflict) { base.branch = 'WAREHOUSE_LOCATION_JOIN_CONFLICT'; base.candidate_count = joined.length; base.candidate_fps = joined.slice(0, 5).map(function (l) { return DEMO4A_hash_(DEMO4A_locId_(l)); }); base.renderable = false; base.received_allowed = false; return base; }
+  // (1) master/logistics coordinate wins when present.
+  if (loc && DEMO4A_locValid_(loc)) { base.branch = 'WAREHOUSE_LOCATION_COORDINATE_READY'; base.latitude = DEMO4A_num_(loc.latitude); base.longitude = DEMO4A_num_(loc.longitude); base.coordinate_source = 'logistics_location'; base.renderable = true; base.received_allowed = true; return base; }
+  // (2) address-derived coordinate — only when identity is address-ready AND a reviewed source-bound coordinate resolves.
+  if (identityReady && (coordAuthority || route)) {
+    var d = DEMO4A_deriveDestCoordinate_(warehouseRow, coordAuthority, addr.address_fingerprint);
+    if (d.ok) { base.branch = 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE'; base.latitude = d.latitude; base.longitude = d.longitude; base.coordinate_source = 'demo_address_derived';
+      base.coordinate_source_type = d.source_type; base.coordinate_source_reference = d.source_reference; base.coordinate_accuracy = d.accuracy; base.coordinate_review_version = d.review_version;
+      base.binding_type = 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE'; base.renderable = true; base.received_allowed = true; return base; }
+    base.coordinate_unresolved_reason = d.reason;
+  }
+  // no join at all → lineage-missing (identity may still be address-ready); else identity-ready but coordinate-pending.
+  if (!loc) { base.branch = identityReady ? 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING' : 'WAREHOUSE_LOCATION_JOIN_MISSING'; base.reason = identityReady ? 'NO_JOINED_LOGISTICS_ROW_AND_NO_REVIEWED_COORDINATE' : (addr.reason || 'NO_ELIGIBLE_LOGISTICS_ROW_FOR_WAREHOUSE_ID'); base.renderable = false; base.received_allowed = false; return base; }
+  base.branch = 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; base.reason = 'DESTINATION_WAREHOUSE_COORDINATE_PENDING'; base.renderable = false; base.received_allowed = false; return base;   // identity kept; NEVER borrow a gateway coord, NEVER received-at-FBA
+}
+// V3G(C) — same-region reselection: the FIRST (deterministic by warehouse_id) OTHER eligible warehouse in the same region
+// bucket + company + country whose destination resolves to a READY display coordinate. Used when the template's own
+// destination warehouse cannot resolve a coordinate; returns null → the caller fails closed.
+function DEMO4A_pickWarehouseForRegion_(warehouses, locations, coordAuthority, regionBucket, company, country, excludeId) {
+  var cands = (warehouses || []).filter(function (w) {
+    if (DEMO4A_low_(DEMO4A_whId_(w)) === DEMO4A_low_(excludeId || '')) return false;
+    if (!DEMO4A_whActive_(w) || !DEMO4A_whDestTypeCompatible_(w)) return false;
+    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return false;
+    if (country && DEMO4A_whCountry_(w) && DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(country)) return false;
+    return DEMO4A_dxRegionBucket_(DEMO4A_whRegion_(w)) === regionBucket;
+  }).sort(function (a, b) { var ia = DEMO4A_whId_(a), ib = DEMO4A_whId_(b); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
+  for (var i = 0; i < cands.length; i++) {
+    var r = DEMO4A_resolveWarehouseDestination_(cands[i], locations, coordAuthority, null);
+    if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') return { warehouse: cands[i], resolution: r };
+  }
+  return null;
 }
 // region bucket for a US warehouse/location (reuses the frozen classifier vocabulary; blank → OTHER).
 function DEMO4A_dxRegionBucket_(region) { var h = DEMO4A_low_(region); if (/west/.test(h)) return 'US_WEST'; if (/central/.test(h)) return 'US_CENTRAL'; if (/east/.test(h)) return 'US_EAST'; return 'OTHER'; }
 // PURE diagnostic core for warehouse↔location authority. Read-only; COMPACT (counts + ≤5 fingerprints; never all rows).
-function DEMO4A_diagnoseWarehouseLocationAuthority_(warehouses, locations) {
+// V3G(G) truthfulness fixes: (1) report record_status when the column IS present (never assert absence); (2) audit RAW
+// location_type + lifecycle over ALL warehouse-backed rows BEFORE any coordinate-validity filter (fulfillment_center /
+// third_party_warehouse recognized, not UNKNOWN); (3) report business-IDENTITY readiness SEPARATELY from coordinate
+// readiness; (4) classify the DEMO_ADDRESS_DERIVED coordinate branch. coordAuthority (optional) enables the derived branch.
+function DEMO4A_diagnoseWarehouseLocationAuthority_(warehouses, locations, coordAuthority) {
   function s(v) { return DEMO4A_str_(v); } function low(v) { return DEMO4A_low_(v); }
   var whHeaders = (warehouses && warehouses[0]) ? Object.keys(warehouses[0]) : [];
   var locHeaders = (locations && locations[0]) ? Object.keys(locations[0]) : [];
   var whHasWarehouseId = whHeaders.map(function (h) { return low(h); }).indexOf('warehouse_id') !== -1;
   var locHasWarehouseId = locHeaders.map(function (h) { return low(h); }).indexOf('warehouse_id') !== -1;
+  var locHasRecordStatus = locHeaders.map(function (h) { return low(h); }).indexOf('record_status') !== -1;
   // warehouse coordinate fields found (expected: NONE) — audited: warehouses carry no coordinate.
   var whCoordFields = whHeaders.filter(function (h) { return /^(lat|latitude|lon|lng|longitude|coordinate)/.test(low(h)); });
   if (!warehouses || !warehouses.length || !whHasWarehouseId || !locHasWarehouseId) {
     return { verdict: 'WAREHOUSE_SCHEMA_AUTHORITY_UNRESOLVED', warehouses_headers: whHeaders, logistics_locations_headers: locHeaders,
       warehouse_coordinate_fields_found: whCoordFields, warehouses_present: !!(warehouses && warehouses.length), warehouse_id_column_present: whHasWarehouseId, logistics_warehouse_id_column_present: locHasWarehouseId,
-      production_map_warehouse_coordinate_fallback_source_proven: false };
+      record_status_column_present: locHasRecordStatus, production_map_warehouse_coordinate_fallback_source_proven: false };
   }
-  // active destination-compatible warehouses + per-dimension counts + per-warehouse branch.
+  function bump(o, k) { o[k] = (o[k] || 0) + 1; }
+  var destWh = (warehouses || []).filter(function (w) { return DEMO4A_whActive_(w) && DEMO4A_whDestTypeCompatible_(w); });
+  var destWhIds = {}; destWh.forEach(function (w) { destWhIds[low(DEMO4A_whId_(w))] = 1; });
+  // (2) RAW location_type + lifecycle audit over ALL warehouse-backed rows, BEFORE any coordinate-validity filter.
+  var rawTypeAudit = {}, verificationCountsAll = {}, recordStatusCounts = {};
+  (locations || []).forEach(function (l) {
+    var wl = low(s(DEMO4A_get_(l, ['warehouse_id']))); if (!wl || !destWhIds[wl]) return;   // warehouse-backed rows only
+    var raw = DEMO4A_locType_(l) || '(blank)', canon = DEMO4A_canonLocType_(raw === '(blank)' ? '' : raw);
+    var e = rawTypeAudit[raw] || (rawTypeAudit[raw] = { raw_token: raw, count: 0, canonical_mapping: canon, recognized: (canon !== '' && canon !== 'UNKNOWN'), examples: [] });
+    e.count++; if (e.examples.length < 3) e.examples.push(DEMO4A_hash_(DEMO4A_locId_(l)));
+    bump(verificationCountsAll, low(DEMO4A_get_(l, ['verification_status'])) || '(blank)');
+    if (locHasRecordStatus) bump(recordStatusCounts, low(DEMO4A_get_(l, ['record_status'])) || '(blank)');
+  });
+  var rawTypeTokenAudit = Object.keys(rawTypeAudit).sort().map(function (k) { return rawTypeAudit[k]; });
+  // per-warehouse branch classification (identity separate from coordinate).
   var byCompany = {}, byCountry = {}, byRegion = {}, byType = {}, byMarketplace = {};
-  var branchCounts = { WAREHOUSE_LOCATION_COORDINATE_READY: 0, WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING: 0, WAREHOUSE_LOCATION_JOIN_MISSING: 0, WAREHOUSE_LOCATION_JOIN_CONFLICT: 0 };
+  var branchCounts = { WAREHOUSE_LOCATION_COORDINATE_READY: 0, DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE: 0, WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING: 0, WAREHOUSE_LOCATION_JOIN_MISSING: 0, WAREHOUSE_LOCATION_JOIN_CONFLICT: 0 };
   var joinedFbaByRegion = { US_WEST: 0, US_CENTRAL: 0, US_EAST: 0, OTHER: 0 };
   var joinedValidCoord = 0, joinedBlankCoord = 0, verificationCounts = {}, examples = [];
-  var destWh = (warehouses || []).filter(function (w) { return DEMO4A_whActive_(w) && DEMO4A_whDestTypeCompatible_(w); });
-  function bump(o, k) { o[k] = (o[k] || 0) + 1; }
+  var identityReadyCount = 0, addressReadyCount = 0, coordinateReadyCount = 0, joinedOk = 0;
   destWh.forEach(function (w) {
     bump(byCompany, s(DEMO4A_whCompany_(w)) || '(blank)'); bump(byCountry, s(DEMO4A_whCountry_(w)) || '(blank)');
     bump(byRegion, s(DEMO4A_whRegion_(w)) || '(blank)'); bump(byType, DEMO4A_whType_(w) || '(blank)'); bump(byMarketplace, s(DEMO4A_whMarketplace_(w)) || '(blank)');
-    var r = DEMO4A_resolveWarehouseDestination_(w, locations);
+    var addr = DEMO4A_addressAuthority_(w);
+    if (addr.status === 'ADDRESS_AUTHORITY_READY') addressReadyCount++;
+    var r = DEMO4A_resolveWarehouseDestination_(w, locations, coordAuthority, null);
     bump(branchCounts, r.branch);
-    if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING') {
+    if (r.identity_ready) identityReadyCount++;
+    if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') coordinateReadyCount++;
+    if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING' || r.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE') {
+      joinedOk++;
       if (r.location) bump(verificationCounts, low(DEMO4A_get_(r.location, ['verification_status'])) || '(blank)');
-      if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') joinedValidCoord++; else joinedBlankCoord++;
+      if (DEMO4A_validCoord_(r.latitude, r.longitude)) joinedValidCoord++; else joinedBlankCoord++;
       if (low(DEMO4A_whCountry_(w)) === 'us') joinedFbaByRegion[DEMO4A_dxRegionBucket_(DEMO4A_whRegion_(w))]++;
     }
-    if (examples.length < 5) examples.push({ warehouse_fp: DEMO4A_hash_(DEMO4A_whId_(w)), warehouse_type: DEMO4A_whType_(w), country: s(DEMO4A_whCountry_(w)), region: s(DEMO4A_whRegion_(w)), branch: r.branch, location_fp: r.logistics_location_id ? DEMO4A_hash_(r.logistics_location_id) : '', location_type: r.location_type || '', verification_status: r.verification_status || '' });
+    if (examples.length < 5) examples.push({ warehouse_fp: DEMO4A_hash_(DEMO4A_whId_(w)), warehouse_type: DEMO4A_whType_(w), country: s(DEMO4A_whCountry_(w)), region: s(DEMO4A_whRegion_(w)), branch: r.branch, identity_ready: !!r.identity_ready, address_status: r.address_status || '', location_fp: r.logistics_location_id ? DEMO4A_hash_(r.logistics_location_id) : '', location_type: r.location_type || '', verification_status: r.verification_status || '' });
   });
   var missing = branchCounts.WAREHOUSE_LOCATION_JOIN_MISSING, conflict = branchCounts.WAREHOUSE_LOCATION_JOIN_CONFLICT;
-  var ready = branchCounts.WAREHOUSE_LOCATION_COORDINATE_READY, pending = branchCounts.WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING;
+  var coordReady = branchCounts.WAREHOUSE_LOCATION_COORDINATE_READY + branchCounts.DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE, pending = branchCounts.WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING;
   var verdict = destWh.length === 0 ? 'WAREHOUSE_LOCATION_JOIN_MISSING'
     : conflict > 0 ? 'WAREHOUSE_LOCATION_JOIN_CONFLICT'
-    : ready > 0 ? 'WAREHOUSE_LOCATION_AUTHORITY_READY'
+    : coordReady > 0 ? 'WAREHOUSE_LOCATION_AUTHORITY_READY'
     : pending > 0 ? 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'
     : 'WAREHOUSE_LOCATION_JOIN_MISSING';
   return {
     verdict: verdict,
-    warehouses_headers: whHeaders, logistics_locations_headers: locHeaders, warehouse_coordinate_fields_found: whCoordFields,
+    warehouses_headers: whHeaders, logistics_locations_headers: locHeaders, warehouse_coordinate_fields_found: whCoordFields, record_status_column_present: locHasRecordStatus,
     active_destination_warehouse_count: destWh.length,
+    identity_readiness: { business_identity_ready: identityReadyCount, address_authority_ready: addressReadyCount },   // (3) identity reported separate from coordinate
+    coordinate_readiness: { display_coordinate_ready: coordinateReadyCount, coordinate_pending: pending },
     destination_warehouses_by: { company: byCompany, country: byCountry, region: byRegion, warehouse_type: byType, marketplace: byMarketplace },
-    warehouse_id_join: { warehouse_rows: (warehouses || []).length, active_destination_warehouses: destWh.length, joined_ok: ready + pending, missing_joins: missing, conflicting_joins: conflict },
+    warehouse_backed_raw_location_type_audit: rawTypeTokenAudit,   // (2) raw-type audit BEFORE coordinate filtering
+    warehouse_id_join: { warehouse_rows: (warehouses || []).length, active_destination_warehouses: destWh.length, joined_ok: joinedOk, missing_joins: missing, conflicting_joins: conflict },
     joined_fba_3pl_by_region: joinedFbaByRegion, joined_rows_valid_coordinate: joinedValidCoord, joined_rows_blank_coordinate: joinedBlankCoord,
-    verification_status_counts: verificationCounts, record_status_counts: '(no record_status column — lifecycle via verification_status + is_active)',
+    verification_status_counts: verificationCounts, verification_status_counts_all_warehouse_backed: verificationCountsAll,
+    record_status_counts: locHasRecordStatus ? recordStatusCounts : '(record_status column not present in this dataset)',   // (1) truthful — never assert absence when present
     branch_counts: branchCounts, production_map_warehouse_coordinate_fallback_source_proven: false,
     safe_examples: examples
   };
@@ -1348,8 +1553,9 @@ function TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY() {
   try {
     var masters = DEMO4A_readMasters_();
     out.masters_present = masters.present;
-    var d = DEMO4A_diagnoseWarehouseLocationAuthority_(masters.warehouses, masters.locations);
+    var d = DEMO4A_diagnoseWarehouseLocationAuthority_(masters.warehouses, masters.locations, DEMO4A_DEST_COORD_AUTHORITY_);
     Object.keys(d).forEach(function (k) { out[k] = d[k]; });
+    out.demo_dest_coord_authority_entries = Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length;   // 0 until the operator pastes reviewed coordinates
   } catch (e) { out.verdict = 'WAREHOUSE_SCHEMA_AUTHORITY_UNRESOLVED'; out.reason = (e && e.message) ? e.message : String(e); }
   out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES';
   Logger.log('DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY ' + JSON.stringify(out));
@@ -1361,16 +1567,36 @@ function TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY() {
 // ================================================================================================================
 // V3F (G) — PURE warehouse-authority gate summary for PREFLIGHT. Not applicable when the warehouses master is absent
 // (legacy logistics-only binding). When applicable, READY requires every destination WAREHOUSE_LOCATION_COORDINATE_READY.
-function DEMO4A_warehouseGates_(present, authority, errors) {
+// V3G(E) — audited frontend map DESTINATION-coordinate consumption. Inline shipment_routes lat/lng ARE consumed at the
+// NODE level (resolveNodeCoord → resolveCurrentPosition, global-logistics-map.js:255-265; the terminal route node plots
+// on a selected shipment). The DEDICATED destination-endpoint fallback marker (resolveDestinationCoord, :267) reads ONLY a
+// warehouse-linked logistics_locations coordinate — it does NOT read inline route/event coords. So an address-derived-only
+// destination renders as a route-node dot (On-The-Way per-shipment view) but NOT as the labeled endpoint fallback.
+var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = {
+  inline_route_node_coordinate_rendered: true,   // resolveNodeCoord reads inline lat/lng first (:261-265)
+  dedicated_destination_endpoint_reads_inline: false,   // resolveDestinationCoord accepts ONLY warehouse→logistics coord (:267)
+  note: 'MAP_DESTINATION_INLINE_COORD_NOT_CONSUMED at the dedicated destination-endpoint fallback; the per-shipment terminal ROUTE NODE renders the inline/address-derived coordinate. Frontend NOT modified in this task.'
+};
+// V3G(F) — SEVEN separate PREFLIGHT gates. Identity/address readiness are reported SEPARATELY from coordinate readiness; a
+// blank master coordinate (ADDRESS_SEEDED_COORDINATES_PENDING) NEVER by itself fails business identity or received-status.
+// READY still requires a real, source-bound display coordinate (logistics OR reviewed address-derived) so the map renders.
+function DEMO4A_warehouseGates_(present, authority, errors, routeGeographyOk) {
   if (!present) return { applicable: false, note: 'warehouses master absent — legacy logistics-only binding (no warehouse authority gate)' };
   var slots = Object.keys(authority || {});
   function every(pred) { return slots.length > 0 && slots.every(function (s) { return pred(authority[s] || {}); }); }
-  var identity = every(function (r) { return r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; });
-  var join = every(function (r) { return ['WAREHOUSE_LOCATION_JOIN_MISSING', 'WAREHOUSE_LOCATION_JOIN_CONFLICT', 'WAREHOUSE_IDENTITY_INELIGIBLE', 'WAREHOUSE_IDENTITY_MISMATCH'].indexOf(r.branch) === -1; });
-  var coord = every(function (r) { return r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY'; });
-  var render = every(function (r) { return !!r.renderable; });
-  var truthful = coord;   // a received/facility marker is emitted ONLY at a coordinate-ready facility (fail-closed guarantees it)
-  return { applicable: true, warehouse_business_identity_gate: identity, warehouse_location_join_gate: join, warehouse_coordinate_gate: coord, map_renderability_gate: render, status_truthfulness_gate: truthful, ok: identity && join && coord && render && truthful, errors: errors || [] };
+  function ready(r) { return r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE'; }
+  var identity = every(function (r) { return r.identity_ready === true || r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY'; });
+  var address = every(function (r) { return r.address_status === 'ADDRESS_AUTHORITY_READY' || (r.identity_ready === true) || r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY'; });
+  var lineage = every(function (r) { return r.branch !== 'WAREHOUSE_LOCATION_JOIN_CONFLICT'; });   // 0/1 join ok; >1 = fail
+  var coord = every(ready);
+  var mapConsumes = DEMO4A_MAP_DEST_COORD_CONSUMPTION_.inline_route_node_coordinate_rendered === true;   // node-level inline render (audited)
+  var truthful = coord;   // received/facility marker emitted ONLY at a coordinate-ready facility (fail-closed guarantees it)
+  var routeGeo = (routeGeographyOk === undefined) ? true : !!routeGeographyOk;
+  return { applicable: true,
+    warehouse_business_identity_ready: identity, warehouse_address_authority_ready: address, warehouse_location_lineage_ready: lineage,
+    destination_display_coordinate_ready: coord, map_consumes_destination_coordinate: mapConsumes, status_truthfulness_ready: truthful, route_geography_ready: routeGeo,
+    map_destination_coordinate_consumption: DEMO4A_MAP_DEST_COORD_CONSUMPTION_,
+    ok: identity && address && lineage && coord && mapConsumes && truthful && routeGeo, errors: errors || [] };
 }
 function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
   var out = { tool: 'TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'STRICTLY READ-ONLY (no write/create/delete/submit)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
@@ -1381,8 +1607,8 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
     var plan = DEMO4A_buildPlan_(masters);
     if (!plan.ok) {
       out.reason = plan.reason; out.rejection_counts = plan.rejection_counts || null; out.available_regions = plan.available_regions || null; out.detail = plan;
-      if (plan.destination_authority) out.warehouse_gates = DEMO4A_warehouseGates_(true, plan.destination_authority, plan.destination_authority_errors || []);
-      out.verdict = plan.reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY' ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY' : (schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA');
+      if (plan.destination_authority) out.warehouse_gates = DEMO4A_warehouseGates_(true, plan.destination_authority, plan.destination_authority_errors || [], plan.binding_gates ? plan.binding_gates.ok : undefined);
+      out.verdict = (plan.reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY' || plan.reason === 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED') ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY' : (schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA');
     }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
@@ -1390,9 +1616,10 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
       out.scope = plan.scope; out.planned_counts = plan.counts; out.per_shipment = plan.per_shipment; out.demo_plan_checksum = plan.checksum;
       // E — compact per-shipment route-geography evidence + the hard binding gates. READY is unreachable unless every gate is true.
       out.binding_gates = plan.binding_gates;
-      // G — the five separate warehouse gates (business identity / join / coordinate / map renderability / status truthfulness).
-      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null);
-      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_facility_marker_renderable: s.destination_facility_marker_renderable, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
+      // V3G(F) — the SEVEN separate warehouse gates (business identity / address authority / lineage / display coordinate /
+      // map consumption / status truthfulness / route geography). Identity/address are reported separately from coordinate.
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined);
+      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_warehouse_code: s.destination_warehouse_code, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_coordinate_source: s.destination_coordinate_source, destination_coordinate_accuracy: s.destination_coordinate_accuracy, destination_address_status: s.destination_address_status, destination_facility_marker_renderable: s.destination_facility_marker_renderable, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
       out.existing_state = { classification: cls.classification, duplicate_pk_counts: cls.duplicate_pk_counts, unexpected_demo_ids: cls.unexpected_demo_ids };
       out.verdict = !schema.ok ? 'PREFLIGHT_FAILED_SCHEMA'
@@ -1419,9 +1646,10 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
       out.scope = plan.scope; out.dynamic_row_counts = plan.counts; out.per_shipment_counts = plan.per_shipment; out.planned_ids = DEMO4A_allIds_(plan);
       out.binding_gates = plan.binding_gates;
-      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null);
-      // G — per-shipment destination authority + coordinate branch + whether the facility marker will render / gateway separately.
-      out.destination_authority = plan.per_shipment.map(function (s) { return { shipping_plan_id: (DEMO4A_PREFIX_ + 'SP-' + s.shipment_id.slice(-1)), shipment_id: s.shipment_id, slot: s.slot, template: s.template, transport_type: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_verification_status: s.destination_verification_status, route_rows: s.route_rows, event_rows: s.event_rows, final_status: s.status, destination_facility_marker_renderable: s.destination_facility_marker_renderable, current_gateway_location_id: s.current_location_id }; });
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null, plan.binding_gates ? plan.binding_gates.ok : undefined);
+      // V3G — per-shipment destination authority + coordinate branch + source/accuracy + address status + whether the
+      // facility marker renders, with the current gateway reported SEPARATELY (a gateway is never the final FBA).
+      out.destination_authority = plan.per_shipment.map(function (s) { return { shipping_plan_id: (DEMO4A_PREFIX_ + 'SP-' + s.shipment_id.slice(-1)), shipment_id: s.shipment_id, slot: s.slot, template: s.template, transport_type: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_warehouse_code: s.destination_warehouse_code, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_coordinate_source: s.destination_coordinate_source, destination_coordinate_source_reference: s.destination_coordinate_source_reference, destination_coordinate_accuracy: s.destination_coordinate_accuracy, destination_address_status: s.destination_address_status, destination_address_fingerprint: s.destination_address_fingerprint, destination_reselected_from_warehouse_id: s.destination_reselected_from_warehouse_id, destination_verification_status: s.destination_verification_status, route_rows: s.route_rows, event_rows: s.event_rows, final_status: s.status, destination_facility_marker_renderable: s.destination_facility_marker_renderable, current_gateway_location_id: s.current_location_id }; });
       out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       out.event_chronology = DEMO4A_chronology_(plan); out.route_planned_to_recorded_event_map = plan.route_event_map; out.expected_ui_visibility = plan.visibility;
       out.demo_plan_checksum = plan.checksum; out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';

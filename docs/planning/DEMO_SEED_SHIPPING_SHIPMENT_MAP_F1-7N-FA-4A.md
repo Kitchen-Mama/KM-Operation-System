@@ -220,3 +220,60 @@ The production map's own BACKEND coordinate snapshot is PAUSED (`GLOBAL_3D_SHIPM
 
 ## Live-validation order (NOT run here)
 DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY → DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES → PREFLIGHT → DRY_RUN → user copies the new demo_plan_checksum → COMMIT → VALIDATE.
+
+---
+
+# F1-7N-FA-4A — V3G: ADDRESS-AUTHORITY DESTINATION COORDINATE DERIVATION
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED.** Supersedes V3F's coordinate-mandatory destination gate. TEMP demo tool + its test + this doc only. No production/master/frontend/schema/bundle change; strictly read-only masters; no DB/property write; both confirmation constants remain placeholders; not run by Claude. One local commit.
+
+## Business rule (USER AUTHORITY)
+The Shipment destination is selected through a warehouse code/id; its business identity is complete when `warehouse_id + warehouse_code + eligible + a resolvable real address` exist. FBA/3PL warehouses are **address-based** facilities, unlike coordinate-based transit nodes (port/airport/border). A **blank master latitude/longitude does NOT mean the destination is incomplete** — coordinates are map-presentation derivative data, never the authority that decides whether the destination exists. Master coordinates are NOT a business or received-status gate. `warehouses`/`logistics_locations` are not modified.
+
+## Audit reconciliations (both audited this round, source-cited)
+| Point | Live evidence | V3G handling |
+|---|---|---|
+| Warehouse address fields | live `warehouses` = single flat `address` + `city`/`state`/`postal_code`/`country` (`SHIPMENT_CENTER_SPEC.md:59`), NOT `address_line1/2`/`subdivision_code` (those are `logistics_locations` fields, `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:154-160`) | tolerant candidate-name accessors read either spelling (`address`/`address_line1`/`address_line_1`; `state`/`subdivision_code`) — the seed's `DEMO4A_get_` idiom |
+| `record_status` on logistics_locations | canonical spec defines only `verification_status` (§5.1), but the live frontend reads `r.record_status \|\| r.coordinate_status` (`operation-system-db-api.js:1331`) | detect the column when present; report its counts truthfully (never assert absence); a dead value (`deleted/archived/void/removed/inactive/obsolete`) is ineligible |
+| `third_party_warehouse` location_type | only `warehouse` / `fulfillment_center` are documented warehouse-backed tokens (`LOGISTICS_LOCATIONS_SEED_CHECKLIST.md:13`); `3PL`/`FBA` are `warehouse_type` values (`SHIPMENT_CENTER_SPEC.md:62`) | added `third_party_warehouse`/`third_party`/`3pl`/`3pl_warehouse` → canonical `warehouse` so a live 3PL row is never UNKNOWN |
+| `verification_status` = ADDRESS_SEEDED_COORDINATES_PENDING | token absent from repo; enum = draft/pending_review/verified/rejected/retired (`GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:180`) | eligibility = not-retired/not-rejected → a coordinate-pending status stays eligible; identity is never invalidated by a blank coordinate |
+
+## Final authority model
+- **Business identity**: `warehouses.warehouse_id`, `warehouse_code`, `warehouse_name`, `company`, `marketplace`, `country`, `logistics_region`, `warehouse_type`, + the real stored address (`DEMO4A_addressAuthority_`).
+- **Location lineage**: exact `logistics_locations.warehouse_id === warehouses.warehouse_id` (0/1; >1 = fail-closed conflict); `logistics_location_id` when the join exists.
+- **Display coordinate precedence**: (1) valid exact warehouse-linked `logistics_locations` coordinate; (2) a REVIEWED, source-bound, address-fingerprint-matched Demo coordinate. NEVER a city/ZIP/postal centroid, port/airport coordinate, fuzzy name match, unrelated location, or invented coordinate.
+
+## Address completeness contract (`DEMO4A_addressAuthority_`)
+Required: `warehouse_id`, `warehouse_code`, `address_line1`, `city`, `country`, and `postal_code` when the country requires it (`DEMO4A_POSTAL_REQUIRED_`, incl. US). Exact country/region agreement with the selected route. Verdicts: `ADDRESS_AUTHORITY_READY` · `ADDRESS_INCOMPLETE` · `ADDRESS_SCOPE_CONFLICT` · `WAREHOUSE_LOCATION_JOIN_CONFLICT` (resolver) · `WAREHOUSE_NOT_ELIGIBLE`.
+
+## Demo-only coordinate derivation (`DEMO4A_DEST_COORD_AUTHORITY_` + `DEMO4A_deriveDestCoordinate_`)
+A reviewable, source-referenced, **address-fingerprint-bound** lookup keyed by UPPERCASE `warehouse_code`. Each entry: `latitude, longitude, source_type, source_reference, accuracy, address_fingerprint, review_version`. Guards: valid coordinate · **facility-grade accuracy** (`rooftop/parcel/building/premise/address`; city/ZIP/centroid/approximate rejected) · the entry's `address_fingerprint` must equal the warehouse's **current** normalized-address fingerprint (a changed address invalidates a stale coordinate) · a non-empty `source_reference`. **It SHIPS EMPTY** — the operator pastes reviewed, source-cited coordinates in a separate, explicit, armed task; until then the derived branch fails closed (`DESTINATION_ADDRESS_COORDINATE_UNRESOLVED`). It is **never a geocoder**, is **never called at COMMIT** (the coordinate is frozen into the deterministic DRY_RUN plan and bound by `demo_plan_checksum`). If a selected warehouse cannot resolve, the seed tries the FIRST deterministic same-region eligible warehouse (`DEMO4A_pickWarehouseForRegion_`), else fails closed.
+
+## Coordinate-branch model (`DEMO4A_resolveWarehouseDestination_`)
+1. **WAREHOUSE_LOCATION_COORDINATE_READY** — valid warehouse-linked logistics coordinate → final FBA marker; received allowed.
+2. **DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE** — identity address-ready + a reviewed source-bound coordinate → final FBA marker (Demo-only display coordinate); received allowed; lineage `logistics_location_id` preserved when the join exists.
+3. **WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING** — identity ready, no valid/derived coordinate → identity kept, NO fabricated coordinate, NO facility marker, NO received-at-FBA; fail closed (`DESTINATION_ADDRESS_COORDINATE_UNRESOLVED`).
+4. **WAREHOUSE_LOCATION_JOIN_CONFLICT** — >1 eligible logistics row → fail closed (fingerprinted).
+5. Identity/eligibility/scope failures (`WAREHOUSE_IDENTITY_MISSING/INELIGIBLE/MISMATCH`, `WAREHOUSE_LOCATION_JOIN_MISSING` when no address) → fail closed (`DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY`).
+Branch `WAREHOUSE_COORDINATE_FALLBACK_FROM_WAREHOUSE_MASTER` is NOT source-proven (warehouses hold no coordinates) → never selected.
+
+## Route / event data (D)
+The destination `shipment_routes` row preserves `route_template_id` + `route_template_node_id` + node identity/sequence; `location_ref_type = logistics_location` + `location_ref_id` = the exact `logistics_location_id` when the join exists; `latitude/longitude` = master coordinate if present, else the approved Demo address-derived coordinate; the binding manifest states the branch. A **received** Demo Shipment's final event references the destination route row, its coordinate equals that row's coordinate, and its note identifies the Demo address-derived coordinate when applicable — `received` is allowed because the chronology reaches the selected real warehouse (not because a master coordinate exists). An **in-transit** Shipment keeps a real gateway/transit current marker; the future destination route row may carry the address-derived facility coordinate but gets **no event** (no received on a planned node). A seaport stays a gateway and is never relabelled the FBA.
+
+## Map source audit (E) — frontend NOT modified
+Inline `shipment_routes` `latitude/longitude` **ARE consumed at the node level** (`resolveNodeCoord` → `resolveCurrentPosition`, `global-logistics-map.js:255-265`) — the terminal route node plots on a selected shipment, so an address-derived destination coordinate renders in the per-shipment On-The-Way view. The **dedicated destination-endpoint fallback marker** (`resolveDestinationCoord`, `:267`) reads ONLY a warehouse-linked `logistics_locations` coordinate (`locByWh`, `:181-184`) — it does NOT read inline route/event coords → reported as `MAP_DESTINATION_INLINE_COORD_NOT_CONSUMED` for that specific path (`DEMO4A_MAP_DEST_COORD_CONSUMPTION_`). Frontend `validCoord` (`:64`) rejects blank/(0,0)/out-of-range. No frontend change is made or required for the per-shipment route render; the endpoint-fallback consumption gap is recorded, not silently patched.
+
+## PREFLIGHT gates (F) — SEVEN, identity separate from coordinate
+`warehouse_business_identity_ready` · `warehouse_address_authority_ready` · `warehouse_location_lineage_ready` · `destination_display_coordinate_ready` · `map_consumes_destination_coordinate` · `status_truthfulness_ready` · `route_geography_ready`. `ADDRESS_SEEDED_COORDINATES_PENDING` never by itself fails business identity or received-status truth; READY still requires a real, source-bound display coordinate. DRY_RUN reports per shipment: warehouse id + code, logistics_location_id, coordinate branch, coordinate source + reference + accuracy, address status + fingerprint, reselected-from id, verification, route/event rows, final status, facility-marker renderability, and the current gateway SEPARATELY.
+
+## Diagnostic truthfulness fixes (G)
+`DEMO4A_diagnoseWarehouseLocationAuthority_`: (1) detects `record_status` when the column is present and reports its counts (never asserts absence); (2) audits RAW warehouse-backed `location_type` + lifecycle BEFORE any coordinate-validity filter (`fulfillment_center`/`third_party_warehouse` recognized, not UNKNOWN); (3) reports business-IDENTITY readiness (`identity_readiness`) SEPARATELY from coordinate readiness (`coordinate_readiness`); (4) classifies the `DEMO_ADDRESS_DERIVED` branch.
+
+## Checksum + VALIDATE (H)
+`demo_plan_checksum` binds the WHDEST manifest: `warehouse_id + warehouse_code + logistics_location_id + normalized-address fingerprint + coordinate branch + derived lat/lng + coordinate source reference + accuracy + verification_status + final status decision` (plus every route/event row). VALIDATE (`live_destination_authority`) proves over live rows: destination warehouse identity matches the selected warehouse; exact logistics lineage when a join exists; route coordinate == the approved (master or address-derived) coordinate; event coordinate == route coordinate; received ends at the real destination warehouse (final event on the destination row); seaport stays a gateway; FBA stays the final facility; no received event on a future/planned node; no master row changed.
+
+## Tests (J1–J16) & baseline
+`demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` **317/0** (+ the V3G section): address is the destination authority; blank master coord keeps identity; address-derived coordinate renders + is Demo-only + source-bound; masters read-only (warehouses + logistics_locations); seaport stays gateway; address-incomplete fails closed; ambiguous/stale/non-facility coordinate fails closed; in-transit destination has no future event; received ends at the warehouse; record_status truthful + dead-value ineligible; fulfillment_center/third_party_warehouse recognized; checksum re-derives on address/coordinate/source change; journal/rollback/idempotency intact; constants placeholder; legacy no-warehouse plan byte-identical. Only the demo-seed suite reads this standalone `.gs` → full affected sweep 0 new failures.
+
+## Live-validation order (NOT run here)
+The operator arms the reviewed-coordinate authority (`DEMO4A_DEST_COORD_AUTHORITY_`), then: DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY → DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES → PREFLIGHT → DRY_RUN → copy the new `demo_plan_checksum` → COMMIT → VALIDATE.

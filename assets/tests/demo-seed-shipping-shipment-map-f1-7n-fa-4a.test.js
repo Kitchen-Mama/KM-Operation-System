@@ -21,7 +21,9 @@ var G22 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '22_
 var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_shipment_receipt_route_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var LOAD = [];
-['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_DEST_COORD_AUTHORITY_', 'DEMO4A_COORD_ACCURACY_FACILITY_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
@@ -40,7 +42,8 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_',
   'DEMO4A_dxCoordKey_', 'DEMO4A_dxRawRegion_', 'DEMO4A_dxSubdivision_', 'DEMO4A_dxCompatibleRoles_', 'DEMO4A_dxRoleStages_', 'DEMO4A_diagnoseLiveRoleCandidates_',
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
-  'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
+  'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
+  'DEMO4A_whCode_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whStateSub_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
 // ---- synthetic read-only masters: 3 active US templates (W/C/E), C richest (4 nodes); real marketplace_skus⋈sku_details.
@@ -541,7 +544,12 @@ eq(DEMO4A_CONFIRMED_CLEAR_TOKEN_, 'PASTE_DEMO_CLEAR_TOKEN_HERE', 'H11. clear tok
 // ============================================================ V3F — WAREHOUSE ↔ LOGISTICS DESTINATION AUTHORITY
 // warehouses = business destination authority (no coords); logistics_locations = coordinate authority; exact bridge
 // logistics_locations.warehouse_id === warehouses.warehouse_id; typed coordinate branches; no fabricated coordinates.
-function wh(id, type, company, country, region) { return { warehouse_id: id, warehouse_code: id, warehouse_name: id, warehouse_type: type, company: company, country: country, marketplace: 'Amazon', logistics_region: region, is_active: 'TRUE' }; }
+// V3G — warehouses carry a resolvable ADDRESS (flat `address` + city/state/postal_code, the live schema shape). `over`
+// lets a test blank a field to exercise the address-authority gate.
+var WH_ADDR_ = { 'US West': { city: 'Los Angeles', state: 'CA', postal_code: '90001' }, 'US Central': { city: 'Chicago', state: 'IL', postal_code: '60601' }, 'US East': { city: 'Newark', state: 'NJ', postal_code: '07101' } };
+function wh(id, type, company, country, region, over) { over = over || {}; var a = WH_ADDR_[region] || { city: 'Demo City', state: 'NA', postal_code: '00000' };
+  return { warehouse_id: id, warehouse_code: id, warehouse_name: id, warehouse_type: type, company: company, country: country, marketplace: 'Amazon', logistics_region: region, is_active: 'TRUE',
+    address: over.noAddress ? '' : ('100 Demo Fulfillment Way ' + id), city: over.noCity ? '' : a.city, state: a.state, postal_code: over.noPostal ? '' : a.postal_code }; }
 function locWH(id, whId, country, region, lat, lng, type, vs) { return { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, warehouse_id: whId, verification_status: vs || 'verified', is_active: 'TRUE' }; }
 function tplWH(id, region, whId) { var t = tplV3C(id, region); t.destination_warehouse_id = whId; return t; }
 function mastersWH(over) {
@@ -583,10 +591,14 @@ var rPending = DEMO4A_resolveWarehouseDestination_(whW, LWHblank);
 eq(rPending.branch, 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING', 'J2. blank-coordinate FBA is NOT discarded — identity kept (COORDINATE_PENDING)');
 ok(rPending.warehouse_id === 'WH-KM-US-FBA-W' && rPending.logistics_location_id === 'LOC-WH-KM-US-FBA-W', 'J2. pending branch still preserves both real ids');
 ok(rPending.latitude === undefined && rPending.received_allowed === false && rPending.renderable === false, 'J5/J11. pending branch fabricates NO coordinate, is not renderable, and NEVER allows received-at-FBA');
-eq(DEMO4A_resolveWarehouseDestination_(wh('WH-NOJOIN', 'FBA', 'KM', 'US', 'US West'), LWH).branch, 'WAREHOUSE_LOCATION_JOIN_MISSING', 'J6. a warehouse with no eligible logistics row → WAREHOUSE_LOCATION_JOIN_MISSING (fail closed)');
+eq(DEMO4A_resolveWarehouseDestination_(wh('WH-NOJOIN', 'FBA', 'KM', 'US', 'US West', { noAddress: true }), LWH).branch, 'WAREHOUSE_LOCATION_JOIN_MISSING', 'J6. no address AND no eligible logistics row → WAREHOUSE_LOCATION_JOIN_MISSING (fail closed)');
+// V3G — an ADDRESS-ready warehouse with no logistics join is identity-ready/coordinate-pending (no-join no longer kills identity).
+var rNoJoinAddr = DEMO4A_resolveWarehouseDestination_(wh('WH-NOJOIN', 'FBA', 'KM', 'US', 'US West'), LWH, {}, tplWH('RT-W', 'US West', 'WH-NOJOIN'));
+ok(rNoJoinAddr.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING' && rNoJoinAddr.identity_ready === true && rNoJoinAddr.logistics_location_id === '', 'J6/V3G. an address-ready warehouse with no logistics join → identity ready, coordinate pending (no fabricated coord)');
 var dupLocs = LWH.concat([locWH('LOC-DUP', 'WH-KM-US-FBA-W', 'US', 'US West', 35.0, -119.0, 'warehouse')]);
 eq(DEMO4A_resolveWarehouseDestination_(whW, dupLocs).branch, 'WAREHOUSE_LOCATION_JOIN_CONFLICT', 'J7. >1 eligible logistics row for one warehouse_id → WAREHOUSE_LOCATION_JOIN_CONFLICT (fail closed)');
-eq(DEMO4A_resolveWarehouseDestination_(whW, LWH.map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (c.warehouse_id === 'WH-KM-US-FBA-W') c.verification_status = 'retired'; return c; })).branch, 'WAREHOUSE_LOCATION_JOIN_MISSING', 'J1/J6. a retired logistics row is ineligible → not joined');
+var rRetired = DEMO4A_resolveWarehouseDestination_(whW, LWH.map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (c.warehouse_id === 'WH-KM-US-FBA-W') c.verification_status = 'retired'; return c; }), {}, tplWH('RT-W', 'US West', 'WH-KM-US-FBA-W'));
+ok(rRetired.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING' && rRetired.logistics_location_id === '', 'J1/J6. a retired logistics row is ineligible → not joined (identity kept, coordinate pending)');
 
 section('V3F-J3/J4/J9/J10. buildPlan with warehouse authority — READY');
 var planWH = DEMO4A_buildPlan_(mastersWH());
@@ -605,11 +617,13 @@ ok(DEMO4A_num_(recvEvWH[0].latitude) !== 0 && planWH.tables.shipment_routes.some
 
 section('V3F-J6/J8/J11. buildPlan fails closed (no fabricated FBA, no received) — identity/coordinate not ready');
 var planPend = DEMO4A_buildPlan_(mastersWH({ fbaBlank: true }));
-eq([planPend.ok, planPend.reason], [false, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY'], 'J11. all-blank-coordinate FBAs → build fails closed (never fabricates coordinates)');
+// V3G — identity is ADDRESS-ready, but with NO reviewed coordinate and NO valid logistics coordinate the DISPLAY coordinate
+// is unresolved → fail closed as DESTINATION_ADDRESS_COORDINATE_UNRESOLVED (never a fabricated coordinate).
+eq([planPend.ok, planPend.reason], [false, 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED'], 'J11/V3G. all-blank-coordinate FBAs with no reviewed coordinate → build fails closed on the COORDINATE (identity stays ready)');
 ok(planPend.destination_authority_errors.some(function (e) { return e.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; }) && !planPend.tables, 'J11. pending branch reported + NO rows built (no received event anywhere)');
-eq(DEMO4A_buildPlan_(mastersWH({ mismatchCompany: true })).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J8. warehouse company ≠ plan scope → fail closed');
-eq(DEMO4A_buildPlan_(mastersWH({ badType: true })).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J8. a non-destination warehouse_type (FACTORY) → fail closed');
-eq(DEMO4A_buildPlan_(mastersWH({ noLocJoin: true })).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J6. warehouse identity exists but no logistics join → fail closed');
+eq(DEMO4A_buildPlan_(mastersWH({ mismatchCompany: true })).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J8. warehouse company ≠ plan scope → fail closed (identity)');
+eq(DEMO4A_buildPlan_(mastersWH({ badType: true })).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J8. a non-destination warehouse_type (FACTORY) → fail closed (identity)');
+eq(DEMO4A_buildPlan_(mastersWH({ noLocJoin: true })).reason, 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'J6/V3G. warehouse identity+address exist but no logistics join AND no reviewed coordinate → fail closed on the COORDINATE');
 
 section('V3F-F. warehouse-location authority diagnostic');
 var dxWH = DEMO4A_diagnoseWarehouseLocationAuthority_(mastersWH().warehouses, mastersWH().locations);
@@ -625,8 +639,8 @@ var dxConf = DEMO4A_diagnoseWarehouseLocationAuthority_(mastersWH().warehouses, 
 eq(dxConf.verdict, 'WAREHOUSE_LOCATION_JOIN_CONFLICT', 'F. a duplicate join → WAREHOUSE_LOCATION_JOIN_CONFLICT');
 
 section('V3F-G. PREFLIGHT-style warehouse gates');
-var gatesReady = DEMO4A_warehouseGates_(true, planWH.destination_authority, null);
-ok(gatesReady.applicable && gatesReady.warehouse_business_identity_gate && gatesReady.warehouse_location_join_gate && gatesReady.warehouse_coordinate_gate && gatesReady.map_renderability_gate && gatesReady.status_truthfulness_gate && gatesReady.ok, 'G. all five warehouse gates pass on a READY plan');
+var gatesReady = DEMO4A_warehouseGates_(true, planWH.destination_authority, null, true);
+ok(gatesReady.applicable && gatesReady.warehouse_business_identity_ready && gatesReady.warehouse_address_authority_ready && gatesReady.warehouse_location_lineage_ready && gatesReady.destination_display_coordinate_ready && gatesReady.map_consumes_destination_coordinate && gatesReady.status_truthfulness_ready && gatesReady.route_geography_ready && gatesReady.ok, 'G/V3G. all SEVEN warehouse gates pass on a READY plan');
 eq(DEMO4A_warehouseGates_(false, {}, null).applicable, false, 'G. gates not applicable when warehouses master absent (legacy logistics-only binding)');
 
 section('V3F-J12/J13/J14. protections + write-boundary + constants intact');
@@ -634,5 +648,102 @@ ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)
 var commitFnWH = extractFn(G, 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED');
 ok(/setProperty\(DEMO4A_JOURNAL_KEY_/.test(commitFnWH) && /COMMIT_FAILED_JOURNAL_UNVERIFIED/.test(commitFnWH) && /DEMO4A_rollbackInserted_\(inserted\)/.test(commitFnWH) && !/COMMITTED_UNVERIFIED/.test(commitFnWH), 'J12. V3A durable journal + inserted-only rollback intact; no COMMITTED_UNVERIFIED');
 eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'J14. both confirmation constants remain placeholders');
+
+// ============================================================ V3G — ADDRESS-AUTHORITY DESTINATION COORDINATE DERIVATION
+// warehouse ADDRESS (not master lat/lng) is the destination business authority; a Demo-only, source-bound, address-
+// fingerprint-matched coordinate is DERIVED for display; blank master coordinates never invalidate the warehouse identity.
+// A reviewed-coordinate authority injected via masters.destCoordAuthority (ships EMPTY in source).
+function mastersWHderived(over) {
+  over = over || {};
+  var m = mastersWH({ fbaBlank: true });   // exact joins present but BLANK master coords + addresses present → derived path
+  var coords = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] };
+  var auth = {};
+  m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var c = coords[w.warehouse_code];
+    auth[w.warehouse_code] = { latitude: c[0], longitude: c[1], source_type: 'reviewed_address_resolution', source_reference: 'DEMO-REVIEW://' + w.warehouse_code, accuracy: over.badAccuracy ? 'city' : 'rooftop', address_fingerprint: over.staleFp ? 'deadbeef' : fp, review_version: 'v1' }; });
+  m.destCoordAuthority = auth;
+  return m;
+}
+
+section('V3G-J1/J2. warehouse ADDRESS is the destination authority; blank master coordinate keeps identity');
+var whA = wh('WH-KM-US-FBA-W', 'FBA', 'KM', 'US', 'US West');
+eq(DEMO4A_addressAuthority_(whA, tplWH('RT-W', 'US West', 'WH-KM-US-FBA-W')).status, 'ADDRESS_AUTHORITY_READY', 'J1. a complete warehouse address → ADDRESS_AUTHORITY_READY (business identity is address-based)');
+var rBlankId = DEMO4A_resolveWarehouseDestination_(whA, mastersWH({ fbaBlank: true }).locations, {}, tplWH('RT-W', 'US West', 'WH-KM-US-FBA-W'));
+ok(rBlankId.identity_ready === true && rBlankId.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING', 'J2. a blank master coordinate does NOT invalidate the warehouse identity (identity ready, coordinate pending)');
+
+section('V3G-J3/J4. an exact-address-derived, source-bound coordinate renders the Demo destination (Demo-only)');
+var rDeriv = DEMO4A_resolveWarehouseDestination_(whA, mastersWH({ fbaBlank: true }).locations, mastersWHderived().destCoordAuthority, tplWH('RT-W', 'US West', 'WH-KM-US-FBA-W'));
+eq(rDeriv.branch, 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE', 'J3. blank master coord + a reviewed address-fingerprint-matched coordinate → DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE');
+ok(rDeriv.renderable === true && rDeriv.received_allowed === true && DEMO4A_validCoord_(rDeriv.latitude, rDeriv.longitude), 'J3. the derived branch is renderable + received-allowed + carries a valid coordinate');
+ok(rDeriv.coordinate_source === 'demo_address_derived' && /^DEMO-REVIEW:/.test(rDeriv.coordinate_source_reference) && rDeriv.coordinate_accuracy === 'rooftop', 'J4. the derived coordinate is Demo-only + source-referenced + facility-grade accuracy');
+eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 0, 'J4. the source-shipped coordinate authority is EMPTY (operator pastes reviewed coordinates in a separate armed task)');
+
+section('V3G-J3/J10. buildPlan on the address-derived path — READY, both ids + source bound');
+var planD = DEMO4A_buildPlan_(mastersWHderived());
+ok(planD.ok, 'J3. plan builds when every destination resolves an address-derived display coordinate');
+var itD = planD.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
+eq(itD.destination_coordinate_branch, 'DEMO_ADDRESS_DERIVED_DESTINATION_COORDINATE', 'J3. in-transit destination branch = address-derived');
+ok(/^WH-KM-US-FBA-/.test(itD.destination_warehouse_id) && itD.destination_warehouse_code === itD.destination_warehouse_id && /^LOC-WH-KM-US-FBA-/.test(itD.destination_logistics_location_id), 'J3. warehouse identity + exact logistics lineage both preserved on the derived destination');
+ok(itD.destination_coordinate_source === 'demo_address_derived' && /^DEMO-REVIEW:/.test(itD.destination_coordinate_source_reference) && itD.destination_coordinate_accuracy === 'rooftop', 'J4. per-shipment carries the derived coordinate source_reference + accuracy');
+
+section('V3G-J6. a seaport stays a gateway and is NEVER relabelled the FBA (derived plan)');
+ok((itD.binding_evidence.current.canon_location_type === 'port' || itD.binding_evidence.current.location_type === 'port') && ['fulfillment_center', 'warehouse'].indexOf(itD.binding_evidence.destination.location_type) !== -1 && itD.binding_evidence.destination.binding_type === 'WAREHOUSE_LOCATION_BINDING', 'J6. current marker = seaport gateway; final destination = the FBA facility (distinct)');
+
+section('V3G-J9. an in-transit destination node carries the facility coordinate but NO future event');
+var itShip = itD.shipment_id;
+var itRoutes = planD.tables.shipment_routes.filter(function (r) { return r.shipment_id === itShip; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+var itDestRow = itRoutes[itRoutes.length - 1];
+ok(DEMO4A_low_(itDestRow.status) === 'planned' && DEMO4A_validCoord_(itDestRow.latitude, itDestRow.longitude), 'J9. the in-transit destination route row is planned yet carries the address-derived facility coordinate');
+ok(planD.tables.shipment_events.filter(function (e) { return e.shipment_id === itShip && e.shipment_route_id === itDestRow.shipment_route_id; }).length === 0, 'J9. NO event is recorded on the future (planned) destination node');
+
+section('V3G-J10. a received shipment ends at the selected warehouse (derived coordinate + note)');
+var delivD = planD.per_shipment.filter(function (s) { return s.slot === 'delivered'; })[0];
+var recvD = planD.tables.shipment_events.filter(function (e) { return e.shipment_id === delivD.shipment_id && DEMO4A_low_(e.event_type) === 'received'; });
+var delivRoutes = planD.tables.shipment_routes.filter(function (r) { return r.shipment_id === delivD.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+var delivDest = delivRoutes[delivRoutes.length - 1];
+ok(recvD.length === 1 && recvD[0].shipment_route_id === delivDest.shipment_route_id && DEMO4A_validCoord_(recvD[0].latitude, recvD[0].longitude), 'J10. the received event is on the destination route row with the derived facility coordinate');
+ok(/ADDRESS-DERIVED-DESTINATION-COORDINATE/.test(recvD[0].note), 'J10. the received event note identifies the Demo address-derived coordinate');
+
+section('V3G-J5. the seed never writes the warehouses OR logistics_locations masters (read-only)');
+ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false && new RegExp("getSheetByName\\('logistics_locations'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, 'J5. no master write to warehouses / logistics_locations');
+
+section('V3G-J7. an incomplete address fails closed (identity)');
+eq(DEMO4A_addressAuthority_(wh('WH-X', 'FBA', 'KM', 'US', 'US West', { noAddress: true })).status, 'ADDRESS_INCOMPLETE', 'J7. a blank address_line1 → ADDRESS_INCOMPLETE');
+eq(DEMO4A_addressAuthority_(wh('WH-X', 'FBA', 'KM', 'US', 'US West', { noPostal: true })).status, 'ADDRESS_INCOMPLETE', 'J7. a US warehouse missing postal_code → ADDRESS_INCOMPLETE');
+(function () { var m = mastersWHderived(); m.warehouses = m.warehouses.map(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (c.warehouse_id === 'WH-KM-US-FBA-C') c.address = ''; return c; }); eq(DEMO4A_buildPlan_(m).reason, 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', 'J7. an address-incomplete destination warehouse → build fails closed on identity'); })();
+
+section('V3G-J8. an ambiguous / unverified / non-facility coordinate fails closed');
+var na = DEMO4A_normalizeWhAddress_(whA);
+eq(DEMO4A_deriveDestCoordinate_(whA, { 'WH-KM-US-FBA-W': { latitude: 34, longitude: -118, accuracy: 'city', source_reference: 'x', address_fingerprint: na.fingerprint } }, na.fingerprint).reason, 'ACCURACY_NOT_FACILITY_GRADE:city', 'J8. a city/ZIP-centroid accuracy is rejected (facility-grade required)');
+eq(DEMO4A_deriveDestCoordinate_(whA, { 'WH-KM-US-FBA-W': { latitude: 34, longitude: -118, accuracy: 'rooftop', source_reference: 'x', address_fingerprint: 'deadbeef' } }, na.fingerprint).reason, 'ADDRESS_FINGERPRINT_STALE', 'J8. a coordinate bound to a stale address fingerprint is rejected');
+ok(DEMO4A_buildPlan_(mastersWHderived({ staleFp: true })).reason === 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'J8. a stale-fingerprint authority → build fails closed on the coordinate');
+ok(DEMO4A_buildPlan_(mastersWHderived({ badAccuracy: true })).reason === 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', 'J8. a non-facility-grade accuracy → build fails closed on the coordinate');
+eq(DEMO4A_resolveWarehouseDestination_(whA, mastersWH().locations.concat([locWH('LOC-DUP3', 'WH-KM-US-FBA-W', 'US', 'US West', 35, -119, 'warehouse')]), mastersWHderived().destCoordAuthority, tplWH('RT-W', 'US West', 'WH-KM-US-FBA-W')).branch, 'WAREHOUSE_LOCATION_JOIN_CONFLICT', 'J8. >1 eligible logistics join is ambiguous → fail closed (even with a reviewed coordinate)');
+
+section('V3G-J11. record_status detection is truthful; a dead record_status is ineligible');
+var dxRS = DEMO4A_diagnoseWarehouseLocationAuthority_(mastersWHderived().warehouses, mastersWHderived().locations.map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; c.record_status = 'active'; return c; }), mastersWHderived().destCoordAuthority);
+ok(dxRS.record_status_column_present === true && typeof dxRS.record_status_counts === 'object', 'J11. when a record_status column is present the diagnostic reports it (never asserts absence)');
+ok(DEMO4A_locVerificationEligible_({ is_active: 'TRUE', verification_status: 'verified', record_status: 'deleted' }) === false && DEMO4A_locVerificationEligible_({ is_active: 'TRUE', verification_status: 'verified', record_status: 'active' }) === true, 'J11. a dead record_status excludes the row; a live one stays eligible');
+ok(DEMO4A_locVerificationEligible_({ is_active: 'TRUE', verification_status: 'ADDRESS_SEEDED_COORDINATES_PENDING' }) === true, 'J11/J2. a coordinate-pending verification_status is still eligible (blank coord never kills identity)');
+
+section('V3G-J12. fulfillment_center / third_party_warehouse tokens are recognized (never UNKNOWN)');
+eq([DEMO4A_canonLocType_('fulfillment_center'), DEMO4A_canonLocType_('third_party_warehouse'), DEMO4A_canonLocType_('3pl')], ['fulfillment_center', 'warehouse', 'warehouse'], 'J12. warehouse-backed raw location_type tokens map to a recognized canonical type');
+ok(dxRS.warehouse_backed_raw_location_type_audit.some(function (t) { return t.raw_token === 'fulfillment_center' && t.recognized === true; }), 'J12. the raw-type audit runs BEFORE coordinate filtering and marks fulfillment_center recognized');
+
+section('V3G-J13. the checksum changes if the address, the coordinate, or the source reference changes');
+var ckBase = planD.checksum;
+(function () { var m = mastersWHderived(); m.warehouses = m.warehouses.map(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (c.warehouse_id === 'WH-KM-US-FBA-C') c.address = c.address + ' STE 200'; return c; }); m.destCoordAuthority = {}; m.warehouses.forEach(function (w) { var fp = DEMO4A_normalizeWhAddress_(w).fingerprint; var co = { 'WH-KM-US-FBA-W': [34.05, -118.25], 'WH-KM-US-FBA-C': [41.85, -87.65], 'WH-KM-US-FBA-E': [40.72, -74.17] }[w.warehouse_code]; m.destCoordAuthority[w.warehouse_code] = { latitude: co[0], longitude: co[1], source_type: 'reviewed_address_resolution', source_reference: 'DEMO-REVIEW://' + w.warehouse_code, accuracy: 'rooftop', address_fingerprint: fp, review_version: 'v1' }; }); var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing a warehouse address re-checksums (address fingerprint is bound)'); })();
+(function () { var m = mastersWHderived(); m.destCoordAuthority['WH-KM-US-FBA-C'].latitude = 42.0; var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing the derived coordinate re-checksums'); })();
+(function () { var m = mastersWHderived(); m.destCoordAuthority['WH-KM-US-FBA-C'].source_reference = 'DEMO-REVIEW://OTHER'; var p = DEMO4A_buildPlan_(m); ok(p.ok && p.checksum !== ckBase, 'J13. changing the coordinate source reference re-checksums'); })();
+
+section('V3G-J14/J15. V3A protections + confirmation constants remain intact');
+ok(/setProperty\(DEMO4A_JOURNAL_KEY_/.test(commitFnWH) && /DEMO4A_rollbackInserted_\(inserted\)/.test(commitFnWH) && !/COMMITTED_UNVERIFIED/.test(commitFnWH), 'J14. durable journal + inserted-only rollback intact; no COMMITTED_UNVERIFIED');
+eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'J15. both confirmation constants remain placeholders');
+
+section('V3G-J3. LIVE VALIDATE proves the derived destination authority end-to-end');
+(function () { var live = liveFromPlan(planD); var v = DEMO4A_validateLiveRows_(planD, live, mastersWHderived()); ok(v.checks.live_destination_authority.ok && v.checks.live_bound_coord_equals_master.ok && v.checks.live_event_coord_equals_route.ok, 'J3/J10. VALIDATE confirms the derived destination coordinate, lineage, and received-at-warehouse over live rows'); })();
+
+section('V3G-J16. legacy (no-warehouse) plans are byte-identical (address authority is additive, gated on warehouses)');
+eq(DEMO4A_buildPlan_(mastersV3C()).checksum, planC.checksum, 'J16. a plan with no warehouses master is unchanged (V3G activates only when warehouses are present)');
+eq(DEMO4A_buildPlan_(mastersFull()).ok, true, 'J16. the base full-master plan still builds (no regression)');
 
 done();
