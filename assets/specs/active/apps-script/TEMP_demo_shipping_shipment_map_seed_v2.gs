@@ -608,6 +608,31 @@ function DEMO4A_buildPlan_(masters) {
   var scope = DEMO4A_resolveScopeAndSkus_(masters.marketplaceSkus, masters.skuDetails, destCountry);
   if (!scope.ok) return scope;
 
+  // V3F — DESTINATION-WAREHOUSE AUTHORITY GATE. Active ONLY when the `warehouses` master is present (legacy/test fixtures
+  // without it keep the logistics-only binding unchanged). Resolves each shipment's destination BUSINESS identity
+  // (template.destination_warehouse_id → warehouses row) then the typed coordinate branch (exact join to a
+  // logistics_locations row via warehouse_id). Fails closed with exact evidence — NO fabricated FBA marker, NO received-
+  // at-FBA — unless EVERY destination is WAREHOUSE_LOCATION_COORDINATE_READY. Identity (company/country) is validated
+  // separately from coordinates.
+  var warehousesPresent = !!(masters.warehouses && masters.warehouses.length);
+  var destAuthority = {};
+  if (warehousesPresent) {
+    var whById = {}; masters.warehouses.forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id && whById[id] === undefined) whById[id] = w; });
+    var authErrors = [];
+    DEMO4A_SHIP_LIFECYCLE_.forEach(function (life) {
+      var pick = sel._assignRaw[life.slot], tpl = pick.template, destWh = DEMO4A_str_(tpl.destination_warehouse_id);
+      var whRow = destWh ? whById[DEMO4A_low_(destWh)] : null;
+      var r;
+      if (whRow && !DEMO4A_whDestTypeCompatible_(whRow)) r = { branch: 'WAREHOUSE_IDENTITY_INELIGIBLE', reason: 'WAREHOUSE_TYPE_NOT_DESTINATION_COMPATIBLE:' + DEMO4A_whType_(whRow), warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
+      else if (whRow && DEMO4A_whCompany_(whRow) && scope.company && DEMO4A_low_(DEMO4A_whCompany_(whRow)) !== DEMO4A_low_(scope.company)) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COMPANY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
+      else if (whRow && DEMO4A_whCountry_(whRow) && DEMO4A_str_(tpl.destination_country) && DEMO4A_low_(DEMO4A_whCountry_(whRow)) !== DEMO4A_low_(DEMO4A_str_(tpl.destination_country))) r = { branch: 'WAREHOUSE_IDENTITY_MISMATCH', reason: 'COUNTRY_MISMATCH', warehouse_id: DEMO4A_whId_(whRow), renderable: false, received_allowed: false };
+      else r = DEMO4A_resolveWarehouseDestination_(whRow, masters.locations);
+      destAuthority[life.slot] = r;
+      if (r.branch !== 'WAREHOUSE_LOCATION_COORDINATE_READY') authErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: r.warehouse_id || destWh });
+    });
+    if (authErrors.length) return { ok: false, reason: 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', destination_authority_errors: authErrors, destination_authority: destAuthority };
+  }
+
   var P = DEMO4A_PREFIX_;
   var tables = { shipping_plans: [], shipping_plan_lines: [], shipments: [], shipment_lines: [], shipment_routes: [], shipment_events: [] };
   var visibility = { weekly_shipping_plan: [], shipment_draft: [], shipment_overview: [], on_the_way_map: [], primary_map_record: null };
@@ -619,6 +644,19 @@ function DEMO4A_buildPlan_(masters) {
     var binding = isInTransit ? pick.currentBinding : pick.binding;   // in-transit uses the current-marker binding
     var roleByIndex = binding.role_by_index;
     var planId = P + 'SP-' + idx, shipId = P + 'SHP-' + idx;
+    // V3F — when the warehouse authority is active + READY, the FINAL DESTINATION marker IS the exact warehouse-linked
+    // logistics_location (E): override the last-node binding with that source-proven facility coordinate. The route
+    // lat/lng then equal that exact location row; both identities (warehouse_id + logistics_location_id) are preserved.
+    var da = warehousesPresent ? destAuthority[life.slot] : null;
+    if (da && da.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') {
+      var destIdx = resolved.length - 1;
+      var whBind = { source: 'WAREHOUSE_LOCATION_BINDING', node_index: destIdx, region_exact: true, location_ref_id: da.logistics_location_id,
+        latitude: da.latitude, longitude: da.longitude, location_name: da.logistics_location_id, country: da.country, region: da.region, city: '',
+        canon_type: da.location_type, location_type: da.location_type, source_proven: true, role_compatible: true, corridor_compatible: true,
+        warehouse_id: da.warehouse_id, verification_status: da.verification_status };
+      binding.destination = whBind; roleByIndex[destIdx] = whBind;
+      if (binding.evidence) binding.evidence.destination = { role: 'destination', location_id: da.logistics_location_id, warehouse_id: da.warehouse_id, country: da.country, region: da.region, location_type: da.location_type, canon_location_type: da.location_type, node_type: DEMO4A_str_(resolved[destIdx].node.node_type), binding_type: 'WAREHOUSE_LOCATION_BINDING', source_proven: true, role_compatible: true, corridor_compatible: true };
+    }
     var originCountry = DEMO4A_str_(tpl.origin_country) || DEMO4A_str_(binding.origin.country) || 'CN';
     var destRegion = DEMO4A_str_(tpl.destination_region) || DEMO4A_str_(binding.destination.region) || pick.region;
     var srcWh = DEMO4A_str_(tpl.origin_warehouse_id), destWh = DEMO4A_str_(tpl.destination_warehouse_id);
@@ -687,6 +725,9 @@ function DEMO4A_buildPlan_(masters) {
         DEMO4A_str_(b.country), DEMO4A_str_(b.region), DEMO4A_str_(b.canon_type || DEMO4A_canonLocType_(b.location_type || '')),
         (b.role_compatible === true ? '1' : '0'), (b.corridor_compatible === true ? '1' : '0'), DEMO4A_num_(b.latitude), DEMO4A_num_(b.longitude)].join('~'));
     });
+    // V3F — bind the destination BUSINESS identity + coordinate branch into the checksum (both ids + join key + branch +
+    // location_type + verification_status + exact coord), so any change to the warehouse/location authority re-checksums.
+    if (da) bindingManifest.push(['WHDEST', shipId, DEMO4A_str_(da.warehouse_id), DEMO4A_str_(da.logistics_location_id), DEMO4A_str_(da.branch), DEMO4A_str_(da.location_type), DEMO4A_str_(da.verification_status), DEMO4A_num_(da.latitude), DEMO4A_num_(da.longitude)].join('~'));
 
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
     var evs = DEMO4A_lifecycleEvents_(life.slot, roleByIndex, resolved, currentIndex, life.event_end, life.event_step);
@@ -706,6 +747,8 @@ function DEMO4A_buildPlan_(masters) {
       route_rows: nodeCount, event_rows: evs.length, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
       plan_lines: lineCount, shipment_lines: lineCount,
       transport_class: DEMO4A_str_(binding.transport_class || DEMO4A_transportClass_(method)),
+      destination_warehouse_id: da ? DEMO4A_str_(da.warehouse_id) : destWh, destination_logistics_location_id: da ? DEMO4A_str_(da.logistics_location_id) : DEMO4A_str_(binding.destination.location_ref_id),
+      destination_coordinate_branch: da ? da.branch : 'LOGISTICS_ONLY_BINDING', destination_facility_marker_renderable: da ? !!da.renderable : true, destination_verification_status: da ? DEMO4A_str_(da.verification_status) : '',
       binding_evidence: { origin: binding.evidence ? binding.evidence.origin : null, current: binding.evidence ? binding.evidence.current : null, destination: binding.evidence ? binding.evidence.destination : null } });
 
     var onMap = DEMO4A_mapVisible_(life.status, evs.length, nodeCount);
@@ -718,6 +761,7 @@ function DEMO4A_buildPlan_(masters) {
   return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility, binding_gates: binding_gates,
     scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku_pairs: scope.pairs },
     region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
+    warehouses_present: warehousesPresent, destination_authority: destAuthority,
     binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
 }
 function DEMO4A_overviewVisible_(s) { return { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 }[DEMO4A_low_(s)] === 1; }
@@ -956,8 +1000,9 @@ function DEMO4A_readTable_(name) {
 function DEMO4A_readMasters_() {
   var t = DEMO4A_readTable_('shipment_route_templates'), n = DEMO4A_readTable_('shipment_route_template_nodes'), l = DEMO4A_readTable_('logistics_locations');
   var mk = DEMO4A_readTable_('marketplace_skus'), sd = DEMO4A_readTable_('sku_details');
-  return { templates: t.rows, nodes: n.rows, locations: l.rows, marketplaceSkus: mk.rows, skuDetails: sd.rows,
-    present: { shipment_route_templates: t.present, shipment_route_template_nodes: n.present, logistics_locations: l.present, marketplace_skus: mk.present, sku_details: sd.present } };
+  var wh = DEMO4A_readTable_('warehouses');   // V3F — business destination authority (READ-ONLY; has NO coordinates)
+  return { templates: t.rows, nodes: n.rows, locations: l.rows, marketplaceSkus: mk.rows, skuDetails: sd.rows, warehouses: wh.rows,
+    present: { shipment_route_templates: t.present, shipment_route_template_nodes: n.present, logistics_locations: l.present, marketplace_skus: mk.present, sku_details: sd.present, warehouses: wh.present } };
 }
 function DEMO4A_schemaGate_() {
   var out = { ok: true, tables: {} };
@@ -1200,27 +1245,159 @@ function TEMP_DEMO4A_DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES() {
 }
 
 // ================================================================================================================
+// V3F — WAREHOUSE ↔ LOGISTICS-LOCATION DESTINATION AUTHORITY (source-proven join; read-only). `warehouses` is the
+// BUSINESS destination authority (warehouse_id/company/country/logistics_region/warehouse_type/marketplace/is_active) and
+// carries NO coordinates; `logistics_locations` is the MAP/coordinate authority. EXACT bridge (no fuzzy/name/city/address
+// matching): logistics_locations.warehouse_id === warehouses.warehouse_id — source-proven in production
+// (33_party_authority_handlers.gs:107 backend resolver, fail-closed DESTINATION_LOCATION_AMBIGUOUS on >1; frontend
+// global-logistics-map.js:182/:267). There is NO warehouse-coordinate fallback and NO runtime geocoding (audited); the
+// frontend rejects blank/(0,0)/out-of-range coords. Therefore a blank-coordinate FBA is IDENTITY-ready + COORDINATE-
+// pending — never coordinate-fabricated, never plotted as a facility marker, never emits a received event at the FBA.
+// ================================================================================================================
+var DEMO4A_WH_DEST_TYPES_ = { fba: 1, '3pl': 1, warehouse: 1, distribution_center: 1, fulfillment_center: 1, dc: 1 };   // destination-compatible warehouse_type tokens (RETURN/FACTORY excluded)
+function DEMO4A_whId_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_id'])); }
+function DEMO4A_whType_(w) { return DEMO4A_low_(DEMO4A_get_(w, ['warehouse_type', 'type'])); }
+function DEMO4A_whCompany_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['company'])); }
+function DEMO4A_whCountry_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['country', 'country_code'])); }
+function DEMO4A_whRegion_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['logistics_region', 'region'])); }
+function DEMO4A_whMarketplace_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['marketplace'])); }
+function DEMO4A_whActive_(w) { return DEMO4A_activeFlag_(w) !== false; }
+function DEMO4A_whDestTypeCompatible_(w) { return DEMO4A_WH_DEST_TYPES_.hasOwnProperty(DEMO4A_whType_(w)); }
+// logistics-location identity/coordinate eligibility: verification_status NOT retired/rejected (33_:61-66) AND is_active
+// not explicitly false. (There is NO record_status column — lifecycle is verification_status + is_active.)
+function DEMO4A_locVerificationEligible_(loc) {
+  if (!DEMO4A_locActive_(loc)) return false;
+  var vs = DEMO4A_low_(DEMO4A_get_(loc, ['verification_status']));
+  return vs !== 'retired' && vs !== 'rejected';
+}
+// EXACT bridge: every ELIGIBLE logistics row whose warehouse_id === wid (NO fuzzy/name/city matching).
+function DEMO4A_locsForWarehouse_(locations, wid) {
+  var w = DEMO4A_low_(DEMO4A_str_(wid)); if (w === '') return [];
+  return (locations || []).filter(function (l) { return DEMO4A_locVerificationEligible_(l) && DEMO4A_low_(DEMO4A_str_(DEMO4A_get_(l, ['warehouse_id']))) === w; });
+}
+// TYPED coordinate-branch resolver for a destination warehouse business identity. Branch 2
+// (PRODUCTION_WAREHOUSE_COORDINATE_FALLBACK) is NOT source-proven (warehouses hold no coords) → NEVER selected.
+function DEMO4A_resolveWarehouseDestination_(warehouseRow, locations) {
+  if (!warehouseRow) return { branch: 'WAREHOUSE_LOCATION_JOIN_MISSING', reason: 'NO_DESTINATION_WAREHOUSE_IDENTITY', renderable: false, received_allowed: false };
+  var wid = DEMO4A_whId_(warehouseRow);
+  var joined = DEMO4A_locsForWarehouse_(locations, wid);
+  if (!joined.length) return { branch: 'WAREHOUSE_LOCATION_JOIN_MISSING', warehouse_id: wid, reason: 'NO_ELIGIBLE_LOGISTICS_ROW_FOR_WAREHOUSE_ID', renderable: false, received_allowed: false };
+  if (joined.length > 1) return { branch: 'WAREHOUSE_LOCATION_JOIN_CONFLICT', warehouse_id: wid, candidate_count: joined.length, candidate_fps: joined.slice(0, 5).map(function (l) { return DEMO4A_hash_(DEMO4A_locId_(l)); }), renderable: false, received_allowed: false };
+  var loc = joined[0];
+  var base = { warehouse_id: wid, logistics_location_id: DEMO4A_locId_(loc), location_type: DEMO4A_canonLocType_(DEMO4A_locType_(loc)),
+    country: DEMO4A_locCountry_(loc), region: DEMO4A_locRegion_(loc), verification_status: DEMO4A_str_(DEMO4A_get_(loc, ['verification_status'])), join_key: wid, location: loc };
+  if (DEMO4A_locValid_(loc)) { base.branch = 'WAREHOUSE_LOCATION_COORDINATE_READY'; base.latitude = DEMO4A_num_(loc.latitude); base.longitude = DEMO4A_num_(loc.longitude); base.coordinate_source = 'logistics_location'; base.renderable = true; base.received_allowed = true; return base; }
+  base.branch = 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; base.reason = 'DESTINATION_WAREHOUSE_COORDINATE_PENDING'; base.renderable = false; base.received_allowed = false; return base;   // identity kept; NEVER borrow a gateway coordinate, NEVER received-at-FBA
+}
+// region bucket for a US warehouse/location (reuses the frozen classifier vocabulary; blank → OTHER).
+function DEMO4A_dxRegionBucket_(region) { var h = DEMO4A_low_(region); if (/west/.test(h)) return 'US_WEST'; if (/central/.test(h)) return 'US_CENTRAL'; if (/east/.test(h)) return 'US_EAST'; return 'OTHER'; }
+// PURE diagnostic core for warehouse↔location authority. Read-only; COMPACT (counts + ≤5 fingerprints; never all rows).
+function DEMO4A_diagnoseWarehouseLocationAuthority_(warehouses, locations) {
+  function s(v) { return DEMO4A_str_(v); } function low(v) { return DEMO4A_low_(v); }
+  var whHeaders = (warehouses && warehouses[0]) ? Object.keys(warehouses[0]) : [];
+  var locHeaders = (locations && locations[0]) ? Object.keys(locations[0]) : [];
+  var whHasWarehouseId = whHeaders.map(function (h) { return low(h); }).indexOf('warehouse_id') !== -1;
+  var locHasWarehouseId = locHeaders.map(function (h) { return low(h); }).indexOf('warehouse_id') !== -1;
+  // warehouse coordinate fields found (expected: NONE) — audited: warehouses carry no coordinate.
+  var whCoordFields = whHeaders.filter(function (h) { return /^(lat|latitude|lon|lng|longitude|coordinate)/.test(low(h)); });
+  if (!warehouses || !warehouses.length || !whHasWarehouseId || !locHasWarehouseId) {
+    return { verdict: 'WAREHOUSE_SCHEMA_AUTHORITY_UNRESOLVED', warehouses_headers: whHeaders, logistics_locations_headers: locHeaders,
+      warehouse_coordinate_fields_found: whCoordFields, warehouses_present: !!(warehouses && warehouses.length), warehouse_id_column_present: whHasWarehouseId, logistics_warehouse_id_column_present: locHasWarehouseId,
+      production_map_warehouse_coordinate_fallback_source_proven: false };
+  }
+  // active destination-compatible warehouses + per-dimension counts + per-warehouse branch.
+  var byCompany = {}, byCountry = {}, byRegion = {}, byType = {}, byMarketplace = {};
+  var branchCounts = { WAREHOUSE_LOCATION_COORDINATE_READY: 0, WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING: 0, WAREHOUSE_LOCATION_JOIN_MISSING: 0, WAREHOUSE_LOCATION_JOIN_CONFLICT: 0 };
+  var joinedFbaByRegion = { US_WEST: 0, US_CENTRAL: 0, US_EAST: 0, OTHER: 0 };
+  var joinedValidCoord = 0, joinedBlankCoord = 0, verificationCounts = {}, examples = [];
+  var destWh = (warehouses || []).filter(function (w) { return DEMO4A_whActive_(w) && DEMO4A_whDestTypeCompatible_(w); });
+  function bump(o, k) { o[k] = (o[k] || 0) + 1; }
+  destWh.forEach(function (w) {
+    bump(byCompany, s(DEMO4A_whCompany_(w)) || '(blank)'); bump(byCountry, s(DEMO4A_whCountry_(w)) || '(blank)');
+    bump(byRegion, s(DEMO4A_whRegion_(w)) || '(blank)'); bump(byType, DEMO4A_whType_(w) || '(blank)'); bump(byMarketplace, s(DEMO4A_whMarketplace_(w)) || '(blank)');
+    var r = DEMO4A_resolveWarehouseDestination_(w, locations);
+    bump(branchCounts, r.branch);
+    if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING') {
+      if (r.location) bump(verificationCounts, low(DEMO4A_get_(r.location, ['verification_status'])) || '(blank)');
+      if (r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY') joinedValidCoord++; else joinedBlankCoord++;
+      if (low(DEMO4A_whCountry_(w)) === 'us') joinedFbaByRegion[DEMO4A_dxRegionBucket_(DEMO4A_whRegion_(w))]++;
+    }
+    if (examples.length < 5) examples.push({ warehouse_fp: DEMO4A_hash_(DEMO4A_whId_(w)), warehouse_type: DEMO4A_whType_(w), country: s(DEMO4A_whCountry_(w)), region: s(DEMO4A_whRegion_(w)), branch: r.branch, location_fp: r.logistics_location_id ? DEMO4A_hash_(r.logistics_location_id) : '', location_type: r.location_type || '', verification_status: r.verification_status || '' });
+  });
+  var missing = branchCounts.WAREHOUSE_LOCATION_JOIN_MISSING, conflict = branchCounts.WAREHOUSE_LOCATION_JOIN_CONFLICT;
+  var ready = branchCounts.WAREHOUSE_LOCATION_COORDINATE_READY, pending = branchCounts.WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING;
+  var verdict = destWh.length === 0 ? 'WAREHOUSE_LOCATION_JOIN_MISSING'
+    : conflict > 0 ? 'WAREHOUSE_LOCATION_JOIN_CONFLICT'
+    : ready > 0 ? 'WAREHOUSE_LOCATION_AUTHORITY_READY'
+    : pending > 0 ? 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'
+    : 'WAREHOUSE_LOCATION_JOIN_MISSING';
+  return {
+    verdict: verdict,
+    warehouses_headers: whHeaders, logistics_locations_headers: locHeaders, warehouse_coordinate_fields_found: whCoordFields,
+    active_destination_warehouse_count: destWh.length,
+    destination_warehouses_by: { company: byCompany, country: byCountry, region: byRegion, warehouse_type: byType, marketplace: byMarketplace },
+    warehouse_id_join: { warehouse_rows: (warehouses || []).length, active_destination_warehouses: destWh.length, joined_ok: ready + pending, missing_joins: missing, conflicting_joins: conflict },
+    joined_fba_3pl_by_region: joinedFbaByRegion, joined_rows_valid_coordinate: joinedValidCoord, joined_rows_blank_coordinate: joinedBlankCoord,
+    verification_status_counts: verificationCounts, record_status_counts: '(no record_status column — lifecycle via verification_status + is_active)',
+    branch_counts: branchCounts, production_map_warehouse_coordinate_fallback_source_proven: false,
+    safe_examples: examples
+  };
+}
+function TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY() {
+  var out = { tool: 'TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY', mode: 'STRICTLY READ-ONLY (getSheetByName + getValues only)', output_contract: 'ONE_COMPACT_PRIMARY_LOG_ENTRY (counts + <=5 fingerprints; never all rows)' };
+  try {
+    var masters = DEMO4A_readMasters_();
+    out.masters_present = masters.present;
+    var d = DEMO4A_diagnoseWarehouseLocationAuthority_(masters.warehouses, masters.locations);
+    Object.keys(d).forEach(function (k) { out[k] = d[k]; });
+  } catch (e) { out.verdict = 'WAREHOUSE_SCHEMA_AUTHORITY_UNRESOLVED'; out.reason = (e && e.message) ? e.message : String(e); }
+  out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES';
+  Logger.log('DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY ' + JSON.stringify(out));
+  return out;
+}
+
+// ================================================================================================================
 // ENTRYPOINT 1 — PREFLIGHT (strictly read-only)
 // ================================================================================================================
+// V3F (G) — PURE warehouse-authority gate summary for PREFLIGHT. Not applicable when the warehouses master is absent
+// (legacy logistics-only binding). When applicable, READY requires every destination WAREHOUSE_LOCATION_COORDINATE_READY.
+function DEMO4A_warehouseGates_(present, authority, errors) {
+  if (!present) return { applicable: false, note: 'warehouses master absent — legacy logistics-only binding (no warehouse authority gate)' };
+  var slots = Object.keys(authority || {});
+  function every(pred) { return slots.length > 0 && slots.every(function (s) { return pred(authority[s] || {}); }); }
+  var identity = every(function (r) { return r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY' || r.branch === 'WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING'; });
+  var join = every(function (r) { return ['WAREHOUSE_LOCATION_JOIN_MISSING', 'WAREHOUSE_LOCATION_JOIN_CONFLICT', 'WAREHOUSE_IDENTITY_INELIGIBLE', 'WAREHOUSE_IDENTITY_MISMATCH'].indexOf(r.branch) === -1; });
+  var coord = every(function (r) { return r.branch === 'WAREHOUSE_LOCATION_COORDINATE_READY'; });
+  var render = every(function (r) { return !!r.renderable; });
+  var truthful = coord;   // a received/facility marker is emitted ONLY at a coordinate-ready facility (fail-closed guarantees it)
+  return { applicable: true, warehouse_business_identity_gate: identity, warehouse_location_join_gate: join, warehouse_coordinate_gate: coord, map_renderability_gate: render, status_truthfulness_gate: truthful, ok: identity && join && coord && render && truthful, errors: errors || [] };
+}
 function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
   var out = { tool: 'TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED', mode: 'STRICTLY READ-ONLY (no write/create/delete/submit)', output_contract: 'ONE_PRIMARY_LOG_ENTRY' };
   try {
     var schema = DEMO4A_schemaGate_(); out.schema_gate = schema;
     var masters = DEMO4A_readMasters_(); out.masters_present = masters.present;
-    out.master_row_counts = { templates: masters.templates.length, template_nodes: masters.nodes.length, logistics_locations: masters.locations.length, marketplace_skus: masters.marketplaceSkus.length, sku_details: masters.skuDetails.length };
+    out.master_row_counts = { templates: masters.templates.length, template_nodes: masters.nodes.length, logistics_locations: masters.locations.length, marketplace_skus: masters.marketplaceSkus.length, sku_details: masters.skuDetails.length, warehouses: (masters.warehouses || []).length };
     var plan = DEMO4A_buildPlan_(masters);
-    if (!plan.ok) { out.verdict = schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA'; out.reason = plan.reason; out.rejection_counts = plan.rejection_counts || null; out.available_regions = plan.available_regions || null; out.detail = plan; }
+    if (!plan.ok) {
+      out.reason = plan.reason; out.rejection_counts = plan.rejection_counts || null; out.available_regions = plan.available_regions || null; out.detail = plan;
+      if (plan.destination_authority) out.warehouse_gates = DEMO4A_warehouseGates_(true, plan.destination_authority, plan.destination_authority_errors || []);
+      out.verdict = plan.reason === 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY' ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY' : (schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA');
+    }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
       out.selected_template_ids = plan.chosen_templates.map(function (c) { return c.route_template_id; }); out.rejection_counts = plan.rejection_counts;
       out.scope = plan.scope; out.planned_counts = plan.counts; out.per_shipment = plan.per_shipment; out.demo_plan_checksum = plan.checksum;
       // E — compact per-shipment route-geography evidence + the hard binding gates. READY is unreachable unless every gate is true.
       out.binding_gates = plan.binding_gates;
-      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
+      // G — the five separate warehouse gates (business identity / join / coordinate / map renderability / status truthfulness).
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null);
+      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_facility_marker_renderable: s.destination_facility_marker_renderable, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
       out.existing_state = { classification: cls.classification, duplicate_pk_counts: cls.duplicate_pk_counts, unexpected_demo_ids: cls.unexpected_demo_ids };
       out.verdict = !schema.ok ? 'PREFLIGHT_FAILED_SCHEMA'
         : !(plan.binding_gates && plan.binding_gates.ok) ? 'PREFLIGHT_FAILED_BINDING_GATES'
+        : (out.warehouse_gates.applicable && !out.warehouse_gates.ok) ? 'PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY'
         : cls.classification === 'ABSENT_ALL' ? 'READY_FOR_DEMO_SEED'
         : cls.classification === 'PRESENT_EXACT_ALL' ? 'ALREADY_SEEDED_EXACT'
         : ('BLOCKED_' + cls.classification);
@@ -1242,6 +1419,9 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
       out.scope = plan.scope; out.dynamic_row_counts = plan.counts; out.per_shipment_counts = plan.per_shipment; out.planned_ids = DEMO4A_allIds_(plan);
       out.binding_gates = plan.binding_gates;
+      out.warehouse_gates = DEMO4A_warehouseGates_(plan.warehouses_present, plan.destination_authority, null);
+      // G — per-shipment destination authority + coordinate branch + whether the facility marker will render / gateway separately.
+      out.destination_authority = plan.per_shipment.map(function (s) { return { shipping_plan_id: (DEMO4A_PREFIX_ + 'SP-' + s.shipment_id.slice(-1)), shipment_id: s.shipment_id, slot: s.slot, template: s.template, transport_type: s.transport_class, destination_warehouse_id: s.destination_warehouse_id, destination_logistics_location_id: s.destination_logistics_location_id, destination_coordinate_branch: s.destination_coordinate_branch, destination_verification_status: s.destination_verification_status, route_rows: s.route_rows, event_rows: s.event_rows, final_status: s.status, destination_facility_marker_renderable: s.destination_facility_marker_renderable, current_gateway_location_id: s.current_location_id }; });
       out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       out.event_chronology = DEMO4A_chronology_(plan); out.route_planned_to_recorded_event_map = plan.route_event_map; out.expected_ui_visibility = plan.visibility;
       out.demo_plan_checksum = plan.checksum; out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';

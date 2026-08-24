@@ -174,3 +174,49 @@ Changed: `assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v
 
 ## Purpose
 The V3D live diagnostic returned eligible-templates = 0 (`NO_ROLE_COMPATIBLE_DESTINATION_LOCATION` = 29, `NO_ROLE_COMPATIBLE_ORIGIN_LOCATION` = 3). V3E pinpoints WHICH stage each candidate dies at (region vs raw-token vs canonical vs transport vs role) and the exact live raw tokens + region authority — the evidence required BEFORE any V3D matrix/region alignment. **No matrix change is made in this task.**
+
+---
+
+# F1-7N-FA-4A — V3F: WAREHOUSE ↔ LOGISTICS-LOCATION DESTINATION AUTHORITY ALIGNMENT
+
+**Status: SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED.** TEMP demo tool + its test + this doc only. No production/master/frontend/schema/bundle change; strictly read-only masters; no DB/property write; both confirmation constants remain placeholders; not run by Claude. One local commit.
+
+## A — Source authority matrix (audited, cited)
+| Concern | Authority | Source |
+|---|---|---|
+| Business destination identity | `shipments.destination_warehouse_id` (+ `destination`,`destination_type`; legacy `warehouse_id`), inherited from the plan → `warehouses.warehouse_id` | `12_shipment_handlers.gs:33,504`; `11_:24`; `33_party_authority_handlers.gs:130` |
+| `warehouses` coordinates | **NONE** — business authority only (`warehouse_id, warehouse_type∈FBA/3PL/RETURN/FACTORY, company, country, logistics_region, marketplace, is_active, address/city/state/postal_code`) | `SHIPMENT_CENTER_SPEC.md:59,62`; `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:456` |
+| Map coordinate authority | `logistics_locations.latitude/longitude` only | `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:160,192` |
+| Exact join | `logistics_locations.warehouse_id === warehouses.warehouse_id` — **IMPLEMENTED** (backend `partyResolveDestinationLocation_` 33_:107, fail-closed `DESTINATION_LOCATION_AMBIGUOUS` on >1; frontend `resolveDestinationCoord`/`locByWh` global-logistics-map.js:182,267) | 33_:107-124; 34_:334; map:182,267 |
+| Warehouse-coordinate fallback (branch 2) | **NOT source-proven** — warehouses hold no coordinate; fabrication forbidden | `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:219,328` |
+| Multiple logistics rows per warehouse | backend fails closed on >1; ≤1 active primary per warehouse | 33_:112; `LOGISTICS_LOCATIONS_SEED_CHECKLIST.md:7,26` |
+| Blank / (0,0) / out-of-range coords | REJECTED — `validCoord` `!(0,0)` + ±90/±180; blanks→null | map:64; `operation-system-db-api.js:1299-1303` |
+| Runtime geocoding | **NONE** (definitively) | map:6; `project-current-state.md:2863`; test-banned |
+| `verification_status` | enum draft/pending_review/verified/rejected/retired; eligible = not retired/rejected. **No `record_status` column.** The USER token `ADDRESS_SEEDED_COORDINATES_PENDING` does NOT exist in-repo (real concept = frontend `COORDINATE_PENDING`) | `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:180`; 33_:61-66; map:259 |
+| Route coords at dispatch | template node's OWN inline lat/lng (not dereferenced via logistics_location_id); blank if node blank; never (0,0) | `22_shipment_dispatch_handlers.gs:190-197` |
+
+## Live-schema conclusions
+The V3E finding (47/398 coordinate-valid rows, mostly airports/seaports/gateways; US FBA/3PL destinations zero at role_compatible) is explained: the real FBA/3PL facilities exist as **warehouse-backed `logistics_locations` rows with blank coordinates** — they are IDENTITY-ready but COORDINATE-pending. `warehouses` never carried coordinates; the coordinate-valid rows are gateways, not the FBA facilities. "No valid coordinate" ≠ "warehouse does not exist."
+
+## Selected coordinate branch model (frozen; branch 2 excluded as not source-proven)
+`DEMO4A_resolveWarehouseDestination_(warehouseRow, locations)` (exact `warehouse_id` join, no fuzzy/name/city):
+1. **WAREHOUSE_LOCATION_COORDINATE_READY** — one eligible logistics row with a valid coord → the FBA/3PL facility is the final destination marker (route lat/lng = that exact row); `received` allowed.
+2. **PRODUCTION_WAREHOUSE_COORDINATE_FALLBACK** — NOT source-proven → NEVER selected (diagnostic reports `production_map_warehouse_coordinate_fallback_source_proven:false`).
+3. **WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING** — identity resolves, coord blank → identity preserved, **no fabricated coordinate, no facility marker, NO received-at-FBA**; the demo fails closed (`DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY`).
+4. **WAREHOUSE_LOCATION_JOIN_MISSING** — warehouse identity but no eligible logistics row → fail closed.
+5. **WAREHOUSE_LOCATION_JOIN_CONFLICT** — >1 eligible logistics row for the warehouse → fail closed (fingerprinted).
+
+## Destination / status semantics
+`warehouses` = business destination authority; `logistics_locations` = coordinate authority; the seed preserves BOTH ids + the exact join key + `location_type` + `country`/`region` + coordinate source + `verification_status` in the binding manifest/checksum (a `WHDEST~…` entry). Route semantics keep origin (factory/warehouse), export/import gateways (CN/US port/airport) and the current transit marker DISTINCT from the final destination FBA facility; a seaport stays a gateway and is never relabelled as the FBA. `received` is emitted only under branch 1 (facility coordinate truthfully reached). The warehouse authority activates ONLY when the `warehouses` master is present (legacy/no-warehouse fixtures keep the logistics-only binding unchanged).
+
+## Diagnostic entrypoint
+`TEMP_DEMO4A_DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY()` (pure core `DEMO4A_diagnoseWarehouseLocationAuthority_`) — strictly read-only, ONE compact log: warehouses/logistics headers, warehouse coordinate fields found (none), active destination-warehouse counts by company/country/region/type/marketplace, exact `warehouse_id` join counts (rows / joined / missing / conflicting), joined FBA/3PL by US_WEST/CENTRAL/EAST, joined valid-vs-blank coordinate counts, verification_status counts, `production_map_warehouse_coordinate_fallback_source_proven:false`, ≤5 fingerprinted examples, and a verdict ∈ {WAREHOUSE_LOCATION_AUTHORITY_READY, WAREHOUSE_IDENTITY_READY_COORDINATE_PENDING, WAREHOUSE_LOCATION_JOIN_MISSING, WAREHOUSE_LOCATION_JOIN_CONFLICT, WAREHOUSE_SCHEMA_AUTHORITY_UNRESOLVED}; `DEMO4A_ZERO_WRITE_CONFIRMED = YES`.
+
+## PREFLIGHT / DRY_RUN (G)
+PREFLIGHT reports five separate gates (`warehouse_business_identity_gate`, `warehouse_location_join_gate`, `warehouse_coordinate_gate`, `map_renderability_gate`, `status_truthfulness_gate`) — `READY_FOR_DEMO_SEED` requires all true (else `PREFLIGHT_FAILED_WAREHOUSE_AUTHORITY`). DRY_RUN reports per shipment: destination_warehouse_id, destination_logistics_location_id, coordinate branch, verification_status, route/event rows, final status, facility-marker-renderable, and the gateway location separately. COMMIT re-runs the gates under lock (buildPlan is re-invoked under the ScriptLock; a non-READY branch → COMMIT_REFUSED_PLAN). The `demo_plan_checksum` binds the branch + both ids + verification (retired checksums not accepted).
+
+## Downstream blockers (recorded; NOT changed here)
+The production map's own BACKEND coordinate snapshot is PAUSED (`GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md:95`) — only the frontend join renders today. `shipment_routes` at dispatch use template-node inline coords (not the logistics_location_id join) — a production spec-vs-code gap. Neither is changed in this task.
+
+## Live-validation order (NOT run here)
+DIAGNOSE_WAREHOUSE_LOCATION_AUTHORITY → DIAGNOSE_LIVE_LOCATION_ROLE_CANDIDATES → PREFLIGHT → DRY_RUN → user copies the new demo_plan_checksum → COMMIT → VALIDATE.
