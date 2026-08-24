@@ -201,67 +201,174 @@ function DEMO4A_nodeGeoBinding_(node, idIndexes) {
     latitude: DEMO4A_num_(ownLat), longitude: DEMO4A_num_(ownLng), location_name: DEMO4A_str_(DEMO4A_get_(node, ['node_name'])) || DEMO4A_str_(node.node_code), country: DEMO4A_str_(node.country), region: DEMO4A_str_(node.region), city: DEMO4A_str_(node.city) };
   return { bound: false };
 }
-// transit-type → role-appropriate preferred canonical location types (soft preference; deterministic id order otherwise).
-function DEMO4A_transitPrefTypes_(transitType, role) {
-  var t = DEMO4A_low_(transitType), air = /air/.test(t), rail = /rail/.test(t);
-  if (role === 'origin') return air ? ['factory', 'warehouse', 'airport'] : rail ? ['factory', 'warehouse', 'rail_terminal'] : ['factory', 'warehouse', 'port', 'seaport'];
-  if (role === 'destination') return ['warehouse', 'fulfillment_center', 'port', 'airport', 'rail_terminal'];
-  return air ? ['airport', 'hub', 'port'] : rail ? ['rail_terminal', 'hub', 'port'] : ['port', 'seaport', 'hub', 'airport'];   // current transit
+// ================================================================================================================
+// V3D — HARD ROUTE-GEOGRAPHY SEMANTIC GATE (replaces the soft type preference + id-order selection). Determinism is NOT
+// semantic authority: a DEMO SYNTHETIC RUNTIME BINDING must be transport/role-compatible AND corridor-plausible, never
+// chosen because its id sorts first. CANONICAL_MASTER_BINDING / NODE_DIRECT_COORDINATE are the node's own source-proven
+// master truth (exact-identifier match or the node's own coordinate) and are EXEMPT from the synthetic gate — B(3) itself
+// whitelists "an explicit third-country node country from the selected template node" and "a source-proven route corridor/
+// transshipment authority". Only the invented synthetic pick is gated.
+// ------------------------------------------------------------------------------------------------------------------
+// Transport class of a template transit_type / node transport_mode (canonical tokens; NEVER a display-name match).
+function DEMO4A_transportClass_(mode) {
+  var m = DEMO4A_low_(mode);
+  if (/air/.test(m)) return 'air';                                   // air / air_express / airfreight
+  if (/rail|train|intermodal_rail/.test(m)) return 'rail';
+  if (/truck|road|inland|ltl|ftl|drayage|ground|parcel|courier|last.?mile|fba/.test(m)) return 'truck';
+  if (/sea|ocean|maritime|vessel|container|fcl|lcl|barge/.test(m)) return 'sea';
+  return 'unknown';
 }
-// deterministic anchor pick from ACTIVE valid-coordinate locations. Exact country (hard). Exact region preferred when the
-// template supplies one AND an in-country location carries it (else country-only, region_exact:false). Role type is a
-// SOFT preference. Excludes already-used ids. Stable order by logistics_location_id. Returns { loc, region_exact } | null.
+// Normalize a raw logistics_locations.location_type to a canonical §5.2 enum token via an EXPLICIT synonym map (no fuzzy /
+// substring / name matching). Blank → ''; an unrecognized token → 'UNKNOWN' (fails closed for a synthetic binding).
+// Canonical enum (GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md §5.2): factory, warehouse, fulfillment_center, port, airport,
+// rail_terminal, truck_terminal, border_crossing, customs_facility, transit_hub, parcel_hub, carrier_facility,
+// city_centroid, country_centroid, virtual_transit_point, other (+ distribution_center as an owner-used warehouse-class).
+var DEMO4A_LOC_TYPE_CANON_ = {
+  factory: 'factory', plant: 'factory', manufacturer: 'factory', supplier: 'factory',
+  warehouse: 'warehouse', wh: 'warehouse', dc_warehouse: 'warehouse',
+  fulfillment_center: 'fulfillment_center', fulfilment_center: 'fulfillment_center', fc: 'fulfillment_center', fba: 'fulfillment_center', fba_center: 'fulfillment_center',
+  distribution_center: 'distribution_center', dc: 'distribution_center', distribution_centre: 'distribution_center', regional_distribution_center: 'distribution_center',
+  port: 'port', seaport: 'port', sea_port: 'port', harbor: 'port', harbour: 'port', container_port: 'port', ocean_port: 'port',
+  airport: 'airport', air_port: 'airport', air_cargo_terminal: 'airport',
+  rail_terminal: 'rail_terminal', railway_terminal: 'rail_terminal', rail: 'rail_terminal', railhead: 'rail_terminal', rail_ramp: 'rail_terminal', rail_yard: 'rail_terminal',
+  truck_terminal: 'truck_terminal', trucking_terminal: 'truck_terminal', truck: 'truck_terminal', motor_carrier_terminal: 'truck_terminal', cross_dock: 'truck_terminal', crossdock: 'truck_terminal',
+  border_crossing: 'border_crossing', border: 'border_crossing', border_gateway: 'border_crossing', land_border: 'border_crossing', land_port: 'border_crossing',
+  customs_facility: 'customs_facility', customs: 'customs_facility', customs_office: 'customs_facility', bonded_warehouse: 'customs_facility', customs_bond: 'customs_facility',
+  transit_hub: 'transit_hub', hub: 'transit_hub', transshipment: 'transit_hub', transshipment_hub: 'transit_hub', transhipment: 'transit_hub', gateway: 'transit_hub', logistics_hub: 'transit_hub', sort_center: 'transit_hub', sortation_center: 'transit_hub', consolidation_center: 'transit_hub',
+  parcel_hub: 'parcel_hub', parcel: 'parcel_hub', last_mile_hub: 'parcel_hub', delivery_station: 'parcel_hub', delivery_node: 'parcel_hub',
+  carrier_facility: 'carrier_facility', carrier: 'carrier_facility', courier_facility: 'carrier_facility', carrier_hub: 'carrier_facility',
+  city_centroid: 'city_centroid', country_centroid: 'country_centroid',
+  virtual_transit_point: 'virtual_transit_point', virtual: 'virtual_transit_point', midpoint: 'virtual_transit_point', ocean_waypoint: 'virtual_transit_point', waypoint: 'virtual_transit_point', transit_point: 'virtual_transit_point',
+  other: 'other'
+};
+function DEMO4A_canonLocType_(raw) { var t = DEMO4A_low_(raw); if (t === '') return ''; return DEMO4A_LOC_TYPE_CANON_.hasOwnProperty(t) ? DEMO4A_LOC_TYPE_CANON_[t] : 'UNKNOWN'; }
+// C — the HARD role/type compatibility matrix (canonical location_type tokens × transport class × role). Returns the set
+// of COMPATIBLE canonical types. sea/truck destinations DELIBERATELY exclude airport; airport is a destination only for air.
+function DEMO4A_roleCompatibleTypes_(tclass, role) {
+  var ORIGIN = { sea: ['factory', 'warehouse', 'port', 'fulfillment_center', 'distribution_center'], air: ['factory', 'warehouse', 'airport', 'fulfillment_center', 'distribution_center'], rail: ['factory', 'warehouse', 'rail_terminal', 'distribution_center'], truck: ['factory', 'warehouse', 'truck_terminal', 'distribution_center'] };
+  var CURRENT = { sea: ['port', 'transit_hub', 'virtual_transit_point'], air: ['airport', 'transit_hub', 'virtual_transit_point'], rail: ['rail_terminal', 'border_crossing', 'transit_hub', 'virtual_transit_point'], truck: ['truck_terminal', 'border_crossing', 'transit_hub', 'virtual_transit_point'] };
+  var DEST_COMMON = ['warehouse', 'fulfillment_center', 'distribution_center', 'truck_terminal', 'rail_terminal', 'transit_hub', 'parcel_hub', 'carrier_facility'];
+  if (role === 'origin') return (ORIGIN[tclass] || ORIGIN.sea).slice();
+  if (role === 'current') return (CURRENT[tclass] || CURRENT.sea).slice();
+  return (tclass === 'air') ? DEST_COMMON.concat(['airport']) : DEST_COMMON.slice();   // destination: sea/rail/truck exclude airport
+}
+// role/type verdict for a canonical location type: 'compatible' | 'incompatible' | 'unknown' (blank/unrecognized). UNKNOWN
+// fails closed for a synthetic binding.
+function DEMO4A_typeRoleCompat_(canonType, tclass, role) {
+  if (canonType === '' || canonType === 'UNKNOWN') return 'unknown';
+  return DEMO4A_roleCompatibleTypes_(tclass, role).indexOf(canonType) !== -1 ? 'compatible' : 'incompatible';
+}
+// D — node_type is an UNFROZEN user-maintained vocabulary (31_:110 makes the lifecycle STRUCTURAL, never node_type-driven).
+// Structural position is the role authority; node_type is a recognized-INCOMPATIBLE GUARD for the synthetic CURRENT marker
+// only — never host a moving current marker on a recognized customs / appointment / administrative / endpoint node.
+// Returns 'compatible' | 'incompatible' | 'unknown' (unknown ⇒ allowed by structural position; documented + tested).
+function DEMO4A_nodeRoleCompat_(nodeType, role) {
+  var t = DEMO4A_low_(nodeType); if (t === '') return 'unknown';
+  if (role !== 'current') return 'unknown';   // origin/destination governed structurally (first/last node)
+  var BAD = /(customs|clearance|appointment|booking|schedule|document|admin|invoice|payment|origin|pickup|pick_up|destination|final|delivery|deliver|receipt|receive|fba|last_?mile|handover|drop_?off)/;
+  var OK = /(port|ocean|sea|maritime|vessel|voyage|transit|transship|tranship|hub|gateway|main_?leg|main_?transit|line_?haul|linehaul|inland|rail|leg|waypoint|midpoint)/;
+  if (BAD.test(t)) return 'incompatible';
+  if (OK.test(t)) return 'compatible';
+  return 'unknown';
+}
+// B(3) — the corridor countries plausible for a direct route's CURRENT marker: origin_country, destination_country, and
+// any EXPLICIT non-blank node.country on the selected template's nodes (a proven route/transshipment node). Never the
+// unrelated global logistics-location pool. Lowercased set.
+function DEMO4A_corridorCountries_(template, resolved) {
+  var set = {}, oc = DEMO4A_low_(DEMO4A_str_(template.origin_country)), dc = DEMO4A_low_(DEMO4A_str_(template.destination_country));
+  if (oc) set[oc] = 1; if (dc) set[dc] = 1;
+  (resolved || []).forEach(function (r) { var c = DEMO4A_low_(DEMO4A_str_(r.node.country)); if (c) set[c] = 1; });
+  return set;
+}
+// D — choose the synthetic CURRENT-marker node index: a MIDDLE node (1..n-2) whose node_type is not recognized-incompatible
+// for a moving transit marker, preferring a recognized-compatible one, then the geometric middle, then lowest index
+// (deterministic). Returns -1 when no plausible middle node exists (⇒ not current-capable; fail closed).
+function DEMO4A_chooseCurrentIndex_(resolved) {
+  var n = resolved.length; if (n < 3) return -1;
+  var mid = Math.max(1, Math.min(n - 2, Math.floor((n - 1) / 2))), cand = [];
+  for (var i = 1; i <= n - 2; i++) { var c = DEMO4A_nodeRoleCompat_(resolved[i].node.node_type, 'current'); if (c !== 'incompatible') cand.push({ i: i, rank: (c === 'compatible' ? 0 : 1), dist: Math.abs(i - mid) }); }
+  if (!cand.length) return -1;
+  cand.sort(function (a, b) { if (a.rank !== b.rank) return a.rank - b.rank; if (a.dist !== b.dist) return a.dist - b.dist; return a.i - b.i; });
+  return cand[0].i;
+}
+// HARD anchor pick from ACTIVE valid-coordinate locations. Country gate: opts.country (exact, origin/destination) OR
+// opts.countries (corridor set, current). Exact region preferred when supplied AND an in-scope location carries it. The
+// role/type gate is HARD (opts.role + opts.tclass): only role-compatible canonical location types survive; UNKNOWN/blank
+// types are excluded. Excludes used ids. Deterministic by logistics_location_id. Returns { loc, region_exact, canon_type } | null.
 function DEMO4A_pickAnchor_(locations, opts) {
   opts = opts || {};
-  var inCountry = (locations || []).filter(function (l) {
+  var role = opts.role, tclass = opts.tclass || 'sea';
+  var compat = (role === 'origin' || role === 'current' || role === 'destination') ? DEMO4A_roleCompatibleTypes_(tclass, role) : null;
+  var pool0 = (locations || []).filter(function (l) {
     if (!DEMO4A_locValid_(l) || !DEMO4A_locActive_(l)) return false;
     var id = DEMO4A_locId_(l); if (!id || (opts.exclude && opts.exclude[id])) return false;
-    if (opts.country && DEMO4A_low_(DEMO4A_locCountry_(l)) !== DEMO4A_low_(opts.country)) return false;
+    if (opts.countries) { if (!opts.countries[DEMO4A_low_(DEMO4A_locCountry_(l))]) return false; }         // B(3) corridor gate (current)
+    else if (opts.country) { if (DEMO4A_low_(DEMO4A_locCountry_(l)) !== DEMO4A_low_(opts.country)) return false; }
+    if (compat) { var ct = DEMO4A_canonLocType_(DEMO4A_locType_(l)); if (compat.indexOf(ct) === -1) return false; }   // C hard role/type gate
     return true;
   });
-  if (!inCountry.length) return null;
-  var pool = inCountry, regionExact = false;
-  if (opts.region) { var byReg = inCountry.filter(function (l) { return DEMO4A_low_(DEMO4A_locRegion_(l)) === DEMO4A_low_(opts.region); }); if (byReg.length) { pool = byReg; regionExact = true; } }
-  function typeRank(l) { var i = (opts.preferTypes || []).indexOf(DEMO4A_locType_(l)); return i === -1 ? (opts.preferTypes || []).length : i; }
-  pool.sort(function (a, b) { var ra = typeRank(a), rb = typeRank(b); if (ra !== rb) return ra - rb; var ia = DEMO4A_locId_(a), ib = DEMO4A_locId_(b); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
-  return { loc: pool[0], region_exact: regionExact };
+  if (!pool0.length) return null;
+  var pool = pool0, regionExact = false;
+  if (opts.region) { var byReg = pool0.filter(function (l) { return DEMO4A_low_(DEMO4A_locRegion_(l)) === DEMO4A_low_(opts.region); }); if (byReg.length) { pool = byReg; regionExact = true; } }
+  pool.sort(function (a, b) { var ia = DEMO4A_locId_(a), ib = DEMO4A_locId_(b); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
+  return { loc: pool[0], region_exact: regionExact, canon_type: DEMO4A_canonLocType_(DEMO4A_locType_(pool[0])) };
 }
 function DEMO4A_bindingFromLoc_(loc, source, nodeIndex, regionExact) {
   return { source: source, node_index: nodeIndex, region_exact: !!regionExact, location_ref_id: DEMO4A_locId_(loc),
     latitude: DEMO4A_num_(loc.latitude), longitude: DEMO4A_num_(loc.longitude), location_name: DEMO4A_str_(loc.location_name), country: DEMO4A_locCountry_(loc), region: DEMO4A_locRegion_(loc), city: DEMO4A_str_(loc.city) };
 }
-// C — build the ORIGIN/CURRENT/DESTINATION role bindings for one template. A role node that already has a canonical/
-// direct binding uses THAT (its coordinate authority); otherwise a deterministic Demo-only location is chosen. Origin +
-// destination are always required (distinct coords); a distinct current marker is required only when opts.requireCurrent.
+// C/B/D — build the ORIGIN/CURRENT/DESTINATION role bindings for one template. A role node that already has a CANONICAL /
+// DIRECT binding uses THAT source-proven coordinate authority (EXEMPT from the synthetic gate; compat still reported for
+// evidence). Otherwise a HARD-gated deterministic Demo-only location is chosen: transport/role-compatible location_type,
+// exact origin/destination country (region-preferred), corridor-country CURRENT marker on a node-role-compatible middle
+// node. Origin + destination required (distinct coords); a distinct current marker only when opts.requireCurrent. Every
+// role carries { role_compatible, corridor_compatible, canon_type, node_type } evidence; fail-closed with a typed reason.
 function DEMO4A_coordKey_(b) { return DEMO4A_num_(b.latitude).toFixed(5) + ',' + DEMO4A_num_(b.longitude).toFixed(5); }
 function DEMO4A_bindTemplateRoles_(template, resolved, locations, opts) {
   opts = opts || {};
-  var n = resolved.length, used = {}, transit = DEMO4A_str_(template.transit_type);
+  var n = resolved.length, used = {};
+  var tclass = DEMO4A_transportClass_(template.transit_type);
+  var lastMileClass = DEMO4A_transportClass_(template.last_mile_delivery);
+  var corridor = DEMO4A_corridorCountries_(template, resolved);
+  var evidence = { origin: null, current: null, destination: null };
+  function evid(role, b) {
+    var nd = resolved[b.node_index] ? resolved[b.node_index].node : null;
+    return { role: role, location_id: DEMO4A_str_(b.location_ref_id), country: DEMO4A_str_(b.country), region: DEMO4A_str_(b.region),
+      location_type: DEMO4A_str_(b.location_type || ''), canon_location_type: DEMO4A_str_(b.canon_type || ''), node_type: DEMO4A_str_(nd ? nd.node_type : ''),
+      binding_type: b.source, source_proven: !!b.source_proven, role_compatible: b.role_compatible === true, corridor_compatible: b.corridor_compatible === true };
+  }
   function roleAt(idx, role, pickOpts) {
     var geo = resolved[idx] && resolved[idx].geo;
-    if (geo && geo.bound) { var b = { source: geo.binding_type, node_index: idx, region_exact: true, location_ref_id: geo.location_ref_id, latitude: geo.latitude, longitude: geo.longitude, location_name: geo.location_name, country: geo.country, region: geo.region, city: geo.city }; if (b.location_ref_id) used[b.location_ref_id] = 1; used[DEMO4A_coordKey_(b)] = 1; return b; }
-    pickOpts.exclude = used;
+    if (geo && geo.bound) {   // CANONICAL_MASTER_BINDING / NODE_DIRECT_COORDINATE = source-proven master truth (exempt)
+      var b = { source: geo.binding_type, node_index: idx, region_exact: true, location_ref_id: geo.location_ref_id, latitude: geo.latitude, longitude: geo.longitude,
+        location_name: geo.location_name, country: geo.country, region: geo.region, city: geo.city, canon_type: 'SOURCE_PROVEN', source_proven: true, role_compatible: true, corridor_compatible: true };
+      if (b.location_ref_id) used[b.location_ref_id] = 1; used[DEMO4A_coordKey_(b)] = 1; evidence[role] = evid(role, b); return b;
+    }
+    pickOpts.exclude = used; pickOpts.role = role;
+    pickOpts.tclass = (role === 'destination') ? (lastMileClass !== 'unknown' ? lastMileClass : tclass) : tclass;
     var pick = DEMO4A_pickAnchor_(locations, pickOpts);
     if (!pick) return null;
     var bb = DEMO4A_bindingFromLoc_(pick.loc, 'DEMO_SYNTHETIC_RUNTIME_BINDING', idx, pick.region_exact);
-    used[bb.location_ref_id] = 1; used[DEMO4A_coordKey_(bb)] = 1; return bb;
+    bb.location_type = DEMO4A_locType_(pick.loc); bb.canon_type = pick.canon_type; bb.source_proven = false; bb.role_compatible = true; bb.corridor_compatible = true;
+    used[bb.location_ref_id] = 1; used[DEMO4A_coordKey_(bb)] = 1; evidence[role] = evid(role, bb); return bb;
   }
-  var origin = roleAt(0, 'origin', { country: DEMO4A_str_(template.origin_country), preferTypes: DEMO4A_transitPrefTypes_(transit, 'origin') });
-  if (!origin) return { ok: false, reason: 'NO_ORIGIN_ANCHOR' };
-  var destination = roleAt(n - 1, 'destination', { country: DEMO4A_str_(template.destination_country), region: DEMO4A_str_(template.destination_region), preferTypes: DEMO4A_transitPrefTypes_(transit, 'destination') });
-  if (!destination) return { ok: false, reason: 'NO_DESTINATION_ANCHOR' };
-  if (DEMO4A_coordKey_(origin) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'ORIGIN_DESTINATION_NOT_DISTINCT' };
+  var origin = roleAt(0, 'origin', { country: DEMO4A_str_(template.origin_country) });
+  if (!origin) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_ORIGIN_LOCATION', evidence: evidence, corridor: Object.keys(corridor) };
+  var destination = roleAt(n - 1, 'destination', { country: DEMO4A_str_(template.destination_country), region: DEMO4A_str_(template.destination_region) });
+  if (!destination) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_DESTINATION_LOCATION', evidence: evidence, corridor: Object.keys(corridor) };
+  if (DEMO4A_coordKey_(origin) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'ORIGIN_DESTINATION_NOT_DISTINCT', evidence: evidence, corridor: Object.keys(corridor) };
   var roleByIndex = {}; roleByIndex[0] = origin; roleByIndex[n - 1] = destination;
   var current = null, currentIndex = -1;
   if (opts.requireCurrent) {
-    if (n < 3) return { ok: false, reason: 'NO_MIDDLE_NODE_FOR_CURRENT_MARKER', origin: origin, destination: destination };
-    currentIndex = Math.max(1, Math.min(n - 2, Math.floor((n - 1) / 2)));
-    current = roleAt(currentIndex, 'current', { preferTypes: DEMO4A_transitPrefTypes_(transit, 'current') });
-    if (!current) return { ok: false, reason: 'NO_CURRENT_TRANSIT_MARKER', origin: origin, destination: destination };
-    if (DEMO4A_coordKey_(current) === DEMO4A_coordKey_(origin) || DEMO4A_coordKey_(current) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'CURRENT_MARKER_NOT_DISTINCT', origin: origin, destination: destination };
+    if (n < 3) return { ok: false, reason: 'NO_MIDDLE_NODE_FOR_CURRENT_MARKER', evidence: evidence, origin: origin, destination: destination, corridor: Object.keys(corridor) };
+    currentIndex = DEMO4A_chooseCurrentIndex_(resolved);
+    if (currentIndex === -1) return { ok: false, reason: 'NODE_TYPE_INCOMPATIBLE_FOR_CURRENT_MARKER', evidence: evidence, origin: origin, destination: destination, corridor: Object.keys(corridor) };
+    current = roleAt(currentIndex, 'current', { countries: corridor });   // B(3) corridor-restricted — NEVER the global pool
+    if (!current) return { ok: false, reason: 'NO_ROLE_COMPATIBLE_CURRENT_LOCATION', evidence: evidence, origin: origin, destination: destination, corridor: Object.keys(corridor) };
+    if (DEMO4A_coordKey_(current) === DEMO4A_coordKey_(origin) || DEMO4A_coordKey_(current) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'CURRENT_MARKER_NOT_DISTINCT', evidence: evidence, origin: origin, destination: destination, corridor: Object.keys(corridor) };
     roleByIndex[currentIndex] = current;
   }
-  return { ok: true, origin: origin, destination: destination, current: current, current_index: currentIndex, role_by_index: roleByIndex };
+  return { ok: true, origin: origin, destination: destination, current: current, current_index: currentIndex, role_by_index: roleByIndex, evidence: evidence, corridor: Object.keys(corridor), transport_class: tclass };
 }
 // region classification for a template (US West / Central / East), else OTHER.
 function DEMO4A_regionOf_(tpl) {
@@ -459,6 +566,35 @@ function DEMO4A_lifecycleEvents_(slot, roleByIndex, resolved, currentIndex, endY
   return evs;
 }
 
+// E — per-plan binding gates over the three shipments' role evidence. READY_FOR_DEMO_SEED is unreachable unless all gates
+// are true. A source-proven (canonical/direct) binding satisfies role/corridor by authority; a synthetic binding must have
+// passed the hard gate to exist here, so these gates read the ACTUAL evidence honestly (never hardcoded true).
+function DEMO4A_bindingGates_(perShipment) {
+  var all = [], primaryDistinct = true, primaryChecked = false, noAirportDest = true, noThirdCountry = true, roleOk = true, corridorOk = true;
+  (perShipment || []).forEach(function (s) {
+    var e = s.binding_evidence || {}, roles = ['origin', 'current', 'destination'];
+    roles.forEach(function (r) { var b = e[r]; if (!b) return; all.push(b);
+      if (!b.role_compatible) roleOk = false;
+      if (!b.corridor_compatible && !b.source_proven) { corridorOk = false; noThirdCountry = false; }
+    });
+    var tclass = DEMO4A_str_(s.transport_class);
+    if (e.destination && (tclass === 'sea' || tclass === 'truck' || tclass === 'rail') && !e.destination.source_proven && e.destination.canon_location_type === 'airport') noAirportDest = false;
+    if (s.slot === 'in_transit' && e.origin && e.current && e.destination) {
+      primaryChecked = true;
+      var ids = [e.origin.location_id, e.current.location_id, e.destination.location_id];
+      if (ids.some(function (x) { return x === ''; }) || ids[0] === ids[1] || ids[1] === ids[2] || ids[0] === ids[2]) primaryDistinct = false;
+    }
+  });
+  return {
+    all_role_bindings_compatible: roleOk,
+    all_corridor_bindings_compatible: corridorOk,
+    primary_current_distinct: primaryChecked && primaryDistinct,
+    no_unrelated_third_country: noThirdCountry,
+    sea_truck_destination_not_airport: noAirportDest,
+    ok: roleOk && corridorOk && (primaryChecked && primaryDistinct) && noThirdCountry && noAirportDest
+  };
+}
+
 // ================================================================================================================
 // PURE PLAN BUILDER — deterministic rows for all six tables + dynamic counts + visibility + demo_plan_checksum.
 //   masters = { templates, nodes, locations, marketplaceSkus, skuDetails }.
@@ -542,8 +678,15 @@ function DEMO4A_buildPlan_(masters) {
         created_at: DEMO4A_CREATED_AT_, updated_at: DEMO4A_CREATED_AT_ });
     }
 
-    // H — binding manifest (checksummed): each role's node id + exact logistics_location_id + binding type + coords.
-    ['origin', 'current', 'destination'].forEach(function (role) { var b = binding[role]; if (b) bindingManifest.push([shipId, role, DEMO4A_str_(resolved[b.node_index].node.route_template_node_id), DEMO4A_str_(b.location_ref_id), b.source, DEMO4A_num_(b.latitude), DEMO4A_num_(b.longitude)].join('~')); });
+    // H/F — binding manifest (checksummed): each role's node id + node_type + exact logistics_location_id + binding type +
+    // country + region + canonical location_type + role/corridor compatibility DECISIONS + exact coords. Any change to a
+    // binding's location, type, role/corridor decision, country/region or coordinate changes the demo_plan_checksum.
+    ['origin', 'current', 'destination'].forEach(function (role) {
+      var b = binding[role]; if (!b) return; var nd = resolved[b.node_index].node;
+      bindingManifest.push([shipId, role, DEMO4A_str_(nd.route_template_node_id), DEMO4A_str_(nd.node_type), DEMO4A_str_(b.location_ref_id), b.source,
+        DEMO4A_str_(b.country), DEMO4A_str_(b.region), DEMO4A_str_(b.canon_type || DEMO4A_canonLocType_(b.location_type || '')),
+        (b.role_compatible === true ? '1' : '0'), (b.corridor_compatible === true ? '1' : '0'), DEMO4A_num_(b.latitude), DEMO4A_num_(b.longitude)].join('~'));
+    });
 
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
     var evs = DEMO4A_lifecycleEvents_(life.slot, roleByIndex, resolved, currentIndex, life.event_end, life.event_step);
@@ -561,7 +704,9 @@ function DEMO4A_buildPlan_(masters) {
     per_shipment.push({ shipment_id: shipId, slot: life.slot, status: life.status, template: pick.tid, region: pick.region, nodes: nodeCount,
       canonical_binding_count: canonicalCount, direct_coordinate_count: directCount, demo_synthetic_binding_count: syntheticCount, abstract_rows: abstractRowCount,
       route_rows: nodeCount, event_rows: evs.length, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
-      plan_lines: lineCount, shipment_lines: lineCount });
+      plan_lines: lineCount, shipment_lines: lineCount,
+      transport_class: DEMO4A_str_(binding.transport_class || DEMO4A_transportClass_(method)),
+      binding_evidence: { origin: binding.evidence ? binding.evidence.origin : null, current: binding.evidence ? binding.evidence.current : null, destination: binding.evidence ? binding.evidence.destination : null } });
 
     var onMap = DEMO4A_mapVisible_(life.status, evs.length, nodeCount);
     if (onMap) { var last = evs[evs.length - 1]; var mapRec = { shipment_id: shipId, status: life.status, moving: DEMO4A_mapMoving_(life.status), delivered: DEMO4A_mapDelivered_(life.status), current_node_sequence: DEMO4A_str_(resolved[currentIndex].node.node_sequence), latest_event: last.event_type, latest_event_time: last.event_time, marker_lat: last.binding.latitude, marker_lng: last.binding.longitude, carrier_id: carrier, transit_method: method, eta: life.eta }; visibility.on_the_way_map.push(mapRec); if (life.slot === 'in_transit') visibility.primary_map_record = mapRec; }
@@ -569,7 +714,8 @@ function DEMO4A_buildPlan_(masters) {
 
   var counts = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { counts[t] = tables[t].length; });
   counts.total = DEMO4A_WRITE_ORDER_.reduce(function (a, t) { return a + tables[t].length; }, 0);
-  return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility,
+  var binding_gates = DEMO4A_bindingGates_(per_shipment);
+  return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility, binding_gates: binding_gates,
     scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku_pairs: scope.pairs },
     region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
     binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
@@ -721,6 +867,38 @@ function DEMO4A_validateLiveRows_(plan, live, masters) {
   });
   checks.primary_in_transit_anchors_distinct = { ok: distinctOk, checked: distinctChecked };
 
+  // G (V3D) — LIVE route-geography semantics: (a) a bound location_type must be role/transport-compatible (a sea/truck
+  // final destination is NEVER an airport); (b) a current marker's node_type must be transit-compatible; (c) the current
+  // marker's country must lie in the shipment's own corridor (origin/destination + explicit abstract node countries) —
+  // never an unrelated third country. location_type is read from the logistics_locations authority (masters), never a name.
+  var locTypeById = {};
+  if (masters) (masters.locations || []).forEach(function (l) { var id = DEMO4A_locId_(l); if (id) locTypeById[id] = DEMO4A_canonLocType_(DEMO4A_locType_(l)); });
+  var geoOk = true, geoBad = [], corrOk = true, corrBad = [];
+  demoRows('shipments').forEach(function (s) {
+    var sid = DEMO4A_str_(s.shipment_id), tclass = DEMO4A_transportClass_(s.shipping_method);
+    var rr = demoRows('shipment_routes').filter(function (r) { return DEMO4A_str_(r.shipment_id) === sid; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+    if (!rr.length) return;
+    var geoRows = rr.filter(function (r) { return DEMO4A_low_(r.location_ref_type) === 'logistics_location' && DEMO4A_str_(r.location_ref_id) !== ''; });
+    // corridor = origin + destination geo-row countries ∪ explicit ABSTRACT (unbound) node countries; NOT the current row itself
+    var corridor = {};
+    if (geoRows.length) { [geoRows[0], geoRows[geoRows.length - 1]].forEach(function (r) { var c = DEMO4A_low_(DEMO4A_str_(r.country)); if (c) corridor[c] = 1; }); }
+    rr.forEach(function (r) { var bound = DEMO4A_low_(r.location_ref_type) === 'logistics_location' && DEMO4A_str_(r.location_ref_id) !== ''; if (!bound) { var c = DEMO4A_low_(DEMO4A_str_(r.country)); if (c) corridor[c] = 1; } });
+    geoRows.forEach(function (r, i) {
+      var role = (i === 0) ? 'origin' : (i === geoRows.length - 1 ? 'destination' : 'current');
+      var ct = locTypeById.hasOwnProperty(DEMO4A_str_(r.location_ref_id)) ? locTypeById[DEMO4A_str_(r.location_ref_id)] : DEMO4A_canonLocType_('');
+      if (role === 'destination' && ct === 'airport' && tclass !== 'air') { geoOk = false; geoBad.push('sea_truck_dest_airport:' + r.shipment_route_id); }
+      if (DEMO4A_typeRoleCompat_(ct, tclass, role) === 'incompatible') { geoOk = false; geoBad.push('type_role_conflict:' + r.shipment_route_id + ':' + ct + '/' + role); }
+    });
+    var curRow = rr.filter(function (r) { return DEMO4A_low_(r.status) === 'current'; })[0];
+    if (curRow) {
+      if (DEMO4A_nodeRoleCompat_(curRow.node_type, 'current') === 'incompatible') { geoOk = false; geoBad.push('current_node_type_incompatible:' + curRow.shipment_route_id); }
+      var cc = DEMO4A_low_(DEMO4A_str_(curRow.country));
+      if (cc && !corridor[cc]) { corrOk = false; corrBad.push('unrelated_third_country:' + curRow.shipment_route_id + ':' + cc); }
+    }
+  });
+  checks.live_bound_type_role_compatible = { ok: geoOk, checked: !!masters, bad: geoBad.slice(0, 10) };
+  checks.live_no_unrelated_third_country = { ok: corrOk, bad: corrBad.slice(0, 10) };
+
   var allOk = Object.keys(checks).every(function (k) { return checks[k].ok; });
   return { checks: checks, classification: cls.classification, demo_seed_validated: (cls.classification === 'PRESENT_EXACT_ALL' && allOk) };
 }
@@ -851,9 +1029,13 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
       out.selected_template_ids = plan.chosen_templates.map(function (c) { return c.route_template_id; }); out.rejection_counts = plan.rejection_counts;
       out.scope = plan.scope; out.planned_counts = plan.counts; out.per_shipment = plan.per_shipment; out.demo_plan_checksum = plan.checksum;
+      // E — compact per-shipment route-geography evidence + the hard binding gates. READY is unreachable unless every gate is true.
+      out.binding_gates = plan.binding_gates;
+      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
       out.existing_state = { classification: cls.classification, duplicate_pk_counts: cls.duplicate_pk_counts, unexpected_demo_ids: cls.unexpected_demo_ids };
       out.verdict = !schema.ok ? 'PREFLIGHT_FAILED_SCHEMA'
+        : !(plan.binding_gates && plan.binding_gates.ok) ? 'PREFLIGHT_FAILED_BINDING_GATES'
         : cls.classification === 'ABSENT_ALL' ? 'READY_FOR_DEMO_SEED'
         : cls.classification === 'PRESENT_EXACT_ALL' ? 'ALREADY_SEEDED_EXACT'
         : ('BLOCKED_' + cls.classification);
@@ -874,6 +1056,8 @@ function TEMP_DEMO4A_DRY_RUN_SHIPPING_SHIPMENT_MAP_SEED() {
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
       out.scope = plan.scope; out.dynamic_row_counts = plan.counts; out.per_shipment_counts = plan.per_shipment; out.planned_ids = DEMO4A_allIds_(plan);
+      out.binding_gates = plan.binding_gates;
+      out.route_geography_evidence = plan.per_shipment.map(function (s) { return { shipment_id: s.shipment_id, slot: s.slot, transport_class: s.transport_class, origin: s.binding_evidence.origin, current: s.binding_evidence.current, destination: s.binding_evidence.destination }; });
       out.event_chronology = DEMO4A_chronology_(plan); out.route_planned_to_recorded_event_map = plan.route_event_map; out.expected_ui_visibility = plan.visibility;
       out.demo_plan_checksum = plan.checksum; out.confirmation_constant_status = (DEMO4A_CONFIRMED_SEED_CHECKSUM_ === 'PASTE_DEMO_SEED_CHECKSUM_HERE') ? 'PLACEHOLDER' : 'SET';
       out.verdict = 'DRY_RUN_READY';
@@ -899,6 +1083,8 @@ function TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED() {
     lock = LockService.getScriptLock(); if (!lock.tryLock(30000)) { out.verdict = 'COMMIT_REFUSED_LOCK'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
     var plan2 = DEMO4A_buildPlan_(DEMO4A_readMasters_());
     if (!plan2.ok || DEMO4A_str_(plan2.checksum) !== DEMO4A_str_(DEMO4A_CONFIRMED_SEED_CHECKSUM_)) { out.verdict = 'COMMIT_REFUSED_DRIFT_UNDER_LOCK'; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
+    // V3D — the hard route-geography gates must hold under lock (a synthetic binding can never be corridor/role-implausible).
+    if (!(plan2.binding_gates && plan2.binding_gates.ok)) { out.verdict = 'COMMIT_REFUSED_BINDING_GATES'; out.binding_gates = plan2.binding_gates; Logger.log('DEMO4A_COMMIT ' + JSON.stringify(out, null, 2)); return out; }
 
     // A — existing-state classification under lock. COMMIT proceeds ONLY for ABSENT_ALL (insert) or PRESENT_EXACT_ALL (reuse).
     var cls = DEMO4A_classifyState_(plan2, DEMO4A_readLive_());

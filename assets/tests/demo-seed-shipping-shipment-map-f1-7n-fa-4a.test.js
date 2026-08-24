@@ -25,11 +25,13 @@ var LOAD = [];
 LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
+LOAD.push(G.match(/var DEMO4A_LOC_TYPE_CANON_ = \{[\s\S]*?\n\};/)[0]);
 ['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
   'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
   'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_indexLocationsByCode_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_nodeLat_', 'DEMO4A_nodeLng_', 'DEMO4A_nodeLocId_',
   'DEMO4A_locValid_', 'DEMO4A_locId_', 'DEMO4A_locType_', 'DEMO4A_locCountry_', 'DEMO4A_locRegion_', 'DEMO4A_locActive_', 'DEMO4A_indexLocationsByIdentifiers_', 'DEMO4A_nodeCanonicalMatch_', 'DEMO4A_nodeGeoBinding_',
-  'DEMO4A_transitPrefTypes_', 'DEMO4A_pickAnchor_', 'DEMO4A_bindingFromLoc_', 'DEMO4A_coordKey_', 'DEMO4A_bindTemplateRoles_', 'DEMO4A_templateEligibility_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_', 'DEMO4A_diagnoseResolution_',
+  'DEMO4A_transportClass_', 'DEMO4A_canonLocType_', 'DEMO4A_roleCompatibleTypes_', 'DEMO4A_typeRoleCompat_', 'DEMO4A_nodeRoleCompat_', 'DEMO4A_corridorCountries_', 'DEMO4A_chooseCurrentIndex_',
+  'DEMO4A_pickAnchor_', 'DEMO4A_bindingFromLoc_', 'DEMO4A_coordKey_', 'DEMO4A_bindTemplateRoles_', 'DEMO4A_templateEligibility_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_', 'DEMO4A_diagnoseResolution_', 'DEMO4A_bindingGates_',
   'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_rowBindingAt_', 'DEMO4A_slotCurrentIndex_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
   'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
   'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_anyInserted_', 'DEMO4A_journalCanonical_', 'DEMO4A_buildJournal_', 'DEMO4A_verifyJournal_',
@@ -290,12 +292,12 @@ eq(DEMO4A_nodeGeoBinding_({ node_code: 'CUSTOMS-XYZ' }, idIdx).bound, false, 'V3
 
 section('V3C-5..8. Demo fallback uses existing active locations; exact filters; deterministic; distinct roles');
 var locs = locsV3C();
-var origin = DEMO4A_pickAnchor_(locs, { country: 'CN', preferTypes: ['factory'] });
+var origin = DEMO4A_pickAnchor_(locs, { country: 'CN', role: 'origin', tclass: 'sea' });
 ok(origin && DEMO4A_locId_(origin.loc) === 'CN-FAC-1', 'V3C-5/7. origin fallback = deterministic active CN factory (CN-FAC-1)');
-eq(DEMO4A_pickAnchor_(locs, { country: 'ZZ' }), null, 'V3C-6. exact country filter: no ZZ location → null (never a wrong-country coordinate)');
-var wDest = DEMO4A_pickAnchor_(locs, { country: 'US', region: 'US East' });
+eq(DEMO4A_pickAnchor_(locs, { country: 'ZZ', role: 'origin', tclass: 'sea' }), null, 'V3C-6. exact country filter: no ZZ location → null (never a wrong-country coordinate)');
+var wDest = DEMO4A_pickAnchor_(locs, { country: 'US', region: 'US East', role: 'destination', tclass: 'sea' });
 ok(wDest && DEMO4A_locId_(wDest.loc) === 'US-E-1' && wDest.region_exact === true, 'V3C-6. exact region match preferred (US East → US-E-1)');
-eq(DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', preferTypes: ['factory'] }).loc.logistics_location_id, DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', preferTypes: ['factory'] }).loc.logistics_location_id, 'V3C-7. deterministic (same inputs → same pick)');
+eq(DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', role: 'origin', tclass: 'sea' }).loc.logistics_location_id, DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', role: 'origin', tclass: 'sea' }).loc.logistics_location_id, 'V3C-7. deterministic (same inputs → same pick)');
 var itC = planC.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
 ok(itC.origin_location_id && itC.current_location_id && itC.destination_location_id, 'V3C-8. primary in-transit has origin + current + destination location ids');
 ok(itC.origin_location_id !== itC.current_location_id && itC.current_location_id !== itC.destination_location_id && itC.origin_location_id !== itC.destination_location_id, 'V3C-8. the three primary anchors are distinct');
@@ -357,5 +359,103 @@ var noLocs = mastersV3C(); noLocs.locations = [];
 var pFail = DEMO4A_buildPlan_(noLocs);
 eq(pFail.ok, false, 'V3C-G. no logistics_locations → fail closed (no fabricated coordinate)');
 ok(pFail.rejection_counts && Object.keys(pFail.rejection_counts).length >= 1, 'V3C-G. fail-closed carries exact rejection counts');
+
+// ============================================================ V3D — HARD ROUTE-GEOGRAPHY SEMANTIC GATE
+// Prevent geographically implausible Demo location bindings (third-country markers, sea/truck airport destinations) and
+// enforce transport/role-compatible origin, current and destination anchors. Determinism is NOT semantic authority.
+function locT(id, country, region, lat, lng, type) { return { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, is_active: 'TRUE' }; }
+var POOL = [
+  locT('LOC-CN-FAC', 'CN', '', 31.2, 121.4, 'factory'),
+  locT('LOC-CN-PORT', 'CN', '', 29.9, 121.8, 'seaport'),
+  locT('LOC-CHANNEL-FR-CALAIS', 'FR', '', 50.95, 1.85, 'port'),
+  locT('LOC-AIR-US-ATL', 'US', 'US Central', 33.6, -84.4, 'airport'),
+  locT('LOC-AIR-US-DFW', 'US', 'US Central', 32.9, -97.0, 'airport'),
+  locT('LOC-WH-US-CENTRAL', 'US', 'US Central', 41.8, -87.6, 'warehouse'),
+  locT('LOC-PORT-US-WEST', 'US', 'US West', 37.7, -122.4, 'seaport'),
+  locT('LOC-FC-US-CENTRAL', 'US', 'US Central', 39.0, -94.5, 'fulfillment_center')
+];
+
+section('V3D-H1. CN→US current marker rejects an unrelated third country (France/Calais)');
+var curSea = DEMO4A_pickAnchor_(POOL, { countries: { cn: 1, us: 1 }, role: 'current', tclass: 'sea' });
+ok(curSea && DEMO4A_locId_(curSea.loc) !== 'LOC-CHANNEL-FR-CALAIS', 'H1. current marker never binds FR/Calais when the corridor is {CN,US}');
+ok(curSea && DEMO4A_low_(DEMO4A_locCountry_(curSea.loc)) !== 'fr', 'H1. the chosen current marker is inside the corridor, not FR');
+
+section('V3D-H2. an EXPLICIT third-country route node authorizes that country');
+var corridorFR = DEMO4A_corridorCountries_({ origin_country: 'CN', destination_country: 'US' }, [{ node: { country: 'FR' } }, { node: { country: '' } }]);
+eq([corridorFR.cn, corridorFR.us, corridorFR.fr], [1, 1, 1], 'H2. an explicit FR route node adds FR to the corridor authority');
+var curFR = DEMO4A_pickAnchor_(POOL, { countries: corridorFR, role: 'current', tclass: 'sea' });
+ok(curFR && DEMO4A_locId_(curFR.loc) === 'LOC-CHANNEL-FR-CALAIS', 'H2. with FR proven in the corridor, the FR port becomes eligible again (same location, now authorized)');
+
+section('V3D-H3/H4. sea/truck destination is never an airport; air may be');
+var destSea = DEMO4A_pickAnchor_(POOL, { country: 'US', region: 'US Central', role: 'destination', tclass: 'sea' });
+ok(destSea && DEMO4A_canonLocType_(DEMO4A_locType_(destSea.loc)) !== 'airport', 'H3. a sea destination is never an airport');
+ok(destSea && ['warehouse', 'fulfillment_center', 'distribution_center'].indexOf(DEMO4A_canonLocType_(DEMO4A_locType_(destSea.loc))) !== -1, 'H3. a sea destination is a warehouse/FC/DC');
+var airOnly = [locT('LOC-AIR-1', 'US', 'US Central', 33.6, -84.4, 'airport')];
+eq(DEMO4A_pickAnchor_(airOnly, { country: 'US', region: 'US Central', role: 'destination', tclass: 'sea' }), null, 'H3. an airport-only region fails a sea destination closed (never picks the airport)');
+ok(DEMO4A_pickAnchor_(airOnly, { country: 'US', region: 'US Central', role: 'destination', tclass: 'air' }) !== null, 'H4. the SAME airport IS a valid destination for an air route');
+
+section('V3D-H5/H6. sea origin is maritime/factory; truck last-mile is a warehouse-class endpoint');
+var origin5 = DEMO4A_pickAnchor_(POOL, { country: 'CN', role: 'origin', tclass: 'sea' });
+ok(origin5 && ['factory', 'warehouse', 'port', 'fulfillment_center', 'distribution_center'].indexOf(DEMO4A_canonLocType_(DEMO4A_locType_(origin5.loc))) !== -1, 'H5. a sea origin is a maritime/factory/warehouse type');
+eq(DEMO4A_pickAnchor_([locT('LOC-CN-AIR', 'CN', '', 31.1, 121.8, 'airport')], { country: 'CN', role: 'origin', tclass: 'sea' }), null, 'H5. an airport is rejected as a sea origin');
+var truckDest = DEMO4A_pickAnchor_(POOL, { country: 'US', region: 'US Central', role: 'destination', tclass: 'truck' });
+ok(truckDest && ['warehouse', 'fulfillment_center', 'distribution_center', 'parcel_hub', 'carrier_facility', 'truck_terminal', 'rail_terminal', 'transit_hub'].indexOf(DEMO4A_canonLocType_(DEMO4A_locType_(truckDest.loc))) !== -1, 'H6. a truck last-mile destination is a warehouse/FC/DC/delivery endpoint (never an airport)');
+
+section('V3D-H7/H9. transport/role + node/role compatibility matrix');
+eq(DEMO4A_typeRoleCompat_('port', 'sea', 'current'), 'compatible', 'H7. a seaport is a compatible sea current marker');
+eq(DEMO4A_typeRoleCompat_('customs_facility', 'sea', 'current'), 'incompatible', 'H7. a customs facility is NOT a compatible current marker');
+eq(DEMO4A_typeRoleCompat_('airport', 'sea', 'destination'), 'incompatible', 'H7. an airport is an incompatible sea destination type');
+eq(DEMO4A_typeRoleCompat_('warehouse', 'sea', 'origin'), 'compatible', 'H7. a warehouse is a compatible sea origin');
+eq(DEMO4A_nodeRoleCompat_('customs_clearance', 'current'), 'incompatible', 'H9. a customs node cannot host a current marker');
+eq(DEMO4A_nodeRoleCompat_('port_transit', 'current'), 'compatible', 'H9. a port/transit node can host a current marker');
+eq(DEMO4A_nodeRoleCompat_('appointment', 'current'), 'incompatible', 'H9. an appointment/admin node cannot host a current marker');
+eq(DEMO4A_chooseCurrentIndex_([{ node: { node_type: 'origin' } }, { node: { node_type: 'customs' } }, { node: { node_type: 'port' } }, { node: { node_type: 'destination' } }]), 2, 'H9. the current index skips the customs middle node in favour of the port node');
+
+section('V3D-H10. explicit synonym normalization only — no fuzzy/name matching');
+eq(DEMO4A_canonLocType_('seaport'), 'port', 'H10. explicit synonym maps (seaport→port)');
+eq(DEMO4A_canonLocType_('Los Angeles Seaport Terminal 3'), 'UNKNOWN', 'H10. a descriptive name does NOT fuzzy-match → UNKNOWN (fails closed for a synthetic binding)');
+eq(DEMO4A_canonLocType_(''), '', 'H10. a blank type is blank (unknown; fails closed for a synthetic binding)');
+
+section('V3D-H11. deterministic, order-stable selection among equally-valid candidates');
+var tie = [locT('LOC-B', 'US', 'US West', 37.0, -122.0, 'warehouse'), locT('LOC-A', 'US', 'US West', 34.0, -118.0, 'warehouse')];
+eq(DEMO4A_pickAnchor_(tie, { country: 'US', region: 'US West', role: 'destination', tclass: 'sea' }).loc.logistics_location_id, 'LOC-A', 'H11. lowest id wins among equally-valid candidates');
+eq(DEMO4A_pickAnchor_(tie.slice().reverse(), { country: 'US', region: 'US West', role: 'destination', tclass: 'sea' }).loc.logistics_location_id, 'LOC-A', 'H11. stable regardless of input order');
+
+section('V3D-H12/H13. full plan on a polluted pool — no invented coord, no FR/airport, abstract timeline intact');
+function mastersV3D() { var m = mastersV3C(); m.locations = m.locations.concat([locT('LOC-CHANNEL-FR-CALAIS', 'FR', '', 50.95, 1.85, 'port'), locT('LOC-AIR-US-C', 'US', 'US Central', 39.0, -94.6, 'airport'), locT('LOC-AIR-US-E', 'US', 'US East', 40.6, -73.8, 'airport'), locT('LOC-AIR-US-W', 'US', 'US West', 33.9, -118.4, 'airport')]); return m; }
+var planD = DEMO4A_buildPlan_(mastersV3D());
+ok(planD.ok, 'H12(setup). the V3D plan still builds with Calais + airports polluting the pool');
+(function () { var pool = {}; mastersV3D().locations.forEach(function (l) { pool[DEMO4A_num_(l.latitude).toFixed(5) + ',' + DEMO4A_num_(l.longitude).toFixed(5)] = 1; });
+  ok(planD.tables.shipment_routes.concat(planD.tables.shipment_events).every(function (r) { if (DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.longitude) === '') return true; return pool[DEMO4A_num_(r.latitude).toFixed(5) + ',' + DEMO4A_num_(r.longitude).toFixed(5)] === 1; }), 'H12. no invented coordinate — every non-blank coord is an existing logistics_locations coord'); })();
+var boundIdsD = planD.tables.shipment_routes.filter(function (r) { return DEMO4A_str_(r.location_ref_id) !== ''; }).map(function (r) { return r.location_ref_id; });
+ok(boundIdsD.indexOf('LOC-CHANNEL-FR-CALAIS') === -1, 'H1/H12. the polluted-pool plan never binds FR/Calais anywhere');
+ok(boundIdsD.every(function (id) { return !/^LOC-AIR-/.test(id); }), 'H3/H12. the sea-route plan never binds any airport');
+ok(planD.binding_gates.ok && planD.binding_gates.sea_truck_destination_not_airport && planD.binding_gates.no_unrelated_third_country && planD.binding_gates.all_role_bindings_compatible && planD.binding_gates.primary_current_distinct, 'H8/E. all binding gates hold (role + corridor + primary-current-distinct + no-airport-dest)');
+var itD = planD.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
+eq(planD.tables.shipment_routes.filter(function (r) { return r.shipment_id === itD.shipment_id; }).length, itD.nodes, 'H13. the full abstract template-node timeline is preserved as route rows');
+ok(itD.abstract_rows >= 1, 'H13. abstract (coordinate-blank) timeline rows remain');
+ok(itD.origin_location_id !== itD.current_location_id && itD.current_location_id !== itD.destination_location_id && itD.origin_location_id !== itD.destination_location_id, 'H8. primary in-transit origin/current/destination are distinct');
+
+section('V3D-H14. previous V3A/V3B/V3C gates remain intact on the V3D plan');
+ok(G.indexOf('function DEMO4A_transitPrefTypes_') === -1, 'H14. the soft-preference selector DEMO4A_transitPrefTypes_ is fully removed (superseded by the hard gate)');
+ok(DEMO4A_verifyJournal_(JSON.parse(JSON.stringify(DEMO4A_buildJournal_(planD))), DEMO4A_buildJournal_(planD)).ok, 'H14. V3A journal integrity gate still holds');
+eq(DEMO4A_classifyState_(planD, liveFromPlan(planD)).classification, 'PRESENT_EXACT_ALL', 'H14. V3 state classification (REUSED) intact');
+ok(DEMO4A_validateLiveRows_(planD, liveFromPlan(planD), mastersV3D()).demo_seed_validated, 'H14. V3C live-row validation (incl. the new geography checks) passes on an exact V3D live set');
+ok(DEMO4A_REQUIRED_COLS_.shipping_plan_lines.indexOf('marketplace') === -1, 'H14. V3B no-line-marketplace conclusion preserved');
+
+section('V3D-H15. the retired checksum 77e18d0b is neither pinned nor accepted; type/decision bound into the checksum');
+ok(G.indexOf('77e18d0b') === -1, 'H15. 77e18d0b appears nowhere in the seed source (not pinned/accepted)');
+ok(/^[0-9a-f]{8}$/.test(planD.checksum) && planD.checksum !== '77e18d0b', 'H15. the regenerated checksum is a fresh 8-hex value, not the retired one');
+(function () { var m2 = mastersV3D(); m2.locations = m2.locations.map(function (l) { var c = Object.assign({}, l); if (c.logistics_location_id === 'TR-1') c.location_type = 'transit_hub'; return c; }); var p2 = DEMO4A_buildPlan_(m2); ok(p2.ok && p2.checksum !== planD.checksum, 'H15/F. changing a bound location_type changes the demo_plan_checksum (type is bound into the manifest)'); })();
+
+section('V3D-H16. both confirmation constants remain placeholders');
+eq(DEMO4A_CONFIRMED_SEED_CHECKSUM_, 'PASTE_DEMO_SEED_CHECKSUM_HERE', 'H16. seed confirmation constant remains a placeholder');
+eq(DEMO4A_CONFIRMED_CLEAR_TOKEN_, 'PASTE_DEMO_CLEAR_TOKEN_HERE', 'H16. clear token remains a placeholder');
+
+section('V3D-G. LIVE validator enforces the geography semantics (H17 zero-new-failure proven by the runner)');
+var vchecksD = DEMO4A_validateLiveRows_(planD, liveFromPlan(planD), mastersV3D()).checks;
+ok(vchecksD.live_bound_type_role_compatible.ok && vchecksD.live_no_unrelated_third_country.ok, 'G. exact V3D live passes the bound-type/role + no-third-country checks');
+(function () { var bad = liveFromPlan(planD); var cur = bad.shipment_routes.rows.filter(function (r) { return r.shipment_id === itD.shipment_id && DEMO4A_low_(r.status) === 'current'; })[0]; if (cur) cur.country = 'FR'; ok(!DEMO4A_validateLiveRows_(planD, bad, mastersV3D()).checks.live_no_unrelated_third_country.ok, 'G. a live current marker relabelled to an unrelated third country (FR) is caught'); })();
+(function () { var bad = liveFromPlan(planD); var m4 = mastersV3D(); var dst = bad.shipment_routes.rows.filter(function (r) { return r.shipment_id === itD.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); }).filter(function (r) { return DEMO4A_str_(r.location_ref_id) !== ''; }); var last = dst[dst.length - 1]; if (last) { m4.locations = m4.locations.map(function (l) { var c = Object.assign({}, l); if (c.logistics_location_id === last.location_ref_id) c.location_type = 'airport'; return c; }); ok(!DEMO4A_validateLiveRows_(planD, bad, m4).checks.live_bound_type_role_compatible.ok, 'G. a sea-route destination whose master location_type is an airport is caught'); } else ok(true, 'G. (no bound destination row to tamper — vacuous)'); })();
 
 done();

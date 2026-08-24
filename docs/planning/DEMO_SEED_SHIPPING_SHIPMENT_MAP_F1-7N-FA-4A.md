@@ -104,3 +104,53 @@ Aligns the demo seed with the canonical live `shipping_plan_lines` schema and th
 **J — PREFLIGHT** now reports schema_gate, demo state classification, scope/SKU pairs, template selection mode, selected template ids, regions, per-shipment (status · template · node count · abstract rows · canonical/direct/synthetic binding counts · origin/current/destination location ids), six-table counts, rejection_counts, and the verdict (`READY_FOR_DEMO_SEED` or one precise reason). `TEMP_DEMO4A_DIAGNOSE_ROUTE_MASTER_RESOLUTION()` emits the compact identifier audit.
 
 **K — tests.** `demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` (166/0): 108 prior V3/V3A proofs + 58 V3C proofs covering all 24 required proofs (no master modification; no manufactured coordinate; canonical binding wins; fuzzy prohibited; fallback uses existing active locations; exact country/region/type filters; deterministic selection; distinct origin/current/destination; complete abstract timeline; abstract rows blank; Demo binding evidence; current event geographic; no events on future rows; received latest = received; event coords = master; checksum sensitivity; V3A journal/rollback; partial/drift/duplicate refusal; exact retry REUSED; CLEAR disarmed; no production handlers; no K2/AI/stock/PO/document side effects; no line marketplace; zero new full-suite failures). The seed file is standalone (read by one test); full sweep = known 4-test baseline, 0 new. APPS_SCRIPT_SYNC_REQUIRED: `TEMP_demo_shipping_shipment_map_seed_v2.gs`. No bundle/frontend/master/schema change. Both confirmation constants remain placeholders; DIAGNOSE/PREFLIGHT/DRY_RUN/COMMIT/VALIDATE/CLEAR not run live.
+
+---
+
+# F1-7N-FA-4A — V3D: ROUTE-GEOGRAPHY SEMANTIC GATE (source-implemented · test-proven · NOT live-run)
+
+**Status:** source + offline-test correction only. No live `DIAGNOSE/PREFLIGHT/DRY_RUN/COMMIT/VALIDATE/CLEAR`; no DB/property/master write; no `logistics_locations` / route-template edit; both confirmation constants remain placeholders; the retired checksum `77e18d0b` is not set. One local commit; not pushed/deployed.
+
+## A — Root cause (proven from source)
+The prior binding contract treated role-appropriate `location_type` as a **soft preference** (`DEMO4A_transitPrefTypes_` + a `typeRank`), then selected by **deterministic `logistics_location_id` order**. Determinism is not semantic authority. Two concrete failures followed:
+- **`DEMO4A_pickAnchor_`** filtered country hard but type soft, so among non-preferred types the lexically-smallest id won — an **airport** could take a sea/truck destination merely by sorting first (`LOC-AIR-US-ATL/DFW/LAX`).
+- **The current marker** was picked with **no country/corridor constraint at all** (`{ preferTypes: … }` only), so the global logistics pool let a third-country node (`LOC-CHANNEL-FR-CALAIS`, FR) bind a direct CN → US route.
+
+Since live has ~0 canonical node→location matches (the frozen V3C conclusion), those picks were **DEMO_SYNTHETIC_RUNTIME_BINDING**s — exactly the path now hardened. `CANONICAL_MASTER_BINDING` / `NODE_DIRECT_COORDINATE` are the node's own source-proven master truth and remain **exempt** from the synthetic gate (B(3) itself whitelists "an explicit third-country node country from the selected template node" and "a source-proven route corridor/transshipment authority"); their compatibility is still computed and reported as evidence.
+
+## C — Final compatibility matrix (canonical `location_type` × transport class × role)
+Tokens derived from the production `location_type` enum (`GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md` §5.2: factory, warehouse, fulfillment_center, port, airport, rail_terminal, truck_terminal, border_crossing, customs_facility, transit_hub, parcel_hub, carrier_facility, city_centroid, country_centroid, virtual_transit_point, other) + owner-used `distribution_center`. Raw types are normalized by an **explicit synonym map** (`DEMO4A_LOC_TYPE_CANON_`) — never a display-name / substring match; an unrecognized token → `UNKNOWN`, a blank → `''`, and both **fail closed** for a synthetic binding.
+
+| Transport class | ORIGIN compatible | CURRENT (gateway/transit) compatible | DESTINATION compatible |
+|---|---|---|---|
+| sea / sea_express | factory, warehouse, port, fulfillment_center, distribution_center | port, transit_hub, virtual_transit_point | warehouse, fulfillment_center, distribution_center, truck_terminal, rail_terminal, transit_hub, parcel_hub, carrier_facility — **NO airport** |
+| air / air_express | factory, warehouse, airport, fulfillment_center, distribution_center | airport, transit_hub, virtual_transit_point | …destination-common **+ airport** |
+| rail | factory, warehouse, rail_terminal, distribution_center | rail_terminal, border_crossing, transit_hub, virtual_transit_point | destination-common (no airport) |
+| truck / inland / parcel | factory, warehouse, truck_terminal, distribution_center | truck_terminal, border_crossing, transit_hub, virtual_transit_point | destination-common (no airport) |
+
+Verdicts: `compatible` / `incompatible` / `unknown` (`DEMO4A_typeRoleCompat_`); `UNKNOWN`/blank ⇒ `unknown` ⇒ fail closed for a synthetic binding.
+
+## B(3) — Corridor rules (current transit marker)
+Allowed corridor countries for a route's current marker (`DEMO4A_corridorCountries_`) = `origin_country` ∪ `destination_country` ∪ **every explicit non-blank `node.country`** on the selected template's nodes (a proven route/transshipment node). The synthetic current pick is filtered to that set (`DEMO4A_pickAnchor_` `opts.countries`), so **France/Calais is ineligible for a CN → US route unless the template explicitly contains an FR node**. Origin and destination remain exact-country hard filters.
+
+## D — Node-role compatibility (structural authority)
+`node_type` is an **unfrozen, user-maintained** vocabulary (`31_:110` makes the lifecycle STRUCTURAL, never `node_type`-dependent). Therefore **structural position is the role authority** (first node = origin, last = destination, a middle node = current) and `node_type` is a recognized-**incompatible guard** for the synthetic current marker only: `DEMO4A_chooseCurrentIndex_` picks a middle node whose `node_type` is not a recognized customs / appointment / administrative / endpoint token (`DEMO4A_nodeRoleCompat_`), preferring a recognized transit token, then the geometric middle, then lowest index (deterministic). No plausible middle node ⇒ not current-capable (fail closed). The full abstract route sequence is always preserved as timeline rows.
+
+## Expected replacement for Calais / expected destination types
+- **Current marker (CN → US Central, sea):** an in-corridor transit anchor — an origin-country export port, or a destination-country West-Coast gateway port before inland US Central (deterministically the lowest-id in-corridor `port`/`transit_hub`/`virtual_transit_point`), distinct from origin and destination. **Never** an unrelated third country.
+- **Destination (sea/truck):** a warehouse / fulfillment_center / distribution_center / eligible inland terminal in the destination country + exact region; **never an airport**. If none exists → fail closed `NO_ROLE_COMPATIBLE_DESTINATION_LOCATION`.
+
+## E — Preflight / dry-run evidence + gates
+Each shipment reports `{ origin, current, destination }` with `location_id, country, region, location_type, canon_location_type, node_type, binding_type, source_proven, role_compatible, corridor_compatible` (`route_geography_evidence`). Gates (`binding_gates`): `all_role_bindings_compatible`, `all_corridor_bindings_compatible`, `primary_current_distinct`, `no_unrelated_third_country`, `sea_truck_destination_not_airport`. **`READY_FOR_DEMO_SEED` is unreachable unless all gates are true** (new verdict `PREFLIGHT_FAILED_BINDING_GATES`); COMMIT re-checks the gates under lock (`COMMIT_REFUSED_BINDING_GATES`). Fail-closed rejection reasons: `NO_ROLE_COMPATIBLE_ORIGIN/CURRENT/DESTINATION_LOCATION`, `NODE_TYPE_INCOMPATIBLE_FOR_CURRENT_MARKER`, `NO_MIDDLE_NODE_FOR_CURRENT_MARKER`, `ORIGIN_DESTINATION_NOT_DISTINCT`, `CURRENT_MARKER_NOT_DISTINCT`.
+
+## F — Checksum (retired-checksum evidence)
+The binding manifest tuple now binds, per role: node id + **node_type** + exact `logistics_location_id` + binding type + **country + region + canonical location_type + role-compatibility decision + corridor-compatibility decision** + exact coordinates. Any change to a binding's location, type, role/corridor decision, country/region or coordinate changes `demo_plan_checksum`. The old checksum **`77e18d0b` appears nowhere in the source** and is neither pinned nor accepted; the constant stays placeholder.
+
+## G — Validator (live)
+`DEMO4A_validateLiveRows_` adds `live_bound_type_role_compatible` (a bound `location_type` — read from the `logistics_locations` authority, never a name — must be role/transport-compatible; a sea/truck final destination is never an airport; a current marker's `node_type` must be transit-compatible) and `live_no_unrelated_third_country` (the current marker's country must lie in the shipment's own corridor: origin/destination + explicit abstract node countries). `DEMO_SEED_VALIDATED` now also requires these. Existing coordinate-equals-master, distinctness, chronology and status-agreement checks are retained.
+
+## H — Tests (17 requirements, all green: 211/0 in the suite)
+CN→US rejects FR/Calais (H1); explicit FR node re-authorizes it (H2); sea/truck destination never airport, air may be (H3/H4); sea origin maritime/factory, truck last-mile warehouse-class (H5/H6); corridor rule for current (H1/H2/H7); current distinct from origin/destination (H8); node/role compatibility incl. customs-node skip (H9); explicit-synonym-only, no fuzzy match (H10); deterministic order-stable selection (H11); no invented coordinate on a polluted pool (H12); full abstract timeline preserved (H13); prior V3A/V3B/V3C gates intact (H14); retired `77e18d0b` not pinned + type/decision bound into the checksum (H15); both constants placeholder (H16); zero new full-suite failures (H17 — verified by the runner: only the known 4-suite baseline fails, none reading this file).
+
+## I / J — Files, sync manifest, boundary
+Changed: `assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs` (TEMP demo tool) + `assets/tests/demo-seed-shipping-shipment-map-f1-7n-fa-4a.test.js` + this planning doc. **No** production / master / frontend / bundle / schema change. `APPS_SCRIPT_SYNC_REQUIRED`: none for production — the TEMP demo tool is user-synced only if/when the demo is exercised (it is not run in this task). No live execution or write; both confirmation constants remain placeholders.
