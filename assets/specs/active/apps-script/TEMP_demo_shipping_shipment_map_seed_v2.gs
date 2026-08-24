@@ -153,136 +153,222 @@ function DEMO4A_nodeLng_(node) { return DEMO4A_get_(node, ['longitude', 'lng', '
 function DEMO4A_nodeLocId_(node) { return DEMO4A_str_(DEMO4A_get_(node, ['logistics_location_id', 'location_id'])); }
 // index locations by canonical logistics_location_id AND by location_code (the latter only for the read-only diagnostic).
 function DEMO4A_indexLocationsByCode_(locations) { var by = {}; (locations || []).forEach(function (l) { var c = DEMO4A_str_(DEMO4A_get_(l, ['location_code', 'code'])); if (c) by[c] = l; }); return by; }
-// V3B(C/D) — the FROZEN canonical node→coordinate authority, mirroring production csdTemplateNodes_/route-writer (22_)
-// AND the On-the-Way Map precedence (global-logistics-map.js): a node's coordinate comes from its declared
-// logistics_location (node.logistics_location_id → logistics_locations.logistics_location_id) when that canonical
-// location resolves, else the node's own latitude/longitude. There is NO node_code→location_code join in the write/map
-// path (that mapping is only REPORTED by the diagnostic). Classification:
-//   • GEOGRAPHIC — declares a location and/or own coords AND resolves to a valid non-(0,0) coordinate. location_ref_type=
-//     'logistics_location' + location_ref_id (canonical id) ONLY when the declared location row exists.
-//   • ABSTRACT — declares neither a logistics_location_id nor own coords (customs/process/transit milestone): kept in the
-//     route + timeline, no fabricated coordinate/location, never a map marker.
-//   • FAIL CLOSED — a node that DECLARES a geographic reference (logistics_location_id or own lat/lng) that does not
-//     resolve to a valid coordinate (missing location row / invalid or (0,0) coords) → the template is disqualified.
-function DEMO4A_resolveNode_(node, locById) {
-  var declaredLocId = DEMO4A_nodeLocId_(node);
-  var ownLat = DEMO4A_nodeLat_(node), ownLng = DEMO4A_nodeLng_(node);
-  var declaresOwnCoord = (DEMO4A_str_(ownLat) !== '' || DEMO4A_str_(ownLng) !== '');
-  var declaresGeographic = (declaredLocId !== '') || declaresOwnCoord;
-  var loc = declaredLocId ? locById[declaredLocId] : null;
-  if (declaredLocId && !loc) return { ok: false, geographic: false, reason: 'DECLARED_LOGISTICS_LOCATION_NOT_FOUND', declared: declaredLocId };
-  var lat = '', lng = '', refType = '', refId = '', src = '', name = '', country = '', region = '', city = '';
-  if (loc && DEMO4A_validCoord_(loc.latitude, loc.longitude)) {                    // canonical location resolves → coords from logistics_locations (task C)
-    lat = DEMO4A_num_(loc.latitude); lng = DEMO4A_num_(loc.longitude); refType = 'logistics_location'; refId = declaredLocId; src = 'LOGISTICS_LOCATION';
-    name = DEMO4A_str_(loc.location_name); country = DEMO4A_str_(loc.country); region = DEMO4A_str_(loc.region); city = DEMO4A_str_(loc.city);
-  } else if (declaresOwnCoord && DEMO4A_validCoord_(ownLat, ownLng)) {             // else the node's own coordinate authority
-    lat = DEMO4A_num_(ownLat); lng = DEMO4A_num_(ownLng); src = 'NODE';
-    if (loc) { refType = 'logistics_location'; refId = declaredLocId; }            // location row exists (ref stamped) though coord came from the node
-  }
-  var geographic = (src !== '');
-  if (declaresGeographic && !geographic) return { ok: false, geographic: false, reason: 'DECLARED_LOCATION_COORDINATE_UNRESOLVED', declared: declaredLocId || (DEMO4A_str_(ownLat) + ',' + DEMO4A_str_(ownLng)) };
-  name = name || DEMO4A_str_(DEMO4A_get_(node, ['node_name'])) || DEMO4A_str_(node.node_code);
-  country = country || DEMO4A_str_(node.country); region = region || DEMO4A_str_(node.region); city = city || DEMO4A_str_(node.city);
-  return { ok: true, geographic: geographic, location_ref_type: refType, location_ref_id: refId, coord_source: src,
-    latitude: lat, longitude: lng, location_name: name, country: country, region: region, city: city };
+// V3C — the FROZEN master conclusion: route templates provide process/timeline topology, but their nodes are (with rare
+// exceptions) NOT physically linked to logistics_locations (live: 0 node.logistics_location_id matches, 0 node_code→
+// location_code matches, only 12/427 nodes with direct coords). Therefore the template node sequence/type/code/name is
+// the TIMELINE authority; logistics_locations is the COORDINATE authority; and the Demo Seed creates an EXPLICIT
+// DEMO-ONLY runtime binding (never a master edit, never fuzzy/name matching). Coordinate binding precedence per node:
+//   1. CANONICAL_MASTER_BINDING — an EXACT full-value match between a node identifier field (or node_code) and a
+//      logistics_locations identifier field (DEMO4A_LOC_ID_FIELDS_). Used only when source/live proves it.
+//   2. NODE_DIRECT_COORDINATE — the node carries its own valid non-(0,0) latitude/longitude.
+//   3. (role anchors only) DEMO_SYNTHETIC_RUNTIME_BINDING — a deterministically chosen existing active logistics_location
+//      by exact country (+ preferred exact region + role-appropriate type). NEVER manufactures a coordinate.
+// Every canonical location identifier field considered for an EXACT match (no fuzzy/substring/display-name matching):
+var DEMO4A_LOC_ID_FIELDS_ = ['logistics_location_id', 'location_code', 'un_locode', 'iata_code', 'icao_code', 'port_code', 'rail_terminal_code', 'border_gateway_code', 'warehouse_id', 'factory_id', 'carrier_id'];
+function DEMO4A_locValid_(loc) { return !!loc && DEMO4A_validCoord_(loc.latitude, loc.longitude); }
+function DEMO4A_locId_(loc) { return DEMO4A_str_(DEMO4A_get_(loc, ['logistics_location_id', 'location_id'])); }
+function DEMO4A_locType_(loc) { return DEMO4A_low_(DEMO4A_get_(loc, ['location_type', 'type', 'category', 'node_type'])); }
+function DEMO4A_locCountry_(loc) { return DEMO4A_str_(DEMO4A_get_(loc, ['country', 'country_code'])); }
+function DEMO4A_locRegion_(loc) { return DEMO4A_str_(DEMO4A_get_(loc, ['region', 'state', 'province', 'state_province'])); }
+function DEMO4A_locActive_(loc) { var a = DEMO4A_activeFlag_(loc); return a !== false; }   // active unless EXPLICITLY inactive
+// index locations by EACH exact identifier field (first occurrence wins, deterministic).
+function DEMO4A_indexLocationsByIdentifiers_(locations) {
+  var idx = {}; DEMO4A_LOC_ID_FIELDS_.forEach(function (f) { idx[f] = {}; });
+  (locations || []).forEach(function (l) { DEMO4A_LOC_ID_FIELDS_.forEach(function (f) { var v = DEMO4A_str_(DEMO4A_get_(l, [f])); if (v !== '' && idx[f][v] === undefined) idx[f][v] = l; }); });
+  return idx;
 }
-// V3B(D) — ONE canonical template map-eligibility rule shared by selection AND the diagnostic (no heuristic drift).
-// Eligible ⇔ active · ≥2 nodes · every node_sequence present + unique · EVERY node resolves (abstract ok; a declared-but-
-// unresolved reference fails closed) · ≥2 geographic nodes · origin (first) AND destination (last) are geographic.
-function DEMO4A_templateEligibility_(t, ns, locById) {
-  if (!DEMO4A_truthy_(t.is_active)) return { eligible: false, reason: 'TEMPLATE_INACTIVE', geoCount: 0, abstractCount: 0, resolved: [] };
-  if (!ns || ns.length < 2) return { eligible: false, reason: 'FEWER_THAN_TWO_NODES', geoCount: 0, abstractCount: 0, resolved: [] };
-  var seqSeen = {}, resolved = [], geoCount = 0, abstractCount = 0;
-  for (var i = 0; i < ns.length; i++) {
-    var seq = DEMO4A_str_(ns[i].node_sequence);
-    if (seq === '' || seqSeen[seq]) return { eligible: false, reason: 'NODE_SEQUENCE_MISSING_OR_DUPLICATE', geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
-    seqSeen[seq] = 1;
-    var r = DEMO4A_resolveNode_(ns[i], locById);
-    if (!r.ok) return { eligible: false, reason: r.reason, geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
-    if (r.geographic) geoCount++; else abstractCount++;
-    resolved.push({ node: ns[i], res: r });
+// EXACT canonical identifier match for a node → { loc, node_field, loc_field } or null. A node identifier field OR the
+// node_code must EXACTLY equal a logistics_locations identifier field value AND that location must have valid coords.
+// NO fuzzy/substring/name/city matching.
+function DEMO4A_nodeCanonicalMatch_(node, idIndexes) {
+  for (var i = 0; i < DEMO4A_LOC_ID_FIELDS_.length; i++) {
+    var f = DEMO4A_LOC_ID_FIELDS_[i], idxF = idIndexes[f] || {};
+    var nv = DEMO4A_str_(DEMO4A_get_(node, [f]));
+    if (nv !== '' && idxF[nv] && DEMO4A_locValid_(idxF[nv])) return { loc: idxF[nv], node_field: f, loc_field: f };
+    var code = DEMO4A_str_(node.node_code);
+    if (code !== '' && idxF[code] && DEMO4A_locValid_(idxF[code])) return { loc: idxF[code], node_field: 'node_code', loc_field: f };
   }
-  if (geoCount < 2) return { eligible: false, reason: 'FEWER_THAN_TWO_GEOGRAPHIC_NODES', geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
-  if (!resolved[0].res.geographic) return { eligible: false, reason: 'ORIGIN_NODE_NOT_GEOGRAPHIC', geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
-  if (!resolved[resolved.length - 1].res.geographic) return { eligible: false, reason: 'DESTINATION_NODE_NOT_GEOGRAPHIC', geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
-  return { eligible: true, reason: '', geoCount: geoCount, abstractCount: abstractCount, resolved: resolved };
+  return null;
+}
+// per-node coordinate binding by precedence 1→2. Returns { bound, binding_type, location_ref_type, location_ref_id,
+// latitude, longitude, location_name/country/region/city, match_field }. Unbound (abstract) ⇒ { bound:false }.
+function DEMO4A_nodeGeoBinding_(node, idIndexes) {
+  var cm = DEMO4A_nodeCanonicalMatch_(node, idIndexes);
+  if (cm) return { bound: true, binding_type: 'CANONICAL_MASTER_BINDING', location_ref_type: 'logistics_location', location_ref_id: DEMO4A_locId_(cm.loc), match_field: cm.loc_field,
+    latitude: DEMO4A_num_(cm.loc.latitude), longitude: DEMO4A_num_(cm.loc.longitude), location_name: DEMO4A_str_(cm.loc.location_name) || DEMO4A_str_(node.node_code), country: DEMO4A_locCountry_(cm.loc), region: DEMO4A_locRegion_(cm.loc), city: DEMO4A_str_(cm.loc.city) };
+  var ownLat = DEMO4A_nodeLat_(node), ownLng = DEMO4A_nodeLng_(node);
+  if (DEMO4A_validCoord_(ownLat, ownLng)) return { bound: true, binding_type: 'NODE_DIRECT_COORDINATE', location_ref_type: '', location_ref_id: '', match_field: '',
+    latitude: DEMO4A_num_(ownLat), longitude: DEMO4A_num_(ownLng), location_name: DEMO4A_str_(DEMO4A_get_(node, ['node_name'])) || DEMO4A_str_(node.node_code), country: DEMO4A_str_(node.country), region: DEMO4A_str_(node.region), city: DEMO4A_str_(node.city) };
+  return { bound: false };
+}
+// transit-type → role-appropriate preferred canonical location types (soft preference; deterministic id order otherwise).
+function DEMO4A_transitPrefTypes_(transitType, role) {
+  var t = DEMO4A_low_(transitType), air = /air/.test(t), rail = /rail/.test(t);
+  if (role === 'origin') return air ? ['factory', 'warehouse', 'airport'] : rail ? ['factory', 'warehouse', 'rail_terminal'] : ['factory', 'warehouse', 'port', 'seaport'];
+  if (role === 'destination') return ['warehouse', 'fulfillment_center', 'port', 'airport', 'rail_terminal'];
+  return air ? ['airport', 'hub', 'port'] : rail ? ['rail_terminal', 'hub', 'port'] : ['port', 'seaport', 'hub', 'airport'];   // current transit
+}
+// deterministic anchor pick from ACTIVE valid-coordinate locations. Exact country (hard). Exact region preferred when the
+// template supplies one AND an in-country location carries it (else country-only, region_exact:false). Role type is a
+// SOFT preference. Excludes already-used ids. Stable order by logistics_location_id. Returns { loc, region_exact } | null.
+function DEMO4A_pickAnchor_(locations, opts) {
+  opts = opts || {};
+  var inCountry = (locations || []).filter(function (l) {
+    if (!DEMO4A_locValid_(l) || !DEMO4A_locActive_(l)) return false;
+    var id = DEMO4A_locId_(l); if (!id || (opts.exclude && opts.exclude[id])) return false;
+    if (opts.country && DEMO4A_low_(DEMO4A_locCountry_(l)) !== DEMO4A_low_(opts.country)) return false;
+    return true;
+  });
+  if (!inCountry.length) return null;
+  var pool = inCountry, regionExact = false;
+  if (opts.region) { var byReg = inCountry.filter(function (l) { return DEMO4A_low_(DEMO4A_locRegion_(l)) === DEMO4A_low_(opts.region); }); if (byReg.length) { pool = byReg; regionExact = true; } }
+  function typeRank(l) { var i = (opts.preferTypes || []).indexOf(DEMO4A_locType_(l)); return i === -1 ? (opts.preferTypes || []).length : i; }
+  pool.sort(function (a, b) { var ra = typeRank(a), rb = typeRank(b); if (ra !== rb) return ra - rb; var ia = DEMO4A_locId_(a), ib = DEMO4A_locId_(b); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
+  return { loc: pool[0], region_exact: regionExact };
+}
+function DEMO4A_bindingFromLoc_(loc, source, nodeIndex, regionExact) {
+  return { source: source, node_index: nodeIndex, region_exact: !!regionExact, location_ref_id: DEMO4A_locId_(loc),
+    latitude: DEMO4A_num_(loc.latitude), longitude: DEMO4A_num_(loc.longitude), location_name: DEMO4A_str_(loc.location_name), country: DEMO4A_locCountry_(loc), region: DEMO4A_locRegion_(loc), city: DEMO4A_str_(loc.city) };
+}
+// C — build the ORIGIN/CURRENT/DESTINATION role bindings for one template. A role node that already has a canonical/
+// direct binding uses THAT (its coordinate authority); otherwise a deterministic Demo-only location is chosen. Origin +
+// destination are always required (distinct coords); a distinct current marker is required only when opts.requireCurrent.
+function DEMO4A_coordKey_(b) { return DEMO4A_num_(b.latitude).toFixed(5) + ',' + DEMO4A_num_(b.longitude).toFixed(5); }
+function DEMO4A_bindTemplateRoles_(template, resolved, locations, opts) {
+  opts = opts || {};
+  var n = resolved.length, used = {}, transit = DEMO4A_str_(template.transit_type);
+  function roleAt(idx, role, pickOpts) {
+    var geo = resolved[idx] && resolved[idx].geo;
+    if (geo && geo.bound) { var b = { source: geo.binding_type, node_index: idx, region_exact: true, location_ref_id: geo.location_ref_id, latitude: geo.latitude, longitude: geo.longitude, location_name: geo.location_name, country: geo.country, region: geo.region, city: geo.city }; if (b.location_ref_id) used[b.location_ref_id] = 1; used[DEMO4A_coordKey_(b)] = 1; return b; }
+    pickOpts.exclude = used;
+    var pick = DEMO4A_pickAnchor_(locations, pickOpts);
+    if (!pick) return null;
+    var bb = DEMO4A_bindingFromLoc_(pick.loc, 'DEMO_SYNTHETIC_RUNTIME_BINDING', idx, pick.region_exact);
+    used[bb.location_ref_id] = 1; used[DEMO4A_coordKey_(bb)] = 1; return bb;
+  }
+  var origin = roleAt(0, 'origin', { country: DEMO4A_str_(template.origin_country), preferTypes: DEMO4A_transitPrefTypes_(transit, 'origin') });
+  if (!origin) return { ok: false, reason: 'NO_ORIGIN_ANCHOR' };
+  var destination = roleAt(n - 1, 'destination', { country: DEMO4A_str_(template.destination_country), region: DEMO4A_str_(template.destination_region), preferTypes: DEMO4A_transitPrefTypes_(transit, 'destination') });
+  if (!destination) return { ok: false, reason: 'NO_DESTINATION_ANCHOR' };
+  if (DEMO4A_coordKey_(origin) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'ORIGIN_DESTINATION_NOT_DISTINCT' };
+  var roleByIndex = {}; roleByIndex[0] = origin; roleByIndex[n - 1] = destination;
+  var current = null, currentIndex = -1;
+  if (opts.requireCurrent) {
+    if (n < 3) return { ok: false, reason: 'NO_MIDDLE_NODE_FOR_CURRENT_MARKER', origin: origin, destination: destination };
+    currentIndex = Math.max(1, Math.min(n - 2, Math.floor((n - 1) / 2)));
+    current = roleAt(currentIndex, 'current', { preferTypes: DEMO4A_transitPrefTypes_(transit, 'current') });
+    if (!current) return { ok: false, reason: 'NO_CURRENT_TRANSIT_MARKER', origin: origin, destination: destination };
+    if (DEMO4A_coordKey_(current) === DEMO4A_coordKey_(origin) || DEMO4A_coordKey_(current) === DEMO4A_coordKey_(destination)) return { ok: false, reason: 'CURRENT_MARKER_NOT_DISTINCT', origin: origin, destination: destination };
+    roleByIndex[currentIndex] = current;
+  }
+  return { ok: true, origin: origin, destination: destination, current: current, current_index: currentIndex, role_by_index: roleByIndex };
 }
 // region classification for a template (US West / Central / East), else OTHER.
 function DEMO4A_regionOf_(tpl) {
   var hay = DEMO4A_low_(tpl.destination_region) + '|' + DEMO4A_low_(tpl.route_template_name);
   if (/west/.test(hay)) return 'US_WEST'; if (/central/.test(hay)) return 'US_CENTRAL'; if (/east/.test(hay)) return 'US_EAST'; return 'OTHER';
 }
-// select ONE fully-resolvable active template per US West/Central/East (distinct). Truthful fallback (flagged) to the
-// top-3 richest distinct templates when the three regions cannot all resolve; fail closed when <3 qualify.
-function DEMO4A_selectTemplates_(templates, nodes, locById) {
-  var byTpl = DEMO4A_nodesByTemplate_(nodes);
-  var qualified = [];
+// V3C — ONE eligibility rule shared by selection AND the diagnostic. Eligible (for a non-in-transit slot) ⇔ active ·
+// ≥2 nodes · sequences present + unique · valid origin + destination role bindings (distinct). requireCurrent adds the
+// distinct in-transit current marker (needs ≥3 nodes). Per-node geo bindings (canonical/direct) are computed for the
+// full sequence; abstract nodes are allowed and never fail the template.
+function DEMO4A_templateEligibility_(t, ns, locations, idIndexes, opts) {
+  opts = opts || {};
+  if (!DEMO4A_truthy_(t.is_active)) return { eligible: false, reason: 'TEMPLATE_INACTIVE', resolved: [] };
+  if (!ns || ns.length < 2) return { eligible: false, reason: 'FEWER_THAN_TWO_NODES', resolved: [] };
+  var seqSeen = {}, resolved = [], canonicalCount = 0, directCount = 0, abstractCount = 0;
+  for (var i = 0; i < ns.length; i++) {
+    var seq = DEMO4A_str_(ns[i].node_sequence);
+    if (seq === '' || seqSeen[seq]) return { eligible: false, reason: 'NODE_SEQUENCE_MISSING_OR_DUPLICATE', resolved: resolved };
+    seqSeen[seq] = 1;
+    var geo = DEMO4A_nodeGeoBinding_(ns[i], idIndexes);
+    if (geo.bound && geo.binding_type === 'CANONICAL_MASTER_BINDING') canonicalCount++;
+    else if (geo.bound) directCount++; else abstractCount++;
+    resolved.push({ node: ns[i], geo: geo });
+  }
+  var bind = DEMO4A_bindTemplateRoles_(t, resolved, locations, opts);
+  if (!bind.ok) return { eligible: false, reason: bind.reason, resolved: resolved, canonicalCount: canonicalCount, directCount: directCount, abstractCount: abstractCount };
+  return { eligible: true, reason: '', resolved: resolved, binding: bind, canonicalCount: canonicalCount, directCount: directCount, abstractCount: abstractCount };
+}
+// G — select ONE template per US West/Central/East (distinct) with valid Demo bindings; the PRIMARY in-transit must also
+// bind a distinct current marker. Truthful FALLBACK_TRUTHFUL_TOP3 when W/C/E cannot all be built; fail closed (with exact
+// per-reason rejection counts) when fewer than three status-valid Demo plans exist.
+function DEMO4A_selectTemplates_(templates, nodes, locations) {
+  var byTpl = DEMO4A_nodesByTemplate_(nodes), idIndexes = DEMO4A_indexLocationsByIdentifiers_(locations);
+  var qualified = [], rejections = {};
   (templates || []).forEach(function (t) {
     var tid = DEMO4A_str_(t.route_template_id); if (!tid) return;
-    var el = DEMO4A_templateEligibility_(t, byTpl[tid] || [], locById);
-    if (!el.eligible) return;
-    qualified.push({ template: t, tid: tid, resolved: el.resolved, nodeCount: (byTpl[tid] || []).length, geoCount: el.geoCount, abstractCount: el.abstractCount, region: DEMO4A_regionOf_(t) });
+    var ns = byTpl[tid] || [];
+    var el = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, {});
+    if (!el.eligible) { rejections[el.reason] = (rejections[el.reason] || 0) + 1; return; }
+    var elC = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, { requireCurrent: true });   // can this be the primary in-transit?
+    qualified.push({ template: t, tid: tid, resolved: el.resolved, nodeCount: ns.length, binding: el.binding, currentCapable: elC.eligible, currentBinding: elC.eligible ? elC.binding : null,
+      canonicalCount: el.canonicalCount, directCount: el.directCount, abstractCount: el.abstractCount, region: DEMO4A_regionOf_(t) });
   });
   var availableRegions = {}; qualified.forEach(function (q) { availableRegions[q.region] = (availableRegions[q.region] || 0) + 1; });
-  if (qualified.length < 3) return { ok: false, reason: 'INSUFFICIENT_ACTIVE_RESOLVABLE_TEMPLATES', qualified_count: qualified.length, available_regions: availableRegions };
-  // richest = most GEOGRAPHIC nodes (map-path richness), tie-break by total node count then id.
-  function richer(a, b) { if (b.geoCount !== a.geoCount) return b.geoCount - a.geoCount; if (b.nodeCount !== a.nodeCount) return b.nodeCount - a.nodeCount; return a.tid < b.tid ? -1 : 1; }
-  function best(region) { var c = qualified.filter(function (q) { return q.region === region; }); c.sort(richer); return c[0] || null; }
-  var w = best('US_WEST'), c = best('US_CENTRAL'), e = best('US_EAST');
+  var currentCapable = qualified.filter(function (q) { return q.currentCapable; });
+  if (qualified.length < 3 || !currentCapable.length) return { ok: false, reason: qualified.length < 3 ? 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS' : 'NO_PRIMARY_IN_TRANSIT_CANDIDATE', qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections };
+  // richest = most nodes (fuller timeline), tie-break by id.
+  function richer(a, b) { if (b.nodeCount !== a.nodeCount) return b.nodeCount - a.nodeCount; return a.tid < b.tid ? -1 : 1; }
+  function best(pool, region) { var c = pool.filter(function (q) { return q.region === region; }); c.sort(richer); return c[0] || null; }
+  var w = best(qualified, 'US_WEST'), c = best(qualified, 'US_CENTRAL'), e = best(qualified, 'US_EAST');
   var chosen, mode;
   if (w && c && e) { chosen = [w, c, e]; mode = 'DISTINCT_WCE'; }
-  else {
-    // truthful documented fallback: top-3 richest distinct templates; regions reported AS THEY ARE (never claimed W/C/E).
-    chosen = qualified.slice().sort(richer).slice(0, 3); mode = 'FALLBACK_TRUTHFUL_TOP3';
-  }
-  var byRich = chosen.slice().sort(richer);
-  var inTransit = byRich[0];   // richest eligible route → PRIMARY in-transit
+  else { chosen = qualified.slice().sort(richer).slice(0, 3); mode = 'FALLBACK_TRUTHFUL_TOP3'; }
+  // PRIMARY in-transit = richest current-capable among the chosen; else the richest current-capable overall (swap in).
+  var chosenCurrentCapable = chosen.filter(function (q) { return q.currentCapable; }).sort(richer);
+  var inTransit = chosenCurrentCapable[0];
+  if (!inTransit) { inTransit = currentCapable.slice().sort(richer)[0]; chosen = [inTransit].concat(chosen.filter(function (q) { return q.tid !== inTransit.tid; })).slice(0, 3); mode = 'FALLBACK_TRUTHFUL_TOP3'; }
   var rest = chosen.filter(function (x) { return x.tid !== inTransit.tid; }).sort(function (a, b) { return a.tid < b.tid ? -1 : 1; });
-  return { ok: true, region_selection_mode: mode, available_regions: availableRegions, assign: { origin: rest[0], in_transit: inTransit, delivered: rest[1] },
-    chosen: chosen.map(function (x) { return { route_template_id: x.tid, region: x.region, node_count: x.nodeCount, geographic_nodes: x.geoCount, abstract_nodes: x.abstractCount, name: DEMO4A_str_(x.template.route_template_name) }; }),
+  if (rest.length < 2) return { ok: false, reason: 'INSUFFICIENT_STATUS_VALID_DEMO_PLANS', qualified_count: qualified.length, current_capable_count: currentCapable.length, available_regions: availableRegions, rejection_counts: rejections };
+  return { ok: true, region_selection_mode: mode, available_regions: availableRegions, rejection_counts: rejections,
+    assign: { origin: rest[0], in_transit: inTransit, delivered: rest[1] },
+    chosen: [rest[0], inTransit, rest[1]].map(function (x) { return { route_template_id: x.tid, region: x.region, node_count: x.nodeCount, canonical_bindings: x.canonicalCount, direct_coordinate_nodes: x.directCount, abstract_nodes: x.abstractCount, name: DEMO4A_str_(x.template.route_template_name) }; }),
     _assignRaw: { origin: rest[0], in_transit: inTransit, delivered: rest[1] } };
 }
 
-// V3B(B) — PURE read-only master-resolution diagnostic. Reports the exact candidate mappings + geographic/abstract audit
-// so the true join authority is provable from data (never a heuristic guess). Never dumps all nodes (fingerprinted
-// examples only). The minimum map requirement is stated as proven from the map source: ≥2 geographic nodes with the
-// origin (first) and destination (last) geographic; abstract milestones may sit between; the in-transit current marker
-// must resolve to a geographic node.
+// V3C(B) — PURE read-only master-resolution diagnostic. Audits EXACT matches between every node identifier field (and
+// node_code) and every logistics_locations identifier field (DEMO4A_LOC_ID_FIELDS_), reports per-field match counts,
+// per-node binding classification (canonical / direct-coordinate / abstract), unresolved declared references, and how
+// many templates can build valid Demo origin/destination (and distinct in-transit current) bindings. NO fuzzy matching.
+// Never dumps all nodes (fingerprinted examples only).
 function DEMO4A_diagnoseResolution_(templates, nodes, locations) {
-  var locById = DEMO4A_indexLocations_(locations), locByCode = DEMO4A_indexLocationsByCode_(locations);
-  var byTpl = DEMO4A_nodesByTemplate_(nodes);
+  var idIndexes = DEMO4A_indexLocationsByIdentifiers_(locations), byTpl = DEMO4A_nodesByTemplate_(nodes);
   var activeTemplates = (templates || []).filter(function (t) { return DEMO4A_truthy_(t.is_active); });
-  var nodeTypes = {}, mapByLocId = 0, mapByNodeCode = 0, mapByOwnCoord = 0, nodesResolvableViaLocation = 0, abstractNodes = 0, unresolvedDeclared = 0;
+  var nodeTypes = {}, canonical = 0, direct = 0, abstract = 0, unresolvedDeclared = 0;
+  var byIdField = {}; DEMO4A_LOC_ID_FIELDS_.forEach(function (f) { byIdField[f] = 0; });
   (nodes || []).forEach(function (n) {
     var type = DEMO4A_low_(n.node_type) || '(blank)'; nodeTypes[type] = (nodeTypes[type] || 0) + 1;
-    var locId = DEMO4A_nodeLocId_(n), code = DEMO4A_str_(n.node_code);
-    var ownLat = DEMO4A_nodeLat_(n), ownLng = DEMO4A_nodeLng_(n), hasOwn = DEMO4A_validCoord_(ownLat, ownLng);
-    if (locId && locById[locId]) mapByLocId++;
-    if (code && locByCode[code]) mapByNodeCode++;
-    if (hasOwn) mapByOwnCoord++;
-    var locResolvable = !!(locId && locById[locId] && DEMO4A_validCoord_(locById[locId].latitude, locById[locId].longitude));
-    if (locResolvable) nodesResolvableViaLocation++;
-    var declaresGeo = (locId !== '') || (DEMO4A_str_(ownLat) !== '' || DEMO4A_str_(ownLng) !== '');
-    if (!declaresGeo) abstractNodes++;
-    else if (!(hasOwn || locResolvable)) unresolvedDeclared++;
+    var cm = DEMO4A_nodeCanonicalMatch_(n, idIndexes);
+    if (cm) { canonical++; byIdField[cm.loc_field] = (byIdField[cm.loc_field] || 0) + 1; }
+    else if (DEMO4A_validCoord_(DEMO4A_nodeLat_(n), DEMO4A_nodeLng_(n))) direct++;
+    else {
+      abstract++;
+      // a node that declares an identifier field or a logistics_location_id but does NOT resolve to any location
+      var declares = false; DEMO4A_LOC_ID_FIELDS_.forEach(function (f) { if (DEMO4A_str_(DEMO4A_get_(n, [f])) !== '') declares = true; });
+      if (declares) unresolvedDeclared++;
+    }
   });
-  var byRegion = { US_WEST: 0, US_CENTRAL: 0, US_EAST: 0, OTHER: 0 }, failReasons = {}, examples = [];
+  var byRegionEligible = { US_WEST: 0, US_CENTRAL: 0, US_EAST: 0, OTHER: 0 }, failReasons = {}, currentCapable = 0, examples = [];
   activeTemplates.forEach(function (t) {
     var tid = DEMO4A_str_(t.route_template_id), ns = byTpl[tid] || [];
-    var el = DEMO4A_templateEligibility_(t, ns, locById);
-    if (el.eligible) byRegion[DEMO4A_regionOf_(t)] = (byRegion[DEMO4A_regionOf_(t)] || 0) + 1;
+    var el = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, {});
+    var elC = DEMO4A_templateEligibility_(t, ns, locations, idIndexes, { requireCurrent: true });
+    if (el.eligible) byRegionEligible[DEMO4A_regionOf_(t)] = (byRegionEligible[DEMO4A_regionOf_(t)] || 0) + 1;
     else failReasons[el.reason] = (failReasons[el.reason] || 0) + 1;
-    if (examples.length < 5) examples.push({ template_fp: DEMO4A_hash_(tid), region: DEMO4A_regionOf_(t), node_count: ns.length, geographic_nodes: el.geoCount, abstract_nodes: el.abstractCount, eligible: el.eligible, reason: el.reason || '' });
+    if (elC.eligible) currentCapable++;
+    if (examples.length < 5) examples.push({ template_fp: DEMO4A_hash_(tid), region: DEMO4A_regionOf_(t), node_count: ns.length, canonical_bindings: el.canonicalCount || 0, direct_coordinate_nodes: el.directCount || 0, abstract_nodes: el.abstractCount || 0, eligible: el.eligible, current_capable: elC.eligible, reason: el.reason || '' });
   });
   return {
     headers: { shipment_route_templates: (templates && templates[0]) ? Object.keys(templates[0]) : [], shipment_route_template_nodes: (nodes && nodes[0]) ? Object.keys(nodes[0]) : [], logistics_locations: (locations && locations[0]) ? Object.keys(locations[0]) : [] },
     active_template_count: activeTemplates.length, node_count: (nodes || []).length, location_count: (locations || []).length,
-    candidate_mappings: { node_logistics_location_id_to_location_id: mapByLocId, node_code_to_location_code: mapByNodeCode, node_direct_lat_lng: mapByOwnCoord },
-    frozen_authority: 'node.logistics_location_id -> logistics_locations.logistics_location_id (coords from the location); else node own latitude/longitude. shipment_routes.location_ref_id = the canonical logistics_location_id. No node_code->location_code join in the write/map path.',
-    node_types: nodeTypes, nodes_with_direct_coordinates: mapByOwnCoord, nodes_resolvable_via_location: nodesResolvableViaLocation,
-    intentionally_abstract_nodes: abstractNodes, unresolved_declared_location_refs: unresolvedDeclared,
-    valid_templates_by_region: byRegion, failure_reason_counts: failReasons,
-    minimum_geographic_nodes_required: 2, minimum_requirement_note: 'origin (first) + destination (last) geographic; >=2 geographic nodes for a drawable path; in-transit current marker resolves to a geographic node',
+    exact_identifier_match_counts: byIdField,
+    node_binding_counts: { canonical_master_binding: canonical, node_direct_coordinate: direct, abstract: abstract },
+    unresolved_declared_location_refs: unresolvedDeclared, node_types: nodeTypes,
+    frozen_authority: 'template node = TIMELINE authority; logistics_locations = COORDINATE authority. Coordinate binding: (1) EXACT node/node_code -> logistics_locations identifier match (CANONICAL_MASTER_BINDING); (2) node own lat/lng (NODE_DIRECT_COORDINATE); (3) role anchors only -> deterministic active logistics_location by exact country/region/type (DEMO_SYNTHETIC_RUNTIME_BINDING). No fuzzy/name matching; no master edit; no manufactured coordinate.',
+    eligible_templates_by_region: byRegionEligible, in_transit_current_capable_templates: currentCapable,
+    failure_reason_counts: failReasons,
+    demo_binding_requirement_note: 'origin (first node) + destination (last node) bind to distinct valid logistics_locations; the primary in-transit additionally binds a distinct current transit marker on a middle node. Abstract timeline nodes remain coordinate-blank.',
     safe_examples: examples
   };
 }
@@ -330,34 +416,37 @@ function DEMO4A_resolveScopeAndSkus_(marketplaceSkus, skuDetails, destCountry) {
   return { ok: true, company: parts[0], country: parts[1], marketplace: parts[2], pairs: pairs };
 }
 
-// V3B(E) — the CURRENT map marker index must land on a GEOGRAPHIC node (never an abstract/blank-coord milestone).
-// origin → first geographic; delivered → last geographic (destination); in_transit → a geographic node strictly between
-// origin and destination when one exists, else the second geographic. Returns an index into `resolved` (all nodes).
-function DEMO4A_currentGeoIndex_(slot, resolved) {
-  var geo = []; (resolved || []).forEach(function (r, i) { if (r.res.geographic) geo.push(i); });
-  if (!geo.length) return -1;
-  if (slot === 'origin') return geo[0];
-  if (slot === 'delivered') return geo[geo.length - 1];
-  var mid = geo.filter(function (i) { return i !== geo[0] && i !== geo[geo.length - 1]; });
-  if (mid.length) return mid[Math.floor((mid.length - 1) / 2)];
-  return geo[Math.min(1, geo.length - 1)];
+// V3C — the ROW coordinate binding at node index i: a ROLE anchor binding if present, else the node's own canonical/
+// direct binding, else null (ABSTRACT — coordinate-blank timeline row). Never manufactures a coordinate.
+function DEMO4A_rowBindingAt_(i, roleByIndex, resolved) {
+  if (roleByIndex && roleByIndex[i]) { var rb = roleByIndex[i]; return { binding_type: rb.source, location_ref_id: rb.location_ref_id, latitude: rb.latitude, longitude: rb.longitude, location_name: rb.location_name, country: rb.country, region: rb.region, city: rb.city }; }
+  var g = resolved[i] && resolved[i].geo;
+  if (g && g.bound) return { binding_type: g.binding_type, location_ref_id: g.location_ref_id, latitude: g.latitude, longitude: g.longitude, location_name: g.location_name, country: g.country, region: g.region, city: g.city };
+  return null;
 }
-// per-shipment route node statuses across ALL nodes (geographic + abstract) relative to the current geographic index.
-function DEMO4A_lifecycleNodes_(slot, resolved, currentIndex) {
-  var n = resolved.length, statuses = [];
+// current route-row index per slot: origin(shipped)→0 (departed); delivered(received)→last (destination); in_transit→the
+// bound current-marker index.
+function DEMO4A_slotCurrentIndex_(slot, n, currentBindingIndex) {
+  if (slot === 'origin') return 0;
+  if (slot === 'delivered') return n - 1;
+  return currentBindingIndex;   // in_transit
+}
+// route node statuses over ALL nodes relative to currentIndex (abstract rows carry status but no coordinate).
+function DEMO4A_lifecycleNodes_(slot, n, currentIndex) {
+  var statuses = [];
   for (var i = 0; i < n; i++) statuses.push(i < currentIndex ? 'completed' : (i === currentIndex ? 'current' : 'planned'));
   if (slot === 'delivered') { for (var j = 0; j < n; j++) statuses[j] = 'completed'; }
-  else if (slot === 'origin') statuses[currentIndex] = 'completed';   // departed origin; no in-flight 'current' marker
+  else if (slot === 'origin') statuses[0] = 'completed';   // departed origin; no in-flight 'current' marker
   return { currentIndex: currentIndex, nodeStatuses: statuses };
 }
-// truthful chronological events. ONLY geographic nodes become events (each carries a real coordinate); abstract
-// milestones stay as route rows/timeline but never as a map marker. The LAST event (current) is geographic by
-// construction. Canonical event_type; strictly-increasing dates ending at endYmd.
-function DEMO4A_lifecycleEvents_(slot, resolved, currentIndex, endYmd, stepDays) {
+// events on BOUND (geographic) route rows from origin up to currentIndex — each carrying the exact bound coordinate.
+// Abstract rows never become events. LAST event agrees with shipment status. Canonical enums; strictly-increasing times.
+function DEMO4A_lifecycleEvents_(slot, roleByIndex, resolved, currentIndex, endYmd, stepDays) {
   var evs = [];
   for (var i = 0; i <= currentIndex; i++) {
-    if (!resolved[i].res.geographic) continue;
-    evs.push({ nodeIndex: i, resolved: resolved[i].res, planned_event_type: DEMO4A_str_(resolved[i].node.planned_event_type) });
+    var b = DEMO4A_rowBindingAt_(i, roleByIndex, resolved);
+    if (!b) continue;
+    evs.push({ nodeIndex: i, binding: b, planned_event_type: DEMO4A_str_(resolved[i].node.planned_event_type) });
   }
   var count = evs.length;
   evs.forEach(function (e, k) {
@@ -376,23 +465,26 @@ function DEMO4A_lifecycleEvents_(slot, resolved, currentIndex, endYmd, stepDays)
 // ================================================================================================================
 function DEMO4A_buildPlan_(masters) {
   masters = masters || {};
-  var locById = DEMO4A_indexLocations_(masters.locations);
-  var sel = DEMO4A_selectTemplates_(masters.templates, masters.nodes, locById);
+  var sel = DEMO4A_selectTemplates_(masters.templates, masters.nodes, masters.locations);
   if (!sel.ok) return sel;
-  var destCountry = DEMO4A_str_((sel._assignRaw.in_transit.template || {}).destination_country) || DEMO4A_str_(sel._assignRaw.in_transit.resolved[sel._assignRaw.in_transit.resolved.length - 1].res.country) || 'US';
+  var itPick = sel._assignRaw.in_transit;
+  var destCountry = DEMO4A_str_((itPick.template || {}).destination_country) || DEMO4A_str_(itPick.currentBinding.destination.country) || 'US';
   var scope = DEMO4A_resolveScopeAndSkus_(masters.marketplaceSkus, masters.skuDetails, destCountry);
   if (!scope.ok) return scope;
 
   var P = DEMO4A_PREFIX_;
   var tables = { shipping_plans: [], shipping_plan_lines: [], shipments: [], shipment_lines: [], shipment_routes: [], shipment_events: [] };
   var visibility = { weekly_shipping_plan: [], shipment_draft: [], shipment_overview: [], on_the_way_map: [], primary_map_record: null };
-  var per_shipment = [], eventMap = [];
+  var per_shipment = [], eventMap = [], bindingManifest = [];
 
   DEMO4A_SHIP_LIFECYCLE_.forEach(function (life, si) {
     var idx = si + 1, pick = sel._assignRaw[life.slot], tpl = pick.template, resolved = pick.resolved, nodeCount = resolved.length;
+    var isInTransit = (life.slot === 'in_transit');
+    var binding = isInTransit ? pick.currentBinding : pick.binding;   // in-transit uses the current-marker binding
+    var roleByIndex = binding.role_by_index;
     var planId = P + 'SP-' + idx, shipId = P + 'SHP-' + idx;
-    var originCountry = DEMO4A_str_(tpl.origin_country) || DEMO4A_str_(resolved[0].res.country) || 'CN';
-    var destRegion = DEMO4A_str_(tpl.destination_region) || DEMO4A_str_(resolved[nodeCount - 1].res.region) || pick.region;
+    var originCountry = DEMO4A_str_(tpl.origin_country) || DEMO4A_str_(binding.origin.country) || 'CN';
+    var destRegion = DEMO4A_str_(tpl.destination_region) || DEMO4A_str_(binding.destination.region) || pick.region;
     var srcWh = DEMO4A_str_(tpl.origin_warehouse_id), destWh = DEMO4A_str_(tpl.destination_warehouse_id);
     var carrier = DEMO4A_str_(tpl.carrier_id), method = DEMO4A_str_(tpl.transit_type) || 'SEA', lastMile = DEMO4A_str_(tpl.last_mile_delivery);
 
@@ -429,54 +521,70 @@ function DEMO4A_buildPlan_(masters) {
     if (DEMO4A_overviewVisible_(life.status)) visibility.shipment_overview.push({ shipment_id: shipId, status: life.status });
     if (DEMO4A_draftVisible_(life.status)) visibility.shipment_draft.push({ shipment_id: shipId, status: life.status });
 
-    var currentIndex = DEMO4A_currentGeoIndex_(life.slot, resolved);
-    var lc = DEMO4A_lifecycleNodes_(life.slot, resolved, currentIndex);
-    var geoNodeCount = 0, abstractNodeCount = 0;
+    var currentIndex = DEMO4A_slotCurrentIndex_(life.slot, nodeCount, isInTransit ? binding.current_index : 0);
+    var lc = DEMO4A_lifecycleNodes_(life.slot, nodeCount, currentIndex);
+    var canonicalCount = 0, directCount = 0, syntheticCount = 0, abstractRowCount = 0;
     for (var ni = 0; ni < nodeCount; ni++) {
-      var node = resolved[ni].node, res = resolved[ni].res;
-      if (res.geographic) geoNodeCount++; else abstractNodeCount++;
-      // V3B(C/D) — geographic node → real coordinate + location_ref (when a canonical location resolved); ABSTRACT node →
-      // kept as a route row (lineage + display code) but NO coordinate and NO logistics_location (never a map marker).
+      var node = resolved[ni].node, rbd = DEMO4A_rowBindingAt_(ni, roleByIndex, resolved);
+      if (rbd) { if (rbd.binding_type === 'CANONICAL_MASTER_BINDING') canonicalCount++; else if (rbd.binding_type === 'NODE_DIRECT_COORDINATE') directCount++; else syntheticCount++; }
+      else abstractRowCount++;
+      // V3C — a bound row copies its coordinate EXACTLY from the resolved authority (canonical/direct/synthetic location);
+      // location_ref_type='logistics_location' only when a canonical logistics_location_id resolved. An ABSTRACT row keeps
+      // the node timeline label (code/name/country) with NO coordinate and NO location_ref — never a map marker.
       tables.shipment_routes.push({ shipment_route_id: P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1), shipment_id: shipId,
         route_template_id: pick.tid, route_template_node_id: DEMO4A_str_(node.route_template_node_id), sequence_no: DEMO4A_str_(node.node_sequence),
-        node_type: DEMO4A_str_(node.node_type), node_code: DEMO4A_str_(node.node_code), location_ref_type: res.location_ref_type, location_ref_id: res.location_ref_id,
-        location_name: res.location_name, country: res.country, region: res.region, city: res.city, latitude: res.latitude, longitude: res.longitude,
+        node_type: DEMO4A_str_(node.node_type), node_code: DEMO4A_str_(node.node_code),
+        location_ref_type: (rbd && DEMO4A_str_(rbd.location_ref_id) !== '') ? 'logistics_location' : '', location_ref_id: rbd ? DEMO4A_str_(rbd.location_ref_id) : '',
+        location_name: rbd ? rbd.location_name : (DEMO4A_str_(DEMO4A_get_(node, ['node_name'])) || DEMO4A_str_(node.node_code)),
+        country: rbd ? rbd.country : DEMO4A_str_(node.country), region: rbd ? rbd.region : DEMO4A_str_(node.region), city: rbd ? rbd.city : DEMO4A_str_(node.city),
+        latitude: rbd ? rbd.latitude : '', longitude: rbd ? rbd.longitude : '',
         transport_mode: DEMO4A_str_(node.transport_mode_to_next), planned_event_type: DEMO4A_str_(node.planned_event_type), status: lc.nodeStatuses[ni],
         created_at: DEMO4A_CREATED_AT_, updated_at: DEMO4A_CREATED_AT_ });
     }
 
+    // H — binding manifest (checksummed): each role's node id + exact logistics_location_id + binding type + coords.
+    ['origin', 'current', 'destination'].forEach(function (role) { var b = binding[role]; if (b) bindingManifest.push([shipId, role, DEMO4A_str_(resolved[b.node_index].node.route_template_node_id), DEMO4A_str_(b.location_ref_id), b.source, DEMO4A_num_(b.latitude), DEMO4A_num_(b.longitude)].join('~')); });
+
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
-    var evs = DEMO4A_lifecycleEvents_(life.slot, resolved, currentIndex, life.event_end, life.event_step);
+    var evs = DEMO4A_lifecycleEvents_(life.slot, roleByIndex, resolved, currentIndex, life.event_end, life.event_step);
     evs.forEach(function (e, ei) {
       tables.shipment_events.push({ shipment_event_id: P + 'SE-' + idx + '-' + DEMO4A_z2_(ei + 1), shipment_id: shipId, shipment_route_id: routeIdOf(e.nodeIndex),
         event_sequence: ei + 1, event_time: e.event_time, event_type: e.event_type, event_status: e.event_status,
-        location_name: e.resolved.location_name, country: e.resolved.country, city: e.resolved.city, latitude: e.resolved.latitude, longitude: e.resolved.longitude,
-        source: DEMO4A_SOURCE_, source_event_id: P + 'SE-' + idx + '-' + DEMO4A_z2_(ei + 1), raw_status: e.event_status, note: DEMO4A_TAG_,
+        location_name: e.binding.location_name, country: e.binding.country, city: e.binding.city, latitude: e.binding.latitude, longitude: e.binding.longitude,
+        source: DEMO4A_SOURCE_, source_event_id: P + 'SE-' + idx + '-' + DEMO4A_z2_(ei + 1), raw_status: e.event_status,
+        note: DEMO4A_TAG_ + (e.binding.binding_type === 'DEMO_SYNTHETIC_RUNTIME_BINDING' ? ' · DEMO-4A-SYNTHETIC-RUNTIME-BINDING' : ''),
         created_by: DEMO4A_ACTOR_, created_at: DEMO4A_CREATED_AT_, updated_by: DEMO4A_ACTOR_, updated_at: DEMO4A_CREATED_AT_ });
       // G — explicit route.planned_event_type → canonical recorded event_type mapping (NEVER conflated)
       eventMap.push({ shipment_id: shipId, sequence_no: DEMO4A_str_(resolved[e.nodeIndex].node.node_sequence), route_planned_event_type: e.planned_event_type || '(none)', recorded_event_type: e.event_type, recorded_event_status: e.event_status });
     });
 
-    per_shipment.push({ shipment_id: shipId, slot: life.slot, status: life.status, template: pick.tid, region: pick.region, nodes: nodeCount, geographic_nodes: geoNodeCount, abstract_nodes: abstractNodeCount, route_rows: nodeCount, event_rows: evs.length, current_node_geographic: !!(resolved[currentIndex] && resolved[currentIndex].res.geographic), plan_lines: lineCount, shipment_lines: lineCount });
+    per_shipment.push({ shipment_id: shipId, slot: life.slot, status: life.status, template: pick.tid, region: pick.region, nodes: nodeCount,
+      canonical_binding_count: canonicalCount, direct_coordinate_count: directCount, demo_synthetic_binding_count: syntheticCount, abstract_rows: abstractRowCount,
+      route_rows: nodeCount, event_rows: evs.length, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
+      plan_lines: lineCount, shipment_lines: lineCount });
 
     var onMap = DEMO4A_mapVisible_(life.status, evs.length, nodeCount);
-    if (onMap) { var last = evs[evs.length - 1]; var mapRec = { shipment_id: shipId, status: life.status, moving: DEMO4A_mapMoving_(life.status), delivered: DEMO4A_mapDelivered_(life.status), current_node_sequence: DEMO4A_str_(resolved[currentIndex].node.node_sequence), current_node_geographic: true, latest_event: last.event_type, latest_event_time: last.event_time, marker_lat: last.resolved.latitude, marker_lng: last.resolved.longitude, carrier_id: carrier, transit_method: method, eta: life.eta }; visibility.on_the_way_map.push(mapRec); if (life.slot === 'in_transit') visibility.primary_map_record = mapRec; }
+    if (onMap) { var last = evs[evs.length - 1]; var mapRec = { shipment_id: shipId, status: life.status, moving: DEMO4A_mapMoving_(life.status), delivered: DEMO4A_mapDelivered_(life.status), current_node_sequence: DEMO4A_str_(resolved[currentIndex].node.node_sequence), latest_event: last.event_type, latest_event_time: last.event_time, marker_lat: last.binding.latitude, marker_lng: last.binding.longitude, carrier_id: carrier, transit_method: method, eta: life.eta }; visibility.on_the_way_map.push(mapRec); if (life.slot === 'in_transit') visibility.primary_map_record = mapRec; }
   });
 
   var counts = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { counts[t] = tables[t].length; });
   counts.total = DEMO4A_WRITE_ORDER_.reduce(function (a, t) { return a + tables[t].length; }, 0);
-  return { ok: true, checksum: DEMO4A_checksum_(tables), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility,
+  return { ok: true, checksum: DEMO4A_checksum_(tables, bindingManifest), tables: tables, counts: counts, per_shipment: per_shipment, visibility: visibility,
     scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku_pairs: scope.pairs },
-    region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, chosen_templates: sel.chosen, route_event_map: eventMap };
+    region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
+    binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
 }
 function DEMO4A_overviewVisible_(s) { return { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 }[DEMO4A_low_(s)] === 1; }
 function DEMO4A_draftVisible_(s) { return { draft: 1, ready_to_ship: 1, shipped: 1 }[DEMO4A_low_(s)] === 1; }
 function DEMO4A_mapMoving_(s) { return { shipped: 1, in_transit: 1 }[DEMO4A_low_(s)] === 1; }
 function DEMO4A_mapDelivered_(s) { return { received: 1, completed: 1, delivered: 1, closed: 1 }[DEMO4A_low_(s)] === 1; }
 function DEMO4A_mapVisible_(s, eventCount, nodeCount) { var x = DEMO4A_low_(s); if (x === 'cancelled' || x === 'closed') return false; var runtime = { shipped: 1, in_transit: 1, arrived: 1, partial_received: 1, partially_received: 1, received: 1, completed: 1, delivered: 1 }[x] === 1; return runtime || eventCount > 0 || nodeCount > 0; }
-function DEMO4A_checksum_(tables) {
+// H — the checksum binds every six-table row AND the explicit binding manifest (role node ids + exact logistics_location
+// ids + binding type + exact coordinates), so any change to a binding/location/coordinate changes the checksum.
+function DEMO4A_checksum_(tables, bindingManifest) {
   var parts = [];
   DEMO4A_WRITE_ORDER_.forEach(function (t) { var pk = DEMO4A_PK_OF_[t]; (tables[t] || []).slice().sort(function (a, b) { return DEMO4A_str_(a[pk]) < DEMO4A_str_(b[pk]) ? -1 : 1; }).forEach(function (r) { parts.push(t + '{' + DEMO4A_rowChecksum_(r, Object.keys(r)) + '}'); }); });
+  if (bindingManifest && bindingManifest.length) parts.push('BIND{' + bindingManifest.slice().sort().join('|') + '}');
   return DEMO4A_hash_(parts.join('\n'));
 }
 function DEMO4A_allIds_(plan) { var ids = {}; DEMO4A_WRITE_ORDER_.forEach(function (t) { ids[t] = (plan.tables[t] || []).map(function (r) { return r[DEMO4A_PK_OF_[t]]; }); }); return ids; }
@@ -510,7 +618,7 @@ function DEMO4A_classifyState_(plan, live) {
 // ================================================================================================================
 // C — LIVE-ROW VALIDATOR. Every check reads actual live rows. DEMO_SEED_VALIDATED requires PRESENT_EXACT_ALL AND all pass.
 // ================================================================================================================
-function DEMO4A_validateLiveRows_(plan, live) {
+function DEMO4A_validateLiveRows_(plan, live, masters) {
   function demoRows(name) { var pk = DEMO4A_PK_OF_[name]; return (live[name] ? live[name].rows : []).filter(function (r) { return DEMO4A_isDemo_(r[pk]); }); }
   function idset(name) { var s = {}, pk = DEMO4A_PK_OF_[name]; demoRows(name).forEach(function (r) { s[DEMO4A_str_(r[pk])] = r; }); return s; }
   var plans = idset('shipping_plans'), spl = idset('shipping_plan_lines'), sp = idset('shipments'), sl = idset('shipment_lines'), routes = idset('shipment_routes'), events = idset('shipment_events');
@@ -580,7 +688,41 @@ function DEMO4A_validateLiveRows_(plan, live) {
   demoRows('shipments').forEach(function (s) { var id = DEMO4A_str_(s.shipment_id), st = s.status; if (DEMO4A_overviewVisible_(st)) vis.shipment_overview.push(id); if (DEMO4A_draftVisible_(st)) vis.shipment_draft.push(id); var evc = (evByShip[id] || []).length, rc = (seqByShip[id] || []).length; if (DEMO4A_mapVisible_(st, evc, rc)) vis.on_the_way_map.push(id); });
   checks.live_ui_visibility = { ok: vis.on_the_way_map.length >= 1, visibility: vis };
 
-  return { checks: checks, classification: cls.classification };
+  // V3C — Demo-bound coordinates equal the logistics_locations authority (needs masters); abstract rows stay blank; the
+  // primary in-transit shipment's origin/current/destination coordinates are distinct; event coord = its route-row coord.
+  var locById = masters ? DEMO4A_indexLocations_(masters.locations) : null;
+  function ck(lat, lng) { return DEMO4A_num_(lat).toFixed(5) + ',' + DEMO4A_num_(lng).toFixed(5); }
+  var boundOk = true, boundBad = [], absOk = true;
+  demoRows('shipment_routes').forEach(function (r) {
+    var hasRef = DEMO4A_low_(r.location_ref_type) === 'logistics_location' && DEMO4A_str_(r.location_ref_id) !== '';
+    var hasCoord = DEMO4A_str_(r.latitude) !== '' || DEMO4A_str_(r.longitude) !== '';
+    if (!hasRef && !hasCoord) return;   // abstract row — nothing bound (fine)
+    if (hasRef && locById) { var loc = locById[DEMO4A_str_(r.location_ref_id)]; if (!loc || !DEMO4A_validCoord_(loc.latitude, loc.longitude)) { boundOk = false; boundBad.push('missing_master_loc:' + r.shipment_route_id); } else if (ck(loc.latitude, loc.longitude) !== ck(r.latitude, r.longitude)) { boundOk = false; boundBad.push('coord≠master:' + r.shipment_route_id); } }
+  });
+  checks.live_bound_coord_equals_master = { ok: boundOk, checked: !!locById, bad: boundBad.slice(0, 10) };
+  // abstract rows (blank ref + blank coord) explicitly carry NO coordinate
+  demoRows('shipment_routes').forEach(function (r) { var hasRef = DEMO4A_low_(r.location_ref_type) === 'logistics_location' && DEMO4A_str_(r.location_ref_id) !== ''; if (!hasRef && (DEMO4A_str_(r.latitude) !== '' || DEMO4A_str_(r.longitude) !== '') && !DEMO4A_validCoord_(r.latitude, r.longitude)) absOk = false; });
+  checks.abstract_rows_blank = { ok: absOk };
+  // event coord equals its referenced route-row coord (no invented event coordinate)
+  var evCoordOk = true, evCoordBad = [];
+  demoRows('shipment_events').forEach(function (e) { var r = routes[DEMO4A_str_(e.shipment_route_id)]; if (r && (DEMO4A_str_(r.latitude) !== '' || DEMO4A_str_(r.longitude) !== '') && ck(r.latitude, r.longitude) !== ck(e.latitude, e.longitude)) { evCoordOk = false; evCoordBad.push('evt≠route:' + e.shipment_event_id); } });
+  checks.live_event_coord_equals_route = { ok: evCoordOk, bad: evCoordBad.slice(0, 10) };
+  // primary in-transit origin/current/destination distinct
+  var distinctOk = true, distinctChecked = false;
+  demoRows('shipments').forEach(function (s) {
+    if (DEMO4A_low_(s.status) !== 'in_transit') return;
+    var rr = demoRows('shipment_routes').filter(function (r) { return DEMO4A_str_(r.shipment_id) === DEMO4A_str_(s.shipment_id); }).sort(function (a, b) { return DEMO4A_num_(a.sequence_no) - DEMO4A_num_(b.sequence_no); });
+    var geo = rr.filter(function (r) { return DEMO4A_validCoord_(r.latitude, r.longitude); });
+    var cur = rr.filter(function (r) { return DEMO4A_low_(r.status) === 'current' && DEMO4A_validCoord_(r.latitude, r.longitude); })[0];
+    if (geo.length < 2 || !cur) { distinctOk = false; return; }
+    distinctChecked = true;
+    var keys = [ck(geo[0].latitude, geo[0].longitude), ck(cur.latitude, cur.longitude), ck(geo[geo.length - 1].latitude, geo[geo.length - 1].longitude)];
+    var uniq = {}; keys.forEach(function (k) { uniq[k] = 1; }); if (Object.keys(uniq).length !== 3) distinctOk = false;
+  });
+  checks.primary_in_transit_anchors_distinct = { ok: distinctOk, checked: distinctChecked };
+
+  var allOk = Object.keys(checks).every(function (k) { return checks[k].ok; });
+  return { checks: checks, classification: cls.classification, demo_seed_validated: (cls.classification === 'PRESENT_EXACT_ALL' && allOk) };
 }
 
 // ================================================================================================================
@@ -704,9 +846,10 @@ function TEMP_DEMO4A_PREFLIGHT_SHIPPING_SHIPMENT_MAP_SEED() {
     var masters = DEMO4A_readMasters_(); out.masters_present = masters.present;
     out.master_row_counts = { templates: masters.templates.length, template_nodes: masters.nodes.length, logistics_locations: masters.locations.length, marketplace_skus: masters.marketplaceSkus.length, sku_details: masters.skuDetails.length };
     var plan = DEMO4A_buildPlan_(masters);
-    if (!plan.ok) { out.verdict = schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA'; out.reason = plan.reason; out.detail = plan; }
+    if (!plan.ok) { out.verdict = schema.ok ? 'PREFLIGHT_FAILED' : 'PREFLIGHT_FAILED_SCHEMA'; out.reason = plan.reason; out.rejection_counts = plan.rejection_counts || null; out.available_regions = plan.available_regions || null; out.detail = plan; }
     else {
       out.region_selection_mode = plan.region_selection_mode; out.available_regions = plan.available_regions; out.chosen_templates = plan.chosen_templates;
+      out.selected_template_ids = plan.chosen_templates.map(function (c) { return c.route_template_id; }); out.rejection_counts = plan.rejection_counts;
       out.scope = plan.scope; out.planned_counts = plan.counts; out.per_shipment = plan.per_shipment; out.demo_plan_checksum = plan.checksum;
       var cls = DEMO4A_classifyState_(plan, DEMO4A_readLive_());
       out.existing_state = { classification: cls.classification, duplicate_pk_counts: cls.duplicate_pk_counts, unexpected_demo_ids: cls.unexpected_demo_ids };
@@ -811,10 +954,9 @@ function TEMP_DEMO4A_VALIDATE_SHIPPING_SHIPMENT_MAP_SEED() {
     var plan = DEMO4A_buildPlan_(DEMO4A_readMasters_());
     if (!plan.ok) { out.verdict = 'VALIDATE_BLOCKED'; out.reason = plan.reason; Logger.log('DEMO4A_VALIDATE ' + JSON.stringify(out, null, 2)); return out; }
     var live = DEMO4A_readLive_();
-    var v = DEMO4A_validateLiveRows_(plan, live);
+    var v = DEMO4A_validateLiveRows_(plan, live, DEMO4A_readMasters_());   // masters → verify each bound coord equals its logistics_locations authority
     out.classification = v.classification; out.checks = v.checks; out.demo_plan_checksum = plan.checksum;
-    var allOk = Object.keys(v.checks).every(function (k) { return v.checks[k].ok === true; });
-    out.verdict = (v.classification === 'PRESENT_EXACT_ALL' && allOk) ? 'DEMO_SEED_VALIDATED' : 'DEMO_SEED_RECONCILIATION_REQUIRED';
+    out.verdict = v.demo_seed_validated ? 'DEMO_SEED_VALIDATED' : 'DEMO_SEED_RECONCILIATION_REQUIRED';
   } catch (e) { out.verdict = 'VALIDATE_THREW'; out.reason = (e && e.message) ? e.message : String(e); }
   out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES (read-only; no stock/PO/K2/checksum/flag change)';
   Logger.log('DEMO4A_VALIDATE ' + JSON.stringify(out, null, 2)); return out;

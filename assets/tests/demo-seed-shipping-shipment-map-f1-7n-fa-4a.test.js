@@ -9,7 +9,7 @@ var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
-function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED V3B: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
+function done() { console.log('\n' + '-'.repeat(40)); console.log('DEMO-4A SEED V3C: ' + pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1); }
 var ROOT = path.join(__dirname, '..');
 function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing fn ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
 function arrTokens(literal) { var body = literal.replace(/\[([\s\S]*)\]/, '$1').replace(/\/\/[^\n]*/g, ''); var out = [], re = /'([^']+)'/g, x; while ((x = re.exec(body))) out.push(x[1]); return out; }
@@ -21,14 +21,16 @@ var G22 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '22_
 var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_shipment_receipt_route_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var LOAD = [];
-['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_REQUIRED_COLS_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_EXTERNAL_REF_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_SHIP_LIFECYCLE_ = \[[\s\S]*?\n\];/)[0]);
 ['DEMO4A_str_', 'DEMO4A_low_', 'DEMO4A_num_', 'DEMO4A_truthy_', 'DEMO4A_hash_', 'DEMO4A_z2_', 'DEMO4A_addDays_', 'DEMO4A_isDemo_', 'DEMO4A_get_',
   'DEMO4A_canonDateOnly_', 'DEMO4A_canonDateTime_', 'DEMO4A_fieldKind_', 'DEMO4A_canon_', 'DEMO4A_rowChecksum_', 'DEMO4A_mismatchedFields_',
-  'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_indexLocationsByCode_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_nodeLat_', 'DEMO4A_nodeLng_', 'DEMO4A_nodeLocId_', 'DEMO4A_resolveNode_', 'DEMO4A_templateEligibility_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_', 'DEMO4A_diagnoseResolution_',
-  'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_currentGeoIndex_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
+  'DEMO4A_validCoord_', 'DEMO4A_indexLocations_', 'DEMO4A_indexLocationsByCode_', 'DEMO4A_nodesByTemplate_', 'DEMO4A_nodeLat_', 'DEMO4A_nodeLng_', 'DEMO4A_nodeLocId_',
+  'DEMO4A_locValid_', 'DEMO4A_locId_', 'DEMO4A_locType_', 'DEMO4A_locCountry_', 'DEMO4A_locRegion_', 'DEMO4A_locActive_', 'DEMO4A_indexLocationsByIdentifiers_', 'DEMO4A_nodeCanonicalMatch_', 'DEMO4A_nodeGeoBinding_',
+  'DEMO4A_transitPrefTypes_', 'DEMO4A_pickAnchor_', 'DEMO4A_bindingFromLoc_', 'DEMO4A_coordKey_', 'DEMO4A_bindTemplateRoles_', 'DEMO4A_templateEligibility_', 'DEMO4A_regionOf_', 'DEMO4A_selectTemplates_', 'DEMO4A_diagnoseResolution_',
+  'DEMO4A_activeFlag_', 'DEMO4A_resolveScopeAndSkus_', 'DEMO4A_rowBindingAt_', 'DEMO4A_slotCurrentIndex_', 'DEMO4A_lifecycleNodes_', 'DEMO4A_lifecycleEvents_', 'DEMO4A_buildPlan_', 'DEMO4A_overviewVisible_', 'DEMO4A_draftVisible_',
   'DEMO4A_mapMoving_', 'DEMO4A_mapDelivered_', 'DEMO4A_mapVisible_', 'DEMO4A_checksum_', 'DEMO4A_allIds_', 'DEMO4A_chronology_', 'DEMO4A_classifyState_',
   'DEMO4A_validateLiveRows_', 'DEMO4A_rollbackPlan_', 'DEMO4A_anyInserted_', 'DEMO4A_journalCanonical_', 'DEMO4A_buildJournal_', 'DEMO4A_verifyJournal_',
   'DEMO4A_externalRefsIn_', 'DEMO4A_nonDemoReferences_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
@@ -249,89 +251,111 @@ ok(/if \(post\.classification !== 'PRESENT_EXACT_ALL'\) throw[\s\S]*?out\.verdic
 eq(DEMO4A_classifyState_(plan, liveFromPlan(plan)).classification, 'PRESENT_EXACT_ALL', 'V3A-11. exact retry → PRESENT_EXACT_ALL');
 ok(/PRESENT_EXACT_ALL'\) \{ out\.delta = \{ shipping_plans: 0[\s\S]*?verdict = 'REUSED'/.test(commitFn), 'V3A-11. PRESENT_EXACT_ALL → REUSED with six zero deltas');
 
-// ============================================================ V3B — live master-join alignment + geographic/abstract authority
-// real-shaped node builders: own-coord geographic node (no logistics_location_id), abstract node (no coord/location).
-function nodeOwn(tid, seq, lat, lng, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA', latitude: lat, longitude: lng }; }
-function nodeAbs(tid, seq, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA' }; }
-// W/C/E, each origin(geo) → customs(ABSTRACT) → …→ dest(geo); C is richest (extra geo port) → primary in-transit.
-function mastersV3B() {
-  var templates = [tpl('RT-W', 'US West'), tpl('RT-C', 'US Central'), tpl('RT-E', 'US East')];
-  var nodes = [];
-  ['RT-W', 'RT-E'].forEach(function (tid, k) { nodes.push(nodeOwn(tid, 1, 30 + k, -100 - k, 'origin', 'origin_departure'), nodeAbs(tid, 2, 'customs', 'customs_clearance'), nodeOwn(tid, 3, 34 + k, -84 - k, 'destination', 'final_delivery')); });
-  nodes.push(nodeOwn('RT-C', 1, 31, -118, 'origin', 'origin_departure'), nodeAbs('RT-C', 2, 'customs', 'customs_clearance'), nodeOwn('RT-C', 3, 39, -104, 'port', 'port_transit'), nodeOwn('RT-C', 4, 40, -74, 'destination', 'final_delivery'));
-  return { templates: templates, nodes: nodes, locations: [], marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
+// ============================================================ V3C — DEMO-only role-based logistics-location binding
+// Templates provide the TIMELINE; logistics_locations is the COORDINATE authority. Coordinate binding precedence per
+// node: CANONICAL_MASTER_BINDING (exact identifier match) → NODE_DIRECT_COORDINATE → (role anchors) DEMO_SYNTHETIC_RUNTIME_BINDING.
+function tplV3C(id, region) { return { route_template_id: id, route_template_name: 'CN to ' + region, is_active: 'TRUE', origin_country: 'CN', destination_country: 'US', destination_region: region, origin_warehouse_id: 'WH-CN-' + id, destination_warehouse_id: 'WH-US-' + id, carrier_id: 'CAR-1', transit_type: 'SEA', last_mile_delivery: 'FBA' }; }
+function nAbs(tid, seq, type, evt) { return { route_template_node_id: tid + '-N' + seq, route_template_id: tid, node_sequence: seq, node_type: type, node_code: (type + seq).toUpperCase(), node_name: type + ' ' + seq, planned_event_type: evt, transport_mode_to_next: 'SEA' }; }
+function locV3C(id, country, region, lat, lng, type) { return { logistics_location_id: id, location_code: id + '-C', location_name: id, country: country, region: region, latitude: lat, longitude: lng, location_type: type, is_active: 'TRUE' }; }
+function locsV3C() {
+  return [
+    locV3C('CN-FAC-1', 'CN', '', 31.2, 121.4, 'factory'), locV3C('CN-FAC-2', 'CN', '', 22.5, 114.0, 'factory'),
+    locV3C('US-W-1', 'US', 'US West', 34.0, -118.2, 'warehouse'), locV3C('US-C-1', 'US', 'US Central', 41.8, -87.6, 'warehouse'), locV3C('US-E-1', 'US', 'US East', 40.7, -74.0, 'warehouse'),
+    locV3C('TR-1', 'US', 'US West', 37.7, -122.4, 'port'), locV3C('TR-2', 'US', 'US Central', 29.7, -95.3, 'port')
+  ];
 }
+function mastersV3C() {
+  var templates = [tplV3C('RT-W', 'US West'), tplV3C('RT-C', 'US Central'), tplV3C('RT-E', 'US East')];
+  var nodes = [];
+  ['RT-W', 'RT-E'].forEach(function (tid) { nodes.push(nAbs(tid, 1, 'origin', 'origin_departure'), nAbs(tid, 2, 'customs', 'customs_clearance'), nAbs(tid, 3, 'port', 'port_transit'), nAbs(tid, 4, 'destination', 'final_delivery')); });
+  nodes.push(nAbs('RT-C', 1, 'origin', 'origin_departure'), nAbs('RT-C', 2, 'customs', 'customs_clearance'), nAbs('RT-C', 3, 'port', 'port_transit'), nAbs('RT-C', 4, 'hub', 'hub_transit'), nAbs('RT-C', 5, 'destination', 'final_delivery'));   // richest → primary in-transit
+  return { templates: templates, nodes: nodes, locations: locsV3C(), marketplaceSkus: mastersFull().marketplaceSkus, skuDetails: mastersFull().skuDetails };
+}
+var planC = DEMO4A_buildPlan_(mastersV3C());
+ok(planC.ok, 'V3C setup. plan builds from abstract-node templates via Demo role bindings');
 
-section('V3B-1..2. canonical shipping_plan_lines has no marketplace column');
-ok(DEMO4A_REQUIRED_COLS_.shipping_plan_lines.indexOf('marketplace') === -1, 'V3B-1. marketplace removed from shipping_plan_lines required cols');
-ok(plan.tables.shipping_plan_lines.every(function (r) { return !r.hasOwnProperty('marketplace'); }), 'V3B-1. no marketplace field written into any plan line');
-ok(plan.tables.shipping_plans.every(function (r) { return DEMO4A_str_(r.marketplace) !== ''; }) && plan.tables.shipments.every(function (r) { return DEMO4A_str_(r.marketplace) !== ''; }), 'V3B-1. marketplace remains on the header authorities (shipping_plans + shipments)');
-ok(CANON.shipping_plan_lines.indexOf('marketplace') === -1 ? true : true, 'V3B-2. plan-line write never introduces a non-canonical column (schema subset check above already enforces this)');
-ok(plan.tables.shipping_plan_lines.every(function (r) { return Object.keys(r).every(function (k) { return CANON.shipping_plan_lines.indexOf(k) !== -1; }); }), 'V3B-2. every plan-line key is a real canonical column (no new DB column)');
+section('V3C-1..2. no master modification, no coordinate manufactured');
+DEMO4A_MASTER_TABS_.forEach(function (m) { ok(new RegExp("getSheetByName\\('" + m + "'\\)\\.(appendRow|deleteRow|setValue|getRange\\([^)]*\\)\\.setValue)").test(G) === false, 'V3C-1. master ' + m + ' never written/deleted'); });
+(function () { var pool = {}; locsV3C().forEach(function (l) { pool[DEMO4A_num_(l.latitude).toFixed(5) + ',' + DEMO4A_num_(l.longitude).toFixed(5)] = 1; });
+  var ok2 = planC.tables.shipment_routes.concat(planC.tables.shipment_events).every(function (r) { if (DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.longitude) === '') return true; return pool[DEMO4A_num_(r.latitude).toFixed(5) + ',' + DEMO4A_num_(r.longitude).toFixed(5)] === 1; });
+  ok(ok2, 'V3C-2. every non-blank coordinate equals an existing logistics_locations coordinate (none manufactured)'); })();
 
-section('V3B-3. node/location join authority');
-var locG = { logistics_location_id: 'L-1', location_code: 'L-1-C', location_name: 'Loc One', country: 'US', region: 'W', city: 'LA', latitude: 34.05, longitude: -118.24 };
-var byId = DEMO4A_indexLocations_([locG]);
-var rLoc = DEMO4A_resolveNode_({ node_code: 'ORIG', logistics_location_id: 'L-1' }, byId);
-eq([rLoc.ok, rLoc.geographic, rLoc.location_ref_type, rLoc.location_ref_id, rLoc.latitude, rLoc.longitude], [true, true, 'logistics_location', 'L-1', 34.05, -118.24], 'V3B-3. logistics_location_id → canonical location: coords + location_ref from the location');
-var rOwn = DEMO4A_resolveNode_({ node_code: 'P1', latitude: 39.7, longitude: -104.9 }, byId);
-eq([rOwn.ok, rOwn.geographic, rOwn.location_ref_type, rOwn.latitude], [true, true, '', 39.7], 'V3B-3. own lat/lng, no location id → geographic via NODE, no location_ref');
+section('V3C-3..4. canonical identifier binding wins; no fuzzy matching');
+var idIdx = DEMO4A_indexLocationsByIdentifiers_([locV3C('L-UN', 'US', 'US West', 34.0, -118.0, 'port')].map(function (l) { l.un_locode = 'USLAX'; return l; }));
+eq(DEMO4A_nodeCanonicalMatch_({ node_code: 'USLAX' }, idIdx).loc_field, 'un_locode', 'V3C-3. node_code exactly equal to a location un_locode → canonical match');
+var gb = DEMO4A_nodeGeoBinding_({ node_code: 'USLAX' }, idIdx);
+eq([gb.bound, gb.binding_type, gb.latitude], [true, 'CANONICAL_MASTER_BINDING', 34.0], 'V3C-3. canonical binding used (exact identifier), coords from the matched location');
+eq(DEMO4A_nodeCanonicalMatch_({ node_code: 'Los Angeles', node_name: 'Los Angeles Port' }, idIdx), null, 'V3C-4. a display-name / non-exact token does NOT match (no fuzzy/substring/name matching)');
+eq(DEMO4A_nodeGeoBinding_({ node_code: 'CUSTOMS-XYZ' }, idIdx).bound, false, 'V3C-4. an unmatched abstract node is NOT force-bound');
 
-section('V3B-4. declared but unresolved location fails closed');
-eq(DEMO4A_resolveNode_({ node_code: 'X', logistics_location_id: 'MISSING' }, byId).reason, 'DECLARED_LOGISTICS_LOCATION_NOT_FOUND', 'V3B-4. logistics_location_id not in locations → fail closed');
-var byBad = DEMO4A_indexLocations_([{ logistics_location_id: 'L-Z', latitude: 0, longitude: 0 }]);
-eq(DEMO4A_resolveNode_({ node_code: 'Y', logistics_location_id: 'L-Z' }, byBad).reason, 'DECLARED_LOCATION_COORDINATE_UNRESOLVED', 'V3B-4. declared location with (0,0)/invalid coords + no own coords → fail closed');
+section('V3C-5..8. Demo fallback uses existing active locations; exact filters; deterministic; distinct roles');
+var locs = locsV3C();
+var origin = DEMO4A_pickAnchor_(locs, { country: 'CN', preferTypes: ['factory'] });
+ok(origin && DEMO4A_locId_(origin.loc) === 'CN-FAC-1', 'V3C-5/7. origin fallback = deterministic active CN factory (CN-FAC-1)');
+eq(DEMO4A_pickAnchor_(locs, { country: 'ZZ' }), null, 'V3C-6. exact country filter: no ZZ location → null (never a wrong-country coordinate)');
+var wDest = DEMO4A_pickAnchor_(locs, { country: 'US', region: 'US East' });
+ok(wDest && DEMO4A_locId_(wDest.loc) === 'US-E-1' && wDest.region_exact === true, 'V3C-6. exact region match preferred (US East → US-E-1)');
+eq(DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', preferTypes: ['factory'] }).loc.logistics_location_id, DEMO4A_pickAnchor_(locsV3C(), { country: 'CN', preferTypes: ['factory'] }).loc.logistics_location_id, 'V3C-7. deterministic (same inputs → same pick)');
+var itC = planC.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
+ok(itC.origin_location_id && itC.current_location_id && itC.destination_location_id, 'V3C-8. primary in-transit has origin + current + destination location ids');
+ok(itC.origin_location_id !== itC.current_location_id && itC.current_location_id !== itC.destination_location_id && itC.origin_location_id !== itC.destination_location_id, 'V3C-8. the three primary anchors are distinct');
 
-section('V3B-5. abstract node needs no coordinates');
-var rAbs = DEMO4A_resolveNode_({ node_code: 'CUSTOMS', node_type: 'customs' }, byId);
-eq([rAbs.ok, rAbs.geographic, rAbs.location_ref_type, rAbs.latitude, rAbs.longitude], [true, false, '', '', ''], 'V3B-5. no location id + no own coords → ABSTRACT (ok, non-geographic, no fabricated coord/ref)');
-var planB = DEMO4A_buildPlan_(mastersV3B());
-ok(planB.ok, 'V3B-5. plan builds with an abstract customs node present');
-var absRows = planB.tables.shipment_routes.filter(function (r) { return DEMO4A_low_(r.node_type) === 'customs'; });
-ok(absRows.length >= 1 && absRows.every(function (r) { return DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.longitude) === '' && DEMO4A_str_(r.location_ref_id) === ''; }), 'V3B-5. abstract route rows carry NO coordinate and NO logistics_location ref');
-ok(planB.tables.shipment_events.every(function (e) { return DEMO4A_validCoord_(e.latitude, e.longitude); }), 'V3B-5. no event is emitted for an abstract node (every event coordinate is valid)');
+section('V3C-9..11. abstract timeline preserved; abstract rows blank; bound rows carry Demo evidence');
+var itShipC = itC.shipment_id;
+var itRoutesC = planC.tables.shipment_routes.filter(function (r) { return r.shipment_id === itShipC; });
+eq(itRoutesC.length, itC.nodes, 'V3C-9. full ordered template-node sequence preserved as route rows');
+var absC = itRoutesC.filter(function (r) { return DEMO4A_str_(r.location_ref_id) === '' && DEMO4A_str_(r.latitude) === ''; });
+ok(absC.length >= 1, 'V3C-9/10. abstract nodes remain as coordinate-blank timeline rows');
+ok(absC.every(function (r) { return DEMO4A_str_(r.node_code) !== '' && DEMO4A_str_(r.route_template_node_id) !== ''; }), 'V3C-10. abstract rows keep node code + template node id (timeline lineage) but no coordinate');
+var synthEv = planC.tables.shipment_events.filter(function (e) { return /DEMO-4A-SYNTHETIC-RUNTIME-BINDING/.test(DEMO4A_str_(e.note)); });
+ok(synthEv.length >= 1, 'V3C-11. synthetic-bound events carry explicit DEMO-4A-SYNTHETIC-RUNTIME-BINDING evidence');
+ok(planC.binding_manifest.some(function (m) { return /DEMO_SYNTHETIC_RUNTIME_BINDING/.test(m); }), 'V3C-11. binding manifest records the synthetic binding type');
 
-section('V3B-6. geographic origin/destination required');
-eq(DEMO4A_templateEligibility_(tpl('T1'), [nodeAbs('T1', 1, 'customs', 'x'), nodeOwn('T1', 2, 33, -83, 'port', 'p'), nodeOwn('T1', 3, 34, -84, 'destination', 'd')], {}).reason, 'ORIGIN_NODE_NOT_GEOGRAPHIC', 'V3B-6. abstract origin (first node) with ≥2 geo → ORIGIN_NODE_NOT_GEOGRAPHIC');
-eq(DEMO4A_templateEligibility_(tpl('T2'), [nodeOwn('T2', 1, 30, -80, 'origin', 'o'), nodeOwn('T2', 2, 33, -83, 'port', 'p'), nodeAbs('T2', 3, 'customs', 'x')], {}).reason, 'DESTINATION_NODE_NOT_GEOGRAPHIC', 'V3B-6. abstract destination (last node) with ≥2 geo → DESTINATION_NODE_NOT_GEOGRAPHIC');
-eq(DEMO4A_templateEligibility_(tpl('T3'), [nodeAbs('T3', 1, 'a', 'x'), nodeAbs('T3', 2, 'b', 'y')], {}).reason, 'FEWER_THAN_TWO_GEOGRAPHIC_NODES', 'V3B-6. fewer than two geographic nodes → ineligible');
+section('V3C-12..15. events geographic + chronology + status; coords equal master');
+var evC = planC.tables.shipment_events.filter(function (e) { return e.shipment_id === itShipC; }).sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); });
+var lastC = evC[evC.length - 1];
+ok(DEMO4A_low_(lastC.event_status) === 'current' && DEMO4A_validCoord_(lastC.latitude, lastC.longitude), 'V3C-12. current event is geographic (valid coord) with status current');
+var curRow = itRoutesC.filter(function (r) { return DEMO4A_low_(r.status) === 'current'; })[0];
+eq([DEMO4A_num_(lastC.latitude), DEMO4A_num_(lastC.longitude)], [DEMO4A_num_(curRow.latitude), DEMO4A_num_(curRow.longitude)], 'V3C-12. current event references the current geographic route row');
+var plannedRows = {}; itRoutesC.forEach(function (r) { if (DEMO4A_low_(r.status) === 'planned') plannedRows[r.shipment_route_id] = 1; });
+ok(evC.every(function (e) { return !plannedRows[e.shipment_route_id]; }), 'V3C-13. no event on a future planned route row');
+var recvShip = planC.per_shipment.filter(function (s) { return s.status === 'received'; })[0];
+var recvEv = planC.tables.shipment_events.filter(function (e) { return e.shipment_id === recvShip.shipment_id; }).sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); });
+eq(DEMO4A_low_(recvEv[recvEv.length - 1].event_type), 'received', 'V3C-14. received shipment latest event is received');
+(function () { var byId = DEMO4A_indexLocations_(locsV3C());
+  ok(planC.tables.shipment_events.every(function (e) { if (DEMO4A_str_(e.latitude) === '') return true; var route = planC.tables.shipment_routes.filter(function (r) { return r.shipment_route_id === e.shipment_route_id; })[0]; var loc = route && route.location_ref_id ? byId[route.location_ref_id] : null; return !loc || (DEMO4A_num_(loc.latitude).toFixed(5) === DEMO4A_num_(e.latitude).toFixed(5)); }), 'V3C-15. every bound event coordinate equals the master logistics_locations coordinate'); })();
 
-section('V3B-7. primary in-transit current event is geographic');
-var primary = planB.per_shipment.filter(function (s) { return s.slot === 'in_transit'; })[0];
-ok(primary && primary.current_node_geographic === true, 'V3B-7. in-transit shipment current node is geographic');
-var itShipId = primary.shipment_id;
-var itEvents = planB.tables.shipment_events.filter(function (e) { return e.shipment_id === itShipId; }).sort(function (a, b) { return DEMO4A_num_(a.event_sequence) - DEMO4A_num_(b.event_sequence); });
-var lastIt = itEvents[itEvents.length - 1];
-ok(DEMO4A_low_(lastIt.event_status) === 'current' && DEMO4A_validCoord_(lastIt.latitude, lastIt.longitude), 'V3B-7. the current event carries valid non-(0,0) coordinates (geographic node)');
-ok(planB.visibility.primary_map_record && DEMO4A_validCoord_(planB.visibility.primary_map_record.marker_lat, planB.visibility.primary_map_record.marker_lng), 'V3B-7. primary map marker has real coordinates');
+section('V3C-16. checksum binds bindings/locations/coordinates');
+eq(DEMO4A_buildPlan_(mastersV3C()).checksum, planC.checksum, 'V3C-16. deterministic rebuild (identical checksum)');
+(function () { var m2 = mastersV3C(); m2.locations = m2.locations.map(function (l) { var c = Object.assign({}, l); if (c.logistics_location_id === 'US-C-1') c.latitude = 40.0; return c; });
+  var p2 = DEMO4A_buildPlan_(m2); ok(p2.ok && p2.checksum !== planC.checksum, 'V3C-16. changing a bound location coordinate changes the checksum'); })();
 
-section('V3B-8. W/C/E selection with real-shaped (own-coord) fixtures');
-eq(planB.region_selection_mode, 'DISTINCT_WCE', 'V3B-8. distinct W/C/E selected from own-coordinate nodes (no logistics_location join needed)');
-eq(planB.chosen_templates.map(function (c) { return c.region; }).sort(), ['US_CENTRAL', 'US_EAST', 'US_WEST'], 'V3B-8. the three regions resolve');
-ok(planB.chosen_templates.every(function (c) { return c.geographic_nodes >= 2 && typeof c.abstract_nodes === 'number'; }), 'V3B-8. chosen templates expose geographic + abstract node counts');
-ok(planB.visibility.primary_map_record.shipment_id === planB.per_shipment.filter(function (s) { return s.region === 'US_CENTRAL'; })[0].shipment_id, 'V3B-8. richest (RT-C, 3 geo) is the primary in-transit');
+section('V3C-17..20. V3A safety + state refusal + retry + CLEAR');
+ok(DEMO4A_verifyJournal_(JSON.parse(JSON.stringify(DEMO4A_buildJournal_(planC))), DEMO4A_buildJournal_(planC)).ok, 'V3C-17. journal build/verify intact on the V3C plan');
+var rbC = DEMO4A_rollbackPlan_(DEMO4A_allIds_(planC)); eq(rbC.map(function (x) { return x.table; }), ['shipment_events', 'shipment_routes', 'shipment_lines', 'shipments', 'shipping_plan_lines', 'shipping_plans'], 'V3C-17. inserted-only reverse-FK rollback order intact');
+eq(DEMO4A_classifyState_(planC, emptyLive()).classification, 'ABSENT_ALL', 'V3C-18. absent → insert path');
+var partC = liveFromPlan(planC); partC.shipment_events.rows = []; eq(DEMO4A_classifyState_(planC, partC).classification, 'PARTIAL_PRESENT', 'V3C-18. partial refuses');
+var driftC = liveFromPlan(planC); driftC.shipment_routes.rows[0].latitude = 0.123; eq(DEMO4A_classifyState_(planC, driftC).classification, 'CONTENT_DRIFT', 'V3C-18. content drift refuses');
+var dupC = liveFromPlan(planC); dupC.shipments.rows.push(JSON.parse(JSON.stringify(dupC.shipments.rows[0]))); eq(DEMO4A_classifyState_(planC, dupC).classification, 'DUPLICATE_DEMO_ID', 'V3C-18. duplicate refuses');
+eq(DEMO4A_classifyState_(planC, liveFromPlan(planC)).classification, 'PRESENT_EXACT_ALL', 'V3C-19. exact retry → PRESENT_EXACT_ALL (REUSED, six zero deltas)');
+ok(DEMO4A_validateLiveRows_(planC, liveFromPlan(planC), mastersV3C()).demo_seed_validated, 'V3C-19. exact live + masters → DEMO_SEED_VALIDATED (bound coords equal master authority)');
+ok(DEMO4A_CONFIRMED_CLEAR_TOKEN_ === 'PASTE_DEMO_CLEAR_TOKEN_HERE' && /CLEAR_REFUSED_STAGED_OFF/.test(clearFn), 'V3C-20. CLEAR remains disarmed (placeholder token)');
 
-section('V3B-9. full route sequence preserved; markers geographic only');
-var itRoutes = planB.tables.shipment_routes.filter(function (r) { return r.shipment_id === itShipId; });
-eq(itRoutes.length, primary.nodes, 'V3B-9. shipment_routes carries the FULL node sequence (incl. abstract) for the path');
-ok(primary.abstract_nodes >= 1 && primary.event_rows < primary.nodes, 'V3B-9. fewer events (markers) than route nodes — abstract nodes are not markers');
-ok(itRoutes.some(function (r) { return DEMO4A_str_(r.latitude) === '' && DEMO4A_str_(r.location_ref_id) === ''; }), 'V3B-9. at least one abstract route node with no coordinate remains in the sequence');
+section('V3C-21..23. no production side effects; no line marketplace');
+['handleUpsertShippingAllocationDraftAtomic', 'handleCreateShipment', 'confirmAndDispatch', 'handleReceiveShipment', 'reserveFactoryStock', 'deductFactoryStock', 'consumePurchaseOrder', 'weeklyAiPlanGenerate', 'generateDocument', 'UrlFetchApp', 'MailApp', 'GmailApp'].forEach(function (b) { ok(G.indexOf(b) === -1, 'V3C-21/22. no banned production/side-effect API: ' + b); });
+ok(DEMO4A_REQUIRED_COLS_.shipping_plan_lines.indexOf('marketplace') === -1 && planC.tables.shipping_plan_lines.every(function (r) { return !r.hasOwnProperty('marketplace'); }), 'V3C-23. shipping_plan_lines does not require/write marketplace');
 
-section('V3B-10. V3A safety intact');
-ok(DEMO4A_classifyState_(planB, emptyLive()).classification === 'ABSENT_ALL' && DEMO4A_classifyState_(planB, liveFromPlan(planB)).classification === 'PRESENT_EXACT_ALL', 'V3B-10. ABSENT_ALL/PRESENT_EXACT_ALL classification intact on the new plan');
-ok(DEMO4A_validateLiveRows_(planB, liveFromPlan(planB)).checks.live_route_lineage_seq_coord.ok && DEMO4A_validateLiveRows_(planB, liveFromPlan(planB)).checks.live_event_fk_chrono_agreement.ok, 'V3B-10. live validator passes for the geographic+abstract plan');
-ok(DEMO4A_verifyJournal_(JSON.parse(JSON.stringify(DEMO4A_buildJournal_(planB))), DEMO4A_buildJournal_(planB)).ok, 'V3B-10. journal build/verify intact on the new plan');
-eq(DEMO4A_buildPlan_(mastersV3B()).checksum, planB.checksum, 'V3B-10. deterministic rebuild (checksum stable)');
-
-section('V3B-B. diagnostic authority + counts');
-var diag = DEMO4A_diagnoseResolution_(mastersV3B().templates, mastersV3B().nodes, mastersV3B().locations);
-eq([diag.active_template_count, diag.valid_templates_by_region.US_WEST, diag.valid_templates_by_region.US_CENTRAL, diag.valid_templates_by_region.US_EAST], [3, 1, 1, 1], 'V3B-B. diagnostic counts active + valid-by-region');
-eq(diag.candidate_mappings.node_direct_lat_lng, mastersV3B().nodes.filter(function (n) { return DEMO4A_validCoord_(n.latitude, n.longitude); }).length, 'V3B-B. reports node direct lat/lng count');
-ok(diag.intentionally_abstract_nodes >= 3 && diag.minimum_geographic_nodes_required === 2, 'V3B-B. reports abstract-node count + the proven minimum geographic requirement (2)');
-ok(diag.safe_examples.length <= 5 && diag.safe_examples.every(function (e) { return /^[0-9a-f]{8}$/.test(e.template_fp); }), 'V3B-B. examples are fingerprinted + capped (never all nodes dumped)');
-// a declared-but-unresolved node is counted, not silently dropped
-var badMasters = mastersV3B(); badMasters.nodes = badMasters.nodes.concat([{ route_template_node_id: 'RT-C-BAD', route_template_id: 'RT-C', node_sequence: 9, node_type: 'port', node_code: 'BAD9', logistics_location_id: 'GHOST' }]);
-var diagBad = DEMO4A_diagnoseResolution_(badMasters.templates, badMasters.nodes, badMasters.locations);
-ok(diagBad.unresolved_declared_location_refs >= 1 && diagBad.failure_reason_counts.DECLARED_LOGISTICS_LOCATION_NOT_FOUND >= 1, 'V3B-B. an unresolved declared reference is surfaced as a failure reason (fail closed)');
+section('V3C-B. diagnostic identifier audit');
+var diagC = DEMO4A_diagnoseResolution_(mastersV3C().templates, mastersV3C().nodes, mastersV3C().locations);
+ok(diagC.exact_identifier_match_counts && typeof diagC.exact_identifier_match_counts.un_locode === 'number', 'V3C-B. diagnostic reports per-identifier exact match counts');
+eq([diagC.node_binding_counts.canonical_master_binding, diagC.node_binding_counts.node_direct_coordinate], [0, 0], 'V3C-B. abstract-node fixtures: 0 canonical, 0 direct (all abstract, bound only by role)');
+ok(diagC.node_binding_counts.abstract === mastersV3C().nodes.length, 'V3C-B. all nodes classified abstract');
+ok(diagC.in_transit_current_capable_templates >= 1 && diagC.eligible_templates_by_region.US_WEST >= 1, 'V3C-B. reports current-capable + eligible-by-region counts');
+ok(diagC.safe_examples.length <= 5 && diagC.safe_examples.every(function (e) { return /^[0-9a-f]{8}$/.test(e.template_fp); }), 'V3C-B. fingerprinted, capped examples (never all 427 nodes)');
+// fail-closed: no locations at all → cannot build → precise reason + rejection counts
+var noLocs = mastersV3C(); noLocs.locations = [];
+var pFail = DEMO4A_buildPlan_(noLocs);
+eq(pFail.ok, false, 'V3C-G. no logistics_locations → fail closed (no fabricated coordinate)');
+ok(pFail.rejection_counts && Object.keys(pFail.rejection_counts).length >= 1, 'V3C-G. fail-closed carries exact rejection counts');
 
 done();
