@@ -3437,17 +3437,166 @@ function TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE() {
     out.lineage_values = { calculation_run_id: auth.fields.calculation_run_id.old_raw, formula_version: auth.fields.formula_version.old_raw, calculated_at: auth.fields.calculated_at.old_raw, source_data_as_of: auth.fields.source_data_as_of.old_raw };
     // SOURCE proof (not row-count inference): the pre-R6F2G6 REGENERATE branch physically writes in place.
     out.regenerated_branch_physical_writes = 'YES — sadAtomicUpsertCore_ REGENERATE branch: header setValue on status/route(recommended_*)/lineage + draft_version++ + updated_by/updated_at (16_:~709-720); EVERY matched line setValue updated_at + sadRegenerateLinePatch_ fields (16_:~763-775). Row-count delta stays 0/0 while cells change — delta 0/0 does NOT prove zero-write.';
-    // The R6F2G6 fix routes an exact representation-equivalent frozen retry to the zero-write REUSE early-return BEFORE
-    // any mutation (sadK2SemanticPayloadEqual_). Its presence is the source-level guarantee; the DEFINITIVE runtime proof
-    // is content-checksum equality across a retry (now enforced by the fixed verifier), never a row-count.
-    var fixPresent = (typeof sadK2SemanticPayloadEqual_ === 'function');
-    out.semantic_reuse_gate_present = fixPresent;
-    out.classification = fixPresent ? 'TRUE_REUSE_ALREADY_NO_WRITE' : 'REGENERATED_IN_PLACE_WRITE_POSSIBLE';
-    out.definitive_proof_method = 'compare content_checksums before vs after a controlled retry; the fixed TEMP_R6F2F_VERIFY returns REUSED only when they are byte-equal AND every group outcome is REUSED (row counts alone are never sufficient).';
+    // R6F2G7 (A) — classification is now based on an ACTUAL read-only evaluation of the live stored payload vs a freshly
+    // reconstructed incoming KMWRR payload through the SAME comparator sadAtomicUpsertCore_ uses — NOT on the mere
+    // presence of the semantic gate in source (the R6F2G6 diagnostic's false TRUE_REUSE was exactly that mistake).
+    out.semantic_reuse_gate_present = (typeof sadK2SemanticPayloadEqual_ === 'function');
+    var ld = TEMP_r6f2g7LiveSemanticDiff_(token);
+    out.live_semantic = { available: ld.available, classification: ld.classification, reason: ld.reason || null, semantic_equal: ld.available ? ld.semantic_equal : null, diff_count: ld.available ? ld.diff.diff_count : null, true_business_diff_count: ld.available ? ld.diff.true_business_diff_count : null, contract: ld.available ? ld.contract : null };
+    out.classification = ld.classification;   // LIVE_SEMANTIC_EQUAL_TRUE_REUSE_READY | LIVE_SEMANTIC_DIFF_REGENERATION_WOULD_OCCUR | LIVE_COMPARISON_UNAVAILABLE
+    out.definitive_proof_method = 'a read-only live evaluation of stored vs reconstructed-incoming through the SAME comparator; TRUE reuse is authorized ONLY by LIVE_SEMANTIC_EQUAL_TRUE_REUSE_READY (see TEMP_R6F2G7_DIAGNOSE_LIVE_K2_SEMANTIC_DIFF for the field-by-field diff). Content-checksum equality across a retry remains the physical confirmation.';
     out.verdict = 'DIAGNOSED';
   } catch (e) { out.verdict = 'DIAGNOSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
   out.R6F2G6_ZERO_WRITE_CONFIRMED = 'YES (read-only: TEMP_readObjects_ + property read; no setValues/appendRow/setProperty/deleteRow)';
   Logger.log('R6F2G6_DIAGNOSE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FA-3C-DRAFT-MODEL-R6F2G7 — LIVE stored-vs-incoming semantic diff (read-only). Reconstructs the EXACT production
+// incoming K2 payload through the SAME path the atomic writer would receive (weeklyAiPlanHarvest_ → KMWHA mapper →
+// KMWRB → KMWRR.buildK2GenerationPlan), WITHOUT calling the atomic writer and WITHOUT any write, then compares it to the
+// live stored payload using the SAME comparator sadAtomicUpsertCore_ uses (sadK2SemanticPayloadEqual_). No second
+// approximation of the incoming payload is maintained.
+// ================================================================================================================
+// H — TRUTHFUL audit history of the two prior live regeneration attempts (draft_version reached 3; latest audit
+// timestamp 2026-08-23 22:08:57 Asia/Taipei). These audit fields are NOT rolled back or rewritten — they are truthful
+// evidence of actual in-place regeneration and are reported as-is.
+var TEMP_R6F2G7_AUDIT_HISTORY_ = { prior_live_regeneration_attempts: 2, draft_version_reached: 3, latest_audit_timestamp_taipei: '2026-08-23 22:08:57', note: 'truthful evidence of REGENERATED-in-place attempts; never rolled back or rewritten' };
+
+function TEMP_r6f2g7ReconstructIncoming_(token, ss) {
+  if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined' || typeof weeklyAiPlanHarvest_ !== 'function' || typeof sadK2DeterministicHeaderId_ !== 'function') return { ok: false, reason: 'NOT_BUNDLED' };
+  var sc = token.scope, cyc = token.planning_cycle;
+  var h = weeklyAiPlanHarvest_(ss, { company: sc.company, country: sc.country, planningCycle: cyc });
+  if (!h || !h.ok) return { ok: false, reason: 'HARVEST_UNAVAILABLE' };
+  var sp = (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment';
+  var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: cyc, businessScope: { company: sc.company, country: sc.country, marketplace: sc.marketplace, source_page: sp }, mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false, actor: 'r6f2g7_diag', now: procurementTimestamp_(), sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined' ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null), warehousesById: h.warehousesById, kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+  if (!mapped || !mapped.ready) return { ok: false, reason: 'MAP_UNAVAILABLE' };
+  var request = mapped.request; request.businessScope = request.businessScope || {}; request.businessScope.marketplace = sc.marketplace;
+  if (typeof KMWRB.buildWeeklySourceLines !== 'function' || typeof KMWRR.buildK2GenerationPlan !== 'function' || typeof weeklyAiPlanReadCarrierAuthorities_ !== 'function' || typeof weeklyAiPlanShipDate_ !== 'function' || typeof weeklyAiPlanK2AllocatedLines_ !== 'function') return { ok: false, reason: 'PRODUCTION_MAPPER_UNAVAILABLE' };
+  var src = KMWRB.buildWeeklySourceLines(request);
+  if (!src || !src.ok) return { ok: false, reason: 'SOURCE_LINES_UNAVAILABLE' };
+  var carriers = weeklyAiPlanReadCarrierAuthorities_(ss), shipDate = weeklyAiPlanShipDate_(h);
+  var M = String(sc.marketplace || '').trim();
+  var forMkt = weeklyAiPlanK2AllocatedLines_(src.lines, h).filter(function (a) { return String(a.marketplace || '').trim() === M; });
+  if (!forMkt.length) return { ok: false, reason: 'NO_ALLOCATED_LINES_FOR_SCOPE' };
+  var plan = KMWRR.buildK2GenerationPlan({ scope: { planning_cycle: cyc, company: sc.company, country: sc.country, marketplace: M, source_page: (request.businessScope.source_page || sp) },
+    allocatedLines: forMkt, warehousesById: h.warehousesById, rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: shipDate,
+    authorizedBySkuWindow: (function () { var a = {}; forMkt.forEach(function (x) { var k = String(x.sku).toLowerCase() + '|' + String(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(), sourceCeilingById: {} });
+  var expHeaderId = TEMP_str_((token.expected_header_ids_sorted || [])[0]);
+  var group = null; (plan.groups || []).forEach(function (g) { if (TEMP_str_(sadK2DeterministicHeaderId_(g.header)) === expHeaderId) group = g; });
+  if (!group) return { ok: false, reason: 'INCOMING_GROUP_NOT_FOUND' };
+  var lineage = (typeof weeklyAiPlanResolveGapRunLineage_ === 'function') ? weeklyAiPlanResolveGapRunLineage_(cyc, h, request) : { ok: false };
+  if (lineage && lineage.ok) { group.header.calculation_run_id = lineage.calculation_run_id; group.header.formula_version = lineage.formula_version; group.header.calculated_at = lineage.calculated_at; group.header.source_data_as_of = lineage.source_data_as_of; }
+  return { ok: true, header: group.header, lines: group.lines, lineage_ok: !!(lineage && lineage.ok) };
+}
+function TEMP_r6f2g7ReadStored_(token) {
+  var H = TEMP_readObjects_('shipping_allocation_drafts'), L = TEMP_readObjects_('shipping_allocation_draft_lines');
+  var expHdr = TEMP_str_((token.expected_header_ids_sorted || [])[0]);
+  var expL = {}; (token.expected_line_ids_sorted || []).forEach(function (id) { expL[TEMP_str_(id)] = 1; });
+  var header = null; (H.rows || []).forEach(function (r) { if (TEMP_str_(TEMP_r6f2fHeaderId_(r)) === expHdr) header = r; });
+  var lines = (L.rows || []).filter(function (x) { return expL[TEMP_str_(TEMP_r6f2fLineId_(x))]; });
+  return { header: header, lines: lines };
+}
+// safe value: fingerprint confidential SKU/site-SKU; canonical value for everything else.
+function TEMP_r6f2g7SafeVal_(field, v) { if (field === 'sku' || field === 'site_sku') return (typeof TEMP_r5bIdFingerprint_ === 'function') ? TEMP_r5bIdFingerprint_(TEMP_str_(v)) : ('h' + TEMP_r5bHash_(TEMP_str_(v))); return sadFpNorm_(field, v); }
+function TEMP_r6f2g7Type_(v) { return (typeof TEMP_r5bTypeOf_ === 'function') ? TEMP_r5bTypeOf_(v) : (v == null ? 'null' : typeof v); }
+function TEMP_r6f2g7Category_(field, storedV, incV, incBlank, equal) {
+  if (typeof SAD_K2_SEM_EXCLUDE_ !== 'undefined' && SAD_K2_SEM_EXCLUDE_[field]) return 'AUDIT_FIELD_SHOULD_NOT_BE_IN_PAYLOAD';
+  if (incBlank) return 'BLANK_VS_DEFAULT_EQUIVALENT';                       // incoming not provided → regeneration preserves the stored cell
+  var sCanon = sadFpNorm_(field, storedV), iCanon = sadFpNorm_(field, incV);
+  var isDate = (/_date$/.test(field) || field === 'window_start_date' || field === 'window_end_date' || field === 'required_by_date');
+  var isNum = (typeof SAD_K2_FP_NUMERIC_FIELDS_ !== 'undefined' && SAD_K2_FP_NUMERIC_FIELDS_[field]);
+  if (equal) {
+    if (isDate && (TEMP_r6f2g7Type_(storedV) === 'Date' || TEMP_r6f2g7Type_(incV) === 'Date')) return 'DATE_REPRESENTATION_ONLY';
+    if (isNum && TEMP_str_(storedV) !== TEMP_str_(incV)) return 'NUMERIC_REPRESENTATION_ONLY';
+    return 'EQUAL';
+  }
+  if (isDate && iCanon !== '' && !/^\d{4}-\d\d-\d\d/.test(iCanon)) return 'UNKNOWN_UNPARSEABLE';
+  return 'TRUE_BUSINESS_VALUE_DIFFERENCE';                                   // nonblank incoming that differs canonically (blank≠zero≠false)
+}
+function TEMP_r6f2g7FieldRec_(field, sv, iv) {
+  var incBlank = TEMP_str_(iv) === '', eq = sadK2SemFieldEqual_(field, sv, iv);
+  return { field: field, stored_type: TEMP_r6f2g7Type_(sv), incoming_type: TEMP_r6f2g7Type_(iv), stored: TEMP_r6f2g7SafeVal_(field, sv), incoming: TEMP_r6f2g7SafeVal_(field, iv), stored_canon: sadFpNorm_(field, sv), incoming_canon: incBlank ? '(omitted→preserved)' : sadFpNorm_(field, iv), equal: eq, category: TEMP_r6f2g7Category_(field, sv, iv, incBlank, eq) };
+}
+function TEMP_r6f2g7BuildDiff_(hPrior, lPrior, hInc, lInc) {
+  var headerFields = [], lineDiffs = [], diffCount = 0, trueBiz = 0;
+  SAD_K2_HEADER_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, (hPrior || {})[f], (hInc || {})[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE') trueBiz++; } headerFields.push(rec); });
+  var pById = {}, iById = {}; (lPrior || []).forEach(function (l) { pById[sadK2LineIdentity_(l)] = l; }); (lInc || []).forEach(function (l) { iById[sadK2LineIdentity_(l)] = l; });
+  var keys = {}; Object.keys(pById).forEach(function (k) { keys[k] = 1; }); Object.keys(iById).forEach(function (k) { keys[k] = 1; });
+  Object.keys(keys).sort().forEach(function (key) {
+    var sp = pById[key], si = iById[key];
+    if (!sp || !si) { lineDiffs.push({ identity_fp: TEMP_r5bHash_(key), present_stored: !!sp, present_incoming: !!si, category: 'MISSING_OR_EXTRA_LINE' }); diffCount++; trueBiz++; return; }
+    var fields = []; SAD_K2_LINE_FP_.forEach(function (f) { var rec = TEMP_r6f2g7FieldRec_(f, sp[f], si[f]); if (!rec.equal) { diffCount++; if (rec.category === 'TRUE_BUSINESS_VALUE_DIFFERENCE' || rec.category === 'UNKNOWN_UNPARSEABLE') trueBiz++; } fields.push(rec); });
+    lineDiffs.push({ identity_fp: TEMP_r5bHash_(key), fields: fields });
+  });
+  return { header_fields: headerFields, line_diffs: lineDiffs, diff_count: diffCount, true_business_diff_count: trueBiz };
+}
+function TEMP_r6f2g7SemChecksum_(header, lines) {
+  var hp = SAD_K2_HEADER_FP_.filter(function (f) { return !SAD_K2_SEM_EXCLUDE_[f]; }).map(function (f) { return f + '=' + sadFpNorm_(f, (header || {})[f]); }).join('|');
+  var lp = (lines || []).map(function (l) { return sadK2LineIdentity_(l) + '::' + SAD_K2_LINE_FP_.filter(function (f) { return !SAD_K2_SEM_EXCLUDE_[f]; }).map(function (f) { return f + '=' + sadFpNorm_(f, l[f]); }).join('|'); }).sort();
+  return TEMP_r5bHash_(hp + '\n#\n' + lp.join('\n'));
+}
+// the SHARED read-only live evaluation used by the R6F2G7 diagnostic/preflight AND the (fixed) R6F2G6 diagnostic.
+function TEMP_r6f2g7LiveSemanticDiff_(token) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var inc = TEMP_r6f2g7ReconstructIncoming_(token, ss);
+  if (!inc.ok) return { available: false, classification: 'LIVE_COMPARISON_UNAVAILABLE', reason: inc.reason };
+  var stored = TEMP_r6f2g7ReadStored_(token);
+  if (!stored.header) return { available: false, classification: 'LIVE_COMPARISON_UNAVAILABLE', reason: 'STORED_HEADER_ABSENT' };
+  var semEqual = sadK2SemanticPayloadEqual_(stored.header, stored.lines, inc.header, inc.lines);
+  var diff = TEMP_r6f2g7BuildDiff_(stored.header, stored.lines, inc.header, inc.lines);
+  return { available: true, classification: semEqual ? 'LIVE_SEMANTIC_EQUAL_TRUE_REUSE_READY' : 'LIVE_SEMANTIC_DIFF_REGENERATION_WOULD_OCCUR', semantic_equal: semEqual, contract: SAD_K2_SEM_CONTRACT_,
+    diff: diff, stored_semantic_checksum: TEMP_r6f2g7SemChecksum_(stored.header, stored.lines), incoming_semantic_checksum: TEMP_r6f2g7SemChecksum_(inc.header, inc.lines), stored_line_count: (stored.lines || []).length, incoming_line_count: (inc.lines || []).length, lineage_ok: inc.lineage_ok };
+}
+
+function TEMP_R6F2G7_DIAGNOSE_LIVE_K2_SEMANTIC_DIFF() {
+  var out = { tool: 'TEMP_R6F2G7_DIAGNOSE_LIVE_K2_SEMANTIC_DIFF', mode: 'STRICTLY READ-ONLY (reconstructs the incoming payload without the atomic writer; no write)', output_contract: 'ONE_PRIMARY_LOG_ENTRY', comparator_contract: SAD_K2_SEM_CONTRACT_, audit_history: TEMP_R6F2G7_AUDIT_HISTORY_ };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; Logger.log('R6F2G7_DIAGNOSE ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var val = TEMP_r6f2gFrozenScopeValidated_(token); out.frozen_scope_verdict = val.verdict;
+    var ld = TEMP_r6f2g7LiveSemanticDiff_(token);
+    out.classification = ld.classification; out.live_comparison_available = ld.available;
+    if (!ld.available) { out.reason = ld.reason; }
+    else {
+      out.semantic_equal = ld.semantic_equal; out.diff_count = ld.diff.diff_count; out.true_business_diff_count = ld.diff.true_business_diff_count;
+      out.stored_semantic_checksum = ld.stored_semantic_checksum; out.incoming_semantic_checksum = ld.incoming_semantic_checksum;
+      out.stored_line_count = ld.stored_line_count; out.incoming_line_count = ld.incoming_line_count; out.lineage_reconstructed = ld.lineage_ok;
+      out.header_field_diff = ld.diff.header_fields; out.line_field_diff = ld.diff.line_diffs;
+    }
+    out.verdict = 'DIAGNOSED';
+  } catch (e) { out.verdict = 'DIAGNOSE_THREW'; out.reason = (e && e.message ? e.message : String(e)); }
+  out.R6F2G7_ZERO_WRITE_CONFIRMED = 'YES (read-only reconstruction + comparison; no atomic-writer call, no setValues/appendRow/setProperty/deleteRow)';
+  Logger.log('R6F2G7_DIAGNOSE ' + JSON.stringify(out, null, 2));
+  return out;
+}
+
+function TEMP_R6F2G7_PREFLIGHT_TRUE_ZERO_WRITE_REUSE() {
+  var out = { tool: 'TEMP_R6F2G7_PREFLIGHT_TRUE_ZERO_WRITE_REUSE', mode: 'STRICTLY READ-ONLY authorization preflight', output_contract: 'ONE_PRIMARY_LOG_ENTRY', comparator_contract: SAD_K2_SEM_CONTRACT_, audit_history: TEMP_R6F2G7_AUDIT_HISTORY_ };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(TEMP_R6F2E_STORE_PROP_KEY_);
+    if (!raw) { out.verdict = 'NO_FROZEN_SCOPE_STORED'; out.may_run_reuse_verifier = false; Logger.log('R6F2G7_PREFLIGHT ' + JSON.stringify(out, null, 2)); return out; }
+    var token = JSON.parse(raw);
+    var val = TEMP_r6f2gFrozenScopeValidated_(token); var st = val.state || {};
+    var frozenOk = (val.verdict === 'FROZEN_SCOPE_VALIDATED');
+    var fiveLine = (st.matched_line_ids && st.matched_line_ids.length === token.expected_k2_line_count && st.missing_line_ids.length === 0 && st.unexpected_line_ids.length === 0);
+    var ld = TEMP_r6f2g7LiveSemanticDiff_(token);
+    var semEqual = ld.available && ld.semantic_equal === true;
+    var diffCount = ld.available ? ld.diff.diff_count : null;
+    var trueBiz = ld.available ? ld.diff.true_business_diff_count : null;
+    var predicted = !ld.available ? 'UNKNOWN' : (ld.semantic_equal ? 'REUSED' : 'REGENERATED');
+    out.frozen_scope_validated = frozenOk; out.frozen_scope_verdict = val.verdict; out.exact_five_line_membership = !!fiveLine;
+    out.live_comparison_available = ld.available; out.live_semantic_equal = ld.available ? ld.semantic_equal : null; out.diff_count = diffCount; out.true_business_difference_count = trueBiz;
+    out.stored_semantic_checksum = ld.available ? ld.stored_semantic_checksum : null; out.incoming_semantic_checksum = ld.available ? ld.incoming_semantic_checksum : null;
+    out.predicted_production_outcome = predicted;
+    out.may_run_reuse_verifier = !!(frozenOk && semEqual && diffCount === 0 && predicted === 'REUSED' && fiveLine);
+    out.verdict = out.may_run_reuse_verifier ? 'TRUE_ZERO_WRITE_REUSE_AUTHORIZED' : 'TRUE_ZERO_WRITE_REUSE_NOT_AUTHORIZED';
+    if (!out.may_run_reuse_verifier && ld.available && !ld.semantic_equal) out.blocking = ld.diff.header_fields.filter(function (f) { return !f.equal; }).concat(ld.diff.line_diffs).slice(0, 8);
+  } catch (e) { out.verdict = 'PREFLIGHT_THREW'; out.may_run_reuse_verifier = false; out.reason = (e && e.message ? e.message : String(e)); }
+  out.R6F2G7_ZERO_WRITE_CONFIRMED = 'YES (read-only; no write, no atomic-writer call)';
+  Logger.log('R6F2G7_PREFLIGHT ' + JSON.stringify(out, null, 2));
   return out;
 }
 

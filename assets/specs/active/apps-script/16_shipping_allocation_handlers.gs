@@ -486,13 +486,39 @@ function sadFpNorm_(field, value) {
   if (SAD_K2_FP_NUMERIC_FIELDS_[field]) { var s = String(value == null ? '' : value).trim(); if (s === '') return ''; var n = Number(s); return isFinite(n) ? String(n) : s; }
   return String(value == null ? '' : value).trim();
 }
+// F1-7N-FA-3C-R6F2G7 — the SEMANTIC-equivalence comparator (contract SAD_K2_SEM_CONTRACT_) used by the atomic REUSE
+// branch AND by the read-only R6F2G7 live diagnostic (exactly the same comparator). It answers "would a REGENERATE
+// change any persisted BUSINESS field?" It is representation-robust (R6F2G6 dates/numerics) and, additionally, truthful
+// to the writer's omit/default/preserve semantics — so a lifecycle/omitted field cannot force a spurious REGENERATE,
+// WITHOUT weakening genuine business-change detection:
+//   • status / line_status are lifecycle/audit fields the K2 payload authority (KMWRR) never emits, and regeneration
+//     does not treat them as content (line_status is not patched by sadRegenerateLinePatch_; header status is reset to
+//     'draft' by the writer). They are EXCLUDED from equality (SAD_K2_SEM_EXCLUDE_) — REUSE preserves them (a write-free
+//     no-op), which is strictly safer than REGENERATE. This is the exact R6F2G6→live false negative.
+//   • a BLANK incoming value (null/undefined/'') is "not provided": regeneration adopts a field only when the incoming
+//     provides a NONBLANK value (sadRegenerateLinePatch_), so a blank incoming preserves the stored cell = no change.
+//     An incoming '0' or false is NONBLANK and therefore compared (blank≠zero, blank≠false).
+//   • lines are matched by K2 identity (sku|site_sku|window_code); membership must be EXACT (missing/extra ⇒ not equal);
+//     genuine qty/SKU/window/route/snapshot changes are NONBLANK and compared strictly (canonically).
+var SAD_K2_SEM_CONTRACT_ = 'R6F2G7-SEM-V2';
+var SAD_K2_SEM_EXCLUDE_ = { status: 1, line_status: 1 };
+function sadK2LineIdentity_(l) { function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); } l = l || {}; return s(l.sku) + '|' + s(l.site_sku) + '|' + s(l.window_code); }
+// per-FP-field semantic equality under the contract. excluded ⇒ equal; blank incoming ⇒ preserved (equal); else canon-equal.
+function sadK2SemFieldEqual_(field, storedVal, incVal) {
+  if (SAD_K2_SEM_EXCLUDE_[field]) return true;
+  if (String(incVal == null ? '' : incVal).trim() === '') return true;   // not provided → regeneration preserves → no change
+  return sadFpNorm_(field, storedVal) === sadFpNorm_(field, incVal);
+}
 function sadK2SemanticPayloadEqual_(hPrior, lPrior, hInc, lInc) {
   hPrior = hPrior || {}; hInc = hInc || {};
-  for (var i = 0; i < SAD_K2_HEADER_FP_.length; i++) { var f = SAD_K2_HEADER_FP_[i]; if (sadFpNorm_(f, hPrior[f]) !== sadFpNorm_(f, hInc[f])) return false; }
-  function lkey(l) { return SAD_K2_LINE_FP_.map(function (ff) { return sadFpNorm_(ff, (l || {})[ff]); }).join('~'); }
-  var a = (lPrior || []).map(lkey).sort(), b = (lInc || []).map(lkey).sort();
-  if (a.length !== b.length) return false;
-  for (var j = 0; j < a.length; j++) if (a[j] !== b[j]) return false;
+  for (var i = 0; i < SAD_K2_HEADER_FP_.length; i++) { var f = SAD_K2_HEADER_FP_[i]; if (!sadK2SemFieldEqual_(f, hPrior[f], hInc[f])) return false; }
+  var pById = {}, iById = {};
+  (lPrior || []).forEach(function (l) { pById[sadK2LineIdentity_(l)] = l; });
+  (lInc || []).forEach(function (l) { iById[sadK2LineIdentity_(l)] = l; });
+  var pk = Object.keys(pById).sort(), ik = Object.keys(iById).sort();
+  if (pk.length !== ik.length) return false;
+  for (var k = 0; k < pk.length; k++) if (pk[k] !== ik[k]) return false;
+  for (var m = 0; m < pk.length; m++) { var sp = pById[pk[m]], si = iById[pk[m]]; for (var j = 0; j < SAD_K2_LINE_FP_.length; j++) { var lf = SAD_K2_LINE_FP_[j]; if (!sadK2SemFieldEqual_(lf, sp[lf], si[lf])) return false; } }
   return true;
 }
 
@@ -742,7 +768,7 @@ function sadAtomicUpsertCore_(body) {
     // R6F2G6 — REUSE (zero write) when the raw fingerprints match OR the payload is representation-equivalent (a
     // Sheets Date/number coercion is NOT a content change). Both return BEFORE the first business-table mutation.
     if (priorFp === incFp || sadK2SemanticPayloadEqual_(priorHeaderObj, priorLines, header, lines)) {
-      return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true, reuse_basis: (priorFp === incFp ? 'FINGERPRINT_EQUAL' : 'SEMANTIC_EQUIVALENT') } });
+      return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true, reuse_basis: (priorFp === incFp ? 'FINGERPRINT_EQUAL' : 'SEMANTIC_EQUIVALENT@' + SAD_K2_SEM_CONTRACT_) } });
     }
     outcome = 'REGENERATE';
     nextVersion = String((parseInt(priorVersion, 10) || 1) + 1);   // increment EXACTLY once

@@ -1654,3 +1654,33 @@ New pure `TEMP_r6f2gReuseVerdict_(success, perGroup, rowDeltaZero, dupK2Zero, co
 
 ### deployment
 `16_shipping_allocation_handlers.gs` (standalone) + `TEMP_migrate_request_order_draft_v2.gs` + tests + this doc. No bundle rebuild, no 61_/00_config/core/frontend. APPS_SCRIPT_SYNC_REQUIRED: `16_shipping_allocation_handlers.gs`, `TEMP_migrate_request_order_draft_v2.gs`. No live write; K2 live generation remains HALTed.
+
+## §64 — F1-7N-FA-3C-DRAFT-MODEL-R6F2G7-LIVE-SEMANTIC-DIFF-TRUE-REUSE — expose the live diff + reach TRUE_REUSE (2026-08-24)
+
+Production `16_shipping_allocation_handlers.gs` (STANDALONE .gs, NOT bundled) + TEMP diagnostics + tests + this doc. No core, no 61_, no 00_config, no frontend. No live write; REUSE/executor/migration/rollback/Submit not run.
+
+### Live facts (post-R6F2G6) & the remaining false negative
+After R6F2G6 the frozen scope stayed FROZEN_SCOPE_VALIDATED, yet the controlled retry STILL REGENERATED (before checksum `b60a5418` → after `d1edec43`; draft_version 2→3; header + all five line `updated_at` changed) and the fail-closed verifier correctly returned REUSE_UNVERIFIED / NON_REUSE_GROUP_OUTCOME. So `sadK2SemanticPayloadEqual_` returned false on live data, and the R6F2G6 diagnostic's `TRUE_REUSE_ALREADY_NO_WRITE` (derived only from the gate's presence in source) was misleading.
+
+**Exact false negative (D):** the FP includes lifecycle/audit fields the K2 payload authority (KMWRR) never emits — the incoming header omits `status` (the writer defaults it to `'draft'`, and REGENERATE even resets it), and the incoming lines omit `line_status` (in `SAD_K2_LINE_FP_` but **never patched by `sadRegenerateLinePatch_`**). The R6F2G6 comparator compared stored `'draft'`/`'active'` against the omitted incoming → false. It was NOT another Date issue; dates were already canonical.
+
+### A — diagnostic truthfulness first
+`TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE` now classifies from an ACTUAL read-only live evaluation (`TEMP_r6f2g7LiveSemanticDiff_`), not gate presence: `LIVE_SEMANTIC_EQUAL_TRUE_REUSE_READY` / `LIVE_SEMANTIC_DIFF_REGENERATION_WOULD_OCCUR` / `LIVE_COMPARISON_UNAVAILABLE`. Only the first authorizes another attempt.
+
+### B — read-only live payload reconstruction
+`TEMP_R6F2G7_DIAGNOSE_LIVE_K2_SEMANTIC_DIFF()` reconstructs the exact incoming payload through the SAME production path the writer would receive — `weeklyAiPlanHarvest_` → `KMWHA.mapWeeklyHarvestToBatchRequest` → `KMWRB.buildWeeklySourceLines` → `weeklyAiPlanK2AllocatedLines_` → `KMWRR.buildK2GenerationPlan`, stamping lineage exactly as `weeklyAiPlanGenerateK2_` does — and compares to the live stored payload with the SAME comparator `sadAtomicUpsertCore_` uses. It NEVER calls the atomic writer and writes nothing (`LIVE_COMPARISON_UNAVAILABLE` if not bundled / harvest fails). No second approximation of the incoming payload is maintained.
+
+### C — field-by-field diff
+For the header and each line (matched by K2 identity `sku|site_sku|window_code`), over every `SAD_K2_HEADER_FP_`/`SAD_K2_LINE_FP_` field: stored raw type/value/fingerprint, incoming raw type/value/fingerprint, stored + incoming canonical values, equality, and a category — `DATE_REPRESENTATION_ONLY` / `NUMERIC_REPRESENTATION_ONLY` / `BLANK_VS_DEFAULT_EQUIVALENT` / `AUDIT_FIELD_SHOULD_NOT_BE_IN_PAYLOAD` / `TRUE_BUSINESS_VALUE_DIFFERENCE` / `MISSING_OR_EXTRA_LINE` / `UNKNOWN_UNPARSEABLE`. SKU/site-SKU are fingerprinted (never cleartext); field-level evidence retained.
+
+### E/F — canonical semantic contract (`SAD_K2_SEM_CONTRACT_ = 'R6F2G7-SEM-V2'`)
+`sadK2SemFieldEqual_`: (1) `status`/`line_status` are audit/lifecycle not in the payload authority → EXCLUDED (`SAD_K2_SEM_EXCLUDE_`) — REUSE preserves them (write-free), strictly safer than REGENERATE's reset; (2) a BLANK incoming (null/undefined/'') is "not provided" → regeneration preserves the stored cell → no diff — an incoming `0`/`false` is NONBLANK and therefore compared, so **blank≠zero, blank≠false**; (3) invalid/unparseable fails closed; (4) lines matched by K2 identity with EXACT membership (missing/extra ⇒ not equal); (5) all business/identity/qty/date/route fields stay strict. The atomic REUSE early-return `priorFp === incFp || sadK2SemanticPayloadEqual_(...)` returns `outcome:'REUSED'`, `zero_write:true`, `reuse_basis:'SEMANTIC_EQUIVALENT@R6F2G7-SEM-V2'` BEFORE any `setValue`. Generic/manual non-K2 behavior unchanged; the raw fingerprint formula unchanged; wrapper never re-infers from row counts.
+
+### G — authorization preflight
+`TEMP_R6F2G7_PREFLIGHT_TRUE_ZERO_WRITE_REUSE()` reports frozen validation, live semantic equality, diff count, true-business-difference count, stored/incoming semantic checksums, exact five-line membership, predicted production outcome, and `may_run_reuse_verifier` — true ONLY when semantic_equal, diff count 0, predicted REUSED, and all frozen gates pass.
+
+### H — audit history (truthful; not rolled back)
+`TEMP_R6F2G7_AUDIT_HISTORY_` records the two prior in-place regeneration attempts (draft_version reached 3; latest audit timestamp 2026-08-23 22:08:57 Asia/Taipei) as truthful evidence. These audit fields are NOT rolled back or rewritten.
+
+### I — tests + deployment
+`inventory-k2-live-semantic-diff-true-reuse-f1-7n-fa-3c-r6f2g7.test.js` (39/0) covering all 11 proofs. `inventory-k2-true-zero-write-reuse-f1-7n-fa-3c-r6f2g6.test.js` updated to the R6F2G7 comparator + live-evaluation classification (37/0). Full sweep = known 4-test baseline, 0 new. APPS_SCRIPT_SYNC_REQUIRED: `16_shipping_allocation_handlers.gs`, `TEMP_migrate_request_order_draft_v2.gs`. No bundle rebuild, no frontend.

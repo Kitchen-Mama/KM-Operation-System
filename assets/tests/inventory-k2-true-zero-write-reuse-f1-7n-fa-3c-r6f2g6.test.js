@@ -21,8 +21,8 @@ var G16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_
 var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var LOAD = [];
-['SAD_K2_HEADER_FP_', 'SAD_K2_LINE_FP_', 'SAD_K2_FP_DATE_FIELDS_', 'SAD_K2_FP_NUMERIC_FIELDS_'].forEach(function (n) { LOAD.push(G16.match(new RegExp('var ' + n + ' = [\\[{][\\s\\S]*?[\\]}];'))[0]); });
-['sadFnv1a_', 'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadCanonDate_', 'sadFpNorm_', 'sadK2SemanticPayloadEqual_'].forEach(function (n) { LOAD.push(extractFn(G16, n)); });
+['SAD_K2_HEADER_FP_', 'SAD_K2_LINE_FP_', 'SAD_K2_FP_DATE_FIELDS_', 'SAD_K2_FP_NUMERIC_FIELDS_', 'SAD_K2_SEM_CONTRACT_', 'SAD_K2_SEM_EXCLUDE_'].forEach(function (n) { LOAD.push(G16.match(new RegExp('var ' + n + ' = [\\[{\'][\\s\\S]*?[\\]}\'];'))[0]); });
+['sadFnv1a_', 'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadCanonDate_', 'sadFpNorm_', 'sadK2LineIdentity_', 'sadK2SemFieldEqual_', 'sadK2SemanticPayloadEqual_'].forEach(function (n) { LOAD.push(extractFn(G16, n)); });
 LOAD.push(extractFn(TEMP, 'TEMP_r6f2gReuseVerdict_'));
 eval(LOAD.join('\n'));
 
@@ -65,7 +65,8 @@ ok(sadK2SemanticPayloadEqual_(hdr, storedLines, incHdr, changedDate) === false, 
 var changedHdr = JSON.parse(JSON.stringify(hdr)); changedHdr.recommended_shipping_method = 'AIR';
 ok(sadK2SemanticPayloadEqual_(hdr, storedLines, changedHdr, incLines) === false, 'C4. a changed header route field is not semantic-equal');
 // line-count change is not equal
-ok(sadK2SemanticPayloadEqual_(hdr, storedLines, incHdr, incLines.concat(incLines)) === false, 'C5. a different line count is not semantic-equal');
+var extraLine = incLines.concat([{ sku: 'S2', site_sku: 'S2-JP', window_code: 'W1', window_start_date: '2026-08-23', required_by_date: '2026-09-01', recommended_qty: 50, planned_qty: 50, source_warehouse_id: 'WH-TW' }]);
+ok(sadK2SemanticPayloadEqual_(hdr, storedLines, incHdr, extraLine) === false, 'C5. an extra line with a distinct identity → membership differs → not semantic-equal');
 
 // ============================================================ D — fail-closed verifier verdict (never row-count alone)
 section('D. verifier: REUSED only when every group outcome REUSED + content checksum unchanged');
@@ -89,7 +90,7 @@ var cc = extractFn(TEMP, 'TEMP_r6f2gContentChecksum_');
 ok(/updated_at/.test(cc) && /draft_version/.test(cc) && /TEMP_r5bHash_/.test(cc), 'E3. content checksum includes updated_at + draft_version (detects in-place rewrite)');
 var diag = extractFn(TEMP, 'TEMP_R6F2G6_DIAGNOSE_TRUE_ZERO_WRITE_REUSE');
 ok(/STRICTLY READ-ONLY/.test(diag) && /content_checksums/.test(diag) && /lineage_values/.test(diag) && /audit_fields/.test(diag), 'E4. diagnostic reports validation + content checksums + lineage + audit');
-ok(/regenerated_branch_physical_writes/.test(diag) && /TRUE_REUSE_ALREADY_NO_WRITE/.test(diag) && /REGENERATED_IN_PLACE_WRITE_POSSIBLE/.test(diag), 'E4. diagnostic proves REGENERATE writes + classifies (never infers zero-write from row counts)');
+ok(/regenerated_branch_physical_writes/.test(diag) && /TEMP_r6f2g7LiveSemanticDiff_\(token\)/.test(diag) && /out\.classification = ld\.classification/.test(diag), 'E4. R6F2G6 diagnostic proves REGENERATE writes AND classifies from an ACTUAL live evaluation (not gate presence)');
 ok(/R6F2G6_ZERO_WRITE_CONFIRMED/.test(diag) && !/\.setValue\(|\.setValues\(|\.appendRow\(|\.deleteRow\(|\.setProperty\(|\.clear\(/.test(diag), 'E4. diagnostic makes no actual mutation call (read-only)');
 
 // ============================================================ F — generic/legacy unchanged; fingerprint intact
