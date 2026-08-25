@@ -382,8 +382,24 @@
                     renderNotesBlock(m) +
                     renderPaymentBlock(m) +
                 '</div>' +
+                renderPoDocumentsBlock(m) +
             '</div>' +
         '</div>';
+    }
+
+    // F1-7N-FB-1(K) — Purchase Order Documents, rendered by the ONE shared Document Panel contract that the
+    // Shipment Draft / Shipment Overview cards use. It shows the yyyyMMdd batch-date folder and the PO files
+    // from the generated_documents registry, and shows nothing at all when the panel renderer is unavailable
+    // (no divergent fallback markup, no fabricated folder). Placement: inside the expanded PO detail
+    // workspace, below the existing execution blocks — not a separate dashboard.
+    function renderPoDocumentsBlock(m) {
+        if (typeof window === 'undefined' || typeof window.shDocumentPanelHtml !== 'function') return '';
+        return window.shDocumentPanelHtml({
+            title: 'Purchase Order Documents', entity_id: m.id,
+            folder_url: m.documentFolderUrl || '', folder_name: m.documentFolderName || '',
+            folder_error: m.documentFolderError || '',
+            documents: m.documents || [], pending: !!m.documentsPending, can_retry: m.canRetryDocuments === true
+        });
     }
 
     function summaryItem(label, valueHtml) {

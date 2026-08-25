@@ -695,32 +695,110 @@ shipments          1 ── many generated_documents        (related_entity_type
 
 ---
 
-## L. Shipment Output Routing v1
+## L. Shipment Output Routing — v2 (F1-7N-FB-1, SUPERSEDES v1)
 
-**v1 storage:** every shipment-generated document sets **`output_folder_id` = the root Shipment folder**. Sub-folder placement is **resolved by runtime logic** (not stored per template in v1).
+> **SUPERSESSION NOTICE (F1-7N-FB-1).** The v1 path below is **RETIRED** and is recorded for migration reference
+> only. There is exactly **ONE active folder contract** — v2. Do not implement, resolve or reconcile against v1.
+>
+> **Retired v1:** `Shipment/{COUNTRY}/{SHIP_DATE}/{SHIPMENT_NO}_{COUNTRY}/`
+> Retired because it nested an intermediate date directory (which fragmented one shipment's documents across
+> date folders on any retry), keyed the leaf on `{COUNTRY}` rather than the operational destination bucket, and
+> left `{SHIP_DATE}` undefined — the spec never stated its source field or format.
 
-**Runtime routing logic (folder nesting):**
+**v1 storage is unchanged:** every shipment-generated document sets **`output_folder_id` = the root Shipment
+folder**. Sub-folder placement is resolved by runtime logic (not stored per template).
+
+**Active runtime routing logic (folder nesting):**
 
 ```
-Shipment root  (output_folder_id)
-   → {COUNTRY} folder
-       → {SHIP_DATE} folder
-           → {SHIPMENT_NO}_{COUNTRY} folder   ← all files for the shipment land here
+Shipment root  (document_templates.output_folder_id)
+   → {DESTINATION_BUCKET} folder
+       → {external_shipment_id}_{yyyyMMdd(shipped_at)} folder   ← all files for the shipment land here
 ```
 
 **Resolved path:**
 
 ```
-Shipment/{COUNTRY}/{SHIP_DATE}/{SHIPMENT_NO}_{COUNTRY}/
+Shipment/{DESTINATION_BUCKET}/{external_shipment_id}_{yyyyMMdd(shipped_at)}/
 ```
 
-> **`{SHIPMENT_NO}` in folder/file-name rules resolves the canonical `SHIPMENT_NO`** = `shipments.external_shipment_id` (fallback `shipment_no` → `shipment_id`), per §D. File-name / `file_name_rule` values using `{{SHIPMENT_NO}}` therefore render the external/carrier-facing Shipment ID, not the internal `shipment_no`.
+**Example:** `Shipment/US/KM-SHOPIFY-260825-01_20260825/`
 
-**Rules:**
-- **All documents for the SAME shipment go into the SAME shipment folder** — Shipment Detail · Packing List · Commercial Invoice · Carrier Booking · any other shipment docs.
-- Runtime creates missing folders on the path (idempotent); the template only needs the root `output_folder_id`.
-- **`document_output_folders` (a per-scope folder registry table) is DEFERRED** — not created in v1. v1 keeps root folder on the template + runtime path logic.
-- PO documents (§H) keep their own `output_folder_id`; this routing applies to `related_entity_type = shipment` only.
+**There is no intermediate date directory.**
+
+### L.1 Destination bucket (frozen; never inferred)
+
+| Destination country (ISO, normalized) | Bucket |
+|---|---|
+| `AU` | `AU` |
+| `CA` | `CA` |
+| `JP` | `JP` |
+| `SG` | `SG` |
+| `US` | `US` |
+| `GB`, `UK` | `UK` |
+| `AT` `BE` `BG` `HR` `CY` `CZ` `DE` `DK` `EE` `ES` `FI` `FR` `GR` `HU` `IE` `IT` `LT` `LU` `LV` `MT` `NL` `PL` `PT` `RO` `SE` `SI` `SK` | `EU` |
+
+Country codes are normalized (trim/upper, non-alpha stripped) before matching. **Any destination outside this
+table fails closed with `UNSUPPORTED_DESTINATION_BUCKET`.** No inference, approximation, geocoding or silent
+bucket creation. Adding a bucket is a business decision, never a runtime guess.
+
+### L.2 Folder identity and date rules
+
+- **`external_shipment_id` is mandatory.** No silent fallback to `shipment_id`, `shipment_no`, `created_at`,
+  the current date or the retry date. Missing → `MISSING_EXTERNAL_SHIPMENT_ID`.
+- **`shipped_at` is mandatory** and is the **immutable** source of `yyyyMMdd`, stamped once by Confirm Shipment.
+  Missing → `MISSING_SHIPPED_AT`.
+- A **retry on a later date reuses the folder derived from the original `shipped_at`** — the folder name is a
+  function of stored shipment facts, never of the clock at retry time.
+- The name is sanitized **only** for characters Drive prohibits (`\ / : * ? " < > |`); the business identifier
+  is otherwise preserved verbatim. If two distinct identities sanitize to the same name the batch fails closed.
+- **All documents for the SAME shipment go into the SAME shipment folder** — Shipment Detail · Packing List ·
+  Commercial Invoice · Carrier Booking · export/import/customs · any other shipment document.
+- Runtime creates missing folders on the path (idempotent). **Never write to the root folder directly.**
+
+### L.3 Folder idempotency (exact match only)
+
+| Exact-name matches under the parent | Action |
+|---|---|
+| 0 | create once |
+| 1 | reuse |
+| >1 | fail closed — `SHIPMENT_FOLDER_CONFLICT` (bucket level: `SHIPMENT_BUCKET_FOLDER_CONFLICT`) |
+
+Matching is **exact on the folder name**, never fuzzy and never a recursive Drive search. Concurrent calls
+re-list after creating so two writers converge on one folder instead of duplicating.
+
+### L.4 Drive root authority
+
+`document_templates.output_folder_id` remains the **only** root authority — there is **no** parallel
+document-root table and **no** Drive id is hardcoded in application code. Because that live field may hold a
+**full Drive folder URL** despite its name, every read passes through one shared normalizer that accepts a raw
+folder id **or** a supported Drive folder URL and returns the exact id or a typed invalid result. An unparsed
+URL must never reach `DriveApp.getFolderById()`.
+
+Per generation batch: resolve the applicable templates, normalize every populated `output_folder_id`, and
+require **all Shipment templates to resolve to exactly one Shipment root** (and all Purchase Order templates to
+exactly one PO root). Blank / invalid / conflicting roots fail closed **before any folder or document is
+created** — `OUTPUT_FOLDER_ROOT_MISSING` · `OUTPUT_FOLDER_ROOT_INVALID` · `OUTPUT_FOLDER_ROOT_CONFLICT`.
+Reported evidence is sanitized (ids only, never credentials).
+
+### L.5 Purchase Order output routing
+
+```
+Purchase Order root  (document_templates.output_folder_id)
+   → {yyyyMMdd(document_batch_date)} folder   ← all PO documents first generated on that business date
+```
+
+The batch date is an **immutable canonical date frozen when that PO document batch is first generated** — never
+the retry date. All PO documents for the same canonical business date share the one `yyyyMMdd` folder. Same
+exact-match idempotency as L.3, with the typed conflict `PO_DATE_FOLDER_CONFLICT`. **No per-PO subfolder** is
+created: no active canonical specification requires one (PO file identity lives in the filename and the
+`generated_documents` registry).
+
+### L.6 Registry
+
+`document_output_folders` (a per-scope folder registry table) **remains DEFERRED** — not created. The root stays
+on the template, the path is runtime logic, and the resolved folder is recorded per document on the existing
+`generated_documents.output_folder_id`. **No second registry, and no browser-side Drive query.**
 
 ---
 

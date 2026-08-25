@@ -146,6 +146,25 @@ function dfoGenerateFile_(io, template, mapped, meta, opts) {
 // Default Drive/Sheets io (the ONLY place raw DriveApp/SpreadsheetApp is touched; USER live-verified). copyTemplate
 // duplicates the configured template into its output folder (or the template's own parent when unset); the fill
 // reads/writes the first sheet's matrix; exportPdf writes a sibling PDF. Scoped to files this call creates.
+// F1-7N-FB-1 — Drive FOLDER io for the output-folder resolver (38_document_output_folder_resolver.gs).
+// It lives here because 37_ is the ONE sanctioned owner of raw Drive primitives (F1-5C-EXPORT-R1 §K), which
+// keeps 38_ fully pure and keeps a single Drive boundary in the codebase. Scope is deliberately minimal:
+// it LISTS and CREATES folders only. It never enumerates files, never reads or exports content, and never
+// touches sharing/permissions — so it cannot become a second file engine or widen Drive access.
+function dofFolderIo_() {
+  return {
+    listChildFolders: function (parentId) {
+      var out = [], it = DriveApp.getFolderById(parentId).getFolders();
+      while (it.hasNext()) { var f = it.next(); out.push({ id: f.getId(), name: f.getName() }); }
+      return out;
+    },
+    createFolder: function (parentId, name) {
+      var f = DriveApp.getFolderById(parentId).createFolder(name);
+      return { id: f.getId(), name: f.getName() };
+    }
+  };
+}
+
 function dfoDefaultIo_() {
   return {
     copyTemplate: function (templateFileId, filename, folderId) {

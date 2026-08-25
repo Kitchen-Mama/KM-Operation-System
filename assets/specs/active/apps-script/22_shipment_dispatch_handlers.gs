@@ -9,16 +9,28 @@
 //   2) resolve the route template (explicit id, else unique match by destination + carrier + method)
 //   3) snapshot shipment_routes (one row per template node)
 //   4) deduct factory_stock (current_stock) + write factory_stock_movements   (AUTHORIZED 2026-07-24)
-//   5) create ONE real initial shipment_event (departed_origin) — never future/planned events
-//   6) finalize the shipment: status = in_transit + actual_departure_date + shipped_at/by
+//   5) create ONE real initial shipment_event (shipment_confirmed) — never future/planned events
+//   6) finalize the shipment: status = shipped + shipped_at/by
+//
+// F1-7N-FB-1 LIFECYCLE CORRECTION. Confirm Shipment previously meant "physically departed": it set
+// status = in_transit and wrote a `departed_origin` event. Those are two DIFFERENT business facts, and the
+// frozen model separates them:
+//   Confirm Shipment  -> status = shipped   + event `shipment_confirmed`  (formal hand-over, map-visible)
+//   first real progress beyond the origin -> status = in_transit (event-derived, 31_shipPromoteOnProgress_)
+// `departed_origin` is therefore NO LONGER written as a confirmation marker — overloading it with two
+// meanings is exactly what made the manual "Advance -> In Transit" button necessary. `received` remains
+// owned solely by the formal receiving/inventory workflow (31_), never by map progress.
 // Idempotent: a second Confirm on the same shipment_id is a no-op (returns already_confirmed) — never
 // double-deducts stock / double-writes route / double-writes event. NO DB schema is normalized here;
 // shipment_routes is one-row-per-node (no route header, no shipment_route_node_id) per the schema audit.
 // ============================================================
 
 var CSD_MOV_TYPE_ = 'shipment_out';                 // factory_stock_movements.movement_type for dispatch
-var CSD_EVENT_TYPE_ = 'departed_origin';            // the single real initial event at Confirm
-var CSD_INTRANSIT_ = 'in_transit';
+// F1-7N-FB-1 — the confirmation lifecycle event. Distinct from `departed_origin` (physical departure) so the
+// two facts can never be conflated. Registered in the canonical vocabulary alongside the existing types.
+var CSD_EVENT_TYPE_ = 'shipment_confirmed';         // the single real initial event at Confirm
+var CSD_CONFIRMED_STATUS_ = 'shipped';              // Confirm ends at `shipped` — NEVER in_transit
+var CSD_INTRANSIT_ = 'in_transit';                  // reached only by event-derived promotion (31_)
 
 function csdNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function csdId_(prefix, len) { return prefix + Utilities.getUuid().replace(/-/g, '').substring(0, len || 8).toUpperCase(); }
@@ -77,7 +89,9 @@ function handleConfirmShipmentAndDispatch_(body) {
     var existingRoutes = csdCountRowsFor_(ss, 'shipment_routes', 'shipment_id', shipmentId);
     var existingEvents = csdEventExists_(ss, shipmentId);
     var existingMovement = csdMovementExists_(ss, shipmentId);
-    if (curStatus === CSD_INTRANSIT_ || curStatus === 'arrived' || curStatus === 'received' || curStatus === 'completed' || curStatus === 'closed' || existingRoutes > 0 || existingEvents || existingMovement) {
+    // F1-7N-FB-1: Confirm now ends at `shipped`, so `shipped` joins the already-confirmed guard. The route/
+    // event/movement checks below already covered it, but the status check must be explicit, not incidental.
+    if (curStatus === CSD_CONFIRMED_STATUS_ || curStatus === CSD_INTRANSIT_ || curStatus === 'arrived' || curStatus === 'received' || curStatus === 'completed' || curStatus === 'closed' || existingRoutes > 0 || existingEvents || existingMovement) {
       lock.releaseLock();
       return jsonResponse_({ success: true, already_confirmed: true, data: { shipment_id: shipmentId, status: sc('status') || curStatus, route_nodes_existing: existingRoutes, note: 'Shipment already confirmed/dispatched — no changes made (idempotent).' } });
     }
@@ -222,15 +236,18 @@ function handleConfirmShipmentAndDispatch_(body) {
     });
     rollback.push({ kind: 'row', sheet: eventSheet, row: eventSheet.getLastRow() });
 
-    // 4) Finalize the shipment (status = in_transit; canonical shipped_at / actual_departure_date).
+    // 4) Finalize the shipment. F1-7N-FB-1: status = `shipped` (formal hand-over), NOT in_transit.
+    //    shipped_at is stamped ONCE and is thereafter immutable — it is the sole source of the document
+    //    folder's yyyyMMdd, so a later retry must reuse the original date. actual_departure_date is NOT set
+    //    here any more: Confirm no longer asserts physical departure. It is stamped by the first real
+    //    progress event (31_), which is also what promotes the shipment to in_transit.
     var prevStatus = s.col('status') === -1 ? '' : rv[s.col('status')];
     var prevShippedAt = s.col('shipped_at') === -1 ? '' : rv[s.col('shipped_at')];
     var prevShippedBy = s.col('shipped_by') === -1 ? '' : rv[s.col('shipped_by')];
     var prevActDep = s.col('actual_departure_date') === -1 ? '' : rv[s.col('actual_departure_date')];
     function setShip(name, val, prev) { var c = s.col(name); if (c !== -1) { shipSheet.getRange(row, c + 1).setValue(val); rollback.push({ kind: 'cell', sheet: shipSheet, row: row, col: c, prev: prev }); } }
-    setShip('status', CSD_INTRANSIT_, prevStatus);
+    setShip('status', CSD_CONFIRMED_STATUS_, prevStatus);
     if (!String(prevShippedAt || '').trim()) { setShip('shipped_at', now, prevShippedAt); setShip('shipped_by', actor, prevShippedBy); }
-    if (!String(prevActDep || '').trim()) setShip('actual_departure_date', today, prevActDep);
     var uc = s.col('updated_at'); if (uc !== -1) shipSheet.getRange(row, uc + 1).setValue(now);
     var ub = s.col('updated_by'); if (ub !== -1) shipSheet.getRange(row, ub + 1).setValue(actor);
     SpreadsheetApp.flush();
@@ -244,10 +261,15 @@ function handleConfirmShipmentAndDispatch_(body) {
     return jsonResponse_({
       success: true,
       data: {
-        shipment_id: shipmentId, status: CSD_INTRANSIT_, route_template_id: templateId,
+        shipment_id: shipmentId, status: CSD_CONFIRMED_STATUS_, route_template_id: templateId,
         route_nodes_created: routeNodesCreated, events_created: 1, stock_movements_created: movementsCreated,
         po_allocations_executed: slaExec.executed_allocations, po_lines_reconciled: slaExec.reconciled_po_lines,
-        actual_departure_date: today, warnings: tplRes.warnings || []
+        shipped_at: String(prevShippedAt || '').trim() || now,
+        // F1-7N-FB-1(7) — the shipment transaction is COMMITTED at this point. Document generation is a
+        // trailing, separately retryable concern: a Drive/render failure reports a document status and NEVER
+        // rolls the confirmed shipment back. The UI must not claim files exist until the registry says so.
+        document_generation: { status: 'READY_TO_GENERATE', registry: 'generated_documents', retry_safe: true },
+        warnings: tplRes.warnings || []
       }
     });
   } catch (err) {

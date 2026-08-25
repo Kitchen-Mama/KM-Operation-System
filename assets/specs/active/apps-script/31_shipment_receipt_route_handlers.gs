@@ -216,6 +216,35 @@ function shipEtaValidate_(v) {
   return { ok: true, value: s, code: 'OK' };
 }
 
+// ---- F1-7N-FB-1 — AUTOMATIC shipped -> in_transit PROMOTION (pure decision) --------------------------
+// Confirm Shipment now ends at `shipped` (22_), so nothing manual advances a shipment any more: the FIRST
+// authoritative Current Position update that proves movement BEYOND THE ORIGIN promotes it exactly once.
+// This function only DECIDES; the caller performs the write inside the same ScriptLock as the route move.
+//
+// Promote ONLY when every one of these holds:
+//   · the shipment's current status is exactly `shipped`   (never from draft/ready_to_ship, never a re-promote
+//     from in_transit, never a DEMOTION from arrived/received/completed/closed/cancelled)
+//   · the route move actually ADVANCED (an IDEMPOTENT same-node replay proves nothing moved)
+//   · the reached node is NOT the origin node (sequence strictly greater than the first node's sequence)
+// A coordinate identical to the origin, a re-confirmation of the origin, a planned-only node, a stale/backward
+// move and a duplicate replay therefore all leave the status untouched. `received` is NEVER set here — map
+// progress is not receiving truth (that stays with the formal receiving/inventory workflow above).
+var SHIP_PROMOTE_FROM_ = 'shipped';
+var SHIP_PROMOTE_TO_ = 'in_transit';
+var SHIP_PROMOTE_TERMINAL_ = { arrived: 1, received: 1, partial_received: 1, completed: 1, closed: 1, cancelled: 1, in_transit: 1 };
+function shipPromoteOnProgress_(ctx) {
+  ctx = ctx || {};
+  var cur = String(ctx.current_status == null ? '' : ctx.current_status).trim().toLowerCase();
+  var moveCode = String(ctx.move_code == null ? '' : ctx.move_code).trim().toUpperCase();
+  var originSeq = parseFloat(ctx.origin_sequence_no), targetSeq = parseFloat(ctx.target_sequence_no);
+  if (moveCode !== 'ADVANCED') return { promote: false, reason: 'NO_FORWARD_MOVEMENT', from: cur, to: cur };
+  if (SHIP_PROMOTE_TERMINAL_[cur]) return { promote: false, reason: cur === SHIP_PROMOTE_TO_ ? 'ALREADY_IN_TRANSIT' : 'TERMINAL_OR_LATER_STATUS', from: cur, to: cur };
+  if (cur !== SHIP_PROMOTE_FROM_) return { promote: false, reason: 'NOT_IN_SHIPPED_STATE', from: cur, to: cur };
+  if (!isFinite(originSeq) || !isFinite(targetSeq)) return { promote: false, reason: 'ROUTE_SEQUENCE_UNRESOLVED', from: cur, to: cur };
+  if (targetSeq <= originSeq) return { promote: false, reason: 'STILL_AT_ORIGIN', from: cur, to: cur };
+  return { promote: true, reason: 'FIRST_PROGRESS_BEYOND_ORIGIN', from: cur, to: SHIP_PROMOTE_TO_ };
+}
+
 // __SHIP_RECEIPT_PURE_END__
 
 // Canonical shipment_events header (mirrors 22_'s dispatch EVENT_HEADERS — the SAME table + column contract;
@@ -665,6 +694,45 @@ function handleAdvanceShipmentRoutePoint_(body) {
       }
     }
 
+    // ---- F1-7N-FB-1 — AUTOMATIC shipped -> in_transit promotion, inside THIS lock ----
+    // The first authoritative Current Position update that proves movement beyond the origin promotes the
+    // shipment exactly once. Decided by the pure shipPromoteOnProgress_ (origin-identical / idempotent /
+    // backward / terminal cases all decline), written here so route status, the event and the lifecycle
+    // status commit under the same single-writer lock. It NEVER demotes and NEVER sets `received`.
+    var promotion = { promoted: false, reason: 'NOT_EVALUATED', from: '', to: '' };
+    try {
+      var originSeq = null;
+      for (var oi = 0; oi < nodes.length; oi++) { if (originSeq === null || nodes[oi].seq < originSeq) originSeq = nodes[oi].seq; }
+      var tgtNode = null;
+      for (var ti = 0; ti < nodes.length; ti++) { if (String(nodes[ti].id) === String(targetId)) { tgtNode = nodes[ti]; break; } }
+      var shipSheetP = ss.getSheetByName('shipments');
+      var sp = shipSheetP ? shipmentReadSheet_(shipSheetP) : null;
+      var spStatusCol = sp ? sp.col('status') : -1, spIdCol = sp ? sp.col('shipment_id') : -1, spRow = -1, curShipStatus = '';
+      if (sp && spIdCol !== -1) {
+        for (var pr = 1; pr < sp.rows.length; pr++) {
+          if (String(sp.rows[pr][spIdCol]).trim() === shipmentId) { spRow = pr + 1; curShipStatus = spStatusCol === -1 ? '' : String(sp.rows[pr][spStatusCol] || '').trim(); break; }
+        }
+      }
+      var decision = shipPromoteOnProgress_({
+        current_status: curShipStatus, move_code: move.code,
+        origin_sequence_no: originSeq, target_sequence_no: tgtNode ? tgtNode.seq : null
+      });
+      promotion = { promoted: false, reason: decision.reason, from: decision.from, to: decision.to };
+      if (decision.promote && spRow !== -1 && spStatusCol !== -1) {
+        shipSheetP.getRange(spRow, spStatusCol + 1).setValue(SHIP_PROMOTE_TO_);
+        var pDep = sp.col('actual_departure_date');
+        // Confirm no longer asserts physical departure, so the FIRST real progress stamps it — once.
+        if (pDep !== -1 && !String(sp.rows[spRow - 1][pDep] || '').trim()) shipSheetP.getRange(spRow, pDep + 1).setValue(String(now).substring(0, 10));
+        var pUpd = sp.col('updated_at'); if (pUpd !== -1) shipSheetP.getRange(spRow, pUpd + 1).setValue(now);
+        var pUpdBy = sp.col('updated_by'); if (pUpdBy !== -1) shipSheetP.getRange(spRow, pUpdBy + 1).setValue(actor);
+        SpreadsheetApp.flush();
+        promotion.promoted = true;
+      }
+    } catch (promoErr) {
+      // A promotion failure must never roll back the committed route move (§7 trailing-write discipline).
+      promotion = { promoted: false, reason: 'PROMOTION_WRITE_FAILED', from: promotion.from, to: promotion.to, error: String(promoErr && promoErr.message ? promoErr.message : promoErr) };
+    }
+
     var summary = move.desired.map(function (n) {
       var src = null; for (var k = 0; k < nodes.length; k++) { if (String(nodes[k].id) === String(n.id)) { src = nodes[k]; break; } }
       return { route_template_node_id: src ? src.routeTemplateNodeId : '', shipment_route_id: src ? src.shipmentRouteId : '', sequence_no: n.seq, status: n.status };
@@ -677,6 +745,7 @@ function handleAdvanceShipmentRoutePoint_(body) {
         idempotent: move.code === 'IDEMPOTENT',
         current_sequence_no: move.targetSeq,
         current_route_template_node_id: targetTemplateNode || (summary.filter(function (n) { return n.status === 'current'; })[0] || {}).route_template_node_id || '',
+        lifecycle_promotion: promotion,
         nodes: summary,
         route_event: routeEvent
       }

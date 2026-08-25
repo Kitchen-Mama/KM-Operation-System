@@ -1131,6 +1131,14 @@ function _shRenderDbCard(s, planLines, mode) {
     }
     // Section-specific actions.
     var actionsHtml = '';
+    // F1-7N-FB-1(D) — SIMPLIFIED LIFECYCLE. Confirm Shipment is the ONE user action; after it the shipment
+    // is `shipped`, immediately map-visible, and progresses to `in_transit` automatically from the first
+    // authoritative Current Position update (31_shipPromoteOnProgress_). `received` stays owned by the formal
+    // receiving/inventory workflow. Every manual lifecycle-mutating control is therefore REMOVED here:
+    //   · Shipment Draft   'Done'                (it mutated shipped -> hidden/next lifecycle)
+    //   · Shipment Overview 'Advance -> <next>'  (it manually walked the post-ship lifecycle)
+    // Expand/Collapse and the document actions remain. Once shipped, Shipment Draft is a read-only
+    // shipment-and-document view: no further shipment-progress button is offered.
     if (mode === 'draft') {
         if (status === 'draft') {
             actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
@@ -1139,17 +1147,25 @@ function _shRenderDbCard(s, planLines, mode) {
             actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
                           btn("shConfirmShipment('" + sid + "')", 'Confirm Shipment 🚢', '#0EA5E9') +
                           btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8');
-        } else if (status === 'shipped') {
-            actionsHtml = btn("shShipmentDone('" + sid + "')", 'Done', '#64748B');
         }
+        // status === 'shipped' (and later): NO lifecycle button — progress is event-derived.
     } else {
-        // Overview: official records advance through the post-ship lifecycle (no factory-stock effects).
-        var next = _shNextStatus(status);
-        if (next && status !== 'closed') actionsHtml = btn("shAdvanceStatus('" + sid + "', '" + next + "')", 'Advance → ' + _shEsc(SH_STATUS_LABEL[next] || next), '#3B82F6');
         // F1-6B Part B — Shipping Detail / Packing List documents for a dispatched shipment (the frozen R2B snapshot
         // exists). Thin: the frontend only sends { shipment_id, document_type, generate_file } and opens the returned
         // download_url via the existing R3C adapters — NO placeholder mapping / totals / template / master / file build.
         if (SH_DOC_READY_STATUSES[status]) actionsHtml += _shDocActionsHtml(sid);
+    }
+    // F1-7N-FB-1(J) — the shared Document Panel, in the right-side detail column directly below the
+    // Execution Fields, for BOTH pages. It reads ONLY backend registry metadata already attached to the
+    // shipment view-model; a shipment with none (e.g. a Demo row with a blank external_shipment_id)
+    // truthfully renders "No documents generated yet" rather than a fabricated folder or file.
+    if (status !== 'draft' && status !== 'ready_to_ship') {
+        actionsHtml += shDocumentPanelHtml({
+            title: 'Shipment Documents', entity_id: sid,
+            folder_url: s.documentFolderUrl || '', folder_name: s.documentFolderName || '',
+            folder_error: s.documentFolderError || '',
+            documents: s.documents || [], pending: !!s.documentsPending, can_retry: s.canRetryDocuments === true
+        });
     }
 
     return '' +
@@ -1379,6 +1395,131 @@ var SH_DOC_TYPES = { SHIPDETAIL: 'Shipping Detail', PL: 'Packing List' };
 
 // Compact document action group (rendered inside the overview card's action area). Inline-styled to match the card's
 // existing per-shipment controls; the rows flex-wrap so a narrow screen never overflows.
+// ============================================================================================
+// F1-7N-FB-1(J/K) — THE ONE REUSABLE DOCUMENT PANEL.
+// Shared by the Shipment Draft card, the Shipment Overview card and the Purchase Order Workspace card, so
+// all three render the identical contract instead of three divergent lists. Placement is the right-side
+// detail column, directly below the Execution Fields / PO execution summary.
+//
+// Rules it enforces (asserted by tests):
+//   · NEVER renders a raw Drive URL as body text — a URL only ever becomes the href of a labelled link.
+//   · Links open in a new tab with rel="noopener noreferrer".
+//   · It renders ONLY backend-provided metadata from the generated_documents registry. It never queries
+//     Drive from the browser and never enumerates a folder.
+//   · Download is offered ONLY when the record carries a real downloadable artifact; there is no
+//     "Download All" because no backend ZIP artifact exists.
+//   · Retry is offered ONLY for a failed/retryable record AND only when the caller passes can_retry
+//     (frontend visibility is not authorization — the backend re-checks).
+//   · Every state is truthful: a shipment with no generated documents says so rather than implying files.
+// ============================================================================================
+var SH_DOC_PANEL_VISIBLE_ROWS_ = 5;   // compact by default; "View all (N)" reveals the rest
+var SH_DOC_STATE_LABEL_ = {
+    NONE: 'No documents generated yet',
+    PENDING: 'Generation pending',
+    GENERATING: 'Generating…',
+    PARTIAL: 'Partially generated',
+    READY: 'Ready',
+    FAILED: 'Generation failed',
+    CONFIG_CONFLICT: 'Document folder configuration conflict'
+};
+// Derive the panel state from the registry rows + folder resolution. Pure and total: an unknown mix is
+// reported as PARTIAL rather than optimistically READY.
+function shDocPanelState(model) {
+    model = model || {};
+    if (model.folder_error) return 'CONFIG_CONFLICT';
+    var docs = model.documents || [];
+    if (!docs.length) return model.pending ? 'PENDING' : 'NONE';
+    var ready = 0, failed = 0, running = 0;
+    docs.forEach(function (d) {
+        var st = String((d && d.status) || '').toUpperCase();
+        if (st === 'GENERATED' || st === 'READY') ready++;
+        else if (st === 'FAILED' || st === 'FAILED_RETRYABLE') failed++;
+        else running++;
+    });
+    if (running && !failed) return ready ? 'PARTIAL' : 'GENERATING';
+    if (failed && ready) return 'PARTIAL';
+    if (failed) return 'FAILED';
+    return ready === docs.length ? 'READY' : 'PARTIAL';
+}
+function _shDocIcon(docType) {
+    var t = String(docType || '').toLowerCase();
+    if (t.indexOf('invoice') !== -1) return '🧾';
+    if (t.indexOf('packing') !== -1) return '📦';
+    if (t.indexOf('carrier') !== -1 || t.indexOf('booking') !== -1) return '🚢';
+    if (t.indexOf('customs') !== -1 || t.indexOf('export') !== -1 || t.indexOf('import') !== -1) return '🛃';
+    return '📄';
+}
+// A safe new-tab link. The URL is ONLY ever an href — never rendered as visible text.
+function _shDocLink(url, label, strong) {
+    var u = String(url || '').trim();
+    if (!u) return '';
+    return '<a href="' + _shEsc(u) + '" target="_blank" rel="noopener noreferrer" ' +
+        'style="font-size:12px;color:#3B82F6;text-decoration:none;' + (strong ? 'font-weight:600;' : '') + '">' + _shEsc(label) + '</a>';
+}
+function _shDocRowHtml(d, canRetry, entityId) {
+    var st = String((d && d.status) || '').toUpperCase();
+    var isFailed = (st === 'FAILED' || st === 'FAILED_RETRYABLE');
+    var name = String((d && d.file_name) || '').trim();
+    var actions = _shDocLink(d && d.file_url, 'Open', true);
+    // Download only when a genuinely downloadable artifact exists (never a fabricated export link).
+    if (d && d.download_url) actions += (actions ? ' · ' : '') + _shDocLink(d.download_url, 'Download');
+    else if (d && d.pdf_file_url) actions += (actions ? ' · ' : '') + _shDocLink(d.pdf_file_url, 'Download PDF');
+    if (isFailed && canRetry) {
+        actions += (actions ? ' · ' : '') +
+            '<button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(entityId) + '\',\'' + _shEsc((d && d.generated_document_id) || '') + '\',this)" ' +
+            'style="background:none;border:none;padding:0;color:#DC2626;font-size:12px;cursor:pointer;">Retry</button>';
+    }
+    return '<div class="sh-doc-row" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F1F5F9;">' +
+        '<span aria-hidden="true">' + _shDocIcon(d && (d.document_type || d.template_key)) + '</span>' +
+        '<span style="flex:1 1 auto;min-width:0;">' +
+            '<span style="display:block;font-size:13px;color:#1E293B;">' + _shEsc((d && d.document_label) || (d && d.document_type) || 'Document') + '</span>' +
+            (name ? '<span style="display:block;font-size:11px;color:#94A3B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _shEsc(name) + '">' + _shEsc(name) + '</span>' : '') +
+        '</span>' +
+        '<span style="font-size:11px;color:' + (isFailed ? '#DC2626' : '#64748B') + ';white-space:nowrap;">' +
+            _shEsc(isFailed ? 'Failed' : (st === 'GENERATED' || st === 'READY' ? 'Ready' : (st || 'Pending'))) +
+            ((d && d.generated_at) ? ' · ' + _shEsc(String(d.generated_at).substring(0, 16)) : '') +
+        '</span>' +
+        '<span style="white-space:nowrap;">' + actions + '</span>' +
+    '</div>';
+}
+// model = { title, entity_id, folder_url, folder_name, folder_error, documents:[], pending, can_retry }
+function shDocumentPanelHtml(model) {
+    model = model || {};
+    var state = shDocPanelState(model);
+    var docs = model.documents || [];
+    var head = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">' +
+        '<div style="font-size:13px;font-weight:600;color:#1E293B;">' + _shEsc(model.title || 'Documents') + '</div>' +
+        (model.folder_url ? _shDocLink(model.folder_url, 'Open Folder', true) : '') +
+    '</div>';
+    var body;
+    if (state === 'CONFIG_CONFLICT') {
+        body = '<div style="font-size:12px;color:#DC2626;">' + _shEsc(SH_DOC_STATE_LABEL_.CONFIG_CONFLICT) + ' — ' + _shEsc(model.folder_error) + '</div>';
+    } else if (!docs.length) {
+        body = '<div style="font-size:12px;color:#94A3B8;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || SH_DOC_STATE_LABEL_.NONE) + '</div>';
+    } else {
+        var shown = docs.slice(0, SH_DOC_PANEL_VISIBLE_ROWS_);
+        body = shown.map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id); }).join('');
+        if (docs.length > shown.length) {
+            body += '<button type="button" class="sh-doc-viewall" onclick="shDocViewAll(this)" aria-expanded="false" ' +
+                'style="margin-top:6px;background:none;border:none;padding:0;color:#3B82F6;font-size:12px;cursor:pointer;">View all (' + docs.length + ')</button>' +
+                '<div class="sh-doc-rest" style="display:none;">' + docs.slice(shown.length).map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id); }).join('') + '</div>';
+        }
+    }
+    var badge = '<span style="font-size:11px;color:#64748B;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || state) + '</span>';
+    return '<div class="sh-doc-panel" data-doc-state="' + _shEsc(state) + '" style="margin-top:12px;padding-top:12px;border-top:1px dashed #E2E8F0;">' +
+        head + body + '<div style="margin-top:6px;">' + badge + '</div>' +
+    '</div>';
+}
+function shDocViewAll(btnEl) {
+    var panel = btnEl && btnEl.closest ? btnEl.closest('.sh-doc-panel') : null;
+    if (!panel) return;
+    var rest = panel.querySelector('.sh-doc-rest');
+    if (!rest) return;
+    var open = rest.style.display !== 'none';
+    rest.style.display = open ? 'none' : 'block';
+    btnEl.setAttribute('aria-expanded', open ? 'false' : 'true');
+}
+
 function _shDocActionsHtml(sid) {
     function row(docType, label) {
         var base = 'sh-doc-' + _shEsc(sid) + '-' + docType;
@@ -1622,6 +1763,9 @@ function showShipmentOverview() {
 window._shLoadAndRender = _shLoadAndRender;
 window._shClearCartonError = _shClearCartonError;
 window.toggleShipmentCard = toggleShipmentCard;
+window.shDocumentPanelHtml = shDocumentPanelHtml;
+window.shDocPanelState = shDocPanelState;
+window.shDocViewAll = shDocViewAll;
 window._shToggleCardEl = _shToggleCardEl;
 window._shCardFromEvent = _shCardFromEvent;
 window.shSaveExecution = shSaveExecution;
