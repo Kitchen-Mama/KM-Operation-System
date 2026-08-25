@@ -176,3 +176,137 @@ reload path; 4 fixed at both transport choke points.
 
 **No live latency claim is made anywhere.** These are request/read-volume facts proven offline by executing the
 shipped code against stubbed transport seams.
+
+
+---
+
+# F1-7N-FB-3A — live-evidence closure (2026-08-25)
+
+## I. Deployment identity — why the editor and the website disagreed
+
+Both facts the user reported are true, and together they name the cause exactly.
+
+| fact | what it proves |
+| --- | --- |
+| `TEMP_INVENTORY_SCOPE_REGISTRY_CHECK` succeeded in the Apps Script editor (countries=6, marketplaces=15, rows_read=15, 1004 ms, zero writes) | the code is **saved** and the data is **readable** |
+| the website got `GAP_READ_ERROR — gap read failed` for the same action | the deployed **`/exec` Web App** does not contain that action |
+| `system.health` reported `build=F1-7N-FB-2` | **nothing** — see below |
+| `missing_actions=[]` | **nothing** — see below |
+
+**Root cause A — the build marker never moved.** `SYS_BUILD_VERSION_` was left at `'F1-7N-FB-2'` through all of
+FB-3. The one field whose entire purpose is "prove which code answered" could not distinguish FB-2 from FB-3.
+That was my defect, and it is why the evidence looked contradictory.
+
+**Root cause B — `missing_actions` is self-referential.** It is computed from the *deployed* code's own
+`SYS_REQUIRED_ACTIONS_` list. A deployment that predates an action cannot know the action exists, so it reports
+"nothing missing" while genuinely missing it. An empty list is **not** a completeness proof.
+
+**Root cause C — the client mislabelled it.** A deployment without the action falls through the router to its
+terminal `{ success:false, error:'Invalid POST action. Supported: …' }`. That envelope carries no `errors[]`, so
+`_kmGapRead_` hit its generic fallback and printed `GAP_READ_ERROR`. The same shape reached `_kmWeeklyCommand_`
+as `BUSINESS_COMMAND_ERROR`.
+
+**Fixes.** `build_id` / `contract_version` / `deployed_action_contract_version` /
+`inventory_registry_projection_version` / `required_action_list_version` are now immutable identity fields, with
+a written bump rule. Both runners classify the router's unknown-action envelope as
+**`DEPLOYMENT_CONTRACT_MISMATCH`** — zero-write, **not retryable** (retrying cannot publish a deployment) — and
+say "publish a new deployment version". `checkDeploymentContract()` compares the frontend's pinned minimum
+against the deployment's own identity. A registry failure leaves Site Inventory in **PRE_SEARCH**, starts no
+inventory read, and recovers via its own Retry with no navigation.
+
+The 45 s read timeout was **not** raised.
+
+## II. The origin of "234" — answered
+
+`234` was **not** wrong data and **not** persisted drafts. It was `drafts.length`: the number of **SKU rows
+carrying at least one positive tier quantity**, out of 495 AI-Plan rows on screen. My FB-3 progress line printed
+that SKU-row count under the label `allocation drafts`. The user is right that
+`request_order_allocation_drafts` never held 234 rows — an AI Plan row only becomes a persisted draft when a
+Send writes one.
+
+Every count is now computed once, labelled with its real unit, and **frozen**:
+
+| unit | meaning |
+| --- | --- |
+| `page_rows_in_scope` | rows surviving the page filters |
+| `sku_rows_with_positive_tier` | **this was the 234** |
+| `tier_cells_with_positive_qty` | SKU x T1/T2/T3 cells — the Request Order **line** count |
+| `distinct_skus` / `distinct_series` | their own counts |
+| `canonical_persisted_drafts` | drafts that **already exist** |
+| `manual_drafts_to_create` | drafts this Send would create |
+| `expected_request_order_headers` | = Series groups |
+| `expected_request_order_lines` | = tier cells |
+
+A confirmation summary shows all of them plus typed exclusions (already-submitted, no positive tier qty,
+removed by display filters) **before** anything is written. Progress phases now name their unit
+(`Persisting allocation drafts … SKU rows`, `Creating Request Orders … Series groups`) and take their
+denominators from the frozen workset. The mislabelled helper was deleted.
+
+## III. Page-control authority audit — **with a STOP**
+
+Source authority: `_roCountryMarketplaceScopedRows` (F1-7M-B2-HOTFIX) states the repo's own rule —
+*"rows scoped to the CURRENT Country + Marketplace selection ONLY (never Category / SKU / showMode)"*.
+
+| control | verdict by that authority | does it truncate Send today? |
+| --- | --- | --- |
+| Request type ALL / T1 / T2 / T3 | **BUSINESS_SEND_SCOPE** (user-frozen) | yes — correct |
+| Country | **BUSINESS_SEND_SCOPE** | yes — consistent |
+| Marketplace | **BUSINESS_SEND_SCOPE** | yes — consistent |
+| Category tab | **DISPLAY_ONLY** | **YES — CONFLICT** |
+| Risk | **DISPLAY_ONLY** | **YES — CONFLICT** |
+| SKU search text | **DISPLAY_ONLY** | **YES — CONFLICT** |
+| Show mode | DISPLAY_ONLY | no — proven absent from the Send path |
+| Pagination (50/page) | DISPLAY_ONLY | no — Send reads the unpaged set |
+
+**STOP — authority gap, not repaired.** `handleSendRequest` builds its workset from
+`_applyRequestOrderFilters`, which filters by Category tab, Risk and SKU search. By the repo's own scope rule
+those three are display-only, so a comprehensive ALL/T1/T2/T3 Send is being silently truncated by them. I did
+**not** widen the workset: doing so would make a Send write **more** rows than any previous Send, which is a
+business decision, not a bug fix. Instead the confirmation summary now reports
+`removed_by_display_filters`, so the truncation is visible before any write.
+
+**Decision required:** should Category tab / Risk / SKU search be excluded from the Send workset (making
+ALL/T1/T2/T3 genuinely comprehensive)?
+
+## IV. Interrupted Send Request — reconcile before retry
+
+`TEMP_REQUEST_ORDER_SEND_RECONCILE` / `system.requestOrderSendReconcile` (read-only). A stopped saga is never
+assumed to be a zero-write. It reports draft statuses, `site_confirmed`/`submitted` transitions, Request Orders
+and their line/source counts, duplicate primary keys and execution keys, headers with no lines, advanced drafts
+with no lines, the safe resume point, and whether a retry is safe.
+
+Retry is unsafe **only** for a duplicated identity or a header with no lines; everything else converges, because
+draft ids are deterministic (find-or-update) and Request Orders are keyed by an execution key that is reused.
+
+## V. PO document failure — root cause was the client discarding the cause
+
+13_ already answered a blocked document with a rich envelope (`stage`, `document_stage`, `document_generation`
+with reason / missing[] / configuration_required) — and `purchase-order-overview.js` already had a branch to
+render it. But `updatePurchaseOrderStatus` signals failure with `throw new Error(json.error)`, which reduced the
+whole envelope to its one generic sentence. The resolve-path branch was therefore unreachable, and the page fell
+to `.catch()` → **"Send PO failed: … could not be produced."** — exactly what the user saw.
+
+The envelope is now attached to the thrown Error and rendered from the rejection path: blocking stage, reason
+code, template error, unresolved required placeholders, Drive reason, whether it is a configuration problem,
+whether retry can help, and a pointer to `TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER`. **The hard document gate is
+unchanged** — the PO stays Draft, no status is written, no document row is created, no email is sent.
+
+## VI. Not done, and why
+
+- **§G server orchestration endpoint — NOT implemented.** It requires a new server saga that re-validates a
+  frozen workset, calls the canonical cores, read-after-write verifies every header and line, and resumes by
+  execution key. Building that safely is a larger change than everything else here combined, and a half-built
+  orchestration endpoint is more dangerous than the current client saga, which is at least idempotent and now
+  reconcilable. The serial client saga therefore remains, with its latch, phases, frozen workset, single write
+  batch and reconciliation diagnostic. **Recommended next task.**
+- **Full read-after-write quantity barrier (addendum §1) — PARTIAL.** Each write must return a persisted id, and
+  a failed write blocks the transition. What is **not** implemented is a scoped re-read verifying that every
+  persisted quantity equals the intended quantity. Doing it per draft would add N more round trips; it belongs
+  in the §G orchestration endpoint, where it is one bounded verification pass.
+- **§H AI Plan read timeout — diagnosed, not repaired.** The 45 s expiry is now a terminal `REQUEST_TIMEOUT`
+  that cannot silently become success, and Send Request does not depend on a fresh AI Plan read (it uses the
+  page model already loaded, then writes). The underlying payload size was not measured — that needs a live run
+  — and no include-gated slim API was added for it.
+- **Site Inventory station-scope revalidation (addendum §6) — NOT added server-side.** Submit already sends only
+  persisted draft ids for the applied Country + Marketplace, but the server does not yet re-reject a mixed-site
+  payload. Reported, not silently assumed.

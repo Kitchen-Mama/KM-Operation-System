@@ -3490,6 +3490,114 @@ window.KM.DB.endWriteBatch = async function () {
 };
 window.KM.DB.isWriteBatchOpen = function () { return _kmPostWriteDeferred_ > 0; };
 
+
+// ========================================================================================================
+
+// F1-7N-FB-3A §I — PRESERVE THE STRUCTURED ENVELOPE ON A THROWN WRITER ERROR.
+// The direct writers signal failure by `throw new Error(json.error)`. That discards EVERYTHING else the handler
+// sent. Send PO is the case that exposed it: 13_ answers a blocked document with a rich envelope —
+// { stage:'document_generation', document_stage, document_generation:{ reason, missing[], configuration_required,
+// … }, note } — and purchase-order-overview.js ALREADY has a branch that renders exactly that. But the branch
+// tests `res.stage`, and `res` never arrives: the throw reduced the whole envelope to its one generic sentence,
+// so the page fell to its `.catch()` and printed "Send PO failed: Send PO blocked — the required Purchase Order
+// document could not be produced." That is precisely the symptom the user reported, and the cause is here, not
+// in the backend and not in the document engine.
+// Attaching the envelope keeps the existing throw-based contract (every caller still sees a rejection) while
+// making the structured cause reachable. `.envelope` is the raw handler response; `.code` is its typed stage.
+function _kmWriterError_(json, fallbackMessage) {
+    var e = new Error((json && json.error) || fallbackMessage);
+    e.envelope = json || null;
+    e.code = (json && (json.document_stage || json.stage)) || '';
+    return e;
+}
+
+// F1-7N-FB-3A §C — DEPLOYMENT CONTRACT. "The action is not in the deployed code" is its own failure class.
+// --------------------------------------------------------------------------------------------------------
+// THE LIVE DEFECT. The website reported `GAP_READ_ERROR — gap read failed` for the slim scope registry while
+// the SAME handler ran successfully from the Apps Script editor. Those two facts are not in conflict, and
+// together they name the cause exactly:
+//   • the editor wrapper calls handleInventoryScopeRegistryGet_() DIRECTLY against the code currently SAVED,
+//     so it proves the code is saved and the data is readable;
+//   • the website calls the deployed /exec WEB APP, which serves whichever DEPLOYMENT VERSION was last
+//     published. Saving a file does NOT republish it.
+// A deployment that predates the action falls through the router to its terminal
+// `{ success:false, error:'Invalid POST action. Supported: …' }`. That envelope carries NO `errors[]` array,
+// so _kmGapRead_ hit its generic fallback and printed GAP_READ_ERROR — a read-failure label for what is
+// actually a DEPLOYMENT IDENTITY problem. The same shape reaches _kmWeeklyCommand_ as BUSINESS_COMMAND_ERROR.
+//
+// Both are now classified as DEPLOYMENT_CONTRACT_MISMATCH and name the missing action, so the message says
+// what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
+// not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
+// honest thing the client can do is say so.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 3;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
+// The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
+// action is told apart from a genuine business rejection — a business handler never answers with them.
+var KM_UNKNOWN_ACTION_PATTERNS_ = [
+    /^Invalid POST action\b/i,
+    /^Missing or invalid action parameter\b/i,
+    /^Invalid action\b/i,
+    /^Unsupported action\b/i
+];
+function _kmIsUnknownActionResponse_(errText) {
+    var s = String(errText == null ? '' : errText).trim();
+    for (var i = 0; i < KM_UNKNOWN_ACTION_PATTERNS_.length; i++) { if (KM_UNKNOWN_ACTION_PATTERNS_[i].test(s)) return true; }
+    return false;
+}
+// The typed result. It deliberately does NOT echo the router's "Supported: …" list — that string is long,
+// changes constantly and is exactly the stale artefact we are diagnosing; naming the action the caller asked
+// for is the useful half.
+function _kmDeploymentMismatchError_(action) {
+    return {
+        code: 'DEPLOYMENT_CONTRACT_MISMATCH',
+        message: 'The deployed Apps Script Web App does not contain the action "' + action + '". The code may be saved ' +
+            'in the editor without being published: create a NEW DEPLOYMENT VERSION, then reload. Nothing was read or written.',
+        details: {
+            command: action,
+            missing_action: action,
+            expected_action_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
+            zero_write: true,
+            retryable: false,          // retrying cannot publish a deployment
+            next_action: 'Publish a new Apps Script deployment version containing this action, then reload the page.'
+        }
+    };
+}
+// Compare the frontend's pinned expectations against the deployment's own immutable identity block. Returns a
+// verdict object; NEVER throws. This is the check that turns "the site behaves oddly" into one named fact.
+window.KM.DB.checkDeploymentContract = async function () {
+    var res = await _kmGapRead_('system.health', {});
+    if (!res || res.success === false) {
+        return { ok: false, code: (res && res.error && res.error.code) || 'HEALTH_UNAVAILABLE',
+            message: (res && res.error && res.error.message) || 'system.health did not answer.', identity: null };
+    }
+    var h = res.data || {};
+    var identity = {
+        build_id: h.build_id || h.build_version || null,
+        contract_version: h.contract_version || h.api_contract_version || null,
+        deployed_action_contract_version: (h.deployed_action_contract_version == null) ? null : Number(h.deployed_action_contract_version),
+        inventory_registry_projection_version: h.inventory_registry_projection_version || null,
+        required_action_list_version: (h.required_action_list_version == null) ? null : Number(h.required_action_list_version),
+        missing_actions: h.missing_actions || []
+    };
+    // A deployment that predates the identity block cannot report its own action contract — which is itself
+    // conclusive evidence that it is older than this frontend.
+    if (identity.deployed_action_contract_version == null) {
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+            message: 'The deployed Apps Script does not report an action-contract version, so it is older than this ' +
+                'frontend build. Publish a new deployment version.' };
+    }
+    if (identity.deployed_action_contract_version < KM_EXPECTED_ACTION_CONTRACT_VERSION_) {
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+            message: 'The deployed Apps Script action contract is v' + identity.deployed_action_contract_version +
+                ' but this frontend needs v' + KM_EXPECTED_ACTION_CONTRACT_VERSION_ + '. Publish a new deployment version.' };
+    }
+    return { ok: true, code: 'DEPLOYMENT_CONTRACT_OK', identity: identity, message: '' };
+};
+window.KM.DB.getExpectedContract = function () {
+    return { action_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
+        registry_projection_version: KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ };
+};
+
 // ---- Weekly command reliability (Round C1) ----------------------------------------------------------
 // ONE canonical command runner for the Weekly mutations. It fixes WRITE_SUCCEEDED_BUT_ACK_FAILED by
 // DECOUPLING the acknowledgement from the readback: the command result is determined ONLY by the handler
@@ -3575,6 +3683,12 @@ async function _kmWeeklyCommand_(command, payload) {
         // GAP_JOB_LOCK_UNAVAILABLE / CALCULATION_CONTEXT_INVALID / GAP_JOB_START_ERROR …) is surfaced VERBATIM instead
         // of being flattened to a generic BUSINESS_COMMAND_ERROR. Falls back to the legacy path when there is no
         // errors[] (non-gap handlers), so their classification is unchanged.
+        // F1-7N-FB-3A §C — classify a missing DEPLOYED action before the business classifier can flatten it
+        // into BUSINESS_COMMAND_ERROR. A business handler never answers with the router's unknown-action text.
+        if (!(json.errors && json.errors[0]) && _kmIsUnknownActionResponse_(json.error)) {
+            var _dm = _kmDeploymentMismatchError_(command);
+            return _kmCmdErr_(command, _dm.code, _dm.message, _dm.details);
+        }
         var _structured = (json.errors && json.errors[0]) ? json.errors[0] : null;
         var _emsg = _structured ? (_structured.message || _structured.code) : json.error;
         var _ecode = (_structured && _structured.code) || _kmExtractCanonicalCode_(json.error) || _kmClassifyBusinessError_(json.error);
@@ -3639,7 +3753,12 @@ async function _kmGapRead_(action, payload) {
     var trimmed = String(text || '').trim();
     if (trimmed.charCodeAt(0) !== 123) return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Non-JSON response', snippet: trimmed.slice(0, 80) } };
     var json; try { json = JSON.parse(trimmed); } catch (pe) { return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Malformed JSON response' } }; }
-    if (!json.success) return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
+    if (!json.success) {
+        // F1-7N-FB-3A §C — the router's terminal unknown-action envelope carries no errors[], which is exactly
+        // how it used to become the meaningless "GAP_READ_ERROR — gap read failed". Name it for what it is.
+        if (_kmIsUnknownActionResponse_(json.error)) return { success: false, error: _kmDeploymentMismatchError_(action) };
+        return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
+    }
     return { success: true, data: json.data || { rows: [] } };
 }
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ inventory_replenishment_gap rows ] } }.
@@ -4161,7 +4280,9 @@ window.KM.DB.updatePurchaseOrderStatus = async function(payload) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Update purchase order status failed');
+    // F1-7N-FB-3A §I — throw WITH the envelope so the page can render the document-gate cause it already knows
+    // how to render, instead of only the generic sentence.
+    if (!json.success) throw _kmWriterError_(json, 'Update purchase order status failed');
     await _kmWriterPostWrite_();
     return json.data;
 };

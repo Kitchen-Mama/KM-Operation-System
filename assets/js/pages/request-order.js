@@ -3189,6 +3189,89 @@ function _roSendErrorMessage_(err) {
 window._roSendErrorMessage_ = _roSendErrorMessage_;
 
 
+
+// ============================================================================================================
+// F1-7N-FB-3A §E + ADDENDUM §4 — THE FROZEN WORKSET AND ITS HONEST DENOMINATORS.
+// ------------------------------------------------------------------------------------------------------------
+// WHERE "0/234" CAME FROM, exactly. The progress line read `allocation drafts 0/234`. That denominator was
+// `drafts.length`, and `drafts` is built by iterating the FILTERED page rows and pushing ONE entry per SKU row
+// that has at least one tier with orderQty > 0. So 234 was the number of SKU ROWS WITH A POSITIVE TIER
+// QUANTITY, out of 495 AI-Plan rows on screen. It was NEVER a count of persisted
+// `request_order_allocation_drafts`, and the user is right that the live table never held that many. The label
+// was mine, introduced in FB-3, and it was simply wrong: I printed a SKU-row count under the word "drafts".
+//
+// An AI Plan row is NOT a persisted allocation draft. A row becomes a persisted draft only when this Send
+// writes one (manual path) or when a canonical AI/job draft already exists for it (canonical path).
+//
+// The rules now enforced here:
+//   • every count is computed ONCE, labelled with the unit it actually measures, and FROZEN;
+//   • a phase denominator can never be a different unit from its phase's work item;
+//   • the confirmation summary shows every count and every EXCLUSION with its reason before anything is written;
+//   • counts are never mixed, summed across units, or relabelled.
+var RO_SEND_UNITS_ = ['page_rows_in_scope', 'sku_rows_with_positive_tier', 'tier_cells_with_positive_qty',
+    'distinct_skus', 'distinct_series', 'canonical_persisted_drafts', 'manual_drafts_to_create',
+    'expected_request_order_headers', 'expected_request_order_lines'];
+// Build the immutable count set for a Send. `drafts` is the per-SKU-row structure the caller already built.
+function _roBuildWorkset_(drafts, bySeriesKeys, excluded, tierScope) {
+    var tierCells = 0, skuSet = {}, seriesSet = {}, canonical = 0, manual = 0, lines = 0;
+    for (var i = 0; i < drafts.length; i++) {
+        var d = drafts[i];
+        tierCells += d.lines.length;
+        lines += d.lines.length;
+        skuSet[String(d.item.sku)] = 1;
+        seriesSet[String(d.item.series || '(no series)')] = 1;
+        if (d.isCanonical) canonical++; else manual++;
+    }
+    var counts = {
+        tier_scope: tierScope,
+        page_rows_in_scope: excluded.rows_in_scope,
+        sku_rows_with_positive_tier: drafts.length,
+        tier_cells_with_positive_qty: tierCells,
+        distinct_skus: Object.keys(skuSet).length,
+        distinct_series: Object.keys(seriesSet).length,
+        canonical_persisted_drafts: canonical,
+        manual_drafts_to_create: manual,
+        expected_request_order_headers: bySeriesKeys.length,
+        expected_request_order_lines: lines,
+        excluded: excluded
+    };
+    // Freeze so a later phase cannot mutate a denominator mid-run.
+    try { Object.freeze(counts); Object.freeze(counts.excluded); } catch (e) {}
+    return counts;
+}
+// The confirmation summary. Every number carries its unit; nothing is merged.
+function _roWorksetSummary_(w, typeLabel) {
+    var x = w.excluded || {};
+    return 'Send Request — ' + typeLabel + '\n' +
+        '\nWHAT WILL BE SENT' +
+        '\n  SKU rows with a positive tier qty : ' + w.sku_rows_with_positive_tier +
+        '\n  Tier cells (SKU x T1/T2/T3)       : ' + w.tier_cells_with_positive_qty +
+        '\n  Distinct SKUs                     : ' + w.distinct_skus +
+        '\n  Distinct Series                   : ' + w.distinct_series +
+        '\n  Already-persisted canonical drafts: ' + w.canonical_persisted_drafts +
+        '\n  Manual drafts to create/update    : ' + w.manual_drafts_to_create +
+        '\n  Expected Request Order headers    : ' + w.expected_request_order_headers +
+        '\n  Expected Request Order lines      : ' + w.expected_request_order_lines +
+        '\n\nEXCLUDED' +
+        '\n  Rows on this page in scope        : ' + x.rows_in_scope +
+        '\n  Already submitted (terminal)      : ' + x.already_submitted_sku +
+        '\n  No positive tier qty in scope     : ' + x.no_positive_tier_qty +
+        '\n  Removed by DISPLAY filters        : ' + x.removed_by_display_filters +
+        '\n      (category tab / risk / SKU search — see the Send-scope note below)' +
+        '\n\nTier scope selected: ' + w.tier_scope +
+        '\n\nNOTE: an AI Plan row is NOT a persisted allocation draft. Only the counts above are written.' +
+        '\n\nProceed?';
+}
+// Phase progress with an IMMUTABLE denominator and a unit-accurate label. The unit must be one of
+// RO_SEND_UNITS_ so a phase can never advertise a count of something it is not iterating.
+function _roSendPhase_(phase, done, total, unitLabel) {
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    _roSetSendState_('LOADING', phase + ' ' + done + '/' + total + ' ' + unitLabel + ' (' + pct + '%) — do not close this page.');
+}
+window._roBuildWorkset_ = _roBuildWorkset_;
+window._roWorksetSummary_ = _roWorksetSummary_;
+window._roSendUnits_ = function () { return RO_SEND_UNITS_.slice(); };
+
 // ============================================================================================================
 // F1-7N-FB-3 §D/§F — SEND REQUEST: bounded, latched, always terminal.
 // ------------------------------------------------------------------------------------------------------------
@@ -3256,11 +3339,10 @@ function _roSetSendState_(state, text) {
   el.innerHTML = '<span style="color:' + color + ';">' + _roEsc2_(text || '') + '</span>';
   el.style.display = '';
 }
-// Progress during the serial loop, so a long Send is legible instead of looking frozen.
-function _roSendProgress_(done, total, label) {
-  var pct = total ? Math.round((done / total) * 100) : 0;
-  _roSetSendState_('LOADING', 'Sending… ' + label + ' ' + done + '/' + total + ' (' + pct + '%) — do not close this page.');
-}
+// F1-7N-FB-3A §E — the FB-3 _roSendProgress_ helper is REMOVED. Its caller passed a SKU-row count under the
+// label 'allocation drafts', which is exactly how '0/234 allocation drafts' was printed for a table that never
+// held 234 drafts. Progress now goes through _roSendPhase_, whose denominators come from the FROZEN workset and
+// whose labels name the unit actually being iterated.
 // Compact instrumentation. Never logs a business row or any configuration value.
 function _roSendTrace_(fields) {
   try {
@@ -3319,9 +3401,18 @@ async function handleSendRequest() {
   const sendCycle = String(new Date().getFullYear());   // R4E5B — one stable planning cycle for this Send (manual id + execution key)
   const drafts = [];        // { item, lines:[...], isCanonical, allocDraftId } — allocDraftId is the canonical lineage FK
   let partialCount = 0;     // manual partial-carton lines (allowed — recorded, never blocked)
+  // F1-7N-FB-3A §E / ADDENDUM §3 — typed exclusion counts, so the confirmation summary can explain the
+  // difference between what is on screen and what will be written instead of leaving it to be guessed.
+  const _roExcluded = {
+    rows_in_scope: rows.length,
+    all_page_rows: (requestOrderState.data || []).length,
+    removed_by_display_filters: Math.max(0, (requestOrderState.data || []).length - rows.length),
+    already_submitted_sku: 0,
+    no_positive_tier_qty: 0
+  };
   rows.forEach(function(item) {
     // R4E5B §14/§18 — an already-executed (terminal submitted) SKU is never re-executed by a new Send.
-    if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item.sku)) return;
+    if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item.sku)) { _roExcluded.already_submitted_sku++; return; }
     const edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
     const upc = parseFloat(item.boxSize) || 0;
     const lines = [];
@@ -3362,6 +3453,7 @@ async function handleSendRequest() {
       ? ((_roCanonicalDraftBySku[_roCanonKey_(item.sku)] || {}).draftId || '')
       : _roManualDraftId_(item.company, item.country, item.marketplace, item.sku, sendCycle);
     if (lines.length) drafts.push({ item: item, lines: lines, isCanonical: isCanon, allocDraftId: allocDraftId });
+    else _roExcluded.no_positive_tier_qty++;
   });
 
   // NOTE: partial cartons are ALLOWED (non-blocking). They are recorded (full cartons + loose units +
@@ -3375,10 +3467,6 @@ async function handleSendRequest() {
   }
 
   const totalUnits = drafts.reduce(function(s, d) { return s + d.lines.reduce(function(a, l) { return a + l.orderQty; }, 0); }, 0);
-  let msg = 'Send Request — ' + typeLabel + '\n\nSKU rows: ' + drafts.length + '\nTotal units: ' + totalUnits.toLocaleString() +
-    (partialCount ? ('\nPartial-carton lines: ' + partialCount + ' (allowed — recorded with loose units)') : '') +
-    '\n\nGrouped into Request Order Draft(s) by Series (supplier/factory pending).\n\nProceed?';
-  if (!confirm(msg)) return;
 
   // Group lines by Series → one Request Order Draft per series (supplier/factory pending).
   const bySeries = {};
@@ -3404,8 +3492,17 @@ async function handleSendRequest() {
     });
   });
 
-  // F1-7N-FB-3 §D — the pre-flight gates above all return WITHOUT having taken the latch, so the button is
-  // still enabled and the status surface must not be left showing a stale message.
+  // F1-7N-FB-3A §E + ADDENDUM §4 — freeze the workset and CONFIRM with separately labelled counts before
+  // anything is written. Placed after the Series grouping so the expected header/line counts are real rather
+  // than predicted. Every denominator used by the progress phases below comes from this frozen object.
+  const _roWorkset = _roBuildWorkset_(drafts, Object.keys(bySeries), _roExcluded, typeLabel);
+  if (!confirm(_roWorksetSummary_(_roWorkset, typeLabel) +
+      (partialCount ? ('\n\nPartial-carton lines: ' + partialCount + ' (allowed — recorded with loose units)') : ''))) {
+    _roSetSendState_('IDLE', '');
+    return;
+  }
+
+  // F1-7N-FB-3A §D — the pre-flight gates above all return WITHOUT having taken the latch.
   _roSetSendState_('IDLE', '');
 
   // Demo mode: no DB — simulate + log.
@@ -3435,15 +3532,18 @@ async function handleSendRequest() {
   _roSendState.startedAt = Date.now();
   var _batchOpen = false;
   if (typeof DB.beginWriteBatch === 'function') { DB.beginWriteBatch(); _batchOpen = true; }
-  _roSetSendState_('LOADING', 'Sending… preparing ' + drafts.length + ' SKU row(s). Do not close this page.');
-  _roSendTrace_({ phase: 'start', sku_rows: drafts.length, series_groups: Object.keys(bySeries).length, total_units: totalUnits });
+  _roSetSendState_('LOADING', 'Sending… preparing ' + _roWorkset.sku_rows_with_positive_tier + ' SKU row(s). Do not close this page.');
+  // The trace carries the FROZEN workset, so the log and the UI can never disagree about a denominator.
+  _roSendTrace_({ phase: 'start', workset: _roWorkset });
   try {
     const cycle = sendCycle;
     const staleSkus = [];        // §9 fail-closed: canonical drafts that changed since the user last viewed them
     const coveredDraftIds = [];  // §12 every allocation draft advanced to submitted AFTER request execution succeeds
     for (var di = 0; di < drafts.length; di++) {
-      // Each iteration is 1-3 sequential round trips. Report progress so a long run is legible.
-      _roSendProgress_(di, drafts.length, 'allocation drafts');
+      // F1-7N-FB-3A §E — the label now names what is actually iterated: SKU ROWS, not "allocation drafts".
+      // This loop persists/confirms one allocation draft PER SKU ROW; the denominator is the frozen SKU-row
+      // count and cannot change mid-run.
+      _roSendPhase_('Persisting allocation drafts', di, _roWorkset.sku_rows_with_positive_tier, 'SKU rows');
       const d = drafts[di];
       const sku = d.item.sku;
       if (d.isCanonical) {
@@ -3510,9 +3610,10 @@ async function handleSendRequest() {
     const createdNos = [];
     let reusedCount = 0;
     const seriesKeys = Object.keys(bySeries);
-    _roSendTrace_({ phase: 'allocation_drafts_done', covered: coveredDraftIds.length, elapsed_ms: Date.now() - _roSendState.startedAt });
+    _roSendTrace_({ phase: 'allocation_drafts_done', persisted_draft_ids: coveredDraftIds.length,
+      expected: _roWorkset.sku_rows_with_positive_tier, elapsed_ms: Date.now() - _roSendState.startedAt });
     for (var si = 0; si < seriesKeys.length; si++) {
-      _roSendProgress_(si, seriesKeys.length, 'request orders');
+      _roSendPhase_('Creating Request Orders', si, _roWorkset.expected_request_order_headers, 'Series groups');
       const series = seriesKeys[si];
       const res = await DB.createRequestOrderDraft({
         company: '', source: 'manual', source_ref_type: 'request_order_allocation_batch',

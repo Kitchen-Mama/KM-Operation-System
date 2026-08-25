@@ -334,9 +334,15 @@ function finishAsync() {
   ok(/aria-busy/.test(setState), 'F4. and the busy state is announced');
 
   // 5. progress during the serial multi-write loop
-  ok(/_roSendProgress_\(di, drafts\.length, 'allocation drafts'\)/.test(send), 'F5. the per-SKU loop reports progress');
-  ok(/_roSendProgress_\(si, seriesKeys\.length, 'request orders'\)/.test(send), 'F5. and so does the per-series loop');
-  ok(/do not close this page/i.test(extractFn(RO, '_roSendProgress_') + send), 'F5. with an explicit instruction not to navigate away');
+  // F1-7N-FB-3A §E superseded _roSendProgress_ with _roSendPhase_: the FB-3 helper printed a SKU-ROW count
+  // under the label 'allocation drafts', which is how the live '0/234 allocation drafts' was produced. The
+  // replacement contract is STRICTLY stronger — every phase names the unit it iterates and takes its
+  // denominator from the FROZEN workset — so these assert that instead.
+  ok(/_roSendPhase_\('Persisting allocation drafts', di, _roWorkset\.sku_rows_with_positive_tier, 'SKU rows'\)/.test(send),
+    'F5. the per-SKU loop reports progress with an explicit SKU-row unit');
+  ok(/_roSendPhase_\('Creating Request Orders', si, _roWorkset\.expected_request_order_headers, 'Series groups'\)/.test(send),
+    'F5. and the per-series loop with an explicit Series-group unit');
+  ok(/do not close this page/i.test(extractFn(RO, '_roSendPhase_') + send), 'F5. with an explicit instruction not to navigate away');
 
   // 6. no auto-retry, and a timeout is INDETERMINATE
   var sendBody = code(send).slice(code(send).indexOf('{') + 1);   // exclude the declaration line itself
@@ -461,8 +467,13 @@ function finishAsync() {
   ok(/lock: 'LockService\.getScriptLock\(\)'/.test(G65), 'G12. and only as the reported contract string, never a call');
   eq((G65.match(/read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0/g) || []).length, 1,
     'G12. one shared zero-counter authority');
+  // One footer line per editor wrapper in 65_. Counted from the source rather than hard-coded, so adding a
+  // wrapper (FB-3A added the interrupted-Send reconciliation one) tightens this assertion instead of breaking it.
+  var wrapperCount65 = (G65.match(/^function TEMP_[A-Z_]+\(\) \{/gm) || []).length;
+  ok(wrapperCount65 >= 4, 'G13. 65_ exposes ' + wrapperCount65 + ' editor wrappers');
   ['READ_ONLY = ', 'DB_WRITES = ', 'DRIVE_WRITES = ', 'STATUS_TRANSITIONS = ', 'EMAILS = ', 'DEMO_MUTATIONS = '].forEach(function (f) {
-    eq((G65.match(new RegExp("Logger\\.log\\('" + f, 'g')) || []).length, 3, 'G13. all three wrappers log the footer line ' + f.trim());
+    eq((G65.match(new RegExp("Logger\\.log\\('" + f, 'g')) || []).length, wrapperCount65,
+      'G13. every 65_ wrapper logs the footer line ' + f.trim());
   });
   // no id leakage
   eq((diag65.match(/prodExpectedDbId_/g) || []).length, 1, 'G14. the configured db id is referenced exactly once');

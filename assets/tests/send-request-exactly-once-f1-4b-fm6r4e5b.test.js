@@ -101,7 +101,10 @@ ok(/allocDraftId = isCanon[\s\S]{0,140}_roManualDraftId_\(item\.company/.test(se
 ok(/submitRequestOrderAllocationDrafts\(\{ draft_ids: coveredDraftIds, submitted_by: 'request-order' \}\)/.test(send), '§11 submit (site_confirmed → submitted) runs over the covered drafts AFTER execution');
 var iCreate = send.indexOf('createRequestOrderDraft'), iSubmit = send.indexOf('submitRequestOrderAllocationDrafts({ draft_ids: coveredDraftIds');
 ok(iCreate > -1 && iSubmit > iCreate, '§11/§16 submit happens AFTER request-order creation (success only past the execution boundary)');
-ok(/_roIsSubmittedSku_\(item\.sku\)\) return;/.test(send), '§14/§18 already-executed (submitted) SKUs are excluded from a new Send');
+// F1-7N-FB-3A §E — the exclusion is unchanged in EFFECT (still an immediate `return`); it is now also
+// COUNTED, so the confirmation summary can explain the gap between rows on screen and rows written.
+ok(/_roIsSubmittedSku_\(item\.sku\)\) \{ _roExcluded\.already_submitted_sku\+\+; return; \}/.test(send),
+  '§14/§18 already-executed (submitted) SKUs are excluded from a new Send — and the exclusion is counted');
 ok(/const eff = _roSendOrderQty_\(item, idx, b, e\)/.test(send), '§17 execution qty = canonical persisted order_qty (no recompute)');
 ok(!/getOrderPlanningGap|calculateGap|KMREC|calculateSuggestedOrderQty/.test(send), '§17/§18 no gap/KMREC/suggested recompute in Send');
 ok(/staleSkus\.push\(sku\)/.test(send) && /if \(staleSkus\.length\)[\s\S]{0,600}return;/.test(send), '§9 (J) stale token → no Request Order created, latest truth reloaded');

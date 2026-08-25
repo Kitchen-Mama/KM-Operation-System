@@ -754,7 +754,33 @@
                 }
                 loadAndRender();
             })
-            .catch(function (e) { _poEndCmd(key, btn); alert('Send PO failed: ' + (e && e.message ? e.message : e)); });
+            .catch(function (e) {
+                _poEndCmd(key, btn);
+                // F1-7N-FB-3A §I — THE fix for "Send PO failed: … could not be produced." updatePurchaseOrderStatus
+                // signals failure by throwing, so the resolve-path branch above never saw the envelope. It is now
+                // attached to the Error, and the blocked-document case is rendered here with its real cause: the
+                // stage that blocked, the reason code, the unresolved required placeholders, whether the fix is
+                // configuration, and whether a retry can help. The PO is still Draft either way.
+                var env = (e && e.envelope) || null;
+                if (env && env.stage === 'document_generation') {
+                    var dg = env.document_generation || {};
+                    var missing = (dg.missing || []).map(function (m) { return (m && (m.placeholder || m.field)) || String(m || ''); }).filter(Boolean);
+                    alert('Send PO blocked — the required Purchase Order document could not be produced.\n' +
+                        '\nBlocking stage : ' + (env.document_stage || dg.stage || 'unknown') +
+                        '\nReason code    : ' + (dg.reason_code || dg.reason || 'unknown') +
+                        (dg.template_error ? ('\nTemplate       : ' + dg.template_error) : '') +
+                        (missing.length ? ('\nUnresolved required field(s): ' + missing.slice(0, 8).join(', ') + (missing.length > 8 ? (' … +' + (missing.length - 8)) : '')) : '') +
+                        (dg.drive_reason ? ('\nDrive          : ' + dg.drive_reason) : '') +
+                        (dg.configuration_required ? '\n\nThis is a CONFIGURATION problem — fix it in Admin \u203A Document Templates.' : '') +
+                        (dg.retryable === false ? '\nRetry will not help until the cause above is resolved.' : '') +
+                        '\n\nThe PO remains Draft. No status was written, no document row was created and no email was sent.' +
+                        '\n\nFor the full picture run TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER (or document.diagnostic.purchaseOrder) ' +
+                        'with this purchase_order_id — it reports the template, every unresolved placeholder, Drive readiness, ' +
+                        'the folder authority and the exact blocking stage, read-only.');
+                    return;
+                }
+                alert('Send PO failed: ' + (e && e.message ? e.message : e));
+            });
     }
 
     function cancel(id, btn) {

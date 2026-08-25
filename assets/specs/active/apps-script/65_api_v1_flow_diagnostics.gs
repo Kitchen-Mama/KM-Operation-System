@@ -21,7 +21,7 @@
 // the cases where the question really is "would THIS route save?".
 // ============================================================
 
-var FLOWDIAG_BUILD_VERSION_ = 'F1-7N-FB-3';
+var FLOWDIAG_BUILD_VERSION_ = 'F1-7N-FB-3A';
 
 function flowStr_(v) { return String(v == null ? '' : v).trim(); }
 function flowIsPlaceholder_(v) { var s = flowStr_(v); return s === '' || s.indexOf('PASTE_') === 0; }
@@ -559,6 +559,234 @@ function TEMP_TWO_VERTICAL_FLOWS_DIAGNOSE() {
   });
   (d.procurement_blocking_reasons || []).forEach(function (b) { Logger.log('[TWO-FLOW][procurement][blocker] ' + b); });
   Logger.log('[TWO-FLOW] request_id=' + d.request_id + ' server_ms=' + d.server_ms);
+  Logger.log('READ_ONLY = ' + d.read_only);
+  Logger.log('DB_WRITES = ' + d.db_writes);
+  Logger.log('DRIVE_WRITES = ' + d.drive_writes);
+  Logger.log('STATUS_TRANSITIONS = ' + d.status_transitions);
+  Logger.log('EMAILS = ' + d.emails);
+  Logger.log('DEMO_MUTATIONS = ' + d.demo_mutations);
+}
+
+// ============================================================================================================
+// F1-7N-FB-3A §F — INTERRUPTED SEND REQUEST RECONCILIATION (strictly read-only).
+// ------------------------------------------------------------------------------------------------------------
+// The user stopped a Send Request mid-run. That is NOT a zero-write: the client saga writes 2-3 rows PER SKU
+// sequentially, so stopping it leaves an unknown prefix committed. Navigating away or closing the tab proves
+// nothing about what the server already did — this diagnostic is the only honest way to find out, and it MUST
+// be run before any retry is authorized.
+//
+// It reads the canonical lifecycle and reports, per execution key and per deterministic identity: which
+// allocation drafts advanced, which Request Orders exist, whether their lines are complete, which identities
+// are duplicated, which states are internally inconsistent, the exact safe resume point, and whether a retry
+// is safe at all. It writes nothing and takes no lock.
+//
+// SAFETY MODEL. The canonical Send is idempotent by construction (deterministic draft ids -> find-or-update;
+// Request Orders keyed by an execution key that is REUSED rather than duplicated), so the expected finding is
+// "partial but safely resumable". The states that are NOT safely resumable are enumerated explicitly rather
+// than assumed away.
+var ROREC_ACTIVE_STATUSES_ = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+
+function handleRequestOrderSendReconcile_(body) {
+  var started = Date.now();
+  body = body || {};
+  var cycle = flowStr_(body.planning_cycle);
+  if (flowIsPlaceholder_(cycle)) cycle = '';
+  var execKey = flowStr_(body.execution_key);
+  if (flowIsPlaceholder_(execKey)) execKey = '';
+  var out = {
+    success: true,
+    request_id: flowStr_(body.requestId || body.request_id) || ('ROREC-' + Utilities.getUuid().substring(0, 8).toUpperCase()),
+    build_version: FLOWDIAG_BUILD_VERSION_,
+    scope: { planning_cycle: cycle || null, execution_key: execKey || null },
+    evaluator: 'production (the canonical 13_/15_ tables and their frozen header authorities)',
+    note: 'A stopped or navigated-away Send is NEVER treated as a zero-write. Everything below is read from the DB.'
+  };
+  var c = flowCounters_(); for (var k in c) { if (Object.prototype.hasOwnProperty.call(c, k)) out[k] = c[k]; }
+
+  var ss = flowOpenDb_();
+  if (!ss) {
+    out.verdict = 'BLOCKED'; out.retry_safe = false;
+    out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE' }];
+    out.server_ms = Date.now() - started;
+    return jsonResponse_(out);
+  }
+
+  // ---- 1. allocation drafts, by status, within the cycle scope --------------------------------------------
+  var byStatus = {}, drafts = [], dupDraftIds = {}, seenDraftId = {};
+  try {
+    var dsh = ss.getSheetByName('request_order_allocation_drafts');
+    if (dsh) {
+      var dd = dsh.getDataRange().getValues();
+      if (dd.length > 1) {
+        var dh = dd[0].map(function (x) { return flowStr_(x).toLowerCase(); });
+        var cId = dh.indexOf('request_allocation_draft_id'), cSt = dh.indexOf('status'), cCy = dh.indexOf('planning_cycle');
+        var cSku = dh.indexOf('sku'), cSer = dh.indexOf('series_snapshot'), cGen = dh.indexOf('generation_type');
+        for (var r = 1; r < dd.length; r++) {
+          var id = cId === -1 ? '' : flowStr_(dd[r][cId]);
+          if (!id) continue;
+          var rowCycle = cCy === -1 ? '' : flowStr_(dd[r][cCy]);
+          if (cycle && rowCycle !== cycle) continue;
+          if (seenDraftId[id]) { dupDraftIds[id] = (dupDraftIds[id] || 1) + 1; } else { seenDraftId[id] = 1; }
+          var st = (cSt === -1 ? '' : flowStr_(dd[r][cSt])).toLowerCase();
+          byStatus[st] = (byStatus[st] || 0) + 1;
+          drafts.push({ id: id, status: st, sku: cSku === -1 ? '' : flowStr_(dd[r][cSku]),
+            series: cSer === -1 ? '' : flowStr_(dd[r][cSer]), generation_type: cGen === -1 ? '' : flowStr_(dd[r][cGen]),
+            planning_cycle: rowCycle });
+        }
+      }
+    }
+  } catch (e) { /* absent table -> reported as zero below */ }
+  out.allocation_drafts = {
+    matched: drafts.length,
+    by_status: byStatus,
+    site_confirmed: byStatus.site_confirmed || 0,
+    submitted: byStatus.submitted || 0,
+    still_draft: byStatus.draft || 0,
+    partially_submitted: byStatus.partially_submitted || 0,
+    cancelled: byStatus.cancelled || 0,
+    duplicate_primary_keys: Object.keys(dupDraftIds)
+  };
+  // line counts for the drafts that advanced (a draft with no lines cannot produce an order line)
+  var advanced = drafts.filter(function (d) { return d.status === 'site_confirmed' || d.status === 'submitted'; });
+  var draftsWithNoLines = [];
+  for (var i = 0; i < advanced.length && i < 400; i++) {
+    if (flowCountBy_(ss, 'request_order_allocation_draft_lines', 'request_allocation_draft_id', advanced[i].id) === 0) {
+      draftsWithNoLines.push(advanced[i].id);
+    }
+  }
+  out.allocation_drafts.advanced_with_no_lines = draftsWithNoLines;
+  out.allocation_drafts.line_scan_capped = advanced.length > 400;
+
+  // ---- 2. Request Orders created by this allocation-batch execution path ----------------------------------
+  var orders = [], dupKeys = {}, seenKey = {};
+  try {
+    var osh = ss.getSheetByName('request_orders');
+    if (osh) {
+      var od = osh.getDataRange().getValues();
+      if (od.length > 1) {
+        var oh = od[0].map(function (x) { return flowStr_(x).toLowerCase(); });
+        var oId = oh.indexOf('request_order_id'), oNo = oh.indexOf('request_order_no');
+        var oSrcT = oh.indexOf('source_ref_type'), oSrcI = oh.indexOf('source_ref_id');
+        var oCy = oh.indexOf('planning_cycle'), oSer = oh.indexOf('series'), oSt = oh.indexOf('order_status');
+        var wantType = (typeof RO_EXEC_SOURCE_REF_TYPE_ !== 'undefined') ? RO_EXEC_SOURCE_REF_TYPE_ : 'request_order_allocation_batch';
+        for (var r2 = 1; r2 < od.length; r2++) {
+          if (oSrcT !== -1 && flowStr_(od[r2][oSrcT]) !== wantType) continue;
+          var rowCy = oCy === -1 ? '' : flowStr_(od[r2][oCy]);
+          if (cycle && rowCy !== cycle) continue;
+          var key = oSrcI === -1 ? '' : flowStr_(od[r2][oSrcI]);
+          if (execKey && key !== execKey) continue;
+          if (key) { if (seenKey[key]) { dupKeys[key] = (dupKeys[key] || 1) + 1; } else { seenKey[key] = 1; } }
+          var roId = oId === -1 ? '' : flowStr_(od[r2][oId]);
+          orders.push({ request_order_id: roId, request_order_no: oNo === -1 ? '' : flowStr_(od[r2][oNo]),
+            execution_key: key, series: oSer === -1 ? '' : flowStr_(od[r2][oSer]),
+            order_status: oSt === -1 ? '' : flowStr_(od[r2][oSt]),
+            line_count: roId ? flowCountBy_(ss, 'request_order_lines', 'request_order_id', roId) : 0,
+            source_row_count: roId ? flowCountBy_(ss, 'request_order_line_sources', 'request_order_id', roId) : 0 });
+        }
+      }
+    }
+  } catch (e2) { /* absent table -> zero */ }
+  out.request_orders = {
+    matched: orders.length,
+    duplicate_execution_keys: Object.keys(dupKeys),
+    distinct_execution_keys: Object.keys(seenKey).length,
+    headers_with_zero_lines: orders.filter(function (o) { return o.line_count === 0; }).map(function (o) { return o.request_order_no || o.request_order_id; }),
+    rows: orders.slice(0, 40)
+  };
+  out.request_order_lines_total = orders.reduce(function (s, o) { return s + o.line_count; }, 0);
+  out.request_order_line_sources_total = orders.reduce(function (s, o) { return s + o.source_row_count; }, 0);
+
+  // ---- 3. partial / inconsistent state detection ----------------------------------------------------------
+  var partial = [];
+  if (out.allocation_drafts.site_confirmed > 0 && out.request_orders.matched === 0) {
+    partial.push({ state: 'DRAFTS_CONFIRMED_WITHOUT_REQUEST_ORDER',
+      detail: out.allocation_drafts.site_confirmed + ' draft(s) reached site_confirmed but no Request Order exists for this scope. ' +
+        'This is the EXPECTED shape of a Send stopped between its allocation phase and its order phase.' });
+  }
+  if (out.request_orders.matched > 0 && out.allocation_drafts.submitted === 0) {
+    partial.push({ state: 'REQUEST_ORDER_WITHOUT_SUBMITTED_DRAFTS',
+      detail: 'Request Order(s) exist but no allocation draft reached submitted — the Send stopped before its final lifecycle advance.' });
+  }
+  if (out.request_orders.headers_with_zero_lines.length) {
+    partial.push({ state: 'REQUEST_ORDER_HEADER_WITHOUT_LINES',
+      detail: 'header(s) with zero lines: ' + out.request_orders.headers_with_zero_lines.join(',') });
+  }
+  if (draftsWithNoLines.length) {
+    partial.push({ state: 'ADVANCED_DRAFT_WITHOUT_LINES', detail: draftsWithNoLines.slice(0, 20).join(',') });
+  }
+  if (out.allocation_drafts.duplicate_primary_keys.length) {
+    partial.push({ state: 'DUPLICATE_ALLOCATION_DRAFT_PRIMARY_KEY', detail: out.allocation_drafts.duplicate_primary_keys.slice(0, 20).join(',') });
+  }
+  if (out.request_orders.duplicate_execution_keys.length) {
+    partial.push({ state: 'DUPLICATE_REQUEST_ORDER_EXECUTION_KEY', detail: out.request_orders.duplicate_execution_keys.slice(0, 20).join(',') });
+  }
+  out.partial_states = partial;
+
+  // ---- 4. safe resume point + retry verdict ---------------------------------------------------------------
+  // A duplicated identity, or a header with no lines, is the ONLY class of finding that makes a retry unsafe:
+  // everything else CONVERGES, because the draft ids are deterministic (find-or-update) and the Request Order
+  // is keyed by the execution key (reuse, never a second row).
+  var unsafe = out.allocation_drafts.duplicate_primary_keys.length > 0 ||
+    out.request_orders.duplicate_execution_keys.length > 0 ||
+    out.request_orders.headers_with_zero_lines.length > 0;
+  out.retry_safe = !unsafe;
+  out.user_action_required = unsafe;
+  if (unsafe) {
+    out.safe_resume_point = 'NONE — resolve the duplicate/incomplete identities above first. Do NOT retry.';
+    out.next_action = 'A duplicated primary key / execution key, or a header with no lines, cannot be resolved by a retry. ' +
+      'Reconcile those exact rows before any further Send.';
+  } else if (out.allocation_drafts.site_confirmed > 0 && out.request_orders.matched === 0) {
+    out.safe_resume_point = 'RE_RUN_SEND_FOR_THE_SAME_SCOPE';
+    out.next_action = 'Re-running Send for the same scope is safe: the confirmed drafts are addressed by their deterministic ids ' +
+      '(find-or-update, no new rows) and the Request Order will be created once under its execution key.';
+  } else if (out.request_orders.matched > 0 && out.allocation_drafts.submitted === 0) {
+    out.safe_resume_point = 'RE_RUN_SEND_FOR_THE_SAME_SCOPE';
+    out.next_action = 'Re-running Send for the same scope is safe: the existing Request Order is REUSED by execution key ' +
+      '(reused:true) and only the final lifecycle advance completes.';
+  } else if (out.request_orders.matched > 0) {
+    out.safe_resume_point = 'ALREADY_COMPLETE';
+    out.next_action = 'The lifecycle looks complete for this scope. Verify the Request Order on the Request Order Draft page before sending again.';
+  } else {
+    out.safe_resume_point = 'NOTHING_WAS_WRITTEN_FOR_THIS_SCOPE';
+    out.next_action = 'No allocation draft advanced and no Request Order exists for this scope — the interrupted attempt left nothing behind.';
+  }
+  out.verdict = unsafe ? 'BLOCKED' : (partial.length ? 'PARTIAL_SAFELY_RESUMABLE' : 'CONSISTENT');
+  out.server_ms = Date.now() - started;
+  return jsonResponse_(out);
+}
+
+// Optional scoping. Leave both as placeholders to reconcile every allocation-batch Request Order.
+var TEMP_ROREC_PLANNING_CYCLE_ = 'PASTE_PLANNING_CYCLE_HERE_OR_LEAVE_BLANK';
+var TEMP_ROREC_EXECUTION_KEY_ = 'PASTE_EXECUTION_KEY_HERE_OR_LEAVE_BLANK';
+
+function TEMP_REQUEST_ORDER_SEND_RECONCILE() {
+  var d = {};
+  try {
+    d = JSON.parse(handleRequestOrderSendReconcile_({
+      planning_cycle: TEMP_ROREC_PLANNING_CYCLE_, execution_key: TEMP_ROREC_EXECUTION_KEY_
+    }).getContent());
+  } catch (e) { Logger.log('[RO-RECONCILE] UNPARSEABLE'); return; }
+  Logger.log('[RO-RECONCILE] verdict=' + d.verdict + ' retry_safe=' + d.retry_safe + ' user_action_required=' + d.user_action_required);
+  Logger.log('[RO-RECONCILE] scope=' + JSON.stringify(d.scope));
+  Logger.log('[RO-RECONCILE] note=' + d.note);
+  var a = d.allocation_drafts || {};
+  Logger.log('[RO-RECONCILE][drafts] matched=' + a.matched + ' draft=' + a.still_draft + ' site_confirmed=' + a.site_confirmed +
+    ' submitted=' + a.submitted + ' partially_submitted=' + a.partially_submitted + ' cancelled=' + a.cancelled);
+  Logger.log('[RO-RECONCILE][drafts] duplicate_pks=[' + (a.duplicate_primary_keys || []).join(',') + ']' +
+    ' advanced_with_no_lines=[' + (a.advanced_with_no_lines || []).join(',') + '] line_scan_capped=' + a.line_scan_capped);
+  var o = d.request_orders || {};
+  Logger.log('[RO-RECONCILE][orders] matched=' + o.matched + ' distinct_execution_keys=' + o.distinct_execution_keys +
+    ' duplicate_execution_keys=[' + (o.duplicate_execution_keys || []).join(',') + ']' +
+    ' headers_with_zero_lines=[' + (o.headers_with_zero_lines || []).join(',') + ']');
+  Logger.log('[RO-RECONCILE][orders] lines_total=' + d.request_order_lines_total + ' line_sources_total=' + d.request_order_line_sources_total);
+  (o.rows || []).forEach(function (r) {
+    Logger.log('[RO-RECONCILE][order] no=' + r.request_order_no + ' series=' + r.series + ' status=' + r.order_status +
+      ' lines=' + r.line_count + ' sources=' + r.source_row_count + ' exec_key=' + r.execution_key);
+  });
+  (d.partial_states || []).forEach(function (p) { Logger.log('[RO-RECONCILE][partial] ' + p.state + ' — ' + p.detail); });
+  Logger.log('[RO-RECONCILE] safe_resume_point=' + d.safe_resume_point);
+  Logger.log('[RO-RECONCILE] next_action=' + d.next_action);
+  Logger.log('[RO-RECONCILE] request_id=' + d.request_id + ' server_ms=' + d.server_ms);
   Logger.log('READ_ONLY = ' + d.read_only);
   Logger.log('DB_WRITES = ' + d.db_writes);
   Logger.log('DRIVE_WRITES = ' + d.drive_writes);

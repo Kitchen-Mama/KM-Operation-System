@@ -101,6 +101,11 @@ function doPost(e) {
     if (action === 'system.twoVerticalFlowsDiagnostic') {
       return handleTwoVerticalFlowsDiagnostic_(body);
     }
+    // F1-7N-FB-3A §F — read-only reconciliation of an INTERRUPTED Send Request. A stopped saga is never
+    // assumed to be a zero-write; this reports what actually landed and whether a retry is safe.
+    if (action === 'system.requestOrderSendReconcile') {
+      return handleRequestOrderSendReconcile_(body);
+    }
 
     if (action === 'updateSkuLifecycle') {
       return handleUpdateSkuLifecycle_(body);
