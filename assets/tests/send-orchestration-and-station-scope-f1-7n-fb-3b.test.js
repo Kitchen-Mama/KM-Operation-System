@@ -41,11 +41,18 @@ function extractFn(src, name) {
   }
   throw new Error('unbalanced fn: ' + name);
 }
+// Bracket-matched, so it works whether the array literal closes on its own line or inline.
 function extractVar(src, decl) {
-  const i = src.indexOf(decl);
+  let i = src.indexOf(decl);
   if (i < 0) throw new Error('var not found: ' + decl);
-  const j = src.indexOf('\n];', i);
-  return src.slice(i, j + 3);
+  const start = i;
+  let depth = 0, seen = false;
+  for (; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '[' || ch === '{') { depth++; seen = true; }
+    else if (ch === ']' || ch === '}') { depth--; if (seen && depth === 0) return src.slice(start, i + 2); }
+  }
+  throw new Error('unbalanced var: ' + decl);
 }
 function slice(src, a, b) { const i = src.indexOf(a); const j = src.indexOf(b, i + 1); return src.slice(i, j); }
 
@@ -66,12 +73,23 @@ const SEND = RO.slice(RO.indexOf('async function handleSendRequest()'), RO.index
 
 // ---- load the REAL pure core of 66_ (marker-delimited) + the helpers the handler needs -----------------------
 // the module constants block (declarations + comments only) and then the marker-delimited pure core
-eval(slice(G66, "var ROS_BUILD_VERSION_ = 'F1-7N-FB-3B';", '// __ROS_PURE_START__'));
+eval(slice(G66, 'var ROS_BUILD_VERSION_ =', '// __ROS_PURE_START__'));
 eval(slice(G66, '// __ROS_PURE_START__', '// __ROS_PURE_END__'));
 eval(extractFn(G66, 'rosBuildEnvelope_'));
 eval(extractFn(G66, 'rosSeriesIndex_'));
 eval(extractFn(G66, 'rosUnwrap_'));
+// F1-7N-FB-3C §E: the journal became a chunked Script-Property store and ownership became an atomic
+// compare-and-set, so the orchestration now depends on these impure helpers too.
+eval(extractFn(G66, 'rosJournalWrite_'));
+eval(extractFn(G66, 'rosJournalRead_'));
+eval(extractFn(G66, 'rosOwnershipTransact_'));
+eval(extractFn(G66, 'rosOwnershipRelease_'));
 eval(extractFn(G66, 'rosCountsOf_'));
+eval(extractVar(G66, 'var ROS_SLIM_DRAFT_PROJECTION_ = ['));
+eval(extractVar(G66, 'var ROS_SLIM_FORBIDDEN_INCLUDES_ = ['));
+eval(extractFn(G66, 'rosResolveIncludes_'));
+eval(extractFn(G66, 'rosProjectSlimDraft_'));
+eval(extractFn(G66, 'rosCurrentRunAuthority_'));
 eval(extractFn(G66, 'handleRequestOrderSendWorksetGet_'));
 eval(extractFn(G66, 'handleRequestOrderSendOrchestrate_'));
 
@@ -276,8 +294,10 @@ const dlg = _roSendConfirmSummary_({ all_page_rows_loaded: 495, sku_rows_with_po
   'All Request (T1+T2+T3)');
 ok(dlg.indexOf('ON THIS PAGE (candidate counts — NOT persisted allocation drafts)') !== -1,
   '6. the dialog labels the page numbers as CANDIDATES, not drafts');
-ok(dlg.indexOf('WILL BE SENT (server authority — PERSISTED allocation drafts)') !== -1,
+ok(dlg.indexOf('WILL BE SENT (server authority — PERSISTED allocation drafts') !== -1,
   '6. and labels the server numbers as the send authority');
+ok(dlg.indexOf('frozen') !== -1 && /SEND_WORKSET_DRIFT/.test(dlg),
+  '6. and states that EXACTLY the frozen set executes, or the Send is refused as drift (FB-3C §F)');
 ok(dlg.indexOf('495') !== -1 && dlg.indexOf('234') !== -1 && dlg.indexOf('468') !== -1,
   '6. all three reported numbers appear, each under the correct heading');
 ok(dlg.indexOf('Page rows with NO persisted draft') !== -1,
@@ -287,13 +307,21 @@ ok(!/allocation drafts *: *495/.test(dlg), '6. an AI Plan row count is never lab
 // =============================================================================================================
 section('7. one client click invokes ONE orchestration request');
 
-eq((code(SEND).match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 2,
-  '7. exactly two calls: one ZERO-WRITE dry run, then one committing request');
-ok(/dry_run: true/.test(SEND), '7. the first is explicitly dry_run');
-ok(SEND.indexOf('dry_run: true') < SEND.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
-  '7. and it runs BEFORE the committing call');
-ok(SEND.indexOf('_roSendConfirmSummary_') < SEND.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
-  '7. the user confirms the SERVER numbers before the committing call');
+// F1-7N-FB-3C §D: one click = ONE zero-write preview from the page, then a SERVER-DRIVEN continuation loop with
+// a single call site. The page never issues an execute call itself, so it cannot own business ordering.
+const LOOP = RO.slice(RO.indexOf('async function _roSendRunToCompletion_'), RO.indexOf('async function handleSendRequest()'));
+eq((code(SEND).match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 1,
+  '7. the page issues exactly ONE orchestration call — the zero-write preview');
+ok(/mode: 'preview'/.test(SEND), '7. and it is explicitly a preview');
+ok(code(SEND).indexOf("mode: 'execute'") === -1, '7. the page never issues an execute call itself');
+eq((code(LOOP).match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 1,
+  '7. the continuation loop has ONE call site, reused for every slice');
+ok(/confirmed_checksum: checksum/.test(LOOP) && /continuation: continuation/.test(LOOP),
+  '7. every slice carries the same confirmed checksum and a counted continuation');
+ok(SEND.indexOf("mode: 'preview'") < SEND.indexOf('_roSendConfirmSummary_'),
+  '7. the preview runs BEFORE the confirmation');
+ok(SEND.indexOf('_roSendConfirmSummary_') < SEND.indexOf('_roSendRunToCompletion_('),
+  '7. the user confirms the SERVER numbers before the committing run begins');
 // no per-SKU or per-series write loop remains in the browser
 ['DB.upsertRequestOrderAllocationDraft(', 'DB.upsertRequestOrderAllocationDraftLines(', 'DB.createRequestOrderDraft(',
  'DB.submitRequestOrderAllocationDrafts('].forEach(function (w) {
@@ -318,15 +346,53 @@ function fixtureIo(rows, opts) {
       if (name === 'sku_details') return SKU_DETAILS;
       if (name === 'request_orders') return opts.orders || [];
       if (name === 'request_order_lines') return opts.orderLines || [];
+      if (name === 'request_order_line_sources') return opts.orderSources || [];
       return [];
     },
+    // Emulates 13_ roCreateRequestOrderCore_: one request_order_lines row and one request_order_line_sources row
+    // per input line, with the header totals derived from them. opts.corrupt lets a test make the writer lie in
+    // one specific way so the §G verifier can be proven to catch it.
     createRequestOrderDraft: function (body) {
       writeCalls++;
       if (opts.createFails) return { success: false, error: 'BOOM', stage: 'lines' };
       const n = 'REQ-' + writeCalls;
       const id = 'RO-' + writeCalls;
-      (opts.orders = opts.orders || []).push({ request_order_id: id, request_order_no: n });
-      (body.lines || []).forEach(function () { (opts.orderLines = opts.orderLines || []).push({ request_order_id: id }); });
+      let totalQty = 0; const skus = {};
+      (body.lines || []).forEach(function (l, li) {
+        const lineId = 'ROL-' + writeCalls + '-' + li;
+        let q = Number(l.requested_qty);
+        if (opts.corrupt === 'QTY' && li === 0) q = q + 1;                       // wrong quantity
+        (opts.orderLines = opts.orderLines || []).push({
+          request_order_line_id: (opts.corrupt === 'NO_LINE_ID' && li === 0) ? '' : lineId,
+          request_order_id: id, sku: l.sku, series: l.series, company: l.company,
+          request_bucket: l.request_bucket, request_month: l.request_month,
+          requested_qty: q, approved_qty: q, units_per_carton: l.units_per_carton
+        });
+        if (opts.corrupt === 'DUPLICATE_LINE' && li === 0) {
+          (opts.orderLines = opts.orderLines || []).push({
+            request_order_line_id: lineId + 'X', request_order_id: id, sku: l.sku, series: l.series,
+            company: l.company, request_bucket: l.request_bucket, request_month: l.request_month,
+            requested_qty: q, approved_qty: q, units_per_carton: l.units_per_carton
+          });
+        }
+        (opts.orderSources = opts.orderSources || []).push({
+          request_order_line_source_id: 'ROLS-' + writeCalls + '-' + li,
+          request_order_line_id: lineId, request_order_id: id, sku: l.sku, company: l.company,
+          country: (opts.corrupt === 'STATION' && li === 0) ? 'ZZ' : l.country,
+          marketplace: l.marketplace, tier_type: l.request_bucket, source_month: l.request_month,
+          request_allocation_draft_id: (opts.corrupt === 'LINEAGE' && li === 0) ? 'RD::MONTHLY_ORDER::2026-08::wrong' : l.request_allocation_draft_id,
+          requested_qty: q, approved_qty: q
+        });
+        totalQty += q;
+        skus[String(l.sku).toUpperCase()] = 1;
+      });
+      if (opts.corrupt === 'EXTRA_LINE') {
+        (opts.orderLines = opts.orderLines || []).push({ request_order_line_id: 'ROL-EXTRA', request_order_id: id,
+          sku: 'GHOST', series: '', company: '', request_bucket: 'T2', request_month: '2026-10', requested_qty: 7 });
+      }
+      (opts.orders = opts.orders || []).push({ request_order_id: id, request_order_no: n,
+        total_qty: (opts.corrupt === 'HEADER_TOTAL' ? totalQty + 5 : totalQty),
+        total_sku: Object.keys(skus).length });
       return { success: true, data: { request_order_id: id, request_order_no: n, reused: false, execution_key: 'ROEXEC-' + writeCalls } };
     },
     submitAllocationDrafts: function (body) {
@@ -342,19 +408,41 @@ function fixtureIo(rows, opts) {
       return { success: true, data: { submitted: (opts.submitted || []).length } };
     },
     executionKey: function () { return 'ROEXEC-TEST'; },
-    journalGet: function (k) { return journal[k] || null; },
-    journalPut: function (k, j) { journal[k] = JSON.parse(JSON.stringify(j)); return true; },
+    // F1-7N-FB-3C §E — the journal is now a chunked Script-Property store plus a compare-and-set lock, because a
+    // journalGet -> decide -> journalPut seam cannot be made atomic. The fake lock SERIALIZES its callback and
+    // records how deep it nested, so the suite can prove the lock is never held across a canonical writer call.
+    propGet: function (n) { return Object.prototype.hasOwnProperty.call(journal, n) ? journal[n] : null; },
+    propSet: function (n, v) { journal[n] = String(v); return true; },
+    propDelete: function (n) { delete journal[n]; return true; },
+    withCasLock: function (fn) {
+      opts._casDepth = (opts._casDepth || 0) + 1;
+      opts._casMaxDepth = Math.max(opts._casMaxDepth || 0, opts._casDepth);
+      opts._casCalls = (opts._casCalls || 0) + 1;
+      try { return { locked: true, value: fn() }; }
+      finally { opts._casDepth--; }
+    },
     _journal: journal, _opts: opts
   };
 }
+// F1-7N-FB-3C §F — an execute call MUST carry the checksum a preview froze. This driver performs the real
+// handshake (preview, then execute with the returned checksum) so no test can accidentally bypass it.
+function runSend(io, payload, extra) {
+  const pv = handleRequestOrderSendOrchestrate_({ payload: Object.assign({ mode: 'preview' }, payload) }, io);
+  if (!pv.success) return pv;
+  const ck = pv.data.confirm_with_checksum || pv.data.workset_checksum;
+  return handleRequestOrderSendOrchestrate_({ payload: Object.assign({ mode: 'execute', confirmed_checksum: ck }, payload, extra || {}) }, io);
+}
 const dryRows = [draftRow({ sku: 'S1', tiers: { T1: { qty: 100 } } }), draftRow({ sku: 'S3', tiers: { T1: { qty: 50 } } })];
 writeCalls = 0;
-const dry = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08', dry_run: true } }, fixtureIo(dryRows));
-ok(dry.success === true, '7. the dry run succeeds');
-eq(dry.data.status, 'DRY_RUN_PLAN', '7. and identifies itself as a plan');
-eq(writeCalls, 0, '7. performing ZERO writes');
-eq(dry.data.writes_performed, 0, '7. and reporting zero writes');
+const previewIo = fixtureIo(dryRows);
+const dry = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08', mode: 'preview' } }, previewIo);
+ok(dry.success === true, '7. the preview succeeds');
+eq(dry.data.status, 'PREVIEW', '7. and identifies itself as a frozen plan');
+eq(writeCalls, 0, '7. performing ZERO business writes');
+eq(dry.data.writes_performed, 0, '7. and reporting zero business writes');
 eq(dry.data.counts.expected_request_order_headers, 2, '7. while still computing the real header count');
+eq(dry.data.journal_persisted, true, '7. the preview PERSISTS the frozen plan (FB-3C §F)');
+ok(!!dry.data.confirm_with_checksum, '7. and returns the checksum the execute call must present back');
 
 // =============================================================================================================
 section('8. the orchestration reuses the canonical writers (no second writer)');
@@ -368,17 +456,32 @@ const code66 = noStrings(G66);
  'sheetEnsureColumns_', 'DriveApp', 'MailApp', 'GmailApp'].forEach(function (w) {
   ok(code66.indexOf(w) === -1, '8. 66_ never executes ' + w + ' — it owns no write of its own');
 });
-ok(code66.indexOf('LockService') === -1,
-  '8. and takes NO ScriptLock: the canonical writers hold their own, so nesting cannot deadlock');
+// F1-7N-FB-3C §E: 66_ now DOES take a ScriptLock, because a journal read-modify-write could not otherwise be
+// atomic. §E authorises exactly that, and only around the compare-and-set. The contract is therefore no longer
+// "no lock" but "one lock, in one place, never held across a canonical writer" — which is strictly stronger
+// than the old absence, because it also rules out the race the absence permitted.
+eq((code66.match(/LockService\.getScriptLock\(\)/g) || []).length, 1,
+  '8. exactly ONE ScriptLock acquisition exists in 66_');
+const casFn = extractFn(G66, 'rosDefaultIo_');
+ok(/withCasLock: function \(fn\) \{[\s\S]{0,400}LockService\.getScriptLock\(\)/.test(casFn),
+  '8. and it lives inside withCasLock — the compare-and-set seam');
+ok(/releaseLock/.test(casFn), '8. which always releases it in a finally');
+const ownFn = extractFn(G66, 'rosOwnershipTransact_');
+['createRequestOrderDraft', 'submitAllocationDrafts', 'readTable', 'openDb'].forEach(function (w) {
+  ok(code(ownFn).indexOf('io.' + w) === -1,
+    '8. the CAS transaction never calls io.' + w + ' — the lock is never held across a canonical writer or a table read');
+});
 eq((G66.match(/handleCreateRequestOrderDraft_\(/g) || []).length, 1, '8. exactly ONE seam to the Request Order writer');
 eq((G66.match(/handleSubmitRequestOrderAllocationDrafts_\(/g) || []).length, 1, '8. exactly ONE seam to the submit writer');
 // output PROOF sits between creation and the lifecycle advance
-const iC = orch.indexOf('io.createRequestOrderDraft'), iP = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iS = orch.indexOf('io.submitAllocationDrafts');
+const iC = orch.indexOf('io.createRequestOrderDraft'), iP = orch.indexOf('REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED'), iS = orch.indexOf('io.submitAllocationDrafts');
 ok(iC < iP && iP < iS, '8. create → PROVE the output → only then advance the lifecycle');
+ok(/rosVerifyRequestOrderOutput_\(/.test(orch),
+  '8. and the proof is the FIELD-BY-FIELD verifier, not a line count (FB-3C §G)');
 // EXECUTED end to end
 writeCalls = 0;
 const runIo = fixtureIo(dryRows);
-const run = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08' } }, runIo);
+const run = runSend(runIo, { tier_scope: 'ALL', planning_cycle: '2026-08' });
 ok(run.success === true, '8. a full run succeeds');
 eq(run.data.status, 'COMPLETED', '8. reaching COMPLETED');
 eq(writeCalls, 2, '8. with exactly one canonical writer call per Series group');
@@ -388,21 +491,22 @@ eq(runIo._opts.submitBuckets, null, '8. an ALL Send advances every tier (submit_
 eq(run.data.unverified_transitions, [], '8. and the reconcile phase verifies every advanced draft');
 // and the reconcile is not decorative: a writer that reports success without advancing is CAUGHT
 const silentIo = fixtureIo([draftRow({ sku: 'S1', tiers: { T1: { qty: 100 } } })], { skipStatusAdvance: true });
-const silent = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08' } }, silentIo);
+const silent = runSend(silentIo, { tier_scope: 'ALL', planning_cycle: '2026-08' });
 eq(silent.data.status, 'COMPLETED_WITH_UNVERIFIED_TRANSITIONS',
   '8. a lifecycle row that did NOT actually advance is reported, never assumed');
 ok(silent.data.unverified_transitions.length === 1 && silent.data.unverified_transitions[0].reason === 'STATUS_NOT_ADVANCED',
   '8. naming the exact row and reason');
 // a tier-scoped Send advances ONLY that tier
 const t1Io = fixtureIo([draftRow({ sku: 'S1', tiers: { T1: { qty: 100 }, T2: { qty: 7 } } })]);
-handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'T1', planning_cycle: '2026-08' } }, t1Io);
+runSend(t1Io, { tier_scope: 'T1', planning_cycle: '2026-08' });
 eq(t1Io._opts.submitBuckets, ['T1'], '8. a T1 Send advances ONLY T1 (submit_buckets = [T1])');
 // output failure blocks the lifecycle
 const unprovenIo = fixtureIo(dryRows);
 unprovenIo.createRequestOrderDraft = function () { writeCalls++; return { success: true, data: { request_order_id: 'GHOST', request_order_no: 'REQ-GHOST', reused: false } }; };
-const unproven = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08' } }, unprovenIo);
+const unproven = runSend(unprovenIo, { tier_scope: 'ALL', planning_cycle: '2026-08' });
 ok(unproven.success === false, '8. an unverifiable Request Order fails the run');
-eq(unproven.errors[0].code, 'REQUEST_ORDER_OUTPUT_UNPROVEN', '8. named REQUEST_ORDER_OUTPUT_UNPROVEN');
+eq(unproven.errors[0].code, 'REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED',
+  '8. named REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED (FB-3C: field by field, not a line count)');
 ok(!unprovenIo._opts.submitted, '8. and NO allocation draft was advanced');
 
 // =============================================================================================================
@@ -457,8 +561,12 @@ ok(/\} finally \{/.test(SEND) && /_roSendState\.busy = false;/.test(SEND),
 // the durable record lives on the SERVER, journaled before the first write
 ok(orch.indexOf('io.journalPut(orchestrationKey, journal)') < iC,
   '10. the frozen plan is journaled BEFORE the first write, so a killed execution leaves durable evidence');
-ok(/journalPut\(orchestrationKey, journal\);   \/\/ journal AFTER each Series/.test(orch),
-  '10. and again after every Series, so a kill loses no proven work');
+// FB-3C: the per-Series journal write became an ATOMIC ownership transaction (lease renew + journal write under
+// the CAS lock), which is strictly stronger than the plain put it replaced.
+const iWriteLoop = orch.indexOf('for (var gi = 0');
+const iAfterSeries = orch.indexOf('rosOwnershipTransact_(io, cycle, key, io.now(), function () { return journal; })');
+ok(iAfterSeries > iWriteLoop && iAfterSeries < orch.indexOf('phase(\'write_orders_done\''),
+  '10. the journal + lease are renewed INSIDE the write loop after every Series, so a kill loses no proven work');
 
 // =============================================================================================================
 section('11. a timeout RESUMES by execution key without duplication');
@@ -481,10 +589,10 @@ ok(rosOrchestrationKey_(payloadA) !== rosOrchestrationKey_(changedQty),
 const doneJournal = {};
 doneJournal['ROSEND_JOURNAL_' + rosOrchestrationKey_({ tier_scope: 'ALL', planning_cycle: '2026-08' })] = null;
 const replayIo = fixtureIo(dryRows);
-const first = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08' } }, replayIo);
+const first = runSend(replayIo, { tier_scope: 'ALL', planning_cycle: '2026-08' });
 eq(first.data.status, 'COMPLETED', '11. first run completes');
 const beforeReplay = writeCalls;
-const replay = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: 'ALL', planning_cycle: '2026-08' } }, replayIo);
+const replay = runSend(replayIo, { tier_scope: 'ALL', planning_cycle: '2026-08' });
 eq(replay.data.status, 'ALREADY_COMPLETED', '11. an identical re-invocation REPLAYS the recorded result');
 eq(replay.data.replayed, true, '11. and says so');
 eq(writeCalls, beforeReplay, '11. writing nothing a second time — no duplicate Request Order');
@@ -502,14 +610,32 @@ eq(rosJournalResumable_({ orchestration_key: 'K', status: 'PARTIAL', workset_che
 ok(rosLeaseHeld_({ status: 'RUNNING', lease_at: 1000 }, 2000), '11. a fresh lease is held');
 ok(!rosLeaseHeld_({ status: 'RUNNING', lease_at: 1000 }, 1000 + 360001), '11. an abandoned lease is not');
 ok(!rosLeaseHeld_({ status: 'COMPLETED', lease_at: 1000 }, 1100), '11. a completed run holds nothing');
-ok(/SEND_IN_PROGRESS_SAME_KEY/.test(orch) && /Do NOT retry/.test(orch),
-  '11. a concurrent same-key Send is refused with an explicit do-not-retry');
+// FB-3C §E: refusal is now per PLANNING CYCLE, not per key — a key-scoped lease could not stop two DIFFERENT
+// keys from writing overlapping drafts, which is the case this suite must cover.
+ok(/SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION/.test(orch) && /Do NOT retry/.test(orch),
+  '11. a concurrent Send over the same planning cycle is refused with an explicit do-not-retry');
+eq(rosOwnershipDecision_({ execution_key: 'K1', lease_at: 1000, status: 'RUNNING' }, 'K2', 1100).verdict, 'REFUSE',
+  '11. a DIFFERENT key cannot take a live cycle lease');
+eq(rosOwnershipDecision_({ execution_key: 'K1', lease_at: 1000, status: 'RUNNING' }, 'K1', 1100).verdict, 'GRANT',
+  '11. the owning key renews its own lease');
 // PARTIAL_RESUMABLE is an honest intermediate state, never presented as failure or as complete
 ok(/PARTIAL_RESUMABLE/.test(orch) && /lifecycle_advanced: false/.test(orch),
   '11. a voluntary stop reports PARTIAL_RESUMABLE with the lifecycle explicitly NOT advanced');
 ok(/Do NOT start a new Send/.test(orch), '11. and tells the operator to resume, not to start again');
-ok(/ROS_TIME_BUDGET_MS_ = 240000/.test(G66),
-  '11. the stop happens inside the Apps Script execution ceiling, so the journal is always written');
+// FB-3C §D — THE 90 s / 240 s CONTRADICTION. The budget is now DERIVED from the real client bound, and the
+// relationship is arithmetic rather than a claim: budget + worst single write + reserve <= the client timeout.
+const CW = Number((G66.match(/var ROS_CLIENT_WRITE_TIMEOUT_MS_ = (\d+);/) || [])[1]);
+const MW = Number((G66.match(/var ROS_MAX_SINGLE_WRITE_MS_ = (\d+);/) || [])[1]);
+const RV = Number((G66.match(/var ROS_RESERVE_MS_ = (\d+);/) || [])[1]);
+const clientWrite = Number((DBAPI.match(/var KM_WRITE_TIMEOUT_MS_ = (\d+);/) || [])[1]);
+eq(CW, clientWrite, '11. the server restates the REAL client write timeout (' + clientWrite + ' ms) — they cannot drift');
+eq(ROS_SLICE_BUDGET_MS_, CW - MW - RV, '11. the slice budget is DERIVED, not a magic number');
+ok(ROS_SLICE_BUDGET_MS_ + MW + RV <= CW,
+  '11. budget + worst single write + reserve <= the client bound, so a slice ALWAYS answers before the browser aborts');
+ok(ROS_SLICE_BUDGET_MS_ > 0 && ROS_SLICE_BUDGET_MS_ < CW, '11. and the budget is a real positive margin');
+ok(!/ROS_TIME_BUDGET_MS_/.test(G66), '11. the old 240 000 ms budget that outlived the client bound is gone');
+ok(ROS_LEASE_MS_ > ROS_SLICE_BUDGET_MS_ + MW,
+  '11. the lease outlives the worst-case slice, so a live slice is never treated as abandoned');
 // the client says the same thing
 const errMsgFn = extractFn(RO, '_roSendOrchestrationErrorMessage_');
 ok(/RESUMABLE BY EXECUTION KEY/.test(errMsgFn) && /do NOT press Send again/.test(errMsgFn),
@@ -613,8 +739,11 @@ ok(/typeof DB\.sendRequestOrderOrchestration !== 'function'/.test(SEND),
   '15. a missing transport FAILS CLOSED rather than falling back to a local success');
 ok(/Nothing was sent/.test(SEND), '15. saying so explicitly');
 // success is only ever claimed from a server verdict
-ok(/res\.success !== true/.test(SEND) && /d\.status === 'PARTIAL_RESUMABLE'/.test(SEND),
-  '15. success requires the server verdict, and PARTIAL is not success');
+const LOOP15 = RO.slice(RO.indexOf('async function _roSendRunToCompletion_'), RO.indexOf('async function handleSendRequest()'));
+ok(/res\.success !== true/.test(LOOP15) && /d\.status !== 'PARTIAL_RESUMABLE'/.test(LOOP15),
+  '15. success requires the server verdict, and PARTIAL is explicitly not success');
+ok(/run\.done/.test(SEND) && /run\.exhausted/.test(SEND),
+  '15. and the page only claims success on the loop\u2019s terminal done verdict');
 ok(code66.indexOf('PropertiesService') !== -1,
   '15. the durable record is a SERVER journal (Script Properties), not browser storage');
 
@@ -629,12 +758,17 @@ ok(DEMO.length > 0, '16. the Demo seed file is present');
   });
 });
 // the version-bump rule was followed for a sync-visible backend change that also added actions
+// The bump RULE, not a frozen literal: a suite that pins the exact string fails on every legitimate future
+// bump, which is the opposite of guarding the deployment identity.
 const buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-eq(buildNow, 'F1-7N-FB-3B', '16. SYS_BUILD_VERSION_ names this build');
-ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 4,
-  '16. the action-contract version advanced because router actions were added');
-ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 4;/.test(DBAPI),
-  '16. and the frontend pins the new minimum, so a stale deployment is named rather than guessed at');
+const rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+ok(!!buildNow && buildNow.indexOf('F1-7N-FB-3') === 0 && buildNow !== 'F1-7N-FB-3A',
+  '16. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
+eq(rosBuild, buildNow, '16. and the Send orchestration owner reports the SAME build, so a partial sync is visible');
+const acv = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+const pinned = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+ok(acv >= 4, '16. the action-contract version advanced because router actions were added (v' + acv + ')');
+eq(pinned, acv, '16. and the frontend pins exactly that minimum, so a stale deployment is NAMED rather than guessed at');
 ['requestOrder.send.orchestrate', 'requestOrder.sendWorkset.get'].forEach(function (a) {
   ok(new RegExp("action === '" + a.replace(/\./g, '\\.') + "'").test(ROUTER), '16. the router registers ' + a);
   ok(new RegExp("action: '" + a.replace(/\./g, '\\.') + "'").test(G63), '16. and health probes ' + a);

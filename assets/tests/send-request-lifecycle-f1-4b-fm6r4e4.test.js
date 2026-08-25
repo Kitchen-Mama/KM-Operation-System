@@ -96,7 +96,7 @@ ok(/if \(flush\.failed\) \{/.test(send) && /Nothing was sent and nothing was wri
   '§9 the page also blocks the Send when a pending quantity edit failed to save');
 
 // §11 / §14 / §17.K — ordering, and the canonical writers are still the only writers.
-var iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
+var iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
 ok(iCreate < iProof && iProof < iSubmit,
   '§11 create Request Order -> PROVE the header + line count -> only then advance the lifecycle');
 ok(/createRequestOrderDraft: function \(body\) \{ return rosUnwrap_\(handleCreateRequestOrderDraft_\(body\)\); \}/.test(GS66),

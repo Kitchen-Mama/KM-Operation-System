@@ -281,17 +281,34 @@ ok(!/'allocation drafts'/.test(send), 'F10. and no phase calls a SKU-row count "
 // F1-7N-FB-3B: there is no per-SKU write loop left to report, so the FB-3A per-loop phase assertions are
 // superseded by a STRICTLY STRONGER one — the phase denominator now comes from the SERVER's frozen plan, which
 // the page cannot influence at all, and it still names its unit.
-ok(/_roSendPhase_\('Sending to the server orchestration', 0, plan\.counts\.expected_request_order_headers, 'Series groups'\)/.test(send),
-  'F11. the send phase takes its denominator from the SERVER plan and names its unit as Series groups');
+// F1-7N-FB-3C §J: the single phase line became a PROGRESS BLOCK that must name every required unit and take
+// every number from the server's frozen plan or its verified output. That is strictly stronger than one labelled
+// denominator, so the assertion moves to the renderer.
+var progFn = extractFn(RO, '_roSendProgressLine_');
+ok(/_roSendProgressLine_\(\{ counts: plan\.counts/.test(send),
+  'F11. progress is rendered from the SERVER plan counts, never a page-side prediction');
+['persisted drafts', 'positive tier allocations', 'SKUs', 'Series', 'headers', 'lines verified'].forEach(function (u) {
+  ok(progFn.indexOf(u) !== -1, 'F11. the progress line names its unit: ' + u);
+});
+ok(!/allocation drafts \d/.test(progFn) && !/allocation drafts '/.test(progFn),
+  'F11. and never reproduces the ambiguous "allocation drafts 0/234" label');
 var phaseFn = extractFn(RO, '_roSendPhase_');
-ok(/unitLabel/.test(phaseFn), 'F11. every phase must pass an explicit unit label');
+ok(/unitLabel/.test(phaseFn), 'F11. the phase helper still requires an explicit unit label');
 // the confirmation is shown BEFORE the latch and before the committing request
 ok(send.indexOf('_roSendConfirmSummary_') < send.indexOf('_roSendState.busy = true'),
   'F12. the summary is confirmed before the latch is taken');
-ok(send.indexOf('_roSendConfirmSummary_') < send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
-  'F12. and before the one committing orchestration request');
-ok(send.indexOf('dry_run: true') < send.indexOf('_roSendConfirmSummary_'),
-  'F12. and the numbers it shows come from a ZERO-WRITE dry run performed first');
+// F1-7N-FB-3C §F: the committing call moved into the automatic continuation loop, and it now REQUIRES the
+// frozen checksum the user confirmed. So the ordering proof is: preview (zero-write, freezes) → confirm →
+// only then a call that carries confirmed_checksum.
+var loopFn = extractFn(RO, '_roSendRunToCompletion_');
+ok(send.indexOf("mode: 'preview'") < send.indexOf('_roSendConfirmSummary_'),
+  'F12. the numbers shown come from a ZERO-WRITE preview performed first');
+ok(send.indexOf('_roSendConfirmSummary_') < send.indexOf('_roSendRunToCompletion_('),
+  'F12. and the confirmation happens before the committing run begins');
+ok(/confirmed_checksum: checksum/.test(loopFn) && /mode: 'execute'/.test(loopFn),
+  'F12. every committing call carries mode=execute and the CONFIRMED frozen checksum');
+ok(code(send).indexOf("mode: 'execute'") === -1,
+  'F12. handleSendRequest itself never issues an execute call — only the server-driven loop does');
 
 // exclusions are counted, not silently dropped
 ok(/_roExcluded\.already_submitted_sku\+\+/.test(send), 'F13. terminal-submitted SKUs are counted as an exclusion');

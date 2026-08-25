@@ -110,7 +110,7 @@ ok(/io\.createRequestOrderDraft\(writerBody\)/.test(orch) && !/appendRow|setValu
   '§5 lineage + creation go through the EXISTING canonical writer — the orchestration writes no row itself');
 ok(/io\.submitAllocationDrafts\(\{ draft_ids: ids, submitted_by: actor, submit_buckets: submitBuckets \}\)/.test(orch),
   '§11 the lifecycle advance runs over the covered draft ids through the canonical submit writer');
-var iCreate = orch.indexOf('io.createRequestOrderDraft'), iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
+var iCreate = orch.indexOf('io.createRequestOrderDraft'), iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
 ok(iCreate > -1 && iProof > iCreate && iSubmit > iProof,
   '§11/§16 create → PROVE the output → only then advance the lifecycle (stricter than the retired client order)');
 // §C: the deterministic manual id is RETAINED as the documented identity of the retired path, but the Send

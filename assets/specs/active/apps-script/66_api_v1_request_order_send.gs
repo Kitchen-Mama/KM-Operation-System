@@ -1,84 +1,58 @@
 // ============================================================
 // Kitchen Mama Operation System — Apps Script (modularized source mirror)
-// 66_api_v1_request_order_send.gs — F1-7N-FB-3B §B/§C/§D/§E/§F  SEND REQUEST server orchestration + slim workset
-// NOTE: All .gs files in this folder share ONE global scope. Copy them into the project TOGETHER. No imports.
+// 66_api_v1_request_order_send.gs — F1-7N-FB-3C  SEND REQUEST orchestration: sliced, leased, frozen, verified
+// NOTE: All .gs files in this folder share ONE global scope in the Apps Script project. Copy them into the
+//       project TOGETHER. No imports.
 // ------------------------------------------------------------
-// WHY THIS FILE EXISTS
-// FB-3A closed observability and left §G — the server orchestration — explicitly unimplemented, with the browser
-// still owning a serial multi-write saga. That saga had three structural defects no amount of client polish fixes:
+// WHY THIS FILE EXISTS (FB-3B) — the browser must not own a business transaction.
+//   1. THE WORKSET WAS A VIEW. handleSendRequest built its rows from _applyRequestOrderFilters, so Country,
+//      Marketplace, Category, Risk and SKU search silently truncated a command defined as comprehensive.
+//   2. PROGRESS WAS OWNED BY A TAB. Closing the page abandoned a half-advanced lifecycle.
+//   3. QUANTITY AUTHORITY WAS ASSERTED, NOT PROVEN.
 //
-//   1. THE WORKSET WAS A VIEW. handleSendRequest built its rows from _applyRequestOrderFilters, so the Country,
-//      Marketplace, Category tab, Risk and SKU-search DISPLAY controls silently truncated a business command that
-//      is defined as comprehensive. A user who typed three characters into SKU search and pressed Send sent three
-//      SKUs and was told the Send succeeded.
-//   2. PROGRESS WAS OWNED BY A TAB. Closing the page, navigating, or a 45 s transport bound mid-loop left the
-//      lifecycle half-advanced with no server-side record of intent.
-//   3. QUANTITY AUTHORITY WAS ASSERTED, NOT PROVEN. The client read its own in-memory map and trusted it.
+// WHAT FB-3C FIXES IN THIS FILE. Every one of these was a real defect in FB-3B, not a refinement:
 //
-// THE FIX IS STRUCTURAL, NOT DEFENSIVE. The workset is now built ON THE SERVER from the PERSISTED allocation
-// drafts. The browser cannot narrow it, because the browser no longer supplies it: the only business input is the
-// tier scope (ALL / T1 / T2 / T3). A display filter cannot truncate a set it does not participate in producing.
+//   A. THE 90 s / 240 s CONTRADICTION (§D). FB-3B yielded voluntarily at 240 000 ms while the ONLY transport that
+//      reaches it — _kmWeeklyCommand_ -> _kmFetchBounded_(…, 'write') — aborts at KM_WRITE_TIMEOUT_MS_ = 90 000 ms.
+//      So the browser declared REQUEST_TIMEOUT_WRITE_INDETERMINATE while this handler was, BY DESIGN, still
+//      writing for another 150 seconds. AbortController closes the socket; it does NOT stop an Apps Script
+//      execution. Worse, the PARTIAL_RESUMABLE answer could never arrive, so the one honest intermediate state
+//      was unreachable code. The budget is now DERIVED from the real client bound with explicit margin, and the
+//      relationship is asserted by a regression test rather than described in prose.
 //
-// USER-FROZEN SCOPE (F1-7N-FB-3B §B) — the ONLY BUSINESS_SEND_SCOPE control is the tier scope:
-//     ALL = the complete current eligible allocation population across ALL applicable countries, marketplaces
-//           and tiers · T1 / T2 / T3 = the complete current eligible population of that tier, across all
-//           countries and marketplaces.
-//   Country, Marketplace, Category, Risk, Show mode, SKU search, pagination, the current visible page and
-//   expanded/collapsed state are DISPLAY_ONLY and MUST NOT reduce the workset. rosBuildWorkset_ therefore accepts
-//   NO country, marketplace, category, risk or sku-search parameter AT ALL — the capability is absent, not
-//   disabled, so it cannot be re-enabled by passing a flag.
+//   B. THE LEASE WAS NOT ATOMIC (§E). journalGet -> decide -> journalPut is a read-modify-write race: two
+//      concurrent Sends could both read "no lease" and both proceed. And a lease keyed by the EXECUTION KEY
+//      cannot stop two DIFFERENT keys from owning overlapping drafts. Ownership is now asserted under a short
+//      ScriptLock held ONLY for the compare-and-set, over a per-planning-cycle ACTIVE-EXECUTION registry.
 //
-// WHAT THIS FILE DOES **NOT** DO
-//   · It is NOT a second writer. Every mutation is delegated to an EXISTING canonical writer:
-//       quantities        -> (already persisted incrementally by 25_ rpoEditMonthlyFlatResult_ via the locked
-//                            decision writer; this file only VERIFIES them and never rewrites one)
-//       Request Orders    -> 13_ handleCreateRequestOrderDraft_ (its own ScriptLock + execution-key idempotency)
-//       lifecycle advance -> 15_ handleSubmitRequestOrderAllocationDrafts_
-//     No sheet is provisioned here, no column appended, no cell written by this file's own hand.
-//   · It does NOT create an allocation draft. See THE §C CANONICAL CONFLICT below.
-//   · It issues NO Purchase Order, touches NO Drive, sends NO email, and reads NO Demo data.
+//   C. THE WORKSET WAS NOT FROZEN ACROSS THE CONFIRMATION (§F). FB-3B's dry run journaled nothing, so the plan
+//      the user approved and the plan that executed were two independent computations of the same query. They
+//      agree almost always — and "almost always" is not a contract. The preview now PERSISTS its checksum, and
+//      the commit must present it back; a changed source is SEND_WORKSET_DRIFT, never a silently larger Send.
 //
-// LOCK DISCIPLINE (deliberate, and the reason this is a saga rather than one transaction). Apps Script's
-// ScriptLock is a single named lock: if this orchestrator held it while calling handleCreateRequestOrderDraft_,
-// that writer's own tryLock(30000) would contend with its caller and time out. So the orchestrator holds NO
-// ScriptLock. Single-flight is enforced instead by a JOURNAL LEASE in Script Properties keyed by the
-// orchestration key, and each canonical writer keeps its own atomic lock over its own unit of work. This is the
-// same staged discipline the document saga uses (prepare -> render -> finalize).
+//   D. success:true FROM A WRITER IS NOT PROOF (§G). FB-3B verified that each Request Order header existed and
+//      that its LINE COUNT was not short. It never checked that a line carried the right quantity, tier, month,
+//      SKU or source draft — so a writer that wrote the correct NUMBER of wrong lines would have passed. Every
+//      expected line is now matched field by field before any allocation is marked submitted.
 //
-// RESUMABILITY. Apps Script kills an execution at ~6 minutes. Every phase result is journaled under the
-// orchestration key BEFORE the next phase starts, and the write phase stops voluntarily at ROS_TIME_BUDGET_MS_
-// and answers PARTIAL_RESUMABLE. Re-invoking with the SAME body recomputes the SAME orchestration key (it is a
-// pure function of the body), reads the journal and continues where it stopped. That is a RESUME, not a retry:
-// nothing already proven is repeated, and the response says exactly what is done and what is left. A blind retry
-// after an indeterminate timeout is never advised by this handler — it answers with resume instructions instead.
+//   E. DUPLICATE BUSINESS IDENTITY WAS INVISIBLE (§H). FB-3B refused a duplicated draft ID. It could not see TWO
+//      DIFFERENT IDs for the SAME business scope — exactly the shape the retired RAD-M path created. That is now
+//      a fail-closed blocking conflict, not a silent pick-one.
 //
-// ------------------------------------------------------------
-// THE §C CANONICAL CONFLICT — REPORTED, NOT SILENTLY RESOLVED
-// ------------------------------------------------------------
-// §C requires: "A raw AI Plan row without a persisted canonical draft may not enter the Send workset", and
-// "If current architecture intentionally creates drafts only during Send, STOP and report the exact canonical
-// conflict before changing it."  It does. There are THREE standing authorities and they disagree:
+// USER-FROZEN SCOPE (FB-3B §B, unchanged): the ONLY BUSINESS_SEND_SCOPE control is the tier scope
+// (ALL / T1 / T2 / T3). Country, Marketplace, Category, Risk, Show mode, SKU search, pagination, the visible
+// page and expanded/collapsed state are DISPLAY_ONLY. rosBuildWorkset_ accepts NO such parameter AT ALL — the
+// capability is absent, not disabled, so it cannot be re-enabled by passing a flag.
 //
-//   (A) 47_/request-order.js R4E4/R6B: "NO_DRAFT / conflict / foreign rows keep the existing in-memory planning
-//       behavior and NEVER auto-create a draft (AI Plan remains the draft-creation boundary)."
-//   (B) R4E5B (client handleSendRequest): a SKU with no canonical draft got a DETERMINISTIC MANUAL draft
-//       (_roManualDraftId_ -> 'RAD-M-<company>-<country>-<marketplace>-<sku>-<year>') created DURING the Send
-//       transition, immediately confirmed, and immediately sent.
-//   (C) The LIVE flat V2 schema (00_config REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true) gives a draft a
-//       DETERMINISTIC canonical identity: 'RD::MONTHLY_ORDER::<YYYY-MM>::company=..|country=..|draft_purpose=..
-//       |marketplace=..|sku=..'. A 'RAD-M-…' id is NOT that identity, so (B) wrote rows into the canonical table
-//       under a NON-canonical primary key — invisible to KMRDV2P.readActiveFlatForScope, and therefore invisible
-//       to the very read-back the page uses to prove a draft exists.
-//
-// This file implements (A) + (C), which is what §C mandates: the workset is PERSISTED CANONICAL DRAFTS ONLY, and
-// (B)'s create-inside-Send step is RETIRED FROM THE SEND TRANSITION. The consequence is stated plainly rather
-// than buried: a SKU that has NEVER been materialized by AI Plan is NOT sendable in one click any more. It is
-// reported as the typed exclusion NO_PERSISTED_CANONICAL_DRAFT with its identity, and the operator materializes
-// it first. This is a DELIBERATE reduction in what a single Send does, required by §C, and it is the one place in
-// this task where the frozen business volume changes. It is called out again in the completion report.
+// NOT A WRITER. Every mutation is delegated to an EXISTING canonical writer:
+//   Request Orders    -> 13_ handleCreateRequestOrderDraft_ (its own ScriptLock + execution-key idempotency)
+//   lifecycle advance -> 15_ handleSubmitRequestOrderAllocationDrafts_
+// This file provisions no sheet, appends no column and writes no business cell of its own. It takes a ScriptLock
+// ONLY for the journal/lease compare-and-set, and NEVER holds it while a canonical writer runs — that would make
+// this handler contend with its own callee's tryLock(30000).
 // ============================================================
 
-var ROS_BUILD_VERSION_ = 'F1-7N-FB-3B';
+var ROS_BUILD_VERSION_ = 'F1-7N-FB-3C';
 
 // The flat V2 canonical tables. The child line table is RETIRED under the cutover and is never read here.
 var ROS_DRAFTS_TABLE_ = 'request_order_allocation_drafts';
@@ -86,37 +60,65 @@ var ROS_SKU_DETAILS_TABLE_ = 'sku_details';
 
 // BUSINESS_SEND_SCOPE — the complete, closed set. Anything not in this map is not a Send scope.
 var ROS_TIER_SCOPES_ = { ALL: ['T1', 'T2', 'T3'], T1: ['T1'], T2: ['T2'], T3: ['T3'] };
-// DISPLAY_ONLY controls, named here so the contract is machine-readable by the health/diagnostic surfaces and by
-// the regression suite. Nothing in this file consumes any of them.
+// DISPLAY_ONLY controls, named so the contract is machine-readable by the health/diagnostic surfaces and by the
+// regression suite. Nothing in this file consumes any of them.
 var ROS_DISPLAY_ONLY_CONTROLS_ = ['country', 'marketplace', 'category', 'risk', 'show_mode', 'sku_search',
   'pagination', 'visible_page', 'expanded_state'];
 
-// ACTIVE = eligible to be sent. Terminal statuses are excluded and COUNTED, never silently dropped.
 var ROS_ACTIVE_STATUSES_ = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
 var ROS_TERMINAL_STATUSES_ = { submitted: 1, cancelled: 1 };
-// A tier cell is sendable only when its own tier status is non-terminal (a partially_submitted header can still
-// carry one unsent tier — that tier is the work, and the already-sent tiers are excluded and counted).
 var ROS_TERMINAL_TIER_STATUSES_ = { submitted: 1, cancelled: 1 };
 
 var ROS_PHASES_ = ['validate', 'load_workset', 'verify_quantities', 'freeze', 'group', 'write_orders',
   'verify_output', 'transition', 'reconcile'];
 
-var ROS_JOURNAL_PREFIX_ = 'ROSEND_JOURNAL_';
-var ROS_JOURNAL_TTL_MS_ = 86400000;        // 24 h — long enough to resume a working day, short enough to expire
-var ROS_TIME_BUDGET_MS_ = 240000;          // stop voluntarily at 4 min so the journal is always written
-var ROS_LEASE_MS_ = 360000;                // a lease older than this is treated as an abandoned execution
+// ------------------------------------------------------------------------------------------------------------
+// §D — THE SLICE BUDGET, DERIVED FROM THE REAL CLIENT BOUND.
+//
+// ROS_CLIENT_WRITE_TIMEOUT_MS_ MUST equal KM_WRITE_TIMEOUT_MS_ in assets/js/api/operation-system-db-api.js. It is
+// restated here because Apps Script cannot read the frontend, and a regression test asserts the two are equal —
+// so the pair cannot drift silently. DO NOT raise either value to make a slow Send fit; add a slice instead.
+//
+// The arithmetic, and why each term is what it is:
+//   ROS_MAX_SINGLE_WRITE_MS_ — the worst case for ONE canonical writer call. handleCreateRequestOrderDraft_ does
+//     tryLock(30000) before it writes anything, so a single Series can legitimately cost 30 s of lock wait plus
+//     the write itself. The budget is therefore checked BEFORE admitting each Series, never mid-write.
+//   ROS_RESERVE_MS_ — Apps Script cold start, request/response transit, and the final journal write. This is the
+//     margin that must still exist AFTER the last admitted Series finishes.
+//   ROS_SLICE_BUDGET_MS_ = client bound − worst single write − reserve. A slice stops ADMITTING work at this
+//     point, so the worst-case wall clock is (budget + one write + reserve) = exactly the client bound, and the
+//     realistic case is far under it.
+// A test proves budget + max-single-write + reserve <= client bound, so the invariant cannot be edited away.
+// ------------------------------------------------------------------------------------------------------------
+var ROS_CLIENT_WRITE_TIMEOUT_MS_ = 90000;   // == KM_WRITE_TIMEOUT_MS_ (asserted by the regression suite)
+var ROS_MAX_SINGLE_WRITE_MS_ = 35000;       // canonical writer worst case: 30 s lock wait + the write
+var ROS_RESERVE_MS_ = 12000;                // cold start + transit + the final journal write + the response
+var ROS_SLICE_BUDGET_MS_ = ROS_CLIENT_WRITE_TIMEOUT_MS_ - ROS_MAX_SINGLE_WRITE_MS_ - ROS_RESERVE_MS_;   // 43000
+
+// A lease must outlive the worst-case slice (budget + one write = 78 s) but expire soon enough that a genuinely
+// dead execution can be taken over without human intervention. 150 s satisfies both.
+var ROS_LEASE_MS_ = 150000;
+var ROS_JOURNAL_TTL_MS_ = 86400000;   // 24 h — long enough to resume a working day, short enough to expire
+// A single Script Property holds ~9 KB, so the journal is CHUNKED. See rosChunk_ for why the frozen workset is
+// pinned by CHECKSUM rather than stored row by row.
+var ROS_JOURNAL_PREFIX_ = 'ROSEND_J_';
+var ROS_ACTIVE_PREFIX_ = 'ROSEND_ACTIVE_';
+var ROS_CHUNK_CHARS_ = 8000;
+var ROS_MAX_CHUNKS_ = 40;
+// A user click may fan out into several technical continuations, but never without bound.
+var ROS_MAX_CONTINUATIONS_ = 40;
 
 // ============================================================================================================
 // __ROS_PURE_START__
-// Everything between the PURE markers is deterministic and free of SpreadsheetApp / PropertiesService / Date /
-// Utilities, so the regression suite executes THESE functions rather than a mirrored copy of them.
+// Everything between the PURE markers is deterministic and free of SpreadsheetApp / PropertiesService /
+// LockService / Date / Utilities, so the regression suite executes THESE functions rather than a copy of them.
 // ============================================================================================================
 
 function rosStr_(v) { return String(v == null ? '' : v).trim(); }
 function rosLc_(v) { return rosStr_(v).toLowerCase(); }
 function rosUc_(v) { return rosStr_(v).toUpperCase(); }
-// Blank / non-numeric -> null (ABSENT), never 0. A missing quantity and a zero quantity are different facts and
-// collapsing them is how a "0 was persisted" claim becomes indistinguishable from "nothing was persisted".
+// Blank / non-numeric -> null (ABSENT), never 0. A missing quantity and a zero quantity are different facts, and
+// collapsing them is how "0 was persisted" becomes indistinguishable from "nothing was persisted".
 function rosQty_(v) {
   var s = rosStr_(v);
   if (s === '') return null;
@@ -125,7 +127,7 @@ function rosQty_(v) {
 }
 
 // Pure 32-bit FNV-1a as lowercase hex. Used for the orchestration key and the source checksum so both are
-// reproducible in Node with no Utilities dependency (the determinism authority must be testable).
+// reproducible in Node with no Utilities dependency — the determinism authority must be testable.
 function rosFnv1a_(s) {
   var h = 0x811c9dc5, str = String(s == null ? '' : s);
   for (var i = 0; i < str.length; i++) {
@@ -135,8 +137,8 @@ function rosFnv1a_(s) {
   return ('00000000' + h.toString(16)).slice(-8);
 }
 
-// The ONLY business scope selector. Anything else — including a country or marketplace string — is refused, so a
-// caller cannot smuggle a display filter in through this parameter.
+// The ONLY business scope selector. Anything else — a country, a marketplace, a series — is refused, so a caller
+// cannot smuggle a display filter in through this parameter.
 function rosNormalizeTierScope_(v) {
   var s = rosUc_(v);
   if (s === 'ALL' || s === 'T1' || s === 'T2' || s === 'T3') return s;
@@ -149,8 +151,8 @@ function rosTiersForScope_(scope) { return (ROS_TIER_SCOPES_[scope] || []).slice
 function rosTierCol_(tier, field) { return rosLc_(tier) + '_' + field; }
 function rosTierField_(row, tier, field) { return (row || {})[rosTierCol_(tier, field)]; }
 
-// The natural business identity of an allocation draft, independent of its primary key. Used to match a client
-// INTENT to a persisted row without trusting a client-supplied id.
+// The natural BUSINESS identity of an allocation draft, independent of its primary key. §H depends on this: two
+// different primary keys carrying the same natural key are a duplicate-identity conflict, not two work items.
 function rosNaturalKey_(company, country, marketplace, sku) {
   return [rosUc_(company), rosUc_(country), rosLc_(marketplace), rosUc_(sku)].join('|');
 }
@@ -161,17 +163,24 @@ function rosRowNaturalKey_(row) {
 function rosDraftStatus_(row) { return rosLc_((row || {}).status); }
 function rosDraftIsActive_(row) { return ROS_ACTIVE_STATUSES_[rosDraftStatus_(row)] === 1; }
 function rosDraftIsTerminal_(row) { return ROS_TERMINAL_STATUSES_[rosDraftStatus_(row)] === 1; }
+// §H — the canonical Flat-V2 identity shape. A row whose id does not match it was minted by a retired or legacy
+// path (the RAD-M case), which is why it can collide on business identity with a canonical row.
+function rosIsCanonicalDraftId_(id) { return /^RD::MONTHLY_ORDER::\d{4}-\d{2}::/.test(rosStr_(id)); }
 
 // ------------------------------------------------------------------------------------------------------------
-// §B/§D — THE WORKSET. Pure over the persisted draft rows.
+// FB-3B §B/§D — THE WORKSET. Pure over the persisted draft rows.
 //
 // PARAMETERS, EXHAUSTIVELY: planning_cycle and tier_scope. That is the whole business input. There is NO
 // country, marketplace, category, risk, sku-search, show-mode, page, page-size or visible-row parameter, and
 // adding one would be a source change a regression test refuses.
 //
-// UNITS. Every count below states what it counts, because FB-3A's "234" incident was a LABEL defect: a SKU-row
-// count printed under the word "allocation drafts". These names are the vocabulary the confirmation dialog and
-// the progress phases must use verbatim.
+// UNITS. Every count states what it counts, because FB-3A's "234" incident was a LABEL defect: a SKU-row count
+// printed under the word "allocation drafts". These names are the vocabulary the confirmation dialog and the
+// progress display must use verbatim.
+//
+// §H FAIL-CLOSED ADDITION: blocking_conflicts. Two rows sharing one natural business key are NOT two work items
+// and the right one cannot be guessed, so BOTH are withheld and the Send refuses. Silently picking the canonical
+// one would send a quantity the operator may never have seen.
 // ------------------------------------------------------------------------------------------------------------
 function rosBuildWorkset_(draftRows, opts) {
   opts = opts || {};
@@ -207,33 +216,67 @@ function rosBuildWorkset_(draftRows, opts) {
       tier_absent: 0,
       tier_zero_or_blank_qty: 0,
       draft_id_missing: 0,
-      duplicate_draft_id: 0
+      duplicate_draft_id: 0,
+      duplicate_business_identity: 0,
+      non_canonical_draft_id: 0
     },
-    rows: [],            // one entry per sendable tier cell (the true unit of a Request Order line)
-    drafts: [],          // one entry per sendable draft header
+    rows: [],                // one entry per sendable tier cell (the true unit of a Request Order line)
+    drafts: [],              // one entry per sendable draft header
+    blocking_conflicts: [],  // §H — must be empty for a Send to run
     diagnostics: []
   };
   if (!scope) { out.error = 'INVALID_TIER_SCOPE'; return out; }
   if (!cycle) { out.error = 'PLANNING_CYCLE_REQUIRED'; return out; }
 
   var tierSet = {}; tiers.forEach(function (t) { tierSet[t] = 1; });
-  var seenId = {}, skuSeen = {}, seriesSeen = {};
 
+  // PASS 1 — cycle + status admission, and the natural-key census §H needs. Nothing is emitted yet, because a
+  // duplicate identity found later must be able to withhold a row that pass 1 already accepted.
+  var admitted = [], seenId = {}, byNatural = {};
   (draftRows || []).forEach(function (row) {
     if (rosStr_(row && row.planning_cycle) !== cycle) { out.excluded.wrong_planning_cycle++; return; }
     out.persisted_drafts_in_cycle++;
-
     var st = rosDraftStatus_(row);
     if (st === 'submitted') { out.excluded.status_submitted++; return; }
     if (st === 'cancelled') { out.excluded.status_cancelled++; return; }
     if (!rosDraftIsActive_(row)) { out.excluded.status_unknown++; return; }
     out.active_persisted_drafts++;
-
     var draftId = rosStr_(row.request_allocation_draft_id);
     if (!draftId) { out.excluded.draft_id_missing++; return; }
-    if (seenId[draftId]) { out.excluded.duplicate_draft_id++; out.diagnostics.push({ code: 'DUPLICATE_DRAFT_ID', request_allocation_draft_id: draftId }); return; }
+    if (seenId[draftId]) {
+      out.excluded.duplicate_draft_id++;
+      out.diagnostics.push({ code: 'DUPLICATE_DRAFT_ID', request_allocation_draft_id: draftId });
+      return;
+    }
     seenId[draftId] = 1;
+    var nk = rosRowNaturalKey_(row);
+    (byNatural[nk] = byNatural[nk] || []).push({ id: draftId, row: row, canonical: rosIsCanonicalDraftId_(draftId) });
+    admitted.push({ id: draftId, row: row, natural_key: nk });
+  });
 
+  // PASS 2 — §H fail-closed duplicate-business-identity gate. This is the case the retired RAD-M path created:
+  // one canonical 'RD::MONTHLY_ORDER::…' row and one legacy 'RAD-M-…' row for the SAME company/country/
+  // marketplace/sku. Which quantity is authoritative is a BUSINESS question, so neither is sent.
+  var blockedNatural = {};
+  Object.keys(byNatural).forEach(function (nk) {
+    var group = byNatural[nk];
+    if (group.length < 2) return;
+    blockedNatural[nk] = 1;
+    out.blocking_conflicts.push({
+      code: 'DUPLICATE_BUSINESS_IDENTITY', natural_key: nk,
+      draft_ids: group.map(function (g) { return g.id; }).sort(),
+      canonical_count: group.filter(function (g) { return g.canonical; }).length,
+      non_canonical_count: group.filter(function (g) { return !g.canonical; }).length,
+      resolution: 'Reconcile the duplicate allocation drafts for this scope before sending. Run the allocation-draft identity diagnostic; neither row is sent while both exist.'
+    });
+  });
+
+  // PASS 3 — emit the sendable tier cells.
+  var skuSeen = {}, seriesSeen = {};
+  admitted.forEach(function (a) {
+    if (blockedNatural[a.natural_key]) { out.excluded.duplicate_business_identity++; return; }
+    var row = a.row, draftId = a.id;
+    if (!rosIsCanonicalDraftId_(draftId)) out.excluded.non_canonical_draft_id++;   // counted, not refused alone
     var sku = rosStr_(row.sku);
     var series = rosStr_(seriesBySku[rosUc_(sku)] || '');
     var upc = rosQty_(row.units_per_carton);
@@ -248,12 +291,14 @@ function rosBuildWorkset_(draftRows, opts) {
       if (month === '' && qty == null) { out.excluded.tier_absent++; return; }
       out.selected_tier_allocations++;
       if (ROS_TERMINAL_TIER_STATUSES_[tierStatus] === 1) { out.excluded.tier_terminal_already_sent++; return; }
+      // FB-3C §B.7 — the canonical zero-quantity rule. A persisted 0 is a REAL, saved decision, and it produces
+      // NO Request Order line. It is counted so the dialog can show that the tier was considered and excluded.
       if (qty == null || qty <= 0) { out.excluded.tier_zero_or_blank_qty++; return; }
       out.positive_selected_tier_allocations++;
       out.total_units += qty;
       sendable.push({
         request_allocation_draft_id: draftId,
-        natural_key: rosRowNaturalKey_(row),
+        natural_key: a.natural_key,
         company: rosStr_(row.company), country: rosStr_(row.country), marketplace: rosStr_(row.marketplace),
         sku: sku, series: series, request_bucket: tier, request_month: month,
         order_qty: qty, units_per_carton: (upc == null ? '' : upc),
@@ -268,10 +313,10 @@ function rosBuildWorkset_(draftRows, opts) {
     if (!skuSeen[rosUc_(sku)]) { skuSeen[rosUc_(sku)] = 1; out.distinct_skus++; }
     var seriesKey = series || '(no series)';
     if (!seriesSeen[seriesKey]) { seriesSeen[seriesKey] = 1; out.distinct_series++; }
-    out.drafts.push({ request_allocation_draft_id: draftId, natural_key: rosRowNaturalKey_(row),
+    out.drafts.push({ request_allocation_draft_id: draftId, natural_key: a.natural_key,
       company: rosStr_(row.company), country: rosStr_(row.country), marketplace: rosStr_(row.marketplace),
-      sku: sku, series: series, status: st, draft_version: rosStr_(row.draft_version),
-      tier_count: sendable.length });
+      sku: sku, series: series, status: rosDraftStatus_(row), draft_version: rosStr_(row.draft_version),
+      canonical_identity: rosIsCanonicalDraftId_(draftId), tier_count: sendable.length });
     sendable.forEach(function (r) { out.rows.push(r); });
   });
 
@@ -281,22 +326,28 @@ function rosBuildWorkset_(draftRows, opts) {
 }
 
 // ------------------------------------------------------------------------------------------------------------
-// §C steps 3-5 — THE QUANTITY READ-BACK BARRIER.
+// FB-3B §C — THE QUANTITY READ-BACK BARRIER.
 // The client sends INTENTS: the quantities the user believes are current. Every intent must be matched by a
 // PERSISTED tier cell holding the SAME number. Anything else blocks the WHOLE Send:
-//   UNSAVED_NO_PERSISTED_DRAFT — the intent names a SKU with no active persisted canonical draft;
+//   UNSAVED_NO_PERSISTED_DRAFT — the intent names a scope with no active persisted canonical draft;
 //   UNSAVED_TIER_ABSENT        — the draft exists but that tier was never persisted;
-//   QUANTITY_DRIFT             — DB holds a DIFFERENT number than the user's latest edit.
-// QUANTITY_DRIFT is the case FB-3A's addendum names explicitly: "Do not silently use the prior DB quantity when
-// a newer UI edit failed to save." So it is fatal, not a warning, and the DB value is never substituted.
+//   QUANTITY_DRIFT             — the database holds a DIFFERENT number than the user's latest edit.
+// QUANTITY_DRIFT is fatal, and the DB value is never substituted: "do not silently use the prior DB quantity
+// when a newer UI edit failed to save".
+//
+// FB-3C: an intent of 0 is a REAL assertion (the §B.7 positive->0 case) and must match a persisted 0. Because a
+// 0-quantity tier is deliberately absent from workset.rows, it is verified against the ZERO INDEX the caller
+// supplies rather than against rows — otherwise a correctly saved 0 would look like an unsaved edit and block
+// every Send that contained one.
 // ------------------------------------------------------------------------------------------------------------
-function rosVerifyQuantities_(workset, intents) {
+function rosVerifyQuantities_(workset, intents, zeroIndex) {
   var out = { verified: 0, blocked: false, failures: [], verified_keys: {},
-    intents_total: 0, intents_matched: 0, workset_rows_without_intent: 0 };
+    intents_total: 0, intents_matched: 0, zero_intents_matched: 0, workset_rows_without_intent: 0 };
   var byKey = {};
   (workset && workset.rows ? workset.rows : []).forEach(function (r) {
     byKey[r.natural_key + '::' + r.request_bucket] = r;
   });
+  var zeros = zeroIndex || {};
   var intentKeys = {};
 
   (intents || []).forEach(function (it) {
@@ -304,17 +355,18 @@ function rosVerifyQuantities_(workset, intents) {
     var tiers = (it && it.tiers) || {};
     Object.keys(tiers).forEach(function (tier) {
       var t = rosUc_(tier);
-      if (t !== 'T1' && t !== 'T2' && t !== 'T3') return;   // T4 is visibility-only and is never an order commitment
+      if (t !== 'T1' && t !== 'T2' && t !== 'T3') return;   // T4 is visibility-only, never an order commitment
       var want = rosQty_(tiers[tier] && tiers[tier].order_qty !== undefined ? tiers[tier].order_qty : tiers[tier]);
-      if (want == null) return;                        // no asserted intent for this tier -> persisted value stands
+      if (want == null) return;                             // no asserted intent -> the persisted value stands
       out.intents_total++;
       var key = nk + '::' + t;
       intentKeys[key] = 1;
       var row = byKey[key];
       if (!row) {
-        // Distinguish "no draft at all" from "draft exists, tier not persisted" — different operator actions.
+        // A 0 intent matching a persisted 0 is a SUCCESSFUL verification of a deliberate positive->0 edit.
+        if (Number(want) === 0 && zeros[key] === true) { out.intents_matched++; out.zero_intents_matched++; out.verified++; out.verified_keys[key] = 1; return; }
         var anyTier = false;
-        ['T1', 'T2', 'T3'].forEach(function (x) { if (byKey[nk + '::' + x]) anyTier = true; });
+        ['T1', 'T2', 'T3'].forEach(function (x) { if (byKey[nk + '::' + x] || zeros[nk + '::' + x] === true) anyTier = true; });
         out.failures.push({ code: anyTier ? 'UNSAVED_TIER_ABSENT' : 'UNSAVED_NO_PERSISTED_DRAFT',
           sku: rosStr_(it.sku), country: rosStr_(it.country), marketplace: rosStr_(it.marketplace),
           request_bucket: t, intended_qty: want, persisted_qty: null });
@@ -340,10 +392,31 @@ function rosVerifyQuantities_(workset, intents) {
   return out;
 }
 
+// The index of tier cells that are PERSISTED WITH A NON-POSITIVE quantity — the §B.7 positive->0 case. Built
+// from the same rows the workset saw, so it cannot disagree with it.
+function rosZeroQtyIndex_(draftRows, opts) {
+  opts = opts || {};
+  var cycle = rosStr_(opts.planning_cycle);
+  var tiers = rosTiersForScope_(rosNormalizeTierScope_(opts.tier_scope));
+  var tierSet = {}; tiers.forEach(function (t) { tierSet[t] = 1; });
+  var out = {};
+  (draftRows || []).forEach(function (row) {
+    if (rosStr_(row && row.planning_cycle) !== cycle) return;
+    if (!rosDraftIsActive_(row)) return;
+    var nk = rosRowNaturalKey_(row);
+    ['T1', 'T2', 'T3'].forEach(function (tier) {
+      if (!tierSet[tier]) return;
+      var q = rosQty_(rosTierField_(row, tier, 'order_qty'));
+      if (q != null && q <= 0) out[nk + '::' + tier] = true;
+    });
+  });
+  return out;
+}
+
 // ------------------------------------------------------------------------------------------------------------
-// §E — deterministic Series grouping. Sorted by series key, then by draft id + tier inside the group, so two
-// runs over the same workset produce byte-identical groups and therefore byte-identical execution keys.
-// SKU / tier / country / marketplace lineage is CARRIED, never merged away: one output line per tier cell.
+// FB-3B §E — deterministic Series grouping. Sorted by series key, then by draft id + tier inside the group, so
+// two runs over the same workset produce byte-identical groups and therefore byte-identical execution keys.
+// SKU / tier / station lineage is CARRIED, never merged away: one output line per tier cell.
 // ------------------------------------------------------------------------------------------------------------
 function rosGroupBySeries_(workset) {
   var groups = {};
@@ -376,10 +449,8 @@ function rosWorksetChecksum_(workset) {
     String(parts.length), parts.join(';')].join('|')).toUpperCase();
 }
 
-// The orchestration/idempotency key. PURE FUNCTION OF THE REQUEST BODY, so an identical re-invocation (a resume
-// after a timeout, a double-click, a second tab) computes the same key and lands on the same journal. It binds
-// the tier scope and the planning cycle, and the ASSERTED intents — because two Sends that assert different
-// quantities are different executions even at the same scope.
+// The orchestration/idempotency key. PURE FUNCTION OF THE REQUEST BODY, so an identical re-invocation (a
+// continuation, a double-click, a second tab, a reload) computes the same key and lands on the same journal.
 function rosOrchestrationKey_(payload) {
   payload = payload || {};
   var intents = (payload.intents || []).map(function (it) {
@@ -410,45 +481,169 @@ function rosJournalResumable_(journal, checksum, nowMs) {
   return { resumable: true, reason: 'RESUMABLE' };
 }
 // A lease held by a still-running execution blocks a concurrent one. An older lease is an abandoned execution.
-function rosLeaseHeld_(journal, nowMs) {
-  if (!journal || !journal.lease_at) return false;
-  if (rosStr_(journal.status) === 'COMPLETED') return false;
-  return (Number(nowMs) - Number(journal.lease_at)) < ROS_LEASE_MS_;
+function rosLeaseHeld_(record, nowMs) {
+  if (!record || !record.lease_at) return false;
+  if (rosStr_(record.status) === 'COMPLETED') return false;
+  return (Number(nowMs) - Number(record.lease_at)) < ROS_LEASE_MS_;
 }
 
-// The slim §F projection. ONLY the fields the Send confirmation, the dirty/persisted verification, the tier
-// selection, the Series grouping and the current-run authority need. NO forecast, NO gap, NO recommendation
-// narrative, NO inventory presentation field, NO risk, NO category, NO lead time, NO open-PO remaining.
-var ROS_SLIM_DRAFT_PROJECTION_ = ['request_allocation_draft_id', 'planning_cycle', 'company', 'country',
-  'marketplace', 'sku', 'series', 'status', 'draft_version', 'units_per_carton', 'updated_at',
-  't1_month', 't1_order_qty', 't1_status', 't1_user_edited',
-  't2_month', 't2_order_qty', 't2_status', 't2_user_edited',
-  't3_month', 't3_order_qty', 't3_status', 't3_user_edited'];
-// Fields a caller may NOT request through the include gate, named so the refusal is a contract and not an omission.
-var ROS_SLIM_FORBIDDEN_INCLUDES_ = ['forecast', 'gap', 'recommendation', 'inventory', 'sales', 'risk',
-  'lead_time', 'open_po', 'presentation'];
-
-function rosProjectSlimDraft_(row, seriesBySku) {
-  var o = {};
-  ROS_SLIM_DRAFT_PROJECTION_.forEach(function (f) {
-    if (f === 'series') { o.series = rosStr_((seriesBySku || {})[rosUc_(rosStr_(row && row.sku))] || ''); return; }
-    var v = (row || {})[f];
-    o[f] = (v == null ? '' : (typeof v === 'number' ? v : rosStr_(v)));
-  });
-  return o;
+// ------------------------------------------------------------------------------------------------------------
+// §E — THE PURE OWNERSHIP DECISION. Separated from the lock so it is exhaustively testable: given the current
+// active-execution record for a planning cycle and an incoming key, who owns the workset?
+//
+// Ownership is per PLANNING CYCLE, not per execution key. A key-scoped lease cannot stop two DIFFERENT keys from
+// writing overlapping drafts — which is exactly test 2 of §E — and the workset is cycle-scoped by construction,
+// so the cycle is the correct ownership grain.
+// ------------------------------------------------------------------------------------------------------------
+function rosOwnershipDecision_(activeRecord, key, nowMs) {
+  if (!activeRecord || !rosStr_(activeRecord.execution_key)) return { verdict: 'GRANT', reason: 'NO_ACTIVE_EXECUTION' };
+  if (rosStr_(activeRecord.execution_key) === rosStr_(key)) {
+    return { verdict: 'GRANT', reason: rosLeaseHeld_(activeRecord, nowMs) ? 'RENEW_OWN_LEASE' : 'REACQUIRE_OWN_EXPIRED_LEASE' };
+  }
+  if (rosLeaseHeld_(activeRecord, nowMs)) {
+    return { verdict: 'REFUSE', reason: 'SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION', owner: rosStr_(activeRecord.execution_key) };
+  }
+  return { verdict: 'GRANT', reason: 'TAKEOVER_EXPIRED_LEASE', previous_owner: rosStr_(activeRecord.execution_key) };
 }
-// Resolve the requested include set against the allow-list. An unknown or forbidden include is REFUSED by name
-// (never silently ignored — a silently-ignored include is how a slim API grows back into a fat one).
-function rosResolveIncludes_(requested) {
-  var allowed = { drafts: 1, counts: 1, groups: 1 };
-  var out = { includes: {}, rejected: [] };
-  var list = (requested && requested.length) ? requested : ['counts'];
-  list.forEach(function (r) {
-    var k = rosLc_(r);
-    if (allowed[k]) { out.includes[k] = true; return; }
-    out.rejected.push({ include: k, reason: (ROS_SLIM_FORBIDDEN_INCLUDES_.indexOf(k) !== -1) ? 'FORBIDDEN_NOT_A_SEND_FIELD' : 'UNKNOWN_INCLUDE' });
-  });
+
+// Split a JSON string into Script-Property-sized chunks.
+//
+// WHY THE FROZEN WORKSET IS PINNED BY CHECKSUM RATHER THAN STORED ROW BY ROW. A Script Property holds ~9 KB. A
+// frozen workset of a few hundred tier lines is tens of kilobytes, so storing the rows would exceed the storage
+// contract. The journal therefore stores the CHECKSUM, the immutable Series ORDER and the per-Series completion
+// records, and every continuation re-reads the drafts and re-verifies the checksum against the frozen one. An
+// unchanged checksum PROVES the executed set is the approved set; a changed one is SEND_WORKSET_DRIFT. This is a
+// deliberate design decision with the same guarantee as row storage, not an omission.
+function rosChunk_(s, size) {
+  var out = [], str = String(s == null ? '' : s), n = size || ROS_CHUNK_CHARS_;
+  for (var i = 0; i < str.length; i += n) out.push(str.slice(i, i + n));
   return out;
+}
+
+// ------------------------------------------------------------------------------------------------------------
+// §G — EXACT OUTPUT VERIFICATION. A writer returning success:true is insufficient, and FB-3B's line-COUNT check
+// was insufficient too: a writer that wrote the correct NUMBER of wrong lines would have passed it.
+//
+// For every expected line, matched by (request_order_id, sku, request_bucket, request_month):
+//   · exactly ONE request_order_lines row exists (a duplicate is a failure, not a tolerance);
+//   · request_order_line_id is present;
+//   · requested_qty equals the FROZEN persisted user quantity — not "close to", not "at least";
+//   · series and company match the grouping the orchestration chose;
+//   · the request_order_line_sources row for that line carries the source allocation draft id, the station
+//     (country + marketplace) and the tier/month lineage.
+// Then, per header: total_qty equals the sum of the VERIFIED lines, total_sku equals the distinct SKU count, and
+// there is NO unexpected line — which is how "zero-quantity tiers created no line" is actually proven.
+// PURE over the read rows, so the suite executes this rather than trusting it.
+// ------------------------------------------------------------------------------------------------------------
+function rosVerifyRequestOrderOutput_(expected, orderRow, lineRows, sourceRows) {
+  var out = { ok: true, failures: [], verified_lines: 0, verified_qty: 0, matched_line_ids: [] };
+  var roId = rosStr_(expected && expected.request_order_id);
+  if (!roId) { out.ok = false; out.failures.push({ code: 'REQUEST_ORDER_ID_MISSING' }); return out; }
+  if (!orderRow) { out.ok = false; out.failures.push({ code: 'REQUEST_ORDER_HEADER_NOT_FOUND', request_order_id: roId }); return out; }
+
+  var mine = (lineRows || []).filter(function (l) { return rosStr_(l && l.request_order_id) === roId; });
+  var byKey = {};
+  mine.forEach(function (l) {
+    var k = [rosUc_(l.sku), rosUc_(l.request_bucket), rosStr_(l.request_month)].join('|');
+    (byKey[k] = byKey[k] || []).push(l);
+  });
+  var srcByLine = {};
+  (sourceRows || []).forEach(function (s) {
+    var k = rosStr_(s && s.request_order_line_id); if (!k) return;
+    (srcByLine[k] = srcByLine[k] || []).push(s);
+  });
+
+  var expectedKeys = {};
+  (expected.lines || []).forEach(function (e) {
+    var k = [rosUc_(e.sku), rosUc_(e.request_bucket), rosStr_(e.request_month)].join('|');
+    expectedKeys[k] = true;
+    var found = byKey[k] || [];
+    if (found.length === 0) { out.failures.push({ code: 'LINE_MISSING', sku: e.sku, request_bucket: e.request_bucket, request_month: e.request_month, expected_qty: e.order_qty }); return; }
+    if (found.length > 1) { out.failures.push({ code: 'LINE_DUPLICATED', sku: e.sku, request_bucket: e.request_bucket, request_month: e.request_month, count: found.length }); return; }
+    var l = found[0];
+    var lineId = rosStr_(l.request_order_line_id);
+    if (!lineId) { out.failures.push({ code: 'LINE_ID_MISSING', sku: e.sku, request_bucket: e.request_bucket }); return; }
+    var got = rosQty_(l.requested_qty);
+    if (got == null || Number(got) !== Number(e.order_qty)) {
+      out.failures.push({ code: 'LINE_QUANTITY_MISMATCH', sku: e.sku, request_bucket: e.request_bucket,
+        request_month: e.request_month, expected_qty: Number(e.order_qty), found_qty: (got == null ? null : Number(got)),
+        request_allocation_draft_id: e.request_allocation_draft_id });
+      return;
+    }
+    if (rosUc_(l.series) !== rosUc_(e.series)) {
+      out.failures.push({ code: 'LINE_SERIES_MISMATCH', sku: e.sku, expected_series: rosStr_(e.series), found_series: rosStr_(l.series) });
+      return;
+    }
+    if (rosUc_(l.company) !== rosUc_(e.company)) {
+      out.failures.push({ code: 'LINE_COMPANY_MISMATCH', sku: e.sku, expected_company: rosStr_(e.company), found_company: rosStr_(l.company) });
+      return;
+    }
+    var srcs = srcByLine[lineId] || [];
+    if (srcs.length === 0) { out.failures.push({ code: 'LINE_SOURCE_MISSING', sku: e.sku, request_order_line_id: lineId }); return; }
+    var lineageOk = false;
+    for (var si = 0; si < srcs.length; si++) {
+      var s = srcs[si];
+      if (rosStr_(s.request_allocation_draft_id) !== rosStr_(e.request_allocation_draft_id)) continue;
+      if (rosUc_(s.country) !== rosUc_(e.country)) continue;
+      if (rosLc_(s.marketplace) !== rosLc_(e.marketplace)) continue;
+      if (rosUc_(s.tier_type) !== rosUc_(e.request_bucket)) continue;
+      if (rosStr_(s.source_month) !== rosStr_(e.request_month)) continue;
+      lineageOk = true; break;
+    }
+    if (!lineageOk) {
+      out.failures.push({ code: 'LINE_LINEAGE_MISMATCH', sku: e.sku, request_bucket: e.request_bucket,
+        request_order_line_id: lineId, expected_allocation_draft_id: rosStr_(e.request_allocation_draft_id),
+        expected_station: rosStr_(e.country) + ' / ' + rosStr_(e.marketplace) });
+      return;
+    }
+    out.verified_lines++;
+    out.verified_qty += Number(e.order_qty);
+    out.matched_line_ids.push(lineId);
+  });
+
+  // No UNEXPECTED line may exist on this header. This is the proof that a zero-quantity tier created no line: a
+  // line for a tier that is not in the expected (positive) set shows up here.
+  mine.forEach(function (l) {
+    var k = [rosUc_(l.sku), rosUc_(l.request_bucket), rosStr_(l.request_month)].join('|');
+    if (!expectedKeys[k]) {
+      out.failures.push({ code: 'UNEXPECTED_LINE', sku: rosStr_(l.sku), request_bucket: rosStr_(l.request_bucket),
+        request_month: rosStr_(l.request_month), found_qty: rosQty_(l.requested_qty),
+        detail: 'A line exists that the frozen workset did not authorise (a zero-quantity tier must create no line).' });
+    }
+  });
+
+  // Header totals must equal the verified line sum — not the writer's own arithmetic taken on trust.
+  if (out.failures.length === 0) {
+    var hdrQty = rosQty_(orderRow.total_qty);
+    if (hdrQty == null || Number(hdrQty) !== out.verified_qty) {
+      out.failures.push({ code: 'HEADER_TOTAL_QTY_MISMATCH', request_order_id: roId,
+        header_total_qty: (hdrQty == null ? null : Number(hdrQty)), verified_line_sum: out.verified_qty });
+    }
+    var distinct = {};
+    (expected.lines || []).forEach(function (e) { distinct[rosUc_(e.sku)] = 1; });
+    var hdrSku = rosQty_(orderRow.total_sku);
+    if (hdrSku != null && Number(hdrSku) !== Object.keys(distinct).length) {
+      out.failures.push({ code: 'HEADER_TOTAL_SKU_MISMATCH', request_order_id: roId,
+        header_total_sku: Number(hdrSku), expected_distinct_sku: Object.keys(distinct).length });
+    }
+  }
+  out.ok = out.failures.length === 0;
+  return out;
+}
+
+// §H — the current-run authority, stated as one string so the wire, the dialog and the docs cannot disagree.
+// There is NO calculation_run_id on the flat draft rows (a pre-existing gap documented in 47_), so the run is
+// identified by the planning cycle plus the lifecycle statuses. Under the flat V2 model that IS sufficient, and
+// the reason is structural rather than hopeful: the primary key is
+// 'RD::MONTHLY_ORDER::<cycle>::company=..|country=..|draft_purpose=..|marketplace=..|sku=..', so ONE canonical
+// row can exist per business identity per cycle, draft_version increments IN PLACE, and no superseded version
+// row is ever retained. The only way to get two non-terminal rows for one identity is a NON-canonical id from a
+// retired path — which rosBuildWorkset_ now refuses as DUPLICATE_BUSINESS_IDENTITY instead of choosing one.
+function rosCurrentRunAuthority_(cycle) {
+  return 'planning_cycle=' + rosStr_(cycle) + ' AND header status IN (draft, site_confirmed, partially_submitted)'
+    + ' AND tier status NOT IN (submitted, cancelled) AND exactly ONE active draft per canonical business identity'
+    + ' (RD::MONTHLY_ORDER::<cycle>::<scope> is the primary key; draft_version increments in place; no superseded'
+    + ' version row is retained, so no older same-cycle draft can re-enter a Send)';
 }
 // __ROS_PURE_END__
 
@@ -462,8 +657,8 @@ function rosBuildEnvelope_(ok, data, errors, meta) {
   return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
 }
 
-// Series + units-per-carton authority = sku_details (the SAME canonical authority 56_ uses for category/series).
-// The flat V2 draft row carries NO series column, so series must be resolved here rather than invented.
+// Series + units-per-carton authority = sku_details (the SAME canonical authority 56_ uses). The flat V2 draft
+// row carries NO series column, so series must be resolved here rather than invented.
 function rosSeriesIndex_(skuDetailRows) {
   var series = {}, upc = {};
   (skuDetailRows || []).forEach(function (d) {
@@ -479,17 +674,20 @@ function rosDefaultIo_() {
     now: function () { return Date.now(); },
     openDb: function () { return SpreadsheetApp.openById(prodExpectedDbId_()); },
     readTable: function (ss, name) { return gapReadObjects_(ss, name); },
-    // The canonical writers, reached ONLY through these three seams. There is no fourth write seam in this file.
+    // The canonical writers, reached ONLY through these two seams. There is no third write seam in this file.
     createRequestOrderDraft: function (body) { return rosUnwrap_(handleCreateRequestOrderDraft_(body)); },
     submitAllocationDrafts: function (body) { return rosUnwrap_(handleSubmitRequestOrderAllocationDrafts_(body)); },
-    executionKey: function (company, cycle, series, draftIds) { return roExecutionKey_(company, cycle, series, draftIds); },
-    journalGet: function (key) {
-      try { var raw = PropertiesService.getScriptProperties().getProperty(ROS_JOURNAL_PREFIX_ + key); return raw ? JSON.parse(raw) : null; }
-      catch (e) { return null; }
-    },
-    journalPut: function (key, journal) {
-      try { PropertiesService.getScriptProperties().setProperty(ROS_JOURNAL_PREFIX_ + key, JSON.stringify(journal)); return true; }
-      catch (e) { return false; }
+    propGet: function (name) { try { return PropertiesService.getScriptProperties().getProperty(name); } catch (e) { return null; } },
+    propSet: function (name, value) { try { PropertiesService.getScriptProperties().setProperty(name, value); return true; } catch (e) { return false; } },
+    propDelete: function (name) { try { PropertiesService.getScriptProperties().deleteProperty(name); return true; } catch (e) { return false; } },
+    // §E — the ONLY lock this file takes, and it wraps a compare-and-set over two Script Properties. It is NEVER
+    // held across a canonical writer call: handleCreateRequestOrderDraft_ does its own tryLock(30000), so holding
+    // this across it would make the orchestrator contend with its own callee and time out.
+    withCasLock: function (fn) {
+      var lock = LockService.getScriptLock(), got = false;
+      try { got = lock.tryLock(15000); } catch (e) { return { locked: false, error: String(e && e.message || e) }; }
+      if (!got) return { locked: false, error: 'CAS_LOCK_UNAVAILABLE' };
+      try { return { locked: true, value: fn() }; } finally { try { lock.releaseLock(); } catch (e2) {} }
     }
   };
 }
@@ -501,14 +699,126 @@ function rosUnwrap_(resp) {
   return resp || { success: false, error: 'CANONICAL_WRITER_NO_RESPONSE' };
 }
 
+// ---- chunked journal read/write (see rosChunk_ for the storage rationale) -----------------------------------
+function rosJournalWrite_(io, key, journal) {
+  var json = JSON.stringify(journal || {});
+  var chunks = rosChunk_(json, ROS_CHUNK_CHARS_);
+  if (chunks.length > ROS_MAX_CHUNKS_) return { ok: false, reason: 'JOURNAL_TOO_LARGE', chunks: chunks.length };
+  var base = ROS_JOURNAL_PREFIX_ + key;
+  for (var i = 0; i < chunks.length; i++) io.propSet(base + '__' + i, chunks[i]);
+  io.propSet(base, JSON.stringify({ chunks: chunks.length, len: json.length }));
+  // Remove any stale tail from a previously longer journal, so a read can never splice two generations together.
+  for (var j = chunks.length; j < ROS_MAX_CHUNKS_; j++) {
+    var stale = base + '__' + j;
+    if (io.propGet(stale) == null) break;
+    io.propDelete(stale);
+  }
+  return { ok: true, chunks: chunks.length, bytes: json.length };
+}
+function rosJournalRead_(io, key) {
+  var base = ROS_JOURNAL_PREFIX_ + key;
+  var man = io.propGet(base);
+  if (!man) return null;
+  var m; try { m = JSON.parse(man); } catch (e) { return null; }
+  var parts = [];
+  for (var i = 0; i < Number(m.chunks || 0); i++) {
+    var c = io.propGet(base + '__' + i);
+    if (c == null) return null;   // an incomplete journal is NO journal — never a half-read plan
+    parts.push(c);
+  }
+  var json = parts.join('');
+  if (json.length !== Number(m.len)) return null;
+  try { return JSON.parse(json); } catch (e2) { return null; }
+}
+
+// §E — ATOMIC ownership + journal transition. The pure decision (rosOwnershipDecision_) is applied INSIDE the
+// CAS lock over a freshly-read record, so two concurrent calls cannot both observe "no owner".
+function rosOwnershipTransact_(io, cycle, key, nowMs, journalMutator) {
+  var activeName = ROS_ACTIVE_PREFIX_ + rosStr_(cycle);
+  var res = io.withCasLock(function () {
+    var raw = io.propGet(activeName);
+    var rec = null;
+    if (raw) { try { rec = JSON.parse(raw); } catch (e) { rec = null; } }
+    var decision = rosOwnershipDecision_(rec, key, nowMs);
+    if (decision.verdict === 'REFUSE') return { granted: false, decision: decision };
+    var journal = rosJournalRead_(io, key);
+    var next = journalMutator ? journalMutator(journal) : journal;
+    if (next) {
+      next.lease_at = nowMs;
+      var w = rosJournalWrite_(io, key, next);
+      if (!w.ok) return { granted: false, decision: { verdict: 'REFUSE', reason: w.reason } };
+    }
+    io.propSet(activeName, JSON.stringify({ execution_key: key, lease_at: nowMs,
+      status: (next && next.status) || 'RUNNING', planning_cycle: rosStr_(cycle) }));
+    return { granted: true, decision: decision, journal: next };
+  });
+  if (!res.locked) return { granted: false, decision: { verdict: 'REFUSE', reason: res.error || 'CAS_LOCK_UNAVAILABLE' } };
+  return res.value;
+}
+// Release ownership (terminal states only). Keeps the journal for replay; clears the cycle's active record.
+function rosOwnershipRelease_(io, cycle, key, nowMs, journal) {
+  var activeName = ROS_ACTIVE_PREFIX_ + rosStr_(cycle);
+  io.withCasLock(function () {
+    if (journal) { journal.lease_at = 0; rosJournalWrite_(io, key, journal); }
+    var raw = io.propGet(activeName);
+    var rec = null;
+    if (raw) { try { rec = JSON.parse(raw); } catch (e) { rec = null; } }
+    if (!rec || rosStr_(rec.execution_key) === rosStr_(key)) io.propDelete(activeName);
+    return true;
+  });
+}
+
+// The labelled count block, in one place, so the wire shape and the confirmation dialog cannot drift apart.
+function rosCountsOf_(ws) {
+  return {
+    persisted_drafts_in_cycle: ws.persisted_drafts_in_cycle,
+    active_persisted_drafts: ws.active_persisted_drafts,
+    drafts_with_positive_selected_tier: ws.drafts_with_positive_selected_tier,
+    selected_tier_allocations: ws.selected_tier_allocations,
+    positive_selected_tier_allocations: ws.positive_selected_tier_allocations,
+    distinct_skus: ws.distinct_skus, distinct_series: ws.distinct_series,
+    expected_request_order_headers: ws.expected_request_order_headers,
+    expected_request_order_lines: ws.expected_request_order_lines,
+    total_units: ws.total_units
+  };
+}
+
 // ------------------------------------------------------------------------------------------------------------
-// §F — requestOrder.sendWorkset.get   INCLUDE-GATED SLIM READ.  STRICTLY READ-ONLY.
-//
-// This exists so Send Request NEVER depends on refreshing the 495-row AI-Plan payload. It reads exactly TWO
-// tables (the flat drafts + sku_details for the Series authority) instead of the eleven that
-// aiPlanFirstLayer.get reads, and returns only ROS_SLIM_DRAFT_PROJECTION_. Server phases are timed
-// individually, so a live run names WHICH phase is slow rather than reporting one opaque duration.
+// FB-3B §F — requestOrder.sendWorkset.get   INCLUDE-GATED SLIM READ.  STRICTLY READ-ONLY.
+// Two tables instead of the eleven aiPlanFirstLayer.get reads, so Send Request never depends on refreshing the
+// AI-Plan payload. Server phases are timed individually, so a live run names WHICH phase is slow.
 // ------------------------------------------------------------------------------------------------------------
+var ROS_SLIM_DRAFT_PROJECTION_ = ['request_allocation_draft_id', 'planning_cycle', 'company', 'country',
+  'marketplace', 'sku', 'series', 'status', 'draft_version', 'units_per_carton', 'updated_at',
+  't1_month', 't1_order_qty', 't1_status', 't1_user_edited',
+  't2_month', 't2_order_qty', 't2_status', 't2_user_edited',
+  't3_month', 't3_order_qty', 't3_status', 't3_user_edited'];
+var ROS_SLIM_FORBIDDEN_INCLUDES_ = ['forecast', 'gap', 'recommendation', 'inventory', 'sales', 'risk',
+  'lead_time', 'open_po', 'presentation'];
+
+function rosProjectSlimDraft_(row, seriesBySku) {
+  var o = {};
+  ROS_SLIM_DRAFT_PROJECTION_.forEach(function (f) {
+    if (f === 'series') { o.series = rosStr_((seriesBySku || {})[rosUc_(rosStr_(row && row.sku))] || ''); return; }
+    var v = (row || {})[f];
+    o[f] = (v == null ? '' : (typeof v === 'number' ? v : rosStr_(v)));
+  });
+  return o;
+}
+// An unknown or forbidden include is REFUSED by name (never silently ignored — a silently-ignored include is how
+// a slim API grows back into a fat one).
+function rosResolveIncludes_(requested) {
+  var allowed = { drafts: 1, counts: 1, groups: 1 };
+  var out = { includes: {}, rejected: [] };
+  var list = (requested && requested.length) ? requested : ['counts'];
+  list.forEach(function (r) {
+    var k = rosLc_(r);
+    if (allowed[k]) { out.includes[k] = true; return; }
+    out.rejected.push({ include: k, reason: (ROS_SLIM_FORBIDDEN_INCLUDES_.indexOf(k) !== -1) ? 'FORBIDDEN_NOT_A_SEND_FIELD' : 'UNKNOWN_INCLUDE' });
+  });
+  return out;
+}
+
 function handleRequestOrderSendWorksetGet_(body, io) {
   io = io || rosDefaultIo_();
   var t0 = io.now(), phases = [];
@@ -538,21 +848,12 @@ function handleRequestOrderSendWorksetGet_(body, io) {
 
     var data = {
       planning_cycle: cycle, tier_scope: scope, tiers_in_scope: ws.tiers_in_scope,
-      current_run_authority: 'planning_cycle=' + cycle + ' AND header status IN (draft, site_confirmed, partially_submitted) AND tier status NOT IN (submitted, cancelled)',
+      current_run_authority: rosCurrentRunAuthority_(cycle),
       business_send_scope_controls: ['tier_scope'],
       display_only_controls: ROS_DISPLAY_ONLY_CONTROLS_.slice(),
-      counts: {
-        persisted_drafts_in_cycle: ws.persisted_drafts_in_cycle,
-        active_persisted_drafts: ws.active_persisted_drafts,
-        drafts_with_positive_selected_tier: ws.drafts_with_positive_selected_tier,
-        selected_tier_allocations: ws.selected_tier_allocations,
-        positive_selected_tier_allocations: ws.positive_selected_tier_allocations,
-        distinct_skus: ws.distinct_skus, distinct_series: ws.distinct_series,
-        expected_request_order_headers: ws.expected_request_order_headers,
-        expected_request_order_lines: ws.expected_request_order_lines,
-        total_units: ws.total_units
-      },
+      counts: rosCountsOf_(ws),
       excluded: ws.excluded,
+      blocking_conflicts: ws.blocking_conflicts,
       workset_checksum: rosWorksetChecksum_(ws),
       includes_rejected: inc.rejected,
       projection: ROS_SLIM_DRAFT_PROJECTION_.slice()
@@ -580,20 +881,22 @@ function handleRequestOrderSendWorksetGet_(body, io) {
 }
 
 // ------------------------------------------------------------------------------------------------------------
-// §E — requestOrder.send.orchestrate   ONE CLICK -> ONE REQUEST -> ONE JOURNALED SAGA.
+// §D/§E/§F/§G — requestOrder.send.orchestrate
 //
 // body.payload:
 //   { tier_scope: 'ALL'|'T1'|'T2'|'T3',        // the ONLY business scope control
 //     planning_cycle: 'YYYY-MM',               // current-run authority
-//     execution_planning_cycle?: string,       // the value fed to the EXISTING per-series execution key (13_).
-//                                              //   Kept separate and caller-supplied so a Send interrupted under
-//                                              //   the pre-FB-3B client still converges to the SAME Request Order
-//                                              //   on resume instead of creating a second one under a new key.
+//     execution_planning_cycle?: string,       // the value fed to the EXISTING per-series execution key (13_),
+//                                              //   kept caller-supplied so a Send interrupted under an older
+//                                              //   client converges on the SAME Request Order on continuation
 //     intents?: [ { company, country, marketplace, sku, tiers:{ T1:{order_qty}, ... } } ],
-//     actor?, resume?: boolean, dry_run?: boolean }
+//     mode?: 'preview' | 'execute',            // preview FREEZES and journals the plan; it writes no business row
+//     confirmed_checksum?: string,             // REQUIRED to execute: the checksum the user actually approved
+//     actor?, continuation?: number }
 //
-// dry_run performs phases validate -> group and returns the frozen plan with ZERO writes. It is the honest
-// answer to "what exactly would this Send do?" and it is what the confirmation dialog is built from.
+// A user click produces ONE preview and then ONE OR MORE execute calls. Every execute call carries the SAME
+// immutable execution key and the SAME confirmed checksum; the SERVER decides the next work item from its
+// journal. The browser never groups, orders or selects business work — it only asks "continue".
 // ------------------------------------------------------------------------------------------------------------
 function handleRequestOrderSendOrchestrate_(body, io) {
   io = io || rosDefaultIo_();
@@ -612,119 +915,172 @@ function handleRequestOrderSendOrchestrate_(body, io) {
   if (!cycle) return rosBuildEnvelope_(false, null, [{ code: 'PLANNING_CYCLE_REQUIRED', message: 'planning_cycle (YYYY-MM) is required — it is the current-run authority.' }], { zero_write: true, trace: trace });
   var actor = rosStr_(payload.actor) || 'request-order';
   var execCycle = rosStr_(payload.execution_planning_cycle) || cycle;
-  var orchestrationKey = rosOrchestrationKey_(payload);
-  var dryRun = payload.dry_run === true;
+  var key = rosOrchestrationKey_(payload);
+  // dry_run is accepted as the FB-3B alias so a client mid-deploy cannot accidentally execute.
+  var preview = payload.mode === 'preview' || payload.dry_run === true;
+  var continuation = Math.max(0, Number(payload.continuation) || 0);
+  if (continuation > ROS_MAX_CONTINUATIONS_) {
+    return rosBuildEnvelope_(false, null, [{ code: 'SEND_CONTINUATION_LIMIT_REACHED',
+      message: 'This Send has already used ' + continuation + ' continuations. Stopping so a runaway loop cannot keep writing. Run the interrupted-Send reconciliation and resume deliberately.',
+      details: { orchestration_key: key, limit: ROS_MAX_CONTINUATIONS_ } }], { trace: trace });
+  }
 
   try {
-    // ---- PHASE 1b · IDEMPOTENT REPLAY, checked BEFORE anything is read -------------------------------
-    // This must NOT depend on the current row state. After a successful Send the drafts are terminal, so a
-    // workset-first check would answer a duplicate click with "nothing eligible" — true, but it hides the fact
-    // that the click ALREADY SUCCEEDED, which is exactly what an operator who lost the response needs to know.
-    // The orchestration key is a pure function of the request, so the recorded result is addressable without
-    // reading a single row.
-    var priorJournal = io.journalGet(orchestrationKey);
-    if (priorJournal && rosStr_(priorJournal.status) === 'COMPLETED' && !dryRun) {
+    // ---- PHASE 1b · idempotent replay, BEFORE anything is read ---------------------------------------
+    // This must not depend on the current row state: after a successful Send the drafts are terminal, so a
+    // workset-first check would answer a duplicate click with "nothing eligible" — true, and exactly the wrong
+    // thing to tell an operator who lost the response. The key is derivable from the request alone.
+    var priorJournal = rosJournalRead_(io, key);
+    if (priorJournal && rosStr_(priorJournal.status) === 'COMPLETED' && !preview) {
       phase('replay_completed');
       return rosBuildEnvelope_(true, Object.assign({}, priorJournal.result || {}, { status: 'ALREADY_COMPLETED',
-        orchestration_key: orchestrationKey, replayed: true, writes_performed: 0,
+        orchestration_key: key, replayed: true, writes_performed: 0,
         next_action: 'This exact Send already completed. Nothing was written again. Open Request Order Draft to Approve / Convert to PO.' }), [],
         { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
     }
 
-    // ---- PHASE 2 · load_workset (SERVER-OWNED; no site/display parameter exists) -----------------------
+    // ---- PHASE 2 · load_workset (SERVER-OWNED; no site/display parameter exists) ---------------------
     phase('load_workset');
     var ss = io.openDb();
     var draftRows = io.readTable(ss, ROS_DRAFTS_TABLE_);
     var idx = rosSeriesIndex_(io.readTable(ss, ROS_SKU_DETAILS_TABLE_));
-    var ws = rosBuildWorkset_(draftRows, { planning_cycle: cycle, tier_scope: scope,
-      series_by_sku: idx.series, units_per_carton_by_sku: idx.upc });
+    var wsOpts = { planning_cycle: cycle, tier_scope: scope, series_by_sku: idx.series, units_per_carton_by_sku: idx.upc };
+    var ws = rosBuildWorkset_(draftRows, wsOpts);
     if (ws.error) return rosBuildEnvelope_(false, null, [{ code: ws.error, message: 'workset could not be built' }], { zero_write: true, trace: trace });
     phase('load_workset_done', { active_persisted_drafts: ws.active_persisted_drafts,
       positive_selected_tier_allocations: ws.positive_selected_tier_allocations });
 
+    // §H fail-closed: a duplicated business identity is never resolved by guessing.
+    if (ws.blocking_conflicts.length) {
+      return rosBuildEnvelope_(false, null, [{ code: 'DUPLICATE_BUSINESS_IDENTITY',
+        message: ws.blocking_conflicts.length + ' business scope(s) have more than one active allocation draft. Neither row is sent, because which quantity is authoritative is a business decision. Nothing was written.',
+        details: { conflicts: ws.blocking_conflicts.slice(0, 25),
+          next_action: 'Run the allocation-draft identity diagnostic (system.allocationDraftIdentityDiagnostic) and resolve the duplicates.' } }],
+        { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
+    }
+
     if (!ws.rows.length) {
-      return rosBuildEnvelope_(true, { status: 'NO_ELIGIBLE_PERSISTED_ALLOCATION', orchestration_key: orchestrationKey,
+      return rosBuildEnvelope_(true, { status: 'NO_ELIGIBLE_PERSISTED_ALLOCATION', orchestration_key: key,
         counts: rosCountsOf_(ws), excluded: ws.excluded, writes_performed: 0,
-        next_action: 'Nothing is eligible. Materialize the allocation (AI Plan) or enter a positive tier quantity on a persisted draft, then Send again.' },
+        next_action: 'Nothing is eligible. Enter a positive tier quantity (which persists a canonical draft) or run AI Plan, then Send again.' },
         [], { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
     }
 
-    // ---- PHASE 3 · verify_quantities (§C — the read-after-write barrier) -------------------------------
+    // ---- PHASE 3 · verify_quantities (the read-after-write barrier) -----------------------------------
     phase('verify_quantities');
-    var verify = rosVerifyQuantities_(ws, payload.intents || []);
+    var zeroIdx = rosZeroQtyIndex_(draftRows, wsOpts);
+    var verify = rosVerifyQuantities_(ws, payload.intents || [], zeroIdx);
     if (verify.blocked) {
-      // BLOCK THE ENTIRE SEND. Not the offending row — the whole thing. A partially-correct Request Order is a
-      // worse outcome than none, and the DB value is never substituted for the user's unsaved edit.
       return rosBuildEnvelope_(false, null, [{ code: 'QUANTITY_VERIFICATION_FAILED',
         message: verify.failures.length + ' quantity assertion(s) do not match the persisted allocation. The ENTIRE Send was blocked and nothing was written.',
         details: { failures: verify.failures.slice(0, 50), failure_count: verify.failures.length,
           intents_total: verify.intents_total, intents_matched: verify.intents_matched } }],
         { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
     }
-    phase('verify_quantities_done', { verified: verify.verified, rows_without_intent: verify.workset_rows_without_intent });
+    phase('verify_quantities_done', { verified: verify.verified, zero_verified: verify.zero_intents_matched,
+      rows_without_intent: verify.workset_rows_without_intent });
 
     // ---- PHASE 4 · freeze -----------------------------------------------------------------------------
     phase('freeze');
     var checksum = rosWorksetChecksum_(ws);
     var nowMs = io.now();
-    var journal = priorJournal;
-    var res = rosJournalResumable_(journal, checksum, nowMs);
-    // A COMPLETED journal was already answered in PHASE 1b; reaching here with one means a DRY RUN, which is
-    // allowed to re-plan freely because it writes nothing.
-    if (journal && rosLeaseHeld_(journal, nowMs) && payload.resume !== true) {
-      return rosBuildEnvelope_(false, null, [{ code: 'SEND_IN_PROGRESS_SAME_KEY',
-        message: 'An execution for this exact Send is already running. Do NOT retry — read back by orchestration key, or re-invoke with resume=true after it stops.',
-        details: { orchestration_key: orchestrationKey, phase: rosStr_(journal.phase) } }],
-        { zero_write: true, trace: trace });
-    }
-    var resumed = !!(journal && res.resumable && payload.resume === true);
-    if (journal && !res.resumable && res.reason === 'SOURCE_CHANGED_SINCE_INTERRUPTION') {
-      return rosBuildEnvelope_(false, null, [{ code: 'SOURCE_CHANGED_SINCE_INTERRUPTION',
-        message: 'The persisted allocation changed since the interrupted Send. Reconcile first (system.requestOrderSendReconcile), then Send again — resuming the old plan would write a stale workset.',
-        details: { orchestration_key: orchestrationKey, journal_checksum: rosStr_(journal.workset_checksum), current_checksum: checksum } }],
-        { zero_write: true, trace: trace });
-    }
     var groups = rosGroupBySeries_(ws);
-    phase('freeze_done', { workset_checksum: checksum, series_groups: groups.length, resumed: resumed });
-
-    // ---- PHASE 5 · group (+ dry-run exit: the confirmation dialog's data source) ------------------------
+    var counts = rosCountsOf_(ws);
     var plan = {
-      status: dryRun ? 'DRY_RUN_PLAN' : 'PLANNED',
-      orchestration_key: orchestrationKey, workset_checksum: checksum,
+      status: preview ? 'PREVIEW' : 'PLANNED',
+      orchestration_key: key, workset_checksum: checksum,
       planning_cycle: cycle, tier_scope: scope, tiers_in_scope: ws.tiers_in_scope,
-      current_run_authority: 'planning_cycle=' + cycle + ' AND header status IN (draft, site_confirmed, partially_submitted) AND tier status NOT IN (submitted, cancelled)',
+      current_run_authority: rosCurrentRunAuthority_(cycle),
       business_send_scope_controls: ['tier_scope'], display_only_controls: ROS_DISPLAY_ONLY_CONTROLS_.slice(),
-      counts: rosCountsOf_(ws), excluded: ws.excluded,
+      counts: counts, excluded: ws.excluded,
       quantity_verification: { asserted: verify.intents_total, verified: verify.verified,
+        zero_verified: verify.zero_intents_matched,
         persisted_without_assertion: verify.workset_rows_without_intent, failures: 0 },
       series_groups: groups.map(function (g) { return { series: g.series, line_count: g.line_count,
         distinct_skus: g.distinct_skus, total_units: g.total_units, allocation_draft_ids: g.allocation_draft_ids }; })
     };
-    if (dryRun) {
+
+    // ---- §F PREVIEW: freeze the plan IN THE JOURNAL and hand back the checksum the user must confirm ---
+    if (preview) {
+      var pj = { orchestration_key: key, status: 'PREVIEW', phase: 'freeze', started_at: nowMs,
+        workset_checksum: checksum, planning_cycle: cycle, tier_scope: scope,
+        counts: counts, series_order: groups.map(function (g) { return g.series_key; }),
+        series_done: {}, transitioned: [], continuation: 0 };
+      var pw = rosJournalWrite_(io, key, pj);
       plan.writes_performed = 0;
+      plan.journal_persisted = pw.ok;
+      plan.journal_bytes = pw.bytes || 0;
+      plan.confirm_with_checksum = checksum;
+      plan.slice_budget_ms = ROS_SLICE_BUDGET_MS_;
+      plan.safe_to_close = true;
+      plan.next_action = 'Confirm this plan and re-invoke with mode=execute and confirmed_checksum=' + checksum + '. If the persisted allocation changes in between, the execute call is refused with SEND_WORKSET_DRIFT.';
       return rosBuildEnvelope_(true, plan, [], { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
     }
 
-    // Take the journal lease and record the frozen plan BEFORE the first write, so an execution killed at any
-    // point after this leaves durable evidence of exactly what it intended to do.
-    journal = journal && res.resumable ? journal : { orchestration_key: orchestrationKey, started_at: nowMs,
-      workset_checksum: checksum, planning_cycle: cycle, tier_scope: scope, series_done: {}, transitioned: [], status: 'RUNNING' };
-    journal.lease_at = nowMs; journal.phase = 'write_orders'; journal.status = 'RUNNING';
-    journal.series_done = journal.series_done || {}; journal.transitioned = journal.transitioned || [];
-    io.journalPut(orchestrationKey, journal);
+    // ---- §F EXECUTE: the approved checksum is mandatory and must still hold ---------------------------
+    var confirmed = rosStr_(payload.confirmed_checksum);
+    if (!confirmed) {
+      return rosBuildEnvelope_(false, null, [{ code: 'SEND_CONFIRMATION_REQUIRED',
+        message: 'An execute call must carry confirmed_checksum from a preview. Nothing was written.',
+        details: { orchestration_key: key, current_checksum: checksum } }], { zero_write: true, trace: trace });
+    }
+    if (confirmed !== checksum) {
+      // The source moved between preview and confirmation. NEVER silently execute a different (possibly larger)
+      // Send than the one the operator approved.
+      return rosBuildEnvelope_(false, null, [{ code: 'SEND_WORKSET_DRIFT',
+        message: 'The persisted allocation changed after the plan was previewed, so the approved plan no longer matches the data. Nothing was written. Preview again and re-confirm.',
+        details: { orchestration_key: key, confirmed_checksum: confirmed, current_checksum: checksum,
+          next_action: 'Request a new preview and confirm the new counts.' } }],
+        { zero_write: true, trace: trace, serverDurationMs: io.now() - t0 });
+    }
+    if (priorJournal && rosStr_(priorJournal.workset_checksum) && priorJournal.workset_checksum !== checksum) {
+      return rosBuildEnvelope_(false, null, [{ code: 'SEND_WORKSET_DRIFT',
+        message: 'The journal for this Send was frozen against a different source. Nothing was written. Preview again.',
+        details: { orchestration_key: key, journal_checksum: rosStr_(priorJournal.workset_checksum), current_checksum: checksum } }],
+        { zero_write: true, trace: trace });
+    }
 
-    // ---- PHASE 6 · write_orders — DELEGATED to the canonical writer, one Series at a time --------------
+    // ---- §E ATOMIC OWNERSHIP. Compare-and-set under a SHORT lock, released before any writer runs. ----
+    var own = rosOwnershipTransact_(io, cycle, key, nowMs, function (j) {
+      var next = j || { orchestration_key: key, status: 'RUNNING', started_at: nowMs, workset_checksum: checksum,
+        planning_cycle: cycle, tier_scope: scope, counts: counts,
+        series_order: groups.map(function (g) { return g.series_key; }), series_done: {}, transitioned: [] };
+      next.status = 'RUNNING';
+      next.phase = 'write_orders';
+      next.continuation = continuation;
+      next.workset_checksum = checksum;
+      next.series_done = next.series_done || {};
+      next.transitioned = next.transitioned || [];
+      return next;
+    });
+    if (!own.granted) {
+      var refuseCode = own.decision.reason === 'SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION'
+        ? 'SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION' : 'SEND_LEASE_UNAVAILABLE';
+      return rosBuildEnvelope_(false, null, [{ code: refuseCode,
+        message: refuseCode === 'SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION'
+          ? 'Another Send execution currently owns this planning cycle. Do NOT retry — wait for it to finish, or read back by execution key. Nothing was written.'
+          : 'The Send ownership lease could not be acquired. Nothing was written; retry in a moment.',
+        details: { orchestration_key: key, owner: own.decision.owner || '', reason: own.decision.reason } }],
+        { zero_write: true, trace: trace });
+    }
+    var journal = own.journal;
+    phase('freeze_done', { workset_checksum: checksum, series_groups: groups.length,
+      ownership: own.decision.reason, continuation: continuation });
+
+    // ---- PHASE 6 · write_orders — DELEGATED, one Series at a time, inside the SLICE budget ------------
     phase('write_orders');
-    var created = [], reused = [], writeErrors = [], processed = 0, deferred = [];
+    var created = [], reused = [], writeErrors = [], deferred = [], verifiedGroups = [];
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
-      if (journal.series_done[g.series_key]) { reused.push(journal.series_done[g.series_key]); processed++; continue; }
-      if ((io.now() - t0) > ROS_TIME_BUDGET_MS_) { deferred = groups.slice(gi).map(function (x) { return x.series_key; }); break; }
+      if (journal.series_done[g.series_key]) { reused.push(journal.series_done[g.series_key]); continue; }
+      // §D — stop ADMITTING work at the derived budget, never mid-write. The worst case from here is
+      // ROS_MAX_SINGLE_WRITE_MS_, and ROS_RESERVE_MS_ still remains before the client bound.
+      if ((io.now() - t0) > ROS_SLICE_BUDGET_MS_) { deferred = groups.slice(gi).map(function (x) { return x.series_key; }); break; }
 
       var writerBody = {
         company: '', source: 'manual', source_ref_type: 'request_order_allocation_batch',
         planning_cycle: execCycle, series: g.series,
-        note: 'Send Request — series ' + (g.series || '(no series)') + ' · ' + scope + ' · exec ' + orchestrationKey,
+        note: 'Send Request — series ' + (g.series || '(no series)') + ' · ' + scope + ' · exec ' + key,
         created_by: actor,
         lines: g.lines.map(function (l) {
           return { sku: l.sku, series: l.series, company: l.company, requested_qty: l.order_qty,
@@ -739,91 +1095,107 @@ function handleRequestOrderSendOrchestrate_(body, io) {
       var w = io.createRequestOrderDraft(writerBody);
       if (!w || w.success !== true) {
         writeErrors.push({ series: g.series, error: rosStr_(w && (w.error || w.message)) || 'CREATE_REQUEST_ORDER_FAILED', stage: rosStr_(w && w.stage) });
-        break;   // stop at the first failure: the lifecycle is NOT advanced for anything, and the journal holds what landed
+        break;   // stop at the first failure: nothing is advanced, and the journal holds what landed
       }
       var d = (w.data || {});
-      var rec = { series: g.series, request_order_id: rosStr_(d.request_order_id), request_order_no: rosStr_(d.request_order_no),
-        reused: d.reused === true, execution_key: rosStr_(d.execution_key), line_count: g.line_count,
+      var rec = { series: g.series, series_key: g.series_key, request_order_id: rosStr_(d.request_order_id),
+        request_order_no: rosStr_(d.request_order_no), reused: d.reused === true,
+        execution_key: rosStr_(d.execution_key), line_count: g.line_count,
         allocation_draft_ids: g.allocation_draft_ids };
       journal.series_done[g.series_key] = rec;
-      journal.lease_at = io.now();
-      io.journalPut(orchestrationKey, journal);   // journal AFTER each Series -> a kill loses at most zero proven work
+      // Renew the lease and journal AFTER each Series, so a kill loses no proven work and a concurrent caller
+      // still sees a live owner. The CAS lock is taken and released here — never held across the writer above.
+      rosOwnershipTransact_(io, cycle, key, io.now(), function () { return journal; });
       (rec.reused ? reused : created).push(rec);
-      processed++;
     }
-    phase('write_orders_done', { processed: processed, created: created.length, reused: reused.length, deferred: deferred.length });
+    phase('write_orders_done', { created: created.length, reused: reused.length, deferred: deferred.length });
 
     if (writeErrors.length) {
-      journal.phase = 'write_orders'; journal.status = 'FAILED'; journal.errors = writeErrors; journal.lease_at = 0;
-      io.journalPut(orchestrationKey, journal);
+      journal.status = 'FAILED'; journal.errors = writeErrors;
+      rosOwnershipRelease_(io, cycle, key, io.now(), journal);
       return rosBuildEnvelope_(false, null, [{ code: 'REQUEST_ORDER_WRITE_FAILED',
-        message: 'A Request Order could not be created. No allocation draft was advanced; the Request Orders already created for this execution are recorded and will be REUSED (not duplicated) when you resume.',
-        details: { orchestration_key: orchestrationKey, failed: writeErrors,
+        message: 'A Request Order could not be created. No allocation draft was advanced; the Request Orders already created for this execution are recorded and will be REUSED (not duplicated) when you continue.',
+        details: { orchestration_key: key, failed: writeErrors,
           request_orders_created: created.map(function (x) { return x.request_order_no; }),
-          resume_action: 'Fix the reported cause, then re-invoke with resume=true and the same body.' } }],
+          resume_action: 'Fix the reported cause, then re-invoke mode=execute with the SAME confirmed_checksum.' } }],
+        { trace: trace, serverDurationMs: io.now() - t0 });
+    }
+
+    // ---- PHASE 7 · verify_output — EXACT quantity + lineage proof, per Series -------------------------
+    phase('verify_output');
+    var orderRows = io.readTable(ss, 'request_orders');
+    var lineRows = io.readTable(ss, 'request_order_lines');
+    var sourceRows = io.readTable(ss, 'request_order_line_sources');
+    var orderById = {};
+    (orderRows || []).forEach(function (r) { var k = rosStr_(r && r.request_order_id); if (k) orderById[k] = r; });
+    var groupByKey = {};
+    groups.forEach(function (g) { groupByKey[g.series_key] = g; });
+
+    var allRecs = created.concat(reused), outputFailures = [], provenDraftIds = {};
+    allRecs.forEach(function (rec) {
+      var g = groupByKey[rec.series_key];
+      if (!g) { outputFailures.push({ series: rec.series, code: 'FROZEN_GROUP_MISSING' }); return; }
+      var v = rosVerifyRequestOrderOutput_({ request_order_id: rec.request_order_id, lines: g.lines },
+        orderById[rec.request_order_id], lineRows, sourceRows);
+      rec.verified_lines = v.verified_lines;
+      rec.verified_qty = v.verified_qty;
+      rec.output_verified = v.ok;
+      if (!v.ok) { outputFailures.push({ series: rec.series, request_order_no: rec.request_order_no, failures: v.failures.slice(0, 20) }); return; }
+      verifiedGroups.push(rec);
+      (rec.allocation_draft_ids || []).forEach(function (id) { provenDraftIds[id] = 1; });
+    });
+    phase('verify_output_done', { orders: allRecs.length, verified: verifiedGroups.length, failed: outputFailures.length });
+
+    if (outputFailures.length) {
+      // §G — journal the exact mismatch, PRESERVE already-proven output, advance NOTHING for the failed group,
+      // and never manufacture a compensating quantity.
+      journal.status = 'OUTPUT_VERIFICATION_FAILED';
+      journal.output_failures = outputFailures;
+      rosOwnershipRelease_(io, cycle, key, io.now(), journal);
+      return rosBuildEnvelope_(false, null, [{ code: 'REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED',
+        message: outputFailures.length + ' Request Order(s) do not match the frozen workset field by field. NO allocation draft was advanced for them, so nothing is marked sent without a verified output. No compensating quantity was written.',
+        details: { orchestration_key: key, failures: outputFailures,
+          proven_request_orders: verifiedGroups.map(function (x) { return x.request_order_no; }),
+          next_action: 'Run system.requestOrderSendReconcile for this planning cycle. Correct the cause, then preview and confirm a fresh Send; already-proven Request Orders are reused by execution key.' } }],
         { trace: trace, serverDurationMs: io.now() - t0 });
     }
 
     if (deferred.length) {
-      // Voluntary stop inside the Apps Script execution ceiling. This is NOT a failure and NOT indeterminate:
-      // every Series either has a recorded Request Order or has not been started.
-      journal.phase = 'write_orders'; journal.status = 'PARTIAL'; journal.lease_at = 0;
-      io.journalPut(orchestrationKey, journal);
-      return rosBuildEnvelope_(true, { status: 'PARTIAL_RESUMABLE', orchestration_key: orchestrationKey,
-        workset_checksum: checksum, counts: plan.counts,
+      // §D — a voluntary slice boundary. NOT a failure and NOT indeterminate: every Series either has a
+      // journalled Request Order or has not been started. The lease stays live so the continuation owns it.
+      journal.status = 'PARTIAL'; journal.phase = 'write_orders';
+      rosOwnershipTransact_(io, cycle, key, io.now(), function () { return journal; });
+      return rosBuildEnvelope_(true, { status: 'PARTIAL_RESUMABLE', orchestration_key: key,
+        workset_checksum: checksum, confirm_with_checksum: checksum, counts: counts,
         request_orders_created: created, request_orders_reused: reused,
+        verified_headers: verifiedGroups.length,
+        verified_lines: verifiedGroups.reduce(function (s, x) { return s + (x.verified_lines || 0); }, 0),
+        series_total: groups.length, series_done: Object.keys(journal.series_done).length,
         series_remaining: deferred.length, lifecycle_advanced: false,
-        next_action: 'Re-invoke requestOrder.send.orchestrate with the SAME body and resume=true. Completed Series are skipped by execution key; nothing is duplicated. Do NOT start a new Send.' },
+        continuation: continuation, safe_to_close: true, resumable: true,
+        slice_budget_ms: ROS_SLICE_BUDGET_MS_, elapsed_ms: io.now() - t0,
+        next_action: 'CONTINUE: re-invoke mode=execute with the SAME confirmed_checksum and continuation=' + (continuation + 1) + '. Do NOT start a new Send: the server picks the next Series and completed ones are skipped by execution key. It is safe to close the page — the journal owns the progress.' },
         [], { trace: trace, serverDurationMs: io.now() - t0 });
     }
 
-    // ---- PHASE 7 · verify_output — output PROOF before any lifecycle transition -------------------------
-    phase('verify_output');
-    var orderRows = io.readTable(ss, 'request_orders');
-    var lineRows = io.readTable(ss, 'request_order_lines');
-    var linesByOrder = {};
-    (lineRows || []).forEach(function (l) { var k = rosStr_(l && l.request_order_id); if (k) linesByOrder[k] = (linesByOrder[k] || 0) + 1; });
-    var orderById = {};
-    (orderRows || []).forEach(function (r) { var k = rosStr_(r && r.request_order_id); if (k) orderById[k] = r; });
-    var all = created.concat(reused), unproven = [];
-    all.forEach(function (rec) {
-      var hdr = orderById[rec.request_order_id];
-      var n = linesByOrder[rec.request_order_id] || 0;
-      rec.verified_line_count = n;
-      if (!hdr) { unproven.push({ series: rec.series, request_order_no: rec.request_order_no, reason: 'HEADER_NOT_FOUND_AFTER_WRITE' }); return; }
-      if (n < rec.line_count) { unproven.push({ series: rec.series, request_order_no: rec.request_order_no, reason: 'LINE_COUNT_SHORT', expected: rec.line_count, found: n }); }
-    });
-    phase('verify_output_done', { orders: all.length, unproven: unproven.length });
-    if (unproven.length) {
-      journal.phase = 'verify_output'; journal.status = 'OUTPUT_UNPROVEN'; journal.lease_at = 0;
-      io.journalPut(orchestrationKey, journal);
-      return rosBuildEnvelope_(false, null, [{ code: 'REQUEST_ORDER_OUTPUT_UNPROVEN',
-        message: 'A Request Order could not be verified after writing. NO allocation draft was advanced — the lifecycle stays where it was so nothing is marked sent without an output.',
-        details: { orchestration_key: orchestrationKey, unproven: unproven,
-          next_action: 'Run system.requestOrderSendReconcile for this planning cycle before any retry.' } }],
-        { trace: trace, serverDurationMs: io.now() - t0 });
-    }
-
-    // ---- PHASE 8 · transition — canonical lifecycle advance, ONLY after output proof --------------------
+    // ---- PHASE 8 · transition — canonical lifecycle advance, ONLY over PROVEN output ------------------
     phase('transition');
-    var draftIds = {};
-    all.forEach(function (rec) { (rec.allocation_draft_ids || []).forEach(function (id) { draftIds[id] = 1; }); });
-    var ids = Object.keys(draftIds).sort();
+    var ids = Object.keys(provenDraftIds).sort();
     var submitBuckets = (scope === 'ALL') ? null : [scope];   // a tier-scoped Send advances ONLY that tier
     var sub = ids.length ? io.submitAllocationDrafts({ draft_ids: ids, submitted_by: actor, submit_buckets: submitBuckets }) : { success: true, data: { submitted: 0 } };
     if (!sub || sub.success !== true) {
-      journal.phase = 'transition'; journal.status = 'TRANSITION_FAILED'; journal.lease_at = 0;
-      io.journalPut(orchestrationKey, journal);
+      journal.status = 'TRANSITION_FAILED';
+      rosOwnershipRelease_(io, cycle, key, io.now(), journal);
       return rosBuildEnvelope_(false, null, [{ code: 'ALLOCATION_TRANSITION_FAILED',
-        message: 'The Request Orders exist and are verified, but the allocation lifecycle could not be advanced. Resume with the SAME body: the Request Orders are reused by execution key and only the transition is retried.',
-        details: { orchestration_key: orchestrationKey, request_orders: all.map(function (x) { return x.request_order_no; }),
+        message: 'The Request Orders exist and are field-verified, but the allocation lifecycle could not be advanced. Continue with the SAME confirmed_checksum: the Request Orders are reused by execution key and only the transition is retried.',
+        details: { orchestration_key: key, request_orders: verifiedGroups.map(function (x) { return x.request_order_no; }),
           error: rosStr_(sub && (sub.error || sub.message)) } }],
         { trace: trace, serverDurationMs: io.now() - t0 });
     }
     journal.transitioned = ids;
     phase('transition_done', { drafts_advanced: ids.length, submit_buckets: submitBuckets });
 
-    // ---- PHASE 9 · reconcile — ONE scoped final answer -------------------------------------------------
+    // ---- PHASE 9 · reconcile — ONE scoped final answer ------------------------------------------------
     phase('reconcile');
     var afterRows = io.readTable(ss, ROS_DRAFTS_TABLE_);
     var byId = {}; (afterRows || []).forEach(function (r) { byId[rosStr_(r && r.request_allocation_draft_id)] = r; });
@@ -837,53 +1209,86 @@ function handleRequestOrderSendOrchestrate_(body, io) {
     });
     var result = {
       status: stillActive.length ? 'COMPLETED_WITH_UNVERIFIED_TRANSITIONS' : 'COMPLETED',
-      orchestration_key: orchestrationKey, workset_checksum: checksum,
-      planning_cycle: cycle, tier_scope: scope, resumed: resumed,
-      counts: plan.counts, excluded: ws.excluded,
+      orchestration_key: key, workset_checksum: checksum,
+      planning_cycle: cycle, tier_scope: scope, continuation: continuation,
+      counts: counts, excluded: ws.excluded,
       quantity_verification: plan.quantity_verification,
       request_orders_created: created, request_orders_reused: reused,
-      request_order_count: all.length,
-      request_order_line_count: all.reduce(function (s, x) { return s + (x.line_count || 0); }, 0),
+      request_order_count: allRecs.length,
+      verified_headers: verifiedGroups.length,
+      verified_lines: verifiedGroups.reduce(function (s, x) { return s + (x.verified_lines || 0); }, 0),
+      verified_units: verifiedGroups.reduce(function (s, x) { return s + (x.verified_qty || 0); }, 0),
       allocation_drafts_advanced: ids.length,
       unverified_transitions: stillActive,
       writes_performed: created.length,
+      safe_to_close: true, resumable: false,
       next_action: stillActive.length
-        ? 'Run system.requestOrderSendReconcile — the Request Orders are proven but some lifecycle rows could not be re-read.'
+        ? 'Run system.requestOrderSendReconcile — the Request Orders are field-verified but some lifecycle rows could not be re-read.'
         : 'Open Request Order Draft to Approve / Convert to PO. No Purchase Order was issued and no email was sent by this Send.'
     };
-    journal.status = 'COMPLETED'; journal.phase = 'reconcile'; journal.lease_at = 0; journal.result = result;
-    io.journalPut(orchestrationKey, journal);
+    journal.status = 'COMPLETED'; journal.phase = 'reconcile'; journal.result = result;
+    rosOwnershipRelease_(io, cycle, key, io.now(), journal);
     phase('reconcile_done');
     return rosBuildEnvelope_(true, result, [], { trace: trace, serverDurationMs: io.now() - t0 });
 
   } catch (e) {
     return rosBuildEnvelope_(false, null, [{ code: (e && (e.safetyToken || e.apiCode)) || 'SEND_ORCHESTRATION_ERROR',
       message: String(e && e.message || e),
-      details: { orchestration_key: orchestrationKey,
+      details: { orchestration_key: key,
         next_action: 'Run system.requestOrderSendReconcile before any retry — an interrupted orchestration is never assumed to be a zero-write.' } }],
       { trace: trace, serverDurationMs: io.now() - t0 });
   }
 }
 
-// The labelled count block, in one place, so the wire shape and the confirmation dialog cannot drift apart.
-function rosCountsOf_(ws) {
-  return {
-    active_persisted_drafts: ws.active_persisted_drafts,
-    drafts_with_positive_selected_tier: ws.drafts_with_positive_selected_tier,
-    selected_tier_allocations: ws.selected_tier_allocations,
-    positive_selected_tier_allocations: ws.positive_selected_tier_allocations,
-    distinct_skus: ws.distinct_skus, distinct_series: ws.distinct_series,
-    expected_request_order_headers: ws.expected_request_order_headers,
-    expected_request_order_lines: ws.expected_request_order_lines,
-    total_units: ws.total_units
-  };
+// ------------------------------------------------------------------------------------------------------------
+// §D/§E — requestOrder.send.status   STRICTLY READ-ONLY journal status, so a RELOAD can resume.
+// A page that reloads mid-Send has lost its in-memory state but not the execution: this answers "what does the
+// server think is happening, and may I continue?" without writing, locking or touching a business row.
+// ------------------------------------------------------------------------------------------------------------
+function handleRequestOrderSendStatus_(body, io) {
+  io = io || rosDefaultIo_();
+  var t0 = io.now();
+  var payload = (body && body.payload) || body || {};
+  var key = rosStr_(payload.orchestration_key) || rosOrchestrationKey_(payload);
+  var cycle = rosStr_(payload.planning_cycle);
+  var j = rosJournalRead_(io, key);
+  var activeRaw = cycle ? io.propGet(ROS_ACTIVE_PREFIX_ + cycle) : null;
+  var active = null;
+  if (activeRaw) { try { active = JSON.parse(activeRaw); } catch (e) { active = null; } }
+  var nowMs = io.now();
+  if (!j) {
+    return rosBuildEnvelope_(true, { status: 'NO_JOURNAL', orchestration_key: key,
+      cycle_owner: active ? rosStr_(active.execution_key) : '', writes_performed: 0, safe_to_close: true,
+      next_action: 'No Send is recorded for this execution key. Preview a fresh Send.' }, [],
+      { zero_write: true, serverDurationMs: io.now() - t0 });
+  }
+  var done = Object.keys(j.series_done || {}).length;
+  var total = (j.series_order || []).length;
+  return rosBuildEnvelope_(true, {
+    status: rosStr_(j.status) || 'UNKNOWN', phase: rosStr_(j.phase), orchestration_key: key,
+    workset_checksum: rosStr_(j.workset_checksum), confirm_with_checksum: rosStr_(j.workset_checksum),
+    planning_cycle: rosStr_(j.planning_cycle), tier_scope: rosStr_(j.tier_scope),
+    counts: j.counts || null, series_total: total, series_done: done,
+    series_remaining: Math.max(0, total - done),
+    lifecycle_advanced: (j.transitioned || []).length > 0,
+    request_orders: Object.keys(j.series_done || {}).map(function (k) { return j.series_done[k]; }),
+    lease_held: rosLeaseHeld_(j, nowMs), cycle_owner: active ? rosStr_(active.execution_key) : '',
+    owned_by_this_key: !!(active && rosStr_(active.execution_key) === key),
+    result: j.result || null, output_failures: j.output_failures || [],
+    resumable: rosStr_(j.status) !== 'COMPLETED', safe_to_close: true, writes_performed: 0,
+    next_action: rosStr_(j.status) === 'COMPLETED'
+      ? 'This Send already completed. Open Request Order Draft to Approve / Convert to PO.'
+      : (rosStr_(j.status) === 'PREVIEW'
+        ? 'A plan is frozen but not executed. Confirm it with mode=execute and confirmed_checksum=' + rosStr_(j.workset_checksum) + '.'
+        : 'Continue with mode=execute and confirmed_checksum=' + rosStr_(j.workset_checksum) + '. The server picks the next Series.')
+  }, [], { zero_write: true, serverDurationMs: io.now() - t0 });
 }
 
 // ============================================================================================================
-// EDITOR-RUNNABLE READ-ONLY WRAPPERS. A router action is not a runnable instruction; select one of these in the
-// Apps Script editor and press Run. Both are read-only: the workset probe reads, and the orchestration probe is
-// pinned to dry_run so it can NEVER write. There is no editor wrapper that performs a live Send — a business
-// write belongs to the page, under a confirmation the operator has read.
+// EDITOR-RUNNABLE READ-ONLY WRAPPERS. A router action is not a runnable instruction; select one in the Apps
+// Script editor and press Run. Both are read-only: the workset probe reads, and the orchestration probe is
+// pinned to a PREVIEW so it can never execute. There is deliberately no editor wrapper that performs a live
+// Send — a business write belongs to the page, under a confirmation the operator has read.
 // ============================================================================================================
 
 var TEMP_ROSEND_TIER_SCOPE_ = 'ALL';                 // ALL | T1 | T2 | T3  (the only business scope control)
@@ -903,23 +1308,31 @@ function TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE() {
     + ' | skus=' + c.distinct_skus + ' series=' + c.distinct_series
     + ' | expected_headers=' + c.expected_request_order_headers + ' expected_lines=' + c.expected_request_order_lines
     + ' units=' + c.total_units
-    + ' | checksum=' + d.workset_checksum
+    + ' | checksum=' + d.workset_checksum + ' blocking_conflicts=' + (d.blocking_conflicts || []).length
     + ' | scope_controls=[' + d.business_send_scope_controls.join(',') + '] display_only=[' + d.display_only_controls.join(',') + ']'
     + ' | phases=' + JSON.stringify(r.meta.phases) + ' bytes=' + r.meta.response_bytes + ' writes=' + r.meta.writes_performed);
   Logger.log('[ROSEND-WS][excluded] ' + JSON.stringify(d.excluded));
+  (d.blocking_conflicts || []).slice(0, 20).forEach(function (x) {
+    Logger.log('[ROSEND-WS][CONFLICT] ' + x.code + ' scope=' + x.natural_key + ' ids=' + (x.draft_ids || []).join(',')
+      + ' canonical=' + x.canonical_count + ' non_canonical=' + x.non_canonical_count);
+  });
   (d.groups || []).slice(0, 25).forEach(function (g) {
     Logger.log('[ROSEND-WS][series] ' + (g.series || '(no series)') + ' lines=' + g.line_count + ' skus=' + g.distinct_skus + ' units=' + g.total_units);
   });
 }
 
-function TEMP_REQUEST_ORDER_SEND_DRY_RUN() {
+function TEMP_REQUEST_ORDER_SEND_PREVIEW() {
   var cycle = rosStr_(TEMP_ROSEND_PLANNING_CYCLE_);
-  if (!cycle || cycle.indexOf('PASTE_') === 0) { Logger.log('[ROSEND-DRY] BLOCKED — set TEMP_ROSEND_PLANNING_CYCLE_ (YYYY-MM) and Run again. Nothing was read or written.'); return; }
-  var r = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, dry_run: true } });
-  if (!r.success) { Logger.log('[ROSEND-DRY] BLOCKED ' + JSON.stringify(r.errors) + ' | 0 writes.'); return; }
+  if (!cycle || cycle.indexOf('PASTE_') === 0) { Logger.log('[ROSEND-PREVIEW] BLOCKED — set TEMP_ROSEND_PLANNING_CYCLE_ (YYYY-MM) and Run again. Nothing was read or written.'); return; }
+  var r = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, mode: 'preview' } });
+  if (!r.success) { Logger.log('[ROSEND-PREVIEW] BLOCKED ' + JSON.stringify(r.errors) + ' | 0 business writes.'); return; }
   var d = r.data;
-  Logger.log('[ROSEND-DRY] ' + d.status + ' key=' + d.orchestration_key + ' checksum=' + d.workset_checksum
+  Logger.log('[ROSEND-PREVIEW] ' + d.status + ' key=' + d.orchestration_key + ' checksum=' + d.workset_checksum
     + ' | ' + JSON.stringify(d.counts) + ' | series_groups=' + d.series_groups.length
-    + ' | writes_performed=' + d.writes_performed + ' (dry run — this wrapper cannot write)');
-  Logger.log('[ROSEND-DRY][excluded] ' + JSON.stringify(d.excluded));
+    + ' | journal_persisted=' + d.journal_persisted + ' journal_bytes=' + d.journal_bytes
+    + ' | business writes_performed=' + d.writes_performed + ' (PREVIEW — this wrapper cannot execute)');
+  Logger.log('[ROSEND-PREVIEW][excluded] ' + JSON.stringify(d.excluded));
+  Logger.log('[ROSEND-PREVIEW][slice] client_write_timeout_ms=' + ROS_CLIENT_WRITE_TIMEOUT_MS_
+    + ' max_single_write_ms=' + ROS_MAX_SINGLE_WRITE_MS_ + ' reserve_ms=' + ROS_RESERVE_MS_
+    + ' slice_budget_ms=' + ROS_SLICE_BUDGET_MS_ + ' lease_ms=' + ROS_LEASE_MS_);
 }

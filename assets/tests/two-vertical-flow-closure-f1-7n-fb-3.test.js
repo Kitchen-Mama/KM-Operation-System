@@ -348,8 +348,14 @@ function finishAsync() {
   // its denominator from a source the page cannot influence — now the SERVER's frozen plan.
   ok(!/for \(var di = 0/.test(send) && !/for \(var si = 0/.test(send),
     'F5. no per-SKU or per-series write loop remains in the browser at all');
-  ok(/_roSendPhase_\('Sending to the server orchestration', 0, plan\.counts\.expected_request_order_headers, 'Series groups'\)/.test(send),
-    'F5. and the single phase names its unit and takes its denominator from the SERVER plan');
+  // F1-7N-FB-3C §J: the single phase line became a progress BLOCK. It must still take its numbers from the
+  // server and name every unit — now for more units than before, which is strictly stronger.
+  ok(/_roSendProgressLine_\(\{ counts: plan\.counts/.test(send),
+    'F5. and progress is rendered from the SERVER plan counts, naming every unit');
+  ok(/journal_phase/.test(extractFn(RO, '_roSendProgressLine_')),
+    'F5. including the current server journal phase');
+  ok(/safe to close this page/.test(extractFn(RO, '_roSendProgressLine_')),
+    'F5. and whether it is safe to close the page');
   ok(/do not close this page/i.test(extractFn(RO, '_roSendPhase_') + send), 'F5. with an explicit instruction not to navigate away');
 
   // 6. no auto-retry, and a timeout is INDETERMINATE
@@ -373,10 +379,20 @@ function finishAsync() {
   ok(/_roSendState\.mountSeq = _roMountEpoch/.test(RO), 'F8. the guard reuses the EXISTING mount-epoch authority (no parallel counter)');
 
   // 8. F1-7N-FB-3B §E — the reason a batch was needed is removed: exactly ONE committing request is issued.
-  eq((send.match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 2,
-    'F9. exactly two orchestration calls — one ZERO-WRITE dry run, then one committing request');
-  ok(send.indexOf('dry_run: true') < send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
-    'F9. the dry run comes first, so the user approves the server\u2019s own numbers');
+  // F1-7N-FB-3C §D/§F: one click = ONE zero-write preview in handleSendRequest, then the server-driven
+  // continuation loop. handleSendRequest must issue exactly ONE orchestration call (the preview) and must not
+  // execute anything itself.
+  eq((send.match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 1,
+    'F9. handleSendRequest issues exactly ONE orchestration call — the zero-write preview');
+  ok(/mode: 'preview'/.test(send) && code(send).indexOf("mode: 'execute'") === -1,
+    'F9. and it is a preview: the page never issues an execute call itself');
+  var loopFn = extractFn(RO, '_roSendRunToCompletion_');
+  eq((loopFn.match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 1,
+    'F9. the continuation loop has exactly ONE call site, reused for every slice');
+  ok(/confirmed_checksum: checksum/.test(loopFn),
+    'F9. every slice carries the SAME confirmed frozen checksum');
+  ok(/continuation: continuation/.test(loopFn) && /maxLoops/.test(loopFn),
+    'F9. continuations are counted and BOUNDED (no unbounded client loop)');
   ok(/window\.KM\.DB\.beginWriteBatch = function/.test(DBAPI),
     'F9. the write-batch seam is retained for other multi-write callers (not deleted)');
 
@@ -397,9 +413,11 @@ function finishAsync() {
     'F11. site_confirmed remains an ACTIVE, sendable allocation state (no renamed or bypassed state)');
   ok(/io\.createRequestOrderDraft\(writerBody\)/.test(orch), 'F11. the Request Order is created under the execution key');
   ok(/io\.submitAllocationDrafts\(/.test(orch), 'F11. and the covered drafts are advanced after that');
-  var iC = orch.indexOf('io.createRequestOrderDraft'), iP = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iS = orch.indexOf('io.submitAllocationDrafts');
+  var iC = orch.indexOf('io.createRequestOrderDraft'), iP = orch.indexOf('REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED'), iS = orch.indexOf('io.submitAllocationDrafts');
   ok(iC > -1 && iP > iC && iS > iP,
-    'F11. in that order, with an explicit OUTPUT PROOF between creation and the lifecycle advance');
+    'F11. in that order, with an explicit FIELD-BY-FIELD OUTPUT PROOF between creation and the lifecycle advance');
+  ok(/rosVerifyRequestOrderOutput_\(/.test(orch),
+    'F11. and the proof is the exact quantity/lineage verifier, not a line count');
   eq((RO.match(/DB\.createRequestOrderDraft\(/g) || []).length, 0,
     'F12. the browser has NO Request Order writer call site left at all');
   eq((G66.match(/handleCreateRequestOrderDraft_\(/g) || []).length, 1,

@@ -86,8 +86,11 @@ ok(/NO_ELIGIBLE_PERSISTED_ALLOCATION/.test(RO) && /Nothing was written/.test(RO)
 ok(/An AI Plan row is NOT a persisted allocation draft/.test(RO),
   'C4. and says why the page can show rows while the database has nothing to send');
 var _send = RO.slice(RO.indexOf('async function handleSendRequest'), RO.indexOf('function _roSendPlanningCycle_'));
-ok(_send.indexOf('NO_ELIGIBLE_PERSISTED_ALLOCATION') < _send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
-  'C4. the empty-case return happens before the one committing request');
+// F1-7N-FB-3C: the committing call is now the continuation loop, entered only after the confirmation.
+ok(_send.indexOf('NO_ELIGIBLE_PERSISTED_ALLOCATION') < _send.indexOf('_roSendRunToCompletion_('),
+  'C4. the empty-case return happens before the committing run is entered');
+ok(/A deliberate quantity edit now SAVES a canonical allocation draft|a deliberate quantity edit now SAVES a canonical allocation draft/i.test(_send),
+  'C4. and the message tells the operator that entering a quantity now persists a draft by itself');
 
 section('D/F. downstream idempotency + lineage + no PO (13_ createRequestOrderDraft — already sound)');
 var core13 = extractFn(G13, 'roCreateRequestOrderCore_');
