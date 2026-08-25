@@ -17,9 +17,18 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 // =====================================================================================================
-section('Texture memory stable (no resolution change)');
-ok(/buildEarthCanvas\(2048,\s*1024\)/.test(G), 'M1 earth texture is still rasterized at 2048x1024 (texture memory unchanged)');
+section('Texture tier (V3G6A supersedes the fixed-resolution guard)');
+// SUPERSEDED, NOT DELETED. The UI-GLOBE-01/02 batch was visual-only, so M1 pinned the raster at 2048x1024 to
+// prove that batch changed no texture memory. F1-7N-FA-4A V3G6A is a deliberate, authorised FIDELITY task: the
+// close-zoom blur was traced to that very ceiling (the texture is MAGNIFIED at MIN_D, which no filter can fix).
+// M1 is therefore replaced by a stronger contract - the base tier is unchanged, the higher tier is
+// capability-gated, and the rasterizer stays fully resolution-parametric so the artwork is identical.
+ok(/var TEX_BASE_W_ = 2048, TEX_BASE_H_ = 1024;/.test(G), 'M1a the BASE texture tier is still 2048x1024 (unchanged cost on low-end devices)');
+ok(/out\.width = 4096; out\.height = 2048;/.test(G) && /MAX_TEXTURE_SIZE/.test(G), 'M1b the 4K tier is gated on the GL MAX_TEXTURE_SIZE capability');
+ok(/LOW_DEVICE_MEMORY/.test(G) && /LOW_CORE_COUNT/.test(G) && /DEVICE_CAPABILITY_UNKNOWN/.test(G), 'M1c and on device memory / core count, with UNKNOWN devices kept on the base tier');
+ok(/buildEarthCanvas\(texTier\.width, texTier\.height\)/.test(G), 'M1d the rasterizer is called with the CHOSEN tier, never a hardcoded size');
 ok((G.match(/cv\.width\s*=\s*tw;\s*cv\.height\s*=\s*th/) || []).length >= 1, 'M2 canvas sized from (tw,th) params — no hardcoded larger buffer');
+ok(/var _cs = tw \/ 2048;/.test(G) && /rw = \(26 \+ rnd\(\) \* 66\) \* _cs/.test(G), 'M2b the only absolute pixel radii (clouds) scale with the tier, so a 4K raster paints identical artwork');
 
 // =====================================================================================================
 section('On-demand render model preserved (no continuous loop / no animation-timing change)');

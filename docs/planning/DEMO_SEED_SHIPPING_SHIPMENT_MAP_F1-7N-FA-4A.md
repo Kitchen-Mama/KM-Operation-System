@@ -925,3 +925,93 @@ demo-seed **1203 / 0** (was 1084 / 0 at V3G5C). V3G3 map regression **50 / 0**. 
 ## Sync manifest (USER-owned, nothing run here)
 - `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` · `FRONTEND_DEPLOY_REQUIRED`: none · `BUNDLE_REBUILD_REQUIRED`: NO · **no DB header/schema change required**.
 - Order after review: push → sync the `.gs` → `TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION` (expect `source_warehouse_ids` = the live CN factory, `source_warehouse_companies` = `ResTW`, `source_factory_shared_across_companies true`, `source_company_match_required false`, `risk_count 0`, `source_destination_warehouse_lineage_ready true`, `journal_retry_safe true`, `verdict READY_FOR_CONTROLLED_RETRY`; if still blocked, `plan_blocked_detail` now names the precise resolver reason) → `TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION`, **confirming the printed factory is the intended one** → DRY_RUN → copy the **new** `demo_plan_checksum` → COMMIT → VALIDATE. CLEAR stays staged OFF.
+
+---
+
+# LIVE DEMO CLOSURE + V3G6A FRONTEND FIDELITY
+**Frontend-only task.** No Demo row, DB schema, Apps Script seed tool, confirmation constant, journal, warehouse master, route or event was touched. No Apps Script function was run (no DIAGNOSE / PREFLIGHT / DRY_RUN / COMMIT / VALIDATE / CLEAR). The live results below are **recorded as reported by the operator**, not re-verified by this agent.
+
+## I — live Demo closure record
+| Item | Result |
+|---|---|
+| Live COMMIT | **succeeded** |
+| Six-table delta | **3 / 8 / 3 / 8 / 46 / 5** (= 73) |
+| `demo_plan_checksum` | **`f53a7ef7`** |
+| Post-state classification | **`PRESENT_EXACT_ALL`** |
+| VALIDATE verdict | **`DEMO_SEED_VALIDATED`** |
+| `DEMO4A_CONFIRMED_SEED_CHECKSUM_` | **returned to `PASTE_DEMO_SEED_CHECKSUM_HERE`** |
+| `DEMO4A_CONFIRMED_CLEAR_TOKEN_` | **still `PASTE_DEMO_CLEAR_TOKEN_HERE` — CLEAR remains disarmed** |
+
+`f53a7ef7` is the live checksum; like every earlier value it is **not pinned anywhere in source**, so the tool cannot silently re-authorize against it.
+
+### Visual smoke
+| Page | Result |
+|---|---|
+| Weekly Shipping Plan | **PASS** |
+| Shipment Draft — data visibility | **PASS** |
+| Shipment Draft — Expand button | **FAIL → fixed by V3G6A** (root cause below) |
+| Shipment Overview | **PASS** |
+| On-the-Way Map — data / route visibility | **PASS** |
+| On-the-Way Map — close-zoom fidelity | **audited; renderer already correct, texture tier raised (below)** |
+
+## A — Shipment Draft Expand: exact root cause
+**A duplicate DOM id resolved by `getElementById` to the wrong page — not CSS, not a missing listener, not a stale closure.**
+
+1. `_shRenderDbCard()` is the **single** card builder for **both** pages, and it stamps `id="sh-card-<shipment_id>"`.
+2. A `shipped` shipment is rendered by **both**: `SH_DRAFT_STATUSES = ['draft','ready_to_ship','shipped']` **and** `SH_OVERVIEW_STATUSES.shipped = 1`.
+3. In `index.html`, `#shippinghistory-mount` (Overview) precedes `#shipment-draft-mount` (Draft).
+4. The old `toggleShipmentCard(id)` did `document.getElementById('sh-card-' + id)` → **the first match in document order = the Overview card**.
+
+**Call path:** `click` → inline `onclick="event.stopPropagation();toggleShipmentCard('<sid>')"` → `document.getElementById('sh-card-<sid>')` → *Overview* card → `querySelector('.history-card-details')` → sets `display:block` on the **hidden Overview** card → the Draft card never changes → **no visible response**.
+
+This explains every observed symptom exactly: Overview Expand worked (it matched itself); Weekly Shipping Plan worked (different page, `sp-card-` ids); Draft › Draft and Draft › Ready-to-Ship worked (those statuses are unique to the Draft page); **only Draft › Shipped failed**.
+
+## B — the fix: one canonical Expand/Collapse
+`_shToggleCardEl(card)` + `_shCardFromEvent(evt, id, prefix)` resolve the card from **the clicked node's own subtree** (`closest('.history-card')`), so a click can only ever toggle its own card. The legacy id lookup survives **only** as the no-event fallback, so no programmatic caller loses behaviour. `toggleShipmentCard` and the demo/mock `toggleHistoryCard` both delegate to that **one** implementation — no divergent copy. Added: `type="button"`, an initial `aria-expanded="false"`, and an `aria-expanded` sync on every toggle (the buttons previously had none). The label still alternates Expand ⇄ Collapse, cards remain independent, the default stays collapsed, and the handler is an inline `onclick` re-emitted by every render, so filters and rerenders cannot leave a dead listener.
+
+**Expand is pure DOM.** The toggle path references no status action (`shSaveExecution` / `shReadyToShip` / `shConfirmShipment` / `shReturnToDraft` / `shShipmentDone` / `shAdvanceStatus`), no `fetch`/`XHR`, no reload and no status field — its only mutations are `display`, `textContent` and `aria-expanded` (all asserted).
+
+## C — expanded content
+Unchanged and not redesigned. The detail DOM already existed (`.history-card-details` with **SKU Lines** — qty / cartons / CBM / weights / carton numbers — and **Execution Fields** + section actions); only its toggle was broken. No data invented, no new API field.
+
+## D — map blur: full audit
+| Audited | Finding |
+|---|---|
+| Renderer | hand-written raw **WebGL1** (`assets/js/lib/km-globe.js`), context `{antialias:true, alpha:false}` — not three.js |
+| Canvas CSS size | `width:100%; height:100%` of `.glm-globe-host` (CSS carries **no** scaling and no `image-rendering` — verified, so the CSS was not changed) |
+| Backing buffer | `canvas.width = round(cssW * dpr)`, `canvas.height = round(cssH * dpr)` — **already correct** |
+| `devicePixelRatio` | `dpr = Math.min(window.devicePixelRatio || 1, 2)` — **already correct, already capped** |
+| Resize handling | `window` resize (150 ms debounce) **+** `ResizeObserver` on the container; hidden/detached containers skipped — **already correct** |
+| Texture asset path | **none** — the earth image is rasterized at runtime by `buildEarthCanvas()` from the vendored same-origin `KM_WORLD_LAND` outline. No network, no external file, no licence question |
+| Texture native size | **2048 × 1024** equirectangular |
+| min/mag filters | `LINEAR` / `LINEAR` — **no mipmaps, no anisotropy** |
+| Color space | not applicable: WebGL1 raw `gl.RGB`/`UNSIGNED_BYTE` from a canvas has no colour-space parameter (that is a three.js / WebGL2 concept). **No change made — nothing invented.** |
+| Max zoom | `MIN_D = 1.35`, `MAX_D = 5.0` (unchanged) |
+
+**Cause of the observed blur: the texture, not the renderer.** At `MIN_D` the sphere fills the viewport, so a 2048×1024 texture is **magnified** — one texel spans several device pixels — and `TEXTURE_MAG_FILTER = LINEAR` interpolates it into visible softness. Mipmaps and anisotropy do **not** help magnification; only real texel density does. The DPR/backing-buffer items in §E(1)(2) were therefore **already implemented — they are reported as verified, not claimed as new fixes.**
+
+## E/F — implemented fidelity changes
+1. **Texture tier raised, capability-gated.** `pickTextureTier()` selects **4096 × 2048** only when `gl.MAX_TEXTURE_SIZE ≥ 4096` **and** `navigator.deviceMemory ≥ 4` **and** `navigator.hardwareConcurrency ≥ 4`; an **unidentified** device stays on the base tier (fail-safe, not fail-open). Base stays **2048 × 1024**, so low-end cost is unchanged. Typed reasons: `HIGH_TIER_4K` · `MAX_TEXTURE_SIZE_BELOW_4096` · `LOW_DEVICE_MEMORY` · `LOW_CORE_COUNT` · `DEVICE_CAPABILITY_UNKNOWN` · `CAPABILITY_PROBE_FAILED`.
+2. **Mipmaps** — `generateMipmap` (both tiers are power-of-two), with `MIN_FILTER = LINEAR_MIPMAP_LINEAR` **only when the mip chain actually built**; `MAG_FILTER` stays `LINEAR`.
+3. **Anisotropy** — `EXT_texture_filter_anisotropic` (with WebKit/Moz prefixes) at the renderer-reported maximum, applied only when a mip chain exists. On a sphere most of the visible surface is at a grazing angle, so this is the largest per-pixel win after texel density.
+4. **Artwork preserved exactly.** `buildEarthCanvas` is fully resolution-parametric; the only absolute pixel radii (the baked cloud layer) are now scaled by `tw/2048`, so a 4K raster paints the identical image with more detail.
+5. `getRenderInfo()` / `getTextureInfo()` expose DPR, CSS size, buffer size, tier, mipmaps and anisotropy so the configuration is **observable instead of assumed**.
+
+Not done, deliberately: no CSS upscaling trick, no upscaled low-res texture passed off as new detail, no runtime network dependency, no geometry / projection / camera / marker / coordinate change.
+
+**§F texture decision:** the texture **was** the limiting cause. Its exact resolution was **2048 × 1024**; the recommended tier is **4K (4096 × 2048)**, and because the asset is **generated in-repo** there is no external asset to license and no `HIGH_RES_TEXTURE_ASSET_REQUIRED` condition. 8K is possible later but would cost ~128 MB of texture memory with mips and is not warranted at this globe size.
+
+## G — marker overlap: recorded recommendation, no implementation
+No coordinate is moved or jittered, and no clustering/aggregation was added (asserted: the marker pipeline `rebuildPoints` contains no jitter / scatter / declutter / clustering / random / offset). Recorded for later: current marker behaviour is **accepted for initial user testing**; selected-route emphasis is sufficient at the current four-shipment scale; a future large-data option is **screen-space** grouping with a co-located count badge; any future overlap handling must preserve the exact underlying coordinate, and an aggregate must expand or list **all** underlying nodes when selected.
+
+## H — tests and baseline
+New suite `shipment-draft-expand-and-map-fidelity-f1-7n-fa-4a-v3g6a.test.js` — **92 / 0** — covering all 21 required items. The Expand tests **execute the real shipped functions** (extracted from `shipping-history.js` and evaluated against a minimal DOM that reproduces the duplicate-id defect with Overview mounted first), never a mirrored copy. The map tests are source-facts over the real renderer, since neither WebGL nor a DOM canvas exists in headless Node.
+
+All **25** suites reading a changed file pass, including `globe-visual-guard`, `globe-math`, `global-logistics-map`, the V3G3 destination-endpoint regression and every `shipment-map-*` / `shipment-runtime*` suite. Full sweep of **343** suites → the same **4** pre-existing failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-route-inventory`), none reading a changed file → **0 new failures**.
+
+**One earlier assertion was superseded, not deleted:** `globe-visual-guard` M1 pinned the texture at 2048×1024 to prove the *visual-only* UI-GLOBE batch changed no texture memory. V3G6A is a deliberate, authorised fidelity change to exactly that ceiling, so M1 was replaced by a **stronger** contract (M1a–M1d, M2b): the base tier is still 2048×1024, the 4K tier is capability-gated on all four conditions, the rasterizer is called with the chosen tier rather than a hardcoded size, and the cloud radii scale with it. That suite is now **48 / 0**.
+
+## Deployment manifest (USER-owned)
+- `FRONTEND_DEPLOY_REQUIRED`: `assets/js/pages/shipping-history.js`, `assets/js/lib/km-globe.js`.
+- `APPS_SCRIPT_SYNC_REQUIRED`: **none** · `BUNDLE_REBUILD_REQUIRED`: **NO** · DB / schema / master / Demo-row change: **none**.
+- Map CSS unchanged (audited and found already correct). No new asset file added.

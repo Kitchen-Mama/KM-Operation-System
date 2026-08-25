@@ -101,6 +101,34 @@
   // seeded PRNG (identical every load, no per-frame cost, no Math.random, no setInterval, no extra draw pass),
   // at the SAME 2048×1024 dimensions → texture memory unchanged. Nothing here touches geometry, coordinates,
   // markers, arcs, projection, interaction, or the render loop — it only paints the texture image.
+  // V3G6A(D/E/F) - TEXTURE FIDELITY TIER. AUDIT RESULT: the close-zoom blur is NOT a device-pixel-ratio or
+  // backing-buffer defect (both were already correct: dpr = min(devicePixelRatio||1, 2) and
+  // canvas.width = round(cssW * dpr), re-applied by a window resize listener AND a container ResizeObserver).
+  // The limit is the TEXTURE: the earth image is rasterized at runtime by buildEarthCanvas() and was fixed at
+  // 2048x1024 equirectangular. At MIN_D the sphere fills the viewport, so that texture is MAGNIFIED - one
+  // texel spans several device pixels - and gl.LINEAR magnification interpolates it into visible softness.
+  // Mipmaps/anisotropy cannot fix magnification; only real texel density can. The texture is generated in
+  // this repository from the vendored land outline, so raising the tier needs NO external asset, NO network
+  // request and NO licence: buildEarthCanvas is fully resolution-parametric (every coordinate and line width
+  // derives from tw/th), so a larger raster reproduces the identical artwork with more detail.
+  // The tier is capability-gated so low-end devices keep the original cost.
+  var TEX_BASE_W_ = 2048, TEX_BASE_H_ = 1024;
+  function pickTextureTier(gl) {
+    var out = { width: TEX_BASE_W_, height: TEX_BASE_H_, reason: 'BASE_TIER' };
+    try {
+      var maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+      if (maxTex < 4096) { out.reason = 'MAX_TEXTURE_SIZE_BELOW_4096'; return out; }
+      var nav = (typeof navigator !== 'undefined') ? navigator : {};
+      // deviceMemory / hardwareConcurrency are optional; absent means "unknown", which stays on the base tier
+      // rather than gambling ~32MB of texture memory on an unidentified device.
+      var mem = Number(nav.deviceMemory || 0), cores = Number(nav.hardwareConcurrency || 0);
+      if (mem && mem < 4) { out.reason = 'LOW_DEVICE_MEMORY'; return out; }
+      if (cores && cores < 4) { out.reason = 'LOW_CORE_COUNT'; return out; }
+      if (!mem && !cores) { out.reason = 'DEVICE_CAPABILITY_UNKNOWN'; return out; }
+      out.width = 4096; out.height = 2048; out.reason = 'HIGH_TIER_4K';
+      return out;
+    } catch (e) { out.reason = 'CAPABILITY_PROBE_FAILED'; return out; }
+  }
   function buildEarthCanvas(tw, th) {
     var land = window.KM_WORLD_LAND;
     if (!land || !land.rings || !land.rings.length) return null;
@@ -191,7 +219,10 @@
       var clat = rnd() * 180 - 90, band = Math.abs(clat);
       var keep = (band < 12) ? 0.85 : (band > 38 && band < 62) ? 0.65 : 0.22;   // clouds cluster near equator + mid-latitudes
       if (rnd() > keep) continue;
-      var cx = px(rnd() * 360 - 180), cy = py(clat), rw = 26 + rnd() * 66, rh = rw * (0.32 + rnd() * 0.3);
+      // V3G6A - the ONLY absolute pixel radii in this rasterizer; scaled with the tier so a 4K raster paints
+      // the IDENTICAL artwork (every other dimension already derives from tw/th).
+      var _cs = tw / 2048;
+      var cx = px(rnd() * 360 - 180), cy = py(clat), rw = (26 + rnd() * 66) * _cs, rh = rw * (0.32 + rnd() * 0.3);
       ctx.save(); ctx.translate(cx, cy); ctx.scale(1, rh / rw);
       var cgr = ctx.createRadialGradient(0, 0, 0, 0, 0, rw);
       cgr.addColorStop(0, 'rgba(255,255,255,' + (0.035 + rnd() * 0.05).toFixed(3) + ')'); cgr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -272,8 +303,10 @@
     try { gl = canvas.getContext('webgl', { antialias: true, alpha: false }) || canvas.getContext('experimental-webgl', { antialias: true, alpha: false }); } catch (e) {}
     if (!gl) { container.removeChild(canvas); return err('webgl', 'WebGL context could not be created'); }
 
-    var earthCv = buildEarthCanvas(2048, 1024);
+    var texTier = pickTextureTier(gl);
+    var earthCv = buildEarthCanvas(texTier.width, texTier.height);
     if (!earthCv) { container.removeChild(canvas); return err('asset', 'Land outline asset (KM_WORLD_LAND) is missing or empty; cannot rasterize the Earth texture.'); }
+    var texInfo = { width: texTier.width, height: texTier.height, tier_reason: texTier.reason, mipmaps: false, anisotropy: 1, max_anisotropy: 1 };
 
     var progSphere, progPts, progLine, sphere, buf = {}, tex;
     try {
@@ -289,10 +322,25 @@
       tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, earthCv);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      // V3G6A(E4) - MIPMAPS. Both tiers are power-of-two, so WebGL1 can generate a full mip chain. This fixes
+      // the shimmering/aliasing of MINIFIED texels (the zoomed-out globe and the whole grazing-angle limb),
+      // which plain gl.LINEAR could not. Magnification still uses gl.LINEAR - the correct filter there.
+      try { gl.generateMipmap(gl.TEXTURE_2D); texInfo.mipmaps = true; } catch (e) { texInfo.mipmaps = false; }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, texInfo.mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      // V3G6A(E4) - ANISOTROPY. On a sphere most of the visible surface is viewed at a grazing angle, where an
+      // isotropic mip level is chosen from the WORST axis and the terrain smears. Anisotropic filtering is the
+      // single largest fidelity win here. Extension-gated: absent extension simply leaves anisotropy at 1.
+      try {
+        var aniso = gl.getExtension('EXT_texture_filter_anisotropic') || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') || gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+        if (aniso && texInfo.mipmaps) {
+          var maxA = gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+          texInfo.max_anisotropy = maxA;
+          if (maxA > 1) { gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, maxA); texInfo.anisotropy = maxA; }
+        }
+      } catch (e) {}
     } catch (e) { try { container.removeChild(canvas); } catch (x) {} return err('gl', 'GL init failed: ' + (e && e.message || e)); }
 
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
@@ -478,6 +526,9 @@
       zoomIn: function () { zoomBy(0.82); }, zoomOut: function () { zoomBy(1.22); },
       reset: function () { this.overview(); },
       getStatus: function () { return { ok: status.ok, error: status.error, dist: cam.dist }; },
+      // V3G6A - read-only render/texture facts, so the fidelity configuration is observable instead of assumed.
+      getRenderInfo: function () { return { dpr: dpr, device_pixel_ratio: (window.devicePixelRatio || 1), dpr_cap: 2, css_width: W, css_height: H, buffer_width: canvas.width, buffer_height: canvas.height }; },
+      getTextureInfo: function () { return { width: texInfo.width, height: texInfo.height, tier_reason: texInfo.tier_reason, mipmaps: texInfo.mipmaps, anisotropy: texInfo.anisotropy, max_anisotropy: texInfo.max_anisotropy }; },
       setReducedMotion: function (v) { reduced = !!v; },
       canvas: canvas,
       destroy: function () {

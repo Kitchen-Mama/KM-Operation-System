@@ -578,7 +578,7 @@ function renderHistoryCard(shipment) {
     const cardId = `history-card-${shipment.id}`;
     return `
         <div class="history-card" id="${cardId}" style="border: 1px solid #E2E8F0; border-radius: 8px; background: white;">
-            <div class="history-card-header" style="padding: 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleHistoryCard('${shipment.id}')">
+            <div class="history-card-header" style="padding: 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleHistoryCard('${shipment.id}', event)">
                 <div>
                     <strong style="font-size: 14px;">${shipment.id}</strong>
                     <span style="margin-left: 12px; color: #64748B; font-size: 13px;">${shipment.date}</span>
@@ -588,7 +588,7 @@ function renderHistoryCard(shipment) {
                     <span><strong>Method:</strong> ${shipment.method}</span>
                     <span><strong>Total Pcs:</strong> ${shipment.totalPcs.toLocaleString()}</span>
                     <span><strong>Cost:</strong> $${shipment.totalCost.toLocaleString()}</span>
-                    <button class="history-expand-btn" style="padding: 6px 12px; border: 1px solid #E2E8F0; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; color: #3B82F6;" onclick="event.stopPropagation(); toggleHistoryCard('${shipment.id}')">
+                    <button type="button" class="history-expand-btn" aria-expanded="false" style="padding: 6px 12px; border: 1px solid #E2E8F0; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; color: #3B82F6;" onclick="event.stopPropagation(); toggleHistoryCard('${shipment.id}', event)">
                         Expand
                     </button>
                 </div>
@@ -634,20 +634,9 @@ function renderHistoryCard(shipment) {
     `;
 }
 
-function toggleHistoryCard(shipmentId) {
-    const card = document.getElementById(`history-card-${shipmentId}`);
-    if (!card) return;
-    
-    const details = card.querySelector('.history-card-details');
-    const btn = card.querySelector('.history-expand-btn');
-    
-    if (details.style.display === 'none') {
-        details.style.display = 'block';
-        if (btn) btn.textContent = 'Collapse';
-    } else {
-        details.style.display = 'none';
-        if (btn) btn.textContent = 'Expand';
-    }
+// V3G6A - the demo/mock Overview card reuses the SAME canonical toggle (no divergent second implementation).
+function toggleHistoryCard(shipmentId, evt) {
+    return _shToggleCardEl(_shCardFromEvent(evt, shipmentId, 'history-card-'));
 }
 
 // (Round 3) The old single-select `sh-dropdown` panel logic — _initShDropdowns / _shBindDropdownPanel /
@@ -1165,7 +1154,7 @@ function _shRenderDbCard(s, planLines, mode) {
 
     return '' +
     '<div class="history-card" id="sh-card-' + _shEsc(sid) + '" style="border:1px solid #E2E8F0;border-radius:8px;background:#fff;margin-bottom:12px;">' +
-        '<div class="history-card-header" style="padding:16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleShipmentCard(\'' + _shEsc(sid) + '\')">' +
+        '<div class="history-card-header" style="padding:16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleShipmentCard(\'' + _shEsc(sid) + '\', event)">' +
             '<div>' +
                 '<strong style="font-size:14px;">' + _shEsc(s.externalShipmentId || s.shipmentNo || sid) + '</strong>' +
                 '<span style="margin-left:10px;padding:2px 8px;border-radius:10px;background:#EEF2FF;color:#3730A3;font-size:12px;">' + _shEsc(statusLabel) + '</span>' +
@@ -1181,7 +1170,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<span><strong>Pcs:</strong> ' + _shNum(s.totalQty) + '</span>' +
                 '<span><strong>ETD:</strong> ' + _shEsc(s.etd || '--') + '</span>' +
                 '<span><strong>ETA:</strong> ' + _shEsc(s.eta || '--') + '</span>' +
-                '<button class="history-expand-btn" style="padding:6px 12px;border:1px solid #E2E8F0;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;color:#3B82F6;" onclick="event.stopPropagation();toggleShipmentCard(\'' + _shEsc(sid) + '\')">Expand</button>' +
+                '<button type="button" class="history-expand-btn" aria-expanded="false" style="padding:6px 12px;border:1px solid #E2E8F0;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;color:#3B82F6;" onclick="event.stopPropagation();toggleShipmentCard(\'' + _shEsc(sid) + '\', event)">Expand</button>' +
             '</div>' +
         '</div>' +
         '<div class="history-card-details" style="display:none;padding:16px;border-top:1px solid #E2E8F0;background:#F8FAFC;">' +
@@ -1210,18 +1199,38 @@ function _shRenderDbCard(s, planLines, mode) {
     '</div>';
 }
 
-function toggleShipmentCard(shipmentId) {
-    var card = document.getElementById('sh-card-' + shipmentId);
-    if (!card) return;
+// V3G6A - THE ONE canonical Expand/Collapse for every shipment card (Shipment Draft AND Shipment Overview).
+// ROOT CAUSE it fixes: a `shipped` shipment is rendered by BOTH pages - SH_DRAFT_STATUSES contains 'shipped'
+// and SH_OVERVIEW_STATUSES.shipped is 1 - and _shRenderDbCard stamps the SAME DOM id `sh-card-<shipment_id>`
+// in both. #shippinghistory-mount precedes #shipment-draft-mount in index.html, so the old
+// document.getElementById('sh-card-' + id) ALWAYS resolved to the Overview card. Clicking Expand on a
+// Shipment Draft > Shipped card therefore toggled that other (hidden) card and produced no visible response,
+// while Overview (which matched itself) worked and Draft / Ready-to-Ship (ids unique to that page) worked.
+// It was never CSS, never a missing listener and never a stale closure. The fix resolves the card from the
+// CLICKED node's own subtree, so a click can only ever toggle its own card, and adds the aria-expanded sync
+// the buttons were missing. Toggling is pure DOM: it never touches shipment status, DB data or any action.
+function _shToggleCardEl(card) {
+    if (!card) return null;
     var details = card.querySelector('.history-card-details');
+    if (!details) return null;
     var btn = card.querySelector('.history-expand-btn');
-    if (details.style.display === 'none') {
-        details.style.display = 'block';
-        if (btn) btn.textContent = 'Collapse';
-    } else {
-        details.style.display = 'none';
-        if (btn) btn.textContent = 'Expand';
+    var isOpen = details.style.display !== 'none';   // inline display:none is the collapsed default
+    details.style.display = isOpen ? 'none' : 'block';
+    if (btn) {
+        btn.textContent = isOpen ? 'Expand' : 'Collapse';
+        btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
     }
+    return !isOpen;
+}
+// Resolve the card OWNING the click. The legacy id lookup remains only as the fallback for a programmatic
+// call with no event, so no existing caller loses behaviour.
+function _shCardFromEvent(evt, shipmentId, idPrefix) {
+    var src = evt && (evt.currentTarget || evt.target);
+    if (src && src.closest) { var owned = src.closest('.history-card'); if (owned) return owned; }
+    return document.getElementById(idPrefix + shipmentId);
+}
+function toggleShipmentCard(shipmentId, evt) {
+    return _shToggleCardEl(_shCardFromEvent(evt, shipmentId, 'sh-card-'));
 }
 
 // Clear carton-number error styling / message for a shipment card (called on input).
@@ -1613,6 +1622,8 @@ function showShipmentOverview() {
 window._shLoadAndRender = _shLoadAndRender;
 window._shClearCartonError = _shClearCartonError;
 window.toggleShipmentCard = toggleShipmentCard;
+window._shToggleCardEl = _shToggleCardEl;
+window._shCardFromEvent = _shCardFromEvent;
 window.shSaveExecution = shSaveExecution;
 window.shReadyToShip = shReadyToShip;
 window.shShip = shShip;
