@@ -172,6 +172,10 @@ var DEMO4A_FIELD_CLASS_ = {
   destination_warehouse_id: 'identifier', carrier_id: 'identifier', sku: 'identifier', site_sku: 'identifier', asin: 'identifier',
   transferred_shipment_id: 'identifier', parent_shipping_plan_id: 'identifier', source_event_id: 'identifier', container_no: 'identifier',
   tracking_number: 'identifier', node_code: 'identifier', location_code: 'identifier', postal_code: 'identifier',
+  // warehouse_code is an EXTERNAL/operator code (e.g. ABE2) that must never be numeric-coerced or lose leading zeros.
+  // `identifier` is its CANONICALIZATION class only - it is NOT a relational identity (SHIPMENT_CENTER_SPEC: never an
+  // identity, not globally unique) and this tool never uses it as a foreign key.
+  warehouse_code: 'identifier',
   shipping_plan_no: 'identifier', shipment_no: 'identifier',
   // enums / statuses — exact text (never lowercased)
   status: 'enum', batch_status: 'enum', plan_status: 'enum', event_type: 'enum', event_status: 'enum', raw_status: 'enum',
@@ -196,6 +200,13 @@ var DEMO4A_FIELD_CLASS_ = {
   is_active: 'boolean', is_receiving_enabled: 'boolean', is_deleted: 'boolean', is_primary: 'boolean', is_default: 'boolean'
 };
 var DEMO4A_FIELD_CLASSES_ = { identifier: 1, text: 1, enum: 1, numeric: 1, coordinate: 1, boolean: 1, date: 1, datetime: 1 };
+// V3G5B(I) - COERCION-RISK PREDICATES. A cell only changes representation when its VALUE is coercible. Non-numeric text
+// written through setValues stays text no matter how the column is formatted, so a numeric-formatted column carrying
+// unrelated existing numbers is NOT by itself a risk. These are deliberately narrow: whitespace-only and blank are not
+// numeric-like, and a numeric-like STRING in a non-numeric field IS a real risk (leading zeros / precision can be lost).
+function DEMO4A_numericLike_(v) { if (typeof v === 'number') return true; var t = DEMO4A_str_(v); if (t === '') return false; return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t); }
+function DEMO4A_dateLike_(v) { if (DEMO4A_isDateObj_(v)) return true; var t = DEMO4A_str_(v); if (t === '') return false; return /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(t) || /^\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(t); }
+function DEMO4A_boolLike_(v) { if (typeof v === 'boolean') return true; var t = DEMO4A_str_(v); return t !== '' && (DEMO4A_BOOL_TRUE_.hasOwnProperty(t) || DEMO4A_BOOL_FALSE_.hasOwnProperty(t)); }
 // legacy heuristic retained ONLY as the declared fallback for an unmapped field (reported, never silent).
 function DEMO4A_fieldKind_(f) {
   if (f === 'event_time' || /_at$/.test(f)) return 'datetime';
@@ -824,6 +835,58 @@ function DEMO4A_lifecycleEvents_(slot, roleByIndex, resolved, currentIndex, endY
 // id has been substituted into a warehouse field; and no `shipments.warehouse_id` third authority exists.
 // ================================================================================================================
 var DEMO4A_APPROVED_REGION_DEST_ = { US_WEST: 'WH-KM-US-FBA-BFI4', US_CENTRAL: 'WH-KM-US-FBA-AUS2', US_EAST: 'WH-KM-US-FBA-ABE2' };
+// ================================================================================================================
+// V3G5B(A/B) - THE ONE DEMO SOURCE-WAREHOUSE RESOLVER. `shipment_route_templates.origin_warehouse_id` is an OPTIONAL
+// specificity field (SHIPMENT_ROUTE_AND_EVENT_SPEC), so the live templates legitimately declare it BLANK - which is
+// exactly why the physical source_warehouse_id came out empty. Precedence:
+//   (1) TEMPLATE_EXACT_SOURCE_WAREHOUSE - a NON-BLANK declared id must resolve to an exact warehouses.warehouse_id and
+//       pass every gate. A declared-but-invalid id NEVER falls through to the fallback: it fails closed.
+//   (2) DEMO_DETERMINISTIC_FACTORY_FALLBACK - ONLY when the declared id is blank. Filter by is_factory_warehouse +
+//       active + shipping-enabled-when-present + exact origin country + exact company (when populated), sort by
+//       normalized warehouse_id ASCENDING and take the FIRST. No Math.random, no row order, no coordinate requirement,
+//       no logistics_location requirement, no fuzzy/name matching, no route/location id, no warehouse_code as an id,
+//       no destination warehouse, no fabricated id. Empty candidate set -> NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE.
+// The source warehouse is a BUSINESS identity; the origin route location stays a separate geographic binding.
+// ================================================================================================================
+function DEMO4A_sourceEvidence_(w, branch) {
+  return { ok: true, selection_branch: branch, warehouse_id: DEMO4A_whId_(w), warehouse_code: DEMO4A_whCode_(w), warehouse_name: DEMO4A_whName_(w),
+    company: DEMO4A_whCompany_(w), country: DEMO4A_whCountry_(w), warehouse_type: DEMO4A_whType_(w), is_factory_warehouse: DEMO4A_whIsFactory_(w),
+    is_shipping_enabled_present: DEMO4A_whShippingEnabledPresent_(w),
+    // truthful marking: master identity is proven in BOTH branches (an exact warehouses row was matched), but only the
+    // template's OWN declared authority is source-proven. A fallback is NEVER called source-proven.
+    master_identity_proven: true, demo_fallback: branch === 'DEMO_DETERMINISTIC_FACTORY_FALLBACK', source_proven: branch === 'TEMPLATE_EXACT_SOURCE_WAREHOUSE' };
+}
+function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
+  var tpl = template || {}, declared = DEMO4A_str_(tpl.origin_warehouse_id), originCountry = DEMO4A_str_(tpl.origin_country);
+  var rows = warehouses || [];
+  if (!rows.length) return { ok: false, reason: 'WAREHOUSES_MASTER_ABSENT', declared_warehouse_id: declared };
+  if (declared) {
+    var whById = {}; rows.forEach(function (w) { var id = DEMO4A_low_(DEMO4A_whId_(w)); if (id && whById[id] === undefined) whById[id] = w; });
+    var w = whById[DEMO4A_low_(declared)];
+    // a NON-BLANK declared id that is missing or conflicting fails CLOSED - it never silently falls through.
+    if (!w) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_NOT_IN_MASTER', declared_warehouse_id: declared };
+    if (!DEMO4A_whActive_(w)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_INACTIVE', declared_warehouse_id: declared };
+    if (!DEMO4A_whShippingEnabled_(w)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_SHIPPING_DISABLED', declared_warehouse_id: declared };
+    if (originCountry && DEMO4A_whCountry_(w) && DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COUNTRY_MISMATCH', declared_warehouse_id: declared };
+    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH', declared_warehouse_id: declared };
+    return DEMO4A_sourceEvidence_(w, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE');
+  }
+  // (2) Demo-only deterministic factory fallback. A blank template origin_country cannot be matched exactly -> fail closed.
+  if (!originCountry) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'TEMPLATE_ORIGIN_COUNTRY_BLANK', declared_warehouse_id: '' };
+  var cands = rows.filter(function (w) {
+    if (!DEMO4A_whId_(w)) return false;
+    if (!DEMO4A_whIsFactory_(w)) return false;                                        // is_factory_warehouse = true
+    if (!DEMO4A_whActive_(w)) return false;                                           // active
+    if (!DEMO4A_whShippingEnabled_(w)) return false;                                  // shipping enabled WHEN PRESENT
+    if (DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return false;   // EXACT origin country
+    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return false;   // exact company when populated
+    return true;
+  }).sort(function (a, b) { var ia = DEMO4A_low_(DEMO4A_whId_(a)), ib = DEMO4A_low_(DEMO4A_whId_(b)); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
+  if (!cands.length) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'NO_ACTIVE_FACTORY_WAREHOUSE_IN_ORIGIN_COUNTRY:' + originCountry, declared_warehouse_id: '' };
+  var ev = DEMO4A_sourceEvidence_(cands[0], 'DEMO_DETERMINISTIC_FACTORY_FALLBACK');
+  ev.candidate_count = cands.length;
+  return ev;
+}
 function DEMO4A_srcDestLineageGate_(plan, warehouses) {
   var reasons = [], plans = ((plan || {}).tables || {}).shipping_plans || [], ships = ((plan || {}).tables || {}).shipments || [];
   var whPresent = !!(warehouses && warehouses.length), whById = {};
@@ -857,6 +920,14 @@ function DEMO4A_srcDestLineageGate_(plan, warehouses) {
     if (src && locIds[DEMO4A_low_(src)]) reasons.push('SOURCE_IS_A_ROUTE_LOCATION_ID:' + src);
     if (dst && locIds[DEMO4A_low_(dst)]) reasons.push('DESTINATION_IS_A_ROUTE_LOCATION_ID:' + dst);
     var ps = perByShip[sid], region = ps ? DEMO4A_str_(ps.region) : '';
+    // V3G5B(C) - the business source country must equal the selected route template's origin country exactly.
+    if (ps && DEMO4A_str_(ps.template_origin_country) && DEMO4A_str_(ps.source_warehouse_country) && DEMO4A_low_(ps.source_warehouse_country) !== DEMO4A_low_(ps.template_origin_country)) reasons.push('SOURCE_COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY:' + sid);
+    // V3G5B(E) - warehouse_code, when written, is the DESTINATION warehouse-code snapshot and nothing else.
+    if (Object.prototype.hasOwnProperty.call(sh, 'warehouse_code') && ps) {
+      var wcode = DEMO4A_str_(sh.warehouse_code), expectCode = DEMO4A_str_(ps.destination_warehouse_code);
+      if (expectCode && DEMO4A_low_(wcode) !== DEMO4A_low_(expectCode)) reasons.push('WAREHOUSE_CODE_NOT_DESTINATION_SNAPSHOT:' + sid);
+      if (wcode && DEMO4A_low_(wcode) === DEMO4A_low_(dst)) reasons.push('WAREHOUSE_CODE_WRITTEN_AS_WAREHOUSE_ID:' + sid);
+    }
     // the approved REGIONAL destination authority is only binding while the warehouse authority itself is active
     // (legacy logistics-only fixtures without a warehouses master keep their own template destination).
     var approved = whPresent ? DEMO4A_APPROVED_REGION_DEST_[region] : null;
@@ -865,8 +936,11 @@ function DEMO4A_srcDestLineageGate_(plan, warehouses) {
   });
   var uniq = {}; reasons.forEach(function (r) { uniq[r] = 1; });
   var list = Object.keys(uniq);
+  var pers = ((plan || {}).per_shipment) || [];
   return { source_destination_warehouse_lineage_ready: list.length === 0, reasons: list.slice(0, 8), reason_count: list.length,
-    source_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.source_warehouse_id); }), destination_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.destination_warehouse_id); }) };
+    source_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.source_warehouse_id); }), destination_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.destination_warehouse_id); }),
+    source_warehouse_codes: pers.map(function (x) { return DEMO4A_str_(x.source_warehouse_code); }), destination_warehouse_codes: pers.map(function (x) { return DEMO4A_str_(x.destination_warehouse_code); }),
+    source_selection_branches: pers.map(function (x) { return DEMO4A_str_(x.source_selection_branch); }) };
 }
 // E — per-plan binding gates over the three shipments' role evidence. READY_FOR_DEMO_SEED is unreachable unless all gates
 // are true. A source-proven (canonical/direct) binding satisfies role/corridor by authority; a synthetic binding must have
@@ -941,8 +1015,8 @@ function DEMO4A_buildPlan_(masters) {
       var r = (usedBinding && usedBinding.destination_authority) ? usedBinding.destination_authority
         : DEMO4A_destAuthorityForTemplate_(pick.template, masters.warehouses, masters.locations, coordAuthority, destCompany);
       destAuthority[life.slot] = r;
-      if (!r.identity_ready) identityErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: r.warehouse_id || destWh });
-      else if (!READY_BRANCHES_[r.branch]) coordinateErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || r.coordinate_unresolved_reason || 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', warehouse_id: r.warehouse_id || destWh });
+      if (!r.identity_ready) identityErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || '', warehouse_id: DEMO4A_str_(r.warehouse_id) });
+      else if (!READY_BRANCHES_[r.branch]) coordinateErrors.push({ slot: life.slot, branch: r.branch, reason: r.reason || r.coordinate_unresolved_reason || 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED', warehouse_id: DEMO4A_str_(r.warehouse_id) });
     });
     if (identityErrors.length) return { ok: false, reason: 'DESTINATION_WAREHOUSE_AUTHORITY_NOT_READY', destination_authority_errors: identityErrors.concat(coordinateErrors), destination_authority: destAuthority, warehouses_present: warehousesPresent, coord_authority_armed: coordAuthorityArmed };
     if (coordinateErrors.length) {
@@ -951,6 +1025,22 @@ function DEMO4A_buildPlan_(masters) {
       // + loaded coordinates); armed-but-unresolvable → DESTINATION_ADDRESS_COORDINATE_UNRESOLVED (stale/missing fingerprint).
       return { ok: false, reason: coordAuthorityArmed ? 'DESTINATION_ADDRESS_COORDINATE_UNRESOLVED' : 'DESTINATION_ADDRESS_COORDINATE_AUTHORITY_NOT_ARMED', destination_authority_errors: coordinateErrors, destination_authority: destAuthority, warehouses_present: warehousesPresent, coord_authority_armed: coordAuthorityArmed };
     }
+  }
+
+  // V3G5B(A/B) - DEMO SOURCE-WAREHOUSE AUTHORITY. Resolved ONCE per slot by the single shared resolver, BEFORE any row is
+  // constructed, so eligibility evidence and the physical rows can never diverge. Any slot that cannot resolve an exact
+  // master warehouse identity fails the whole plan closed - no id is ever guessed, substituted or fabricated.
+  var sourceAuthority = {};
+  if (warehousesPresent) {
+    var sourceErrors = [];
+    DEMO4A_SHIP_LIFECYCLE_.forEach(function (life) {
+      var sPick = sel._assignRaw[life.slot];
+      var sres = DEMO4A_resolveDemoSourceWarehouse_(sPick.template, masters.warehouses, destCompany);
+      sourceAuthority[life.slot] = sres;
+      if (!sres.ok) sourceErrors.push({ slot: life.slot, reason: DEMO4A_str_(sres.reason), detail: DEMO4A_str_(sres.detail || ''), declared_warehouse_id: DEMO4A_str_(sres.declared_warehouse_id || '') });
+    });
+    if (sourceErrors.length) return { ok: false, reason: 'DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY', source_authority_errors: sourceErrors, source_authority: sourceAuthority,
+      destination_authority: destAuthority, warehouses_present: warehousesPresent, coord_authority_armed: coordAuthorityArmed };
   }
 
   var P = DEMO4A_PREFIX_;
@@ -986,7 +1076,18 @@ function DEMO4A_buildPlan_(masters) {
     }
     var originCountry = DEMO4A_str_(tpl.origin_country) || DEMO4A_str_(binding.origin.country) || 'CN';
     var destRegion = DEMO4A_str_(tpl.destination_region) || DEMO4A_str_(binding.destination.region) || pick.region;
-    var srcWh = DEMO4A_str_(tpl.origin_warehouse_id), destWh = DEMO4A_str_(tpl.destination_warehouse_id);
+    // V3G5B(C) - SOURCE: the single resolver's selection (exact template authority, else the deterministic Demo factory
+    // fallback). Legacy fixtures without a `warehouses` master keep the template's own declared id verbatim.
+    // V3G5B(D) - DESTINATION: the ALREADY-RESOLVED shared destination authority (`da`) - the destination is NEVER
+    // re-resolved by a second rule here. The template's optional declared id is used ONLY on the legacy no-master path.
+    var srcSel = warehousesPresent ? (sourceAuthority[life.slot] || {}) : null;
+    var srcWh = srcSel ? DEMO4A_str_(srcSel.warehouse_id) : DEMO4A_str_(tpl.origin_warehouse_id);
+    var destWh = da ? DEMO4A_str_(da.warehouse_id) : DEMO4A_str_(tpl.destination_warehouse_id);
+    // V3G5B(E) - shipments.warehouse_code is the DESTINATION warehouse-code snapshot (SHIPMENT_CENTER_SPEC: "destination
+    // display / external-code snapshot - never an identity"; the Picker copies warehouses.warehouse_code onto it). It is
+    // written as a display snapshot ONLY, is never used as a foreign key, and no column is added (it is already the
+    // deployed SHIPMENTS_HEADERS_ column immediately after source_warehouse_id).
+    var destWhCode = da ? DEMO4A_str_(da.warehouse_code) : '';
     var carrier = DEMO4A_str_(tpl.carrier_id), method = DEMO4A_str_(tpl.transit_type) || 'SEA', lastMile = DEMO4A_str_(tpl.last_mile_delivery);
 
     tables.shipping_plans.push({
@@ -1025,7 +1126,7 @@ function DEMO4A_buildPlan_(masters) {
     // updated_at are preserved. `warehouse_code` is NOT added — the intended row never carried it, so there is no
     // existing production meaning for this tool to preserve or redefine.
     tables.shipments.push({ shipment_id: shipId, shipment_no: 'DEMO-SHIP-' + idx, shipping_plan_id: planId,
-      source_warehouse_id: srcWh, company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      source_warehouse_id: srcWh, warehouse_code: destWhCode, company: scope.company, country: scope.country, marketplace: scope.marketplace,
       ship_from: originCountry, destination: destRegion || scope.country, destination_warehouse_id: destWh, destination_type: 'warehouse',
       carrier_id: carrier, shipping_method: method, last_mile_delivery: lastMile, status: life.status,
       etd: life.etd, eta: life.eta, actual_departure_date: life.etd, actual_arrival_date: life.delivered_date, delivered_date: life.delivered_date,
@@ -1066,6 +1167,10 @@ function DEMO4A_buildPlan_(masters) {
     // V3G(H) — bind the FULL destination authority into the checksum: warehouse_id + warehouse_code + logistics_location_id
     // + normalized-address fingerprint + coordinate branch + derived lat/lng + coordinate source reference + accuracy +
     // location_type + verification_status + the final status decision. Any change to address/coordinate/source re-checksums.
+    // V3G5B(J) - bind the FULL source-warehouse evidence into the checksum: identity + code + name + company + country +
+    // type + factory flag + the SELECTION BRANCH + the truthful proven/fallback marking. Changing the source lineage or
+    // the branch that produced it re-checksums the plan.
+    if (srcSel) bindingManifest.push(['WHSRC', shipId, DEMO4A_str_(srcSel.warehouse_id), DEMO4A_str_(srcSel.warehouse_code), DEMO4A_str_(srcSel.warehouse_name), DEMO4A_str_(srcSel.company), DEMO4A_str_(srcSel.country), DEMO4A_str_(srcSel.warehouse_type), (srcSel.is_factory_warehouse === true ? '1' : '0'), DEMO4A_str_(srcSel.selection_branch), (srcSel.source_proven === true ? '1' : '0'), (srcSel.demo_fallback === true ? '1' : '0')].join('~'));
     if (da) bindingManifest.push(['WHDEST', shipId, DEMO4A_str_(da.warehouse_id), DEMO4A_str_(da.warehouse_code), DEMO4A_str_(da.logistics_location_id), DEMO4A_str_(da.address_fingerprint), DEMO4A_str_(da.branch), DEMO4A_str_(da.location_type), DEMO4A_str_(da.verification_status), DEMO4A_str_(da.coordinate_source || ''), DEMO4A_str_(da.coordinate_source_reference || ''), DEMO4A_str_(da.coordinate_accuracy || ''), DEMO4A_num_(da.latitude), DEMO4A_num_(da.longitude), DEMO4A_str_(life.status)].join('~'));
 
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
@@ -1083,7 +1188,14 @@ function DEMO4A_buildPlan_(masters) {
 
     per_shipment.push({ shipment_id: shipId, slot: life.slot, status: life.status, template: pick.tid, region: pick.region, nodes: nodeCount,
       canonical_binding_count: canonicalCount, direct_coordinate_count: directCount, demo_synthetic_binding_count: syntheticCount, abstract_rows: abstractRowCount,
-      route_rows: nodeCount, event_rows: evs.length, source_warehouse_id: srcWh, origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
+      route_rows: nodeCount, event_rows: evs.length, source_warehouse_id: srcWh,
+      source_warehouse_code: srcSel ? DEMO4A_str_(srcSel.warehouse_code) : '', source_warehouse_name: srcSel ? DEMO4A_str_(srcSel.warehouse_name) : '',
+      source_warehouse_country: srcSel ? DEMO4A_str_(srcSel.country) : '', source_warehouse_type: srcSel ? DEMO4A_str_(srcSel.warehouse_type) : '',
+      source_selection_branch: srcSel ? DEMO4A_str_(srcSel.selection_branch) : 'TEMPLATE_DECLARED_NO_WAREHOUSE_MASTER',
+      source_master_identity_proven: srcSel ? srcSel.master_identity_proven === true : false, source_demo_fallback: srcSel ? srcSel.demo_fallback === true : false,
+      source_proven: srcSel ? srcSel.source_proven === true : false, source_is_factory_warehouse: srcSel ? srcSel.is_factory_warehouse === true : false,
+      template_origin_country: DEMO4A_str_(tpl.origin_country), destination_warehouse_code_snapshot: destWhCode,
+      origin_location_id: DEMO4A_str_(binding.origin.location_ref_id), current_location_id: binding.current ? DEMO4A_str_(binding.current.location_ref_id) : '', destination_location_id: DEMO4A_str_(binding.destination.location_ref_id),
       plan_lines: lineCount, shipment_lines: lineCount,
       transport_class: DEMO4A_str_(binding.transport_class || DEMO4A_transportClass_(method)),
       destination_warehouse_id: da ? DEMO4A_str_(da.warehouse_id) : destWh, destination_warehouse_code: da ? DEMO4A_str_(da.warehouse_code) : '', destination_logistics_location_id: da ? DEMO4A_str_(da.logistics_location_id) : DEMO4A_str_(binding.destination.location_ref_id),
@@ -1111,7 +1223,7 @@ function DEMO4A_buildPlan_(masters) {
     region_selection_mode: sel.region_selection_mode, available_regions: sel.available_regions, rejection_counts: sel.rejection_counts, chosen_templates: sel.chosen,
     // V3G4(F) — warehouse-aware evaluation facts, so PREFLIGHT can confirm WHICH destination rule qualified the templates.
     warehouse_aware_template_evaluation: sel.warehouse_aware_template_evaluation === true, qualified_count: sel.qualified_count, current_capable_count: sel.current_capable_count, destination_authority_errors: sel.destination_authority_errors || [],
-    warehouses_present: warehousesPresent, destination_authority: destAuthority,
+    warehouses_present: warehousesPresent, destination_authority: destAuthority, source_authority: sourceAuthority,
     binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
 }
 function DEMO4A_overviewVisible_(s) { return { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 }[DEMO4A_low_(s)] === 1; }
@@ -1703,6 +1815,16 @@ function DEMO4A_whMarketplace_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['marketpl
 function DEMO4A_whActive_(w) { return DEMO4A_activeFlag_(w) !== false; }
 function DEMO4A_whDestTypeCompatible_(w) { return DEMO4A_WH_DEST_TYPES_.hasOwnProperty(DEMO4A_whType_(w)); }
 function DEMO4A_whCode_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_code', 'code'])); }
+function DEMO4A_whName_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_name', 'name'])); }
+// V3G5B(A) — is_factory_warehouse is the SAME canonical factory-eligibility flag production uses (03_master_data_handlers
+// eligibility = is_active AND is_factory_warehouse). Read-only: this tool never writes or redefines it.
+function DEMO4A_whIsFactory_(w) { var v = DEMO4A_get_(w, ['is_factory_warehouse']); if (DEMO4A_str_(v) === '') return false; var t = DEMO4A_low_(v); return t === 'true' || t === 'yes' || t === '1' || t === 'y' || v === true || v === 1; }
+// is_shipping_enabled — PRESENT means a non-blank cell (the SAME convention as is_receiving_enabled below). A blank cell
+// is "not declared" and never blocks; an explicit false blocks. AUDIT NOTE (production, unmodified): is_shipping_enabled
+// is the managed-OVERSEAS outbound capability and production excludes factory warehouses from that check entirely, so
+// requiring it here is STRICTER than production - deliberately fail-closed, never looser.
+function DEMO4A_whShippingEnabledPresent_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['is_shipping_enabled', 'shipping_enabled'])) !== ''; }
+function DEMO4A_whShippingEnabled_(w) { var v = DEMO4A_get_(w, ['is_shipping_enabled', 'shipping_enabled']); if (DEMO4A_str_(v) === '') return true; var t = DEMO4A_low_(v); return !(t === 'false' || t === 'no' || t === '0' || t === 'n' || v === false || v === 0); }
 function DEMO4A_whReceivingEnabled_(w) { var v = DEMO4A_get_(w, ['is_receiving_enabled', 'receiving_enabled']); if (DEMO4A_str_(v) === '') return true; var s = DEMO4A_low_(v); return !(s === 'false' || s === 'no' || s === '0' || s === 'n' || v === false || v === 0); }
 // V3G1(A) — warehouse ADDRESS accessors. The LIVE `warehouses` diagnostic reports address_line1/address_line2/city/state/
 // subdivision_code/postal_code/country as the runtime authority. Live headers WIN: when an address_line1/address_line_1
@@ -2362,7 +2484,8 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
   out.per_shipment = (plan.per_shipment || []).map(function (x) {
     return { shipment_id: DEMO4A_str_(x.shipment_id), slot: DEMO4A_str_(x.slot), status: DEMO4A_str_(x.status), template_id: DEMO4A_str_(x.template), region: DEMO4A_str_(x.region),
       destination_warehouse_id: DEMO4A_str_(x.destination_warehouse_id), destination_warehouse_code: DEMO4A_str_(x.destination_warehouse_code),
-      source_warehouse_id: DEMO4A_str_(x.source_warehouse_id), destination_logistics_location_id: DEMO4A_str_(x.destination_logistics_location_id), destination_coordinate_branch: DEMO4A_str_(x.destination_coordinate_branch),
+      source_warehouse_id: DEMO4A_str_(x.source_warehouse_id), source_warehouse_code: DEMO4A_str_(x.source_warehouse_code), source_selection_branch: DEMO4A_str_(x.source_selection_branch),
+      destination_logistics_location_id: DEMO4A_str_(x.destination_logistics_location_id), destination_coordinate_branch: DEMO4A_str_(x.destination_coordinate_branch),
       destination_address_fingerprint: DEMO4A_str_(x.destination_address_fingerprint), destination_coordinate_accuracy: DEMO4A_str_(x.destination_coordinate_accuracy),
       destination_renderable: x.destination_facility_marker_renderable === true,
       origin_location_id: DEMO4A_str_(x.origin_location_id), current_location_id: DEMO4A_str_(x.current_location_id),
@@ -2398,6 +2521,15 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
   var dupTotal = 0; Object.keys(cls.duplicate_pk_counts || {}).forEach(function (k) { dupTotal += DEMO4A_num_(cls.duplicate_pk_counts[k]) || 0; });
   out.existing_state = { classification: DEMO4A_str_(cls.classification), duplicate_pk_count_total: dupTotal, unexpected_demo_id_count: (cls.unexpected_demo_ids || []).length };
   out.demo_plan_checksum = DEMO4A_str_(plan.checksum);
+  // V3G5B(L) - the compact source/destination lineage facts, so an operator can see WHICH warehouses (and by which
+  // branch) the plan bound without reading any master dump. Capped at the three Demo shipments.
+  var sdl = plan.source_destination_warehouse_lineage || {};
+  out.source_destination_warehouse_lineage = {
+    ready: sdl.source_destination_warehouse_lineage_ready === true,
+    source_warehouse_ids: (sdl.source_warehouse_ids || []).slice(0, 3), source_warehouse_codes: (sdl.source_warehouse_codes || []).slice(0, 3),
+    source_selection_branches: (sdl.source_selection_branches || []).slice(0, 3),
+    destination_warehouse_ids: (sdl.destination_warehouse_ids || []).slice(0, 3), destination_warehouse_codes: (sdl.destination_warehouse_codes || []).slice(0, 3),
+    reasons: (sdl.reasons || []).slice(0, DEMO4A_AUTH_MAX_REASON_CODES_), reason_count: DEMO4A_num_(sdl.reason_count) || 0 };
   out.preflight_verdict = DEMO4A_preflightVerdict_(out.schema_ok, plan, wg, cls.classification);
   out.preflight_reason = out.preflight_verdict === 'READY_FOR_DEMO_SEED' ? '' : DEMO4A_str_(plan.reason);
   // the DRY_RUN core verdict for exactly this plan (DRY_RUN emits DRY_RUN_READY whenever the same plan builds).
@@ -2530,16 +2662,29 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
       else if (c === 'text_cell' || c === 'boolean_cell') sum.text_cell_count++;
       else sum.empty_or_general_count++;
       // an ACTUAL format risk: the physical cell type contradicts the declared field class for a field the writer owns.
-      var fcls = DEMO4A_fieldClass_(col), owned = (((plan || {}).tables || {})[name] || []).some(function (r) { return Object.prototype.hasOwnProperty.call(r, col); });
+      var fcls = DEMO4A_fieldClass_(col), rowsOf = (((plan || {}).tables || {})[name] || []);
+      var owned = rowsOf.some(function (r) { return Object.prototype.hasOwnProperty.call(r, col); });
       if (!owned || fmtRisk.length >= 20) return;
-      if (c === 'date_formatted' && !(fcls === 'date' || fcls === 'datetime')) fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'DATE_FORMATTED_COLUMN_FOR_NON_DATE_FIELD' });
-      else if (c === 'numeric_cell' && !(fcls === 'numeric' || fcls === 'coordinate')) fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'NUMERIC_COLUMN_FOR_NON_NUMERIC_FIELD' });
-      else if (c === 'boolean_cell' && fcls !== 'boolean') fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: 'BOOLEAN_COLUMN_FOR_NON_BOOLEAN_FIELD' });
+      // V3G5B(I) - VALUE-AWARE. The mismatch between a physical cell format and a declared field class is only an ACTUAL
+      // round-trip risk when at least one INTENDED value is coercible by that format. A non-numeric text value in a
+      // numeric-formatted column round-trips exactly (proven by the offline setValues/getValues round-trip tests), so it
+      // no longer contributes to risk_count. A numeric-LIKE text value in a non-numeric field stays a real risk.
+      function pushRisk(code, pred) {
+        var hit = null;
+        for (var ri = 0; ri < rowsOf.length; ri++) { var vv = rowsOf[ri][col]; if (!DEMO4A_isBlankCell_(vv) && pred(vv)) { hit = vv; break; } }
+        if (hit === null) return false;
+        fmtRisk.push({ table: name, field: col, field_class: fcls, column_type_class: c, reason_code: code, example_value: DEMO4A_driftClip_(hit) });
+        return true;
+      }
+      if (c === 'date_formatted' && !(fcls === 'date' || fcls === 'datetime')) pushRisk('DATE_LIKE_VALUE_IN_DATE_FORMATTED_COLUMN', DEMO4A_dateLike_);
+      else if (c === 'numeric_cell' && !(fcls === 'numeric' || fcls === 'coordinate')) pushRisk('NUMERIC_LIKE_VALUE_IN_NUMERIC_COLUMN', DEMO4A_numericLike_);
+      else if (c === 'boolean_cell' && fcls !== 'boolean') pushRisk('BOOLEAN_LIKE_VALUE_IN_BOOLEAN_COLUMN', DEMO4A_boolLike_);
     });
     fmtSummary[name] = sum;
   });
   out.number_format_summary_by_table = fmtSummary;
   out.number_format_risk_fields = fmtRisk;
+  out.format_risk_is_value_aware = true;
   out.predicted_roundtrip_risk_fields = risk.slice(0, 20); out.risk_count = risk.length + fmtRisk.length;
   out.canonicalization_tz = { contract_offset_min: DEMO4A_CANON_TZ_OFFSET_MIN_, spreadsheet_offset_min: tz ? tz.offset_min : null, spreadsheet_time_zone: tz ? DEMO4A_str_(tz.time_zone) : '', resolved: !!(tz && tz.ok) };
   // V3G5A(G) — the source→destination warehouse lineage gate is authorization-bearing and must stay visible.
@@ -2547,7 +2692,10 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
   out.source_destination_warehouse_lineage_ready = lg.source_destination_warehouse_lineage_ready === true;
   out.source_destination_warehouse_lineage_reasons = (lg.reasons || []).slice(0, 8);
   out.source_warehouse_ids = (lg.source_warehouse_ids || []).slice(0, 3);
+  out.source_warehouse_codes = (lg.source_warehouse_codes || []).slice(0, 3);
+  out.source_selection_branches = (lg.source_selection_branches || []).slice(0, 3);
   out.destination_warehouse_ids = (lg.destination_warehouse_ids || []).slice(0, 3);
+  out.destination_warehouse_codes = (lg.destination_warehouse_codes || []).slice(0, 3);
   // V3G5A(K) — prior-attempt journal safety. The prior journal is NEVER cleared or mutated here; it is only read.
   out.journal_status_read_only = journalPresent ? 'PRESENT_FROM_PRIOR_ATTEMPT' : 'ABSENT';
   out.journal_previous_checksum = journalPresent ? DEMO4A_str_(journalPresent.plan_checksum) : '';
