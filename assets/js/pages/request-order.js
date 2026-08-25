@@ -494,6 +494,10 @@ var _roBaseDataStatus = 'IDLE';   // IDLE | LOADING | LOADED | EMPTY | ERROR
 function initRequestOrderSection() {
   _roMountEpoch++;
   _opFirstLayerRegion = null;   // rebind the loadState region to the CURRENT (remounted) DOM element
+  // F1-7N-FB-3 §D — bind the Send guard to the EXISTING mount-epoch authority (no parallel counter), and clear
+  // any stale Send status from a previous mount. A Send that resolves after a remount is discarded, not painted.
+  // Placed AFTER the region rebind so the epoch-bump/rebind pair stays adjacent (the frozen mount contract).
+  try { _roSendState.mountSeq = _roMountEpoch; if (!_roSendState.busy) _roSetSendState_('IDLE', ''); } catch (e) {}
   // Data source priority: live DB (google-sheet) → Demo Data → empty. NEVER the Inventory DOM.
   if (_roUseDb()) {
     _roBaseDataStatus = 'LOADING';
@@ -3184,7 +3188,101 @@ function _roSendErrorMessage_(err) {
 }
 window._roSendErrorMessage_ = _roSendErrorMessage_;
 
+
+// ============================================================================================================
+// F1-7N-FB-3 §D/§F — SEND REQUEST: bounded, latched, always terminal.
+// ------------------------------------------------------------------------------------------------------------
+// THE LIVE DEFECT. Send Request "waited a long time, produced no visible result, and the DB was unchanged".
+// Source-proven, that is four separate faults compounding — none of them a business rule:
+//   1. NO LATCH AND NO LOADING STATE. handleSendRequest disabled nothing, set no busy state, and had no
+//      `finally`. The button element did not even carry an id. For the entire duration the page was
+//      indistinguishable from frozen, and a second click started a SECOND full run.
+//   2. A SERIAL MULTI-WRITE LOOP with no progress. Send performs 2-3 sequential HTTP writes PER SKU
+//      (allocation-draft header, a concurrency-token read, allocation lines), then one per series, then one
+//      lifecycle advance. Twenty SKUs is well over forty sequential Apps Script round trips.
+//   3. A WHOLE-DB RELOAD PER WRITE. Every direct writer awaits _kmWriterPostWrite_, which falls back to
+//      loadOperationDb({force:true}) whenever the scoped posture cannot be confirmed — so on such a session the
+//      loop performed one whole-DB read AFTER EVERY ONE of those writes. This is the dominant cost when it
+//      happens, and it is invisible from the outside.
+//   4. NO CLIENT TIMEOUT. An unanswered request never settled, so the await never returned and (with no latch
+//      to release) the page stayed in that state indefinitely.
+// Fixes 1 and 2's feedback live here; 3 is collapsed to ONE reconcile via the declared write batch; 4 is fixed
+// at the transport choke points in operation-system-db-api.js.
+//
+// WHAT IS DELIBERATELY NOT DONE: the serial per-SKU writes are NOT auto-retried and NOT collapsed into a new
+// batch endpoint. A batch write endpoint would be a second writer for these tables, and retrying a business
+// write automatically is only safe with an explicit server-side idempotency contract. Both are reported, not
+// improvised.
+var _roSendState = { busy: false, mountSeq: 0, requestId: '', startedAt: 0 };
+function _roSendBtn_() {
+  return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-send-request-btn') : null;
+}
+// The one visible progress/terminal surface for Send. Created next to the button; never on <body>.
+function _roSendStatusHost_() {
+  if (typeof document === 'undefined' || !document.getElementById) return null;
+  var el = document.getElementById('ro-send-request-status');
+  if (el) return el;
+  var btn = _roSendBtn_();
+  if (!btn || !btn.parentNode) return null;
+  el = document.createElement('div');
+  el.id = 'ro-send-request-status';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  el.style.fontSize = '12px';
+  el.style.marginTop = '4px';
+  el.style.display = 'none';
+  btn.parentNode.appendChild(el);
+  return el;
+}
+function _roEsc2_(v) {
+  return (typeof _roEsc === 'function') ? _roEsc(v)
+    : String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+}
+// state: IDLE | LOADING | SUCCESS | ERROR. Every path ends in one of the last three — never in LOADING.
+function _roSetSendState_(state, text) {
+  var btn = _roSendBtn_();
+  if (btn) {
+    btn.disabled = (state === 'LOADING');
+    btn.classList.remove('is-loading', 'is-success', 'is-error');
+    if (state === 'LOADING') btn.classList.add('is-loading');
+    else if (state === 'SUCCESS') btn.classList.add('is-success');
+    else if (state === 'ERROR') btn.classList.add('is-error');
+    btn.setAttribute('aria-busy', state === 'LOADING' ? 'true' : 'false');
+  }
+  var el = _roSendStatusHost_();
+  if (!el) return;
+  if (state === 'IDLE') { el.style.display = 'none'; el.innerHTML = ''; return; }
+  var color = state === 'ERROR' ? '#B91C1C' : (state === 'SUCCESS' ? '#166534' : '#64748B');
+  el.innerHTML = '<span style="color:' + color + ';">' + _roEsc2_(text || '') + '</span>';
+  el.style.display = '';
+}
+// Progress during the serial loop, so a long Send is legible instead of looking frozen.
+function _roSendProgress_(done, total, label) {
+  var pct = total ? Math.round((done / total) * 100) : 0;
+  _roSetSendState_('LOADING', 'Sending… ' + label + ' ' + done + '/' + total + ' (' + pct + '%) — do not close this page.');
+}
+// Compact instrumentation. Never logs a business row or any configuration value.
+function _roSendTrace_(fields) {
+  try {
+    var line = { request_id: _roSendState.requestId, action: 'sendRequest' };
+    for (var k in fields) { if (Object.prototype.hasOwnProperty.call(fields, k)) line[k] = fields[k]; }
+    console.info('[ro-send]', JSON.stringify(line));
+  } catch (e) {}
+}
+function _roSendRequestId_() {
+  var r = 'ROSEND-';
+  for (var i = 0; i < 8; i++) r += '0123456789ABCDEF'[Math.floor(Math.random() * 16)];
+  return r;
+}
+window._roSendState_ = function () { return _roSendState; };
+window._roSetSendState_ = _roSetSendState_;
+
 async function handleSendRequest() {
+  // F1-7N-FB-3 §D — SINGLE-FLIGHT. A second click while a Send is running is refused outright: the run performs
+  // many sequential writes, so a concurrent second run would interleave with it. The DB is protected by the
+  // deterministic identities either way, but the user must never be able to start two.
+  if (_roSendState.busy) { _roSetSendState_('LOADING', 'A Send is already running — please wait for it to finish.'); return; }
+  const _sendMount = _roSendState.mountSeq;   // page-transition guard: a late result must not repaint a newer page
   const requestType = document.getElementById('ro-request-type').value;
   const buckets = _roBucketsForType(requestType);
   const typeLabel = { all: 'All Request (T1+T2+T3)', t1: 'T1 Request', t2: 'T2 Request', t3: 'T3 Request' }[requestType];
@@ -3306,6 +3404,10 @@ async function handleSendRequest() {
     });
   });
 
+  // F1-7N-FB-3 §D — the pre-flight gates above all return WITHOUT having taken the latch, so the button is
+  // still enabled and the status surface must not be left showing a stale message.
+  _roSetSendState_('IDLE', '');
+
   // Demo mode: no DB — simulate + log.
   if (!_roUseDb()) {
     console.log('=== Send Request (DEMO, in-memory only) ===', { typeLabel: typeLabel, drafts: drafts, bySeries: bySeries });
@@ -3324,11 +3426,24 @@ async function handleSendRequest() {
   // The allocation confirmation END STATE is site_confirmed (active) — the prior submit-to-terminal step is RETIRED
   // here (nothing downstream reads allocation status 'submitted'; Request Order/PO consume request_orders below).
   const DB = window.KM.DB;
+  // F1-7N-FB-3 §D/§J — take the latch, declare the multi-write batch (so the potentially whole-DB post-write
+  // reconcile happens ONCE at the end instead of after every single write), and release BOTH in `finally` so
+  // no path — success, business failure, transport failure, timeout or an unexpected throw — can leave the
+  // button disabled or the page in LOADING.
+  _roSendState.busy = true;
+  _roSendState.requestId = _roSendRequestId_();
+  _roSendState.startedAt = Date.now();
+  var _batchOpen = false;
+  if (typeof DB.beginWriteBatch === 'function') { DB.beginWriteBatch(); _batchOpen = true; }
+  _roSetSendState_('LOADING', 'Sending… preparing ' + drafts.length + ' SKU row(s). Do not close this page.');
+  _roSendTrace_({ phase: 'start', sku_rows: drafts.length, series_groups: Object.keys(bySeries).length, total_units: totalUnits });
   try {
     const cycle = sendCycle;
     const staleSkus = [];        // §9 fail-closed: canonical drafts that changed since the user last viewed them
     const coveredDraftIds = [];  // §12 every allocation draft advanced to submitted AFTER request execution succeeds
     for (var di = 0; di < drafts.length; di++) {
+      // Each iteration is 1-3 sequential round trips. Report progress so a long run is legible.
+      _roSendProgress_(di, drafts.length, 'allocation drafts');
       const d = drafts[di];
       const sku = d.item.sku;
       if (d.isCanonical) {
@@ -3395,7 +3510,9 @@ async function handleSendRequest() {
     const createdNos = [];
     let reusedCount = 0;
     const seriesKeys = Object.keys(bySeries);
+    _roSendTrace_({ phase: 'allocation_drafts_done', covered: coveredDraftIds.length, elapsed_ms: Date.now() - _roSendState.startedAt });
     for (var si = 0; si < seriesKeys.length; si++) {
+      _roSendProgress_(si, seriesKeys.length, 'request orders');
       const series = seriesKeys[si];
       const res = await DB.createRequestOrderDraft({
         company: '', source: 'manual', source_ref_type: 'request_order_allocation_batch',
@@ -3413,7 +3530,15 @@ async function handleSendRequest() {
     if (coveredDraftIds.length) await DB.submitRequestOrderAllocationDrafts({ draft_ids: coveredDraftIds, submitted_by: 'request-order' });
 
     // §16 success ONLY after the execution boundary is satisfied. §20 submitted leaves the active set on reload.
+    // F1-7N-FB-3 §D — page-transition guard: if the user navigated away (or remounted) while this ran, the
+    // result is recorded and traced but must NOT repaint a hidden or newer page.
+    if (_sendMount !== _roSendState.mountSeq) {
+      _roSendTrace_({ phase: 'success_discarded_stale_mount', created: createdNos.length, reused: reusedCount, elapsed_ms: Date.now() - _roSendState.startedAt });
+      return;
+    }
     if (typeof _roLoadCanonicalDraftsForScope_ === 'function') { _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
+    _roSendTrace_({ phase: 'success', created: createdNos.length, reused: reusedCount, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'SUCCESS' });
+    _roSetSendState_('SUCCESS', 'Sent — ' + createdNos.length + ' Request Order(s)' + (reusedCount ? (', ' + reusedCount + ' reused') : '') + '.');
     alert('✅ Send Request 完成\n\n' + typeLabel + '\nRequest Order: ' + createdNos.length + ' 筆' +
       (reusedCount ? ('（其中 ' + reusedCount + ' 筆為既有訂單，未重複建立）') : '') +
       (createdNos.length ? ('\n' + createdNos.join(', ')) : '') +
@@ -3422,7 +3547,26 @@ async function handleSendRequest() {
   } catch (err) {
     // R6A1 (G) — structured error surface: business message + technical code/affected table (never [object Object]);
     // the failed Send does NOT clear the working Draft (page inputs intact); no false "DB Draft retained" claim.
-    alert(_roSendErrorMessage_(err));
+    // F1-7N-FB-3 §D — a TIMEOUT is INDETERMINATE, not a proven zero-write: the server may have committed after
+    // the client stopped listening. It is never auto-retried, and the user is told to verify before retrying.
+    var _msg = String((err && err.message) || err || '');
+    var _indeterminate = /REQUEST_TIMEOUT_WRITE_INDETERMINATE|REQUEST_TIMEOUT|COMMITTED_UNVERIFIED/.test(_msg);
+    _roSendTrace_({ phase: 'error', indeterminate: _indeterminate, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: _indeterminate ? 'INDETERMINATE' : 'FAILED' });
+    if (_sendMount === _roSendState.mountSeq) {
+      _roSetSendState_('ERROR', _indeterminate
+        ? 'No answer arrived in time. Some rows MAY have been written — reload and verify before retrying.'
+        : 'Send failed. Nothing further was written; your inputs are kept.');
+      alert(_indeterminate
+        ? ('Send Request 未取得伺服器回應（逾時）。\n\n可能已寫入部分資料，請勿直接重試：先重新載入頁面確認 Request Order 是否已建立。\n\n▸ Technical: ' + _msg)
+        : _roSendErrorMessage_(err));
+    }
+  } finally {
+    // ALWAYS terminal: the latch is released and the deferred reconcile runs exactly once, whatever happened.
+    _roSendState.busy = false;
+    if (_batchOpen && typeof DB.endWriteBatch === 'function') { try { await DB.endWriteBatch(); } catch (e) {} }
+    var _btn = _roSendBtn_();
+    if (_btn) { _btn.disabled = false; _btn.setAttribute('aria-busy', 'false'); }
+    _roSendTrace_({ phase: 'released', elapsed_ms: Date.now() - _roSendState.startedAt });
   }
 }
 

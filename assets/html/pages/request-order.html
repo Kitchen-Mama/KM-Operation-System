@@ -106,7 +106,9 @@
                                 <option value="t2">T2 Request</option>
                                 <option value="t3">T3 Request</option>
                             </select>
-                            <button type="button" class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
+                            <!-- F1-7N-FB-3 §D/§F — the button had NO id, so there was nothing for handleSendRequest to disable: the
+                                 whole multi-write Send ran with no latch, no loading state and no terminal feedback. -->
+                            <button type="button" id="ro-send-request-btn" class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
                             <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. Recalculate All Sites moved into the AI Support menu above. -->
                             <button type="button" class="ro-btn ro-btn--cancel" id="ro-cancel-recalc-btn" onclick="handleCancelOrderPlanningGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
                             <!-- F1-4B-FM6-R4E3 — contextual AI Plan Cancel (backend-authoritative; shown ONLY while the scope draft job runs). Drafts already created are preserved. -->
