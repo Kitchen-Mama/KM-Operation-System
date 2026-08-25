@@ -38,7 +38,11 @@ var SHIP_WORKSPACE_TABLES_ = [
   { name: 'shipment_events',               requiredCols: [], optional: true, include: 'events' },
   { name: 'logistics_locations',           requiredCols: [], optional: true, include: 'locations' },
   { name: 'shipment_route_templates',      requiredCols: [], optional: true, include: 'templates' },
-  { name: 'shipment_route_template_nodes', requiredCols: [], optional: true, include: 'templates' }
+  { name: 'shipment_route_template_nodes', requiredCols: [], optional: true, include: 'templates' },
+  // F1-7N-FB-1B §P — the generated_documents registry, projected onto each shipment's Document Panel. Bounded:
+  // read only when the caller asks for it, and optional so a DB without the table degrades to "no documents"
+  // rather than failing the whole workspace read.
+  { name: 'generated_documents',           requiredCols: [], optional: true, include: 'documents' }
 ];
 
 var SHIP_WS_SORT_FIELDS_ = {
@@ -67,7 +71,40 @@ function shipBuildEnvelope_(ok, data, errors, meta) {
 // One Shipment collection View-Model: identity + display refs + line-derived display totals. raw = the source shipments
 // row (read-only passthrough) so a page adapter reproduces the existing render's canonical fields (via the SAME db-api
 // normalizer). Line totals here are the SAME display sums the pages already compute over persisted per-line columns.
-function shipMapShipment_(r, linesByShipment) {
+// F1-7N-FB-1B §P — project the generated_documents registry onto ONE entity's view-model. This is the read path
+// the STOP audit proved was missing: the Document Panels were already correct, but no workspace owner ever
+// produced `documents`, so every panel truthfully rendered "No documents generated yet". Rows are grouped ONCE
+// and projected through the single canonical DTO owner (dgsDocumentDto_ / dgsBatchState_ in 39_) so the API, the
+// diagnostics and the panels can never disagree. It is PURE: the rows were already read by the io layer, and the
+// browser still never touches Drive — it only follows a URL the backend resolved.
+function shipWsDocumentsFor_(rowsByEntity, entityId) {
+  var rows = (rowsByEntity && rowsByEntity[entityId]) || [];
+  var live = rows.filter(function (r) { return dgsRowState_(r) !== 'SUPERSEDED'; });
+  if (!live.length) return { documents: [], documentFolderUrl: '', documentGenerationStatus: 'NONE', documentGenerationError: null, canRetryDocuments: false };
+  var docs = live.map(function (r) { return dgsDocumentDto_(r); });
+  var folderId = '';
+  for (var i = live.length - 1; i >= 0; i--) { if (dgsStr_(live[i].output_folder_id)) { folderId = dgsStr_(live[i].output_folder_id); break; } }
+  var firstErr = null;
+  for (var j = 0; j < docs.length; j++) { if (docs[j].status !== 'READY' && docs[j].reason) { firstErr = docs[j]; break; } }
+  return {
+    documents: docs,
+    documentFolderUrl: dgsFolderUrl_(folderId),
+    documentGenerationStatus: dgsBatchState_(live, { entity_committed: true }),
+    documentGenerationError: firstErr ? { reason: firstErr.reason, message: firstErr.message, documentLabel: firstErr.document_label, templateKey: firstErr.template_key, retryable: firstErr.retryable } : null,
+    canRetryDocuments: docs.some(function (d) { return d.retryable; })
+  };
+}
+function shipWsGroupDocuments_(rows, entityType) {
+  var out = {};
+  (rows || []).forEach(function (r) {
+    if (dgsLc_(r.related_entity_type) !== entityType) return;
+    var id = dgsStr_(r.related_entity_id); if (!id) return;
+    (out[id] = out[id] || []).push(r);
+  });
+  return out;
+}
+
+function shipMapShipment_(r, linesByShipment, docsByShipment) {
   var sid = shipWsStr_(r.shipment_id);
   var lines = linesByShipment[sid] || [];
   var totalQty = 0, receivedQty = 0, lineCount = lines.length;
@@ -77,6 +114,7 @@ function shipMapShipment_(r, linesByShipment) {
     totalQty += shipped; receivedQty += recv;
   }
   var destWh = shipWsStr_((r.destination_warehouse_id === '' || r.destination_warehouse_id == null) ? r.warehouse_id : r.destination_warehouse_id);
+  var docs = shipWsDocumentsFor_(docsByShipment || {}, sid);
   return {
     shipmentId: sid, shipmentNo: shipWsStr_(r.shipment_no), shippingPlanId: shipWsStr_(r.shipping_plan_id),
     company: shipWsStr_(r.company), country: shipWsStr_(r.country), marketplace: shipWsStr_(r.marketplace),
@@ -86,6 +124,10 @@ function shipMapShipment_(r, linesByShipment) {
     trackingNumber: shipWsStr_(r.tracking_number), containerNo: shipWsStr_(r.container_no),
     lineCount: lineCount, sumShipmentQty: totalQty, sumReceivedQty: receivedQty,
     updatedAt: shipWsStr_(r.updated_at),
+    externalShipmentId: shipWsStr_(r.external_shipment_id), shippedAt: shipWsStr_(r.shipped_at),
+    documents: docs.documents, documentFolderUrl: docs.documentFolderUrl,
+    documentGenerationStatus: docs.documentGenerationStatus, documentGenerationError: docs.documentGenerationError,
+    canRetryDocuments: docs.canRetryDocuments,
     raw: r   // read-only passthrough (same shipments table already read)
   };
 }
@@ -177,7 +219,8 @@ function shipWorkspaceBuild_(tables, payload) {
 
   var linesByShipment = {}; for (var i = 0; i < lines.length; i++) { var sid = shipWsStr_(lines[i].shipment_id); if (sid === '') continue; (linesByShipment[sid] = linesByShipment[sid] || []).push(lines[i]); }
 
-  var mappedAll = shipments.map(function (r) { return shipMapShipment_(r, linesByShipment); });
+  var docsByShipment = shipWsGroupDocuments_(tables.generated_documents || [], 'shipment');
+  var mappedAll = shipments.map(function (r) { return shipMapShipment_(r, linesByShipment, docsByShipment); });
   var f = shipNormalizeFilters_(payload.filters, payload.search);
   var filtered = shipFilterShipments_(mappedAll, f);
   var sorted = shipSortShipments_(filtered, payload.sort);

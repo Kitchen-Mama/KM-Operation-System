@@ -28,7 +28,7 @@ function extractFn(src, name) {
   for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } }
   throw new Error('unbalanced ' + name);
 }
-function extractVar(src, name) { var m = src.match(new RegExp('var ' + name + ' = [\\s\\S]*?;\\n')); if (!m) throw new Error('missing var ' + name); return m[0]; }
+function extractVar(src, name) { var m = src.match(new RegExp('var ' + name + ' = [\\s\\S]*?;[^\\n]*\\n')); if (!m) throw new Error('missing var ' + name); return m[0]; }
 
 // ---- load the REAL pure cores -------------------------------------------------------------------------
 var LOAD = [];
@@ -200,7 +200,17 @@ ok(/if \(!String\(prevShippedAt \|\| ''\)\.trim\(\)\) \{ setShip\('shipped_at', 
 ok(/curStatus === CSD_CONFIRMED_STATUS_ \|\| curStatus === CSD_INTRANSIT_/.test(G22), '9. a second Confirm on a shipped shipment is caught by the explicit already-confirmed guard (idempotent)');
 ok(/already_confirmed: true/.test(G22), '9. and returns already_confirmed rather than re-writing');
 ok(/if \(!sc\('external_shipment_id'\)\) missing\.push/.test(G22), '9. external_shipment_id is required before Confirm can proceed');
-ok(/document_generation: \{ status: 'READY_TO_GENERATE'/.test(G22), '9/15. the confirm response reports document generation as a SEPARATE trailing concern');
+// SUPERSEDED by F1-7N-FB-1B: FB-1 could only report READY_TO_GENERATE because nothing generated the documents
+// yet. FB-1B actually generates them after the transaction commits, so the placeholder is replaced with the
+// STRONGER contract — generation really runs, it runs OUTSIDE the dispatch lock, and its failure can never
+// reverse the confirmed shipment.
+ok(/document_generation: \{\n\s*status: docResult\.ok \? 'READY' : 'RETRY_REQUIRED'/.test(G22),
+  '9/15. the confirm response reports the REAL document outcome, not a placeholder');
+ok(/dgsGenerateShipmentDocuments_\(ss, shipmentId, actor/.test(G22), '9/15. document generation is actually performed');
+ok(G22.indexOf('dgsGenerateShipmentDocuments_') > G22.indexOf('// ---------- F1-7N-FB-1B (D2)'),
+  '9/15. and only AFTER the dispatch lock is released — a SEPARATE trailing concern, never inside the transaction');
+ok(/retry_safe: true/.test(G22) && /The shipment remains Shipped/.test(G22),
+  '9/15. a document failure leaves the shipment Shipped and is separately retryable');
 
 section('FB1-10. automatic shipped -> in_transit promotion (real pure decision fn)');
 function promo(over) {
@@ -244,10 +254,15 @@ ok(/btn\.setAttribute\('aria-expanded'/.test(SH), '11. including its aria-expand
 
 section('FB1-12. the reusable Document Panel: every state, no raw URLs, no browser-side Drive');
 global.window = global.window || {};
+// F1-7N-FB-1B extended the panel with the alert-state set and the error-assistance block, so those symbols
+// must be loaded too or shDocumentPanelHtml throws before a single assertion runs.
 eval(extractFn(SH, '_shEsc') + '\n' + extractVar(SH, 'SH_DOC_PANEL_VISIBLE_ROWS_') + '\n' +
      SH.match(/var SH_DOC_STATE_LABEL_ = \{[\s\S]*?\n\};/)[0] + '\n' +
+     extractVar(SH, 'SH_DOC_ALERT_STATE_') + '\n' +
+     SH.match(/var SH_DOC_REASON_HELP_ = \{[\s\S]*?\n\};/)[0] + '\n' +
      extractFn(SH, 'shDocPanelState') + '\n' + extractFn(SH, '_shDocIcon') + '\n' +
-     extractFn(SH, '_shDocLink') + '\n' + extractFn(SH, '_shDocRowHtml') + '\n' + extractFn(SH, 'shDocumentPanelHtml'));
+     extractFn(SH, '_shDocLink') + '\n' + extractFn(SH, '_shDocRowHtml') + '\n' +
+     extractFn(SH, '_shDocHelp') + '\n' + extractFn(SH, '_shDocErrorHtml') + '\n' + extractFn(SH, 'shDocumentPanelHtml'));
 function doc(over) { var d = { generated_document_id: 'GD1', document_type: 'commercial_invoice', document_label: 'Commercial Invoice', file_name: 'KitchenMama_CI.xlsx', status: 'GENERATED', file_url: 'https://drive.google.com/file/d/ABC/view', generated_at: '2026-08-25 09:20:00' }; for (var k in (over || {})) d[k] = over[k]; return d; }
 eq(shDocPanelState({ documents: [] }), 'NONE', '12. no documents -> NONE');
 eq(shDocPanelState({ documents: [], pending: true }), 'PENDING', '12. queued -> PENDING');
@@ -301,7 +316,15 @@ ok(/document_output_folders/.test(CODE38) === false, '14. and does not create th
 ok(/remains DEFERRED/.test(SPEC), '14. the spec still records document_output_folders as deferred');
 ok(/the shipment transaction is COMMITTED at this point/.test(G22), '15. the source records that the shipment transaction is committed BEFORE document generation is considered');
 ok(/trailing, separately retryable concern/.test(G22), '15. document generation is a trailing, separately retryable concern');
-ok(/document_generation: \{ status: 'READY_TO_GENERATE', registry: 'generated_documents', retry_safe: true \}/.test(G22), '15. so a Drive/render failure reports a document status instead of rolling the confirmed shipment back');
+// SUPERSEDED by F1-7N-FB-1B (the inline placeholder became a real generation result). The PROPERTY under test
+// is unchanged and now provable more directly: a Drive/render failure reports a document status and the
+// confirmed shipment is never rolled back.
+ok(/registry: 'generated_documents', retry_safe: true/.test(G22), '15. the confirm response still names the registry and marks the failure retry-safe');
+ok(/status: docResult\.ok \? 'READY' : 'RETRY_REQUIRED'/.test(G22), '15. reporting the REAL outcome rather than a placeholder');
+ok(/catch \(ed\) \{ docResult = \{ ok: false, reason: 'DOCUMENT_GENERATION_FAILED'/.test(G22),
+  '15. a Drive/render throw is captured as a document status, never propagated into the dispatch result');
+ok(G22.indexOf('dgsGenerateShipmentDocuments_') > G22.lastIndexOf('slaApplyExecution_'),
+  '15. so a Drive/render failure reports a document status instead of rolling the confirmed shipment back');
 // no hardcoded live Drive ids in production source
 ['1WY-PvU5dh8trCxjpVp6BQzZLgLl0_mn_', '1K0Gp55ipuYB0TqnoDRoSh7JoTl3FPOM9'].forEach(function (id) {
   ok(G38.indexOf(id) === -1 && G36.indexOf(id) === -1 && G37.indexOf(id) === -1 && SH.indexOf(id) === -1 && PO.indexOf(id) === -1, '14. the live Drive root ' + id.substring(0, 8) + '… is NOT hardcoded in application source');

@@ -77,7 +77,11 @@ ok(/getWorkspace\('purchaseOrder', \{ filters: \{ purchaseOrderId: id \}, includ
 ok(/if \(mySeq !== _poReadSeq\) return;/.test(PO_JS.slice(PO_JS.indexOf('function _poBoundedReadback_'))), 'PO: bounded readback is _poReadSeq stale-guarded');
 ok(/else \{\s*loadAndRender\(\);/.test(PO_JS.slice(PO_JS.indexOf('function _poBoundedReadback_'), PO_JS.indexOf('function _poMergeOnePo_'))), 'PO: bounded miss/failure degrades to the full loadAndRender readback (fresh, not stale)');
 // sendPo/receive/cancel stay on the full readback (section-move / removal → not single-PO reconcilable).
-ok(/transition: 'issue'[\s\S]{0,140}loadAndRender\(\);/.test(PO_JS) && /transition: 'cancel'[\s\S]{0,140}loadAndRender\(\);/.test(PO_JS), 'PO: sendPo/cancel keep the full readback (deferred — section-move/removal)');
+// Window widened for F1-7N-FB-1B: Send PO now inspects the document-generation result before refreshing, so
+// more source sits between the transition and the readback. The PROPERTY is unchanged — sendPo/cancel still use
+// the FULL loadAndRender readback and never the bounded single-PO one.
+ok(/transition: 'issue'[\s\S]{0,1400}loadAndRender\(\);/.test(PO_JS) && /transition: 'cancel'[\s\S]{0,140}loadAndRender\(\);/.test(PO_JS), 'PO: sendPo/cancel keep the full readback (deferred — section-move/removal)');
+ok(!/transition: 'issue'[\s\S]{0,1400}_poBoundedReadback_/.test(PO_JS), 'PO: and Send PO never uses the bounded single-PO readback');
 // Behavioral merge:
 (function () {
   var _poReadModel;

@@ -45,8 +45,9 @@ var GENERATED_DOCUMENTS_HEADERS_ = [
   'generated_by', 'generated_at', 'status', 'email_status', 'email_sent_at', 'regenerated_from_document_id', 'note', 'created_at', 'updated_at'
 ];
 
-// R3A document_type -> frozen document_templates.document_type enum.
-var DOC_TYPE_ENUM_ = { SHIPDETAIL: 'shipment_detail', PL: 'packing_list' };
+// R3A document_type -> frozen document_templates.document_type enum. F1-7N-FB-1B adds CI (Commercial Invoice),
+// whose render model now exists in 35_. carrier_booking_form stays out until its render model is built.
+var DOC_TYPE_ENUM_ = { SHIPDETAIL: 'shipment_detail', PL: 'packing_list', CI: 'commercial_invoice' };
 // scope dimensions the spec defines on document_templates (NB: no `company` scope column).
 var DT_SCOPE_DIMS_ = ['series', 'sku', 'supplier_id', 'factory_id', 'carrier_id', 'country', 'marketplace', 'language'];
 
@@ -225,9 +226,11 @@ function handleShipmentDocumentGenerate_(body) {
       var ex = existing[0];
       // R3C: if a file is wanted and this record has none yet, generate it and update THIS row (idempotent reuse).
       if (wantFile && !dtStr_(ex.file_id)) {
-        var frx = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, {});
+        var lfx = dtResolveLeafFolder_(ss, tpl, shipmentId);
+        if (!lfx.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: lfx.reason, detail: lfx });
+        var frx = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, { folder_id: lfx.folder_id });
         if (!frx.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: frx.error, message: frx.message, type: frx.type, supported: frx.supported, partial_file_id: frx.partial_file_id });
-        dtUpdateGeneratedFile_(genSheet, dtStr_(ex.document_id), frx, shipmentTimestamp_());
+        dtUpdateGeneratedFile_(genSheet, dtStr_(ex.document_id), frx, shipmentTimestamp_(), lfx.folder_id);
         return jsonResponse_({ success: true, reused: true, generated_file: true, document_id: dtStr_(ex.document_id), template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), file_name: frx.file_name, file_id: frx.file_id, file_url: frx.file_url, pdf_file_url: frx.pdf_file_url, download_url: (frx.pdf_file_url || frx.file_url) });
       }
       return jsonResponse_({ success: true, reused: true, document_id: dtStr_(ex.document_id), template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), status: dtStr_(ex.status), file_url: dtStr_(ex.file_url), pdf_file_url: dtStr_(ex.pdf_file_url), download_url: (dtStr_(ex.pdf_file_url) || dtStr_(ex.file_url)), placeholder_values: mapped.values, note: 'Existing generated document reused (idempotent).' });
@@ -235,8 +238,12 @@ function handleShipmentDocumentGenerate_(body) {
     // R3C: generate the file BEFORE persisting the row, so a failed file generation never leaves a false "generated"
     // record with no file. (A file created then a DB failure re-runs to REUSE the same row by key — bounded orphan.)
     var fileFields = { file_name: '', file_id: '', file_url: '', pdf_file_id: '', pdf_file_url: '' };
+    var leafFolderId = '';
     if (wantFile) {
-      var fr = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, {});
+      var lf = dtResolveLeafFolder_(ss, tpl, shipmentId);
+      if (!lf.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: lf.reason, detail: lf });
+      leafFolderId = lf.folder_id;
+      var fr = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, { folder_id: leafFolderId });
       if (!fr.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: fr.error, message: fr.message, type: fr.type, supported: fr.supported, partial_file_id: fr.partial_file_id });
       fileFields = { file_name: fr.file_name, file_id: fr.file_id, file_url: fr.file_url, pdf_file_id: fr.pdf_file_id, pdf_file_url: fr.pdf_file_url };
     }
@@ -247,7 +254,9 @@ function handleShipmentDocumentGenerate_(body) {
       related_entity_type: 'shipment', related_entity_id: shipmentId, document_type: docEnum,
       series: '', sku: '', supplier_id: '', factory_id: dtStr_(h.factory_id), carrier_id: dtStr_(h.carrier_id) || dtStr_(body && body.carrier_id),
       country: dtStr_(h.country), marketplace: dtStr_(h.marketplace), language: dtStr_(body && body.language),
-      file_name: fileFields.file_name, file_id: fileFields.file_id, file_url: fileFields.file_url, pdf_file_id: fileFields.pdf_file_id, pdf_file_url: fileFields.pdf_file_url, output_folder_id: dtStr_(tpl.output_folder_id),
+      // F1-7N-FB-1B §B — output_folder_id stores the ACTUAL LEAF folder holding the document. It used to store
+      // the configured ROOT (tpl.output_folder_id), which was both wrong and unusable as a link target.
+      file_name: fileFields.file_name, file_id: fileFields.file_id, file_url: fileFields.file_url, pdf_file_id: fileFields.pdf_file_id, pdf_file_url: fileFields.pdf_file_url, output_folder_id: leafFolderId,
       generated_by: actor, generated_at: now, status: (existing.length ? 'regenerated' : 'generated'), email_status: 'not_sent', email_sent_at: '',
       regenerated_from_document_id: (existing.length ? dtStr_(existing[0].document_id) : ''),
       note: (wantFile ? 'R3C generated file from the configured template asset.' : 'R3B lifecycle record; file generation not requested.'), created_at: now, updated_at: now
@@ -269,11 +278,12 @@ function dtAppendByHeader_(sheet, obj) {
 
 // R3C — write generated file metadata back onto an existing generated_documents row (by document_id) into the frozen
 // file columns only. Never touches factual/lineage columns. No new column.
-function dtUpdateGeneratedFile_(sheet, documentId, fr, now) {
+function dtUpdateGeneratedFile_(sheet, documentId, fr, now, leafFolderId) {
   var d = sheet.getDataRange().getValues();
   var head = d[0].map(function (x) { return String(x).trim(); });
   var cId = head.indexOf('document_id');
   var set = { file_name: fr.file_name, file_id: fr.file_id, file_url: fr.file_url, pdf_file_id: fr.pdf_file_id, pdf_file_url: fr.pdf_file_url, updated_at: now };
+  if (dtStr_(leafFolderId)) set.output_folder_id = dtStr_(leafFolderId);
   for (var r = 1; r < d.length; r++) {
     if (String(d[r][cId]).trim() === String(documentId).trim()) {
       Object.keys(set).forEach(function (k) { var c = head.indexOf(k); if (c !== -1) sheet.getRange(r + 1, c + 1).setValue(set[k]); });
@@ -281,6 +291,14 @@ function dtUpdateGeneratedFile_(sheet, documentId, fr, now) {
     }
   }
   return false;
+}
+
+// F1-7N-FB-1B §B/§N — the exact LEAF folder this document belongs in. Resolution lives in 39_
+// (dgsResolveShipmentLeafFolder_), NOT here: F1-5C-EXPORT-R3B requires this module to read only the document
+// tables and the frozen snapshot (through 35_), never a live operational table. 39_ is the system-reader /
+// orchestration layer, so the shipment lookup belongs there and this module only consumes the answer.
+function dtResolveLeafFolder_(ss, tpl, shipmentId) {
+  return dgsResolveShipmentLeafFolder_(ss, tpl, shipmentId);
 }
 
 function handleShipmentDocumentGet_(body) {

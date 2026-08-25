@@ -74,8 +74,22 @@ var SFO_LINE_PO_HEADERS_ = [
   'purchase_order_line_id', 'purchase_order_id', 'po_no', 'allocated_qty', 'created_at'
 ];
 
-// A shipment is eligible for final-output finalization once dispatched (R3B sets shipments.status = in_transit).
-var SFO_DISPATCHED_STATUS_ = { in_transit: 1, arrived: 1, received: 1, completed: 1, closed: 1 };
+// A shipment is eligible for final-output finalization once it has been DISPATCHED.
+//
+// F1-7N-FB-1B (E) - `shipped` ADDED. F1-7N-FB-1 corrected the lifecycle so Confirm Shipment ends at `shipped`
+// (formal hand-over) and `in_transit` is reached later, only when a real non-origin Current Position event
+// arrives. This list still said in_transit, so a correctly confirmed shipment was NOT snapshot-eligible and its
+// documents could not be generated until the map happened to advance it - a regression, and the exact reason a
+// confirmed shipment showed an empty Document Panel. The business meaning of this gate is "the dispatch
+// transaction has COMMITTED, so executed allocations and lineage are final", and that is true at `shipped`.
+//
+// ready_to_ship is deliberately NOT here: before the dispatch transaction the PO allocations are still `draft`,
+// so shipment_final_output_line_pos would have no executed lineage to freeze and sfoConservation_ could not
+// balance. That is a real data prerequisite, not a policy choice, and it is why document generation for a
+// shipment is a POST-dispatch step (F1-7N-FB-1B D/D2).
+var SFO_DISPATCHED_STATUS_ = { shipped: 1, in_transit: 1, arrived: 1, received: 1, completed: 1, closed: 1 };
+// The states that are explicitly NOT eligible, kept as an executable statement of intent rather than a comment.
+var SFO_NOT_DISPATCHED_STATUS_ = { draft: 1, ready_to_ship: 1, cancelled: 1 };
 
 // __SFO_PURE_START__
 // Pure, dependency-free builders/validators (eval'd verbatim by the test harness). No sheet / clock / router.

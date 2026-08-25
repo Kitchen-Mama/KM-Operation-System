@@ -305,8 +305,8 @@ function doPost(e) {
     }
 
     // F1-5C-EXPORT-R2B — canonical immutable final-output snapshot. finalize = idempotent post-dispatch
-    // materialization (bound to shipments.status=in_transit; NOT inside the dispatch transaction); get = the ONE
-    // frozen read owner (no re-resolve of masters). See 34_shipment_final_output_handlers.gs.
+    // materialization (eligible from shipments.status=shipped onward — F1-7N-FB-1B §E; NOT inside the dispatch
+    // transaction); get = the ONE frozen read owner (no re-resolve of masters). 34_shipment_final_output_handlers.gs.
     if (action === 'finalizeShipmentFinalOutput') {
       return handleFinalizeShipmentFinalOutput_(body);
     }
@@ -337,6 +337,26 @@ function doPost(e) {
     }
     if (action === 'shipmentDocument.list') {
       return handleShipmentDocumentList_(body);
+    }
+
+    // F1-7N-FB-1B — the system-computed document runtime (39_document_runtime_service.gs). One canonical service
+    // for the UI action, retry and any future API caller. `document.list` is the read path the Shipment and
+    // Purchase Order workspaces project into their Document Panels; the two diagnostics are STRICTLY read-only
+    // (zero writes, no Drive folder or file created) and exist to be run BEFORE a controlled live test.
+    if (action === 'document.list') {
+      return handleEntityDocumentList_(body);
+    }
+    if (action === 'document.get') {
+      return handleGeneratedDocumentGet_(body);
+    }
+    if (action === 'document.retry') {
+      return handleDocumentRetry_(body);
+    }
+    if (action === 'document.diagnostic.purchaseOrder') {
+      return handlePoDocumentDiagnostic_(body);
+    }
+    if (action === 'document.diagnostic.shipment') {
+      return handleShipmentDocumentDiagnostic_(body);
     }
 
     // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE

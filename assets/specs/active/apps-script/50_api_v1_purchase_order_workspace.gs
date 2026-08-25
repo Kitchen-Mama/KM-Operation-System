@@ -27,7 +27,10 @@ var PO_WORKSPACE_TABLES_ = [
   { name: 'purchase_orders',      requiredCols: ['purchase_order_id'] },
   { name: 'purchase_order_lines', requiredCols: ['purchase_order_id'] },
   { name: 'warehouses',           requiredCols: ['warehouse_id'] },
-  { name: 'sku_details',          requiredCols: ['sku'] }
+  { name: 'sku_details',          requiredCols: ['sku'] },
+  // F1-7N-FB-1B §P — the generated_documents registry, projected onto each PO's Document Panel. Optional so a DB
+  // without the table degrades to "no documents" rather than failing the whole workspace read.
+  { name: 'generated_documents',  requiredCols: [], optional: true }
 ];
 
 var PO_WS_SORT_FIELDS_ = {
@@ -91,7 +94,40 @@ function poNormalizeFilters_(filters, search) {
 // One PO View-Model: identity + display refs + line-derived qty rollups. raw = the source purchase_orders row
 // (read-only passthrough) so a page adapter reproduces the existing render's canonical fields (via the SAME
 // db-api normalizer) without broadening table scope.
-function poMapOrder_(r, whIndex, linesByPo) {
+// F1-7N-FB-1B §P — project the generated_documents registry onto ONE entity's view-model. This is the read path
+// the STOP audit proved was missing: the Document Panels were already correct, but no workspace owner ever
+// produced `documents`, so every panel truthfully rendered "No documents generated yet". Rows are grouped ONCE
+// and projected through the single canonical DTO owner (dgsDocumentDto_ / dgsBatchState_ in 39_) so the API, the
+// diagnostics and the panels can never disagree. It is PURE: the rows were already read by the io layer, and the
+// browser still never touches Drive — it only follows a URL the backend resolved.
+function poWsDocumentsFor_(rowsByEntity, entityId) {
+  var rows = (rowsByEntity && rowsByEntity[entityId]) || [];
+  var live = rows.filter(function (r) { return dgsRowState_(r) !== 'SUPERSEDED'; });
+  if (!live.length) return { documents: [], documentFolderUrl: '', documentGenerationStatus: 'NONE', documentGenerationError: null, canRetryDocuments: false };
+  var docs = live.map(function (r) { return dgsDocumentDto_(r); });
+  var folderId = '';
+  for (var i = live.length - 1; i >= 0; i--) { if (dgsStr_(live[i].output_folder_id)) { folderId = dgsStr_(live[i].output_folder_id); break; } }
+  var firstErr = null;
+  for (var j = 0; j < docs.length; j++) { if (docs[j].status !== 'READY' && docs[j].reason) { firstErr = docs[j]; break; } }
+  return {
+    documents: docs,
+    documentFolderUrl: dgsFolderUrl_(folderId),
+    documentGenerationStatus: dgsBatchState_(live, { entity_committed: false }),
+    documentGenerationError: firstErr ? { reason: firstErr.reason, message: firstErr.message, documentLabel: firstErr.document_label, templateKey: firstErr.template_key, retryable: firstErr.retryable } : null,
+    canRetryDocuments: docs.some(function (d) { return d.retryable; })
+  };
+}
+function poWsGroupDocuments_(rows, entityType) {
+  var out = {};
+  (rows || []).forEach(function (r) {
+    if (dgsLc_(r.related_entity_type) !== entityType) return;
+    var id = dgsStr_(r.related_entity_id); if (!id) return;
+    (out[id] = out[id] || []).push(r);
+  });
+  return out;
+}
+
+function poMapOrder_(r, whIndex, linesByPo, docsByPo) {
   var poId = poWsStr_(r.purchase_order_id);
   var lines = linesByPo[poId] || [];
   var ordered = 0, completed = 0, shipped = 0, remaining = 0;
@@ -104,6 +140,7 @@ function poMapOrder_(r, whIndex, linesByPo) {
   var wid = poWsStr_(r.warehouse_id), fid = poWsStr_(r.factory_id);
   var whByWid = whIndex[wid.toUpperCase()], whByFid = whIndex[fid.toUpperCase()];
   var factoryName = (whByWid ? poWsStr_(whByWid.warehouse_name) : '') || (whByFid ? poWsStr_(whByFid.warehouse_name) : '');
+  var docs = poWsDocumentsFor_(docsByPo || {}, poId);
   return {
     purchaseOrderId: poId, poNo: poWsStr_(r.po_no || r.purchase_order_no),
     requestOrderId: poWsStr_(r.request_order_id), requestBucket: poWsStr_(r.request_bucket),
@@ -113,6 +150,9 @@ function poMapOrder_(r, whIndex, linesByPo) {
     orderDate: poWsStr_(r.order_date),
     orderedQty: ordered, completedQty: completed, shippedQty: shipped, remainingQty: remaining,
     lineCount: lines.length,
+    documents: docs.documents, documentFolderUrl: docs.documentFolderUrl,
+    documentGenerationStatus: docs.documentGenerationStatus, documentGenerationError: docs.documentGenerationError,
+    canRetryDocuments: docs.canRetryDocuments,
     raw: r   // read-only passthrough (same purchase_orders table already read)
   };
 }
@@ -224,7 +264,8 @@ function poWorkspaceBuild_(tables, payload) {
   var skuIndex = {}; for (var s = 0; s < skuDetails.length; s++) { var sk = poWsLc_(skuDetails[s].sku); if (sk && !skuIndex[sk]) skuIndex[sk] = skuDetails[s]; }
   var linesByPo = {}; for (var i = 0; i < lines.length; i++) { var pid = poWsStr_(lines[i].purchase_order_id); if (pid === '') continue; (linesByPo[pid] = linesByPo[pid] || []).push(lines[i]); }
 
-  var mappedAll = orders.map(function (r) { return poMapOrder_(r, whUpper, linesByPo); });
+  var docsByPo = poWsGroupDocuments_(tables.generated_documents || [], 'purchase_order');
+  var mappedAll = orders.map(function (r) { return poMapOrder_(r, whUpper, linesByPo, docsByPo); });
   var f = poNormalizeFilters_(payload.filters, payload.search);
   var filtered = poFilterOrders_(mappedAll, f);
   var sorted = poSortOrders_(filtered, payload.sort);

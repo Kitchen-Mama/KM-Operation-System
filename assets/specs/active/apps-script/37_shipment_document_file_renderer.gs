@@ -126,8 +126,15 @@ function dfoGenerateFile_(io, template, mapped, meta, opts) {
   var split = dfoSplitValues_(mapped.values);
   var ctx = dfoScalarCtx_(split.scalars, meta);
   var filename = dfoFilename_(template.file_name_rule, ctx);
+  // F1-7N-FB-1B (A): the DESTINATION is decided by the system (39_/38_) and passed in as an already-normalized
+  // exact leaf folder id — every live caller now does this, so documents land in the shipment's own folder
+  // instead of the shared root, and an unparsed URL can never reach a folder-open call.
+  // The template.output_folder_id fallback is retained ONLY for the legacy R3C contract (a raw folder id on the
+  // template); it is never exercised by the current callers. The new canonical entry point below
+  // (dfoRenderPayload_) is strict and refuses to run without an explicit resolved folder.
+  var folderId = dfoStr_(opts && opts.folder_id) || dfoStr_(template.output_folder_id);
   var copy;
-  try { copy = io.copyTemplate(dfoStr_(template.template_file_id), filename, dfoStr_(template.output_folder_id)); }
+  try { copy = io.copyTemplate(dfoStr_(template.template_file_id), filename, folderId); }
   catch (e) { return { ok: false, error: 'DOCUMENT_FILE_COPY_FAILED', message: (e && e.message ? String(e.message) : String(e)) }; }
   if (!copy || !copy.file_id) return { ok: false, error: 'DOCUMENT_FILE_COPY_FAILED' };
   try {
@@ -138,9 +145,46 @@ function dfoGenerateFile_(io, template, mapped, meta, opts) {
   }
   var pdf = { pdf_file_id: '', pdf_file_url: '' };
   if (!opts || opts.exportPdf !== false) {
-    try { pdf = io.exportPdf(copy.file_id, filename, dfoStr_(template.output_folder_id)) || pdf; } catch (e3) { pdf = { pdf_file_id: '', pdf_file_url: '' }; }
+    try { pdf = io.exportPdf(copy.file_id, filename, folderId) || pdf; } catch (e3) { pdf = { pdf_file_id: '', pdf_file_url: '' }; }
   }
-  return { ok: true, file_name: filename, file_id: copy.file_id, file_url: dfoStr_(copy.file_url), pdf_file_id: dfoStr_(pdf.pdf_file_id), pdf_file_url: dfoStr_(pdf.pdf_file_url) };
+  return { ok: true, file_name: filename, file_id: copy.file_id, file_url: dfoStr_(copy.file_url), pdf_file_id: dfoStr_(pdf.pdf_file_id), pdf_file_url: dfoStr_(pdf.pdf_file_url), output_folder_id: folderId };
+}
+
+// F1-7N-FB-1B (F): render a FULLY RESOLVED system payload. This is the boundary the architecture rule is about —
+// every value here is already a finished string computed by 39_, so this function performs NO selection, NO join,
+// NO arithmetic and NO template choice. It is a copy-fill-export device.
+function dfoRenderPayload_(io, payload, opts) {
+  payload = payload || {};
+  var template = {
+    template_file_id: payload.template_file_id, template_file_type: payload.template_file_type,
+    file_name_rule: '', template_key: payload.template_key, template_id: payload.template_id
+  };
+  var v = dfoValidateAsset_(template);
+  if (!v.ok) return v;
+  if (!dfoStr_(payload.folder_id)) return { ok: false, error: 'DOCUMENT_OUTPUT_FOLDER_REQUIRED' };
+  if (!dfoStr_(payload.file_name)) return { ok: false, error: 'DOCUMENT_FILE_NAME_UNRESOLVED' };
+  var mapped = { values: {} };
+  Object.keys(payload.scalars || {}).forEach(function (k) { mapped.values[k] = payload.scalars[k]; });
+  Object.keys(payload.collections || {}).forEach(function (k) { mapped.values[k] = payload.collections[k]; });
+  var split = dfoSplitValues_(mapped.values);
+  var ctx = dfoScalarCtx_(split.scalars, {});
+  var copy;
+  try { copy = io.copyTemplate(dfoStr_(payload.template_file_id), dfoStr_(payload.file_name), dfoStr_(payload.folder_id)); }
+  catch (e) { return { ok: false, error: 'DOCUMENT_FILE_COPY_FAILED', message: (e && e.message ? String(e.message) : String(e)) }; }
+  if (!copy || !copy.file_id) return { ok: false, error: 'DOCUMENT_FILE_COPY_FAILED' };
+  try {
+    var matrix = io.readSheetMatrix(copy.file_id);
+    io.writeSheetMatrix(copy.file_id, dfoFillSheetMatrix_(matrix, ctx, split.collections));
+  } catch (e2) {
+    return { ok: false, error: 'DOCUMENT_FILE_FILL_FAILED', message: (e2 && e2.message ? String(e2.message) : String(e2)), partial_file_id: copy.file_id };
+  }
+  var pdf = { pdf_file_id: '', pdf_file_url: '' };
+  if (!opts || opts.exportPdf !== false) {
+    try { pdf = io.exportPdf(copy.file_id, dfoStr_(payload.file_name), dfoStr_(payload.folder_id)) || pdf; }
+    catch (e3) { return { ok: false, error: 'DOCUMENT_PDF_EXPORT_FAILED', message: (e3 && e3.message ? String(e3.message) : String(e3)), file_id: copy.file_id, file_url: dfoStr_(copy.file_url), file_name: dfoStr_(payload.file_name), output_folder_id: dfoStr_(payload.folder_id) }; }
+  }
+  return { ok: true, file_name: dfoStr_(payload.file_name), file_id: copy.file_id, file_url: dfoStr_(copy.file_url),
+    pdf_file_id: dfoStr_(pdf.pdf_file_id), pdf_file_url: dfoStr_(pdf.pdf_file_url), output_folder_id: dfoStr_(payload.folder_id) };
 }
 
 // Default Drive/Sheets io (the ONLY place raw DriveApp/SpreadsheetApp is touched; USER live-verified). copyTemplate
@@ -161,6 +205,23 @@ function dofFolderIo_() {
     createFolder: function (parentId, name) {
       var f = DriveApp.getFolderById(parentId).createFolder(name);
       return { id: f.getId(), name: f.getName() };
+    }
+  };
+}
+
+// F1-7N-FB-1B (L) — STRICTLY NON-MUTATING Drive readiness probes. They OPEN a configured identity and read its
+// name/type to prove it is resolvable and reachable BEFORE a business status transition is allowed. They create
+// nothing: no probe folder, no test file, no copy, no permission change — so running readiness a hundred times
+// leaves Drive byte-identical. They also never enumerate a folder's FILES, so this cannot become a browsing API.
+function dofProbeIo_() {
+  return {
+    probeFolder: function (folderId) {
+      try { var f = DriveApp.getFolderById(String(folderId || '').trim()); return { ok: true, id: f.getId(), name: f.getName() }; }
+      catch (e) { return { ok: false, reason: 'FOLDER_INACCESSIBLE' }; }
+    },
+    probeFile: function (fileId) {
+      try { var f = DriveApp.getFileById(String(fileId || '').trim()); return { ok: true, id: f.getId(), name: f.getName(), mime: f.getMimeType() }; }
+      catch (e) { return { ok: false, reason: 'FILE_INACCESSIBLE' }; }
     }
   };
 }

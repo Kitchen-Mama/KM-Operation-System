@@ -705,8 +705,12 @@ shipments          1 ── many generated_documents        (related_entity_type
 > date folders on any retry), keyed the leaf on `{COUNTRY}` rather than the operational destination bucket, and
 > left `{SHIP_DATE}` undefined — the spec never stated its source field or format.
 
-**v1 storage is unchanged:** every shipment-generated document sets **`output_folder_id` = the root Shipment
-folder**. Sub-folder placement is resolved by runtime logic (not stored per template).
+> **CORRECTED by F1-7N-FB-1B §B.** This section previously said every generated document stores
+> `output_folder_id` = the **root** Shipment folder. That is **RETIRED**: the root is not where the document
+> lives, so the value was neither a usable link target nor an accurate record of where the file went.
+> **`generated_documents.output_folder_id` now stores the ACTUAL LEAF folder containing that document.**
+> The root remains configured on `document_templates.output_folder_id` (§L.4) and remains the only root
+> authority; sub-folder placement is still resolved by runtime logic and is never stored per template.
 
 **Active runtime routing logic (folder nesting):**
 
@@ -799,6 +803,173 @@ created: no active canonical specification requires one (PO file identity lives 
 `document_output_folders` (a per-scope folder registry table) **remains DEFERRED** — not created. The root stays
 on the template, the path is runtime logic, and the resolved folder is recorded per document on the existing
 `generated_documents.output_folder_id`. **No second registry, and no browser-side Drive query.**
+
+---
+
+## Q. Document Runtime — system-computed payload, Drive-output-only (F1-7N-FB-1B)
+
+**Status:** ACTIVE. Implemented in `39_document_runtime_service.gs` (orchestration + applicability + payload),
+`35_` (render models), `36_` (registry), `37_` (the ONE Drive boundary), `38_` (folder identity).
+
+### Q.1 Architectural boundary (authoritative)
+
+```
+Business DB → system reader → canonical snapshot → template applicability → document field resolver
+ → fully resolved IMMUTABLE render payload → Drive readiness check → Drive renderer → file/PDF
+ → generated_documents → API DTO → UI Document Panel
+```
+
+**Kitchen Mama owns every business decision**: data selection, joins, calculations, normalization, totals,
+allocation logic, customs values, template selection, field resolution, filename construction and validation.
+
+**Google Drive is not a calculation engine and is not a business-data source.** The Drive layer may only
+normalize/open a configured folder or template identity, verify accessibility without mutating business data,
+create or reuse the exact authorized folder, copy the exact selected template, populate it with the
+already-resolved payload, export a PDF when required, and return ids/URLs/typed results. It must **not** query
+`shipments` / `purchase_orders` / allocations / masters, calculate quantities, cartons, weights, values or
+dates, select templates, choose applicable document classes, infer countries/carriers/factories/series, run
+allocation or stock logic, use `example_value`, mutate PO/Shipment status, or decide whether a business
+transition is allowed. By the time the renderer is called the payload carries finished strings only —
+`TOTAL_QTY: "360"`, `TOTAL_CARTONS: "19"`, `COUNTRY: "US"`, `WAREHOUSE_CODE: "ABE2"`.
+
+### Q.2 Trigger and status matrix
+
+| Entity | Trigger | Order of operations | Success | Failure |
+|---|---|---|---|---|
+| **Purchase Order** | Send PO on a `draft` PO | build + validate payload → Drive readiness → generate native file + PDF → register → **then** the existing canonical `issue` writer | `order_status = issued`, rendered under the **In Production** UI group | stays `draft`; no status written; no email |
+| **Shipment** | Confirm Shipment on `ready_to_ship` | **pre-dispatch readiness gate** → existing dispatch transaction (allocations execute through their existing authority) → `status = shipped`, `shipped_at` written once → snapshot finalized → payloads resolved → documents rendered | `shipped` + documents in Drive | see §Q.3 |
+
+**"In Production" is a UI GROUP LABEL, not a DB status.** `PURCHASE_ORDER_SPEC.md` §3.2 groups
+`issued · supplier_confirmed/confirmed · in_production · partial_completed` under it. **No `in_production` DB
+status is introduced by Send PO** — Send PO writes the canonical `issued` token through the one existing writer.
+
+Confirm Shipment **must not** finish at `in_transit`. The first authoritative non-origin Current Position event
+owns `shipped → in_transit`; receiving alone owns `→ received`.
+
+**No email is sent.** `MailApp` / `GmailApp` / Gmail API / any external email API are not called;
+`generated_documents.email_status` stays at the canonical unsent value. Email Automation is a later consumer of
+these records.
+
+### Q.3 The two failure classes (supersedes any "Drive failure rolls back dispatch" rule)
+
+Because the final Shipment Snapshot requires **executed** allocations, Drive file creation **cannot safely
+precede** the dispatch transaction. The system therefore never builds the snapshot from draft allocations,
+never recalculates allocations outside the canonical authority, never renders to Drive while holding the long
+dispatch ScriptLock, never fakes a transaction across Sheets and Drive, and **never rolls back a real physical
+dispatch because Drive timed out.**
+
+**D1 — pre-dispatch readiness failure → BLOCKS Shipped.** Deterministic, knowable in advance: missing
+`external_shipment_id`; unresolved destination country/bucket; a required template missing, ambiguous, inactive
+or out of window; missing required-field source authority; invalid type/transform; invalid or conflicting Drive
+root; inaccessible root or template file; unsupported template type; invalid folder/filename identity; invalid
+allocation/lineage or snapshot prerequisites. Result: `status` stays `ready_to_ship`, `shipped_at` stays blank,
+nothing is written and **no Drive folder or file is created**.
+
+**D2 — post-dispatch Drive/render failure → RECOVERABLE.** If dispatch and snapshot succeed but a Drive
+copy/write/PDF export fails: the shipment **remains `shipped`**, `shipped_at` is unchanged, stock / allocation /
+route / event results remain truthful, `generated_documents` records a failed-retryable or partial state,
+successful outputs are retained, the UI shows a prominent actionable warning, and Retry regenerates **only** the
+missing or failed outputs with no folder / file / registry duplication.
+
+> User-facing wording for D2: *"Shipment was confirmed successfully, but Packing List PDF generation timed out.
+> The shipment remains Shipped. Retry document generation."*
+
+### Q.4 Drive readiness phase (non-mutating)
+
+Before any business status transition, for every applicable required template: normalize `output_folder_id`,
+resolve exactly one root, confirm the root object is accessible, confirm `template_file_id` is accessible,
+confirm the template type is supported, confirm template metadata can be read, confirm the folder path/name is
+valid. **No probe folder and no test file is created.** Only a `READY` result permits the next business action;
+readiness is not a guarantee that the later write succeeds.
+
+### Q.5 Shipment applicability matrix (system-built, before any Drive call)
+
+| Class | `document_type` | `document_usage` | Requirement | Template match rule |
+|---|---|---|---|---|
+| `SHIPMENT_DETAIL` | `shipment_detail` | `internal` | **ALWAYS** | scoped (blank dimension = unscoped) |
+| `COMMERCIAL_INVOICE_EXPORT` | `commercial_invoice` | `export` | **ALWAYS** | scoped |
+| `PACKING_LIST_EXPORT` | `packing_list` | `export` | **ALWAYS** | scoped |
+| `COMMERCIAL_INVOICE_IMPORT` | `commercial_invoice` | `import` | CONDITIONAL | **exact `country`** must be present and equal |
+| `PACKING_LIST_IMPORT` | `packing_list` | `import` | CONDITIONAL | **exact `country`** must be present and equal |
+| `CARRIER_BOOKING` | `carrier_booking_form` | `carrier` | CONDITIONAL | **exact `carrier_id`** must be present and equal |
+
+Applicability dimensions: `related_entity_type`, `document_type`, `document_usage`, `country`, `marketplace`
+when populated, `carrier_id`, series/SKU/factory specificity when populated, active + effective date window.
+
+**ALWAYS + 0 matches** = `SHIPMENT_DOCUMENT_TEMPLATE_UNRESOLVED` (blocking). **>1 equally specific match** =
+`SHIPMENT_DOCUMENT_TEMPLATE_AMBIGUOUS` (blocking; never "first in sheet order"). **CONDITIONAL + 0 matches** =
+the class genuinely does not apply — never an error and never a broadened manifest. Because the conditional
+classes require an **exactly scoped** template, an unscoped template can never emit AGL forms for TOP SEALAND,
+SINOTRANS forms for another carrier, or US destination forms for a non-US shipment, and no run ever generates
+every active shipment template indiscriminately.
+
+### Q.6 Destination customs documents vs legal importer authority
+
+The `document_templates` rows whose usage/name contains **import** are, in Kitchen Mama's business definition,
+**destination-side customs/export shipment paperwork prepared by KM**. They **do not assert that Kitchen Mama is
+the legal Importer of Record.**
+
+- `COMMERCIAL_INVOICE_IMPORT_US` and `PACKING_LIST_IMPORT_US` are **not** blocked by
+  `LEGAL_IMPORTER_AUTHORITY_GAP`; they are generated from the finalized **outbound** Shipment Snapshot.
+- They grant no import authority, change no customs/tax responsibility, authorize no receiving and prove no
+  importer identity.
+- They are gated by their own document family (`commercial_invoice` / `packing_list`) exactly like their export
+  twins — never by the snapshot's `customs` family.
+
+`LEGAL_IMPORTER_AUTHORITY_GAP` is **preserved intact** for any actual legal/importer, customs-admission,
+tax-liability or receiving workflow, where it genuinely applies. It is narrowed only so it no longer applies to
+these outbound document artifacts. **No DB token rename** is required.
+
+Terminology: **destination customs document generation** = producing an artifact from KM's own outbound facts.
+**Legal importer authority** = the right to be named Importer of Record — a separate, still-unowned authority.
+
+### Q.7 Commercial Invoice runtime status
+
+The CI render model is **implemented** (`docRenderCommercialInvoice_`, 35_) for both
+`COMMERCIAL_INVOICE_EXPORT` and `COMMERCIAL_INVOICE_IMPORT_US`, from frozen snapshot facts only.
+
+**Resolved from canonical authority:** invoice no · invoice date · shipper legal name/address/tax id · seller of
+record · consignee name/address/country · currency · per line: SKU, description, HS code, country of origin,
+quantity, declared unit value, derived declared total, cartons, carton range, gross/net weight, CBM, PO lineage
+· invoice total, total qty/cartons/weights/CBM (all derived Σ over frozen lines).
+
+**No canonical owner (`DOC_CI_UNRESOLVED_AUTHORITY_`, 35_):** `INCOTERM`, `PAYMENT_TERMS`, `PORT_OF_LOADING`,
+`PORT_OF_DISCHARGE`, `IMPORTER_OF_RECORD`. If an ACTIVE template marks any of these `required`, that CI is
+reported **`CONFIGURATION_REQUIRED`** — never falsely `GENERATED`, never silently omitted, and never filled with
+an invented or `example_value` value. A CI becomes **required for a transition** only once its complete active
+required-field contract is executable and passes readiness.
+
+### Q.8 `generated_documents` lifecycle without new enum tokens
+
+The frozen physical enum (§D) is `generated / regenerated / emailed / archived / cancelled / failed`. The richer
+runtime lifecycle is expressed **without widening it**: `preparing` / `validating` / `generating` are transient
+and never persisted; `generated` / `regenerated` are stored as-is; `partial` is **derived** across the batch
+against the applicability manifest size; `failed_retryable` vs `failed_terminal` is `failed` plus a typed reason
+and retryability carried in the existing free-text `note`; `stale/superseded` reuses `cancelled`.
+`dgsRowState_` / `dgsBatchState_` are the single interpretation owner for the API, the diagnostics and the UI.
+
+Logical idempotency identity = `related_entity_type` + `related_entity_id` + `template_id` + `template_version`
+(+ generation lineage). Repeated clicks, reloads and retries never duplicate a folder, a native file, a PDF, a
+registry row, the PO issue transition or the Shipment dispatch transition. Explicit regeneration uses
+`regenerated_from_document_id` and preserves historical outputs.
+
+### Q.9 Snapshot eligibility
+
+`SFO_DISPATCHED_STATUS_` now includes **`shipped`** (34_). `ready_to_ship` is deliberately **not** eligible: the
+PO allocations are still `draft` before the dispatch transaction, so there is no executed lineage to freeze and
+conservation could not balance. `in_transit` and later states remain eligible. A newly confirmed shipment can
+therefore finalize its snapshot immediately — the map does not need to promote it first. Finalization is called
+exactly once and idempotently through the existing `finalizeShipmentFinalOutput` owner; there is no second
+snapshot implementation.
+
+### Q.10 API projection
+
+`generated_documents` reaches the UI through the canonical API only: `document.list` / `document.get` /
+`document.retry`, plus the read-only diagnostics `document.diagnostic.purchaseOrder` and
+`document.diagnostic.shipment`. The Shipment and Purchase Order workspaces project `documents`,
+`documentFolderUrl`, `documentGenerationStatus` and `documentGenerationError` onto each entity's view-model.
+**The frontend never enumerates Drive** — it only follows a folder/file URL the backend already resolved, and it
+never builds document content.
 
 ---
 

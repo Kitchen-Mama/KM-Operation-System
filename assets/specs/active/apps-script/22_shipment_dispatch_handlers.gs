@@ -55,6 +55,28 @@ function handleConfirmShipmentAndDispatch_(body) {
   var shipSheet = ss.getSheetByName('shipments');
   if (!shipSheet) return jsonResponse_({ success: false, error: 'shipments sheet not found', stage: 'load' });
 
+  // ---------- F1-7N-FB-1B (D1) PRE-DISPATCH DOCUMENT READINESS GATE ----------
+  // Deterministic, knowable-in-advance document failures BLOCK the transition. Run BEFORE the lock because it
+  // is strictly read-only (39_/38_ resolution + non-mutating Drive probes: it opens configured identities and
+  // reads their metadata, and creates NO folder, NO probe file and NO copy). A BLOCKED verdict leaves the
+  // shipment at ready_to_ship with a blank shipped_at and nothing else touched.
+  // What it can prove here is identity + template configuration + Drive reachability. Per-field completeness
+  // against the finalized snapshot is genuinely a POST-dispatch fact (the snapshot needs EXECUTED allocations),
+  // which is why a field failure is a recoverable D2 document failure and never an un-shipping event.
+  // There is deliberately NO bypass parameter: the gate is a hard precondition, so no caller can opt out of it.
+  // A readiness check that itself fails is treated as BLOCKED, never as permission to proceed.
+  var docGate;
+  try { docGate = dgsShipmentReadiness_(ss, shipmentId, {}); }
+  catch (eg) { docGate = { ok: false, status: 'BLOCKED', reason: 'DOCUMENT_READINESS_CHECK_FAILED', blockers: [{ reason: 'DOCUMENT_READINESS_CHECK_FAILED', message: (eg && eg.message ? String(eg.message) : String(eg)) }] }; }
+  if (!docGate.ok) {
+    return jsonResponse_({
+      success: false, stage: 'document_readiness', shipment_id: shipmentId,
+      error: 'Cannot Confirm — required shipment documents are not ready.',
+      document_readiness: docGate, blockers: docGate.blockers,
+      note: 'The shipment remains ready_to_ship and shipped_at is blank. Nothing was written and no Drive folder or file was created.'
+    });
+  }
+
   // ---------- LOCK ----------
   var lock = LockService.getScriptLock();
   try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
@@ -258,17 +280,41 @@ function handleConfirmShipmentAndDispatch_(body) {
     SpreadsheetApp.flush();
 
     lock.releaseLock();
+
+    // ---------- F1-7N-FB-1B (D2) POST-DISPATCH DOCUMENT ORCHESTRATION ----------
+    // The physical dispatch is COMMITTED and the lock is RELEASED before any Drive work begins, so slow
+    // rendering can never hold the global lock and an Apps Script timeout can never strand a half-applied
+    // transaction. The final snapshot is finalized here (once, idempotently, by the existing 34_ owner) because
+    // it needs the allocations that were just EXECUTED above; documents are then rendered from it.
+    // A failure here is recoverable, never reversible: the shipment stays `shipped`, shipped_at keeps the value
+    // just written, and stock/allocation/route/event results stay truthful. The failure is recorded as a
+    // retryable generated_documents row and surfaced to the user as a retry prompt.
+    var shippedAtFinal = String(prevShippedAt || '').trim() || now;
+    var docResult = { ok: false, reason: 'NOT_ATTEMPTED' };
+    try { docResult = dgsGenerateShipmentDocuments_(ss, shipmentId, actor, {}); }
+    catch (ed) { docResult = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (ed && ed.message ? String(ed.message) : String(ed)) }; }
+
     return jsonResponse_({
       success: true,
       data: {
         shipment_id: shipmentId, status: CSD_CONFIRMED_STATUS_, route_template_id: templateId,
         route_nodes_created: routeNodesCreated, events_created: 1, stock_movements_created: movementsCreated,
         po_allocations_executed: slaExec.executed_allocations, po_lines_reconciled: slaExec.reconciled_po_lines,
-        shipped_at: String(prevShippedAt || '').trim() || now,
-        // F1-7N-FB-1(7) — the shipment transaction is COMMITTED at this point. Document generation is a
+        shipped_at: shippedAtFinal,
+        // F1-7N-FB-1B (D2) — the shipment transaction is COMMITTED at this point. Document generation is a
         // trailing, separately retryable concern: a Drive/render failure reports a document status and NEVER
         // rolls the confirmed shipment back. The UI must not claim files exist until the registry says so.
-        document_generation: { status: 'READY_TO_GENERATE', registry: 'generated_documents', retry_safe: true },
+        document_generation: {
+          status: docResult.ok ? 'READY' : 'RETRY_REQUIRED',
+          registry: 'generated_documents', retry_safe: true,
+          expected: docResult.expected || 0, generated: docResult.generated || 0, reused: docResult.reused || 0,
+          failed: docResult.failed || 0, configuration_required: docResult.configuration_required || 0,
+          folder_url: docResult.folder_url || '', folder_name: docResult.folder_name || '',
+          destination_bucket: docResult.destination_bucket || '', reason: docResult.ok ? '' : (docResult.reason || ''),
+          results: docResult.results || [],
+          message: docResult.ok ? '' : 'Shipment was confirmed successfully, but one or more documents were not generated. The shipment remains Shipped. Retry document generation.'
+        },
+        document_readiness: docGate ? { status: docGate.status, manifest: docGate.manifest } : null,
         warnings: tplRes.warnings || []
       }
     });

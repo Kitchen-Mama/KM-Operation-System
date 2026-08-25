@@ -2428,7 +2428,7 @@ window.KM.DB.normalizePurchaseOrderLine = function(raw) { return normalizePurcha
 // remaining_qty is BACKEND-OWNED: the DTO always supplies it, so the page never derives max(0, completed - shipped).
 window.KM.DB.adaptPurchaseOrderWorkspace = function(data) {
     data = data || {};
-    var orders = (data.purchaseOrders || []).map(function(p) { return normalizePurchaseOrderRecord((p && p.raw) || {}); });
+    var orders = (data.purchaseOrders || []).map(function(p) { return _kmAttachDocumentDto(normalizePurchaseOrderRecord((p && p.raw) || {}), p); });
     var lines = [];
     var det = data.detailsByPurchaseOrderId || {};
     Object.keys(det).forEach(function(poId) {
@@ -2490,9 +2490,22 @@ window.KM.DB.normalizeShipmentLine = function(raw) { return normalizeShipmentLin
 // cache — each table run through its canonical normalizer with the SAME per-array filter normalizeOperationDb applies,
 // so the adapted arrays equal the legacy getters exactly. Composes persisted shipment facts ONLY (no FIFO/allocation/
 // PO/receipt/factory authority). Map-extra arrays are present only when the workspace was called with their include.
+// F1-7N-FB-1B §P — carry the workspace-projected generated_documents DTOs onto the normalized record. The
+// normalizers deliberately read only `raw` (the physical row), but these fields are BACKEND-DERIVED read-model
+// facts, not columns, so they are attached here rather than invented in the page. The browser never queries
+// Drive: it only follows a folder/file URL the backend already resolved.
+function _kmAttachDocumentDto(target, wsRow) {
+    var w = wsRow || {};
+    target.documents = w.documents || [];
+    target.documentFolderUrl = String(w.documentFolderUrl || '').trim();
+    target.documentGenerationStatus = String(w.documentGenerationStatus || '').trim();
+    target.documentGenerationError = w.documentGenerationError || null;
+    target.canRetryDocuments = w.canRetryDocuments === true;
+    return target;
+}
 window.KM.DB.adaptShipmentWorkspace = function(data) {
     data = data || {};
-    var shipments = (data.shipments || []).map(function(s) { return normalizeShipmentRecord((s && s.raw) || {}); }).filter(function(r) { return r.shipmentId; });
+    var shipments = (data.shipments || []).map(function(s) { return _kmAttachDocumentDto(normalizeShipmentRecord((s && s.raw) || {}), s); }).filter(function(r) { return r.shipmentId; });
     var shipmentLines = (data.shipmentLines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; });
     var warehouses = (data.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; });
     var carrierRateCards = (data.carrierRateCards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; });
@@ -3124,6 +3137,45 @@ window.KM.DB.generateShipmentDocument = async function(payload) {
         return await resp.json();
     } catch (e) { return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' }; }
 };
+// ---- F1-7N-FB-1B §P — the canonical generated_documents read path -------------------------------------------
+// One transport shape for every document action. The frontend NEVER enumerates Drive and never builds document
+// content; it asks the backend for registry metadata and safe links. Errors are returned in the existing
+// envelope shape, so a failure is visible rather than silently rendering an empty panel.
+function _kmDocumentAction(action, payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, ' + action + ' skipped');
+        return Promise.resolve({ success: false, error: 'API not configured', stage: 'config' });
+    }
+    return fetch(OP_DB_API_BASE_URL, {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: action }, payload || {}))
+    }).then(function (resp) {
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
+        return resp.json();
+    }).catch(function (e) { return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' }; });
+}
+// List the documents registered for ONE entity (shipment or purchase_order), with the resolved folder link,
+// the derived batch status and error assistance.
+window.KM.DB.listEntityDocuments = function(entityType, entityId) {
+    return _kmDocumentAction('document.list', { related_entity_type: entityType, related_entity_id: entityId });
+};
+window.KM.DB.getGeneratedDocument = function(documentId) {
+    return _kmDocumentAction('document.get', { document_id: documentId });
+};
+// Retry regenerates ONLY the missing/failed documents; the backend reuses anything already generated, so this
+// can never duplicate a folder, a file, a PDF or a registry row.
+window.KM.DB.retryDocumentGeneration = function(entityType, entityId) {
+    return _kmDocumentAction('document.retry', { related_entity_type: entityType, related_entity_id: entityId, actor: 'operation-system' });
+};
+// READ-ONLY diagnostics. They perform zero writes and create no Drive folder or file — the folders they report
+// are preview paths, not created objects.
+window.KM.DB.runPoDocumentDiagnostic = function(purchaseOrderId) {
+    return _kmDocumentAction('document.diagnostic.purchaseOrder', { purchase_order_id: purchaseOrderId });
+};
+window.KM.DB.runShipmentDocumentDiagnostic = function(shipmentId) {
+    return _kmDocumentAction('document.diagnostic.shipment', { shipment_id: shipmentId });
+};
+
 // Open/download a generated document result in a new tab (download_url = PDF when present, else the editable file).
 // Presentation only — the frontend never builds document content.
 window.KM.DB.openGeneratedDocument = function(res) {

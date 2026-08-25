@@ -743,7 +743,9 @@ function _shRefresh_(renderFn) {
     var rg = _shRegion_();
     if (rg) rg.beginLoad(!!_shReadModel);
     if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _shRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Shipment Workspace API unavailable.' }); return; }
-    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 } })).then(function (env) {
+    // F1-7N-FB-1B §P — ask for the generated_documents projection. It is a BOUNDED include: without it the
+    // workspace does not read the registry at all, so the Document Panel cost is opt-in per page.
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { documents: true } })).then(function (env) {
         if (mySeq !== _shReadSeq) return;
         if (env && env.success) {
             _shReadModel = window.KM.DB.adaptShipmentWorkspace(env.data);
@@ -1159,12 +1161,16 @@ function _shRenderDbCard(s, planLines, mode) {
     // Execution Fields, for BOTH pages. It reads ONLY backend registry metadata already attached to the
     // shipment view-model; a shipment with none (e.g. a Demo row with a blank external_shipment_id)
     // truthfully renders "No documents generated yet" rather than a fabricated folder or file.
-    if (status !== 'draft' && status !== 'ready_to_ship') {
+    // Shown once documents can exist: post-dispatch, or as soon as the registry has any row for this shipment.
+    // A pre-dispatch draft stays clean rather than showing an empty panel it can do nothing about.
+    if ((status !== 'draft' && status !== 'ready_to_ship') || (s.documents && s.documents.length)) {
         actionsHtml += shDocumentPanelHtml({
-            title: 'Shipment Documents', entity_id: sid,
+            title: 'Shipment Documents', entity_type: 'shipment', entity_id: sid,
             folder_url: s.documentFolderUrl || '', folder_name: s.documentFolderName || '',
             folder_error: s.documentFolderError || '',
-            documents: s.documents || [], pending: !!s.documentsPending, can_retry: s.canRetryDocuments === true
+            documents: s.documents || [], pending: !!s.documentsPending,
+            generation_status: s.documentGenerationStatus || '', error: s.documentGenerationError || null,
+            can_retry: s.canRetryDocuments === true
         });
     }
 
@@ -1413,19 +1419,32 @@ var SH_DOC_TYPES = { SHIPDETAIL: 'Shipping Detail', PL: 'Packing List' };
 //   · Every state is truthful: a shipment with no generated documents says so rather than implying files.
 // ============================================================================================
 var SH_DOC_PANEL_VISIBLE_ROWS_ = 5;   // compact by default; "View all (N)" reveals the rest
+// F1-7N-FB-1B §Q — the full truthful state set. The tokens are produced by the ONE backend interpretation owner
+// (dgsBatchState_ in 39_) so the API, the diagnostics and this panel can never disagree about what happened.
 var SH_DOC_STATE_LABEL_ = {
     NONE: 'No documents generated yet',
+    CHECKING: 'Checking readiness…',
     PENDING: 'Generation pending',
     GENERATING: 'Generating…',
+    CONFIGURATION_REQUIRED: 'Configuration required',
     PARTIAL: 'Partially generated',
     READY: 'Ready',
-    FAILED: 'Generation failed',
+    FAILED: 'Failed — action required',
+    CONFIRMED_RETRY_REQUIRED: 'Shipment confirmed — document retry required',
     CONFIG_CONFLICT: 'Document folder configuration conflict'
 };
+// States that must read as a problem rather than as progress.
+var SH_DOC_ALERT_STATE_ = { CONFIGURATION_REQUIRED: 1, FAILED: 1, CONFIRMED_RETRY_REQUIRED: 1, CONFIG_CONFLICT: 1 };
 // Derive the panel state from the registry rows + folder resolution. Pure and total: an unknown mix is
 // reported as PARTIAL rather than optimistically READY.
 function shDocPanelState(model) {
     model = model || {};
+    // The backend already derived this across the whole applicability manifest, so it knows something this
+    // function cannot: how many documents were EXPECTED. A panel that only sees 2 rows would call them READY;
+    // the backend knows 5 were required and correctly says PARTIAL. Trust it when present.
+    var backend = String(model.generation_status || '').toUpperCase();
+    if (backend && SH_DOC_STATE_LABEL_[backend]) return backend;
+    if (model.checking) return 'CHECKING';
     if (model.folder_error) return 'CONFIG_CONFLICT';
     var docs = model.documents || [];
     if (!docs.length) return model.pending ? 'PENDING' : 'NONE';
@@ -1482,7 +1501,68 @@ function _shDocRowHtml(d, canRetry, entityId) {
         '<span style="white-space:nowrap;">' + actions + '</span>' +
     '</div>';
 }
-// model = { title, entity_id, folder_url, folder_name, folder_error, documents:[], pending, can_retry }
+// F1-7N-FB-1B §Q — the error-assistance block. Every failure answers the same questions in the same order:
+// what went wrong in plain language, the typed reason, which document, which template, which fields are missing
+// and where they come from, where to fix it, and whether a retry is safe. It NEVER prints a stack trace, a
+// credential or a raw Drive identifier.
+var SH_DOC_REASON_HELP_ = {
+    SHIPMENT_DOCUMENT_TEMPLATE_UNRESOLVED: { say: 'No active template is configured for a required document.', fix: 'Admin › Document Templates' },
+    SHIPMENT_DOCUMENT_TEMPLATE_AMBIGUOUS: { say: 'More than one active template matches this shipment, so the system will not guess.', fix: 'Admin › Document Templates' },
+    PO_DOCUMENT_TEMPLATE_UNRESOLVED: { say: 'No active Purchase Order template matches this factory and series.', fix: 'Admin › Document Templates' },
+    PO_DOCUMENT_TEMPLATE_AMBIGUOUS: { say: 'More than one Purchase Order template matches equally, so the system will not guess.', fix: 'Admin › Document Templates' },
+    DOCUMENT_REQUIRED_FIELD_MISSING: { say: 'The template requires business fields that are empty.', fix: 'Complete the fields listed below' },
+    DOCUMENT_FIELD_AUTHORITY_MISSING: { say: 'The template requires a field that has no source of truth in the system yet.', fix: 'Admin › Document Templates (make the field optional, or put the value in the template)' },
+    DOCUMENT_CONFIGURATION_REQUIRED: { say: 'This document cannot be produced with its current template configuration.', fix: 'Admin › Document Templates' },
+    UNSUPPORTED_DESTINATION_BUCKET: { say: 'This destination country has no configured document folder.', fix: 'Shipment › Destination' },
+    MISSING_EXTERNAL_SHIPMENT_ID: { say: 'The shipment has no external Shipment ID, which the folder name is built from.', fix: 'Shipment Draft › Execution Fields' },
+    OUTPUT_FOLDER_ROOT_MISSING: { say: 'No output folder is configured on the template.', fix: 'Admin › Document Templates › output_folder_id' },
+    OUTPUT_FOLDER_ROOT_INVALID: { say: 'The configured output folder is not a valid Drive folder ID or URL.', fix: 'Admin › Document Templates › output_folder_id' },
+    OUTPUT_FOLDER_ROOT_CONFLICT: { say: 'The applicable templates point at different output folders.', fix: 'Admin › Document Templates › output_folder_id' },
+    OUTPUT_FOLDER_ROOT_INACCESSIBLE: { say: 'The configured output folder could not be opened.', fix: 'Check Drive sharing for the output folder' },
+    DOCUMENT_TEMPLATE_ASSET_MISSING: { say: 'The template has no template file attached.', fix: 'Admin › Document Templates › template_file_id' },
+    DOCUMENT_TEMPLATE_ASSET_INACCESSIBLE: { say: 'The template file could not be opened.', fix: 'Check Drive sharing for the template file' },
+    DOCUMENT_TEMPLATE_TYPE_UNSUPPORTED: { say: 'That template file type cannot be filled yet.', fix: 'Admin › Document Templates › template_file_type' },
+    DOCUMENT_FILE_COPY_FAILED: { say: 'The template could not be copied into the output folder.', fix: 'Retry' },
+    DOCUMENT_FILE_FILL_FAILED: { say: 'The copied file could not be filled in.', fix: 'Retry' },
+    DOCUMENT_PDF_EXPORT_FAILED: { say: 'The PDF export did not complete.', fix: 'Retry' },
+    SNAPSHOT_PREREQUISITE_INVALID: { say: 'The shipment snapshot the documents are built from is not available yet.', fix: 'Retry' }
+};
+function _shDocHelp(reason) {
+    return SH_DOC_REASON_HELP_[String(reason || '').toUpperCase()] ||
+        { say: 'The document could not be produced.', fix: 'Retry, or check Admin › Document Templates' };
+}
+function _shDocErrorHtml(model, state) {
+    var err = model.error || null;
+    if (!err && !model.folder_error) return '';
+    var reason = String((err && err.reason) || model.folder_error || '').toUpperCase();
+    var help = _shDocHelp(reason);
+    var missing = (err && err.missing) || [];
+    var rows = '';
+    if (missing.length) {
+        rows = '<div style="margin-top:5px;font-size:11px;color:#7F1D1D;">Missing: ' +
+            missing.slice(0, 6).map(function (m) {
+                var name = _shEsc(String((m && (m.placeholder || m.field)) || ''));
+                var src = String((m && (m.data_source_path || m.data_source_field || m.source)) || '').trim();
+                return name + (src ? ' <span style="color:#B91C1C;">(' + _shEsc(src) + ')</span>' : '');
+            }).join(' · ') + (missing.length > 6 ? ' … +' + (missing.length - 6) : '') + '</div>';
+    }
+    var retryHtml = '';
+    if (model.can_retry === true && (err ? err.retryable !== false : false)) {
+        retryHtml = ' <button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(model.entity_type || 'shipment') + '\',\'' + _shEsc(model.entity_id) + '\',this)" ' +
+            'style="background:none;border:none;padding:0;color:#B91C1C;font-size:11px;text-decoration:underline;cursor:pointer;">Retry</button>';
+    }
+    return '<div class="sh-doc-error" style="margin-top:8px;padding:8px 10px;border:1px solid #FECACA;background:#FEF2F2;border-radius:6px;">' +
+        '<div style="font-size:12px;color:#B91C1C;font-weight:600;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || 'Action required') + '</div>' +
+        '<div style="margin-top:3px;font-size:12px;color:#7F1D1D;">' + _shEsc(help.say) + '</div>' +
+        (err && err.documentLabel ? '<div style="margin-top:4px;font-size:11px;color:#7F1D1D;">Document: <strong>' + _shEsc(err.documentLabel) + '</strong>' + (err.templateKey ? ' · Template: <code>' + _shEsc(err.templateKey) + '</code>' : '') + '</div>' : '') +
+        rows +
+        '<div style="margin-top:5px;font-size:11px;color:#7F1D1D;">Where to fix: ' + _shEsc(help.fix) + ' · ' +
+            (reason ? '<code>' + _shEsc(reason) + '</code>' : 'unspecified') + retryHtml + '</div>' +
+    '</div>';
+}
+
+// model = { title, entity_type, entity_id, folder_url, folder_name, folder_error, documents:[], pending,
+//           checking, can_retry, generation_status, error }
 function shDocumentPanelHtml(model) {
     model = model || {};
     var state = shDocPanelState(model);
@@ -1505,10 +1585,27 @@ function shDocumentPanelHtml(model) {
                 '<div class="sh-doc-rest" style="display:none;">' + docs.slice(shown.length).map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id); }).join('') + '</div>';
         }
     }
-    var badge = '<span style="font-size:11px;color:#64748B;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || state) + '</span>';
+    var alert = !!SH_DOC_ALERT_STATE_[state];
+    var badge = '<span style="font-size:11px;color:' + (alert ? '#B91C1C' : '#64748B') + ';">' + _shEsc(SH_DOC_STATE_LABEL_[state] || state) + '</span>';
     return '<div class="sh-doc-panel" data-doc-state="' + _shEsc(state) + '" style="margin-top:12px;padding-top:12px;border-top:1px dashed #E2E8F0;">' +
-        head + body + '<div style="margin-top:6px;">' + badge + '</div>' +
+        head + body + _shDocErrorHtml(model, state) + '<div style="margin-top:6px;">' + badge + '</div>' +
     '</div>';
+}
+// F1-7N-FB-1B §Q/§O — Retry. It regenerates ONLY the missing/failed documents: the backend reuses every
+// already-generated output, so a retry can never duplicate a folder, a file, a PDF or a registry row, and it
+// never re-runs the business transition. Frontend visibility is not authorization — the backend re-checks.
+function shRetryDocument(entityType, entityId, btnEl) {
+    var db = window.KM && window.KM.DB;
+    if (!db || typeof db.retryDocumentGeneration !== 'function') return;
+    if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.textContent = 'Retrying…'; }
+    return Promise.resolve(db.retryDocumentGeneration(entityType || 'shipment', entityId)).then(function (res) {
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Retry'; }
+        if (res && res.success) { _shLoadAndRender(); return; }
+        var reason = (res && (res.error || (res.result && res.result.reason))) || 'Retry failed';
+        if (btnEl) { btnEl.style.color = '#B91C1C'; btnEl.textContent = 'Retry failed'; btnEl.title = String(reason); }
+    }).catch(function () {
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Retry'; }
+    });
 }
 function shDocViewAll(btnEl) {
     var panel = btnEl && btnEl.closest ? btnEl.closest('.sh-doc-panel') : null;
@@ -1644,7 +1741,8 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
         row('Origin → Destination', sum.origin + ' → ' + sum.dest) + row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
         row('Tracking / Container', sum.tracking + ' / ' + sum.container) + row('ETD / ETA', sum.etd + ' / ' + sum.eta) +
         '<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:6px;padding:8px 10px;margin:12px 0;font-size:12px;line-height:1.5;">' +
-          'On confirm: the shipment enters <strong>In Transit</strong>; Factory Stock is <strong>deducted</strong> (canonical movements); the Shipment <strong>Route</strong> and an <strong>initial Event</strong> are created. The route template is auto-resolved from destination + carrier + method.</div>' +
+          'On confirm: the shipment becomes <strong>Shipped</strong>; Factory Stock is <strong>deducted</strong> (canonical movements); the Shipment <strong>Route</strong> and an <strong>initial Event</strong> are created; the applicable <strong>documents</strong> are then generated into Drive. ' +
+          'It moves to <strong>In Transit</strong> by itself on the first real progress beyond the origin. Required documents are checked <strong>before</strong> anything is written — if that check fails the shipment stays Ready to Ship.</div>' +
         '<div id="sh-confirm-status" role="status" aria-live="polite" style="min-height:18px;font-size:12.5px;margin:6px 0;"></div>' +
         '<div id="sh-confirm-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">' +
           '<button type="button" id="sh-confirm-cancel" style="padding:7px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;">Cancel</button>' +
@@ -1683,6 +1781,23 @@ function _shRunConfirm(shipmentId, execPayload) {
     }).then(function (res) {
         if (!res || res.success === false) {
             var stage = (res && res.stage) ? (' [' + res.stage + ']') : '';
+            // D1 — a pre-dispatch document readiness failure. Nothing was written; explain each blocker in the
+            // same plain-language form the Document Panel uses, so the user can act without reading codes.
+            if (res && res.stage === 'document_readiness') {
+                var bl = (res.blockers || []).slice(0, 4).map(function (b) {
+                    var h = _shDocHelp(b && b.reason);
+                    return '<li style="margin-top:3px;">' + _shEsc(h.say) + ' <span style="color:#7F1D1D;">(' + _shEsc(String((b && b.reason) || '')) + (b && b.class_key ? ' · ' + _shEsc(b.class_key) : '') + ')</span><br>' +
+                        '<span style="font-size:11px;">Where to fix: ' + _shEsc((b && b.correction) || h.fix) + '</span></li>';
+                }).join('');
+                if (status) {
+                    status.style.color = '#b91c1c';
+                    status.innerHTML = '<strong>Cannot Confirm — required documents are not ready.</strong>' +
+                        '<ul style="margin:6px 0 0 16px;padding:0;font-size:12px;">' + bl + '</ul>' +
+                        '<div style="margin-top:6px;font-size:11.5px;color:#7F1D1D;">The shipment stays <strong>Ready to Ship</strong>. Nothing was written and no Drive folder or file was created.</div>';
+                }
+                go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
+                return;
+            }
             if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed' + stage + ': ' + ((res && res.error) || 'Unknown error') + ' — shipment_id: ' + shipmentId; }
             go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
             return;
@@ -1691,8 +1806,19 @@ function _shRunConfirm(shipmentId, execPayload) {
         var already = res.already_confirmed ? ' (already confirmed — no duplicate writes)' : '';
         if (status) status.style.color = '#166534';
         var actions = document.getElementById('sh-confirm-actions');
-        if (status) status.innerHTML = '<strong>Confirmed' + already + '.</strong><br>Shipment <code>' + _shEsc(d.shipment_id || shipmentId) + '</code> → <strong>' + _shEsc(d.status || 'in_transit') + '</strong><br>' +
-            'Route initialized: ' + (d.route_nodes_created != null ? d.route_nodes_created : '—') + ' node(s) · Initial Event created: ' + (d.events_created != null ? d.events_created : '—') + ' · Stock movements: ' + (d.stock_movements_created != null ? d.stock_movements_created : '—');
+        var dg = d.document_generation || {};
+        // D2 — a document failure NEVER un-ships a confirmed shipment. Say exactly that, and offer the retry.
+        var docLine = '';
+        if (dg.status === 'READY') {
+            docLine = '<br>Documents: <strong>' + ((dg.generated || 0) + (dg.reused || 0)) + ' of ' + (dg.expected || 0) + '</strong> ready' +
+                (dg.folder_url ? ' · <a href="' + _shEsc(dg.folder_url) + '" target="_blank" rel="noopener noreferrer" style="color:#2563EB;">Open Folder</a>' : '');
+        } else if (dg.status === 'RETRY_REQUIRED') {
+            docLine = '<br><span style="color:#B45309;"><strong>Shipment was confirmed successfully, but one or more documents were not generated. The shipment remains Shipped.</strong> ' +
+                'Retry document generation from the shipment card.</span>';
+        }
+        if (status) status.innerHTML = '<strong>Confirmed' + already + '.</strong><br>Shipment <code>' + _shEsc(d.shipment_id || shipmentId) + '</code> → <strong>' + _shEsc(d.status || 'shipped') + '</strong><br>' +
+            'Route initialized: ' + (d.route_nodes_created != null ? d.route_nodes_created : '—') + ' node(s) · Initial Event created: ' + (d.events_created != null ? d.events_created : '—') + ' · Stock movements: ' + (d.stock_movements_created != null ? d.stock_movements_created : '—') +
+            docLine;
         if (actions) {
             actions.innerHTML = '<button type="button" id="sh-confirm-close" style="padding:7px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;">Close</button>' +
                 '<button type="button" id="sh-confirm-view" style="padding:7px 14px;border:0;background:#0080bb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">View On the Way</button>';
@@ -1766,6 +1892,7 @@ window.toggleShipmentCard = toggleShipmentCard;
 window.shDocumentPanelHtml = shDocumentPanelHtml;
 window.shDocPanelState = shDocPanelState;
 window.shDocViewAll = shDocViewAll;
+window.shRetryDocument = shRetryDocument;
 window._shToggleCardEl = _shToggleCardEl;
 window._shCardFromEvent = _shCardFromEvent;
 window.shSaveExecution = shSaveExecution;

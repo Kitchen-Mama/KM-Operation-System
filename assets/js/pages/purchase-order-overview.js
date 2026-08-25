@@ -227,7 +227,13 @@
                 factoryName: factoryLabel(o, whMap),
                 totalSku: aggSku.length,   // COUNT(DISTINCT sku)
                 totalQty: totalQty,
-                totalCarton: totalCarton
+                totalCarton: totalCarton,
+                // F1-7N-FB-1B §P — backend-projected generated_documents DTOs (never a browser Drive query).
+                documents: o.documents || [],
+                documentFolderUrl: o.documentFolderUrl || '',
+                documentGenerationStatus: o.documentGenerationStatus || '',
+                documentGenerationError: o.documentGenerationError || null,
+                canRetryDocuments: o.canRetryDocuments === true
             };
         }).filter(function (m) { return m.group; });   // hide cancelled / unknown
     }
@@ -395,10 +401,12 @@
     function renderPoDocumentsBlock(m) {
         if (typeof window === 'undefined' || typeof window.shDocumentPanelHtml !== 'function') return '';
         return window.shDocumentPanelHtml({
-            title: 'Purchase Order Documents', entity_id: m.id,
+            title: 'Purchase Order Documents', entity_type: 'purchase_order', entity_id: m.id,
             folder_url: m.documentFolderUrl || '', folder_name: m.documentFolderName || '',
             folder_error: m.documentFolderError || '',
-            documents: m.documents || [], pending: !!m.documentsPending, can_retry: m.canRetryDocuments === true
+            documents: m.documents || [], pending: !!m.documentsPending,
+            generation_status: m.documentGenerationStatus || '', error: m.documentGenerationError || null,
+            can_retry: m.canRetryDocuments === true
         });
     }
 
@@ -725,11 +733,25 @@
             alert('Send PO applies to a Draft PO. This PO is already "' + (PO_STATUS_LABEL[status] || status) + '".');
             return;
         }
-        if (!confirm('Send / issue this PO to the supplier? (order_status: draft → issued)')) return;
+        if (!confirm('Send / issue this PO to the supplier?\n\nThe Purchase Order document is generated first; the PO moves to In Production (order_status: issued) only if it succeeds. No email is sent.')) return;
         var key = id + ':issue';
         if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write (status precheck reads DOM, unchanged until readback)
         window.KM.DB.updatePurchaseOrderStatus({ purchase_order_id: id, transition: 'issue', actor: 'operation-system' })
-            .then(function () { _poEndCmd(key, btn); loadAndRender(); })
+            .then(function (res) {
+                _poEndCmd(key, btn);
+                // F1-7N-FB-1B §C — the required PO document is a HARD gate. On failure the PO is still Draft and
+                // nothing was written, so say exactly that instead of a generic error.
+                if (res && res.success === false && res.stage === 'document_generation') {
+                    var dg = res.document_generation || {};
+                    var miss = (dg.missing || []).slice(0, 6).map(function (m) { return (m && (m.placeholder || m.field)) || ''; }).filter(Boolean).join(', ');
+                    alert('Send PO blocked — the Purchase Order document could not be produced.\n\n' +
+                        'Reason: ' + (dg.reason || 'unknown') + '\n' +
+                        (miss ? 'Missing fields: ' + miss + '\n' : '') +
+                        (dg.configuration_required ? 'Fix in Admin › Document Templates.\n' : '') +
+                        '\nThe PO remains Draft. No status was written and no email was sent.');
+                }
+                loadAndRender();
+            })
             .catch(function (e) { _poEndCmd(key, btn); alert('Send PO failed: ' + (e && e.message ? e.message : e)); });
     }
 
