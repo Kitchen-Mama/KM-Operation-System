@@ -29,6 +29,13 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'shipment.workspace.get', handler: 'handleShipmentWorkspaceGet_', used_by: 'Shipment Draft / Overview / Map' },
   { action: 'purchaseOrder.workspace.get', handler: 'handlePurchaseOrderWorkspaceGet_', used_by: 'Purchase Order Workspace' },
   { action: 'inventoryReplenishment.workspace.get', handler: 'handleInventoryReplenishmentWorkspaceGet_', used_by: 'Site Inventory' },
+  // F1-7N-FB-2A §G — the Execution Plan write/read set. These are the actions the Site Inventory route save
+  // depends on, and a partial sync of 16_ is indistinguishable from a transport fault without probing them.
+  { action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
+  { action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
+  { action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
+  { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
+  { action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
   { action: 'submitAllocationDraftsToShippingPlans', handler: 'handleSubmitAllocationDraftsToShippingPlans_', used_by: 'Site Inventory Submit Plan' },
   { action: 'confirmShipmentAndDispatch', handler: 'handleConfirmShipmentAndDispatch_', used_by: 'Confirm Shipment' },
   { action: 'updatePurchaseOrderStatus', handler: 'handleUpdatePurchaseOrderStatus_', used_by: 'Send PO' },
@@ -41,6 +48,7 @@ var SYS_REQUIRED_ACTIONS_ = [
 
 // The tables the Submit-to-Map vertical slice reads or writes. Reported as present/row-count only.
 var SYS_SLICE_TABLES_ = [
+  'shipping_allocation_drafts', 'shipping_allocation_draft_lines',
   'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_line_allocations',
   'shipment_routes', 'shipment_events', 'shipment_final_output_snapshots', 'shipment_final_output_lines',
   'shipment_final_output_line_pos', 'generated_documents', 'document_templates', 'document_template_fields',
@@ -223,4 +231,291 @@ function TEMP_SUBMIT_FLOW_DIAGNOSE() {
     Logger.log('[SUBMIT-FLOW][visibility] ' + v.page + ' — ' + v.shows);
   });
   (d.blocking_reasons || []).forEach(function (b) { Logger.log('[SUBMIT-FLOW][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
+}
+
+
+// ============================================================================================================
+// F1-7N-FB-2A §F — READ-ONLY Execution Plan (shipping allocation draft) SAVE READINESS.
+// ------------------------------------------------------------------------------------------------------------
+// WHY. The production failure was a bare `BUSINESS_COMMAND_ERROR` on `upsertShippingAllocationDraft`. That is
+// not a backend reason: it is the browser's fallback label for a handler error string it had no code for, and
+// the UI then rendered the message — the only field carrying the real reason — nowhere at all. This diagnostic
+// makes the system state the reason instead of anyone guessing it.
+//
+// HOW. It does NOT reimplement a single business rule. It runs the very gates the write runs, in the same
+// order, against the same live tables:
+//   1. prodRequireSheet_ / prodRequireColumns_ — the VALIDATE-ONLY schema gate that is the first thing
+//      sadUpsertDraftHeaderCore_ touches (via procurementEnsureSheet_). It mutates nothing and throws a
+//      deterministic PRODUCTION_SAFETY:<token>; that token is the highest-value answer this can return, because
+//      it fires before any payload logic and proves a zero-write refusal.
+//   2. sadHeaderRouteIsComplete_ — the real route-completeness predicate.
+//   3. sadResolveActiveDraftK2OrK3_ — the real identity/idempotency authority (CREATE / REUSE / CONFLICT /
+//      BLOCK), which is also what decides INSERT vs UPDATE and the deterministic primary key.
+//   4. sadLegacyReconcileReason_ — the real guard for editing an existing row.
+//   5. auditShippingAllocationSchemaReadOnly (41_) — the existing production header-drift evidence report.
+// Every call above is a READ. Nothing here creates a sheet, appends a column, writes a cell, takes a lock,
+// touches Drive, sends mail or alters Demo data. It NEVER calls procurementEnsureSheet_ on a missing tab path
+// that could provision, never calls a handler, and never claims a write/read round trip occurred.
+//
+// It returns no spreadsheet id, Drive id, token or credential. Row content is never echoed: identities are
+// reported as ids the caller already supplied or as deterministic hashes of the caller's own payload.
+// ============================================================================================================
+
+// Editor-run inputs. Leave a PASTE_ placeholder to skip that part of the evaluation.
+var TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_ = 'PASTE_ALLOCATION_DRAFT_ID_HERE_OR_LEAVE_BLANK';
+// The header payload to evaluate — exactly the shape buildDraftHeaderPayload sends. Fill in the scope + route
+// you are trying to save; blanks are reported as missing rather than guessed.
+var TEMP_SAD_DIAGNOSTIC_HEADER_ = {
+  planning_cycle: '',
+  source_page: 'inventory_replenishment',
+  company: 'PASTE_COMPANY_OR_LEAVE_BLANK',
+  country: 'PASTE_COUNTRY_OR_LEAVE_BLANK',
+  marketplace: 'PASTE_MARKETPLACE_OR_LEAVE_BLANK',
+  recommended_source_warehouse_id: '',
+  recommended_destination_warehouse_id: '',
+  destination_marketplace: '',
+  recommended_shipping_method: '',
+  recommended_last_mile_delivery: ''
+};
+// One representative line, to exercise the real line-completeness + date canonicalization predicates.
+var TEMP_SAD_DIAGNOSTIC_LINE_ = { sku: '', planned_qty: 0, required_by_date: '' };
+
+function sadDiagPlaceholder_(v) {
+  var s = sysStr_(v);
+  return s === '' || s.indexOf('PASTE_') === 0;
+}
+function sadDiagClean_(obj) {
+  var out = {};
+  for (var k in obj) { if (!Object.prototype.hasOwnProperty.call(obj, k)) continue; out[k] = sadDiagPlaceholder_(obj[k]) ? '' : sysStr_(obj[k]); }
+  return out;
+}
+// Run the write path's FIRST gate, read-only, and report the exact token it would raise.
+function sadDiagSchemaGate_(ss, table, headers) {
+  var res = { table: table, present: false, gate: 'UNKNOWN', safety_token: '', missing_headers: [], header_count: 0 };
+  var sheet = null;
+  try { sheet = ss.getSheetByName(table); } catch (e) { sheet = null; }
+  if (!sheet) { res.gate = 'BLOCKED'; res.safety_token = 'SCHEMA_NOT_PROVISIONED'; res.missing_headers = (headers || []).slice(); return res; }
+  res.present = true;
+  try { res.header_count = sheet.getLastColumn(); } catch (e2) {}
+  // The exact validate-only gate the handler hits first. It throws; it never mutates.
+  try {
+    prodRequireSheet_(ss, table, headers || []);
+    res.gate = 'PASS';
+  } catch (gateErr) {
+    res.gate = 'BLOCKED';
+    var m = sysStr_(gateErr && gateErr.message);
+    var tok = m.match(/PRODUCTION_SAFETY:([A-Z_]+)/);
+    res.safety_token = tok ? tok[1] : 'SCHEMA_REFUSED';
+  }
+  // Which canonical headers the live tab does not have (names only — no row content).
+  try {
+    var lastCol = sheet.getLastColumn();
+    var actual = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return sysStr_(h); }) : [];
+    var have = {}; actual.forEach(function (h) { have[h] = 1; });
+    res.missing_headers = (headers || []).filter(function (h) { return !have[h]; });
+  } catch (e3) {}
+  return res;
+}
+// FK readiness — does the id the payload carries exist in its master table? Presence only; no row echo.
+function sadDiagIdExists_(ss, table, column, value) {
+  if (!sysStr_(value)) return null;   // nothing supplied -> not applicable
+  try {
+    var sh = ss.getSheetByName(table); if (!sh) return false;
+    var d = sh.getDataRange().getValues(); if (d.length < 2) return false;
+    var h = d[0].map(function (x) { return sysStr_(x).toLowerCase(); });
+    var c = h.indexOf(String(column).toLowerCase()); if (c === -1) return false;
+    for (var r = 1; r < d.length; r++) { if (sysStr_(d[r][c]) === sysStr_(value)) return true; }
+    return false;
+  } catch (e) { return false; }
+}
+
+function handleShippingAllocationDraftDiagnostic_(body) {
+  var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('SADDIAG-' + Utilities.getUuid().substring(0, 8).toUpperCase());
+  var header = sadDiagClean_((body && body.header) || {});
+  var line = (body && body.line) ? body.line : null;
+  var draftId = sysStr_(body && (body.allocation_draft_id || body.allocationDraftId));
+  var out = {
+    success: true, request_id: requestId,
+    read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
+    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_BUILD_VERSION_,
+    evaluator: 'production (prodRequireSheet_ + sadHeaderRouteIsComplete_ + sadResolveActiveDraftK2OrK3_ + sadLegacyReconcileReason_)'
+  };
+  var blockers = [];
+
+  // 1. action + handler availability (probed by symbol, never invoked)
+  var router = sysRouterReadiness_();
+  var wanted = ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'];
+  out.actions = router.actions.filter(function (a) { return wanted.indexOf(a.action) !== -1; });
+  out.actions_all_available = out.actions.length === wanted.length && out.actions.every(function (a) { return a.available; });
+  if (!out.actions_all_available) blockers.push({ reason: 'ROUTER_ACTION_OR_HANDLER_MISSING', detail: 'a required allocation-draft action is not present in the DEPLOYED code (partial Apps Script sync)' });
+
+  var ss;
+  try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
+  catch (e) {
+    out.verdict = 'BLOCKED';
+    out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE', detail: 'the configured production database could not be opened' }];
+    return jsonResponse_(out);
+  }
+
+  // 2. the write path's first gate, run read-only on BOTH tables
+  out.schema_gate = [
+    sadDiagSchemaGate_(ss, 'shipping_allocation_drafts', (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : []),
+    sadDiagSchemaGate_(ss, 'shipping_allocation_draft_lines', (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : [])
+  ];
+  out.schema_mode = 'EXACT_LIVE_30_COL_AUTHORITY (C2-D1R; order-sensitive, no additive tolerance in normal runtime)';
+  for (var i = 0; i < out.schema_gate.length; i++) {
+    var g = out.schema_gate[i];
+    if (g.gate !== 'PASS') blockers.push({ reason: 'PRODUCTION_SAFETY:' + (g.safety_token || 'SCHEMA_REFUSED'), detail: g.table + (g.missing_headers.length ? (' — missing header(s): ' + g.missing_headers.join(', ')) : ' — header row does not match the canonical authority in the expected order') });
+  }
+
+  // 3. the existing production header-drift evidence report (41_), summarized — never the row content
+  if (typeof auditShippingAllocationSchemaReadOnly === 'function') {
+    try {
+      var audit = auditShippingAllocationSchemaReadOnly();
+      out.schema_audit = ((audit && audit.tables) || []).map(function (t) {
+        return { table: t.table, exists: t.exists, column_count: t.columnCount, exact_match: t.exactMatch,
+          first_mismatch_index: t.firstMismatchIndex, missing_headers: t.missingHeaders || [],
+          extra_headers: t.extraHeaders || [], reordered_headers: t.reorderedHeaders || [],
+          migration_classification: t.migrationClassification };
+      });
+      if (audit && audit.error) out.schema_audit_error = sysStr_(audit.error);
+    } catch (auditErr) { out.schema_audit_error = 'AUDIT_UNAVAILABLE'; }
+  }
+
+  // 4. payload field contract — report what is present/absent; never invent a value
+  var routeFields = ['company', 'country', 'marketplace', 'recommended_source_warehouse_id',
+    'recommended_destination_warehouse_id', 'destination_marketplace', 'recommended_shipping_method'];
+  var present = {}, absent = [];
+  routeFields.forEach(function (f) { var v = sysStr_(header[f]); present[f] = v !== ''; if (v === '') absent.push(f); });
+  out.payload_field_contract = { supplied: present, absent: absent,
+    note: 'destination_marketplace is an ACCEPTED payload field but is NOT a stored column — it makes an Amazon logical destination a valid To.' };
+
+  // 5. route completeness — the REAL predicate
+  var routeComplete = (typeof sadHeaderRouteIsComplete_ === 'function') ? sadHeaderRouteIsComplete_(header) : null;
+  out.route_complete = routeComplete;
+  out.source_destination_readiness = {
+    source_warehouse_id: sysStr_(header.recommended_source_warehouse_id) || null,
+    source_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_source_warehouse_id),
+    destination_warehouse_id: sysStr_(header.recommended_destination_warehouse_id) || null,
+    destination_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_destination_warehouse_id),
+    destination_is_logical_marketplace: sysStr_(header.destination_marketplace) !== '',
+    shipping_method: sysStr_(header.recommended_shipping_method) || null
+  };
+  if (routeComplete === false) blockers.push({ reason: 'PLAN_HEADER_INCOMPLETE', detail: 'a Draft route requires From + To + Method (an Amazon logical destination counts as To); a partial route is refused with zero rows written' });
+  if (out.source_destination_readiness.source_exists_in_warehouses === false) blockers.push({ reason: 'FK_SOURCE_WAREHOUSE_NOT_FOUND', detail: 'the supplied source warehouse_id is not present in warehouses' });
+  if (out.source_destination_readiness.destination_exists_in_warehouses === false) blockers.push({ reason: 'FK_DESTINATION_WAREHOUSE_NOT_FOUND', detail: 'the supplied destination warehouse_id is not present in warehouses' });
+
+  // 6. identity / idempotency / INSERT-vs-UPDATE — the REAL resolution authority
+  out.pk_readiness = { deterministic: false, expected_allocation_draft_id: null, basis: null };
+  out.idempotency = { keyed_by: 'the deterministic K2 shipment-group hash of the header route dims (sadK2DeterministicHeaderId_), so a retry UPDATES the same row instead of inserting a duplicate', resolution: null };
+  var dsh = null;
+  try { dsh = ss.getSheetByName('shipping_allocation_drafts'); } catch (e4) { dsh = null; }
+  if (dsh && typeof sadResolveActiveDraftK2OrK3_ === 'function') {
+    try {
+      if (draftId && !sadDiagPlaceholder_(draftId)) {
+        // explicit id path — the same guard the handler applies before editing an existing row
+        var found = (typeof procurementFindRow_ === 'function') ? procurementFindRow_(dsh, 'allocation_draft_id', draftId) : null;
+        out.pk_readiness = { deterministic: true, expected_allocation_draft_id: draftId, basis: 'explicit allocation_draft_id supplied by the caller' };
+        out.expected_classification = found ? 'UPDATE' : 'INSERT';
+        out.idempotency.resolution = found ? 'EXISTING_ROW' : 'ID_NOT_FOUND';
+        if (found && typeof sadLegacyReconcileReason_ === 'function') {
+          var legR = sadLegacyReconcileReason_(dsh, found, false);
+          out.reconcile_guard = legR || 'PASS';
+          if (legR) blockers.push({ reason: legR, detail: (typeof sadReconcileMessage_ === 'function') ? sadReconcileMessage_(legR) : 'requires an explicit user migration' });
+        }
+      } else {
+        var res = sadResolveActiveDraftK2OrK3_(dsh, header, { allowLegacyReconcile: false });
+        out.idempotency.resolution = res.status + (res.k2 ? ' (K2 shipment group)' : ' (K3 scope)');
+        if (res.status === 'CREATE' || res.status === 'REUSE') {
+          out.pk_readiness = { deterministic: true, expected_allocation_draft_id: sysStr_(res.id) || null,
+            basis: res.k2 ? 'deterministic K2 shipment-group hash of the header route dims' : 'existing active draft for this scope' };
+          out.expected_classification = (res.status === 'CREATE') ? 'INSERT' : 'UPDATE';
+        } else if (res.status === 'CONFLICT') {
+          out.expected_classification = 'BLOCKED';
+          blockers.push({ reason: 'BLOCKED_CONFLICT', detail: 'more than one active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + '; resolve manually (zero rows written)' });
+        } else {
+          out.expected_classification = 'BLOCKED';
+          blockers.push({ reason: sysStr_(res.reason) || 'BLOCK', detail: 'the real draft-resolution authority refuses this payload with zero rows written' });
+        }
+      }
+    } catch (resErr) {
+      out.idempotency.resolution = 'EVALUATION_FAILED';
+      blockers.push({ reason: 'DRAFT_RESOLUTION_EVALUATION_FAILED', detail: 'the resolver could not be evaluated against the live table' });
+    }
+  }
+
+  // 7. line quantity / date validity — the REAL predicates
+  if (line && (sysStr_(line.sku) || Number(line.planned_qty) > 0)) {
+    var lineOk = (typeof sadLineIsComplete_ === 'function') ? sadLineIsComplete_(line) : null;
+    var canonDate = (typeof sadCanonDate_ === 'function' && sysStr_(line.required_by_date)) ? sadCanonDate_(line.required_by_date) : '';
+    out.line_readiness = { sku_present: sysStr_(line.sku) !== '', planned_qty: Number(line.planned_qty) || 0,
+      complete: lineOk, required_by_date_canonical: canonDate || null,
+      // sadCanonDate_ echoes an unparseable value back unchanged, so validity is the canonical SHAPE, not
+      // merely a non-empty return.
+      date_valid: sysStr_(line.required_by_date) === '' ? null : /^\d{4}-\d{2}-\d{2}$/.test(canonDate) };
+    if (lineOk === false) blockers.push({ reason: 'PLAN_LINE_INCOMPLETE', detail: 'a persistable line needs a SKU and a quantity greater than zero' });
+    if (out.line_readiness.date_valid === false) blockers.push({ reason: 'LINE_DATE_NOT_CANONICAL', detail: 'required_by_date is not canonicalizable to YYYY-MM-DD' });
+  }
+
+  // 8. the exact rows a successful save WOULD write — a manifest, not a write
+  out.expected_write_manifest = (blockers.length)
+    ? [{ table: '(none)', operation: 'ZERO_WRITE', rows: 'every reason above is a pre-write refusal — no cell would be touched' }]
+    : [
+      { table: 'shipping_allocation_drafts', operation: out.expected_classification || 'INSERT_OR_UPDATE', rows: 'exactly one header row, keyed by the deterministic allocation_draft_id above' },
+      { table: 'shipping_allocation_draft_lines', operation: 'UPSERT_BY_LINE_ID', rows: 'one row per COMPLETE Execution Plan line; recommendation-snapshot columns are preserved when the payload omits them' }
+    ];
+  out.blocking_reasons = blockers;
+  out.verdict = blockers.length ? 'BLOCKED' : 'READY';
+  out.exact_blocking_reason = blockers.length ? (blockers[0].reason + ' — ' + (blockers[0].detail || '')) : '';
+  return jsonResponse_(out);
+}
+
+function TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE() {
+  var hdr = sadDiagClean_(TEMP_SAD_DIAGNOSTIC_HEADER_);
+  var did = sadDiagPlaceholder_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_) ? '' : sysStr_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_);
+  var d = {};
+  try {
+    d = JSON.parse(handleShippingAllocationDraftDiagnostic_({
+      header: hdr, line: TEMP_SAD_DIAGNOSTIC_LINE_, allocation_draft_id: did
+    }).getContent());
+  } catch (e) { Logger.log('[SAD-DIAG] UNPARSEABLE'); return; }
+
+  Logger.log('[SAD-DIAG] verdict=' + d.verdict + ' | exact_blocking_reason=' + (d.exact_blocking_reason || '(none)'));
+  Logger.log('[SAD-DIAG] evaluator=' + d.evaluator);
+  Logger.log('[SAD-DIAG] actions_all_available=' + d.actions_all_available);
+  (d.actions || []).forEach(function (a) { Logger.log('[SAD-DIAG][action] ' + a.action + ' available=' + a.available); });
+  (d.schema_gate || []).forEach(function (g) {
+    Logger.log('[SAD-DIAG][schema-gate] ' + g.table + ' present=' + g.present + ' gate=' + g.gate +
+      ' token=' + (g.safety_token || '-') + ' header_count=' + g.header_count +
+      ' missing=[' + (g.missing_headers || []).join(',') + ']');
+  });
+  Logger.log('[SAD-DIAG] schema_mode=' + d.schema_mode);
+  (d.schema_audit || []).forEach(function (t) {
+    Logger.log('[SAD-DIAG][header-drift] ' + t.table + ' exists=' + t.exists + ' cols=' + t.column_count +
+      ' exact=' + t.exact_match + ' first_mismatch_index=' + t.first_mismatch_index +
+      ' missing=[' + (t.missing_headers || []).join(',') + '] extra=[' + (t.extra_headers || []).join(',') +
+      '] reordered=[' + (t.reordered_headers || []).join(',') + '] classification=' + t.migration_classification);
+  });
+  if (d.schema_audit_error) Logger.log('[SAD-DIAG][header-drift] error=' + d.schema_audit_error);
+  Logger.log('[SAD-DIAG] payload absent_fields=[' + ((d.payload_field_contract && d.payload_field_contract.absent) || []).join(',') + ']');
+  Logger.log('[SAD-DIAG] route_complete=' + d.route_complete);
+  var sd = d.source_destination_readiness || {};
+  Logger.log('[SAD-DIAG] from=' + sd.source_warehouse_id + ' fk_ok=' + sd.source_exists_in_warehouses +
+    ' | to=' + sd.destination_warehouse_id + ' fk_ok=' + sd.destination_exists_in_warehouses +
+    ' logical_marketplace_to=' + sd.destination_is_logical_marketplace + ' | method=' + sd.shipping_method);
+  var pk = d.pk_readiness || {};
+  Logger.log('[SAD-DIAG] pk_deterministic=' + pk.deterministic + ' expected_id=' + pk.expected_allocation_draft_id + ' basis=' + pk.basis);
+  Logger.log('[SAD-DIAG] idempotency=' + ((d.idempotency && d.idempotency.resolution) || '-') + ' expected_classification=' + d.expected_classification);
+  if (d.reconcile_guard) Logger.log('[SAD-DIAG] reconcile_guard=' + d.reconcile_guard);
+  if (d.line_readiness) Logger.log('[SAD-DIAG] line complete=' + d.line_readiness.complete + ' qty=' + d.line_readiness.planned_qty +
+    ' date_canonical=' + d.line_readiness.required_by_date_canonical + ' date_valid=' + d.line_readiness.date_valid);
+  (d.expected_write_manifest || []).forEach(function (m) { Logger.log('[SAD-DIAG][would-write] ' + m.table + ' ' + m.operation + ' — ' + m.rows); });
+  (d.blocking_reasons || []).forEach(function (b) { Logger.log('[SAD-DIAG][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
+  Logger.log('[SAD-DIAG] request_id=' + d.request_id);
+  Logger.log('READ_ONLY = ' + d.read_only);
+  Logger.log('DB_WRITES = ' + d.db_writes);
+  Logger.log('DRIVE_WRITES = ' + d.drive_writes);
+  Logger.log('STATUS_TRANSITIONS = ' + d.status_transitions);
+  Logger.log('EMAILS = ' + d.emails);
+  Logger.log('DEMO_MUTATIONS = ' + d.demo_mutations);
 }

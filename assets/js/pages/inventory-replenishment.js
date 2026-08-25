@@ -1680,6 +1680,12 @@ function _irApplyInventoryColumnModel(fulfillmentModel) {
 }
 
 function renderReplenishment() {
+    // F1-7N-FB-2A §B — THE gate. Placed before getReplenishmentData() so that NO caller of
+    // renderReplenishment() — the mount, an LTS change, a post-write reconcile, the async recommendation
+    // re-render — can paint inventory rows the user never searched for. Demo mode is unchanged (it needs no
+    // Search and holds its own static dataset).
+    if (!(typeof _replenDemoOn === 'function' && _replenDemoOn()) && !_irSearchApplied_()) { _irRenderSearchGate_(); return; }
+    if (_irSearch.status === 'LOADING' || _irSearch.status === 'ERROR') { _irRenderSearchGate_(); return; }
     const allData = getReplenishmentData();
 
     // Category rail renders FIRST and UNCONDITIONALLY — BEFORE the table-body guard below. It must
@@ -1744,6 +1750,17 @@ function renderReplenishment() {
         </div>
     `).join('');
     
+    // F1-7N-FB-2A §B — EMPTY is a distinct state and reachable ONLY from a rendered (i.e. successful,
+    // applied) Search. It is never shown before one: PRE_SEARCH owns that case. Placed after the row render
+    // so an LTS change re-evaluates it too, and it replaces the previously BLANK body on a zero-row result.
+    if (!data.length && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) {
+        _irSearch.status = 'EMPTY';
+        scrollBody.innerHTML = '<div class="replen-empty replen-search-empty" style="color:#64748B;padding:10px;">' +
+            'No SKUs match the searched Country / Marketplace' + ((_irRenderScope_().ltsFilter) ? ' and LTS filter' : '') + '.</div>';
+        fixedBody.innerHTML = '';
+    } else if (data.length) {
+        _irSearch.status = 'READY';
+    }
     // Initialize header scroll sync
     initReplenHeaderSync();
     // F1-7N: adapt the Inventory columns to the selected marketplace's fulfillment model (SELF_FULFILLED hides Current Stock).
@@ -2263,6 +2280,20 @@ function submitReplenishmentPlans() {
     // _opDbCache, which an F1-7L zero-prime session never has — so on the deployed site this gate silently
     // failed and Submit fell into the sessionStorage branch below, alerting "created (Demo / local mode)" while
     // persisting NOTHING. A business write must never have an automatic production fallback.
+    // F1-7N-FB-2A §D — Submit must never carry an unpersisted Execution Plan row. The canonical Submit sends
+    // only persisted allocation_draft_id(s) and the backend re-reads the persisted rows, so an unsaved route
+    // would be SILENTLY DROPPED from the submitted plan — a partially-submitted plan that looks complete. Fail
+    // CLOSED instead, naming the routes that must be fixed first. This runs before any request.
+    if (typeof _irHasUnsavedRoutes_ === 'function' && _irHasUnsavedRoutes_()) {
+        var _unsaved = _irUnsavedSkus_();
+        var _first = _irUnsavedRoutes[_unsaved[0]] || {};
+        alert('Cannot Submit Plan — ' + _unsaved.length + ' Execution Plan route(s) are NOT saved to the database.\n\n' +
+            'Unsaved: ' + _unsaved.join(', ') + '\n' +
+            'Reason: ' + (_first.code || 'SAVE_FAILED') + (_first.message ? ('\n' + _first.message) : '') + '\n\n' +
+            'Nothing was submitted and nothing was written. Correct and save every route first — Submit only ever ' +
+            'consumes persisted draft rows, so an unsaved route would be silently missing from the plan.');
+        return;   // fail CLOSED
+    }
     var _db = window.KM && window.KM.DB;
     var _hasSubmitApi = !!(_db && _db.submitAllocationDraftsToShippingPlans);
     var _writeEligible = !!(_db && _db.isProductionWriteEligible && _db.isProductionWriteEligible());
@@ -2381,9 +2412,81 @@ function _replenCtxEq(a, b) {
     return !!a && !!b && a.company === b.company && a.country === b.country && a.marketplace === b.marketplace;
 }
 function _persistAllocationDraft() {
-    // sessionStorage is a UI RECOVERY CACHE only — NOT the Draft SSOT (Round 4 Decision E).
-    try { sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(replenAllocationDraft)); } catch (e) {}
+    // sessionStorage is a UI RECOVERY CACHE only — NOT the Draft SSOT (Round 4 Decision E). F1-7N-FB-2A §D:
+    // the cache now carries the UNSAVED marks alongside the typed values, so restoring it after a reload
+    // re-establishes "this route was never persisted" instead of promoting a failed write into canonical
+    // state. The values are kept ONLY so the user can correct and retry them.
+    try {
+        var snapshot = {};
+        for (var k in replenAllocationDraft) { if (Object.prototype.hasOwnProperty.call(replenAllocationDraft, k)) snapshot[k] = replenAllocationDraft[k]; }
+        snapshot._unsavedRoutes = (typeof _irUnsavedRoutes === 'object' && _irUnsavedRoutes) ? _irUnsavedRoutes : {};
+        sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(snapshot));
+    } catch (e) {}
 }
+// ============================================================================
+// F1-7N-FB-2A §D — NO LOCAL PERSISTENCE FALLBACK FOR A BUSINESS WRITE.
+// ----------------------------------------------------------------------------
+// The production screenshot said "Could not save to the database — kept locally", which is a false
+// persistence claim: the route lived on only in the sessionStorage recovery cache, was restored on reload as
+// though it were canonical, and Submit Plan read that same in-memory Working Draft. The frozen rule now is:
+//   • a failed write is NEVER represented as Saved;
+//   • the typed values STAY VISIBLE so the user can correct and retry — labelled `Unsaved — database update
+//     failed`, never silently;
+//   • the sessionStorage cache carries the UNSAVED marks with it, so a reload cannot promote a failed write
+//     into canonical state;
+//   • Submit Plan FAILS CLOSED while any route is unsaved;
+//   • Saved requires a backend acknowledgement carrying the persisted primary key AND its
+//     persisted/reused classification (created|updated) — never a bare success flag;
+//   • retry reuses the SAME idempotency identity (the deterministic allocation_draft_id / line id the
+//     handler assigns), so a retry updates the same row instead of inserting a duplicate.
+var _irUnsavedRoutes = {};   // sku -> { code, message, table, requestId, retryable, nextAction, at }
+function _irMarkRouteUnsaved_(sku, err) {
+    var s = (err && err.structured) || {};
+    _irUnsavedRoutes[String(sku)] = {
+        code: String(s.code || 'SAVE_FAILED'),
+        message: String(s.message || (err && err.message) || 'save failed'),
+        table: String(s.table || ''),
+        requestId: String(s.requestId || ''),
+        retryable: s.retryable !== false,
+        nextAction: String(s.nextAction || ''),
+        at: String(s.at || '')
+    };
+    _persistAllocationDraft();   // carries the UNSAVED marks — see _persistAllocationDraft
+    _irRenderUnsavedBanner_();
+}
+function _irClearRouteUnsaved_(sku) {
+    if (_irUnsavedRoutes[String(sku)]) { delete _irUnsavedRoutes[String(sku)]; _persistAllocationDraft(); _irRenderUnsavedBanner_(); }
+}
+function _irUnsavedSkus_() { return Object.keys(_irUnsavedRoutes); }
+function _irHasUnsavedRoutes_() { return _irUnsavedSkus_().length > 0; }
+// A backend save counts as PERSISTED only with the primary key AND the insert/update classification.
+function _irSaveAcknowledged_(res) {
+    if (!res || res.success === false) return null;
+    var d = res.data || {};
+    var pk = String(d.allocation_draft_id == null ? '' : d.allocation_draft_id).trim();
+    if (!pk) return null;
+    var created = d.created === true, updated = d.updated === true;
+    if (!created && !updated) return null;   // no persisted/reused classification -> NOT proven persisted
+    return { allocation_draft_id: pk, classification: created ? 'created' : 'updated' };
+}
+function _irRenderUnsavedBanner_() {
+    var host = _irStateHost_(); if (!host) return;
+    var skus = _irUnsavedSkus_();
+    var existing = host.querySelector('.replen-unsaved-banner');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    if (!skus.length) { if (!host.innerHTML) { host.style.display = 'none'; } return; }
+    var html = '<div class="replen-unsaved-banner" role="alert" style="background:#FEF2F2;border-left:3px solid #EF4444;color:#B91C1C;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+        '<strong>Unsaved — database update failed.</strong> ' + _irEsc_(String(skus.length)) +
+        ' Execution Plan route(s) were NOT saved: ' + _irEsc_(skus.join(', ')) +
+        '. They are kept on screen so you can correct and retry them. Submit Plan is blocked until every route is saved.' +
+        '</div>';
+    host.insertAdjacentHTML('afterbegin', html);
+    host.style.display = '';
+}
+window._irUnsavedRoutes_ = function () { return _irUnsavedRoutes; };
+window._irHasUnsavedRoutes_ = _irHasUnsavedRoutes_;
+window._irSaveAcknowledged_ = _irSaveAcknowledged_;
+
 // ── Draft DB persistence (Round 4 Decision E + System Repair 2 Part A) ───────────────────────────────
 // SSOT = shipping_allocation_drafts / _lines. A working-draft route is persisted ONLY when it is a
 // COMPLETE Execution Plan line (From + To + Qty>0 + Method — the single shared IRDraft.isRouteComplete
@@ -2518,7 +2621,19 @@ function _cancelAllocationDraftHeader() {
         var ctx = _replenCtx();
         var header = window.IRDraft.buildDraftHeaderPayload({ allocation_draft_id: draftId, company: ctx.company, country: ctx.country, marketplace: ctx.marketplace, status: 'cancelled' });
         replenAllocationDraft.allocationDraftId = '';
-        return window.KM.DB.upsertShippingAllocationDraft(header);
+        // F1-7N-FB-2A §D — the local id is cleared optimistically (a fresh complete route must start a new
+        // header), so a FAILED cancel would otherwise be invisible: the draft stays active in the DB while the
+        // page has forgotten it, and the next save resolves to a second active draft — a BLOCKED_CONFLICT with
+        // no explanation. Record the failure as UNSAVED so it is visible and Submit is blocked.
+        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header))
+            .then(function (res) {
+                if (!res || res.success === false) {
+                    _irMarkRouteUnsaved_('draft:' + draftId, _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_drafts', 'draft header cancel failed'));
+                }
+                return res;
+            })['catch'](function (e2) {
+                _irMarkRouteUnsaved_('draft:' + draftId, _irMakeDraftSaveError_({ code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) }, 'shipping_allocation_drafts', 'draft header cancel failed'));
+            });
     } catch (e) { console.warn('[replen] cancel draft header error:', e); }
 }
 window._cancelAllocationDraftHeader = _cancelAllocationDraftHeader;
@@ -2577,7 +2692,14 @@ function _flushDraftDbPersist(sku) {
         });
         return window.KM.DB.upsertShippingAllocationDraft(header).then(function (hres) {
             if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
-            var draftId = (hres.data && hres.data.allocation_draft_id) || replenAllocationDraft.allocationDraftId;
+            // F1-7N-FB-2A §D — a bare success flag is NOT proof of persistence. Require the persisted primary
+            // key AND the created/updated classification the canonical handler returns; anything less is
+            // treated as a failed save (UNSAVED), never as Saved.
+            var ack = _irSaveAcknowledged_(hres);
+            if (!ack) throw _irMakeDraftSaveError_({ code: 'PERSISTENCE_NOT_ACKNOWLEDGED',
+                message: 'The save response did not contain a persisted allocation_draft_id with a created/updated classification, so the row cannot be treated as persisted.' },
+                'shipping_allocation_drafts', 'draft header upsert unacknowledged');
+            var draftId = ack.allocation_draft_id;
             replenAllocationDraft.allocationDraftId = draftId;
             var lines = complete.map(function (r) {
                 return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
@@ -2585,13 +2707,20 @@ function _flushDraftDbPersist(sku) {
             return window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftId, lines: lines });
         }).then(function (lres) {
             if (lres && lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
+            // Both writes acknowledged → this SKU's route is genuinely persisted. Clear any prior UNSAVED mark
+            // (a retry that reuses the same deterministic identity updates the same row — no duplicate).
+            _irClearRouteUnsaved_(sku);
+            if (typeof _irHideDraftSaveError === 'function') _irHideDraftSaveError(sku);
             _draftDbInFlight[sku] = false;
             if (_draftDbDirty[sku]) { _draftDbDirty[sku] = false; _flushDraftDbPersist(sku); }   // coalesced edit → one more write
-        }).catch(function (err) {
+        })['catch'](function (err) {
             _draftDbInFlight[sku] = false;
-            // Never fake success; keep the sessionStorage recovery cache so the user can retry.
+            // F1-7N-FB-2A §D — FAIL CLOSED. Never fake success and never let the local cache stand in for the
+            // row: the route is recorded as UNSAVED (visible label + Submit blocked) and the typed values are
+            // kept only so the user can correct and retry.
+            _irMarkRouteUnsaved_(sku, err);
             if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, err);
-            console.warn('[replen] Draft DB persistence failed (kept local cache):', err && err.message ? err.message : err);
+            console.warn('[replen] Draft DB persistence FAILED — route marked UNSAVED (nothing was persisted):', err && err.message ? err.message : err);
         });
     } catch (e) { _draftDbInFlight[sku] = false; console.warn('[replen] Draft DB persistence error:', e); }
 }
@@ -2608,14 +2737,80 @@ function _irMakeDraftSaveError_(raw, table, fallbackMsg) {
     var info = (raw && typeof raw === 'object') ? raw : { message: (raw == null ? '' : String(raw)) };
     var det = (info && info.details) || {};
     var e = new Error(String(info.message || fallbackMsg || 'save failed'));
+    var msg = String(info.message || fallbackMsg || 'save failed');
+    var code = String(info.code || 'SAVE_FAILED');
     e.structured = {
-        code: String(info.code || 'SAVE_FAILED'),
+        code: code,
+        // F1-7N-FB-2A §E — the TYPED INNER REASON. `BUSINESS_COMMAND_ERROR` is not a backend reason at all: it
+        // is the client's fallback label for a handler error string it has no code for, and the real reason has
+        // always been sitting in `message` — which the previous UI rendered nowhere. The allocation-draft
+        // handler can answer with a dozen typed reasons outside the canonical code list (ROUTE_INCOMPLETE_NEW_
+        // DRAFT / LEGACY_ROUTE_RECONCILIATION_REQUIRED / K2_ROUTE_RECONCILIATION_REQUIRED, a lock-unavailable
+        // stage, or a PRODUCTION_SAFETY:<schema token> thrown by the validate-only prodRequireSheet_ gate), so
+        // the reason is extracted and shown instead of being thrown away.
+        reasonCode: _irTypedReasonCode_(code, msg),
         table: String(det.table || det.affectedTable || table || ''),
         missingHeader: String(det.missingHeader || det.header || ''),
+        missingFields: (det.missing && det.missing.join) ? det.missing.join(', ') : String(det.missingFields || ''),
+        schemaMismatch: String(det.schemaStatus || det.schemaMismatch || ''),
+        entityKey: String(det.existing_id || det.allocation_draft_id || ''),
         requestId: String(det.requestId || det.command || ''),
-        message: String(info.message || fallbackMsg || 'save failed')
+        // Zero-write is only claimed when the server said so, or when the reason is a documented pre-write
+        // gate. It is never assumed from a generic failure.
+        zeroWrite: (det.zero_write === true) || _irReasonIsPreWrite_(msg) ? 'true' : 'unknown',
+        retryable: _irReasonRetryable_(code, msg),
+        nextAction: _irReasonNextAction_(code, msg),
+        message: msg
     };
     return e;
+}
+// Extract the handler's own typed token from the error text when the transport layer had no code for it. The
+// canonical tokens are LEADING in the handler's error string, and PRODUCTION_SAFETY carries its token inline.
+var IR_DRAFT_TYPED_REASONS_ = ['ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED',
+    'K2_ROUTE_RECONCILIATION_REQUIRED', 'PLAN_HEADER_INCOMPLETE', 'PLAN_LINE_INCOMPLETE', 'BLOCKED_CONFLICT',
+    'IMMUTABLE_TERMINAL_STATUS', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'SOURCE_AVAILABLE_QTY_EXCEEDED',
+    'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PERSISTENCE_NOT_ACKNOWLEDGED'];
+function _irTypedReasonCode_(code, message) {
+    var m = String(message == null ? '' : message);
+    var ps = m.match(/PRODUCTION_SAFETY:([A-Z_]+)/);
+    if (ps) return 'PRODUCTION_SAFETY:' + ps[1];
+    for (var i = 0; i < IR_DRAFT_TYPED_REASONS_.length; i++) {
+        if (m.indexOf(IR_DRAFT_TYPED_REASONS_[i]) !== -1) return IR_DRAFT_TYPED_REASONS_[i];
+    }
+    if (/could not acquire lock/i.test(m)) return 'LOCK_UNAVAILABLE';
+    if (/^lock error/i.test(m)) return 'LOCK_ERROR';
+    return String(code || 'SAVE_FAILED');
+}
+// A documented pre-write gate proves ZERO rows were written; the handler states it explicitly.
+function _irReasonIsPreWrite_(message) {
+    var m = String(message == null ? '' : message);
+    return /zero rows written/i.test(m) || /PRODUCTION_SAFETY:/.test(m) || /could not acquire lock/i.test(m);
+}
+function _irReasonRetryable_(code, message) {
+    var r = _irTypedReasonCode_(code, message);
+    if (r === 'LOCK_UNAVAILABLE' || r === 'LOCK_ERROR' || code === 'HTTP_TRANSPORT_ERROR' || code === 'NON_JSON_RESPONSE') return true;
+    if (r.indexOf('PRODUCTION_SAFETY:') === 0) return false;      // a schema/target fault will not fix itself
+    if (r === 'ROUTE_INCOMPLETE_NEW_DRAFT' || r === 'PLAN_HEADER_INCOMPLETE' || r === 'PLAN_LINE_INCOMPLETE') return true;   // fix the route, then retry
+    if (r === 'LEGACY_ROUTE_RECONCILIATION_REQUIRED' || r === 'K2_ROUTE_RECONCILIATION_REQUIRED' ||
+        r === 'BLOCKED_CONFLICT' || r === 'IMMUTABLE_TERMINAL_STATUS') return false;   // needs an explicit migration/decision
+    return true;
+}
+function _irReasonNextAction_(code, message) {
+    var r = _irTypedReasonCode_(code, message);
+    if (r.indexOf('PRODUCTION_SAFETY:') === 0)
+        return 'The database tab or its header row does not match the expected schema, so the write was refused before touching any cell. Run TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE in the Apps Script editor — it reports the exact table and header difference read-only.';
+    if (r === 'ROUTE_INCOMPLETE_NEW_DRAFT' || r === 'PLAN_HEADER_INCOMPLETE')
+        return 'Complete the route (From + To + Method) on this Execution Plan row, then retry.';
+    if (r === 'PLAN_LINE_INCOMPLETE') return 'Give the line a SKU and a quantity greater than zero, then retry.';
+    if (r === 'LEGACY_ROUTE_RECONCILIATION_REQUIRED' || r === 'K2_ROUTE_RECONCILIATION_REQUIRED')
+        return 'An existing Draft for this scope cannot be reconciled automatically. It needs an explicit user migration — it is never auto-healed or overwritten.';
+    if (r === 'BLOCKED_CONFLICT') return 'More than one active Draft exists for this scope. Resolve the duplicate before saving.';
+    if (r === 'IMMUTABLE_TERMINAL_STATUS') return 'This Draft is already submitted or cancelled and can no longer be edited.';
+    if (r === 'LOCK_UNAVAILABLE' || r === 'LOCK_ERROR') return 'The database was briefly locked by another write. Retry in a moment — nothing was written.';
+    if (r === 'PERSISTENCE_NOT_ACKNOWLEDGED') return 'The server did not confirm a persisted row id. Retry, then verify with TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE before submitting.';
+    if (code === 'HTTP_TRANSPORT_ERROR' || code === 'NON_JSON_RESPONSE')
+        return 'The request never reached a working deployment. Verify the Apps Script deployment (system.health), then retry.';
+    return 'Correct the route and retry. Nothing has been saved for this row.';
 }
 // F1-7N-FA-3C-R6E-P0 — SAFE STRUCTURED save-error surface. Never fakes success (no "Saved"), never renders
 // "[object Object]", never exposes a stack/token. Concise user line + a COLLAPSED technical disclosure (code /
@@ -2625,14 +2820,35 @@ function _irShowDraftSaveError(sku, err) {
     if (!el) return;
     var s = (err && err.structured) || {};
     var esc = (typeof _execEsc === 'function') ? _execEsc : function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
-    var rows = '<div><strong>Error code:</strong> ' + esc(s.code || 'SAVE_FAILED') + '</div>';
+    // F1-7N-FB-2A §E — the concise line states the TRUTH (nothing was saved) and never claims a local save.
+    // Everything diagnosable is in the collapsed Technical Details: the typed inner reason, the affected
+    // table, missing/invalid fields, any schema mismatch, a safe entity key, the request id, the zero-write
+    // status and whether a retry can succeed. No token, spreadsheet id, Drive id or stack ever appears.
+    var rows = '<div><strong>Reason:</strong> ' + esc(s.reasonCode || s.code || 'SAVE_FAILED') + '</div>';
+    if (s.message && s.message !== s.reasonCode) rows += '<div><strong>Server message:</strong> ' + esc(s.message) + '</div>';
+    if (s.code && s.code !== s.reasonCode) rows += '<div><strong>Transport code:</strong> ' + esc(s.code) + '</div>';
     if (s.table) rows += '<div><strong>Affected table:</strong> ' + esc(s.table) + '</div>';
     if (s.missingHeader) rows += '<div><strong>Missing header:</strong> ' + esc(s.missingHeader) + '</div>';
+    if (s.missingFields) rows += '<div><strong>Missing/invalid fields:</strong> ' + esc(s.missingFields) + '</div>';
+    if (s.schemaMismatch) rows += '<div><strong>Schema mismatch:</strong> ' + esc(s.schemaMismatch) + '</div>';
+    if (s.entityKey) rows += '<div><strong>Existing record:</strong> ' + esc(s.entityKey) + '</div>';
     if (s.requestId) rows += '<div><strong>Request:</strong> ' + esc(s.requestId) + '</div>';
-    el.innerHTML = '<div class="ir-save-error-user">Could not save to the database — kept locally. Please retry after the database configuration is verified.</div>' +
+    rows += '<div><strong>Rows written:</strong> ' + esc(s.zeroWrite === 'true' ? 'none (zero-write confirmed)' : 'not confirmed by the server') + '</div>';
+    rows += '<div><strong>Retryable:</strong> ' + esc(s.retryable === false ? 'no' : 'yes') + '</div>';
+    el.innerHTML = '<div class="ir-save-error-user"><strong>Unsaved — database update failed.</strong> ' +
+            'This route was NOT saved to the database. Your entries are kept on screen so you can correct and retry them; ' +
+            'Submit Plan is blocked until every route is saved.</div>' +
+        (s.nextAction ? '<div class="ir-save-error-next">' + esc(s.nextAction) + '</div>' : '') +
         '<details class="ir-save-error-detail"><summary>Technical details</summary>' + rows + '</details>';
     el.style.display = 'block'; el.style.color = '#dc2626';
 }
+// Clear the inline save error once the same route is genuinely persisted.
+function _irHideDraftSaveError(sku) {
+    var el = document.getElementById('allocation-carton-error-' + sku);
+    if (!el) return;
+    if (el.querySelector && el.querySelector('.ir-save-error-user')) { el.innerHTML = ''; el.style.display = 'none'; }
+}
+window._irHideDraftSaveError = _irHideDraftSaveError;
 // Soft-cancel ONE persisted draft line (Decision E §16) — never hard delete. line_status='cancelled'.
 function _cancelAllocationDraftLine(lineId) {
     try {
@@ -2640,7 +2856,19 @@ function _cancelAllocationDraftLine(lineId) {
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return;
         var draftId = replenAllocationDraft.allocationDraftId;
         if (!draftId) return;
-        return window.KM.DB.upsertShippingAllocationDraftLines(window.IRDraft.buildCancelLinePayload(draftId, lineId));
+        // F1-7N-FB-2A §D — a soft-cancel is a business WRITE. If it fails, the line still exists in the DB
+        // while the UI shows it removed, which is the same false-persistence class as a failed save. Record it
+        // as UNSAVED so Submit is blocked and the failure is visible rather than swallowed by a console warn.
+        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraftLines(window.IRDraft.buildCancelLinePayload(draftId, lineId)))
+            .then(function (res) {
+                if (!res || res.success === false) {
+                    var err = _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_draft_lines', 'draft line cancel failed');
+                    _irMarkRouteUnsaved_('line:' + lineId, err);
+                }
+                return res;
+            })['catch'](function (e2) {
+                _irMarkRouteUnsaved_('line:' + lineId, _irMakeDraftSaveError_({ code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) }, 'shipping_allocation_draft_lines', 'draft line cancel failed'));
+            });
     } catch (e) { console.warn('[replen] cancel draft line error:', e); }
 }
 window._cancelAllocationDraftLine = _cancelAllocationDraftLine;
@@ -2836,7 +3064,14 @@ async function _restoreAllocationDraftFromSession() {
                     await window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
                 }
             } catch (e) { /* bounded load failed → fall through to the sessionStorage recovery cache below (as before) */ }
-            if (_hydrateAllocationDraftFromDb(ctx)) return;   // DB SSOT loaded → do not overlay the cache
+            if (_hydrateAllocationDraftFromDb(ctx)) {
+                // F1-7N-FB-2A §D — the DB is the SSOT: what it returns IS the persisted truth, so any prior
+                // UNSAVED mark is void (a route that failed to save simply is not in these rows, and correctly
+                // disappears from the UI rather than lingering as a fake row).
+                _irUnsavedRoutes = {};
+                _irRenderUnsavedBanner_();
+                return;   // DB SSOT loaded → do not overlay the cache
+            }
         }
         var raw = sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY);
         if (!raw) return;
@@ -2848,6 +3083,11 @@ async function _restoreAllocationDraftFromSession() {
                 bySku: parsed.bySku || {}
             };
             window.KM.shippingAllocationDraft = replenAllocationDraft;
+            // F1-7N-FB-2A §D — restore the UNSAVED marks WITH the values. A reload therefore cannot launder a
+            // failed write into canonical state: the routes come back visibly labelled and Submit stays blocked
+            // until each one is actually persisted.
+            _irUnsavedRoutes = (parsed._unsavedRoutes && typeof parsed._unsavedRoutes === 'object') ? parsed._unsavedRoutes : {};
+            _irRenderUnsavedBanner_();
         }
     } catch (e) {}
 }
@@ -4086,6 +4326,156 @@ function _irWsGet(name) {
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];
 }
 
+// ============================================================================
+// F1-7N-FB-2A §B — EXPLICIT SEARCH GATE (frozen UX contract).
+// ----------------------------------------------------------------------------
+// Selecting Country or Marketplace NEVER loads data and NEVER repaints the table. Nothing appears until
+// the user presses Search. TWO filter states exist and are never conflated:
+//   • PENDING — whatever the selectors currently hold (owned by the DOM).
+//   • APPLIED — the filters of the last SUCCESSFUL Search (owned by _irSearch.applied).
+// The primary render reads APPLIED, so the contract holds no matter WHO calls renderReplenishment().
+//
+// The three source-proven auto-load paths this replaces:
+//   1. the mount ran _irWorkspaceRefresh_() and then renderReplenishment() — one full workspace read AND a
+//      rendered table before any Search, scoped to whatever the selectors happened to default to;
+//   2. initReplenRecoContext() (mount) called _irRecoTrigger() → the materialized-gap read AND
+//      recommendation.workspace.get, both pre-Search;
+//   3. onReplenRecoScopeChanged() — bound to BOTH selector onchange handlers and documented at each binding
+//      as "Pure page-input recompute — NO API call", which was FALSE — called _irRecoTrigger() again on every
+//      selector change, and _irRecoRefreshVelocityCells_() then re-rendered the whole main table when the
+//      response arrived. That is the "changing Country/Marketplace loads data" defect: two requests per
+//      change plus an unrequested table repaint.
+var _irSearch = {
+    applied: null,     // { country, marketplaceId } of the last SUCCESSFUL Search — null = never searched
+    status: 'PRE_SEARCH',   // PRE_SEARCH | LOADING | READY | EMPTY | ERROR
+    seq: 0,            // monotonic Search sequence (stale-response guard)
+    inFlight: false,   // single-flight: rapid repeat clicks never start a second concurrent read
+    stale: false,      // a selector changed after a successful Search → Search again
+    error: null
+};
+function _irSearchState_() { return _irSearch; }
+function _irPendingFilters_() {
+    var c = document.getElementById('replenCountry');
+    var m = document.getElementById('replenMarketplace');
+    return { country: (c && c.value) ? String(c.value) : '', marketplaceId: (m && m.value) ? String(m.value) : '' };
+}
+// The render scope. Country + Marketplace come from the APPLIED filters — atomically: a selector change is
+// invisible to the table until the next successful Search. The LTS filter is DELIBERATELY read live: it is a
+// CLIENT-SIDE filter over the already-loaded result set (_replenLtsFilter, applied in the row expand data) and
+// issues no request of any kind, so its existing immediate behaviour is preserved unchanged.
+function _irRenderScope_() {
+    var a = _irSearch.applied;
+    var lts = document.getElementById('replenLTSFilter');
+    return { country: a ? a.country : '', marketplaceId: a ? a.marketplaceId : '',
+        ltsFilter: (lts && lts.value) ? String(lts.value) : '' };
+}
+function _irSearchApplied_() { return !!_irSearch.applied; }
+function _irFiltersDiffer_(a, b) {
+    if (!a || !b) return true;
+    return a.country !== b.country || a.marketplaceId !== b.marketplaceId;
+}
+// A selector changed. NO request, NO render — only a stale mark, so the user knows the displayed result no
+// longer matches the selectors and Search is required again. The last CONFIRMED result stays on screen.
+function _irMarkSearchStale_() {
+    if (!_irSearch.applied) { _irRenderSearchGate_(); return; }
+    _irSearch.stale = _irFiltersDiffer_(_irPendingFilters_(), _irSearch.applied);
+    _irRenderStaleNotice_();
+}
+function _irEsc_(v) {
+    return (typeof escapeReplenHtml === 'function') ? escapeReplenHtml(v)
+        : String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+}
+// The one banner host, created next to the table (never on <body>). Idempotent.
+function _irStateHost_() {
+    if (typeof document === 'undefined' || !document.getElementById) return null;
+    var el = document.getElementById('replenSearchState');
+    if (el) return el;
+    var table = document.getElementById('replen-detail-table');
+    if (!table || !table.parentNode) return null;
+    el = document.createElement('div');
+    el.id = 'replenSearchState';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.display = 'none';
+    table.parentNode.insertBefore(el, table);
+    return el;
+}
+function _irRenderStaleNotice_() {
+    var host = _irStateHost_(); if (!host) return;
+    if (!_irSearch.stale) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.innerHTML = '<div class="replen-search-stale" style="background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+        '<strong>Filters changed — results are out of date.</strong> The table still shows the last confirmed search. Press <em>Search</em> to apply the new Country / Marketplace.' +
+        '</div>';
+    host.style.display = '';
+}
+// PRE_SEARCH / LOADING / ERROR render INTO the table bodies, so they are mutually exclusive with rows and with
+// each other. "No data" is NEVER shown before a successful Search.
+function _irRenderSearchGate_() {
+    var body = document.getElementById('replenScrollBody');
+    var fixed = document.getElementById('replenFixedBody');
+    if (!body) return;
+    var html = '';
+    if (_irSearch.status === 'LOADING') {
+        html = '<div class="replen-empty replen-search-loading" style="color:#64748B;padding:10px;">Searching…</div>';
+    } else if (_irSearch.status === 'ERROR') {
+        var e = _irSearch.error || {};
+        var code = _irEsc_(e.code || 'INVENTORY_REPLENISHMENT_READ_FAILED');
+        var msg = _irEsc_(e.message || 'The inventory search could not be completed.');
+        html = '<div class="replen-search-error" role="alert" style="color:#B91C1C;background:#FEF2F2;border-left:3px solid #EF4444;padding:10px;">' +
+            '<div style="font-weight:600;">Search failed — no results were loaded</div>' +
+            '<div style="margin-top:3px;">' + msg + ' <code>' + code + '</code></div>' +
+            '<div style="margin-top:4px;font-size:12px;">This is a read failure, not an empty result — nothing about your data changed.</div>' +
+            '<button type="button" class="replen-search-retry" onclick="searchReplenishment()" style="margin-top:8px;padding:5px 12px;border:1px solid #EF4444;background:#fff;color:#B91C1C;border-radius:4px;cursor:pointer;font-size:12px;">Retry search</button>' +
+            '</div>';
+    } else {
+        html = '<div class="replen-empty replen-pre-search" style="color:#64748B;padding:10px;">Select Country and Marketplace, then press Search.</div>';
+    }
+    body.innerHTML = html;
+    if (fixed) fixed.innerHTML = '';
+    if (typeof renderReplenCategoryTabs === 'function') { try { renderReplenCategoryTabs([]); } catch (e2) {} }
+    _irRenderStaleNotice_();
+}
+// The registry that fills the Country / Marketplace options lives in the SAME workspace payload as the
+// inventory rows, so the selectors cannot be populated without one read. It is therefore LAZY: it happens on
+// first interaction with either selector, NOT on mount — so opening the page performs no inventory workspace
+// request at all — and it is single-flight, so repeated focus never stacks requests.
+var _irRegistryStatus = 'IDLE';   // IDLE | LOADING | LOADED | ERROR
+var _irRegistryPending = null;
+function _irEnsureRegistryLoaded_() {
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) return Promise.resolve(null);
+    if (!_irEffectiveWorkspace()) return Promise.resolve(null);     // Legacy mode keeps its own load path
+    if (_irRegistryStatus === 'LOADED' && _irReadModel) return Promise.resolve(_irReadModel);
+    if (_irRegistryPending) return _irRegistryPending;               // single-flight
+    _irRegistryStatus = 'LOADING';
+    _irRegistryPending = _irWorkspaceRefresh_().then(function (m) {
+        _irRegistryStatus = 'LOADED'; _irRegistryPending = null;
+        if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+        return m;
+    })['catch'](function (err) {
+        _irRegistryStatus = 'ERROR'; _irRegistryPending = null;
+        throw err;
+    });
+    return _irRegistryPending;
+}
+// Bound once to focus/mousedown on both selectors. Idempotent.
+var _irRegistryBound = false;
+function _irBindRegistryLazyLoad_() {
+    if (_irRegistryBound || typeof document === 'undefined') return;
+    var ids = ['replenCountry', 'replenMarketplace'];
+    var arm = function () { _irEnsureRegistryLoaded_()['catch'](function () {}); };
+    for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (!el || !el.addEventListener) continue;
+        el.addEventListener('focus', arm);
+        el.addEventListener('mousedown', arm);
+    }
+    _irRegistryBound = true;
+}
+window._irSearchState_ = _irSearchState_;
+window._irRenderScope_ = _irRenderScope_;
+window._irMarkSearchStale_ = _irMarkSearchStale_;
+window._irEnsureRegistryLoaded_ = _irEnsureRegistryLoaded_;
+
 // F1-7J-A2 · SECONDARY Execution-Plan carrier reference (carrier_lead_times + carrier_rate_cards). Loaded LAZILY (once
 // per page load) via the EXISTING inventoryReplenishment workspace with include.carrierPlanning — NOT part of the primary
 // render (secondary-panel-only). Canonical mode reads this scoped model (fail-closed: [] until loaded, NO broad fallback);
@@ -4183,68 +4573,102 @@ function _irAfterWrite(cb) {
 // ========================================
 // Search-triggered loading (Demo OFF + Cloud Read)
 // ========================================
+// F1-7N-FB-2A §B — Search is now the ONLY thing that loads or applies anything.
+//   • Filters are VALIDATED first, so an invalid Search costs zero requests.
+//   • SINGLE-FLIGHT: a second click while a read is in flight is dropped (no duplicate concurrent read).
+//   • A monotonic sequence guard means an older in-flight response can never overwrite a newer Search.
+//   • The pending filters become APPLIED only on SUCCESS — atomically, together — so a failed Search leaves
+//     the previous confirmed result and its filters untouched.
+//   • Failure shows an actionable error with a Retry, never an empty result.
 function searchReplenishment() {
     // A new search (incl. Country / Marketplace change then Search) resets the Category tab to All.
     replenCategoryTab = 'All';
 
     // Demo ON: just re-render (demo does not need search)
-    if (_replenDemoOn()) {
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) {
         renderReplenishment();
         return;
     }
 
-    // Canonical: scoped inventoryReplenishment workspace (NO broad Operation DB for the primary render). Fetch once (the
-    // scope-independent full read model), populate filters + search. Fail-closed — a bounded region error, never a silent
-    // legacy broad fallback (the broad load below lives ONLY in the Legacy branch).
+    // Validate the PENDING selector values BEFORE anything else — a blocked Search issues NO request.
+    var pending = _irPendingFilters_();
+    if (!pending.country && !pending.marketplaceId) { alert('Please select Country and Marketplace before searching.'); return; }
+    if (!pending.country) { alert('Please select a Country.'); return; }
+    if (!pending.marketplaceId) { alert('Please select a Marketplace.'); return; }
+
+    if (_irSearch.inFlight) return;   // single-flight — repeated rapid clicks share the in-flight read
+
+    // Canonical: scoped inventoryReplenishment workspace (NO broad Operation DB for the primary render). The
+    // read model is scope-INDEPENDENT, so once it is loaded a Search is pure client-side filtering and costs
+    // ZERO further requests. Fail-closed — a bounded region error, never a silent legacy broad fallback.
     if (_irEffectiveWorkspace()) {
-        if (_irReadModel) { populateReplenFiltersFromRegistry(); _doReplenSearch(); return; }
-        _irWorkspaceRefresh_().then(function () {
-            populateReplenFiltersFromRegistry();
-            _doReplenSearch();
-        }).catch(function (err) { _irRenderError_(err); });
+        var mySeq = ++_irSearch.seq;
+        if (_irReadModel) { _irApplySearch_(pending, mySeq); return; }
+        _irSearch.inFlight = true; _irSearch.status = 'LOADING'; _irSearch.error = null;
+        _irRenderSearchGate_();
+        _irEnsureRegistryLoaded_().then(function () {
+            _irSearch.inFlight = false;
+            if (mySeq !== _irSearch.seq) return;   // a newer Search superseded this response
+            _irApplySearch_(pending, mySeq);
+        })['catch'](function (err) {
+            _irSearch.inFlight = false;
+            if (mySeq !== _irSearch.seq) return;   // stale failure — never overwrite a newer Search
+            _irSearch.status = 'ERROR';
+            _irSearch.error = { code: (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED',
+                message: (err && err.message) || 'Inventory Replenishment read failed' };
+            _irRenderSearchGate_();
+        });
         return;
     }
 
     // Legacy (kill switch OFF): if the DB cache isn't loaded yet, load once, populate filters, then search.
+    var lSeq = ++_irSearch.seq;
     if (!window._opDbCache) {
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
             ? window.KM.DB.loadOperationDb
             : (window.reloadOperationDb || null);
         if (loader) {
+            _irSearch.inFlight = true; _irSearch.status = 'LOADING'; _irSearch.error = null;
+            _irRenderSearchGate_();
             loader({ force: true }).then(function() {
-                populateReplenFiltersFromRegistry();
-                _doReplenSearch();
-            }).catch(function() {
-                _doReplenSearch();
+                _irSearch.inFlight = false;
+                if (lSeq !== _irSearch.seq) return;
+                _irApplySearch_(pending, lSeq);
+            })['catch'](function(err) {
+                _irSearch.inFlight = false;
+                if (lSeq !== _irSearch.seq) return;
+                _irSearch.status = 'ERROR';
+                _irSearch.error = { code: (err && err.code) || 'OPERATION_DB_LOAD_FAILED',
+                    message: (err && err.message) || 'The Operation DB could not be loaded.' };
+                _irRenderSearchGate_();
             });
             return;
         }
     }
-    _doReplenSearch();
+    _irApplySearch_(pending, lSeq);
 }
 
-function _doReplenSearch() {
-    var country = document.getElementById('replenCountry').value;
-    // marketplace = marketplace_id (Cloud) or marketplace name (Demo); company is derived from it.
-    var marketplace = document.getElementById('replenMarketplace').value;
-    if (!country && !marketplace) {
-        alert('Please select Country and Marketplace before searching.');
-        return;
-    }
-    if (!country) {
-        alert('Please select a Country.');
-        return;
-    }
-    if (!marketplace) {
-        alert('Please select a Marketplace.');
-        return;
-    }
+// Commit the PENDING filters as APPLIED (atomic — both or neither) and render exactly once. This is the ONLY
+// place _irSearch.applied is ever assigned, so nothing else in the page can make data appear.
+function _irApplySearch_(pending, mySeq) {
+    if (mySeq !== _irSearch.seq) return;                  // superseded while resolving
+    if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+    _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    _irSearch.stale = false;
+    _irSearch.error = null;
+    _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
     renderReplenishment();
-    // F1-4B-B / FM5-R1: after loading the scope, read the materialized gap (default) or issue at most one live
-    // recommendation.workspace.get (diagnostic/fallback). One request per scope; never per SKU; never both.
+    // F1-4B-B / FM5-R1: the SCOPE-dependent reads (materialized gap, at most one live
+    // recommendation.workspace.get) belong to Search and to nothing else. They used to also fire on mount and
+    // on every selector change — that was root cause 2/3 of the pre-Search auto-load. One request set per
+    // confirmed Search; never per SKU; never both engines.
     if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
+    // The Execution-Plan Method catalog is only reachable after a Search (it needs an expanded row), so it is
+    // preloaded HERE rather than on mount. Deduped inside _irLoadCarrierPlanning_ — never one fetch per expand.
+    if (typeof _irLoadCarrierPlanning_ === 'function') { try { _irLoadCarrierPlanning_(); } catch (e) {} }
 }
 window.searchReplenishment = searchReplenishment;
+window._irApplySearch_ = _irApplySearch_;
 
 // ---- F1-4B-FM5-R4J · "Recalculate All Sites" (Inventory Replenishment Gap) — BACKEND-OWNED RESUMABLE JOB ------
 // The ~14-min all-site materialization is NO LONGER owned by the browser request. One click STARTS one backend job
@@ -4563,9 +4987,13 @@ function _getCloudReplenishmentData() {
     var IR = window.IRMap;
     // IDENTITY: the Marketplace dropdown value is the marketplace_id (no Company select). Company +
     // country + marketplace are DERIVED from the marketplaces master for that marketplace_id below.
-    var marketplaceId = document.getElementById('replenMarketplace') ? document.getElementById('replenMarketplace').value : '';
-    var country = document.getElementById('replenCountry') ? document.getElementById('replenCountry').value : '';
-    var ltsFilter = document.getElementById('replenLTSFilter') ? document.getElementById('replenLTSFilter').value : '';
+    // F1-7N-FB-2A §B — read the APPLIED search filters, never the live selectors. This is what makes Search
+    // ATOMIC: changing Country/Marketplace cannot alter the rendered result set, only mark it stale. The LTS
+    // filter stays LIVE inside _irRenderScope_ because it is a client-side filter over this same result set.
+    var _irScope = _irRenderScope_();
+    var marketplaceId = _irScope.marketplaceId;
+    var country = _irScope.country;
+    var ltsFilter = _irScope.ltsFilter;
     if (!marketplaceId || !DB || !DB.getMarketplaceSkus || !IR) return [];
 
     function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
@@ -5485,8 +5913,12 @@ function bindReplenFilterDependencies() {
             // does not belong to the new country (no fallback to US / first marketplace).
             refreshReplenMarketplaceOptions();
             // Recommendation Context (F1-4B-B-PRE): re-scope destination options + drop a now-invalid
-            // destination selection. Pure page-input recompute — NO API call.
+            // destination selection. Pure page-input recompute — genuinely NO API call now: F1-7N-FB-2A §B
+            // removed the _irRecoTrigger() that used to fire two scope reads from inside this handler.
             if (typeof onReplenRecoScopeChanged === 'function') onReplenRecoScopeChanged();
+            // §B — a selector change marks the displayed result STALE and requires Search again. It never
+            // loads and never repaints the table (the APPLIED filters are unchanged until Search succeeds).
+            if (typeof _irMarkSearchStale_ === 'function') _irMarkSearchStale_();
         };
     }
     if (mpSel) {
@@ -5496,8 +5928,9 @@ function bindReplenFilterDependencies() {
             // so no further re-scoping is needed.
             _clearAllocationDraft();
             // Recommendation Context (F1-4B-B-PRE): re-scope destination options for the new marketplace
-            // scope + drop a now-invalid destination. Pure page-input recompute — NO API call.
+            // scope + drop a now-invalid destination. Pure page-input recompute — genuinely NO API call now.
             if (typeof onReplenRecoScopeChanged === 'function') onReplenRecoScopeChanged();
+            if (typeof _irMarkSearchStale_ === 'function') _irMarkSearchStale_();
         };
     }
 }
@@ -5785,17 +6218,19 @@ function _irSetInternalRecommendationContext(ctx) {
   return _irctxLastContext;
 }
 
-// Per-mount init: compute the internal context + trigger the flag-gated read. No control/indicator init.
+// Per-mount init: compute the internal context ONLY. F1-7N-FB-2A §B — this used to call _irRecoTrigger(),
+// which issued the materialized-gap read AND recommendation.workspace.get on page open, before any Search.
+// The context is a pure page-input recompute; the reads now belong exclusively to _irApplySearch_.
 function initReplenRecoContext() {
   updateReplenRecoContext();
-  _irRecoTrigger();
 }
 
-// Scope change (Country/Marketplace) → recompute the internal context + (F1-4B-B) invalidate/refetch when
-// the new scope is READY. No destination-option UI to rebuild (context is internal).
+// Scope change (Country/Marketplace) → recompute the internal context ONLY. F1-7N-FB-2A §B — this used to
+// call _irRecoTrigger() from BOTH selector onchange handlers (two requests per selector change), and the
+// arriving response then re-rendered the main table via _irRecoRefreshVelocityCells_. That was the
+// "selecting a Country loads data" defect. Recompute the internal context; load nothing.
 function onReplenRecoScopeChanged() {
   updateReplenRecoContext();
-  _irRecoTrigger();
 }
 
 window.updateReplenRecoContext = updateReplenRecoContext;
@@ -6490,6 +6925,9 @@ function _irRecoHasSalesDrivenBasis_() {
   return false;
 }
 function _irRecoRefreshVelocityCells_() {
+  // F1-7N-FB-2A §B — never repaint before a confirmed Search. renderReplenishment() enforces this itself, but
+  // asserting it here keeps the intent explicit at the async call site that used to cause the surprise repaint.
+  if (typeof _irSearchApplied_ === 'function' && !_irSearchApplied_() && !(typeof _replenDemoOn === 'function' && _replenDemoOn())) return;
   if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasSalesDrivenBasis_() && typeof renderReplenishment === 'function') renderReplenishment();
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
@@ -6809,6 +7247,9 @@ if (window.KM && window.KM.lifecycle) {
                 // AFTER the scoped read-model is fetched, so the filter dropdowns + primary render need NO broad Operation DB.
                 var _irMountAfterLoad = function () {
                     if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+                    // F1-7N-FB-2A §B — arm the LAZY registry load on first selector interaction. The mount does
+                    // NOT read: opening Site Inventory issues no inventoryReplenishment workspace request at all.
+                    if (typeof _irBindRegistryLazyLoad_ === 'function') _irBindRegistryLazyLoad_();
                     // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
                     // calculation month / planning cycle). Populates options + restores explicit session
                     // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
@@ -6826,12 +7267,14 @@ if (window.KM && window.KM.lifecycle) {
                 // read, so the Execution-Plan Method dropdown is warm before any row expand (the dedupe in
                 // _irLoadCarrierPlanning_ means a later expand reuses this same in-flight/resolved fetch — never N fetches).
                 // Independent of the primary render; never blocks it and never per-SKU.
-                if (typeof _irLoadCarrierPlanning_ === 'function') { try { _irLoadCarrierPlanning_(); } catch (e) {} }
-                if (_irEffectiveWorkspace()) {
-                    _irWorkspaceRefresh_().then(_irMountAfterLoad).catch(function (err) { _irRenderError_(err); });
-                } else {
-                    _irMountAfterLoad();
-                }
+                // F1-7N-FB-2A §B — THE mount fix. Previously this branch ran _irWorkspaceRefresh_() and then
+                // _irMountAfterLoad -> renderReplenishment(), i.e. a full inventory workspace read AND a rendered
+                // table on page open, for whatever Country/Marketplace the selectors defaulted to. The mount now
+                // performs NO business read: it wires the page and shows the pre-search state. The registry read
+                // that fills the selectors is deferred to first selector interaction (_irBindRegistryLazyLoad_),
+                // and every data read belongs to Search. The carrier-catalog preload moved to _irApplySearch_ for
+                // the same reason (it is only reachable from an expanded row, which requires a Search).
+                _irMountAfterLoad();
             });
         },
         unmount() {

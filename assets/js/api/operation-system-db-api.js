@@ -3427,12 +3427,35 @@ function _kmClassifyBusinessError_(msg) {
 // C2-D2A-UI: canonical business codes some handlers emit as the LEADING token of the error string
 // (allocation-draft workflow). When present, surface the exact code so the UI maps state by code, never by
 // parsing the message (§12). Weekly command errors do not start with these tokens, so C1 classification is unchanged.
+// F1-7N-FB-2A §C/§E — this list was INCOMPLETE, and that is why the production Execution Plan failure showed
+// as a bare `BUSINESS_COMMAND_ERROR`: any handler reason NOT listed here falls through to
+// _kmClassifyBusinessError_, whose fallback IS that generic label. The allocation-draft handler emits several
+// typed reasons that were missing, each of them a LEADING token of the error string exactly like the others:
+//   • ROUTE_INCOMPLETE_NEW_DRAFT / LEGACY_ROUTE_RECONCILIATION_REQUIRED — sadResolveActiveDraftK2OrK3_ BLOCK
+//   • K2_ROUTE_RECONCILIATION_REQUIRED — sadLegacyReconcileReason_ on a K2 identity mismatch
+//   • PRODUCTION_SAFETY:<token> — thrown by the VALIDATE-ONLY prodRequireSheet_/prodRequireColumns_ gate
+//     (SCHEMA_NOT_PROVISIONED / HEADER_MISSING / HEADER_ORDER_MISMATCH / MISSING_REQUIRED_HEADER /
+//     WRONG_SPREADSHEET_TARGET …) and surfaced through the router's top-level catch as err.message. This one
+//     is the most consequential to name: it means the write was refused BEFORE touching a cell, so it is a
+//     provable zero-write, and it will never succeed on retry until the schema is reconciled.
+// Naming them changes nothing about the backend contract; it stops the browser from discarding the reason.
 var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
-    'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED'];
+    'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED',
+    'ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED', 'K2_ROUTE_RECONCILIATION_REQUIRED'];
 function _kmExtractCanonicalCode_(msg) {
     var s = String(msg == null ? '' : msg).trim();
+    // A production-safety schema refusal carries its own token; return it WITH the token so the UI can tell
+    // "the tab is missing" apart from "the header order drifted" without parsing prose.
+    var ps = s.match(/^PRODUCTION_SAFETY:([A-Z_]+)/);
+    if (ps) return 'PRODUCTION_SAFETY:' + ps[1];
     for (var i = 0; i < KM_CANONICAL_CODES.length; i++) { if (s.indexOf(KM_CANONICAL_CODES[i]) === 0) return KM_CANONICAL_CODES[i]; }
     return '';
+}
+// A refusal by the validate-only schema gate, a documented pre-write gate, or an unavailable lock proves that
+// ZERO rows were written. Exposed so the page can state zero-write truthfully instead of guessing.
+function _kmZeroWriteProven_(msg) {
+    var s = String(msg == null ? '' : msg);
+    return /^PRODUCTION_SAFETY:/.test(s.trim()) || /zero rows written/i.test(s) || /could not acquire lock/i.test(s);
 }
 function _kmCmdOk_(command, data) { return { success: true, data: Object.assign({ command: command, committed: true }, data || {}), error: null }; }
 function _kmCmdErr_(command, code, message, details) {
@@ -3466,7 +3489,12 @@ async function _kmWeeklyCommand_(command, payload) {
         var _emsg = _structured ? (_structured.message || _structured.code) : json.error;
         var _ecode = (_structured && _structured.code) || _kmExtractCanonicalCode_(json.error) || _kmClassifyBusinessError_(json.error);
         // Preserve the handler's structured data (e.g. conflictIds / stage detail) into error.details for the UI.
-        return _kmCmdErr_(command, _ecode, _emsg || (command + ' failed'), (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null));
+        // F1-7N-FB-2A §E — also carry the handler's own `stage` and the PROVEN zero-write fact, so the page can
+        // state "nothing was written" only when the server's own reason establishes it.
+        var _det = (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null) || {};
+        if (json.stage != null && _det.stage == null) _det.stage = String(json.stage);
+        if (_det.zero_write == null && _kmZeroWriteProven_(_emsg)) _det.zero_write = true;
+        return _kmCmdErr_(command, _ecode, _emsg || (command + ' failed'), _det);
     }
     return _kmCmdOk_(command, json.data);   // COMMITTED — the page performs the single readback via the active path
 }

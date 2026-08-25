@@ -17,6 +17,13 @@ section('C. structured save-error — no "[object Object]", safe disclosure, nev
 (function () {
   function _execEsc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
   var elStore = {}; var document = { getElementById: function (id) { return elStore[id] || (elStore[id] = { id: id, style: {}, innerHTML: '', textContent: '' }); } };
+  // F1-7N-FB-2A §E — _irMakeDraftSaveError_ now recovers the TYPED INNER REASON (the field the previous
+  // surface discarded), so its extraction set includes those helpers and their reason table.
+  eval(IR.match(/var IR_DRAFT_TYPED_REASONS_ = \[[\s\S]*?\];/)[0]);
+  eval(extract(IR, '_irTypedReasonCode_'));
+  eval(extract(IR, '_irReasonIsPreWrite_'));
+  eval(extract(IR, '_irReasonRetryable_'));
+  eval(extract(IR, '_irReasonNextAction_'));
   eval(extract(IR, '_irMakeDraftSaveError_'));
   eval(extract(IR, '_irShowDraftSaveError'));
   // The exact live shape from _kmCmdErr_: error is a STRUCTURED object (this is what became "[object Object]").
@@ -27,8 +34,11 @@ section('C. structured save-error — no "[object Object]", safe disclosure, nev
   _irShowDraftSaveError('CO1100-R', e);
   var html = elStore['allocation-carton-error-CO1100-R'].innerHTML;
   ok(html.indexOf('[object Object]') === -1, 'C3. rendered surface never shows "[object Object]"');
-  ok(/Could not save to the database/.test(html) && /kept locally/.test(html), 'C3. concise user message + kept-locally (retained plan)');
+  ok(/Unsaved — database update failed/.test(html), 'C3. the surface labels the route UNSAVED (F1-7N-FB-2A §D)');
+  ok(!/kept locally/.test(html), 'C3. and never claims the failed write was kept locally — that was a FALSE persistence claim');
+  ok(/NOT saved to the database/.test(html), 'C3. it states plainly that nothing was saved');
   ok(!/Saved/.test(html), 'C3. the failed save NEVER shows "Saved"');
+  ok(/PRODUCTION_SAFETY:HEADER_MISSING/.test(html), 'C3. and the TYPED INNER REASON is now visible, not discarded');
   ok(/<details/.test(html) && /HEADER_MISSING/.test(html) && /shipping_plan_lines/.test(html), 'C3. collapsed technical disclosure with code + affected table');
   ok(!/AKfyc|token|password|stack/i.test(html), 'C3. no stack / token / secret exposed');
   // a plain-string error still renders (back-compat)
@@ -66,8 +76,15 @@ section('D. Method loading — in-flight dedupe + LOADING/EMPTY/ERROR states');
     // ERROR state
     _irCarrierModel = null; _irCarrierStatus = 'ERROR';
     eq(_execMethodOptionsHtml([], ''), '<option value="">Unable to load methods — Retry</option>', 'D. ERROR → "Unable to load methods — Retry"');
-    // source: mount preloads the catalog in parallel with the primary read
-    ok(/_irLoadCarrierPlanning_\(\); \} catch \(e\) \{\} \}\s*\n\s*if \(_irEffectiveWorkspace\(\)\)/.test(IR), 'D. mount PRELOADS the catalog in parallel with the primary read (warm before any expand)');
+    // F1-7N-FB-2A §B moved the PRELOAD TRIGGER from mount to a confirmed Search, because the mount no longer
+    // performs a primary read at all and a row can only be expanded AFTER a Search. R6E's guarantee is intact:
+    // the catalog is warmed before any expand is possible, and the dedupe still collapses concurrent expands
+    // into ONE fetch (proved by D2 above).
+    ok(/_irLoadCarrierPlanning_\(\); \} catch \(e\) \{\} \}/.test(IR), 'D. the catalog preload still exists and is exception-guarded');
+    var applySearch = extract(IR, '_irApplySearch_');
+    ok(/_irLoadCarrierPlanning_\(\)/.test(applySearch), 'D. and it is PRELOADED on a confirmed Search — warm before any row expand');
+    ok(applySearch.indexOf('renderReplenishment()') < applySearch.indexOf('_irLoadCarrierPlanning_()'),
+      'D. after the render, so it never blocks the primary table');
     runE();
   }).catch(function (err) { console.error('D ASYNC ERROR', err && err.stack || err); fail++; done(); });
 })();

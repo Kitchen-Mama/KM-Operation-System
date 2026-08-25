@@ -71,6 +71,12 @@ function doPost(e) {
     if (action === 'system.submitFlowDiagnostic') {
       return handleSubmitFlowDiagnostic_(body);
     }
+    // F1-7N-FB-2A §F — read-only Execution Plan (shipping allocation draft) save readiness. It runs the SAME
+    // production gates the write runs — the validate-only schema gate and the real draft-resolution authority —
+    // and reports the exact token that would block the write, without writing a cell.
+    if (action === 'system.shippingAllocationDraftDiagnostic') {
+      return handleShippingAllocationDraftDiagnostic_(body);
+    }
 
     if (action === 'updateSkuLifecycle') {
       return handleUpdateSkuLifecycle_(body);

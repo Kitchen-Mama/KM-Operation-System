@@ -152,3 +152,80 @@ Because source is now reconciled to the approved 30/28 schema, the expected outc
 **Legacy "Submit Plan" control disposition (§9 of the round):** the existing control is classified as a **legacy / manual Shipping-Plan creation path** (it calls `createShippingPlansBatch` from local Execution-Plan state). It is kept **separate** from the Allocation Draft persistence panel and is **not** wired to any Draft submit handler; the new `IRDraftWorkspace` exposes **no submit**, and the page never marks a Draft submitted from local UI. The **DB-authoritative Submit → Weekly Shipping Plan handoff is not yet available** and remains HALTed (§9). No local data marks a Draft submitted.
 
 **Live browser checklist:** enter a scope → panel shows NOT_SAVED (no DB draft) / SAVED (DB draft, with id+version) / CONFLICT (duplicate) / SUBMITTED / CANCELLED; complete a route+line → Save → SAVED after one targeted readback (no whole-DB reload in the network tab); duplicate route → block message; Cancel → confirmation → CANCELLED history; refresh → only the targeted read fires.
+
+## 11. F1-7N-FB-2A — Execution Plan save observability + no local persistence fallback (2026-08-25)
+
+Closes a production `BUSINESS_COMMAND_ERROR` on `upsertShippingAllocationDraft` (affected table
+`shipping_allocation_drafts`) whose surface read "Could not save to the database — kept locally".
+
+### 11.1 What `BUSINESS_COMMAND_ERROR` actually was
+It is **not a backend reason**. `_kmClassifyBusinessError_` returns it as the CLIENT fallback for any handler
+error string that is neither an "already/cannot" pattern nor a member of `KM_CANONICAL_CODES`, and the
+Execution Plan error surface then rendered code / table / missingHeader / requestId but **never `message`** —
+the only field carrying the typed reason. The screenshot was therefore the system reporting *"an error I have
+no label for"*, with the label discarded. It **excludes** the eight canonical rejections (`PLAN_HEADER_INCOMPLETE`,
+`BLOCKED_CONFLICT`, `IMMUTABLE_TERMINAL_STATUS`, …) — those would have shown their own code.
+
+The reasons the handler can emit that fell outside the list:
+
+| reason | source | zero-write | retryable |
+| --- | --- | --- | --- |
+| `PRODUCTION_SAFETY:<token>` (`SCHEMA_NOT_PROVISIONED` / `HEADER_MISSING` / `HEADER_ORDER_MISMATCH` / `HEADER_BLANK` / `HEADER_DUPLICATE` / `HEADER_UNEXPECTED` / `ROW_WIDTH_MISMATCH` / `MISSING_REQUIRED_HEADER` / `WRONG_SPREADSHEET_TARGET`) | `prodRequireSheet_` / `prodRequireColumns_`, thrown out of `procurementEnsureSheet_` on the FIRST statement of `sadUpsertDraftHeaderCore_`, surfaced by the router's top-level catch as `err.message` | proven | no — needs schema reconciliation |
+| `ROUTE_INCOMPLETE_NEW_DRAFT` | `sadResolveActiveDraftK2OrK3_` BLOCK | stated | yes, after completing the route |
+| `LEGACY_ROUTE_RECONCILIATION_REQUIRED` | `sadResolveActiveDraftK2OrK3_` BLOCK | stated | no — explicit user migration |
+| `K2_ROUTE_RECONCILIATION_REQUIRED` | `sadLegacyReconcileReason_` | stated | no — explicit user migration |
+| `LOCK_UNAVAILABLE` / `LOCK_ERROR` | `handleUpsertShippingAllocationDraft_` lock stage | proven | yes |
+
+`PRODUCTION_SAFETY:*` is the leading candidate for the observed failure because it fires before any payload
+logic, for every payload, and a route the frontend refuses to persist unless `IRDraft.isRouteComplete` passes
+cannot reach the K3 branch that raises the two `*_RECONCILIATION_REQUIRED`/`ROUTE_INCOMPLETE_NEW_DRAFT`
+reasons on a first save. **Which token it is cannot be named from a screenshot** — `TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE`
+names it read-only.
+
+### 11.2 Frozen rules added
+1. Those reasons are members of `KM_CANONICAL_CODES` (schema refusals keep the full `PRODUCTION_SAFETY:<token>`),
+   so the browser never flattens them again.
+2. A failed write is **never** represented as Saved. The typed values stay visible, labelled
+   `Unsaved — database update failed`; the sessionStorage recovery cache carries the UNSAVED marks so a reload
+   cannot promote a failed write into canonical state; a successful DB hydrate voids those marks (the DB is the SSOT).
+3. **Saved requires** a response carrying the persisted `allocation_draft_id` **and** its `created`/`updated`
+   classification. A bare `success:true` is `PERSISTENCE_NOT_ACKNOWLEDGED` — a failed save. Retry reuses the same
+   deterministic `SADH-K2-` identity, so it UPDATEs rather than duplicating.
+4. **Submit Plan fails closed** while any route is unsaved. Submit sends only persisted draft ids and the backend
+   re-reads persisted rows, so an unsaved route would be silently absent from an apparently complete plan.
+5. Every Execution Plan write is covered: header upsert, line upsert, line soft-cancel (delete) and header
+   soft-cancel. A swallowed cancel failure was its own false-persistence path.
+
+### 11.3 Read-only diagnostic (`TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE`, 63_)
+Runs the write path's own gates in the write path's own order and reports the exact token — it reimplements no
+business rule: `prodRequireSheet_`/`prodRequireColumns_` → `sadHeaderRouteIsComplete_` →
+`sadResolveActiveDraftK2OrK3_` → `sadLegacyReconcileReason_`, plus the existing
+`auditShippingAllocationSchemaReadOnly` (41_) header-drift report. Reads only; never provisions a sheet, never
+takes a lock, never touches Drive, never invokes a handler, and returns no spreadsheet/Drive id.
+Also routed as `system.shippingAllocationDraftDiagnostic`, and the four Execution Plan actions are now covered
+by `system.health` symbol probing.
+
+## 12. F1-7N-FB-2A — Site Inventory explicit Search gate (2026-08-25)
+
+Selecting Country or Marketplace must not load data. Two filter states are now distinct: **PENDING** (the
+selectors) and **APPLIED** (`_irSearch.applied`, assigned in exactly one place, only on a successful Search).
+The primary render and `_getCloudReplenishmentData` read APPLIED, so a selector change can only mark the result
+stale — it cannot repaint or fetch.
+
+Three auto-load paths were removed: the mount's `_irWorkspaceRefresh_()` + render; `initReplenRecoContext()`'s
+`_irRecoTrigger()`; and `onReplenRecoScopeChanged()`'s `_irRecoTrigger()` — the last bound to BOTH selector
+`onchange` handlers, each of which documented itself as making "NO API call" while issuing two scope reads and
+then repainting the table via `_irRecoRefreshVelocityCells_`. Search now owns every data read, is single-flight,
+sequence-guarded on both success and failure, validates filters before issuing anything, and never self-retries.
+States are mutually exclusive: PRE_SEARCH ("Select Country and Marketplace, then press Search.") / LOADING /
+READY / EMPTY / ERROR — "No data" is never shown before a successful Search.
+
+**The LTS filter is unchanged**: source-proven a client-side `.filter()` over the already-loaded rows in both
+data paths, never a server query parameter, so it is still read live and applied immediately.
+
+**Residual, disclosed:** the Country/Marketplace option lists derive from `marketplaces` inside the same
+`inventoryReplenishment` workspace payload as the inventory rows, so the selectors cannot be populated without
+one read. That read is deferred to first interaction with a selector (single-flight) rather than run on mount —
+so opening the page issues no inventory workspace request — but a user who opens a selector before searching
+still causes exactly one. Making that read genuinely registry-only would need an include-gated slim mode in
+`60_api_v1_inventory_replenishment_workspace.gs`; not done here.
