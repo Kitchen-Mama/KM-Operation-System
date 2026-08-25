@@ -106,6 +106,21 @@ function doPost(e) {
     if (action === 'system.requestOrderSendReconcile') {
       return handleRequestOrderSendReconcile_(body);
     }
+    // F1-7N-FB-3B §E/§F — SEND REQUEST server orchestration + slim workset (owner = 66_).
+    //   requestOrder.sendWorkset.get   READ-ONLY. Two tables, an include-gated slim projection. It exists so Send
+    //     Request never depends on refreshing the 495-row AI-Plan payload (aiPlanFirstLayer.get reads ELEVEN tables).
+    //   requestOrder.send.orchestrate  ONE client click -> ONE request -> ONE journaled, resumable saga. The workset
+    //     is built SERVER-SIDE from the persisted allocation drafts, so the page's Country / Marketplace / Category /
+    //     Risk / Show mode / SKU search / pagination controls cannot truncate a comprehensive business command: the
+    //     handler accepts NO such parameter. The only business scope input is tier_scope (ALL / T1 / T2 / T3).
+    //     Every mutation is delegated to an existing canonical writer (13_ create, 15_ submit) — no second writer.
+    //     dry_run=true returns the frozen plan with zero writes; that is what the confirmation dialog is built from.
+    if (action === 'requestOrder.sendWorkset.get') {
+      return jsonResponse_(handleRequestOrderSendWorksetGet_(body));
+    }
+    if (action === 'requestOrder.send.orchestrate') {
+      return jsonResponse_(handleRequestOrderSendOrchestrate_(body));
+    }
 
     if (action === 'updateSkuLifecycle') {
       return handleUpdateSkuLifecycle_(body);

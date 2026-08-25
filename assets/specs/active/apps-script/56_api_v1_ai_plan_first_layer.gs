@@ -135,6 +135,40 @@ function aplBuild_(tables, payload) {
   var linesBySku = {}; for (var l = 0; l < poLineRows.length; l++) { var lk = aplUpper_(poLineRows[l].sku); if (lk === '') continue; (linesBySku[lk] = linesBySku[lk] || []).push(poLineRows[l]); }
   var splBySku = {}; for (var s = 0; s < splRows.length; s++) { var sk = aplUpper_(splRows[s].sku); (splBySku[sk] = splBySku[sk] || []).push(splRows[s]); }
 
+  // F1-7N-FB-3B §F — THE CAUSE OF THE >45-SECOND AI-PLAN READ, and it is algorithmic, not transport.
+  // The per-row loop below used to scan TWO WHOLE TABLES for every single SKU row:
+  //   · fc_special_events        — one full scan per row, to answer "is there any scoped event?"
+  //   · overseas_inventory_snapshot — TWO full scans per row (aplOverseasHasMatch_, then rivOverseasStock_)
+  // At the reported live shape that is 495 rows x (E + 2xO) string-uppercasing comparisons — millions of
+  // operations, all of them redundant, because BOTH owner predicates require an exact SKU match before they
+  // consider a row at all. Pre-indexing by SKU once turns the quadratic term into a linear one.
+  //
+  // OUTPUT IS UNCHANGED BY CONSTRUCTION, and that is why this is a safe fix rather than a behaviour change:
+  //   · rivOverseasStock_ / aplOverseasHasMatch_ both begin with `if (upper(r.sku) !== upper(sku)) continue;`
+  //     so a row outside the SKU bucket could never have contributed. Passing the bucket yields the identical
+  //     total and the identical matched/unmatched verdict.
+  //   · fcrEventScopeMatch_ requires `upper(row.sku) === upper(scope.sku)` OR (scope_type='sku' AND
+  //     upper(scope_id) === upper(scope.sku)) — so an event row is only ever relevant to the SKU named by
+  //     row.sku or by row.scope_id. Indexing under BOTH keys therefore loses nothing.
+  // No owner function is modified, no arithmetic is re-implemented, and no null convention moves. The read
+  // TIMEOUT WAS NOT RAISED — a slow read is fixed, not accommodated.
+  var overseasBySku = {};
+  for (var ov = 0; ov < overseasRows.length; ov++) {
+    var ovk = aplUpper_(overseasRows[ov].sku);
+    (overseasBySku[ovk] = overseasBySku[ovk] || []).push(overseasRows[ov]);
+  }
+  var eventsBySku = {};
+  for (var ev = 0; ev < eventRows.length; ev++) {
+    var evr = eventRows[ev];
+    var k1 = aplUpper_(evr.sku);
+    if (k1 !== '') (eventsBySku[k1] = eventsBySku[k1] || []).push(evr);
+    if (aplLower_(evr.scope_type) === 'sku') {
+      var k2 = aplUpper_(evr.scope_id);
+      if (k2 !== '' && k2 !== k1) (eventsBySku[k2] = eventsBySku[k2] || []).push(evr);
+    }
+  }
+  var APL_EMPTY_ = [];
+
   var rows = [];
   for (var mi = 0; mi < mskus.length; mi++) {
     var m = mskus[mi];
@@ -148,13 +182,15 @@ function aplBuild_(tables, payload) {
 
     // Special Event FC (raw): null when no scoped events; else the reused prep-month sum.
     var evScope = { sku: sku, company: company, country: country, marketplace: marketplace };
+    var skuEvents = eventsBySku[aplUpper_(sku)] || APL_EMPTY_;   // §F: this SKU's candidates only (see the index note)
     var anyScopedEvent = false;
-    for (var e = 0; e < eventRows.length; e++) { if (fcrEventScopeMatch_(eventRows[e], evScope)) { anyScopedEvent = true; break; } }
-    var specialEventsFc = anyScopedEvent ? fcrSpecialRawQty_(eventRows, evScope, windowKeys) : null;
+    for (var e = 0; e < skuEvents.length; e++) { if (fcrEventScopeMatch_(skuEvents[e], evScope)) { anyScopedEvent = true; break; } }
+    var specialEventsFc = anyScopedEvent ? fcrSpecialRawQty_(skuEvents, evScope, windowKeys) : null;
 
     // Site / Overseas (raw): null when no matching row; else the reused aggregation.
     var siteStock = aplSiteHasMatch_(amzBySku, sku, country, marketplace) ? rivSiteStock_(amzBySku, sku, country, marketplace) : null;
-    var thirdPartyStock = aplOverseasHasMatch_(overseasRows, whById, sku, country) ? rivOverseasStock_(overseasRows, whById, sku, country) : null;
+    var skuOverseas = overseasBySku[aplUpper_(sku)] || APL_EMPTY_;   // §F: this SKU's candidates only
+    var thirdPartyStock = aplOverseasHasMatch_(skuOverseas, whById, sku, country) ? rivOverseasStock_(skuOverseas, whById, sku, country) : null;
 
     rows.push({
       sku: sku, country: country, marketplace: marketplace, marketplaceId: aplStr_(m.marketplace_id),
@@ -220,11 +256,32 @@ function handleAiPlanFirstLayerGet_(body, io) {
   var reqId = aplStr_(body && body.requestId) || ('REQ-S' + ('000000' + seq).slice(-6));
   try {
     var payload = (body && body.payload) || {};
+    // F1-7N-FB-3B §F — PER-PHASE SERVER INSTRUMENTATION. A single serverDurationMs could not distinguish "the
+    // spreadsheet is slow to open", "one table is enormous", "the composition is quadratic" and "the payload is
+    // too big to serialize" — so the >45 s read had no nameable cause. Each phase is now timed separately, every
+    // table reports its own read cost and row count, and the response's serialized BYTE SIZE is measured. These
+    // are diagnostic meta only: not one business value, null convention or row is affected by their presence.
+    var phases = [];
+    var tOpen = io.now();
     var ss = io.openTarget();
-    var tables = {}, readCount = 0;
-    for (var i = 0; i < APL_TABLES_.length; i++) { var spec = APL_TABLES_[i]; tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true); readCount++; }
+    phases.push({ phase: 'sheet_open', ms: io.now() - tOpen });
+    var tRead = io.now(), tables = {}, readCount = 0, perTable = [];
+    for (var i = 0; i < APL_TABLES_.length; i++) {
+      var spec = APL_TABLES_[i], tT = io.now();
+      tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
+      perTable.push({ table: spec.name, rows: (tables[spec.name] || []).length, ms: io.now() - tT });
+      readCount++;
+    }
+    phases.push({ phase: 'header_resolution_and_row_read', ms: io.now() - tRead, tables: perTable });
+    var tMap = io.now();
     var vm = aplBuild_(tables, payload);
-    return aplBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount });
+    phases.push({ phase: 'current_run_filtering_and_mapping', ms: io.now() - tMap, rows_out: (vm && vm.rows ? vm.rows.length : 0) });
+    var tSer = io.now();
+    var bytes = 0;
+    try { bytes = JSON.stringify(vm).length; } catch (eS) { bytes = -1; }
+    phases.push({ phase: 'serialization', ms: io.now() - tSer, response_bytes: bytes });
+    return aplBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount,
+      phases: phases, response_bytes: bytes });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'AI_PLAN_FIRST_LAYER_BUILD_FAILED';
     return aplBuildEnvelope_(false, null, [{ code: code, message: String(e && e.message || e), details: (e && e.schemaDetail) || null }],

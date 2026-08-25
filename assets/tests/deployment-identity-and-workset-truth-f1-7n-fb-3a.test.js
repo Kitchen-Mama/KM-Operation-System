@@ -98,9 +98,15 @@ section('B. immutable deployment identity');
 ok(/required_action_list_version:/.test(G63) && /required_action_count:/.test(G63),
   'B1. plus the required-action list version and size');
 // the build marker was the field that failed, so it must now actually move
-ok(/var SYS_BUILD_VERSION_ = 'F1-7N-FB-3A';/.test(G63), 'B2. SYS_BUILD_VERSION_ is bumped for this change');
+// F1-7N-FB-3B: the bump rule is asserted, not a frozen literal. FB-3B is a sync-visible backend change that
+// ALSO adds router actions, so both constants must have moved past their FB-3A values. Pinning the exact string
+// would make this suite fail on every legitimate future bump, which is the opposite of what it is guarding.
+var _buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+ok(!!_buildNow && _buildNow !== 'F1-7N-FB-3A' && _buildNow !== 'F1-7N-FB-2',
+  'B2. SYS_BUILD_VERSION_ is bumped past FB-3A for this change (now ' + _buildNow + ')');
 ok(!/var SYS_BUILD_VERSION_ = 'F1-7N-FB-2';/.test(G63), 'B2. and no longer reports the FB-2 build it reported live');
-ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 3;/.test(G63), 'B2. the action contract is versioned');
+var _acv = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+ok(_acv >= 4, 'B2. the action contract version advanced when router actions were added (now v' + _acv + ')');
 ok(/MUST be bumped in the same commit as any sync-visible backend change/.test(G63),
   'B2. with a written rule so it cannot silently go stale again');
 // the registry projection version is sourced from 64_, not restated
@@ -210,7 +216,7 @@ section('F. the origin of 234 — EXECUTING the shipped workset builder');
 
 eval(extractVar(RO, 'var RO_SEND_UNITS_ = ['));
 eval(extractFn(RO, '_roBuildWorkset_'));
-eval(extractFn(RO, '_roWorksetSummary_'));
+eval(extractFn(RO, '_roSendConfirmSummary_'));
 
 // Reproduce the reported shape: 495 rows on the page, 234 SKU rows carrying a positive tier qty.
 var drafts = [];
@@ -238,37 +244,62 @@ var before = w.sku_rows_with_positive_tier;
 try { w.sku_rows_with_positive_tier = 1; } catch (e) { /* strict-mode throw is also acceptable */ }
 eq(w.sku_rows_with_positive_tier, before, 'F8. the workset is FROZEN — no phase can change a denominator mid-run');
 
-// the summary labels every count with its unit and never merges them
-var sum = _roWorksetSummary_(w, 'All Request (T1+T2+T3)');
-['SKU rows with a positive tier qty', 'Tier cells (SKU x T1/T2/T3)', 'Distinct SKUs', 'Distinct Series',
- 'Already-persisted canonical drafts', 'Manual drafts to create/update', 'Expected Request Order headers',
- 'Expected Request Order lines', 'Already submitted (terminal)', 'No positive tier qty in scope',
- 'Removed by DISPLAY filters'].forEach(function (label) {
+// F1-7N-FB-3B: the confirmation summary is now built from the SERVER's frozen plan, and it must keep the two
+// unit families VISIBLY SEPARATE — page CANDIDATES (495 / 234 / 468) versus PERSISTED allocation drafts. That is
+// the strictly stronger form of the FB-3A contract: FB-3A labelled the units, FB-3B also proves which of them is
+// the send authority. _roWorksetSummary_ is superseded by _roSendConfirmSummary_ and no longer exists.
+var serverPlan = { tier_scope: 'ALL', planning_cycle: '2026-08', workset_checksum: 'ROSCHK-DEADBEEF',
+  counts: { active_persisted_drafts: 180, drafts_with_positive_selected_tier: 180, selected_tier_allocations: 540,
+    positive_selected_tier_allocations: 360, distinct_skus: 180, distinct_series: 7,
+    expected_request_order_headers: 7, expected_request_order_lines: 360, total_units: 99000 },
+  excluded: { status_submitted: 40, status_cancelled: 0, tier_terminal_already_sent: 12,
+    tier_zero_or_blank_qty: 168, tier_out_of_scope: 0 },
+  quantity_verification: { asserted: 360, verified: 360, persisted_without_assertion: 0 } };
+var sum = _roSendConfirmSummary_({ all_page_rows_loaded: 495, sku_rows_with_positive_tier: 234,
+  tier_cells_with_positive_qty: 468 }, serverPlan, 'All Request (T1+T2+T3)');
+['ON THIS PAGE (candidate counts', 'WILL BE SENT (server authority', 'AI Plan rows loaded',
+ 'SKU rows with a positive tier qty', 'Tier cells with a positive qty', 'Active persisted drafts in the cycle',
+ 'POSITIVE selected-tier allocations', 'Distinct SKUs', 'Distinct Series',
+ 'Request Orders to create (headers)', 'Request Order LINES to create', 'QUANTITY VERIFICATION',
+ 'Verified against the database', 'Page rows with NO persisted draft',
+ 'Already submitted (header terminal)', 'Tier already sent (tier terminal)'].forEach(function (label) {
   ok(sum.indexOf(label) !== -1, 'F9. the confirmation summary labels: ' + label);
 });
-ok(/an AI Plan row is NOT a persisted allocation draft/.test(sum),
-  'F9. and states the distinction the old label got wrong');
+ok(/NOT persisted allocation drafts/.test(sum), 'F9. and states the distinction the old label got wrong');
+ok(sum.indexOf('495') !== -1 && sum.indexOf('234') !== -1 && sum.indexOf('468') !== -1,
+  'F9. the page CANDIDATE counts 495 / 234 / 468 all appear, under the candidate heading');
+ok(sum.indexOf('DISPLAY ONLY') !== -1 && /do NOT reduce this Send/.test(sum),
+  'F9. and the dialog states that the display controls do not reduce the Send');
 ok(sum.indexOf('Proceed?') !== -1, 'F9. it is a CONFIRMATION shown before anything is written');
+ok(!/function _roWorksetSummary_/.test(RO), 'F9. the superseded single-block summary helper is removed');
 
 // the old mislabelled progress helper is gone, and no phase may mix units
 // scan the CODE: the comment recording the removal deliberately names the removed helper
 ok(!/_roSendProgress_/.test(code(RO)), 'F10. the mislabelled FB-3 progress helper is removed from the code');
 var send = extractFn(RO, 'handleSendRequest');
 ok(!/'allocation drafts'/.test(send), 'F10. and no phase calls a SKU-row count "allocation drafts"');
-ok(/_roSendPhase_\('Persisting allocation drafts', di, _roWorkset\.sku_rows_with_positive_tier, 'SKU rows'\)/.test(send),
-  'F11. the per-SKU phase names its unit as SKU rows and takes its denominator from the frozen workset');
-ok(/_roSendPhase_\('Creating Request Orders', si, _roWorkset\.expected_request_order_headers, 'Series groups'\)/.test(send),
-  'F11. the per-series phase names its unit as Series groups');
+// F1-7N-FB-3B: there is no per-SKU write loop left to report, so the FB-3A per-loop phase assertions are
+// superseded by a STRICTLY STRONGER one — the phase denominator now comes from the SERVER's frozen plan, which
+// the page cannot influence at all, and it still names its unit.
+ok(/_roSendPhase_\('Sending to the server orchestration', 0, plan\.counts\.expected_request_order_headers, 'Series groups'\)/.test(send),
+  'F11. the send phase takes its denominator from the SERVER plan and names its unit as Series groups');
 var phaseFn = extractFn(RO, '_roSendPhase_');
 ok(/unitLabel/.test(phaseFn), 'F11. every phase must pass an explicit unit label');
-// the confirmation is shown BEFORE the latch and before any write
-ok(send.indexOf('_roWorksetSummary_') < send.indexOf('beginWriteBatch'), 'F12. the summary is confirmed before the batch opens');
-ok(send.indexOf('_roWorksetSummary_') < send.indexOf('upsertRequestOrderAllocationDraft'), 'F12. and before the first write');
+// the confirmation is shown BEFORE the latch and before the committing request
+ok(send.indexOf('_roSendConfirmSummary_') < send.indexOf('_roSendState.busy = true'),
+  'F12. the summary is confirmed before the latch is taken');
+ok(send.indexOf('_roSendConfirmSummary_') < send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
+  'F12. and before the one committing orchestration request');
+ok(send.indexOf('dry_run: true') < send.indexOf('_roSendConfirmSummary_'),
+  'F12. and the numbers it shows come from a ZERO-WRITE dry run performed first');
 
 // exclusions are counted, not silently dropped
 ok(/_roExcluded\.already_submitted_sku\+\+/.test(send), 'F13. terminal-submitted SKUs are counted as an exclusion');
 ok(/_roExcluded\.no_positive_tier_qty\+\+/.test(send), 'F13. so are rows with no positive tier qty');
-ok(/removed_by_display_filters/.test(send), 'F13. and rows removed by DISPLAY filters are surfaced');
+// F1-7N-FB-3B §B: the FB-3A "surface the display-filter truncation" contract is REPLACED by the user-frozen
+// decision that there must BE no truncation. The count survives as a 0-BY-CONSTRUCTION proof.
+ok(/removed_by_display_filters: 0,/.test(send),
+  'F13. and display-filter truncation is now 0 BY CONSTRUCTION, not merely surfaced');
 
 // =======================================================================================================
 section('G. interrupted-saga reconciliation before any retry');

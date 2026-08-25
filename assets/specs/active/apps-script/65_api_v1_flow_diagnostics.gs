@@ -21,7 +21,7 @@
 // the cases where the question really is "would THIS route save?".
 // ============================================================
 
-var FLOWDIAG_BUILD_VERSION_ = 'F1-7N-FB-3A';
+var FLOWDIAG_BUILD_VERSION_ = 'F1-7N-FB-3B';
 
 function flowStr_(v) { return String(v == null ? '' : v).trim(); }
 function flowIsPlaceholder_(v) { var s = flowStr_(v); return s === '' || s.indexOf('PASTE_') === 0; }
@@ -273,15 +273,19 @@ function handleRequestOrderSendDiagnostic_(body) {
     success: true,
     request_id: flowStr_(body && (body.requestId || body.request_id)) || ('ROSEND-' + Utilities.getUuid().substring(0, 8).toUpperCase()),
     build_version: FLOWDIAG_BUILD_VERSION_,
-    canonical_meaning: 'Send Request = advance each per-SKU allocation draft to site_confirmed, create ONE Request Order per series under a deterministic execution key, then advance the covered drafts to submitted. It is NOT an approval decision and NOT a PO issue.',
+    canonical_meaning: 'Send Request (F1-7N-FB-3B) = ONE server orchestration over the PERSISTED allocation drafts for the current planning cycle, scoped ONLY by tier (ALL/T1/T2/T3): verify the asserted quantities against the DB, freeze the workset, create ONE Request Order per Series under a deterministic execution key, prove the output, then advance the covered drafts. Country / Marketplace / Category / Risk / Show mode / SKU search / pagination are DISPLAY_ONLY and never reduce it. It is NOT an approval decision and NOT a PO issue.',
     evaluator: 'production (prodRequireSheet_ + the frozen 13_/15_ header authorities + sysRouterReadiness_)',
     supplied_draft_id: draftId || null
   };
   var c = flowCounters_(); for (var k in c) { if (Object.prototype.hasOwnProperty.call(c, k)) out[k] = c[k]; }
   var blockers = [];
 
+  // F1-7N-FB-3B — the orchestration actions are now part of the Send path, so a partial sync of 66_ is a Send
+  // blocker and must be reported as one. The three legacy per-SKU write actions stay in the list: they remain the
+  // CANONICAL writers the orchestration delegates to, so their absence still blocks a Send.
   var acts = flowActionRows_(['upsertRequestOrderAllocationDraft', 'upsertRequestOrderAllocationDraftLines',
-    'createRequestOrderDraft', 'submitRequestOrderAllocationDrafts']);
+    'createRequestOrderDraft', 'submitRequestOrderAllocationDrafts',
+    'requestOrder.send.orchestrate', 'requestOrder.sendWorkset.get']);
   out.actions = acts.rows;
   out.actions_all_available = acts.all_available;
   if (!acts.all_available) blockers.push({ reason: 'ROUTER_ACTION_OR_HANDLER_MISSING', detail: 'not present in the DEPLOYED code (partial Apps Script sync): ' + acts.missing.join(',') });

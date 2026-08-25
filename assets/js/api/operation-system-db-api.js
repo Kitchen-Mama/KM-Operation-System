@@ -3529,7 +3529,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 3;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 4;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
 // action is told apart from a genuine business rejection — a business handler never answers with them.
@@ -3783,6 +3783,38 @@ window.KM.DB.getClientCapabilities = function() { return _kmGapRead_('getClientC
 // requested at page mount WITHOUT touching the inventory workspace and WITHOUT putting the inventory table
 // into a loading state. Read-only, bounded by the shared client timeout, never throws.
 window.KM.DB.getInventoryScopeRegistry = function() { return _kmGapRead_('inventoryScope.registry.get', {}); };
+
+// F1-7N-FB-3B §E/§F — SEND REQUEST: the slim workset READ and the single ORCHESTRATION write. Owner = 66_.
+//
+// getRequestOrderSendWorkset — READ-ONLY, include-gated, TWO tables. Send Request no longer depends on a fresh
+// 495-row AI-Plan payload (aiPlanFirstLayer.get reads ELEVEN tables): the confirmation counts, the tier
+// selection, the Series grouping, the persisted-quantity facts and the current-run authority all come from
+// here. Bounded by the shared READ timeout, which was deliberately NOT raised.
+window.KM.DB.getRequestOrderSendWorkset = function (payload) { return _kmGapRead_('requestOrder.sendWorkset.get', { payload: payload || {} }); };
+
+// sendRequestOrderOrchestration — ONE CLICK, ONE REQUEST. The browser no longer runs a per-SKU write loop and
+// no longer owns business progress: it posts the tier scope, the planning cycle and its asserted quantities,
+// and the server builds the workset from the PERSISTED drafts, verifies, freezes, writes through the canonical
+// writers, proves the output and advances the lifecycle.
+//
+// WHY THIS IS NOT ROUTED THROUGH _kmWeeklyCommand_'s generic timeout story: an expired orchestration is neither
+// a zero-write nor a failure — it is RESUMABLE BY EXECUTION KEY. The key is a pure function of the body, so the
+// caller resumes by re-posting the SAME body with resume=true; nothing already proven is repeated. A blind
+// retry is never advised. `dry_run: true` performs zero writes and returns the frozen plan — that is what the
+// confirmation dialog is built from, so the numbers the user approves are the server's, not the page's.
+window.KM.DB.sendRequestOrderOrchestration = async function (payload) {
+    var res = await _kmWeeklyCommand_('requestOrder.send.orchestrate', { payload: payload || {} });
+    if (res && res.success === false && res.error && /REQUEST_TIMEOUT/.test(String(res.error.code || ''))) {
+        res.error.details = Object.assign({}, res.error.details || {}, {
+            resumable_by_execution_key: true, retryable: false,
+            next_action: 'Do NOT press Send again. Re-invoke the SAME Send with resume=true, or run the interrupted-Send reconciliation first — the orchestration key is derived from the request, so a resume converges on the same Request Orders.'
+        });
+    }
+    return res;
+};
+// Read-only reconciliation of an interrupted Send (FB-3A, 65_). Kept adjacent because the orchestration's own
+// timeout guidance points at it: an interrupted orchestration is never assumed to be a zero-write.
+window.KM.DB.reconcileRequestOrderSend = function (payload) { return _kmGapRead_('system.requestOrderSendReconcile', payload || {}); };
 // Fetch the effective backend flags ONCE and apply them through the ONE KM.api apply path. On ANY transport/business
 // failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
 // generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.
