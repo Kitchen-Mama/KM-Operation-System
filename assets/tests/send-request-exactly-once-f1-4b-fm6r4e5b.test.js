@@ -95,19 +95,43 @@ ok(_roManualDraftId_('KM', 'US', 'AMAZON_US', 'GA0450', '2026') !== _roManualDra
 ok(/^RAD-M-/.test(_roManualDraftId_('KM', 'US', 'AMAZON_US', 'GA0450', '2026')), 'manual id is prefixed + grain-encoded');
 
 console.log('\n== frontend Send wiring ==');
-ok(/source_ref_type: 'request_order_allocation_batch'/.test(send) && /planning_cycle: cycle, series: series/.test(send), '§2 Send tags the batch execution (source_ref_type + cycle + series) for the backend key');
-ok(/request_allocation_draft_id: d\.allocDraftId/.test(send), '§3/§10 every request-order line carries its canonical allocation lineage FK');
-ok(/allocDraftId = isCanon[\s\S]{0,140}_roManualDraftId_\(item\.company/.test(send), '§5 lineage FK = canonical draft id, else the deterministic manual id');
-ok(/submitRequestOrderAllocationDrafts\(\{ draft_ids: coveredDraftIds, submitted_by: 'request-order' \}\)/.test(send), '§11 submit (site_confirmed → submitted) runs over the covered drafts AFTER execution');
-var iCreate = send.indexOf('createRequestOrderDraft'), iSubmit = send.indexOf('submitRequestOrderAllocationDrafts({ draft_ids: coveredDraftIds');
-ok(iCreate > -1 && iSubmit > iCreate, '§11/§16 submit happens AFTER request-order creation (success only past the execution boundary)');
+// F1-7N-FB-3B §E — THESE INVARIANTS DID NOT CHANGE; THEIR OWNER DID. The per-SKU browser saga is retired, so
+// the execution-tagging, lineage-FK and ordering guarantees are now asserted where they actually execute: the
+// server orchestration (66_). Nothing here is relaxed — an ordering that was previously only textual in one
+// function is now a numbered PHASE sequence that also read-after-write proves the output before advancing the
+// lifecycle, which the client loop never did.
+var GS66 = read('specs/active/apps-script/66_api_v1_request_order_send.gs');
+var orch = extractFn(GS66, 'handleRequestOrderSendOrchestrate_');
+ok(/source_ref_type: 'request_order_allocation_batch'/.test(orch) && /planning_cycle: execCycle, series: g\.series/.test(orch),
+  '§2 the orchestration tags the batch execution (source_ref_type + cycle + series) for the backend key');
+ok(/request_allocation_draft_id: l\.request_allocation_draft_id/.test(orch),
+  '§3/§10 every request-order line carries its canonical allocation lineage FK');
+ok(/io\.createRequestOrderDraft\(writerBody\)/.test(orch) && !/appendRow|setValue\(/.test(orch),
+  '§5 lineage + creation go through the EXISTING canonical writer — the orchestration writes no row itself');
+ok(/io\.submitAllocationDrafts\(\{ draft_ids: ids, submitted_by: actor, submit_buckets: submitBuckets \}\)/.test(orch),
+  '§11 the lifecycle advance runs over the covered draft ids through the canonical submit writer');
+var iCreate = orch.indexOf('io.createRequestOrderDraft'), iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
+ok(iCreate > -1 && iProof > iCreate && iSubmit > iProof,
+  '§11/§16 create → PROVE the output → only then advance the lifecycle (stricter than the retired client order)');
+// §C: the deterministic manual id is RETAINED as the documented identity of the retired path, but the Send
+// transition must no longer reach it — a draft is never created from a raw AI Plan row and immediately sent.
+ok(!/_roManualDraftId_/.test(send), '§C the Send transition no longer creates a manual draft (retired per FB-3B §C)');
+ok(typeof _roManualDraftId_ === 'function', '§5 the deterministic manual-id authority is retained (reversible), not deleted');
 // F1-7N-FB-3A §E — the exclusion is unchanged in EFFECT (still an immediate `return`); it is now also
 // COUNTED, so the confirmation summary can explain the gap between rows on screen and rows written.
 ok(/_roIsSubmittedSku_\(item\.sku\)\) \{ _roExcluded\.already_submitted_sku\+\+; return; \}/.test(send),
   '§14/§18 already-executed (submitted) SKUs are excluded from a new Send — and the exclusion is counted');
 ok(/const eff = _roSendOrderQty_\(item, idx, b, e\)/.test(send), '§17 execution qty = canonical persisted order_qty (no recompute)');
 ok(!/getOrderPlanningGap|calculateGap|KMREC|calculateSuggestedOrderQty/.test(send), '§17/§18 no gap/KMREC/suggested recompute in Send');
-ok(/staleSkus\.push\(sku\)/.test(send) && /if \(staleSkus\.length\)[\s\S]{0,600}return;/.test(send), '§9 (J) stale token → no Request Order created, latest truth reloaded');
+// F1-7N-FB-3B §C — the stale-token abort is superseded by a STRICTLY STRONGER barrier. The client loop aborted
+// when a canonical TOKEN had moved; the orchestration now compares every asserted QUANTITY against the persisted
+// value and blocks the ENTIRE Send on any drift, absence or unsaved edit — before a single Request Order exists.
+var verifyFn = extractFn(GS66, 'rosVerifyQuantities_');
+ok(/QUANTITY_DRIFT/.test(verifyFn) && /UNSAVED_NO_PERSISTED_DRAFT/.test(verifyFn) && /UNSAVED_TIER_ABSENT/.test(verifyFn),
+  '§9 (J) drift / unsaved / missing persisted draft are each named distinctly');
+var iVerify = orch.indexOf('QUANTITY_VERIFICATION_FAILED');
+ok(iVerify > -1 && iVerify < iCreate, '§9 (J) and the whole Send is blocked BEFORE any Request Order is created');
+ok(/zero_write: true/.test(orch.slice(iVerify - 400, iVerify + 700)), '§9 (J) reported as a proven zero-write');
 
 console.log('\n== §8/§25 real conflicts still fail closed; §23 PO untouched ==');
 ok(/if \(hs\.length > 1\) \{ conflicts\.push/.test(GS47), '§8/§25 >1 active canonical row still → BLOCKED_CONFLICT (not weakened)');

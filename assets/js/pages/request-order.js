@@ -3239,29 +3239,6 @@ function _roBuildWorkset_(drafts, bySeriesKeys, excluded, tierScope) {
     try { Object.freeze(counts); Object.freeze(counts.excluded); } catch (e) {}
     return counts;
 }
-// The confirmation summary. Every number carries its unit; nothing is merged.
-function _roWorksetSummary_(w, typeLabel) {
-    var x = w.excluded || {};
-    return 'Send Request — ' + typeLabel + '\n' +
-        '\nWHAT WILL BE SENT' +
-        '\n  SKU rows with a positive tier qty : ' + w.sku_rows_with_positive_tier +
-        '\n  Tier cells (SKU x T1/T2/T3)       : ' + w.tier_cells_with_positive_qty +
-        '\n  Distinct SKUs                     : ' + w.distinct_skus +
-        '\n  Distinct Series                   : ' + w.distinct_series +
-        '\n  Already-persisted canonical drafts: ' + w.canonical_persisted_drafts +
-        '\n  Manual drafts to create/update    : ' + w.manual_drafts_to_create +
-        '\n  Expected Request Order headers    : ' + w.expected_request_order_headers +
-        '\n  Expected Request Order lines      : ' + w.expected_request_order_lines +
-        '\n\nEXCLUDED' +
-        '\n  Rows on this page in scope        : ' + x.rows_in_scope +
-        '\n  Already submitted (terminal)      : ' + x.already_submitted_sku +
-        '\n  No positive tier qty in scope     : ' + x.no_positive_tier_qty +
-        '\n  Removed by DISPLAY filters        : ' + x.removed_by_display_filters +
-        '\n      (category tab / risk / SKU search — see the Send-scope note below)' +
-        '\n\nTier scope selected: ' + w.tier_scope +
-        '\n\nNOTE: an AI Plan row is NOT a persisted allocation draft. Only the counts above are written.' +
-        '\n\nProceed?';
-}
 // Phase progress with an IMMUTABLE denominator and a unit-accurate label. The unit must be one of
 // RO_SEND_UNITS_ so a phase can never advertise a count of something it is not iterating.
 function _roSendPhase_(phase, done, total, unitLabel) {
@@ -3269,7 +3246,6 @@ function _roSendPhase_(phase, done, total, unitLabel) {
     _roSetSendState_('LOADING', phase + ' ' + done + '/' + total + ' ' + unitLabel + ' (' + pct + '%) — do not close this page.');
 }
 window._roBuildWorkset_ = _roBuildWorkset_;
-window._roWorksetSummary_ = _roWorksetSummary_;
 window._roSendUnits_ = function () { return RO_SEND_UNITS_.slice(); };
 
 // ============================================================================================================
@@ -3359,22 +3335,177 @@ function _roSendRequestId_() {
 window._roSendState_ = function () { return _roSendState; };
 window._roSetSendState_ = _roSetSendState_;
 
+// ============================================================================================================
+// F1-7N-FB-3B §B/§C/§D/§E — SEND REQUEST: ONE CLICK, ONE SERVER ORCHESTRATION.
+// ------------------------------------------------------------------------------------------------------------
+// WHAT CHANGED, AND WHY THE CLIENT SAGA HAD TO GO. FB-3 latched the button, phased the progress and bounded the
+// transport; FB-3A froze the counts and named the labels. Both were true improvements to a fundamentally wrong
+// shape, and FB-3A said so: §G was left unimplemented and the browser still owned the business transaction.
+// Three structural defects survived every client-side fix:
+//
+//   1. THE WORKSET WAS A VIEW, SO DISPLAY CONTROLS TRUNCATED A BUSINESS COMMAND. Send built its rows from
+//      _applyRequestOrderFilters, which filters by Category tab, Risk and SKU search — and the Country and
+//      Marketplace selections besides. A user who typed three characters into SKU search and pressed "All
+//      Request" sent three SKUs and was told the Send had succeeded. FB-3A surfaced the truncation as a count
+//      and asked for a decision; FB-3B has that decision (§B, user-frozen) and DELETES the filtering.
+//   2. PROGRESS WAS OWNED BY A BROWSER TAB. Navigating, closing the tab or hitting the transport bound
+//      mid-loop left the lifecycle half-advanced with no server record of what was intended.
+//   3. QUANTITY AUTHORITY WAS ASSERTED, NOT PROVEN. The loop trusted its own in-memory map.
+//
+// THE USER-FROZEN SCOPE RULE (§B). The ONLY BUSINESS_SEND_SCOPE control is the request type:
+//     ALL = the complete current eligible allocation population across ALL applicable countries, marketplaces
+//           and tiers · T1 / T2 / T3 = the complete current eligible population of that tier, across all
+//           countries and marketplaces.
+//   Country, Marketplace, Category, Risk, Show mode, SKU search, pagination, the current visible page and
+//   expanded/collapsed state are DISPLAY_ONLY and MUST NOT truncate the Send. This is intentional: Send
+//   Request is a comprehensive one-time task, not a per-row selection.
+//
+// HOW THAT IS NOW STRUCTURAL RATHER THAN A PROMISE. The server builds the workset from the PERSISTED allocation
+// drafts (66_ rosBuildWorkset_, which accepts no country / marketplace / category / risk / sku parameter at
+// all). This page no longer supplies the population — it supplies the TIER SCOPE and its asserted quantities.
+// A display filter cannot narrow a set it does not participate in producing, and re-adding one here could not
+// narrow the Send even if someone tried.
+//
+// THE §C LIFECYCLE. AI Plan quantities are DEFAULTS. The authority is the latest SUCCESSFULLY PERSISTED
+// user-edited quantity, and a Send never creates a draft from a raw AI Plan row and immediately sends it:
+//     AI Plan / materialization -> persisted canonical draft -> user edits persisted through the canonical
+//     writer -> scoped read-after-write verification -> frozen checksum + workset -> Send orchestration
+// Before anything is written this handler flushes every pending edit AND WAITS for it, and the server then
+// re-reads every affected draft and refuses the WHOLE Send if any asserted quantity is unsaved, missing or
+// drifted. A prior DB quantity is never silently substituted for a newer edit that failed to save.
+//
+// THE §C CANONICAL CONFLICT — REPORTED, NOT HIDDEN. R4E5B used to create a DETERMINISTIC MANUAL draft
+// ('RAD-M-…') for a never-materialized SKU inside the Send transition. That contradicted the standing rule
+// "AI Plan remains the draft-creation boundary" AND the live flat-V2 deterministic identity
+// ('RD::MONTHLY_ORDER::<YYYY-MM>::…'), under which a 'RAD-M-…' row is not the canonical draft for its scope at
+// all. §C settles it: the workset is PERSISTED CANONICAL DRAFTS ONLY, so that create-inside-Send step is
+// RETIRED. The consequence is real and is stated in the confirmation dialog rather than buried: a SKU that has
+// never been materialized is no longer sendable in one click.
+//
+// PROGRESS AND NAVIGATION. There is no per-SKU write loop left to report, so progress is PHASE-based over the
+// server's own phases. Navigating away can no longer cancel or own business progress: the orchestration is
+// already running on the server, keyed by an execution key, and a late response is discarded for RENDERING
+// only — never treated as "nothing happened".
+// ============================================================================================================
+
+// §B — the tier scope, and the ONLY mapping from a page control to a business scope value.
+function _roSendTierScope_(requestType) {
+  var t = String(requestType == null ? '' : requestType).trim().toLowerCase();
+  return (t === 't1' || t === 't2' || t === 't3') ? t.toUpperCase() : 'ALL';
+}
+
+// §B — THE SEND SCOPE ROW UNIVERSE. Deliberately `requestOrderState.data` UNFILTERED.
+// It does NOT consult, and must never consult: requestOrderState.filters.country, .marketplace, .risk, .sku,
+// requestOrderState.categoryTab, requestOrderState.showMode, the pagination state or any expanded-row state.
+// _applyRequestOrderFilters is the DISPLAY authority and is intentionally not called here. These page rows are
+// used ONLY to compute the user's asserted quantities and the page-side candidate counts — the population that
+// is actually sent is the server's, built from persisted drafts.
+function _roSendScopeRows_() {
+  var all = requestOrderState.data || [];
+  // Site Confirm, when REQUIRED, is a business gate rather than a display filter, so it still applies.
+  return _roSiteConfirmRequired() ? all.filter(_roIsRowConfirmed) : all;
+}
+
+// §C step 1 — FLUSH EVERY PENDING EDIT AND WAIT FOR IT. _roFlushPendingAutosaveOnUnmount_ is deliberately
+// fire-and-forget (navigation must never block); a Send is the opposite case: it must not proceed over a write
+// that is still in flight or that failed. Each pending callback goes through the SAME canonical locked writer
+// and the SAME optimistic token, so this adds no second write path.
+async function _roFlushDirtyEditsForSend_() {
+  var out = { flushed: 0, failed: 0, errors: [] };
+  var keys = Object.keys(_roAutosaveTimers_ || {});
+  var pending = [];
+  keys.forEach(function (k) {
+    var t = _roAutosaveTimers_[k];
+    if (t) { try { clearTimeout(t); } catch (e) {} }
+    delete _roAutosaveTimers_[k];
+    var fn = _roAutosavePending_[k];
+    delete _roAutosavePending_[k];
+    if (typeof fn !== 'function') return;
+    try { pending.push(Promise.resolve(fn())); } catch (e2) { pending.push(Promise.reject(e2)); }
+  });
+  if (!pending.length) return out;
+  out.flushed = pending.length;
+  var settled = await Promise.all(pending.map(function (p) { return p.then(function () { return null; }, function (e) { return e; }); }));
+  settled.forEach(function (e) { if (e) { out.failed++; out.errors.push(String((e && e.message) || e)); } });
+  return out;
+}
+
+// §C — the ASSERTED quantities. One entry per SKU row identity carrying the quantities the USER believes are
+// current, so the server can prove each one against the persisted draft. The quantity itself comes from the
+// unchanged authority _roSendOrderQty_ (canonical persisted order_qty for a draft-backed SKU, else the manual
+// effective value) — this is not a new quantity rule.
+function _roBuildSendIntents_(rows, buckets) {
+  var intents = [];
+  (rows || []).forEach(function (entry) {
+    var item = entry.item, lines = entry.lines;
+    if (!lines.length) return;
+    var tiers = {};
+    lines.forEach(function (l) { tiers[l.bucket] = { order_qty: l.orderQty, month: l.month }; });
+    intents.push({ company: item.company || '', country: item.country || '', marketplace: item.marketplace || '',
+      sku: item.sku, series: item.series || '', tiers: tiers });
+  });
+  return intents;
+}
+
+// §D — the confirmation summary. TWO clearly separated blocks, because conflating them is exactly the "234"
+// defect: page rows are CANDIDATES, not persisted work units, and the dialog now says so in those words.
+//   ON THIS PAGE — 495 AI Plan rows / 234 SKU rows with a positive tier / 468 tier cells are CANDIDATE counts.
+//   WILL BE SENT — the SERVER's counts over PERSISTED allocation drafts. This is the authority.
+// A difference between the two blocks is informative, not an error: it is the count of page rows that have no
+// persisted canonical draft yet.
+function _roSendConfirmSummary_(pageCounts, plan, typeLabel) {
+  var c = (plan && plan.counts) || {};
+  var x = (plan && plan.excluded) || {};
+  var q = (plan && plan.quantity_verification) || {};
+  var noDraft = Math.max(0, Number(pageCounts.sku_rows_with_positive_tier || 0) - Number(c.drafts_with_positive_selected_tier || 0));
+  return 'Send Request — ' + typeLabel + '\n' +
+    '\nSCOPE (user-frozen): tier scope ' + (plan && plan.tier_scope) + ' — the COMPLETE eligible population across' +
+    '\nALL countries and marketplaces. Country, Marketplace, Category, Risk, Show mode, SKU search and' +
+    '\npagination are DISPLAY ONLY and do NOT reduce this Send.' +
+    '\n\nON THIS PAGE (candidate counts — NOT persisted allocation drafts)' +
+    '\n  AI Plan rows loaded                 : ' + pageCounts.all_page_rows_loaded +
+    '\n  SKU rows with a positive tier qty   : ' + pageCounts.sku_rows_with_positive_tier +
+    '\n  Tier cells with a positive qty      : ' + pageCounts.tier_cells_with_positive_qty +
+    '\n\nWILL BE SENT (server authority — PERSISTED allocation drafts)' +
+    '\n  Active persisted drafts in the cycle: ' + c.active_persisted_drafts +
+    '\n  Drafts with a positive tier in scope: ' + c.drafts_with_positive_selected_tier +
+    '\n  Selected-tier allocations           : ' + c.selected_tier_allocations +
+    '\n  POSITIVE selected-tier allocations  : ' + c.positive_selected_tier_allocations +
+    '\n  Distinct SKUs                       : ' + c.distinct_skus +
+    '\n  Distinct Series                     : ' + c.distinct_series +
+    '\n  Request Orders to create (headers)  : ' + c.expected_request_order_headers +
+    '\n  Request Order LINES to create       : ' + c.expected_request_order_lines +
+    '\n  Total units                         : ' + c.total_units +
+    '\n\nQUANTITY VERIFICATION' +
+    '\n  Quantities asserted by this page    : ' + q.asserted +
+    '\n  Verified against the database       : ' + q.verified +
+    '\n  Persisted with no assertion         : ' + q.persisted_without_assertion +
+    '\n\nEXCLUDED (server, typed)' +
+    '\n  Page rows with NO persisted draft   : ' + noDraft + '  <- run AI Plan to materialize these first' +
+    '\n  Already submitted (header terminal) : ' + (x.status_submitted || 0) +
+    '\n  Cancelled                           : ' + (x.status_cancelled || 0) +
+    '\n  Tier already sent (tier terminal)   : ' + (x.tier_terminal_already_sent || 0) +
+    '\n  Tier zero / blank qty               : ' + (x.tier_zero_or_blank_qty || 0) +
+    '\n  Tier out of the selected scope      : ' + (x.tier_out_of_scope || 0) +
+    '\n\nPlanning cycle: ' + (plan && plan.planning_cycle) + '   ·   Frozen source: ' + (plan && plan.workset_checksum) +
+    '\n\nProceed?';
+}
+window._roSendConfirmSummary_ = _roSendConfirmSummary_;
+window._roSendTierScope_ = _roSendTierScope_;
+window._roBuildSendIntents_ = _roBuildSendIntents_;
+
 async function handleSendRequest() {
-  // F1-7N-FB-3 §D — SINGLE-FLIGHT. A second click while a Send is running is refused outright: the run performs
-  // many sequential writes, so a concurrent second run would interleave with it. The DB is protected by the
-  // deterministic identities either way, but the user must never be able to start two.
+  // SINGLE-FLIGHT. A second click while an orchestration is running is refused outright.
   if (_roSendState.busy) { _roSetSendState_('LOADING', 'A Send is already running — please wait for it to finish.'); return; }
   const _sendMount = _roSendState.mountSeq;   // page-transition guard: a late result must not repaint a newer page
   const requestType = document.getElementById('ro-request-type').value;
   const buckets = _roBucketsForType(requestType);
   const typeLabel = { all: 'All Request (T1+T2+T3)', t1: 'T1 Request', t2: 'T2 Request', t3: 'T3 Request' }[requestType];
+  const tierScope = _roSendTierScope_(requestType);   // §B — the ONLY business scope control
 
   // Gate 1 (Site Confirm) — F1-7N-FA-3C-R6E-P0: enforced ONLY when Site Confirm is REQUIRED (backend-owned flag,
-  // KM.api.requestOrderSiteConfirmRequired). When the flag is temporarily false, Send does NOT reject for a missing Site
-  // Confirm; ALL other Send gates below (submitted-status, positive eligible line, quantities, canonical draft +
-  // optimistic lock, execution key / duplicate protection, downstream schema, auth) stay MANDATORY and unchanged.
+  // KM.api.requestOrderSiteConfirmRequired). Unchanged by FB-3B.
   if (_roSiteConfirmRequired()) {
-    // at least one confirmed site must exist, and every required site scope must be confirmed for ALL requested buckets.
     if (!(requestOrderState.confirmedSites || []).some(function(c) { return c.status === 'confirmed'; })) {
       alert('Please confirm all site scopes before sending this request.');
       return;
@@ -3386,32 +3517,26 @@ async function handleSendRequest() {
     }
   }
 
-  // F1-7L: the per-line FC snapshot (_roFcForItemMonth → getFcRegularForecast) reads the broad-cache FC slice.
-  // Send is reachable without expanding a row, so ensure the bounded second-layer tables are loaded here (no
-  // whole Operation DB, no startup prime) before building the send snapshots.
+  // F1-7L: the per-line FC snapshot reads the broad-cache FC slice; ensure the bounded second-layer tables are
+  // loaded before reading quantities (no whole Operation DB, no startup prime).
   try { await _roEnsureL2Tables(false); } catch (e) {}
 
-  // Collect eligible allocation lines from the confirmed, filtered rows (only order_qty > 0).
-  // Each line carries its bucket/month + the same source snapshots used by the 下單系統 table.
-  // R6E — when Site Confirm is required, only confirmed rows are eligible; when not required, the confirmation filter is
-  // dropped (a row is not excluded SOLELY for lacking Site Confirm). Every other per-row eligibility gate still applies below.
-  const rows = _roSiteConfirmRequired()
-    ? _applyRequestOrderFilters(requestOrderState.data).filter(_roIsRowConfirmed)
-    : _applyRequestOrderFilters(requestOrderState.data);
-  const sendCycle = String(new Date().getFullYear());   // R4E5B — one stable planning cycle for this Send (manual id + execution key)
-  const drafts = [];        // { item, lines:[...], isCanonical, allocDraftId } — allocDraftId is the canonical lineage FK
-  let partialCount = 0;     // manual partial-carton lines (allowed — recorded, never blocked)
-  // F1-7N-FB-3A §E / ADDENDUM §3 — typed exclusion counts, so the confirmation summary can explain the
-  // difference between what is on screen and what will be written instead of leaving it to be guessed.
+  // §B — the UNFILTERED row universe. _applyRequestOrderFilters is NOT called: it is the DISPLAY authority.
+  const rows = _roSendScopeRows_();
+  const drafts = [];        // { item, lines:[...], isCanonical } — page-side CANDIDATES only, never written from here
+  let partialCount = 0;
   const _roExcluded = {
     rows_in_scope: rows.length,
     all_page_rows: (requestOrderState.data || []).length,
-    removed_by_display_filters: Math.max(0, (requestOrderState.data || []).length - rows.length),
+    // §B — 0 BY CONSTRUCTION. The Send universe is the unfiltered page data, so no display control can remove a
+    // row from it. The field is kept (and asserted) so the guarantee is visible in the dialog and in the trace.
+    removed_by_display_filters: 0,
     already_submitted_sku: 0,
     no_positive_tier_qty: 0
   };
   rows.forEach(function(item) {
-    // R4E5B §14/§18 — an already-executed (terminal submitted) SKU is never re-executed by a new Send.
+    // R4E5B §14/§18 — an already-executed (terminal submitted) SKU is never re-executed. The SERVER re-checks
+    // this against the persisted status; this count exists so the dialog can explain the page-vs-server delta.
     if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item.sku)) { _roExcluded.already_submitted_sku++; return; }
     const edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
     const upc = parseFloat(item.boxSize) || 0;
@@ -3420,256 +3545,244 @@ async function handleSendRequest() {
       const idx = RO_TIER_LABELS.indexOf(b);
       const e = edits[b] || {};
       // R4E4 §10 — canonical persisted order_qty for an AI-Plan draft SKU; else the manual effective value.
+      // UNCHANGED authority: this is the number ASSERTED to the server, which then proves it against the DB.
       const eff = _roSendOrderQty_(item, idx, b, e);
       const q = (eff == null) ? 0 : Number(eff);
-      if (isNaN(q) || q <= 0) return;                    // none / invalid → skip (negatives blocked at input)
+      if (isNaN(q) || q <= 0) return;
       const cb = _roCartonBreak(q, upc);
-      const sug = _roTierSuggested(item, idx);
-      const diff = (sug == null) ? '' : (q - sug);
-      const partial = !!(cb.isValid && cb.isPartial);    // NON-blocking manual partial carton
-      if (partial) partialCount++;
+      if (cb.isValid && cb.isPartial) partialCount++;    // NON-blocking manual partial carton (recorded, never blocked)
       const mo = _roBucketMonthObj(b);
       const moYm = mo ? (mo.year + '-' + String(mo.idx + 1).padStart(2, '0')) : '';
-      const fcQty = _roFcForItemMonth(item, mo);
-      lines.push({
-        bucket: b, month: e.month || moYm, orderQty: q, note: e.note || '',
-        upc: upc,
-        carton: (upc > 0) ? (cb.full != null ? cb.full : Math.floor(q / upc)) : '',   // FULL cartons only
-        looseUnits: (upc > 0 && cb.loose != null) ? cb.loose : '',                     // remainder units (partial)
-        isPartial: partial,
-        suggestedQty: (sug == null ? '' : sug),
-        orderVsSuggested: diff,                                                        // Order − Suggested (audit)
-        fcQty: (fcQty == null ? '' : fcQty),
-        targetPct: mo ? _roTargetPct(item, mo) : '',
-        siteStock: (item.siteStock == null ? '' : item.siteStock),
-        thirdPartyStock: (item.thirdPartyStock == null ? '' : item.thirdPartyStock),
-        factoryStock: (item.factoryStock == null ? '' : item.factoryStock)
-      });
+      lines.push({ bucket: b, month: e.month || moYm, orderQty: q });
     });
-    // R4E5B §3/§5/§10 — the canonical allocation lineage FK for every line of this SKU: the AI/canonical draft id
-    // when one exists, else a DETERMINISTIC manual draft id (stable across retries → stable execution key).
     var isCanon = (typeof _roIsCanonicalDraftSku_ === 'function') && _roIsCanonicalDraftSku_(item.sku);
-    var allocDraftId = isCanon
-      ? ((_roCanonicalDraftBySku[_roCanonKey_(item.sku)] || {}).draftId || '')
-      : _roManualDraftId_(item.company, item.country, item.marketplace, item.sku, sendCycle);
-    if (lines.length) drafts.push({ item: item, lines: lines, isCanonical: isCanon, allocDraftId: allocDraftId });
+    if (lines.length) drafts.push({ item: item, lines: lines, isCanonical: isCanon });
     else _roExcluded.no_positive_tier_qty++;
   });
 
-  // NOTE: partial cartons are ALLOWED (non-blocking). They are recorded (full cartons + loose units +
-  // Order−Suggested diff) but never rounded back to a full carton (task H). No full-carton Gate here.
+  // Page-side CANDIDATE counts, frozen and unit-labelled (FB-3A §E, retained verbatim in meaning). These are
+  // NOT the send authority — the dialog labels them "candidate counts — NOT persisted allocation drafts".
+  const bySeries = {};
+  drafts.forEach(function(d) { bySeries[d.item.series || '(no series)'] = 1; });
+  const _roWorkset = _roBuildWorkset_(drafts, Object.keys(bySeries), _roExcluded, typeLabel);
 
-  if (!drafts.length) {
-    // R6A1 (C.7) — NO_ELIGIBLE_SUBMITTED_DRAFTS: a clean zero-write result (returns BEFORE any DB call), never a
-    // HEADER_MISSING / generic failure. Only submitted positive tiers (order_qty > 0) produce downstream lines.
-    alert('No eligible submitted tiers to send (NO_ELIGIBLE_SUBMITTED_DRAFTS) — ' + typeLabel + '.\n\nOpen a confirmed SKU’s Order Allocation and enter a positive Order Qty (T1/T2/T3) first. (No Request Order was created.)');
+  // §C step 1 — FLUSH pending edits and WAIT. A failed flush blocks the ENTIRE Send (step 5): a Send over an
+  // edit that did not persist would silently use the older DB quantity, which is exactly what must not happen.
+  _roSetSendState_('LOADING', 'Saving pending quantity edits…');
+  const flush = await _roFlushDirtyEditsForSend_();
+  if (flush.failed) {
+    _roSetSendState_('ERROR', flush.failed + ' quantity edit(s) could not be saved. Nothing was sent.');
+    alert('Send Request 已停止 — ' + flush.failed + ' 筆數量編輯未能寫入資料庫。\n\n' +
+      'Nothing was sent and nothing was written. The unsaved value is still on screen: correct it, let it save, then Send again.\n\n' +
+      '▸ ' + flush.errors.slice(0, 5).join('\n▸ '));
     return;
   }
 
-  const totalUnits = drafts.reduce(function(s, d) { return s + d.lines.reduce(function(a, l) { return a + l.orderQty; }, 0); }, 0);
+  const DB = window.KM.DB;
+  const planningCycle = _roSendPlanningCycle_();
+  if (!planningCycle) {
+    _roSetSendState_('ERROR', 'The current planning cycle could not be resolved.');
+    alert('Send Request 已停止：無法判斷目前的 planning cycle（YYYY-MM）。\n\nNothing was sent. Run AI Plan / Search first so the current cycle is established.');
+    return;
+  }
+  const intents = _roBuildSendIntents_(drafts, buckets);
+  // R4E5B kept its execution planning-cycle input as the YEAR. It is passed through UNCHANGED so a Send that was
+  // interrupted under the previous client converges on the SAME Request Order rather than creating a second one.
+  const executionCycle = String(new Date().getFullYear());
+  const orchestrationPayload = { tier_scope: tierScope, planning_cycle: planningCycle,
+    execution_planning_cycle: executionCycle, intents: intents, actor: 'request-order' };
 
-  // Group lines by Series → one Request Order Draft per series (supplier/factory pending).
-  const bySeries = {};
-  drafts.forEach(function(d) {
-    const series = d.item.series || '';
-    const key = series || '(no series)';
-    if (!bySeries[key]) bySeries[key] = [];
-    d.lines.forEach(function(l) {
-      bySeries[key].push({
-        sku: d.item.sku, series: series, company: d.item.company || '', requested_qty: l.orderQty,
-        request_bucket: l.bucket, request_month: l.month,           // bucket PRESERVED per line (never merged)
-        // country/marketplace flow into request_order_line_sources (source of truth for site allocation).
-        country: d.item.country || '', marketplace: d.item.marketplace || '',
-        request_allocation_draft_id: d.allocDraftId || '',          // R4E5B canonical lineage FK + execution-key input
-        units_per_carton: l.upc || '',
-        calculation_method: l.isPartial ? 'manual_partial_carton' : 'manual_order_allocation', line_status: 'draft',
-        note: (d.item.company || '--') + ' / ' + (d.item.country || '--') + ' / ' + (d.item.marketplace || '--') +
-              ' · ' + l.bucket + ' ' + (l.month || '') +
-              (l.isPartial ? (' · PARTIAL CARTON (' + (l.carton || 0) + ' ctn + ' + (l.looseUnits || 0) + ' loose)') : '') +
-              (l.suggestedQty !== '' && l.orderVsSuggested !== '' && l.orderVsSuggested !== 0 ? (' · Order−Suggested=' + l.orderVsSuggested + ' (suggested ' + l.suggestedQty + ')') : '') +
-              (l.note ? (' — ' + l.note) : '')
-      });
-    });
-  });
+  // Demo mode: no DB — never reaches the orchestration.
+  if (!_roUseDb()) {
+    console.log('=== Send Request (DEMO, in-memory only) ===', { typeLabel: typeLabel, tierScope: tierScope, intents: intents.length });
+    alert('DEMO (in-memory only, NOT written to DB)\n\n' + typeLabel +
+      '\nSKU rows with a positive tier: ' + _roWorkset.sku_rows_with_positive_tier +
+      '\nTier cells: ' + _roWorkset.tier_cells_with_positive_qty +
+      '\n\nLive mode would run ONE server orchestration over the PERSISTED allocation drafts.');
+    _roSetSendState_('IDLE', '');
+    return;
+  }
+  if (typeof DB.sendRequestOrderOrchestration !== 'function') {
+    _roSetSendState_('ERROR', 'This build cannot reach the Send orchestration.');
+    alert('Send Request 無法執行：前端未載入 Send orchestration 傳輸層。\n\nNothing was sent. Reload the page; if it persists, the frontend deploy is incomplete.');
+    return;
+  }
 
-  // F1-7N-FB-3A §E + ADDENDUM §4 — freeze the workset and CONFIRM with separately labelled counts before
-  // anything is written. Placed after the Series grouping so the expected header/line counts are real rather
-  // than predicted. Every denominator used by the progress phases below comes from this frozen object.
-  const _roWorkset = _roBuildWorkset_(drafts, Object.keys(bySeries), _roExcluded, typeLabel);
-  if (!confirm(_roWorksetSummary_(_roWorkset, typeLabel) +
-      (partialCount ? ('\n\nPartial-carton lines: ' + partialCount + ' (allowed — recorded with loose units)') : ''))) {
+  // §D/§E — DRY RUN FIRST. Zero writes, and it returns the SERVER's frozen plan: the counts the user approves
+  // are the ones the write phase will use, not a page-side prediction of them.
+  _roSetSendState_('LOADING', 'Checking the persisted allocation…');
+  const dry = await DB.sendRequestOrderOrchestration(Object.assign({ dry_run: true }, orchestrationPayload));
+  if (!dry || dry.success !== true) {
+    _roSetSendState_('ERROR', 'Send could not be prepared. Nothing was written.');
+    alert(_roSendOrchestrationErrorMessage_(dry, false));
+    return;
+  }
+  const plan = dry.data || {};
+  if (plan.status === 'NO_ELIGIBLE_PERSISTED_ALLOCATION' || !Number(((plan.counts) || {}).positive_selected_tier_allocations)) {
+    _roSetSendState_('IDLE', '');
+    alert('No eligible PERSISTED allocation to send (NO_ELIGIBLE_PERSISTED_ALLOCATION) — ' + typeLabel + '.\n\n' +
+      'The page shows ' + _roWorkset.sku_rows_with_positive_tier + ' SKU row(s) with a positive tier quantity, but the database holds no ' +
+      'active persisted allocation draft carrying one for this planning cycle and tier scope.\n\n' +
+      'An AI Plan row is NOT a persisted allocation draft. Run AI Plan to materialize the allocation (or open a ' +
+      'SKU and enter an Order Qty, which saves it), then Send again. Nothing was written.');
+    return;
+  }
+  if (!confirm(_roSendConfirmSummary_({ all_page_rows_loaded: _roExcluded.all_page_rows,
+      sku_rows_with_positive_tier: _roWorkset.sku_rows_with_positive_tier,
+      tier_cells_with_positive_qty: _roWorkset.tier_cells_with_positive_qty }, plan, typeLabel) +
+      (partialCount ? ('\n\n(Partial-carton lines on this page: ' + partialCount + ' — allowed, recorded with loose units.)') : ''))) {
     _roSetSendState_('IDLE', '');
     return;
   }
 
-  // F1-7N-FB-3A §D — the pre-flight gates above all return WITHOUT having taken the latch.
-  _roSetSendState_('IDLE', '');
-
-  // Demo mode: no DB — simulate + log.
-  if (!_roUseDb()) {
-    console.log('=== Send Request (DEMO, in-memory only) ===', { typeLabel: typeLabel, drafts: drafts, bySeries: bySeries });
-    alert('DEMO (in-memory only, NOT written to DB)\n\n' + typeLabel + '\nSKU rows: ' + drafts.length +
-      '\nSeries groups: ' + Object.keys(bySeries).length + '\nTotal units: ' + totalUnits.toLocaleString() +
-      '\n\nLive mode would create Request Order Draft(s) + persist allocation drafts.');
-    return;
-  }
-
-  // Live (F1-4B-FM6-R4E4): confirm the CANONICAL allocation lifecycle, then feed the downstream Request Order.
-  // ONE logical active allocation per scope/SKU:
-  //   • AI-Plan / canonical-draft SKU → CONFIRM the SAME draft in place (draft → site_confirmed) via its id under
-  //     the optimistic-lock token. No new row (was the collision source); generation_type + recommended_qty + lines
-  //     are preserved (a status transition never rewrites them). Stale token / terminal → FAIL CLOSED (§9).
-  //   • manual / no-canonical-draft SKU → create ONE canonical manual draft (no AI draft exists → no competing row).
-  // The allocation confirmation END STATE is site_confirmed (active) — the prior submit-to-terminal step is RETIRED
-  // here (nothing downstream reads allocation status 'submitted'; Request Order/PO consume request_orders below).
-  const DB = window.KM.DB;
-  // F1-7N-FB-3 §D/§J — take the latch, declare the multi-write batch (so the potentially whole-DB post-write
-  // reconcile happens ONCE at the end instead of after every single write), and release BOTH in `finally` so
-  // no path — success, business failure, transport failure, timeout or an unexpected throw — can leave the
-  // button disabled or the page in LOADING.
+  // ---- COMMIT. ONE request. No per-SKU loop, no write batch to declare, no whole-DB reload per item. --------
   _roSendState.busy = true;
   _roSendState.requestId = _roSendRequestId_();
   _roSendState.startedAt = Date.now();
-  var _batchOpen = false;
-  if (typeof DB.beginWriteBatch === 'function') { DB.beginWriteBatch(); _batchOpen = true; }
-  _roSetSendState_('LOADING', 'Sending… preparing ' + _roWorkset.sku_rows_with_positive_tier + ' SKU row(s). Do not close this page.');
-  // The trace carries the FROZEN workset, so the log and the UI can never disagree about a denominator.
-  _roSendTrace_({ phase: 'start', workset: _roWorkset });
+  _roSendPhase_('Sending to the server orchestration', 0, plan.counts.expected_request_order_headers, 'Series groups');
+  _roSendTrace_({ phase: 'start', tier_scope: tierScope, planning_cycle: planningCycle,
+    orchestration_key: plan.orchestration_key, workset_checksum: plan.workset_checksum,
+    page_candidates: _roWorkset, server_plan: plan.counts });
   try {
-    const cycle = sendCycle;
-    const staleSkus = [];        // §9 fail-closed: canonical drafts that changed since the user last viewed them
-    const coveredDraftIds = [];  // §12 every allocation draft advanced to submitted AFTER request execution succeeds
-    for (var di = 0; di < drafts.length; di++) {
-      // F1-7N-FB-3A §E — the label now names what is actually iterated: SKU ROWS, not "allocation drafts".
-      // This loop persists/confirms one allocation draft PER SKU ROW; the denominator is the frozen SKU-row
-      // count and cannot change mid-run.
-      _roSendPhase_('Persisting allocation drafts', di, _roWorkset.sku_rows_with_positive_tier, 'SKU rows');
-      const d = drafts[di];
-      const sku = d.item.sku;
-      if (d.isCanonical) {
-        // CONFIRM the existing canonical draft in place — reuse its id (NO second active authority). §9 optimistic
-        // lock: pass the canonical token; the backend fails closed on a stale token / terminal status.
-        const refD = _roCanonicalDraftBySku[_roCanonKey_(sku)];
-        const tok = await _roEnsureDraftToken_(sku);
-        try {
-          await DB.upsertRequestOrderAllocationDraft({ request_allocation_draft_id: refD.draftId, status: 'site_confirmed', expectedToken: tok, updated_by: 'request-order' });
-          coveredDraftIds.push(refD.draftId);
-        } catch (ce) {
-          if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH|IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(ce && ce.message))) { staleSkus.push(sku); continue; }
-          throw ce;
-        }
-      } else {
-        // MANUAL path — ONE canonical manual draft addressed by a DETERMINISTIC id (d.allocDraftId), so a retry
-        // find-or-updates the SAME row (idempotent; never a new active authority). order_qty is the manual effective
-        // value (never a live recompute); recommended_qty snapshot stays blank; generation_type = user_created.
-        try {
-          await DB.upsertRequestOrderAllocationDraft({
-            request_allocation_draft_id: d.allocDraftId,
-            planning_cycle: cycle, company: d.item.company || '', country: d.item.country || '',
-            marketplace: d.item.marketplace || '', sku: d.item.sku,
-            category_snapshot: d.item.category || '', series_snapshot: d.item.series || '',
-            status: 'site_confirmed', generation_type: 'user_created', draft_purpose: 'regular',
-            draft_version: 1, created_by: 'request-order'
-          });
-        } catch (me) {
-          if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(me && me.message))) { staleSkus.push(sku); continue; }
-          throw me;
-        }
-        await DB.upsertRequestOrderAllocationDraftLines({
-          request_allocation_draft_id: d.allocDraftId,
-          lines: d.lines.map(function(l) {
-            return {
-              request_month: l.month, request_bucket: l.bucket, order_qty: l.orderQty,
-              carton_qty: l.carton, units_per_carton: l.upc,
-              factory_available_qty_snapshot: l.factoryStock, destination_stock_snapshot: l.siteStock,
-              third_party_available_qty_snapshot: l.thirdPartyStock, regular_demand_snapshot: l.fcQty,
-              target_pct_snapshot: l.targetPct,
-              note: (l.isPartial ? ('[PARTIAL ' + (l.carton || 0) + 'ctn+' + (l.looseUnits || 0) + 'loose; suggested ' + l.suggestedQty + '; diff ' + l.orderVsSuggested + '] ') : '') + (l.note || ''),
-              allocation_method: l.isPartial ? 'manual_partial_carton' : 'manual'
-            };
-          })
-        });
-        coveredDraftIds.push(d.allocDraftId);
+    const res = await DB.sendRequestOrderOrchestration(orchestrationPayload);
+    if (!res || res.success !== true) {
+      const err = (res && res.error) || {};
+      const indeterminate = /REQUEST_TIMEOUT/.test(String(err.code || ''));
+      _roSendTrace_({ phase: 'error', code: String(err.code || ''), indeterminate: indeterminate,
+        elapsed_ms: Date.now() - _roSendState.startedAt, verdict: indeterminate ? 'RESUMABLE' : 'FAILED' });
+      if (_sendMount === _roSendState.mountSeq) {
+        _roSetSendState_('ERROR', indeterminate
+          ? 'No answer arrived in time. The Send is RESUMABLE by execution key — do not press Send again.'
+          : 'Send failed. Nothing further was written; your inputs are kept.');
+        alert(_roSendOrchestrationErrorMessage_(res, indeterminate));
       }
-    }
-
-    // §9 FAIL CLOSED — if any canonical draft changed under the user, do NOT create request orders from a stale
-    // view; reload the latest canonical truth and let the user review + Send again. No partial downstream write.
-    if (staleSkus.length) {
-      renderRequestOrderTable();
-      if (typeof _roLoadCanonicalDraftsForScope_ === 'function') { _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
-      alert('Send Request 已停止：以下 SKU 的方案在您檢視後有變動，未送出：' + staleSkus.join(', ') +
-        '\n\n最新方案已重新載入，請確認後再送出。（未寫入任何 Request Order。）');
       return;
     }
-
-    // §6/§16 EXACTLY-ONCE downstream execution — one Request Order per series, idempotency-guarded server-side by the
-    // deterministic execution key (source_ref_type=request_order_allocation_batch, source_ref_id=ROEXEC-…) computed
-    // from the covered allocation-draft-id SET. A double-click / two-tab / retry / lost response converges to ONE
-    // Request Order (created or reused). Lines carry request_allocation_draft_id (canonical lineage) + persisted qty.
-    const createdNos = [];
-    let reusedCount = 0;
-    const seriesKeys = Object.keys(bySeries);
-    _roSendTrace_({ phase: 'allocation_drafts_done', persisted_draft_ids: coveredDraftIds.length,
-      expected: _roWorkset.sku_rows_with_positive_tier, elapsed_ms: Date.now() - _roSendState.startedAt });
-    for (var si = 0; si < seriesKeys.length; si++) {
-      _roSendPhase_('Creating Request Orders', si, _roWorkset.expected_request_order_headers, 'Series groups');
-      const series = seriesKeys[si];
-      const res = await DB.createRequestOrderDraft({
-        company: '', source: 'manual', source_ref_type: 'request_order_allocation_batch',
-        planning_cycle: cycle, series: series,
-        note: 'Send Request — series ' + series + ' (supplier/factory pending)',
-        lines: bySeries[series]
-      });
-      if (res && (res.request_order_no || res.requestOrderNo)) createdNos.push(res.request_order_no || res.requestOrderNo);
-      if (res && res.reused) reusedCount++;
+    const d = res.data || {};
+    // A PARTIAL_RESUMABLE answer is a SUCCESSFUL, HONEST intermediate state: the server stopped inside the Apps
+    // Script execution ceiling with every Series either recorded or not started. It is never auto-resumed.
+    if (d.status === 'PARTIAL_RESUMABLE') {
+      _roSendTrace_({ phase: 'partial_resumable', created: (d.request_orders_created || []).length,
+        remaining: d.series_remaining, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'PARTIAL' });
+      if (_sendMount === _roSendState.mountSeq) {
+        _roSetSendState_('ERROR', 'Partially sent — ' + d.series_remaining + ' Series group(s) remain. Resume from the same Send.');
+        alert('Send Request 尚未完成（可續行）\n\n' +
+          'Request Orders created so far: ' + (d.request_orders_created || []).length +
+          '\nSeries groups remaining      : ' + d.series_remaining +
+          '\nAllocation lifecycle advanced: NO (nothing was marked sent)\n\n' +
+          d.next_action + '\n\nExecution key: ' + d.orchestration_key);
+      }
+      return;
     }
-
-    // §11/§12 — advance the covered allocation drafts draft/site_confirmed → submitted ONLY NOW that the Request
-    // Order execution is proven to exist. Idempotent: an already-submitted draft is a safe no-op (§13). A submit
-    // failure surfaces below; a retry reuses the existing Request Order (by key) and finishes the lifecycle (§15).
-    if (coveredDraftIds.length) await DB.submitRequestOrderAllocationDrafts({ draft_ids: coveredDraftIds, submitted_by: 'request-order' });
-
-    // §16 success ONLY after the execution boundary is satisfied. §20 submitted leaves the active set on reload.
-    // F1-7N-FB-3 §D — page-transition guard: if the user navigated away (or remounted) while this ran, the
-    // result is recorded and traced but must NOT repaint a hidden or newer page.
     if (_sendMount !== _roSendState.mountSeq) {
-      _roSendTrace_({ phase: 'success_discarded_stale_mount', created: createdNos.length, reused: reusedCount, elapsed_ms: Date.now() - _roSendState.startedAt });
+      // Navigation cannot own or cancel business progress: the orchestration already completed on the SERVER.
+      // The result is traced and NOT discarded as "nothing happened" — only the repaint is skipped.
+      _roSendTrace_({ phase: 'success_discarded_stale_mount', request_orders: d.request_order_count,
+        elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'SUCCESS' });
       return;
     }
     if (typeof _roLoadCanonicalDraftsForScope_ === 'function') { _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
-    _roSendTrace_({ phase: 'success', created: createdNos.length, reused: reusedCount, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'SUCCESS' });
-    _roSetSendState_('SUCCESS', 'Sent — ' + createdNos.length + ' Request Order(s)' + (reusedCount ? (', ' + reusedCount + ' reused') : '') + '.');
-    alert('✅ Send Request 完成\n\n' + typeLabel + '\nRequest Order: ' + createdNos.length + ' 筆' +
-      (reusedCount ? ('（其中 ' + reusedCount + ' 筆為既有訂單，未重複建立）') : '') +
-      (createdNos.length ? ('\n' + createdNos.join(', ')) : '') +
-      '\n\n請到 Request Order Draft 頁面進行 Approve / Convert to PO。');
+    _roSendTrace_({ phase: 'success', status: d.status, request_orders: d.request_order_count,
+      lines: d.request_order_line_count, drafts_advanced: d.allocation_drafts_advanced,
+      elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'SUCCESS' });
+    const reusedCount = (d.request_orders_reused || []).length;
+    _roSetSendState_('SUCCESS', 'Sent — ' + d.request_order_count + ' Request Order(s)' + (reusedCount ? (', ' + reusedCount + ' reused') : '') + '.');
+    alert('✅ Send Request 完成\n\n' + typeLabel +
+      '\nRequest Order headers : ' + d.request_order_count + (reusedCount ? ('（其中 ' + reusedCount + ' 筆為既有訂單，未重複建立）') : '') +
+      '\nRequest Order lines   : ' + d.request_order_line_count +
+      '\nAllocation drafts advanced : ' + d.allocation_drafts_advanced +
+      ((d.request_orders_created || []).length ? ('\n\n' + (d.request_orders_created || []).map(function (x) { return x.request_order_no; }).join(', ')) : '') +
+      ((d.unverified_transitions || []).length ? ('\n\n⚠ ' + d.unverified_transitions.length + ' lifecycle row(s) could not be re-read — run the interrupted-Send reconciliation.') : '') +
+      '\n\n' + d.next_action);
     renderRequestOrderTable();
   } catch (err) {
-    // R6A1 (G) — structured error surface: business message + technical code/affected table (never [object Object]);
-    // the failed Send does NOT clear the working Draft (page inputs intact); no false "DB Draft retained" claim.
-    // F1-7N-FB-3 §D — a TIMEOUT is INDETERMINATE, not a proven zero-write: the server may have committed after
-    // the client stopped listening. It is never auto-retried, and the user is told to verify before retrying.
+    // The transport runner does not throw, so reaching here is an unexpected client fault. It is NEVER reported
+    // as a zero-write: the orchestration may have committed.
     var _msg = String((err && err.message) || err || '');
-    var _indeterminate = /REQUEST_TIMEOUT_WRITE_INDETERMINATE|REQUEST_TIMEOUT|COMMITTED_UNVERIFIED/.test(_msg);
-    _roSendTrace_({ phase: 'error', indeterminate: _indeterminate, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: _indeterminate ? 'INDETERMINATE' : 'FAILED' });
+    _roSendTrace_({ phase: 'error', unexpected: true, elapsed_ms: Date.now() - _roSendState.startedAt, verdict: 'INDETERMINATE' });
     if (_sendMount === _roSendState.mountSeq) {
-      _roSetSendState_('ERROR', _indeterminate
-        ? 'No answer arrived in time. Some rows MAY have been written — reload and verify before retrying.'
-        : 'Send failed. Nothing further was written; your inputs are kept.');
-      alert(_indeterminate
-        ? ('Send Request 未取得伺服器回應（逾時）。\n\n可能已寫入部分資料，請勿直接重試：先重新載入頁面確認 Request Order 是否已建立。\n\n▸ Technical: ' + _msg)
-        : _roSendErrorMessage_(err));
+      _roSetSendState_('ERROR', 'Send ended unexpectedly. Verify before retrying.');
+      alert('Send Request 發生非預期錯誤，且無法確認伺服器是否已寫入。\n\n' +
+        '請勿直接重試：先執行 interrupted-Send reconciliation（system.requestOrderSendReconcile）確認狀態。\n\n▸ Technical: ' + _msg);
     }
   } finally {
-    // ALWAYS terminal: the latch is released and the deferred reconcile runs exactly once, whatever happened.
+    // ALWAYS terminal: the latch is released whatever happened. There is no write batch to close — the whole
+    // Send is ONE request, so the single post-write reconcile is the transport runner's own.
     _roSendState.busy = false;
-    if (_batchOpen && typeof DB.endWriteBatch === 'function') { try { await DB.endWriteBatch(); } catch (e) {} }
     var _btn = _roSendBtn_();
     if (_btn) { _btn.disabled = false; _btn.setAttribute('aria-busy', 'false'); }
     _roSendTrace_({ phase: 'released', elapsed_ms: Date.now() - _roSendState.startedAt });
   }
 }
+
+// The current-run authority, as a value: the planning cycle the persisted drafts are keyed by (YYYY-MM). It is
+// resolved from the SAME authority the rest of the page uses (the canonical draft cycle when one is hydrated,
+// else the Asia/Taipei current cycle the AI-Plan read already resolves) — never from the server's clock and
+// never invented here. A blank result BLOCKS the Send rather than guessing a cycle.
+function _roSendPlanningCycle_() {
+  // 1. Prefer the cycle the PERSISTED drafts are actually keyed by (from the hydrated flat read-back), so the
+  //    Send targets the same run the page is displaying rather than a computed guess.
+  try {
+    var keys = Object.keys(_roCanonicalDraftBySku || {});
+    for (var i = 0; i < keys.length; i++) {
+      var pc = String((_roCanonicalDraftBySku[keys[i]] || {}).planningCycle || '').trim().replace(/^RECO-/, '');
+      if (/^\d{4}-\d{2}$/.test(pc)) return pc;
+    }
+  } catch (e) {}
+  // 2. Else the SAME Asia/Taipei cycle authority the AI-Plan first-layer read already uses (_opFirstLayerCycle
+  //    -> 'RECO-YYYY-MM'). No second clock, no server clock, no invented cycle.
+  try {
+    if (typeof _opFirstLayerCycle === 'function') {
+      var c = String(_opFirstLayerCycle() || '').replace(/^RECO-/, '');
+      if (/^\d{4}-\d{2}$/.test(c)) return c;
+    }
+  } catch (e2) {}
+  return '';   // blank BLOCKS the Send — a guessed cycle would send the wrong run
+}
+window._roSendPlanningCycle_ = _roSendPlanningCycle_;
+
+// The orchestration's error surface. Every branch names the stage, states the write posture truthfully, and
+// gives the ONE correct next action. A timeout is never presented as a zero-write and never invites a retry.
+function _roSendOrchestrationErrorMessage_(res, indeterminate) {
+  var e = (res && res.error) || {};
+  var det = e.details || {};
+  var code = String(e.code || 'SEND_ORCHESTRATION_FAILED');
+  if (indeterminate) {
+    return 'Send Request 未取得伺服器回應（逾時）。\n\n' +
+      'The orchestration may still be running or may already have committed. It is RESUMABLE BY EXECUTION KEY, ' +
+      'so do NOT press Send again — a blind retry is what creates duplicates.\n\n' +
+      '1. Run the interrupted-Send reconciliation (system.requestOrderSendReconcile) for this planning cycle.\n' +
+      '2. If it reports retry_safe, re-run the SAME Send: completed Series are skipped by execution key.\n\n' +
+      '▸ Technical: ' + code;
+  }
+  if (code === 'QUANTITY_VERIFICATION_FAILED') {
+    var f = (det.failures || []).slice(0, 8).map(function (x) {
+      return '  · ' + x.sku + ' ' + x.request_bucket + ' — ' + x.code +
+        ' (on screen ' + x.intended_qty + ', in database ' + (x.persisted_qty == null ? 'NOT PERSISTED' : x.persisted_qty) + ')';
+    }).join('\n');
+    return 'Send Request 已停止 — 數量驗證失敗（未寫入任何資料）。\n\n' +
+      det.failure_count + ' asserted quantity/quantities do not match the persisted allocation. The ENTIRE Send was ' +
+      'blocked on purpose: sending the rest would commit the OLD database quantity for these rows.\n\n' + f +
+      '\n\nRe-enter the value so it saves (or run AI Plan to materialize the draft), then Send again.\n' +
+      'Nothing was written and no lifecycle status changed.';
+  }
+  if (code === 'SEND_IN_PROGRESS_SAME_KEY') {
+    return 'Send Request 已在執行中（同一個 execution key）。\n\nDo not retry — read back by execution key, or wait for it to finish.\n\n▸ ' + String(e.message || '');
+  }
+  if (code === 'SOURCE_CHANGED_SINCE_INTERRUPTION') {
+    return 'Send Request 無法續行：自上次中斷後，已保存的配額內容已變更。\n\nRun the interrupted-Send reconciliation first, then start a fresh Send. Nothing was written.\n\n▸ ' + String(e.message || '');
+  }
+  if (code === 'REQUEST_ORDER_OUTPUT_UNPROVEN' || code === 'ALLOCATION_TRANSITION_FAILED') {
+    return 'Send Request 未完成 — ' + code + '\n\n' + String(e.message || '') +
+      '\n\nRun the interrupted-Send reconciliation before any retry.\n\n▸ Technical: ' + code;
+  }
+  if (code === 'DEPLOYMENT_CONTRACT_MISMATCH') {
+    return String(e.message || 'The deployed Apps Script is out of date.') +
+      '\n\nNothing was read and nothing was written. Retrying cannot help — a new deployment version must be published.';
+  }
+  return 'Send Request 失敗（未寫入任何 Request Order）。\n\n' + String(e.message || code) + '\n\n▸ Technical: ' + code;
+}
+window._roSendOrchestrationErrorMessage_ = _roSendOrchestrationErrorMessage_;
 
 // AI Plan (Order System) — refreshes order suggestions using the EXISTING Suggest Order / order-calculation
 // path (renderRequestOrderTable recomputes suggestions from the current filter + request scope; the same
@@ -4009,6 +4122,15 @@ function _roSendOrderQty_(item, idx, bucket, edit) {
 // F1-4B-FM6-R4E5B — DETERMINISTIC manual allocation-draft id (grain + planning cycle). A manual (no-AI) Send must
 // be idempotent across retries: reusing this stable id makes upsertRequestOrderAllocationDraft find-or-update the
 // SAME row (never a new one), so the backend execution key stays stable → exactly one Request Order. Byte-stable.
+//
+// F1-7N-FB-3B §C — RETIRED FROM THE SEND TRANSITION, DELIBERATELY NOT DELETED.
+// handleSendRequest no longer calls this. §C forbids creating a draft from a raw AI Plan row and sending it in
+// the same transition, and under the live flat-V2 cutover a 'RAD-M-…' id is not the canonical identity for its
+// scope at all (that is 'RD::MONTHLY_ORDER::<YYYY-MM>::company=…|country=…|draft_purpose=…|marketplace=…|sku=…'),
+// so rows written under this id were invisible to the very read-back the page uses to prove a draft exists.
+// The function is KEPT because the decision to retire the path is a BUSINESS decision that must stay reversible,
+// and because it documents the exact identity of the retired path for the canonical-conflict report. It is
+// referenced by the R4E5B determinism test and by nothing in the Send path — a regression test asserts both.
 function _roManualDraftId_(company, country, marketplace, sku, cycle) {
   function s(v) { return String(v == null ? '' : v).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_'); }
   return 'RAD-M-' + [s(company), s(country), s(marketplace), s(sku), s(cycle)].join('-');
@@ -4062,6 +4184,9 @@ function _roV2NormalizeFlatDraft_(d) {
   });
   return {
     sku: (d.scope && d.scope.sku) || '', draftId: d.draftId, draftVersion: d.draftVersion,
+    // F1-7N-FB-3B §C — the PERSISTED planning cycle is carried through: it is the Send's current-run authority
+    // (_roSendPlanningCycle_ prefers it over any computed cycle, so a Send targets the run the page is showing).
+    planningCycle: (d.planningCycle == null ? '' : String(d.planningCycle)),
     expectedToken: null, status: d.status, conflict: false, model: 'flat_v2', lines: lines
   };
 }

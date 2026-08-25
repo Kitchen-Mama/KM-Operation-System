@@ -113,12 +113,27 @@ function runE() {
 
   section('E. Send gating + status label are flag-driven (source)');
   ok(/if \(_roSiteConfirmRequired\(\)\) \{[\s\S]{0,600}confirm all site scopes/.test(RO), 'E(false). Gate 1 (site confirm) is enforced ONLY when _roSiteConfirmRequired()');
-  ok(/_roSiteConfirmRequired\(\)\s*\?\s*_applyRequestOrderFilters[\s\S]{0,120}filter\(_roIsRowConfirmed\)\s*:\s*_applyRequestOrderFilters/.test(RO), 'E(false). the confirmation row-filter is dropped when Site Confirm is not required');
+  // F1-7N-FB-3B §B: the Send universe is no longer built from _applyRequestOrderFilters at all — that is the
+  // DISPLAY authority, and a display control must not truncate a comprehensive business command. The flag-driven
+  // behaviour under test is unchanged and now lives in _roSendScopeRows_: the confirmation row-filter is applied
+  // ONLY when Site Confirm is required, over the UNFILTERED row universe.
+  var scopeRows = extract(RO, '_roSendScopeRows_');
+  ok(/_roSiteConfirmRequired\(\) \? all\.filter\(_roIsRowConfirmed\) : all/.test(scopeRows),
+    'E(false). the confirmation row-filter is dropped when Site Confirm is not required');
+  ok(!/_applyRequestOrderFilters/.test(scopeRows.replace(/\/\/[^\n]*/g, '')),
+    'E(false). and the Send universe never consults the DISPLAY filter authority');
   ok(/!_roSiteConfirmRequired\(\)\) \{[\s\S]{0,160}display = 'none'/.test(RO), 'E(false). "No site confirmed yet" label is hidden when Site Confirm is not required');
   // OTHER Send gates remain mandatory (unchanged, still present)
   // R6A1 reworded the empty-eligible message to NO_ELIGIBLE_SUBMITTED_DRAFTS (still proves the positive-line gate — it
   // requires a "positive Order Qty"); the submitted-status + optimistic-token gates are unchanged.
-  ok(/_roIsSubmittedSku_\(item\.sku\)/.test(RO) && /positive Order Qty/.test(RO) && /expectedToken/.test(RO), 'E. other Send gates (submitted-status, positive line, optimistic token) remain MANDATORY');
+  // F1-7N-FB-3B: the submitted-status gate and the optimistic token both remain (the token now guards the
+  // incremental quantity writes rather than a Send-time confirm), and the positive-tier gate moved to the server
+  // workset builder, which is where the population is now decided.
+  var G66 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '66_api_v1_request_order_send.gs'), 'utf8');
+  ok(/_roIsSubmittedSku_\(item\.sku\)/.test(RO) && /expectedToken/.test(RO),
+    'E. other Send gates (submitted-status, optimistic token) remain MANDATORY');
+  ok(/tier_zero_or_blank_qty\+\+/.test(G66) && /status_submitted\+\+/.test(G66),
+    'E. and the positive-tier + terminal-status gates are enforced server-side, as COUNTED exclusions');
   // backend flag of record exists with the config convention
   var CFG = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '00_config.gs'), 'utf8');
   ok(/var REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false;/.test(CFG) && /function requestOrderSiteConfirmRequired_\(\)/.test(CFG), 'E. backend owner-of-record flag REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ (+ getter) follows the 00_config convention');

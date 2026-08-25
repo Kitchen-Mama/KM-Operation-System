@@ -60,26 +60,50 @@ eq(raVerifyDraftToken_('D1', null), { ok: true }, 'no token supplied → check s
 _snap = { draft: null };
 eq(raVerifyDraftToken_('D1', { draft_version: 2, userEditFingerprint: 'FP-0' }).error, 'DRAFT_NOT_FOUND', 'missing draft → fail closed');
 
-console.log('\n== §3/§16 confirm in place (no competing active row) ==');
-ok(/_roIsCanonicalDraftSku_\(item\.sku\)/.test(send) && /if \(d\.isCanonical\)/.test(send), 'Send routes canonical-draft SKUs to the confirm path (R4E5B: routing captured as d.isCanonical)');
-ok(/upsertRequestOrderAllocationDraft\(\{ request_allocation_draft_id: refD\.draftId, status: 'site_confirmed', expectedToken: tok, updated_by: 'request-order' \}\)/.test(send), '§3/§16 canonical SKU CONFIRMS the SAME draft in place (reuse id; NO new active row)');
-ok(!/request_allocation_draft_id: refD\.draftId[\s\S]{0,120}generation_type/.test(send), '§4 confirm does NOT set generation_type (provenance preserved by the in-place update)');
-ok(/refD\.draftId/.test(send) && /_roCanonicalDraftBySku\[_roCanonKey_\(sku\)\]/.test(send), 'confirm reuses the CACHED canonical draft id (from ONE getActive; no per-SKU readback fan-out)');
+console.log('\n== F1-7N-FB-3B §E: the lifecycle invariants, re-asserted at their NEW OWNER (66_) ==');
+// THE BUSINESS INVARIANTS BELOW ARE UNCHANGED. What changed is WHERE they execute. FB-3B retires the browser's
+// per-SKU saga (§B/§C/§E) because a display filter could truncate it and a closed tab could abandon it. Each
+// assertion is therefore relocated to the server orchestration, and several are STRENGTHENED on the way:
+//   · "confirm in place, never a competing active row" -> the orchestration NEVER creates or confirms a draft at
+//     all. It consumes only rows that are ALREADY persisted, so a competing active row cannot arise from a Send.
+//   · "manual SKU creates one canonical draft during Send" -> RETIRED by §C (reported as a canonical conflict):
+//     a raw AI Plan row without a persisted canonical draft may not enter the workset.
+//   · "stale token aborts before any downstream write" -> replaced by a full QUANTITY read-back barrier that
+//     blocks the ENTIRE Send on any drift, absence or unsaved edit.
+//   · "submit runs after request execution" -> now create -> PROVE THE OUTPUT -> then advance.
+var GS66 = read('specs/active/apps-script/66_api_v1_request_order_send.gs');
+var orch = extractFn(GS66, 'handleRequestOrderSendOrchestrate_');
+var ws = extractFn(GS66, 'rosBuildWorkset_');
 
-console.log('\n== §5 manual path (one canonical manual draft) ==');
-ok(/\} else \{[\s\S]{0,900}status: 'site_confirmed', generation_type: 'user_created'/.test(send), '§5 manual / no-AI SKU creates ONE canonical draft (user_created) — no AI draft exists so no competing row');
-ok(/upsertRequestOrderAllocationDraftLines/.test(send), '§5 manual path still writes its own lines');
+// §3/§16 — no competing active row is possible: the Send neither creates nor confirms an allocation draft.
+ok(!/upsertRequestOrderAllocationDraft\b/.test(orch) && !/upsertRequestOrderAllocationDraftLines/.test(orch),
+  '§3/§16 the orchestration never writes an allocation draft header or line (no competing active row)');
+ok(/rosDraftIsActive_/.test(ws) && /ROS_ACTIVE_STATUSES_\[rosDraftStatus_\(row\)\] === 1/.test(extractFn(GS66, 'rosDraftIsActive_')),
+  '§3/§16 it consumes only ALREADY-ACTIVE persisted drafts, addressed by their own persisted id');
+ok(!/upsertRequestOrderAllocationDraft/.test(send),
+  '§5 (§C) the Send transition no longer creates or confirms a draft — the create-inside-Send path is retired');
 
-console.log('\n== §9 fail-closed abort before downstream ==');
-ok(/CONCURRENCY_TOKEN_MISMATCH\|VERSION_CONFLICT\|TOKEN_MISMATCH\|IMMUTABLE_TERMINAL_STATUS\|BLOCKED_CONFLICT/.test(send) && /staleSkus\.push\(sku\)/.test(send), '§9 a stale/terminal confirm is collected, not overwritten');
-ok(/if \(staleSkus\.length\) \{[\s\S]{0,400}return;/.test(send), '§9 any stale SKU → abort BEFORE creating request orders (no partial downstream write)');
-ok(/staleSkus[\s\S]{0,400}_roLoadCanonicalDraftsForScope_/.test(send), '§9 fail-closed reloads the latest canonical truth for review + retry');
+// §9 — the read-back barrier that replaces the stale-token abort, and it blocks the WHOLE Send.
+var verify = extractFn(GS66, 'rosVerifyQuantities_');
+ok(/QUANTITY_DRIFT/.test(verify) && /UNSAVED_NO_PERSISTED_DRAFT/.test(verify) && /UNSAVED_TIER_ABSENT/.test(verify),
+  '§9 drift / no-persisted-draft / tier-absent are each named distinctly, never merged');
+ok(/out\.blocked = out\.failures\.length > 0;/.test(verify), '§9 any single failure blocks the run');
+var iVerify = orch.indexOf('QUANTITY_VERIFICATION_FAILED'), iCreate = orch.indexOf('io.createRequestOrderDraft');
+ok(iVerify > -1 && iCreate > -1 && iVerify < iCreate,
+  '§9 the barrier runs BEFORE any Request Order is created (no partial downstream write)');
+// and the client refuses to send over an edit that did not persist
+ok(/if \(flush\.failed\) \{/.test(send) && /Nothing was sent and nothing was written/.test(send),
+  '§9 the page also blocks the Send when a pending quantity edit failed to save');
 
-console.log('\n== §3/§17 no submit-to-terminal; downstream preserved ==');
-// R4E4 retired the submit step; F1-4B-FM6-R4E5B RESTORES it as the post-execution lifecycle (site_confirmed →
-// submitted ONLY after the Request Order execution succeeds). See send-request-exactly-once-f1-4b-fm6r4e5b.test.js.
-ok(/submitRequestOrderAllocationDrafts\(\{ draft_ids: coveredDraftIds/.test(send), '§11 (R4E5B) submit runs AFTER request execution, over the covered draft ids');
-ok(/createRequestOrderDraft/.test(send), '§14/§17.K downstream Request Order (request_orders) creation preserved (consumable by the existing path)');
+// §11 / §14 / §17.K — ordering, and the canonical writers are still the only writers.
+var iProof = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iSubmit = orch.indexOf('io.submitAllocationDrafts');
+ok(iCreate < iProof && iProof < iSubmit,
+  '§11 create Request Order -> PROVE the header + line count -> only then advance the lifecycle');
+ok(/createRequestOrderDraft: function \(body\) \{ return rosUnwrap_\(handleCreateRequestOrderDraft_\(body\)\); \}/.test(GS66),
+  '§14/§17.K downstream Request Order creation is DELEGATED to the existing canonical writer (13_)');
+ok(/submitAllocationDrafts: function \(body\) \{ return rosUnwrap_\(handleSubmitRequestOrderAllocationDrafts_\(body\)\); \}/.test(GS66),
+  '§11 and the lifecycle advance to the existing canonical submit writer (15_)');
+ok(/_roLoadCanonicalDraftsForScope_/.test(send), 'the page still reloads the latest canonical truth after a Send');
 
 console.log('\n== §10/§18 no frontend recommendation/gap recompute for execution (I) ==');
 ok(!/getOrderPlanningGap|calculateGap|KMREC|calculateSuggestedOrderQty|getInventoryReplenishmentGap/.test(send), 'I Send performs NO gap/KMREC/suggested recompute (execution qty = persisted order_qty)');

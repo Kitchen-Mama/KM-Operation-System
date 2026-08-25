@@ -136,8 +136,21 @@ section('WIRING — adapter wrappers + edit routing + Send Request untouched + n
   // DISPLAY overlay leaves the Send Request payload owner untouched
   ok(/_roRowOrderQtyDisplay_/.test(ro), 'W9 render uses the display overlay for persisted rows');
   ok(/function _roEffectiveOrderQty\(item, idx, edit\) \{\s*if \(edit && edit\.orderQty != null && edit\.orderQty !== ''\) return Number\(edit\.orderQty\);/.test(RO_JS), 'W10 _roEffectiveOrderQty (Send Request payload owner) is byte-unchanged');
-  // Send Request path unchanged — still the legacy 15_/13_ commit
-  ok(/function handleSendRequest/.test(RO_JS) && /upsertRequestOrderAllocationDraftLines/.test(RO_JS) && /createRequestOrderDraft/.test(RO_JS), 'W11 handleSendRequest still owns the legacy submit (unchanged this round)');
+  // F1-7N-FB-3B §E: the Send COMMIT moved from the browser to the server orchestration (66_), but the CANONICAL
+  // WRITERS this suite cares about are unchanged — 15_ upsertRequestOrderAllocationDraftLines still owns the
+  // quantity write (now reached by the incremental locked edit path only) and 13_ createRequestOrderDraft still
+  // owns the Request Order. What must NOT have happened is a second writer appearing anywhere.
+  var G66 = read('specs/active/apps-script/66_api_v1_request_order_send.gs');
+  ok(/function handleSendRequest/.test(RO_JS), 'W11 handleSendRequest still exists as the Send entry point');
+  // The page's ONLY quantity write is the LOCKED decision writer (25_ updateRecommendationDecisionLocked),
+  // which is what this suite exists to establish. FB-3B removed the Send-path batch line adapter call
+  // (upsertRequestOrderAllocationDraftLines) from the browser entirely, so exactly one remains.
+  ok(/db\.updateRecommendationDecisionLocked\(cmd\)/.test(RO_JS), 'W11 the page writes quantities ONLY through the locked decision writer');
+  ok(!/DB\.upsertRequestOrderAllocationDraftLines\(/.test(RO_JS), 'W11 and the Send-path batch line writer is gone from the browser');
+  ok(/handleCreateRequestOrderDraft_\(/.test(G66) && /handleSubmitRequestOrderAllocationDrafts_\(/.test(G66),
+    'W11 and the orchestration commits through the SAME canonical 13_/15_ writers (no second writer)');
+  ok(!/appendRow|\.setValue\(|\.setValues\(|insertSheet/.test(G66.replace(/\/\/[^\n]*/g, '')),
+    'W11 the orchestration writes no sheet cell of its own');
   // no PO/shipment/stock write introduced in the new module
   ok(!/__RO_EDIT_PURE_START__[\s\S]*?(createShipment|purchase_order|factory_stock_movements|deductStock|reserveStock)/.test(RO_JS), 'W12 canonical-edit module writes no PO/shipment/stock');
 })();

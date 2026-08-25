@@ -305,6 +305,7 @@ reloads = 0;
 
 // =======================================================================================================
 function finishAsync() {
+  var DBAPI = read('js/api/operation-system-db-api.js');
   section('F. Send Request — latched, progressive, always terminal (defect B4)');
 
   var send = extractFn(RO, 'handleSendRequest');
@@ -322,7 +323,11 @@ function finishAsync() {
   var fin = send.slice(send.lastIndexOf('} finally {'));
   ok(/_roSendState\.busy = false;/.test(fin), 'F3. which always clears the busy latch');
   ok(/_btn\.disabled = false/.test(fin), 'F3. and always re-enables the button');
-  ok(/endWriteBatch/.test(fin), 'F3. and always ends the write batch');
+  // F1-7N-FB-3B §E: the write batch existed ONLY to collapse the per-write whole-DB reloads of a serial
+  // multi-write loop. One click is now ONE request, so there is no batch to open or end — the defect the batch
+  // mitigated cannot occur. Assert its ABSENCE rather than its presence, or this suite would re-require the loop.
+  ok(!/endWriteBatch/.test(send) && !/beginWriteBatch/.test(send),
+    'F3. no write batch is needed — one click is ONE request, so there is no per-write reload to collapse');
 
   // 4. terminal states on every path
   ok(/_roSetSendState_\('LOADING'/.test(send), 'F4. LOADING is entered explicitly');
@@ -338,28 +343,42 @@ function finishAsync() {
   // under the label 'allocation drafts', which is how the live '0/234 allocation drafts' was produced. The
   // replacement contract is STRICTLY stronger — every phase names the unit it iterates and takes its
   // denominator from the FROZEN workset — so these assert that instead.
-  ok(/_roSendPhase_\('Persisting allocation drafts', di, _roWorkset\.sku_rows_with_positive_tier, 'SKU rows'\)/.test(send),
-    'F5. the per-SKU loop reports progress with an explicit SKU-row unit');
-  ok(/_roSendPhase_\('Creating Request Orders', si, _roWorkset\.expected_request_order_headers, 'Series groups'\)/.test(send),
-    'F5. and the per-series loop with an explicit Series-group unit');
+  // F1-7N-FB-3B §E: the serial per-SKU and per-series client loops are GONE, which is the strongest possible
+  // form of "the loop reports progress". What must remain true is that the phase still names its unit and takes
+  // its denominator from a source the page cannot influence — now the SERVER's frozen plan.
+  ok(!/for \(var di = 0/.test(send) && !/for \(var si = 0/.test(send),
+    'F5. no per-SKU or per-series write loop remains in the browser at all');
+  ok(/_roSendPhase_\('Sending to the server orchestration', 0, plan\.counts\.expected_request_order_headers, 'Series groups'\)/.test(send),
+    'F5. and the single phase names its unit and takes its denominator from the SERVER plan');
   ok(/do not close this page/i.test(extractFn(RO, '_roSendPhase_') + send), 'F5. with an explicit instruction not to navigate away');
 
   // 6. no auto-retry, and a timeout is INDETERMINATE
   var sendBody = code(send).slice(code(send).indexOf('{') + 1);   // exclude the declaration line itself
   ok(!/handleSendRequest\s*\(/.test(sendBody), 'F6. the handler never re-invokes itself — no auto-retry of a business write');
   ok(!/setTimeout|setInterval/.test(sendBody), 'F6. and schedules no retry timer');
-  ok(/REQUEST_TIMEOUT_WRITE_INDETERMINATE/.test(send), 'F6. an expired write is recognised as indeterminate');
-  ok(/MAY have been written|可能已寫入/.test(send), 'F6. and the user is told to verify BEFORE retrying, never to just retry');
+  // F1-7N-FB-3B §E: an expired orchestration is no longer merely "indeterminate, go and check". It is
+  // RESUMABLE BY EXECUTION KEY — the key is a pure function of the request body, so re-posting the same body
+  // continues the journaled saga and skips what is already proven. The instruction is therefore stronger AND
+  // more precise: never retry blindly, resume.
+  var errMsg = extractFn(RO, '_roSendOrchestrationErrorMessage_');
+  ok(/REQUEST_TIMEOUT/.test(send) || /REQUEST_TIMEOUT/.test(errMsg), 'F6. an expired write is recognised');
+  ok(/RESUMABLE BY EXECUTION KEY/.test(errMsg) && /do NOT press Send again/.test(errMsg),
+    'F6. and the user is told to RESUME by execution key, never to retry blindly');
+  ok(/requestOrderSendReconcile/.test(errMsg),
+    'F6. with the read-only reconciliation named as the first step');
 
   // 7. a late result cannot repaint a newer page
   ok(/_sendMount !== _roSendState\.mountSeq/.test(send), 'F7. a stale mount discards the result');
   ok(/success_discarded_stale_mount/.test(send), 'F7. and records that it did so');
   ok(/_roSendState\.mountSeq = _roMountEpoch/.test(RO), 'F8. the guard reuses the EXISTING mount-epoch authority (no parallel counter)');
 
-  // 8. the batch is declared around the multi-write run
-  ok(/DB\.beginWriteBatch\(\); _batchOpen = true;/.test(send), 'F9. the multi-write run declares a write batch');
-  ok(send.indexOf('beginWriteBatch') < send.indexOf('upsertRequestOrderAllocationDraft'),
-    'F9. before the first write');
+  // 8. F1-7N-FB-3B §E — the reason a batch was needed is removed: exactly ONE committing request is issued.
+  eq((send.match(/DB\.sendRequestOrderOrchestration\(/g) || []).length, 2,
+    'F9. exactly two orchestration calls — one ZERO-WRITE dry run, then one committing request');
+  ok(send.indexOf('dry_run: true') < send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
+    'F9. the dry run comes first, so the user approves the server\u2019s own numbers');
+  ok(/window\.KM\.DB\.beginWriteBatch = function/.test(DBAPI),
+    'F9. the write-batch seam is retained for other multi-write callers (not deleted)');
 
   // 9. instrumentation exists and leaks nothing
   var trace = extractFn(RO, '_roSendTrace_');
@@ -370,13 +389,22 @@ function finishAsync() {
   });
 
   // 10. the canonical meaning of Send Request is preserved — no renamed or bypassed state
-  ok(/status: 'site_confirmed'/.test(send), 'F11. it still advances the allocation draft to site_confirmed');
-  ok(/createRequestOrderDraft\(/.test(send), 'F11. still creates the Request Order under the execution key');
-  ok(/submitRequestOrderAllocationDrafts\(/.test(send), 'F11. and still advances the covered drafts to submitted AFTER that');
-  ok(send.indexOf('createRequestOrderDraft(') < send.indexOf('submitRequestOrderAllocationDrafts('),
-    'F11. in that order — the lifecycle advance never precedes the proof that the Request Order exists');
-  eq((RO.match(/DB\.createRequestOrderDraft\(/g) || []).length, 1, 'F12. exactly one Request Order writer call site');
-  ok(/source_ref_type: 'request_order_allocation_batch'/.test(send), 'F12. keyed by the deterministic execution key');
+  // F1-7N-FB-3B §E — the canonical meaning is preserved; its OWNER moved to the server, where the ordering is
+  // a numbered phase sequence with an output PROOF inserted between creation and the lifecycle advance.
+  var G66 = read('specs/active/apps-script/66_api_v1_request_order_send.gs');
+  var orch = extractFn(G66, 'handleRequestOrderSendOrchestrate_');
+  ok(/ROS_ACTIVE_STATUSES_ = \{ draft: 1, site_confirmed: 1, partially_submitted: 1 \}/.test(G66),
+    'F11. site_confirmed remains an ACTIVE, sendable allocation state (no renamed or bypassed state)');
+  ok(/io\.createRequestOrderDraft\(writerBody\)/.test(orch), 'F11. the Request Order is created under the execution key');
+  ok(/io\.submitAllocationDrafts\(/.test(orch), 'F11. and the covered drafts are advanced after that');
+  var iC = orch.indexOf('io.createRequestOrderDraft'), iP = orch.indexOf('REQUEST_ORDER_OUTPUT_UNPROVEN'), iS = orch.indexOf('io.submitAllocationDrafts');
+  ok(iC > -1 && iP > iC && iS > iP,
+    'F11. in that order, with an explicit OUTPUT PROOF between creation and the lifecycle advance');
+  eq((RO.match(/DB\.createRequestOrderDraft\(/g) || []).length, 0,
+    'F12. the browser has NO Request Order writer call site left at all');
+  eq((G66.match(/handleCreateRequestOrderDraft_\(/g) || []).length, 1,
+    'F12. and the orchestration reaches the canonical writer through exactly one seam');
+  ok(/source_ref_type: 'request_order_allocation_batch'/.test(orch), 'F12. keyed by the deterministic execution key');
   // and the backend really is idempotent on that key
   ok(/roFindByExecutionKey_\(roSheetX, RO_EXEC_SOURCE_REF_TYPE_, execKey\)/.test(G13),
     'F12. which the backend reuses instead of creating a second Request Order');

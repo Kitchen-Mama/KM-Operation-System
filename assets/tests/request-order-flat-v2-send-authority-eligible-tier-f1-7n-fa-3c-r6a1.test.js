@@ -77,7 +77,17 @@ var none = KMRDV2.explodeSendRequestLinesFromDto(dto([
   { tier: 'T2', month: '2026-02', orderQty: 5, status: 'cancelled' }
 ]));
 eq(none.length, 0, 'C4. no eligible tier → zero lines (NO_ELIGIBLE_SUBMITTED_DRAFTS is a clean zero-write result)');
-ok(/NO_ELIGIBLE_SUBMITTED_DRAFTS/.test(RO) && /No Request Order was created/.test(RO), 'C4. frontend surfaces NO_ELIGIBLE_SUBMITTED_DRAFTS clean (returns before any DB call)');
+// F1-7N-FB-3B §C: the clean zero-write empty result is now named for what it actually is — there is no
+// PERSISTED allocation to send. Knowing that requires a READ (the server owns the population), so the promise is
+// tightened from "before any DB call" to "before any WRITE", which is the guarantee that matters, and the message
+// states the AI-Plan-row / persisted-draft distinction explicitly.
+ok(/NO_ELIGIBLE_PERSISTED_ALLOCATION/.test(RO) && /Nothing was written/.test(RO),
+  'C4. frontend surfaces the empty case as a clean zero-WRITE result');
+ok(/An AI Plan row is NOT a persisted allocation draft/.test(RO),
+  'C4. and says why the page can show rows while the database has nothing to send');
+var _send = RO.slice(RO.indexOf('async function handleSendRequest'), RO.indexOf('function _roSendPlanningCycle_'));
+ok(_send.indexOf('NO_ELIGIBLE_PERSISTED_ALLOCATION') < _send.indexOf('DB.sendRequestOrderOrchestration(orchestrationPayload)'),
+  'C4. the empty-case return happens before the one committing request');
 
 section('D/F. downstream idempotency + lineage + no PO (13_ createRequestOrderDraft — already sound)');
 var core13 = extractFn(G13, 'roCreateRequestOrderCore_');

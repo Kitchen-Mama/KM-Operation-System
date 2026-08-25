@@ -123,7 +123,14 @@ eval(extractFn(RO, '_opLoadFirstLayerComposer_'));
   // token first — so there is no held token to pass and the single db-api read is necessary (not redundant).
   ok(/_roEnsureDraftToken_/.test(RO), '_roEnsureDraftToken_ exists (canonical-draft token helper)');
   // It is used ONLY on the canonical branch / inline edit — NOT in the manual lines-writer path.
-  eq((RO.match(/(?<!function )_roEnsureDraftToken_\(/g) || []).length, 2, '_roEnsureDraftToken_ is CALLED exactly twice (canonical confirm + inline order-qty edit) — NOT the manual Send lines path');
+  // F1-7N-FB-3B §E: this suite exists to eliminate serial per-SKU requests, and the Send-time confirm was one
+  // of them — it fetched a token PER CANONICAL SKU. The server orchestration removed that call entirely, so the
+  // count drops from 2 to 1 (the inline order-qty edit only). That is this suite's own goal reached, not a
+  // relaxation: assert the Send path holds NO per-SKU token read at all.
+  eq((RO.match(/(?<!function )_roEnsureDraftToken_\(/g) || []).length, 1,
+    '_roEnsureDraftToken_ is CALLED exactly once (the inline order-qty edit) — the Send-time per-SKU token read is eliminated');
+  var sendFn = RO.slice(RO.indexOf('async function handleSendRequest'), RO.indexOf('function _roSendPlanningCycle_'));
+  ok(!/_roEnsureDraftToken_/.test(sendFn), 'and the Send path issues NO per-SKU token request');
   // The manual lines-writer call site still passes NO expectedToken (unchanged — no locking bypass introduced).
   var linesCall = RO.slice(RO.indexOf('DB.upsertRequestOrderAllocationDraftLines('), RO.indexOf('DB.upsertRequestOrderAllocationDraftLines(') + 400);
   ok(linesCall.indexOf('expectedToken') === -1, 'A2: manual Send lines-writer call passes NO expectedToken — UNCHANGED (no null-token locking bypass)');
