@@ -3529,7 +3529,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 4;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 5;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
 // action is told apart from a genuine business rejection — a business handler never answers with them.
@@ -3815,6 +3815,39 @@ window.KM.DB.sendRequestOrderOrchestration = async function (payload) {
 // Read-only reconciliation of an interrupted Send (FB-3A, 65_). Kept adjacent because the orchestration's own
 // timeout guidance points at it: an interrupted orchestration is never assumed to be a zero-write.
 window.KM.DB.reconcileRequestOrderSend = function (payload) { return _kmGapRead_('system.requestOrderSendReconcile', payload || {}); };
+
+// F1-7N-FB-3C §D — THE 90 s / 240 s CONTRADICTION, AND WHY THIS CONSTANT IS RESTATED IN THE BACKEND.
+// FB-3B's orchestration yielded voluntarily at 240 000 ms while THIS transport aborts a write at
+// KM_WRITE_TIMEOUT_MS_ = 90 000 ms. So the browser declared REQUEST_TIMEOUT_WRITE_INDETERMINATE while the server
+// was, by design, still writing for another 150 seconds — and AbortController closes the socket without stopping
+// an Apps Script execution, so the writes continued invisibly and the PARTIAL_RESUMABLE answer could never
+// arrive. 66_ now derives its slice budget FROM this value (ROS_CLIENT_WRITE_TIMEOUT_MS_ must equal it, and a
+// regression test asserts the equality), stops ADMITTING work at 43 000 ms, and answers PARTIAL_RESUMABLE well
+// inside the bound. THE TIMEOUT WAS NOT RAISED to make a slow Send fit; the work was sliced instead.
+//
+// requestOrder.send.status — READ-ONLY journal status. A page that RELOADS mid-Send has lost its in-memory state
+// but not the execution; this is how it finds out what the server thinks is happening before doing anything.
+window.KM.DB.getRequestOrderSendStatus = function (payload) { return _kmGapRead_('requestOrder.send.status', { payload: payload || {} }); };
+
+// F1-7N-FB-3C §B — THE USER-AUTHORIZED DRAFT-CREATION BOUNDARY.
+// A deliberate user quantity edit is now an authorized canonical draft-creation/update boundary, so a SKU the AI
+// never materialized is no longer permanently unsendable. One request: find-or-create the canonical Flat-V2
+// draft, persist the quantity through the canonical locked writer, READ IT BACK, and return the persisted
+// internal id. It never mints a 'RAD-M-…' identity, and it never defers creation to Send Request.
+//
+// This uses the WRITE runner, so it inherits the bounded write timeout and the DEPLOYMENT_CONTRACT_MISMATCH
+// classification. A failure here must leave the field visibly UNSAVED — the caller is responsible for that, and
+// Send Request stays blocked while any edit is unsaved.
+window.KM.DB.ensureAndEditAllocationDraft = function (payload) { return _kmWeeklyCommand_('requestOrder.allocationDraft.ensureAndEdit', payload || {}); };
+
+// F1-7N-FB-3C §C — read-only reconciliation of non-canonical allocation-draft identities (the retired 'RAD-M-…'
+// rows). Reports and PROPOSES; it migrates nothing. Ids come back masked.
+window.KM.DB.getAllocationDraftIdentityDiagnostic = function (payload) { return _kmGapRead_('system.allocationDraftIdentityDiagnostic', { payload: payload || {} }); };
+
+// The slice budget the SERVER is expected to respect, restated for the continuation loop so the page can report
+// a nonsensical server duration instead of silently absorbing it. Kept as a derived read, never a second
+// authority: the server owns the budget and reports it back on every PARTIAL_RESUMABLE answer.
+window.KM.DB.getWriteTimeoutMs = function () { return _kmTimeoutMs_('write'); };
 // Fetch the effective backend flags ONCE and apply them through the ONE KM.api apply path. On ANY transport/business
 // failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
 // generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.

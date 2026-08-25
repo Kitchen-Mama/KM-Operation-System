@@ -379,3 +379,214 @@ function raSubmitLinesByDraft_(sheet, draftId, bucketSet, actor, now) {
   }
   return out;
 }
+
+// ============================================================================================================
+// F1-7N-FB-3C §B — THE USER-AUTHORIZED DRAFT-CREATION BOUNDARY.
+// ------------------------------------------------------------------------------------------------------------
+// THE BUSINESS DECISION THAT MADE THIS NECESSARY, stated before the code because it CHANGES A STANDING RULE.
+// Until FB-3C the rule was "AI Plan remains the draft-creation boundary" (R4E4/R6B). FB-3B then retired the
+// R4E5B path that created a draft inside the Send transition, which was correct on its own terms but left a real
+// hole: a user who typed a quantity onto a SKU with no persisted draft wrote NOTHING AT ALL —
+// _roSaveTierEditToCanonicalDraft_ returned early — and that SKU was then unsendable, because Send consumes
+// persisted drafts only. The user has resolved this:
+//
+//     AI Plan is an INITIAL/DEFAULT draft source. It is NOT the exclusive draft-creation boundary.
+//     A DELIBERATE USER QUANTITY EDIT is ALSO an authorized canonical draft-creation/update boundary.
+//
+// That is the smallest possible extension, and it is recorded in
+// docs/planning/REQUEST_ORDER_ALLOCATION_DRAFT_CREATION_BOUNDARY.md — not only here in runtime.
+//
+// WHAT THIS HANDLER IS AND IS NOT. It is a COMPOSITION of two existing canonical writers, in this order:
+//   1. KMRDV2P.generateMonthlyFlat via 24_ rpoGenerateMonthlyFlatResult_  — the canonical CREATE. It mints the
+//      canonical identity through KMRDV2.draftId, honours the manual non-actionable gate (AI may never create an
+//      all-zero draft; a MANUAL create may), writes ONE flat 53-column row under the shared ScriptLock +
+//      optimistic token + run journal, and roundtrip-verifies the id/cycle text format.
+//   2. KMRDV2P.editMonthlyFlat via 24_ rpoEditMonthlyFlatResult_ — the canonical QUANTITY WRITE, under the
+//      optimistic token, stamping user_edited and never touching recommended_qty.
+// It authors no row, no id, no schema and no arithmetic of its own. In particular it NEVER mints a
+// 'RAD-M-…' identity: the id always comes from the canonical KMRDV2 projection, so it is
+// 'RD::MONTHLY_ORDER::<cycle>::company=..|country=..|draft_purpose=..|marketplace=..|sku=..' by construction.
+//
+// AND IT ALWAYS READS BACK. A create-then-edit sequence that reports success without re-reading the row is the
+// same false-persistence class of bug FB-2A fixed on the Site Inventory side. The persisted tier quantity is
+// re-read and compared to the requested value; a mismatch is ALLOCATION_DRAFT_QUANTITY_NOT_VERIFIED and the page
+// keeps the route visibly UNSAVED, which blocks Send.
+//
+// ZERO IS A REAL DECISION (§B.7). order_qty = 0 is accepted and persisted as 0. It is NOT a delete and NOT a
+// cancel: the draft stays active, the tier keeps its month, and the canonical zero-quantity rule then excludes
+// that tier from the Send workset (rosBuildWorkset_ counts it as tier_zero_or_blank_qty). The operator can raise
+// it again later without re-creating anything.
+// ============================================================================================================
+
+var RAEE_TIERS_ = { T1: 1, T2: 1, T3: 1 };   // T4 is visibility-only and is never an order commitment
+
+// Resolve the ACTIVE flat draft for one exact business scope + cycle, using the EXISTING resolver so this
+// handler cannot disagree with the generation path about what "active" means.
+function raeeLoadActive_(ss, cycle, scope) {
+  return rpoFlatLoadActive_(ss, { recommendationType: 'MONTHLY_ORDER', planningCycle: cycle,
+    businessScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      sku: scope.sku, draft_purpose: scope.draft_purpose } });
+}
+
+// Read the persisted tier quantity back from the canonical flat DTO. Returns null when the tier is absent, so an
+// absent tier can never be reported as a verified 0.
+function raeePersistedTierQty_(dto, tier) {
+  var tiers = (dto && dto.tiers) || [];
+  for (var i = 0; i < tiers.length; i++) {
+    if (String(tiers[i].tier).toUpperCase() !== String(tier).toUpperCase()) continue;
+    var q = tiers[i].orderQty;
+    return (q === null || q === undefined || q === '') ? null : Number(q);
+  }
+  return null;
+}
+
+/**
+ * requestOrder.allocationDraft.ensureAndEdit
+ *
+ * body.payload:
+ *   { planning_cycle: 'YYYY-MM',
+ *     scope: { company, country, marketplace, sku, draft_purpose? },
+ *     tier: 'T1'|'T2'|'T3', request_month: 'YYYY-MM',
+ *     order_qty: number (>= 0),      // 0 is a real, persisted decision — see §B.7
+ *     note?: string, units_per_carton?: number, actor?: string }
+ *
+ * Returns { request_allocation_draft_id, created, updated, persisted_order_qty, verified, draft_version,
+ *           canonical_identity, generation_type }.
+ */
+function handleRequestOrderAllocationDraftEnsureAndEdit_(body) {
+  var payload = (body && body.payload) || body || {};
+  var scopeIn = payload.scope || {};
+  var scope = {
+    company: String(scopeIn.company == null ? '' : scopeIn.company).trim(),
+    country: String(scopeIn.country == null ? '' : scopeIn.country).trim(),
+    marketplace: String(scopeIn.marketplace == null ? '' : scopeIn.marketplace).trim(),
+    sku: String(scopeIn.sku == null ? '' : scopeIn.sku).trim(),
+    draft_purpose: String(scopeIn.draft_purpose == null ? '' : scopeIn.draft_purpose).trim() || 'regular'
+  };
+  var tier = String(payload.tier == null ? '' : payload.tier).trim().toUpperCase();
+  var month = String(payload.request_month == null ? '' : payload.request_month).trim();
+  var actor = String(payload.actor == null ? '' : payload.actor).trim() || 'request-order';
+
+  // ---- validate BEFORE touching anything. Every refusal is a named zero-write. ----------------------------
+  if (!scope.company || !scope.country || !scope.marketplace || !scope.sku) {
+    return jsonResponse_({ success: false, error: 'INVALID_SCOPE', code: 'INVALID_SCOPE', zero_write: true,
+      message: 'company + country + marketplace + sku are required to address a canonical allocation draft.' });
+  }
+  if (!RAEE_TIERS_[tier]) {
+    return jsonResponse_({ success: false, error: 'INVALID_TIER', code: 'INVALID_TIER', zero_write: true,
+      message: 'tier must be T1, T2 or T3. T4 is visibility-only and is never an order commitment.' });
+  }
+  var qty = Number(payload.order_qty);
+  if (!isFinite(qty) || qty < 0) {
+    return jsonResponse_({ success: false, error: 'INVALID_ORDER_QTY', code: 'INVALID_ORDER_QTY', zero_write: true,
+      message: 'order_qty must be a finite number >= 0. A blank is not a decision; 0 IS a decision and persists as 0.' });
+  }
+  var cycle;
+  try { rpoFlatBundle_(); cycle = KMRDV2.normalizePlanningCycleMonthly(payload.planning_cycle); }
+  catch (e) {
+    return jsonResponse_({ success: false, error: 'INVALID_PLANNING_CYCLE', code: 'INVALID_PLANNING_CYCLE', zero_write: true,
+      message: 'planning_cycle must be exactly YYYY-MM (the current-run authority). ' + String(e && e.message || e) });
+  }
+  if (!month) month = cycle;   // the tier month defaults to the cycle rather than being invented per tier
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try { rpoFlatSchemaGate_(ss); }
+  catch (se) {
+    return jsonResponse_({ success: false, error: (se && se.message) || 'RECOMMENDATION_SCHEMA_NOT_READY',
+      code: 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', zero_write: true });
+  }
+
+  // ---- STEP 1 · does a canonical active draft already exist for this exact scope + cycle? -----------------
+  var active = raeeLoadActive_(ss, cycle, scope);
+  if (active && active.status === 'BLOCKED_CONFLICT') {
+    return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT', code: 'BLOCKED_CONFLICT', zero_write: true,
+      stage: 'active', message: 'More than one active allocation draft exists for this scope, so which one to edit is a business decision. Nothing was written.',
+      data: { match_count: active.matchCount || null } });
+  }
+  var existed = !!(active && active.draft);
+  var draftId = existed ? String((active.draft.request_allocation_draft_id || '')).trim() : '';
+
+  // ---- STEP 2 · CREATE through the canonical generation path when it does not exist -----------------------
+  // §B.2. facts are supplied explicitly so a manual create needs NO materialized gap row: the user's edit is the
+  // authority, recommended_qty stays 0 (the AI default was never produced for this tier), and the manual
+  // non-actionable gate permits an all-zero create. generation_type is user_created so provenance stays honest.
+  var created = false;
+  if (!existed) {
+    var gen = rpoGenerateMonthlyFlatResult_({
+      recommendationType: 'MONTHLY_ORDER', mode: 'manual', action: 'create',
+      planningCycle: cycle, businessScope: scope, generationType: 'user_created', actor: actor,
+      facts: { ready: true, formulaVersion: 'USER_MANUAL_ORDER', sourceDataAsOf: '',
+        lines: [{ request_bucket: tier, request_month: month, recommended_qty: 0,
+          units_per_carton: (payload.units_per_carton == null ? '' : payload.units_per_carton) }] }
+    });
+    var gd = (gen && gen.data) || {};
+    if (!gen || gen.success !== true) {
+      return jsonResponse_({ success: false, error: String(gd.error || gen && gen.error || 'ALLOCATION_DRAFT_CREATE_FAILED'),
+        code: 'ALLOCATION_DRAFT_CREATE_FAILED', stage: String(gd.stage || ''), zero_write: true,
+        message: 'The canonical allocation draft could not be created, so the quantity was NOT persisted. The value stays UNSAVED on screen.' });
+    }
+    draftId = String(gd.draftId || gd.committedDraftId || '').trim();
+    created = true;
+    if (gd.writeOutcome === 'WRITE_COMMITTED_READBACK_FAILED') {
+      // The row committed but its own roundtrip failed. Report it truthfully rather than continuing to edit a
+      // row we cannot prove exists; the deterministic id keeps a re-run idempotent.
+      return jsonResponse_({ success: false, error: 'ALLOCATION_DRAFT_CREATE_UNVERIFIED',
+        code: 'ALLOCATION_DRAFT_CREATE_UNVERIFIED', stage: 'create_readback', zero_write: false,
+        message: 'The allocation draft was committed but could not be read back, so the quantity was not applied. Reload to reconcile before retrying.',
+        data: { request_allocation_draft_id: draftId, requires_reconciliation: true } });
+    }
+  }
+  if (!draftId) {
+    return jsonResponse_({ success: false, error: 'ALLOCATION_DRAFT_ID_UNRESOLVED', code: 'ALLOCATION_DRAFT_ID_UNRESOLVED',
+      zero_write: true, message: 'No canonical allocation draft id could be resolved for this scope.' });
+  }
+
+  // ---- STEP 3 · persist the USER QUANTITY through the canonical locked edit writer ------------------------
+  // §B.1 — for an existing draft this is the ONLY path taken, so an existing AI-generated draft is UPDATED in
+  // place and never replaced. recommended_qty is untouched by the edit writer by contract.
+  var tok = rpoFlatTokenForDraft_(ss, draftId);
+  var edit = rpoEditMonthlyFlatResult_({
+    draftId: draftId,
+    edits: [{ naturalKey: { request_month: month, request_bucket: tier },
+      fields: (payload.note == null ? { order_qty: qty } : { order_qty: qty, note: String(payload.note) }) }],
+    expectedToken: (tok && tok.expectedToken) || tok || null,
+    actor: actor
+  });
+  if (!edit || edit.success !== true) {
+    return jsonResponse_({ success: false, error: String((edit && (edit.error || edit.reason)) || 'ALLOCATION_DRAFT_QUANTITY_WRITE_FAILED'),
+      code: 'ALLOCATION_DRAFT_QUANTITY_WRITE_FAILED', stage: String((edit && edit.stage) || 'edit'),
+      zero_write: !created,
+      message: 'The quantity could not be persisted' + (created ? ' (the draft row itself was created).' : '.') + ' The value stays UNSAVED on screen and Send stays blocked.',
+      data: { request_allocation_draft_id: draftId, draft_created: created } });
+  }
+
+  // ---- STEP 4 · READ IT BACK. A writer's success flag is not persistence proof. --------------------------
+  var after = rpoFlatLoadById_(ss, draftId);
+  var dto = (after && (after.draft || after.dto || after)) || null;
+  var persisted = raeePersistedTierQty_(dto, tier);
+  if (persisted === null || Number(persisted) !== Number(qty)) {
+    return jsonResponse_({ success: false, error: 'ALLOCATION_DRAFT_QUANTITY_NOT_VERIFIED',
+      code: 'ALLOCATION_DRAFT_QUANTITY_NOT_VERIFIED', stage: 'readback', zero_write: false,
+      message: 'The quantity was written but the read-back does not match, so it is NOT treated as saved. Reload to see the persisted value before retrying.',
+      data: { request_allocation_draft_id: draftId, intended_order_qty: qty,
+        persisted_order_qty: persisted, draft_created: created, requires_reconciliation: true } });
+  }
+
+  return jsonResponse_({ success: true, data: {
+    request_allocation_draft_id: draftId,
+    created: created, updated: !created,
+    persisted_order_qty: Number(persisted),
+    verified: true,
+    tier: tier, request_month: month, planning_cycle: cycle,
+    draft_version: (dto && dto.draftVersion != null) ? dto.draftVersion : null,
+    status: (dto && dto.status) || '',
+    generation_type: (dto && dto.generationType) || '',
+    // §B.5 — proof, on the wire, that no RAD-M identity was minted. The client asserts this.
+    canonical_identity: /^RD::MONTHLY_ORDER::\d{4}-\d{2}::/.test(draftId),
+    // §B.7 — a persisted 0 is saved AND excluded from Send by the canonical zero-quantity rule.
+    sendable_tier: Number(persisted) > 0,
+    zero_quantity_rule: Number(persisted) > 0
+      ? 'This tier carries a positive quantity and will be included in the next Send.'
+      : 'A persisted 0 is a saved decision: the draft stays active and this tier is EXCLUDED from the Send workset until it is positive again.'
+  } });
+}

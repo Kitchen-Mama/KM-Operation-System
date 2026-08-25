@@ -121,6 +121,23 @@ function doPost(e) {
     if (action === 'requestOrder.send.orchestrate') {
       return jsonResponse_(handleRequestOrderSendOrchestrate_(body));
     }
+    // F1-7N-FB-3C §D/§E — READ-ONLY journal status, so a page that RELOADS mid-Send can resume instead of
+    // starting a second execution. Answers "what does the server think is happening, and may I continue?".
+    if (action === 'requestOrder.send.status') {
+      return jsonResponse_(handleRequestOrderSendStatus_(body));
+    }
+    // F1-7N-FB-3C §B — THE USER-AUTHORIZED DRAFT-CREATION BOUNDARY (owner = 15_). A deliberate user quantity
+    // edit is now an authorized canonical draft-creation/update boundary, not only AI Plan. Find-or-create the
+    // canonical Flat-V2 draft, persist the user quantity through the canonical locked writer, read it back and
+    // return the persisted internal id. It NEVER mints a 'RAD-M-…' identity and never waits for Send.
+    if (action === 'requestOrder.allocationDraft.ensureAndEdit') {
+      return handleRequestOrderAllocationDraftEnsureAndEdit_(body);
+    }
+    // F1-7N-FB-3C §C — STRICTLY READ-ONLY reconciliation of non-canonical allocation-draft identities (the
+    // retired 'RAD-M-…' rows). Reports, masks and PROPOSES an idempotent plan; it migrates nothing.
+    if (action === 'system.allocationDraftIdentityDiagnostic') {
+      return handleAllocationDraftIdentityDiagnostic_(body);
+    }
 
     if (action === 'updateSkuLifecycle') {
       return handleUpdateSkuLifecycle_(body);

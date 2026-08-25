@@ -242,7 +242,9 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   read('specs/active/apps-script/40_api_v1_weekly_workspace.gs'),
   // F1-7N-FB-3B: the Send Request server orchestration owner. Every handler named in SYS_REQUIRED_ACTIONS_ must
   // be defined exactly once across these sources, so a new owner file has to be listed or the probe cannot see it.
-  read('specs/active/apps-script/66_api_v1_request_order_send.gs')].join('\n');
+  read('specs/active/apps-script/66_api_v1_request_order_send.gs'),
+  // F1-7N-FB-3C: the read-only allocation-draft identity reconciliation owner.
+  read('specs/active/apps-script/67_api_v1_allocation_draft_identity.gs')].join('\n');
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;

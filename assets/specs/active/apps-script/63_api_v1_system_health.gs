@@ -37,14 +37,14 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-3B';
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-3C';
 // Incremented when the set of router actions changes. The frontend compares this against its own pinned
 // minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
 // through a confusing per-action failure.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 4;
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 5;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 4;
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 5;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -66,6 +66,12 @@ var SYS_REQUIRED_ACTIONS_ = [
   // than reaching the user as a Send that silently does nothing.
   { action: 'requestOrder.send.orchestrate', handler: 'handleRequestOrderSendOrchestrate_', used_by: 'Send Request (server orchestration)' },
   { action: 'requestOrder.sendWorkset.get', handler: 'handleRequestOrderSendWorksetGet_', used_by: 'Send Request (slim workset / confirmation counts)' },
+  // F1-7N-FB-3C — the reload-resume status read, the user-edit draft-creation boundary, and the read-only
+  // identity reconciliation. A partial sync that omits 15_/66_/67_ must be named here rather than reaching the
+  // user as an edit that saves nothing or a Send that cannot resume.
+  { action: 'requestOrder.send.status', handler: 'handleRequestOrderSendStatus_', used_by: 'Send Request (reload resume / progress)' },
+  { action: 'requestOrder.allocationDraft.ensureAndEdit', handler: 'handleRequestOrderAllocationDraftEnsureAndEdit_', used_by: 'Order Allocation quantity edit (canonical draft create/update)' },
+  { action: 'system.allocationDraftIdentityDiagnostic', handler: 'handleAllocationDraftIdentityDiagnostic_', used_by: 'Allocation-draft identity reconciliation (read-only)' },
   // Vertical B — Procurement. Send Request writes through these three, then the PO vertical continues.
   { action: 'upsertRequestOrderAllocationDraft', handler: 'handleUpsertRequestOrderAllocationDraft_', used_by: 'Send Request (allocation draft)' },
   { action: 'upsertRequestOrderAllocationDraftLines', handler: 'handleUpsertRequestOrderAllocationDraftLines_', used_by: 'Send Request (allocation lines)' },
