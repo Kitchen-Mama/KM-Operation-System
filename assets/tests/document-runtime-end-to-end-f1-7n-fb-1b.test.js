@@ -86,7 +86,10 @@ LOAD.push(G39.match(/var DGS_DOC_LABEL_ = \{[\s\S]*?\n\};/)[0]);
   'dgsClassCandidates_', 'dgsShipmentManifest_', 'dgsSelectPoTemplate_', 'dgsCanonicalJson_', 'dgsChecksum_',
   'dgsSplitMapped_', 'dgsFillText_', 'dgsFilename_', 'dgsBuildRenderPayload_', 'dgsShipMonth_', 'dgsPoPayloadModel_',
   'dgsDriveReadiness_', 'dgsIdentityKey_', 'dgsPoBatchDate_', 'dgsPlanBatch_', 'dgsRegistryRow_', 'dgsDocumentDto_',
-  'dgsDocumentLabel_', 'dgsFolderUrl_'].forEach(function (f) { LOAD.push(extractFn(G39, f)); });
+  'dgsDocumentLabel_', 'dgsFolderUrl_', 'dgsClassifyEntry_', 'dgsExecutableManifest_', 'dgsGatingClassKeys_',
+  'dgsPoSourceChecksum_', 'dgsPoStatus_'].forEach(function (f) { LOAD.push(extractFn(G39, f)); });
+LOAD.push(extractVar(G39, 'DGS_DOC_STATES_'));
+LOAD.push(extractFn(G35, 'docCiFieldAuthorityReport_'));
 
 ['docStr_', 'docLc_', 'docUc_', 'docNum_', 'docAddr_', 'docRequire_', 'docLinePos_', 'docDistinctPoNos_',
   'docFamilyStatus_', 'docTotals_', 'docHeaderBlock_', 'docRenderShippingDetail_', 'docRenderPackingList_',
@@ -459,11 +462,16 @@ ok(!/setShip\('status', CSD_INTRANSIT_/.test(G22), '9. Confirm never writes in_t
 // =======================================================================================================
 section('B10. §C/§M Send PO — document gate in FRONT of the one canonical writer');
 
-ok(/pcDocumentGateForIssue_\(ss, poId, actor, orderDate, depositDue\)/.test(G13), '10. Send PO runs the document gate');
-var gIdx = G13.indexOf('poDocResult = pcDocumentGateForIssue_');
+// SUPERSEDED by F1-7N-FB-1B-G1: the single-lock gate became a three-stage saga, so assert the staged contract.
+ok(/pcPoPrepareForIssue_\(ss, poId, actor, poOrderDate, poDepositDue\)/.test(G13), '10. Send PO runs the STAGE 1 document preparation');
 var sIdx = G13.indexOf("setStatus('issued')");
-ok(gIdx > 0 && gIdx < sIdx, '10. the document is produced BEFORE the status is written');
-ok(/if \(!poDocResult\.ok\) \{[\s\S]{0,600}The PO remains Draft/.test(G13), '10. on failure the PO remains Draft');
+ok(G13.indexOf('poPrepared = pcPoPrepareForIssue_') > 0 && G13.indexOf('poPrepared = pcPoPrepareForIssue_') < sIdx,
+  '10. preparation happens BEFORE the status is written');
+ok(G13.indexOf('dgsPoRenderPrepared_(ss, poPrepared)') > 0 && G13.indexOf('dgsPoRenderPrepared_(ss, poPrepared)') < sIdx,
+  '10. and so does the Drive rendering');
+ok(G13.indexOf('dgsPoFinalize_(ss, poPrepared, poRendered, actor)') < sIdx,
+  '10. and the finalize/verify step');
+ok(/The PO remains Draft\. No status was written and no email was sent\./.test(G13), '10. on failure the PO remains Draft');
 ok(/stage: 'document_generation'/.test(G13), '10. with a typed stage the UI can act on');
 eq((G13.match(/setStatus\('issued'\)/g) || []).length, 1, '10. there is still exactly ONE PO issue writer — no second transition path');
 ok(/order_status: \(transition === 'issue'\) \? 'issued' : undefined/.test(G13), '10. Send PO writes the canonical `issued` token');
@@ -820,6 +828,299 @@ ok(/Q\.5 Shipment applicability matrix/.test(SPEC) && /COMMERCIAL_INVOICE_IMPORT
 ok(/Q\.9 Snapshot eligibility/.test(SPEC) && /`ready_to_ship` is deliberately \*\*not\*\* eligible/.test(SPEC), '21. and the shipped snapshot rule');
 ok(/There is exactly \*\*ONE active folder contract\*\*/.test(SPEC), '21. the single active folder contract still holds');
 ok(/INCOTERM/.test(SPEC) && /CONFIGURATION_REQUIRED/.test(SPEC), '21. the CI runtime status and its unresolved fields are recorded');
+
+
+// =======================================================================================================
+section('G1-A. the PO lock boundary — Drive NEVER runs inside the business lock');
+
+// STAGE 1 must be Drive-mutation-free, because it is the only stage that runs with the lock held.
+var poPrepFn = extractFn(G39, 'dgsPoPrepare_');
+ok(!/dofFolderIo_|createFolder|dfoRenderPayload_|dfoDefaultIo_|dofResolvePoDateFolder_|exportPdf|copyTemplate/.test(poPrepFn),
+  'A. STAGE 1 (dgsPoPrepare_) performs NO Drive mutation — no folder io, no copy, no render, no PDF');
+ok(/dofProbeIo_/.test(poPrepFn), 'A. its only Drive contact is the non-mutating readiness probe');
+ok(/dgsResolvePayload_/.test(poPrepFn), 'A. it resolves the full payload (so nothing business-side is left for later)');
+ok(/dgsPoSourceChecksum_/.test(poPrepFn), 'A. it freezes the source checksum');
+ok(/require_draft/.test(poPrepFn) && /PURCHASE_ORDER_NOT_DRAFT/.test(poPrepFn), 'A. and verifies the PO is still draft');
+ok(/DGS_PO_RESERVED_/.test(poPrepFn) && /reservedNote/.test(poPrepFn), 'A. and reserves the idempotent attempt row');
+ok(/var DGS_PO_RESERVED_ = 'DOCUMENT_ATTEMPT_RESERVED';/.test(G39), 'A. under a typed reserved reason');
+ok(/if \(prior\) dgsUpdateRegistry_[\s\S]{0,120}else dgsWriteRegistry_/.test(poPrepFn),
+  'A. reusing a prior attempt row rather than appending a second one');
+
+// STAGE 2 is the only Drive-mutating stage, and it is a separate function so it can be called lock-free.
+var poRenderFn = extractFn(G39, 'dgsPoRenderPrepared_');
+ok(/dofResolvePoDateFolder_\(dofFolderIo_\(\)/.test(poRenderFn) && /dfoRenderPayload_/.test(poRenderFn),
+  'A. STAGE 2 (dgsPoRenderPrepared_) owns folder resolution + copy + fill + PDF');
+ok(!/tryLock|LockService/.test(poRenderFn), 'A. and it never takes a lock itself');
+
+// STAGE 3 re-verifies and attaches; it must not write the business status (that is the one canonical writer).
+var poFinFn = extractFn(G39, 'dgsPoFinalize_');
+ok(/dgsPoStatus_\(loaded\.po\) !== 'draft'/.test(poFinFn), 'A. STAGE 3 re-verifies the PO is STILL draft');
+ok(/after !== prepared\.source_checksum/.test(poFinFn), 'A. and that the source checksum is unchanged');
+ok(/DGS_PO_DRIFT_/.test(poFinFn) && /var DGS_PO_DRIFT_ = 'DOCUMENT_SOURCE_DRIFT';/.test(G39),
+  'A. drift is recorded with its own typed reason');
+ok(/Stale file [\s\S]{0,80}retained, not attached/.test(poFinFn), 'A. stale output is NEVER attached as current');
+ok(!/removeFile|setTrashed|\.remove\(|deleteFile/.test(poFinFn), 'A. and is never deleted either');
+// on drift the file columns must NOT be written - only the note
+var driftBlock = poFinFn.slice(poFinFn.indexOf('if (after !== prepared.source_checksum)'), poFinFn.indexOf('if (!dgsStr_(rendered.file.file_id))'));
+ok(!/file_id: rendered|file_url: rendered|pdf_file_url: rendered/.test(driftBlock),
+  'A. the drift path writes no file column, so a stale render can never become the current document');
+ok(!/setStatus\(|setCell\(|\.setValue\(/.test(poFinFn), 'A. STAGE 3 writes no cell directly');
+ok(!/order_status:\s*'/.test(poFinFn) && !/order_status'?\s*,\s*'issued'/.test(poFinFn),
+  'A. and never writes order_status — the one canonical writer does (it only REPORTS the status it read)');
+ok(/dgsUpdateRegistry_/.test(poFinFn), 'A. its only write is to the generated_documents registry');
+ok(!/dofFolderIo_|createFolder|copyTemplate|exportPdf/.test(poFinFn), 'A. and performs no Drive mutation');
+
+// the caller in 13_ must release the lock across stage 2 and reacquire for stage 3
+var prepIdx = G13.indexOf('poPrepared = pcPoPrepareForIssue_');
+var rel1 = G13.indexOf('finally { try { poIssueLock.releaseLock(); } catch (eR) {} }');
+var renderIdx = G13.indexOf('dgsPoRenderPrepared_(ss, poPrepared)');
+var reacquire = G13.indexOf('// ---- STAGE 3 ----');
+var finIdx = G13.indexOf('dgsPoFinalize_(ss, poPrepared, poRendered, actor)');
+ok(prepIdx > 0 && rel1 > prepIdx, 'A. 13_ releases the lock immediately after STAGE 1');
+ok(renderIdx > rel1, 'A. STAGE 2 runs AFTER that release — the Drive work is lock-free');
+ok(reacquire > renderIdx && finIdx > reacquire, 'A. the lock is REACQUIRED before STAGE 3 verifies and attaches');
+ok(/---- STAGE 2 \(no lock held\) ----/.test(G13), 'A. and the source says so explicitly');
+
+// the decisive whole-file proof: no Drive-mutating symbol appears between a tryLock and its release
+function lockedRegions(src) {
+  var out = [], i = 0;
+  while (true) {
+    var a = src.indexOf('tryLock(', i);
+    if (a < 0) break;
+    var b = src.indexOf('releaseLock()', a);
+    if (b < 0) { out.push(src.slice(a)); break; }
+    out.push(src.slice(a, b));
+    i = b + 1;
+  }
+  return out;
+}
+var DRIVE_MUTATORS = /dofFolderIo_\(\)|createFolder\(|copyTemplate\(|exportPdf\(|dfoRenderPayload_\(|dfoGenerateFile_\(|dofResolvePoDateFolder_\(|dofResolveShipmentFolder_\(/;
+lockedRegions(code(G13)).forEach(function (region, i) {
+  ok(!DRIVE_MUTATORS.test(region), 'A. 13_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
+});
+lockedRegions(code(G22)).forEach(function (region, i) {
+  ok(!DRIVE_MUTATORS.test(region), 'A. 22_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
+});
+lockedRegions(code(G39)).forEach(function (region, i) {
+  ok(!DRIVE_MUTATORS.test(region), 'A. 39_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
+});
+// and the retry path holds no lock across Drive work at all
+var retryFn = extractFn(G39, 'handleDocumentRetry_');
+ok(!/tryLock|LockService/.test(retryFn), 'A. the retry handler holds NO global lock across its Drive work');
+ok(/NO lock is held here/.test(retryFn), 'A. and records why');
+// the PO API/retry wrapper releases across the render
+var poWrap = extractFn(G39, 'dgsGeneratePoDocuments_');
+ok(poWrap.indexOf('dgsPoRenderPrepared_') > poWrap.indexOf('finally { try { lock.releaseLock(); } catch (e2) {} }'),
+  'A. dgsGeneratePoDocuments_ renders only after releasing its stage-1 lock');
+ok(poWrap.indexOf('dgsPoFinalize_') > poWrap.lastIndexOf('lock.tryLock(30000)'),
+  'A. and finalizes only after reacquiring it');
+ok(/<-- NO lock held here/.test(poWrap), 'A. with the boundary stated in source');
+
+// checksum drift really is detectable by the same function stage 3 uses
+var poA = { purchase_order_id: 'PO-1', po_no: 'X', series: 'S', expected_ship_date: '2026-10-14' };
+var linesA = [{ sku: 'K1', ordered_qty: '10', carton_qty: '1', unit_price: '2' }];
+eq(dgsPoSourceChecksum_(poA, linesA), dgsPoSourceChecksum_(poA, linesA), 'A. the PO source checksum is stable for identical data');
+ok(dgsPoSourceChecksum_(poA, linesA) !== dgsPoSourceChecksum_(poA, [{ sku: 'K1', ordered_qty: '11', carton_qty: '1', unit_price: '2' }]),
+  'A. and changes when a rendered quantity changes — drift is genuinely detectable');
+ok(dgsPoSourceChecksum_(poA, linesA) !== dgsPoSourceChecksum_(Object.assign({}, poA, { expected_ship_date: '2026-11-01' }), linesA),
+  'A. and when a rendered date changes');
+eq(dgsPoStatus_({ order_status: 'DRAFT' }), 'draft', 'A. status reading is normalized');
+eq(dgsPoStatus_({ status: 'issued' }), 'issued', 'A. with the legacy column as fallback');
+
+// =======================================================================================================
+section('G1-B. callable read-only diagnostic entrypoints');
+
+var TEMPD = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
+ok(/^function TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER\(\) \{/m.test(TEMPD), 'B. TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER is a top-level function');
+ok(/^function TEMP_DOCUMENT_DIAGNOSE_SHIPMENT\(\) \{/m.test(TEMPD), 'B. TEMP_DOCUMENT_DIAGNOSE_SHIPMENT is a top-level function');
+ok(/var TEMP_DOCUMENT_DIAGNOSTIC_PURCHASE_ORDER_ID_ = 'PASTE_PURCHASE_ORDER_ID_HERE';/.test(TEMPD), 'B. the PO placeholder constant is exactly as specified');
+ok(/var TEMP_DOCUMENT_DIAGNOSTIC_SHIPMENT_ID_ = 'PASTE_SHIPMENT_ID_HERE';/.test(TEMPD), 'B. and the shipment placeholder constant');
+// same evaluators as production — no competing implementation
+ok(/handlePoDocumentDiagnostic_\(\{ purchase_order_id: poId \}\)/.test(TEMPD), 'B. the PO entrypoint delegates to the PRODUCTION evaluator');
+ok(/handleShipmentDocumentDiagnostic_\(\{ shipment_id: shipmentId \}\)/.test(TEMPD), 'B. and the shipment entrypoint likewise');
+var CT = code(TEMPD);
+ok(!/dgsShipmentManifest_|dgsSelectPoTemplate_|dgsExecutableManifest_|dtMapPlaceholders_|docRenderByClass_/.test(CT),
+  'B. it re-implements NO evaluator — there is no competing diagnostic');
+// strictly read-only
+ok(!/setValue|appendRow|deleteRow|dtAppendByHeader_|dgsWriteRegistry_|dgsUpdateRegistry_|PropertiesService/.test(CT),
+  'B. it performs NO DB / property / flag / status write');
+ok(!/DriveApp|createFolder|dofFolderIo_|copyTemplate|exportPdf|getAs\(/.test(CT), 'B. it creates no Drive folder, no file and no PDF');
+ok(!/MailApp|GmailApp|sendEmail/i.test(CT), 'B. it sends no email');
+ok(!/handleConfirmShipmentAndDispatch_|handleUpdatePurchaseOrderStatus_|dgsGeneratePoDocuments_|dgsGenerateShipmentDocuments_|handleDocumentRetry_/.test(CT),
+  'B. it never invokes Send PO, Confirm Shipment or any generation path');
+ok(!/DEMO4A_|TEMP_demo_shipping/.test(CT), 'B. and never touches Demo data');
+// placeholder rejection + PK reporting + log discipline
+ok(/TEMP_DOC_DIAG_PLACEHOLDERS_/.test(TEMPD) && /is still the placeholder/.test(TEMPD), 'B. a still-placeholder id is rejected, not diagnosed');
+ok(/if \(!id \|\| TEMP_DOC_DIAG_PLACEHOLDERS_\[id\]\)/.test(TEMPD), 'B. and so is a blank id');
+ok(/Use the INTERNAL PRIMARY KEY, not a display number/.test(TEMPD), 'B. the constants document that they take the internal PK');
+ok(/d\.purchase_order_id/.test(TEMPD) && /d\.shipment_id/.test(TEMPD), 'B. and each log reports the exact selected internal PK');
+ok(/TEMP_DOC_DIAG_LOG_CAP_/.test(TEMPD) && /truncated/.test(TEMPD), 'B. every line is capped inside the log truncation ceiling');
+ok(/READ-ONLY: writes=/.test(TEMPD), 'B. and each primary line carries the zero-write confirmation');
+var poEntry = extractFn(TEMPD, 'TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER');
+var shipEntry = extractFn(TEMPD, 'TEMP_DOCUMENT_DIAGNOSE_SHIPMENT');
+eq((poEntry.match(/handlePoDocumentDiagnostic_\(/g) || []).length, 1, 'B. the PO entrypoint evaluates exactly ONCE');
+eq((shipEntry.match(/handleShipmentDocumentDiagnostic_\(/g) || []).length, 1, 'B. and so does the shipment entrypoint');
+eq((poEntry.match(/tempDocDiagLog_\(\n?\s*'\[DOC-DIAG\]\[PO\] '/g) || []).length, 1, 'B. emitting exactly ONE compact primary line');
+eq((shipEntry.match(/tempDocDiagLog_\(\n?\s*'\[DOC-DIAG\]\[SHIP\] '/g) || []).length, 1, 'B. and the shipment one likewise');
+// the PO log contract covers every field the gate asked for
+['purchase_order_id', 'po_no', 'db_status', 'ui_group', 'system_payload_verdict', 'payload_checksum',
+  'template', 'field', 'drive', 'folder_preview', 'required_document_manifest', 'existing_documents',
+  'SEND_PO_VERDICT', 'blocked_by'].forEach(function (k) {
+  ok(TEMPD.indexOf(k) !== -1, 'B. PO log contract includes ' + k);
+});
+['shipment_id', 'external_shipment_id', 'system_readiness_verdict', 'drive_readiness_verdict',
+  'applicable_manifest', 'executable_manifest', 'transition_gate_manifest', 'field_contract',
+  'final_folder_preview', 'snapshot', 'existing_documents', 'CONFIRM_VERDICT', 'blocked_by',
+  'commercial_invoice_field_authority'].forEach(function (k) {
+  ok(TEMPD.indexOf(k) !== -1, 'B. Shipment log contract includes ' + k);
+});
+// and the production evaluators expose what those logs read
+var shipDiag2 = extractFn(G39, 'handleShipmentDocumentDiagnostic_');
+['executable_manifest', 'transition_gate_manifest', 'commercial_invoice_field_authority',
+  'system_readiness_verdict', 'drive_readiness_verdict', 'confirm_shipment_verdict', 'blocking_reasons']
+  .forEach(function (k) { ok(shipDiag2.indexOf(k) !== -1, 'B. the shipment evaluator emits ' + k); });
+var poDiag2 = extractFn(G39, 'handlePoDocumentDiagnostic_');
+['system_payload_verdict', 'drive_readiness_verdict', 'required_document_manifest', 'send_po_verdict', 'blocking_reasons']
+  .forEach(function (k) { ok(poDiag2.indexOf(k) !== -1, 'B. the PO evaluator emits ' + k); });
+
+// =======================================================================================================
+section('G1-C. applicability vs EXECUTABILITY — five states, and only executable-required may block');
+
+eq(DGS_DOC_STATES_, ['REQUIRED_AND_EXECUTABLE', 'OPTIONAL_AND_EXECUTABLE', 'CONFIGURATION_REQUIRED', 'RUNTIME_DEFERRED', 'NOT_APPLICABLE'],
+  'C. exactly the five states');
+eq(dgsGatingClassKeys_(), ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'D. only Shipment Detail + Export Packing List gate the transition');
+
+var complete = { complete: true, missing: [], unresolved: [] };
+var incomplete = { complete: false, missing: [{ placeholder: 'CARTON_NO_RANGE' }], unresolved: [] };
+var authorityGap = { complete: false, missing: [], unresolved: [{ placeholder: 'INCOTERM' }] };
+function byKey(rows, k) { for (var i = 0; i < rows.length; i++) if (rows[i].class_key === k) return rows[i]; return null; }
+
+// the real US / TOP SEALAND manifest, with every field contract complete
+var allComplete = {};
+man.entries.forEach(function (e) { allComplete[e.class_key] = complete; });
+var execAll = dgsExecutableManifest_(man.entries, allComplete);
+eq(byKey(execAll.documents, 'SHIPMENT_DETAIL').state, 'REQUIRED_AND_EXECUTABLE', 'C. Shipment Detail -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'SHIPMENT_DETAIL').blocks_transition, true, 'C. and it blocks');
+eq(byKey(execAll.documents, 'PACKING_LIST_EXPORT').state, 'REQUIRED_AND_EXECUTABLE', 'C. Export Packing List -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'PACKING_LIST_EXPORT').blocks_transition, true, 'C. and it blocks');
+eq(byKey(execAll.documents, 'PACKING_LIST_IMPORT').state, 'OPTIONAL_AND_EXECUTABLE',
+  'C. US destination Packing List -> OPTIONAL_AND_EXECUTABLE (no canonical owner makes it mandatory; NOT inferred from the word "import")');
+eq(byKey(execAll.documents, 'PACKING_LIST_IMPORT').blocks_transition, false, 'C. so it never blocks');
+eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT').state, 'REQUIRED_AND_EXECUTABLE', 'C. Export CI with a complete contract -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT').blocks_transition, false, 'C. but it still does not gate this controlled version');
+eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_IMPORT').blocks_transition, false, 'C. nor does the US destination CI');
+eq(byKey(execAll.documents, 'CARRIER_BOOKING').state, 'RUNTIME_DEFERRED', 'C. TOP SEALAND Booking -> RUNTIME_DEFERRED (no renderer exists)');
+eq(byKey(execAll.documents, 'CARRIER_BOOKING').renderer_available, false, 'C. renderer_available is false');
+eq(byKey(execAll.documents, 'CARRIER_BOOKING').blocks_transition, false, 'C. and RUNTIME_DEFERRED can never block Confirm Shipment');
+eq(execAll.blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'D. the actual blocking manifest is exactly those two');
+eq(execAll.runtime_deferred, ['CARRIER_BOOKING'], 'C. and exactly one runtime-deferred class');
+
+// a required authority turns a CI into CONFIGURATION_REQUIRED, never a silent blank and never a blocker
+var withGap = {}; man.entries.forEach(function (e) { withGap[e.class_key] = complete; });
+withGap.COMMERCIAL_INVOICE_EXPORT = authorityGap;
+var execGap = dgsExecutableManifest_(man.entries, withGap);
+eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').state, 'CONFIGURATION_REQUIRED', 'C. a required unresolved authority -> CONFIGURATION_REQUIRED');
+eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').missing_authorities, ['INCOTERM'], 'C. naming the exact field');
+eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').blocks_transition, false, 'C. and it does not block');
+eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').retryable, true, 'C. it is retryable once configured');
+eq(execGap.blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'D. the blocking manifest is unchanged by a CI configuration problem');
+
+// an incomplete contract on a GATING class removes it from the blocking set rather than blocking wrongly
+var gateIncomplete = {}; man.entries.forEach(function (e) { gateIncomplete[e.class_key] = complete; });
+gateIncomplete.PACKING_LIST_EXPORT = incomplete;
+var execGi = dgsExecutableManifest_(man.entries, gateIncomplete);
+eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').state, 'CONFIGURATION_REQUIRED', 'C. a gating class with an incomplete contract is CONFIGURATION_REQUIRED');
+eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').blocks_transition, false, 'C. it cannot "block" on a contract it cannot satisfy — it is reported for correction');
+eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').missing_fields.length, 1, 'C. with the missing field named');
+
+// pre-dispatch (no snapshot) the contract is UNKNOWN and nothing is asserted either way
+var execUnknown = dgsExecutableManifest_(man.entries, null);
+eq(byKey(execUnknown.documents, 'SHIPMENT_DETAIL').required_field_contract_complete, 'UNKNOWN',
+  'C. before dispatch the field contract is UNKNOWN, never assumed complete');
+eq(byKey(execUnknown.documents, 'SHIPMENT_DETAIL').blocks_transition, false, 'C. so nothing blocks on an unverifiable contract');
+eq(byKey(execUnknown.documents, 'CARRIER_BOOKING').state, 'RUNTIME_DEFERRED', 'C. a missing renderer is knowable without a snapshot');
+// every row carries the evidence the gate asked for
+['blocks_transition', 'renderer_available', 'required_field_contract_complete', 'missing_authorities', 'retryable', 'next_action']
+  .forEach(function (k) { ok(byKey(execAll.documents, 'SHIPMENT_DETAIL').hasOwnProperty(k), 'C. every classified row reports ' + k); });
+ok(!/GENERATED/.test(byKey(execAll.documents, 'CARRIER_BOOKING').next_action) || /never generated/.test(byKey(execAll.documents, 'CARRIER_BOOKING').next_action),
+  'C. and a deferred class is explicitly never written as a GENERATED registry row');
+ok(/never generated, never blocking, and never written as a GENERATED registry row/.test(G39),
+  'C. the source states that a deferred class emits no blank document and no GENERATED row');
+
+// =======================================================================================================
+section('G1-D. the actual Confirm Shipment blocking manifest');
+
+var readinessFn2 = extractFn(G39, 'dgsShipmentReadiness_');
+ok(/dgsGatingClassKeys_\(\)/.test(readinessFn2), 'D. the pre-dispatch gate consults the policy gate list');
+ok(/if \(gating\[e\.class_key\]\) blockers\.push\(item\); else configIssues\.push\(item\);/.test(readinessFn2),
+  'D. a template problem BLOCKS only for a gating class; every other becomes a reported configuration issue');
+ok(/gatingEntries = manifest\.entries\.filter/.test(readinessFn2), 'D. Drive readiness is asserted over the gating templates');
+ok(/nonGatingDrive/.test(readinessFn2) && /configIssues\.push\(\{ reason: nonGatingDrive\.reason/.test(readinessFn2),
+  'D. and a non-gating asset problem is reported, never blocking');
+ok(/executable_manifest: executable\.documents/.test(readinessFn2), 'D. the gate returns the executable manifest for the UI');
+ok(/transition_gate_classes: dgsGatingClassKeys_\(\)/.test(readinessFn2), 'D. and names the gate classes explicitly');
+ok(/configuration_issues/.test(readinessFn2), 'D. deferred/config-required documents are surfaced, not silently hidden');
+ok(/NO active canonical specification declares any document[\s\S]{0,12}class mandatory for the dispatch transition/.test(G39),
+  'D. the source records WHY only two classes gate (no canonical owner declares any document mandatory)');
+ok(/only "mandatory" statements are/.test(G39), 'D. citing the only mandatory statements that DO exist (folder identity)');
+
+// =======================================================================================================
+section('G1-E. the five Commercial Invoice field authorities, per active template');
+
+var authNone = docCiFieldAuthorityReport_([]);
+eq(authNone.length, 5, 'E. all five authorities are always reported');
+eq(authNone.map(function (a) { return a.state; }), ['NOT_MAPPED', 'NOT_MAPPED', 'NOT_MAPPED', 'NOT_MAPPED', 'NOT_MAPPED'],
+  'E. a template that references none of them reports NOT_MAPPED for all five');
+eq(authNone.filter(function (a) { return a.blocks_document; }).length, 0, 'E. and none blocks');
+
+var authMixed = docCiFieldAuthorityReport_([
+  { placeholder: 'INCOTERM', required: 'TRUE', is_active: 'TRUE' },
+  { placeholder: 'PAYMENT_TERMS', required: 'FALSE', is_active: 'TRUE' },
+  { placeholder: 'PORT_OF_LOADING', required: 'TRUE', is_active: 'FALSE' },
+  { placeholder: 'HS_CODE', required: 'TRUE', is_active: 'TRUE' }
+]);
+function auth(k) { for (var i = 0; i < authMixed.length; i++) if (authMixed[i].placeholder === k) return authMixed[i]; return null; }
+eq(auth('INCOTERM').state, 'REQUIRED_UNRESOLVED', 'E. required + unresolved -> REQUIRED_UNRESOLVED');
+eq(auth('INCOTERM').blocks_document, true, 'E. and it blocks that CI');
+eq(auth('PAYMENT_TERMS').state, 'OPTIONAL_UNRESOLVED', 'E. mapped but optional -> OPTIONAL_UNRESOLVED');
+eq(auth('PAYMENT_TERMS').blocks_document, false, 'E. and does not block');
+eq(auth('PORT_OF_LOADING').state, 'OPTIONAL_UNRESOLVED', 'E. an INACTIVE required row does not count as required');
+eq(auth('PORT_OF_DISCHARGE').state, 'NOT_MAPPED', 'E. a field the template never references is NOT_MAPPED');
+eq(auth('IMPORTER_OF_RECORD').state, 'NOT_MAPPED', 'E. and so is the importer field here');
+eq(authMixed.filter(function (a) { return a.resolved; }).length, 0, 'E. none is ever reported as resolved — the system has no source for any of them');
+authMixed.forEach(function (a) { ok(dgsStr_(a.detail).length > 10, 'E. each carries an explanation: ' + a.placeholder); });
+ok(!/'US'|'FOB'|'CIF'|'EXW'|'NET 30'/.test(code(G35)), 'E. and NO value is invented for any of them');
+ok(/commercial_invoice_field_authority/.test(shipDiag2), 'E. the shipment diagnostic reports the per-field verdict');
+
+
+// =======================================================================================================
+section('G1-F. canonical documentation records the G1 corrections with no contradictory text');
+
+ok(/### Q\.2\.1 Send PO staged saga/.test(SPEC), 'F. the staged Send PO saga is canonical');
+ok(/Drive operations must \*\*never\*\* run while a long\/global business `ScriptLock` is held/.test(SPEC),
+  'F. with the lock rule stated as a prohibition');
+ok(/\*\*1 · `dgsPoPrepare_`\*\* \| \*\*held\*\*/.test(SPEC) && /\*\*2 · `dgsPoRenderPrepared_`\*\* \| \*\*none\*\*/.test(SPEC) && /\*\*3 · `dgsPoFinalize_`\*\* \| \*\*held\*\*/.test(SPEC),
+  'F. and the per-stage lock state tabulated (held / none / held)');
+ok(/DOCUMENT_ATTEMPT_RESERVED/.test(SPEC), 'F. the reserved-attempt crash-safety mechanism is documented');
+ok(/DOCUMENT_SOURCE_DRIFT/.test(SPEC) && /never attached as\s*\n?current/.test(SPEC), 'F. as is the source-drift rule');
+// the superseded one-line claim must be GONE
+ok(!/generate native file \+ PDF → register → \*\*then\*\* the existing canonical `issue` writer/.test(SPEC),
+  'F. the old single-stage PO claim is removed — no contradictory active text');
+ok(/### Q\.5\.1 Applicability ≠ executability ≠ blocking/.test(SPEC), 'F. the executability distinction is canonical');
+['REQUIRED_AND_EXECUTABLE', 'OPTIONAL_AND_EXECUTABLE', 'CONFIGURATION_REQUIRED', 'RUNTIME_DEFERRED', 'NOT_APPLICABLE']
+  .forEach(function (st) { ok(SPEC.indexOf(st) !== -1, 'F. the spec names state ' + st); });
+ok(/An applicable document must never become a hard\s*\n?transition gate merely because it is applicable/.test(SPEC),
+  'F. with the governing rule stated plainly');
+ok(/`SHIPMENT_DETAIL` — `REQUIRED_AND_EXECUTABLE`/.test(SPEC) && /`PACKING_LIST_EXPORT` — `REQUIRED_AND_EXECUTABLE`/.test(SPEC),
+  'F. the exact transition gate is enumerated');
+ok(/\*\*not\*\* inferred from the word "import"/.test(SPEC), 'F. the destination-document rule is not word-based');
+ok(/emits \*\*no blank document and no `GENERATED` registry row\*\*/.test(SPEC), 'F. RUNTIME_DEFERRED emits nothing');
+ok(/never silently hidden/.test(SPEC), 'F. and deferred documents stay visible in the UI');
+ok(/`REQUIRED_UNRESOLVED`/.test(SPEC) && /`OPTIONAL_UNRESOLVED`/.test(SPEC) && /`NOT_MAPPED`/.test(SPEC),
+  'F. the five CI authorities have a documented per-field verdict');
+ok(/### Q\.10\.1 Callable read-only diagnostics/.test(SPEC), 'F. the callable diagnostics are canonical');
+ok(/TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER/.test(SPEC) && /PASTE_PURCHASE_ORDER_ID_HERE/.test(SPEC), 'F. naming the function and its placeholder');
+ok(/TEMP_DOCUMENT_DIAGNOSE_SHIPMENT/.test(SPEC) && /PASTE_SHIPMENT_ID_HERE/.test(SPEC), 'F. and the shipment pair');
 
 // =======================================================================================================
 console.log('\n----------------------------------------');

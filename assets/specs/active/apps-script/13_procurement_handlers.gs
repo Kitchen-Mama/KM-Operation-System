@@ -1983,16 +1983,71 @@ function handleUpdatePurchaseOrderStatus_(body) {
   if (!sheet) return jsonResponse_({ success: false, error: 'purchase_orders sheet not found' });
   sheetEnsureColumns_(sheet, ['order_status', 'order_date', 'deposit_due_date']);   // ensure columns before findRow captures headers
 
-  // F1-7N-FB-1B (C/M) — Send PO is `issue`, and the required PO document is a HARD PRE-CONDITION for it. This
-  // stays the ONE canonical status writer; the document step is inserted in FRONT of the write, not beside it.
-  // A ScriptLock makes the whole "generate then issue" unit idempotent, so a double-click, a browser reload or
-  // a retried request cannot produce a second file, a second registry row or a second transition.
+  // F1-7N-FB-1B-G1 (A) — SEND PO IS A STAGED SAGA. The required PO document is a HARD pre-condition for the
+  // issue transition, but it must NOT be produced while holding the business ScriptLock: folder resolution,
+  // folder creation, template copy, cell population and PDF export are slow blocking Drive calls, and holding a
+  // global lock across them risks an Apps Script timeout stranding the lock and blocking every other writer.
+  //
+  //   STAGE 1 (lock HELD)     verify draft, freeze the source checksum, resolve the template + full payload,
+  //                           prove Drive readiness with non-mutating probes, reserve the attempt row
+  //   ---- lock RELEASED ----
+  //   STAGE 2 (NO lock)       resolve/create the date folder, copy the template, fill it, export the PDF
+  //   ---- lock REACQUIRED ---
+  //   STAGE 3 (lock HELD)     re-verify still-draft + checksum unchanged, attach the output, then the ONE
+  //                           canonical issue writer below runs
+  //
+  // Any failure leaves the PO in draft with no status written and no email sent; the reserved attempt row keeps
+  // partial work recoverable and a retry reuses it instead of duplicating a folder, file or registry row.
   var poDocResult = null;
+  var poPrepared = null, poRendered = null, poOrderDate = '', poDepositDue = '';
   var poIssueLock = null;
+  function poBlocked(res, stage) {
+    return jsonResponse_({
+      success: false, stage: 'document_generation', document_stage: stage, purchase_order_id: poId,
+      error: 'Send PO blocked — the required Purchase Order document could not be produced.',
+      document_generation: res,
+      note: 'The PO remains Draft. No status was written and no email was sent.'
+    });
+  }
   if (transition === 'issue') {
+    // ONE candidate Send PO date, frozen BEFORE the document is rendered and persisted as order_date only after
+    // the whole saga succeeds — so {{DOC_DATE}} on the issued document and purchase_orders.order_date can never
+    // disagree, and a retry on a later day never re-dates an already-registered document batch.
+    poOrderDate = procurementToday_();
+    poDepositDue = procurementAddBusinessDays_(poOrderDate, 5);
     poIssueLock = LockService.getScriptLock();
+    // ---- STAGE 1 ----
     try { if (!poIssueLock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
     catch (eL) { return jsonResponse_({ success: false, error: 'Lock error: ' + (eL && eL.message ? eL.message : eL), stage: 'lock' }); }
+    try { poPrepared = pcPoPrepareForIssue_(ss, poId, actor, poOrderDate, poDepositDue); }
+    catch (eP) { poPrepared = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (eP && eP.message ? String(eP.message) : String(eP)) }; }
+    finally { try { poIssueLock.releaseLock(); } catch (eR) {} }
+    if (!poPrepared.ok) return poBlocked(poPrepared, 'prepare');
+    // ---- STAGE 2 (no lock held) ----
+    if (!poPrepared.complete) {
+      try { poRendered = dgsPoRenderPrepared_(ss, poPrepared); }
+      catch (eD) { poRendered = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (eD && eD.message ? String(eD.message) : String(eD)) }; }
+      if (!poRendered.ok) {
+        pcPoMarkAttemptFailed_(ss, poPrepared.document_id, poRendered);
+        return poBlocked({ ok: false, reason: poRendered.reason, message: poRendered.message || '', document_id: poPrepared.document_id, retryable: true }, 'render');
+      }
+    }
+    // ---- STAGE 3 ----
+    try { if (!poIssueLock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+    catch (eL2) { return jsonResponse_({ success: false, error: 'Lock error: ' + (eL2 && eL2.message ? eL2.message : eL2), stage: 'lock' }); }
+    if (poPrepared.complete) {
+      poDocResult = { ok: true, reused: true, generated: 0, document_id: poPrepared.document_id, document_batch_date: poPrepared.document_batch_date };
+    } else {
+      var poFin;
+      try { poFin = dgsPoFinalize_(ss, poPrepared, poRendered, actor); }
+      catch (eF) { poFin = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (eF && eF.message ? String(eF.message) : String(eF)) }; }
+      if (!poFin.ok) {
+        try { poIssueLock.releaseLock(); } catch (eR2) {}
+        return poBlocked({ ok: false, reason: poFin.reason, document_id: poPrepared.document_id, retryable: true, detail: poFin }, 'finalize');
+      }
+      poDocResult = { ok: true, generated: 1, document_id: poFin.document_id, file_name: poFin.file_name,
+        folder_url: poFin.folder_url, document_batch_date: poPrepared.document_batch_date, checksum: poFin.checksum };
+    }
   }
   try {
 
@@ -2023,25 +2078,12 @@ function handleUpdatePurchaseOrderStatus_(body) {
       return jsonResponse_({ success: false, error: 'Transition "' + transition + '" requires status "' + EXPECTED_PREV[transition] + '" (current: ' + curStatus + ')' });
     }
     if (transition === 'issue') {
-      // ONE candidate Send PO date, frozen BEFORE the document is rendered and persisted as order_date only
-      // after it succeeds — so {{DOC_DATE}} on the issued document and purchase_orders.order_date can never
-      // disagree, and a retry on a later day never re-dates an already-registered document batch.
-      var orderDate = procurementToday_();                       // order_date = Send PO date (date-only)
-      var depositDue = procurementAddBusinessDays_(orderDate, 5);
-      poDocResult = pcDocumentGateForIssue_(ss, poId, actor, orderDate, depositDue);
-      if (!poDocResult.ok) {
-        if (poIssueLock) { try { poIssueLock.releaseLock(); } catch (e3) {} }
-        return jsonResponse_({
-          success: false, stage: 'document_generation', purchase_order_id: poId,
-          error: 'Send PO blocked — the required Purchase Order document could not be produced.',
-          order_status: curStatus, document_generation: poDocResult,
-          note: 'The PO remains Draft. No status was written and no email was sent.'
-        });
-      }
+      // The document saga above has ALREADY succeeded (any failure returned before reaching here), so this is
+      // purely the canonical status write, using the exact same frozen candidate dates the document rendered.
       setStatus('issued'); setCell('issued_by', actor); setCell('issued_at', now);
-      setCell('order_date', orderDate);
+      setCell('order_date', poOrderDate);
       // deposit_due_date = order_date + 5 BUSINESS days (weekends excluded; NOT from created_at). Holidays deferred.
-      setCell('deposit_due_date', depositDue);
+      setCell('deposit_due_date', poDepositDue);
     }
     else if (transition === 'confirm') { setStatus('confirmed'); setCell('confirmed_by', actor); setCell('confirmed_at', now); }
     else if (transition === 'start_production') { setStatus('in_production'); }
@@ -2077,23 +2119,33 @@ function handleUpdatePurchaseOrderStatus_(body) {
   } finally { if (poIssueLock) { try { poIssueLock.releaseLock(); } catch (e4) {} } }
 }
 
-// F1-7N-FB-1B (C/G) — the Send PO document gate. It delegates to the ONE canonical document runtime (39_);
-// this function only supplies the authorized master joins and the frozen candidate dates. It sends NO email:
-// generated_documents.email_status stays at the canonical unsent value and Email Automation is a later
-// consumer of these records.
-function pcDocumentGateForIssue_(ss, poId, actor, orderDate, depositDue) {
+// F1-7N-FB-1B-G1 (A) — STAGE 1 of the Send PO saga, called with the business lock HELD. It delegates every
+// decision to the ONE canonical document runtime (39_) and only supplies the authorized master joins and the
+// frozen candidate dates. It performs NO Drive mutation (39_ uses non-mutating probes here), so holding the
+// lock across it is safe. It sends NO email: generated_documents.email_status stays at the canonical unsent
+// value and Email Automation is a later consumer of these records.
+function pcPoPrepareForIssue_(ss, poId, actor, orderDate, depositDue) {
+  var poLines = sfoReadTable_(ss, 'purchase_order_lines', []).filter(function (l) { return String(l.purchase_order_id || '').trim() === String(poId).trim(); });
+  var po = null, all = sfoReadTable_(ss, 'purchase_orders', []);
+  for (var i = 0; i < all.length; i++) { if (String(all[i].purchase_order_id || '').trim() === String(poId).trim()) { po = all[i]; break; } }
+  var skus = poLines.map(function (l) { return l.sku; });
+  return dgsPoPrepare_(ss, poId, {
+    actor: actor, require_draft: true,
+    order_date_candidate: orderDate, deposit_due_date_candidate: depositDue, today: orderDate,
+    factory_name: dgsFactoryName_(ss, po ? po.factory_id : ''), sku_labels: dgsSkuLabels_(ss, skus)
+  });
+}
+// Record a STAGE 2 Drive failure on the reserved attempt row. The PO is untouched and stays draft; the row keeps
+// the attempt recoverable so a retry resumes instead of duplicating anything.
+function pcPoMarkAttemptFailed_(ss, documentId, rendered) {
   try {
-    var poLines = sfoReadTable_(ss, 'purchase_order_lines', []).filter(function (l) { return String(l.purchase_order_id || '').trim() === String(poId).trim(); });
-    var po = null, all = sfoReadTable_(ss, 'purchase_orders', []);
-    for (var i = 0; i < all.length; i++) { if (String(all[i].purchase_order_id || '').trim() === String(poId).trim()) { po = all[i]; break; } }
-    var skus = poLines.map(function (l) { return l.sku; });
-    return dgsGeneratePoDocuments_(ss, poId, actor, {
-      order_date_candidate: orderDate, deposit_due_date_candidate: depositDue, today: orderDate,
-      factory_name: dgsFactoryName_(ss, po ? po.factory_id : ''), sku_labels: dgsSkuLabels_(ss, skus)
+    var sheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
+    dgsUpdateRegistry_(sheet, documentId, {
+      status: DGS_ROW_FAILED_, updated_at: shipmentTimestamp_(),
+      note: dgsEncodeNote_(rendered.reason, dgsRetryable_(rendered.reason),
+        'Drive generation failed' + (rendered.message ? ': ' + rendered.message : '') + '. The PO remains Draft.')
     });
-  } catch (e) {
-    return { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (e && e.message ? String(e.message) : String(e)), purchase_order_id: String(poId) };
-  }
+  } catch (e) { /* the PO is still draft either way; never let bookkeeping mask the real failure */ }
 }
 
 // ---- updatePurchaseOrderHeader ------------------------------------

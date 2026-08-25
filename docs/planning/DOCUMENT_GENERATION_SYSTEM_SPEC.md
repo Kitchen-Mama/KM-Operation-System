@@ -836,7 +836,7 @@ transition is allowed. By the time the renderer is called the payload carries fi
 
 | Entity | Trigger | Order of operations | Success | Failure |
 |---|---|---|---|---|
-| **Purchase Order** | Send PO on a `draft` PO | build + validate payload → Drive readiness → generate native file + PDF → register → **then** the existing canonical `issue` writer | `order_status = issued`, rendered under the **In Production** UI group | stays `draft`; no status written; no email |
+| **Purchase Order** | Send PO on a `draft` PO | the staged saga in **Q.2.1** — prepare (lock held) → render (**no lock**) → finalize + `issue` writer (lock held) | `order_status = issued`, rendered under the **In Production** UI group | stays `draft`; no status written; no email |
 | **Shipment** | Confirm Shipment on `ready_to_ship` | **pre-dispatch readiness gate** → existing dispatch transaction (allocations execute through their existing authority) → `status = shipped`, `shipped_at` written once → snapshot finalized → payloads resolved → documents rendered | `shipped` + documents in Drive | see §Q.3 |
 
 **"In Production" is a UI GROUP LABEL, not a DB status.** `PURCHASE_ORDER_SPEC.md` §3.2 groups
@@ -845,6 +845,31 @@ status is introduced by Send PO** — Send PO writes the canonical `issued` toke
 
 Confirm Shipment **must not** finish at `in_transit`. The first authoritative non-origin Current Position event
 owns `shipped → in_transit`; receiving alone owns `→ received`.
+
+### Q.2.1 Send PO staged saga (F1-7N-FB-1B-G1 §A)
+
+Drive operations must **never** run while a long/global business `ScriptLock` is held — folder resolution,
+folder creation, template copy, cell population, PDF export and file lookup over large folders are all slow
+blocking calls, and an Apps Script timeout mid-hold strands the lock and blocks every other writer.
+
+| Stage | Lock | Does |
+|---|---|---|
+| **1 · `dgsPoPrepare_`** | **held** | verify still `draft` · freeze the immutable source checksum · resolve the exact template + fully computed render payload · prove Drive readiness with **non-mutating probes** · reserve/reuse the idempotent `generated_documents` attempt |
+| — | **released** | |
+| **2 · `dgsPoRenderPrepared_`** | **none** | resolve/create the date folder · copy the template · fill it · export the PDF |
+| — | **reacquired** | |
+| **3 · `dgsPoFinalize_`** | **held** | re-verify still `draft` · verify the checksum unchanged · verify the output exists · attach it · then the **one canonical `issue` writer** sets `order_status = issued` · finalize the registry row |
+
+The reserved attempt row is the crash-safety mechanism: it is written with the frozen `failed` token plus a
+retryable `DOCUMENT_ATTEMPT_RESERVED` reason, so a process that dies mid-render leaves a truthful
+"attempted, no file" record a retry resumes — never a phantom `generated` row with no file.
+
+**If Drive fails:** the PO remains `draft`; partial outputs stay registered and recoverable; a retry reuses
+them; no folder, file or registry row is duplicated.
+
+**If the source changes during rendering:** the PO is **not** issued; the attempt is marked retryable with
+`DOCUMENT_SOURCE_DRIFT`; regeneration must run from the new payload; the stale render is **never attached as
+current** (and never deleted — its id is recorded in the note so a human can reconcile it).
 
 **No email is sent.** `MailApp` / `GmailApp` / Gmail API / any external email API are not called;
 `generated_documents.email_status` stays at the canonical unsent value. Email Automation is a later consumer of
@@ -896,6 +921,45 @@ readiness is not a guarantee that the later write succeeds.
 Applicability dimensions: `related_entity_type`, `document_type`, `document_usage`, `country`, `marketplace`
 when populated, `carrier_id`, series/SKU/factory specificity when populated, active + effective date window.
 
+### Q.5.1 Applicability ≠ executability ≠ blocking (F1-7N-FB-1B-G1 §C/§D)
+
+Three independent facts are tracked per class and are deliberately **not** collapsed into one flag:
+`requirement` (what the business says), `renderer_available` (whether a render model exists at all) and
+`gates_transition` (whether it may block Confirm Shipment). **An applicable document must never become a hard
+transition gate merely because it is applicable.** Every applicable document resolves to exactly one state:
+
+`REQUIRED_AND_EXECUTABLE` · `OPTIONAL_AND_EXECUTABLE` · `CONFIGURATION_REQUIRED` · `RUNTIME_DEFERRED` ·
+`NOT_APPLICABLE`
+
+reported with `blocks_transition`, `renderer_available`, `required_field_contract_complete`,
+`missing_fields`, `missing_authorities`, `retryable` and `next_action`.
+
+**The Confirm Shipment transition gate for this controlled version is exactly:**
+
+1. `SHIPMENT_DETAIL` — `REQUIRED_AND_EXECUTABLE`
+2. `PACKING_LIST_EXPORT` — `REQUIRED_AND_EXECUTABLE`
+3. every deterministic Shipment/Drive readiness check
+
+Nothing else blocks. **No active canonical specification declares any document class mandatory for the
+dispatch transition** — this spec's only "mandatory" statements are about folder identity
+(`external_shipment_id`, `shipped_at`, §L.2) — so the gate is the explicit minimum frozen in G1 §D. An
+additional document blocks only when **all** of these hold: canonically required for this shipment · a
+renderer exists · the required-field contract is proven complete · the template is exact and active ·
+readiness passes.
+
+| Class | State (US / TOP SEALAND) | Blocks? | Why |
+|---|---|---|---|
+| `SHIPMENT_DETAIL` | `REQUIRED_AND_EXECUTABLE` | **yes** | renderer exists; gate class |
+| `PACKING_LIST_EXPORT` | `REQUIRED_AND_EXECUTABLE` | **yes** | renderer exists; gate class |
+| `COMMERCIAL_INVOICE_EXPORT` | `REQUIRED_AND_EXECUTABLE` or `CONFIGURATION_REQUIRED` | no | its active required-field contract cannot be verified before dispatch (it is evaluated against the finalized snapshot, which needs the **executed** allocations the dispatch transaction produces) — an unverifiable condition must not block |
+| `PACKING_LIST_IMPORT` | `OPTIONAL_AND_EXECUTABLE` | no | destination-side paperwork; no canonical owner makes it mandatory (**not** inferred from the word "import") |
+| `COMMERCIAL_INVOICE_IMPORT` | `OPTIONAL_AND_EXECUTABLE` or `CONFIGURATION_REQUIRED` | no | same, plus the CI field-contract rule above |
+| `CARRIER_BOOKING` | `RUNTIME_DEFERRED` | no | no render model exists (`CARRIER_BOOKING_MAPPING_SPEC.md` defines the mapping; the runtime is deferred) |
+
+A `RUNTIME_DEFERRED` class emits **no blank document and no `GENERATED` registry row**. Deferred and
+configuration-required documents are shown clearly in the UI and are visibly distinguished from the documents
+that actually block — they are never silently hidden.
+
 **ALWAYS + 0 matches** = `SHIPMENT_DOCUMENT_TEMPLATE_UNRESOLVED` (blocking). **>1 equally specific match** =
 `SHIPMENT_DOCUMENT_TEMPLATE_AMBIGUOUS` (blocking; never "first in sheet order"). **CONDITIONAL + 0 matches** =
 the class genuinely does not apply — never an error and never a broadened manifest. Because the conditional
@@ -939,6 +1003,18 @@ reported **`CONFIGURATION_REQUIRED`** — never falsely `GENERATED`, never silen
 an invented or `example_value` value. A CI becomes **required for a transition** only once its complete active
 required-field contract is executable and passes readiness.
 
+`docCiFieldAuthorityReport_` (35_) classifies each of the five against the **live active template rows**, so the
+user is told which are genuinely required rather than being handed a blanket warning:
+
+| State | Meaning | Blocks that CI |
+|---|---|---|
+| `REQUIRED_UNRESOLVED` | the active template marks it required and the system has no source of truth | yes |
+| `OPTIONAL_UNRESOLVED` | mapped but not required → renders blank where the contract permits blank | no |
+| `NOT_MAPPED` | the template never references it | no |
+
+An **inactive** row marked required does not count as required. The report never selects a value or a source —
+it only classifies what the live configuration asks for.
+
 ### Q.8 `generated_documents` lifecycle without new enum tokens
 
 The frozen physical enum (§D) is `generated / regenerated / emailed / archived / cancelled / failed`. The richer
@@ -970,6 +1046,24 @@ snapshot implementation.
 `documentFolderUrl`, `documentGenerationStatus` and `documentGenerationError` onto each entity's view-model.
 **The frontend never enumerates Drive** — it only follows a folder/file URL the backend already resolved, and it
 never builds document content.
+
+### Q.10.1 Callable read-only diagnostics (F1-7N-FB-1B-G1 §B)
+
+A router action is not a runnable instruction, so `TEMP_document_diagnostics.gs` provides two **top-level**
+functions selectable and runnable from the Apps Script editor:
+
+| Function | Paste the internal PK into |
+|---|---|
+| `TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER` | `TEMP_DOCUMENT_DIAGNOSTIC_PURCHASE_ORDER_ID_ = 'PASTE_PURCHASE_ORDER_ID_HERE'` |
+| `TEMP_DOCUMENT_DIAGNOSE_SHIPMENT` | `TEMP_DOCUMENT_DIAGNOSTIC_SHIPMENT_ID_ = 'PASTE_SHIPMENT_ID_HERE'` |
+
+Both **delegate to the production evaluators** (`handlePoDocumentDiagnostic_` /
+`handleShipmentDocumentDiagnostic_`), so there is exactly one diagnostic implementation and no drifting copy.
+They emit **one compact primary Logger line** (plus short per-document lines), capped inside the log-truncation
+ceiling; they reject a blank or still-placeholder id rather than diagnosing nothing; they report the exact
+selected internal PK; and they are strictly read-only — no DB/property/flag/status write, no Drive folder, file
+or PDF, no email, no Send PO or Confirm Shipment invocation, no Demo mutation, and every folder path is labelled
+a **preview**.
 
 ---
 

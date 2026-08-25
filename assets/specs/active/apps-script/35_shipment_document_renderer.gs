@@ -199,6 +199,35 @@ var DOC_CI_UNRESOLVED_AUTHORITY_ = {
   PORT_OF_DISCHARGE: 'No canonical owner in the frozen snapshot. Same limitation as PORT_OF_LOADING.',
   IMPORTER_OF_RECORD: 'Genuinely governed by LEGAL_IMPORTER_AUTHORITY_GAP (R2A) — a legal-authority boundary, not a document limitation.'
 };
+// F1-7N-FB-1B-G1 §E — report each of the five unresolved CI authorities against the ACTIVE template rows, so
+// the user is told exactly which are actually required rather than being handed a blanket warning. States:
+//   REQUIRED_UNRESOLVED - the active template marks it required and the system has no source of truth -> blocks
+//   OPTIONAL_UNRESOLVED - mapped but not required -> renders blank where the contract permits blank
+//   NOT_MAPPED          - the template does not reference it at all -> nothing to resolve
+// It never picks a value or a source; it only classifies what the live configuration asks for.
+function docCiFieldAuthorityReport_(fieldRows) {
+  var mapped = {};
+  (fieldRows || []).forEach(function (f) {
+    var p = docUc_(f.placeholder);
+    if (!DOC_CI_UNRESOLVED_AUTHORITY_[p]) return;
+    var activeRow = !(docLc_(f.is_active) === 'false' || docStr_(f.is_active) === '0');
+    var required = activeRow && docStr_(f.required) && docLc_(f.required) !== 'false' && docLc_(f.required) !== '0';
+    if (!mapped[p] || required) mapped[p] = { required: !!required, active: activeRow };
+  });
+  var out = [];
+  Object.keys(DOC_CI_UNRESOLVED_AUTHORITY_).forEach(function (p) {
+    var m = mapped[p];
+    out.push({
+      placeholder: p,
+      state: !m ? 'NOT_MAPPED' : (m.required ? 'REQUIRED_UNRESOLVED' : 'OPTIONAL_UNRESOLVED'),
+      required_by_active_template: !!(m && m.required),
+      resolved: false,
+      blocks_document: !!(m && m.required),
+      detail: DOC_CI_UNRESOLVED_AUTHORITY_[p]
+    });
+  });
+  return out;
+}
 function docCiUnresolvedFields_(fieldRows) {
   var out = [];
   (fieldRows || []).forEach(function (f) {

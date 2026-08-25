@@ -170,14 +170,91 @@ function dgsActive_(row, asOf) { return dgsLc_(row.status) === 'active' && dgsBo
 //                 class does not apply to this shipment (never an error, never a broadened manifest).
 // `match` controls the scoping rule, which is what keeps AGL forms off a TOP SEALAND shipment and US import
 // forms off a non-US destination.
+// F1-7N-FB-1B-G1 (C/D). THREE INDEPENDENT FACTS per class, deliberately not collapsed into one flag:
+//   requirement        - what the business says about the document itself (ALWAYS / CONDITIONAL).
+//   gates_transition   - whether it may BLOCK Confirm Shipment in this controlled version.
+//   renderer_available - whether a render model exists at all.
+// Collapsing them is exactly the bug this gate exists to prevent: "applicable" must never imply "blocking".
+//
+// Why only SHIPMENT_DETAIL + PACKING_LIST_EXPORT gate: NO active canonical specification declares any document
+// class mandatory for the dispatch transition (DOCUMENT_GENERATION_SYSTEM_SPEC's only "mandatory" statements are
+// about folder identity - external_shipment_id and shipped_at). So the gate is the explicit minimum the user
+// froze in G1 D, and nothing else is allowed to block. In particular:
+//   COMMERCIAL_INVOICE_* - a renderer exists, but whether its ACTIVE required-field contract is complete cannot
+//     be known before dispatch (the field contract is evaluated against the finalized snapshot, which needs the
+//     EXECUTED allocations the dispatch transaction produces). An unverifiable condition must not block.
+//   *_IMPORT - destination-side paperwork. No canonical owner makes it mandatory, so it is produced when an
+//     exactly-scoped active template exists, and never blocks.
+//   CARRIER_BOOKING - no render model exists (CARRIER_BOOKING_MAPPING_SPEC defines the mapping; the runtime is
+//     deferred), so it is RUNTIME_DEFERRED and can never block.
 var DGS_SHIPMENT_CLASSES_ = [
-  { class_key: 'SHIPMENT_DETAIL', document_type: 'shipment_detail', document_usage: 'internal', requirement: 'ALWAYS', match: 'SCOPED', render: 'SHIPDETAIL' },
-  { class_key: 'COMMERCIAL_INVOICE_EXPORT', document_type: 'commercial_invoice', document_usage: 'export', requirement: 'ALWAYS', match: 'SCOPED', render: 'CI' },
-  { class_key: 'PACKING_LIST_EXPORT', document_type: 'packing_list', document_usage: 'export', requirement: 'ALWAYS', match: 'SCOPED', render: 'PL' },
-  { class_key: 'COMMERCIAL_INVOICE_IMPORT', document_type: 'commercial_invoice', document_usage: 'import', requirement: 'CONDITIONAL', match: 'EXACT_COUNTRY', render: 'CI' },
-  { class_key: 'PACKING_LIST_IMPORT', document_type: 'packing_list', document_usage: 'import', requirement: 'CONDITIONAL', match: 'EXACT_COUNTRY', render: 'PL' },
-  { class_key: 'CARRIER_BOOKING', document_type: 'carrier_booking_form', document_usage: 'carrier', requirement: 'CONDITIONAL', match: 'EXACT_CARRIER', render: 'BOOKING' }
+  { class_key: 'SHIPMENT_DETAIL', document_type: 'shipment_detail', document_usage: 'internal', requirement: 'ALWAYS', match: 'SCOPED', render: 'SHIPDETAIL', gates_transition: true, renderer_available: true },
+  { class_key: 'COMMERCIAL_INVOICE_EXPORT', document_type: 'commercial_invoice', document_usage: 'export', requirement: 'ALWAYS', match: 'SCOPED', render: 'CI', gates_transition: false, renderer_available: true },
+  { class_key: 'PACKING_LIST_EXPORT', document_type: 'packing_list', document_usage: 'export', requirement: 'ALWAYS', match: 'SCOPED', render: 'PL', gates_transition: true, renderer_available: true },
+  { class_key: 'COMMERCIAL_INVOICE_IMPORT', document_type: 'commercial_invoice', document_usage: 'import', requirement: 'CONDITIONAL', match: 'EXACT_COUNTRY', render: 'CI', gates_transition: false, renderer_available: true },
+  { class_key: 'PACKING_LIST_IMPORT', document_type: 'packing_list', document_usage: 'import', requirement: 'CONDITIONAL', match: 'EXACT_COUNTRY', render: 'PL', gates_transition: false, renderer_available: true },
+  { class_key: 'CARRIER_BOOKING', document_type: 'carrier_booking_form', document_usage: 'carrier', requirement: 'CONDITIONAL', match: 'EXACT_CARRIER', render: 'BOOKING', gates_transition: false, renderer_available: false }
 ];
+var DGS_DOC_STATES_ = ['REQUIRED_AND_EXECUTABLE', 'OPTIONAL_AND_EXECUTABLE', 'CONFIGURATION_REQUIRED', 'RUNTIME_DEFERRED', 'NOT_APPLICABLE'];
+// Classify ONE applicable document into exactly one state, with the evidence the user asked to see. `field`
+// carries the per-document field verdict when a snapshot exists ({complete, missing, unresolved}); when it is
+// absent (pre-dispatch) the contract is reported as UNKNOWN rather than assumed either way.
+function dgsClassifyEntry_(entry, field) {
+  var cls = null;
+  for (var i = 0; i < DGS_SHIPMENT_CLASSES_.length; i++) { if (DGS_SHIPMENT_CLASSES_[i].class_key === entry.class_key) cls = DGS_SHIPMENT_CLASSES_[i]; }
+  var rendererAvailable = !!(cls && cls.renderer_available);
+  var gatesByPolicy = !!(cls && cls.gates_transition);
+  var complete = field ? !!field.complete : null;
+  var missing = (field && field.missing) || [];
+  var unresolved = (field && field.unresolved) || [];
+  var state, nextAction, blocks = false, retryable = false;
+  if (!rendererAvailable) {
+    state = 'RUNTIME_DEFERRED';
+    nextAction = 'No render model exists for this document class yet. It is listed for visibility and is never generated, never blocking, and never written as a GENERATED registry row.';
+  } else if (complete === false) {
+    state = 'CONFIGURATION_REQUIRED';
+    nextAction = unresolved.length
+      ? 'The active template marks a field required that has no source of truth in the system. Make it optional, or put the value in the template, or supply the missing business authority.'
+      : 'Complete the missing business fields listed, then retry document generation.';
+    retryable = true;
+  } else {
+    state = (entry.requirement === 'ALWAYS') ? 'REQUIRED_AND_EXECUTABLE' : 'OPTIONAL_AND_EXECUTABLE';
+    nextAction = 'Ready to generate.';
+    // it blocks ONLY when policy says it gates AND its field contract is actually proven complete
+    blocks = gatesByPolicy && complete === true;
+  }
+  return {
+    class_key: entry.class_key, document_type: entry.document_type, document_usage: entry.document_usage,
+    template_key: entry.template_key, template_id: entry.template_id, template_version: entry.template_version,
+    requirement: entry.requirement, state: state,
+    blocks_transition: blocks,
+    renderer_available: rendererAvailable,
+    required_field_contract_complete: complete === null ? 'UNKNOWN' : complete,
+    missing_fields: missing,
+    missing_authorities: unresolved.map(function (u) { return dgsStr_(u.placeholder); }),
+    retryable: retryable,
+    gates_by_policy: gatesByPolicy,
+    next_action: nextAction
+  };
+}
+// The executable manifest: every applicable document classified, plus the subset that may actually block.
+function dgsExecutableManifest_(entries, fieldByClass) {
+  fieldByClass = fieldByClass || {};
+  var rows = (entries || []).map(function (e) { return dgsClassifyEntry_(e, fieldByClass[e.class_key] || null); });
+  return {
+    documents: rows,
+    blocking: rows.filter(function (r) { return r.blocks_transition; }).map(function (r) { return r.class_key; }),
+    configuration_required: rows.filter(function (r) { return r.state === 'CONFIGURATION_REQUIRED'; }).map(function (r) { return r.class_key; }),
+    runtime_deferred: rows.filter(function (r) { return r.state === 'RUNTIME_DEFERRED'; }).map(function (r) { return r.class_key; }),
+    // the classes that gate BY POLICY, whether or not their contract has been proven yet - this is what the
+    // pre-dispatch gate must find a template for
+    policy_gating: rows.filter(function (r) { return r.gates_by_policy; }).map(function (r) { return r.class_key; })
+  };
+}
+// The class keys that gate the transition by policy, independent of any live data.
+function dgsGatingClassKeys_() {
+  return DGS_SHIPMENT_CLASSES_.filter(function (c) { return c.gates_transition; }).map(function (c) { return c.class_key; });
+}
 function dgsClassCandidates_(templates, ctx, cls) {
   return (templates || []).filter(function (t) {
     if (dgsLc_(t.related_entity_type) !== 'shipment') return false;
@@ -667,20 +744,39 @@ function dgsShipmentReadiness_(ss, shipmentId, opts) {
   var bucket = dofDestinationBucket_(sc.ctx.country);
   if (!bucket.ok) blockers.push({ reason: 'UNSUPPORTED_DESTINATION_BUCKET', field: 'shipments.country', value: bucket.country, correction: 'Shipment Draft > Destination' });
   var manifest = dgsShipmentManifest_(dgsTemplates_(ss), sc.ctx);
+  // G1 (D): a template problem BLOCKS only for a class that gates the transition by policy. For every other
+  // class it is a configuration issue the user should see and fix, never a reason to refuse a real shipment.
+  var gating = {}; dgsGatingClassKeys_().forEach(function (k) { gating[k] = 1; });
+  var configIssues = [];
   manifest.errors.forEach(function (e) {
-    blockers.push({ reason: e.reason, class_key: e.class_key, count: e.count || 0, template_keys: e.template_keys || [], correction: 'Admin > Document Templates' });
+    var item = { reason: e.reason, class_key: e.class_key, count: e.count || 0, template_keys: e.template_keys || [], correction: 'Admin > Document Templates' };
+    if (gating[e.class_key]) blockers.push(item); else configIssues.push(item);
   });
+  // Drive readiness is only asserted over the templates that gate; an unreachable asset for a non-gating class
+  // is reported, never blocking. (An unreachable ROOT still blocks, because the gating classes share it.)
+  var gatingEntries = manifest.entries.filter(function (e) { return gating[e.class_key]; });
   var drive = { status: 'SKIPPED' };
-  if (manifest.entries.length) {
-    drive = dgsDriveReadiness_(dofProbeIo_(), manifest.entries, 'shipment');
+  if (gatingEntries.length) {
+    drive = dgsDriveReadiness_(dofProbeIo_(), gatingEntries, 'shipment');
     if (!drive.ok) blockers.push({ reason: drive.reason, correction: 'Admin > Document Templates (output_folder_id / template_file_id)', detail: drive.checks || [] });
   }
+  var nonGatingDrive = { status: 'SKIPPED' };
+  var nonGating = manifest.entries.filter(function (e) { return !gating[e.class_key]; });
+  if (nonGating.length) {
+    nonGatingDrive = dgsDriveReadiness_(dofProbeIo_(), nonGating, 'shipment');
+    if (!nonGatingDrive.ok) configIssues.push({ reason: nonGatingDrive.reason, correction: 'Admin > Document Templates (output_folder_id / template_file_id)', detail: nonGatingDrive.checks || [] });
+  }
+  var executable = dgsExecutableManifest_(manifest.entries, null);
   return {
     ok: !blockers.length, status: blockers.length ? 'BLOCKED' : 'READY',
     shipment_id: dgsStr_(shipmentId), destination_country: sc.ctx.country, destination_bucket: bucket.bucket || '',
     external_shipment_id: sc.external_shipment_id,
     manifest: manifest.entries.map(function (e) { return { class_key: e.class_key, document_type: e.document_type, document_usage: e.document_usage, requirement: e.requirement, match_basis: e.match_basis, template_key: e.template_key, template_id: e.template_id, template_version: e.template_version }; }),
+    executable_manifest: executable.documents,
+    transition_gate_classes: dgsGatingClassKeys_(),
+    configuration_issues: configIssues,
     drive_readiness: { status: drive.status, reason: drive.reason || '', root_folder_id: drive.root_folder_id || '', checks: drive.checks || [] },
+    non_gating_drive_readiness: { status: nonGatingDrive.status, reason: nonGatingDrive.reason || '' },
     blockers: blockers
   };
 }
@@ -688,7 +784,10 @@ function dgsShipmentReadiness_(ss, shipmentId, opts) {
 // ---- render ONE applicable document -------------------------------------------------------------------
 // SYSTEM: render model -> field mapping -> required-field verdict -> fully resolved payload.
 // DRIVE:  copy + fill + export, from that payload only.
-function dgsRenderOne_(ss, opts) {
+// STAGE 1 of the render, and the ONLY part that reads business data: map the fields, apply the required-field
+// verdict, and build the finished payload. It performs NO Drive call at all, so it is safe to run inside a
+// business lock — which is what lets the Drive half run outside one.
+function dgsResolvePayload_(ss, opts) {
   var entry = opts.entry, model = opts.model, tpl = entry.template;
   var fields = dgsFieldsFor_(ss, entry.template_id);
   var mapped = dtMapPlaceholders_(model, fields);
@@ -706,9 +805,15 @@ function dgsRenderOne_(ss, opts) {
     fallback_file_name: opts.fallback_file_name
   });
   if (!built.ok) return { ok: false, reason: built.reason, template_key: entry.template_key };
-  var fr = dfoRenderPayload_(dfoDefaultIo_(), built.payload, {});
-  if (!fr.ok) return { ok: false, reason: fr.error, message: fr.message || '', payload: built.payload, partial_file_id: fr.partial_file_id || fr.file_id || '' };
-  return { ok: true, file: fr, payload: built.payload };
+  return { ok: true, payload: built.payload, field_verdict: { complete: true, missing: [], unresolved: [] } };
+}
+// STAGE 2: the Drive half. Never called while a business lock is held.
+function dgsRenderOne_(ss, opts) {
+  var resolved = dgsResolvePayload_(ss, opts);
+  if (!resolved.ok) return resolved;
+  var fr = dfoRenderPayload_(dfoDefaultIo_(), resolved.payload, {});
+  if (!fr.ok) return { ok: false, reason: fr.error, message: fr.message || '', payload: resolved.payload, partial_file_id: fr.partial_file_id || fr.file_id || '' };
+  return { ok: true, file: fr, payload: resolved.payload };
 }
 
 // ---- §C/§E Shipment post-dispatch document orchestration ------------------------------------------------
@@ -824,16 +929,49 @@ function dgsGenerateShipmentDocuments_(ss, shipmentId, actor, opts) {
   };
 }
 
-// ---- §C/§G Purchase Order document generation (PRE-issue gate) -----------------------------------------
-// The PO has no snapshot circularity — purchase_orders + purchase_order_lines ARE the PO Snapshot (RO&PO §8A)
-// — so the document is produced BEFORE the issue transition and a failure simply leaves the PO in draft.
-function dgsGeneratePoDocuments_(ss, poId, actor, opts) {
-  opts = opts || {};
-  var po = dgsFindRow_(sfoReadTable_(ss, 'purchase_orders', []), 'purchase_order_id', poId);
-  if (!po) return { ok: false, reason: 'PURCHASE_ORDER_NOT_FOUND', purchase_order_id: dgsStr_(poId) };
-  var poLines = sfoReadTable_(ss, 'purchase_order_lines', []).filter(function (l) { return dgsStr_(l.purchase_order_id) === dgsStr_(poId); });
-  if (!poLines.length) return { ok: false, reason: 'PURCHASE_ORDER_HAS_NO_LINES', purchase_order_id: dgsStr_(poId) };
+// ---- §C/§G Purchase Order document generation — STAGED SAGA (F1-7N-FB-1B-G1 §A) -------------------------
+// The PO has no snapshot circularity (purchase_orders + purchase_order_lines ARE the PO Snapshot, RO&PO §8A), so
+// the document is produced BEFORE the issue transition. But it must NOT be produced while holding the business
+// ScriptLock: folder resolution, folder creation, template copy, cell population and PDF export are all slow,
+// blocking Drive calls, and holding a global lock across them risks an Apps Script timeout stranding the lock
+// and blocking every other writer. The flow is therefore split into three stages:
+//
+//   STAGE 1  dgsPoPrepare_        (inside the lock)   verify draft, checksum, template, payload, reserve attempt
+//   ---- lock released ----
+//   STAGE 2  dgsPoRenderPrepared_ (NO lock)           folder resolve/create, copy, fill, PDF
+//   ---- lock reacquired ----
+//   STAGE 3  dgsPoFinalize_       (inside the lock)   re-verify draft + checksum, then the issue writer runs
+//
+// The reserved attempt row is the crash-safety mechanism: it is written with the frozen `failed` token and a
+// retryable DOCUMENT_ATTEMPT_RESERVED reason, so a process that dies mid-render leaves a truthful "attempted,
+// no file" record that a retry picks up — never a phantom `generated` row with no file.
+var DGS_PO_RESERVED_ = 'DOCUMENT_ATTEMPT_RESERVED';
+var DGS_PO_DRIFT_ = 'DOCUMENT_SOURCE_DRIFT';
 
+function dgsPoLoad_(ss, poId) {
+  var po = dgsFindRow_(sfoReadTable_(ss, 'purchase_orders', []), 'purchase_order_id', poId);
+  if (!po) return { ok: false, reason: 'PURCHASE_ORDER_NOT_FOUND' };
+  var lines = sfoReadTable_(ss, 'purchase_order_lines', []).filter(function (l) { return dgsStr_(l.purchase_order_id) === dgsStr_(poId); });
+  if (!lines.length) return { ok: false, reason: 'PURCHASE_ORDER_HAS_NO_LINES' };
+  return { ok: true, po: po, lines: lines };
+}
+// The immutable source identity for a PO document attempt. It covers exactly the facts the document renders,
+// so an edit to any of them between STAGE 1 and STAGE 3 is real drift and must stop the issue.
+function dgsPoSourceChecksum_(po, lines) {
+  var built = dgsPoPayloadModel_(po, lines, {});
+  return dgsChecksum_({ h: built.header, l: built.lines });
+}
+function dgsPoStatus_(po) { return dgsLc_(po.order_status) || dgsLc_(po.status); }
+
+// ---- STAGE 1 (inside the business lock; NO Drive mutation whatsoever) -----------------------------------
+function dgsPoPrepare_(ss, poId, opts) {
+  opts = opts || {};
+  var loaded = dgsPoLoad_(ss, poId);
+  if (!loaded.ok) return { ok: false, reason: loaded.reason, purchase_order_id: dgsStr_(poId) };
+  var po = loaded.po, poLines = loaded.lines;
+  if (opts.require_draft && dgsPoStatus_(po) !== 'draft') {
+    return { ok: false, reason: 'PURCHASE_ORDER_NOT_DRAFT', purchase_order_id: dgsStr_(poId), order_status: dgsPoStatus_(po) };
+  }
   var ctx = {
     factory_id: dgsStr_(po.factory_id), series: dgsStr_(po.series), supplier_id: dgsStr_(po.supplier_id),
     sku: '', carrier_id: '', country: '', marketplace: '', language: '',
@@ -842,16 +980,14 @@ function dgsGeneratePoDocuments_(ss, poId, actor, opts) {
   var sel = dgsSelectPoTemplate_(dgsTemplates_(ss), ctx);
   if (!sel.ok) return { ok: false, reason: sel.reason, purchase_order_id: dgsStr_(poId), detail: sel };
 
+  // Drive READINESS only — probes open configured identities and read metadata. They create nothing, so this
+  // is safe inside the lock and is exactly the deterministic check that must pass before the PO can be issued.
   var drive = dgsDriveReadiness_(dofProbeIo_(), [{ class_key: 'PURCHASE_ORDER', template: sel.template }], 'purchase_order');
   if (!drive.ok) return { ok: false, reason: drive.reason, purchase_order_id: dgsStr_(poId), drive_readiness: drive };
 
   var existing = dgsGeneratedFor_(ss, 'purchase_order', poId);
   var batch = dgsPoBatchDate_(existing, opts.today);
   if (!batch.ymd) return { ok: false, reason: 'PO_FOLDER_IDENTITY_INVALID', purchase_order_id: dgsStr_(poId) };
-  var folder = dofResolvePoDateFolder_(dofFolderIo_(), {
-    templates: [sel.template], document_batch_date: batch.ymd.substring(0, 4) + '-' + batch.ymd.substring(4, 6) + '-' + batch.ymd.substring(6, 8)
-  });
-  if (!folder.ok) return { ok: false, reason: folder.reason, purchase_order_id: dgsStr_(poId), detail: folder };
 
   var built = dgsPoPayloadModel_(po, poLines, {
     factory_name: dgsStr_(opts.factory_name), sku_labels: opts.sku_labels || {},
@@ -859,61 +995,131 @@ function dgsGeneratePoDocuments_(ss, poId, actor, opts) {
   });
   var entry = { class_key: 'PURCHASE_ORDER', render: 'PO', document_type: 'purchase_order',
     template: sel.template, template_id: sel.template_id, template_key: sel.template_key, template_version: sel.template_version };
-  var plan = dgsPlanBatch_([entry], existing, 'purchase_order', poId);
-  var now = shipmentTimestamp_();
-  if (plan.complete) {
-    return { ok: true, purchase_order_id: dgsStr_(poId), reused: true, generated: 0,
-      folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id), document_batch_date: batch.ymd,
-      results: [{ class_key: 'PURCHASE_ORDER', status: 'READY', reused: true, document_id: dgsStr_(plan.reuse[0].row.document_id) }] };
-  }
-  var item = plan.todo[0];
-  var one = dgsRenderOne_(ss, {
+  var resolved = dgsResolvePayload_(ss, {
     entry: entry, model: built, related_entity_type: 'purchase_order', related_entity_id: poId,
-    folder_id: folder.folder_id, destination_bucket: '',
-    fallback_file_name: 'KitchenMama_PO_' + dgsStr_(po.po_no)
+    folder_id: '', destination_bucket: '', fallback_file_name: 'KitchenMama_PO_' + dgsStr_(po.po_no)
   });
+  if (!resolved.ok) {
+    return { ok: false, reason: resolved.reason, configuration_required: !!resolved.configuration_required,
+      purchase_order_id: dgsStr_(poId), missing: resolved.missing || [], unresolved_authority: resolved.unresolved_authority || [] };
+  }
+
+  var plan = dgsPlanBatch_([entry], existing, 'purchase_order', poId);
+  var checksum = dgsPoSourceChecksum_(po, poLines);
+  var now = shipmentTimestamp_();
   var base = {
     template_id: entry.template_id, template_key: entry.template_key, template_version: entry.template_version,
     related_entity_type: 'purchase_order', related_entity_id: poId, document_type: 'purchase_order',
     series: dgsStr_(po.series), supplier_id: dgsStr_(po.supplier_id), factory_id: dgsStr_(po.factory_id),
-    language: dgsStr_(sel.template.language), output_folder_id: folder.folder_id,
-    generated_by: actor, generated_at: now, created_at: now, updated_at: now,
-    regenerated_from_document_id: item.row ? dgsStr_(item.row.document_id) : ''
+    language: dgsStr_(sel.template.language), output_folder_id: '',
+    generated_by: dgsStr_(opts.actor), generated_at: now, created_at: now, updated_at: now
   };
+  if (plan.complete) {
+    // an already-generated current-version document is REUSED verbatim; no Drive work at all
+    return { ok: true, complete: true, purchase_order_id: dgsStr_(poId), document_id: dgsStr_(plan.reuse[0].row.document_id),
+      source_checksum: checksum, document_batch_date: batch.ymd, template: entry, root_folder_id: drive.root_folder_id };
+  }
+  // reserve (or reuse) the idempotent attempt row, so a crash mid-render is recoverable and a concurrent
+  // caller converges on the SAME document_id instead of appending a second row
+  var prior = plan.todo[0].row;
+  var docId = prior ? dgsStr_(prior.document_id) : dgsNewDocId_();
   var genSheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
-  if (!one.ok) {
-    var conf = !!one.configuration_required;
-    var human = conf ? ('Template field mapping is incomplete for ' + entry.template_key + '.')
-      : ('Drive generation failed: ' + one.reason + (one.message ? ' — ' + one.message : '') + '.');
-    var patch = { status: DGS_ROW_FAILED_, note: dgsEncodeNote_(conf ? 'DOCUMENT_CONFIGURATION_REQUIRED' : one.reason, !conf && dgsRetryable_(one.reason), human), updated_at: now };
-    if (item.row) dgsUpdateRegistry_(genSheet, dgsStr_(item.row.document_id), patch);
-    else dgsWriteRegistry_(genSheet, Object.assign({}, base, { document_id: dgsNewDocId_() }, patch));
-    return { ok: false, reason: one.reason, configuration_required: conf, purchase_order_id: dgsStr_(poId),
-      missing: one.missing || [], unresolved_authority: one.unresolved_authority || [],
-      folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id), document_batch_date: batch.ymd };
-  }
-  var okRow = Object.assign({}, base, {
-    file_name: one.file.file_name, file_id: one.file.file_id, file_url: one.file.file_url,
-    pdf_file_id: one.file.pdf_file_id, pdf_file_url: one.file.pdf_file_url,
-    output_folder_id: one.file.output_folder_id || folder.folder_id,
-    status: item.row ? DGS_ROW_REGENERATED_ : DGS_ROW_GENERATED_,
-    note: dgsEncodeNote_('', false, 'checksum ' + one.payload.source_checksum + '.')
+  var reservedNote = dgsEncodeNote_(DGS_PO_RESERVED_, true, 'Attempt reserved; Drive rendering in progress. checksum ' + checksum + '.');
+  if (prior) dgsUpdateRegistry_(genSheet, docId, { status: DGS_ROW_FAILED_, note: reservedNote, updated_at: now });
+  else dgsWriteRegistry_(genSheet, Object.assign({}, base, { document_id: docId, status: DGS_ROW_FAILED_, note: reservedNote }));
+  return {
+    ok: true, complete: false, purchase_order_id: dgsStr_(poId), document_id: docId,
+    payload: resolved.payload, template: entry, base: base, source_checksum: checksum,
+    document_batch_date: batch.ymd, root_folder_id: drive.root_folder_id,
+    regenerated_from_document_id: prior ? dgsStr_(prior.document_id) : ''
+  };
+}
+
+// ---- STAGE 2 (NO business lock held; this is the only Drive-mutating step) -------------------------------
+function dgsPoRenderPrepared_(ss, prepared) {
+  var folder = dofResolvePoDateFolder_(dofFolderIo_(), {
+    templates: [prepared.template.template],
+    document_batch_date: prepared.document_batch_date.substring(0, 4) + '-' + prepared.document_batch_date.substring(4, 6) + '-' + prepared.document_batch_date.substring(6, 8)
   });
-  var docId;
-  if (item.row) {
-    docId = dgsStr_(item.row.document_id);
-    dgsUpdateRegistry_(genSheet, docId, {
-      file_name: okRow.file_name, file_id: okRow.file_id, file_url: okRow.file_url,
-      pdf_file_id: okRow.pdf_file_id, pdf_file_url: okRow.pdf_file_url, output_folder_id: okRow.output_folder_id,
-      status: DGS_ROW_GENERATED_, note: okRow.note, generated_at: now, updated_at: now
-    });
-  } else {
-    docId = dgsNewDocId_(); okRow.document_id = docId; dgsWriteRegistry_(genSheet, okRow);
+  if (!folder.ok) return { ok: false, reason: folder.reason, detail: folder };
+  var payload = prepared.payload;
+  payload.folder_id = folder.folder_id;   // the destination the SYSTEM resolved; the renderer never picks one
+  var fr = dfoRenderPayload_(dfoDefaultIo_(), payload, {});
+  if (!fr.ok) return { ok: false, reason: fr.error, message: fr.message || '', folder_id: folder.folder_id, partial_file_id: fr.partial_file_id || fr.file_id || '' };
+  return { ok: true, file: fr, folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id) };
+}
+
+// ---- STAGE 3 (business lock reacquired) -----------------------------------------------------------------
+// Re-verify the world, then commit the document. It does NOT write order_status: the caller's ONE canonical
+// issue writer does that, and only after this returns ok.
+function dgsPoFinalize_(ss, prepared, rendered, actor) {
+  var genSheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
+  var now = shipmentTimestamp_();
+  var loaded = dgsPoLoad_(ss, prepared.purchase_order_id);
+  if (!loaded.ok) return { ok: false, reason: loaded.reason };
+  if (dgsPoStatus_(loaded.po) !== 'draft') {
+    // someone else already moved it — do not double-issue and do not attach this output as current
+    dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_FAILED_, updated_at: now,
+      note: dgsEncodeNote_('PURCHASE_ORDER_NOT_DRAFT', true, 'PO left draft during rendering; attempt not attached. Rendered file ' + dgsStr_(rendered.file.file_id) + ' retained for recovery.') });
+    return { ok: false, reason: 'PURCHASE_ORDER_NOT_DRAFT', order_status: dgsPoStatus_(loaded.po) };
   }
-  return { ok: true, purchase_order_id: dgsStr_(poId), generated: 1, document_id: docId,
-    file_name: okRow.file_name, folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id),
-    document_batch_date: batch.ymd, checksum: one.payload.source_checksum,
-    results: [{ class_key: 'PURCHASE_ORDER', status: 'READY', document_id: docId }] };
+  var after = dgsPoSourceChecksum_(loaded.po, loaded.lines);
+  if (after !== prepared.source_checksum) {
+    // §A source drift: never issue, never attach stale output as current, keep the attempt retryable. The
+    // rendered file is NOT written into the file columns and is NOT deleted (we never delete what we cannot
+    // prove is unreferenced) — its id is recorded so a human can reconcile it.
+    dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_FAILED_, updated_at: now,
+      note: dgsEncodeNote_(DGS_PO_DRIFT_, true, 'Source data changed during rendering (' + prepared.source_checksum + ' -> ' + after + '). Regenerate from the new payload. Stale file ' + dgsStr_(rendered.file.file_id) + ' retained, not attached.') });
+    return { ok: false, reason: DGS_PO_DRIFT_, expected_checksum: prepared.source_checksum, actual_checksum: after };
+  }
+  if (!dgsStr_(rendered.file.file_id)) return { ok: false, reason: 'DOCUMENT_OUTPUT_MISSING' };
+  dgsUpdateRegistry_(genSheet, prepared.document_id, {
+    file_name: rendered.file.file_name, file_id: rendered.file.file_id, file_url: rendered.file.file_url,
+    pdf_file_id: rendered.file.pdf_file_id, pdf_file_url: rendered.file.pdf_file_url,
+    output_folder_id: rendered.file.output_folder_id || rendered.folder_id,
+    status: prepared.regenerated_from_document_id ? DGS_ROW_REGENERATED_ : DGS_ROW_GENERATED_,
+    note: dgsEncodeNote_('', false, 'checksum ' + prepared.source_checksum + '.'),
+    regenerated_from_document_id: prepared.regenerated_from_document_id || '',
+    generated_by: dgsStr_(actor), generated_at: now, updated_at: now
+  });
+  return { ok: true, document_id: prepared.document_id, file_name: rendered.file.file_name,
+    folder_id: rendered.folder_id, folder_url: rendered.folder_url, checksum: prepared.source_checksum };
+}
+
+// Retry / API entry point for PO documents. Same three stages, same lock discipline: the lock is HELD for
+// stage 1 and stage 3 and RELEASED across the Drive work in stage 2.
+function dgsGeneratePoDocuments_(ss, poId, actor, opts) {
+  opts = opts || {};
+  var lock = LockService.getScriptLock();
+  var prepared;
+  try { if (!lock.tryLock(30000)) return { ok: false, reason: 'LOCK_UNAVAILABLE', purchase_order_id: dgsStr_(poId) }; }
+  catch (e) { return { ok: false, reason: 'LOCK_ERROR', message: (e && e.message ? String(e.message) : String(e)) }; }
+  try { prepared = dgsPoPrepare_(ss, poId, Object.assign({ actor: actor }, opts)); }
+  finally { try { lock.releaseLock(); } catch (e2) {} }
+  if (!prepared.ok) return prepared;
+  if (prepared.complete) {
+    return { ok: true, purchase_order_id: prepared.purchase_order_id, reused: true, generated: 0,
+      document_batch_date: prepared.document_batch_date,
+      results: [{ class_key: 'PURCHASE_ORDER', status: 'READY', reused: true, document_id: prepared.document_id }] };
+  }
+  var rendered = dgsPoRenderPrepared_(ss, prepared);      // <-- NO lock held here
+  var genSheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
+  if (!rendered.ok) {
+    dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_FAILED_, updated_at: shipmentTimestamp_(),
+      note: dgsEncodeNote_(rendered.reason, dgsRetryable_(rendered.reason), 'Drive generation failed' + (rendered.message ? ': ' + rendered.message : '') + '.') });
+    return { ok: false, reason: rendered.reason, message: rendered.message || '', purchase_order_id: prepared.purchase_order_id,
+      document_id: prepared.document_id, retryable: dgsRetryable_(rendered.reason) };
+  }
+  try { if (!lock.tryLock(30000)) return { ok: false, reason: 'LOCK_UNAVAILABLE_FINALIZE', purchase_order_id: prepared.purchase_order_id, document_id: prepared.document_id, retryable: true }; }
+  catch (e3) { return { ok: false, reason: 'LOCK_ERROR', message: (e3 && e3.message ? String(e3.message) : String(e3)) }; }
+  try {
+    var fin = dgsPoFinalize_(ss, prepared, rendered, actor);
+    if (!fin.ok) return { ok: false, reason: fin.reason, purchase_order_id: prepared.purchase_order_id, document_id: prepared.document_id, retryable: true, detail: fin };
+    return { ok: true, purchase_order_id: prepared.purchase_order_id, generated: 1, document_id: fin.document_id,
+      file_name: fin.file_name, folder_id: fin.folder_id, folder_url: fin.folder_url,
+      document_batch_date: prepared.document_batch_date, checksum: fin.checksum,
+      results: [{ class_key: 'PURCHASE_ORDER', status: 'READY', document_id: fin.document_id }] };
+  } finally { try { lock.releaseLock(); } catch (e4) {} }
 }
 
 // ---- §P read path -------------------------------------------------------------------------------------
@@ -960,9 +1166,10 @@ function handleDocumentRetry_(body) {
   var entityId = dgsStr_(body && (body.related_entity_id || body.entity_id || body.shipment_id || body.purchase_order_id));
   var actor = dgsStr_(body && body.actor) || 'operation-system';
   if (!entityId) return jsonResponse_({ success: false, error: 'RELATED_ENTITY_ID_REQUIRED' });
-  var lock = LockService.getScriptLock();
-  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
-  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  // F1-7N-FB-1B-G1 (A) — NO lock is held here. Retry performs Drive work, and a retry must never hold a global
+  // ScriptLock across it. The PO path manages its own stage-1/stage-3 locking internally (releasing across the
+  // Drive step); the shipment path runs entirely after its dispatch transaction has committed. Idempotency comes
+  // from the registry plan (a READY document is reused, never re-rendered) and from exact-name folder matching.
   try {
     var ss = dgsDb_();
     var res = (entityType === 'purchase_order')
@@ -971,7 +1178,7 @@ function handleDocumentRetry_(body) {
     return jsonResponse_({ success: !!res.ok, retried: true, result: res });
   } catch (err) {
     return jsonResponse_({ success: false, error: 'DOCUMENT_RETRY_FAILED: ' + (err && err.message ? err.message : err), related_entity_id: entityId });
-  } finally { try { lock.releaseLock(); } catch (e2) {} }
+  }
 }
 
 // ---- §S read-only diagnostics (ZERO writes, NO folder, NO file) ----------------------------------------
@@ -1016,8 +1223,31 @@ function handlePoDocumentDiagnostic_(body) {
     out.folder_preview = { root_folder_id: drive.root_folder_id || '', date_folder: batch.ymd, date_source: batch.source, path: 'Purchase Order/' + batch.ymd + '/' };
     out.existing_documents = existing.map(function (r) { return dgsDocumentDto_(r); });
     out.expected_registry_identity = { related_entity_type: 'purchase_order', related_entity_id: poId, template_id: sel.template_id, template_version: sel.template_version, key: dgsIdentityKey_('purchase_order', poId, sel.template_id, sel.template_version) };
-    out.verdict = (out.eligible_for_send_po && mapped.missing.length === 0 && built.ok && drive.ok) ? 'READY' : 'BLOCKED';
-  } else { out.verdict = 'BLOCKED'; }
+    out.system_payload_verdict = (mapped.missing.length === 0 && built.ok) ? 'READY' : 'BLOCKED';
+    out.drive_readiness_verdict = drive.ok ? 'READY' : 'BLOCKED';
+    out.required_document_manifest = [{
+      class_key: 'PURCHASE_ORDER', document_type: 'purchase_order', template_key: sel.template_key,
+      requirement: 'ALWAYS', state: (out.system_payload_verdict === 'READY' && drive.ok) ? 'REQUIRED_AND_EXECUTABLE' : 'CONFIGURATION_REQUIRED',
+      blocks_transition: true, renderer_available: true,
+      required_field_contract_complete: mapped.missing.length === 0,
+      missing_fields: mapped.missing, missing_authorities: [], retryable: !drive.ok,
+      next_action: (out.system_payload_verdict === 'READY' && drive.ok) ? 'Ready to Send PO.' : 'Resolve the blocking reasons below, then re-run this diagnostic.'
+    }];
+    out.blocking_reasons = []
+      .concat(out.eligible_for_send_po ? [] : [{ reason: 'PURCHASE_ORDER_NOT_DRAFT', detail: 'Send PO applies to a Draft PO; this one is ' + status + '.' }])
+      .concat(mapped.missing.length ? [{ reason: 'DOCUMENT_REQUIRED_FIELD_MISSING', detail: mapped.missing.length + ' required template field(s) unresolved.' }] : [])
+      .concat(built.ok ? [] : [{ reason: built.reason, detail: 'The filename could not be constructed.' }])
+      .concat(drive.ok ? [] : [{ reason: drive.reason, detail: 'Drive readiness failed.' }]);
+    out.send_po_verdict = out.blocking_reasons.length ? 'BLOCKED' : 'READY';
+    out.verdict = out.send_po_verdict;
+  } else {
+    out.system_payload_verdict = 'BLOCKED';
+    out.drive_readiness_verdict = 'NOT_EVALUATED';
+    out.required_document_manifest = [];
+    out.blocking_reasons = [{ reason: sel.reason, detail: 'No single active Purchase Order template matches factory "' + dgsStr_(po.factory_id) + '" + series "' + dgsStr_(po.series) + '".' }];
+    out.send_po_verdict = 'BLOCKED';
+    out.verdict = 'BLOCKED';
+  }
   dgsLog_('[DGS-PO-DIAG]', { po: poId, verdict: out.verdict, template: out.template && out.template.template_key });
   return jsonResponse_(out);
 }
@@ -1044,27 +1274,44 @@ function handleShipmentDocumentDiagnostic_(body) {
   var snap = docReadSnapshot_(ss, shipmentId);
   out.snapshot_eligible = !!SFO_DISPATCHED_STATUS_[sc.status];
   out.snapshot_present = !!snap;
-  var byDoc = [], ready = 0, configReq = 0;
+  var byDoc = [], ready = 0, configReq = 0, fieldByClass = {}, ciAuthority = [];
   readiness.manifest.forEach(function (m) {
     var fields = dgsFieldsFor_(ss, m.template_id);
-    var entryTpl = null;
     var row = { class_key: m.class_key, template_key: m.template_key, requirement: m.requirement };
-    if (!snap) { row.field_completeness = 'SNAPSHOT_NOT_AVAILABLE'; byDoc.push(row); return; }
     var cls = null;
     for (var i = 0; i < DGS_SHIPMENT_CLASSES_.length; i++) { if (DGS_SHIPMENT_CLASSES_[i].class_key === m.class_key) cls = DGS_SHIPMENT_CLASSES_[i]; }
+    if (cls && cls.render === 'CI') {
+      // §E — classify the five unresolved CI authorities against this template's ACTIVE rows
+      docCiFieldAuthorityReport_(fields).forEach(function (a) { ciAuthority.push(Object.assign({ class_key: m.class_key, template_key: m.template_key }, a)); });
+    }
+    // Field completeness is evaluated against the FINALIZED snapshot. Before dispatch there is none (it needs
+    // the EXECUTED allocations), so the contract is reported UNKNOWN rather than assumed either way — which is
+    // precisely why a CI can never be a pre-dispatch transition gate.
+    if (!snap) { row.field_completeness = 'SNAPSHOT_NOT_AVAILABLE'; byDoc.push(row); return; }
     var model = docRenderByClass_(cls ? cls.render : '', snap);
-    if (!model.ok) { row.status = 'CONFIGURATION_REQUIRED'; row.reason = model.error || model.reason; configReq++; byDoc.push(row); return; }
+    if (!model.ok) {
+      row.status = 'CONFIGURATION_REQUIRED'; row.reason = model.error || model.reason;
+      fieldByClass[m.class_key] = { complete: false, missing: [], unresolved: [] };
+      configReq++; byDoc.push(row); return;
+    }
     var mapped = dtMapPlaceholders_(model, fields);
     var unresolved = (cls && cls.render === 'CI') ? docCiUnresolvedFields_(fields) : [];
     row.required_missing = mapped.missing;
     row.unresolved_authority = unresolved;
     row.status = (mapped.missing.length || unresolved.length) ? 'CONFIGURATION_REQUIRED' : 'READY';
+    fieldByClass[m.class_key] = { complete: row.status === 'READY', missing: mapped.missing, unresolved: unresolved };
     if (row.status === 'READY') ready++; else configReq++;
     byDoc.push(row);
   });
   out.field_completeness_by_document = byDoc;
   out.documents_ready = ready;
   out.documents_configuration_required = configReq;
+  // §C — every applicable document in exactly one state, with the evidence behind it
+  var execMan = dgsExecutableManifest_(readiness.manifest, snap ? fieldByClass : null);
+  out.executable_manifest = execMan.documents;
+  out.transition_gate_manifest = { policy_gate_classes: dgsGatingClassKeys_(), currently_blocking: execMan.blocking,
+    configuration_required: execMan.configuration_required, runtime_deferred: execMan.runtime_deferred };
+  out.commercial_invoice_field_authority = ciAuthority;
   if (sc.shipped_at) {
     out.persisted_shipped_at = sc.shipped_at;
     var leaf = dofShipmentFolderName_(sc.external_shipment_id, sc.shipped_at);
@@ -1074,7 +1321,12 @@ function handleShipmentDocumentDiagnostic_(body) {
   out.existing_documents = existing.map(function (r) { return dgsDocumentDto_(r); });
   out.missing_or_failed_outputs = out.existing_documents.filter(function (d) { return d.status !== 'READY'; }).map(function (d) { return { document_label: d.document_label, status: d.status, reason: d.reason }; });
   out.safe_retry_verdict = out.existing_documents.some(function (d) { return d.retryable; }) ? 'RETRY_SAFE' : (out.missing_or_failed_outputs.length ? 'CONFIGURATION_REQUIRED' : 'NOTHING_TO_RETRY');
-  out.verdict = readiness.ok ? 'READY' : 'BLOCKED';
+  out.system_readiness_verdict = out.pre_dispatch_system_readiness.status;
+  out.drive_readiness_verdict = readiness.drive_readiness.status === 'READY' ? 'READY' : (readiness.drive_readiness.status === 'SKIPPED' ? 'NOT_EVALUATED' : 'BLOCKED');
+  out.blocking_reasons = readiness.blockers;
+  out.configuration_issues = readiness.configuration_issues || [];
+  out.confirm_shipment_verdict = (readiness.ok && out.eligible_for_confirm) ? 'READY' : 'BLOCKED';
+  out.verdict = out.confirm_shipment_verdict;
   dgsLog_('[DGS-SHIP-DIAG]', { shipment: shipmentId, verdict: out.verdict, manifest: out.applicable_manifest.length, ready: ready });
   return jsonResponse_(out);
 }
