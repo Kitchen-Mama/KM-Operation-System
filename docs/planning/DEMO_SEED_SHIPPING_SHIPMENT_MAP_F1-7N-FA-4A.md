@@ -790,3 +790,68 @@ demo-seed **993 / 0** (was 845 / 0). V3G3 map regression **50 / 0**. Full sweep 
 ## Sync manifest (USER-owned, nothing run here)
 - `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` · `FRONTEND_DEPLOY_REQUIRED`: none · `BUNDLE_REBUILD_REQUIRED`: NO · **no DB header/schema change required**.
 - Retry order after review: push → sync the `.gs` → `TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION` (expect `risk_count 0`, `source_destination_warehouse_lineage_ready true`, non-blank `source_warehouse_ids` / `destination_warehouse_ids`, `journal_retry_safe true`, `verdict READY_FOR_CONTROLLED_RETRY`) → `TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION` (**read the printed `source_selection_branches` and confirm the selected factory is the intended one before arming anything**) → DRY_RUN → copy the **new** `demo_plan_checksum` → COMMIT → VALIDATE. CLEAR stays staged OFF.
+
+---
+
+# V3G5C — CORRECT FACTORY SOURCE ELIGIBILITY SEMANTICS
+**SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED · NOT LIVE-RUN.** Narrow corrective follow-up on `7a82a9a` (V3G5B), made **before** the resolver is published. TEMP demo tool + its offline test + this document only. No production handler, master data, schema/header, frontend, router/API or bundle change; both confirmation constants remain `PASTE_..._HERE`; the prior journal was neither cleared nor mutated; no Apps Script entrypoint was executed.
+
+## A — the source-proven semantic correction
+V3G5B gated the Demo **source** warehouse on `is_shipping_enabled` "when present", calling it deliberately fail-closed. V3G5B's own audit already contained the disproof, so the gate is now removed — with the reason recorded, not silently dropped.
+
+| Field | Source-proven meaning | Citation |
+|---|---|---|
+| `is_factory_warehouse` | identifies the business facility as a **factory warehouse** | `03_master_data_handlers.gs` §164 "eligibility: `warehouses.is_active = TRUE` AND `warehouses.is_factory_warehouse = TRUE`"; `21_factory_inventory_handlers.gs` §401 "is a FACTORY (`is_factory_warehouse=TRUE` AND, when known, `warehouse_type=FACTORY`)" |
+| `is_active` | the **lifecycle eligibility gate**, always paired with the factory flag | same `03_master_data_handlers.gs` §164 conjunction; also `13_procurement_handlers.gs` §2288–2289, `43_api_v1_gap_materialization.gs` §417 |
+| `is_shipping_enabled` | the **managed-OVERSEAS outbound capability**, evaluated **only where `is_factory_warehouse` is NOT TRUE** | `SYSTEM_RUNTIME_ARCHITECTURE.md` §575 "…active record, `is_factory_warehouse` is **not TRUE**, the relevant capability is enabled (`is_receiving_enabled` for inbound / `is_shipping_enabled` for outbound)"; `WAREHOUSE_OPERATIONS_SPEC.md` §126 same conjunction; `OVERSEAS_OUTBOUND_SPEC.md` §19 "origin_warehouse_id resolves to an active, **non-factory** `warehouses` record with `is_shipping_enabled = TRUE`"; `SHIPMENT_CENTER_SPEC.md` §1218 outbound rule |
+| factory-origin shipments | a **first-class supported path with no shipping-capability gate at all** | `DATABASE_RELATIONSHIP_MAP.md` §603 "**Factory warehouses (`is_factory_warehouse = TRUE`) never create an overseas operation.**"; `SHIPMENT_CENTER_SPEC.md` B-1 §466 reservation keyed on `factory_stock.warehouse_id (= shipments.origin_warehouse_id) + sku` with `warehouses.is_factory_warehouse = TRUE` |
+| company / country scope | `warehouse_id` is the system-unique identity; logical uniqueness is `warehouse_id` **or** `company + country + marketplace + warehouse_code` — never a code alone | `SHIPMENT_CENTER_SPEC.md` §22.0(D) |
+
+**Conclusions recorded (all five):** (1) `is_factory_warehouse` identifies the facility as a factory warehouse. (2) `is_active` is the lifecycle eligibility gate. (3) `is_shipping_enabled` is **not** a general "may be used as a shipment source" authority for factory warehouses — it is the managed-overseas outbound capability and is structurally never evaluated for a factory. (4) A factory warehouse must **not** be rejected merely because `is_shipping_enabled` is false or blank. (5) **No production/master schema or data is changed** — only this Demo tool's own eligibility rule.
+
+The two accessors (`DEMO4A_whShippingEnabled_`, `DEMO4A_whShippingEnabledPresent_`) are **deleted**, not left unused, so no executable path can consult the flag; a source-fact test strips comments and asserts that neither the accessors nor any `is_shipping_enabled` column read survives in code, and that the resolver body contains no `shipping` reference on any branch. The explanation and all four citations live in the source at the deletion site.
+
+## B — final resolver matrix
+`DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company)` remains the single pure Demo-only resolver and still accepts **no** locations/coordinates argument (asserted: its body references no `locations` / `latitude` / `longitude` / `logistics_location`).
+
+| Gate | Branch 1 `TEMPLATE_EXACT_SOURCE_WAREHOUSE` (declared id non-blank) | Branch 2 `DEMO_DETERMINISTIC_FACTORY_FALLBACK` (declared id blank **only**) |
+|---|---|---|
+| exact `warehouses.warehouse_id` | **required** | required (non-blank id) |
+| `is_active` | **required** | **required** |
+| `is_factory_warehouse` | **not required** — production does not prove a declared source must be a factory (the canonical origin may be a factory *or* a managed overseas warehouse) | **required** |
+| country = `template.origin_country` | **required (exact)** | **required (exact)** |
+| company = Demo company when populated | **required (exact)** | **required (exact)** |
+| `is_shipping_enabled` | **NOT consulted** | **NOT consulted** |
+| latitude/longitude | not required | not required |
+| `logistics_location` join | not required | not required |
+| selection | the declared row | sort by normalized `warehouse_id` **ascending**, take the **first** |
+| failure | `TEMPLATE_SOURCE_WAREHOUSE_INVALID` (+ typed detail), **never falls through** | `NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE` (+ typed rejection counts) |
+
+Preserved exactly: `master_identity_proven = true` in both branches, `source_proven = true` **only** for branch 1, `demo_fallback = true` only for branch 2, and the full source evidence (id, code, name, company, country, type, factory flag, **selection branch**, proven/fallback marking) checksum-bound in the `WHSRC` manifest row. No `Math.random`, no row-order dependence, no fuzzy/prefix/name matching, no route-location or `warehouse_code`-as-id substitution, no fabricated id.
+
+**Proof that a shipping-disabled factory is eligible:** `['FALSE', '', 'TRUE', 'no', '0']` all yield the **same** selected warehouse — the flag has no effect whatsoever — and end-to-end, a fixture whose CN factory carries `is_shipping_enabled = FALSE` builds a plan that is **byte-identical** to the baseline (same checksum), confirming the flag influences nothing the checksum binds.
+
+## C — country / company still fail closed
+Nothing is broadened. A factory in another country is counted `COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY` and the plan fails closed; one owned by another **populated** company is counted `COMPANY_MISMATCH` and is never borrowed; an inactive factory is counted `INACTIVE`. In every case `DEMO4A_buildPlan_` returns `DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY` with the per-slot reason `NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE`, and both read-only entrypoints publish the exact typed cause. **No warehouse is invented and the rule is never weakened without a separate user decision.** The three selected Demo templates keep a **CN** source, as expected.
+
+## H — read-only output contract
+A single shared pure summariser, `DEMO4A_sourceAuthoritySummary_`, feeds **both** entrypoints (never a second evaluator — asserted). Newly published by both: `source_factory_candidate_count`, `source_factory_rejection_counts` (typed, capped at five codes, with `source_factory_rejection_code_count` so nothing is hidden by the cap) and **`source_shipping_enabled_gate_applied: false`**, so an operator can confirm the corrected semantic from the log alone. The failure path of the authorization envelope carries them too — that is exactly when they matter.
+
+Coverage is a **union across the two entrypoints**, which is how the contract is satisfied without adding a duplicate evaluator or a new sheet/property read to the authorization entrypoint: the canonicalization diagnostic carries `writer_projection_complete`, `writer_projection_missing_total`, `risk_count`, `journal_integrity_valid`, `journal_retry_safe`, `corrected_plan_checksum`, `existing_state`, `confirmation_constant_status`, `verdict`; the authorization envelope carries `source_destination_warehouse_lineage`, `demo_plan_checksum`, `existing_state`, `confirmation_constant_status`, `may_run_dry_run`, `may_arm_commit_checksum`, `preflight_verdict`; **both** carry the source/destination id + code + branch triples and the three new source fields, and **both** stamp `DEMO4A_ZERO_WRITE_CONFIRMED`. Measured: diagnostic **3758 bytes**, authorization envelope **4680 bytes**, failing envelope well under the ceiling — all < 6000.
+
+`READY_FOR_CONTROLLED_RETRY` is still reached only when every projection, canonicalization, source/destination lineage, existing-state and journal gate passes.
+
+## D/F/G — everything else re-proven unchanged
+Propagation (plan → shipment inheritance of both endpoints, exact master resolution, `source != destination`, no logistics-location id in a warehouse field, `warehouse_code` still the destination display-code snapshot), the writer-projection gate running before the journal write and the first `appendRow`, the value-aware format-risk rule (`CN` / `US West|Central|East` safe by pure round-trip proof, `0086` still blocking), no cell-format mutation or apostrophe injection, journal read-only + supersedable only under the full conjunction, inserted-only rollback with mandatory verification, `COMMITTED_UNVERIFIED` impossible, `PRESENT_EXACT_ALL` / six-zero-delta `REUSED`, counts **3/8/3/8/46/5 = 73**, and route/event semantics — all re-asserted after the correction. `shipments.warehouse_id` and `shipments.updated_by` stay removed; no schema column is added.
+
+**Checksum:** deterministic and source-lineage-sensitive, with **no value hardcoded**; `7e4cf9d9` and `8b3eabec` remain unnamed in source. For fixtures where the flag was absent the corrected semantics reproduce the identical checksum — the correction changes the *plan* only where live data actually has a shipping-disabled factory that V3G5B would wrongly have rejected.
+
+## Offline result
+All three Demo shipments select **`WH-KM-CN-FACTORY-1`** (`CNFAC1`) via `DEMO_DETERMINISTIC_FACTORY_FALLBACK`, candidate count **1**, rejection counts `{ NOT_A_FACTORY_WAREHOUSE: 3 }` (the three FBA destination rows, correctly excluded), `source_shipping_enabled_gate_applied: false`, lineage ready, `risk_count 0`, verdict `READY_FOR_CONTROLLED_RETRY`. Destinations unchanged: AUS2 / BFI4 / ABE2 with their `LOC-` lineage and code snapshots. **The live source id is still not asserted** — the live master is unreadable offline; both entrypoints print it before anything is armed.
+
+## Tests and baseline
+demo-seed **1084 / 0** (was 995 / 0 after the loader correction, 993 / 0 at V3G5B). V3G3 map regression **50 / 0**. Full sweep of **342** suites → the same **4** pre-existing failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-route-inventory`), none reading a changed file → **0 new failures**. Five V3G5B assertions were deliberately **superseded and rewritten, never deleted**: the branch-1 shipping gate, the three fallback shipping-capability assertions, and the `is_shipping_enabled_present` evidence field — each replaced by its corrected inverse with the semantic reason attached.
+
+## Sync manifest (USER-owned, nothing run here)
+- `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` · `FRONTEND_DEPLOY_REQUIRED`: none · `BUNDLE_REBUILD_REQUIRED`: NO · **no DB header/schema change required**.
+- Order after review: push → sync the `.gs` → `TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION` (expect `source_shipping_enabled_gate_applied: false`, a non-blank `source_warehouse_ids` triple, `source_factory_candidate_count > 0`, `risk_count 0`, `source_destination_warehouse_lineage_ready true`, `journal_retry_safe true`, `verdict READY_FOR_CONTROLLED_RETRY`; if the source is still unresolved, read `source_factory_rejection_counts` — it names the exact typed cause) → `TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION`, **confirming the printed factory is the intended one** → DRY_RUN → copy the **new** `demo_plan_checksum` → COMMIT → VALIDATE. CLEAR stays staged OFF.

@@ -22,7 +22,7 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
-  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_', 'DEMO4A_APPROVED_REGION_DEST_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_', 'DEMO4A_APPROVED_REGION_DEST_', 'DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_', 'DEMO4A_SOURCE_MAX_REJECTION_CODES_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_COORD_ACCURACY_CANON_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_FIELD_CLASS_ = \{[\s\S]*?\n\};/)[0]);
@@ -47,7 +47,7 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_dxCoordKey_', 'DEMO4A_dxRawRegion_', 'DEMO4A_dxSubdivision_', 'DEMO4A_dxCompatibleRoles_', 'DEMO4A_dxRoleStages_', 'DEMO4A_diagnoseLiveRoleCandidates_',
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
   'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
-  'DEMO4A_whCode_', 'DEMO4A_whName_', 'DEMO4A_whIsFactory_', 'DEMO4A_whShippingEnabled_', 'DEMO4A_whShippingEnabledPresent_', 'DEMO4A_sourceEvidence_', 'DEMO4A_resolveDemoSourceWarehouse_', 'DEMO4A_numericLike_', 'DEMO4A_dateLike_', 'DEMO4A_boolLike_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
+  'DEMO4A_whCode_', 'DEMO4A_whName_', 'DEMO4A_whIsFactory_', 'DEMO4A_sourceEvidence_', 'DEMO4A_resolveDemoSourceWarehouse_', 'DEMO4A_sourceAuthoritySummary_', 'DEMO4A_numericLike_', 'DEMO4A_dateLike_', 'DEMO4A_boolLike_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
   'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_preflightVerdict_', 'DEMO4A_authorizationSummary_', 'DEMO4A_rowForHeaders_', 'DEMO4A_srcDestLineageGate_', 'DEMO4A_writerProjectionGaps_', 'DEMO4A_driftClip_', 'DEMO4A_driftEvidence_', 'DEMO4A_canonDiagnosticCore_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
@@ -1894,17 +1894,17 @@ section('V3G5B-1..3. the source-resolver precedence: exact template authority wi
   var bad = b5Resolve({ origin_warehouse_id: 'WH-KM-CN-FACTORY-NOPE' }, whs);
   eq([bad.ok, bad.reason, bad.detail], [false, 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', 'DECLARED_SOURCE_WAREHOUSE_NOT_IN_MASTER'], '2. a NON-BLANK declared origin id that is not in the master fails CLOSED');
   ok(!bad.warehouse_id && !bad.selection_branch, '2. it does NOT silently fall through to the deterministic factory fallback');
-  ['is_active', 'is_shipping_enabled'].forEach(function (f) {
-    var o = {}; o[f] = 'FALSE'; var w = srcWhRow(o);
-    var r = b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [w]);
-    eq([r.ok, r.reason], [false, 'TEMPLATE_SOURCE_WAREHOUSE_INVALID'], '2. a declared origin warehouse with ' + f + '=FALSE fails closed');
-  });
+  eq([b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ is_active: 'FALSE' })]).ok, b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ is_active: 'FALSE' })]).reason], [false, 'TEMPLATE_SOURCE_WAREHOUSE_INVALID'], '2. a declared origin warehouse with is_active=FALSE fails closed');
+  // V3G5C(B) - SUPERSEDES V3G5B: is_shipping_enabled is the managed-OVERSEAS outbound capability (production evaluates
+  // it only on a NON-factory endpoint), so it is not an authority over the declared template source either.
+  eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ is_shipping_enabled: 'FALSE' })]).selection_branch, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE', '2/V3G5C. a declared origin warehouse with is_shipping_enabled=FALSE remains VALID (no shipping-capability gate)');
   eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ country: 'VN' })]).detail, 'DECLARED_SOURCE_WAREHOUSE_COUNTRY_MISMATCH', '2. a declared origin warehouse in the wrong country fails closed');
   eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ company: 'OTHERCO' })]).detail, 'DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH', '2. a declared origin warehouse of another company fails closed');
   var fb = b5Resolve({}, whs);
   eq([fb.ok, fb.selection_branch, fb.demo_fallback, fb.source_proven], [true, 'DEMO_DETERMINISTIC_FACTORY_FALLBACK', true, false], '3. a BLANK template origin_warehouse_id activates the Demo fallback, truthfully marked NOT source-proven');
   eq(fb.master_identity_proven, true, '3/B. the fallback still proves an EXACT warehouses master identity');
   eq([fb.warehouse_code, fb.warehouse_name, fb.country, fb.warehouse_type, fb.is_factory_warehouse], ['CNF0', 'Factory WH-KM-CN-FACTORY-0', 'CN', 'factory', true], '3/B. the selected source binding preserves code / name / country / type / factory flag');
+  eq(fb.shipping_enabled_gate_applied, false, '3/V3G5C. and it publishes shipping_enabled_gate_applied = FALSE instead of the retired is_shipping_enabled_present evidence');
 })();
 
 section('V3G5B-4..8. every fallback filter is required');
@@ -1912,10 +1912,14 @@ section('V3G5B-4..8. every fallback filter is required');
   var base = 'WH-KM-CN-FACTORY-1';
   eq(b5Resolve({}, [b5Fac(base, { is_factory_warehouse: 'FALSE' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '4. the fallback requires is_factory_warehouse = true');
   eq(b5Resolve({}, [b5Fac(base, { is_active: 'FALSE' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '5. the fallback requires an active warehouse');
-  eq(b5Resolve({}, [b5Fac(base, { is_shipping_enabled: 'FALSE' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '6. the fallback requires is_shipping_enabled when the field is PRESENT');
-  eq(b5Resolve({}, [b5Fac(base, { is_shipping_enabled: 'TRUE' })]).warehouse_id, base, '6. an explicit is_shipping_enabled = TRUE qualifies');
-  eq(b5Resolve({}, [b5Fac(base)]).warehouse_id, base, '6. a BLANK/absent is_shipping_enabled is "not declared" and never blocks (the same convention as is_receiving_enabled)');
-  eq(DEMO4A_whShippingEnabledPresent_(b5Fac(base)), false, '6. presence is a NON-BLANK cell, not merely a declared column');
+  // V3G5C(A/I-1,2) - SUPERSEDES V3G5B's shipping-capability gate. is_shipping_enabled is the managed-OVERSEAS outbound
+  // capability; production evaluates it ONLY where is_factory_warehouse is NOT TRUE and states that factory warehouses
+  // never create an overseas operation. It is therefore NOT an authority over a factory's Demo source eligibility.
+  eq(b5Resolve({}, [b5Fac(base, { is_shipping_enabled: 'FALSE' })]).warehouse_id, base, 'I-1/V3G5C. an active CN factory with is_shipping_enabled = FALSE remains ELIGIBLE');
+  eq(b5Resolve({}, [b5Fac(base, { is_shipping_enabled: '' })]).warehouse_id, base, 'I-2/V3G5C. an active CN factory with a BLANK is_shipping_enabled remains ELIGIBLE');
+  eq(b5Resolve({}, [b5Fac(base)]).warehouse_id, base, 'I-2/V3G5C. and one with no is_shipping_enabled column at all remains ELIGIBLE');
+  eq(b5Resolve({}, [b5Fac(base, { is_shipping_enabled: 'TRUE' })]).warehouse_id, base, 'I-1/V3G5C. an explicit TRUE is likewise neither required nor rewarded - the flag is simply not consulted');
+  eq(['FALSE', '', 'TRUE', 'no', '0'].map(function (v) { return b5Resolve({}, [b5Fac(base, { is_shipping_enabled: v })]).warehouse_id; }), [base, base, base, base, base], 'I-1/I-2/V3G5C. EVERY is_shipping_enabled value yields the SAME selection: the flag has no effect whatsoever');
   eq(b5Resolve({}, [b5Fac(base, { country: 'VN' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '7. the fallback country must equal the template origin_country EXACTLY');
   eq(b5Resolve({ origin_country: '' }, [b5Fac(base)]).detail, 'TEMPLATE_ORIGIN_COUNTRY_BLANK', '7. a blank template origin_country cannot be matched exactly and fails closed');
   eq(b5Resolve({}, [b5Fac(base, { company: 'OTHERCO' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '8. the fallback company must equal the resolved Demo company when the warehouse company is populated');
@@ -2139,5 +2143,143 @@ eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEM
 eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, '50. exactly the three approved coordinate authorities remain armed');
 ok(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).every(function (k) { return DEMO4A_DEST_COORD_AUTHORITY_[k].review_status === 'user_approved'; }), '50. and all three remain USER-approved, unmodified');
 ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, '50. the warehouses master remains read-only');
+
+// ================================================================================================================
+// V3G5C - CORRECTED FACTORY SOURCE ELIGIBILITY SEMANTICS.
+// V3G5B's own audit proved that `warehouses.is_shipping_enabled` is the production managed-OVERSEAS outbound
+// capability, evaluated ONLY where `is_factory_warehouse` is NOT TRUE, and that factory warehouses never create an
+// overseas operation at all. V3G5B nevertheless gated the Demo SOURCE warehouse on it "when present", which could
+// reject a perfectly valid active factory. This section proves the corrected semantic, the deletion of the gate, and
+// that every other V3G5B protection survives the correction unchanged.
+// ================================================================================================================
+section('V3G5C-A/E. the semantic correction is documented in source and NO executable path consults is_shipping_enabled');
+(function () {
+  // the source must EXPLAIN the correction, not merely drop the gate.
+  ok(/is_shipping_enabled is the managed-OVERSEAS outbound capability and is STRUCTURALLY never evaluated for a factory/.test(G), 'A. the source records WHY the gate was removed (the managed-overseas capability semantic)');
+  ok(/SYSTEM_RUNTIME_ARCHITECTURE\.md/.test(G) && /WAREHOUSE_OPERATIONS_SPEC\.md/.test(G) && /OVERSEAS_OUTBOUND_SPEC\.md/.test(G) && /DATABASE_RELATIONSHIP_MAP\.md/.test(G), 'A. and cites all four production sources that establish it');
+  ok(/A factory warehouse must\s*\n?\/\/ therefore NEVER be rejected merely because is_shipping_enabled is false or blank/.test(G), 'A. and states the resulting rule explicitly');
+  ok(/No production\s*\n\/\/ handler, master column or master data is changed/.test(G), 'A. and records that no production/master schema or data changes');
+  // E - the SOURCE-FACT proof: strip comments, then no executable line may read the flag.
+  var CODE = G.split('\n').filter(function (l) { return !/^\s*(\/\/|\*|\/\*)/.test(l); }).join('\n');
+  ok(/DEMO4A_whShippingEnabled_|DEMO4A_whShippingEnabledPresent_/.test(CODE) === false, 'E. both shipping-capability accessors are DELETED, not merely left unused');
+  ok(/is_shipping_enabled'|shipping_enabled'/.test(CODE) === false, 'E. no executable line reads an is_shipping_enabled / shipping_enabled column at all');
+  var RES = extractFn(G, 'DEMO4A_resolveDemoSourceWarehouse_').split('\n').filter(function (l) { return !/^\s*\/\//.test(l); }).join('\n');
+  ok(/shipping/i.test(RES) === false, 'E. the resolver body itself contains no shipping-capability reference on ANY branch');
+  ok(/locations|latitude|longitude|logistics_location/.test(RES) === false, 'I-9. and no location / coordinate / logistics_location dependency on ANY branch');
+  eq(DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_, false, 'H. the published gate flag is FALSE');
+})();
+
+section('V3G5C-I. the corrected eligibility matrix, one row per rule');
+(function () {
+  var ID = 'WH-KM-CN-FACTORY-1';
+  function elig(over) { return DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [b5Fac(ID, over)], 'KM'); }
+  [['is_shipping_enabled FALSE', { is_shipping_enabled: 'FALSE' }, true],
+   ['is_shipping_enabled blank', { is_shipping_enabled: '' }, true],
+   ['is_shipping_enabled absent', {}, true],
+   ['is_shipping_enabled TRUE', { is_shipping_enabled: 'TRUE' }, true],
+   ['is_active FALSE', { is_active: 'FALSE' }, false],
+   ['is_factory_warehouse FALSE', { is_factory_warehouse: 'FALSE' }, false],
+   ['wrong country', { country: 'VN' }, false],
+   ['wrong populated company', { company: 'OTHERCO' }, false],
+   ['blank company', { company: '' }, true]].forEach(function (c) {
+    eq(elig(c[1]).ok === true, c[2], 'I. fallback eligibility with ' + c[0] + ' -> ' + (c[2] ? 'ELIGIBLE' : 'INELIGIBLE'));
+  });
+  // the typed rejection counts name the exact cause instead of failing anonymously.
+  eq(elig({ is_factory_warehouse: 'FALSE' }).rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 1 }, 'H. a non-factory row is counted as NOT_A_FACTORY_WAREHOUSE');
+  eq(elig({ is_active: 'FALSE' }).rejection_counts, { INACTIVE: 1 }, 'H. an inactive factory is counted as INACTIVE');
+  eq(elig({ country: 'VN' }).rejection_counts, { COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY: 1 }, 'H. a wrong-country factory is counted as COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY');
+  eq(elig({ company: 'OTHERCO' }).rejection_counts, { COMPANY_MISMATCH: 1 }, 'H. a wrong-company factory is counted as COMPANY_MISMATCH');
+  ok(Object.keys(elig({ is_active: 'FALSE' }).rejection_counts).indexOf('SHIPPING_DISABLED') === -1, 'E. no rejection code for a shipping capability exists any more');
+  // C - a shipping-disabled factory is now the SELECTED source end to end, not merely "eligible".
+  var mShip = mastersB5({ mapWarehouses: function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.is_shipping_enabled = 'FALSE'; return c; } });
+  var pShip = DEMO4A_buildPlan_(mShip);
+  eq([pShip.ok, pShip.per_shipment.every(function (x) { return x.source_warehouse_id === SRC_WH_ID_; })], [true, true], 'I-1/D. end to end: every Demo plan still selects the CN factory when its is_shipping_enabled is FALSE');
+  eq(pShip.checksum, B5_.checksum, 'G. and the plan is byte-identical - the flag influences nothing that the checksum binds');
+})();
+
+section('V3G5C-C. country / company scope still fails CLOSED - nothing is silently broadened');
+(function () {
+  // no CN factory at all for the Demo company -> the plan must fail closed with the exact typed reason.
+  function scoped(mapFn) { return DEMO4A_buildPlan_(mastersB5({ mapWarehouses: mapFn })); }
+  var noFactory = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.is_active = 'FALSE'; return c; });
+  eq(noFactory.ok, false, 'C. no ACTIVE CN factory -> the whole plan fails closed (no warehouse is invented)');
+  eq(noFactory.reason, 'DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY', 'C. with the typed plan-level reason');
+  ok(noFactory.source_authority_errors.every(function (e) { return e.reason === 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE'; }), 'C. and the exact per-slot reason NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE');
+  eq(noFactory.source_authority_summary.source_factory_rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 3, INACTIVE: 1 }, 'C/H. the read-only summary names the exact cause per typed code (the three FBA destination rows are correctly counted as NOT_A_FACTORY_WAREHOUSE, the CN factory as INACTIVE), never an anonymous failure');
+  var otherCo = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.company = 'OTHERCO'; return c; });
+  eq([otherCo.ok, otherCo.source_authority_summary.source_factory_rejection_counts], [false, { NOT_A_FACTORY_WAREHOUSE: 3, COMPANY_MISMATCH: 1 }], 'C. a factory owned by another POPULATED company is never silently borrowed');
+  var otherCountry = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.country = 'VN'; return c; });
+  eq([otherCountry.ok, otherCountry.source_authority_summary.source_factory_rejection_counts], [false, { NOT_A_FACTORY_WAREHOUSE: 3, COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY: 1 }], 'C. selection is never broadened across countries: the source stays in the template origin country');
+  ok(B5_.per_shipment.every(function (x) { return DEMO4A_low_(x.source_warehouse_country) === 'cn' && DEMO4A_low_(x.template_origin_country) === 'cn'; }), 'C. the three selected Demo templates keep a CN source, as expected');
+  // the failing authorization envelope must still be tiny AND must carry the corrected source evidence.
+  var MP = { present: { shipment_route_templates: true, shipment_route_template_nodes: true, logistics_locations: true, marketplace_skus: true, sku_details: true, warehouses: true } };
+  var envF = DEMO4A_authorizationSummary_({ ok: true }, MP, noFactory, noFactory, emptyLive(), { verdict: 'THREE_REGION_COORDINATE_PROPOSAL_READY', proposal_entries: 3 });
+  eq([envF.may_run_dry_run, envF.may_arm_commit_checksum, envF.source_shipping_enabled_gate_applied], [false, false, false], 'C/H. the failing envelope blocks both authorizations and still publishes the corrected gate flag');
+  eq(envF.source_factory_rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 3, INACTIVE: 1 }, 'C/H. and carries the typed rejection counts on the FAILURE path, where they matter most');
+  ok(JSON.stringify(envF).length < 6000, 'H. the failing envelope is ' + JSON.stringify(envF).length + ' bytes (< 6000)');
+})();
+
+section('V3G5C-H. the read-only output contract of both compact entrypoints');
+(function () {
+  var MP = { present: { shipment_route_templates: true, shipment_route_template_nodes: true, logistics_locations: true, marketplace_skus: true, sku_details: true, warehouses: true } };
+  var env = DEMO4A_authorizationSummary_({ ok: true }, MP, B5_, B5_, emptyLive(), { verdict: 'THREE_REGION_COORDINATE_PROPOSAL_READY', proposal_entries: 3 });
+  var hdrs = {}, ctc = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (t2) { var seen = {}; (B5_.tables[t2] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); }); hdrs[t2] = Object.keys(seen); ctc[t2] = {}; hdrs[t2].forEach(function (h) { ctc[t2][h] = 'text_cell'; }); });
+  ctc.shipping_plans.ship_from = 'numeric_cell'; ctc.shipping_plans.destination = 'numeric_cell';
+  var diag = DEMO4A_canonDiagnosticCore_({ ok: true }, mastersB5(), B5_, hdrs, ctc, { ok: true, offset_min: 480, time_zone: 'Asia/Taipei' }, null, 'ABSENT_ALL', DEMO4A_srcDestLineageGate_(B5_, B5_WHS_), true);
+  // union coverage across the two entrypoints, as the contract requires.
+  ['writer_projection_complete', 'writer_projection_missing_total', 'risk_count', 'source_destination_warehouse_lineage_ready',
+   'source_warehouse_ids', 'source_warehouse_codes', 'source_selection_branches', 'destination_warehouse_ids', 'destination_warehouse_codes',
+   'source_factory_candidate_count', 'source_factory_rejection_counts', 'source_shipping_enabled_gate_applied',
+   'existing_state', 'journal_integrity_valid', 'journal_retry_safe', 'corrected_plan_checksum', 'confirmation_constant_status', 'verdict'].forEach(function (k) {
+    ok(diag[k] !== undefined, 'H. the canonicalization diagnostic exposes ' + k);
+  });
+  ['source_destination_warehouse_lineage', 'source_factory_candidate_count', 'source_factory_rejection_counts', 'source_shipping_enabled_gate_applied',
+   'existing_state', 'demo_plan_checksum', 'confirmation_constant_status', 'may_run_dry_run', 'may_arm_commit_checksum', 'preflight_verdict'].forEach(function (k) {
+    ok(env[k] !== undefined, 'H. the authorization envelope exposes ' + k);
+  });
+  eq([diag.source_shipping_enabled_gate_applied, env.source_shipping_enabled_gate_applied], [false, false], 'H. both publish source_shipping_enabled_gate_applied = FALSE');
+  eq([diag.source_factory_candidate_count, env.source_factory_candidate_count], [1, 1], 'H. both publish the source factory candidate count');
+  eq(diag.verdict, 'READY_FOR_CONTROLLED_RETRY', 'H. the successful diagnostic verdict is READY_FOR_CONTROLLED_RETRY');
+  eq([diag.writer_projection_complete, diag.writer_projection_missing_total, diag.risk_count, diag.source_destination_warehouse_lineage_ready], [true, 0, 0, true], 'F/H. projection complete, zero missing, zero risk, lineage ready');
+  ok(Object.keys(diag.source_factory_rejection_counts).length <= 5 && Object.keys(env.source_factory_rejection_counts).length <= 5, 'H. the rejection counts are capped at five codes');
+  ok(JSON.stringify(diag).length < 6000, 'H. the diagnostic is ' + JSON.stringify(diag).length + ' bytes (< 6000)');
+  ok(JSON.stringify(env).length < 6000, 'H. the authorization envelope is ' + JSON.stringify(env).length + ' bytes (< 6000)');
+  ok(/DEMO4A_ZERO_WRITE_CONFIRMED/.test(extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION')) && /DEMO4A_ZERO_WRITE_CONFIRMED/.test(extractFn(G, 'TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION')), 'H. both entrypoints stamp DEMO4A_ZERO_WRITE_CONFIRMED');
+  // the summariser is ONE shared pure function - never a second approximate evaluator.
+  ok((G.match(/DEMO4A_sourceAuthoritySummary_\(/g) || []).length >= 4 && (G.match(/function DEMO4A_sourceAuthoritySummary_/g) || []).length === 1, 'H. one shared pure summariser feeds both entrypoints (no duplicated evaluator)');
+})();
+
+section('V3G5C-D/F/G. propagation, projection, checksum and the V3G5B protections all survive the correction');
+(function () {
+  var whIds = {}; B5_WHS_.forEach(function (w) { whIds[DEMO4A_whId_(w)] = 1; });
+  ok(B5_PLANS_.every(function (pl) { return DEMO4A_str_(pl.source_warehouse_id) && DEMO4A_str_(pl.destination_warehouse_id); }), 'D. every plan carries a non-blank source AND destination warehouse');
+  ok(B5_SHIPS_.every(function (sh) { var pl = B5_PLANS_.filter(function (x) { return x.shipping_plan_id === sh.shipping_plan_id; })[0];
+    return sh.source_warehouse_id === pl.source_warehouse_id && sh.destination_warehouse_id === pl.destination_warehouse_id
+      && whIds[sh.source_warehouse_id] && whIds[sh.destination_warehouse_id]
+      && DEMO4A_low_(sh.source_warehouse_id) !== DEMO4A_low_(sh.destination_warehouse_id); }), 'D. every shipment inherits both endpoints exactly, both resolve to master rows, and they never collapse to one identity');
+  eq(B5_PER_.map(function (x) { return x.region + '=' + x.destination_warehouse_id; }).sort().join(','), 'US_CENTRAL=WH-KM-US-FBA-AUS2,US_EAST=WH-KM-US-FBA-ABE2,US_WEST=WH-KM-US-FBA-BFI4', 'I-12. the destinations remain ABE2 / AUS2 / BFI4');
+  ok(B5_SHIPS_.every(function (sh) { var per = B5_PER_.filter(function (x) { return x.shipment_id === sh.shipment_id; })[0];
+    return sh.warehouse_code === per.destination_warehouse_code && sh.warehouse_code !== sh.destination_warehouse_id; }), 'I-14. warehouse_code remains the destination display-code snapshot, never an identity');
+  ok(B5_SHIPS_.every(function (sh) { return !Object.prototype.hasOwnProperty.call(sh, 'warehouse_id') && !Object.prototype.hasOwnProperty.call(sh, 'updated_by'); }), 'D. shipments.warehouse_id and shipments.updated_by are NOT restored');
+  ok(/insertColumn|appendColumn|createSheet|ALTER TABLE/.test(G) === false, 'I-22. no schema / header column is added or migrated');
+  // G - the checksum stays deterministic and source-lineage sensitive after the correction, with no value hardcoded.
+  eq(DEMO4A_buildPlan_(mastersB5()).checksum, B5_.checksum, 'G/I-17. the corrected semantics reproduce the SAME deterministic checksum');
+  ok(DEMO4A_buildPlan_(mastersB5({ extraWarehouses: [b5Fac('WH-KM-CN-FACTORY-0')] })).checksum !== B5_.checksum, 'G/I-17. and a different deterministic source selection still changes it');
+  ok(/7e4cf9d9/.test(G) === false && /8b3eabec/.test(G) === false, 'G. both retired checksum values remain unnamed in source; none is hardcoded');
+  // F - projection / canonicalization gates still block before the journal and the first write.
+  var hdrs = {}; DEMO4A_WRITE_ORDER_.forEach(function (t2) { var seen = {}; (B5_.tables[t2] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); }); hdrs[t2] = Object.keys(seen); });
+  eq(DEMO4A_writerProjectionGaps_(B5_, hdrs).missing_total, 0, 'F/I-18. writer projection remains complete with zero missing fields');
+  var dropped = {}; DEMO4A_WRITE_ORDER_.forEach(function (t2) { dropped[t2] = hdrs[t2].filter(function (c) { return !(t2 === 'shipments' && c === 'source_warehouse_id'); }); });
+  ok(DEMO4A_writerProjectionGaps_(B5_, dropped).ok === false, 'F/I-18. and a dropped physical column still blocks');
+  var cf = extractFn(G, 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED');
+  ok(cf.indexOf('COMMIT_BLOCKED_WRITER_PROJECTION_INCOMPLETE') < cf.indexOf('setProperty') && cf.indexOf('COMMIT_BLOCKED_WRITER_PROJECTION_INCOMPLETE') < cf.indexOf('appendRow'), 'F/I-18. the gate still runs BEFORE the journal write and the first appendRow');
+  ok(/rb\.ok \? 'COMMIT_FAILED_POSTCHECK_ROLLED_BACK' : 'COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED'/.test(cf) && /COMMITTED_UNVERIFIED/.test(G) === false, 'I-19. inserted-only rollback with mandatory verification is intact and COMMITTED_UNVERIFIED remains impossible');
+  ok(/deleteProperty/.test(extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION')) === false, 'F. the prior journal is still never cleared or mutated by the read-only diagnostic');
+  var m46 = mastersB5({ nodeCounts: { US_WEST: 16, US_CENTRAL: 15, US_EAST: 15 } });
+  eq(DEMO4A_buildPlan_(m46).counts, { shipping_plans: 3, shipping_plan_lines: 8, shipments: 3, shipment_lines: 8, shipment_routes: 46, shipment_events: 5, total: 73 }, 'I-15/I-16. the six-table counts remain 3 / 8 / 3 / 8 / 46 / 5 = 73');
+  eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'I-21. both confirmation constants remain placeholders');
+  ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, 'I-22. the warehouses master remains read-only');
+})();
 
 done();

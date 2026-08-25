@@ -842,8 +842,10 @@ var DEMO4A_APPROVED_REGION_DEST_ = { US_WEST: 'WH-KM-US-FBA-BFI4', US_CENTRAL: '
 //   (1) TEMPLATE_EXACT_SOURCE_WAREHOUSE - a NON-BLANK declared id must resolve to an exact warehouses.warehouse_id and
 //       pass every gate. A declared-but-invalid id NEVER falls through to the fallback: it fails closed.
 //   (2) DEMO_DETERMINISTIC_FACTORY_FALLBACK - ONLY when the declared id is blank. Filter by is_factory_warehouse +
-//       active + shipping-enabled-when-present + exact origin country + exact company (when populated), sort by
-//       normalized warehouse_id ASCENDING and take the FIRST. No Math.random, no row order, no coordinate requirement,
+//       is_active + exact origin country + exact company (when populated) - production's OWN canonical factory rule,
+//       with NO is_shipping_enabled gate (V3G5C: that flag is the managed-overseas outbound capability and is never
+//       evaluated for a factory) - then sort by normalized warehouse_id ASCENDING and take the FIRST. A false or blank
+//       is_shipping_enabled therefore NEVER rejects a factory. No Math.random, no row order, no coordinate requirement,
 //       no logistics_location requirement, no fuzzy/name matching, no route/location id, no warehouse_code as an id,
 //       no destination warehouse, no fabricated id. Empty candidate set -> NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE.
 // The source warehouse is a BUSINESS identity; the origin route location stays a separate geographic binding.
@@ -851,10 +853,30 @@ var DEMO4A_APPROVED_REGION_DEST_ = { US_WEST: 'WH-KM-US-FBA-BFI4', US_CENTRAL: '
 function DEMO4A_sourceEvidence_(w, branch) {
   return { ok: true, selection_branch: branch, warehouse_id: DEMO4A_whId_(w), warehouse_code: DEMO4A_whCode_(w), warehouse_name: DEMO4A_whName_(w),
     company: DEMO4A_whCompany_(w), country: DEMO4A_whCountry_(w), warehouse_type: DEMO4A_whType_(w), is_factory_warehouse: DEMO4A_whIsFactory_(w),
-    is_shipping_enabled_present: DEMO4A_whShippingEnabledPresent_(w),
+    // V3G5C - published so an operator sees the corrected semantic without reading source: the Demo source rule applies
+    // NO is_shipping_enabled gate (that flag is the managed-overseas outbound capability, never a factory authority).
+    shipping_enabled_gate_applied: DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_,
     // truthful marking: master identity is proven in BOTH branches (an exact warehouses row was matched), but only the
     // template's OWN declared authority is source-proven. A fallback is NEVER called source-proven.
     master_identity_proven: true, demo_fallback: branch === 'DEMO_DETERMINISTIC_FACTORY_FALLBACK', source_proven: branch === 'TEMPLATE_EXACT_SOURCE_WAREHOUSE' };
+}
+// V3G5C(H) - the compact, capped source-authority evidence published by BOTH read-only entrypoints. Pure: it only
+// folds what the resolver already returned per slot. `shipping_enabled_gate_applied` is published as an explicit FALSE
+// so an operator can confirm the corrected semantic from the log alone.
+var DEMO4A_SOURCE_MAX_REJECTION_CODES_ = 5;
+function DEMO4A_sourceAuthoritySummary_(sourceAuthority) {
+  var slots = Object.keys(sourceAuthority || {}), counts = {}, cand = 0, branches = [], anyFallback = false;
+  slots.forEach(function (k) {
+    var r = (sourceAuthority || {})[k] || {};
+    cand = Math.max(cand, DEMO4A_num_(r.candidate_count) || 0);
+    if (r.selection_branch) branches.push(DEMO4A_str_(r.selection_branch));
+    if (r.demo_fallback === true) anyFallback = true;
+    Object.keys(r.rejection_counts || {}).forEach(function (c) { counts[c] = Math.max(counts[c] || 0, DEMO4A_num_(r.rejection_counts[c]) || 0); });
+  });
+  var capped = {}; Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, DEMO4A_SOURCE_MAX_REJECTION_CODES_).forEach(function (c) { capped[c] = counts[c]; });
+  return { source_factory_candidate_count: cand, source_factory_rejection_counts: capped, source_factory_rejection_code_count: Object.keys(counts).length,
+    source_selection_branches: branches.slice(0, 3), source_demo_fallback_used: anyFallback,
+    source_shipping_enabled_gate_applied: DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_ };
 }
 function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
   var tpl = template || {}, declared = DEMO4A_str_(tpl.origin_warehouse_id), originCountry = DEMO4A_str_(tpl.origin_country);
@@ -866,25 +888,39 @@ function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
     // a NON-BLANK declared id that is missing or conflicting fails CLOSED - it never silently falls through.
     if (!w) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_NOT_IN_MASTER', declared_warehouse_id: declared };
     if (!DEMO4A_whActive_(w)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_INACTIVE', declared_warehouse_id: declared };
-    if (!DEMO4A_whShippingEnabled_(w)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_SHIPPING_DISABLED', declared_warehouse_id: declared };
+    // V3G5C(B) - NO shipping-capability gate, NO coordinate requirement, NO logistics_location join requirement, and NO
+    // is_factory_warehouse requirement: the canonical shipment origin (`shipments.origin_warehouse_id`) may legitimately
+    // be EITHER a factory (SHIPMENT_CENTER_SPEC B-1 factory_stock path) OR a managed overseas warehouse (Overseas
+    // Outbound path), so production does NOT prove that a declared template source must always be a factory.
     if (originCountry && DEMO4A_whCountry_(w) && DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COUNTRY_MISMATCH', declared_warehouse_id: declared };
     if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH', declared_warehouse_id: declared };
     return DEMO4A_sourceEvidence_(w, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE');
   }
   // (2) Demo-only deterministic factory fallback. A blank template origin_country cannot be matched exactly -> fail closed.
   if (!originCountry) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'TEMPLATE_ORIGIN_COUNTRY_BLANK', declared_warehouse_id: '' };
+  // V3G5C(B) - the eligibility conjunction is EXACTLY production's canonical factory rule (is_active AND
+  // is_factory_warehouse - 03_master_data_handlers.gs / 13_procurement_handlers.gs / 43_api_v1_gap_materialization.gs)
+  // plus the Demo scope (exact origin country, exact company when populated). is_shipping_enabled is NOT consulted: it
+  // is the managed-OVERSEAS outbound capability that production never evaluates for a factory (see the deleted
+  // accessors above). Coordinates and logistics_location rows are NOT consulted either - business source identity is
+  // separate from geographic route identity. Every rejection is COUNTED by typed reason so a live empty candidate set
+  // names its exact cause instead of failing anonymously.
+  var rejections = {};
+  function rej(code) { rejections[code] = (rejections[code] || 0) + 1; return false; }
   var cands = rows.filter(function (w) {
-    if (!DEMO4A_whId_(w)) return false;
-    if (!DEMO4A_whIsFactory_(w)) return false;                                        // is_factory_warehouse = true
-    if (!DEMO4A_whActive_(w)) return false;                                           // active
-    if (!DEMO4A_whShippingEnabled_(w)) return false;                                  // shipping enabled WHEN PRESENT
-    if (DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return false;   // EXACT origin country
-    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return false;   // exact company when populated
+    if (!DEMO4A_whId_(w)) return rej('WAREHOUSE_ID_BLANK');
+    if (!DEMO4A_whIsFactory_(w)) return rej('NOT_A_FACTORY_WAREHOUSE');                                   // is_factory_warehouse = true
+    if (!DEMO4A_whActive_(w)) return rej('INACTIVE');                                                     // is_active
+    if (DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return rej('COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY');   // EXACT origin country
+    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return rej('COMPANY_MISMATCH');   // exact company when populated
     return true;
   }).sort(function (a, b) { var ia = DEMO4A_low_(DEMO4A_whId_(a)), ib = DEMO4A_low_(DEMO4A_whId_(b)); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
-  if (!cands.length) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'NO_ACTIVE_FACTORY_WAREHOUSE_IN_ORIGIN_COUNTRY:' + originCountry, declared_warehouse_id: '' };
+  if (!cands.length) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'NO_ACTIVE_FACTORY_WAREHOUSE_IN_ORIGIN_COUNTRY:' + originCountry,
+    declared_warehouse_id: '', candidate_count: 0, rejection_counts: rejections, evaluated_row_count: rows.length };
   var ev = DEMO4A_sourceEvidence_(cands[0], 'DEMO_DETERMINISTIC_FACTORY_FALLBACK');
   ev.candidate_count = cands.length;
+  ev.rejection_counts = rejections;
+  ev.evaluated_row_count = rows.length;
   return ev;
 }
 function DEMO4A_srcDestLineageGate_(plan, warehouses) {
@@ -1040,6 +1076,7 @@ function DEMO4A_buildPlan_(masters) {
       if (!sres.ok) sourceErrors.push({ slot: life.slot, reason: DEMO4A_str_(sres.reason), detail: DEMO4A_str_(sres.detail || ''), declared_warehouse_id: DEMO4A_str_(sres.declared_warehouse_id || '') });
     });
     if (sourceErrors.length) return { ok: false, reason: 'DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY', source_authority_errors: sourceErrors, source_authority: sourceAuthority,
+      source_authority_summary: DEMO4A_sourceAuthoritySummary_(sourceAuthority),
       destination_authority: destAuthority, warehouses_present: warehousesPresent, coord_authority_armed: coordAuthorityArmed };
   }
 
@@ -1224,6 +1261,7 @@ function DEMO4A_buildPlan_(masters) {
     // V3G4(F) — warehouse-aware evaluation facts, so PREFLIGHT can confirm WHICH destination rule qualified the templates.
     warehouse_aware_template_evaluation: sel.warehouse_aware_template_evaluation === true, qualified_count: sel.qualified_count, current_capable_count: sel.current_capable_count, destination_authority_errors: sel.destination_authority_errors || [],
     warehouses_present: warehousesPresent, destination_authority: destAuthority, source_authority: sourceAuthority,
+    source_authority_summary: DEMO4A_sourceAuthoritySummary_(sourceAuthority),
     binding_manifest: bindingManifest.slice(), route_event_map: eventMap };
 }
 function DEMO4A_overviewVisible_(s) { return { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 }[DEMO4A_low_(s)] === 1; }
@@ -1819,12 +1857,23 @@ function DEMO4A_whName_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_name'
 // V3G5B(A) — is_factory_warehouse is the SAME canonical factory-eligibility flag production uses (03_master_data_handlers
 // eligibility = is_active AND is_factory_warehouse). Read-only: this tool never writes or redefines it.
 function DEMO4A_whIsFactory_(w) { var v = DEMO4A_get_(w, ['is_factory_warehouse']); if (DEMO4A_str_(v) === '') return false; var t = DEMO4A_low_(v); return t === 'true' || t === 'yes' || t === '1' || t === 'y' || v === true || v === 1; }
-// is_shipping_enabled — PRESENT means a non-blank cell (the SAME convention as is_receiving_enabled below). A blank cell
-// is "not declared" and never blocks; an explicit false blocks. AUDIT NOTE (production, unmodified): is_shipping_enabled
-// is the managed-OVERSEAS outbound capability and production excludes factory warehouses from that check entirely, so
-// requiring it here is STRICTER than production - deliberately fail-closed, never looser.
-function DEMO4A_whShippingEnabledPresent_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['is_shipping_enabled', 'shipping_enabled'])) !== ''; }
-function DEMO4A_whShippingEnabled_(w) { var v = DEMO4A_get_(w, ['is_shipping_enabled', 'shipping_enabled']); if (DEMO4A_str_(v) === '') return true; var t = DEMO4A_low_(v); return !(t === 'false' || t === 'no' || t === '0' || t === 'n' || v === false || v === 0); }
+// V3G5C(A) - THE is_shipping_enabled ACCESSORS ARE DELETED ON PURPOSE. V3G5B gated the Demo SOURCE warehouse on that
+// flag "when present". The production sources prove that is WRONG for a factory:
+//   SYSTEM_RUNTIME_ARCHITECTURE.md "Warehouse Master capability checks": an endpoint qualifies as a managed overseas
+//     warehouse only when it is active, `is_factory_warehouse` is NOT TRUE, and the relevant capability is enabled
+//     (`is_receiving_enabled` inbound / `is_shipping_enabled` outbound).
+//   WAREHOUSE_OPERATIONS_SPEC.md "Managed-overseas detection": the same conjunction, `is_factory_warehouse` NOT TRUE.
+//   OVERSEAS_OUTBOUND_SPEC.md: outbound links a Formal Shipment whose origin resolves to "an active, NON-FACTORY
+//     `warehouses` record with `is_shipping_enabled = TRUE`".
+//   DATABASE_RELATIONSHIP_MAP.md: "Factory warehouses (`is_factory_warehouse = TRUE`) never create an overseas operation."
+// So is_shipping_enabled is the managed-OVERSEAS outbound capability and is STRUCTURALLY never evaluated for a factory;
+// it is NOT a general "may be used as a shipment source" authority. A factory-origin shipment is instead a first-class
+// supported path: SHIPMENT_CENTER_SPEC.md B-1 keys reservation on `shipments.origin_warehouse_id` with
+// `warehouses.is_factory_warehouse = TRUE` and carries NO shipping-capability gate at all. A factory warehouse must
+// therefore NEVER be rejected merely because is_shipping_enabled is false or blank. The accessors are REMOVED rather
+// than left unused so that no executable path can consult the flag (asserted by a source-fact test). No production
+// handler, master column or master data is changed by this correction - only this Demo tool's own eligibility rule.
+var DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_ = false;
 function DEMO4A_whReceivingEnabled_(w) { var v = DEMO4A_get_(w, ['is_receiving_enabled', 'receiving_enabled']); if (DEMO4A_str_(v) === '') return true; var s = DEMO4A_low_(v); return !(s === 'false' || s === 'no' || s === '0' || s === 'n' || v === false || v === 0); }
 // V3G1(A) — warehouse ADDRESS accessors. The LIVE `warehouses` diagnostic reports address_line1/address_line2/city/state/
 // subdivision_code/postal_code/country as the runtime authority. Live headers WIN: when an address_line1/address_line_1
@@ -2465,6 +2514,10 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     out.rejection_counts = rc;
     out.reason_codes = Object.keys(rc).slice(0, DEMO4A_AUTH_MAX_REASON_CODES_);
     out.gate_summary = { all_pass: false };
+    var sasF = plan.source_authority_summary || DEMO4A_sourceAuthoritySummary_(null);
+    out.source_factory_candidate_count = sasF.source_factory_candidate_count;
+    out.source_factory_rejection_counts = sasF.source_factory_rejection_counts;
+    out.source_shipping_enabled_gate_applied = sasF.source_shipping_enabled_gate_applied;
     out.existing_state = { classification: '', duplicate_pk_count_total: 0, unexpected_demo_id_count: 0 };
     out.demo_plan_checksum = '';
     out.preflight_verdict = DEMO4A_preflightFailureReason_(plan, out.schema_ok).verdict;
@@ -2530,6 +2583,10 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     source_selection_branches: (sdl.source_selection_branches || []).slice(0, 3),
     destination_warehouse_ids: (sdl.destination_warehouse_ids || []).slice(0, 3), destination_warehouse_codes: (sdl.destination_warehouse_codes || []).slice(0, 3),
     reasons: (sdl.reasons || []).slice(0, DEMO4A_AUTH_MAX_REASON_CODES_), reason_count: DEMO4A_num_(sdl.reason_count) || 0 };
+  var sas = plan.source_authority_summary || DEMO4A_sourceAuthoritySummary_(null);
+  out.source_factory_candidate_count = sas.source_factory_candidate_count;
+  out.source_factory_rejection_counts = sas.source_factory_rejection_counts;
+  out.source_shipping_enabled_gate_applied = sas.source_shipping_enabled_gate_applied;
   out.preflight_verdict = DEMO4A_preflightVerdict_(out.schema_ok, plan, wg, cls.classification);
   out.preflight_reason = out.preflight_verdict === 'READY_FOR_DEMO_SEED' ? '' : DEMO4A_str_(plan.reason);
   // the DRY_RUN core verdict for exactly this plan (DRY_RUN emits DRY_RUN_READY whenever the same plan builds).
@@ -2694,6 +2751,11 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
   out.source_warehouse_ids = (lg.source_warehouse_ids || []).slice(0, 3);
   out.source_warehouse_codes = (lg.source_warehouse_codes || []).slice(0, 3);
   out.source_selection_branches = (lg.source_selection_branches || []).slice(0, 3);
+  // V3G5C(H) - the corrected source-eligibility evidence, so an empty live candidate set names its exact typed cause.
+  var sas = (plan || {}).source_authority_summary || DEMO4A_sourceAuthoritySummary_(null);
+  out.source_factory_candidate_count = sas.source_factory_candidate_count;
+  out.source_factory_rejection_counts = sas.source_factory_rejection_counts;
+  out.source_shipping_enabled_gate_applied = sas.source_shipping_enabled_gate_applied;
   out.destination_warehouse_ids = (lg.destination_warehouse_ids || []).slice(0, 3);
   out.destination_warehouse_codes = (lg.destination_warehouse_codes || []).slice(0, 3);
   // V3G5A(K) — prior-attempt journal safety. The prior journal is NEVER cleared or mutated here; it is only read.
