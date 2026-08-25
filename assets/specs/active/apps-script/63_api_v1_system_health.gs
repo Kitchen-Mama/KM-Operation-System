@@ -29,6 +29,19 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'shipment.workspace.get', handler: 'handleShipmentWorkspaceGet_', used_by: 'Shipment Draft / Overview / Map' },
   { action: 'purchaseOrder.workspace.get', handler: 'handlePurchaseOrderWorkspaceGet_', used_by: 'Purchase Order Workspace' },
   { action: 'inventoryReplenishment.workspace.get', handler: 'handleInventoryReplenishmentWorkspaceGet_', used_by: 'Site Inventory' },
+  // F1-7N-FB-3 §C/§G — the slim scope registry is now what Site Inventory's selectors depend on at mount, so a
+  // partial sync that omits 64_ must be visible here rather than looking like a slow page.
+  { action: 'inventoryScope.registry.get', handler: 'handleInventoryScopeRegistryGet_', used_by: 'Site Inventory scope selectors' },
+  { action: 'system.shippingAllocationSchemaDiagnostic', handler: 'handleShippingAllocationSchemaDiagnostic_', used_by: 'Execution Plan schema diagnostic' },
+  { action: 'system.requestOrderSendDiagnostic', handler: 'handleRequestOrderSendDiagnostic_', used_by: 'Send Request diagnostic' },
+  { action: 'system.twoVerticalFlowsDiagnostic', handler: 'handleTwoVerticalFlowsDiagnostic_', used_by: 'Two-vertical flow diagnostic' },
+  // Vertical B — Procurement. Send Request writes through these three, then the PO vertical continues.
+  { action: 'upsertRequestOrderAllocationDraft', handler: 'handleUpsertRequestOrderAllocationDraft_', used_by: 'Send Request (allocation draft)' },
+  { action: 'upsertRequestOrderAllocationDraftLines', handler: 'handleUpsertRequestOrderAllocationDraftLines_', used_by: 'Send Request (allocation lines)' },
+  { action: 'submitRequestOrderAllocationDrafts', handler: 'handleSubmitRequestOrderAllocationDrafts_', used_by: 'Send Request (lifecycle advance)' },
+  { action: 'createRequestOrderDraft', handler: 'handleCreateRequestOrderDraft_', used_by: 'Send Request (Request Order)' },
+  { action: 'createPurchaseOrderFromRequest', handler: 'handleCreatePurchaseOrderFromRequest_', used_by: 'Request Order -> PO Draft' },
+  { action: 'requestOrder.workspace.get', handler: 'handleRequestOrderWorkspaceGet_', used_by: 'Request Order Workspace' },
   // F1-7N-FB-2A §G — the Execution Plan write/read set. These are the actions the Site Inventory route save
   // depends on, and a partial sync of 16_ is indistinguishable from a transport fault without probing them.
   { action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
@@ -262,6 +275,25 @@ function TEMP_SUBMIT_FLOW_DIAGNOSE() {
 // ============================================================================================================
 
 // Editor-run inputs. Leave a PASTE_ placeholder to skip that part of the evaluation.
+//
+// F1-7N-FB-3 §E — you NEVER need to invent a field name here. The objects below are PREFILLED with the exact
+// canonical keys the writer accepts; you only replace VALUES. The editable value fields are exactly these, and
+// nothing else in this file should be edited:
+//   TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_  — an existing allocation_draft_id, or leave blank
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.company                                  (e.g. 'KM')
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.country                                  (e.g. 'US')
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.marketplace                              (e.g. 'Amazon')
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_source_warehouse_id          the From warehouse_id
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_destination_warehouse_id     the To warehouse_id, OR leave blank and set
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.destination_marketplace                  …this instead for an Amazon logical To
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_shipping_method              the Method
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_last_mile_delivery           optional
+//   TEMP_SAD_DIAGNOSTIC_HEADER_.planning_cycle                           optional
+//   TEMP_SAD_DIAGNOSTIC_LINE_.sku / .planned_qty / .required_by_date     one representative line
+// Do NOT add, rename or remove keys — the key set IS the writer's contract.
+//
+// If you only need to know whether the TABLE/HEADER contract itself would refuse the write, run the
+// ZERO-CONFIGURATION diagnostic instead: TEMP_SHIPPING_ALLOCATION_SCHEMA_DIAGNOSE (65_) needs no input at all.
 var TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_ = 'PASTE_ALLOCATION_DRAFT_ID_HERE_OR_LEAVE_BLANK';
 // The header payload to evaluate — exactly the shape buildDraftHeaderPayload sends. Fill in the scope + route
 // you are trying to save; blanks are reported as missing rather than guessed.

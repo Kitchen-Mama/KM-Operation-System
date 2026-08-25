@@ -32,8 +32,14 @@ global.window = { KM: { DB: {} } };
 global.fetch = function (url, init) { return _fetchImpl(url, init); };
 eval(DBSRC.match(/var KM_ALREADY_IN_TARGET_PATTERNS = \[[\s\S]*?\];/)[0]);
 eval(DBSRC.match(/var KM_CANONICAL_CODES = \[[\s\S]*?\];/)[0]);   // C2-D2A-UI: canonical code extraction dependency
-// _kmWeeklyCommand_ is declared `async function` — extractFn drops the leading `async`, so re-add it.
-eval(['_kmClassifyBusinessError_', '_kmExtractCanonicalCode_', '_kmZeroWriteProven_', '_kmCmdOk_', '_kmCmdErr_'].map(function (n) { return extractFn(DBSRC, n); }).join('\n')
+// F1-7N-FB-3 §D — the command runner is now BOUNDED: it fetches through _kmFetchBounded_ and classifies an
+// expiry via _kmTimeoutError_/_kmTimeoutMs_. Those are dependencies of the function under test, so they join
+// the extraction set. Both _kmWeeklyCommand_ and _kmFetchBounded_ are declared `async function` — extractFn
+// drops the leading `async`, so it is re-added.
+var KM_READ_TIMEOUT_MS_ = 45000, KM_WRITE_TIMEOUT_MS_ = 90000;
+eval(['_kmClassifyBusinessError_', '_kmExtractCanonicalCode_', '_kmZeroWriteProven_', '_kmTimeoutMs_',
+  '_kmTimeoutError_', '_kmCmdOk_', '_kmCmdErr_'].map(function (n) { return extractFn(DBSRC, n); }).join('\n')
+  + '\nasync ' + extractFn(DBSRC, '_kmFetchBounded_')
   + '\nasync ' + extractFn(DBSRC, '_kmWeeklyCommand_'));
 
 function resp(okFlag, status, bodyText) { return { ok: okFlag, status: status, text: function () { return Promise.resolve(bodyText); } }; }

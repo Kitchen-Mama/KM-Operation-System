@@ -4321,10 +4321,141 @@ var _irReadModel = null;   // workspace-sourced { getX: [...] } keyed by getter 
 var _irReadSeq = 0;
 
 // Read-model-first table access: Workspace mode → scoped DTO array; Legacy → the broad-cache getter unchanged.
+// F1-7N-FB-3 §C — the SLIM SCOPE REGISTRY sits between them for the scope slice only: before a Search there is
+// no inventory read model, but the selectors (and _replenSelectedScope, which resolves company/country/
+// marketplace from a marketplace_id) still need `getMarketplaces`. The registry supplies exactly that slice and
+// nothing else, so scope resolution works pre-Search without any inventory read.
 function _irWsGet(name) {
     if (_irReadModel) return _irReadModel[name] || [];
+    if (name === 'getMarketplaces' && typeof _irRegistry !== 'undefined' && _irRegistry && _irRegistry.model) return _irRegistry.model.getMarketplaces || [];
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];
 }
+// ============================================================================
+// F1-7N-FB-3 §C — SLIM SCOPE REGISTRY: selector loading is now SEPARATE from inventory loading.
+// ----------------------------------------------------------------------------
+// THE B1 DEFECT this closes. FB-2A deferred the selector population to first selector interaction, but it
+// still populated them by calling _irWorkspaceRefresh_() — the FULL 20-table inventoryReplenishment read. That
+// function is also the owner of the inventory table's load region (_irRegion_().beginLoad()), whose renderer
+// writes "Loading Inventory Replenishment…" into #replenScrollBody. So touching a dropdown put the INVENTORY
+// TABLE into LOADING while Country and Marketplace were still unselected — a direct PRE_SEARCH violation — and
+// it cost a whole-workspace read to draw two dropdowns (the B2 slowness).
+//
+// The two concerns are now genuinely independent:
+//   • the SELECTORS are fed by inventoryScope.registry.get — ONE table, a six-column bounded projection, no
+//     inventory row of any kind. It has its own status, its own error surface and its own Retry, rendered NEXT
+//     TO THE SELECTORS, and it NEVER touches the table's load region.
+//   • the TABLE is fed by inventoryReplenishment.workspace.get, and ONLY by a confirmed Search.
+// A registry failure therefore cannot blank or "load" the table, and an inventory failure cannot disable the
+// selectors.
+var _irRegistry = { status: 'IDLE', model: null, error: null, seq: 0 };   // IDLE|LOADING|READY|EMPTY|ERROR
+var _irRegistryPending = null;                                            // the single in-flight promise
+// The registry DTO shaped exactly like the read-model slice the page already consumes, so every existing
+// consumer (refreshReplenCountryOptions / refreshReplenMarketplaceOptions / _replenSelectedScope) works
+// unchanged against either source. No second adapter, no second field vocabulary.
+function _irAdaptScopeRegistry_(data) {
+    var rows = (data && data.marketplaces) || [];
+    return {
+        getMarketplaces: rows.map(function (m) {
+            return {
+                marketplaceId: String(m.marketplace_id == null ? '' : m.marketplace_id),
+                company: String(m.company == null ? '' : m.company),
+                country: String(m.country == null ? '' : m.country),
+                marketplace: String(m.marketplace == null ? '' : m.marketplace),
+                marketplaceDisplayName: String(m.marketplace_display_name == null ? '' : m.marketplace_display_name),
+                status: 'active'                                  // the registry emits ELIGIBLE scopes only
+            };
+        }),
+        countries: (data && data.countries) || [],
+        marketplaceIdsByCountry: (data && data.marketplace_ids_by_country) || {},
+        empty: !!(data && data.empty),
+        emptyReason: (data && data.empty_reason) || ''
+    };
+}
+// The selector-scoped host: created next to the filter row, never inside the table.
+function _irRegistryHost_() {
+    if (typeof document === 'undefined' || !document.getElementById) return null;
+    var el = document.getElementById('replenScopeRegistryState');
+    if (el) return el;
+    var anchor = document.getElementById('replenLTSFilter') || document.getElementById('replenMarketplace') || document.getElementById('replenCountry');
+    var row = anchor && anchor.closest ? anchor.closest('.replen-filters') : null;
+    var host = row || (anchor && anchor.parentNode);
+    if (!host) return null;
+    el = document.createElement('div');
+    el.id = 'replenScopeRegistryState';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.display = 'none';
+    el.style.flexBasis = '100%';
+    host.appendChild(el);
+    return el;
+}
+function _irRenderRegistryState_() {
+    var el = _irRegistryHost_(); if (!el) return;
+    var s = _irRegistry.status;
+    if (s === 'READY' || s === 'IDLE') { el.style.display = 'none'; el.innerHTML = ''; return; }
+    var html = '';
+    if (s === 'LOADING') {
+        html = '<span class="replen-scope-loading" style="color:#64748B;font-size:12px;">Loading Country / Marketplace options…</span>';
+    } else if (s === 'EMPTY') {
+        html = '<span class="replen-scope-empty" style="color:#92400E;font-size:12px;">No active marketplace scopes are configured, so there is nothing to search yet.</span>';
+    } else {
+        var e = _irRegistry.error || {};
+        html = '<span class="replen-scope-error" role="alert" style="color:#B91C1C;font-size:12px;">' +
+            'Could not load the Country / Marketplace options. ' + _irEsc_(e.message || '') +
+            ' <code>' + _irEsc_(e.code || 'SCOPE_REGISTRY_READ_FAILED') + '</code>' +
+            ' <button type="button" class="replen-scope-retry" onclick="_irReloadScopeRegistry_()" ' +
+            'style="margin-left:6px;padding:2px 8px;border:1px solid #EF4444;background:#fff;color:#B91C1C;border-radius:3px;cursor:pointer;font-size:11px;">Retry</button>' +
+            '</span>';
+    }
+    el.innerHTML = html;
+    el.style.display = '';
+}
+// Load the registry ONCE per mount. Single-flight, sequence-guarded, and terminal on EVERY path — success,
+// empty, error and timeout all leave a state the user can act on. It NEVER touches the table's load region.
+function _irEnsureRegistryLoaded_(opts) {
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) return Promise.resolve(null);   // Demo owns its static options
+    var force = !!(opts && opts.force);
+    if (!force && _irRegistry.status === 'READY' && _irRegistry.model) return Promise.resolve(_irRegistry.model);
+    if (_irRegistryPending) return _irRegistryPending;                                          // single-flight
+    var db = window.KM && window.KM.DB;
+    if (!(db && typeof db.getInventoryScopeRegistry === 'function')) {
+        _irRegistry.status = 'ERROR';
+        _irRegistry.error = { code: 'SCOPE_REGISTRY_ACTION_UNAVAILABLE', message: 'The scope registry action is not available to this page.' };
+        _irRenderRegistryState_();
+        return Promise.resolve(null);
+    }
+    var mySeq = ++_irRegistry.seq;
+    _irRegistry.status = 'LOADING'; _irRegistry.error = null;
+    _irRenderRegistryState_();
+    _irRegistryPending = Promise.resolve(db.getInventoryScopeRegistry()).then(function (res) {
+        _irRegistryPending = null;
+        if (mySeq !== _irRegistry.seq) return _irRegistry.model;      // superseded by a newer load
+        if (!res || res.success === false) {
+            _irRegistry.status = 'ERROR';
+            _irRegistry.error = (res && res.error) || { code: 'SCOPE_REGISTRY_READ_FAILED', message: 'The scope registry could not be read.' };
+            _irRenderRegistryState_();
+            return null;
+        }
+        _irRegistry.model = _irAdaptScopeRegistry_(res.data);
+        _irRegistry.status = _irRegistry.model.empty ? 'EMPTY' : 'READY';
+        _irRenderRegistryState_();
+        if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+        return _irRegistry.model;
+    })['catch'](function (err) {
+        _irRegistryPending = null;
+        if (mySeq !== _irRegistry.seq) return null;
+        _irRegistry.status = 'ERROR';
+        _irRegistry.error = { code: (err && err.code) || 'SCOPE_REGISTRY_READ_FAILED', message: (err && err.message) || 'The scope registry could not be read.' };
+        _irRenderRegistryState_();
+        return null;   // TERMINAL — never a hanging promise, so no caller can be left latched
+    });
+    return _irRegistryPending;
+}
+function _irReloadScopeRegistry_() { return _irEnsureRegistryLoaded_({ force: true }); }
+window._irEnsureRegistryLoaded_ = _irEnsureRegistryLoaded_;
+window._irReloadScopeRegistry_ = _irReloadScopeRegistry_;
+window._irRegistryState_ = function () { return _irRegistry; };
+
 
 // ============================================================================
 // F1-7N-FB-2A §B — EXPLICIT SEARCH GATE (frozen UX contract).
@@ -4435,42 +4566,12 @@ function _irRenderSearchGate_() {
     if (typeof renderReplenCategoryTabs === 'function') { try { renderReplenCategoryTabs([]); } catch (e2) {} }
     _irRenderStaleNotice_();
 }
-// The registry that fills the Country / Marketplace options lives in the SAME workspace payload as the
-// inventory rows, so the selectors cannot be populated without one read. It is therefore LAZY: it happens on
-// first interaction with either selector, NOT on mount — so opening the page performs no inventory workspace
-// request at all — and it is single-flight, so repeated focus never stacks requests.
-var _irRegistryStatus = 'IDLE';   // IDLE | LOADING | LOADED | ERROR
-var _irRegistryPending = null;
-function _irEnsureRegistryLoaded_() {
-    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) return Promise.resolve(null);
-    if (!_irEffectiveWorkspace()) return Promise.resolve(null);     // Legacy mode keeps its own load path
-    if (_irRegistryStatus === 'LOADED' && _irReadModel) return Promise.resolve(_irReadModel);
-    if (_irRegistryPending) return _irRegistryPending;               // single-flight
-    _irRegistryStatus = 'LOADING';
-    _irRegistryPending = _irWorkspaceRefresh_().then(function (m) {
-        _irRegistryStatus = 'LOADED'; _irRegistryPending = null;
-        if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
-        return m;
-    })['catch'](function (err) {
-        _irRegistryStatus = 'ERROR'; _irRegistryPending = null;
-        throw err;
-    });
-    return _irRegistryPending;
-}
-// Bound once to focus/mousedown on both selectors. Idempotent.
-var _irRegistryBound = false;
-function _irBindRegistryLazyLoad_() {
-    if (_irRegistryBound || typeof document === 'undefined') return;
-    var ids = ['replenCountry', 'replenMarketplace'];
-    var arm = function () { _irEnsureRegistryLoaded_()['catch'](function () {}); };
-    for (var i = 0; i < ids.length; i++) {
-        var el = document.getElementById(ids[i]);
-        if (!el || !el.addEventListener) continue;
-        el.addEventListener('focus', arm);
-        el.addEventListener('mousedown', arm);
-    }
-    _irRegistryBound = true;
-}
+// F1-7N-FB-3 §C — the FB-2A workspace-backed selector loader that lived here has been REMOVED. It populated
+// the selectors by calling _irWorkspaceRefresh_(), which owns the inventory table's load region, so opening a
+// dropdown printed "Loading Inventory Replenishment…" into the table while nothing was selected (defect B1) and
+// cost a 20-table read to draw two dropdowns (defect B2). Selector population now has exactly ONE authority:
+// the slim scope registry declared above (inventoryScope.registry.get). Keeping both would have been worse than
+// either — they shared the function name, and this one, being later in the file, would have won by hoisting.
 window._irSearchState_ = _irSearchState_;
 window._irRenderScope_ = _irRenderScope_;
 window._irMarkSearchStale_ = _irMarkSearchStale_;
@@ -4606,7 +4707,9 @@ function searchReplenishment() {
         if (_irReadModel) { _irApplySearch_(pending, mySeq); return; }
         _irSearch.inFlight = true; _irSearch.status = 'LOADING'; _irSearch.error = null;
         _irRenderSearchGate_();
-        _irEnsureRegistryLoaded_().then(function () {
+        // F1-7N-FB-3 §C — Search is the ONLY thing that reads the inventory workspace. (FB-2A routed this
+        // through the registry loader, which is what coupled selector loading to the table's load state.)
+        _irWorkspaceRefresh_().then(function () {
             _irSearch.inFlight = false;
             if (mySeq !== _irSearch.seq) return;   // a newer Search superseded this response
             _irApplySearch_(pending, mySeq);
@@ -7247,9 +7350,11 @@ if (window.KM && window.KM.lifecycle) {
                 // AFTER the scoped read-model is fetched, so the filter dropdowns + primary render need NO broad Operation DB.
                 var _irMountAfterLoad = function () {
                     if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
-                    // F1-7N-FB-2A §B — arm the LAZY registry load on first selector interaction. The mount does
-                    // NOT read: opening Site Inventory issues no inventoryReplenishment workspace request at all.
-                    if (typeof _irBindRegistryLazyLoad_ === 'function') _irBindRegistryLazyLoad_();
+                    // F1-7N-FB-3 §C — the mount requests ONLY the slim scope registry (one table, six columns)
+                    // so the selectors are usable immediately. It issues ZERO inventoryReplenishment workspace
+                    // reads and never puts the inventory table into a loading state — the table stays PRE_SEARCH.
+                    // Its own loading/empty/error state renders beside the selectors, with its own Retry.
+                    if (typeof _irEnsureRegistryLoaded_ === 'function') { try { _irEnsureRegistryLoaded_(); } catch (e) {} }
                     // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
                     // calculation month / planning cycle). Populates options + restores explicit session
                     // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
@@ -7270,9 +7375,9 @@ if (window.KM && window.KM.lifecycle) {
                 // F1-7N-FB-2A §B — THE mount fix. Previously this branch ran _irWorkspaceRefresh_() and then
                 // _irMountAfterLoad -> renderReplenishment(), i.e. a full inventory workspace read AND a rendered
                 // table on page open, for whatever Country/Marketplace the selectors defaulted to. The mount now
-                // performs NO business read: it wires the page and shows the pre-search state. The registry read
-                // that fills the selectors is deferred to first selector interaction (_irBindRegistryLazyLoad_),
-                // and every data read belongs to Search. The carrier-catalog preload moved to _irApplySearch_ for
+                // performs NO INVENTORY read: it wires the page, shows the pre-search state, and requests only
+                // the slim scope registry (one table, six columns) so the selectors are usable immediately.
+                // Every INVENTORY read belongs to Search. The carrier-catalog preload moved to _irApplySearch_ for
                 // the same reason (it is only reachable from an expanded row, which requires a Search).
                 _irMountAfterLoad();
             });

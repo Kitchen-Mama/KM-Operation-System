@@ -2829,6 +2829,9 @@ function _kmScopedPostureActive_() {
 }
 // The single post-write seam every direct writer now awaits instead of loadOperationDb({ force: true }).
 async function _kmWriterPostWrite_() {
+    // F1-7N-FB-3 §J — inside a declared write batch the (potentially whole-DB) reconcile is deferred to ONE
+    // call at the end of the batch. Outside a batch the behaviour is byte-identical to before.
+    if (_kmPostWriteDeferred_ > 0) { _kmPostWriteDirty_ = true; return; }
     if (!_kmScopedPostureActive_()) { await loadOperationDb({ force: true }); }
 }
 // Bounded targeted cache patch (§1 option C / §13-sanctioned; extended in F1-7L) — re-GET only the named tables
@@ -3406,6 +3409,87 @@ window.KM.DB.createShippingPlansBatch = async function(payload) {
     return json.data;
 };
 
+
+// ========================================================================================================
+// F1-7N-FB-3 §D — BOUNDED TRANSPORT. Nothing may load forever.
+// --------------------------------------------------------------------------------------------------------
+// Every business request in both verticals funnels through one of the two canonical runners below
+// (_kmGapRead_ for reads, _kmWeeklyCommand_ for commands) or through a direct writer. None of them had a
+// timeout: `fetch` against an Apps Script deployment that never answers simply never settles, so the caller's
+// await never returns, its latch is never released and the page stays in LOADING forever with no error. That
+// is the mechanism behind "waited a long time and produced no visible result" — the client had no upper bound.
+//
+// A timeout is a TRANSPORT verdict, never a business verdict: it says "no answer arrived", NOT "nothing was
+// written". A write that times out is therefore reported as INDETERMINATE and is NEVER auto-retried — only an
+// explicit user retry that reuses the SAME idempotency identity is safe, and the caller owns that decision.
+var KM_READ_TIMEOUT_MS_ = 45000;    // a bounded scoped read
+var KM_WRITE_TIMEOUT_MS_ = 90000;   // a locked DB write; Apps Script cold start + lock wait is legitimately slow
+function _kmTimeoutMs_(kind) {
+    try {
+        var o = (typeof window !== 'undefined' && window.KM_REQUEST_TIMEOUT_MS) || null;
+        if (o && typeof o === 'object' && o[kind] > 0) return Number(o[kind]);   // explicit operator override
+    } catch (e) {}
+    return kind === 'write' ? KM_WRITE_TIMEOUT_MS_ : KM_READ_TIMEOUT_MS_;
+}
+// fetch with an upper bound. Aborts the in-flight request (so the browser stops holding the socket) and throws
+// a typed error the runners classify. `AbortController` is assumed present in every supported browser; when it
+// is genuinely absent we still bound the WAIT via a rejecting race, so the caller is released either way.
+async function _kmFetchBounded_(url, init, kind) {
+    var ms = _kmTimeoutMs_(kind);
+    var timedOut = false;
+    var ctl = null;
+    try { ctl = (typeof AbortController === 'function') ? new AbortController() : null; } catch (e) { ctl = null; }
+    var timer = null;
+    var expiry = new Promise(function (_res, rej) {
+        timer = setTimeout(function () {
+            timedOut = true;
+            try { if (ctl) ctl.abort(); } catch (e2) {}
+            var err = new Error('The request exceeded the ' + Math.round(ms / 1000) + 's client time limit and was aborted.');
+            err.kmTimeout = true;
+            rej(err);
+        }, ms);
+    });
+    var opts = ctl ? Object.assign({}, init, { signal: ctl.signal }) : init;
+    try {
+        return await Promise.race([fetch(url, opts), expiry]);
+    } catch (err) {
+        if (timedOut || (err && err.kmTimeout)) { var t = new Error('REQUEST_TIMEOUT'); t.kmTimeout = true; t.timeoutMs = ms; throw t; }
+        throw err;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+// The typed transport result for an expired request. A read is retryable; a WRITE is INDETERMINATE — the
+// server may or may not have committed, so the client must never present it as either success or zero-write.
+function _kmTimeoutError_(action, kind, ms) {
+    return kind === 'write'
+        ? { code: 'REQUEST_TIMEOUT_WRITE_INDETERMINATE',
+            message: 'No answer arrived within ' + Math.round(ms / 1000) + 's. The write may or may not have been committed — verify before retrying.',
+            details: { command: action, zero_write: false, indeterminate: true, retryable: false, timeout_ms: ms } }
+        : { code: 'REQUEST_TIMEOUT',
+            message: 'No answer arrived within ' + Math.round(ms / 1000) + 's.',
+            details: { command: action, zero_write: true, retryable: true, timeout_ms: ms } };
+}
+// F1-7N-FB-3 §J — post-write reconcile suppression for a MULTI-WRITE batch.
+// _kmWriterPostWrite_ falls back to loadOperationDb({force:true}) — a WHOLE-DB read — whenever the scoped
+// posture cannot be confirmed. Send Request performs 2-3 writes PER SKU in a serial loop, so on any session
+// where a single workspace flag is rolled back (or the Foundation is momentarily absent) that loop performed
+// one whole-DB reload PER WRITE. A batch declares itself here and reconciles ONCE at the end instead.
+var _kmPostWriteDeferred_ = 0;
+var _kmPostWriteDirty_ = false;
+window.KM.DB.beginWriteBatch = function () { _kmPostWriteDeferred_++; };
+// Ends the batch and performs AT MOST ONE reconcile for everything written inside it.
+window.KM.DB.endWriteBatch = async function () {
+    if (_kmPostWriteDeferred_ > 0) _kmPostWriteDeferred_--;
+    if (_kmPostWriteDeferred_ === 0 && _kmPostWriteDirty_) {
+        _kmPostWriteDirty_ = false;
+        // DELEGATE to the ONE writer seam (now un-deferred) instead of repeating its reload. A batch defers the
+        // EXISTING reconcile; it must never become a second whole-DB reload path of its own.
+        await _kmWriterPostWrite_();
+    }
+};
+window.KM.DB.isWriteBatchOpen = function () { return _kmPostWriteDeferred_ > 0; };
+
 // ---- Weekly command reliability (Round C1) ----------------------------------------------------------
 // ONE canonical command runner for the Weekly mutations. It fixes WRITE_SUCCEEDED_BUT_ACK_FAILED by
 // DECOUPLING the acknowledgement from the readback: the command result is determined ONLY by the handler
@@ -3466,9 +3550,15 @@ async function _kmWeeklyCommand_(command, payload) {
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
     var resp;
     try {
-        resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(Object.assign({ action: command }, payload || {})) });
+        // F1-7N-FB-3 §D — bounded. An expired WRITE is INDETERMINATE, never "nothing was written": the server
+        // may have committed after we stopped listening, so it is reported as such and never auto-retried.
+        resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(Object.assign({ action: command }, payload || {})) }, 'write');
     } catch (netErr) {
+        if (netErr && netErr.kmTimeout) {
+            var te = _kmTimeoutError_(command, 'write', netErr.timeoutMs);
+            return _kmCmdErr_(command, te.code, te.message, te.details);
+        }
         // Network/redirect failure with NO acknowledged response → transport error (not an ack of a commit).
         return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr));
     }
@@ -3538,8 +3628,12 @@ async function _kmGapRead_(action, payload) {
     if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
     var resp;
-    try { resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }); }
-    catch (netErr) { return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } }; }
+    // F1-7N-FB-3 §D — bounded: an unanswered read can no longer hold its caller's latch forever.
+    try { resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }, 'read'); }
+    catch (netErr) {
+        if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
+        return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+    }
     var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
     if (!resp.ok) return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'API HTTP ' + resp.status } };
     var trimmed = String(text || '').trim();
@@ -3562,6 +3656,14 @@ window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPla
 // that exposes their EFFECTIVE values. This replaces three independently hardcoded frontend booleans with a single
 // read → single apply path (KM.api.applyClientCapabilities). READ-ONLY; never mutates the DB.
 window.KM.DB.getClientCapabilities = function() { return _kmGapRead_('getClientCapabilities', {}); };
+
+// F1-7N-FB-3 §C — SLIM SCOPE REGISTRY for the Site Inventory selectors (owner = 64_). ONE table, a six-column
+// bounded projection: countries + marketplaces (+ the country -> marketplace_id index that lets a Country
+// change re-scope the Marketplace selector with NO further request). It carries no inventory row, no sales
+// history, no forecast, no recommendation, no factory stock, no draft, no plan and no document — so it can be
+// requested at page mount WITHOUT touching the inventory workspace and WITHOUT putting the inventory table
+// into a loading state. Read-only, bounded by the shared client timeout, never throws.
+window.KM.DB.getInventoryScopeRegistry = function() { return _kmGapRead_('inventoryScope.registry.get', {}); };
 // Fetch the effective backend flags ONCE and apply them through the ONE KM.api apply path. On ANY transport/business
 // failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
 // generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.

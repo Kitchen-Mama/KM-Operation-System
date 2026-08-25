@@ -230,6 +230,9 @@ ok(/SYS_REQUIRED_ACTIONS_/.test(G63), '7. the required-action list exists — a 
 
 // every handler the health module claims to probe must actually exist exactly once
 var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, G39, G50, G57, G63,
+  read('specs/active/apps-script/15_request_allocation_handlers.gs'),
+  read('specs/active/apps-script/64_api_v1_scope_registry.gs'),
+  read('specs/active/apps-script/65_api_v1_flow_diagnostics.gs'),
   read('specs/active/apps-script/22_shipment_dispatch_handlers.gs'),
   read('specs/active/apps-script/34_shipment_final_output_handlers.gs'),
   read('specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'),

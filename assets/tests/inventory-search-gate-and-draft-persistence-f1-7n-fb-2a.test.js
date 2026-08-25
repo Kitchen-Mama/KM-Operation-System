@@ -163,10 +163,16 @@ var regFn = extractFn(INV, '_irEnsureRegistryLoaded_');
 ok(!/ltsFilter/.test(code(regFn)) && !/ltsFilter/.test(code(extractFn(INV, 'searchReplenishment'))),
   'C5. no read path sends the LTS value to the server');
 ok(/if \(_irRegistryPending\) return _irRegistryPending;/.test(regFn), 'C6. the registry load is single-flight');
-var bindFn = extractFn(INV, '_irBindRegistryLazyLoad_');
-ok(/addEventListener\('focus', arm\)/.test(bindFn) && /addEventListener\('mousedown', arm\)/.test(bindFn),
-  'C6. armed by first interaction with a selector, not by the mount');
-ok(/if \(_irRegistryBound \|\| typeof document === 'undefined'\) return;/.test(bindFn), 'C6. and bound only once');
+// F1-7N-FB-3 §C — selector population is now a SEPARATE slim action, so it can never load the inventory table.
+ok(/getInventoryScopeRegistry\(\)/.test(regFn), 'C6. the selectors are fed by the slim scope registry action');
+ok(!/_irWorkspaceRefresh_/.test(code(regFn)),
+  'C6. and NEVER by the inventory workspace read — which is what used to put the TABLE into loading (defect B1)');
+ok(!/_irRegion_|beginLoad/.test(code(regFn)),
+  'C6. it never touches the inventory table load region');
+ok(/_irRegistry\.status = 'ERROR'/.test(regFn) && /_irRegistry\.status = 'LOADING'/.test(regFn),
+  'C6. it owns its OWN status, independent of the table state');
+ok(!/_irBindRegistryLazyLoad_/.test(INV),
+  'C6. and the superseded lazy-bind loader is gone — one selector-population authority, not two');
 
 // =======================================================================================================
 section('D. production never keeps a failed business write as canonical local data');
@@ -480,7 +486,8 @@ eval(extractFn(INV, '_irRenderScope_'));
 eval(extractFn(INV, '_irSearchApplied_'));
 eval(extractFn(INV, '_irFiltersDiffer_'));
 eval(extractFn(INV, '_irMarkSearchStale_'));
-eval(extractFn(INV, '_irEnsureRegistryLoaded_'));
+// F1-7N-FB-3 §C — searchReplenishment now calls _irWorkspaceRefresh_ DIRECTLY (it no longer borrows the
+// selector-registry loader), so the stub below is the exact seam the shipped Search uses.
 eval(extractFn(INV, '_irApplySearch_'));
 eval(extractFn(INV, 'searchReplenishment'));
 

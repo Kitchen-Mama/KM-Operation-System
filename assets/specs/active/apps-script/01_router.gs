@@ -41,7 +41,16 @@ function doGet(e) {
       return handleSystemHealth_(e && e.parameter ? e.parameter : {});
     }
 
-    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable or system.health' });
+    // F1-7N-FB-3 §C — SLIM SCOPE REGISTRY (owner = 64_). One table, a six-column bounded projection: the only
+    // thing Site Inventory needs to render its Country / Marketplace selectors. It exists so that populating a
+    // dropdown no longer costs the 20-table inventoryReplenishment workspace read — which was also the read
+    // that drove the inventory table's own load state, printing "Loading Inventory Replenishment…" while the
+    // selectors were still unselected. Pure read: routed on BOTH verbs.
+    if (action === 'inventoryScope.registry.get') {
+      return handleInventoryScopeRegistryGet_(e && e.parameter ? e.parameter : {});
+    }
+
+    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' });
 
   } catch (err) {
     Logger.log(err.stack);
@@ -76,6 +85,21 @@ function doPost(e) {
     // and reports the exact token that would block the write, without writing a cell.
     if (action === 'system.shippingAllocationDraftDiagnostic') {
       return handleShippingAllocationDraftDiagnostic_(body);
+    }
+    // F1-7N-FB-3 §C — slim scope registry (see the doGet registration above for why it exists).
+    if (action === 'inventoryScope.registry.get') {
+      return handleInventoryScopeRegistryGet_(body);
+    }
+    // F1-7N-FB-3 §E/§F/§K — read-only flow diagnostics (owner = 65_). Zero-configuration schema readiness for
+    // the Execution Plan writer, Send Request readiness, and the composed two-vertical verdict. All read-only.
+    if (action === 'system.shippingAllocationSchemaDiagnostic') {
+      return handleShippingAllocationSchemaDiagnostic_(body);
+    }
+    if (action === 'system.requestOrderSendDiagnostic') {
+      return handleRequestOrderSendDiagnostic_(body);
+    }
+    if (action === 'system.twoVerticalFlowsDiagnostic') {
+      return handleTwoVerticalFlowsDiagnostic_(body);
     }
 
     if (action === 'updateSkuLifecycle') {
