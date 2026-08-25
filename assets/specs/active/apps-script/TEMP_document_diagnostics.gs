@@ -96,6 +96,7 @@ function TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER() {
   var fc = d.field_completeness || {};
   var fp = d.folder_preview || {};
   var tpl = d.template || {};
+  var gd = d.generated_documents || {};
   var blockers = (d.blocking_reasons || []).map(function (b) { return tempDocDiagStr_(b.reason); });
   // ---- ONE compact primary line ----
   tempDocDiagLog_(
@@ -112,10 +113,17 @@ function TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER() {
     ' | folder_preview=' + tempDocDiagStr_(fp.path) + ' (root=' + tempDocDiagStr_(fp.root_folder_id) + ', date_source=' + tempDocDiagStr_(fp.date_source) + ')' +
     ' | file=' + tempDocDiagStr_(d.expected_file_name) +
     ' | existing_documents=' + (d.existing_documents || []).length +
+    // F1-7N-FB-3B §H — the operator contract: which stage refuses, the machine-readable code, the attempt/current
+    // split of generated_documents, whether retrying can possibly help, and the exact next action.
+    ' | generated_documents attempts=' + tempDocDiagStr_(gd.attempt_count) + ' current=' + tempDocDiagStr_(gd.current_count) +
+      ' failed=' + (gd.failed || []).length + ' in_progress=' + (gd.in_progress || []).length + ' superseded=' + (gd.superseded || []).length +
+    ' | BLOCKING_STAGE=' + tempDocDiagStr_(d.blocking_stage) + ' REASON_CODE=' + tempDocDiagStr_(d.reason_code) +
+    ' retry=' + tempDocDiagStr_(d.safe_retry_verdict) +
     ' | SEND_PO_VERDICT=' + tempDocDiagStr_(d.send_po_verdict) +
     (blockers.length ? (' | blocked_by=' + blockers.join(',')) : '') +
     ' | READ-ONLY: writes=' + tempDocDiagStr_(d.writes_performed) + ' folders_created=' + tempDocDiagStr_(d.folders_created) + ' files_created=' + tempDocDiagStr_(d.files_created) + ' emails=0'
   );
+  tempDocDiagLog_('[DOC-DIAG][PO][next_action] ' + tempDocDiagStr_(d.next_action));
   // ---- short secondary detail ----
   (d.required_document_manifest || []).forEach(function (m) {
     tempDocDiagLog_('[DOC-DIAG][PO][doc] ' + tempDocDiagStr_(m.class_key) + ' state=' + tempDocDiagStr_(m.state) +

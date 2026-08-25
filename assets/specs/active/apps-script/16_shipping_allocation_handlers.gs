@@ -978,6 +978,46 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     drafts.push({ id: id, header: header, lines: shippable });
     if (isSubmitted) alreadySubmitted.push(id); else toTransition.push(id);
   });
+  // ---- (14)/(15) F1-7N-FB-3B §G — SERVER-SIDE STATION SCOPE. Site Inventory Submit Plan is scoped to EXACTLY the
+  // currently APPLIED Country + Marketplace, and until now that was enforced only by the browser choosing which
+  // draft ids to send. A page bug, a stale selector, a replayed payload or a hand-crafted request could therefore
+  // submit drafts belonging to two different stations inside ONE Weekly Shipping Plan batch. Two independent gates
+  // close it, both FAIL CLOSED and both before any write:
+  //   (14) MIXED_SITE_PAYLOAD  — the requested drafts do not all belong to ONE company+country+marketplace. This
+  //        holds even when the caller sends no applied_scope, so an unversioned client still cannot mix stations.
+  //   (15) APPLIED_SCOPE_MISMATCH — when the caller declares its APPLIED station (applied_scope), every draft must
+  //        belong to exactly that station. A stale selector is then a named refusal rather than a silent write to
+  //        whichever station the drafts happened to carry.
+  // Scope identity comes from the PERSISTED header (never from the request body), so the payload cannot assert a
+  // station it does not own. Site Inventory is deliberately different from Request Order Send here: Submit Plan is
+  // a single-station commitment, while Send Request is comprehensive across stations by frozen business rule.
+  if (!errors.length && drafts.length) {
+    var sadStationOf_ = function (h) {
+      return [String(h.company == null ? '' : h.company).trim().toUpperCase(),
+              String(h.country == null ? '' : h.country).trim().toUpperCase(),
+              String(h.marketplace == null ? '' : h.marketplace).trim().toLowerCase()].join('|');
+    };
+    var stations = {}, stationList = [];
+    drafts.forEach(function (d) { var s = sadStationOf_(d.header); if (!stations[s]) { stations[s] = 1; stationList.push(s); } });
+    if (stationList.length > 1) {
+      return { success: false, error: 'MIXED_SITE_PAYLOAD — the requested Execution Plan drafts belong to ' + stationList.length +
+        ' different Country/Marketplace stations. Submit Plan commits ONE station at a time; nothing was written.',
+        code: 'MIXED_SITE_PAYLOAD', stage: 'validation', zero_write: true,
+        data: { execution_key: execKey, station_count: stationList.length,
+          stations: drafts.map(function (d) { return { allocation_draft_id: d.id, company: String(d.header.company || ''), country: String(d.header.country || ''), marketplace: String(d.header.marketplace || '') }; }).slice(0, 25) } };
+    }
+    var appliedScope = body.applied_scope || null;
+    if (appliedScope) {
+      var want = sadStationOf_(appliedScope);
+      if (want !== '||' && want !== stationList[0]) {
+        return { success: false, error: 'APPLIED_SCOPE_MISMATCH — the drafts belong to a different Country/Marketplace than the applied selection. The selector is stale; re-apply Search and Submit again. Nothing was written.',
+          code: 'APPLIED_SCOPE_MISMATCH', stage: 'validation', zero_write: true,
+          data: { execution_key: execKey,
+            applied: { company: String(appliedScope.company || ''), country: String(appliedScope.country || ''), marketplace: String(appliedScope.marketplace || '') },
+            drafts_station: { company: String(drafts[0].header.company || ''), country: String(drafts[0].header.country || ''), marketplace: String(drafts[0].header.marketplace || '') } } };
+      }
+    }
+  }
   if (errors.length) return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation', zero_write: true, data: { execution_key: execKey, errors: errors.slice(0, 25) } };
 
   // already-submitted drafts may only be replayed as an IDEMPOTENT reuse of the SAME execution-key plan; a new key over

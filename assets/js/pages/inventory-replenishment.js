@@ -2143,7 +2143,7 @@ function createPlan(sku) {
     alert(`Create plan for ${sku} - Stage 1 placeholder`);
 }
 
-function submitReplenishmentPlans() {
+async function submitReplenishmentPlans() {
     const data = getReplenishmentData();
     // Country + marketplace NAME are derived from the selected scope (the Marketplace dropdown value is a
     // marketplace_id in Cloud mode), so the payload carries the marketplace NAME — not the raw id.
@@ -2284,6 +2284,11 @@ function submitReplenishmentPlans() {
     // only persisted allocation_draft_id(s) and the backend re-reads the persisted rows, so an unsaved route
     // would be SILENTLY DROPPED from the submitted plan — a partially-submitted plan that looks complete. Fail
     // CLOSED instead, naming the routes that must be fixed first. This runs before any request.
+    // F1-7N-FB-3B §G step 1 — SAVE DIRTY ROUTES AND WAIT. The Execution-Plan write is debounced by 400 ms, so a
+    // Submit pressed straight after typing raced the very write it depends on. Flushing here (through the same
+    // canonical writer) makes the unsaved-route gate below decide on a SETTLED state instead of a pending one.
+    try { await _irFlushPendingRouteWritesForSubmit_(); } catch (_eFlush) {}
+
     if (typeof _irHasUnsavedRoutes_ === 'function' && _irHasUnsavedRoutes_()) {
         var _unsaved = _irUnsavedSkus_();
         var _first = _irUnsavedRoutes[_unsaved[0]] || {};
@@ -2301,6 +2306,18 @@ function submitReplenishmentPlans() {
         var submitExecutionKey = _replenSubmitExecutionKey();
         var _draftIds = _replenActiveAllocationDraftIds();
         if (!_draftIds.length) { alert('No persisted allocation draft to submit yet — adjust the Execution Plan (which saves the draft) and try again.'); return; }
+        // F1-7N-FB-3B §G steps 2-3 — READ THE PERSISTED ROUTES BACK AND VERIFY THE USER-EDITED QUANTITIES before
+        // committing. A PROVEN drift between the screen and the database blocks the Submit: committing would ship
+        // the older stored quantity while the operator is looking at the newer one. An inconclusive read never
+        // blocks and is never reported as a verification (see _irVerifyPersistedRouteQuantities_).
+        var _qv = { verdict: 'UNVERIFIABLE', drifted: [] };
+        try { _qv = await _irVerifyPersistedRouteQuantities_((typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null); } catch (_eV) {}
+        if (_qv.verdict === 'DRIFTED') {
+            alert('Cannot Submit Plan — the saved quantities do not match what is on screen.' + NL2 +
+                _qv.drifted.slice(0, 8).map(function (d) { return '  · ' + d.sku + ' — on screen ' + d.on_screen + ', in database ' + d.in_database; }).join(String.fromCharCode(10)) + NL2 +
+                'Nothing was submitted and nothing was written. Re-enter the quantity so it saves, then Submit again.');
+            return;   // fail CLOSED — never commit the older stored quantity
+        }
         _replenCanonicalSubmit(_draftIds, submitExecutionKey, planLines.length);
         return;
     }
@@ -2553,11 +2570,115 @@ function _replenActiveAllocationDraftIds() {
 }
 window._replenActiveAllocationDraftIds = _replenActiveAllocationDraftIds;
 
+// ============================================================================================================
+// F1-7N-FB-3B §G — SITE INVENTORY STATION SCOPE + PRE-SUBMIT READ-AFTER-WRITE VERIFICATION.
+// ------------------------------------------------------------------------------------------------------------
+// Site Inventory is DELIBERATELY the opposite of Request Order Send. Send Request is comprehensive across every
+// country and marketplace by frozen business rule; Submit Plan commits EXACTLY ONE station — the currently
+// APPLIED Country + Marketplace — and must reject anything else.
+//
+// WHY THE APPLIED SCOPE, NOT THE LIVE SELECTS. _replenSelectedScope() reads the <select> elements, which the user
+// may have changed AFTER the last successful Search. Those newer values describe a station whose rows are not on
+// screen. The APPLIED scope (_irSearch.applied — the single place the search gate ever assigns) is the station
+// the visible plan actually belongs to, so that is what is declared to the server. A divergence between the two
+// is precisely the "stale selector" case, and the server now names it (APPLIED_SCOPE_MISMATCH) instead of
+// writing to whichever station the draft ids happened to carry.
+function _irAppliedSubmitScope_() {
+    var applied = (typeof _irSearch !== 'undefined' && _irSearch && _irSearch.applied) ? _irSearch.applied : null;
+    if (!applied) return null;
+    var list = [];
+    try { list = _irWsGet('getMarketplaces') || []; } catch (e) { list = []; }
+    var rec = null;
+    for (var i = 0; i < list.length; i++) { if (String(list[i].marketplaceId) === String(applied.marketplaceId)) { rec = list[i]; break; } }
+    return { company: (rec && rec.company) || '', country: (rec && rec.country) || applied.country || '',
+        marketplace: (rec && rec.marketplace) || '', marketplaceId: String(applied.marketplaceId || '') };
+}
+window._irAppliedSubmitScope_ = _irAppliedSubmitScope_;
+
+// §G — FLUSH the debounced Execution-Plan route writes and WAIT. The 400 ms debounce means a Submit pressed
+// straight after typing a Qty could otherwise race the write it depends on. Each flush goes through the SAME
+// canonical writer (_flushDraftDbPersist), so this is not a second write path. Fail-closed is handled by the
+// EXISTING unsaved-route gate: a failed flush marks the route UNSAVED, which blocks Submit.
+async function _irFlushPendingRouteWritesForSubmit_() {
+    var out = { flushed: 0 };
+    var keys = Object.keys(_draftDbTimers || {});
+    var work = [];
+    keys.forEach(function (sku) {
+        var t = _draftDbTimers[sku];
+        if (!t) return;
+        try { clearTimeout(t); } catch (e) {}
+        _draftDbTimers[sku] = null;
+        out.flushed++;
+        try { work.push(Promise.resolve(_flushDraftDbPersist(sku))); } catch (e2) {}
+    });
+    if (work.length) { try { await Promise.all(work.map(function (pr) { return pr.then(function () { return null; }, function () { return null; }); })); } catch (e3) {} }
+    // Also wait out any write already in flight, so the read-back below cannot observe a half-written route.
+    var guard = 0;
+    while (Object.keys(_draftDbInFlight || {}).some(function (k) { return _draftDbInFlight[k]; }) && guard < 60) {
+        guard++;
+        await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    return out;
+}
+window._irFlushPendingRouteWritesForSubmit_ = _irFlushPendingRouteWritesForSubmit_;
+
+// §G — PRE-SUBMIT READ-AFTER-WRITE VERIFICATION of the user-edited planned quantities.
+// Reads the persisted draft back through the EXISTING targeted read-back (getShippingAllocationDraftWorkspace —
+// never a whole-DB reload) and compares each persisted planned_qty against the value on screen, keyed by the
+// stable allocation_draft_line_id the client owns.
+//
+// AI Suggested Qty is NEVER a source here: the comparison reads the user-owned planned_qty only, so a later
+// user-edited planned quantity can never be overwritten or out-voted by a recommendation value.
+//
+// THE ONE RULE THAT MATTERS: an inconclusive read is NOT a verification, and it is NOT a failure either. It
+// returns UNVERIFIABLE and Submit proceeds — the server re-reads the persisted drafts anyway and the
+// unsaved-route gate has already run. What is NEVER allowed is claiming a verification that did not happen, or
+// blocking a legitimate Submit because a diagnostic read was unavailable. A PROVEN drift blocks.
+async function _irVerifyPersistedRouteQuantities_(appliedScope) {
+    var out = { verdict: 'UNVERIFIABLE', checked: 0, drifted: [], reason: '' };
+    var db = window.KM && window.KM.DB;
+    if (!db || typeof db.getShippingAllocationDraftWorkspace !== 'function') { out.reason = 'READBACK_API_UNAVAILABLE'; return out; }
+    if (!appliedScope || !appliedScope.country) { out.reason = 'NO_APPLIED_SCOPE'; return out; }
+    var res;
+    try {
+        res = await db.getShippingAllocationDraftWorkspace({ company: appliedScope.company, country: appliedScope.country,
+            marketplace: appliedScope.marketplace, source_page: 'inventory_replenishment' });
+    } catch (e) { out.reason = 'READBACK_FAILED'; return out; }
+    var data = (res && res.data) || {};
+    if (!res || res.success === false || data.status !== 'ACTIVE_DRAFT_FOUND') { out.reason = 'READBACK_' + String(data.status || 'INCONCLUSIVE'); return out; }
+    var persisted = {};
+    (data.lines || []).forEach(function (l) {
+        var id = String((l && l.allocation_draft_line_id) || '').trim();
+        if (!id) return;
+        if (String((l && l.line_status) || '').trim().toLowerCase() === 'cancelled') return;
+        persisted[id] = Number(l.planned_qty);
+    });
+    if (!Object.keys(persisted).length) { out.reason = 'READBACK_NO_LINES'; return out; }
+    var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+    Object.keys(bySku).forEach(function (sku) {
+        (bySku[sku] || []).forEach(function (r) {
+            if (!_isRouteComplete(r)) return;
+            var id = String(r.allocation_draft_line_id || '').trim();
+            if (!id || !(id in persisted)) return;   // not part of this persisted draft — not evidence of drift
+            var onScreen = Number(r.planned_qty != null ? r.planned_qty : r.qty);
+            out.checked++;
+            if (Number(persisted[id]) !== onScreen) {
+                out.drifted.push({ sku: sku, allocation_draft_line_id: id, on_screen: onScreen, in_database: Number(persisted[id]) });
+            }
+        });
+    });
+    out.verdict = out.drifted.length ? 'DRIFTED' : (out.checked ? 'VERIFIED' : 'UNVERIFIABLE');
+    if (!out.checked) out.reason = 'NO_MATCHED_LINES';
+    return out;
+}
+window._irVerifyPersistedRouteQuantities_ = _irVerifyPersistedRouteQuantities_;
+
 // F1-7N-FA-4B — SINGLE-FLIGHT canonical Submit. One in-flight Promise per execution key: a second click while a Submit
 // is in flight for the SAME key SHARES that Promise (no second mutation). Button disabled on first click, restored only
 // on a terminal response. CREATED/REUSED → clear draft + show the plan. CONFLICT → require refresh/review (keep draft).
 // IN_PROGRESS_SAME_EXECUTION_KEY → show Processing + begin readback (never a blind retry). The execution key is stable
 // across navigation/re-entry (persisted on replenAllocationDraft).
+var NL2 = String.fromCharCode(10) + String.fromCharCode(10);   // paragraph break inside an alert()
 var _replenSubmitInFlight = {};   // execKey -> Promise (the single in-flight mutation)
 function _replenSetSubmitButtonDisabled(disabled) {
     try { var b = document.querySelector('[onclick*="submitReplenishmentPlans"]') || document.getElementById('replen-submit-plan-btn'); if (b) b.disabled = !!disabled; } catch (e) {}
@@ -2565,8 +2686,14 @@ function _replenSetSubmitButtonDisabled(disabled) {
 function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
     if (_replenSubmitInFlight[execKey]) return _replenSubmitInFlight[execKey];   // share the in-flight Promise (no 2nd mutation)
     _replenSetSubmitButtonDisabled(true);
+    // F1-7N-FB-3B §G — declare the APPLIED station so the server can revalidate it. The server refuses a
+    // mixed-station payload even without this field; declaring it additionally catches a STALE SELECTOR, which
+    // no server-side check could otherwise see. Scope identity on the server still comes from the persisted
+    // header, never from this declaration — the payload cannot assert a station it does not own.
+    var _appliedScope = (typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null;
     var p = window.KM.DB.submitAllocationDraftsToShippingPlans({
-        allocation_draft_ids: draftIds, execution_key: execKey, submitted_by: 'inventory-replenishment'
+        allocation_draft_ids: draftIds, execution_key: execKey, submitted_by: 'inventory-replenishment',
+        applied_scope: _appliedScope || undefined
     }).then(function (result) {
         result = result || {};
         if (result.success) {
@@ -2580,6 +2707,17 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
         if (code === 'IN_PROGRESS_SAME_EXECUTION_KEY') {
             alert('Submit is already processing for this plan. Reading back the result…');   // NOT a blind retry
             try { if (typeof _refreshAllocationDraftWorkspace === 'function') _refreshAllocationDraftWorkspace(); } catch (e) {}
+        } else if (code === 'MIXED_SITE_PAYLOAD') {
+            // F1-7N-FB-3B §G — fail-closed station scope. Submit Plan commits ONE Country + Marketplace.
+            alert('Cannot Submit Plan — MIXED_SITE_PAYLOAD.' + NL2 +
+                'The selected Execution Plan drafts belong to more than one Country/Marketplace station, and ' +
+                'Submit Plan commits ONE station at a time. Nothing was written.' + NL2 +
+                'Re-apply Search for a single station and submit that station only.');
+        } else if (code === 'APPLIED_SCOPE_MISMATCH') {
+            alert('Cannot Submit Plan — APPLIED_SCOPE_MISMATCH.' + NL2 +
+                'The Execution Plan drafts belong to a different Country/Marketplace than the applied selection, ' +
+                'so the selector is stale. Nothing was written.' + NL2 +
+                'Press Search to re-apply the station you intend to submit, then Submit Plan again.');
         } else if (code === 'CONFLICT' || code === 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT' || code === 'SUBMIT_DRAFT_ALREADY_SUBMITTED') {
             alert('This plan changed since it was prepared, or was already submitted under a different attempt. Refresh and review before submitting again.');   // CONFLICT → refresh/review
         } else {

@@ -1233,6 +1233,65 @@ function handleDocumentRetry_(body) {
 // These prove what WOULD happen. They never create a folder or file, never write a row, and never claim a real
 // Drive round trip occurred — the folder they report is a PREVIEW path, not a created object.
 function dgsLog_(tag, obj) { try { Logger.log(tag + ' ' + JSON.stringify(obj)); } catch (e) {} }
+// ---- F1-7N-FB-3B §H — PO diagnostic operator contract (derived; no second evaluation) --------------------
+// ATTEMPT vs CURRENT. generated_documents historically arrived as one flat list, which reads as "this PO has 4
+// documents" when the truth may be "3 failed attempts and 1 live file". The split uses the EXISTING dgsRowState_
+// classification, so it cannot disagree with what the panels show:
+//   current      — a live READY row (a file exists)
+//   in_progress  — GENERATING
+//   failed       — FAILED_RETRYABLE / FAILED_TERMINAL / CONFIGURATION_REQUIRED
+//   superseded   — SUPERSEDED (an earlier attempt replaced by a later one)
+// attempt_count is EVERY row ever recorded for this PO; current_count is what actually exists now.
+function dgsPoGeneratedSplit_(dtos) {
+  var out = { attempt_count: 0, current_count: 0, current: [], in_progress: [], failed: [], superseded: [] };
+  (dtos || []).forEach(function (d) {
+    out.attempt_count++;
+    var s = dgsStr_(d && d.status);
+    if (s === 'READY') { out.current.push(d); out.current_count++; }
+    else if (s === 'SUPERSEDED') { out.superseded.push(d); }
+    else if (s === 'GENERATING') { out.in_progress.push(d); }
+    else { out.failed.push(d); }
+  });
+  return out;
+}
+// The blocking STAGE, the single machine-readable REASON_CODE, retry safety and the operator's exact next
+// action. Ordered by the sequence Send PO actually executes, so the stage named is the FIRST one that refuses:
+//   eligibility -> template_selection -> field_contract -> file_name -> drive_readiness -> (none).
+// Retry safety is derived from the EXISTING dgsFailureClass_ authority: a PRE_DISPATCH_BLOCKING reason is a
+// configuration fact, so retrying the same request cannot change it — saying "try again" there would be false.
+function dgsPoBlockingContract_(out) {
+  var reasons = (out && out.blocking_reasons) || [];
+  var first = reasons.length ? dgsUc_(reasons[0].reason) : '';
+  var stageOf = {
+    PURCHASE_ORDER_NOT_DRAFT: 'eligibility',
+    DOCUMENT_REQUIRED_FIELD_MISSING: 'field_contract',
+    DOCUMENT_FIELD_AUTHORITY_MISSING: 'field_contract',
+    DOCUMENT_FILE_NAME_UNRESOLVED: 'file_name',
+    DOCUMENT_TRANSFORM_UNSUPPORTED: 'field_contract'
+  };
+  var stage = stageOf[first];
+  if (!stage && first) stage = (first.indexOf('TEMPLATE') !== -1) ? 'template_selection'
+    : ((first.indexOf('FOLDER') !== -1 || first.indexOf('DRIVE') !== -1) ? 'drive_readiness' : 'document_generation');
+  var missing = ((out && out.field_completeness && out.field_completeness.required_missing) || []).map(function (m) { return dgsStr_(m.placeholder); });
+  var next;
+  if (!first) next = 'No blocker. Send PO will generate the Purchase Order document and move the PO out of Draft.';
+  else if (stage === 'eligibility') next = 'Send PO applies to a Draft PO only. No document action is required.';
+  else if (stage === 'template_selection') next = 'Configure exactly ONE active Purchase Order template matching this PO\'s factory + series, then re-run this diagnostic.';
+  else if (stage === 'field_contract') next = 'Populate the unresolved required source field(s) on the authoritative record — ' + (missing.length ? missing.slice(0, 8).join(', ') : 'see field_completeness.required_missing') + ' — then re-run this diagnostic. Send PO stays blocked and the PO stays Draft.';
+  else if (stage === 'file_name') next = 'The document file name could not be constructed from the template naming rule. Correct the naming rule or the field it reads, then re-run this diagnostic.';
+  else if (stage === 'drive_readiness') next = 'Resolve the Drive output configuration named by reason_code (root/folder authority), then re-run this diagnostic. Nothing was created in Drive.';
+  else next = 'Resolve the reason_code above, then re-run this diagnostic.';
+  return {
+    blocking_stage: first ? stage : 'none',
+    reason_code: first || 'NONE',
+    safe_retry_verdict: !first ? 'NOT_APPLICABLE_NOT_BLOCKED'
+      : (dgsFailureClass_(first) === 'PRE_DISPATCH_BLOCKING'
+        ? 'RETRY_CANNOT_HELP_CONFIGURATION_REQUIRED'
+        : 'RETRY_MAY_HELP_TRANSIENT'),
+    next_action: next
+  };
+}
+
 function handlePoDocumentDiagnostic_(body) {
   var poId = dgsStr_(body && body.purchase_order_id);
   if (!poId) return jsonResponse_({ success: false, error: 'PURCHASE_ORDER_ID_REQUIRED' });
@@ -1288,6 +1347,16 @@ function handlePoDocumentDiagnostic_(body) {
       .concat(drive.ok ? [] : [{ reason: drive.reason, detail: 'Drive readiness failed.' }]);
     out.send_po_verdict = out.blocking_reasons.length ? 'BLOCKED' : 'READY';
     out.verdict = out.send_po_verdict;
+    // F1-7N-FB-3B §H — the four fields the operator-facing contract needs and this evaluator did not name.
+    // They are DERIVED from the verdicts already computed above (no second evaluation, no invented value):
+    // the STAGE that blocks, the single machine-readable REASON_CODE, whether a retry can possibly help, and
+    // the attempt/current split of generated_documents. All read-only; the hard Send PO gate is untouched.
+    out.generated_documents = dgsPoGeneratedSplit_(out.existing_documents);
+    var poBlk = dgsPoBlockingContract_(out);
+    out.blocking_stage = poBlk.blocking_stage;
+    out.reason_code = poBlk.reason_code;
+    out.safe_retry_verdict = poBlk.safe_retry_verdict;
+    out.next_action = poBlk.next_action;
   } else {
     out.system_payload_verdict = 'BLOCKED';
     out.drive_readiness_verdict = 'NOT_EVALUATED';
@@ -1295,6 +1364,11 @@ function handlePoDocumentDiagnostic_(body) {
     out.blocking_reasons = [{ reason: sel.reason, detail: 'No single active Purchase Order template matches factory "' + dgsStr_(po.factory_id) + '" + series "' + dgsStr_(po.series) + '".' }];
     out.send_po_verdict = 'BLOCKED';
     out.verdict = 'BLOCKED';
+    out.generated_documents = dgsPoGeneratedSplit_([]);
+    out.blocking_stage = 'template_selection';
+    out.reason_code = dgsStr_(sel.reason) || 'PO_TEMPLATE_UNRESOLVED';
+    out.safe_retry_verdict = 'RETRY_CANNOT_HELP_CONFIGURATION_REQUIRED';
+    out.next_action = 'Configure exactly ONE active Purchase Order document template matching factory "' + dgsStr_(po.factory_id) + '" + series "' + dgsStr_(po.series) + '", then re-run this diagnostic. Send PO stays blocked and the PO stays Draft until then.';
   }
   dgsLog_('[DGS-PO-DIAG]', { po: poId, verdict: out.verdict, template: out.template && out.template.template_key });
   return jsonResponse_(out);

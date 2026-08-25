@@ -310,3 +310,164 @@ unchanged** — the PO stays Draft, no status is written, no document row is cre
 - **Site Inventory station-scope revalidation (addendum §6) — NOT added server-side.** Submit already sends only
   persisted draft ids for the applied Country + Marketplace, but the server does not yet re-reject a mixed-site
   payload. Reported, not silently assumed.
+
+
+---
+
+# F1-7N-FB-3B — Send Request server orchestration + frozen scope authority (2026-08-25)
+
+FB-3A is accepted only as deployment/error observability work; it closed neither vertical. FB-3B closes the
+Send Request vertical by moving the transaction off the browser, and closes the Site Inventory station boundary
+server-side.
+
+## I. §B — the Send scope is frozen, and the truncation is DELETED
+
+FB-3A reported an authority gap and asked for a decision. The decision is now user-frozen.
+
+| control | verdict | truncates Send after FB-3B? |
+| --- | --- | --- |
+| Request type ALL / T1 / T2 / T3 | **BUSINESS_SEND_SCOPE** | yes — this is the only one |
+| Country | DISPLAY_ONLY | **no** (was yes) |
+| Marketplace | DISPLAY_ONLY | **no** (was yes) |
+| Category tab | DISPLAY_ONLY | **no** (was yes — the FB-3A conflict) |
+| Risk | DISPLAY_ONLY | **no** (was yes — the FB-3A conflict) |
+| SKU search | DISPLAY_ONLY | **no** (was yes — the FB-3A conflict) |
+| Show mode / pagination / visible page / expanded state | DISPLAY_ONLY | no (already proven absent) |
+
+`ALL` = the complete current eligible allocation population across **all** applicable countries, marketplaces
+and tiers. `T1`/`T2`/`T3` = the complete current eligible population of that tier, across all countries and
+marketplaces.
+
+**This is structural, not a promise.** The population is now built by `rosBuildWorkset_` (66_) from the
+**persisted** allocation drafts, and that function accepts **no** country, marketplace, category, risk,
+sku-search, show-mode, page or visible-row parameter. The capability is absent, not disabled. On the page,
+`_roSendScopeRows_()` returns `requestOrderState.data` unfiltered and `_applyRequestOrderFilters` — the DISPLAY
+authority — is not called by the Send path at all. `removed_by_display_filters` survives as a **0
+by construction** proof rather than a warning.
+
+## II. §E — the server orchestration (the §G FB-3A left unimplemented)
+
+One click → one request → one journaled, resumable saga with nine explicit phases:
+
+`validate` → `replay_completed` → `load_workset` → `verify_quantities` → `freeze` → `group` → `write_orders`
+→ `verify_output` → `transition` → `reconcile`
+
+- **No second writer.** Request Orders go through 13_ `handleCreateRequestOrderDraft_`; the lifecycle advance
+  through 15_ `handleSubmitRequestOrderAllocationDrafts_`. 66_ executes no `appendRow`, `setValue`, `setValues`,
+  `insertSheet`, `deleteRow`, sheet-ensure, `DriveApp` or `MailApp` — asserted against comment- and
+  string-stripped source.
+- **No ScriptLock in the orchestrator, deliberately.** Apps Script's ScriptLock is one named lock; holding it
+  while calling a writer that takes it would contend with itself. Single-flight is a **journal lease** in Script
+  Properties keyed by the orchestration key, and each canonical writer keeps its own atomic lock. Same staged
+  discipline as the document saga.
+- **Output proof before the lifecycle moves.** `verify_output` re-reads each Request Order header and counts its
+  lines; a short or missing one returns `REQUEST_ORDER_OUTPUT_UNPROVEN` and **no** draft is advanced.
+- **Resumable, never blindly retried.** The orchestration key is a pure function of the request body. The write
+  phase stops voluntarily at 240 s (inside the ~6 min ceiling), journals, and answers `PARTIAL_RESUMABLE` with
+  `lifecycle_advanced: false`. An identical re-invocation of a completed run replays the recorded result with
+  zero writes, and that check runs **before** any row is read — so an operator who lost the response is told
+  "this already succeeded" instead of "nothing is eligible".
+- **A moved source is refused.** A journal whose `workset_checksum` no longer matches returns
+  `SOURCE_CHANGED_SINCE_INTERRUPTION` rather than committing a stale plan.
+- **`dry_run: true`** performs zero writes and returns the frozen plan. That is what the confirmation dialog is
+  built from, so the numbers the user approves are the server's.
+
+## III. §C — the persisted-quantity barrier, and the canonical conflict
+
+Lifecycle enforced: AI Plan / materialization → persisted canonical draft → user edits persisted through the
+canonical writer → scoped read-after-write verification → frozen checksum + workset → Send.
+
+The page flushes every pending edit and **awaits** it; a failed flush blocks the Send. The server then compares
+every asserted quantity against the persisted value and blocks the **entire** Send on `QUANTITY_DRIFT`,
+`UNSAVED_NO_PERSISTED_DRAFT` or `UNSAVED_TIER_ABSENT`. The prior DB quantity is never substituted for a newer
+edit that failed to save.
+
+**STOP — the canonical conflict, reported as §C requires.** Three authorities disagreed:
+
+1. R4E4/R6B: *"NO_DRAFT / conflict / foreign rows … NEVER auto-create a draft (AI Plan remains the
+   draft-creation boundary)."*
+2. R4E5B: the client Send created a `RAD-M-…` manual draft **inside the Send transition** and immediately sent it.
+3. The **live** flat-V2 cutover (`REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true`) gives a draft the deterministic
+   identity `RD::MONTHLY_ORDER::<YYYY-MM>::company=…|country=…|draft_purpose=…|marketplace=…|sku=…`. A
+   `RAD-M-…` row is **not** that identity, so rows written by (2) were invisible to
+   `KMRDV2P.readActiveFlatForScope` — the very read-back the page uses to prove a draft exists.
+
+FB-3B implements (1)+(3), which is what §C mandates: the workset is **persisted canonical drafts only** and
+(2) is **retired from the Send transition**. `_roManualDraftId_` is kept, explicitly marked retired, because
+reversing this is a business decision. **Consequence, stated plainly: a SKU never materialized by AI Plan is no
+longer sendable in one click.** It appears in the dialog as `Page rows with NO persisted draft` with the
+instruction to materialize first.
+
+## IV. §D — the counts, in two clearly separated families
+
+The confirmation dialog shows **ON THIS PAGE (candidate counts — NOT persisted allocation drafts)** — AI Plan
+rows loaded, SKU rows with a positive tier, tier cells with a positive qty — and **WILL BE SENT (server
+authority — PERSISTED allocation drafts)**: active persisted drafts, drafts with a positive selected tier,
+selected-tier allocations, POSITIVE selected-tier allocations, distinct SKUs, distinct Series, expected Request
+Order headers, expected Request Order lines, total units. Plus quantity-verification counts and typed exclusions
+(`status_submitted`, `status_cancelled`, `tier_terminal_already_sent`, `tier_zero_or_blank_qty`,
+`tier_out_of_scope`, `draft_id_missing`, `duplicate_draft_id`, `wrong_planning_cycle`).
+
+`495 / 234 / 468` remain candidate/source counts and are labelled as such. The difference between the two blocks
+is named: `Page rows with NO persisted draft`.
+
+**Current-run authority (exact):** `planning_cycle = <YYYY-MM>` **AND** header `status IN (draft,
+site_confirmed, partially_submitted)` **AND** tier `status NOT IN (submitted, cancelled)`. The page resolves the
+cycle from the hydrated persisted draft first, else from the existing `_opFirstLayerCycle()` Asia/Taipei
+authority with its `RECO-` prefix stripped; a blank result **blocks** the Send rather than guessing. There is no
+per-row run id on the draft rows — that limitation is pre-existing and documented in 47_.
+
+## V. §F — the >45 s read has a named, fixed cause
+
+`aplBuild_` scanned **two whole tables per SKU row**: one full `fc_special_events` scan, plus **two** full
+`overseas_inventory_snapshot` scans (`aplOverseasHasMatch_` then `rivOverseasStock_`). At 495 rows that is
+495 × (E + 2×O) string comparisons. Both owner predicates require an exact SKU match first, so pre-indexing by
+SKU once is **output-identical** and turns the quadratic term linear. Event rows are indexed under **both**
+`sku` and (`scope_type='sku'`) `scope_id`, matching `fcrEventScopeMatch_` exactly, so no matchable row is lost.
+No owner function was modified and no null convention moved. **The 45 s bound was not raised.**
+
+The AI-Plan read is now instrumented per phase (sheet open, header resolution + per-table row read with row
+counts, current-run filtering + mapping, serialization) with the response byte size measured.
+
+`requestOrder.sendWorkset.get` is the new include-gated slim read: **two** tables instead of eleven, carrying
+only tier selection, Series grouping, status, planning cycle and identity. A forbidden include (`forecast`,
+`gap`, `recommendation`, `inventory`, `risk`, `lead_time`, …) is **refused by name** — a silently-ignored
+include is how a slim API grows fat again.
+
+## VI. §G — Site Inventory station scope, now server-enforced
+
+Two fail-closed gates in `sadSubmitToShippingPlansCore_`, both before the `shipping_plans` write authority:
+
+- **`MIXED_SITE_PAYLOAD`** — the requested drafts do not all belong to one company+country+marketplace. Holds
+  even when the caller sends no `applied_scope`, so an unversioned client still cannot mix stations.
+- **`APPLIED_SCOPE_MISMATCH`** — the caller declared its APPLIED station and the drafts belong to another one.
+  This is the stale-selector case no server-side check could otherwise see.
+
+Station identity comes from the **persisted header**, never from the request body. The page declares
+`_irSearch.applied` (not `_replenSelectedScope()`, which reads the possibly-newer `<select>` values), flushes and
+awaits the debounced route writes, keeps the FB-2A unsaved-route block, and read-back verifies the persisted
+`planned_qty` against the screen via the targeted workspace read. An **inconclusive** read returns
+`UNVERIFIABLE` and does not block — and is never reported as a verification. AI Suggested Qty is not a source in
+that comparison.
+
+## VII. §H — the PO diagnostic operator contract
+
+`handlePoDocumentDiagnostic_` already reported the PO id, template, applicability, unresolved required
+placeholders, Drive readiness, root/folder authority and existing documents. FB-3B adds, all **derived** from
+verdicts already computed (no second evaluation, no invented configuration): `blocking_stage`, `reason_code`,
+`safe_retry_verdict` (from the existing `dgsFailureClass_` authority), `next_action`, and
+`generated_documents` split into `attempt_count` / `current` / `in_progress` / `failed` / `superseded` using the
+existing `dgsRowState_` classification. The hard gate is unchanged: `blocks_transition: true`, the PO stays
+Draft, no status write, no document row, no email.
+
+## VIII. Not done, and why
+
+- **Per-line quantity provenance on the Request Order** — the orchestration proves each header and its line
+  COUNT, not each line's quantity, after writing. A per-line quantity read-back would be a second bounded pass
+  over `request_order_lines`; the barrier that matters (the pre-write allocation-quantity check) is implemented.
+- **The `RAD-M-…` rows already in the live table** are not migrated or cleaned. Nothing here writes or deletes
+  them; they are now simply not sendable. A migration is a separate, USER-owned decision.
+- **The >45 s fix is not yet measured live.** The algorithmic cause is fixed and output-identical, and the read
+  is instrumented — but the actual improvement needs one live run, which this task did not perform.
+- **`_roSendPlanningCycle_` has no per-row run id to bind to** (pre-existing limitation, 47_). It uses the
+  hydrated persisted cycle, else the existing Asia/Taipei cycle authority, and blocks on neither being available.
