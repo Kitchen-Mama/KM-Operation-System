@@ -22,7 +22,7 @@ var G31 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '31_
 
 var LOAD = [];
 ['DEMO4A_PREFIX_', 'DEMO4A_TAG_', 'DEMO4A_SOURCE_', 'DEMO4A_ACTOR_', 'DEMO4A_CREATED_AT_', 'DEMO4A_DEFAULT_COMPANY_', 'DEMO4A_CONFIRMED_SEED_CHECKSUM_', 'DEMO4A_CONFIRMED_CLEAR_TOKEN_', 'DEMO4A_JOURNAL_KEY_', 'DEMO4A_WRITE_ORDER_', 'DEMO4A_CLEAR_ORDER_', 'DEMO4A_PK_OF_', 'DEMO4A_FK_INTO_DEMO_', 'DEMO4A_MASTER_TABS_', 'DEMO4A_LOC_ID_FIELDS_',
-  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_', 'DEMO4A_APPROVED_REGION_DEST_', 'DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_', 'DEMO4A_SOURCE_MAX_REJECTION_CODES_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
+  'DEMO4A_RECORD_STATUS_DEAD_', 'DEMO4A_VS_COORDINATE_PENDING_', 'DEMO4A_POSTAL_REQUIRED_', 'DEMO4A_COORD_ACCURACY_FACILITY_', 'DEMO4A_COORD_COUNTRY_BOUNDS_', 'DEMO4A_GATEWAY_CENTROID_TYPES_', 'DEMO4A_DEST_READY_BRANCHES_', 'DEMO4A_DEST_AUTH_REASONS_', 'DEMO4A_AUTHORIZATION_CONTRACT_VERSION_', 'DEMO4A_AUTH_MAX_REASON_CODES_', 'DEMO4A_CANON_CONTRACT_VERSION_', 'DEMO4A_CANON_TZ_OFFSET_MIN_', 'DEMO4A_FIELD_CLASSES_', 'DEMO4A_BOOL_TRUE_', 'DEMO4A_BOOL_FALSE_', 'DEMO4A_DRIFT_MAX_EXAMPLES_', 'DEMO4A_DRIFT_MAX_VALUE_LEN_', 'DEMO4A_APPROVED_REGION_DEST_', 'DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_', 'DEMO4A_SOURCE_MAX_REJECTION_CODES_', 'DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_', 'DEMO4A_SOURCE_FACTORY_SHARED_ACROSS_COMPANIES_'].forEach(function (n) { LOAD.push(G.match(new RegExp('var ' + n + ' = [^\\n]*;'))[0]); });
 LOAD.push(G.match(/var DEMO4A_MAP_DEST_COORD_CONSUMPTION_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_COORD_ACCURACY_CANON_ = \{[\s\S]*?\n\};/)[0]);
 LOAD.push(G.match(/var DEMO4A_FIELD_CLASS_ = \{[\s\S]*?\n\};/)[0]);
@@ -47,7 +47,7 @@ LOAD.push(G.match(/var DEMO4A_WH_DEST_TYPES_ = \{[\s\S]*?\};/)[0]);
   'DEMO4A_dxCoordKey_', 'DEMO4A_dxRawRegion_', 'DEMO4A_dxSubdivision_', 'DEMO4A_dxCompatibleRoles_', 'DEMO4A_dxRoleStages_', 'DEMO4A_diagnoseLiveRoleCandidates_',
   'DEMO4A_whId_', 'DEMO4A_whType_', 'DEMO4A_whCompany_', 'DEMO4A_whCountry_', 'DEMO4A_whRegion_', 'DEMO4A_whMarketplace_', 'DEMO4A_whActive_', 'DEMO4A_whDestTypeCompatible_',
   'DEMO4A_locVerificationEligible_', 'DEMO4A_locsForWarehouse_', 'DEMO4A_resolveWarehouseDestination_', 'DEMO4A_dxRegionBucket_', 'DEMO4A_diagnoseWarehouseLocationAuthority_', 'DEMO4A_warehouseGates_',
-  'DEMO4A_whCode_', 'DEMO4A_whName_', 'DEMO4A_whIsFactory_', 'DEMO4A_sourceEvidence_', 'DEMO4A_resolveDemoSourceWarehouse_', 'DEMO4A_sourceAuthoritySummary_', 'DEMO4A_numericLike_', 'DEMO4A_dateLike_', 'DEMO4A_boolLike_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
+  'DEMO4A_whCode_', 'DEMO4A_whName_', 'DEMO4A_whOwner_', 'DEMO4A_whIsFactory_', 'DEMO4A_sourceEvidence_', 'DEMO4A_resolveDemoSourceWarehouse_', 'DEMO4A_sourceAuthoritySummary_', 'DEMO4A_numericLike_', 'DEMO4A_dateLike_', 'DEMO4A_boolLike_', 'DEMO4A_whReceivingEnabled_', 'DEMO4A_whColPresent_', 'DEMO4A_whAddrLine1_', 'DEMO4A_whAddrLine2_', 'DEMO4A_whCity_', 'DEMO4A_whSubdivision_', 'DEMO4A_whStateSub_', 'DEMO4A_whAddrFlatLegacyPresent_', 'DEMO4A_whPostal_', 'DEMO4A_postalRequired_', 'DEMO4A_normAddrPart_', 'DEMO4A_normalizeWhAddress_', 'DEMO4A_addressAuthority_', 'DEMO4A_deriveDestCoordinate_', 'DEMO4A_pickWarehouseForRegion_',
   'DEMO4A_destCandidateEligible_', 'DEMO4A_selectDestCandidatesByRegion_', 'DEMO4A_diagnoseDestCandidates_', 'DEMO4A_proposalToAuthority_', 'DEMO4A_coordAuthorityArmed_', 'DEMO4A_coordAccuracyFacility_', 'DEMO4A_coordInBounds_', 'DEMO4A_gatewayCoordMatch_', 'DEMO4A_preflightFailureReason_', 'DEMO4A_mapDestinationEndpointSource_', 'DEMO4A_destAuthorityForTemplate_', 'DEMO4A_destAuthorityReason_', 'DEMO4A_warehouseDestBinding_', 'DEMO4A_preflightVerdict_', 'DEMO4A_authorizationSummary_', 'DEMO4A_rowForHeaders_', 'DEMO4A_srcDestLineageGate_', 'DEMO4A_writerProjectionGaps_', 'DEMO4A_driftClip_', 'DEMO4A_driftEvidence_', 'DEMO4A_canonDiagnosticCore_', 'DEMO4A_validateCoordProposal_', 'DEMO4A_mapDestinationDisplayStatus_'].forEach(function (n) { LOAD.push(extractFn(G, n)); });
 eval(LOAD.join('\n'));
 
@@ -1351,7 +1351,7 @@ ok(/DEMO4A_ZERO_WRITE_CONFIRMED/.test(A_SRC_), 'E4/B. the entrypoint stamps DEMO
 
 section('V3G4A-E5/E6. exactly three compact shipment objects; exact W/C/E coverage');
 eq(A_ENV_.per_shipment.length, 3, 'E5. exactly three per-shipment objects');
-eq(Object.keys(A_ENV_.per_shipment[0]).sort().join(','), ['current_location_id', 'destination_address_fingerprint', 'destination_coordinate_accuracy', 'destination_coordinate_branch', 'destination_logistics_location_id', 'destination_renderable', 'destination_warehouse_code', 'destination_warehouse_id', 'event_rows', 'origin_location_id', 'plan_lines', 'region', 'route_rows', 'shipment_id', 'shipment_lines', 'slot', 'source_selection_branch', 'source_warehouse_code', 'source_warehouse_id', 'status', 'template_id'].join(','), 'E5/B/V3G5B(L). each shipment object carries ONLY the 21 authorized compact fields (source id + code + selection branch, destination id + code + logistics location)');
+eq(Object.keys(A_ENV_.per_shipment[0]).sort().join(','), ['current_location_id', 'destination_address_fingerprint', 'destination_coordinate_accuracy', 'destination_coordinate_branch', 'destination_logistics_location_id', 'destination_renderable', 'destination_warehouse_code', 'destination_warehouse_id', 'event_rows', 'origin_location_id', 'plan_lines', 'region', 'route_rows', 'shipment_id', 'shipment_lines', 'slot', 'source_company_match', 'source_selection_branch', 'source_shared_factory_authorized', 'source_warehouse_code', 'source_warehouse_company', 'source_warehouse_id', 'source_warehouse_owner', 'status', 'template_id'].join(','), 'E5/B/V3G5D(I). each shipment object carries ONLY the 25 authorized compact fields (source id + code + company + owner + branch + company-match + shared-factory authorization, destination id + code + logistics location)');
 eq(A_ENV_.selected_templates.map(function (t) { return t.region; }).sort().join(','), 'US_CENTRAL,US_EAST,US_WEST', 'E6. the three selected templates cover W/C/E exactly once each');
 eq(Object.keys(A_ENV_.selected_templates[0]).sort().join(','), 'node_count,region,template_id', 'E6/B. selected_templates carries only template_id + region + node_count');
 eq(A_ENV_.per_shipment.map(function (x) { return x.destination_warehouse_code; }).sort().join(','), 'ABE2,AUS2,BFI4', 'E6. the three approved destination warehouses appear once each');
@@ -1899,7 +1899,11 @@ section('V3G5B-1..3. the source-resolver precedence: exact template authority wi
   // it only on a NON-factory endpoint), so it is not an authority over the declared template source either.
   eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ is_shipping_enabled: 'FALSE' })]).selection_branch, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE', '2/V3G5C. a declared origin warehouse with is_shipping_enabled=FALSE remains VALID (no shipping-capability gate)');
   eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ country: 'VN' })]).detail, 'DECLARED_SOURCE_WAREHOUSE_COUNTRY_MISMATCH', '2. a declared origin warehouse in the wrong country fails closed');
-  eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ company: 'OTHERCO' })]).detail, 'DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH', '2. a declared origin warehouse of another company fails closed');
+  // V3G5D(A/B) - SUPERSEDES V3G5B/V3G5C: `company` is administrative attribution, NOT an exclusive usage permission
+  // (RECOMMENDATION_SOURCE_CONTRACT_SPEC SC-11.1 D-1: "`warehouses.company` stays owner/administrative context only").
+  // A declared source belonging to another company is therefore VALID; the mismatch is published as evidence.
+  eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ company: 'OTHERCO' })]).selection_branch, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE', '2/V3G5D. a declared origin warehouse of another company is VALID (no company-equality gate)');
+  eq(b5Resolve({ origin_warehouse_id: SRC_WH_ID_ }, [srcWhRow({ company: 'OTHERCO' })]).company, 'OTHERCO', '2/V3G5D. and its real company is preserved verbatim as evidence');
   var fb = b5Resolve({}, whs);
   eq([fb.ok, fb.selection_branch, fb.demo_fallback, fb.source_proven], [true, 'DEMO_DETERMINISTIC_FACTORY_FALLBACK', true, false], '3. a BLANK template origin_warehouse_id activates the Demo fallback, truthfully marked NOT source-proven');
   eq(fb.master_identity_proven, true, '3/B. the fallback still proves an EXACT warehouses master identity');
@@ -1922,8 +1926,13 @@ section('V3G5B-4..8. every fallback filter is required');
   eq(['FALSE', '', 'TRUE', 'no', '0'].map(function (v) { return b5Resolve({}, [b5Fac(base, { is_shipping_enabled: v })]).warehouse_id; }), [base, base, base, base, base], 'I-1/I-2/V3G5C. EVERY is_shipping_enabled value yields the SAME selection: the flag has no effect whatsoever');
   eq(b5Resolve({}, [b5Fac(base, { country: 'VN' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '7. the fallback country must equal the template origin_country EXACTLY');
   eq(b5Resolve({ origin_country: '' }, [b5Fac(base)]).detail, 'TEMPLATE_ORIGIN_COUNTRY_BLANK', '7. a blank template origin_country cannot be matched exactly and fails closed');
-  eq(b5Resolve({}, [b5Fac(base, { company: 'OTHERCO' })]).reason, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', '8. the fallback company must equal the resolved Demo company when the warehouse company is populated');
-  eq(b5Resolve({}, [b5Fac(base, { company: '' })]).warehouse_id, base, '8. a warehouse with a BLANK company is not excluded by the company gate');
+  // V3G5D(A/B/F) - SUPERSEDES V3G5B/V3G5C item 8. Production's own factory rule is company-AGNOSTIC
+  // (supply-planning-allocation-facts.js: "factory eligibility = is_factory_warehouse + is_active (shared source;
+  // company-agnostic per D-1)"), and factory_stock is the cross-company FACTORY_SHARED pool. A factory administratively
+  // owned by another company is therefore ELIGIBLE; the mismatch is evidence, never a block.
+  eq(b5Resolve({}, [b5Fac(base, { company: 'OTHERCO' })]).warehouse_id, base, '8/V3G5D. a factory owned by another company IS eligible (shared physical source)');
+  eq(b5Resolve({}, [b5Fac(base, { company: '' })]).warehouse_id, base, '8/V3G5D. and a blank company is likewise never a filter');
+  eq(['KM', 'ResUS', 'ResTW', 'OTHERCO', ''].map(function (c) { return b5Resolve({}, [b5Fac(base, { company: c })]).warehouse_id; }), [base, base, base, base, base], '8/V3G5D. EVERY warehouse company value yields the SAME selection: company has no effect on factory source eligibility');
 })();
 
 section('V3G5B-9..16. the fallback is deterministic and never substitutes another identity');
@@ -2180,7 +2189,8 @@ section('V3G5C-I. the corrected eligibility matrix, one row per rule');
    ['is_active FALSE', { is_active: 'FALSE' }, false],
    ['is_factory_warehouse FALSE', { is_factory_warehouse: 'FALSE' }, false],
    ['wrong country', { country: 'VN' }, false],
-   ['wrong populated company', { company: 'OTHERCO' }, false],
+   ['another populated company (V3G5D: shared factory)', { company: 'OTHERCO' }, true],
+   ['another warehouse_owner (V3G5D: shared factory)', { warehouse_owner: 'ResTW' }, true],
    ['blank company', { company: '' }, true]].forEach(function (c) {
     eq(elig(c[1]).ok === true, c[2], 'I. fallback eligibility with ' + c[0] + ' -> ' + (c[2] ? 'ELIGIBLE' : 'INELIGIBLE'));
   });
@@ -2188,7 +2198,7 @@ section('V3G5C-I. the corrected eligibility matrix, one row per rule');
   eq(elig({ is_factory_warehouse: 'FALSE' }).rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 1 }, 'H. a non-factory row is counted as NOT_A_FACTORY_WAREHOUSE');
   eq(elig({ is_active: 'FALSE' }).rejection_counts, { INACTIVE: 1 }, 'H. an inactive factory is counted as INACTIVE');
   eq(elig({ country: 'VN' }).rejection_counts, { COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY: 1 }, 'H. a wrong-country factory is counted as COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY');
-  eq(elig({ company: 'OTHERCO' }).rejection_counts, { COMPANY_MISMATCH: 1 }, 'H. a wrong-company factory is counted as COMPANY_MISMATCH');
+  eq(elig({ company: 'OTHERCO' }).rejection_counts, {}, 'H/V3G5D. a differing company produces NO rejection at all - the code COMPANY_MISMATCH no longer exists');
   ok(Object.keys(elig({ is_active: 'FALSE' }).rejection_counts).indexOf('SHIPPING_DISABLED') === -1, 'E. no rejection code for a shipping capability exists any more');
   // C - a shipping-disabled factory is now the SELECTED source end to end, not merely "eligible".
   var mShip = mastersB5({ mapWarehouses: function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.is_shipping_enabled = 'FALSE'; return c; } });
@@ -2206,8 +2216,11 @@ section('V3G5C-C. country / company scope still fails CLOSED - nothing is silent
   eq(noFactory.reason, 'DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY', 'C. with the typed plan-level reason');
   ok(noFactory.source_authority_errors.every(function (e) { return e.reason === 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE'; }), 'C. and the exact per-slot reason NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE');
   eq(noFactory.source_authority_summary.source_factory_rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 3, INACTIVE: 1 }, 'C/H. the read-only summary names the exact cause per typed code (the three FBA destination rows are correctly counted as NOT_A_FACTORY_WAREHOUSE, the CN factory as INACTIVE), never an anonymous failure');
-  var otherCo = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.company = 'OTHERCO'; return c; });
-  eq([otherCo.ok, otherCo.source_authority_summary.source_factory_rejection_counts], [false, { NOT_A_FACTORY_WAREHOUSE: 3, COMPANY_MISMATCH: 1 }], 'C. a factory owned by another POPULATED company is never silently borrowed');
+  // V3G5D - SUPERSEDES the V3G5C company fail-closed expectation. Cross-company factory use is the FROZEN, canonical
+  // rule, so the plan must BUILD, not fail; the differing company is surfaced as evidence on every shipment.
+  var otherCo = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) { c.company = 'ResTW'; c.warehouse_owner = 'ResTW'; } return c; });
+  eq(otherCo.ok, true, 'C/V3G5D. a ResTW-owned CN factory BUILDS a KM Demo plan (administrative ownership is not a usage permission)');
+  ok(otherCo.per_shipment.every(function (x) { return x.source_warehouse_company === 'ResTW' && x.source_warehouse_owner === 'ResTW' && x.shipment_company === 'KM' && x.source_company_match === false && x.source_company_match_required === false && x.source_shared_factory_authorized === true; }), 'C/F/V3G5D. and the mismatch is VISIBLE evidence on every shipment while remaining non-blocking');
   var otherCountry = scoped(function (w) { var c = {}; for (var k in w) c[k] = w[k]; if (DEMO4A_whIsFactory_(c)) c.country = 'VN'; return c; });
   eq([otherCountry.ok, otherCountry.source_authority_summary.source_factory_rejection_counts], [false, { NOT_A_FACTORY_WAREHOUSE: 3, COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY: 1 }], 'C. selection is never broadened across countries: the source stays in the template origin country');
   ok(B5_.per_shipment.every(function (x) { return DEMO4A_low_(x.source_warehouse_country) === 'cn' && DEMO4A_low_(x.template_origin_country) === 'cn'; }), 'C. the three selected Demo templates keep a CN source, as expected');
@@ -2280,6 +2293,217 @@ section('V3G5C-D/F/G. propagation, projection, checksum and the V3G5B protection
   eq(DEMO4A_buildPlan_(m46).counts, { shipping_plans: 3, shipping_plan_lines: 8, shipments: 3, shipment_lines: 8, shipment_routes: 46, shipment_events: 5, total: 73 }, 'I-15/I-16. the six-table counts remain 3 / 8 / 3 / 8 / 46 / 5 = 73');
   eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'I-21. both confirmation constants remain placeholders');
   ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, 'I-22. the warehouses master remains read-only');
+})();
+
+// ================================================================================================================
+// V3G5D - SHARED FACTORY SOURCE AUTHORITY.
+// The live diagnostic stopped safely with verdict CANONICALIZATION_RISK_REMAINS / plan_blocked_reason
+// DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY / DEMO4A_ZERO_WRITE_CONFIRMED YES. The cause was NOT missing DB data: the
+// live CN factory is administratively owned by ResTW, and V3G5C's company-equality gate rejected it for a KM Demo
+// shipment. That gate contradicted the repository's own FROZEN rule (D-1 FACTORY_SHARED: factory stock is a
+// company-agnostic cross-company shared physical pool and `warehouses.company` is owner/administrative context only).
+// These fixtures reproduce the EXACT live rows the user supplied.
+// ================================================================================================================
+// the live warehouse rows, verbatim from the user's DB evidence (no id or code is hardcoded in executable selection).
+function d5LiveYouxin(over) { over = over || {}; var r = { warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN', warehouse_code: 'CN_YOUXIN', warehouse_name: 'CN侑鑫',
+  warehouse_type: 'FACTORY', company: 'ResTW', warehouse_owner: 'ResTW', is_factory_warehouse: 'TRUE', is_active: 'TRUE', country: 'CN', is_shipping_enabled: '',
+  logistics_region: 'CN East', address_line1: '1 Youxin Rd', address_line2: '', city: 'Shenzhen', state: 'Guangdong', subdivision_code: 'GD', postal_code: '518000' };
+  Object.keys(over).forEach(function (k) { r[k] = over[k]; }); return r; }
+function d5LiveTwFactory(over) { over = over || {}; var r = { warehouse_id: 'WH-TW-TW-FACTORY-RES', warehouse_code: 'TW_RES', warehouse_name: 'TW Factory',
+  warehouse_type: 'FACTORY', company: 'ResTW', warehouse_owner: 'ResTW', is_factory_warehouse: 'TRUE', is_active: 'TRUE', country: 'TW', is_shipping_enabled: '',
+  logistics_region: 'TW', address_line1: '1 TW Rd', address_line2: '', city: 'Taipei', state: 'Taipei', subdivision_code: 'TP', postal_code: '10001' };
+  Object.keys(over).forEach(function (k) { r[k] = over[k]; }); return r; }
+// the live-shaped masters: blank template origin AND destination warehouse ids, and the ONLY factories present are the
+// two real ResTW rows - exactly the live condition that V3G5C blocked.
+function mastersD5(over) {
+  over = over || {};
+  var m = mastersB5(over);
+  m.warehouses = m.warehouses.filter(function (w) { return !DEMO4A_whIsFactory_(w); }).concat([d5LiveTwFactory(over.twOver), d5LiveYouxin(over.youxinOver)]);
+  if (over.extraWarehouses) m.warehouses = m.warehouses.concat(over.extraWarehouses);
+  return m;
+}
+var D5_ = DEMO4A_buildPlan_(mastersD5());
+var D5_WHS_ = mastersD5().warehouses;
+
+section('V3G5D-A. the shared-factory rule is ALREADY canonical - cited, not invented');
+(function () {
+  var SC = fs.readFileSync(path.join(ROOT, '..', 'docs', 'planning', 'RECOMMENDATION_SOURCE_CONTRACT_SPEC.md'), 'utf8');
+  ok(/Factory stock is a \*\*company-agnostic, cross-company shared physical supply pool\*\*/.test(SC), 'A. SC-11.1 D-1 RESOLVED records the cross-company shared factory pool');
+  ok(/`warehouses\.company` stays owner\/administrative context only/.test(SC), 'A. and states verbatim that warehouses.company is owner/administrative context ONLY');
+  var AF = fs.readFileSync(path.join(ROOT, 'js', 'core', 'supply-planning-allocation-facts.js'), 'utf8');
+  ok(/factory eligibility = is_factory_warehouse \+ is_active \(shared source; company-agnostic per D-1\)/.test(AF), 'A. production records factory eligibility as company-agnostic');
+  var elig = AF.slice(AF.indexOf('function eligibleFactoryWarehouseIds'), AF.indexOf('function eligibleFactoryWarehouseIds') + 700);
+  ok(/is_factory_warehouse/.test(elig) && /is_active/.test(elig) && /w\.company/.test(elig) === false, 'A. and its implementation filters on EXACTLY those two flags with NO company filter');
+  ok(/str\(w\.company\) === company/.test(AF), 'A. while the 3PL branch in the SAME file DOES require company equality - the asymmetry is deliberate');
+  var GAP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '43_api_v1_gap_materialization.gs'), 'utf8');
+  ok(/FACTORY  — company-wide competing set \(factory_stock is the FACTORY_SHARED pool/.test(GAP), 'A. and the gap materializer calls FACTORY a company-wide competing set');
+  // the tool must CITE the rule rather than assert it on its own authority.
+  ok(/RECOMMENDATION_SOURCE_CONTRACT_SPEC\.md SC-11\.1/.test(G) && /supply-planning-allocation-facts\.js/.test(G) && /43_api_v1_gap_materialization\.gs/.test(G), 'A. the Demo tool cites all three production sources at the policy site');
+  ok(/administrative attribution, NEVER exclusive usage permissions/.test(G), 'A. and freezes the corrected semantic in words');
+  eq([DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_, DEMO4A_SOURCE_FACTORY_SHARED_ACROSS_COMPANIES_], [false, true], 'A/F. the frozen policy constants are company_match_required = FALSE and shared_across_companies = TRUE');
+})();
+
+section('V3G5D-L1..L7. the supplied live DB rows: YOUXIN is selected for CN, the TW factory is rejected');
+(function () {
+  // L6 - the live ResTW-owned CN factory is reached from the live rows by deterministic eligibility, never hardcoded.
+  var sel = DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveTwFactory(), d5LiveYouxin()], 'KM');
+  eq([sel.ok, sel.warehouse_id, sel.warehouse_code, sel.warehouse_name, sel.company, sel.warehouse_owner, sel.country, sel.selection_branch],
+     [true, 'WH-TW-CN-FACTORY-YOUXIN', 'CN_YOUXIN', 'CN侑鑫', 'ResTW', 'ResTW', 'CN', 'DEMO_DETERMINISTIC_FACTORY_FALLBACK'],
+     'L6. the exact live CN factory (ResTW-owned) is selected for a KM CN-origin template');
+  ok(/WH-TW-CN-FACTORY-YOUXIN|CN_YOUXIN/.test(extractFn(G, 'DEMO4A_resolveDemoSourceWarehouse_')) === false && /WH-TW-CN-FACTORY-YOUXIN|CN_YOUXIN/.test(extractFn(G, 'DEMO4A_sourceEvidence_')) === false, 'C. neither the id nor the code is hardcoded in executable selection logic');
+  ok(/WH-TW-CN-FACTORY-YOUXIN/.test(G) === false, 'C. the live id appears nowhere in the tool at all');
+  // L7 - the TW factory is rejected for a CN-origin template on COUNTRY, the one geography rule that still binds.
+  var twOnly = DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveTwFactory()], 'KM');
+  eq([twOnly.ok, twOnly.reason, twOnly.rejection_counts], [false, 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', { COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY: 1 }], 'L7. WH-TW-TW-FACTORY-RES is rejected for a CN-origin template: its country is TW');
+  ok(sel.warehouse_id !== 'WH-TW-TW-FACTORY-RES', 'L7. and it is never selected even though it sorts BEFORE the CN row by warehouse_id');
+  eq(['WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-TW-FACTORY-RES'].slice().sort().join(','), 'WH-TW-CN-FACTORY-YOUXIN,WH-TW-TW-FACTORY-RES', 'L7. (the CN row does sort first here, so country is proven by the TW-only case above)');
+  // L1/L2/L3 - the SAME ResTW factory serves KM, ResUS and ResTW shipments alike.
+  ['KM', 'ResUS', 'ResTW'].forEach(function (co) {
+    var r = DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveTwFactory(), d5LiveYouxin()], co);
+    eq([r.ok, r.warehouse_id], [true, 'WH-TW-CN-FACTORY-YOUXIN'], 'L1/L2/L3. the ResTW-owned CN factory is eligible for a ' + co + ' shipment');
+  });
+  // L4/L5 - company and warehouse_owner mismatches are VISIBLE but never blocking.
+  eq([sel.company, sel.warehouse_owner, sel.source_company_match_required, sel.user_authorized_shared_factory_policy], ['ResTW', 'ResTW', false, true], 'L4/L5. the mismatching company and owner are preserved as evidence, with company_match_required FALSE');
+  eq(['ResTW', 'KM', 'ResUS', 'OTHERCO', ''].map(function (o) { return DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveYouxin({ warehouse_owner: o })], 'KM').warehouse_id; }),
+     ['WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN'], 'L5. EVERY warehouse_owner value yields the same selection: owner has no effect on eligibility');
+  // L8..L12 - every rule that MUST still bind, still binds.
+  eq(DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveYouxin({ is_active: 'FALSE' })], 'KM').rejection_counts, { INACTIVE: 1 }, 'L8. an INACTIVE CN factory is still rejected');
+  eq(DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveYouxin({ is_factory_warehouse: 'FALSE' })], 'KM').rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 1 }, 'L9. a NON-factory row is still rejected for the blank-template fallback');
+  eq(['', 'FALSE', 'TRUE'].map(function (v) { return DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), [d5LiveYouxin({ is_shipping_enabled: v })], 'KM').warehouse_id; }), ['WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN'], 'L10/L11. the live BLANK is_shipping_enabled - and an explicit FALSE - remain eligible (V3G5C preserved)');
+  var pool = [d5LiveYouxin({ warehouse_id: 'WH-TW-CN-FACTORY-Z' }), d5LiveYouxin({ warehouse_id: 'WH-TW-CN-FACTORY-A' }), d5LiveYouxin()];
+  eq(DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), pool, 'KM').warehouse_id, 'WH-TW-CN-FACTORY-A', 'L12. eligible rows are still sorted by normalized warehouse_id ASCENDING and the first is taken');
+  eq(DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({}), pool.slice().reverse(), 'KM').warehouse_id, 'WH-TW-CN-FACTORY-A', 'L12. and input row order still does not matter');
+  eq(DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({ origin_warehouse_id: 'WH-NOT-IN-MASTER' }), [d5LiveYouxin()], 'KM').reason, 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', 'L13. a nonblank INVALID template source id still fails closed');
+  ok(!DEMO4A_resolveDemoSourceWarehouse_(b5Tpl({ origin_warehouse_id: 'WH-NOT-IN-MASTER' }), [d5LiveYouxin()], 'KM').warehouse_id, 'L13. and never falls through to the factory fallback');
+  // L29 - no executable company-equality rejection of a factory source survives anywhere.
+  var CODE = G.split('\n').filter(function (l) { return !/^\s*(\/\/|\*|\/\*)/.test(l); }).join('\n');
+  var RES = extractFn(G, 'DEMO4A_resolveDemoSourceWarehouse_').split('\n').filter(function (l) { return !/^\s*\/\//.test(l); }).join('\n');
+  var NLCH = String.fromCharCode(10);
+  var RES_BODY = RES.split(NLCH).slice(1).join(NLCH);   // drop the mandated signature line: `company` survives only as the parameter name
+  ok(/company/i.test(RES_BODY) === false, 'L29. the resolver BODY contains no company reference on any branch - the mandated `company` parameter is now evidence-only and gates nothing');
+  ok(/DEMO4A_whCompany_/.test(RES) === false, 'L29. the resolver never reads a warehouse company at all');
+  ok(/COMPANY_MISMATCH/.test(RES) === false, 'L29. and no executable COMPANY_MISMATCH source rejection remains in the resolver');
+  // F - the correction is scoped to the SOURCE factory ONLY: the DESTINATION company rules must survive untouched.
+  ok(/reason: 'COMPANY_MISMATCH'/.test(extractFn(G, 'DEMO4A_destAuthorityForTemplate_')), 'F. the DESTINATION warehouse company identity rule is deliberately PRESERVED (this correction is source-scoped)');
+  ok(/DESTINATION_WAREHOUSE_SCOPE_COMPANY_MISMATCH/.test(CODE), 'F. and so is the destination scope-company gate in buildPlan');
+  ok(/DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH/.test(CODE) === false, 'L29. nor the declared-source company rejection');
+  ok(/Math\.random/.test(CODE) === false, 'L28. Math.random still appears nowhere in executable code');
+  ok(/locations|latitude|longitude|logistics_location/.test(RES) === false, 'B. and the resolver still inspects no location or coordinate on any branch');
+})();
+
+section('V3G5D-E/F. propagation and the shared-company evidence on the live-shaped plan');
+(function () {
+  ok(D5_.ok, 'E. the live-shaped plan (ResTW CN factory only, blank template warehouse ids) now BUILDS');
+  var whIds = {}; D5_WHS_.forEach(function (w) { whIds[DEMO4A_whId_(w)] = 1; });
+  eq(D5_.tables.shipping_plans.map(function (pl) { return pl.source_warehouse_id; }), ['WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN', 'WH-TW-CN-FACTORY-YOUXIN'], 'E/L14. every shipping_plan carries the resolved shared CN factory');
+  ok(D5_.tables.shipments.every(function (sh) { var pl = D5_.tables.shipping_plans.filter(function (x) { return x.shipping_plan_id === sh.shipping_plan_id; })[0];
+    return sh.source_warehouse_id === pl.source_warehouse_id && sh.destination_warehouse_id === pl.destination_warehouse_id
+      && whIds[sh.source_warehouse_id] && whIds[sh.destination_warehouse_id]
+      && DEMO4A_low_(sh.source_warehouse_id) !== DEMO4A_low_(sh.destination_warehouse_id); }), 'E/L14/L16. every shipment inherits both endpoints exactly, both resolve to master rows, and they stay distinct');
+  eq(D5_.per_shipment.map(function (x) { return x.region + '=' + x.destination_warehouse_id + '/' + x.destination_warehouse_code; }).sort().join(','),
+     'US_CENTRAL=WH-KM-US-FBA-AUS2/AUS2,US_EAST=WH-KM-US-FBA-ABE2/ABE2,US_WEST=WH-KM-US-FBA-BFI4/BFI4', 'L15. the destination identities remain ABE2 / AUS2 / BFI4 with their codes');
+  ok(D5_.tables.shipments.every(function (sh) { var per = D5_.per_shipment.filter(function (x) { return x.shipment_id === sh.shipment_id; })[0];
+    return sh.warehouse_code === per.destination_warehouse_code && sh.warehouse_code !== sh.destination_warehouse_id; }), 'L17. warehouse_code remains the destination display-code snapshot');
+  ok(D5_.tables.shipments.every(function (sh) { return !Object.prototype.hasOwnProperty.call(sh, 'warehouse_id') && !Object.prototype.hasOwnProperty.call(sh, 'updated_by'); }), 'E. shipments.warehouse_id and shipments.updated_by are NOT restored');
+  // F - the shared-company evidence, per shipment.
+  ok(D5_.per_shipment.every(function (x) { return x.source_warehouse_company === 'ResTW' && x.source_warehouse_owner === 'ResTW' && x.shipment_company === 'KM'
+    && x.source_company_match === false && x.source_company_match_required === false && x.source_shared_factory_authorized === true; }), 'F. every shipment publishes company / owner / shipment_company / match=false / required=false / authorized=true');
+  eq([D5_.source_authority_summary.source_factory_shared_across_companies, D5_.source_authority_summary.source_company_match_required, D5_.source_authority_summary.source_shared_factory_authorized], [true, false, true], 'F. and the plan-level shared-factory policy is published');
+  // the lineage gate must NOT treat a company mismatch as a defect.
+  var lg = DEMO4A_srcDestLineageGate_(D5_, D5_WHS_);
+  eq([lg.source_destination_warehouse_lineage_ready, lg.reason_count], [true, 0], 'F/L21. a ResTW source with a KM shipment is NOT a lineage failure');
+  eq([lg.source_warehouse_companies, lg.source_warehouse_owners], [['ResTW', 'ResTW', 'ResTW'], ['ResTW', 'ResTW', 'ResTW']], 'F. the lineage gate carries the companies and owners as evidence');
+  ok(lg.reasons.every(function (r) { return !/COMPANY/.test(r); }), 'F/L4. no lineage reason code can be produced by a company mismatch');
+  eq(D5_.binding_gates.ok, true, 'F. and the full binding-gate conjunction passes');
+  // D - the checksum manifest binds the owner and the policy marker.
+  ok(/DEMO4A_str_\(srcSel\.warehouse_owner\)/.test(G) && /srcSel\.user_authorized_shared_factory_policy === true \? '1' : '0'/.test(G), 'D. the WHSRC manifest binds warehouse_owner and the shared-factory policy marker');
+  ok(D5_.per_shipment.every(function (x) { return x.source_proven === false && x.source_master_identity_proven === true; }), 'D. the deterministic fallback is truthfully NOT template-proven while its master identity IS proven');
+})();
+
+section('V3G5D-J. the checksum is new, deterministic and sensitive to source + shared-policy mutation');
+(function () {
+  eq(DEMO4A_buildPlan_(mastersD5()).checksum, D5_.checksum, 'L18/J. the same live-shaped input reproduces the same checksum');
+  ok(D5_.checksum !== B5_.checksum, 'J. the corrected shared-factory plan produces a NEW checksum (the company-isolated V3G5C value is retired)');
+  var altSrc = DEMO4A_buildPlan_(mastersD5({ youxinOver: { warehouse_id: 'WH-TW-CN-FACTORY-AAA' } }));
+  ok(altSrc.per_shipment[0].source_warehouse_id === 'WH-TW-CN-FACTORY-AAA' && altSrc.checksum !== D5_.checksum, 'L18/J. changing the source warehouse id changes the checksum');
+  var altOwner = DEMO4A_buildPlan_(mastersD5({ youxinOver: { warehouse_owner: 'AMZLGS' } }));
+  ok(altOwner.ok && altOwner.checksum !== D5_.checksum, 'J. changing the source warehouse_owner attribution changes the checksum (bound as evidence, though never a gate)');
+  var altCo = DEMO4A_buildPlan_(mastersD5({ youxinOver: { company: 'ResUS' } }));
+  ok(altCo.ok && altCo.checksum !== D5_.checksum, 'J. changing the source company changes the checksum while still building');
+  var altCode = DEMO4A_buildPlan_(mastersD5({ youxinOver: { warehouse_code: 'CN_OTHER' } }));
+  ok(altCode.checksum !== D5_.checksum, 'J. changing the source warehouse_code changes the checksum');
+  var altLoc = DEMO4A_buildPlan_(mastersD5({ mapLocations: function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (c.logistics_location_id === 'LOC-WH-KM-US-FBA-ABE2') c.logistics_location_id = 'LOC-ALT-ABE2'; return c; } }));
+  ok(altLoc.ok && altLoc.checksum !== D5_.checksum, 'J. changing the destination logistics-location lineage changes the checksum');
+  ok(/7e4cf9d9/.test(G) === false && /8b3eabec/.test(G) === false, 'J. every retired checksum value stays unnamed in source; none is hardcoded');
+  ok(new RegExp("DEMO4A_CONFIRMED_SEED_CHECKSUM_ = '[0-9a-f]{8}").test(G) === false, 'J/L26. no live checksum is pinned into the confirmation constant');
+})();
+
+section('V3G5D-H/I. the read-only outputs carry the shared-factory evidence and stay compact');
+(function () {
+  var MP = { present: { shipment_route_templates: true, shipment_route_template_nodes: true, logistics_locations: true, marketplace_skus: true, sku_details: true, warehouses: true } };
+  var PV = { verdict: 'THREE_REGION_COORDINATE_PROPOSAL_READY', proposal_entries: 3 };
+  var hdrs = {}, ctc = {};
+  DEMO4A_WRITE_ORDER_.forEach(function (t2) { var seen = {}; (D5_.tables[t2] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); }); hdrs[t2] = Object.keys(seen); ctc[t2] = {}; hdrs[t2].forEach(function (h) { ctc[t2][h] = 'text_cell'; }); });
+  ctc.shipping_plans.ship_from = 'numeric_cell'; ctc.shipping_plans.destination = 'numeric_cell';
+  var diag = DEMO4A_canonDiagnosticCore_({ ok: true }, mastersD5(), D5_, hdrs, ctc, { ok: true, offset_min: 480, time_zone: 'Asia/Taipei' }, null, 'ABSENT_ALL', DEMO4A_srcDestLineageGate_(D5_, D5_WHS_), true);
+  ['schema_ok', 'plan_checksum', 'corrected_plan_checksum', 'writer_projection_complete', 'writer_projection_missing_total', 'risk_count',
+   'source_destination_warehouse_lineage_ready', 'source_warehouse_ids', 'source_warehouse_codes', 'source_warehouse_companies', 'source_warehouse_owners',
+   'source_selection_branches', 'source_factory_shared_across_companies', 'source_company_match_required',
+   'destination_warehouse_ids', 'destination_warehouse_codes', 'existing_state', 'journal_integrity_valid', 'journal_retry_safe',
+   'confirmation_constant_status', 'verdict'].forEach(function (k) { ok(diag[k] !== undefined, 'H. the diagnostic exposes ' + k); });
+  eq(diag.verdict, 'READY_FOR_CONTROLLED_RETRY', 'H/L21. the successful verdict is READY_FOR_CONTROLLED_RETRY');
+  eq([diag.writer_projection_complete, diag.writer_projection_missing_total, diag.risk_count, diag.source_destination_warehouse_lineage_ready], [true, 0, 0, true], 'L19/L20/L21. projection complete, zero missing, zero risk, lineage ready');
+  eq([diag.source_warehouse_companies, diag.source_warehouse_owners], [['ResTW', 'ResTW', 'ResTW'], ['ResTW', 'ResTW', 'ResTW']], 'H. it publishes the source companies and owners');
+  eq([diag.source_factory_shared_across_companies, diag.source_company_match_required], [true, false], 'H. and the shared-factory policy');
+  ok(/DEMO4A_ZERO_WRITE_CONFIRMED/.test(extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION')), 'H. the entrypoint stamps DEMO4A_ZERO_WRITE_CONFIRMED');
+  ok(JSON.stringify(diag).length < 6000, 'H/L22. the diagnostic is ' + JSON.stringify(diag).length + ' bytes (< 6000), one compact log entry');
+  // H - a BLOCKED plan must name the precise resolver reason, not only the generic plan-level code.
+  var blockedSrc = extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION');
+  ok(/plan_blocked_detail/.test(blockedSrc) && /source_authority_errors/.test(blockedSrc), 'H. a blocked plan reports plan_blocked_detail from the exact per-slot source resolver errors');
+  var blockedPlan = DEMO4A_buildPlan_(mastersD5({ youxinOver: { is_active: 'FALSE' }, twOver: { is_active: 'FALSE' } }));
+  eq(blockedPlan.reason, 'DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY', 'H. (the generic plan-level reason is still produced)');
+  ok(blockedPlan.source_authority_errors.every(function (e) { return e.reason === 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE' && /NO_ACTIVE_FACTORY_WAREHOUSE_IN_ORIGIN_COUNTRY/.test(e.detail); }), 'H. and the PRECISE per-slot reason + detail are available for the log');
+  eq(blockedPlan.source_authority_summary.source_factory_rejection_counts, { NOT_A_FACTORY_WAREHOUSE: 3, INACTIVE: 2 }, 'H. with typed rejection counts naming every excluded row');
+  // I - the authorization envelope.
+  var env = DEMO4A_authorizationSummary_({ ok: true }, MP, D5_, D5_, emptyLive(), PV);
+  eq([env.may_run_dry_run, env.preflight_verdict], [true, 'READY_FOR_DEMO_SEED'], 'I. the corrected shared-factory plan is authorizable');
+  eq([env.per_shipment[0].source_warehouse_id, env.per_shipment[0].source_warehouse_code, env.per_shipment[0].source_warehouse_company, env.per_shipment[0].source_warehouse_owner, env.per_shipment[0].source_selection_branch],
+     ['WH-TW-CN-FACTORY-YOUXIN', 'CN_YOUXIN', 'ResTW', 'ResTW', 'DEMO_DETERMINISTIC_FACTORY_FALLBACK'], 'I. it exposes the selected source id / code / company / owner / branch');
+  eq([env.source_company_match_required, env.source_factory_shared_across_companies, env.source_shared_factory_authorized, env.per_shipment[0].source_company_match], [false, true, true, false], 'I. plus the shared-factory policy and the plain company-match fact');
+  eq([env.source_destination_warehouse_lineage.ready, env.gate_summary.source_destination_warehouse_lineage_ready], [true, true], 'I. and the source/destination lineage gate');
+  ok(DEMO4A_str_(env.demo_plan_checksum) !== '' && env.may_arm_commit_checksum === true, 'I. the current checksum and may_arm_commit_checksum are exposed');
+  ok(JSON.stringify(env).length < 6000, 'I/L22. the authorization envelope is ' + JSON.stringify(env).length + ' bytes (< 6000)');
+  ok((G.match(/function DEMO4A_sourceAuthoritySummary_/g) || []).length === 1, 'I. the shared summariser is still ONE function - the evaluator is not duplicated');
+})();
+
+section('V3G5D-K/L. counts, routes, events, journal, rollback and constants all survive');
+(function () {
+  var P46 = DEMO4A_buildPlan_(mastersD5({ nodeCounts: { US_WEST: 16, US_CENTRAL: 15, US_EAST: 15 } }));
+  eq(P46.counts, { shipping_plans: 3, shipping_plan_lines: 8, shipments: 3, shipment_lines: 8, shipment_routes: 46, shipment_events: 5, total: 73 }, 'K/L23. the six-table counts remain 3 / 8 / 3 / 8 / 46 / 5 = 73');
+  eq(P46.per_shipment.map(function (x) { return x.region; }).sort().join(','), 'US_CENTRAL,US_EAST,US_WEST', 'K. W/C/E coverage is preserved');
+  var byShip = {}; P46.tables.shipment_events.forEach(function (e) { (byShip[e.shipment_id] = byShip[e.shipment_id] || []).push(e); });
+  P46.per_shipment.forEach(function (x) {
+    var evs = byShip[x.shipment_id] || [], last = evs[evs.length - 1];
+    var routes = P46.tables.shipment_routes.filter(function (r) { return r.shipment_id === x.shipment_id; }), destRoute = routes[routes.length - 1];
+    if (x.slot === 'origin') eq(evs.length, 1, 'K. the shipped shipment keeps ONLY the departed-origin event');
+    if (x.slot === 'in_transit') { eq(evs.length, 2, 'K. the in-transit shipment keeps origin + current events'); ok(last.shipment_route_id !== destRoute.shipment_route_id, 'K. and its destination stays planned (no received event)'); }
+    if (x.slot === 'delivered') { ok(last.shipment_route_id === destRoute.shipment_route_id && DEMO4A_num_(last.latitude) === DEMO4A_num_(destRoute.latitude), 'K. the received shipment ends at the approved destination warehouse coordinate'); }
+  });
+  ok(P46.per_shipment.every(function (x) { return x.destination_facility_marker_renderable === true; }), 'K. the destination marker stays renderable');
+  ok(P46.per_shipment.every(function (x) { return x.current_location_id !== x.origin_location_id && x.current_location_id !== x.destination_location_id; }), 'K. the current marker stays distinct from origin and destination');
+  ok(P46.binding_gates.sea_truck_destination_not_airport === true, 'K. no gateway is relabelled as the destination warehouse');
+  var cf = extractFn(G, 'TEMP_DEMO4A_COMMIT_SHIPPING_SHIPMENT_MAP_SEED');
+  ok(/rb\.ok \? 'COMMIT_FAILED_POSTCHECK_ROLLED_BACK' : 'COMMIT_FAILED_POSTCHECK_ROLLBACK_UNVERIFIED'/.test(cf), 'L24. inserted-only rollback with mandatory verification is intact');
+  ok(/COMMITTED_UNVERIFIED/.test(G) === false, 'L25. COMMITTED_UNVERIFIED remains impossible');
+  ok(/deleteProperty/.test(extractFn(G, 'TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION')) === false, 'J. the prior journal is still never cleared or mutated');
+  var hdrs2 = {}; DEMO4A_WRITE_ORDER_.forEach(function (t2) { var seen = {}; (D5_.tables[t2] || []).forEach(function (r) { Object.keys(r).forEach(function (k) { seen[k] = 1; }); }); hdrs2[t2] = Object.keys(seen); });
+  eq(DEMO4A_writerProjectionGaps_(D5_, hdrs2).missing_total, 0, 'L19. writer projection is complete on the corrected plan');
+  ok(DEMO4A_writerProjectionGaps_(D5_, (function () { var h = {}; DEMO4A_WRITE_ORDER_.forEach(function (t2) { h[t2] = hdrs2[t2].filter(function (c) { return !(t2 === 'shipments' && c === 'source_warehouse_id'); }); }); return h; })()).ok === false, 'L19. and a dropped physical column still blocks');
+  eq(DEMO4A_classifyState_(D5_, liveFromPlan(D5_)).classification, 'PRESENT_EXACT_ALL', 'L24. an exact write of the corrected rows classifies PRESENT_EXACT_ALL');
+  eq([DEMO4A_CONFIRMED_SEED_CHECKSUM_, DEMO4A_CONFIRMED_CLEAR_TOKEN_], ['PASTE_DEMO_SEED_CHECKSUM_HERE', 'PASTE_DEMO_CLEAR_TOKEN_HERE'], 'L26. both confirmation constants remain placeholders');
+  ok(/insertColumn|appendColumn|createSheet|ALTER TABLE/.test(G) === false, 'L27. no schema / header column is added or migrated');
+  ok(new RegExp("getSheetByName\\('warehouses'\\)\\.(appendRow|deleteRow|setValue)").test(G) === false, 'L27. the warehouses master remains read-only');
+  eq(Object.keys(DEMO4A_DEST_COORD_AUTHORITY_).length, 3, 'K. the three approved destination coordinate authorities are untouched');
 })();
 
 done();

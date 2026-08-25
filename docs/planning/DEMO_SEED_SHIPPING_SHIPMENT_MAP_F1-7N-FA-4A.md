@@ -855,3 +855,73 @@ demo-seed **1084 / 0** (was 995 / 0 after the loader correction, 993 / 0 at V3G5
 ## Sync manifest (USER-owned, nothing run here)
 - `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` · `FRONTEND_DEPLOY_REQUIRED`: none · `BUNDLE_REBUILD_REQUIRED`: NO · **no DB header/schema change required**.
 - Order after review: push → sync the `.gs` → `TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION` (expect `source_shipping_enabled_gate_applied: false`, a non-blank `source_warehouse_ids` triple, `source_factory_candidate_count > 0`, `risk_count 0`, `source_destination_warehouse_lineage_ready true`, `journal_retry_safe true`, `verdict READY_FOR_CONTROLLED_RETRY`; if the source is still unresolved, read `source_factory_rejection_counts` — it names the exact typed cause) → `TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION`, **confirming the printed factory is the intended one** → DRY_RUN → copy the **new** `demo_plan_checksum` → COMMIT → VALIDATE. CLEAR stays staged OFF.
+
+---
+
+# V3G5D — SHARED FACTORY SOURCE AUTHORITY CORRECTION
+**SOURCE-IMPLEMENTED · TEST-PROVEN · NOT LIVE-VERIFIED · NOT LIVE-RUN.** Follow-up on `51c6816` (V3G5C). TEMP demo tool + its offline test + this document only. No production handler, master data, schema/header, frontend, router/API or bundle change; **no canonical document edited** (see §M audit below); both confirmation constants remain `PASTE_..._HERE`; the prior journal was neither cleared nor mutated; no Apps Script entrypoint executed.
+
+## What the live run actually proved
+The live diagnostic stopped **safely**: `verdict CANONICALIZATION_RISK_REMAINS`, `plan_blocked_reason DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY`, `DEMO4A_ZERO_WRITE_CONFIRMED YES`. The cause was **not missing DB data** — the live CN factory exists and is active. V3G5C rejected it because its `company` is `ResTW` while the Demo shipment company is `KM`. That company-**isolation** gate was the defect.
+
+## A/M — canonical audit: the shared-factory rule is ALREADY canonical
+No canonical file needed changing, and **no canonical document contradicts the frozen rule**. The repository already records it:
+
+| Source | Exact evidence |
+|---|---|
+| `RECOMMENDATION_SOURCE_CONTRACT_SPEC.md` **SC-11.1 "D-1 RESOLVED — Factory shared-company authority (`FACTORY_SHARED`)"** | "Factory stock is a **company-agnostic, cross-company shared physical supply pool**." · verbatim: "**`warehouses.company` stays owner/administrative context only**." · "the Factory Allocation Runtime allocates the shared physical pool **across companies**" |
+| `assets/js/core/supply-planning-allocation-facts.js` | "§35/§40: factory eligibility = `is_factory_warehouse` + `is_active` (**shared source; company-agnostic per D-1**)" — and `eligibleFactoryWarehouseIds()` filters on **exactly those two flags with no company filter**, sorted ascending, while the **3PL branch immediately above it does require `str(w.company) === company`**. The asymmetry is deliberate. |
+| `43_api_v1_gap_materialization.gs` | "FACTORY — **company-wide competing set** (`factory_stock` is the **`FACTORY_SHARED`** pool; `is_factory_warehouse` eligible)" — `factoryWhIds` likewise built with no company filter |
+| `SHIPMENT_CENTER_SPEC.md` §22.0(C) | `company` = the business/account context **using** the warehouse (KM/ResUS/ResTW); `warehouse_owner` = the physical **operator** (Amazon / WINIT / AMZLGS / **ResTW for an owned factory**) |
+| `DATABASE_RELATIONSHIP_MAP.md` §589 | the company-filtered candidate pipeline is the **destination** picker, and "**RETURN/FACTORY excluded from normal destination selection**" |
+| repository-wide search | **no** `warehouse_access` / `warehouse_permission` / `warehouse_authorization` mapping table exists anywhere |
+
+**No conflict to report.** `SHIPMENT_CENTER_SPEC.md` §22.0(E)–(H) does filter candidates by Company, but that pipeline is explicitly the **destination** Warehouse Picker and FACTORY is explicitly excluded from it — a **scope distinction, not a contradiction**. The company filter never governed a factory *source*.
+
+**Frozen rule (all eleven points recorded):** (1) `warehouses.company` is administrative/account ownership attribution. (2) `warehouse_owner` identifies owner/operator attribution. (3) Neither is an exclusive usage authorization. (4) Factory warehouses are shared operational sources across KM / ResUS / ResTW. (5) A shipment company need not equal the factory warehouse company. (6) Absent an explicit warehouse-access mapping (none exists), company mismatch must not reject a valid factory source. (7) Country remains authoritative for route geography. (8) `is_active` remains authoritative for lifecycle eligibility. (9) `is_factory_warehouse` remains authoritative for the blank-template fallback. (10) `warehouse_id` remains the business identity. (11) `logistics_location_id` and route `location_ref_id` remain geography only and never replace warehouse identity.
+
+## B — final resolver matrix
+`DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company)` — the signature is unchanged as mandated, but `company` is now **evidence-only**: the resolver body contains no company reference and never calls `DEMO4A_whCompany_` (both asserted).
+
+| Gate | Branch 1 `TEMPLATE_EXACT_SOURCE_WAREHOUSE` | Branch 2 `DEMO_DETERMINISTIC_FACTORY_FALLBACK` |
+|---|---|---|
+| exact `warehouses.warehouse_id`, non-blank | **required** | required (non-blank id) |
+| `is_active` | **required** | **required** |
+| country = `template.origin_country` | **required (exact)** | **required (exact)** |
+| `is_factory_warehouse` | not required | **required** |
+| **`company` / `warehouse_owner`** | **NOT required** | **NOT filtered** |
+| `is_shipping_enabled` · marketplace · coordinates · `logistics_location` · id-prefix | **not consulted** | **not consulted** |
+| selection | the declared row | sort normalized `warehouse_id` **ascending**, take **first** |
+| failure | `TEMPLATE_SOURCE_WAREHOUSE_INVALID`, **never falls through** | `NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE` + typed counts |
+
+No `Math.random`; no fuzzy matching; no route-location substitution; no runtime geocoder. **This correction is source-scoped**: the destination `COMPANY_MISMATCH` identity rule and `DESTINATION_WAREHOUSE_SCOPE_COMPANY_MISMATCH` are deliberately **preserved** (both asserted present).
+
+## C — the supplied live DB rows, reproduced exactly
+The fixture carries the user's rows verbatim. **Result:** `WH-TW-CN-FACTORY-YOUXIN` / `CN_YOUXIN` / `CN侑鑫` / company `ResTW` / owner `ResTW` / country `CN` / branch `DEMO_DETERMINISTIC_FACTORY_FALLBACK` — reached from the live rows by deterministic eligibility and ascending sort. **Neither the id nor the code appears anywhere in the tool** (asserted: 0 occurrences of `WH-TW-CN-FACTORY-YOUXIN` in source). `WH-TW-CN-FACTORY-RES`… `WH-TW-TW-FACTORY-RES` is **rejected for the CN-origin templates on `COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY`** — the one geography rule that still binds. The same ResTW factory is proven eligible for **KM, ResUS and ResTW** shipments alike, and every `warehouse_owner` value yields the identical selection.
+
+## D/F — evidence and the shared-factory policy gate
+The `WHSRC` checksum manifest now binds `warehouse_id`, `warehouse_code`, `warehouse_name`, **`warehouse_owner`**, `company`, `country`, `warehouse_type`, `is_factory_warehouse`, **`is_active`**, the selection branch, the proven/fallback markers and the **shared-factory policy marker**. Provenance stays truthful: branch 1 → `source_proven = true`; branch 2 → `source_proven = false`, `master_identity_proven = true`, `user_authorized_shared_factory_policy = true`. A deterministic fallback is never labelled template-proven.
+
+Published plan-level: `source_factory_shared_across_companies: true`, `source_company_match_required: false`, `source_shared_factory_authorized`. Published **per shipment**: `source_warehouse_company`, `source_warehouse_owner`, `shipment_company`, `source_company_match` (the plain fact — `false` on the live shape), `source_company_match_required: false`, `source_shared_factory_authorized: true`. The lineage gate carries companies and owners as evidence and **can produce no reason code from a company or owner mismatch** (asserted).
+
+## E — propagation on the live-shaped plan
+| slot | region | source (company / owner) | destination | code | logistics location |
+|---|---|---|---|---|---|
+| origin / shipped | US_CENTRAL | `WH-TW-CN-FACTORY-YOUXIN` (ResTW / ResTW) | `WH-KM-US-FBA-AUS2` | `AUS2` | `LOC-WH-KM-US-FBA-AUS2` |
+| in_transit | US_WEST | `WH-TW-CN-FACTORY-YOUXIN` (ResTW / ResTW) | `WH-KM-US-FBA-BFI4` | `BFI4` | `LOC-WH-KM-US-FBA-BFI4` |
+| delivered | US_EAST | `WH-TW-CN-FACTORY-YOUXIN` (ResTW / ResTW) | `WH-KM-US-FBA-ABE2` | `ABE2` | `LOC-WH-KM-US-FBA-ABE2` |
+
+Shipment company `KM` with source company `ResTW` — `source_company_match: false`, and **this is not classified as a conflict**. Plan → shipment inheritance exact for both endpoints, both resolving to master rows, source ≠ destination, no logistics-location id in a warehouse field, `warehouse_code` still the destination display snapshot, `shipments.warehouse_id` / `updated_by` still absent, no column added or renamed.
+
+## H/I — read-only outputs
+Diagnostic **4013 bytes**, authorization envelope **5410 bytes** — both one compact entry, under 6000. The diagnostic publishes `source_warehouse_companies`, `source_warehouse_owners`, `source_factory_shared_across_companies`, `source_company_match_required` alongside the existing contract, and now emits **`plan_blocked_detail`** — the precise per-slot resolver reason/detail — whenever a plan is blocked, so `DEMO_SOURCE_WAREHOUSE_AUTHORITY_NOT_READY` never appears alone again. The envelope exposes the selected source id / code / company / owner / branch, the shared-factory policy, the lineage gate, the checksum and both authorization flags, from the **same single summariser** (one definition — the evaluator is not duplicated).
+
+## G/J/K — preserved
+V3G5C's boolean corrections stand: `is_shipping_enabled` false/blank/true has no effect; inactive factories, non-factory rows and wrong-country factories all remain ineligible; no coordinates, fuzzy matching, route substitution or geocoder. **Checksum:** new, deterministic, **nothing hardcoded**; every previous value — `7e4cf9d9`, `8b3eabec` and the company-isolated V3G5C plan checksum — is retired and unnamed in source. It changes on source id, source company, source owner, source code, selection branch, shared-policy marker, destination id/code and destination logistics lineage (each proven). Journal read-only and supersedable only under the full conjunction; inserted-only rollback with mandatory verification; `COMMITTED_UNVERIFIED` impossible; counts **3/8/3/8/46/5 = 73**; shipped = departed-origin only, in-transit = origin + current with destination planned, delivered = final received at the approved destination coordinate; W/C/E coverage; current marker distinct; destination renderable; no gateway relabelled.
+
+## Tests and baseline
+demo-seed **1203 / 0** (was 1084 / 0 at V3G5C). V3G3 map regression **50 / 0**. Full sweep of **342** suites → the same **4** pre-existing failures (`gap-job-done-notice-f1-small-r1`, `order-planning-monthly-projection-consumer-f1-4b-fm3d`, `replen-header-toggle`, `supply-planning-route-inventory`), none reading a changed file → **0 new failures**. Five company-isolation assertions from V3G5B/V3G5C were **superseded and rewritten with the semantic reason attached, never deleted**: the branch-1 declared-source company gate, the fallback company filter, the V3G5C eligibility-matrix company row, its `COMPANY_MISMATCH` rejection-count expectation, and the plan-level company fail-closed expectation. The authorized per-shipment field set grew 21 → 25.
+
+## Sync manifest (USER-owned, nothing run here)
+- `APPS_SCRIPT_SYNC_REQUIRED`: `TEMP_demo_shipping_shipment_map_seed_v2.gs` · `FRONTEND_DEPLOY_REQUIRED`: none · `BUNDLE_REBUILD_REQUIRED`: NO · **no DB header/schema change required**.
+- Order after review: push → sync the `.gs` → `TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION` (expect `source_warehouse_ids` = the live CN factory, `source_warehouse_companies` = `ResTW`, `source_factory_shared_across_companies true`, `source_company_match_required false`, `risk_count 0`, `source_destination_warehouse_lineage_ready true`, `journal_retry_safe true`, `verdict READY_FOR_CONTROLLED_RETRY`; if still blocked, `plan_blocked_detail` now names the precise resolver reason) → `TEMP_DEMO4A_SUMMARIZE_READ_ONLY_SEED_AUTHORIZATION`, **confirming the printed factory is the intended one** → DRY_RUN → copy the **new** `demo_plan_checksum` → COMMIT → VALIDATE. CLEAR stays staged OFF.

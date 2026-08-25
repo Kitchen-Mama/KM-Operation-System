@@ -842,17 +842,23 @@ var DEMO4A_APPROVED_REGION_DEST_ = { US_WEST: 'WH-KM-US-FBA-BFI4', US_CENTRAL: '
 //   (1) TEMPLATE_EXACT_SOURCE_WAREHOUSE - a NON-BLANK declared id must resolve to an exact warehouses.warehouse_id and
 //       pass every gate. A declared-but-invalid id NEVER falls through to the fallback: it fails closed.
 //   (2) DEMO_DETERMINISTIC_FACTORY_FALLBACK - ONLY when the declared id is blank. Filter by is_factory_warehouse +
-//       is_active + exact origin country + exact company (when populated) - production's OWN canonical factory rule,
-//       with NO is_shipping_enabled gate (V3G5C: that flag is the managed-overseas outbound capability and is never
-//       evaluated for a factory) - then sort by normalized warehouse_id ASCENDING and take the FIRST. A false or blank
-//       is_shipping_enabled therefore NEVER rejects a factory. No Math.random, no row order, no coordinate requirement,
+//       is_active + exact origin country - production's OWN company-agnostic canonical factory rule - with NO
+//       is_shipping_enabled gate (V3G5C: the managed-overseas outbound capability, never evaluated for a factory) and
+//       NO company / warehouse_owner gate (V3G5D: administrative attribution, never a usage permission) - then sort by
+//       normalized warehouse_id ASCENDING and take the FIRST. Neither a false/blank is_shipping_enabled nor a differing
+//       company ever rejects a factory. No Math.random, no row order, no coordinate requirement,
 //       no logistics_location requirement, no fuzzy/name matching, no route/location id, no warehouse_code as an id,
 //       no destination warehouse, no fabricated id. Empty candidate set -> NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE.
 // The source warehouse is a BUSINESS identity; the origin route location stays a separate geographic binding.
 // ================================================================================================================
 function DEMO4A_sourceEvidence_(w, branch) {
   return { ok: true, selection_branch: branch, warehouse_id: DEMO4A_whId_(w), warehouse_code: DEMO4A_whCode_(w), warehouse_name: DEMO4A_whName_(w),
-    company: DEMO4A_whCompany_(w), country: DEMO4A_whCountry_(w), warehouse_type: DEMO4A_whType_(w), is_factory_warehouse: DEMO4A_whIsFactory_(w),
+    company: DEMO4A_whCompany_(w), warehouse_owner: DEMO4A_whOwner_(w), country: DEMO4A_whCountry_(w), warehouse_type: DEMO4A_whType_(w),
+    is_factory_warehouse: DEMO4A_whIsFactory_(w), is_active: DEMO4A_whActive_(w),
+    // V3G5D(D/F) - the shared-factory policy marker. TRUE only on the deterministic fallback, which is the branch the
+    // USER authorized to cross administrative company boundaries; a template-declared source needs no such policy.
+    user_authorized_shared_factory_policy: branch === 'DEMO_DETERMINISTIC_FACTORY_FALLBACK',
+    source_company_match_required: DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_,
     // V3G5C - published so an operator sees the corrected semantic without reading source: the Demo source rule applies
     // NO is_shipping_enabled gate (that flag is the managed-overseas outbound capability, never a factory authority).
     shipping_enabled_gate_applied: DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_,
@@ -876,7 +882,12 @@ function DEMO4A_sourceAuthoritySummary_(sourceAuthority) {
   var capped = {}; Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, DEMO4A_SOURCE_MAX_REJECTION_CODES_).forEach(function (c) { capped[c] = counts[c]; });
   return { source_factory_candidate_count: cand, source_factory_rejection_counts: capped, source_factory_rejection_code_count: Object.keys(counts).length,
     source_selection_branches: branches.slice(0, 3), source_demo_fallback_used: anyFallback,
-    source_shipping_enabled_gate_applied: DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_ };
+    source_shipping_enabled_gate_applied: DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_,
+    // V3G5D(F) - the shared-factory policy, published so an operator can confirm from the log alone that a differing
+    // administrative company is EXPECTED evidence rather than a defect.
+    source_factory_shared_across_companies: DEMO4A_SOURCE_FACTORY_SHARED_ACROSS_COMPANIES_,
+    source_company_match_required: DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_,
+    source_shared_factory_authorized: anyFallback ? true : null };
 }
 function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
   var tpl = template || {}, declared = DEMO4A_str_(tpl.origin_warehouse_id), originCountry = DEMO4A_str_(tpl.origin_country);
@@ -893,14 +904,15 @@ function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
     // be EITHER a factory (SHIPMENT_CENTER_SPEC B-1 factory_stock path) OR a managed overseas warehouse (Overseas
     // Outbound path), so production does NOT prove that a declared template source must always be a factory.
     if (originCountry && DEMO4A_whCountry_(w) && DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COUNTRY_MISMATCH', declared_warehouse_id: declared };
-    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return { ok: false, reason: 'TEMPLATE_SOURCE_WAREHOUSE_INVALID', detail: 'DECLARED_SOURCE_WAREHOUSE_COMPANY_MISMATCH', declared_warehouse_id: declared };
+    // V3G5D(B) - NO company / warehouse_owner equality gate: both are administrative attribution, never an exclusive
+    // usage permission (see the frozen shared-factory policy above). The mismatch is published as evidence instead.
     return DEMO4A_sourceEvidence_(w, 'TEMPLATE_EXACT_SOURCE_WAREHOUSE');
   }
   // (2) Demo-only deterministic factory fallback. A blank template origin_country cannot be matched exactly -> fail closed.
   if (!originCountry) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'TEMPLATE_ORIGIN_COUNTRY_BLANK', declared_warehouse_id: '' };
   // V3G5C(B) - the eligibility conjunction is EXACTLY production's canonical factory rule (is_active AND
   // is_factory_warehouse - 03_master_data_handlers.gs / 13_procurement_handlers.gs / 43_api_v1_gap_materialization.gs)
-  // plus the Demo scope (exact origin country, exact company when populated). is_shipping_enabled is NOT consulted: it
+  // plus the ONE Demo scope rule that still binds: the exact origin country. is_shipping_enabled is NOT consulted: it
   // is the managed-OVERSEAS outbound capability that production never evaluates for a factory (see the deleted
   // accessors above). Coordinates and logistics_location rows are NOT consulted either - business source identity is
   // separate from geographic route identity. Every rejection is COUNTED by typed reason so a live empty candidate set
@@ -912,7 +924,9 @@ function DEMO4A_resolveDemoSourceWarehouse_(template, warehouses, company) {
     if (!DEMO4A_whIsFactory_(w)) return rej('NOT_A_FACTORY_WAREHOUSE');                                   // is_factory_warehouse = true
     if (!DEMO4A_whActive_(w)) return rej('INACTIVE');                                                     // is_active
     if (DEMO4A_low_(DEMO4A_whCountry_(w)) !== DEMO4A_low_(originCountry)) return rej('COUNTRY_NOT_TEMPLATE_ORIGIN_COUNTRY');   // EXACT origin country
-    if (company && DEMO4A_whCompany_(w) && DEMO4A_low_(DEMO4A_whCompany_(w)) !== DEMO4A_low_(company)) return rej('COMPANY_MISMATCH');   // exact company when populated
+    // V3G5D(B/F) - NO company, warehouse_owner, marketplace, is_shipping_enabled, coordinate, logistics-location or
+    // warehouse-id-prefix filter. The eligibility conjunction is EXACTLY production's own company-agnostic factory rule
+    // (is_factory_warehouse + is_active) plus the Demo route-geography constraint (exact origin country).
     return true;
   }).sort(function (a, b) { var ia = DEMO4A_low_(DEMO4A_whId_(a)), ib = DEMO4A_low_(DEMO4A_whId_(b)); return ia < ib ? -1 : (ia > ib ? 1 : 0); });
   if (!cands.length) return { ok: false, reason: 'NO_ELIGIBLE_DEMO_SOURCE_FACTORY_WAREHOUSE', detail: 'NO_ACTIVE_FACTORY_WAREHOUSE_IN_ORIGIN_COUNTRY:' + originCountry,
@@ -976,7 +990,11 @@ function DEMO4A_srcDestLineageGate_(plan, warehouses) {
   return { source_destination_warehouse_lineage_ready: list.length === 0, reasons: list.slice(0, 8), reason_count: list.length,
     source_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.source_warehouse_id); }), destination_warehouse_ids: ships.map(function (x) { return DEMO4A_str_(x.destination_warehouse_id); }),
     source_warehouse_codes: pers.map(function (x) { return DEMO4A_str_(x.source_warehouse_code); }), destination_warehouse_codes: pers.map(function (x) { return DEMO4A_str_(x.destination_warehouse_code); }),
-    source_selection_branches: pers.map(function (x) { return DEMO4A_str_(x.source_selection_branch); }) };
+    source_selection_branches: pers.map(function (x) { return DEMO4A_str_(x.source_selection_branch); }),
+    // V3G5D(F) - administrative attribution travels with the lineage as EVIDENCE. It is deliberately NOT a gate input:
+    // no reason code above can be produced by a company or warehouse_owner mismatch on the SOURCE factory.
+    source_warehouse_companies: pers.map(function (x) { return DEMO4A_str_(x.source_warehouse_company); }),
+    source_warehouse_owners: pers.map(function (x) { return DEMO4A_str_(x.source_warehouse_owner); }) };
 }
 // E — per-plan binding gates over the three shipments' role evidence. READY_FOR_DEMO_SEED is unreachable unless all gates
 // are true. A source-proven (canonical/direct) binding satisfies role/corridor by authority; a synthetic binding must have
@@ -1207,7 +1225,9 @@ function DEMO4A_buildPlan_(masters) {
     // V3G5B(J) - bind the FULL source-warehouse evidence into the checksum: identity + code + name + company + country +
     // type + factory flag + the SELECTION BRANCH + the truthful proven/fallback marking. Changing the source lineage or
     // the branch that produced it re-checksums the plan.
-    if (srcSel) bindingManifest.push(['WHSRC', shipId, DEMO4A_str_(srcSel.warehouse_id), DEMO4A_str_(srcSel.warehouse_code), DEMO4A_str_(srcSel.warehouse_name), DEMO4A_str_(srcSel.company), DEMO4A_str_(srcSel.country), DEMO4A_str_(srcSel.warehouse_type), (srcSel.is_factory_warehouse === true ? '1' : '0'), DEMO4A_str_(srcSel.selection_branch), (srcSel.source_proven === true ? '1' : '0'), (srcSel.demo_fallback === true ? '1' : '0')].join('~'));
+    // V3G5D(D) - the manifest additionally binds warehouse_owner, is_active and the shared-factory policy marker, so a
+    // change of administrative attribution or of the policy itself re-checksums the plan.
+    if (srcSel) bindingManifest.push(['WHSRC', shipId, DEMO4A_str_(srcSel.warehouse_id), DEMO4A_str_(srcSel.warehouse_code), DEMO4A_str_(srcSel.warehouse_name), DEMO4A_str_(srcSel.company), DEMO4A_str_(srcSel.warehouse_owner), DEMO4A_str_(srcSel.country), DEMO4A_str_(srcSel.warehouse_type), (srcSel.is_factory_warehouse === true ? '1' : '0'), (srcSel.is_active === true ? '1' : '0'), DEMO4A_str_(srcSel.selection_branch), (srcSel.source_proven === true ? '1' : '0'), (srcSel.demo_fallback === true ? '1' : '0'), (srcSel.user_authorized_shared_factory_policy === true ? '1' : '0')].join('~'));
     if (da) bindingManifest.push(['WHDEST', shipId, DEMO4A_str_(da.warehouse_id), DEMO4A_str_(da.warehouse_code), DEMO4A_str_(da.logistics_location_id), DEMO4A_str_(da.address_fingerprint), DEMO4A_str_(da.branch), DEMO4A_str_(da.location_type), DEMO4A_str_(da.verification_status), DEMO4A_str_(da.coordinate_source || ''), DEMO4A_str_(da.coordinate_source_reference || ''), DEMO4A_str_(da.coordinate_accuracy || ''), DEMO4A_num_(da.latitude), DEMO4A_num_(da.longitude), DEMO4A_str_(life.status)].join('~'));
 
     var routeIdOf = function (ni) { return P + 'SR-' + idx + '-' + DEMO4A_z2_(ni + 1); };
@@ -1229,6 +1249,13 @@ function DEMO4A_buildPlan_(masters) {
       source_warehouse_code: srcSel ? DEMO4A_str_(srcSel.warehouse_code) : '', source_warehouse_name: srcSel ? DEMO4A_str_(srcSel.warehouse_name) : '',
       source_warehouse_country: srcSel ? DEMO4A_str_(srcSel.country) : '', source_warehouse_type: srcSel ? DEMO4A_str_(srcSel.warehouse_type) : '',
       source_selection_branch: srcSel ? DEMO4A_str_(srcSel.selection_branch) : 'TEMPLATE_DECLARED_NO_WAREHOUSE_MASTER',
+      // V3G5D(F) - a company/owner mismatch is VISIBLE evidence, never a block. source_company_match reports the plain
+      // fact; source_company_match_required is FALSE; source_shared_factory_authorized records the frozen user policy.
+      source_warehouse_company: srcSel ? DEMO4A_str_(srcSel.company) : '', source_warehouse_owner: srcSel ? DEMO4A_str_(srcSel.warehouse_owner) : '',
+      shipment_company: DEMO4A_str_(scope.company),
+      source_company_match: srcSel ? (DEMO4A_low_(DEMO4A_str_(srcSel.company)) === DEMO4A_low_(DEMO4A_str_(scope.company))) : null,
+      source_company_match_required: DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_,
+      source_shared_factory_authorized: srcSel ? srcSel.user_authorized_shared_factory_policy === true : false,
       source_master_identity_proven: srcSel ? srcSel.master_identity_proven === true : false, source_demo_fallback: srcSel ? srcSel.demo_fallback === true : false,
       source_proven: srcSel ? srcSel.source_proven === true : false, source_is_factory_warehouse: srcSel ? srcSel.is_factory_warehouse === true : false,
       template_origin_country: DEMO4A_str_(tpl.origin_country), destination_warehouse_code_snapshot: destWhCode,
@@ -1854,6 +1881,10 @@ function DEMO4A_whActive_(w) { return DEMO4A_activeFlag_(w) !== false; }
 function DEMO4A_whDestTypeCompatible_(w) { return DEMO4A_WH_DEST_TYPES_.hasOwnProperty(DEMO4A_whType_(w)); }
 function DEMO4A_whCode_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_code', 'code'])); }
 function DEMO4A_whName_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_name', 'name'])); }
+// V3G5D - warehouse_owner = the physical operator / controlling logistics party (Amazon / WINIT / AMZLGS / ResTW for an
+// owned factory) - SHIPMENT_CENTER_SPEC.md 22.0(C). Like `company` it is administrative attribution, NOT a usage
+// permission, so it is carried as EVIDENCE only and never gates source eligibility.
+function DEMO4A_whOwner_(w) { return DEMO4A_str_(DEMO4A_get_(w, ['warehouse_owner', 'owner'])); }
 // V3G5B(A) — is_factory_warehouse is the SAME canonical factory-eligibility flag production uses (03_master_data_handlers
 // eligibility = is_active AND is_factory_warehouse). Read-only: this tool never writes or redefines it.
 function DEMO4A_whIsFactory_(w) { var v = DEMO4A_get_(w, ['is_factory_warehouse']); if (DEMO4A_str_(v) === '') return false; var t = DEMO4A_low_(v); return t === 'true' || t === 'yes' || t === '1' || t === 'y' || v === true || v === 1; }
@@ -1874,6 +1905,30 @@ function DEMO4A_whIsFactory_(w) { var v = DEMO4A_get_(w, ['is_factory_warehouse'
 // than left unused so that no executable path can consult the flag (asserted by a source-fact test). No production
 // handler, master column or master data is changed by this correction - only this Demo tool's own eligibility rule.
 var DEMO4A_SOURCE_SHIPPING_ENABLED_GATE_APPLIED_ = false;
+// ================================================================================================================
+// V3G5D(A/F) - FROZEN SHARED-FACTORY SOURCE POLICY. V3G5C rejected a factory whose `company` differed from the Demo
+// company. That was an incorrect company-ISOLATION gate, and the repository already records the opposite rule:
+//   RECOMMENDATION_SOURCE_CONTRACT_SPEC.md SC-11.1 "D-1 RESOLVED - Factory shared-company authority (FACTORY_SHARED)":
+//     "Factory stock is a company-agnostic, cross-company shared physical supply pool" and, verbatim,
+//     "`warehouses.company` stays owner/administrative context only"; the Factory Allocation Runtime "allocates the
+//     shared physical pool ACROSS COMPANIES".
+//   assets/js/core/supply-planning-allocation-facts.js: "factory eligibility = is_factory_warehouse + is_active
+//     (shared source; company-agnostic per D-1)" - and eligibleFactoryWarehouseIds() filters on EXACTLY those two
+//     flags with NO company filter, while the 3PL branch immediately above it DOES require company equality. The
+//     asymmetry is deliberate.
+//   43_api_v1_gap_materialization.gs: "FACTORY - company-wide competing set (factory_stock is the FACTORY_SHARED
+//     pool; is_factory_warehouse eligible)" - factoryWhIds is likewise built with no company filter.
+//   SHIPMENT_CENTER_SPEC.md 22.0(C): `company` = the business/account context USING the warehouse; `warehouse_owner` =
+//     the physical operator. Its company-filtered candidate pipeline (22.0(E)-(H)) is the DESTINATION Warehouse Picker,
+//     and DATABASE_RELATIONSHIP_MAP.md records "RETURN/FACTORY excluded from normal destination selection" - so that
+//     company filter never governed a factory SOURCE in the first place. No contradiction, only a scope distinction.
+//   No warehouse-access / warehouse-permission / warehouse-authorization mapping table exists anywhere in the repo.
+// Therefore: company and warehouse_owner are administrative attribution, NEVER exclusive usage permissions. A KM Demo
+// shipment may legitimately source from an active CN factory whose company/owner is ResTW. Company mismatch is carried
+// as VISIBLE EVIDENCE and never blocks. This applies to the SOURCE factory ONLY - destination warehouse company rules
+// are untouched by this correction.
+var DEMO4A_SOURCE_COMPANY_MATCH_REQUIRED_ = false;
+var DEMO4A_SOURCE_FACTORY_SHARED_ACROSS_COMPANIES_ = true;
 function DEMO4A_whReceivingEnabled_(w) { var v = DEMO4A_get_(w, ['is_receiving_enabled', 'receiving_enabled']); if (DEMO4A_str_(v) === '') return true; var s = DEMO4A_low_(v); return !(s === 'false' || s === 'no' || s === '0' || s === 'n' || v === false || v === 0); }
 // V3G1(A) — warehouse ADDRESS accessors. The LIVE `warehouses` diagnostic reports address_line1/address_line2/city/state/
 // subdivision_code/postal_code/country as the runtime authority. Live headers WIN: when an address_line1/address_line_1
@@ -2518,6 +2573,8 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     out.source_factory_candidate_count = sasF.source_factory_candidate_count;
     out.source_factory_rejection_counts = sasF.source_factory_rejection_counts;
     out.source_shipping_enabled_gate_applied = sasF.source_shipping_enabled_gate_applied;
+    out.source_factory_shared_across_companies = sasF.source_factory_shared_across_companies;
+    out.source_company_match_required = sasF.source_company_match_required;
     out.existing_state = { classification: '', duplicate_pk_count_total: 0, unexpected_demo_id_count: 0 };
     out.demo_plan_checksum = '';
     out.preflight_verdict = DEMO4A_preflightFailureReason_(plan, out.schema_ok).verdict;
@@ -2538,6 +2595,8 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
     return { shipment_id: DEMO4A_str_(x.shipment_id), slot: DEMO4A_str_(x.slot), status: DEMO4A_str_(x.status), template_id: DEMO4A_str_(x.template), region: DEMO4A_str_(x.region),
       destination_warehouse_id: DEMO4A_str_(x.destination_warehouse_id), destination_warehouse_code: DEMO4A_str_(x.destination_warehouse_code),
       source_warehouse_id: DEMO4A_str_(x.source_warehouse_id), source_warehouse_code: DEMO4A_str_(x.source_warehouse_code), source_selection_branch: DEMO4A_str_(x.source_selection_branch),
+      source_warehouse_company: DEMO4A_str_(x.source_warehouse_company), source_warehouse_owner: DEMO4A_str_(x.source_warehouse_owner),
+      source_company_match: x.source_company_match === true, source_shared_factory_authorized: x.source_shared_factory_authorized === true,
       destination_logistics_location_id: DEMO4A_str_(x.destination_logistics_location_id), destination_coordinate_branch: DEMO4A_str_(x.destination_coordinate_branch),
       destination_address_fingerprint: DEMO4A_str_(x.destination_address_fingerprint), destination_coordinate_accuracy: DEMO4A_str_(x.destination_coordinate_accuracy),
       destination_renderable: x.destination_facility_marker_renderable === true,
@@ -2587,6 +2646,11 @@ function DEMO4A_authorizationSummary_(schema, masters, plan, planRepeat, live, p
   out.source_factory_candidate_count = sas.source_factory_candidate_count;
   out.source_factory_rejection_counts = sas.source_factory_rejection_counts;
   out.source_shipping_enabled_gate_applied = sas.source_shipping_enabled_gate_applied;
+  out.source_factory_shared_across_companies = sas.source_factory_shared_across_companies;
+  out.source_company_match_required = sas.source_company_match_required;
+  out.source_shared_factory_authorized = sas.source_shared_factory_authorized;
+  out.source_destination_warehouse_lineage.source_warehouse_companies = (sdl.source_warehouse_companies || []).slice(0, 3);
+  out.source_destination_warehouse_lineage.source_warehouse_owners = (sdl.source_warehouse_owners || []).slice(0, 3);
   out.preflight_verdict = DEMO4A_preflightVerdict_(out.schema_ok, plan, wg, cls.classification);
   out.preflight_reason = out.preflight_verdict === 'READY_FOR_DEMO_SEED' ? '' : DEMO4A_str_(plan.reason);
   // the DRY_RUN core verdict for exactly this plan (DRY_RUN emits DRY_RUN_READY whenever the same plan builds).
@@ -2751,11 +2815,16 @@ function DEMO4A_canonDiagnosticCore_(schema, masters, plan, headersByTable, colu
   out.source_warehouse_ids = (lg.source_warehouse_ids || []).slice(0, 3);
   out.source_warehouse_codes = (lg.source_warehouse_codes || []).slice(0, 3);
   out.source_selection_branches = (lg.source_selection_branches || []).slice(0, 3);
+  // V3G5D(H) - administrative attribution of the selected source, published as evidence.
+  out.source_warehouse_companies = (lg.source_warehouse_companies || []).slice(0, 3);
+  out.source_warehouse_owners = (lg.source_warehouse_owners || []).slice(0, 3);
   // V3G5C(H) - the corrected source-eligibility evidence, so an empty live candidate set names its exact typed cause.
   var sas = (plan || {}).source_authority_summary || DEMO4A_sourceAuthoritySummary_(null);
   out.source_factory_candidate_count = sas.source_factory_candidate_count;
   out.source_factory_rejection_counts = sas.source_factory_rejection_counts;
   out.source_shipping_enabled_gate_applied = sas.source_shipping_enabled_gate_applied;
+  out.source_factory_shared_across_companies = sas.source_factory_shared_across_companies;
+  out.source_company_match_required = sas.source_company_match_required;
   out.destination_warehouse_ids = (lg.destination_warehouse_ids || []).slice(0, 3);
   out.destination_warehouse_codes = (lg.destination_warehouse_codes || []).slice(0, 3);
   // V3G5A(K) — prior-attempt journal safety. The prior journal is NEVER cleared or mutated here; it is only read.
@@ -2797,7 +2866,19 @@ function TEMP_DEMO4A_DIAGNOSE_WRITE_READBACK_CANONICALIZATION() {
     var schema = DEMO4A_schemaGate_();
     var masters = DEMO4A_readMasters_();
     var plan = DEMO4A_buildPlan_(masters);
-    if (!plan.ok) { out.verdict = 'CANONICALIZATION_RISK_REMAINS'; out.plan_blocked_reason = plan.reason; out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES'; Logger.log('DEMO4A_CANONICALIZATION_DIAGNOSTIC ' + JSON.stringify(out)); return out; }
+    if (!plan.ok) {
+      out.verdict = 'CANONICALIZATION_RISK_REMAINS'; out.plan_blocked_reason = plan.reason;
+      // V3G5D(H) - a blocked plan must name the PRECISE resolver reason, not only the generic plan-level code, so the
+      // operator never has to guess which gate stopped it. Compact and capped; no master rows are dumped.
+      out.plan_blocked_detail = (plan.source_authority_errors || []).slice(0, 3).map(function (e) { return DEMO4A_str_(e.slot) + ':' + DEMO4A_str_(e.reason) + (e.detail ? ('/' + DEMO4A_str_(e.detail)) : '') + (e.declared_warehouse_id ? ('/' + DEMO4A_str_(e.declared_warehouse_id)) : ''); });
+      var sasB = plan.source_authority_summary || DEMO4A_sourceAuthoritySummary_(null);
+      out.source_factory_candidate_count = sasB.source_factory_candidate_count;
+      out.source_factory_rejection_counts = sasB.source_factory_rejection_counts;
+      out.source_factory_shared_across_companies = sasB.source_factory_shared_across_companies;
+      out.source_company_match_required = sasB.source_company_match_required;
+      out.destination_authority_errors_count = (plan.destination_authority_errors || []).length;
+      out.DEMO4A_ZERO_WRITE_CONFIRMED = 'YES'; Logger.log('DEMO4A_CANONICALIZATION_DIAGNOSTIC ' + JSON.stringify(out)); return out;
+    }
     var headersByTable = {}, columnTypeClasses = {};
     DEMO4A_WRITE_ORDER_.forEach(function (name) {
       var t = DEMO4A_readTable_(name); headersByTable[name] = t.headers;
