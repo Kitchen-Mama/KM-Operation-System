@@ -33,7 +33,15 @@ function doGet(e) {
       return handleGetClientCapabilities_();
     }
 
-    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb or getTable' });
+    // F1-7N-FB-2 §D — read-only production health. Routed on doGet AND doPost so the browser can probe the
+    // deployment with either verb: a JSON answer here proves the deployment is reachable and that the DEPLOYED
+    // code contains the actions the pages are about to call (a partial Apps Script sync is otherwise
+    // indistinguishable from a transport fault). Returns no spreadsheet id, Drive id, token or row data.
+    if (action === 'system.health') {
+      return handleSystemHealth_(e && e.parameter ? e.parameter : {});
+    }
+
+    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable or system.health' });
 
   } catch (err) {
     Logger.log(err.stack);
@@ -54,6 +62,14 @@ function doPost(e) {
     // reads it via the canonical POST read runner (_kmGapRead_), so it is routed here as well as in doGet.
     if (action === 'getClientCapabilities') {
       return handleGetClientCapabilities_();
+    }
+
+    // F1-7N-FB-2 §D/§K — read-only health + Submit-to-Map flow readiness (zero writes, no Drive, no lock).
+    if (action === 'system.health') {
+      return handleSystemHealth_(body);
+    }
+    if (action === 'system.submitFlowDiagnostic') {
+      return handleSubmitFlowDiagnostic_(body);
     }
 
     if (action === 'updateSkuLifecycle') {

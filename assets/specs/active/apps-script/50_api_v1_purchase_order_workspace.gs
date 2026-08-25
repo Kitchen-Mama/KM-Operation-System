@@ -30,7 +30,10 @@ var PO_WORKSPACE_TABLES_ = [
   { name: 'sku_details',          requiredCols: ['sku'] },
   // F1-7N-FB-1B §P — the generated_documents registry, projected onto each PO's Document Panel. Optional so a DB
   // without the table degrades to "no documents" rather than failing the whole workspace read.
-  { name: 'generated_documents',  requiredCols: [], optional: true }
+  // F1-7N-FB-2 §H — BOUNDED by an include, matching the shipment workspace. FB-1B shipped this without an
+  // `include` key, so EVERY Purchase Order page load performed an extra unbounded registry read whether or not
+  // the caller wanted documents. That was a real added read on the hottest PO path.
+  { name: 'generated_documents',  requiredCols: [], optional: true, include: 'documents' }
 ];
 
 var PO_WS_SORT_FIELDS_ = {
@@ -306,7 +309,8 @@ function poWorkspaceDefaultIo_() {
       prodAssertDbTarget_(ss, id);
       return ss;
     },
-    readTable: function (ss, name, requiredCols) {
+    readTable: function (ss, name, requiredCols, optional) {
+      if (optional && !ss.getSheetByName(name)) return [];   // absent optional table -> [] (never a hard failure)
       var sheet = prodRequireSheet_(ss, name, []);
       prodRequireColumns_(sheet, requiredCols);
       return poWsRowsToObjects_(sheet);
@@ -322,9 +326,14 @@ function handlePurchaseOrderWorkspaceGet_(body, io) {
     var payload = (body && body.payload) || {};
     var ss = io.openTarget();
     var tables = {}, readCount = 0;
+    // F1-7N-FB-2 §H — honour `include` and `optional`, exactly as the shipment workspace does. Without this the
+    // table-spec keys were inert: an un-requested table was still read on every load (a real cost on the hottest
+    // PO path), and an absent optional table would have failed the entire workspace read instead of degrading.
+    var include = payload.include || {};
     for (var i = 0; i < PO_WORKSPACE_TABLES_.length; i++) {
       var spec = PO_WORKSPACE_TABLES_[i];
-      tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols);
+      if (spec.include && !include[spec.include]) continue;   // skip un-requested tables (no read cost)
+      tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
       readCount++;
     }
     var vm = poWorkspaceBuild_(tables, payload);

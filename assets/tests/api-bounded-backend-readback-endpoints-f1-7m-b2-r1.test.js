@@ -73,7 +73,9 @@ ok(/if \(include\.locations\) out\.logisticsLocations = tables\.logistics_locati
 // ===================================================================================================================
 console.log('\n== PO frontend: confirmEdit bounded merge — ONE fresh PO in place, others + masters retained ==');
 ok(/updatePurchaseOrderHeader\(payload\)[\s\S]{0,600}_poEndCmd\(key, btn\); closeModal\(\); _poBoundedReadback_\(id\);/.test(PO_JS), 'PO: confirmEdit success → bounded readback (not full loadAndRender)');
-ok(/getWorkspace\('purchaseOrder', \{ filters: \{ purchaseOrderId: id \}, include: \{ summary: false, filterOptions: false \} \}\)/.test(PO_JS), 'PO: bounded readback requests filters.purchaseOrderId + skips summary/filterOptions');
+// F1-7N-FB-2: the include object gained `documents: true` (a BOUNDED registry include). The property under
+// test is unchanged - the readback is still scoped to ONE purchaseOrderId and still skips summary/filterOptions.
+ok(/getWorkspace\('purchaseOrder', \{ filters: \{ purchaseOrderId: id \}, include: \{ summary: false, filterOptions: false[^}]*\} \}\)/.test(PO_JS), 'PO: bounded readback requests filters.purchaseOrderId + skips summary/filterOptions');
 ok(/if \(mySeq !== _poReadSeq\) return;/.test(PO_JS.slice(PO_JS.indexOf('function _poBoundedReadback_'))), 'PO: bounded readback is _poReadSeq stale-guarded');
 ok(/else \{\s*loadAndRender\(\);/.test(PO_JS.slice(PO_JS.indexOf('function _poBoundedReadback_'), PO_JS.indexOf('function _poMergeOnePo_'))), 'PO: bounded miss/failure degrades to the full loadAndRender readback (fresh, not stale)');
 // sendPo/receive/cancel stay on the full readback (section-move / removal → not single-PO reconcilable).

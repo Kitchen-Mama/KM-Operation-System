@@ -82,7 +82,9 @@
             var hasContent = !!(el && el.firstElementChild && !el.querySelector('.procurement-empty') && !el.querySelector('.km-region-loading'));
             if (rg) rg.beginLoad(hasContent);
             if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _poRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Purchase Order Workspace API unavailable.' }); return; }
-            Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
+            // F1-7N-FB-2 §H — `documents` is a BOUNDED include: without it the workspace no longer reads the
+            // generated_documents registry at all, so the Document Panel cost is opt-in per page load.
+            Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 }, include: { documents: true } })).then(function (env) {
                 if (mySeq !== _poReadSeq) return;
                 if (env && env.success) {
                     _poReadModel = window.KM.DB.adaptPurchaseOrderWorkspace(env.data);
@@ -679,7 +681,7 @@
     function _poBoundedReadback_(id) {
         if (!_poEffectiveWorkspace() || !(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { loadAndRender(); return; }
         var mySeq = ++_poReadSeq;
-        Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { filters: { purchaseOrderId: id }, include: { summary: false, filterOptions: false } })).then(function (env) {
+        Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { filters: { purchaseOrderId: id }, include: { summary: false, filterOptions: false, documents: true } })).then(function (env) {
             if (mySeq !== _poReadSeq) return;   // a newer read superseded this bounded readback
             if (env && env.success && _poReadModel && _poMergeOnePo_(id, window.KM.DB.adaptPurchaseOrderWorkspace(env.data))) {
                 renderFromDb();

@@ -704,15 +704,41 @@ function loadWeeklyShippingReadModel_() {
         lines: (window.KM.DB.getShippingPlanLines && window.KM.DB.getShippingPlanLines()) || [],
         shipmentMap: maps.shipmentMap, live: maps.live });
 }
+// F1-7N-FB-2 §I — a transport failure must be visibly DIFFERENT from a proven-empty result, must expose the
+// diagnostic facts that make a 404-HTML answer explainable, must offer Retry, and must NOT destroy the last
+// confirmed data. Previously it blanked every other group's region, which turned a transport fault into an
+// apparent "everything is gone".
+function _spReadErrorDetailHtml_(err) {
+    var d = (err && err.details) || {};
+    var bits = [];
+    if (d.httpStatus != null) bits.push('HTTP ' + _spEsc(String(d.httpStatus)));
+    if (d.contentType) bits.push(_spEsc(String(d.contentType)));
+    if (!bits.length) return '';
+    return ' <span style="color:#7F1D1D;">(' + bits.join(' · ') + ')</span>';
+}
 function _spRenderReadError_(err) {
-    var ids = ['shippingPlanCards', 'pendingApprovalCards', 'approvedCards', 'completedCards', 'cancelledCards'];
     var code = _spEsc((err && err.code) || 'READ_FAILED');
     var msg = _spEsc((err && err.message) || 'Failed to load shipping plans.');
     var reqId = err && err.requestId ? (' <span style="color:#94A3B8;">[' + _spEsc(err.requestId) + ']</span>') : '';
-    // Show a structured error — NEVER a "No records" empty-state — and do not fall back to Legacy.
-    var banner = '<p class="sp-read-error" style="color:#B91C1C; background:#FEF2F2; border-left:3px solid #EF4444; padding:8px;">' +
-        'Workspace read error: ' + msg + ' <code>' + code + '</code>' + reqId + '</p>';
-    ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.innerHTML = (id === 'shippingPlanCards') ? banner : ''; });
+    var nonJson = String((err && err.code) || '') === 'TRANSPORT_NON_JSON_RESPONSE';
+    var guidance = nonJson
+        ? 'The API endpoint answered with a web page instead of data. This is a transport/deployment problem, not an empty plan list — your existing plans are unaffected.'
+        : 'This is a read failure, not a proven-empty plan list.';
+    var banner = '<div class="sp-read-error" role="alert" style="color:#B91C1C; background:#FEF2F2; border-left:3px solid #EF4444; padding:10px; margin-bottom:8px;">' +
+        '<div style="font-weight:600;">Could not load shipping plans</div>' +
+        '<div style="margin-top:3px;">' + msg + ' <code>' + code + '</code>' + _spReadErrorDetailHtml_(err) + reqId + '</div>' +
+        '<div style="margin-top:4px;font-size:12px;">' + _spEsc(guidance) + '</div>' +
+        '<button type="button" class="sp-read-retry" onclick="renderShippingPlanFromDb()" ' +
+            'style="margin-top:8px;padding:5px 12px;border:1px solid #EF4444;background:#fff;color:#B91C1C;border-radius:4px;cursor:pointer;font-size:12px;">Retry</button>' +
+    '</div>';
+    // Preserve whatever was last CONFIRMED: only the primary region gains the banner, and the other groups are
+    // left exactly as they were rather than being overwritten with an empty string.
+    var el = document.getElementById('shippingPlanCards');
+    if (!el) return;
+    var existing = el.querySelector('.sp-read-error');
+    if (existing) existing.parentNode.removeChild(existing);
+    if (el.querySelector('.sp-card')) { el.insertAdjacentHTML('afterbegin', banner); }
+    else { el.innerHTML = banner; }
 }
 
 // F1-7B-R1: bounded loading state for the primary cards region (shared KM.loadState contract). INITIAL_LOADING

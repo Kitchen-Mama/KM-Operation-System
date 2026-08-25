@@ -2258,9 +2258,15 @@ function submitReplenishmentPlans() {
     // mutation). The Working Draft is cleared only on a confirmed terminal CREATED/REUSED. planLines above are retained
     // solely for the client-side carton pre-gate — they are NOT transmitted. (Old createShippingPlansBatch line-trusting
     // call removed; the API name remains a deprecated compatibility wrapper.)
-    var canCloudWrite = window.KM && window.KM.DB && window.KM.DB.submitAllocationDraftsToShippingPlans &&
-        window.KM.DB.isCloudWriteEnabled && window.KM.DB.isCloudWriteEnabled();
-    if (canCloudWrite) {
+    // F1-7N-FB-2 §C/§E — SUBMIT FAILS CLOSED. The eligibility predicate is now a CONFIGURATION fact
+    // (isProductionWriteEligible), not a cache-load fact. isCloudWriteEnabled() required a primed broad
+    // _opDbCache, which an F1-7L zero-prime session never has — so on the deployed site this gate silently
+    // failed and Submit fell into the sessionStorage branch below, alerting "created (Demo / local mode)" while
+    // persisting NOTHING. A business write must never have an automatic production fallback.
+    var _db = window.KM && window.KM.DB;
+    var _hasSubmitApi = !!(_db && _db.submitAllocationDraftsToShippingPlans);
+    var _writeEligible = !!(_db && _db.isProductionWriteEligible && _db.isProductionWriteEligible());
+    if (_hasSubmitApi && _writeEligible) {
         var submitExecutionKey = _replenSubmitExecutionKey();
         var _draftIds = _replenActiveAllocationDraftIds();
         if (!_draftIds.length) { alert('No persisted allocation draft to submit yet — adjust the Execution Plan (which saves the draft) and try again.'); return; }
@@ -2268,7 +2274,21 @@ function submitReplenishmentPlans() {
         return;
     }
 
-    // Fallback (Demo / API not configured): keep the legacy sessionStorage behavior so navigation works.
+    // The local branch below is DEVELOPMENT-ONLY and is unreachable from the production build: it requires both
+    // a local dev host AND an explicit human opt-in (window.KM_DEV_LOCAL_MODE === true). Anywhere else, an
+    // ineligible write fails closed with an actionable error and writes nothing at all — no sessionStorage
+    // record, no success alert, no navigation that would imply a plan exists.
+    if (!(_db && _db.isDevLocalModeAllowed && _db.isDevLocalModeAllowed())) {
+        var _why = !_hasSubmitApi ? 'SUBMIT_API_UNAVAILABLE' : 'API_NOT_CONFIGURED';
+        var _msg = (_db && _db.describeWriteFailure)
+            ? _db.describeWriteFailure('submitAllocationDraftsToShippingPlans', { code: _why, zero_write: true,
+                message: 'The Operation DB API is not available to this page, so the plan cannot be persisted.' })
+            : ('Could not submit — the Operation DB API is unavailable. Nothing was written. Reason: ' + _why);
+        alert(_msg);
+        return;   // fail CLOSED — no local plan, no success notification, no navigation
+    }
+
+    // DEVELOPMENT-ONLY fallback (local host + explicit opt-in): sessionStorage so local navigation works.
     var allPlans = [];
     var existingData = sessionStorage.getItem('allShippingPlans');
     if (existingData) { allPlans = JSON.parse(existingData); }
@@ -2290,7 +2310,7 @@ function submitReplenishmentPlans() {
     sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
     // Demo fallback success → also clear the Working Draft (kept separate from the demo store).
     _clearAllocationDraft();
-    alert('Weekly Shipping Plan created (Demo / local mode).\nTotal SKUs: ' + totalSkus + '\nMethods: ' + Object.keys(shippingPlans).length);
+    alert('[DEV LOCAL MODE] Nothing was saved to the database.\n\nThis is a local browser-only record for development navigation.\nTotal SKUs: ' + totalSkus + '\nMethods: ' + Object.keys(shippingPlans).length);
     showSection('shippingplan');
     setTimeout(function() { renderShippingPlan(); }, 100);
 }

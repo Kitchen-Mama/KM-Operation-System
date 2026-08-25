@@ -728,7 +728,10 @@ eq(poDto.documents[0].document_label, 'Purchase Order', '18. with a friendly lab
 eq(shipWsDocumentsFor_({}, 'NOPE').documentGenerationStatus, 'NONE', '18. an entity with no documents truthfully reports NONE');
 
 ok(/{ name: 'generated_documents',\s+requiredCols: \[\], optional: true, include: 'documents' }/.test(G57), '18. the shipment workspace reads the registry as a BOUNDED include');
-ok(/{ name: 'generated_documents',  requiredCols: \[\], optional: true }/.test(G50), '18. the PO workspace reads it optionally');
+// STRENGTHENED by F1-7N-FB-2: the PO spec is now ALSO bounded by an include (FB-1B read it unconditionally,
+// and the read loop honoured neither key), so assert the stronger contract rather than the old inert one.
+ok(/{ name: 'generated_documents',  requiredCols: \[\], optional: true, include: 'documents' }/.test(G50), '18. the PO workspace reads it optionally AND only when requested');
+ok(/if \(spec\.include && !include\[spec\.include\]\) continue;/.test(G50), '18. and its read loop actually honours the include');
 ok(/include: \{ documents: true \}/.test(SH), '18. and the Shipment page actually asks for it');
 ['document.list', 'document.get', 'document.retry', 'document.diagnostic.purchaseOrder', 'document.diagnostic.shipment']
   .forEach(function (a) { ok(RTR.indexOf("action === '" + a + "'") !== -1, '18. router exposes ' + a); });

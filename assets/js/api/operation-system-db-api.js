@@ -2694,6 +2694,81 @@ window.KM.DB.isScopedReadEligible = function() {
     return isOperationDbApiConfigured() && getOperationDbDataSourceMode() !== 'mock';
 };
 
+// ============================================================================================================
+// F1-7N-FB-2 §C/§D — PRODUCTION WRITE ELIGIBILITY, and the removal of the automatic production fallback.
+// ============================================================================================================
+// THE DEFECT THIS CLOSES. isCloudWriteEnabled() requires getDataSourceMode() === 'google-sheet', which is only
+// reachable AFTER the broad window._opDbCache has been primed. F1-7L deliberately removed the startup whole-DB
+// prime, so on a cold canonical session getDataSourceMode() === 'not-loaded' and EVERY write gated on that
+// predicate silently fails its gate. Site Inventory's Submit Plan then fell through to a sessionStorage branch
+// and reported "Weekly Shipping Plan created (Demo / local mode)" — a fabricated success, with nothing persisted.
+// The identical cold-start defect was already found and fixed for scoped READS (isScopedReadEligible); this is
+// the write-side counterpart.
+//
+// Write eligibility is a CONFIGURATION fact, not a cache-load fact: the API is configured and we are not in an
+// explicit mock posture. It is intentionally the same predicate shape as the read side.
+window.KM.DB.isProductionWriteEligible = function() {
+    return isOperationDbApiConfigured() && getOperationDbDataSourceMode() !== 'mock';
+};
+
+// Local/mock behaviour survives ONLY behind an explicit development flag that the production build cannot set.
+// Two conditions, both required: the page must be served from a local dev host, AND a human must have opted in
+// on that host. A GitHub Pages origin (or any other real host) can never satisfy the first, so the production
+// deployment has no reachable path into local mode — which is the point.
+window.KM.DB.isDevLocalModeAllowed = function() {
+    try {
+        if (typeof window === 'undefined' || window.KM_DEV_LOCAL_MODE !== true) return false;
+        var h = (window.location && window.location.hostname) ? String(window.location.hostname) : '';
+        return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';
+    } catch (e) { return false; }
+};
+
+// One place that turns a failed production write into an ACTIONABLE message. It reports the action, the
+// request_id, the HTTP status, the response content type, the typed transport reason and retry guidance, plus
+// the zero-write confirmation when the backend proved it. It never includes a token, a spreadsheet id, a Drive
+// id or a raw HTML body — the transport layer already reduces a non-JSON body to a sanitized prefix, and that
+// prefix is deliberately NOT surfaced here.
+window.KM.DB.describeWriteFailure = function(action, res) {
+    res = res || {};
+    var d = res.details || {};
+    var reason = res.code || res.apiCode || res.reason || res.stage || 'WRITE_FAILED';
+    var lines = ['Could not save — nothing was written.', '', 'Action: ' + String(action || 'unknown')];
+    if (res.requestId || res.request_id) lines.push('Request ID: ' + String(res.requestId || res.request_id));
+    if (d.httpStatus != null) lines.push('HTTP status: ' + String(d.httpStatus));
+    if (d.contentType) lines.push('Response type: ' + String(d.contentType));
+    lines.push('Reason: ' + String(reason));
+    if (res.message || res.error) lines.push('Detail: ' + String(res.message || res.error));
+    if (res.zero_write === true || res.db_writes === 0) lines.push('Confirmed: 0 database rows were written.');
+    lines.push('');
+    lines.push(reason === 'TRANSPORT_NON_JSON_RESPONSE'
+        ? 'The API endpoint answered with a web page instead of data. Run system.health to check whether the Apps Script deployment is reachable and fully synced, then retry.'
+        : 'Retry once. If it fails again, run the read-only system.health check before retrying further.');
+    return lines.join('\n');
+};
+
+// F1-7N-FB-2 §D — read-only production health probe. A JSON answer proves the deployment is reachable AND that
+// the deployed code contains the actions the pages are about to call.
+window.KM.DB.getSystemHealth = function() {
+    if (!isOperationDbApiConfigured()) return Promise.resolve({ success: false, error: 'API not configured', code: 'TRANSPORT_NOT_CONFIGURED' });
+    return fetch(OP_DB_API_BASE_URL, {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'system.health' })
+    }).then(function (resp) {
+        var ctype = '';
+        try { ctype = (resp.headers && resp.headers.get) ? (resp.headers.get('content-type') || '') : ''; } catch (e) {}
+        return Promise.resolve(resp.text()).then(function (raw) {
+            var t = String(raw == null ? '' : raw).trim();
+            if (t === '' || /^<(!doctype|html)/i.test(t)) {
+                return { success: false, code: 'TRANSPORT_NON_JSON_RESPONSE',
+                    details: { httpStatus: resp.status, contentType: ctype },
+                    message: 'The endpoint returned a web page instead of JSON. The Apps Script deployment may be unreachable, superseded, or access-restricted.' };
+            }
+            try { return JSON.parse(t); }
+            catch (e2) { return { success: false, code: 'TRANSPORT_NON_JSON_RESPONSE', details: { httpStatus: resp.status, contentType: ctype } }; }
+        });
+    }).catch(function (e) { return { success: false, code: 'TRANSPORT_ERROR', message: (e && e.message) ? e.message : String(e) }; });
+};
+
 // F1-7N-FA-3C-R6C — CANONICAL DB PROVIDER READINESS authority (shell-permanent). window.KM.DB and its config
 // (OP_DB_API_BASE_URL const) are created ONCE at shell load and NEVER torn down on SPA navigation, so readiness is a
 // pure function of configuration + eligibility — exposed here as ONE idempotent, retryable authority so a page mount can
