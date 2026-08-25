@@ -2699,7 +2699,17 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
         if (result.success) {
             var d = result.data || {};
             _clearAllocationDraft();   // confirmed terminal (CREATED or REUSED) → drop the Working Draft + execution key
-            alert('Weekly Shipping Plan ' + (d.reused ? 'already created (reused)' : 'created') + '.\nShipping Plans: ' + (d.plan_count || (d.plans ? d.plans.length : 0)) + '\nSKU lines: ' + (d.line_count || expectedLineCount || 0) + '\nStatus: Draft');
+            // F1-7N-FB-3C §I — report the server's EXACT output verification rather than only "created".
+            // The plan writer returning success is not proof that the committed lines carry the operator's
+            // planned quantities; the server now re-reads them field by field and says so on the wire.
+            var ov = d.output_verification || null;
+            var ovLine = !ov ? ''
+                : (ov.skipped ? ('\nLine verification: NOT PERFORMED (' + (ov.reason || 'skipped') + ') — not claimed as verified')
+                    : ('\nLine verification: ' + (ov.verified ? 'PASSED' : 'FAILED') +
+                       ' — ' + (ov.verified_lines || 0) + '/' + (ov.expected_lines || 0) + ' line(s), ' +
+                       (ov.verified_qty || 0) + ' unit(s) matched against the frozen Execution Plan' +
+                       (ov.applied_station ? ('\nStation verified: ' + [ov.applied_station.company, ov.applied_station.country, ov.applied_station.marketplace].filter(Boolean).join(' / ')) : '')));
+            alert('Weekly Shipping Plan ' + (d.reused ? 'already created (reused)' : 'created') + '.\nShipping Plans: ' + (d.plan_count || (d.plans ? d.plans.length : 0)) + '\nSKU lines: ' + (d.line_count || expectedLineCount || 0) + '\nStatus: Draft' + ovLine);
             showSection('shippingplan'); setTimeout(function () { renderShippingPlan(); }, 100);
             return result;
         }
@@ -2707,6 +2717,18 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
         if (code === 'IN_PROGRESS_SAME_EXECUTION_KEY') {
             alert('Submit is already processing for this plan. Reading back the result…');   // NOT a blind retry
             try { if (typeof _refreshAllocationDraftWorkspace === 'function') _refreshAllocationDraftWorkspace(); } catch (e) {}
+        } else if (code === 'SHIPPING_PLAN_OUTPUT_VERIFICATION_FAILED') {
+            // F1-7N-FB-3C §I — the plan WAS committed and the drafts ARE submitted; what failed is the
+            // field-by-field match against the frozen route quantities. Nothing is rolled back, because
+            // reversing a durable plan on the strength of a verification read would be a second mutation.
+            // The operator is told exactly which lines disagree, and told not to approve the plan yet.
+            var vf = ((result.data || {}).failures || []).slice(0, 8).map(function (f) {
+                return '  · ' + (f.code || 'MISMATCH') + ' ' + (f.sku || '') +
+                    (f.expected_user_planned_qty != null ? (' — on screen ' + f.expected_user_planned_qty + ', in plan ' + f.found_requested_qty) : '');
+            }).join(String.fromCharCode(10));
+            alert('Weekly Shipping Plan was created, but its lines DO NOT match your Execution Plan quantities.' + NL2 +
+                vf + NL2 +
+                'Nothing was rolled back. Do NOT approve this plan yet — review the named lines first, then correct and re-submit.');
         } else if (code === 'MIXED_SITE_PAYLOAD') {
             // F1-7N-FB-3B §G — fail-closed station scope. Submit Plan commits ONE Country + Marketplace.
             alert('Cannot Submit Plan — MIXED_SITE_PAYLOAD.' + NL2 +

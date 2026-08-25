@@ -471,3 +471,152 @@ Draft, no status write, no document row, no email.
   is instrumented — but the actual improvement needs one live run, which this task did not perform.
 - **`_roSendPlanningCycle_` has no per-row run id to bind to** (pre-existing limitation, 47_). It uses the
   hydrated persisted cycle, else the existing Asia/Taipei cycle authority, and blocks on neither being available.
+
+
+---
+
+# F1-7N-FB-3C — manual-edit boundary, slice safety, atomic lease, exact output proof (2026-08-25)
+
+FB-3B moved the Send transaction to the server. FB-3C fixes four real defects it shipped, closes the hole its
+own §C created, and adds the exact output verification that makes "sent" mean something.
+
+## I. §D — the 90 s / 240 s contradiction, measured and fixed
+
+**Audited shipped values:** `KM_WRITE_TIMEOUT_MS_ = 90 000` (`operation-system-db-api.js`), and FB-3B's
+`ROS_TIME_BUDGET_MS_ = 240 000`. `sendRequestOrderOrchestration` → `_kmWeeklyCommand_` →
+`_kmFetchBounded_(…, 'write')`, so **90 000 ms was the only bound that ever applied**.
+
+The consequence was worse than a mismatched constant: `AbortController` closes the socket but does **not** stop
+an Apps Script execution, so the server kept writing for up to another 150 s while the browser reported
+`REQUEST_TIMEOUT_WRITE_INDETERMINATE` — and the `PARTIAL_RESUMABLE` answer at 240 s was **unreachable code**.
+
+**The budget is now derived, not chosen:**
+
+| constant | value | why |
+| --- | --- | --- |
+| `ROS_CLIENT_WRITE_TIMEOUT_MS_` | 90 000 | must equal `KM_WRITE_TIMEOUT_MS_`; a test asserts the equality |
+| `ROS_MAX_SINGLE_WRITE_MS_` | 35 000 | one canonical writer call: its own `tryLock(30000)` + the write |
+| `ROS_RESERVE_MS_` | 12 000 | cold start + transit + the final journal write + the response |
+| **`ROS_SLICE_BUDGET_MS_`** | **43 000** | `= 90 000 − 35 000 − 12 000` |
+| `ROS_LEASE_MS_` | 150 000 | outlives the worst-case slice (78 s) but expires without a human |
+
+A slice stops **admitting** work at 43 000 ms — never mid-write — so the worst case is exactly the client bound
+and the realistic case is far under it. **The timeout was not raised.** A test proves
+`budget + worst single write + reserve ≤ client bound`, so the invariant cannot be edited away.
+
+The UI then **continues automatically** by the same immutable execution key. This is not the old browser saga:
+every call carries the same key and the same confirmed checksum, the browser sends no work list / grouping /
+ordering, the **server** picks the next Series from its journal, continuations are counted and bounded on both
+sides, and a reload can call `requestOrder.send.status` and continue.
+
+## II. §E — the lease is now atomic, and ownership is per planning cycle
+
+FB-3B did `journalGet → decide → journalPut`, a read-modify-write race in which two concurrent Sends could both
+observe "no lease". Worse, the lease was keyed by the **execution key**, which cannot stop two **different** keys
+from writing overlapping drafts.
+
+Ownership is now a compare-and-set inside one short `LockService.getScriptLock()` (`tryLock(15000)`) over a
+**per-planning-cycle** active-execution record. The pure decision (`rosOwnershipDecision_`) is separated from the
+lock and exhaustively tested. **The lock is never held across a canonical writer** — that would make the
+orchestrator contend with its own callee's `tryLock(30000)` — and a test asserts the CAS transaction calls no
+`io.createRequestOrderDraft` / `io.submitAllocationDrafts` / `io.readTable` / `io.openDb`.
+
+Proven: same-key concurrent continuation, different-key overlap refused (`SEND_WORKSET_OWNED_BY_ANOTHER_EXECUTION`),
+expired-lease takeover, completed-execution replay, reload resume, and an unavailable CAS lock **refusing** rather
+than running unguarded. Exactly one active owner; no duplicate header, line or transition.
+
+## III. §F — the workset is frozen across the confirmation
+
+FB-3B's dry run journaled nothing, so the approved plan and the executed plan were two independent computations
+of the same query. `mode: 'preview'` now **persists** the frozen plan (checksum, counts, immutable Series order)
+in the journal and returns the checksum; `mode: 'execute'` **requires** it back and refuses on mismatch with
+`SEND_WORKSET_DRIFT`. A larger workset than the one approved is refused, never silently executed.
+
+**Storage decision, stated rather than hidden:** a Script Property holds ~9 KB, so a few hundred frozen tier rows
+cannot be stored. The journal is chunked and pins the frozen set **by checksum** — every continuation re-reads
+and re-verifies it. An unchanged checksum proves the executed set is the approved set; that is the same guarantee
+as row storage, within the storage contract.
+
+## IV. §G — exact quantity and lineage proof
+
+FB-3B verified header existence and a **line count**: a writer that wrote the right *number* of wrong lines would
+have passed. `rosVerifyRequestOrderOutput_` now matches every expected line by
+`(request_order_id, sku, request_bucket, request_month)` and checks: exactly one row, a present
+`request_order_line_id`, `requested_qty` **equal** to the frozen quantity, matching series and company, and a
+`request_order_line_sources` row carrying the source draft id, the station and the tier/month lineage. Then, per
+header: `total_qty` equals the verified line sum, `total_sku` equals the distinct SKU count, and **no unexpected
+line exists** — which is how "a zero-quantity tier created no line" is actually proven.
+
+Failure is `REQUEST_ORDER_OUTPUT_VERIFICATION_FAILED`: the affected source allocation is **not** marked submitted,
+the exact mismatch is journaled, already-proven output is preserved, a resume disposition is given, and **no
+compensating quantity is manufactured**. Eleven distinct failure modes are each proven caught.
+
+## V. §B — the user-authorized draft-creation boundary
+
+Recorded canonically in `docs/planning/REQUEST_ORDER_ALLOCATION_DRAFT_CREATION_BOUNDARY.md`, not only in runtime.
+
+> AI Plan is an INITIAL/DEFAULT draft source. It is **not** the exclusive draft-creation boundary. A deliberate
+> user quantity edit is **also** an authorized canonical creation/update boundary.
+
+`requestOrder.allocationDraft.ensureAndEdit` (owner 15_) composes **two existing canonical writers** — the
+`KMRDV2P.generateMonthlyFlat` create (which mints `RD::MONTHLY_ORDER::<cycle>::…` through `KMRDV2.draftId`) and
+the `KMRDV2P.editMonthlyFlat` quantity write — then **reads the row back** and compares the persisted tier
+quantity to the requested one. It authors no row, no id and no arithmetic; it never mints a `RAD-M-…`; the wire
+carries `canonical_identity`, and the page refuses to adopt a non-canonical one.
+
+Not widened: **only an order quantity** creates a draft (a note is not an order decision). Provenance stays
+`user_created`, and `recommended_qty` is never back-filled from a user quantity. A persisted **0** is a real saved
+decision — the draft stays active and the canonical zero-quantity rule excludes that tier from the Send.
+
+## VI. §H — current-run authority: sufficient, and why
+
+`planning_cycle` + statuses **is** sufficient under the live flat-V2 model, for a structural reason rather than a
+hopeful one: the primary key is `RD::MONTHLY_ORDER::<cycle>::company=..|country=..|draft_purpose=..|marketplace=..|sku=..`,
+so **one** canonical row can exist per business identity per cycle, `draft_version` increments **in place**, and
+**no superseded version row is retained**. There is therefore no older same-cycle draft that could re-enter a
+Send. Terminal rows are excluded and counted; a `partially_submitted` header resumes only its non-terminal tiers.
+
+**No data-contract extension is required** — but FB-3B had a real blind spot: it refused a duplicated draft **id**
+and could not see **two different ids for the same business scope**, which is exactly what the retired `RAD-M-…`
+path produced. That is now `DUPLICATE_BUSINESS_IDENTITY`, and **both** rows are withheld: which quantity is
+authoritative is a business decision and must not be guessed.
+
+## VII. §C — RAD-M reconciliation (read-only, proposes only)
+
+`system.allocationDraftIdentityDiagnostic` (67_, new) classifies every non-canonical row
+(`RETIRED_MANUAL_SEND_PATH` / `LEGACY_PRE_V2` / `CANONICAL_CYCLE_MISMATCH` / `UNRECOGNIZED`), pairs it with the
+canonical identity its own scope would produce, reports the quantity/status differences, whether Send currently
+ignores it and why, and an **idempotent** disposition: `ADOPT_AS_CANONICAL` · `CANCEL_AS_EMPTY` ·
+`CANCEL_AS_SUPERSEDED` · `CANCEL_AS_DUPLICATE_IDENTICAL` · `BUSINESS_DECISION_REQUIRED` · `MANUAL_REVIEW_REQUIRED`.
+Ids are **masked** (they embed company/country/marketplace/SKU). It contains no write, lock, Drive or mail call,
+declares `rows_migrated: 0, rows_deleted: 0`, and every plan step is flagged `requires_user_authorization`.
+**Migration remains a separate, user-authorized action.**
+
+## VIII. §I — Site Inventory output proof
+
+The FB-3B station gates stay. `sadVerifyShippingPlanOutput_` now verifies, after commit: exactly one
+`shipping_plan_lines` row per frozen route, `requested_qty` **equal** to the frozen user `planned_qty`, every plan
+belonging to the one applied station, **no unauthorised line** (that is how "no other site row created" is
+proven), and plan totals equal to the verified line sum. Suggested Qty is never read by the verifier.
+
+A failure here is `SHIPPING_PLAN_OUTPUT_VERIFICATION_FAILED` and is **not** rolled back: the plan is durably
+committed and the drafts are already submitted, so reversing it on a verification read would be a second, less
+tested mutation. The operator gets the exact mismatches and is told not to approve the plan yet.
+
+## IX. §J — progress and confirmation UX
+
+The confirmation dialog keeps the two labelled families (page **candidates** vs server **persisted** authority) and
+now also shows the frozen checksum and the drift promise. Progress shows persisted drafts, positive tier
+allocations, distinct SKUs, distinct Series, expected headers, expected lines, **verified** headers, **verified**
+lines, the current journal phase, the continuation number, and safe-to-close/resumable. The ambiguous
+`allocation drafts 0/234` cannot return — a test asserts the renderer never produces it.
+
+## X. Not done, and why
+
+- **No live evidence.** No live function was executed and no live DB/Drive/property/status/email write was made,
+  so **no live performance or live DB success is claimed** anywhere in this round. The AI-Plan algorithmic fix
+  from FB-3B is still unmeasured live.
+- **`RAD-M-…` rows are not migrated.** By instruction. They are reported and are not sendable.
+- **The Shipping Plan verification does not roll back.** Reasoned above; the alternative was a riskier mutation.
+- **Journal storage is checksum-pinned rather than row-stored.** Reasoned in §III; a row-stored journal exceeds
+  the Script Property contract.

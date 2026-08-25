@@ -931,6 +931,98 @@ function handleSubmitAllocationDraftsToShippingPlans_(body) {
   finally { try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
 }
 
+// ============================================================================================================
+// F1-7N-FB-3C §I — EXACT SITE-INVENTORY OUTPUT VERIFICATION.
+// ------------------------------------------------------------------------------------------------------------
+// FB-3B added the two station-scope gates (MIXED_SITE_PAYLOAD / APPLIED_SCOPE_MISMATCH) and the existing core
+// already read the committed plan back to confirm the DRAFT TRANSITION. What neither of them proved is that the
+// committed shipping_plan_lines actually carry THE QUANTITIES THE OPERATOR SAW. The plan writer returning
+// success is not that proof, and a plan whose line quantities silently came from a Suggested Qty rather than the
+// user's planned_qty is precisely the failure this project has already been bitten by once.
+//
+// So: for every FROZEN route line this submit derived, verify against the committed rows that
+//   * exactly ONE shipping_plan_lines row exists for (shipping_plan_id, sku, site_sku);
+//   * requested_qty equals the frozen route planned_qty EXACTLY — never rounded, never "at least";
+//   * the line belongs to a plan whose company/country/marketplace is the ONE applied station;
+//   * no line exists that the frozen route set did not authorise (that is how "no other site row created" is
+//     actually proven rather than assumed);
+//   * the plan-level requested_qty total equals the sum of the verified lines.
+// PURE over the read rows, so the regression suite executes this function rather than trusting a description of
+// it. It is only ever called AFTER the canonical writer has committed, and it WRITES NOTHING.
+// ------------------------------------------------------------------------------------------------------------
+function sadVerifyShippingPlanOutput_(expectedLines, planIds, planRows, planLineRows, appliedStation) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function U(v) { return S(v).toUpperCase(); }
+  function L(v) { return S(v).toLowerCase(); }
+  function N(v) { var t = S(v); if (t === '') return null; var n = Number(t.replace(/,/g, '')); return isFinite(n) ? n : null; }
+
+  var out = { ok: true, failures: [], verified_lines: 0, verified_qty: 0, plans_checked: 0 };
+  var idSet = {};
+  (planIds || []).forEach(function (id) { if (S(id)) idSet[S(id)] = 1; });
+  var plans = (planRows || []).filter(function (p) { return idSet[S(p && p.shipping_plan_id)] === 1; });
+  out.plans_checked = plans.length;
+  if (!plans.length) { out.ok = false; out.failures.push({ code: 'SHIPPING_PLAN_HEADER_NOT_FOUND', plan_ids: Object.keys(idSet) }); return out; }
+
+  // (1) every committed plan must belong to the ONE applied station.
+  var wantC = U(appliedStation && appliedStation.company), wantCo = U(appliedStation && appliedStation.country), wantM = L(appliedStation && appliedStation.marketplace);
+  plans.forEach(function (p) {
+    if (wantCo && U(p.country) !== wantCo) { out.failures.push({ code: 'PLAN_COUNTRY_MISMATCH', shipping_plan_id: S(p.shipping_plan_id), found: S(p.country), expected: S(appliedStation.country) }); }
+    if (wantM && L(p.marketplace) !== wantM) { out.failures.push({ code: 'PLAN_MARKETPLACE_MISMATCH', shipping_plan_id: S(p.shipping_plan_id), found: S(p.marketplace), expected: S(appliedStation.marketplace) }); }
+    if (wantC && U(p.company) !== wantC) { out.failures.push({ code: 'PLAN_COMPANY_MISMATCH', shipping_plan_id: S(p.shipping_plan_id), found: S(p.company), expected: S(appliedStation.company) }); }
+  });
+
+  var mine = (planLineRows || []).filter(function (l) { return idSet[S(l && l.shipping_plan_id)] === 1; });
+  var byKey = {};
+  mine.forEach(function (l) {
+    var k = [U(l.sku), U(l.site_sku)].join('|');
+    (byKey[k] = byKey[k] || []).push(l);
+  });
+
+  // (2) every FROZEN route line must appear exactly once, with the exact frozen quantity.
+  var expectedKeys = {};
+  (expectedLines || []).forEach(function (e) {
+    var k = [U(e.sku), U(e.site_sku)].join('|');
+    expectedKeys[k] = true;
+    var found = byKey[k] || [];
+    if (found.length === 0) { out.failures.push({ code: 'PLAN_LINE_MISSING', sku: S(e.sku), site_sku: S(e.site_sku), expected_qty: Number(e.requested_qty) }); return; }
+    if (found.length > 1) { out.failures.push({ code: 'PLAN_LINE_DUPLICATED', sku: S(e.sku), site_sku: S(e.site_sku), count: found.length }); return; }
+    var l = found[0];
+    if (!S(l.shipping_plan_line_id)) { out.failures.push({ code: 'PLAN_LINE_ID_MISSING', sku: S(e.sku) }); return; }
+    var got = N(l.requested_qty);
+    if (got == null || Number(got) !== Number(e.requested_qty)) {
+      // The user's planned_qty is the authority. A mismatch here is exactly the "Suggested Qty replaced the
+      // user quantity" failure mode, so it is named rather than tolerated.
+      out.failures.push({ code: 'PLAN_LINE_QUANTITY_MISMATCH', sku: S(e.sku), site_sku: S(e.site_sku),
+        expected_user_planned_qty: Number(e.requested_qty), found_requested_qty: (got == null ? null : Number(got)),
+        detail: 'The committed plan line does not carry the frozen user planned quantity.' });
+      return;
+    }
+    out.verified_lines++;
+    out.verified_qty += Number(e.requested_qty);
+  });
+
+  // (3) no UNEXPECTED line — this is how "no other site row was created" is proven.
+  mine.forEach(function (l) {
+    var k = [U(l.sku), U(l.site_sku)].join('|');
+    if (!expectedKeys[k]) {
+      out.failures.push({ code: 'UNEXPECTED_PLAN_LINE', sku: S(l.sku), site_sku: S(l.site_sku),
+        shipping_plan_id: S(l.shipping_plan_id), found_qty: N(l.requested_qty),
+        detail: 'A committed plan line exists that the frozen Execution Plan routes did not authorise.' });
+    }
+  });
+
+  // (4) plan totals equal the verified line sum.
+  if (out.failures.length === 0) {
+    var lineSum = 0;
+    mine.forEach(function (l) { var n = N(l.requested_qty); if (n != null) lineSum += Number(n); });
+    if (lineSum !== out.verified_qty) {
+      out.failures.push({ code: 'PLAN_TOTAL_MISMATCH', committed_line_sum: lineSum, verified_line_sum: out.verified_qty });
+    }
+  }
+  out.ok = out.failures.length === 0;
+  return out;
+}
+
 // PURE-ish orchestration core (assumes the caller holds the ScriptLock). Returns a PLAIN result object.
 function sadSubmitToShippingPlansCore_(ss, body, ids) {
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
@@ -978,6 +1070,9 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     drafts.push({ id: id, header: header, lines: shippable });
     if (isSubmitted) alreadySubmitted.push(id); else toTransition.push(id);
   });
+  // F1-7N-FB-3C §I — the ONE station this submit commits, taken from the PERSISTED headers (never the payload).
+  // It is captured during the station gate below and reused by the post-commit output verification.
+  var sadAppliedStation = null;
   // ---- (14)/(15) F1-7N-FB-3B §G — SERVER-SIDE STATION SCOPE. Site Inventory Submit Plan is scoped to EXACTLY the
   // currently APPLIED Country + Marketplace, and until now that was enforced only by the browser choosing which
   // draft ids to send. A page bug, a stale selector, a replayed payload or a hand-crafted request could therefore
@@ -1006,6 +1101,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
         data: { execution_key: execKey, station_count: stationList.length,
           stations: drafts.map(function (d) { return { allocation_draft_id: d.id, company: String(d.header.company || ''), country: String(d.header.country || ''), marketplace: String(d.header.marketplace || '') }; }).slice(0, 25) } };
     }
+    sadAppliedStation = { company: String(drafts[0].header.company || ''), country: String(drafts[0].header.country || ''), marketplace: String(drafts[0].header.marketplace || '') };
     var appliedScope = body.applied_scope || null;
     if (appliedScope) {
       var want = sadStationOf_(appliedScope);
@@ -1097,7 +1193,36 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     return { success: false, error: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', code: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', stage: 'draft_transition', zero_write: rolledOk, data: { execution_key: execKey, outcome: commit.data.outcome, plans_rolled_back: planIds, unverified_drafts: unverified, plan_rollback: planRb, draft_restore_ok: restoreOk } };
   }
 
+  // ---- F1-7N-FB-3C §I — EXACT OUTPUT VERIFICATION over the committed plan, after the draft transition is
+  // read back. The drafts are already `submitted` at this point, which is why a failure here is reported as
+  // COMMITTED_OUTPUT_UNVERIFIED rather than rolled back: reversing a durably committed plan on the strength of a
+  // verification read would be a second, less-tested mutation. The operator gets the exact mismatch instead.
+  var planIdsForVerify = planIds.slice();
+  var sadVerify = { ok: true, failures: [], verified_lines: 0, verified_qty: 0, plans_checked: 0, skipped: false };
+  try {
+    var vPlanSheet = ss.getSheetByName('shipping_plans');
+    var vLineSheet = ss.getSheetByName('shipping_plan_lines');
+    if (!planIdsForVerify.length || !vPlanSheet || !vLineSheet) {
+      sadVerify.skipped = true;
+      sadVerify.reason = !planIdsForVerify.length ? 'REUSED_EXISTING_PLAN_NO_NEW_IDS' : 'PLAN_TABLES_UNREADABLE';
+    } else {
+      sadVerify = sadVerifyShippingPlanOutput_(submitLines, planIdsForVerify,
+        shippingPlanReadObjects_(vPlanSheet), shippingPlanReadObjects_(vLineSheet), sadAppliedStation || {});
+    }
+  } catch (eVer) { sadVerify = { ok: true, failures: [], skipped: true, reason: 'VERIFICATION_READ_FAILED: ' + (eVer && eVer.message ? eVer.message : eVer) }; }
+  if (sadVerify.skipped !== true && sadVerify.ok !== true) {
+    return { success: false, error: 'SHIPPING_PLAN_OUTPUT_VERIFICATION_FAILED', code: 'SHIPPING_PLAN_OUTPUT_VERIFICATION_FAILED',
+      stage: 'output_verification', zero_write: false,
+      data: { execution_key: execKey, plans: planIds, failures: sadVerify.failures.slice(0, 25),
+        verified_lines: sadVerify.verified_lines, expected_lines: submitLines.length,
+        applied_station: sadAppliedStation,
+        next_action: 'The Weekly Shipping Plan WAS committed and the drafts are submitted, but its lines do not match the frozen Execution Plan quantities field by field. Nothing was rolled back \u2014 reversing a durable plan on a verification read would be a second mutation. Review the named mismatches on the plan before approving it.' } };
+  }
   return { success: true, data: { execution_key: execKey, outcome: commit.data.outcome, reused: !!commit.data.reused,
+    output_verification: { verified: sadVerify.skipped ? null : sadVerify.ok, skipped: !!sadVerify.skipped,
+      reason: sadVerify.reason || '', verified_lines: sadVerify.verified_lines || 0,
+      verified_qty: sadVerify.verified_qty || 0, expected_lines: submitLines.length,
+      applied_station: sadAppliedStation },
     plan_count: (commit.data.plan_count || planIds.length), line_count: (commit.data.line_count || submitLines.length), plans: planIds,
     submitted_drafts: toTransition.slice(), already_submitted: alreadySubmitted,
     lineage: drafts.map(function (d) { return { allocation_draft_id: d.id, calculation_run_id: String(d.header.calculation_run_id || '').trim(), formula_version: String(d.header.formula_version || '').trim(), calculated_at: String(d.header.calculated_at || '').trim(), source_data_as_of: String(d.header.source_data_as_of || '').trim(), planning_cycle: String(d.header.planning_cycle || '').trim() }; }) } };
