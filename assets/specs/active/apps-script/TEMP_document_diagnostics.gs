@@ -25,6 +25,29 @@
 // Each run emits ONE compact primary Logger line, kept well inside the Apps Script log-truncation ceiling by
 // summarising verdicts and counts rather than dumping the full payload. A few short secondary lines follow for
 // the per-document detail; nothing is echoed that could leak a credential.
+//
+// ------------------------------------------------------------------------------------------------------------
+// RETENTION / CLEANUP RULE (F1-7N-FB-1B-G2 §D)
+// ------------------------------------------------------------------------------------------------------------
+// This file exists ONLY to make the controlled live test runnable from the Apps Script editor. It is a thin
+// logging shell over the production evaluators and holds no logic of its own, so deleting it can never change
+// how documents are generated, listed, fetched or retried: the production paths are the router actions
+// document.list / document.get / document.retry / document.diagnostic.* plus the Send PO and Confirm Shipment
+// sagas, and NOTHING in production calls anything defined in this file (a test asserts that in both directions).
+//
+// It MAY be removed from BOTH the deployed Apps Script project AND active repository source once ALL SIX of the
+// following have been completed and verified:
+//   1. both diagnostics have run successfully against controlled REAL records;
+//   2. one controlled Purchase Order has generated its document and moved from Draft into the In Production UI
+//      group (order_status = issued);
+//   3. one controlled Shipment has passed readiness, become `shipped`, and generated its required documents;
+//   4. generated_documents and BOTH UI Document Panels (Shipment Draft / Overview, Purchase Order Workspace)
+//      have been verified against those records;
+//   5. retry / idempotency has been verified — a repeat produces no duplicate folder, file, PDF or registry row;
+//   6. no unresolved CONFIGURATION_REQUIRED item affects either of the two BLOCKING Shipment documents
+//      (SHIPMENT_DETAIL, PACKING_LIST_EXPORT). A CONFIGURATION_REQUIRED item on a non-blocking document
+//      (Commercial Invoice, destination forms, carrier booking) does not hold up removal.
+// Until all six hold, keep the file: it is the only editor-runnable way to answer "why was this blocked?".
 // ============================================================
 
 // ---- PASTE THE ID YOU WANT TO DIAGNOSE HERE -----------------------------------------------------------

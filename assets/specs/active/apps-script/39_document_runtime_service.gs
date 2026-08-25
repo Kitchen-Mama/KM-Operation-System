@@ -207,34 +207,55 @@ function dgsClassifyEntry_(entry, field) {
   var complete = field ? !!field.complete : null;
   var missing = (field && field.missing) || [];
   var unresolved = (field && field.unresolved) || [];
-  var state, nextAction, blocks = false, retryable = false;
+  var state, nextAction, blocks = false, retryable = false, readiness, reasonCode = '';
   if (!rendererAvailable) {
     state = 'RUNTIME_DEFERRED';
+    readiness = 'RUNTIME_DEFERRED';
+    reasonCode = 'RENDERER_NOT_IMPLEMENTED';
     nextAction = 'No render model exists for this document class yet. It is listed for visibility and is never generated, never blocking, and never written as a GENERATED registry row.';
   } else if (complete === false) {
     state = 'CONFIGURATION_REQUIRED';
+    readiness = 'CONFIGURATION_REQUIRED';
+    reasonCode = unresolved.length ? 'DOCUMENT_FIELD_AUTHORITY_MISSING' : 'DOCUMENT_REQUIRED_FIELD_MISSING';
     nextAction = unresolved.length
       ? 'The active template marks a field required that has no source of truth in the system. Make it optional, or put the value in the template, or supply the missing business authority.'
       : 'Complete the missing business fields listed, then retry document generation.';
     retryable = true;
+  } else if (complete === null) {
+    state = (entry.requirement === 'ALWAYS') ? 'REQUIRED_AND_EXECUTABLE' : 'OPTIONAL_AND_EXECUTABLE';
+    readiness = 'FIELD_CONTRACT_UNVERIFIED';
+    reasonCode = 'FIELD_CONTRACT_UNVERIFIED';
+    nextAction = 'Template and renderer are in place. The required-field contract is verified against the finalized snapshot, which exists only after dispatch.';
   } else {
     state = (entry.requirement === 'ALWAYS') ? 'REQUIRED_AND_EXECUTABLE' : 'OPTIONAL_AND_EXECUTABLE';
+    readiness = 'READY';
     nextAction = 'Ready to generate.';
-    // it blocks ONLY when policy says it gates AND its field contract is actually proven complete
-    blocks = gatesByPolicy && complete === true;
+    blocks = gatesByPolicy;   // proven complete AND a policy gate
   }
+  // G2 §E — the four dimensions are reported SEPARATELY so no pair of labels can read as contradictory.
+  // `document_state` describes the DOCUMENT (business requirement + executability). `transition_requirement`
+  // describes the TRANSITION (whether this class is a gate at all). A class can therefore truthfully be
+  // REQUIRED_AND_EXECUTABLE and NOT_A_GATE: the business requires the document, the transition does not.
   return {
     class_key: entry.class_key, document_type: entry.document_type, document_usage: entry.document_usage,
     template_key: entry.template_key, template_id: entry.template_id, template_version: entry.template_version,
-    requirement: entry.requirement, state: state,
+    applicability: 'APPLICABLE',
+    renderer_status: rendererAvailable ? 'AVAILABLE' : 'DEFERRED',
+    field_contract_status: complete === null ? 'UNVERIFIED' : (complete ? 'COMPLETE' : 'INCOMPLETE'),
+    transition_requirement: gatesByPolicy ? 'GATE' : 'NOT_A_GATE',
     blocks_transition: blocks,
+    readiness_verdict: readiness,
+    reason_code: reasonCode,
+    next_action: nextAction,
+    // document-level classification (G1 §C vocabulary), and the supporting evidence
+    document_state: state,
+    requirement: entry.requirement,
     renderer_available: rendererAvailable,
     required_field_contract_complete: complete === null ? 'UNKNOWN' : complete,
     missing_fields: missing,
     missing_authorities: unresolved.map(function (u) { return dgsStr_(u.placeholder); }),
     retryable: retryable,
-    gates_by_policy: gatesByPolicy,
-    next_action: nextAction
+    gates_by_policy: gatesByPolicy
   };
 }
 // The executable manifest: every applicable document classified, plus the subset that may actually block.
@@ -244,8 +265,8 @@ function dgsExecutableManifest_(entries, fieldByClass) {
   return {
     documents: rows,
     blocking: rows.filter(function (r) { return r.blocks_transition; }).map(function (r) { return r.class_key; }),
-    configuration_required: rows.filter(function (r) { return r.state === 'CONFIGURATION_REQUIRED'; }).map(function (r) { return r.class_key; }),
-    runtime_deferred: rows.filter(function (r) { return r.state === 'RUNTIME_DEFERRED'; }).map(function (r) { return r.class_key; }),
+    configuration_required: rows.filter(function (r) { return r.document_state === 'CONFIGURATION_REQUIRED'; }).map(function (r) { return r.class_key; }),
+    runtime_deferred: rows.filter(function (r) { return r.document_state === 'RUNTIME_DEFERRED'; }).map(function (r) { return r.class_key; }),
     // the classes that gate BY POLICY, whether or not their contract has been proven yet - this is what the
     // pre-dispatch gate must find a template for
     policy_gating: rows.filter(function (r) { return r.gates_by_policy; }).map(function (r) { return r.class_key; })
@@ -936,11 +957,21 @@ function dgsGenerateShipmentDocuments_(ss, shipmentId, actor, opts) {
 // blocking Drive calls, and holding a global lock across them risks an Apps Script timeout stranding the lock
 // and blocking every other writer. The flow is therefore split into three stages:
 //
-//   STAGE 1  dgsPoPrepare_        (inside the lock)   verify draft, checksum, template, payload, reserve attempt
+//   STAGE 1  dgsPoPrepare_        (inside the lock)   DB ONLY: verify draft, freeze checksum, resolve template
+//                                                     + payload, reserve the attempt
 //   ---- lock released ----
-//   STAGE 2  dgsPoRenderPrepared_ (NO lock)           folder resolve/create, copy, fill, PDF
+//   STAGE 2  dgsPoRenderPrepared_ (NO lock)           Drive READINESS PROBE, then folder resolve/create, copy,
+//                                                     fill, PDF
 //   ---- lock reacquired ----
-//   STAGE 3  dgsPoFinalize_       (inside the lock)   re-verify draft + checksum, then the issue writer runs
+//   STAGE 3  dgsPoFinalize_       (inside the lock)   DB ONLY: re-verify draft + checksum, attach the output;
+//                                                     the caller's ONE canonical issue writer then runs
+//
+// F1-7N-FB-1B-G2 §B FROZEN RULE: **no Google Drive API call of ANY kind may execute while the business
+// ScriptLock is held** — and that now explicitly includes READ-ONLY probes. G1 still ran the Drive readiness
+// probe inside STAGE 1, which satisfied the earlier "no Drive MUTATION under lock" rule but not this one. The
+// probe therefore moved into STAGE 2, making STAGE 1 and STAGE 3 provably DB-only. Reserving the attempt before
+// the probe is deliberate: if readiness then fails, the reserved row records a truthful retryable attempt and
+// the PO stays draft.
 //
 // The reserved attempt row is the crash-safety mechanism: it is written with the frozen `failed` token and a
 // retryable DOCUMENT_ATTEMPT_RESERVED reason, so a process that dies mid-render leaves a truthful "attempted,
@@ -980,11 +1011,8 @@ function dgsPoPrepare_(ss, poId, opts) {
   var sel = dgsSelectPoTemplate_(dgsTemplates_(ss), ctx);
   if (!sel.ok) return { ok: false, reason: sel.reason, purchase_order_id: dgsStr_(poId), detail: sel };
 
-  // Drive READINESS only — probes open configured identities and read metadata. They create nothing, so this
-  // is safe inside the lock and is exactly the deterministic check that must pass before the PO can be issued.
-  var drive = dgsDriveReadiness_(dofProbeIo_(), [{ class_key: 'PURCHASE_ORDER', template: sel.template }], 'purchase_order');
-  if (!drive.ok) return { ok: false, reason: drive.reason, purchase_order_id: dgsStr_(poId), drive_readiness: drive };
-
+  // NO Drive call here — not even a read-only probe (G2 §B). Drive readiness is asserted in STAGE 2, after the
+  // lock is released. Everything in this function is a Sheet read plus pure computation.
   var existing = dgsGeneratedFor_(ss, 'purchase_order', poId);
   var batch = dgsPoBatchDate_(existing, opts.today);
   if (!batch.ymd) return { ok: false, reason: 'PO_FOLDER_IDENTITY_INVALID', purchase_order_id: dgsStr_(poId) };
@@ -1017,7 +1045,7 @@ function dgsPoPrepare_(ss, poId, opts) {
   if (plan.complete) {
     // an already-generated current-version document is REUSED verbatim; no Drive work at all
     return { ok: true, complete: true, purchase_order_id: dgsStr_(poId), document_id: dgsStr_(plan.reuse[0].row.document_id),
-      source_checksum: checksum, document_batch_date: batch.ymd, template: entry, root_folder_id: drive.root_folder_id };
+      source_checksum: checksum, document_batch_date: batch.ymd, template: entry };
   }
   // reserve (or reuse) the idempotent attempt row, so a crash mid-render is recoverable and a concurrent
   // caller converges on the SAME document_id instead of appending a second row
@@ -1030,13 +1058,17 @@ function dgsPoPrepare_(ss, poId, opts) {
   return {
     ok: true, complete: false, purchase_order_id: dgsStr_(poId), document_id: docId,
     payload: resolved.payload, template: entry, base: base, source_checksum: checksum,
-    document_batch_date: batch.ymd, root_folder_id: drive.root_folder_id,
+    document_batch_date: batch.ymd,
     regenerated_from_document_id: prior ? dgsStr_(prior.document_id) : ''
   };
 }
 
-// ---- STAGE 2 (NO business lock held; this is the only Drive-mutating step) -------------------------------
+// ---- STAGE 2 (NO business lock held; the ONLY stage that touches Drive at all) ---------------------------
+// It owns BOTH the non-mutating readiness probe and the mutating render, precisely so neither can ever run
+// under the business lock. Readiness runs first: if a configured identity is unreachable, nothing is created.
 function dgsPoRenderPrepared_(ss, prepared) {
+  var drive = dgsDriveReadiness_(dofProbeIo_(), [{ class_key: 'PURCHASE_ORDER', template: prepared.template.template }], 'purchase_order');
+  if (!drive.ok) return { ok: false, reason: drive.reason, drive_readiness: drive, stage: 'drive_readiness' };
   var folder = dofResolvePoDateFolder_(dofFolderIo_(), {
     templates: [prepared.template.template],
     document_batch_date: prepared.document_batch_date.substring(0, 4) + '-' + prepared.document_batch_date.substring(4, 6) + '-' + prepared.document_batch_date.substring(6, 8)
@@ -1046,22 +1078,35 @@ function dgsPoRenderPrepared_(ss, prepared) {
   payload.folder_id = folder.folder_id;   // the destination the SYSTEM resolved; the renderer never picks one
   var fr = dfoRenderPayload_(dfoDefaultIo_(), payload, {});
   if (!fr.ok) return { ok: false, reason: fr.error, message: fr.message || '', folder_id: folder.folder_id, partial_file_id: fr.partial_file_id || fr.file_id || '' };
-  return { ok: true, file: fr, folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id) };
+  return { ok: true, file: fr, folder_id: folder.folder_id, folder_url: dgsFolderUrl_(folder.folder_id), root_folder_id: drive.root_folder_id };
 }
 
-// ---- STAGE 3 (business lock reacquired) -----------------------------------------------------------------
-// Re-verify the world, then commit the document. It does NOT write order_status: the caller's ONE canonical
-// issue writer does that, and only after this returns ok.
+// ---- STAGE 3 (business lock reacquired; DB ONLY, no Drive call) -----------------------------------------
+// OWNERSHIP, stated exactly (G2 §C). This function does TWO things and no more:
+//   1. VERIFIES  — re-reads the PO and its lines, and confirms it is still draft and the source checksum is
+//                  unchanged. Its return value is an AUTHORIZATION result (`authorizes_issue`).
+//   2. ATTACHES  — writes the finished output onto the reserved generated_documents row.
+// It does NOT write order_status, and it does not call the issue writer. The caller
+// (handleUpdatePurchaseOrderStatus_ in 13_) holds the lock, checks `authorizes_issue`, and then performs the
+// transition through its own single `setStatus('issued')` — which remains the ONE canonical order_status writer
+// in the codebase. The G1 report blurred these two roles; this comment and the tests now pin them apart.
 function dgsPoFinalize_(ss, prepared, rendered, actor) {
   var genSheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
   var now = shipmentTimestamp_();
   var loaded = dgsPoLoad_(ss, prepared.purchase_order_id);
   if (!loaded.ok) return { ok: false, reason: loaded.reason };
-  if (dgsPoStatus_(loaded.po) !== 'draft') {
-    // someone else already moved it — do not double-issue and do not attach this output as current
-    dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_FAILED_, updated_at: now,
-      note: dgsEncodeNote_('PURCHASE_ORDER_NOT_DRAFT', true, 'PO left draft during rendering; attempt not attached. Rendered file ' + dgsStr_(rendered.file.file_id) + ' retained for recovery.') });
-    return { ok: false, reason: 'PURCHASE_ORDER_NOT_DRAFT', order_status: dgsPoStatus_(loaded.po) };
+  var liveStatus = dgsPoStatus_(loaded.po);
+  if (liveStatus !== 'draft') {
+    // A CONCURRENT REQUEST ALREADY ISSUED IT. Never issue twice, never attach this output as the current
+    // document, and never append a second current row — report the live state truthfully instead. The rendered
+    // file is retained (never auto-deleted) and its id is recorded so a human can reconcile it.
+    var already = dgsGeneratedFor_(ss, 'purchase_order', prepared.purchase_order_id)
+      .filter(function (r) { return dgsRowState_(r) === 'READY'; });
+    dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_CANCELLED_, updated_at: now,
+      note: dgsEncodeNote_('PURCHASE_ORDER_ALREADY_ISSUED', false, 'PO left draft during rendering (now ' + liveStatus + '); this attempt is superseded and NOT attached. Rendered file ' + dgsStr_(rendered.file.file_id) + ' retained for recovery.') });
+    return { ok: false, authorizes_issue: false, reason: 'PURCHASE_ORDER_ALREADY_ISSUED', order_status: liveStatus,
+      current_document_id: already.length ? dgsStr_(already[0].document_id) : '',
+      message: 'This Purchase Order was already sent by another request; it is now ' + liveStatus + '. No second document or transition was created.' };
   }
   var after = dgsPoSourceChecksum_(loaded.po, loaded.lines);
   if (after !== prepared.source_checksum) {
@@ -1070,9 +1115,11 @@ function dgsPoFinalize_(ss, prepared, rendered, actor) {
     // prove is unreferenced) — its id is recorded so a human can reconcile it.
     dgsUpdateRegistry_(genSheet, prepared.document_id, { status: DGS_ROW_FAILED_, updated_at: now,
       note: dgsEncodeNote_(DGS_PO_DRIFT_, true, 'Source data changed during rendering (' + prepared.source_checksum + ' -> ' + after + '). Regenerate from the new payload. Stale file ' + dgsStr_(rendered.file.file_id) + ' retained, not attached.') });
-    return { ok: false, reason: DGS_PO_DRIFT_, expected_checksum: prepared.source_checksum, actual_checksum: after };
+    return { ok: false, authorizes_issue: false, reason: DGS_PO_DRIFT_,
+      expected_checksum: prepared.source_checksum, actual_checksum: after,
+      message: 'The Purchase Order changed while its document was being generated, so the document no longer matches the order. Nothing was issued. Press Send PO again to regenerate from the current data.' };
   }
-  if (!dgsStr_(rendered.file.file_id)) return { ok: false, reason: 'DOCUMENT_OUTPUT_MISSING' };
+  if (!dgsStr_(rendered.file.file_id)) return { ok: false, authorizes_issue: false, reason: 'DOCUMENT_OUTPUT_MISSING' };
   dgsUpdateRegistry_(genSheet, prepared.document_id, {
     file_name: rendered.file.file_name, file_id: rendered.file.file_id, file_url: rendered.file.file_url,
     pdf_file_id: rendered.file.pdf_file_id, pdf_file_url: rendered.file.pdf_file_url,
@@ -1082,7 +1129,8 @@ function dgsPoFinalize_(ss, prepared, rendered, actor) {
     regenerated_from_document_id: prepared.regenerated_from_document_id || '',
     generated_by: dgsStr_(actor), generated_at: now, updated_at: now
   });
-  return { ok: true, document_id: prepared.document_id, file_name: rendered.file.file_name,
+  // Verified + attached. The CALLER may now run its one canonical issue writer; this function never does.
+  return { ok: true, authorizes_issue: true, document_id: prepared.document_id, file_name: rendered.file.file_name,
     folder_id: rendered.folder_id, folder_url: rendered.folder_url, checksum: prepared.source_checksum };
 }
 

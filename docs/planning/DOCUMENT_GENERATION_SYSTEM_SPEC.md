@@ -848,17 +848,30 @@ owns `shipped → in_transit`; receiving alone owns `→ received`.
 
 ### Q.2.1 Send PO staged saga (F1-7N-FB-1B-G1 §A)
 
-Drive operations must **never** run while a long/global business `ScriptLock` is held — folder resolution,
-folder creation, template copy, cell population, PDF export and file lookup over large folders are all slow
-blocking calls, and an Apps Script timeout mid-hold strands the lock and blocks every other writer.
+> **FROZEN RULE (F1-7N-FB-1B-G2 §B).** **No Google Drive API call of any kind may execute while the business
+> `ScriptLock` is held — read-only probes included.** `DriveApp`, `getFolderById`, `getFileById`, folder
+> readiness probes, folder lookup, `createFolder`, `makeCopy`, `setName`, opening a document/spreadsheet by
+> Drive identity, PDF export, permission/metadata reads, and **any `dof*`/`dfo*` helper that can transitively
+> reach Drive** are all excluded from every locked region. G1 satisfied the weaker "no Drive *mutation* under
+> lock" rule but still probed inside STAGE 1; the probe has moved to STAGE 2.
 
-| Stage | Lock | Does |
-|---|---|---|
-| **1 · `dgsPoPrepare_`** | **held** | verify still `draft` · freeze the immutable source checksum · resolve the exact template + fully computed render payload · prove Drive readiness with **non-mutating probes** · reserve/reuse the idempotent `generated_documents` attempt |
-| — | **released** | |
-| **2 · `dgsPoRenderPrepared_`** | **none** | resolve/create the date folder · copy the template · fill it · export the PDF |
-| — | **reacquired** | |
-| **3 · `dgsPoFinalize_`** | **held** | re-verify still `draft` · verify the checksum unchanged · verify the output exists · attach it · then the **one canonical `issue` writer** sets `order_status = issued` · finalize the registry row |
+Every Drive call is slow and blocking, and an Apps Script timeout mid-hold strands the lock and blocks every
+other writer — so the lock is held only across Sheet reads and pure computation.
+
+| Stage | Lock | Drive | Does |
+|---|---|---|---|
+| **1 · `dgsPoPrepare_`** | **held** | **none** | verify still `draft` · freeze the immutable source checksum · resolve the exact template + fully computed render payload · reserve/reuse the idempotent `generated_documents` attempt (DB-only) |
+| — | **released** | | |
+| **2 · `dgsPoRenderPrepared_`** | **none** | **all** | the **non-mutating readiness probe** first, then resolve/create the date folder · copy the template · fill it · export the PDF |
+| — | **reacquired** | | |
+| **3 · `dgsPoFinalize_`** | **held** | **none** | re-read the PO + lines · verify still `draft` · verify the checksum unchanged · verify the output exists · attach it to the registry · return an **authorization** result |
+| — | still held | | the caller's **one canonical `issue` writer** sets `order_status = issued`, then releases |
+
+**Ownership split (G2 §C), stated exactly.** `dgsPoFinalize_` does two things and no more: it **verifies**
+(returning `authorizes_issue`) and it **attaches** the output to `generated_documents`. It writes no cell and
+never touches `order_status`. The caller — `handleUpdatePurchaseOrderStatus_` in `13_` — holds the lock, checks
+`authorizes_issue === true`, and performs the transition through its own single `setStatus('issued')`, which
+remains the **only** `order_status = issued` writer in the codebase (asserted: exactly one occurrence).
 
 The reserved attempt row is the crash-safety mechanism: it is written with the frozen `failed` token plus a
 retryable `DOCUMENT_ATTEMPT_RESERVED` reason, so a process that dies mid-render leaves a truthful
@@ -868,8 +881,20 @@ retryable `DOCUMENT_ATTEMPT_RESERVED` reason, so a process that dies mid-render 
 them; no folder, file or registry row is duplicated.
 
 **If the source changes during rendering:** the PO is **not** issued; the attempt is marked retryable with
-`DOCUMENT_SOURCE_DRIFT`; regeneration must run from the new payload; the stale render is **never attached as
-current** (and never deleted — its id is recorded in the note so a human can reconcile it).
+`DOCUMENT_SOURCE_DRIFT` and an actionable message; regeneration must run from the new payload; the stale render
+is **never attached as current** (and never deleted — its id is recorded in the note so a human can reconcile
+it).
+
+**If another request already issued the PO:** the second request does **not** issue again and does **not**
+append a duplicate current row. Its attempt is superseded (`PURCHASE_ORDER_ALREADY_ISSUED`), the existing
+current `document_id` is reported, and the caller returns a truthful `already_issued` success rather than a
+spurious failure.
+
+**Known remaining exception (reported, not silently tolerated).** The **legacy** manual single-document
+generator `handleShipmentDocumentGenerate_` (`36_`, the R3B/R3C "Generate" button path) still holds a
+`ScriptLock` across its Drive work. It is **not** part of the Send PO or Confirm Shipment saga and predates
+F1-7N-FB-1B. A test pins it as the sole known locked-Drive region so the pattern cannot spread unnoticed;
+bringing it onto the staged flow is a separate task.
 
 **No email is sent.** `MailApp` / `GmailApp` / Gmail API / any external email API are not called;
 `generated_documents.email_status` stays at the canonical unsent value. Email Automation is a later consumer of
@@ -931,8 +956,26 @@ transition gate merely because it is applicable.** Every applicable document res
 `REQUIRED_AND_EXECUTABLE` · `OPTIONAL_AND_EXECUTABLE` · `CONFIGURATION_REQUIRED` · `RUNTIME_DEFERRED` ·
 `NOT_APPLICABLE`
 
-reported with `blocks_transition`, `renderer_available`, `required_field_contract_complete`,
-`missing_fields`, `missing_authorities`, `retryable` and `next_action`.
+**Reported as SEPARATE fields (G2 §E), so no pair of labels can read as contradictory:**
+
+| Field | Values |
+|---|---|
+| `applicability` | `APPLICABLE` / `NOT_APPLICABLE` |
+| `renderer_status` | `AVAILABLE` / `DEFERRED` |
+| `field_contract_status` | `COMPLETE` / `INCOMPLETE` / `UNVERIFIED` |
+| `transition_requirement` | `GATE` / `NOT_A_GATE` |
+| `blocks_transition` | boolean — the computed effect |
+| `readiness_verdict` | `READY` / `CONFIGURATION_REQUIRED` / `RUNTIME_DEFERRED` / `FIELD_CONTRACT_UNVERIFIED` |
+| `reason_code` | `''` / `RENDERER_NOT_IMPLEMENTED` / `DOCUMENT_FIELD_AUTHORITY_MISSING` / `DOCUMENT_REQUIRED_FIELD_MISSING` / `FIELD_CONTRACT_UNVERIFIED` |
+| `next_action` | plain-language instruction |
+
+plus `document_state` (the five-state document classification above), `missing_fields`,
+`missing_authorities` and `retryable`.
+
+`document_state` describes the **document** (business requirement + executability); `transition_requirement`
+describes the **transition**. A class can therefore truthfully be `REQUIRED_AND_EXECUTABLE` **and**
+`NOT_A_GATE` — the business requires the document, the transition does not — which is exactly the pairing that
+read as a contradiction when a single label carried both meanings.
 
 **The Confirm Shipment transition gate for this controlled version is exactly:**
 
@@ -1061,9 +1104,25 @@ Both **delegate to the production evaluators** (`handlePoDocumentDiagnostic_` /
 `handleShipmentDocumentDiagnostic_`), so there is exactly one diagnostic implementation and no drifting copy.
 They emit **one compact primary Logger line** (plus short per-document lines), capped inside the log-truncation
 ceiling; they reject a blank or still-placeholder id rather than diagnosing nothing; they report the exact
-selected internal PK; and they are strictly read-only — no DB/property/flag/status write, no Drive folder, file
-or PDF, no email, no Send PO or Confirm Shipment invocation, no Demo mutation, and every folder path is labelled
-a **preview**.
+selected internal PK; and they are read-only — no DB/property/flag/status write, no Drive folder, file or PDF,
+no email, no Send PO or Confirm Shipment invocation, no Demo mutation, and every folder path is labelled a
+**preview**. They *do* make read-only Drive **probes** (a readiness report must), while holding **no lock**;
+tests assert they can never reach a mutating Drive helper, even transitively.
+
+**Retention / cleanup rule (G2 §D).** The file is a thin logging shell over the production evaluators and holds
+no logic of its own; nothing in production calls anything defined in it (asserted in both directions), so
+deleting it cannot change document generation, `document.list`, `document.get` or `document.retry`. It may be
+removed from **both** the deployed Apps Script project **and** active repository source once all six hold:
+
+1. both diagnostics have run successfully against controlled **real** records;
+2. one controlled Purchase Order has generated its document and moved from Draft into the **In Production** UI
+   group (`order_status = issued`);
+3. one controlled Shipment has passed readiness, become `shipped`, and generated its required documents;
+4. `generated_documents` and **both** UI Document Panels have been verified against those records;
+5. retry / idempotency has been verified — no duplicate folder, file, PDF or registry row;
+6. no unresolved `CONFIGURATION_REQUIRED` item affects either of the two **blocking** Shipment documents
+   (`SHIPMENT_DETAIL`, `PACKING_LIST_EXPORT`). A `CONFIGURATION_REQUIRED` item on a non-blocking document does
+   not hold up removal.
 
 ---
 

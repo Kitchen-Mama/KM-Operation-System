@@ -22,6 +22,7 @@ var RTR = read('specs/active/apps-script/01_router.gs');
 var SH = read('js/pages/shipping-history.js');
 var POJS = read('js/pages/purchase-order-overview.js');
 var API = read('js/api/operation-system-db-api.js');
+var TEMPD = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
 var SPEC = read('../docs/planning/DOCUMENT_GENERATION_SYSTEM_SPEC.md');
 
 var fail = 0, pass = 0;
@@ -837,7 +838,9 @@ section('G1-A. the PO lock boundary — Drive NEVER runs inside the business loc
 var poPrepFn = extractFn(G39, 'dgsPoPrepare_');
 ok(!/dofFolderIo_|createFolder|dfoRenderPayload_|dfoDefaultIo_|dofResolvePoDateFolder_|exportPdf|copyTemplate/.test(poPrepFn),
   'A. STAGE 1 (dgsPoPrepare_) performs NO Drive mutation — no folder io, no copy, no render, no PDF');
-ok(/dofProbeIo_/.test(poPrepFn), 'A. its only Drive contact is the non-mutating readiness probe');
+// SUPERSEDED by G2 §B: STAGE 1 used to hold the readiness probe. Under the frozen rule (probes included) it
+// must have NO Drive contact whatsoever, which is a strictly stronger requirement.
+ok(!/dofProbeIo_|dgsDriveReadiness_|DriveApp/.test(poPrepFn), 'A. STAGE 1 makes NO Drive call at all — not even a read-only probe');
 ok(/dgsResolvePayload_/.test(poPrepFn), 'A. it resolves the full payload (so nothing business-side is left for later)');
 ok(/dgsPoSourceChecksum_/.test(poPrepFn), 'A. it freezes the source checksum');
 ok(/require_draft/.test(poPrepFn) && /PURCHASE_ORDER_NOT_DRAFT/.test(poPrepFn), 'A. and verifies the PO is still draft');
@@ -854,7 +857,8 @@ ok(!/tryLock|LockService/.test(poRenderFn), 'A. and it never takes a lock itself
 
 // STAGE 3 re-verifies and attaches; it must not write the business status (that is the one canonical writer).
 var poFinFn = extractFn(G39, 'dgsPoFinalize_');
-ok(/dgsPoStatus_\(loaded\.po\) !== 'draft'/.test(poFinFn), 'A. STAGE 3 re-verifies the PO is STILL draft');
+ok(/var liveStatus = dgsPoStatus_\(loaded\.po\);/.test(poFinFn) && /liveStatus !== 'draft'/.test(poFinFn),
+  'A. STAGE 3 re-verifies the PO is STILL draft');
 ok(/after !== prepared\.source_checksum/.test(poFinFn), 'A. and that the source checksum is unchanged');
 ok(/DGS_PO_DRIFT_/.test(poFinFn) && /var DGS_PO_DRIFT_ = 'DOCUMENT_SOURCE_DRIFT';/.test(G39),
   'A. drift is recorded with its own typed reason');
@@ -881,29 +885,101 @@ ok(renderIdx > rel1, 'A. STAGE 2 runs AFTER that release — the Drive work is l
 ok(reacquire > renderIdx && finIdx > reacquire, 'A. the lock is REACQUIRED before STAGE 3 verifies and attaches');
 ok(/---- STAGE 2 \(no lock held\) ----/.test(G13), 'A. and the source says so explicitly');
 
-// the decisive whole-file proof: no Drive-mutating symbol appears between a tryLock and its release
-function lockedRegions(src) {
-  var out = [], i = 0;
-  while (true) {
-    var a = src.indexOf('tryLock(', i);
-    if (a < 0) break;
-    var b = src.indexOf('releaseLock()', a);
-    if (b < 0) { out.push(src.slice(a)); break; }
-    out.push(src.slice(a, b));
-    i = b + 1;
-  }
-  return out;
+// ---------------------------------------------------------------------------------------------------------
+// G2 §B — THE FROZEN RULE IS NOW "no Drive API call of ANY KIND under the business lock", read-only probes
+// included. A symbol blacklist is not enough for that: a locked region can reach Drive through any depth of
+// innocuous-looking helper. So this builds the TRANSITIVE CLOSURE of every function that can reach Drive, then
+// tracks lock DEPTH through each file and asserts no closure member is called while depth > 0.
+// ---------------------------------------------------------------------------------------------------------
+var ALL_GS = [G13, G22, G34, G35, G36, G37, G38, G39, RTR, read('specs/active/apps-script/TEMP_document_diagnostics.gs')];
+// any expression that reaches the Drive API directly, MUTATING OR NOT
+var DRIVE_PRIMITIVE = /DriveApp|DocumentApp|getFolderById|getFileById|makeCopy\(|\.getAs\(|createFile\(|createFolder\(|setTrashed\(|getFolders\(|getFiles\(|SpreadsheetApp\.openById/;
+function allFunctions(sources) {
+  var defs = {};
+  sources.forEach(function (src) {
+    var re = /^function ([A-Za-z0-9_$]+)\s*\(/gm, m;
+    while ((m = re.exec(src)) !== null) {
+      try { defs[m[1]] = code(extractFn(src, m[1])); } catch (e) { /* unparseable -> skip */ }
+    }
+  });
+  return defs;
 }
-var DRIVE_MUTATORS = /dofFolderIo_\(\)|createFolder\(|copyTemplate\(|exportPdf\(|dfoRenderPayload_\(|dfoGenerateFile_\(|dofResolvePoDateFolder_\(|dofResolveShipmentFolder_\(/;
-lockedRegions(code(G13)).forEach(function (region, i) {
-  ok(!DRIVE_MUTATORS.test(region), 'A. 13_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
+var FN = allFunctions(ALL_GS);
+// seed: functions whose own body touches a Drive primitive
+var driveReaching = {};
+Object.keys(FN).forEach(function (name) { if (DRIVE_PRIMITIVE.test(FN[name])) driveReaching[name] = 'direct'; });
+// transitive closure: a function that CALLS a Drive-reaching function is itself Drive-reaching
+for (var cpass = 0; cpass < 12; cpass++) {   // NB: not `pass` - that is the suite counter
+  var grew = false;
+  Object.keys(FN).forEach(function (name) {
+    if (driveReaching[name]) return;
+    var body = FN[name];
+    for (var callee in driveReaching) {
+      if (callee !== name && body.indexOf(callee + '(') !== -1) { driveReaching[name] = 'via ' + callee; grew = true; return; }
+    }
+  });
+  if (!grew) break;
+}
+ok(!!driveReaching.dofProbeIo_, 'A. the closure knows the READ-ONLY probe io reaches Drive');
+ok(!!driveReaching.dofFolderIo_ && !!driveReaching.dfoDefaultIo_, 'A. and both other io factories');
+ok(!!driveReaching.dgsPoRenderPrepared_, 'A. and that STAGE 2 is (correctly) Drive-reaching');
+ok(!!driveReaching.dgsResolveShipmentLeafFolder_, 'A. and that it follows transitive helper calls');
+ok(Object.keys(driveReaching).length > 8, 'A. the closure is non-trivial (' + Object.keys(driveReaching).length + ' functions)');
+
+// A SECOND closure, seeded only from Drive MUTATORS. Read-only probing and mutation are different privileges,
+// and some callers (the diagnostics) legitimately probe while never being allowed to mutate.
+var DRIVE_MUTATOR_PRIMITIVE = /makeCopy\(|createFile\(|createFolder\(|setTrashed\(|\.getAs\(|\.setName\(|removeFile\(/;
+var driveMutating = {};
+Object.keys(FN).forEach(function (name) { if (DRIVE_MUTATOR_PRIMITIVE.test(FN[name])) driveMutating[name] = 'direct'; });
+for (var mpass = 0; mpass < 12; mpass++) {
+  var mgrew = false;
+  Object.keys(FN).forEach(function (name) {
+    if (driveMutating[name]) return;
+    var body = FN[name];
+    for (var mc in driveMutating) {
+      if (mc !== name && body.indexOf(mc + '(') !== -1) { driveMutating[name] = 'via ' + mc; mgrew = true; return; }
+    }
+  });
+  if (!mgrew) break;
+}
+ok(!!driveMutating.dofFolderIo_ && !!driveMutating.dfoDefaultIo_, 'A. the mutation closure catches both mutating io factories');
+ok(!driveMutating.dofProbeIo_, 'A. and correctly excludes the READ-ONLY probe io');
+
+// walk lock DEPTH so a release inside a catch block cannot be mistaken for the region end
+function lockedCalls(src, label) {
+  var body = code(src), depth = 0, hits = [], i = 0;
+  var tokens = [];
+  var reTok = /tryLock\s*\(|releaseLock\s*\(\s*\)|([A-Za-z0-9_$]+)\s*\(/g, m;
+  while ((m = reTok.exec(body)) !== null) tokens.push({ at: m.index, text: m[0], name: m[1] || '' });
+  tokens.forEach(function (t) {
+    if (/^tryLock/.test(t.text)) { depth++; return; }
+    if (/^releaseLock/.test(t.text)) { depth = Math.max(0, depth - 1); return; }
+    if (depth > 0 && t.name && driveReaching[t.name]) hits.push(t.name + ' @' + label);
+  });
+  return hits;
+}
+[['13_', G13], ['22_', G22], ['39_', G39]].forEach(function (pair) {
+  var hits = lockedCalls(pair[1], pair[0]);
+  eq(hits, [], 'A. ' + pair[0] + ' makes NO Drive call of any kind (probes included) while the lock is held');
 });
-lockedRegions(code(G22)).forEach(function (region, i) {
-  ok(!DRIVE_MUTATORS.test(region), 'A. 22_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
-});
-lockedRegions(code(G39)).forEach(function (region, i) {
-  ok(!DRIVE_MUTATORS.test(region), 'A. 39_ locked region #' + (i + 1) + ' contains NO Drive-mutating call');
-});
+// and the same for STAGE 1 / STAGE 3 in isolation, which are the two functions the lock wraps
+ok(!driveReaching.dgsPoPrepare_, 'A. STAGE 1 (dgsPoPrepare_) is NOT Drive-reaching at all — DB only');
+ok(!driveReaching.dgsPoFinalize_, 'A. STAGE 3 (dgsPoFinalize_) is NOT Drive-reaching at all — DB only');
+ok(!driveReaching.dgsResolvePayload_, 'A. and neither is payload resolution');
+ok(!/dofProbeIo_|dgsDriveReadiness_/.test(code(extractFn(G39, 'dgsPoPrepare_'))),
+  'A. the readiness PROBE was moved out of STAGE 1 (G2 corrected the G1 arrangement)');
+ok(/dgsDriveReadiness_\(dofProbeIo_\(\)/.test(extractFn(G39, 'dgsPoRenderPrepared_')),
+  'A. and now runs in STAGE 2, outside the lock, before anything is created');
+var st2 = extractFn(G39, 'dgsPoRenderPrepared_');
+ok(st2.indexOf('dgsDriveReadiness_') < st2.indexOf('dofResolvePoDateFolder_'),
+  'A. readiness is probed BEFORE the folder is resolved/created');
+
+// PRE-EXISTING EXCEPTION, pinned so it cannot silently spread: the LEGACY manual single-document generator in
+// 36_ still holds a lock across Drive work. It is not part of the Send PO or Confirm Shipment saga and was not
+// introduced by FB-1B/G1/G2; it is reported rather than silently tolerated.
+var legacyHits = lockedCalls(G36, '36_');
+ok(legacyHits.length > 0, 'A. the legacy 36_ manual generator is KNOWN to hold a lock across Drive work');
+eq(legacyHits.filter(function (h) { return h.indexOf('@36_') === -1; }), [], 'A. and that exception is confined to 36_');
 // and the retry path holds no lock across Drive work at all
 var retryFn = extractFn(G39, 'handleDocumentRetry_');
 ok(!/tryLock|LockService/.test(retryFn), 'A. the retry handler holds NO global lock across its Drive work');
@@ -930,7 +1006,6 @@ eq(dgsPoStatus_({ status: 'issued' }), 'issued', 'A. with the legacy column as f
 // =======================================================================================================
 section('G1-B. callable read-only diagnostic entrypoints');
 
-var TEMPD = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
 ok(/^function TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER\(\) \{/m.test(TEMPD), 'B. TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER is a top-level function');
 ok(/^function TEMP_DOCUMENT_DIAGNOSE_SHIPMENT\(\) \{/m.test(TEMPD), 'B. TEMP_DOCUMENT_DIAGNOSE_SHIPMENT is a top-level function');
 ok(/var TEMP_DOCUMENT_DIAGNOSTIC_PURCHASE_ORDER_ID_ = 'PASTE_PURCHASE_ORDER_ID_HERE';/.test(TEMPD), 'B. the PO placeholder constant is exactly as specified');
@@ -999,17 +1074,17 @@ function byKey(rows, k) { for (var i = 0; i < rows.length; i++) if (rows[i].clas
 var allComplete = {};
 man.entries.forEach(function (e) { allComplete[e.class_key] = complete; });
 var execAll = dgsExecutableManifest_(man.entries, allComplete);
-eq(byKey(execAll.documents, 'SHIPMENT_DETAIL').state, 'REQUIRED_AND_EXECUTABLE', 'C. Shipment Detail -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'SHIPMENT_DETAIL').document_state, 'REQUIRED_AND_EXECUTABLE', 'C. Shipment Detail -> REQUIRED_AND_EXECUTABLE');
 eq(byKey(execAll.documents, 'SHIPMENT_DETAIL').blocks_transition, true, 'C. and it blocks');
-eq(byKey(execAll.documents, 'PACKING_LIST_EXPORT').state, 'REQUIRED_AND_EXECUTABLE', 'C. Export Packing List -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'PACKING_LIST_EXPORT').document_state, 'REQUIRED_AND_EXECUTABLE', 'C. Export Packing List -> REQUIRED_AND_EXECUTABLE');
 eq(byKey(execAll.documents, 'PACKING_LIST_EXPORT').blocks_transition, true, 'C. and it blocks');
-eq(byKey(execAll.documents, 'PACKING_LIST_IMPORT').state, 'OPTIONAL_AND_EXECUTABLE',
+eq(byKey(execAll.documents, 'PACKING_LIST_IMPORT').document_state, 'OPTIONAL_AND_EXECUTABLE',
   'C. US destination Packing List -> OPTIONAL_AND_EXECUTABLE (no canonical owner makes it mandatory; NOT inferred from the word "import")');
 eq(byKey(execAll.documents, 'PACKING_LIST_IMPORT').blocks_transition, false, 'C. so it never blocks');
-eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT').state, 'REQUIRED_AND_EXECUTABLE', 'C. Export CI with a complete contract -> REQUIRED_AND_EXECUTABLE');
+eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT').document_state, 'REQUIRED_AND_EXECUTABLE', 'C. Export CI with a complete contract -> REQUIRED_AND_EXECUTABLE');
 eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT').blocks_transition, false, 'C. but it still does not gate this controlled version');
 eq(byKey(execAll.documents, 'COMMERCIAL_INVOICE_IMPORT').blocks_transition, false, 'C. nor does the US destination CI');
-eq(byKey(execAll.documents, 'CARRIER_BOOKING').state, 'RUNTIME_DEFERRED', 'C. TOP SEALAND Booking -> RUNTIME_DEFERRED (no renderer exists)');
+eq(byKey(execAll.documents, 'CARRIER_BOOKING').document_state, 'RUNTIME_DEFERRED', 'C. TOP SEALAND Booking -> RUNTIME_DEFERRED (no renderer exists)');
 eq(byKey(execAll.documents, 'CARRIER_BOOKING').renderer_available, false, 'C. renderer_available is false');
 eq(byKey(execAll.documents, 'CARRIER_BOOKING').blocks_transition, false, 'C. and RUNTIME_DEFERRED can never block Confirm Shipment');
 eq(execAll.blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'D. the actual blocking manifest is exactly those two');
@@ -1019,7 +1094,7 @@ eq(execAll.runtime_deferred, ['CARRIER_BOOKING'], 'C. and exactly one runtime-de
 var withGap = {}; man.entries.forEach(function (e) { withGap[e.class_key] = complete; });
 withGap.COMMERCIAL_INVOICE_EXPORT = authorityGap;
 var execGap = dgsExecutableManifest_(man.entries, withGap);
-eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').state, 'CONFIGURATION_REQUIRED', 'C. a required unresolved authority -> CONFIGURATION_REQUIRED');
+eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').document_state, 'CONFIGURATION_REQUIRED', 'C. a required unresolved authority -> CONFIGURATION_REQUIRED');
 eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').missing_authorities, ['INCOTERM'], 'C. naming the exact field');
 eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').blocks_transition, false, 'C. and it does not block');
 eq(byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT').retryable, true, 'C. it is retryable once configured');
@@ -1029,7 +1104,7 @@ eq(execGap.blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'D. the blockin
 var gateIncomplete = {}; man.entries.forEach(function (e) { gateIncomplete[e.class_key] = complete; });
 gateIncomplete.PACKING_LIST_EXPORT = incomplete;
 var execGi = dgsExecutableManifest_(man.entries, gateIncomplete);
-eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').state, 'CONFIGURATION_REQUIRED', 'C. a gating class with an incomplete contract is CONFIGURATION_REQUIRED');
+eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').document_state, 'CONFIGURATION_REQUIRED', 'C. a gating class with an incomplete contract is CONFIGURATION_REQUIRED');
 eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').blocks_transition, false, 'C. it cannot "block" on a contract it cannot satisfy — it is reported for correction');
 eq(byKey(execGi.documents, 'PACKING_LIST_EXPORT').missing_fields.length, 1, 'C. with the missing field named');
 
@@ -1038,7 +1113,7 @@ var execUnknown = dgsExecutableManifest_(man.entries, null);
 eq(byKey(execUnknown.documents, 'SHIPMENT_DETAIL').required_field_contract_complete, 'UNKNOWN',
   'C. before dispatch the field contract is UNKNOWN, never assumed complete');
 eq(byKey(execUnknown.documents, 'SHIPMENT_DETAIL').blocks_transition, false, 'C. so nothing blocks on an unverifiable contract');
-eq(byKey(execUnknown.documents, 'CARRIER_BOOKING').state, 'RUNTIME_DEFERRED', 'C. a missing renderer is knowable without a snapshot');
+eq(byKey(execUnknown.documents, 'CARRIER_BOOKING').document_state, 'RUNTIME_DEFERRED', 'C. a missing renderer is knowable without a snapshot');
 // every row carries the evidence the gate asked for
 ['blocks_transition', 'renderer_available', 'required_field_contract_complete', 'missing_authorities', 'retryable', 'next_action']
   .forEach(function (k) { ok(byKey(execAll.documents, 'SHIPMENT_DETAIL').hasOwnProperty(k), 'C. every classified row reports ' + k); });
@@ -1094,11 +1169,137 @@ ok(/commercial_invoice_field_authority/.test(shipDiag2), 'E. the shipment diagno
 
 
 // =======================================================================================================
+section('G2-B. checksum is verified on BOTH sides of the Drive work; drift and double-issue are safe');
+
+var prepFn = extractFn(G39, 'dgsPoPrepare_');
+var finFn = extractFn(G39, 'dgsPoFinalize_');
+ok(/dgsPoSourceChecksum_\(po, poLines\)/.test(prepFn), 'B. the checksum is frozen BEFORE the Drive work');
+ok(/dgsPoSourceChecksum_\(loaded\.po, loaded\.lines\)/.test(finFn), 'B. and recomputed AFTER it');
+ok(/after !== prepared\.source_checksum/.test(finFn), 'B. then compared');
+ok(/dgsPoLoad_\(ss, prepared\.purchase_order_id\)/.test(finFn), 'B. from a genuinely FRESH read of the PO and its lines');
+// drift
+var driftSlice = finFn.slice(finFn.indexOf('if (after !== prepared.source_checksum)'), finFn.indexOf('if (!dgsStr_(rendered.file.file_id))'));
+ok(/authorizes_issue: false/.test(driftSlice), 'B. drift refuses authorization, so the PO stays draft');
+ok(/DGS_PO_DRIFT_/.test(driftSlice), 'B. with the DOCUMENT_SOURCE_DRIFT reason');
+ok(/message:/.test(driftSlice) && /Press Send PO again/.test(driftSlice), 'B. and an actionable message');
+ok(!/file_id: rendered|file_url: rendered|pdf_file_url: rendered/.test(driftSlice), 'B. attaching no stale file');
+ok(/retained, not attached/.test(driftSlice), 'B. while keeping the file identity recoverable for audit/retry');
+ok(!/setTrashed|removeFile|\.remove\(/.test(finFn), 'B. no potentially valid Drive file is ever auto-deleted');
+// already issued
+var alreadySlice = finFn.slice(finFn.indexOf('if (liveStatus !== \'draft\')'), finFn.indexOf('var after ='));
+ok(/PURCHASE_ORDER_ALREADY_ISSUED/.test(alreadySlice), 'B. a concurrent issue is detected by its own reason code');
+ok(/authorizes_issue: false/.test(alreadySlice), 'B. and refuses a second transition');
+ok(/DGS_ROW_CANCELLED_/.test(alreadySlice), 'B. superseding this attempt rather than adding a second current row');
+ok(/current_document_id/.test(alreadySlice), 'B. while reporting the EXISTING current document truthfully');
+ok(/already_issued: true/.test(G13) && /no duplicate transition, document or registry row/.test(G13),
+  'B. and 13_ surfaces that as a truthful success, not a failure');
+// the caller must not issue without authorization
+ok(/if \(!poFin\.ok \|\| poFin\.authorizes_issue !== true\)/.test(G13),
+  'B. 13_ issues ONLY on an explicit authorizes_issue === true');
+var issueIdx = G13.indexOf("setStatus('issued')");
+ok(G13.indexOf('poFin.authorizes_issue !== true') < issueIdx, 'B. checked before the transition');
+// Drive failure leaves the PO draft
+ok(/pcPoMarkAttemptFailed_\(ss, poPrepared\.document_id, poRendered\)/.test(G13), 'B. a STAGE 2 Drive failure is recorded on the reserved attempt');
+ok(/return poBlocked\(\{ ok: false, reason: poRendered\.reason/.test(G13), 'B. and returns blocked');
+ok(/The PO remains Draft\. No status was written and no email was sent\./.test(G13), 'B. leaving the PO draft with no status and no email');
+eq((G13.match(/setStatus\('issued'\)/g) || []).length, 1, 'C. there is exactly ONE order_status = issued writer');
+ok(!/setStatus\(|setCell\(|\.setValue\(/.test(finFn), 'C. and STAGE 3 is not it — it writes no cell at all');
+ok(/dgsUpdateRegistry_/.test(finFn), 'C. its only write is the generated_documents attachment');
+ok(/Its return value is an AUTHORIZATION result/.test(G39) && /remains the ONE canonical order_status writer/.test(G39),
+  'C. the ownership split is stated in source, resolving the G1 report ambiguity');
+ok(/It does NOT write order_status, and it does not call the issue writer\./.test(G39), 'C. stated as a prohibition, not an aspiration');
+// exactly one attachment per successful render
+var okSlice = finFn.slice(finFn.indexOf('if (!dgsStr_(rendered.file.file_id))'));
+eq((okSlice.match(/dgsUpdateRegistry_\(/g) || []).length, 1, 'F. a successful render attaches EXACTLY once');
+ok(/authorizes_issue: true/.test(okSlice), 'F. and only then authorizes the one canonical transition');
+
+// =======================================================================================================
+section('G2-D. TEMP diagnostics retention contract');
+
+ok(/RETENTION \/ CLEANUP RULE \(F1-7N-FB-1B-G2 §D\)/.test(TEMPD), 'D. the cleanup rule is documented in the file itself');
+['both diagnostics have run successfully against controlled REAL records',
+  'moved from Draft into the In Production UI',
+  'passed readiness, become `shipped`',
+  'BOTH UI Document Panels',
+  'no duplicate folder, file, PDF or registry row',
+  'CONFIGURATION_REQUIRED item affects either of the two BLOCKING Shipment documents'].forEach(function (cond) {
+  ok(TEMPD.indexOf(cond) !== -1, 'D. retention condition documented: ' + cond.slice(0, 46));
+});
+// deleting the file must not affect production
+var tempFns = Object.keys(allFunctions([TEMPD]));
+ok(tempFns.indexOf('TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER') !== -1 && tempFns.indexOf('TEMP_DOCUMENT_DIAGNOSE_SHIPMENT') !== -1,
+  'D. the two entrypoints are defined there');
+var PRODUCTION = [G13, G22, G34, G35, G36, G37, G38, G39, RTR].map(code).join('\n');
+var leaked = tempFns.filter(function (fn) { return PRODUCTION.indexOf(fn + '(') !== -1; });
+eq(leaked, [], 'D. NOTHING in production calls anything defined in the TEMP file — deleting it cannot break generation/list/get/retry');
+['document.list', 'document.get', 'document.retry'].forEach(function (a) {
+  ok(RTR.indexOf("action === '" + a + "'") !== -1, 'D. production action survives independently: ' + a);
+});
+ok(!/TEMP_DOCUMENT_DIAGNOSE/.test(PRODUCTION), 'D. and no production path references the entrypoints by name');
+// still strictly read-only after the G2 edit
+var CT2 = code(TEMPD);
+ok(!/dgsGeneratePoDocuments_|dgsGenerateShipmentDocuments_|handleDocumentRetry_|dgsPoRenderPrepared_|dgsPoFinalize_/.test(CT2),
+  'D. it never generates or retries a document');
+ok(!/dgsWriteRegistry_|dgsUpdateRegistry_|dtAppendByHeader_|appendRow|setValue/.test(CT2), 'D. it never mutates generated_documents');
+ok(!/setStatus|order_status\s*=|handleUpdatePurchaseOrderStatus_|handleConfirmShipmentAndDispatch_/.test(CT2), 'D. it never changes PO or Shipment status');
+ok(!/PropertiesService|ScriptProperties/.test(CT2), 'D. it never changes properties or constants');
+ok(!/MailApp|GmailApp|sendEmail/i.test(CT2), 'D. it never calls email');
+ok(!/DEMO4A_|TEMP_demo_shipping/.test(CT2), 'D. it never touches Demo seed rows');
+// The diagnostics DO reach Drive — through the READ-ONLY probe, which is exactly what a readiness report needs.
+// What matters is the two properties that make that safe, and both are asserted rather than assumed:
+tempFns.forEach(function (fn) {
+  ok(!driveMutating[fn], 'D. it can never MUTATE Drive, even transitively: ' + fn);
+});
+ok(!!driveReaching.TEMP_DOCUMENT_DIAGNOSE_SHIPMENT, 'D. it does legitimately reach Drive — via the read-only probe (a readiness report must)');
+eq(lockedCalls(TEMPD, 'TEMP'), [], 'D. and it holds no lock while doing so');
+ok(!/tryLock|LockService/.test(CT2), 'D. in fact it takes no lock at all');
+ok(!/dofFolderIo_|dfoDefaultIo_/.test(CT2) && !/dofFolderIo_|dfoDefaultIo_/.test(code(extractFn(G39, 'handlePoDocumentDiagnostic_')) + code(extractFn(G39, 'handleShipmentDocumentDiagnostic_'))),
+  'D. neither it nor the evaluators it calls ever construct a MUTATING Drive io');
+
+// =======================================================================================================
+section('G2-E. manifest fields never conflate applicability, executability and blocking');
+
+var row = byKey(execAll.documents, 'COMMERCIAL_INVOICE_EXPORT');
+['applicability', 'renderer_status', 'field_contract_status', 'transition_requirement', 'blocks_transition',
+  'readiness_verdict', 'reason_code', 'next_action'].forEach(function (k) {
+  ok(row.hasOwnProperty(k), 'E. every row reports the separate field ' + k);
+});
+eq(row.applicability, 'APPLICABLE', 'E. Export CI is applicable');
+eq(row.renderer_status, 'AVAILABLE', 'E. its renderer exists');
+eq(row.field_contract_status, 'COMPLETE', 'E. its field contract is complete here');
+eq(row.transition_requirement, 'NOT_A_GATE', 'E. and it is NOT a transition gate — stated as its own dimension');
+eq(row.blocks_transition, false, 'E. so it does not block');
+eq(row.readiness_verdict, 'READY', 'E. while still being READY to generate');
+// the exact contradiction G2 called out must be impossible to read off a row
+ok(!(row.transition_requirement === 'GATE' && row.blocks_transition === false),
+  'E. a row can never say GATE while reporting blocks_transition=false');
+var gateRow = byKey(execAll.documents, 'PACKING_LIST_EXPORT');
+eq([gateRow.transition_requirement, gateRow.blocks_transition], ['GATE', true], 'E. a real gate says GATE and blocks');
+var defRow = byKey(execAll.documents, 'CARRIER_BOOKING');
+eq([defRow.renderer_status, defRow.readiness_verdict, defRow.reason_code, defRow.transition_requirement, defRow.blocks_transition],
+  ['DEFERRED', 'RUNTIME_DEFERRED', 'RENDERER_NOT_IMPLEMENTED', 'NOT_A_GATE', false],
+  'E. a deferred renderer reports every dimension consistently');
+var unkRow = byKey(dgsExecutableManifest_(man.entries, null).documents, 'SHIPMENT_DETAIL');
+eq([unkRow.field_contract_status, unkRow.readiness_verdict, unkRow.reason_code, unkRow.blocks_transition],
+  ['UNVERIFIED', 'FIELD_CONTRACT_UNVERIFIED', 'FIELD_CONTRACT_UNVERIFIED', false],
+  'E. an unverified contract is its own verdict, never silently treated as ready or as failed');
+var gapRow = byKey(execGap.documents, 'COMMERCIAL_INVOICE_EXPORT');
+eq([gapRow.field_contract_status, gapRow.readiness_verdict, gapRow.reason_code],
+  ['INCOMPLETE', 'CONFIGURATION_REQUIRED', 'DOCUMENT_FIELD_AUTHORITY_MISSING'],
+  'E. a missing authority reports INCOMPLETE + CONFIGURATION_REQUIRED + the exact reason code');
+eq(execAll.blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'], 'E. the frozen blocker set is exactly those two');
+eq(dgsExecutableManifest_(man.entries, withGap).blocking, ['SHIPMENT_DETAIL', 'PACKING_LIST_EXPORT'],
+  'E. and a CI configuration problem never changes it');
+
+// =======================================================================================================
 section('G1-F. canonical documentation records the G1 corrections with no contradictory text');
 
 ok(/### Q\.2\.1 Send PO staged saga/.test(SPEC), 'F. the staged Send PO saga is canonical');
-ok(/Drive operations must \*\*never\*\* run while a long\/global business `ScriptLock` is held/.test(SPEC),
-  'F. with the lock rule stated as a prohibition');
+ok(/\*\*No Google Drive API call of any kind may execute while the business\s*\n> `ScriptLock` is held — read-only probes included\.\*\*/.test(SPEC),
+  'F. with the G2 frozen rule stated as a prohibition, probes included');
+ok(/any `dof\*`\/`dfo\*` helper that can transitively\s*\n> reach Drive/.test(SPEC), 'F. covering transitive helpers');
+ok(/G1 satisfied the weaker "no Drive \*mutation\* under\s*\n> lock" rule but still probed inside STAGE 1; the probe has moved to STAGE 2/.test(SPEC),
+  'F. and recording exactly what G2 corrected');
 ok(/\*\*1 · `dgsPoPrepare_`\*\* \| \*\*held\*\*/.test(SPEC) && /\*\*2 · `dgsPoRenderPrepared_`\*\* \| \*\*none\*\*/.test(SPEC) && /\*\*3 · `dgsPoFinalize_`\*\* \| \*\*held\*\*/.test(SPEC),
   'F. and the per-stage lock state tabulated (held / none / held)');
 ok(/DOCUMENT_ATTEMPT_RESERVED/.test(SPEC), 'F. the reserved-attempt crash-safety mechanism is documented');
@@ -1119,6 +1320,17 @@ ok(/never silently hidden/.test(SPEC), 'F. and deferred documents stay visible i
 ok(/`REQUIRED_UNRESOLVED`/.test(SPEC) && /`OPTIONAL_UNRESOLVED`/.test(SPEC) && /`NOT_MAPPED`/.test(SPEC),
   'F. the five CI authorities have a documented per-field verdict');
 ok(/### Q\.10\.1 Callable read-only diagnostics/.test(SPEC), 'F. the callable diagnostics are canonical');
+ok(/\*\*Ownership split \(G2 §C\), stated exactly\.\*\*/.test(SPEC), 'F. the finalize-vs-writer ownership split is canonical');
+ok(/remains the \*\*only\*\* `order_status = issued` writer in the codebase/.test(SPEC), 'F. naming the single canonical writer');
+ok(/\*\*If another request already issued the PO:\*\*/.test(SPEC), 'F. the concurrent-issue rule is canonical');
+ok(/PURCHASE_ORDER_ALREADY_ISSUED/.test(SPEC), 'F. with its reason code');
+ok(/Known remaining exception \(reported, not silently tolerated\)/.test(SPEC), 'F. the legacy 36_ locked-Drive exception is disclosed');
+ok(/handleShipmentDocumentGenerate_/.test(SPEC), 'F. by name');
+ok(/\| `transition_requirement` \| `GATE` \/ `NOT_A_GATE` \|/.test(SPEC), 'F. the separated manifest fields are canonical');
+ok(/`REQUIRED_AND_EXECUTABLE` \*\*and\*\*\s*\n`NOT_A_GATE`/.test(SPEC), 'F. and the once-contradictory pairing is explained');
+ok(/\*\*Retention \/ cleanup rule \(G2 §D\)\.\*\*/.test(SPEC), 'F. the TEMP retention rule is canonical');
+ok(/deleting it cannot change document generation, `document\.list`, `document\.get` or `document\.retry`/.test(SPEC),
+  'F. stating that deletion cannot affect production');
 ok(/TEMP_DOCUMENT_DIAGNOSE_PURCHASE_ORDER/.test(SPEC) && /PASTE_PURCHASE_ORDER_ID_HERE/.test(SPEC), 'F. naming the function and its placeholder');
 ok(/TEMP_DOCUMENT_DIAGNOSE_SHIPMENT/.test(SPEC) && /PASTE_SHIPMENT_ID_HERE/.test(SPEC), 'F. and the shipment pair');
 

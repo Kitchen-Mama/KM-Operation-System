@@ -1983,18 +1983,22 @@ function handleUpdatePurchaseOrderStatus_(body) {
   if (!sheet) return jsonResponse_({ success: false, error: 'purchase_orders sheet not found' });
   sheetEnsureColumns_(sheet, ['order_status', 'order_date', 'deposit_due_date']);   // ensure columns before findRow captures headers
 
-  // F1-7N-FB-1B-G1 (A) — SEND PO IS A STAGED SAGA. The required PO document is a HARD pre-condition for the
-  // issue transition, but it must NOT be produced while holding the business ScriptLock: folder resolution,
+  // F1-7N-FB-1B-G1/G2 (A/B) — SEND PO IS A STAGED SAGA. The required PO document is a HARD pre-condition for
+  // the issue transition, but it must NOT be produced while holding the business ScriptLock: folder resolution,
   // folder creation, template copy, cell population and PDF export are slow blocking Drive calls, and holding a
   // global lock across them risks an Apps Script timeout stranding the lock and blocking every other writer.
   //
-  //   STAGE 1 (lock HELD)     verify draft, freeze the source checksum, resolve the template + full payload,
-  //                           prove Drive readiness with non-mutating probes, reserve the attempt row
+  // G2 FROZEN RULE: **no Drive API call of ANY kind runs under the lock — read-only probes included.**
+  //
+  //   STAGE 1 (lock HELD)     DB ONLY: verify draft, freeze the source checksum, resolve the template + the
+  //                           fully computed payload, reserve the idempotent attempt row. NO Drive call.
   //   ---- lock RELEASED ----
-  //   STAGE 2 (NO lock)       resolve/create the date folder, copy the template, fill it, export the PDF
+  //   STAGE 2 (NO lock)       ALL Drive work: the non-mutating readiness probe, then resolve/create the date
+  //                           folder, copy the template, fill it, export the PDF.
   //   ---- lock REACQUIRED ---
-  //   STAGE 3 (lock HELD)     re-verify still-draft + checksum unchanged, attach the output, then the ONE
-  //                           canonical issue writer below runs
+  //   STAGE 3 (lock HELD)     DB ONLY: re-verify still-draft + checksum unchanged, attach the output. It
+  //                           returns an AUTHORIZATION result and never writes order_status itself; the ONE
+  //                           canonical issue writer below is the only thing that does.
   //
   // Any failure leaves the PO in draft with no status written and no email sent; the reserved attempt row keeps
   // partial work recoverable and a retry reuses it instead of duplicating a folder, file or registry row.
@@ -2041,9 +2045,20 @@ function handleUpdatePurchaseOrderStatus_(body) {
       var poFin;
       try { poFin = dgsPoFinalize_(ss, poPrepared, poRendered, actor); }
       catch (eF) { poFin = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (eF && eF.message ? String(eF.message) : String(eF)) }; }
-      if (!poFin.ok) {
+      // G2 §C — the issue transition proceeds ONLY on an explicit authorization from the verifier.
+      if (!poFin.ok || poFin.authorizes_issue !== true) {
         try { poIssueLock.releaseLock(); } catch (eR2) {}
-        return poBlocked({ ok: false, reason: poFin.reason, document_id: poPrepared.document_id, retryable: true, detail: poFin }, 'finalize');
+        // A concurrent request may have already issued this PO. That is not a failure to fix — report the live
+        // state truthfully, without a second transition and without a second current document row.
+        if (poFin.reason === 'PURCHASE_ORDER_ALREADY_ISSUED') {
+          return jsonResponse_({
+            success: true, already_issued: true, purchase_order_id: poId,
+            data: { purchase_order_id: poId, transition: 'issue', order_status: poFin.order_status, ui_group: 'In Production', email_sent: false },
+            document_generation: { ok: true, reused: true, current_document_id: poFin.current_document_id, note: poFin.message },
+            note: 'Already sent by another request — no duplicate transition, document or registry row was created.'
+          });
+        }
+        return poBlocked({ ok: false, reason: poFin.reason, message: poFin.message || '', document_id: poPrepared.document_id, retryable: true, detail: poFin }, 'finalize');
       }
       poDocResult = { ok: true, generated: 1, document_id: poFin.document_id, file_name: poFin.file_name,
         folder_url: poFin.folder_url, document_batch_date: poPrepared.document_batch_date, checksum: poFin.checksum };
@@ -2119,11 +2134,12 @@ function handleUpdatePurchaseOrderStatus_(body) {
   } finally { if (poIssueLock) { try { poIssueLock.releaseLock(); } catch (e4) {} } }
 }
 
-// F1-7N-FB-1B-G1 (A) — STAGE 1 of the Send PO saga, called with the business lock HELD. It delegates every
-// decision to the ONE canonical document runtime (39_) and only supplies the authorized master joins and the
-// frozen candidate dates. It performs NO Drive mutation (39_ uses non-mutating probes here), so holding the
-// lock across it is safe. It sends NO email: generated_documents.email_status stays at the canonical unsent
-// value and Email Automation is a later consumer of these records.
+// F1-7N-FB-1B-G1/G2 (A/B) — STAGE 1 of the Send PO saga, called with the business lock HELD. It delegates
+// every decision to the ONE canonical document runtime (39_) and only supplies the authorized master joins and
+// the frozen candidate dates. It performs NO Drive call AT ALL — not even a read-only probe (G2 §B) — so
+// holding the lock across it is safe: every operation here is a Sheet read plus pure computation. It sends NO
+// email: generated_documents.email_status stays at the canonical unsent value and Email Automation is a later
+// consumer of these records.
 function pcPoPrepareForIssue_(ss, poId, actor, orderDate, depositDue) {
   var poLines = sfoReadTable_(ss, 'purchase_order_lines', []).filter(function (l) { return String(l.purchase_order_id || '').trim() === String(poId).trim(); });
   var po = null, all = sfoReadTable_(ss, 'purchase_orders', []);
