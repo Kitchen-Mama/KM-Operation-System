@@ -17,9 +17,34 @@
 // ============================================================
 
 var SYS_API_CONTRACT_VERSION_ = '1';
-// Bumped by hand when a sync-visible change lands. It is a build marker, not a secret: it lets the browser prove
-// which deployed code answered, which is exactly what a partial Apps Script sync makes ambiguous.
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-2';
+// ------------------------------------------------------------------------------------------------------------
+// F1-7N-FB-3A §C — DEPLOYMENT IDENTITY. This is the field that failed us, and the failure was mine.
+//
+// The live evidence read `build=F1-7N-FB-2` while the editor could already run the FB-3 registry successfully.
+// That looked like a stale deployment, but it was not diagnostic of anything: FB-3 added 64_/65_ and new router
+// branches and NEVER BUMPED THIS CONSTANT. So the one field whose entire purpose is "prove which code
+// answered" could not distinguish FB-2 from FB-3 at all.
+//
+// Worse, `missing_actions=[]` is SELF-REFERENTIAL: it is computed from the DEPLOYED code's own
+// SYS_REQUIRED_ACTIONS_ list. A deployment that predates an action cannot know the action exists, so it
+// reports "nothing missing" while genuinely missing it. An empty missing_actions is therefore NOT evidence
+// that a deployment is complete — only the version fields below can establish that, by being compared against
+// what the FRONTEND expects.
+//
+// Rules for these constants:
+//   • SYS_BUILD_VERSION_ MUST be bumped in the same commit as any sync-visible backend change.
+//   • SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ MUST be bumped whenever a router ACTION is added or removed.
+//   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
+// The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
+// ------------------------------------------------------------------------------------------------------------
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-3A';
+// Incremented when the set of router actions changes. The frontend compares this against its own pinned
+// minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
+// through a confusing per-action failure.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 3;
+// Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
+// OLD list apart from a "nothing missing" answer from the CURRENT list.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 3;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -35,6 +60,7 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'system.shippingAllocationSchemaDiagnostic', handler: 'handleShippingAllocationSchemaDiagnostic_', used_by: 'Execution Plan schema diagnostic' },
   { action: 'system.requestOrderSendDiagnostic', handler: 'handleRequestOrderSendDiagnostic_', used_by: 'Send Request diagnostic' },
   { action: 'system.twoVerticalFlowsDiagnostic', handler: 'handleTwoVerticalFlowsDiagnostic_', used_by: 'Two-vertical flow diagnostic' },
+  { action: 'system.requestOrderSendReconcile', handler: 'handleRequestOrderSendReconcile_', used_by: 'Interrupted Send Request reconciliation' },
   // Vertical B — Procurement. Send Request writes through these three, then the PO vertical continues.
   { action: 'upsertRequestOrderAllocationDraft', handler: 'handleUpsertRequestOrderAllocationDraft_', used_by: 'Send Request (allocation draft)' },
   { action: 'upsertRequestOrderAllocationDraftLines', handler: 'handleUpsertRequestOrderAllocationDraftLines_', used_by: 'Send Request (allocation lines)' },
@@ -121,6 +147,17 @@ function handleSystemHealth_(body) {
   return jsonResponse_({
     success: true,
     ok: ok,
+    // F1-7N-FB-3A §C — the IMMUTABLE deployment identity block. Every field here is a constant compiled into
+    // the answering code, so together they identify exactly which deployment replied.
+    build_id: SYS_BUILD_VERSION_,
+    contract_version: SYS_API_CONTRACT_VERSION_,
+    deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
+    inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
+    required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
+    required_action_count: SYS_REQUIRED_ACTIONS_.length,
+    // An EMPTY missing_actions list proves nothing on its own — see the note at the constants above. This flag
+    // makes that explicit in the payload so a reader cannot mistake one for a completeness guarantee.
+    missing_actions_is_self_referential: true,
     api_contract_version: SYS_API_CONTRACT_VERSION_,
     build_version: SYS_BUILD_VERSION_,
     environment_mode: 'production',
@@ -209,6 +246,16 @@ var TEMP_FLOW_DIAGNOSTIC_ALLOCATION_DRAFT_ID_ = 'PASTE_ALLOCATION_DRAFT_ID_HERE_
 function TEMP_SYSTEM_HEALTH_CHECK() {
   var h = {};
   try { h = JSON.parse(handleSystemHealth_({}).getContent()); } catch (e) { Logger.log('[SYS-HEALTH] UNPARSEABLE'); return; }
+  Logger.log('[SYS-HEALTH][identity] build_id=' + h.build_id +
+    ' contract_version=' + h.contract_version +
+    ' deployed_action_contract_version=' + h.deployed_action_contract_version +
+    ' inventory_registry_projection_version=' + h.inventory_registry_projection_version +
+    ' required_action_list_version=' + h.required_action_list_version +
+    ' required_action_count=' + h.required_action_count);
+  Logger.log('[SYS-HEALTH][identity] NOTE: missing_actions is computed from the DEPLOYED code\'s own required-action ' +
+    'list, so an EMPTY list is NOT proof that this deployment is complete. Compare the version fields above.');
+  Logger.log('[SYS-HEALTH][identity] NOTE: running this wrapper in the EDITOR proves the code is SAVED. It does NOT ' +
+    'prove the /exec WEB APP serves it — that requires a new deployment version.');
   Logger.log('[SYS-HEALTH] ok=' + h.ok +
     ' contract=' + h.api_contract_version + ' build=' + h.build_version + ' env=' + h.environment_mode +
     ' | router_ready=' + h.router_ready + ' doGet=' + (h.entrypoints && h.entrypoints.doGet) + ' doPost=' + (h.entrypoints && h.entrypoints.doPost) +

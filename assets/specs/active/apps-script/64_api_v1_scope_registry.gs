@@ -203,6 +203,12 @@ function handleInventoryScopeRegistryGet_(body, io) {
 
 // ---- editor-runnable read-only check --------------------------------------------------------------------
 // Confirms the registry is answerable and reports its SHAPE — never the rows themselves.
+//
+// F1-7N-FB-3A §C — READ THIS BEFORE TRUSTING A GREEN RESULT. This wrapper calls the handler DIRECTLY inside
+// the editor, against the code currently SAVED in the project. It therefore proves only that the code is saved
+// and that the data is readable. It proves NOTHING about the deployed /exec Web App, which serves whichever
+// DEPLOYMENT VERSION was last published. A green result here alongside a failing website is the classic
+// signature of exactly that: saved but not deployed. Publish a new deployment version.
 function TEMP_INVENTORY_SCOPE_REGISTRY_CHECK() {
   var env = {};
   try { env = JSON.parse(handleInventoryScopeRegistryGet_({}).getContent()); }

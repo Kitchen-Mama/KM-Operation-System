@@ -4400,11 +4400,22 @@ function _irRenderRegistryState_() {
         html = '<span class="replen-scope-empty" style="color:#92400E;font-size:12px;">No active marketplace scopes are configured, so there is nothing to search yet.</span>';
     } else {
         var e = _irRegistry.error || {};
+        var codeTxt = String(e.code || 'SCOPE_REGISTRY_READ_FAILED');
+        // F1-7N-FB-3A §C — a STALE DEPLOYMENT is not a read failure and must not read like one. When the
+        // deployed Web App does not contain the action, the actionable fact is "publish a new deployment
+        // version", and Retry is relabelled accordingly: retrying cannot publish anything, so offering a bare
+        // "Retry" would invite a pointless loop. The button still issues exactly ONE registry request.
+        var stale = (codeTxt === 'DEPLOYMENT_CONTRACT_MISMATCH');
+        var lead = stale
+            ? 'Country / Marketplace options unavailable — the deployed Apps Script is out of date.'
+            : 'Could not load the Country / Marketplace options.';
+        var retryLabel = stale ? 'Re-check' : 'Retry';
         html = '<span class="replen-scope-error" role="alert" style="color:#B91C1C;font-size:12px;">' +
-            'Could not load the Country / Marketplace options. ' + _irEsc_(e.message || '') +
-            ' <code>' + _irEsc_(e.code || 'SCOPE_REGISTRY_READ_FAILED') + '</code>' +
+            '<strong>' + _irEsc_(lead) + '</strong> ' + _irEsc_(e.message || '') +
+            ' <code>' + _irEsc_(codeTxt) + '</code>' +
+            (stale ? '<span class="replen-scope-hint" style="display:block;color:#7F1D1D;margin-top:2px;">Nothing was read or written. Site Inventory stays in its pre-search state until the options load.</span>' : '') +
             ' <button type="button" class="replen-scope-retry" onclick="_irReloadScopeRegistry_()" ' +
-            'style="margin-left:6px;padding:2px 8px;border:1px solid #EF4444;background:#fff;color:#B91C1C;border-radius:3px;cursor:pointer;font-size:11px;">Retry</button>' +
+            'style="margin-left:6px;padding:2px 8px;border:1px solid #EF4444;background:#fff;color:#B91C1C;border-radius:3px;cursor:pointer;font-size:11px;">' + retryLabel + '</button>' +
             '</span>';
     }
     el.innerHTML = html;
@@ -4433,6 +4444,10 @@ function _irEnsureRegistryLoaded_(opts) {
         if (!res || res.success === false) {
             _irRegistry.status = 'ERROR';
             _irRegistry.error = (res && res.error) || { code: 'SCOPE_REGISTRY_READ_FAILED', message: 'The scope registry could not be read.' };
+            // F1-7N-FB-3A §C — a registry failure NEVER starts an inventory workspace read and never advances
+            // the table's own state: _irSearch.applied stays null, so the table stays PRE_SEARCH. Only Search
+            // reads the inventory workspace, and only a successful Search applies filters. Recovery is the
+            // Retry button on this surface — no page navigation is required, and none would help.
             _irRenderRegistryState_();
             return null;
         }
