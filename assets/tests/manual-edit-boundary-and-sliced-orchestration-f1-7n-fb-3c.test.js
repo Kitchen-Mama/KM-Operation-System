@@ -792,7 +792,10 @@ ok(DEMO.indexOf('F1-7N-FB-3C') === -1, '20. and carries no FB-3C marker — it w
 });
 // deployment identity moved, and the frontend pins exactly it
 const buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-eq(buildNow, 'F1-7N-FB-3C', '20. SYS_BUILD_VERSION_ names this build');
+// The bump RULE, not a frozen literal. Pinning the exact string makes this suite fail on every legitimate future
+// bump, which is the opposite of guarding the deployment identity. What must hold is that the id is a real
+// F1-7N-FB-<n><letter> build and that the Send owner reports the SAME one, so a partial Apps Script sync shows up.
+ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || ''), '20. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
 eq(ROS_BUILD_VERSION_, buildNow, '20. and the Send owner reports the SAME build');
 const acv = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
 const pinned = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);

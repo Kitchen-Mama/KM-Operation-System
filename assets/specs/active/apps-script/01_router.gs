@@ -86,6 +86,13 @@ function doPost(e) {
     if (action === 'system.shippingAllocationDraftDiagnostic') {
       return handleShippingAllocationDraftDiagnostic_(body);
     }
+    // F1-7N-FB-4A §C — READ-ONLY Execution Plan identity CONFLICT diagnostic (owner = 68_). Answers, for one
+    // exact route/business scope, which persisted row is in the way, which identity family it belongs to, which
+    // business dimension makes it disagree, whether it already produced a Shipping Plan, and the safe idempotent
+    // dispositions. It runs the REAL production authorities from 16_ and writes nothing.
+    if (action === 'system.executionPlanConflictDiagnostic') {
+      return jsonResponse_(handleExecutionPlanConflictDiagnostic_(body));
+    }
     // F1-7N-FB-3 §C — slim scope registry (see the doGet registration above for why it exists).
     if (action === 'inventoryScope.registry.get') {
       return handleInventoryScopeRegistryGet_(body);

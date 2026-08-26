@@ -233,6 +233,8 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   read('specs/active/apps-script/15_request_allocation_handlers.gs'),
   read('specs/active/apps-script/64_api_v1_scope_registry.gs'),
   read('specs/active/apps-script/65_api_v1_flow_diagnostics.gs'),
+  // F1-7N-FB-4A §C — the read-only Execution Plan conflict diagnostic's owner.
+  read('specs/active/apps-script/68_api_v1_execution_plan_conflict_diagnostic.gs'),
   read('specs/active/apps-script/22_shipment_dispatch_handlers.gs'),
   read('specs/active/apps-script/34_shipment_final_output_handlers.gs'),
   read('specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'),

@@ -45,9 +45,14 @@ eq(sadLegacyReconcileReason_(sheet([{ allocation_draft_id: 'X', status: 'draft',
 section('A. cores handle BLOCK + legacy guard; K3 callers classified');
 var atomicCore = extractFn(G16, 'sadAtomicUpsertCore_');
 ok(/res\.status === 'BLOCK'/.test(atomicCore) && /ROUTE_INCOMPLETE_NEW_DRAFT/.test(atomicCore), 'A6. atomic core fails closed on BLOCK (route-incomplete new draft)');
-ok(/sadLegacyReconcileReason_\(hSh, found, allowReconcile\)/.test(atomicCore), 'A6. atomic core applies the legacy-reconcile guard on explicit-id edits');
+// F1-7N-FB-4A §D — STRICTLY STRONGER: both cores must hand the guard the REQUEST HEADER. Without it the guard can
+// only ask "does this row's id still hash to itself?", which the writer's own permitted route edit makes false and
+// which then bricks the row forever. The 3-argument form is exactly the defect, so it is now a FAILING shape.
+ok(/sadLegacyReconcileReason_\(hSh, found, allowReconcile, header \|\| null\)/.test(atomicCore),
+  'A6. atomic core applies the legacy-reconcile guard WITH the request header');
 var manualCore = extractFn(G16, 'sadUpsertDraftHeaderCore_');
-ok(/res\.status === 'BLOCK'/.test(manualCore) && /sadLegacyReconcileReason_\(sh, found, allowReconcile\)/.test(manualCore), 'A7. manual core fails closed on BLOCK + legacy guard');
+ok(/res\.status === 'BLOCK'/.test(manualCore) && /sadLegacyReconcileReason_\(sh, found, allowReconcile, body \|\| null\)/.test(manualCore),
+  'A7. manual core fails closed on BLOCK + applies the legacy guard WITH the request header');
 // the two remaining direct K3 callers are read-only / existing-row-only (never CREATE)
 ok(/function handleGetShippingAllocationDraftWorkspace_[\s\S]*?sadResolveActiveDraft_/.test(G16), 'A8. readback caller = READ_ONLY_COMPATIBILITY');
 ok(/function handleCancelShippingAllocationDraft_[\s\S]*?sadResolveActiveDraft_/.test(G16), 'A8. cancel caller = EXISTING_ROW_ONLY (soft-cancel; never CREATE)');

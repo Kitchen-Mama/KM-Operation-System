@@ -2995,9 +2995,20 @@ function _irShowDraftSaveError(sku, err) {
     if (s.requestId) rows += '<div><strong>Request:</strong> ' + esc(s.requestId) + '</div>';
     rows += '<div><strong>Rows written:</strong> ' + esc(s.zeroWrite === 'true' ? 'none (zero-write confirmed)' : 'not confirmed by the server') + '</div>';
     rows += '<div><strong>Retryable:</strong> ' + esc(s.retryable === false ? 'no' : 'yes') + '</div>';
+    // F1-7N-FB-4A §D — THE TYPED BACKEND REASON IS PROMOTED OUT OF THE COLLAPSED DISCLOSURE. The live report was
+    // "Database update failed" plus one generic sentence, with the actual reason code hidden behind "Technical
+    // details" — so two DIFFERENT backend refusals (a legacy row needing a user migration, a K2 row belonging to
+    // another shipment group, a duplicate group) all read as one indistinguishable failure and the operator had
+    // nothing to act on. The reason code and the server's own sentence are now on the face of the message, above
+    // the fold, and the collapsed section keeps everything else exactly as before.
+    var _reasonCode = esc(s.reasonCode || s.code || 'SAVE_FAILED');
+    var _serverLine = (s.message && s.message !== s.reasonCode) ? esc(s.message) : '';
     el.innerHTML = '<div class="ir-save-error-user"><strong>Unsaved — database update failed.</strong> ' +
             'This route was NOT saved to the database. Your entries are kept on screen so you can correct and retry them; ' +
             'Submit Plan is blocked until every route is saved.</div>' +
+        '<div class="ir-save-error-reason"><strong>Reason:</strong> <code>' + _reasonCode + '</code>' +
+            (_serverLine ? '<span class="ir-save-error-reason__msg"> — ' + _serverLine + '</span>' : '') + '</div>' +
+        (s.entityKey ? '<div class="ir-save-error-reason"><strong>Blocking record:</strong> <code>' + esc(s.entityKey) + '</code></div>' : '') +
         (s.nextAction ? '<div class="ir-save-error-next">' + esc(s.nextAction) + '</div>' : '') +
         '<details class="ir-save-error-detail"><summary>Technical details</summary>' + rows + '</details>';
     el.style.display = 'block'; el.style.color = '#dc2626';

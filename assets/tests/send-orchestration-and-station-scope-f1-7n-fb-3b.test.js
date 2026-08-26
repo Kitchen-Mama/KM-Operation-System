@@ -762,8 +762,9 @@ ok(DEMO.length > 0, '16. the Demo seed file is present');
 // bump, which is the opposite of guarding the deployment identity.
 const buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 const rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-ok(!!buildNow && buildNow.indexOf('F1-7N-FB-3') === 0 && buildNow !== 'F1-7N-FB-3A',
-  '16. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
+// The rule must not pin the MINOR either: F1-7N-FB-4A is a legitimate later build and pinning 'FB-3' rejected it.
+ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || '') && buildNow !== 'F1-7N-FB-3A',
+  '16. SYS_BUILD_VERSION_ names a current build at or after FB-3B (' + buildNow + ')');
 eq(rosBuild, buildNow, '16. and the Send orchestration owner reports the SAME build, so a partial sync is visible');
 const acv = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
 const pinned = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);

@@ -37,14 +37,14 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-3C';
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-4A';
 // Incremented when the set of router actions changes. The frontend compares this against its own pinned
 // minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
 // through a confusing per-action failure.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 5;
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 6;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 5;
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 6;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -82,6 +82,7 @@ var SYS_REQUIRED_ACTIONS_ = [
   // F1-7N-FB-2A §G — the Execution Plan write/read set. These are the actions the Site Inventory route save
   // depends on, and a partial sync of 16_ is indistinguishable from a transport fault without probing them.
   { action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
+  { action: 'system.executionPlanConflictDiagnostic', handler: 'handleExecutionPlanConflictDiagnostic_', used_by: 'F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic' },
   { action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
   { action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
   { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
@@ -509,7 +510,8 @@ function handleShippingAllocationDraftDiagnostic_(body) {
         out.expected_classification = found ? 'UPDATE' : 'INSERT';
         out.idempotency.resolution = found ? 'EXISTING_ROW' : 'ID_NOT_FOUND';
         if (found && typeof sadLegacyReconcileReason_ === 'function') {
-          var legR = sadLegacyReconcileReason_(dsh, found, false);
+          // FB-4A §D — pass the REQUEST header so this reports the same semantic-group verdict production takes.
+          var legR = sadLegacyReconcileReason_(dsh, found, false, header);
           out.reconcile_guard = legR || 'PASS';
           if (legR) blockers.push({ reason: legR, detail: (typeof sadReconcileMessage_ === 'function') ? sadReconcileMessage_(legR) : 'requires an explicit user migration' });
         }

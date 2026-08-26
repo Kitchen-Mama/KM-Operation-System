@@ -3342,29 +3342,72 @@ window.KM.DB.advanceShipmentRoutePoint = async function(payload) {
     return json;
 };
 
-// Shipment ETA update (F1-SHIPMENT-MAP-R10). Bounded canonical writer — updates ONLY shipments.eta.
-// Payload (snake_case): { shipment_id (required), eta (YYYY-MM-DD, required), actor? }. Returns the FULL
-// backend response WITHOUT throwing; force-reloads the cache on success so the drawer reflects DB truth.
+// Shipment ETA update (F1-SHIPMENT-MAP-R10; F1-7N-FB-4A §G). THE one canonical writer — updates ONLY
+// shipments.eta plus its audit stamps, and the server proves persistence by reading the cell back.
+// Payload (snake_case): { shipment_id (the INTERNAL shipments.shipment_id), eta (YYYY-MM-DD), actor? }.
+//
+// BOUNDED. The previous version awaited a bare fetch with NO timeout, so a stalled write left the drawer's
+// button disabled with "Updating ETA…" on screen for as long as the socket stayed open, and the page could not
+// distinguish "still running" from "dead". It is now bound by the SAME KM_WRITE_TIMEOUT_MS_ every other write
+// uses, and an abort is reported as REQUEST_TIMEOUT_WRITE_INDETERMINATE — INDETERMINATE, because closing a
+// socket does not stop an Apps Script execution, so the write may well have landed. The caller must RECONCILE
+// (read the persisted ETA) before offering a retry; it must never blindly repeat the write.
+//
+// Returns the FULL backend response WITHOUT throwing, so a typed failure (ETA_INVALID / SHIPMENT_NOT_FOUND /
+// ETA_HEADER_MISSING / ETA_WRITE_NOT_ACKNOWLEDGED / ETA_READBACK_MISMATCH) reaches the page intact.
 window.KM.DB.updateShipmentEta = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, updateShipmentEta skipped');
-        return { success: false, error: 'API not configured', code: 'config' };
+        return { success: false, error: 'API not configured', code: 'TRANSPORT_NOT_CONFIGURED' };
     }
     var json;
+    var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, KM_WRITE_TIMEOUT_MS_) : null;
     try {
-        var resp = await fetch(OP_DB_API_BASE_URL, {
+        var opts = {
             method: 'POST',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(Object.assign({ action: 'shipment.eta.update' }, payload))
-        });
-        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'network' };
+        };
+        if (ctl) opts.signal = ctl.signal;
+        var resp = await fetch(OP_DB_API_BASE_URL, opts);
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'HTTP_TRANSPORT_ERROR' };
         json = await resp.json();
     } catch (e) {
-        return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
+        if (timer) { clearTimeout(timer); timer = null; }
+        var aborted = !!(e && (e.name === 'AbortError' || String(e.message || '').indexOf('abort') !== -1));
+        if (aborted) {
+            return { success: false, code: 'REQUEST_TIMEOUT_WRITE_INDETERMINATE',
+                error: 'The ETA request exceeded ' + KM_WRITE_TIMEOUT_MS_ + ' ms. The server may still have applied it, so the stored ETA must be RECONCILED before any retry.' };
+        }
+        return { success: false, error: (e && e.message) ? e.message : String(e), code: 'HTTP_TRANSPORT_ERROR' };
     }
     if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
+};
+
+// F1-7N-FB-4A §G — READ-ONLY ETA reconciliation. After an INDETERMINATE timeout the only safe next step is to
+// find out what the database actually holds; repeating an indeterminate write is how a double-apply happens.
+// This reads the ONE shipment through the existing bounded shipment workspace (no new backend surface, no write,
+// no lock) and reports whether the persisted ETA already equals the intended one.
+// Returns { success, reconciled, persisted_eta, matches_intended } — never throws.
+window.KM.DB.reconcileShipmentEta = async function(shipmentId, intendedEta) {
+    var sid = String(shipmentId == null ? '' : shipmentId).trim();
+    var want = String(intendedEta == null ? '' : intendedEta).trim();
+    if (!sid) return { success: false, reconciled: false, error: 'shipment_id is required', code: 'SHIPMENT_ID_REQUIRED' };
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+        return { success: false, reconciled: false, error: 'the shipment workspace read is unavailable', code: 'RECONCILE_UNAVAILABLE' };
+    }
+    var env;
+    try { env = await Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: sid } })); }
+    catch (e) { return { success: false, reconciled: false, error: String((e && e.message) || e), code: 'RECONCILE_READ_FAILED' }; }
+    if (!(env && env.success && env.data)) return { success: false, reconciled: false, error: 'the shipment could not be re-read', code: 'RECONCILE_READ_FAILED' };
+    var one = (env.data.shipments || []).filter(function (r) { return String(r.shipmentId || (r.raw && r.raw.shipment_id) || '') === sid; })[0];
+    if (!one) return { success: false, reconciled: false, error: 'the shipment was not found on re-read', code: 'SHIPMENT_NOT_FOUND' };
+    var persisted = String(one.eta == null ? '' : one.eta).trim();
+    return { success: true, reconciled: true, persisted_eta: persisted, matches_intended: !!want && persisted === want };
 };
 
 // Backfill / migration: scan ALL existing marketplace_skus rows and create/update sku_regional_details.
@@ -3529,7 +3572,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 5;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 6;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
 // action is told apart from a genuine business rejection — a business handler never answers with them.
@@ -4081,6 +4124,10 @@ window.KM.DB.submitRequestOrderAllocationDrafts = async function(payload) {
 // BUSINESS_COMMAND_ERROR / ALREADY_IN_TARGET_STATE / TRANSPORT_NOT_CONFIGURED), NEVER throws, and NO internal
 // whole-DB loadOperationDb — the page performs exactly one targeted readback via getShippingAllocationDraftWorkspace.
 window.KM.DB.upsertShippingAllocationDraft = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraft', payload); };
+// F1-7N-FB-4A §C — READ-ONLY Execution Plan identity conflict diagnostic (owner = 68_). Zero writes: it reports
+// which persisted row blocks one exact route, why, and the safe idempotent dispositions. Never call it as part of
+// a save — it is an operator/diagnostic surface, and a save must not depend on a diagnostic to decide anything.
+window.KM.DB.getExecutionPlanConflictDiagnostic = function(payload) { return _kmWeeklyCommand_('system.executionPlanConflictDiagnostic', payload); };
 // UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
 window.KM.DB.upsertShippingAllocationDraftLines = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftLines', payload); };
 window.KM.DB.submitShippingAllocationDrafts = function(payload) { return _kmWeeklyCommand_('submitShippingAllocationDrafts', payload); };

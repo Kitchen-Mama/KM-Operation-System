@@ -178,7 +178,9 @@ function sadUpsertDraftHeaderCore_(body) {
   }
   // A: editing an existing route-INCOMPLETE (legacy) row by explicit id is fail-closed unless an explicit USER migration.
   if (found) {
-    var legR = sadLegacyReconcileReason_(sh, found, allowReconcile);
+    // FB-4A §D — the REQUEST header is handed to the guard, so the comparison is "is this row my own shipment
+    // group?" rather than "does this row's id still hash to itself?". Zero rows are written on a refusal.
+    var legR = sadLegacyReconcileReason_(sh, found, allowReconcile, body || null);
     if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', data: { status: legR, existing_id: id } });
   }
 
@@ -772,7 +774,10 @@ function sadAtomicUpsertCore_(body) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
     if (st === 'submitted' || st === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
     // A: editing an existing route-INCOMPLETE (legacy) row is fail-closed unless an explicit USER migration is requested.
-    var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile);
+    // FB-4A §D — the REQUEST header goes to the guard here too. The AI-Plan generation path runs through THIS core,
+    // and it is the path that mints a K2 id over the four route dimensions the generation engine leaves blank, so it
+    // is the one most exposed to the id-drift trap the semantic comparison closes.
+    var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile, header || null);
     if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
   }
 
@@ -1330,12 +1335,71 @@ function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
 // (impostor / route drift) is refused with a DISTINCT typed K2_ROUTE_RECONCILIATION_REQUIRED (never auto-healed or
 // overwritten). Generic (non-SADH-K2-) rows keep the exact original legacy rule unchanged. Returns a typed reason
 // string to BLOCK, or '' to proceed.
-function sadLegacyReconcileReason_(sh, found, allowReconcile) {
+//
+// F1-7N-FB-4A §D — THE COMPARISON WAS WRONG, AND IT BRICKED THE ROW IT WAS PROTECTING.
+// R6F2G5 asked "does this row's STORED id still equal the hash of its OWN CURRENT dims?". That question has a
+// false-positive the writer itself manufactures: the UPDATE branch of sadUpsertDraftHeaderCore_ is ALLOWED to
+// change recommended_source_warehouse_id / recommended_destination_warehouse_id / recommended_shipping_method /
+// recommended_last_mile_delivery / recommendation_group_no, and five of those are K2 GROUPING DIMENSIONS. The
+// SADH-K2- id, however, is minted ONCE at CREATE and is never re-keyed (re-keying would orphan every
+// shipping_allocation_draft_lines row that points at it). So the first legitimate route edit succeeds and
+// silently leaves stored_id = H(dims BEFORE the edit) while the row now holds dims AFTER the edit — and from the
+// SECOND edit onward this guard compares H(after) against H(before), refuses its own row as an impostor, and the
+// route can NEVER be saved again. The AI-Plan generation path makes this the NORMAL case rather than an edge
+// case: the bundled generation engine leaves four of the ten K2 dims BLANK (see the K2 contract note above), so
+// an AI-generated header is keyed over blank route dims and the operator's first completed route in the
+// Execution Plan is exactly the edit that drifts it.
+//
+// The row was never an impostor. It is the caller's own row, holding the caller's own dims, under a stale
+// CREATE-time surrogate id. The correct question is SEMANTIC, not self-referential:
+//     does this persisted row belong to the SAME K2 shipment group as the request now being written?
+// That is strictly stronger against a real impostor (a row for a DIFFERENT group is still refused, on the
+// group key rather than on a hash coincidence) and it stops refusing the one row the caller means.
+//
+// Accepting a stale id is safe ONLY while the group is uncontested. If another ACTIVE header already carries the
+// request's group key, adopting this drifted row would create a SECOND header for one shipment group — so that
+// case is reported as BLOCKED_CONFLICT (a business decision) instead of being written.
+//
+// Nothing here is auto-healed: the stale id is KEPT exactly as stored (no re-key, no overwrite, no cancel, no
+// delete, no line-FK rewrite). The row is updated IN PLACE under its existing identity, which is what an edit of
+// an existing Execution Plan route has always meant.
+var SAD_K2_BASIS_ID_MATCHES_ = 'K2_ID_MATCHES_OWN_GROUP';
+var SAD_K2_BASIS_STALE_ACCEPTED_ = 'K2_STALE_CREATE_TIME_ID_ACCEPTED_SAME_GROUP';
+var SAD_K2_BASIS_DIFFERENT_GROUP_ = 'K2_ROW_BELONGS_TO_A_DIFFERENT_SHIPMENT_GROUP';
+var SAD_K2_BASIS_NO_REQUEST_GROUP_ = 'K2_ID_DRIFTED_AND_NO_REQUEST_GROUP_SUPPLIED_TO_COMPARE';
+var SAD_K2_BASIS_CONTESTED_ = 'K2_GROUP_ALREADY_OWNED_BY_ANOTHER_ACTIVE_HEADER';
+
+// PURE decision (no sheet access) so the regression suite executes the real rule rather than a description of it.
+// persistedRow = the header-shaped object actually stored; wantHeader = the incoming request header (or null when
+// the caller has none); activeRows = the other ACTIVE header-shaped rows. Returns { reason, basis, conflictIds }.
+function sadK2ReconcileDecision_(persistedRow, wantHeader, activeRows) {
+  var o = persistedRow || {};
+  var storedId = String(o.allocation_draft_id == null ? '' : o.allocation_draft_id).trim();
+  if (sadK2DeterministicHeaderId_(o) === storedId) return { reason: '', basis: SAD_K2_BASIS_ID_MATCHES_, conflictIds: [] };
+  if (!wantHeader) return { reason: 'K2_ROUTE_RECONCILIATION_REQUIRED', basis: SAD_K2_BASIS_NO_REQUEST_GROUP_, conflictIds: [] };
+  var want = sadK2GroupKey_(wantHeader);
+  if (sadK2GroupKey_(o) !== want) return { reason: 'K2_ROUTE_RECONCILIATION_REQUIRED', basis: SAD_K2_BASIS_DIFFERENT_GROUP_, conflictIds: [] };
+  var rivals = [];
+  (activeRows || []).forEach(function (r) {
+    var rid = String((r && r.allocation_draft_id) == null ? '' : r.allocation_draft_id).trim();
+    if (!rid || rid === storedId) return;
+    if (sadK2GroupKey_(r) === want) rivals.push(rid);
+  });
+  if (rivals.length) return { reason: 'BLOCKED_CONFLICT', basis: SAD_K2_BASIS_CONTESTED_, conflictIds: rivals };
+  return { reason: '', basis: SAD_K2_BASIS_STALE_ACCEPTED_, conflictIds: [] };
+}
+
+// `wantHeader` is OPTIONAL and additive: omitted, the K2 branch keeps the exact pre-FB-4A self-hash rule, so no
+// existing caller changes behaviour by accident. The generic (non-SADH-K2-) legacy rule is UNCHANGED — a legacy
+// row genuinely requires a USER migration and is never adopted here (see §D of the FB-4A record).
+function sadLegacyReconcileReason_(sh, found, allowReconcile, wantHeader) {
   if (!found || allowReconcile === true) return '';
   var o = sadRowToObject_(sh, found.row);
   var storedId = String(o.allocation_draft_id == null ? '' : o.allocation_draft_id).trim();
   if (storedId.indexOf('SADH-K2-') === 0) {
-    return sadK2DeterministicHeaderId_(o) === storedId ? '' : 'K2_ROUTE_RECONCILIATION_REQUIRED';
+    if (sadK2DeterministicHeaderId_(o) === storedId) return '';
+    if (!wantHeader) return 'K2_ROUTE_RECONCILIATION_REQUIRED';
+    return sadK2ReconcileDecision_(o, wantHeader, sadReadActiveHeaderRows_(sh)).reason;
   }
   return sadHeaderRouteIsComplete_(o) ? '' : 'LEGACY_ROUTE_RECONCILIATION_REQUIRED';
 }
@@ -1343,6 +1407,9 @@ function sadLegacyReconcileReason_(sh, found, allowReconcile) {
 // R6F2G5 — reason-typed reconciliation message for the two BLOCK call sites (atomic + manual). Keeps the outcome
 // observable and distinct: a genuine legacy incomplete-route collision vs a K2 shipment-group identity mismatch.
 function sadReconcileMessage_(reason) {
+  if (reason === 'BLOCKED_CONFLICT') {
+    return 'this route\'s shipment group is already owned by a DIFFERENT active Draft header, so adopting this row would create a second header for one group; resolve the duplicate before saving';
+  }
   if (reason === 'K2_ROUTE_RECONCILIATION_REQUIRED') {
     return 'this existing K2 Draft\'s stored id is not the deterministic hash of its own shipment-group route (K2 identity mismatch); reconcile via an explicit USER migration — never auto-healed or overwritten';
   }
