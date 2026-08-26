@@ -3572,7 +3572,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 6;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
 // action is told apart from a genuine business rejection — a business handler never answers with them.
@@ -3607,8 +3607,28 @@ function _kmDeploymentMismatchError_(action) {
 }
 // Compare the frontend's pinned expectations against the deployment's own immutable identity block. Returns a
 // verdict object; NEVER throws. This is the check that turns "the site behaves oddly" into one named fact.
+// F1-7N-FB-4A ADDENDUM §H — the exact actions and symbols THIS frontend build needs. They are sent to
+// system.health as an explicit probe list so the answer is computed against OUR expectation rather than against
+// the deployment's own required-action list. A deployment that predates any of them reports it ABSENT; an empty
+// self-referential missing_actions can never say that.
+var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
+    'requestOrder.sendWorkset.get', 'requestOrder.send.orchestrate', 'requestOrder.send.status',
+    'requestOrder.allocationDraft.ensureAndEdit', 'system.allocationDraftIdentityDiagnostic',
+    'system.executionPlanConflictDiagnostic', 'system.requestOrderSendDiagnosticStatus',
+    'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft'
+];
+// Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
+// catches a half-finished, file-by-file Apps Script sync that still resolves every action.
+var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
+    'sadK2ReconcileDecision_',              // 16_ — the FB-4A Execution Plan identity correction
+    'shipEtaDateOnly_',                     // 31_ — the FB-4A ETA date-only round-trip normalizer
+    'shipWsDateOnly_',                      // 57_ — the FB-4A scoped-read date projection
+    'rosResolveCurrentPlanningCycle_',      // 66_ — the addendum planning-cycle authority
+    'TEMP_ROSEND_DIAG_OWNER_FILE_'          // TEMP_request_order_send_diagnostics.gs — the single diagnostic owner
+];
 window.KM.DB.checkDeploymentContract = async function () {
-    var res = await _kmGapRead_('system.health', {});
+    var res = await _kmGapRead_('system.health', {
+        probe_actions: KM_REQUIRED_DEPLOYED_ACTIONS_, probe_symbols: KM_REQUIRED_DEPLOYED_SYMBOLS_ });
     if (!res || res.success === false) {
         return { ok: false, code: (res && res.error && res.error.code) || 'HEALTH_UNAVAILABLE',
             message: (res && res.error && res.error.message) || 'system.health did not answer.', identity: null };
@@ -3620,7 +3640,15 @@ window.KM.DB.checkDeploymentContract = async function () {
         deployed_action_contract_version: (h.deployed_action_contract_version == null) ? null : Number(h.deployed_action_contract_version),
         inventory_registry_projection_version: h.inventory_registry_projection_version || null,
         required_action_list_version: (h.required_action_list_version == null) ? null : Number(h.required_action_list_version),
-        missing_actions: h.missing_actions || []
+        missing_actions: h.missing_actions || [],
+        // FB-4A addendum §H — the non-self-referential evidence.
+        mixed_deployment: (h.mixed_deployment == null) ? null : !!h.mixed_deployment,
+        deployment_uniformity_verdict: h.deployment_uniformity_verdict || null,
+        module_build_stamps: (h.module_build_stamps && h.module_build_stamps.modules) || [],
+        stale_modules: (h.module_build_stamps && h.module_build_stamps.stale_modules) || [],
+        absent_modules: (h.module_build_stamps && h.module_build_stamps.absent_modules) || [],
+        caller_probe: h.caller_probe || null,
+        request_order_send_diagnostic_owner: h.request_order_send_diagnostic_owner || null
     };
     // A deployment that predates the identity block cannot report its own action contract — which is itself
     // conclusive evidence that it is older than this frontend.
@@ -3634,8 +3662,32 @@ window.KM.DB.checkDeploymentContract = async function () {
             message: 'The deployed Apps Script action contract is v' + identity.deployed_action_contract_version +
                 ' but this frontend needs v' + KM_EXPECTED_ACTION_CONTRACT_VERSION_ + '. Publish a new deployment version.' };
     }
+    // FB-4A addendum §H — a deployment that does not answer our explicit probe is older than the probe itself,
+    // which is conclusive on its own. Checked BEFORE the per-item verdict so a silent old build cannot pass.
+    if (!identity.caller_probe) {
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+            message: 'The deployed Apps Script did not answer the explicit action/symbol probe, so it predates this ' +
+                'frontend build. Re-copy the Apps Script files and publish a NEW deployment version.' };
+    }
+    if (identity.caller_probe.all_present === false) {
+        var miss = (identity.caller_probe.missing_actions || []).concat(identity.caller_probe.missing_symbols || []);
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+            message: 'The deployment is missing ' + miss.length + ' item(s) this frontend needs: ' + miss.join(', ') +
+                '. Re-copy the owning Apps Script files and publish a NEW deployment version.' };
+    }
+    // A MIXED sync still resolves every action, so it must be reported on its own evidence: each owner file's
+    // compiled build constant. This is the case the live report suspected and nothing previously could name.
+    if (identity.mixed_deployment === true) {
+        var bad = (identity.stale_modules || []).concat(identity.absent_modules || []);
+        return { ok: false, code: 'DEPLOYMENT_PARTIAL_SYNC', identity: identity,
+            message: 'The Apps Script project is only PARTIALLY synchronized: ' + bad.join(', ') +
+                ' (deployment build ' + identity.build_id + '). Re-copy those files and publish a NEW deployment version.' };
+    }
     return { ok: true, code: 'DEPLOYMENT_CONTRACT_OK', identity: identity, message: '' };
 };
+// The read-only Request Order Send diagnostic ownership + cycle-resolution report (addendum §G), reachable from
+// the website so the operator never has to open the Apps Script editor to answer "which file owns this?".
+window.KM.DB.getRequestOrderSendDiagnosticStatus = function (payload) { return _kmGapRead_('system.requestOrderSendDiagnosticStatus', payload || {}); };
 window.KM.DB.getExpectedContract = function () {
     return { action_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
         registry_projection_version: KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ };

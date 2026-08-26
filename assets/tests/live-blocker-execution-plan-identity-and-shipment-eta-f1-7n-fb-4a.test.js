@@ -26,6 +26,10 @@ var G57 = read('specs/active/apps-script/57_api_v1_shipment_workspace.gs');
 var G63 = read('specs/active/apps-script/63_api_v1_system_health.gs');
 var G66 = read('specs/active/apps-script/66_api_v1_request_order_send.gs');
 var G68 = read('specs/active/apps-script/68_api_v1_execution_plan_conflict_diagnostic.gs');
+var GTD = read('specs/active/apps-script/TEMP_request_order_send_diagnostics.gs');
+var GDEMOSEED = read('specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs');
+var GDOCDIAG = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
+var G67 = read('specs/active/apps-script/67_api_v1_allocation_draft_identity.gs');
 var ROUTER = read('specs/active/apps-script/01_router.gs');
 var DBAPI = read('js/api/operation-system-db-api.js');
 var MAP = read('js/pages/global-logistics-map.js');
@@ -74,15 +78,16 @@ global.Utilities = Utilities; global.Session = Session;
 eval(extractVar(G66, 'ROS_DRAFTS_TABLE_'));
 eval(extractVar(G66, 'ROS_ACTIVE_STATUSES_'));
 eval(extractVar(G66, 'ROS_TERMINAL_STATUSES_'));
-eval(extractVar(G66, 'ROS_TEMP_CYCLE_OWNER_FILE_'));
-eval(extractVar(G66, 'ROS_TEMP_CYCLE_CONSTANT_'));
+eval(extractVar(G66, 'ROS_CYCLE_SOURCE_OVERRIDE_'));
+eval(extractVar(G66, 'ROS_CYCLE_SOURCE_PERSISTED_'));
+eval(extractVar(G66, 'ROS_CYCLE_SOURCE_NONE_'));
 eval(extractFn(G66, 'rosStr_'));
 eval(extractFn(G66, 'rosLc_'));
 eval(extractFn(G66, 'rosDraftStatus_'));
 eval(extractFn(G66, 'rosDraftIsActive_'));
 eval(extractFn(G66, 'rosDraftIsTerminal_'));
 eval(extractFn(G66, 'rosPlanningCycleCensus_'));
-eval(extractFn(G66, 'rosTempCycleRemedyLines_'));
+eval(extractFn(G66, 'rosResolveCurrentPlanningCycle_'));
 
 eval(extractVar(G16, 'SAD_K2_GROUP_DIMENSIONS_'));
 eval(extractVar(G16, 'SAD_K2_BASIS_ID_MATCHES_'));
@@ -143,31 +148,60 @@ ok(census.active_cycles.indexOf('(blank)') === -1, '1. but a blank cycle is NEVE
 eq(rosPlanningCycleCensus_([]).recommended, '', '1. an empty table recommends NOTHING rather than inventing a cycle');
 ok(/no planning cycle currently has an active/.test(rosPlanningCycleCensus_([]).recommendation_basis), '1. and says why');
 
-var remedy = rosTempCycleRemedyLines_(census).join('\n');
-ok(/66_api_v1_request_order_send\.gs/.test(remedy), '1. the remedy names the EXACT file holding the source constant');
-ok(/TEMP_ROSEND_PLANNING_CYCLE_/.test(remedy), '1. and the exact constant to edit');
-ok(/DO NOT add a Script Property/.test(remedy), '1. and states plainly that a Script Property is NOT the authority');
-ok(/read by nothing/.test(remedy), '1. and explains why a Script Property changes nothing');
-ok(/do not add a second constant/i.test(remedy), '1. and forbids introducing a second configuration authority');
-ok(remedy.indexOf('2026-08') !== -1, '1. the recommended EXACT value appears in the remedy');
-ok(/active=2/.test(remedy), '1. the read-only census of available cycles is printed');
-ok(/FAIL-CLOSED/.test(remedy) && /explicit exact planning_cycle/.test(remedy), '1. and it restates that Preview/Execute stay fail-closed');
-// zero write, structurally: the census and the remedy touch no writer, no property, no lock
-[extractFn(G66, 'rosPlanningCycleCensus_'), extractFn(G66, 'rosTempCycleRemedyLines_'),
-  extractFn(G66, 'rosReadPlanningCycleCensus_'), extractFn(G66, 'TEMP_ROSEND_LOG_BLOCKED_')].forEach(function (fn, i) {
+// ---- ADDENDUM §F — the manual source-edit trap is GONE: the cycle resolves automatically ------------------
+// Exactly one cycle carries ACTIVE drafts -> RESOLVED from the same persisted authority the website uses.
+var solo = rosResolveCurrentPlanningCycle_([
+  { planning_cycle: '2026-08', status: 'draft' },
+  { planning_cycle: '2026-08', status: 'site_confirmed' },
+  { planning_cycle: '2026-07', status: 'submitted' },      // terminal -> not a candidate
+  { planning_cycle: '2026-06', status: 'cancelled' }       // terminal -> not a candidate
+], '');
+eq([solo.status, solo.blocked, solo.resolved_planning_cycle], ['RESOLVED', false, '2026-08'], '1. one active cycle resolves automatically — NO source edit required');
+eq(solo.resolution_source, ROS_CYCLE_SOURCE_PERSISTED_, '1. and the source is the PERSISTED active allocation drafts');
+ok(/the same persisted authority the website resolves from/.test(solo.reason), '1. naming the website authority it mirrors');
+eq(solo.override.supplied, false, '1. with no override in play');
+
+// AMBIGUITY BLOCKS AND REPORTS EVERY CANDIDATE — it never picks one.
+var amb = rosResolveCurrentPlanningCycle_([
+  { planning_cycle: '2026-08', status: 'draft' },
+  { planning_cycle: '2026-08', status: 'draft' },
+  { planning_cycle: '2026-07', status: 'draft' }
+], '');
+eq([amb.status, amb.blocked, amb.resolved_planning_cycle], ['AMBIGUOUS', true, ''], '1. two active cycles BLOCK rather than choosing');
+eq(amb.candidate_count, 2, '1. and every candidate is reported');
+eq(amb.candidates.map(function (c) { return c.planning_cycle; }).sort(), ['2026-07', '2026-08'], '1. by name');
+ok(/nothing was written/i.test(amb.reason), '1. stating that nothing was written');
+ok(!/most active|newest|busiest/i.test(amb.reason), '1. and it does not offer to pick the busiest — that would target a run nobody meant');
+
+// No active drafts -> BLOCK. The page's CALENDAR fallback is deliberately not mirrored server-side.
+var none = rosResolveCurrentPlanningCycle_([{ planning_cycle: '2026-08', status: 'submitted' }], '');
+eq([none.status, none.blocked], ['NO_ACTIVE_DRAFTS', true], '1. no active draft BLOCKS rather than inventing a cycle');
+eq(none.resolution_source, ROS_CYCLE_SOURCE_NONE_, '1. with no resolution source claimed');
+eq(rosResolveCurrentPlanningCycle_([], '').resolved_planning_cycle, '', '1. an empty table resolves to nothing');
+var resolverCode = noStrings(extractFn(G66, 'rosResolveCurrentPlanningCycle_'));
+ok(resolverCode.indexOf('Date') === -1 && resolverCode.indexOf('getFullYear') === -1,
+  '1. the resolver consults NO clock — a calendar cycle is not a persisted authority');
+
+// The OPTIONAL override exists for controlled testing, is honoured, and is loud when it points at nothing.
+var ov = rosResolveCurrentPlanningCycle_([{ planning_cycle: '2026-08', status: 'draft' }, { planning_cycle: '2026-07', status: 'draft' }], '2026-07');
+eq([ov.status, ov.blocked, ov.resolved_planning_cycle], ['RESOLVED', false, '2026-07'], '1. an explicit override breaks a would-be ambiguity');
+eq(ov.resolution_source, ROS_CYCLE_SOURCE_OVERRIDE_, '1. and reports the override as the source');
+eq(ov.override.has_persisted_rows, true, '1. reporting that the override cycle does carry rows');
+var ovDead = rosResolveCurrentPlanningCycle_([{ planning_cycle: '2026-08', status: 'draft' }], '2019-01');
+eq(ovDead.override.has_persisted_rows, false, '1. an override to a cycle with NO rows is flagged');
+ok(/WARNING/.test(ovDead.reason), '1. loudly, so an empty workset is not mistaken for a broken probe');
+eq(rosResolveCurrentPlanningCycle_([{ planning_cycle: '2026-08', status: 'draft' }], 'August').status, 'OVERRIDE_INVALID', '1. a malformed override is refused, not parsed');
+eq(rosResolveCurrentPlanningCycle_([{ planning_cycle: '2026-08', status: 'draft' }], 'PASTE_YYYY-MM_HERE').status, 'RESOLVED', '1. a leftover placeholder is treated as "no override", not as a value');
+
+// zero write, structurally: resolution and the TEMP wrappers touch no writer, no property, no lock
+[extractFn(G66, 'rosPlanningCycleCensus_'), extractFn(G66, 'rosResolveCurrentPlanningCycle_'),
+  extractFn(G66, 'rosReadPlanningCycleCensus_'), extractFn(G66, 'rosReadResolvedPlanningCycle_')].forEach(function (fn, i) {
   var c = noStrings(fn);
   ['propSet', 'propDelete', 'withCasLock', 'LockService', 'appendRow', 'setValue', 'createRequestOrderDraft',
-    'submitAllocationDrafts', 'handleRequestOrderSendOrchestrate_', 'handleRequestOrderSendWorksetGet_'].forEach(function (k) {
-    ok(c.indexOf(k) === -1, '1. the blocked path performs no ' + k + ' (fn ' + i + ')');
+    'submitAllocationDrafts', 'handleRequestOrderSendOrchestrate_'].forEach(function (k) {
+    ok(c.indexOf(k) === -1, '1. the resolution path performs no ' + k + ' (fn ' + i + ')');
   });
 });
-// there is exactly ONE cycle authority for these wrappers
-eq((noStrings(G66).match(/TEMP_ROSEND_PLANNING_CYCLE_/g) || []).length >= 3, true, '1. the one constant is referenced by both wrappers and the remedy');
-ok(noStrings(G66).indexOf("getProperty('TEMP_ROSEND_PLANNING_CYCLE_") === -1, '1. and the wrapper never reads it from Script Properties');
-var wsWrap = extractFn(G66, 'TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE');
-var pvWrap = extractFn(G66, 'TEMP_REQUEST_ORDER_SEND_PREVIEW');
-ok(/TEMP_ROSEND_LOG_BLOCKED_\('ROSEND-WS'\); return;/.test(wsWrap), '1. the workset probe RETURNS on a placeholder — it never falls through to a read');
-ok(/TEMP_ROSEND_LOG_BLOCKED_\('ROSEND-PREVIEW'\); return;/.test(pvWrap), '1. and so does the preview wrapper');
 
 // ==========================================================================================================
 section('2. production Send still requires an explicit exact cycle');
@@ -180,11 +214,16 @@ ok(/PLANNING_CYCLE_REQUIRED/.test(orch), '2. the orchestration fails closed with
   var c = noStrings(fn);
   ok(c.indexOf('rosPlanningCycleCensus_') === -1 && c.indexOf('rosReadPlanningCycleCensus_') === -1,
     '2. the production path never consults the census to supply a cycle (fn ' + i + ')');
+  ok(c.indexOf('rosReadResolvedPlanningCycle_') === -1, '2. nor the resolver reader (fn ' + i + ')');
   ok(c.indexOf('recommended') === -1, '2. and never reads a recommendation (fn ' + i + ')');
 });
 var builder = extractFn(G66, 'rosBuildWorkset_');
 ok(/if \(!cycle\) \{ out\.error = 'PLANNING_CYCLE_REQUIRED'/.test(builder), '2. the builder itself refuses a blank cycle');
-ok(noStrings(builder).indexOf('TEMP_ROSEND_PLANNING_CYCLE_') === -1, '2. and the builder never reads the TEMP constant');
+ok(noStrings(builder).indexOf('TEMP_ROSEND') === -1, '2. and the builder never reads a TEMP diagnostic constant');
+[wsGet, orch, builder].forEach(function (fn, i) {
+  ok(noStrings(fn).indexOf('rosResolveCurrentPlanningCycle_') === -1,
+    '2. production never calls the automatic resolver — a diagnostic convenience is not a production default (fn ' + i + ')');
+});
 
 // ==========================================================================================================
 section('3. the exact Execution Plan conflict is CLASSIFIED, not generic');
@@ -566,6 +605,147 @@ ok(/gap-job-done-notice-f1-small-r1/.test(read('tests/live-blocker-execution-pla
 // nothing here claims live evidence
 ok(/no live performance and no live DB success is claimed/i.test(DOC), '19. the record claims no live evidence');
 ok(/Nothing was migrated/i.test(DOC) && /rows_migrated = 0/.test(DOC), '19. and states that nothing was migrated');
+
+// ==========================================================================================================
+section('20. ADDENDUM — diagnostic ownership, single definition, and a provable deployment');
+// ==========================================================================================================
+// §I.1 — ZERO ROSEND SYMBOLS IN THE DEMO SEED. The Demo seed owns Demo data and nothing else; a Request Order
+// diagnostic placed there would couple two unrelated subsystems and put the seed's checksum contract at risk.
+['TEMP_ROSEND', 'TEMP_REQUEST_ORDER_SEND', 'ROSEND', 'rosResolveCurrentPlanningCycle_', 'rosPlanningCycleCensus_'].forEach(function (k) {
+  ok(GDEMOSEED.indexOf(k) === -1, '20. the Demo seed contains NO ' + k);
+});
+ok(GDEMOSEED.indexOf('F1-7N-FB-4A') === -1, '20. and carries no FB-4A marker at all — it was not touched');
+['TEMP_ROSEND', 'TEMP_REQUEST_ORDER_SEND'].forEach(function (k) {
+  ok(GDOCDIAG.indexOf(k) === -1, '20. TEMP_document_diagnostics.gs contains no ' + k + ' either (it never owned them)');
+});
+
+// §I.2 — EXACTLY ONE DEFINITION of each entrypoint and each config constant. All .gs files share ONE global
+// scope, so a second definition would not be a harmless copy: whichever file loaded last would silently win.
+var ALL_GS = fs.readdirSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script'))
+  .filter(function (f) { return /\.gs$/.test(f); });
+function definitionsAcrossProject(pattern) {
+  var total = 0, files = [];
+  ALL_GS.forEach(function (f) {
+    var src = read('specs/active/apps-script/' + f);
+    var n = (src.match(pattern) || []).length;
+    if (n) { total += n; files.push(f + ':' + n); }
+  });
+  return { total: total, files: files };
+}
+[['TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE', /function\s+TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE\s*\(/g],
+ ['TEMP_REQUEST_ORDER_SEND_PREVIEW', /function\s+TEMP_REQUEST_ORDER_SEND_PREVIEW\s*\(/g],
+ ['TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS', /function\s+TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS\s*\(/g],
+ ['TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_', /var\s+TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_\s*=/g],
+ ['TEMP_ROSEND_TIER_SCOPE_', /var\s+TEMP_ROSEND_TIER_SCOPE_\s*=/g],
+ ['TEMP_ROSEND_DIAG_OWNER_FILE_', /var\s+TEMP_ROSEND_DIAG_OWNER_FILE_\s*=/g]].forEach(function (pair) {
+  var d = definitionsAcrossProject(pair[1]);
+  eq(d.total, 1, '20. exactly ONE definition of ' + pair[0] + ' across the whole project');
+  eq(d.files, ['TEMP_request_order_send_diagnostics.gs:1'], '20. and it is in the single owner file (' + pair[0] + ')');
+});
+// the retired constant name is gone entirely — so the Script Property the operator created matches nothing
+eq(definitionsAcrossProject(/var\s+TEMP_ROSEND_PLANNING_CYCLE_\s*=/g).total, 0,
+  '20. the old TEMP_ROSEND_PLANNING_CYCLE_ constant no longer exists anywhere');
+ok(noStrings(G66).indexOf('TEMP_ROSEND') === -1, '20. and 66_ (the production Send owner) defines no TEMP diagnostic symbol');
+
+// §I.3 — NO SCRIPT PROPERTY DEPENDENCY anywhere in the diagnostic owner.
+var GTDcode = noStrings(GTD);
+['PropertiesService', 'getProperty', 'setProperty', 'deleteProperty', 'getScriptProperties', 'getUserProperties'].forEach(function (k) {
+  ok(GTDcode.indexOf(k) === -1, '20. the diagnostic owner never touches ' + k);
+});
+ok(/read by NOTHING and changes NOTHING/.test(GTD), '20. and the status report SAYS a Script Property is inert, so the mistake is not made twice');
+
+// §I.4 — automatic resolution uses the PRODUCTION cycle authority, not a private copy.
+ok(/rosReadResolvedPlanningCycle_\(TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_\)/.test(GTD),
+  '20. the diagnostics delegate resolution to the production authority in 66_');
+ok(GTDcode.indexOf('request_order_allocation_drafts') === -1,
+  '20. and never re-implement the table read themselves');
+var probeFn = extractFn(GTD, 'TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE');
+var prevFn = extractFn(GTD, 'TEMP_REQUEST_ORDER_SEND_PREVIEW');
+[probeFn, prevFn].forEach(function (fn, i) {
+  ok(/tempRosendResolve_\(\)/.test(fn), '20. wrapper ' + i + ' resolves through the shared resolver');
+  ok(/if \(res\.blocked\)[\s\S]{0,80}return;/.test(fn), '20. wrapper ' + i + ' RETURNS on a blocked resolution — it never reads a workset');
+});
+
+// §I.5 — the diagnostics remain strictly READ-ONLY.
+['appendRow', 'setValue', 'setValues', 'insertSheet', 'deleteRow', 'deleteSheet', 'procurementEnsureSheet_',
+ 'LockService', 'DriveApp', 'MailApp', 'GmailApp', 'sendEmail', 'DEMO4A_', 'TEMP_demo_'].forEach(function (k) {
+  ok(GTDcode.indexOf(k) === -1, '20. the diagnostic owner contains no ' + k);
+});
+eq((GTD.match(/mode: 'preview'/g) || []).length, 1, '20. the preview wrapper is pinned to preview');
+ok(GTDcode.indexOf("mode: 'execute'") === -1, '20. and no editor wrapper can execute a Send');
+ok(/DB_WRITES=0 DRIVE_WRITES=0 PROPERTY_WRITES=0 STATUS_TRANSITIONS=0/.test(GTD),
+  '20. every blocked path prints the zero-write counters (§G)');
+var statusRep = extractFn(GTD, 'tempRosendStatusReport_');
+['resolved_planning_cycle', 'resolution_source', 'candidate_cycles', 'build_id',
+ 'deployed_action_contract_version', 'owner_file', 'owner_build_version',
+ 'DB_WRITES', 'DRIVE_WRITES', 'STATUS_TRANSITIONS'].forEach(function (k) {
+  ok(statusRep.indexOf(k) !== -1, '20. the §G status report includes ' + k);
+});
+
+// §H — a MIXED deployment is a NAMED fact, on evidence that is not self-referential.
+eval(extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_'));
+eval(extractFn(G63, 'sysModuleBuildStamps_'));
+var SYS_BUILD_VERSION_ = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+// the manifest must match what the files ACTUALLY declare, or the check is a lie on day one
+var declaredBy = {
+  'SYS_BUILD_VERSION_': SYS_BUILD_VERSION_,
+  'ROS_BUILD_VERSION_': (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'ADI_BUILD_VERSION_': (G67.match(/var ADI_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'EPC_BUILD_VERSION_': (G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'TEMP_ROSEND_DIAG_BUILD_VERSION_': (GTD.match(/var TEMP_ROSEND_DIAG_BUILD_VERSION_ = '([^']+)';/) || [])[1]
+};
+SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
+  eq(declaredBy[m.symbol], m.expected, '20. the manifest expectation for ' + m.file + ' matches what the file declares');
+});
+// a file that did not change this round is NOT forced to churn
+var unchanged = SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return m.expected !== SYS_BUILD_VERSION_; });
+ok(unchanged.length >= 1, '20. at least one owner legitimately declares an OLDER build than this round');
+ok(unchanged.every(function (m) { return declaredBy[m.symbol] === m.expected; }), '20. and it is still treated as current');
+// execute the real stamp reader against a UNIFORM and a MIXED project
+global.sysGlobalValue_ = function (n) { return declaredBy[n]; };
+eval(extractFn(G63, 'sysModuleBuildStamps_'));
+var uniform = sysModuleBuildStamps_();
+eq([uniform.mixed_deployment, uniform.absent_modules.length, uniform.stale_modules.length], [false, 0, 0], '20. a fully synced project is UNIFORM');
+ok(/UNIFORM/.test(uniform.verdict), '20. and says so');
+// the live scenario: 66_ left a round behind while everything else is current
+declaredBy['ROS_BUILD_VERSION_'] = 'F1-7N-FB-3C';
+var mixed = sysModuleBuildStamps_();
+eq(mixed.mixed_deployment, true, '20. a 66_ left a round behind is detected as a MIXED deployment');
+ok(/66_api_v1_request_order_send\.gs declares F1-7N-FB-3C/.test(mixed.stale_modules.join('|')), '20. naming the exact file and what it declares');
+ok(/MIXED_OR_PARTIAL_SYNC/.test(mixed.verdict), '20. with a verdict the operator can act on');
+// a file absent from the deployment entirely
+declaredBy['ROS_BUILD_VERSION_'] = 'F1-7N-FB-4A';
+delete declaredBy['TEMP_ROSEND_DIAG_BUILD_VERSION_'];
+var absent = sysModuleBuildStamps_();
+eq(absent.mixed_deployment, true, '20. a file that was never copied is detected too');
+eq(absent.absent_modules, ['TEMP_request_order_send_diagnostics.gs'], '20. and named');
+
+// the CALLER-driven probe is what breaks the self-reference
+var probeSrc = extractFn(G63, 'sysProbeRequested_');
+ok(/probe_actions/.test(probeSrc) && /probe_symbols/.test(probeSrc), '20. health accepts the caller\u2019s explicit action + symbol list');
+ok(/known_to_this_build/.test(probeSrc), '20. and reports an action the deployment has never heard of as such');
+ok(/NOT self-referential/.test(probeSrc), '20. stating plainly why it is not self-referential');
+ok(/module_build_stamps: moduleStamps/.test(G63) && /caller_probe: callerProbe/.test(G63), '20. both are in the health payload');
+ok(/if \(moduleStamps\.mixed_deployment\) ok = false;/.test(G63), '20. a partial sync makes the deployment NOT ok');
+// the client pins the exact list and refuses on any of the three failure shapes
+ok(/KM_REQUIRED_DEPLOYED_ACTIONS_/.test(DBAPI) && /KM_REQUIRED_DEPLOYED_SYMBOLS_/.test(DBAPI), '20. the frontend pins the exact actions AND symbols it needs');
+['system.requestOrderSendDiagnosticStatus', 'system.executionPlanConflictDiagnostic', 'shipment.eta.update'].forEach(function (a) {
+  ok(new RegExp("'" + a.replace(/\./g, '\\.') + "'").test(DBAPI), '20. including ' + a);
+});
+['sadK2ReconcileDecision_', 'shipEtaDateOnly_', 'shipWsDateOnly_', 'rosResolveCurrentPlanningCycle_', 'TEMP_ROSEND_DIAG_OWNER_FILE_'].forEach(function (sy) {
+  ok(DBAPI.indexOf("'" + sy + "'") !== -1, '20. and the symbol ' + sy + ', which proves its owner file was copied');
+});
+var chk = DBAPI.slice(DBAPI.indexOf('checkDeploymentContract = async function'), DBAPI.indexOf('getExpectedContract'));
+ok(/probe_actions: KM_REQUIRED_DEPLOYED_ACTIONS_/.test(chk), '20. the client SENDS the probe list rather than trusting missing_actions');
+ok(/DEPLOYMENT_PARTIAL_SYNC/.test(chk), '20. and has a distinct verdict for a partial sync');
+ok(/did not answer the explicit action\/symbol probe/.test(chk), '20. a deployment too old to answer the probe is itself conclusive');
+ok(chk.indexOf('!identity.caller_probe') < chk.indexOf('mixed_deployment === true'), '20. the too-old check runs before the uniformity check');
+// the new action is routed and required
+ok(/action === 'system\.requestOrderSendDiagnosticStatus'[\s\S]{0,140}handleRequestOrderSendDiagnosticStatus_/.test(ROUTER), '20. the §G status action is routed');
+ok(/system\.requestOrderSendDiagnosticStatus/.test(G63), '20. and is in the required-action list');
+var acv2 = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+ok(acv2 >= 7, '20. the action contract advanced again because an action was added (v' + acv2 + ')');
+eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]), acv2, '20. and the frontend pins exactly it');
 
 console.log('\n----------------------------------------');
 if (fail === 0) console.log('ALL PASS  (' + pass + ' assertions)');

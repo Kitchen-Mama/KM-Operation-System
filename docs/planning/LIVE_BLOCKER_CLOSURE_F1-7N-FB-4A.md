@@ -9,6 +9,11 @@ was made in producing this record.
 
 ---
 
+> **Superseded in part by the ADDENDUM (§V below).** The FB-4A §B design required an operator to hand-edit a
+> source constant before the read-only probes would run. The addendum removes that trap: the planning cycle now
+> resolves automatically from the persisted authority, and the TEMP entrypoints moved to a single dedicated owner
+> file. Where this document and §V disagree, **§V is current**.
+
 ## I. §C/§D — the Execution Plan conflict
 
 ### I.1 What the operator saw
@@ -268,3 +273,110 @@ recorded in `GLOBAL_3D_SHIPMENT_MAP_SPEC_V1.md` §32.
   to another cycle or another route. The diagnostic reports that case by name
   (`existing_resolution_basis`, `conflicting_business_identity_fields`); narrowing the hydration filter is a
   behaviour change to a working read path and was not made blind, without live evidence that it is the live cause.
+
+---
+
+## V. ADDENDUM (2026-08-26) — Request Order diagnostic ownership and mixed deployment
+
+### V.1 Audit result: the repository was already clean; the *deployment* is what is mixed
+
+Every ROSEND symbol was defined **exactly once**, all in `66_api_v1_request_order_send.gs`:
+
+| symbol | definitions | file |
+| --- | --- | --- |
+| `TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE` | 1 | `66_api_v1_request_order_send.gs` |
+| `TEMP_REQUEST_ORDER_SEND_PREVIEW` | 1 | `66_api_v1_request_order_send.gs` |
+| `TEMP_ROSEND_PLANNING_CYCLE_` | 1 | `66_api_v1_request_order_send.gs` |
+| `TEMP_ROSEND_TIER_SCOPE_` | 1 | `66_api_v1_request_order_send.gs` |
+
+`TEMP_demo_shipping_shipment_map_seed_v2.gs`: **0 occurrences.** `TEMP_document_diagnostics.gs`: **0 occurrences.**
+
+So live evidence item 3 is **expected and correct** — neither of those files ever owned these symbols, and the
+operator's expectation that the constant lived in `TEMP_document_diagnostics.gs` was mistaken (flagged in the
+FB-4A report). **§E is a no-op: there was no misplaced Request Order diagnostic code in the Demo seed to remove,
+so the Demo seed was not touched and its checksum contract is untouched.**
+
+What that audit *does* establish is item 4. The wrappers were runnable and printed the **terse** FB-3B/FB-3C
+message rather than the FB-4A census — which is only possible if the deployed `66_` predates the FB-4A commits.
+Since nothing has been pushed or synced, that is expected; but it is exactly the class of half-finished,
+file-by-file sync that nothing in the system could previously *name*.
+
+### V.2 §C/§D — one canonical owner, moved out of the production file
+
+`TEMP_request_order_send_diagnostics.gs` (**new**) is now the single owner of every Request Order Send diagnostic
+entrypoint and its configuration. `66_` keeps only what production owns and defines **no** TEMP symbol.
+
+All `.gs` files share **one global scope**, so a duplicated entrypoint or constant is not a harmless copy —
+whichever file loads last silently wins, and an operator editing the other copy changes nothing while appearing
+to change something. A regression test enumerates every `.gs` file in the project and requires **exactly one**
+definition of each entrypoint and each constant, in that one file.
+
+The old constant name `TEMP_ROSEND_PLANNING_CYCLE_` **no longer exists anywhere**. It was replaced by
+`TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_`, whose name states what it is. A consequence worth stating plainly: the
+Script Property the operator created is **inert** — it was read by nothing before and matches no constant now.
+Deleting it is optional and changes no behaviour.
+
+### V.3 §F — the manual source-edit trap is removed
+
+Requiring a source edit before a **read-only** probe will run is a trap, and the live attempt proved it. The cycle
+now resolves **automatically and read-only** from the **same persisted authority the website uses**:
+`request-order.js _roSendPlanningCycle_` resolves from the persisted allocation drafts the page hydrated, and
+`rosResolveCurrentPlanningCycle_` mirrors exactly that — the distinct `planning_cycle` values carried by **ACTIVE**
+rows of the same table the Send consumes.
+
+| condition | verdict |
+| --- | --- |
+| exactly one cycle with active drafts | `RESOLVED`, source `PERSISTED_ACTIVE_ALLOCATION_DRAFTS` |
+| more than one | **`AMBIGUOUS` — every candidate reported, BLOCKED, zero writes** |
+| none | `NO_ACTIVE_DRAFTS` — blocked; no cycle is invented |
+| override set | `RESOLVED`, source `EXPLICIT_OVERRIDE_CONSTANT` |
+| override malformed | `OVERRIDE_INVALID` — refused, never parsed |
+
+**The page's second fallback is deliberately not mirrored.** `_roSendPlanningCycle_` falls back to the Asia/Taipei
+calendar cycle when no draft is hydrated; that exists so a Send can be *attempted* before hydration, and it is a
+clock, not a persisted authority. Mirroring it would let a diagnostic over persisted work report a cycle with zero
+rows — worse than reporting nothing. A test asserts the resolver consults **no clock at all**.
+
+**Ambiguity never picks.** Choosing the busiest or newest candidate would silently target a run the operator did
+not mean, so every candidate is listed and the caller is blocked. The optional override then breaks the tie.
+
+**No Script Property is an authority.** `PropertiesService` appears nowhere in the diagnostic owner, and the §G
+report says so in words, so the mistake cannot be made silently twice.
+
+### V.4 §G — the read-only status report
+
+`TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS` (also routed as `system.requestOrderSendDiagnosticStatus`, so the
+website can prove it without opening the editor) reports: the resolved planning cycle, the resolution source, all
+candidate cycles, `build_id` / action-contract version / required-action-list version, the exact owner file and
+its build, every module's build stamp, whether the deployment is mixed, and
+`DB_WRITES=0 DRIVE_WRITES=0 PROPERTY_WRITES=0 STATUS_TRANSITIONS=0 LOCKS=0`.
+
+### V.5 §H — proving a deployment without asking it to grade its own homework
+
+`missing_actions=[]` is self-referential (FB-3A already flagged it), but it has a second, worse blind spot: **it
+cannot see a mixed deployment.** If `63_` is current and `66_` is a round behind, every required action still
+resolves — the symbols exist — and health reports a clean bill while the operator runs last round's code. Two
+additions fix that, and neither asks the deployment to grade itself:
+
+1. **Module build stamps.** Each owner file compiles in a constant recording the round *that file* last changed;
+   `SYS_MODULE_BUILD_STAMPS_` records what each is expected to declare. A file that was not re-copied declares an
+   older build, `mixed_deployment` becomes true, and the file is **named**. The evidence comes from the *other*
+   files, so a stale `63_` cannot conceal a stale `66_`. The stamp is deliberately **not** required to equal
+   `SYS_BUILD_VERSION_` — a file that did not change this round should not have to be edited to prove it is
+   current (`67_` legitimately still declares `F1-7N-FB-3C`). Files with no stamp (`16_`, `31_`, `57_`) are proven
+   instead by the symbol probe below.
+2. **Caller-driven probes.** The frontend sends the **exact** action names and global symbols it needs
+   (`probe_actions` / `probe_symbols`); the answer is computed against **the caller's list**, so a deployment that
+   predates an action reports it **absent** rather than "nothing missing". `checkDeploymentContract` now fails on
+   three distinct shapes: too old to answer the probe at all, any probed item absent, or `DEPLOYMENT_PARTIAL_SYNC`.
+
+**Ordering, stated rather than assumed:** the manifest lives in `63_`, so a stale `63_` carries a stale manifest.
+That case is caught first and by different evidence — a stale `63_` reports an older
+`deployed_action_contract_version` than the frontend pins, which the client checks before it looks at uniformity.
+
+### V.6 Not done
+
+- **The Demo seed was not touched** (§E was a no-op — there was nothing misplaced in it).
+- **No write, no migration, no row change, no diagnostic deleted.** The old wrappers were *moved*, not removed.
+- **No live evidence.** Nothing was executed live, so which files the deployed project actually contains is still
+  unknown — `TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS` and `system.health` are what will answer it.

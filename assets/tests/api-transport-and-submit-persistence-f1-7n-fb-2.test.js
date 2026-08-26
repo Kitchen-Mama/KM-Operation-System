@@ -235,6 +235,8 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   read('specs/active/apps-script/65_api_v1_flow_diagnostics.gs'),
   // F1-7N-FB-4A §C — the read-only Execution Plan conflict diagnostic's owner.
   read('specs/active/apps-script/68_api_v1_execution_plan_conflict_diagnostic.gs'),
+  // F1-7N-FB-4A addendum §C/§D — the SINGLE owner of the Request Order Send TEMP diagnostics.
+  read('specs/active/apps-script/TEMP_request_order_send_diagnostics.gs'),
   read('specs/active/apps-script/22_shipment_dispatch_handlers.gs'),
   read('specs/active/apps-script/34_shipment_final_output_handlers.gs'),
   read('specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'),

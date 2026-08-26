@@ -693,39 +693,88 @@ function rosPlanningCycleCensus_(draftRows) {
   };
 }
 
-// FB-4A §B — the exact remedy text the blocked wrappers print. It names the ONE authority (the source constant
-// in THIS file) and rules out the two wrong places an operator naturally reaches for. There is deliberately no
-// second constant, no Script Property read and no fallback: adding one would create a second configuration
-// authority, and the whole point of the fail-closed rule is that exactly one place decides the cycle.
-var ROS_TEMP_CYCLE_OWNER_FILE_ = '66_api_v1_request_order_send.gs';
-var ROS_TEMP_CYCLE_CONSTANT_ = 'TEMP_ROSEND_PLANNING_CYCLE_';
-function rosTempCycleRemedyLines_(census) {
-  var lines = [
-    'HOW TO UNBLOCK — edit the SOURCE CONSTANT, nothing else:',
-    '  1. Open ' + ROS_TEMP_CYCLE_OWNER_FILE_ + ' in the Apps Script editor.',
-    '  2. Find   var ' + ROS_TEMP_CYCLE_CONSTANT_ + ' = \'PASTE_YYYY-MM_HERE\';',
-    '  3. Replace the placeholder with the exact cycle, e.g.   var ' + ROS_TEMP_CYCLE_CONSTANT_ + ' = \'' +
-      ((census && census.recommended) || 'YYYY-MM') + '\';',
-    '  4. Save, then Run this function again.',
-    'DO NOT add a Script Property. ' + ROS_TEMP_CYCLE_CONSTANT_ + ' is a SOURCE constant — this wrapper reads the',
-    '  source value only, so a Script Property of that name is read by nothing and changes nothing.',
-    'DO NOT edit another file and do not add a second constant — ' + ROS_TEMP_CYCLE_OWNER_FILE_ + ' is the only authority.'
-  ];
-  if (census && census.cycles && census.cycles.length) {
-    lines.push('AVAILABLE PLANNING CYCLES (read-only census of ' + ROS_DRAFTS_TABLE_ + '):');
-    census.cycles.slice(0, 24).forEach(function (c) {
-      lines.push('  ' + c.planning_cycle + '  active=' + c.active_drafts + '  terminal=' + c.terminal_drafts
-        + '  persisted=' + c.persisted_drafts
-        + '  latest_calculated_at=' + (c.latest_calculated_at || '(none)')
-        + '  latest_source_data_as_of=' + (c.latest_source_data_as_of || '(none)'));
-    });
-    lines.push('RECOMMENDED EXACT VALUE: ' + (census.recommended || '(none available)') + '  — ' + census.recommendation_basis);
-  } else {
-    lines.push('AVAILABLE PLANNING CYCLES: none — ' + ROS_DRAFTS_TABLE_ + ' holds no rows this wrapper could census.');
+// FB-4A ADDENDUM §F — AUTOMATIC PLANNING-CYCLE RESOLUTION (PURE). THE MANUAL SOURCE-EDIT TRAP IS REMOVED.
+//
+// Requiring an operator to hand-edit a source constant before a READ-ONLY probe will run is a trap, and the live
+// attempt proved it: the constant was never edited, a Script Property of the same name was created instead, and
+// the property is read by nothing — so the probe stayed blocked with no way to tell why. A diagnostic that
+// cannot run without a code change is a diagnostic that does not run.
+//
+// THE AUTHORITY IS THE SAME PERSISTED ONE THE WEBSITE USES. request-order.js `_roSendPlanningCycle_` resolves the
+// cycle from the PERSISTED allocation drafts the page hydrated — "the cycle the drafts are actually keyed by,
+// so the Send targets the same run the page is displaying rather than a computed guess". This mirrors exactly
+// that: the distinct planning_cycle values carried by ACTIVE persisted rows of the SAME table the Send consumes.
+//
+// THE PAGE'S SECOND FALLBACK IS DELIBERATELY NOT MIRRORED. `_roSendPlanningCycle_` falls back to the Asia/Taipei
+// calendar cycle when no draft is hydrated yet. That fallback exists so a Send can be ATTEMPTED before hydration;
+// it is a clock, not a persisted authority. Mirroring it here would let a diagnostic over PERSISTED work report a
+// cycle with zero rows, which is worse than reporting nothing. So a cycle with no active drafts BLOCKS.
+//
+// AMBIGUITY BLOCKS AND REPORTS, IT NEVER PICKS. More than one cycle carrying active drafts is a real business
+// condition (an unfinished previous run), and choosing the busiest or the newest would silently target a run the
+// operator did not mean. Every candidate is reported and the caller is blocked, with zero writes.
+//
+// There is NO Script Property read anywhere in this resolution, and the optional override is a single named
+// constant owned by TEMP_request_order_send_diagnostics.gs — passed IN as an argument, never read from here,
+// so this function has exactly one input and no hidden configuration authority.
+var ROS_CYCLE_SOURCE_OVERRIDE_ = 'EXPLICIT_OVERRIDE_CONSTANT';
+var ROS_CYCLE_SOURCE_PERSISTED_ = 'PERSISTED_ACTIVE_ALLOCATION_DRAFTS';
+var ROS_CYCLE_SOURCE_NONE_ = 'NONE';
+
+function rosResolveCurrentPlanningCycle_(draftRows, overrideValue) {
+  var census = rosPlanningCycleCensus_(draftRows);
+  var candidates = census.cycles.filter(function (c) { return c.active_drafts > 0 && /^\d{4}-\d{2}$/.test(c.planning_cycle); });
+  var out = {
+    resolved_planning_cycle: '',
+    resolution_source: ROS_CYCLE_SOURCE_NONE_,
+    status: '',
+    blocked: true,
+    reason: '',
+    candidate_count: candidates.length,
+    candidates: candidates,
+    all_cycles: census.cycles,
+    override: { supplied: false, value: '', valid: false, has_persisted_rows: false }
+  };
+
+  var ov = rosStr_(overrideValue);
+  if (ov && ov.indexOf('PASTE_') !== 0) {
+    out.override.supplied = true;
+    out.override.value = ov;
+    out.override.valid = /^\d{4}-\d{2}$/.test(ov);
+    if (!out.override.valid) {
+      out.status = 'OVERRIDE_INVALID';
+      out.reason = 'the explicit override constant is not a YYYY-MM planning cycle; nothing was read from the workset and nothing was written';
+      return out;
+    }
+    out.override.has_persisted_rows = census.cycles.some(function (c) { return c.planning_cycle === ov && c.persisted_drafts > 0; });
+    out.resolved_planning_cycle = ov;
+    out.resolution_source = ROS_CYCLE_SOURCE_OVERRIDE_;
+    out.status = 'RESOLVED';
+    out.blocked = false;
+    // An override to a cycle with no persisted rows is HONOURED (that is what an override is for) but reported
+    // loudly, because it is otherwise indistinguishable from a working probe that finds nothing.
+    out.reason = out.override.has_persisted_rows
+      ? 'resolved from the explicit override constant, which does carry persisted rows'
+      : 'resolved from the explicit override constant — WARNING: this cycle carries NO persisted allocation drafts, so the probe will legitimately report an empty workset';
+    return out;
   }
-  lines.push('Preview and Execute remain FAIL-CLOSED: both require an explicit exact planning_cycle and neither');
-  lines.push('  falls back to this census, to a recommendation, or to "the latest cycle".');
-  return lines;
+
+  if (candidates.length === 1) {
+    out.resolved_planning_cycle = candidates[0].planning_cycle;
+    out.resolution_source = ROS_CYCLE_SOURCE_PERSISTED_;
+    out.status = 'RESOLVED';
+    out.blocked = false;
+    out.reason = 'exactly one planning cycle carries ACTIVE persisted allocation drafts — the same persisted authority the website resolves from';
+    return out;
+  }
+  if (candidates.length === 0) {
+    out.status = 'NO_ACTIVE_DRAFTS';
+    out.reason = 'no planning cycle carries an ACTIVE persisted allocation draft, so there is no current run to probe. Run AI Plan / Search on the website first, or set the explicit override constant for a controlled test. Nothing was written.';
+    return out;
+  }
+  out.status = 'AMBIGUOUS';
+  out.reason = candidates.length + ' planning cycles carry ACTIVE persisted allocation drafts, so the current run cannot be resolved without a decision. Every candidate is listed above. Set the explicit override constant to the ONE you mean. Nothing was read from the workset and nothing was written.';
+  return out;
 }
 
 // __ROS_PURE_END__
@@ -785,6 +834,21 @@ function rosReadPlanningCycleCensus_(io) {
   } catch (e) {
     return { cycles: [], active_cycles: [], recommended: '',
       recommendation_basis: 'UNAVAILABLE — ' + ROS_DRAFTS_TABLE_ + ' could not be read: ' + String(e && e.message || e) };
+  }
+}
+
+// FB-4A ADDENDUM §F/§G — READ-ONLY resolution reader. One table, no property read, no property write, no lock,
+// no business read and no write of any kind. A failure to read is reported, never swallowed into "no cycles".
+function rosReadResolvedPlanningCycle_(overrideValue, io) {
+  io = io || rosDefaultIo_();
+  try {
+    var ss = io.openDb();
+    return rosResolveCurrentPlanningCycle_(io.readTable(ss, ROS_DRAFTS_TABLE_), overrideValue);
+  } catch (e) {
+    return { resolved_planning_cycle: '', resolution_source: ROS_CYCLE_SOURCE_NONE_, status: 'WORKSET_UNREADABLE',
+      blocked: true, reason: ROS_DRAFTS_TABLE_ + ' could not be read: ' + String(e && e.message || e),
+      candidate_count: 0, candidates: [], all_cycles: [],
+      override: { supplied: false, value: '', valid: false, has_persisted_rows: false } };
   }
 }
 
@@ -1382,64 +1446,16 @@ function handleRequestOrderSendStatus_(body, io) {
 }
 
 // ============================================================================================================
-// EDITOR-RUNNABLE READ-ONLY WRAPPERS. A router action is not a runnable instruction; select one in the Apps
-// Script editor and press Run. Both are read-only: the workset probe reads, and the orchestration probe is
-// pinned to a PREVIEW so it can never execute. There is deliberately no editor wrapper that performs a live
-// Send — a business write belongs to the page, under a confirmation the operator has read.
+// FB-4A ADDENDUM §C/§D — THE EDITOR-RUNNABLE TEMP WRAPPERS NO LONGER LIVE HERE.
+//
+// TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE, TEMP_REQUEST_ORDER_SEND_PREVIEW and the tier-scope / cycle-override
+// constants are owned by ONE file: TEMP_request_order_send_diagnostics.gs. Every .gs file shares a single global
+// scope, so a duplicated entrypoint or constant in a second file would not be a harmless copy — whichever file
+// loaded last would silently win, which is precisely the class of confusion this addendum exists to end.
+//
+// 66_ keeps only what the PRODUCTION Send owns: the workset builder, the orchestration, the journal, and the
+// planning-cycle AUTHORITY (rosPlanningCycleCensus_ / rosResolveCurrentPlanningCycle_) that both the diagnostics
+// and this file's own fail-closed validation are derived from. Preview and Execute still require an explicit
+// exact planning_cycle and neither consults the resolver — a diagnostic convenience must never become a
+// production default.
 // ============================================================================================================
-
-var TEMP_ROSEND_TIER_SCOPE_ = 'ALL';                 // ALL | T1 | T2 | T3  (the only business scope control)
-// THE SINGLE CYCLE AUTHORITY FOR THESE WRAPPERS. Edit the value HERE, in this file, in the Apps Script editor.
-// It is NOT read from Script Properties and there is no second constant — a Script Property of the same name is
-// read by nothing. While it holds the placeholder both wrappers refuse to run and print a read-only census of the
-// planning cycles that actually carry persisted rows, plus the exact value to paste (see rosTempCycleRemedyLines_).
-var TEMP_ROSEND_PLANNING_CYCLE_ = 'PASTE_YYYY-MM_HERE';
-
-function TEMP_ROSEND_LOG_BLOCKED_(tag) {
-  Logger.log('[' + tag + '] BLOCKED — ' + ROS_TEMP_CYCLE_CONSTANT_ + ' is still the placeholder, so nothing was read'
-    + ' from the workset and NOTHING was written (no DB row, no Script Property, no lock).');
-  rosTempCycleRemedyLines_(rosReadPlanningCycleCensus_()).forEach(function (l) { Logger.log('[' + tag + '] ' + l); });
-}
-
-function TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE() {
-  var cycle = rosStr_(TEMP_ROSEND_PLANNING_CYCLE_);
-  if (!cycle || cycle.indexOf('PASTE_') === 0) { TEMP_ROSEND_LOG_BLOCKED_('ROSEND-WS'); return; }
-  var r = handleRequestOrderSendWorksetGet_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, include: ['counts', 'groups'] } });
-  if (!r.success) { Logger.log('[ROSEND-WS] FAILED ' + JSON.stringify(r.errors)); return; }
-  var d = r.data, c = d.counts;
-  Logger.log('[ROSEND-WS] cycle=' + d.planning_cycle + ' scope=' + d.tier_scope + ' tiers=[' + d.tiers_in_scope.join(',') + ']'
-    + ' | persisted_in_cycle=' + c.persisted_drafts_in_cycle + ' active=' + c.active_persisted_drafts
-    + ' drafts_with_positive_tier=' + c.drafts_with_positive_selected_tier
-    + ' selected_tier_allocations=' + c.selected_tier_allocations
-    + ' POSITIVE_tier_allocations=' + c.positive_selected_tier_allocations
-    + ' | skus=' + c.distinct_skus + ' series=' + c.distinct_series
-    + ' | expected_headers=' + c.expected_request_order_headers + ' expected_lines=' + c.expected_request_order_lines
-    + ' units=' + c.total_units
-    + ' | checksum=' + d.workset_checksum + ' blocking_conflicts=' + (d.blocking_conflicts || []).length
-    + ' | scope_controls=[' + d.business_send_scope_controls.join(',') + '] display_only=[' + d.display_only_controls.join(',') + ']'
-    + ' | phases=' + JSON.stringify(r.meta.phases) + ' bytes=' + r.meta.response_bytes + ' writes=' + r.meta.writes_performed);
-  Logger.log('[ROSEND-WS][excluded] ' + JSON.stringify(d.excluded));
-  (d.blocking_conflicts || []).slice(0, 20).forEach(function (x) {
-    Logger.log('[ROSEND-WS][CONFLICT] ' + x.code + ' scope=' + x.natural_key + ' ids=' + (x.draft_ids || []).join(',')
-      + ' canonical=' + x.canonical_count + ' non_canonical=' + x.non_canonical_count);
-  });
-  (d.groups || []).slice(0, 25).forEach(function (g) {
-    Logger.log('[ROSEND-WS][series] ' + (g.series || '(no series)') + ' lines=' + g.line_count + ' skus=' + g.distinct_skus + ' units=' + g.total_units);
-  });
-}
-
-function TEMP_REQUEST_ORDER_SEND_PREVIEW() {
-  var cycle = rosStr_(TEMP_ROSEND_PLANNING_CYCLE_);
-  if (!cycle || cycle.indexOf('PASTE_') === 0) { TEMP_ROSEND_LOG_BLOCKED_('ROSEND-PREVIEW'); return; }
-  var r = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, mode: 'preview' } });
-  if (!r.success) { Logger.log('[ROSEND-PREVIEW] BLOCKED ' + JSON.stringify(r.errors) + ' | 0 business writes.'); return; }
-  var d = r.data;
-  Logger.log('[ROSEND-PREVIEW] ' + d.status + ' key=' + d.orchestration_key + ' checksum=' + d.workset_checksum
-    + ' | ' + JSON.stringify(d.counts) + ' | series_groups=' + d.series_groups.length
-    + ' | journal_persisted=' + d.journal_persisted + ' journal_bytes=' + d.journal_bytes
-    + ' | business writes_performed=' + d.writes_performed + ' (PREVIEW — this wrapper cannot execute)');
-  Logger.log('[ROSEND-PREVIEW][excluded] ' + JSON.stringify(d.excluded));
-  Logger.log('[ROSEND-PREVIEW][slice] client_write_timeout_ms=' + ROS_CLIENT_WRITE_TIMEOUT_MS_
-    + ' max_single_write_ms=' + ROS_MAX_SINGLE_WRITE_MS_ + ' reserve_ms=' + ROS_RESERVE_MS_
-    + ' slice_budget_ms=' + ROS_SLICE_BUDGET_MS_ + ' lease_ms=' + ROS_LEASE_MS_);
-}

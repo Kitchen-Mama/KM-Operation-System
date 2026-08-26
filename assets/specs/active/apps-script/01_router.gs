@@ -93,6 +93,12 @@ function doPost(e) {
     if (action === 'system.executionPlanConflictDiagnostic') {
       return jsonResponse_(handleExecutionPlanConflictDiagnostic_(body));
     }
+    // F1-7N-FB-4A addendum §G — READ-ONLY Request Order Send diagnostic ownership + planning-cycle resolution
+    // (owner = TEMP_request_order_send_diagnostics.gs). Routed so the WEBSITE can prove which file owns the TEMP
+    // entrypoints and which cycle resolves, without anyone opening the Apps Script editor. Writes nothing.
+    if (action === 'system.requestOrderSendDiagnosticStatus') {
+      return jsonResponse_(handleRequestOrderSendDiagnosticStatus_(body));
+    }
     // F1-7N-FB-3 §C — slim scope registry (see the doGet registration above for why it exists).
     if (action === 'inventoryScope.registry.get') {
       return handleInventoryScopeRegistryGet_(body);

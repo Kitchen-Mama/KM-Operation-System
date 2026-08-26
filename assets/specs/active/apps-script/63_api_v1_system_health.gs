@@ -41,10 +41,10 @@ var SYS_BUILD_VERSION_ = 'F1-7N-FB-4A';
 // Incremented when the set of router actions changes. The frontend compares this against its own pinned
 // minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
 // through a confusing per-action failure.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 6;
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 7;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 6;
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 7;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -83,6 +83,7 @@ var SYS_REQUIRED_ACTIONS_ = [
   // depends on, and a partial sync of 16_ is indistinguishable from a transport fault without probing them.
   { action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
   { action: 'system.executionPlanConflictDiagnostic', handler: 'handleExecutionPlanConflictDiagnostic_', used_by: 'F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic' },
+  { action: 'system.requestOrderSendDiagnosticStatus', handler: 'handleRequestOrderSendDiagnosticStatus_', used_by: 'F1-7N-FB-4A addendum §G read-only Request Order Send diagnostic ownership + cycle resolution' },
   { action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
   { action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
   { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
@@ -112,6 +113,108 @@ function sysHandlerPresent_(name) {
   try { return typeof this[name] === 'function'; } catch (e) { /* fall through */ }
   try { return eval('typeof ' + name) === 'function'; } catch (e2) { return false; }
 }
+// -------------------------------------------------------------------------------------------------------------
+// F1-7N-FB-4A ADDENDUM §H — PER-MODULE BUILD STAMPS + CALLER-DRIVEN PROBES.
+//
+// THE PROBLEM WITH missing_actions=[] IS NOT ONLY THAT IT IS SELF-REFERENTIAL — IT IS THAT IT CANNOT SEE A
+// MIXED DEPLOYMENT. If 63_ is current but 66_ is a round behind (files are copied into the Apps Script editor
+// ONE AT A TIME, so a half-finished sync is the normal failure), every required action still resolves — the
+// symbols exist — and health reports a clean bill while the operator runs last round's code.
+//
+// Two additions fix that, and neither asks the deployment to grade its own homework:
+//
+//   1. MODULE BUILD STAMPS. Each owner file compiles in its OWN build constant recording the round in which
+//      THAT FILE last changed, and the manifest below records what each is EXPECTED to declare. This reads them
+//      through `typeof` (never invoking anything) and compares. A file that was not re-copied reports an OLDER
+//      build than its manifest entry, and `mixed_deployment` becomes true. The evidence comes from the OTHER
+//      files, so a stale 63_ cannot conceal a stale 66_.
+//
+//      The stamp is deliberately NOT required to equal SYS_BUILD_VERSION_: a file that did not change this round
+//      should not have to be edited to prove it is current. 67_ legitimately still declares F1-7N-FB-3C.
+//      A file with no stamp at all (16_, 31_, 57_) is proven instead by the caller's SYMBOL probe below, which
+//      names a global that only the current version of that file defines.
+//
+//      ORDERING NOTE, STATED RATHER THAN ASSUMED: the manifest itself lives in 63_, so a stale 63_ carries a
+//      stale manifest. That case is caught FIRST and by different evidence — a stale 63_ reports an older
+//      deployed_action_contract_version than the frontend pins, which is the check the client runs before it
+//      looks at uniformity at all.
+//
+//   2. CALLER-DRIVEN PROBES. The caller sends the exact action names and global symbols IT needs
+//      (probe_actions / probe_symbols). The answer is computed against the CALLER's list, not against the
+//      deployment's own SYS_REQUIRED_ACTIONS_, so a deployment that predates an action reports it ABSENT
+//      instead of reporting "nothing missing". This is the half that breaks the self-reference.
+//
+// Both are pure reads: `typeof` on a global, and a string lookup. Nothing is invoked and nothing is written.
+// -------------------------------------------------------------------------------------------------------------
+// file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
+var SYS_MODULE_BUILD_STAMPS_ = [
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'deployment identity + health' },
+  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send orchestration + planning-cycle authority' },
+  { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
+  { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Execution Plan identity conflict diagnostic' },
+  { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' }
+];
+
+function sysGlobalValue_(name) {
+  try { return eval('typeof ' + name + " !== 'undefined' ? " + name + ' : undefined'); }
+  catch (e) { return undefined; }
+}
+
+function sysModuleBuildStamps_() {
+  var rows = SYS_MODULE_BUILD_STAMPS_.map(function (m) {
+    var v = sysGlobalValue_(m.symbol);
+    var present = (v !== undefined && v !== null && String(v) !== '');
+    return {
+      file: m.file, symbol: m.symbol, owns: m.owns,
+      expected_build: m.expected,
+      present: present,
+      declared_build: present ? String(v) : null,
+      matches_expected: present ? (String(v) === m.expected) : false
+    };
+  });
+  var absent = rows.filter(function (r) { return !r.present; });
+  var stale = rows.filter(function (r) { return r.present && !r.matches_expected; });
+  return {
+    deployment_build: SYS_BUILD_VERSION_,
+    modules: rows,
+    absent_modules: absent.map(function (r) { return r.file; }),
+    stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
+    mixed_deployment: (absent.length + stale.length) > 0,
+    verdict: (absent.length + stale.length) === 0
+      ? 'UNIFORM — every probed owner file declares the build its manifest entry expects'
+      : 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this deployment expects. Re-copy the files listed and publish a NEW deployment version.'
+  };
+}
+
+// Answer the CALLER's list. `probe_actions` are checked against the router's action->handler map AND the actual
+// presence of the handler symbol; `probe_symbols` are checked by `typeof` alone. Absent entries are reported as
+// absent — that is the whole point, and it is what an empty self-referential missing_actions could never say.
+function sysProbeRequested_(body) {
+  function arr(v) { if (!v) return []; if (!Array.isArray(v)) v = [v]; return v.map(sysStr_).filter(function (x) { return !!x; }); }
+  var wantActions = arr(body && (body.probe_actions || body.probeActions));
+  var wantSymbols = arr(body && (body.probe_symbols || body.probeSymbols));
+  if (!wantActions.length && !wantSymbols.length) return null;
+  var byAction = {};
+  for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) byAction[SYS_REQUIRED_ACTIONS_[i].action] = SYS_REQUIRED_ACTIONS_[i].handler;
+  var actions = wantActions.map(function (a) {
+    var handler = byAction[a] || null;
+    // A caller-named action the deployment does not even LIST is reported unknown-to-this-build, which is
+    // exactly the "older than the frontend" signal. Where the handler name is known, its symbol is probed.
+    var present = handler ? (sysGlobalValue_(handler) !== undefined) : false;
+    return { action: a, known_to_this_build: !!handler, handler: handler, handler_present: present, available: !!handler && present };
+  });
+  var symbols = wantSymbols.map(function (n) { return { symbol: n, present: sysGlobalValue_(n) !== undefined }; });
+  var missingActions = actions.filter(function (a) { return !a.available; }).map(function (a) { return a.action; });
+  var missingSymbols = symbols.filter(function (sy) { return !sy.present; }).map(function (sy) { return sy.symbol; });
+  return {
+    requested_by_caller: true,
+    actions: actions, symbols: symbols,
+    missing_actions: missingActions, missing_symbols: missingSymbols,
+    all_present: missingActions.length === 0 && missingSymbols.length === 0,
+    note: 'Computed against the CALLER\'s list, not against this deployment\'s own required-action list, so it is NOT self-referential.'
+  };
+}
+
 function sysRouterReadiness_() {
   var rows = [], missing = [];
   for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) {
@@ -156,6 +259,10 @@ function handleSystemHealth_(body) {
     schema.error = 'DB_NOT_REACHABLE';
   }
   var ok = router.all_available && dbReachable && schema.all_present === true;
+  var moduleStamps = sysModuleBuildStamps_();
+  var callerProbe = sysProbeRequested_(body);
+  if (moduleStamps.mixed_deployment) ok = false;   // a partial sync is NOT a healthy deployment
+  if (callerProbe && !callerProbe.all_present) ok = false;
   return jsonResponse_({
     success: true,
     ok: ok,
@@ -163,6 +270,7 @@ function handleSystemHealth_(body) {
     // the answering code, so together they identify exactly which deployment replied.
     build_id: SYS_BUILD_VERSION_,
     contract_version: SYS_API_CONTRACT_VERSION_,
+    request_order_send_diagnostic_owner: (typeof TEMP_ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? TEMP_ROSEND_DIAG_OWNER_FILE_ : null,
     deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
     inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
     required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
@@ -170,6 +278,13 @@ function handleSystemHealth_(body) {
     // An EMPTY missing_actions list proves nothing on its own — see the note at the constants above. This flag
     // makes that explicit in the payload so a reader cannot mistake one for a completeness guarantee.
     missing_actions_is_self_referential: true,
+    // FB-4A ADDENDUM §H — the two NON-self-referential proofs. module_build_stamps reports each owner file's own
+    // compiled build constant (so a half-finished file-by-file sync is a named fact), and caller_probe answers
+    // the CALLER's explicit action/symbol list (so a deployment that predates an action says so).
+    module_build_stamps: moduleStamps,
+    mixed_deployment: moduleStamps.mixed_deployment,
+    deployment_uniformity_verdict: moduleStamps.verdict,
+    caller_probe: callerProbe,
     api_contract_version: SYS_API_CONTRACT_VERSION_,
     build_version: SYS_BUILD_VERSION_,
     environment_mode: 'production',
