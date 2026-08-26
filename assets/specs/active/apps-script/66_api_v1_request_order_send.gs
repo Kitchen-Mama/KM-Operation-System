@@ -645,6 +645,89 @@ function rosCurrentRunAuthority_(cycle) {
     + ' (RD::MONTHLY_ORDER::<cycle>::<scope> is the primary key; draft_version increments in place; no superseded'
     + ' version row is retained, so no older same-cycle draft can re-enter a Send)';
 }
+// ------------------------------------------------------------------------------------------------------------
+// FB-4A §B — PLANNING-CYCLE CENSUS (PURE). The editor wrappers below are fail-closed: they refuse to guess a
+// planning cycle. Refusing is correct, but a bare refusal made the operator guess, and the live attempt proved
+// the guess lands somewhere worse — a Script Property that NOTHING reads. So when the constant is still the
+// placeholder the wrapper now ANSWERS the question instead: which cycles actually carry persisted rows, how many
+// are active in each, and what the latest calculation evidence for each one is.
+//
+// It is a census of ONE table's cycle column. It builds no workset, resolves no series, and never becomes an
+// input to a write — rosBuildWorkset_ still demands an explicit exact cycle (PLANNING_CYCLE_REQUIRED) and this
+// function is never consulted to supply one. `recommended` is a REPORT of the busiest active cycle, never a
+// default: nothing reads it back.
+function rosPlanningCycleCensus_(draftRows) {
+  var byCycle = {}, order = [];
+  (draftRows || []).forEach(function (row) {
+    var cycle = rosStr_(row && row.planning_cycle);
+    if (!cycle) { cycle = '(blank)'; }
+    if (!byCycle[cycle]) {
+      byCycle[cycle] = { planning_cycle: cycle, persisted_drafts: 0, active_drafts: 0, terminal_drafts: 0,
+        latest_calculated_at: '', latest_source_data_as_of: '' };
+      order.push(cycle);
+    }
+    var c = byCycle[cycle];
+    c.persisted_drafts++;
+    if (rosDraftIsActive_(row)) c.active_drafts++;
+    else if (rosDraftIsTerminal_(row)) c.terminal_drafts++;
+    var calc = rosStr_(row && row.calculated_at);
+    if (calc > c.latest_calculated_at) c.latest_calculated_at = calc;
+    var asOf = rosStr_(row && row.source_data_as_of);
+    if (asOf > c.latest_source_data_as_of) c.latest_source_data_as_of = asOf;
+  });
+  // Most ACTIVE rows first (that is what a Send would consume), then the newest calculation, then the cycle
+  // label descending — fully deterministic, so the same DB always yields the same recommendation.
+  var cycles = order.map(function (k) { return byCycle[k]; }).sort(function (a, b) {
+    return (b.active_drafts - a.active_drafts)
+      || (a.latest_calculated_at < b.latest_calculated_at ? 1 : a.latest_calculated_at > b.latest_calculated_at ? -1 : 0)
+      || (a.planning_cycle < b.planning_cycle ? 1 : a.planning_cycle > b.planning_cycle ? -1 : 0);
+  });
+  var withActive = cycles.filter(function (c) { return c.active_drafts > 0 && /^\d{4}-\d{2}$/.test(c.planning_cycle); });
+  return {
+    cycles: cycles,
+    active_cycles: withActive.map(function (c) { return c.planning_cycle; }),
+    recommended: withActive.length ? withActive[0].planning_cycle : '',
+    recommendation_basis: withActive.length
+      ? 'the cycle with the most ACTIVE persisted allocation drafts (ties broken by the newest calculated_at)'
+      : 'NONE — no planning cycle currently has an active persisted allocation draft'
+  };
+}
+
+// FB-4A §B — the exact remedy text the blocked wrappers print. It names the ONE authority (the source constant
+// in THIS file) and rules out the two wrong places an operator naturally reaches for. There is deliberately no
+// second constant, no Script Property read and no fallback: adding one would create a second configuration
+// authority, and the whole point of the fail-closed rule is that exactly one place decides the cycle.
+var ROS_TEMP_CYCLE_OWNER_FILE_ = '66_api_v1_request_order_send.gs';
+var ROS_TEMP_CYCLE_CONSTANT_ = 'TEMP_ROSEND_PLANNING_CYCLE_';
+function rosTempCycleRemedyLines_(census) {
+  var lines = [
+    'HOW TO UNBLOCK — edit the SOURCE CONSTANT, nothing else:',
+    '  1. Open ' + ROS_TEMP_CYCLE_OWNER_FILE_ + ' in the Apps Script editor.',
+    '  2. Find   var ' + ROS_TEMP_CYCLE_CONSTANT_ + ' = \'PASTE_YYYY-MM_HERE\';',
+    '  3. Replace the placeholder with the exact cycle, e.g.   var ' + ROS_TEMP_CYCLE_CONSTANT_ + ' = \'' +
+      ((census && census.recommended) || 'YYYY-MM') + '\';',
+    '  4. Save, then Run this function again.',
+    'DO NOT add a Script Property. ' + ROS_TEMP_CYCLE_CONSTANT_ + ' is a SOURCE constant — this wrapper reads the',
+    '  source value only, so a Script Property of that name is read by nothing and changes nothing.',
+    'DO NOT edit another file and do not add a second constant — ' + ROS_TEMP_CYCLE_OWNER_FILE_ + ' is the only authority.'
+  ];
+  if (census && census.cycles && census.cycles.length) {
+    lines.push('AVAILABLE PLANNING CYCLES (read-only census of ' + ROS_DRAFTS_TABLE_ + '):');
+    census.cycles.slice(0, 24).forEach(function (c) {
+      lines.push('  ' + c.planning_cycle + '  active=' + c.active_drafts + '  terminal=' + c.terminal_drafts
+        + '  persisted=' + c.persisted_drafts
+        + '  latest_calculated_at=' + (c.latest_calculated_at || '(none)')
+        + '  latest_source_data_as_of=' + (c.latest_source_data_as_of || '(none)'));
+    });
+    lines.push('RECOMMENDED EXACT VALUE: ' + (census.recommended || '(none available)') + '  — ' + census.recommendation_basis);
+  } else {
+    lines.push('AVAILABLE PLANNING CYCLES: none — ' + ROS_DRAFTS_TABLE_ + ' holds no rows this wrapper could census.');
+  }
+  lines.push('Preview and Execute remain FAIL-CLOSED: both require an explicit exact planning_cycle and neither');
+  lines.push('  falls back to this census, to a recommendation, or to "the latest cycle".');
+  return lines;
+}
+
 // __ROS_PURE_END__
 
 // ============================================================================================================
@@ -691,6 +774,20 @@ function rosDefaultIo_() {
     }
   };
 }
+// FB-4A §B — READ-ONLY census reader. Opens the DB and reads exactly ONE table. It performs no property read,
+// no property write, no lock, no business read (no workset build, no series resolution, no sku_details read) and
+// no write of any kind. A failure to read is reported, never silently swallowed into "no cycles".
+function rosReadPlanningCycleCensus_(io) {
+  io = io || rosDefaultIo_();
+  try {
+    var ss = io.openDb();
+    return rosPlanningCycleCensus_(io.readTable(ss, ROS_DRAFTS_TABLE_));
+  } catch (e) {
+    return { cycles: [], active_cycles: [], recommended: '',
+      recommendation_basis: 'UNAVAILABLE — ' + ROS_DRAFTS_TABLE_ + ' could not be read: ' + String(e && e.message || e) };
+  }
+}
+
 // The canonical handlers answer with a ContentService response. Unwrap without re-implementing anything.
 function rosUnwrap_(resp) {
   if (resp && typeof resp.getContent === 'function') {
@@ -1292,11 +1389,21 @@ function handleRequestOrderSendStatus_(body, io) {
 // ============================================================================================================
 
 var TEMP_ROSEND_TIER_SCOPE_ = 'ALL';                 // ALL | T1 | T2 | T3  (the only business scope control)
+// THE SINGLE CYCLE AUTHORITY FOR THESE WRAPPERS. Edit the value HERE, in this file, in the Apps Script editor.
+// It is NOT read from Script Properties and there is no second constant — a Script Property of the same name is
+// read by nothing. While it holds the placeholder both wrappers refuse to run and print a read-only census of the
+// planning cycles that actually carry persisted rows, plus the exact value to paste (see rosTempCycleRemedyLines_).
 var TEMP_ROSEND_PLANNING_CYCLE_ = 'PASTE_YYYY-MM_HERE';
+
+function TEMP_ROSEND_LOG_BLOCKED_(tag) {
+  Logger.log('[' + tag + '] BLOCKED — ' + ROS_TEMP_CYCLE_CONSTANT_ + ' is still the placeholder, so nothing was read'
+    + ' from the workset and NOTHING was written (no DB row, no Script Property, no lock).');
+  rosTempCycleRemedyLines_(rosReadPlanningCycleCensus_()).forEach(function (l) { Logger.log('[' + tag + '] ' + l); });
+}
 
 function TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE() {
   var cycle = rosStr_(TEMP_ROSEND_PLANNING_CYCLE_);
-  if (!cycle || cycle.indexOf('PASTE_') === 0) { Logger.log('[ROSEND-WS] BLOCKED — set TEMP_ROSEND_PLANNING_CYCLE_ to the current planning cycle (YYYY-MM) and Run again. Nothing was read.'); return; }
+  if (!cycle || cycle.indexOf('PASTE_') === 0) { TEMP_ROSEND_LOG_BLOCKED_('ROSEND-WS'); return; }
   var r = handleRequestOrderSendWorksetGet_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, include: ['counts', 'groups'] } });
   if (!r.success) { Logger.log('[ROSEND-WS] FAILED ' + JSON.stringify(r.errors)); return; }
   var d = r.data, c = d.counts;
@@ -1323,7 +1430,7 @@ function TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE() {
 
 function TEMP_REQUEST_ORDER_SEND_PREVIEW() {
   var cycle = rosStr_(TEMP_ROSEND_PLANNING_CYCLE_);
-  if (!cycle || cycle.indexOf('PASTE_') === 0) { Logger.log('[ROSEND-PREVIEW] BLOCKED — set TEMP_ROSEND_PLANNING_CYCLE_ (YYYY-MM) and Run again. Nothing was read or written.'); return; }
+  if (!cycle || cycle.indexOf('PASTE_') === 0) { TEMP_ROSEND_LOG_BLOCKED_('ROSEND-PREVIEW'); return; }
   var r = handleRequestOrderSendOrchestrate_({ payload: { tier_scope: TEMP_ROSEND_TIER_SCOPE_, planning_cycle: cycle, mode: 'preview' } });
   if (!r.success) { Logger.log('[ROSEND-PREVIEW] BLOCKED ' + JSON.stringify(r.errors) + ' | 0 business writes.'); return; }
   var d = r.data;
