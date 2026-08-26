@@ -40,11 +40,28 @@ var ASSETS = [
   },
   {
     out: 'earth-albedo-5400.jpg',
-    url: 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg',
-    bytes: 2566770,
-    sha256: 'a9f0088972dee0254610af851c4d6838ca3f2cf79176987e0a5713e2c15ec042',
+    // MAP-VISUAL-REAL-EARTH-TEXTURE-3-R2 §L2 — JULY, NOT DECEMBER, AND THE REASON THE PREVIOUS ROUND CHOSE
+    // DECEMBER WAS A SEARCH ERROR RATHER THAN AN AVAILABILITY LIMIT.
+    //
+    // TEXTURE-2's provenance recorded that "months 200401/04/06/07/08/09 all return HTTP 404 at that size" and
+    // concluded December was the only 5400x2700 topography+bathymetry image NASA publishes. That is false. Each
+    // BMNG month has its OWN image record; the probe had queried record 73909 (December's record) for every
+    // month, so of course every other month 404'd. Measured with HEAD requests: 200407 lives at record 73751
+    // (2,308,798 B) and 200408 at 73776 (2,308,163 B), both HTTP 200.
+    //
+    // That mattered, because December is a WINTER composite and it is the whole of the Canada defect: measured
+    // over the vendored December asset, southern-prairie Canada reads rgb(193,192,187) - brighter than the Arctic
+    // ice in the same image - and the snow line runs along the 49th parallel, so the surface showed a colour
+    // discontinuity that followed a political border. July reads rgb(62,69,34) in the same box.
+    //
+    // JULY over August, decided by measurement rather than preference: the two are indistinguishable across
+    // southern Canada (prairie L60/L64/L50 vs L59/L64/L53) but July retains MORE legitimate high-elevation snow
+    // (St Elias glacier L175 vs L170), and §L2 forbids removing real mountain snow while fixing the season.
+    url: 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x5400x2700.jpg',
+    bytes: 2308798,
+    sha256: '4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba',
     width: 5400, height: 2700,
-    product: 'NASA Blue Marble Next Generation, December 2004, w/ Topography and Bathymetry'
+    product: 'NASA Blue Marble Next Generation, July 2004, w/ Topography and Bathymetry'
   }
 ];
 

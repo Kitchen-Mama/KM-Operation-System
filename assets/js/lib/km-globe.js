@@ -563,16 +563,27 @@
     // showing an invented planet. HIGH is capability-gated and loaded only when the device has earned it.
     BASE: { file: 'earth-albedo-2048.jpg', w: 2048, h: 1024, bytes: 266599,
             product: 'NASA Blue Marble (2002): land surface, ocean colour and sea ice' },
-    HIGH: { file: 'earth-albedo-5400.jpg', w: 5400, h: 2700, bytes: 2566770,
-            product: 'NASA Blue Marble Next Generation, December 2004, topography and bathymetry' }
+    // TEXTURE-3-R2 §L2 — JULY 2004, replacing December. December is a winter composite, and it is the entire
+    // cause of the "Canada is one white mass" defect: in it, southern-prairie Canada measures rgb(193,192,187),
+    // BRIGHTER than the Arctic ice in the same image, and the snow line follows the 49th parallel. Same product
+    // family, same publisher, same licence, same projection, same dimensions - and 258 KB smaller.
+    HIGH: { file: 'earth-albedo-5400.jpg', w: 5400, h: 2700, bytes: 2308798,
+            product: 'NASA Blue Marble Next Generation, July 2004, topography and bathymetry' }
   };
   function earthAssetDir() {
     var o = (typeof window !== 'undefined' && window.KM_GLOBE_EARTH_ASSET_DIR) || '';
     return o ? String(o) : EARTH_ASSET_DIR_;
   }
+  // TEXTURE-3-R2 §L2/§J — THE IMAGE NEEDS A CACHE-BUST TOKEN OF ITS OWN.
+  //
+  // The filename did not change when the December asset was replaced by July, and the request carried no version
+  // query, so every browser holding the old JPEG would keep serving it from cache and the corrected surface
+  // would simply never arrive. index.html's `?v=` tokens cover the SCRIPTS; they do nothing for an image the
+  // engine requests itself. The token is pinned to the asset content, so it moves exactly when the bytes do.
+  var EARTH_ASSET_VERSION_ = 'jul2004-4f424067';
   function earthAssetPath(key) {
     var a = EARTH_ASSETS_[key];
-    return a ? (earthAssetDir() + a.file) : '';
+    return a ? (earthAssetDir() + a.file + '?v=' + EARTH_ASSET_VERSION_) : '';
   }
 
   // Decoded images are cached PER SESSION, keyed by path (§I.3): a second mount of the map, or a tier switch and
@@ -1016,12 +1027,12 @@
 
     // ---- §E/§I.6 STAGED UPGRADE ----
     //
-    // A REAL SEASONAL FINDING SHAPED THIS LADDER. The two vendored assets are different Blue Marble products:
-    // the 2048 base is an annual/growing-season composite (boreal Canada reads dark green, measured rgb ~49,54,22)
-    // while the only 5400x2700 topography+bathymetry image NASA publishes is DECEMBER 2004, in which the northern
-    // hemisphere is snow-covered (the same region measures rgb ~187,197,202). Verified by decoding both assets -
-    // see tools/geo/jpeg-dc-probe.js. Loading base and THEN high would therefore flip Canada and Siberia from
-    // green to white about a second after every page load, which looks like a bug rather than an upgrade.
+    // THE SEASONAL MISMATCH THAT SHAPED THIS LADDER IS GONE (TEXTURE-3-R2 §L2). TEXTURE-2 measured the base
+    // asset's boreal Canada at rgb ~49,54,22 (dark green) against the December high asset's rgb ~187,197,202
+    // (snow) and built the ladder so the two are never seen in sequence. The high tier is now JULY 2004, and the
+    // same box measures rgb(29,38,14) - the SAME class as the base. The ladder is kept exactly as it is anyway:
+    // one visible transition per device is still the right behaviour, and it is now green -> green rather than
+    // green -> white, so the transition is close to invisible instead of merely non-jarring.
     //
     // So there is exactly ONE visible material transition per device, never two:
     //   capable device      procedural bootstrap -> REAL HIGH        (the base asset is not even requested)

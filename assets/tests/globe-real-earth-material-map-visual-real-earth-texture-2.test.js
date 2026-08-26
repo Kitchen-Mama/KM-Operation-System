@@ -401,8 +401,11 @@ ok(/texture maps/.test(EARTH_PROV), 'L1 including the clause that names texture 
 ok(/NASA should be acknowledged[\s>]+as the source of the material/.test(EARTH_PROV), 'L1 and the attribution obligation is stated (quoted across the markdown line wrap)');
 ok(/copyright protected with the name of the copyright holder/.test(EARTH_PROV),
   'L1 with the third-party-content caveat checked rather than presumed');
+// TEXTURE-3-R2 §L2 — the high-tier digest moved with the asset (December -> July 2004). The digest is pinned
+// on purpose: the point of the pin is that a substituted or re-encoded upstream file is a hard failure. What is
+// NOT pinned is which month, because that is a content decision recorded in PROVENANCE.md, not an invariant.
 ['d4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e',
- 'a9f0088972dee0254610af851c4d6838ca3f2cf79176987e0a5713e2c15ec042'].forEach(function (h) {
+ '4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba'].forEach(function (h) {
   ok(EARTH_PROV.indexOf(h) !== -1, 'L2 provenance pins the asset SHA-256 ' + h.slice(0, 12));
   ok(FETCH.indexOf(h) !== -1, 'L2 and the fetch script verifies against the same digest');
 });
