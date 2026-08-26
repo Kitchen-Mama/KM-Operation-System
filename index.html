@@ -485,6 +485,9 @@
     <script src="assets/js/data/geo-names-zh-hant.js?v=map-texture3-r3-20260826"></script>
     <!-- The ONE geographic-name authority. Implements the deterministic per-class fallback order and reports WHICH
          level answered, so a silent regression to ISO codes cannot look like a successful zh-Hant render. -->
+    <!-- TEXTURE-3-R3 §F — zh-TW MAP DISPLAY names, above the vendored formal names. Names only: no geometry,
+         no coordinates, no anchors. Loaded BEFORE the resolver, which reads it as its top two authority levels. -->
+    <script src="assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r3-20260826"></script>
     <script src="assets/js/core/geo-name-resolver.js?v=map-texture3-r3-20260826"></script>
     <script src="assets/js/lib/km-geo-topology.js?v=map-texture3-r3-20260826"></script>
     <script src="assets/js/lib/km-globe.js?v=map-texture3-r3-20260826"></script>

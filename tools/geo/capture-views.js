@@ -77,6 +77,23 @@ var VIEWS = [
   { id: 'antimeridian', title: 'I7 anti-meridian / Pacific islands', focus: [0, 180], dist: 2.2, w: 1280, h: 900, admin1: false },
   // §I.8 — a live-style shipment route over North America
   { id: 'route-na', title: 'I8 shipment route over North America', focus: [42, -95], dist: 2.5, w: 1280, h: 900, admin1: false, route: true },
+  // ---- TEXTURE-3-R3 §H — the views R2's set did not contain. §H names fourteen; R2 captured eight
+  // ---- acceptance views plus a Canada comparison set, which left the globe limb, the dense-ADM1 US view
+  // ---- and three whole continents unlooked-at.
+  // §H.9 — the globe LIMB, close. This is where §C's old 0.0035 border shell showed worst: a layer at
+  // radius 1+d viewed edge-on is displaced from the ground by d*tan(t), which diverges as t nears 90 deg.
+  // THE FIRST ATTEMPT AT THIS VIEW SHOWED NO LIMB AT ALL, and the reason is geometric rather than a matter of
+  // taste. At camera distance d the globe's angular radius is asin(1/d); the projection is a 45 deg vertical
+  // fov, so a half-fov of 22.5 deg. At d=1.45 the globe subtends 43.6 deg and OVERFILLS the frame - the disc
+  // edge is off-screen in every direction. The limb only enters frame beyond d = 1/sin(22.5) = 2.61, so this
+  // sits just outside that at 2.8, which is the closest the limb can be looked at with this fov.
+  { id: 'globe-limb', title: 'H9 globe limb close-up', focus: [10, -50], dist: 2.8, w: 1280, h: 900, admin1: true },
+  // §H.11 — dense ADM1 over the US, at the zoom where the layer is at FULL strength rather than fading in.
+  { id: 'us-adm1-dense', title: 'H11 dense ADM1 - continental US', focus: [39, -96], dist: 1.5, w: 1280, h: 900, admin1: true },
+  // §H.12/§H.13/§H.14 — three continents R2 never captured at all.
+  { id: 'south-america', title: 'H12 South America', focus: [-15, -60], dist: 1.9, w: 1280, h: 900, admin1: true },
+  { id: 'africa', title: 'H13 Africa', focus: [2, 20], dist: 1.9, w: 1280, h: 900, admin1: true },
+  { id: 'oceania', title: 'H14 Australia / Oceania', focus: [-25, 140], dist: 1.9, w: 1280, h: 900, admin1: true },
   // ---- §L5 Canada comparison set ----
   { id: 'canada-bc', title: 'L5-2 Vancouver / British Columbia', focus: [50, -122], dist: 1.5, w: 1280, h: 900, admin1: true },
   { id: 'canada-prairies', title: 'L5-3 Alberta / Saskatchewan / Manitoba', focus: [51, -105], dist: 1.55, w: 1280, h: 900, admin1: true },
@@ -98,6 +115,7 @@ function harnessHtml(view, forceTier) {
     '<script src="assets/js/data/world-land-110m.js"></script>',
     '<script src="assets/js/data/world-countries-110m.js"></script>',
     '<script src="assets/js/data/geo-names-zh-hant.js"></script>',
+    '<script src="assets/js/data/geo-display-aliases-zh-tw.js"></script>',
     '<script src="assets/js/core/geo-name-resolver.js"></script>',
     '<script src="assets/js/lib/km-geo-topology.js"></script>',
     '<script src="assets/js/lib/km-globe.js"></script>',
@@ -150,12 +168,20 @@ function harnessHtml(view, forceTier) {
     '        g.focus(VIEW.focus[0], VIEW.focus[1], { dist: VIEW.dist });',
     // Two frames of settle, then read the diagnostics the report must quote.
     '        setTimeout(function () {',
-    '          var mi = {}, ti = {}, ri = {};',
+    '          var mi = {}, ti = {}, ri = {}, li = {}, ai = {}, tp = {}, pf = {};',
+    '          try { li = g.getLodInfo(); } catch (e) {}',
+    '          try { ai = g.getAdmin1LayerInfo(); } catch (e) {}',
+    // TEXTURE-3-R3 §D/§I — the canonical-topology facts and the separated timings. measureFrames() lives in
+    // the ENGINE because only the engine can drive a synchronous frame; from out here the best available is
+    // a camera nudge plus requestAnimationFrame, which measures the browser's scheduler and not the renderer.
+    '          try { tp = g.getTopologyInfo(); } catch (e) {}',
+    '          try { pf = g.measureFrames({ samples: 24 }); } catch (e) { pf = { error: String(e && e.message || e) }; }',
     '          try { mi = g.getMaterialInfo(); } catch (e) {}',
     '          try { ti = g.getTextureInfo(); } catch (e) {}',
     '          try { ri = g.getRenderInfo(); } catch (e) {}',
     '          out.ok = true;',
-    '          done({ material: mi, texture: ti, render: ri, camera: { focus: VIEW.focus, dist: VIEW.dist },',
+    '          done({ material: mi, texture: ti, render: ri, lod: li, admin1: ai, topology: tp, perf: pf,',
+    '                 camera: { focus: VIEW.focus, dist: VIEW.dist },',
     '                 admin1_requested: !!VIEW.admin1, route: !!VIEW.route,',
     '                 font_probe: fontProbe() });',
     '        }, 900);',

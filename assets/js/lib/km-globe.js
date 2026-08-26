@@ -921,6 +921,9 @@
   }
 
   function isPot_(n) { return n > 0 && (n & (n - 1)) === 0; }
+  function nowMsGlobal_() {
+    try { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0; } catch (e) { return 0; }
+  }
 
   // §D - DOWNSCALE ONLY, and it refuses rather than inventing. Producing a bitmap LARGER than its source is
   // exactly the forbidden "resize the texture and call it new detail", so that request returns null instead of a
@@ -1272,6 +1275,21 @@
       decoded_dimensions: TEX_BASE_W_ + 'x' + TEX_BASE_H_,
       gpu_dimensions: TEX_BASE_W_ + 'x' + TEX_BASE_H_,
       resample: 'NONE', gamma_decode: '', srgb_internalformat: '', webgl_version: glVersion,
+      // TEXTURE-3-R3 §I — the UNMASKED renderer string, so a performance number can never be reported as
+      // hardware when it came from a software rasteriser. Extension-gated and guarded: where the browser
+      // withholds it (privacy settings, some Firefox builds) the value is UNAVAILABLE rather than a guess, and a
+      // measurement labelled UNAVAILABLE must not be presented as a GPU result either.
+      renderer: (function () {
+        try {
+          var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          if (dbg) {
+            var r = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+            if (r) return String(r);
+          }
+          var plain = gl.getParameter(gl.RENDERER);
+          return plain ? String(plain) : 'UNAVAILABLE';
+        } catch (e) { return 'UNAVAILABLE'; }
+      })(),
       estimated_gpu_bytes: 0, max_texture_size: texInfo.max_texture_size,
       mipmaps: false, filter: '', wrap_s: '', anisotropy: 1, max_anisotropy: 1,
       allocation_verified: false, fallback_reason: '', high_detail_load_ms: 0,
@@ -1298,6 +1316,10 @@
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);   // v=0 is the image TOP, matching buildSphere's UVs
+      // TEXTURE-3-R3 §I — GPU UPLOAD is measured as its own phase. It is not the same thing as decode: the
+      // browser decodes the JPEG into a bitmap, and texImage2D then copies that bitmap across to the driver
+      // and generateMipmap builds the chain. On the 8192 tier the second half is 134 MB of traffic.
+      var __upT0 = nowMsGlobal_();
       while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing errors so the check below is about US */ }
       var decode = 1, ifmt = 'RGB8';
       if (glVersion === 2 && gl.SRGB8_ALPHA8) {
@@ -1366,6 +1388,7 @@
       matInfo.anisotropy = texInfo.anisotropy; matInfo.max_anisotropy = texInfo.max_anisotropy;
       matInfo.allocation_verified = true;
       matInfo.estimated_gpu_bytes = estimateGpuBytes(gpuW, gpuH, texInfo.mipmaps);
+      matInfo.gpu_upload_ms = Math.round((nowMsGlobal_() - __upT0) * 10) / 10;
       return true;
     }
 
@@ -1531,6 +1554,7 @@
     var lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 };
     var degradeReason = '';
     var prevLabelSet = {}, lastLabelStats = { candidates: 0, drawn: 0, tier: 0 };
+    var lastLabelMs = 0, firstRenderMs = 0, framesDrawn = 0, lastFrameMs = 0, createT0 = nowMsGlobal_();
     var prevContinentSet = {};
     var W = 1, H = 1, dpr = 1;
     var mvp = mat4Identity(), model = mat4Identity(), mv = mat4Identity();
@@ -1568,6 +1592,7 @@
 
     function draw() {
       raf = 0; if (destroyed) return;
+      var __frameT0 = nowMsGlobal_();
       recomputeMatrices();
       gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1680,6 +1705,11 @@
       }
 
       drawCountryLabels();
+      framesDrawn++;
+      // §I — FIRST RENDER, recorded once: the interval from create() to the end of the first complete frame.
+      // Everything after it is a redraw, and averaging the two would hide whichever one matters.
+      if (framesDrawn === 1) firstRenderMs = Math.round((nowMsGlobal_() - createT0) * 10) / 10;
+      lastFrameMs = Math.round((nowMsGlobal_() - __frameT0) * 100) / 100;
     }
 
     // TEXTURE-3-R3 §G — one clipping rule for all three label classes. A label is admitted only if its whole
@@ -1758,6 +1788,10 @@
     // no DOM node is created or removed here, and nothing is allocated per label beyond the small candidate list.
     function drawCountryLabels() {
       if (!labelCtx) return;
+      // §I — LABEL PLACEMENT is a separate phase from rendering: it is synchronous CPU work on a 2D canvas
+      // (project, filter, order, collide, paint) and it is charged to no GPU. Measuring it separately is how
+      // the first frame-timing attempt was caught measuring labels instead of frames.
+      var __lblT0 = nowMsGlobal_();
       labelCtx.setTransform(1, 0, 0, 1, 0, 0);
       labelCtx.clearRect(0, 0, labelCv.width, labelCv.height);
       // §G LAYER INDEPENDENCE. This canvas now carries TWO layers, so it may only bail when NEITHER has
@@ -1846,6 +1880,7 @@
       // §G — ADM1 text is SUBORDINATE by construction: it is laid out last and is blocked by the country
       // names, the continent names and the shipment markers, so a division label can never cover any of them.
       drawAdmin1Labels(markerRects.concat(countryRects, continentRects), fontPx);
+      lastLabelMs = Math.round((nowMsGlobal_() - __lblT0) * 100) / 100;
     }
 
     // ==========================================================================================================
@@ -2169,6 +2204,72 @@
       getStatus: function () { return { ok: status.ok, error: status.error, dist: cam.dist }; },
       // V3G6A - read-only render/texture facts, so the fidelity configuration is observable instead of assumed.
       getRenderInfo: function () { return { dpr: dpr, device_pixel_ratio: (window.devicePixelRatio || 1), dpr_cap: 2, css_width: W, css_height: H, buffer_width: canvas.width, buffer_height: canvas.height }; },
+      // TEXTURE-3-R3 §I — STEADY ROTATE/ZOOM FRAME TIMING, measured here rather than in a harness page.
+      //
+      // It lives in the engine because only the engine can drive a SYNCHRONOUS frame: from outside, the best a
+      // caller can do is nudge the camera and wait for requestAnimationFrame, which measures the browser's
+      // scheduling rather than the renderer. This walks the camera and calls the real recomputeMatrices() + draw()
+      // per sample, so the number describes a MOVING camera - which is what §I asks for and what a static redraw
+      // would flatter.
+      //
+      // The camera is restored afterwards, so calling this never changes what the next frame shows. It is a
+      // diagnostics entry point in the same family as getMaterialInfo(), not a render path: nothing in the engine
+      // calls it.
+      measureFrames: function (o) {
+        o = o || {};
+        var n = Math.max(1, Math.min(240, o.samples || 24));
+        var dYaw = o.dYaw == null ? 0.004 : o.dYaw;
+        var dDist = o.dDist == null ? 0.0015 : o.dDist;
+        // WITHOUT THIS THE MEASUREMENT IS MEANINGLESS, AND THE FIRST VERSION PROVED IT. WebGL calls only ENQUEUE
+        // work; the driver completes it asynchronously. Timing recomputeMatrices()+draw() therefore measures
+        // command submission plus the synchronous 2D label pass - and it showed the 141,608-vertex LOD-3 globe
+        // as FASTER (0.00 ms) than the 22,452-vertex LOD-0 globe (0.18 ms), because LOD 0 draws more LABELS.
+        // gl.finish() blocks until the pipeline has drained, which is what makes the number a frame time.
+        var doFinish = o.finish !== false;
+        var saved = { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist };
+        var t = [], i;
+        try {
+          // One untimed frame first, so a lazily-compiled shader or a first-use buffer binding is not charged to
+          // sample 0 - that would show up as a p95 that never happens again in practice.
+          recomputeMatrices(); draw();
+          if (doFinish) gl.finish();
+          for (i = 0; i < n; i++) {
+            cam.yaw += dYaw;
+            cam.dist = Math.max(MIN_D, Math.min(MAX_D, cam.dist + (i % 2 ? dDist : -dDist)));
+            var t0 = nowMs();
+            recomputeMatrices(); draw();
+            if (doFinish) gl.finish();
+            t.push(nowMs() - t0);
+          }
+        } catch (e) {
+          cam.yaw = saved.yaw; cam.pitch = saved.pitch; cam.dist = saved.dist;
+          recomputeMatrices(); draw();
+          return { error: String((e && e.message) || e) };
+        }
+        cam.yaw = saved.yaw; cam.pitch = saved.pitch; cam.dist = saved.dist;
+        recomputeMatrices(); draw();
+        var sorted = t.slice().sort(function (a, b) { return a - b; });
+        function pct(p) { return Math.round(sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] * 100) / 100; }
+        var sum = 0; for (i = 0; i < t.length; i++) sum += t[i];
+        return {
+          samples: t.length,
+          mean_ms: Math.round(sum / t.length * 100) / 100,
+          p50_ms: pct(0.5), p95_ms: pct(0.95), min_ms: pct(0), max_ms: pct(0.999),
+          // Reported so the reader is never left to assume hardware numbers. The renderer string comes from the
+          // driver, not from this file.
+          renderer: matInfo.renderer || 'UNKNOWN',
+          // What the number actually includes, stated with the number. A reader cannot otherwise tell whether
+          // this is submission time or completion time, and the two differ by orders of magnitude.
+          pipeline_drained: doFinish,
+          measures: doFinish
+            ? 'matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)'
+            : 'matrix update + GL submission + 2D label pass ONLY - NOT a frame time',
+          lod: lod, distance: Math.round(cam.dist * 1000) / 1000,
+          adm1_visible: admin1BordersVisible(),
+          border_vertices: borderCounts.COASTLINE + borderCounts.INTERNATIONAL + borderCounts.ADM1,
+          sphere_triangles: sphere && sphere.idx ? sphere.idx.length / 3 : 0
+        };
+      },
       getTextureInfo: function () { return { width: texInfo.width, height: texInfo.height, tier_reason: texInfo.tier_reason, mipmaps: texInfo.mipmaps, anisotropy: texInfo.anisotropy, max_anisotropy: texInfo.max_anisotropy, max_texture_size: texInfo.max_texture_size, allocation_verified: texInfo.allocation_verified, downgraded_from: texInfo.downgraded_from }; },
       // MAP-VISUAL-REAL-EARTH-TEXTURE-2 §I - the material is fully observable, so which tier is live, what it
       // cost, how colour is handled and WHY anything degraded are all facts rather than inferences. Reported
@@ -2274,6 +2375,22 @@
             adm1: { candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn,
                     budget: lastAdmin1LabelStats.budget }
           },
+          // §I — THE PHASES, MEASURED SEPARATELY. `asset_load_ms` is what the browser reports for fetching
+          // AND decoding the image together; `gpu_upload_ms` is the texImage2D + generateMipmap copy after
+          // that. Resource Timing can split fetch from decode, and tools/geo/measure-perf.js does so - it is
+          // not split here because the engine must not depend on a timing API being present.
+          phases_ms: {
+            asset_load_fetch_plus_decode: matInfo.load_ms_by_tier || {},
+            gpu_upload: matInfo.gpu_upload_ms == null ? null : matInfo.gpu_upload_ms,
+            topology_prepare_coarse: topoBuildMs.coarse,
+            topology_prepare_fine: topoBuildMs.fine,
+            border_buffer_upload_coarse: borderUploadMs.coarse,
+            border_buffer_upload_fine: borderUploadMs.fine,
+            label_placement_last_frame: lastLabelMs,
+            first_render: firstRenderMs,
+            last_frame_submit: lastFrameMs
+          },
+          frames_drawn: framesDrawn,
           coarse: setInfo('COARSE', topoCoarse, layersCoarse, topoBuildMs.coarse, borderUploadMs.coarse),
           fine: setInfo('FINE', topoFine, layersFine, topoBuildMs.fine, borderUploadMs.fine),
           degrade_reason: degradeReason || null

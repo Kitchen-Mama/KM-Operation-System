@@ -26,11 +26,22 @@
     // Authority levels, reported back so a caller (and a test) can prove which source answered.
     // The numbers match the ordered lists in the localization authority decision.
     var LEVEL = {
-        ZH_HANT_PINNED_SOURCE: 'ZH_HANT_PINNED_SOURCE',   // countries 1 · admin1 1
-        ZH_HANT_VENDORED_CLDR: 'ZH_HANT_VENDORED_CLDR',   // countries 2 (unused: level 1 covers every ISO country)
+        // TEXTURE-3-R3 §F — the two DISPLAY levels that now sit ABOVE the vendored formal name. §F's order for a
+        // map label is: verified CLDR zh-Hant alt-short, then a reviewed zh-TW display alias, then NAME_ZHT, then
+        // English, then ISO alpha-2. Both new levels come from assets/js/data/geo-display-aliases-zh-tw.js.
+        //
+        // WHY TWO LEVELS AND NOT ONE. Level 1 is an authority §F NAMES, so applying it is following the
+        // specification. Level 2 is a REVIEW, so it is the level that must refuse a geopolitically weighted name
+        // rather than decide it. Collapsing them would lose exactly that distinction — and the asset carries an
+        // `unresolved` list of names it deliberately did NOT apply, which is only meaningful because level 2
+        // exists separately.
+        CLDR_ALT_SHORT: 'CLDR_ALT_SHORT',                 // countries 1 (display)
+        REVIEWED_DISPLAY_ALIAS: 'REVIEWED_DISPLAY_ALIAS', // countries 2 (display)
+        ZH_HANT_PINNED_SOURCE: 'ZH_HANT_PINNED_SOURCE',   // countries 3 · admin1 1 — and the FULL-name authority
+        ZH_HANT_VENDORED_CLDR: 'ZH_HANT_VENDORED_CLDR',   // admin1 2 (wired, empty: no bounded source vendored)
         ZH_HANT_REVIEWED_LIST: 'ZH_HANT_REVIEWED_LIST',   // continents 1 · oceans 1
-        ENGLISH_CANONICAL: 'ENGLISH_CANONICAL',           // countries 3 · continents 2 · admin1 3
-        CODE: 'CODE',                                     // countries 4 · admin1 4
+        ENGLISH_CANONICAL: 'ENGLISH_CANONICAL',           // countries 4 · continents 2 · admin1 3
+        CODE: 'CODE',                                     // countries 5 · admin1 4
         HIDDEN: 'HIDDEN'                                  // continents 3 · oceans 3 — no reliable name exists
     };
 
@@ -44,6 +55,26 @@
     // 1 verified zh-Hant from the pinned Natural Earth field · 2 vendored CLDR zh-Hant · 3 canonical English ·
     // 4 ISO alpha-2. Level 2 is wired but empty: the pinned field covers all 175 ISO-coded countries, so no CLDR
     // mapping was vendored. Keeping the branch means adding one later needs no change here.
+    function aliases() {
+        return (typeof window !== 'undefined' && window.KM_GEO_DISPLAY_ALIASES) ? window.KM_GEO_DISPLAY_ALIASES : null;
+    }
+
+    // §F — the FULL formal name, always available whatever the map is painting. This is what a tooltip or a detail
+    // panel asks for, and it is deliberately a SEPARATE function rather than an option on the display path: the
+    // display name is allowed to be short, the full name is not allowed to be lossy, and one function cannot be
+    // the authority for both without one of those guarantees quietly winning.
+    function countryFull(iso, opts) {
+        opts = opts || {};
+        var code = upper(iso);
+        var d = dataset();
+        if (!code) return { name: '', level: LEVEL.HIDDEN, iso: '' };
+        var zh = d && d.countries ? str(d.countries[code]) : '';
+        if (zh && (opts.lang || 'zh-TW') !== 'en') return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, iso: code };
+        var en = (d && d.countryEnglish && str(d.countryEnglish[code])) || str(opts.english);
+        if (en) return { name: en, level: LEVEL.ENGLISH_CANONICAL, iso: code };
+        return { name: code, level: LEVEL.CODE, iso: code };
+    }
+
     function country(iso, opts) {
         opts = opts || {};
         var code = upper(iso);
@@ -54,6 +85,23 @@
             var en0 = (d && d.countryEnglish && str(d.countryEnglish[code])) || str(opts.english);
             return en0 ? { name: en0, level: LEVEL.ENGLISH_CANONICAL, iso: code }
                        : { name: code, level: LEVEL.CODE, iso: code };
+        }
+        // §F — the two DISPLAY levels, consulted only for a map label. `form: 'full'` bypasses them entirely, so
+        // the same call site can ask for either without a second resolver.
+        if (opts.form !== 'full') {
+            var a = aliases();
+            if (a) {
+                var as = a.cldrAltShort && a.cldrAltShort[code];
+                if (as && str(as.display)) {
+                    return { name: str(as.display), level: LEVEL.CLDR_ALT_SHORT, iso: code,
+                             full: str(as.full), source: as.source };
+                }
+                var rv = a.reviewed && a.reviewed[code];
+                if (rv && str(rv.display)) {
+                    return { name: str(rv.display), level: LEVEL.REVIEWED_DISPLAY_ALIAS, iso: code,
+                             full: str(rv.full), source: rv.source };
+                }
+            }
         }
         var zh = d && d.countries ? str(d.countries[code]) : '';
         if (zh) return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, iso: code };
@@ -159,9 +207,18 @@
         };
     }
 
+    // §F — the naming decisions this build DELIBERATELY did not make, surfaced so the product can show that one
+    // is outstanding instead of appearing to have settled it. Empty when nothing is pending.
+    function unresolvedNames() {
+        var a = aliases();
+        return (a && a.unresolved) ? a.unresolved.slice() : [];
+    }
+
     var api = {
         LEVEL: LEVEL,
         country: country,
+        countryFull: countryFull,
+        unresolvedNames: unresolvedNames,
         continent: continent,
         continentOfCountry: continentOfCountry,
         admin1: admin1,
