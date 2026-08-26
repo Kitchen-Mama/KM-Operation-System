@@ -44,6 +44,14 @@ var AIPL_EXPIRATION_REASON_ = 'SUPERSEDED_BY_NEW_AI_PLAN';
 // migration manifest; this module only ever READS whether they exist.
 var AIPL_AUDIT_COLUMNS_ = ['generation_run_id', 'expired_at', 'expired_by_run_id', 'expiration_reason'];
 
+// ADDENDUM §C/§H — THE MIGRATION VERSION. One string names the exact schema shape this code requires, and the
+// migration tool stamps the same string. It is compared, never inferred: a gate that only counts columns cannot
+// tell "migrated to this contract" from "someone happened to add four columns with these names".
+var AIPL_MIGRATION_VERSION_ = 'FB4C-AI-LIFECYCLE-1';
+var AIPL_SCHEMA_NOT_READY_ = 'AI_PLAN_LIFECYCLE_SCHEMA_NOT_READY';
+var AIPL_COLLISION_CODE_ = 'ACTIVE_SOURCE_IDENTITY_COLLISION';
+var AIPL_SUPPRESSED_CODE_ = 'SUPPRESSED_BY_ACTIVE_MANUAL_DRAFT';
+
 // A row is AI-generated when its provenance says so. `generation_type` is the existing provenance column and
 // `user_created` is the manual marker, so anything not user-created and carrying a generation run id is an AI
 // row. A row with NEITHER marker is treated as MANUAL — fail-safe, because the cost of wrongly expiring a
@@ -97,6 +105,244 @@ function aiplSameScope_(row, scope) {
   if (aiplLo_(row.marketplace) !== aiplLo_(scope.marketplace)) return false;
   if (aiplStr_(scope.planning_cycle) && aiplLo_(row.planning_cycle) !== aiplLo_(scope.planning_cycle)) return false;
   return true;
+}
+
+// ADDENDUM §H — THE SCHEMA VERSION, DERIVED RATHER THAN STORED.
+//
+// A stored version would need a migration-ledger TABLE, which is a larger schema change than the four columns
+// being gated - so the version is instead a deterministic property of the schema itself: the live header is at
+// AIPL_MIGRATION_VERSION_ exactly when it equals the canonical order byte-for-byte, and is at no version
+// otherwise. That keeps the check honest (it cannot say "migrated" about a sheet that is not) and it cannot
+// drift out of sync with reality the way a hand-written ledger row can.
+function aiplSchemaVersionOf_(liveHeaders) {
+  if (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ === 'undefined') return '';
+  var canon = SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_;
+  var a = (liveHeaders || []).map(function (h) { return aiplStr_(h); });
+  while (a.length && a[a.length - 1] === '') a.pop();
+  if (a.length !== canon.length) return '';
+  for (var i = 0; i < canon.length; i++) if (a[i] !== canon[i]) return '';
+  return AIPL_MIGRATION_VERSION_;
+}
+
+// READ-ONLY fact gathering for the gate. Deliberately uses getSheetByName rather than procurementEnsureSheet_:
+// the validate-only resolver THROWS a production-safety token, and a missing table must arrive at the gate as a
+// reportable fact (missing_table) rather than as an exception that loses the rest of the diagnosis.
+function aiplReadActivationFacts_(ss, ctx) {
+  ctx = ctx || {};
+  function headersOf(name) {
+    try {
+      var sh = ss.getSheetByName(name);
+      if (!sh) return { name: name, exists: false, headers: [] };
+      var lc = sh.getLastColumn();
+      if (!lc) return { name: name, exists: true, headers: [] };
+      var hs = sh.getRange(1, 1, 1, lc).getValues()[0].map(function (h) { return aiplStr_(h); });
+      while (hs.length && hs[hs.length - 1] === '') hs.pop();
+      return { name: name, exists: true, headers: hs, sheet: sh };
+    } catch (e) { return { name: name, exists: false, headers: [], read_error: String(e && e.message || e) }; }
+  }
+  var ht = headersOf('shipping_allocation_drafts');
+  var lt = headersOf('shipping_allocation_draft_lines');
+
+  var tail;
+  if (ht.exists && ht.sheet && typeof sadLifecycleTailState_ === 'function') {
+    try { tail = sadLifecycleTailState_(ht.sheet); } catch (e) { tail = null; }
+  }
+  if (!tail) {
+    var have = {}; (ht.headers || []).forEach(function (h) { have[h] = 1; });
+    tail = { missing: AIPL_AUDIT_COLUMNS_.filter(function (c) { return !have[c]; }), misplaced: [], present: [], complete: false };
+  }
+
+  return {
+    header_table: { name: ht.name, exists: ht.exists, headers: ht.headers },
+    line_table: { name: lt.name, exists: lt.exists, headers: lt.headers },
+    tail: tail,
+    header_status_accepts_expired: (typeof sadHeaderStatusValid_ === 'function') ? sadHeaderStatusValid_('expired') === true : false,
+    line_status_accepts_expired: (typeof sadLineStatusValid_ === 'function') ? sadLineStatusValid_('expired') === true : false,
+    migration_version: aiplSchemaVersionOf_(ht.headers),
+    expected_migration_version: AIPL_MIGRATION_VERSION_,
+    generation_run_id: aiplStr_(ctx.generation_run_id),
+    identity_collisions: ctx.identity_collisions || []
+  };
+}
+
+// ============================================================================================================
+// ADDENDUM §A/§H — THE ACTIVATION GATE.
+//
+// WHAT WAS WRONG. FB-4C called this behaviour "fail closed", and it was not. The schema check lived inside
+// aiplPrepareManifest_, which is reached from aiplExpireSupersededDrafts_, which 61_ calls in STAGE 3 - AFTER
+// every header and line of the new run has already been committed. So on an unmigrated database a run did this:
+//
+//     write the new AI drafts  ->  reach the lifecycle  ->  discover the columns are missing  ->  expire nothing
+//
+// leaving the NEW draft and the OLD draft both active for the same scope. That is not fail-closed, it is
+// fail-OPEN with a footnote: the exact duplicate-active-plan state the lifecycle exists to prevent, produced BY
+// the lifecycle's own safety check. The correct placement is before the first write, and the correct outcome is
+// that the whole generation command refuses.
+//
+// This gate is PURE over facts so it can be tested without a spreadsheet, and it returns the complete refusal
+// payload (§A) rather than a bare boolean - the caller must not have to reconstruct why.
+function aiplActivationGate_(facts) {
+  facts = facts || {};
+  var missingTable = [], missingColumns = [], invalidStatus = [], blockers = [];
+
+  var ht = facts.header_table || {}, lt = facts.line_table || {};
+  if (!ht.exists) missingTable.push(aiplStr_(ht.name) || 'shipping_allocation_drafts');
+  if (!lt.exists) missingTable.push(aiplStr_(lt.name) || 'shipping_allocation_draft_lines');
+
+  // Columns, and their POSITIONS. A column that exists in the wrong place is drift, not readiness: every
+  // positional reader downstream would be pointed at the wrong cell.
+  var tail = facts.tail || { missing: AIPL_AUDIT_COLUMNS_.slice(), misplaced: [], complete: false };
+  (tail.missing || []).forEach(function (c) { missingColumns.push(c); });
+  (tail.misplaced || []).forEach(function (m) {
+    blockers.push('HEADER_ORDER_DRIFT: ' + m.column + ' is at index ' + m.actual_index + ', canonical index is ' + m.expected_index);
+  });
+
+  // §H — `expired` must be POSITIVELY accepted by both validators. Before the addendum it was accepted on a
+  // line only because nothing validated line_status at all, which is not the same thing.
+  if (facts.header_status_accepts_expired !== true) invalidStatus.push('shipping_allocation_drafts.status does not accept "expired"');
+  if (facts.line_status_accepts_expired !== true) invalidStatus.push('shipping_allocation_draft_lines.line_status does not accept "expired"');
+
+  // §H — the migration version must MATCH, and the current run must own a run id (without one, nothing later can
+  // tell this run's rows from the rows it is replacing, so expiring anything would be guesswork).
+  var wantVer = aiplStr_(facts.expected_migration_version) || AIPL_MIGRATION_VERSION_;
+  var haveVer = aiplStr_(facts.migration_version);
+  if (haveVer !== wantVer) blockers.push('MIGRATION_VERSION_MISMATCH: schema reports "' + (haveVer || '(none)') + '", this build requires "' + wantVer + '"');
+  if (!aiplStr_(facts.generation_run_id)) blockers.push('CURRENT_RUN_HAS_NO_GENERATION_RUN_ID');
+
+  // §H — an unresolved active identity collision in the affected scope blocks activation. It is not this run's
+  // to repair, and running on top of it would add a third row to an already-ambiguous identity.
+  var collisions = facts.identity_collisions || [];
+  if (collisions.length) {
+    blockers.push('UNRESOLVED_ACTIVE_IDENTITY_COLLISION: ' + collisions.length + ' identity(ies) hold more than one active decision');
+  }
+
+  var ok = !missingTable.length && !missingColumns.length && !invalidStatus.length && !blockers.length;
+  if (ok) return { ready: true, migration_version: wantVer };
+
+  var next;
+  if (missingTable.length) {
+    next = 'Provision the missing table(s) (' + missingTable.join(', ') + ') before any AI Plan run.';
+  } else if (missingColumns.length || (tail.misplaced || []).length) {
+    next = 'Run TEMP_AI_LIFECYCLE_MIGRATE_DRY_RUN() in the Apps Script project, review the report, then TEMP_AI_LIFECYCLE_MIGRATE_COMMIT with the mode and checksum it prints. Missing: ' + (missingColumns.join(', ') || '(none)') + '.';
+  } else if (collisions.length) {
+    next = 'Reconcile the listed active identity collision(s) first - two active decisions for one canonical identity cannot be resolved automatically, and this run will not guess a survivor.';
+  } else if (haveVer !== wantVer) {
+    next = 'Sync the Apps Script project and re-run TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE(); the deployed schema version does not match this build.';
+  } else {
+    next = 'Resolve the blocking reasons listed above, then re-run TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE().';
+  }
+
+  return {
+    ready: false,
+    error: {
+      code: AIPL_SCHEMA_NOT_READY_,
+      message: 'the Inventory AI Plan lifecycle schema is not ready, so the whole generation command refused BEFORE its first write. Nothing was created and nothing was expired.',
+      missing_table: missingTable,
+      missing_columns: missingColumns,
+      invalid_status_authority: invalidStatus,
+      expected_migration_version: wantVer,
+      actual_migration_version: haveVer || null,
+      header_order_drift: (tail.misplaced || []).slice(),
+      identity_collisions: collisions.slice(),
+      blocking_reasons: blockers,
+      zero_write: true,
+      created_headers: 0, created_lines: 0, expired_headers: 0, expired_lines: 0,
+      next_action: next
+    }
+  };
+}
+
+// ============================================================================================================
+// ADDENDUM §B — MANUAL PRECEDENCE.
+//
+// THE CANONICAL RULE: a current manual Execution Plan is the BINDING OPERATOR DECISION. An AI Plan is ADVISORY
+// and must not create a second active decision for the same canonical business identity.
+//
+// Why this needs its own decision function rather than relying on the existing line patch: under the frozen K2
+// contract one canonical identity is ONE header row, so an AI run targeting a route an operator already planned
+// does not create a second row - it RESOLVES TO THE OPERATOR'S ROW and regenerates it. That bumps draft_version,
+// adopts the AI calculation lineage and (now that the column is written) stamps the AI run id onto what was a
+// manual decision. sadRegenerateLinePatch_ does protect a planned_qty that differs from recommended_qty, but
+// that is a heuristic: a manual quantity that happens to EQUAL the previous recommendation reads as
+// "not overridden" and follows the new one. Precedence has to be decided at the IDENTITY level, before the
+// write, or the operator's decision is silently absorbed.
+//
+// Returns one decision per proposed identity. `blocks_run` is false throughout: suppression and collision are
+// per-identity outcomes, and the run continues for every other identity (§B).
+function aiplManualPrecedence_(activeRows, proposed, keyOf) {
+  var byKey = {};
+  (activeRows || []).forEach(function (r) {
+    var k = keyOf(r);
+    if (!k) return;
+    (byKey[k] = byKey[k] || []).push(r);
+  });
+
+  return (proposed || []).map(function (pr) {
+    var key = aiplStr_(pr.identity_key) || (pr.header ? keyOf(pr.header) : '');
+    var held = byKey[key] || [];
+    var manual = held.filter(function (r) { return !aiplIsAiGenerated_(r); });
+    var ai = held.filter(function (r) { return aiplIsAiGenerated_(r); });
+
+    function ident(r) {
+      return {
+        allocation_draft_id: aiplStr_(r.allocation_draft_id),
+        status: aiplLo_(r.status),
+        generation_type: aiplLo_(r.generation_type) || '(blank)',
+        generation_run_id: aiplStr_(r.generation_run_id) || null,
+        source: aiplIsAiGenerated_(r) ? 'AI' : 'MANUAL'
+      };
+    }
+
+    // PRE-EXISTING CORRUPTION. More than one active decision already holds this identity and they do not agree
+    // on provenance. This is reported and blocked FOR THIS IDENTITY - never repaired: choosing a survivor would
+    // be destroying an operator decision or an audit row on a guess, and the addendum is explicit that normal
+    // generation does not silently repair unknown historical collisions.
+    if (manual.length && ai.length) {
+      return {
+        identity_key: key, decision: AIPL_COLLISION_CODE_,
+        message: 'this canonical identity is already held by BOTH an active manual decision and an active AI draft. Two active decisions for one identity cannot be reconciled automatically, and no survivor is guessed.',
+        rows: held.map(ident), manual_rows: manual.map(ident), ai_rows: ai.map(ident),
+        created: false, updated: false, blocks_run: false, requires_reconciliation: true
+      };
+    }
+    if (manual.length > 1 || ai.length > 1) {
+      return {
+        identity_key: key, decision: AIPL_COLLISION_CODE_,
+        message: 'this canonical identity is held by ' + held.length + ' active rows of the same provenance, which the K2 contract forbids. Reported, not repaired.',
+        rows: held.map(ident), manual_rows: manual.map(ident), ai_rows: ai.map(ident),
+        created: false, updated: false, blocks_run: false, requires_reconciliation: true
+      };
+    }
+
+    // THE BINDING OPERATOR DECISION. Preserve the header, the line, the exact user quantity, the route and the
+    // note; create no parallel AI draft; overwrite nothing. The recommendation is still REPORTED, so the
+    // operator can see what the AI would have proposed next to what they decided.
+    if (manual.length === 1) {
+      var m = manual[0];
+      return {
+        identity_key: key, decision: AIPL_SUPPRESSED_CODE_,
+        message: 'an active manual Execution Plan already holds this identity. The manual decision is binding; the AI recommendation is advisory and was not written.',
+        manual_identity: ident(m),
+        persisted_user_qty: (pr.persisted_user_qty !== undefined && pr.persisted_user_qty !== null) ? pr.persisted_user_qty : null,
+        persisted_note: aiplStr_(m.note) || null,
+        persisted_route: {
+          recommended_source_warehouse_id: aiplStr_(m.recommended_source_warehouse_id),
+          recommended_destination_warehouse_id: aiplStr_(m.recommended_destination_warehouse_id),
+          recommended_shipping_method: aiplStr_(m.recommended_shipping_method),
+          recommended_last_mile_delivery: aiplStr_(m.recommended_last_mile_delivery)
+        },
+        current_recommendation: (pr.recommendation !== undefined) ? pr.recommendation : null,
+        created: false, updated: false, blocks_run: false, requires_reconciliation: false
+      };
+    }
+
+    // Free, or held only by this plan's own AI lineage - the normal path.
+    return {
+      identity_key: key, decision: 'PROCEED',
+      existing_ai: ai.length ? ident(ai[0]) : null,
+      created: false, updated: false, blocks_run: false, requires_reconciliation: false
+    };
+  });
 }
 
 /**

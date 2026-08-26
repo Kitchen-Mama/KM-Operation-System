@@ -102,8 +102,16 @@ ok(/per_group_outcome_counts/.test(genK2) && /job_status/.test(genK2), 'G1. repo
 // asserted below; what was ADDED is the one other legitimate success: a run that successfully computed ZERO
 // recommendations. That is a real answer about the world, and §E requires it to still supersede the previous
 // plan — so the assertion now pins BOTH halves instead of a single expression that could not express them.
-ok(/var runSucceeded = zeroResult \|\| \(anyOk && !anyFail\)/.test(genK2),
-  'G2. whole-job success requires every group committed — or a genuine zero-result run');
+// G2 STRENGTHENED AGAIN by F1-7N-FB-4C-ADDENDUM-MIGRATION §B. The rule "a partial commit is never whole-job
+// success" is still the point and is still asserted. What is ADDED is the third legitimate success: a run whose
+// every proposed identity was already held by a binding manual Execution Plan wrote nothing and was RIGHT to.
+// All three halves are pinned, so no future edit can quietly add a fourth.
+ok(/var runSucceeded = zeroResult \|\| allSuppressed \|\| \(anyOk && !anyFail\)/.test(genK2),
+  'G2. whole-job success requires every group committed — or a genuine zero-result run — or an all-suppressed run');
+ok(/var allSuppressed = \(jobStatus === 'ALL_SUPPRESSED_BY_MANUAL'\)/.test(genK2),
+  'G2. all-suppressed is its own classified status, not a silent NO_DEMAND');
+ok(/anyFail \? \(anyOk \? 'PARTIAL' : 'FAILED'\) : 'COMPLETED'/.test(genK2),
+  'G2. and a partial commit is still neither');
 ok(/var zeroResult = \(jobStatus === 'NO_DEMAND'\)/.test(genK2),
   'G2b. and a zero-result run is exactly NO_DEMAND — never ALL_BLOCKED, PARTIAL or FAILED');
 ok(/success: runSucceeded/.test(genK2), 'G2c. the envelope reports exactly that decision');

@@ -44,6 +44,35 @@ var SHIPPING_ALLOCATION_DRAFTS_HEADERS_ = [
   'submitted_by', 'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'
 ];
 
+// ============================================================================================================
+// F1-7N-FB-4C-ADDENDUM-MIGRATION §D — THE LIFECYCLE TAIL, AND WHY IT IS A SEPARATE CONSTANT.
+//
+// The AI Plan draft lifecycle needs four audit columns. The obvious move - append them to
+// SHIPPING_ALLOCATION_DRAFTS_HEADERS_ above - was AUDITED AND REJECTED, because that constant is what every
+// caller passes to procurementEnsureSheet_ -> prodRequireSheet_, and prodRequireSheet_ fails closed on a
+// MISSING expected header (classifySchemaMismatch: missingHeaders.length -> HEADER_MISSING -> invalid). Adding
+// them there would mean that the moment 16_ is synced, and until the migration runs, EVERY shipping-allocation
+// read and write - manual Execution Plan saves included - throws PRODUCTION_SAFETY:HEADER_MISSING. There is no
+// deployment order that avoids that window, because the reverse order breaks the exact-schema write gate.
+//
+// So the two lists are deliberately different things:
+//   SHIPPING_ALLOCATION_DRAFTS_HEADERS_           the REQUIRED contract - 30 columns, frozen. Extra columns are
+//                                                 ALLOWed by this table's additive contract, so a migrated sheet
+//                                                 satisfies it unchanged.
+//   ..._DRAFTS_HEADERS_CANONICAL_                 the CANONICAL post-migration order - the required 30 followed
+//                                                 by the lifecycle tail in ONE documented order.
+// The write gate (sadExactSchemaReason_) validates against the CANONICAL list with the tail marked optional, so
+// a pre-migration sheet (30) and a migrated sheet (34) are BOTH exact - and anything else, including a tail in
+// the wrong order or any unknown extra column, still fails. The result is that code sync and schema migration
+// are ORDER-INDEPENDENT: neither one alone can break a write, and the lifecycle simply stays gated (see
+// aiplActivationGate_) until the columns actually exist.
+//
+// CANONICAL ORDER IS APPEND-ONLY AND FIXED: generation_run_id, expired_at, expired_by_run_id, expiration_reason,
+// at indexes 30, 31, 32, 33. No live column is ever reordered or rewritten.
+var SAD_LIFECYCLE_TAIL_COLUMNS_ = ['generation_run_id', 'expired_at', 'expired_by_run_id', 'expiration_reason'];
+var SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ =
+  SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_LIFECYCLE_TAIL_COLUMNS_);
+
 var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // identity
   'allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku',
@@ -75,6 +104,19 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
 // them would destroy the distinction the lifecycle exists to record.
 // An expired row is READ-ONLY: it is not editable, not submittable, and not part of any active set below.
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1, expired: 1 };
+// ADDENDUM §D/§H — the LINE status authority, written down. `line_status` already exists as a column, so no
+// line column is added by the migration; what was missing was an explicit enum. Before this, `expired` was
+// accepted on a line only by OMISSION - nothing validated line_status at all - which is not the same thing as
+// being accepted, and §H requires `expired` to be positively accepted by BOTH validators.
+var SAD_LINE_STATUSES_ = {
+  draft: 1, planned: 1, site_confirmed: 1, submitted: 1, cancelled: 1, expired: 1,
+  superseded: 1, superseded_user_review: 1
+};
+function sadHeaderStatusValid_(v) { return !!SAD_STATUSES_[String(v == null ? '' : v).trim().toLowerCase()]; }
+function sadLineStatusValid_(v) {
+  var t = String(v == null ? '' : v).trim().toLowerCase();
+  return t === '' || !!SAD_LINE_STATUSES_[t];       // blank stays legal: most writers never set a line status
+}
 // The statuses no writer may mutate. `expired` is terminal for the same reason `submitted` is: it is history.
 var SAD_TERMINAL_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1 };
 var SAD_TERMINAL_LINE_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1, superseded: 1, superseded_user_review: 1 };
@@ -899,13 +941,44 @@ function handleUpsertShippingAllocationDraftAtomic_(body) {
 
 // EXACT (order-sensitive) header-row check against a canonical authority. '' when OK, else a reason string. Trailing
 // all-blank cells are not real columns. Pure over a sheet-like object exposing getDataRange().getValues().
-function sadExactSchemaReason_(sh, authority) {
+// ADDENDUM §D — EXACT, with ONE documented optional tail. `optionalTail` names a trailing suffix of `authority`
+// that a live sheet is permitted not to have yet (the pre-migration state). Everything else is unchanged and
+// still exact: the live header must be a BYTE-EXACT PREFIX of the authority, so a reorder, a rename, a blank, a
+// duplicate or ANY unknown extra column still fails closed with the same deterministic reason string. This is a
+// CLOSED allowance over four named columns - not the order-agnostic tolerance rule 9 forbids.
+function sadExactSchemaReason_(sh, authority, optionalTail) {
   var data = sh.getDataRange().getValues();
   var actual = (data && data.length ? data[0] : []).map(function (h) { return String(h == null ? '' : h).trim(); });
   while (actual.length && actual[actual.length - 1] === '') actual.pop();
-  if (actual.length !== authority.length) return 'COL_COUNT_' + actual.length + '_EXPECTED_' + authority.length;
-  for (var i = 0; i < authority.length; i++) if (actual[i] !== authority[i]) return 'COL' + i + '_IS_' + (actual[i] || '(blank)') + '_EXPECTED_' + authority[i];
+  var tail = optionalTail || [];
+  var minLen = authority.length - tail.length;
+  if (actual.length < minLen || actual.length > authority.length) {
+    return 'COL_COUNT_' + actual.length + '_EXPECTED_' + (tail.length ? minLen + '_TO_' + authority.length : String(authority.length));
+  }
+  for (var i = 0; i < actual.length; i++) if (actual[i] !== authority[i]) return 'COL' + i + '_IS_' + (actual[i] || '(blank)') + '_EXPECTED_' + authority[i];
   return '';
+}
+
+// Which lifecycle tail columns the LIVE sheet actually has, in canonical order, plus the exact ones missing.
+// This is the single source of truth for "is the lifecycle schema present?" - the activation gate and the
+// migration tool both read it rather than each forming their own opinion.
+function sadLifecycleTailState_(sh) {
+  var data = sh.getDataRange().getValues();
+  var actual = (data && data.length ? data[0] : []).map(function (h) { return String(h == null ? '' : h).trim(); });
+  while (actual.length && actual[actual.length - 1] === '') actual.pop();
+  var base = SHIPPING_ALLOCATION_DRAFTS_HEADERS_.length, present = [], missing = [], misplaced = [];
+  SAD_LIFECYCLE_TAIL_COLUMNS_.forEach(function (c, i) {
+    var at = actual.indexOf(c);
+    if (at === -1) { missing.push(c); return; }
+    present.push(c);
+    if (at !== base + i) misplaced.push({ column: c, expected_index: base + i, actual_index: at });
+  });
+  return {
+    live_count: actual.length, live_headers: actual,
+    canonical_count: SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_.length,
+    present: present, missing: missing, misplaced: misplaced,
+    complete: missing.length === 0 && misplaced.length === 0
+  };
 }
 
 // Pure pre-write validation for the atomic path. Returns { ok:true, lines:[aliased] } or { ok:false, error, stage,
@@ -946,7 +1019,7 @@ function sadAtomicUpsertCore_(body) {
   // ensure both sheets, then validate BOTH schemas EXACT (rule 9 — no order-agnostic tolerance).
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
-  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_, SAD_LIFECYCLE_TAIL_COLUMNS_);
   if (hR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_drafts] ' + hR, stage: 'schema', zero_write: true });
   var lR = sadExactSchemaReason_(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
   if (lR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_draft_lines] ' + lR, stage: 'schema', zero_write: true });
@@ -1020,6 +1093,10 @@ function sadAtomicUpsertCore_(body) {
         'recommended_last_mile_delivery'].forEach(function (f) { if (header[f] != null) setCol(f, String(header[f])); });
       // REGENERATE: adopt new calculation evidence + bump draft_version EXACTLY once. note is USER-owned (not overwritten).
       ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'].forEach(function (f) { if (header[f] != null && String(header[f]).trim() !== '') setCol(f, String(header[f])); });
+      // ADDENDUM — a REGENERATE is this run's output, so the row's owning run becomes THIS run. Excluded from
+      // SAD_K2_HEADER_FP_, so stamping it never turns an otherwise-identical payload into a false content change
+      // (a REUSE returns before the write phase and correctly keeps the run that created the row).
+      if (header.generation_run_id != null && String(header.generation_run_id).trim() !== '') setCol('generation_run_id', String(header.generation_run_id).trim());
       if (nextVersion) setCol('draft_version', nextVersion);
       setCol('updated_by', actor); setCol('updated_at', now);
     })();
@@ -1043,6 +1120,13 @@ function sadAtomicUpsertCore_(body) {
       calculated_at: String(header.calculated_at || '').trim(),
       source_data_as_of: String(header.source_data_as_of || '').trim(),
       draft_version: String(header.draft_version || '1').trim(),
+      // ADDENDUM — WRITE the lifecycle provenance. FB-4C stamped generation_run_id onto the header OBJECT in 61_
+      // but this insert never carried it into the row, so no persisted row could ever have one and the lifecycle
+      // could not have told one run from another even with the columns present. Written by header NAME
+      // (procurementAppendByHeader_), so this is inert pre-migration and correct post-migration - it needs no
+      // deployment ordering. The three expiration columns are deliberately left blank: a row is not expired.
+      generation_run_id: String(header.generation_run_id || '').trim(),
+      expired_at: '', expired_by_run_id: '', expiration_reason: '',
       created_by: actor, created_at: now, updated_by: actor, updated_at: now,
       submitted_by: '', submitted_at: '', cancelled_by: '', cancelled_at: '', cancel_reason: '',
       note: String(header.note || '').trim()

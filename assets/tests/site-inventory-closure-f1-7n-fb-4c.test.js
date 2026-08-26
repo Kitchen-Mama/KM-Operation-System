@@ -276,7 +276,17 @@ function runRest() {
     eq(zero.expire.map(function (x) { return x.allocation_draft_id; }), ['CURRENT-1', 'OLD-AI-1', 'OLD-AI-EDITED'],
       '11. a zero-result successful run expires every older AI draft in scope');
     ok(G61C.indexOf('var zeroResult = (jobStatus === \'NO_DEMAND\')') !== -1, '11b. NO_DEMAND is classified as a zero-result run');
-    ok(G61C.indexOf('var runSucceeded = zeroResult || (anyOk && !anyFail)') !== -1, '11c. and a zero-result run is a SUCCESS');
+    // 11c SUPERSEDED BY F1-7N-FB-4C-ADDENDUM-MIGRATION §B, and STRENGTHENED. FB-4C pinned the exact expression
+    // `zeroResult || (anyOk && !anyFail)`. The addendum adds ONE more legitimate success case: a run whose every
+    // proposed identity was suppressed by a binding manual Execution Plan wrote nothing and was RIGHT to write
+    // nothing. The rule that matters is unchanged and is now pinned in both directions - the only successes are
+    // "no demand", "all suppressed", and "every group committed"; a partial or failed run is still not success.
+    ok(G61C.indexOf('var runSucceeded = zeroResult || allSuppressed || (anyOk && !anyFail)') !== -1,
+      '11c. a zero-result run is a SUCCESS, and so is an all-suppressed run');
+    ok(G61C.indexOf("var allSuppressed = (jobStatus === 'ALL_SUPPRESSED_BY_MANUAL')") !== -1,
+      '11c. all-suppressed is its own classified job status, not a silent NO_DEMAND');
+    ok(/anyFail \? \(anyOk \? 'PARTIAL' : 'FAILED'\) : 'COMPLETED'/.test(G61C),
+      '11c. and a partial or failed run is still NEITHER — whole-job success needs every written group to commit');
     ok(G61C.indexOf('zero_result: zeroResult') !== -1, '11d. reported as zero_result in the projection');
 
     // 10 — a FAILED run expires nothing

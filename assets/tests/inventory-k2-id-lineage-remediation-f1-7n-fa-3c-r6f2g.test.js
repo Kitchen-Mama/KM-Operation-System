@@ -98,7 +98,15 @@ eq(resolver(JSON.stringify({ product: 'INVENTORY', runId: 'GAP-INV-1', status: '
 eq(resolver(JSON.stringify({ product: 'INVENTORY', runId: 'GAP-INV-1', status: 'DONE', planningCycle: 'RECO-2026-07' }), 'RECO-2026-08').reason, 'LINEAGE_RUN_CYCLE_MISMATCH', 'C6 stale/other-cycle run → BLOCK');
 var genK2 = extractFn(G61, 'weeklyAiPlanGenerateK2_');
 ok(/var lineage = weeklyAiPlanResolveGapRunLineage_\(request\.planningCycle, harvest, request\);/.test(genK2) && /if \(!lineage\.ok\) return jsonResponse_\(\{ success: false/.test(genK2), 'C7 generate BLOCKS before any write when lineage not ok');
-ok(/g\.header\.calculation_run_id = lineage\.calculation_run_id;[\s\S]{0,500}handleUpsertShippingAllocationDraftAtomic_/.test(genK2), 'C8 header stamped with lineage BEFORE the atomic write');
+// C8 SUPERSEDED, NOT WEAKENED. The 500-character proximity window was a proxy for "before the write" when both
+// happened in one loop. F1-7N-FB-4C-ADDENDUM-MIGRATION §A moved the stamping into a pure compute pass and the
+// write into a later pass, so the two are now far apart in the source - and the ordering is STRUCTURAL rather
+// than incidental, which is a stronger version of the same claim. Pinned as order, not as distance.
+var stampAt = genK2.indexOf('g.header.calculation_run_id = lineage.calculation_run_id;');
+var writeAt = genK2.indexOf('handleUpsertShippingAllocationDraftAtomic_(');
+ok(stampAt > 0 && writeAt > stampAt, 'C8 header stamped with lineage BEFORE the atomic write');
+ok(/g\.header\.formula_version = lineage\.formula_version;/.test(genK2) && /g\.header\.calculated_at = lineage\.calculated_at;/.test(genK2) && /g\.header\.source_data_as_of = lineage\.source_data_as_of;/.test(genK2), 'C8 with the full lineage quartet stamped, not just the run id');
+ok(genK2.slice(stampAt, writeAt).indexOf('handleUpsertShippingAllocationDraftAtomic_') === -1, 'C8 and no write happens between the stamp and the one write site');
 ok(genK2.indexOf('var lineage = weeklyAiPlanResolveGapRunLineage_') < genK2.indexOf('Object.keys(byMkt).sort().forEach'), 'C9 lineage resolution/BLOCK precedes the per-group write loop');
 
 // ================================================================================================================

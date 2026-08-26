@@ -73,7 +73,14 @@ ok(!/KMWRB\.generateWeeklyShippingRecommendationBatch/.test(G61), 'D2. the legac
 var genK2 = extractFn(G61, 'weeklyAiPlanGenerateK2_');
 ok(/KMWRB\.buildWeeklySourceLines\(request\)/.test(genK2), 'D3. K2 path reuses the extracted per-source line production');
 ok(/KMWRR\.buildK2GenerationPlan/.test(genK2), 'D3. K2 path derives routes + partitions via KMWRR');
-ok(/handleUpsertShippingAllocationDraftAtomic_\(\{ header: g\.header, lines: g\.lines, enforce_k2_grouping: true \}\)/.test(genK2), 'D4. each K2 group is written via the ATOMIC endpoint with the K2 route guard ON');
+// D4 SUPERSEDED, NOT WEAKENED. F1-7N-FB-4C-ADDENDUM-MIGRATION §A split this function into a pure compute pass
+// and a write pass so the lifecycle schema gate can run BEFORE the first write, so the group being written is
+// now `pl` (a planned group) rather than the loop-local `g`. What D4 exists to protect - the atomic endpoint and
+// the K2 route guard being ON - is unchanged, and the split adds a guarantee D4 could not express: there is
+// exactly ONE write site and it sits downstream of the gate.
+ok(/handleUpsertShippingAllocationDraftAtomic_\(\{ header: pl\.header, lines: pl\.lines, enforce_k2_grouping: true \}\)/.test(genK2), 'D4. each K2 group is written via the ATOMIC endpoint with the K2 route guard ON');
+ok((genK2.match(/handleUpsertShippingAllocationDraftAtomic_\(/g) || []).length === 1, 'D4. via exactly ONE write site, so no path can bypass the gate that precedes it');
+ok(genK2.indexOf('if (!gate.ready)') < genK2.indexOf('handleUpsertShippingAllocationDraftAtomic_({ header: pl.header'), 'D4. and the schema gate refuses before it');
 ok(/weeklyAiPlanReadCarrierAuthorities_/.test(G61) && /carrier_rate_cards/.test(G61) && /carrier_lead_times/.test(G61), 'D5. the K2 path harvests carrier_rate_cards + carrier_lead_times (absent from the legacy harvest)');
 
 // ============================================================ E — K2 empty-header classifier (H) + diagnostics (I)

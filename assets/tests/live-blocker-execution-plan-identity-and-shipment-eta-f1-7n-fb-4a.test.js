@@ -713,8 +713,16 @@ var declaredBy = {
   'EPC_BUILD_VERSION_': (G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   'TEMP_ROSEND_DIAG_BUILD_VERSION_': (GTD.match(/var TEMP_ROSEND_DIAG_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   // F1-7N-FB-4C - the AI Plan draft lifecycle joined the manifest, so this invariant now covers it too.
-  'AIPL_BUILD_VERSION_': (read('specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs').match(/var AIPL_BUILD_VERSION_ = '([^']+)';/) || [])[1]
+  'AIPL_BUILD_VERSION_': (read('specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs').match(/var AIPL_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  // F1-7N-FB-4C-ADDENDUM-MIGRATION - and so did the lifecycle schema migration owner. Every manifest entry must
+  // appear here or the check below silently compares `undefined`, which is how a manifest invariant rots.
+  'TEMP_AIMIG_BUILD_VERSION_': (read('specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs').match(/var TEMP_AIMIG_BUILD_VERSION_ = '([^']+)';/) || [])[1]
 };
+// Guard the guard: a manifest entry with no declaredBy lookup would make the comparison vacuous.
+SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
+  ok(Object.prototype.hasOwnProperty.call(declaredBy, m.symbol),
+    '20. every manifest symbol has a real declared-value lookup (' + m.symbol + ')');
+});
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
   eq(declaredBy[m.symbol], m.expected, '20. the manifest expectation for ' + m.file + ' matches what the file declares');
 });

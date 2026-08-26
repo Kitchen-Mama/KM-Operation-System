@@ -155,7 +155,11 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
   // still write its own rows and simply expire nothing, leaving last week's plan active and looking like advice.
-  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FB-4C', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' }
+  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FB-4C', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' },
+  // F1-7N-FB-4C-ADDENDUM-MIGRATION — the USER-run lifecycle schema migration. Registered because its absence is
+  // ACTIONABLE: the AI Plan will refuse to run until the columns exist, and the only supported way to add them is
+  // this tool. Without the entry, "the run is blocked" and "the tool that unblocks it was never synced" look the same.
+  { file: 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', symbol: 'TEMP_AIMIG_BUILD_VERSION_', expected: 'F1-7N-FB-4C-ADDENDUM-MIGRATION', owns: 'AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)' }
 ];
 
 function sysGlobalValue_(name) {

@@ -310,6 +310,19 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     ('AIPLAN-' + sadFnv1a_([request.planningCycle, scope0.company, scope0.country, requestedMkt, lineage.calculation_run_id].join('|')).toUpperCase());
   var generationRunId = 'AIRUN-' + sadFnv1a_(executionKey).toUpperCase();
 
+  // ==========================================================================================================
+  // ADDENDUM §A/§B — TWO PASSES, WITH THE GATE BETWEEN THEM.
+  //
+  // FB-4C built each marketplace's plan and wrote it in the SAME loop, so the first row was committed before
+  // anything had looked at the lifecycle schema or at what the operator had already decided. The plan builder
+  // (KMWRR.buildK2GenerationPlan) is pure, so the loop splits cleanly: PASS 1 computes every group and writes
+  // nothing; the gate then runs on the complete set of proposed identities; PASS 2 writes only what survived.
+  // This is what makes "zero writes" a structural property rather than a claim - there is no code path from a
+  // gate refusal to a write.
+  // ==========================================================================================================
+
+  // ---- PASS 1: compute every group. ZERO WRITES. ----
+  var planned = [];                                  // { marketplace, groupNo, header, lines, identity_key }
   Object.keys(byMkt).sort().forEach(function (M) {
     var plan = KMWRR.buildK2GenerationPlan({
       scope: { planning_cycle: request.planningCycle, company: scope0.company, country: scope0.country, marketplace: M, source_page: scope0.source_page },
@@ -321,9 +334,6 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     plan.blocked.forEach(function (b) { blockedTotal.push({ marketplace: M, block: b.block }); });
     conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved });
     plan.groups.forEach(function (g) {
-      // G — each K2 group is INDIVIDUALLY atomic (one lock inside the atomic endpoint). The overall job reports a
-      // truthful per-group outcome; whole-job success is claimed ONLY when every group committed. A retry uses the
-      // SAME deterministic identity (SADH-K2-…) so a committed group REUSEs (zero writes), never duplicates.
       // R6F2G (C) — stamp the authoritative lineage onto the header before the atomic write. These fields are EXCLUDED
       // from the REUSE fingerprint (SAD_K2_HEADER_FP_/LINE_FP_), so a committed group still REUSEs (zero writes) here.
       g.header.calculation_run_id = lineage.calculation_run_id;
@@ -333,13 +343,113 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       // FB-4C §D — provenance for the lifecycle. `generation_run_id` marks WHICH run owns this row; without it
       // no later run can tell its own rows from the ones it is replacing.
       g.header.generation_run_id = generationRunId;
-      var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: g.header, lines: g.lines, enforce_k2_grouping: true }));
-      var d = (resp && resp.data) ? resp.data : {};
-      var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (d.outcome || 'CREATED')) : ((d && d.reason) ? d.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));
-      if (resp && resp.success) anyOk = true; else anyFail = true;
-      groupsWritten.push({ marketplace: M, groupNo: g.groupNo, outcome: outcome, allocation_draft_id: d.allocation_draft_id || null, draft_version: d.draft_version || null, line_count: d.line_count || 0, ok: !!(resp && resp.success), error: (resp && !resp.success) ? resp.error : null });
+      planned.push({
+        marketplace: M, groupNo: g.groupNo, header: g.header, lines: g.lines,
+        identity_key: (typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(g.header) : '',
+        recommended_total: (g.lines || []).reduce(function (a, l) { return a + (Number(l.recommended_qty) || 0); }, 0)
+      });
     });
   });
+
+  // ---- THE GATE. Reads only. Anything that fails here returns BEFORE the first write. ----
+  var activeRows = [], activeHeaders = [];
+  try {
+    var _hs = ss.getSheetByName('shipping_allocation_drafts');
+    if (_hs) {
+      var _d = _hs.getDataRange().getValues();
+      if (_d && _d.length > 1) {
+        activeHeaders = _d[0].map(function (h) { return String(h == null ? '' : h).trim(); });
+        for (var _r = 1; _r < _d.length; _r++) {
+          var _o = { __row: _r + 1 };
+          for (var _c = 0; _c < activeHeaders.length; _c++) if (activeHeaders[_c]) _o[activeHeaders[_c]] = _d[_r][_c];
+          var _st = String(_o.status == null ? '' : _o.status).trim().toLowerCase();
+          // "Active" = not terminal. The named terminal set is the authority; an expired/submitted/cancelled row
+          // holds no identity and must never suppress a fresh recommendation.
+          var _term = (typeof SAD_TERMINAL_STATUSES_ !== 'undefined') ? SAD_TERMINAL_STATUSES_ : { submitted: 1, cancelled: 1, expired: 1 };
+          if (!_term[_st]) activeRows.push(_o);
+        }
+      }
+    }
+  } catch (eRead) { activeRows = []; }
+
+  // §B — per-identity precedence, computed on the FULL proposed set before anything is written.
+  var precedence = (typeof aiplManualPrecedence_ === 'function')
+    ? aiplManualPrecedence_(activeRows, planned.map(function (pl) {
+        var held = null;
+        for (var i = 0; i < activeRows.length; i++) {
+          if ((typeof sadK2GroupKey_ === 'function' ? sadK2GroupKey_(activeRows[i]) : '') === pl.identity_key) { held = activeRows[i]; break; }
+        }
+        return { identity_key: pl.identity_key, recommendation: pl.recommended_total,
+                 persisted_user_qty: held ? (held.__persisted_user_qty != null ? held.__persisted_user_qty : null) : null };
+      }), function (r) { return (typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(r) : ''; })
+    : planned.map(function (pl) { return { identity_key: pl.identity_key, decision: 'PROCEED' }; });
+
+  var decisionByKey = {};
+  precedence.forEach(function (d) { decisionByKey[d.identity_key] = d; });
+  var collisions = precedence.filter(function (d) { return d.decision === 'ACTIVE_SOURCE_IDENTITY_COLLISION'; });
+  var suppressed = precedence.filter(function (d) { return d.decision === 'SUPPRESSED_BY_ACTIVE_MANUAL_DRAFT'; });
+
+  // §A/§H — the schema/activation gate. Placed HERE: after the run id is minted (the gate requires one) and
+  // before the first write. On refusal the whole command stops with zero writes and the complete diagnosis.
+  if (typeof aiplActivationGate_ === 'function' && typeof aiplReadActivationFacts_ === 'function') {
+    var facts = aiplReadActivationFacts_(ss, { generation_run_id: generationRunId, identity_collisions: collisions });
+    var gate = aiplActivationGate_(facts);
+    if (!gate.ready) {
+      return jsonResponse_({
+        success: false, zero_write: true,
+        errors: [gate.error],
+        data: {
+          mode: 'K2_ROUTE_GROUP', job_status: 'BLOCKED_SCHEMA_NOT_READY',
+          planningCycle: request.planningCycle, businessScope: scope0,
+          generation_run_id: generationRunId, execution_key: executionKey,
+          created_headers: 0, updated_headers: 0, created_lines: 0, updated_lines: 0,
+          expired_headers: 0, expired_lines: 0, active_count: 0, expired_count: 0,
+          zero_result: false, groups: [], blocked: [],
+          lifecycle: { ran: false, reason: gate.error.code, expired_headers: 0, expired_lines: 0 },
+          schema_gate: gate.error
+        }
+      });
+    }
+  } else {
+    // The lifecycle module is not in the deployed project. That is a MIXED DEPLOYMENT, not a reason to proceed:
+    // without it nothing would expire and the run would leave two active plans - exactly the state §A forbids.
+    return jsonResponse_({
+      success: false, zero_write: true,
+      errors: [weeklyAiPlanErr_('AI_PLAN_LIFECYCLE_SCHEMA_NOT_READY',
+        'the AI Plan lifecycle module (69_api_v1_ai_plan_lifecycle.gs) is not present in this Apps Script project, so no run may write: it would create a new draft while leaving the previous one active.',
+        { missing_table: [], missing_columns: [], invalid_status_authority: [],
+          expected_migration_version: 'FB4C-AI-LIFECYCLE-1', zero_write: true,
+          created_headers: 0, created_lines: 0, expired_headers: 0, expired_lines: 0,
+          next_action: 'Sync 69_api_v1_ai_plan_lifecycle.gs into the Apps Script project and publish a new deployment version.' })],
+      data: { job_status: 'BLOCKED_LIFECYCLE_MODULE_MISSING', created_headers: 0, created_lines: 0, expired_headers: 0, expired_lines: 0, groups: [] }
+    });
+  }
+
+  // ---- PASS 2: write. Only identities the gate and precedence allow. ----
+  planned.forEach(function (pl) {
+    var d = decisionByKey[pl.identity_key] || { decision: 'PROCEED' };
+    // §B — an active manual Execution Plan is the binding decision: no parallel AI draft, no overwrite. The run
+    // continues for every other identity, and the suppression is REPORTED with what the AI would have proposed.
+    if (d.decision === 'SUPPRESSED_BY_ACTIVE_MANUAL_DRAFT' || d.decision === 'ACTIVE_SOURCE_IDENTITY_COLLISION') {
+      groupsWritten.push({
+        marketplace: pl.marketplace, groupNo: pl.groupNo, outcome: d.decision,
+        allocation_draft_id: (d.manual_identity && d.manual_identity.allocation_draft_id) || null,
+        draft_version: null, line_count: 0, ok: true, suppressed: true,
+        created: false, updated: false, blocks_run: false,
+        identity_key: pl.identity_key, precedence: d, error: null
+      });
+      return;
+    }
+    // G — each K2 group is INDIVIDUALLY atomic (one lock inside the atomic endpoint). The overall job reports a
+    // truthful per-group outcome; whole-job success is claimed ONLY when every group committed. A retry uses the
+    // SAME deterministic identity (SADH-K2-…) so a committed group REUSEs (zero writes), never duplicates.
+    var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: pl.header, lines: pl.lines, enforce_k2_grouping: true }));
+    var dd = (resp && resp.data) ? resp.data : {};
+    var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (dd.outcome || 'CREATED')) : ((dd && dd.reason) ? dd.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));
+    if (resp && resp.success) anyOk = true; else anyFail = true;
+    groupsWritten.push({ marketplace: pl.marketplace, groupNo: pl.groupNo, outcome: outcome, allocation_draft_id: dd.allocation_draft_id || null, draft_version: dd.draft_version || null, line_count: dd.line_count || 0, ok: !!(resp && resp.success), identity_key: pl.identity_key, error: (resp && !resp.success) ? resp.error : null });
+  });
+
   var outcomeCounts = {};
   groupsWritten.forEach(function (g) { outcomeCounts[g.outcome] = (outcomeCounts[g.outcome] || 0) + 1; });
   // F1-7N-FA-3C-R6F2D (F) — applied scope MUST equal the requested scope. The applied marketplaces = the ones actually
@@ -349,14 +459,24 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   var scopeEqual = requestedMkt ? (appliedList.length <= 1 && (appliedList.length === 0 || appliedList[0] === requestedMkt)) : true;
   if (requestedMkt && !scopeEqual) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('APPLIED_SCOPE_WIDENED', 'applied scope ' + JSON.stringify(appliedList) + ' != requested marketplace ' + requestedMkt + ' — refused (no out-of-scope rows)')] });
   // job-level status: COMPLETED only if every group ok; else PARTIAL (never claim whole-job success on partial commit).
-  var jobStatus = groupsWritten.length === 0 ? (blockedTotal.length ? 'ALL_BLOCKED' : 'NO_DEMAND') : (anyFail ? (anyOk ? 'PARTIAL' : 'FAILED') : 'COMPLETED');
+  // ADDENDUM §B — a SUPPRESSED group is neither a success nor a failure of this run: the operator already
+  // decided that identity, so it contributes no write and must not turn a clean run into PARTIAL. A run whose
+  // every group was suppressed still succeeded - it correctly wrote nothing.
+  var writtenGroups = groupsWritten.filter(function (g) { return !g.suppressed; });
+  var jobStatus = writtenGroups.length === 0
+    ? (blockedTotal.length ? 'ALL_BLOCKED' : (groupsWritten.length ? 'ALL_SUPPRESSED_BY_MANUAL' : 'NO_DEMAND'))
+    : (anyFail ? (anyOk ? 'PARTIAL' : 'FAILED') : 'COMPLETED');
 
   // F1-7N-FB-4C §E — A ZERO-RESULT RUN IS A SUCCESSFUL RUN. Computing no recommendations is a real answer about
   // the world ("nothing needs shipping this cycle"), not a failure, and it must still replace the previous
   // proposal — otherwise last week's plan silently stays active and looks like this week's advice. It writes NO
   // empty header and NO empty line. ALL_BLOCKED is NOT this case: something went wrong there, so nothing expires.
   var zeroResult = (jobStatus === 'NO_DEMAND');
-  var runSucceeded = zeroResult || (anyOk && !anyFail);
+  // ALL_SUPPRESSED_BY_MANUAL is a SUCCESSFUL run with nothing to write: every identity it would have proposed is
+  // already held by a binding operator decision. It still supersedes older AI drafts of the same scope, because
+  // "the operator has this covered" is as real an answer about the world as a fresh recommendation.
+  var allSuppressed = (jobStatus === 'ALL_SUPPRESSED_BY_MANUAL');
+  var runSucceeded = zeroResult || allSuppressed || (anyOk && !anyFail);
 
   // §E Stage 3 steps 5-7 — EXPIRE ONLY AFTER THE CURRENT RUN IS COMMITTED AND VERIFIED. A failed or partial run
   // expires NOTHING, so the operator is never left without an active plan because a replacement half-landed.
@@ -396,7 +516,7 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     lifecycle.reason = 'RUN_NOT_SUCCESSFUL_NOTHING_EXPIRED';
   }
 
-  var activeCount = groupsWritten.filter(function (g) { return g.ok; }).length;
+  var activeCount = writtenGroups.filter(function (g) { return g.ok; }).length;
   return jsonResponse_({
     success: runSucceeded,
     data: {
@@ -404,12 +524,21 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       // §G — the projection the frontend needs to refresh honestly.
       generation_run_id: generationRunId, execution_key: executionKey,
       scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || null, planning_cycle: request.planningCycle },
-      created_headers: groupsWritten.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).length,
-      updated_headers: groupsWritten.filter(function (g) { return g.ok && (g.outcome === 'UPDATED' || g.outcome === 'REGENERATED' || g.outcome === 'REUSED'); }).length,
-      created_lines: groupsWritten.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
-      updated_lines: groupsWritten.filter(function (g) { return g.ok && g.outcome !== 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
+      created_headers: writtenGroups.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).length,
+      updated_headers: writtenGroups.filter(function (g) { return g.ok && (g.outcome === 'UPDATED' || g.outcome === 'REGENERATED' || g.outcome === 'REUSED'); }).length,
+      created_lines: writtenGroups.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
+      updated_lines: writtenGroups.filter(function (g) { return g.ok && g.outcome !== 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
       expired_headers: lifecycle.expired_headers, expired_lines: lifecycle.expired_lines,
       active_count: activeCount, expired_count: lifecycle.expired_headers, zero_result: zeroResult,
+      // ADDENDUM §B/§G — precedence is REPORTED, not implied. A caller must be able to tell "the AI had nothing
+      // to say" from "the AI had something to say and the operator's decision outranked it", and to see the
+      // recommendation that was withheld next to the quantity that was kept.
+      all_suppressed_by_manual: allSuppressed,
+      suppressed_count: suppressed.length,
+      suppressed_by_active_manual_draft: suppressed,
+      identity_collision_count: collisions.length,
+      active_source_identity_collisions: collisions,
+      schema_gate: { ready: true, migration_version: (typeof AIPL_MIGRATION_VERSION_ !== 'undefined') ? AIPL_MIGRATION_VERSION_ : null },
       verification: { lifecycle_ok: lifecycle.ok, lifecycle_reason: lifecycle.reason, detail: lifecycle.verification, manifest: lifecycle.manifest },
       lifecycle: lifecycle,
       requested_scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || 'ALL_MARKETPLACES(company/country fan-out)' },
