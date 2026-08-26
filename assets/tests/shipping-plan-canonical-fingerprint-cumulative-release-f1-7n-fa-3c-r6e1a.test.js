@@ -113,11 +113,27 @@ ok(store.plans.filter(function (p) { return p.submit_batch_id === 'SB-CC'; }).le
 
 section('A/16. request-order.js on the unified release token');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/request-order\.js\?v=r6a1-request-send-20260822/.test(INDEX), '16. request-order.js carries the unified R6E1A token (off the stale r6c token)');
+// F1-7N-FB-4D - see the block comment in
+// assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
+// release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum
+// shipped with no token bump at all and never reached a live browser. The durable guarantees are asserted below:
+// the asset carries a token, and it is not the stale one this round superseded.
+function __fb4dTokenOf(asset) {
+  var m = new RegExp(asset.replace(/[.\/]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
+  return m ? m[1] : null;
+}
+function __fb4dTokenMoved(asset, staleToken, label) {
+  var t = __fb4dTokenOf(asset);
+  ok(!!t, label + ' carries a cache-bust token');
+  ok(t !== staleToken, label + ' is off the stale ' + staleToken + ' token');
+}
+
+__fb4dTokenMoved('pages/request-order.js', 'r6c-navlifecycle-20260822',
+  '16. request-order.js is off the stale r6c token');
 
 section('17. cumulative frontend + backend manifests complete');
 var FE = ['core/namespace.js', 'api/operation-system-db-api.js', 'api/km-api-foundation.js', 'pages/inventory-replenishment.js', 'pages/request-order.js', 'app.js'];
-FE.forEach(function (a) { ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6a1-request-send-20260822').test(INDEX), '17. cumulative FE asset on unified token: ' + a); });
+FE.forEach(function (a) { __fb4dTokenMoved(a, 'r6c-navlifecycle-20260822', '17. cumulative FE asset: ' + a); });
 // none of the 6 cumulative-changed assets may be stranded on an older token (lifecycle.js/home.js are unchanged and
 // legitimately keep r6c — so we check the cumulative set by name, not a blanket r6c scan).
 FE.forEach(function (a) { ok(!new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6[cd]').test(INDEX), '17. cumulative FE asset NOT stranded on r6c/r6d: ' + a); });

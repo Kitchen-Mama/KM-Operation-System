@@ -35,6 +35,11 @@
  * `handleSkuDetailsWorkspaceGet_(body, io)` takes an injectable `io` so it runs against fixtures with ZERO SpreadsheetApp.
  */
 
+// F1-7N-FB-4D §E — deployment build stamp for the SKU WORKSPACE OWNER. FB-4D changed nothing in this file:
+// the SKU Details repair this round is entirely client-side, and this stamp is what lets the website PROVE
+// that rather than assume it. Last behavioural change was F1-7N-FB-4C-R1 (the echoed action + requestId).
+var SKD_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';
+
 var SKD_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
 // BASE tables (sku-details.js) — fail-closed on missing schema. 'regional' tables (sku-regional-details.js) — include-gated + missing-safe.

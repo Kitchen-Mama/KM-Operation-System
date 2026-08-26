@@ -359,7 +359,7 @@ function runRest() {
     ok(G16C.indexOf('sadCanonicalLineId_') !== -1, '21c. canonical line resolution still stands');
     ok(IRC.indexOf('preflightRouteGroups') !== -1 && IRC.indexOf('_irPersistOneRouteGroup_') !== -1,
       '20b. the FB-4B-Addendum multi-route grouping is unchanged');
-    ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines\)/.test(IRC),
+    ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines, wantGroupKey\)/.test(IRC),
       '21d. scoped persisted-id adoption is unchanged');
 
     // ================================================================================================================

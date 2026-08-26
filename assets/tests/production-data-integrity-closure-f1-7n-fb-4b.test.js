@@ -171,8 +171,11 @@ ok(/persisted_lines: persisted/.test(keyed), '5. the response carries the ids AC
 // F1-7N-FB-4B-ADDENDUM — STRENGTHENED: adoption is still required on success, and is now additionally SCOPED to
 // the header the ids came from. Route A and Route B of one SKU share the same line identity (route is a HEADER
 // dimension), so an unscoped adoption would hand Route B's persisted id to Route A.
-ok(/_irAdoptPersistedLineIds_\(sku, draftIdSeen, \(lres\.data && lres\.data\.persisted_lines\) \|\| \[\]\)/.test(IR), '5. the page adopts the persisted ids on success');
-ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines\)/.test(IR), '5. and adoption is SCOPED to one header, so a route never adopts the id of another route');
+// F1-7N-FB-4D - STRENGTHENED AGAIN: adoption now also carries the SERVER-REPORTED route group key, so the
+// header scope is verified against what 16_ actually stored instead of against the id in the same response.
+ok(/_irAdoptPersistedLineIds_\(sku, draftIdSeen, \(lres\.data && lres\.data\.persisted_lines\) \|\| \[\], serverGroupKey \|\| g\.groupKey\)/.test(IR),
+  '5. the page adopts the persisted ids on success, scoped by header AND group key');
+ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines, wantGroupKey\)/.test(IR), '5. and adoption is SCOPED to one header, so a route never adopts the id of another route');
 ok(/SADL-LOCAL-/.test(IR), '5. and its own generated id is now marked LOCAL, not a durable identity');
 var adopt = extractFn(IR, '_irAdoptPersistedLineIds_');
 ok(/setAttribute\('data-line-id', canonical\)/.test(adopt), '5. re-stamping the DOM attribute the next collect reads');

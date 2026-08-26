@@ -2634,9 +2634,15 @@ function _newDraftLineId() {
 // line identity. Matching on identity alone across a multi-route save would therefore hand Route B's persisted id
 // to Route A's row and the next save would rewrite the wrong header's line. The draft id is the discriminator, so
 // only rows already bound to THIS header are eligible.
-function _irAdoptPersistedLineIds_(sku, draftId, persistedLines) {
+// F1-7N-FB-4D §B4 — the header group is now a VERIFIED parameter, not an assumption. `wantGroupKey` is the
+// route group this call asked about; 16_ stamps the group key it actually stored onto every persisted line. A
+// line whose stored group key disagrees is NOT adopted: it describes a row under a different shipment group,
+// and adopting it is precisely how Route A ends up holding Route B's identity. A server that sends no group key
+// (an older deployment) is tolerated — the draft-id scope still applies — so this stays deploy-order-safe.
+function _irAdoptPersistedLineIds_(sku, draftId, persistedLines, wantGroupKey) {
     if (!persistedLines || !persistedLines.length) return 0;
     var wantDraft = String(draftId == null ? '' : draftId).trim();
+    var wantGroup = String(wantGroupKey == null ? '' : wantGroupKey).trim();
     var rows = ((replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || []).filter(function (r) {
         return !wantDraft || String(r.allocation_draft_id || '').trim() === wantDraft;
     });
@@ -2648,6 +2654,11 @@ function _irAdoptPersistedLineIds_(sku, draftId, persistedLines) {
     var byKey = {};
     persistedLines.forEach(function (p) {
         if (String(p.line_status || '').trim().toLowerCase() === 'cancelled') return;
+        // §B4 — cross-header adoption guard. Both keys are compared only when BOTH sides carry one.
+        var pDraft = String((p && p.allocation_draft_id) || '').trim();
+        if (wantDraft && pDraft && pDraft !== wantDraft) return;
+        var pGroup = String((p && p.route_group_key) || '').trim();
+        if (wantGroup && pGroup && pGroup !== wantGroup) return;
         var id = String(p.allocation_draft_line_id || '').trim();
         if (id) byKey[k(p)] = id;
     });
@@ -3106,7 +3117,7 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
         last_mile_delivery: h.recommended_last_mile_delivery || undefined,
         destination_marketplace: h.destination_marketplace || undefined
     });
-    var draftIdSeen = '';
+    var draftIdSeen = '', serverGroupKey = '';
     return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header)).then(function (hres) {
         if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
         // F1-7N-FB-2A §D — a bare success flag is NOT proof of persistence. Require the persisted primary key AND
@@ -3116,6 +3127,20 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
             message: 'The save response did not contain a persisted allocation_draft_id with a created/updated classification, so the row cannot be treated as persisted.' },
             'shipping_allocation_drafts', 'draft header upsert unacknowledged');
         draftIdSeen = ack.allocation_draft_id;
+        // F1-7N-FB-4D §B4 — DID THE SERVER RESOLVE THE HEADER WE ASKED ABOUT? 16_ now returns the group key it
+        // stored. If it names a DIFFERENT shipment group than this route's, the header is real but it is not
+        // this route's header, and binding this route's rows to it would hand one route another's identity.
+        // That is not a failure to write and not a success either — it is genuinely indeterminate, which is the
+        // state that blocks Submit until a scoped readback settles it (§A2.11). Absent key → older deployment,
+        // tolerated, and the draft-id scope still applies.
+        serverGroupKey = String((hres.data && hres.data.route_group_key) || '').trim();
+        if (serverGroupKey && String(g.groupKey || '').trim() && serverGroupKey !== String(g.groupKey).trim()) {
+            var gkErr = new Error('the header the server resolved belongs to a different shipment group than this route');
+            gkErr.structured = { code: 'ROUTE_GROUP_KEY_MISMATCH', message: gkErr.message,
+                requested_group_key: String(g.groupKey), server_group_key: serverGroupKey,
+                allocation_draft_id: draftIdSeen };
+            throw gkErr;
+        }
         var lines = (g.routes || []).map(function (r) {
             return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
         });
@@ -3123,7 +3148,7 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
     }).then(function (lres) {
         if (!lres || lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
         // §D.9 — adopt only into THIS header's rows, then bind the rows to it.
-        try { _irAdoptPersistedLineIds_(sku, draftIdSeen, (lres.data && lres.data.persisted_lines) || []); } catch (eA) {}
+        try { _irAdoptPersistedLineIds_(sku, draftIdSeen, (lres.data && lres.data.persisted_lines) || [], serverGroupKey || g.groupKey); } catch (eA) {}
         try { _irStampRouteGroupIds_(sku, g, draftIdSeen); } catch (eS) {}
         // keep the legacy single-id field pointing at a real persisted header for older readers
         replenAllocationDraft.allocationDraftId = draftIdSeen;
@@ -3134,7 +3159,9 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
         if (replenAllocationDraft.allocationDraftIds.indexOf(draftIdSeen) === -1) replenAllocationDraft.allocationDraftIds.push(draftIdSeen);
         return { status: 'persisted', groupKey: g.groupKey, allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g),
             line_count: (g.routes || []).length,
+            server_group_key: serverGroupKey,
             verification: (lres.data && lres.data.verification) || null,
+            persisted_headers: (lres.data && lres.data.persisted_headers) || [],
             persisted_lines: (lres.data && lres.data.persisted_lines) || [] };
     })['catch'](function (err) {
         var st = (err && err.structured) || {};
@@ -3142,9 +3169,13 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
         // §D.7 — a write whose outcome is genuinely unknown must not be reported as "not persisted". A transport
         // failure or a timeout may have committed on the server; only a refusal the server itself named is a
         // proven zero-write. The execution key is the group key, so a reconcile retry is idempotent.
-        var INDETERMINATE = { REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, HTTP_TRANSPORT_ERROR: 1, LINE_OUTPUT_VERIFICATION_FAILED: 1, PERSISTENCE_NOT_ACKNOWLEDGED: 1 };
+        // FB-4D §B4 — ROUTE_GROUP_KEY_MISMATCH is INDETERMINATE, not not_persisted: a header was resolved and a
+        // row may well exist, just not under the identity this route believes it owns. Only a scoped readback can
+        // settle that, so Submit must stay blocked rather than trust either reading.
+        var INDETERMINATE = { REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, HTTP_TRANSPORT_ERROR: 1, LINE_OUTPUT_VERIFICATION_FAILED: 1, PERSISTENCE_NOT_ACKNOWLEDGED: 1, ROUTE_GROUP_KEY_MISMATCH: 1 };
         return { status: INDETERMINATE[code] ? 'indeterminate' : 'not_persisted', groupKey: g.groupKey,
             allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g), code: code,
+            server_group_key: serverGroupKey,
             message: String(st.message || (err && err.message) || err) };
     });
 }

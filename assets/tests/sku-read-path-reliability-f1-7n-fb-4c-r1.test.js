@@ -289,7 +289,10 @@ checks.push(Promise.resolve(api(f12).getWorkspace('skuDetails', {}, { signal: ac
 }));
 // the page's own sequence guard drops a stale response instead of repainting
 ok(/if \(mySeq !== _srdReadSeq\) return _srdReadModel;/.test(SRDC), 'G12 SKU Regional drops a superseded response');
-ok(/if \(mySeq !== _skReadSeq\) return _skReadModel;/.test(SKDC), 'G12 SKU Details drops a superseded response');
+ok(/if \(mySeq !== _skReadSeq\) return \{ __superseded: true, model: _skReadModel \};/.test(SKDC),
+  'G12 SKU Details drops a superseded response — FB-4D: announced, not returned as a null model');
+ok(/if \(res && res\.__superseded\) return;/.test(SKDC),
+  'G12b and the caller stands down instead of rendering from it');
 ok(/if \(seq !== _srdReqSeq\) return;/.test(SRDC), 'G12 and its loader guards the render callback by sequence too');
 
 // §G.13/§C.12/§C.13 — a failed read can never become READY from cache, and there is no fallback path.
@@ -338,7 +341,14 @@ ok(/request ' \+ esc\(reqId\)/.test(SRDC), 'F6 plus the request id');
 ok(/Retrying cannot fix this\./.test(SRDC), 'F6 saying so instead of offering a useless Retry');
 ok(/var SK_NO_RETRY_CODES = \{ DEPLOYMENT_CONTRACT_MISMATCH: 1, CLIENT_ACTION_REQUIRED: 1 \};/.test(SKDC),
   'F6 the SKU Details page likewise');
-ok(/'action ' \+ action \+ ' · ' \+ code/.test(SKDC), 'F6 with action + code in its banner');
+ok(/code ' \+ _skEsc_\(code\)/.test(SKDC), 'F6 with the code in its banner');
+ok(/action ' \+ _skEsc_\(action\)/.test(SKDC), 'F6 and the action');
+ok(/'SKU Details read error'/.test(SKDC) || /SKU Details read error/.test(SKDC), 'F6 under a named label');
+ok(/request ' \+ _skEsc_\(reqId\)/.test(SKDC), 'F6 plus the request id');
+ok(/overflow-wrap:break-word/.test(SKDC),
+  'F6 FB-4D: in a WRAPPING full-width host — the old banner was clipped by the frozen column it lived in');
+ok(/SKU_DETAILS_RENDER_MODEL_FAILED/.test(SKDC),
+  'F6 FB-4D: and a render-model failure is classified separately from a read failure');
 // no sensitive data in the banner
 [ 'spreadsheetId', 'AKfycb', 'getApiBaseUrl()', 'token' ].forEach(function (bad) {
   ok(srdErr.indexOf(bad) === -1 && skErr.indexOf(bad) === -1, 'F7 the banner exposes no sensitive value: ' + bad);

@@ -122,6 +122,22 @@ section('H. unified release token (R6F)');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'H. KM.RELEASE = r6a1-request-send-20260822');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/inventory-replenishment\.js\?v=r6a1-request-send-20260822/.test(INDEX), 'H. changed inventory-replenishment.js carries the R6F token (hydration fix cache-busts)');
+// F1-7N-FB-4D - see the block comment in
+// assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
+// release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum
+// shipped with no token bump at all and never reached a live browser. The durable guarantees are asserted below:
+// the asset carries a token, and it is not the stale one this round superseded.
+function __fb4dTokenOf(asset) {
+  var m = new RegExp(asset.replace(/[.\/]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
+  return m ? m[1] : null;
+}
+function __fb4dTokenMoved(asset, staleToken, label) {
+  var t = __fb4dTokenOf(asset);
+  ok(!!t, label + ' carries a cache-bust token');
+  ok(t !== staleToken, label + ' is off the stale ' + staleToken + ' token');
+}
+
+__fb4dTokenMoved('pages/inventory-replenishment.js', 'donenotice-20260811',
+  'H. changed inventory-replenishment.js cache-busts (hydration fix reaches the browser)');
 
 done();

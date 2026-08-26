@@ -17,6 +17,13 @@
 // Lead Time — those are resolved later at Shipment Draft). Warehouse endpoints: ship_from / destination
 // (human-readable snapshots) + source_warehouse_id / destination_warehouse_id (authoritative ids) +
 // ship_from_type / destination_type. NO origin_warehouse_id / origin_type. All reads/writes are by header NAME.
+// F1-7N-FB-4D §E — deployment build stamp for the SHIPPING PLAN SUBMIT OWNER. FB-4D changed NOTHING in this
+// file; the stamp records the round that last changed its behaviour (F1-7N-FA-4B2, the physical
+// shipment-compatibility group key) so the manifest never claims a change this file did not receive. It is
+// registered because Submit is the last write in the Site Inventory chain: if this owner is a round behind
+// while the allocation owner is current, the plan commit and the draft it consumes disagree silently.
+var SP_BUILD_VERSION_ = 'F1-7N-FA-4B2';
+
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
   'company', 'country', 'marketplace',

@@ -28,7 +28,9 @@
  * cancels, deletes or overwrites anything — see §D of the FB-4A record for the migration boundary.
  */
 
-var EPC_BUILD_VERSION_ = 'F1-7N-FB-4A';
+// FB-4D §C changed this file: the duplicate diagnostic now reports its SCOPE and can no longer answer an
+// unqualified zero. The stamp moves with the behaviour.
+var EPC_BUILD_VERSION_ = 'F1-7N-FB-4D';
 var EPC_DRAFTS_TABLE_ = 'shipping_allocation_drafts';
 var EPC_DRAFT_LINES_TABLE_ = 'shipping_allocation_draft_lines';
 var EPC_PLANS_TABLE_ = 'shipping_plans';
@@ -71,6 +73,14 @@ function epcMaskId_(id) {
   var tail = s.length > 4 ? s.slice(-4) : s;
   return (prefix ? prefix : '') + '…' + tail;
 }
+// FB-4D §C — a comparison key that survives the ways a pasted id differs INVISIBLY from a stored one: case,
+// ASCII whitespace, the non-breaking space, the zero-width space/joiners and the BOM. If two ids agree here but
+// not exactly, the id only LOOKS identical — and that is a FINDING to report, never a reason to answer "nothing
+// found". A near miss was previously indistinguishable from a clean table.
+function epcNormKey_(v) {
+  return String(v == null ? '' : v).replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]/g, '').toLowerCase();
+}
+
 function epcIdRef_(id) {
   var s = epcStr_(id);
   if (!s) return { masked: '', hash: '', length: 0, present: false };
@@ -616,14 +626,95 @@ function handleExecutionPlanDuplicateLineDiagnostic_(body) {
 
   var data = sh.getDataRange().getValues();
   var headers = (data[0] || []).map(function (h) { return epcStr_(h); });
-  var rows = [];
+  var physicalRows = Math.max(0, data.length - 1);
+
+  // FB-4D §C — COLUMN PRESENCE IS REPORTED, NOT ASSUMED. If the filter column is renamed, shifted out of the
+  // header row, or simply absent, then `o.allocation_draft_id` is undefined for EVERY row and every comparison
+  // fails. The old loop expressed that as "no rows matched", which is byte-for-byte the same answer as a genuinely
+  // clean table. Reporting the column index turns a silent zero into a named cause.
+  var colDraft = headers.indexOf('allocation_draft_id');
+  var colLine = headers.indexOf('allocation_draft_line_id');
+  var colSku = headers.indexOf('sku');
+
+  // Count each filter INDEPENDENTLY so the report can say WHICH predicate eliminated the rows, and collect
+  // near misses so an id that only looks identical is surfaced instead of dropped.
+  var rows = [], matchedSheetRows = [];
+  var mDraft = 0, mLine = 0, mSku = 0;
+  var nearDraftRows = [], nearLineRows = [];
+  var wantDraftKey = epcNormKey_(wantDraft), wantLineKey = epcNormKey_(wantLine);
   for (var r = 1; r < data.length; r++) {
     var o = { __row: r + 1 };
     for (var c = 0; c < headers.length; c++) if (headers[c]) o[headers[c]] = data[r][c];
-    if (wantDraft && epcStr_(o.allocation_draft_id) !== wantDraft) continue;
-    if (wantLine && epcStr_(o.allocation_draft_line_id) !== wantLine) continue;
-    if (wantSku && epcUc_(o.sku) !== wantSku) continue;
-    rows.push(o);
+    var hitDraft = !wantDraft || epcStr_(o.allocation_draft_id) === wantDraft;
+    var hitLine = !wantLine || epcStr_(o.allocation_draft_line_id) === wantLine;
+    var hitSku = !wantSku || epcUc_(o.sku) === wantSku;
+    if (hitDraft) mDraft++;
+    if (hitLine) mLine++;
+    if (hitSku) mSku++;
+    if (wantDraft && !hitDraft && epcNormKey_(o.allocation_draft_id) === wantDraftKey) nearDraftRows.push(o.__row);
+    if (wantLine && !hitLine && epcNormKey_(o.allocation_draft_line_id) === wantLineKey) nearLineRows.push(o.__row);
+    if (hitDraft && hitLine && hitSku) { rows.push(o); matchedSheetRows.push(o.__row); }
+  }
+
+  // DOES THE REQUESTED HEADER EXIST? Reported separately, because "that header is not in the drafts table" and
+  // "the header is there but no line points at it" call for different operator actions.
+  var headerState = { requested: !!wantDraft, present: null, physical_rows: 0, sheet_rows: [], reason: '' };
+  if (wantDraft) {
+    var hTab = null;
+    try { hTab = ss.getSheetByName(EPC_DRAFTS_TABLE_); } catch (e3) { hTab = null; }
+    if (!hTab) { headerState.present = false; headerState.reason = EPC_DRAFTS_TABLE_ + ' is not present in this spreadsheet'; }
+    else {
+      var hData = hTab.getDataRange().getValues();
+      var hHeaders = (hData[0] || []).map(function (h) { return epcStr_(h); });
+      var hCol = hHeaders.indexOf('allocation_draft_id');
+      if (hCol === -1) { headerState.present = false; headerState.reason = EPC_DRAFTS_TABLE_ + ' has no allocation_draft_id column'; }
+      else {
+        for (var hr = 1; hr < hData.length; hr++) {
+          if (epcStr_(hData[hr][hCol]) === wantDraft) { headerState.physical_rows++; headerState.sheet_rows.push(hr + 1); }
+        }
+        headerState.present = headerState.physical_rows > 0;
+        headerState.reason = headerState.present ? '' : 'no row in ' + EPC_DRAFTS_TABLE_ + ' carries this allocation_draft_id';
+      }
+    }
+  }
+
+  // §C — THE FALSE NEGATIVE, CLOSED. A narrowed scan that matches NOTHING is now ALWAYS accompanied by a named
+  // mismatch, so three visible rows can never come back as a silent zero. The reason is chosen in order of how
+  // decisively it explains the emptiness, most decisive first.
+  var scopeMismatch = null;
+  if (rows.length === 0 && (wantDraft || wantLine || wantSku)) {
+    var reason, detail;
+    if (physicalRows === 0) {
+      reason = 'LINES_TABLE_EMPTY';
+      detail = EPC_DRAFT_LINES_TABLE_ + ' contains a header row and no data rows at all, so there was nothing to compare.';
+    } else if (wantDraft && colDraft === -1) {
+      reason = 'FILTER_COLUMN_MISSING';
+      detail = 'an allocation_draft_id filter was requested but ' + EPC_DRAFT_LINES_TABLE_ + ' has no column with that exact header, so every comparison failed for a schema reason rather than a data reason.';
+    } else if (wantLine && colLine === -1) {
+      reason = 'FILTER_COLUMN_MISSING';
+      detail = 'an allocation_draft_line_id filter was requested but ' + EPC_DRAFT_LINES_TABLE_ + ' has no column with that exact header.';
+    } else if (wantSku && colSku === -1) {
+      reason = 'FILTER_COLUMN_MISSING';
+      detail = 'a sku filter was requested but ' + EPC_DRAFT_LINES_TABLE_ + ' has no column with that exact header.';
+    } else if (nearDraftRows.length || nearLineRows.length) {
+      reason = 'NEAR_MISS_ONLY';
+      detail = 'rows exist whose id matches the requested one ONLY after case and invisible-character normalization (non-breaking space, zero-width space, BOM). The stored value and the requested value are not byte-equal, so an exact scan finds nothing. Compare the exact characters before concluding the row is absent.';
+    } else if (wantDraft && headerState.present === false) {
+      reason = 'TARGET_HEADER_NOT_FOUND';
+      detail = 'the requested allocation_draft_id is not present in ' + EPC_DRAFTS_TABLE_ + ' either, so this scope names a header that does not exist in the spreadsheet this diagnostic opened.';
+    } else {
+      reason = 'NO_ROW_MATCHES_REQUESTED_SCOPE';
+      detail = physicalRows + ' data row(s) were scanned and compared; none satisfied the requested scope. If rows are visible in the UI, the spreadsheet this diagnostic opened is not the one being looked at.';
+    }
+    scopeMismatch = {
+      code: 'DIAGNOSTIC_SCOPE_MISMATCH', reason: reason, detail: detail,
+      physical_rows_scanned: physicalRows, rows_matching_scope: 0,
+      rows_matching_draft_id: wantDraft ? mDraft : null,
+      rows_matching_line_pk: wantLine ? mLine : null,
+      rows_matching_sku: wantSku ? mSku : null,
+      near_miss_sheet_rows: { allocation_draft_id: nearDraftRows, allocation_draft_line_id: nearLineRows },
+      next_action: 'Do NOT read this as "no duplicates exist". Resolve the named scope problem first, then re-run.'
+    };
   }
 
   var groups = epcClassifyDuplicates_(rows);
@@ -640,7 +731,28 @@ function handleExecutionPlanDuplicateLineDiagnostic_(body) {
   return epcEnvelope_(true, {
     build_version: EPC_BUILD_VERSION_,
     read_only: true,
-    scanned_rows: rows.length,
+    // FB-4D §C — `scanned_rows` now means what its NAME means: physical data rows read from the tab. The count of
+    // rows that survived the scope filter is `rows_matching_scope`. Conflating those two under one name is the
+    // whole false negative, so they are separate fields and both are always reported.
+    scanned_rows: physicalRows,
+    physical_rows_scanned: physicalRows,
+    rows_matching_scope: rows.length,
+    matched_sheet_rows: matchedSheetRows,
+    scope_report: {
+      requested: { allocation_draft_id_ref: epcIdRef_(wantDraft), allocation_draft_line_id_ref: epcIdRef_(wantLine), sku: wantSku || null },
+      table: EPC_DRAFT_LINES_TABLE_,
+      header_row: headers,
+      filter_columns_present: { allocation_draft_id: colDraft !== -1, allocation_draft_line_id: colLine !== -1, sku: colSku !== -1 },
+      physical_rows_scanned: physicalRows,
+      rows_matching_draft_id: wantDraft ? mDraft : null,
+      rows_matching_line_pk: wantLine ? mLine : null,
+      rows_matching_sku: wantSku ? mSku : null,
+      rows_matching_scope: rows.length,
+      matched_sheet_rows: matchedSheetRows,
+      near_miss_sheet_rows: { allocation_draft_id: nearDraftRows, allocation_draft_line_id: nearLineRows },
+      target_header: headerState
+    },
+    scope_mismatch: scopeMismatch,
     scope: { allocation_draft_id_ref: epcIdRef_(wantDraft), allocation_draft_line_id_ref: epcIdRef_(wantLine), sku: wantSku || null },
     duplicate_group_count: groups.length,
     byte_identical_group_count: identical.length,
@@ -660,7 +772,10 @@ function handleExecutionPlanDuplicateLineDiagnostic_(body) {
     },
     next_action: groups.length
       ? ('Review each group. ' + identical.length + ' can be repaired mechanically (byte-identical business content); ' + conflicting.length + ' need a business decision about which quantity is authoritative. NOTHING WAS DELETED.')
-      : 'No duplicate primary key was found in the scanned scope.'
+      // A zero result must never be phrased as a clean bill of health when the scan never reached any row.
+      : (scopeMismatch
+        ? ('DIAGNOSTIC_SCOPE_MISMATCH (' + scopeMismatch.reason + ') — this run compared NOTHING, so it is not evidence that the table is clean. ' + scopeMismatch.detail)
+        : ('No duplicate primary key exists in the scanned scope: ' + rows.length + ' row(s) matched out of ' + physicalRows + ' scanned, and every primary key appeared exactly once.'))
   }, []);
 }
 
@@ -674,8 +789,32 @@ function TEMP_EXECUTION_PLAN_DUPLICATE_DIAGNOSE() {
     allocation_draft_id: TEMP_DUPFIX_DRAFT_ID_, allocation_draft_line_id: TEMP_DUPFIX_LINE_ID_, sku: TEMP_DUPFIX_SKU_ } });
   if (!r.success) { Logger.log('[DUPFIX] FAILED ' + JSON.stringify(r.errors)); return; }
   var d = r.data;
-  Logger.log('[DUPFIX] scanned=' + d.scanned_rows + ' duplicate_groups=' + d.duplicate_group_count
-    + ' byte_identical=' + d.byte_identical_group_count + ' content_conflict=' + d.content_conflict_group_count);
+  var sr = d.scope_report || {};
+  // SCOPE BEFORE VERDICT. A zero verdict is only meaningful next to the scan that produced it.
+  Logger.log('[DUPFIX][scope] table=' + sr.table
+    + ' requested_draft=' + JSON.stringify((sr.requested || {}).allocation_draft_id_ref)
+    + ' requested_line=' + JSON.stringify((sr.requested || {}).allocation_draft_line_id_ref)
+    + ' requested_sku=' + String((sr.requested || {}).sku));
+  Logger.log('[DUPFIX][scope] target_header=' + JSON.stringify(sr.target_header));
+  Logger.log('[DUPFIX][scope] filter_columns_present=' + JSON.stringify(sr.filter_columns_present)
+    + ' header_row=' + JSON.stringify(sr.header_row));
+  Logger.log('[DUPFIX][scope] physical_rows_scanned=' + d.physical_rows_scanned
+    + ' rows_matching_draft_id=' + sr.rows_matching_draft_id
+    + ' rows_matching_line_pk=' + sr.rows_matching_line_pk
+    + ' rows_matching_sku=' + sr.rows_matching_sku
+    + ' rows_matching_scope=' + d.rows_matching_scope
+    + ' matched_sheet_rows=' + JSON.stringify(d.matched_sheet_rows)
+    + ' near_miss=' + JSON.stringify(sr.near_miss_sheet_rows));
+  if (d.scope_mismatch) {
+    Logger.log('[DUPFIX][DIAGNOSTIC_SCOPE_MISMATCH] reason=' + d.scope_mismatch.reason);
+    Logger.log('[DUPFIX][DIAGNOSTIC_SCOPE_MISMATCH] ' + d.scope_mismatch.detail);
+    Logger.log('[DUPFIX][DIAGNOSTIC_SCOPE_MISMATCH] ' + d.scope_mismatch.next_action);
+  }
+  Logger.log('[DUPFIX] physical_rows_scanned=' + d.physical_rows_scanned
+    + ' rows_matching_scope=' + d.rows_matching_scope
+    + ' duplicate_groups=' + d.duplicate_group_count
+    + ' byte_identical=' + d.byte_identical_group_count + ' content_conflict=' + d.content_conflict_group_count
+    + (d.scope_mismatch ? ' scope_mismatch=' + d.scope_mismatch.reason : ' scope_mismatch=none'));
   (d.duplicate_groups || []).forEach(function (g) {
     Logger.log('[DUPFIX][group] ' + JSON.stringify(g.allocation_draft_line_id_ref) + ' sku=' + g.sku
       + ' rows=' + g.physical_rows + ' class=' + g.classification + ' survivor_row=' + g.proposed_survivor_sheet_row

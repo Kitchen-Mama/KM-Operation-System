@@ -249,7 +249,15 @@ function sadUpsertDraftHeaderCore_(body) {
     if (body && body.note != null) setCol('note', String(body.note));
     setCol('updated_by', actor);
     setCol('updated_at', now);
-    return jsonResponse_({ success: true, data: { allocation_draft_id: id, updated: true } });
+    // FB-4D §B3 — report the canonical group identity this header now carries, so the client can bind the
+    // response to the ROUTE it asked about instead of to whichever save finished last.
+    var updObj = sadRowToObject_(sh, found.row);
+    return jsonResponse_({ success: true, data: { allocation_draft_id: id, updated: true,
+      route_group_key: sadK2GroupKey_(updObj),
+      persisted_headers: [{ allocation_draft_id: id, route_group_key: sadK2GroupKey_(updObj),
+        resolution: 'UPDATED', status: String(updObj.status || ''),
+        deterministic_group_id: sadK2DeterministicHeaderId_(updObj),
+        group_id_matches_stored_id: sadK2DeterministicHeaderId_(updObj) === String(id).trim() }] } });
   }
 
   if (!id) id = 'SAD-' + Utilities.getUuid().substring(0, 10).toUpperCase();
@@ -279,7 +287,12 @@ function sadUpsertDraftHeaderCore_(body) {
     submitted_by: '', submitted_at: '', cancelled_by: '', cancelled_at: '', cancel_reason: '',
     note: String((body && body.note) || '').trim()
   });
-  return jsonResponse_({ success: true, data: { allocation_draft_id: id, created: true } });
+  var newObj = procurementFindRow_(sh, 'allocation_draft_id', id);
+  var newGroupKey = newObj ? sadK2GroupKey_(sadRowToObject_(sh, newObj.row)) : '';
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, created: true,
+    route_group_key: newGroupKey,
+    persisted_headers: [{ allocation_draft_id: id, route_group_key: newGroupKey, resolution: 'CREATED',
+      status: status, deterministic_group_id: id, group_id_matches_stored_id: true }] } });
 }
 
 // ---- upsertShippingAllocationDraftLines ---------------------------
@@ -373,6 +386,12 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // verification — all USER-owned. Until then: K2_CONTRACT_AND_MACHINERY_READY = YES · K2_LIVE_GENERATION_ACTIVATED = NO.
 
 // The 10 canonical K2 grouping dimensions, in frozen order. Route context is HEADER-level (read from recommended_*).
+// F1-7N-FB-4D §E — deployment build stamp for the ALLOCATION HANDLER OWNER. Probed by system.health so a
+// half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
+// still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
+// this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4D';
+
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
   'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'];
@@ -698,6 +717,50 @@ function sadPreflightLineBatch_(isK2, draftId, lines) {
   return { ok: conflicts.length === 0, conflicts: conflicts };
 }
 
+// FB-4D §B2 — PRE-WRITE duplicate-PK scan over the AFFECTED SCOPE. Read-only.
+//
+// WHY THIS IS A PRE-FLIGHT AND NOT A POST-CHECK. sadVerifyDraftLines_ already reports DUPLICATE_PRIMARY_KEY,
+// but it runs AFTER the write: on the live three-row corruption a save would update the first matching row,
+// leave the other two in place, and answer LINE_OUTPUT_VERIFICATION_FAILED — which the client can only class
+// as `indeterminate`. So the operator was told "outcome unknown" about a table whose problem was already
+// knowable before a single cell changed. §B2 requires the batch to be refused instead, with nothing written.
+//
+// SCOPE. Every physical row is read once and counted by primary key. A duplicate blocks when it is under THIS
+// header (the affected scope), or when it names a canonical id this batch is about to resolve or insert —
+// which is the "globally unique and present exactly once" half of §B1. `wantIds` may be empty, in which case
+// only the in-scope check applies.
+function sadScanDuplicateLinePks_(sh, draftId, wantIds) {
+  var data = sh.getDataRange().getValues();
+  var out = { ok: true, duplicates: [], physical_rows_scanned: Math.max(0, data.length - 1) };
+  if (data.length < 2) return out;
+  var hdr = data[0].map(function (x) { return String(x).trim(); });
+  var pi = hdr.indexOf('allocation_draft_line_id'), di = hdr.indexOf('allocation_draft_id');
+  if (pi === -1) return out;   // no PK column — the schema gate owns that failure, not this scan
+  var want = {};
+  (wantIds || []).forEach(function (x) { var k = String(x == null ? '' : x).trim(); if (k) want[k] = 1; });
+  var seen = {};
+  for (var r = 1; r < data.length; r++) {
+    var pk = String(data[r][pi] == null ? '' : data[r][pi]).trim();
+    if (!pk) continue;
+    var dref = di === -1 ? '' : String(data[r][di] == null ? '' : data[r][di]).trim();
+    if (!seen[pk]) seen[pk] = { pk: pk, rows: [], draft_ids: {} };
+    seen[pk].rows.push(r + 1);
+    seen[pk].draft_ids[dref] = 1;
+  }
+  Object.keys(seen).forEach(function (pk) {
+    var g = seen[pk];
+    if (g.rows.length < 2) return;
+    var drafts = Object.keys(g.draft_ids);
+    var inScope = drafts.indexOf(String(draftId).trim()) !== -1;
+    if (!inScope && !want[pk]) return;   // a duplicate elsewhere that this batch does not touch
+    out.ok = false;
+    out.duplicates.push({ allocation_draft_line_id: pk, physical_rows: g.rows.length, sheet_rows: g.rows,
+      allocation_draft_ids: drafts, in_affected_scope: inScope, targeted_by_this_batch: !!want[pk],
+      spans_more_than_one_header: drafts.length > 1 });
+  });
+  return out;
+}
+
 // PURE read-after-write verification (§B.7). Given the rows actually stored for one draft and the lines the
 // caller intended, prove: every expected line exists EXACTLY ONCE, at the exact quantity, with no primary key
 // appearing twice, and with no unauthorized line under the draft. A count is not proof; this matches by identity.
@@ -795,6 +858,19 @@ function sadUpsertLinesKeyedCore_(body) {
       data: { status: 'DUPLICATE_LINE_IDENTITY_IN_BATCH', allocation_draft_id: draftId, conflicts: pre.conflicts } });
   }
 
+  // FB-4D §B2 — THE LAST GATE BEFORE THE FIRST WRITE. A physical primary key that already names more than one
+  // row in the affected scope makes every subsequent resolution ambiguous: procurementFindRow_ returns the FIRST
+  // match, so an update would silently pick one of the duplicates and leave the rest countable. Refuse with a
+  // proven zero write and name the exact sheet rows, so the operator repairs the table rather than guessing.
+  var dupScan = sadScanDuplicateLinePks_(sh, draftId, lines.map(function (x) { return sadCanonicalLineId_(isK2Draft, draftId, x); }));
+  if (!dupScan.ok) {
+    return jsonResponse_({ success: false, error: 'EXISTING_DUPLICATE_PRIMARY_KEY_IN_SCOPE — the database already holds more than one physical row under one allocation_draft_line_id in the scope this write would touch. While that is true every insert/update decision here is ambiguous, so NOTHING was written. Remove the duplicate physical rows first (the read-only duplicate diagnostic names the survivor and the rows to delete), then save again.',
+      stage: 'lines', zero_write: true,
+      data: { status: 'EXISTING_DUPLICATE_PRIMARY_KEY_IN_SCOPE', allocation_draft_id: draftId,
+        physical_rows_scanned: dupScan.physical_rows_scanned, duplicates: dupScan.duplicates,
+        next_action: 'Run the read-only duplicate diagnostic for this header, remove the surplus physical rows, then re-save. This refusal wrote nothing.' } });
+  }
+
   var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
 
   for (var i = 0; i < lines.length; i++) {
@@ -882,8 +958,30 @@ function sadUpsertLinesKeyedCore_(body) {
   var verify = sadVerifyDraftLines_(draftId, lines, storedRows, isK2Draft);
   // FB-4B §B — the response now carries the ids ACTUALLY PERSISTED, so the caller can adopt them and stop
   // sending an id the server never stored. That closed loop is what made every save append another row.
+  // FB-4D §B3 — the ROUTE GROUP KEY travels with the ids. A client holding two route groups for one SKU could
+  // previously only tell which header a returned line belonged to by trusting the request it had just sent; under
+  // a partial failure that is exactly the assumption that hands Route A's id to Route B. The group key is read
+  // from the STORED header, never recomputed from the request, so it is evidence rather than an echo.
+  var hdrSh = ss.getSheetByName('shipping_allocation_drafts');
+  var hdrRow = hdrSh ? procurementFindRow_(hdrSh, 'allocation_draft_id', draftId) : null;
+  var hdrObj = hdrRow ? sadRowToObject_(hdrSh, hdrRow.row) : null;
+  var routeGroupKey = hdrObj ? sadK2GroupKey_(hdrObj) : '';
+  var persistedHeaders = hdrObj ? [{
+    allocation_draft_id: draftId, route_group_key: routeGroupKey,
+    status: String(hdrObj.status || ''),
+    deterministic_group_id: sadK2DeterministicHeaderId_(hdrObj),
+    group_id_matches_stored_id: sadK2DeterministicHeaderId_(hdrObj) === String(draftId).trim(),
+    planning_cycle: String(hdrObj.planning_cycle || ''), company: String(hdrObj.company || ''),
+    country: String(hdrObj.country || ''), marketplace: String(hdrObj.marketplace || ''),
+    recommended_source_warehouse_id: String(hdrObj.recommended_source_warehouse_id || ''),
+    recommended_destination_warehouse_id: String(hdrObj.recommended_destination_warehouse_id || ''),
+    recommended_shipping_method: String(hdrObj.recommended_shipping_method || '')
+  }] : [];
   var persisted = storedRows.map(function (r) {
-    return { allocation_draft_line_id: String(r.allocation_draft_line_id || ''), sku: String(r.sku || ''),
+    return { allocation_draft_line_id: String(r.allocation_draft_line_id || ''),
+      allocation_draft_id: String(r.allocation_draft_id || draftId),
+      route_group_key: routeGroupKey,
+      sku: String(r.sku || ''),
       site_sku: String(r.site_sku || ''), window_code: String(r.window_code || ''),
       planned_qty: String(r.planned_qty == null ? '' : r.planned_qty), line_status: String(r.line_status || '') };
   });
@@ -891,11 +989,12 @@ function sadUpsertLinesKeyedCore_(body) {
     return jsonResponse_({ success: false, error: 'LINE_OUTPUT_VERIFICATION_FAILED — the write was applied but the re-read does not match what was asked for. Nothing was rolled back; inspect the rows below before retrying.',
       stage: 'verify',
       data: { status: 'LINE_OUTPUT_VERIFICATION_FAILED', allocation_draft_id: draftId, verification: verify,
-        created: created, updated: updated, skipped: skipped, persisted_lines: persisted } });
+        created: created, updated: updated, skipped: skipped,
+        persisted_headers: persistedHeaders, persisted_lines: persisted } });
   }
   return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated,
     created: created, updated: updated, skipped: skipped,
-    verification: verify, persisted_lines: persisted } });
+    verification: verify, persisted_headers: persistedHeaders, persisted_lines: persisted } });
 }
 
 // C2-D1R line completeness (§8) — route context is HEADER-level, so a manual Execution Plan LINE is valid
@@ -908,6 +1007,26 @@ function sadLineIsComplete_(l) {
 }
 // Header route completeness (§8, C2-D1R): From + To + Method on the Draft header (recommended_*). An Amazon
 // logical destination (destination_marketplace set) counts as a valid To.
+// F1-7N-FB-4D §B5 — ROUTE COMPLETENESS OF A **STORED** HEADER ROW.
+//
+// sadHeaderRouteIsComplete_ accepts an Amazon logical destination via `destination_marketplace`, which is an
+// accepted PAYLOAD field and NOT a stored column. So the write gate (which sees the request body) calls such a
+// header complete and the Submit gate (which sees the stored row) called it INCOMPLETE — and refused the whole
+// station with ROUTE_INCOMPLETE after both routes had persisted and hydrated correctly.
+//
+// What the row DOES keep is recommended_destination_warehouse_code_snapshot, written only when a destination was
+// actually chosen. That is the retained evidence of the same fact. From and Method are still required unchanged,
+// so a header with no destination at all has a blank snapshot and is still refused with the same reason.
+function sadStoredHeaderRouteIsComplete_(h) {
+  if (sadHeaderRouteIsComplete_(h)) return true;
+  h = h || {};
+  var from = String(h.recommended_source_warehouse_id == null ? '' : h.recommended_source_warehouse_id).trim();
+  var toSnapshot = String(h.recommended_destination_warehouse_code_snapshot == null ? '' : h.recommended_destination_warehouse_code_snapshot).trim();
+  var method = String(h.recommended_shipping_method == null ? '' : h.recommended_shipping_method).trim();
+  var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
+  return !!from && !!toSnapshot && methodOk;
+}
+
 function sadHeaderRouteIsComplete_(b) {
   b = b || {};
   var from = String(b.recommended_source_warehouse_id == null ? '' : b.recommended_source_warehouse_id).trim();
@@ -1279,26 +1398,57 @@ function sadVerifyShippingPlanOutput_(expectedLines, planIds, planRows, planLine
   });
 
   // (2) every FROZEN route line must appear exactly once, with the exact frozen quantity.
+  //
+  // F1-7N-FB-4D §B5 — MATCHED AS A MULTISET PER (sku, site_sku), because ONE SKU CAN LEGITIMATELY HOLD SEVERAL
+  // ROUTES. Route is a HEADER dimension and deliberately not part of line identity, so Route A (Sea) and Route B
+  // (Air) for one SKU share the same (sku, site_sku) and commit two plan lines under two plans. Keying on
+  // (sku, site_sku) alone therefore called every `+ Add Route` plan PLAN_LINE_DUPLICATED — reporting a correctly
+  // committed plan as corrupt, after it had already been written. Comparing the multiset of expected quantities
+  // against the multiset of committed ones proves the same contract (one committed line per frozen route line, at
+  // the exact frozen quantity) at the right grain, and for a single route it reduces to exactly the old check.
   var expectedKeys = {};
+  var expectedByKey = {};
   (expectedLines || []).forEach(function (e) {
     var k = [U(e.sku), U(e.site_sku)].join('|');
     expectedKeys[k] = true;
-    var found = byKey[k] || [];
-    if (found.length === 0) { out.failures.push({ code: 'PLAN_LINE_MISSING', sku: S(e.sku), site_sku: S(e.site_sku), expected_qty: Number(e.requested_qty) }); return; }
-    if (found.length > 1) { out.failures.push({ code: 'PLAN_LINE_DUPLICATED', sku: S(e.sku), site_sku: S(e.site_sku), count: found.length }); return; }
-    var l = found[0];
-    if (!S(l.shipping_plan_line_id)) { out.failures.push({ code: 'PLAN_LINE_ID_MISSING', sku: S(e.sku) }); return; }
-    var got = N(l.requested_qty);
-    if (got == null || Number(got) !== Number(e.requested_qty)) {
-      // The user's planned_qty is the authority. A mismatch here is exactly the "Suggested Qty replaced the
-      // user quantity" failure mode, so it is named rather than tolerated.
-      out.failures.push({ code: 'PLAN_LINE_QUANTITY_MISMATCH', sku: S(e.sku), site_sku: S(e.site_sku),
-        expected_user_planned_qty: Number(e.requested_qty), found_requested_qty: (got == null ? null : Number(got)),
-        detail: 'The committed plan line does not carry the frozen user planned quantity.' });
+    (expectedByKey[k] = expectedByKey[k] || []).push(e);
+  });
+  function qtyList(arr, field) {
+    return arr.map(function (x) { var n = N(x[field]); return n == null ? null : Number(n); })
+      .sort(function (a, b) { return (a === null ? -1 : a) - (b === null ? -1 : b); });
+  }
+  Object.keys(expectedByKey).forEach(function (k) {
+    var want = expectedByKey[k], found = byKey[k] || [];
+    var sku = S(want[0].sku), siteSku = S(want[0].site_sku);
+    if (found.length < want.length) {
+      var wantMissing = qtyList(want, 'requested_qty');
+      out.failures.push({ code: 'PLAN_LINE_MISSING', sku: sku, site_sku: siteSku,
+        expected_line_count: want.length, found_line_count: found.length,
+        expected_qty: (wantMissing.length === 1 ? wantMissing[0] : wantMissing) });
       return;
     }
-    out.verified_lines++;
-    out.verified_qty += Number(e.requested_qty);
+    if (found.length > want.length) {
+      out.failures.push({ code: 'PLAN_LINE_DUPLICATED', sku: sku, site_sku: siteSku, count: found.length,
+        expected_line_count: want.length,
+        plan_ids: found.map(function (l) { return S(l.shipping_plan_id); }) });
+      return;
+    }
+    var missingId = found.filter(function (l) { return !S(l.shipping_plan_line_id); });
+    if (missingId.length) { out.failures.push({ code: 'PLAN_LINE_ID_MISSING', sku: sku, site_sku: siteSku }); return; }
+    var wantQ = qtyList(want, 'requested_qty'), gotQ = qtyList(found, 'requested_qty');
+    var mismatch = false;
+    for (var qi = 0; qi < wantQ.length; qi++) { if (gotQ[qi] === null || Number(gotQ[qi]) !== Number(wantQ[qi])) { mismatch = true; break; } }
+    if (mismatch) {
+      // The user's planned_qty is the authority. A mismatch here is exactly the "Suggested Qty replaced the
+      // user quantity" failure mode, so it is named rather than tolerated.
+      out.failures.push({ code: 'PLAN_LINE_QUANTITY_MISMATCH', sku: sku, site_sku: siteSku,
+        expected_user_planned_qty: (wantQ.length === 1 ? wantQ[0] : wantQ),
+        found_requested_qty: (gotQ.length === 1 ? gotQ[0] : gotQ),
+        detail: 'The committed plan line(s) do not carry the frozen user planned quantities.' });
+      return;
+    }
+    out.verified_lines += want.length;
+    wantQ.forEach(function (q) { out.verified_qty += Number(q); });
   });
 
   // (3) no UNEXPECTED line — this is how "no other site row was created" is proven.
@@ -1349,9 +1499,37 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     if (status === 'expired') { errors.push({ allocation_draft_id: id, reason: 'DRAFT_EXPIRED_SUPERSEDED_BY_NEWER_AI_PLAN' }); return; }
     if (!isSubmitted && status !== 'draft' && status !== 'site_confirmed' && status !== 'partially_submitted') { errors.push({ allocation_draft_id: id, reason: 'STATUS_NOT_SUBMITTABLE:' + status }); return; } // (2)
     if (!isSubmitted && expectedVersions && expectedVersions[id] != null && String(expectedVersions[id]).trim() !== String(header.draft_version == null ? '' : header.draft_version).trim()) { errors.push({ allocation_draft_id: id, reason: 'STALE_VERSION', expected: String(expectedVersions[id]), current: String(header.draft_version) }); return; } // (12)
-    if (!String(header.planning_cycle || '').trim()) { errors.push({ allocation_draft_id: id, reason: 'PLANNING_CYCLE_MISSING' }); return; } // (10)
-    if (!isSubmitted && !sadHeaderRouteIsComplete_(header)) { errors.push({ allocation_draft_id: id, reason: 'ROUTE_INCOMPLETE' }); return; }   // (9) complete route (K2-aware)
-    if (!String(header.calculation_run_id || '').trim() || !String(header.formula_version || '').trim()) { errors.push({ allocation_draft_id: id, reason: 'LINEAGE_INCOMPLETE' }); return; } // (11)
+    // F1-7N-FB-4D §B5 — PROVENANCE IS CHECKED AGAINST WHAT THE DRAFT ACTUALLY IS.
+    //
+    // (10) and (11) demand the provenance of a COMPUTED recommendation: which planning cycle, which calculation
+    // run, which formula version produced the number. A SYSTEM-GENERATED draft must have all of it. A
+    // hand-authored Execution Plan route has NONE of it by construction — the page owns no planning cycle (that
+    // control was deliberately removed as an implementation leak) and no calculation ran — so demanding it
+    // refused every manual Add Route at Submit with PLANNING_CYCLE_MISSING after the routes had already
+    // persisted and hydrated correctly. Zero plan rows, no way forward.
+    //
+    // Supplying a cycle from a clock is NOT the fix: planning_cycle is dimension 1 of the K2 group key, so it
+    // would change the deterministic header id of every live route and create a second header for each one.
+    //
+    // A user_created draft's provenance is the OPERATOR, and that is stored. It is required here, so this is a
+    // narrowing of WHICH provenance is demanded, never a waiver of provenance.
+    var genType = String(header.generation_type == null ? '' : header.generation_type).trim().toLowerCase();
+    var isUserAuthored = (genType === 'user_created');
+    if (isUserAuthored) {
+      if (!String(header.created_by || '').trim() || !String(header.created_at || '').trim()) {
+        errors.push({ allocation_draft_id: id, reason: 'OPERATOR_PROVENANCE_INCOMPLETE' }); return;
+      }
+    } else if (!String(header.planning_cycle || '').trim()) {
+      errors.push({ allocation_draft_id: id, reason: 'PLANNING_CYCLE_MISSING' }); return;   // (10)
+    }
+    // FB-4D §B5 — `header` here is the STORED ROW, so it is checked with the stored-row predicate. The comment
+    // on this line has always claimed K2-awareness; the call did not have it, and an Amazon logical destination
+    // therefore failed a gate its own write had passed.
+    if (!isSubmitted && !sadStoredHeaderRouteIsComplete_(header)) { errors.push({ allocation_draft_id: id, reason: 'ROUTE_INCOMPLETE' }); return; }   // (9) complete route (stored-row aware)
+    // (11) COMPUTED lineage — required of a system-generated draft, meaningless for a hand-authored one.
+    if (!isUserAuthored && (!String(header.calculation_run_id || '').trim() || !String(header.formula_version || '').trim())) {
+      errors.push({ allocation_draft_id: id, reason: 'LINEAGE_INCOMPLETE' }); return;
+    }
     var lines = sadReadLinesForDraft_(lSh, id);
     if (!lines.length) { errors.push({ allocation_draft_id: id, reason: 'NO_LINES' }); return; }                // (3) exact linked lines
     var lineErr = null, shippable = [];

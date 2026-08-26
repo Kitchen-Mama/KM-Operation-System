@@ -252,8 +252,12 @@ ok(/_irPersistOneRouteGroup_\(sku, ctx, g\)/.test(flush),
   'D7. the save flow routes every group through that acknowledged writer');
 ok(/_irClearRouteUnsaved_\(sku\)/.test(flush), 'D7. and only a fully acknowledged save clears the UNSAVED mark');
 
-ok(/data: \{ allocation_draft_id: id, updated: true \}/.test(upsertCore), 'D8. the handler returns updated:true with the id');
-ok(/data: \{ allocation_draft_id: id, created: true \}/.test(upsertCore), 'D8. and created:true with the id');
+// FB-4D widened this response with the stored route_group_key + persisted_headers (§B3), so pin the FIELDS
+// rather than the exact object literal - the guarantee is what the response CARRIES, not its punctuation.
+ok(/allocation_draft_id: id, updated: true/.test(upsertCore), 'D8. the handler returns updated:true with the id');
+ok(/route_group_key: sadK2GroupKey_\(updObj\)/.test(upsertCore), 'D8. plus the stored route group key (FB-4D)');
+ok(/allocation_draft_id: id, created: true/.test(upsertCore), 'D8. and created:true with the id');
+ok(/route_group_key: newGroupKey/.test(upsertCore), 'D8. and the new header reports its group key too (FB-4D)');
 ok(/function sadK2DeterministicHeaderId_\(h\) \{ return 'SADH-K2-' \+ sadFnv1a_\(sadK2GroupKey_\(h\)\)/.test(G16),
   'D8. the header identity is a deterministic hash of the route dims — a retry cannot duplicate the row');
 

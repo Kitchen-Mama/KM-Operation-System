@@ -217,10 +217,32 @@ ok(/release:/.test(RO) && /dbProviderState:/.test(RO), 'I: __roDebug includes re
 // R6E1A re-bumped the centralized KM.RELEASE to the CUMULATIVE unified release token; namespace.js now carries it.
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8')), 'D: namespace.js defines the centralized KM.RELEASE signature (R6E1A unified token)');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
-ok(/request-order\.js\?v=r6a1-request-send-20260822/.test(INDEX), 'D: request-order.js on the unified R6E1A token (R6E1A moved it off the stale r6c token so its R6E Site Confirm fix actually loads)');
+// F1-7N-FB-4D - see the block comment in
+// assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
+// release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum
+// shipped with no token bump at all and never reached a live browser. The durable guarantees are asserted below:
+// the asset carries a token, and it is not the stale one this round superseded.
+function __fb4dTokenOf(asset) {
+  var m = new RegExp(asset.replace(/[.\/]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
+  return m ? m[1] : null;
+}
+function __fb4dTokenMoved(asset, staleToken, label) {
+  var t = __fb4dTokenOf(asset);
+  ok(!!t, label + ' carries a cache-bust token');
+  ok(t !== staleToken, label + ' is off the stale ' + staleToken + ' token');
+}
+
+__fb4dTokenMoved('pages/request-order.js', 'r6c-navlifecycle-20260822',
+  'D: request-order.js moved off the stale r6c token so its R6E Site Confirm fix actually loads');
 // R6E1A (Objective A): the CUMULATIVE changed frontend assets since R6C1 are unified on r6a1-request-send-20260822
 // (namespace, operation-system-db-api, km-api-foundation, inventory-replenishment, request-order, app). lifecycle.js is
 // UNCHANGED so it legitimately keeps its R6C token; the runtime release gate reads KM.RELEASE regardless of any one asset token.
-ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX) && /namespace\.js\?v=r6a1-request-send-20260822/.test(INDEX) && /operation-system-db-api\.js\?v=r6a1-request-send-20260822/.test(INDEX), 'D: framework assets carry a release token (R6E1A unified changed set = r6e1a; unchanged lifecycle.js keeps R6C)');
+// lifecycle.js was NOT changed by R6E1A and must NOT be force-churned — that half of the claim is still exact
+// and is kept as a literal. The two assets that later rounds DID change are asserted by the durable rule.
+ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX),
+  'D: an UNCHANGED framework asset keeps its own token (lifecycle.js stays on R6C)');
+['core/namespace.js', 'api/operation-system-db-api.js'].forEach(function (a) {
+  __fb4dTokenMoved(a, 'r6c-navlifecycle-20260822', 'D: changed framework asset ' + a);
+});
 
 setTimeout(done, 50);   // allow the provider whenReady/retry promises to settle before the summary

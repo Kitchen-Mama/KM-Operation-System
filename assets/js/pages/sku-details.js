@@ -126,22 +126,76 @@ function _skRegion_() {
 // auto-retried, because retrying cannot publish an Apps Script deployment.
 var SK_READ_ACTION = 'skuDetails.workspace.get';
 var SK_NO_RETRY_CODES = { DEPLOYMENT_CONTRACT_MISMATCH: 1, CLIENT_ACTION_REQUIRED: 1 };
-function _skRenderError_(err) {
-    _skReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
-    var code = (err && err.code) || 'SKU_DETAILS_READ_FAILED';
-    var message = (err && err.message) || 'SKU Details read failed';
+// F1-7N-FB-4D §D2 — THE FAILURE HAD TO BECOME LEGIBLE BEFORE IT COULD BE DIAGNOSED. The message used to be
+// written into `upcomingFixedBody`, the narrow FROZEN LEFT COLUMN of a split table, which clipped it to
+// "SKU Details read e..." and threw away the code, the action and the request id — the only three facts that
+// identify the failure. It also landed in the UPCOMING section while the loading placeholder went into RUNNING,
+// so an operator watching the Running table just saw it blank. The banner now lives in its own full-width
+// element above the tables, where nothing truncates it.
+var SK_READ_BANNER_ID = 'sku-read-error-banner';
+function _skReadBannerHost_() {
+    if (typeof document === 'undefined') return null;
+    var existing = document.getElementById(SK_READ_BANNER_ID);
+    if (existing) return existing;
+    var parent = document.getElementById('skuDetailsSection') || document.getElementById('sku-section');
+    if (!parent) return null;
+    var el = document.createElement('div');
+    el.id = SK_READ_BANNER_ID;
+    // wrapping, full width, never inside a scroll/fixed column
+    el.style.cssText = 'margin:8px 0;padding:10px 12px;border:1px solid #FCA5A5;background:#FEF2F2;color:#B91C1C;' +
+        'border-radius:6px;font-size:13px;line-height:1.5;white-space:normal;overflow-wrap:break-word;word-break:break-word;';
+    if (parent.firstChild) parent.insertBefore(el, parent.firstChild); else parent.appendChild(el);
+    return el;
+}
+function _skHideReadBanner_() {
+    var el = (typeof document === 'undefined') ? null : document.getElementById(SK_READ_BANNER_ID);
+    if (el) { el.innerHTML = ''; el.hidden = true; }
+}
+function _skEsc_(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// §D3 — A SUCCESSFUL RESPONSE WHOSE RENDER MODEL THREW IS NOT A TRANSPORT FAILURE, and must not be reported as
+// one. `phase` is 'read' (the request/envelope failed) or 'render' (the data arrived and the page could not
+// build its view). The distinction is not cosmetic: on 'render' the read model is CORRECT and is deliberately
+// KEPT, because nulling it is what previously forced the page down the broad-cache/mock fallback and turned a
+// view bug into "no rows".
+function _skRenderError_(err, phase) {
+    var isRender = (phase === 'render');
+    if (!isRender) _skReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+    var code = (err && err.code) || (isRender ? 'SKU_DETAILS_RENDER_MODEL_FAILED' : 'SKU_DETAILS_READ_FAILED');
+    var message = (err && err.message) || (isRender ? 'SKU Details view could not be built' : 'SKU Details read failed');
     var det = (err && err.details) || {};
     var action = det.action || det.requested_action || SK_READ_ACTION;
     var reqId = det.request_id || det.requestId || null;
     var mismatch = !!SK_NO_RETRY_CODES[code];
     var rg = _skRegion_();
     if (rg) rg.set(mismatch ? window.KM.loadState.STATES.DEPLOYMENT_MISMATCH : window.KM.loadState.STATES.ERROR);
-    var tail = 'action ' + action + ' · ' + code + (reqId ? ' · request ' + reqId : '');
-    var advice = mismatch ? ' — ' + (det.next_action || 'Publish a new Apps Script deployment version, then hard-reload.') : '';
-    var html = '<div class="fixed-row" style="color:#B91C1C;">SKU Details read error: ' + message + ' [' + tail + ']' + advice + '</div>';
-    ['upcoming', 'running', 'phasing', 'closure'].forEach(function (s, idx) {
-        var fb = document.getElementById(s + 'FixedBody'); var sb = document.getElementById(s + 'ScrollBody');
-        if (fb) fb.innerHTML = (idx === 0) ? html : '';
+
+    var label = isRender ? 'SKU Details view error' : 'SKU Details read error';
+    var lead = isRender
+        ? 'The data loaded successfully; building the table failed. This is NOT a database or connection problem.'
+        : '';
+    var advice = mismatch
+        ? (det.next_action || 'Publish a new Apps Script deployment version, then hard-reload.')
+        : (isRender ? 'Reload the page. If it repeats, report the code and request id below.' : 'Retry, or report the code and request id below.');
+    var host = _skReadBannerHost_();
+    if (host) {
+        host.hidden = false;
+        host.innerHTML = '<strong>' + _skEsc_(label) + '</strong>' +
+            (lead ? '<br>' + _skEsc_(lead) : '') +
+            '<br>' + _skEsc_(message) +
+            '<br><span style="font-family:monospace;font-size:12px;">code ' + _skEsc_(code) +
+            ' · action ' + _skEsc_(action) +
+            (reqId ? ' · request ' + _skEsc_(reqId) : ' · request (none reported)') + '</span>' +
+            '<br>' + _skEsc_(advice);
+    }
+    // The table region still has to say something, but it no longer CARRIES the diagnosis — and it is written to
+    // every section so no section is left silently blank while another shows an error.
+    var short = '<div class="fixed-row" style="color:#B91C1C;">' + _skEsc_(label) + ' — see the message above [' + _skEsc_(code) + ']</div>';
+    ['upcoming', 'running', 'phasing', 'closure'].forEach(function (sec) {
+        var fb = document.getElementById(sec + 'FixedBody'); var sb = document.getElementById(sec + 'ScrollBody');
+        if (fb) fb.innerHTML = short;
         if (sb) sb.innerHTML = '';
     });
 }
@@ -156,10 +210,15 @@ function _skWorkspaceRefresh_(include) {
     }
     var params = include ? { include: include } : {};
     return Promise.resolve(window.KM.api.getWorkspace('skuDetails', params)).then(function (env) {
-        if (mySeq !== _skReadSeq) return _skReadModel;   // a newer read superseded this one
+        // §D3 — A SUPERSEDED READ IS ANNOUNCED, NOT SILENTLY DOWNGRADED. This used to return `_skReadModel`,
+        // which on a cold mount is null; the caller then rendered anyway, fell through the broad-cache getter
+        // and landed in the mock arrays. The marker lets the caller stand down and leave the render to the read
+        // that actually owns it.
+        if (mySeq !== _skReadSeq) return { __superseded: true, model: _skReadModel };
         if (env && env.success && env.data) {
             _skReadModel = window.KM.DB.adaptSkuDetailsWorkspace(env.data);
-            if (rg) rg.set(_skReadModel.skuDetails.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+            _skHideReadBanner_();
+            if (rg) rg.set((_skReadModel.skuDetails && _skReadModel.skuDetails.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
             return _skReadModel;
         }
         throw (env && env.errors && env.errors[0]) || { code: 'SKU_DETAILS_READ_FAILED', message: 'SKU Details workspace request failed.' };
@@ -167,9 +226,21 @@ function _skWorkspaceRefresh_(include) {
 }
 
 // Mount + post-write entry: Workspace mode → scoped fetch then render (fail-closed); Legacy mode → render from broad cache.
+// F1-7N-FB-4D §D3 — THE READ AND THE RENDER ARE NOW SEPARATE OUTCOMES.
+//
+// The old form was `.then(render).catch(onError)`, which places the render INSIDE the chain the error handler
+// guards. Any throw while building the view — a DOM node the partial did not inject, a filter helper, a column
+// formatter — therefore arrived at the read-failure handler, was labelled "SKU Details read error", and made it
+// null a read model that was completely intact. An error banner over an empty table with a perfectly healthy
+// read is exactly that shape. The two-argument `.then` keeps the rejection handler on the READ only; a render
+// throw is caught separately and classified as a view failure that does not discard the data.
 function _skLoadAndRender() {
     if (_skEffectiveWorkspace()) {
-        _skWorkspaceRefresh_().then(function () { renderSkuDetailsTable(); }).catch(function (err) { _skRenderError_(err); });
+        _skWorkspaceRefresh_().then(function (res) {
+            if (res && res.__superseded) return;   // a newer read owns the render
+            try { renderSkuDetailsTable(); }
+            catch (e) { _skRenderError_(e, 'render'); }
+        }, function (err) { _skRenderError_(err, 'read'); });
         return;
     }
     renderSkuDetailsTable();
@@ -179,10 +250,20 @@ function _skLoadAndRender() {
 // cache the db-api writer reloaded), then run cb; Legacy mode → run cb immediately (the writer already reloaded the cache).
 function _skAfterWrite(cb) {
     if (!_skEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
-    _skWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _skRenderError_(err); });
+    _skWorkspaceRefresh_().then(function (res) {
+        if (res && res.__superseded) return;   // a newer read owns the reconcile
+        try { if (typeof cb === 'function') cb(); }
+        catch (e) { _skRenderError_(e, 'render'); }
+    }, function (err) { _skRenderError_(err, 'read'); });
 }
 
 function renderSkuDetailsTable() {
+    // F1-7N-FB-4D §D3 — NO LEGACY FALLBACK, NO FAKE EMPTY SUCCESS. In workspace mode a missing read model means
+    // the scoped read has not succeeded, and there is nothing legitimate to draw. Rendering anyway walked
+    // _skGetSkuDetails into the broad-cache getter and then getAllSkuDataWithOverrides into its MOCK arrays
+    // (window.upcomingSkuData / runningSkuData / phasingOutSkuData) — a silent demo fallback that looks exactly
+    // like real data. The loading/error state owns the region until a real model exists.
+    if (_skEffectiveWorkspace() && !_skReadModel) return;
     var _skSrc = _skEffectiveWorkspace() ? _skGetSkuDetails() : undefined;   // Workspace → read-model; Legacy → getter (undefined)
     const groups = window.getAllSkuDataWithOverrides ? getAllSkuDataWithOverrides(_skSrc) : null;
     if (groups) {

@@ -113,7 +113,8 @@ eval(extractVar(G16, 'SAD_K2_BASIS_CONTESTED_'));
 eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterministicLineId_', 'sadFindLineByNaturalKey_',
   'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2LineNaturalKey_', 'sadK2DeterministicLineId_',
   'sadIsK2Group_', 'sadNewLineId_', 'sadK2ResolveActiveDraft_', 'sadCanonicalLineId_', 'sadSameLineIdentity_',
-  'sadPreflightLineBatch_', 'sadVerifyDraftLines_', 'sadLineIsComplete_', 'sadHeaderRouteIsComplete_',
+  'sadPreflightLineBatch_', 'sadScanDuplicateLinePks_', 'sadVerifyDraftLines_', 'sadLineIsComplete_',
+  'sadHeaderRouteIsComplete_',
   'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
   'sadLegacyReconcileReason_', 'sadReconcileMessage_', 'sadRowToObject_', 'sadReadLinesForDraft_',
   'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_', 'handleGetShippingAllocationDraftWorkspace_'
@@ -491,7 +492,7 @@ ok(/!pf\.ok[\s\S]{0,700}?return;/.test(FLUSH),
   'D1b a failed pre-flight RETURNS out of the function rather than falling through to the writes');
 ok(IRSRC.indexOf('_pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels)') !== -1,
   'D2 queued soft-cancels are PUT BACK on a pre-flight refusal — a cancel is itself a write');
-ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines\)/.test(IRSRC),
+ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines, wantGroupKey\)/.test(IRSRC),
   'D3 line-id adoption is SCOPED to one header (§D.9 — Route A never adopts Route B\'s id)');
 ok(IRSRC.indexOf('ROUTE_GROUP_PARTIAL_FAILURE') !== -1, 'D4 a partial multi-header write reports per route, not a bare SAVE_FAILED');
 ['persisted', 'not_persisted', 'indeterminate'].forEach(function (st) {

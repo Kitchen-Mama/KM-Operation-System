@@ -15,6 +15,12 @@
  * Main entry point for GET requests.
  * Supports actions: getOperationDb, getTable
  */
+// F1-7N-FB-4D §E — deployment build stamp for the ROUTER. FB-4D changed nothing here; the stamp records the
+// round that last changed it (F1-7N-FB-4C-R1, the POST_ONLY_ACTION_ON_GET terminal answer). The router is the
+// one file whose staleness is invisible from the client: a stale router still answers every request, it just
+// answers an older contract.
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';
+
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) || '';

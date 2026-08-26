@@ -716,7 +716,11 @@ var declaredBy = {
   'AIPL_BUILD_VERSION_': (read('specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs').match(/var AIPL_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   // F1-7N-FB-4C-ADDENDUM-MIGRATION - and so did the lifecycle schema migration owner. Every manifest entry must
   // appear here or the check below silently compares `undefined`, which is how a manifest invariant rots.
-  'TEMP_AIMIG_BUILD_VERSION_': (read('specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs').match(/var TEMP_AIMIG_BUILD_VERSION_ = '([^']+)';/) || [])[1]
+  'TEMP_AIMIG_BUILD_VERSION_': (read('specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs').match(/var TEMP_AIMIG_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'SAD_BUILD_VERSION_': (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'SP_BUILD_VERSION_': (read('specs/active/apps-script/11_shipping_plan_handlers.gs').match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'RTR_BUILD_VERSION_': (read('specs/active/apps-script/01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  'SKD_BUILD_VERSION_': (read('specs/active/apps-script/59_api_v1_sku_details_workspace.gs').match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1]
 };
 // Guard the guard: a manifest entry with no declaredBy lookup would make the comparison vacuous.
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {

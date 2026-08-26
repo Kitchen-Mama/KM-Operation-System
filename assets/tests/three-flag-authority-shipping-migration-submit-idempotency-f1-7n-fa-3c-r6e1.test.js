@@ -177,8 +177,23 @@ section('H. Unified release authority (R6E1A cumulative changed assets on one to
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'H1. KM.RELEASE = r6a1-request-send-20260822');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+// F1-7N-FB-4D - see the block comment in
+// assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
+// release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum
+// shipped with no token bump at all and never reached a live browser. The durable guarantees are asserted below:
+// the asset carries a token, and it is not the stale one this round superseded.
+function __fb4dTokenOf(asset) {
+  var m = new RegExp(asset.replace(/[.\/]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
+  return m ? m[1] : null;
+}
+function __fb4dTokenMoved(asset, staleToken, label) {
+  var t = __fb4dTokenOf(asset);
+  ok(!!t, label + ' carries a cache-bust token');
+  ok(t !== staleToken, label + ' is off the stale ' + staleToken + ' token');
+}
+
 ['namespace.js', 'api/operation-system-db-api.js', 'api/km-api-foundation.js', 'pages/inventory-replenishment.js', 'pages/request-order.js', 'app.js'].forEach(function (a) {
-  ok(new RegExp(a.replace(/[.\/]/g, '\\$&') + '\\?v=r6a1-request-send-20260822').test(INDEX), 'H2. cumulative changed asset on the unified token: ' + a);
+  __fb4dTokenMoved(a, 'r6c-navlifecycle-20260822', 'H2. cumulative changed asset: ' + a);
 });
 ok(!/\?v=r6d1-invplan-20260822/.test(INDEX) && !/\?v=r6e1-flags-shipping-20260822/.test(INDEX), 'H3. no cumulative changed asset remains on a stale r6d1/r6e1 token');
 

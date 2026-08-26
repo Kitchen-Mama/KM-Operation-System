@@ -3618,13 +3618,21 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft',
     // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
     // could only be discovered by the pages failing, which is precisely how this round started.
-    'skuDetails.workspace.get'
+    'skuDetails.workspace.get',
+    // F1-7N-FB-4D §E — the Site Inventory WRITE chain. Every step of Add Route -> save -> readback -> Submit
+    // depends on these, and a deployment missing any one of them fails in a way that looks like a data problem.
+    'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
+    'submitAllocationDraftsToShippingPlans', 'system.executionPlanDuplicateLineDiagnostic'
 ];
 // F1-7N-FB-4C-R1 §D — the actions each PAGE needs, so a mismatch can name the page rather than only the action.
 // The probe is still one request; this is the mapping used to phrase the message.
 var KM_PAGE_REQUIRED_ACTIONS_ = {
     'sku-details': ['skuDetails.workspace.get'],
-    'sku-regional-details': ['skuDetails.workspace.get']
+    'sku-regional-details': ['skuDetails.workspace.get'],
+    // F1-7N-FB-4D §E — Site Inventory is the page whose failure this round is closing, so it gets the same
+    // page-scoped verdict: the four actions its Execution Plan -> Submit chain cannot work without.
+    'site-inventory': ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines',
+        'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans']
 };
 // Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
 // catches a half-finished, file-by-file Apps Script sync that still resolves every action.
@@ -3638,7 +3646,17 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     // owning file is a round behind, which is the case a resolvable action list cannot see: these prove the
     // files themselves were copied.
     'skdWorkspaceBuild_',                   // 59_ — the SKU Details / SKU Regional read-model builder
-    'skdBuildEnvelope_'                     // 59_ — the envelope that carries the echoed action + requestId
+    'skdBuildEnvelope_',                    // 59_ — the envelope that carries the echoed action + requestId
+    // F1-7N-FB-4D §E — the FB-4D allocation-writer gate. The CLIENT now depends on this build: it binds line-id
+    // adoption to the route_group_key that only this version of 16_ returns, and it expects a duplicate primary
+    // key to be REFUSED before the write rather than reported after it. A 16_ one round behind answers every
+    // action, returns no group key, and writes onto a corrupted table — which is the live failure. Probing the
+    // symbol is the only way the site can tell the two apart.
+    'sadScanDuplicateLinePks_',             // 16_ — the FB-4D pre-write duplicate-PK gate
+    'SAD_BUILD_VERSION_',                   // 16_ — allocation handler owner build stamp
+    'SP_BUILD_VERSION_',                    // 11_ — shipping plan Submit owner build stamp
+    'RTR_BUILD_VERSION_',                   // 01_ — router build stamp
+    'SKD_BUILD_VERSION_'                    // 59_ — SKU workspace owner build stamp
 ];
 window.KM.DB.checkDeploymentContract = async function () {
     var res = await _kmGapRead_('system.health', {
