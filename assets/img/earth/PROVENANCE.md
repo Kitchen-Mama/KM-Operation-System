@@ -1,8 +1,9 @@
 # Earth albedo textures — provenance, licence and deterministic re-acquisition
 
-**Task:** MAP-VISUAL-REAL-EARTH-TEXTURE-2, amended by **TEXTURE-3-R2 §L** · **Recorded:** 2026-08-26
+**Task:** MAP-VISUAL-REAL-EARTH-TEXTURE-2, amended by **TEXTURE-3-R2 §L** and **TEXTURE-3-R3 §B** · **Recorded:** 2026-08-26
 **Consumed by:** `assets/js/lib/km-globe.js` (`EARTH_ASSETS_`, `loadEarthImage`)
-**Re-acquisition:** `node tools/geo/fetch-earth-textures.js` · **Verification:** `node tools/geo/verify-earth-material.js`
+**Re-acquisition:** `node tools/geo/build-earth-tiers.js` (runtime tiers) · `node tools/geo/fetch-earth-textures.js` (retained R2 baseline)
+**Verification:** `node tools/geo/verify-earth-tiers.js --browser` · `node tools/geo/verify-earth-material.js`
 
 ---
 
@@ -14,35 +15,91 @@ everything inside a coastline was manufactured: a latitude colour ramp, thirteen
 two octaves of value noise. Raising that raster from 2048 to 4096 reproduced the *same picture with more texels*,
 because the limit was never resolution — it was **information**.
 
-These two files are that missing information: real, geographically correct equirectangular Earth albedo carrying
+These files are that missing information: real, geographically correct equirectangular Earth albedo carrying
 MODIS-derived land cover (forest, grassland, desert, snow and ice), real ocean colour and, at the high tier, real
 bathymetry.
 
 `buildEarthCanvas()` is retained and still used — as the synchronous bootstrap on the first frame and as the
 offline fallback if these assets cannot be loaded. It is no longer the primary surface.
 
-## 2. Assets
+## 2. Assets — TEXTURE-3-R3 §B: three tiers, ONE source
 
-| field | `earth-albedo-2048.jpg` | `earth-albedo-5400.jpg` |
-| --- | --- | --- |
-| Role | base tier — low-capability devices, and the high-tier failure fallback | high tier — capability-gated |
-| Dimensions | 2048 × 1024 | 5400 × 2700 |
-| Projection | equirectangular (plate carrée), lon −180…+180, lat +90…−90, north at top | same |
-| Format | baseline JPEG, 3 components (YCbCr), non-progressive | same |
-| Byte size | 266,599 | 2,308,798 |
-| SHA-256 | `d4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e` | `4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba` |
-| Product | Blue Marble (2002): land surface, ocean colour and sea ice | Blue Marble Next Generation, **July 2004**, w/ Topography and Bathymetry |
-| Publisher | NASA Earth Observatory / NASA Goddard Space Flight Center | same |
-| Acquisition / version | 2002 growing-season composite | **July 2004** (northern-hemisphere summer) |
-| Upstream file | `land_ocean_ice_2048.jpg` (image record 57730) | `world.topo.bathy.200407.3x5400x2700.jpg` (image record **73751**) |
-| Upstream URL | `https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57730/land_ocean_ice_2048.jpg` | `https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x5400x2700.jpg` |
-| Processing | none — the vendored bytes ARE the upstream bytes | none — same |
-| Original = processed checksum | yes (no derivation step) | yes (no derivation step) |
-| GPU estimate (RGBA8 + mips) | ~11.2 MB | ~74.6 MB at native 5400×2700; ~42.0 MB on the 4096 POT tier |
-| Filtering | `LINEAR_MIPMAP_LINEAR` / `LINEAR`, max anisotropy, sRGB decode once | same |
+**What changed and why.** TEXTURE-3-R2 fixed *which month* the surface shows (July 2004, not December) but left
+the resolution where it was — 5400 × 2700 before and after — so R2 reported §A4 sharpness as **not done**. R3
+closes it from the same NASA image record at its **published full resolution**, and derives all three runtime
+tiers from that one file.
 
-Both were renamed on vendoring so the repository names describe the **role**, not the upstream filename. The
-bytes are unmodified — the SHA-256 values are of the upstream files exactly as served.
+| field | `earth-albedo-8192.jpg` | `earth-albedo-4096.jpg` | `earth-albedo-2048.jpg` |
+| --- | --- | --- | --- |
+| Role | HIGH tier — capability- and budget-gated | MID tier | BASE tier — floor for every device |
+| Dimensions | 8192 × 4096 | 4096 × 2048 | 2048 × 1024 |
+| Projection | equirectangular (plate carrée), lon −180…+180, lat +90…−90, north at top | same | same |
+| Format | baseline JPEG (SOF0), 3 components YCbCr 4:2:0, non-progressive | same | same |
+| Byte size | 4,217,345 | 1,386,011 | 453,127 |
+| Bytes / pixel | 0.1257 | 0.1652 | 0.2161 |
+| SHA-256 | `e7ca8837c1ec906479f55463955dbf68434a134146958aed646a06ae45a95779` | `366b86ec02abac1169583b64630304d94a6d782bdc44e65f4990e18a547bd28d` | `02037552b15ec5488e655467d5419a2b31f29777f9ccebca0cf49a27139637d9` |
+| Derived from | the pinned 21600 × 10800 source, area-average | the 8192 tier, exact 2× box halve | the 4096 tier, exact 2× box halve |
+| Encoder / quality | `tools/geo/jpeg-image.js`, Annex K tables, q88 | same, q90 | same, q92 |
+| GPU estimate (RGBA8 + mips) | 171.0 MB | 42.8 MB | 10.7 MB |
+| Filtering | `LINEAR_MIPMAP_LINEAR` / `LINEAR`, max anisotropy, sRGB decode once | same | same |
+
+**The one source all three come from:**
+
+| field | value |
+| --- | --- |
+| Upstream file | `world.topo.bathy.200407.3x21600x10800.jpg` |
+| Image record | **73751** — the *same* record R2 selected July 2004 from |
+| Upstream URL | `https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x21600x10800.jpg` |
+| Dimensions | 21600 × 10800 (233 megapixels — **16× the texels** of the 5400 × 2700 file) |
+| Byte size | 27,201,049 |
+| SHA-256 | `d225f1f35a6448a4d1d8f6de6e48f3433e470085b70a35800e64f384f269a7b0` |
+| Product | Blue Marble Next Generation, **July 2004**, w/ Topography and Bathymetry |
+| Publisher | NASA Earth Observatory / NASA Goddard Space Flight Center |
+| Vendored? | **No.** It is a build input, cached outside the repository and re-verified by digest on every run — the same rule the Natural Earth GeoJSON inputs follow. |
+
+**This is not a different picture chosen for sharpness.** It is the same month, the same product, the same
+publisher, the same licence and the same projection as the asset R2 accepted — at the resolution NASA publishes
+it. That is why §A's freeze on the July decision is *preserved* by this change rather than reopened, and why
+R2's Canada gate passes on all three tiers with band luminances within **0.8** of the accepted asset's.
+
+**Deriving every tier from one decode is the §B10 guarantee, not a nicety.** Before R3, BASE was a *different
+product entirely* — the 2002 Blue Marble `land_ocean_ice_2048.jpg` (image record 57730, sha256 `d4dc80a6…`,
+266,599 B, now **retired**) — while HIGH was BMNG. Changing tier therefore changed the season, the bathymetry
+and the sea ice: a tier switch was a visible change of planet. Three sample rates of one decode cannot disagree
+about geography.
+
+**`earth-albedo-5400.jpg` is retained and is no longer a runtime tier.** It is the frozen acceptance baseline
+that TEXTURE-3-R2's Canada gate measures byte-for-byte (sha256 `4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba`,
+2,308,798 B, upstream `world.topo.bathy.200407.3x5400x2700.jpg`, same record 73751). Keeping it costs **2.2 MB of
+repository weight and zero bytes at runtime**, and it buys an accepted gate that still measures the exact bytes it
+accepted. Retiring it is a one-line decision for the reviewer; it is not one to take silently, so it is stated
+here instead.
+
+## 2b. Determinism of the derivation (§B3)
+
+```sh
+node tools/geo/build-earth-tiers.js --force        # rebuild all three tiers from the pinned source
+node tools/geo/verify-earth-tiers.js --browser     # verify digests, dimensions, detail and Canada on every tier
+```
+
+Every step is fixed-function: a source verified by SHA-256 *before use*, an area-average resample whose weights
+derive only from the integer dimensions, exact 2× box halving for the lower tiers, and a baseline JPEG encoder
+with standard Annex K tables at a pinned quality. No library version, no GPU, no clock and no randomness enters
+the pixels, so two runs on two machines produce byte-identical files — which is what makes the pinned output
+digests above mean anything.
+
+**Area-average rather than Lanczos**, deliberately. The reduction is 2.637× per axis. Area-average over exactly
+the source footprint of each output texel is a correct anti-aliasing filter that invents no detail and cannot
+ring; Lanczos would read marginally crisper by adding overshoot at coastlines — that is, by drawing a bright rim
+that is not in the source. This task is specifically about not fabricating surface detail.
+
+**The encoder and decoder are ours, so they are checked against someone else's.** `tools/geo/jpeg-image.js`
+writes these files and reads them back, and a round trip through one author's encoder and that same author's
+decoder proves nothing — a shared misreading of the spec would pass it while every browser refused the file. So
+`verify-earth-tiers.js --browser` asks **Chrome's** JPEG decoder to decode all three tiers and compares its
+pixels with ours: agreement is 1.39 / 1.74 / 2.20 mean absolute units out of 255 (HIGH / MID / BASE), and Chrome
+reports the dimensions 8192 × 4096, 4096 × 2048 and 2048 × 1024. Separately, our full decoder agrees with the
+independently written DC-only decoder in `tools/geo/jpeg-dc-probe.js` to a mean of 1.655/255 on the 5400 asset.
 
 ## 3. Two measured findings that shaped these choices
 
@@ -166,7 +223,7 @@ did (see the 49th-parallel step in the table above). The measured step is now 21
 
 ```sh
 node tools/geo/fetch-earth-textures.js            # verify what is vendored; download only what is missing
-node tools/geo/fetch-earth-textures.js --force    # re-download and re-verify both
+node tools/geo/fetch-earth-textures.js --force    # re-download and re-verify the retained R2 baseline
 ```
 
 The script is **checksum-first and fail-closed**: a file is written only if its byte length, SHA-256 *and*
@@ -181,11 +238,31 @@ re-encoding would happen off-repository and could not be verified by checksum.
 
 | candidate | why not |
 | --- | --- |
-| `world.topo.bathy.200412.3x21600x10800.jpg` (21600 × 10800, 29,868,040 B) | The only upstream source with enough information to justify an 8192 × 4096 tier. Unusable here: ~30 MB is an unacceptable page and repository weight, downscaling it needs a build-time image codec this toolchain does not have (no ImageMagick, no `sharp`, no PIL), and client-side resampling would need a ~933 MB intermediate. Recorded as `REAL_EARTH_8K_SOURCE_ASSET_REQUIRED`. |
+| ~~`world.topo.bathy.200412.3x21600x10800.jpg` (21600 × 10800, 29,868,040 B)~~ | ~~The only upstream source with enough information to justify an 8192 × 4096 tier. Unusable here: ~30 MB is an unacceptable page and repository weight, downscaling it needs a build-time image codec this toolchain does not have (no ImageMagick, no `sharp`, no PIL), and client-side resampling would need a ~933 MB intermediate.~~ **`REAL_EARTH_8K_SOURCE_ASSET_REQUIRED` — CLOSED by TEXTURE-3-R3 §B. See the correction below.** |
 | `gebco_08_rev_elev_21600x10800.png` (18,414,843 B) | A true elevation model, which would replace the albedo-luminance relief proxy with real terrain normals. Same two blockers: size, and no codec to resample it. Recorded as `REAL_EARTH_DEM_ASSET_REQUIRED`. |
 | Natural Earth raster (`NE2_50M_SR_W` 88,903,451 B, `HYP_50M_SR_W` 102,197,904 B) | Public domain and excellent, but distributed only as zipped GeoTIFF. No TIFF decoder is available here, and these are cartographic renderings rather than satellite imagery. |
 | A separate cloud layer | Optional in the requirement, and omitted on purpose: clouds must never obscure routes, markers, borders or labels, and the previous surface's procedural clouds were part of the haze being removed. |
 | Any tile server or CDN image | Forbidden: the page must have **no runtime third-party network dependency**. |
+
+### 6a. Correction — `REAL_EARTH_8K_SOURCE_ASSET_REQUIRED` was blocked by a conflated premise, not by a real limit
+
+The struck-through row above is left visible because the reasoning in it is instructive about how a blocker gets
+recorded. Of its three stated reasons, **one was true and two conflated a build input with a shipped asset**:
+
+| stated reason | verdict |
+| --- | --- |
+| "~30 MB is an unacceptable page and repository weight" | **False as applied.** The 21600 × 10800 file is never vendored and never reaches the page — it is a build input, cached outside the repository. What ships is the 8192 tier at **4,217,345 B**. The comparison was between a build input and a page asset. |
+| "downscaling it needs a build-time image codec this toolchain does not have" | **True at the time.** R3 wrote one: `tools/geo/jpeg-image.js`, a dependency-free baseline JPEG decoder and encoder, cross-checked against Chrome's decoder and against the pre-existing DC-only probe. |
+| "client-side resampling would need a ~933 MB intermediate" | **True and irrelevant.** Nothing is resampled client-side. The build-time decoder streams one MCU row at a time and finalises output rows as it passes them, so a 233-megapixel source is resampled in roughly the size of its **output**, not its input — about 100 MB, measured at 13.4 s. |
+
+It also, like the December-vs-July error R2 found, **named the December record** (`200412`) when the accepted
+imagery is July. The July file at the same size is `world.topo.bathy.200407.3x21600x10800.jpg` under record
+**73751**, 27,201,049 B, HTTP 200 — 2.7 MB *smaller* than the December one the row rejected on size.
+
+`REAL_EARTH_DEM_ASSET_REQUIRED` **remains open.** The codec written here reads JPEG only, and
+`gebco_08_rev_elev_21600x10800.png` is a PNG — decodable in principle (Node has `zlib`, so the deflate half is
+free) but it is a genuine elevation model rather than an albedo, and wiring real terrain normals in place of the
+albedo-luminance relief proxy is a shading change, not a texture change. Out of scope for §B, still recorded.
 
 ## 7. §L7 asset and performance controls, and the guard that enforces them
 
@@ -194,12 +271,14 @@ re-encoding would happen off-repository and could not be verified by checksum.
 | Source | NASA Earth Observatory / NASA Goddard Space Flight Center — Blue Marble Next Generation |
 | Licence | NASA content, texture maps named explicitly; attribution required (§4 above, quoted verbatim) |
 | Acquisition / version date | July 2004 composite; image record 73751 |
-| Original checksum | `4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba` (upstream, as served) |
-| Processed checksum | identical — there is no processing step |
-| Deterministic command | `node tools/geo/fetch-earth-textures.js --force` (checksum-first, fail-closed) |
-| Output dimensions | 5400 × 2700 |
-| Byte size | 2,308,798 |
-| GPU memory estimate | ~74.6 MB (RGBA8 + full mip chain) at the native tier; ~42.0 MB on the 4096 POT tier |
+| Original checksum | `d225f1f35a6448a4d1d8f6de6e48f3433e470085b70a35800e64f384f269a7b0` (21600 × 10800 source, upstream as served) |
+| Processed checksums | `e7ca8837…` (8192), `366b86ec…` (4096), `02037552…` (2048) — see §2 |
+| Deterministic command | `node tools/geo/build-earth-tiers.js --force` (source verified before use, fail-closed) |
+| Output dimensions | 8192 × 4096 / 4096 × 2048 / 2048 × 1024 |
+| Byte size | 4,217,345 / 1,386,011 / 453,127 |
+| GPU memory estimate | 171.0 MB (HIGH) / 42.8 MB (MID) / 10.7 MB (BASE), RGBA8 + full mip chain |
+| **Stated texture-memory budget (§B6)** | **192 MB** — `GPU_TEXTURE_BUDGET_BYTES_` in `km-globe.js`. The ladder descends when it does not fit, and the tests shrink it to prove that. |
+| HIGH tier release conditions (§B7/§B8/§B11) | `MAX_TEXTURE_SIZE ≥ 8192` **and** (`deviceMemory ≥ 8 GB`, or ≥ 8 cores when `deviceMemory` is unreported) **and** within budget. Capability alone does not earn it — that is §B11 enforced separately from §B8. |
 | Mipmap / filtering | `LINEAR_MIPMAP_LINEAR` minification, `LINEAR` magnification, max hardware anisotropy, sRGB decoded exactly once |
 
 **The guard.** `assets/tests/globe-canada-seasonal-surface-texture-3-r2.test.js` decodes the vendored asset and

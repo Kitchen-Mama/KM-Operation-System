@@ -123,7 +123,7 @@ function run() {
   }
 
   // ---------------- pixels ----------------
-  ['earth-albedo-2048.jpg', 'earth-albedo-5400.jpg'].forEach(function (file) {
+  ['earth-albedo-2048.jpg', 'earth-albedo-4096.jpg', 'earth-albedo-8192.jpg'].forEach(function (file) {
     var full = path.join(ASSET_DIR, file);
     if (!fs.existsSync(full)) { chk(false, 'asset present: ' + file, 'MISSING'); return; }
     var img = PROBE.decodeDc(fs.readFileSync(full));

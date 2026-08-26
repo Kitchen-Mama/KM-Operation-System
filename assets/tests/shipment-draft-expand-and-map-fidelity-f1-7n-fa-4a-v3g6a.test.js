@@ -209,7 +209,30 @@ ok(/var EARTH_ASSET_DIR_ = 'assets\/img\/earth\/';/.test(GLOBE), '18. the only a
 var srcAssigns = (GLOBE.match(/\.src = [A-Za-z_$][\w$]*/g) || []);
 ok(srcAssigns.length === 1 && srcAssigns[0] === '.src = src', '18. exactly ONE image src assignment exists, and it is the resolved local path: ' + JSON.stringify(srcAssigns));
 ok(/rec = earthImgCache_\[src\] = \{ status: 'LOADING', asset: key, src: src,/.test(GLOBE) && /var src = earthAssetPath\(key\);/.test(GLOBE), '18. that path is produced by earthAssetPath() from the vendored asset table — not from a URL');
-ok(/function earthAssetPath\(key\)/.test(GLOBE) && /return a \? \(earthAssetDir\(\) \+ a\.file\) : '';/.test(GLOBE), '18. earthAssetPath can only ever concatenate the local directory with a table filename');
+// RESTATED — AND THIS ASSERTION CAUGHT A REAL REGRESSION THAT WAS MIS-REPORTED.
+//
+// TEXTURE-3-R2 added a content-pinned cache-bust query to this function (`+ '?v=' + EARTH_ASSET_VERSION_`),
+// because the earth image's FILENAME does not change when its bytes do and a browser holding the old JPEG would
+// otherwise keep serving it forever. That change broke this assertion's literal pattern, and R2's completion
+// report stated "0 new failures" — it did not, because the sweep was run BEFORE that late change and not again
+// after. Two suites were failing from a086104 onward: this one and
+// assets/tests/geo-names-zh-hant-map-visual-real-earth-texture-3.test.js.
+//
+// The stated intent — "can only ever concatenate the local directory with a table filename" — is about there
+// being no caller-supplied string and no host in the path. A version token derived from a module constant is
+// neither. So the restatement keeps the intent and adds the token as a REQUIREMENT rather than tolerating it:
+// the components must be the local directory, a filename from the asset table, and the pinned version constant,
+// and nothing else.
+ok(/function earthAssetPath\(key\)/.test(GLOBE), '18. earthAssetPath exists');
+ok(/return a \? \(earthAssetDir\(\) \+ a\.file \+ '\?v=' \+ EARTH_ASSET_VERSION_\) : '';/.test(GLOBE),
+  '18. earthAssetPath can only ever concatenate the local directory, a table filename and the pinned version token');
+ok(/var EARTH_ASSET_VERSION_ = '[A-Za-z0-9._-]+';/.test(GLOBE),
+  '18. and that token is a literal module constant — not a clock, a counter or a caller argument');
+var _apBody = GLOBE.slice(GLOBE.indexOf('function earthAssetPath(key)'));
+_apBody = _apBody.slice(0, _apBody.indexOf('\n  }') + 4);
+['Date', 'Math.random', 'location', 'document', 'window.', 'arguments['].forEach(function (bad) {
+  ok(_apBody.indexOf(bad) === -1, '18. and earthAssetPath reads no ' + bad);
+});
 ok(/window\.KM_WORLD_LAND/.test(GLOBE), '18. the texture is rasterized from the vendored same-origin land outline (no external asset, no licence question)');
 
 // (17) no coordinate mutation / jitter

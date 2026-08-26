@@ -65,15 +65,21 @@ ok(GLOBE.indexOf('buildEarthCanvas(TEX_BASE_W_, TEX_BASE_H_)') !== -1, 'A2 and i
 // ================================================================================================================
 section('D. a genuinely higher-information source, and no upscaling anywhere');
 // ================================================================================================================
+// RESTATED IN R3: the ladder is now three tiers, so the two-tier shape is swept instead of spelled out. The
+// section heading — "a genuinely higher-information source, and no upscaling anywhere" — is exactly what R3 §B
+// is about, and the source is now 21600x10800 rather than 5400x2700.
 eq(MAT.ASSETS.BASE.file, 'earth-albedo-2048.jpg', 'D1 the base asset is vendored under a role-named file');
-eq(MAT.ASSETS.HIGH.file, 'earth-albedo-5400.jpg', 'D1 the high asset likewise');
+eq(MAT.ASSETS.MID.file, 'earth-albedo-4096.jpg', 'D1 the mid asset likewise');
+eq(MAT.ASSETS.HIGH.file, 'earth-albedo-8192.jpg', 'D1 the high asset likewise');
 eq(MAT.ASSETS.BASE.w + 'x' + MAT.ASSETS.BASE.h, '2048x1024', 'D1 base dimensions');
-eq(MAT.ASSETS.HIGH.w + 'x' + MAT.ASSETS.HIGH.h, '5400x2700', 'D1 high dimensions');
+eq(MAT.ASSETS.MID.w + 'x' + MAT.ASSETS.MID.h, '4096x2048', 'D1 mid dimensions');
+eq(MAT.ASSETS.HIGH.w + 'x' + MAT.ASSETS.HIGH.h, '8192x4096', 'D1 high dimensions');
 // the files must actually exist at the declared size — a metadata-only claim would be worthless
-[['BASE', MAT.ASSETS.BASE], ['HIGH', MAT.ASSETS.HIGH]].forEach(function (p) {
+[['BASE', MAT.ASSETS.BASE], ['MID', MAT.ASSETS.MID], ['HIGH', MAT.ASSETS.HIGH]].forEach(function (p) {
   var f = path.join(ROOT, 'assets', 'img', 'earth', p[1].file);
   ok(fs.existsSync(f), 'D1 ' + p[0] + ' asset file exists on disk');
   eq(fs.statSync(f).size, p[1].bytes, 'D1 ' + p[0] + ' asset byte size matches the declared value');
+  eq(p[1].w, p[1].h * 2, 'D1 ' + p[0] + ' is 2:1 equirectangular');
 });
 // §D — the resampler must DOWNSCALE ONLY. This is executed, not grepped.
 ok(MAT.resample({ naturalWidth: 2048, naturalHeight: 1024 }, 4096, 2048) === null,
@@ -94,16 +100,46 @@ ok(GLOBE.indexOf('assets/img/earth/') !== -1 && !/https?:\/\//.test(GLOBE),
 // ================================================================================================================
 section('E. capability-gated tiers — executed against real capability sets');
 // ================================================================================================================
-var tHigh = MAT.pickTier({ maxTextureSize: 16384, webgl2: true });
-eq(tHigh.tier, 'REAL_HIGH_5400_NATIVE', 'E1 WebGL2 + 16384 earns the native 5400 tier');
+// ---- RESTATED IN TEXTURE-3-R3 --------------------------------------------------------------------------------
+// R3 §B replaces the two-asset ladder (2048 + NPOT 5400) with three power-of-two tiers (2048/4096/8192) derived
+// from one pinned 21600x10800 July 2004 source. Four assertions in this section described the OLD ladder's shape
+// and are restated at their stated intent:
+//
+//   E1 "WebGL2 + 16384 earns the native 5400 tier"     -> earns the LARGEST tier, at native size, no resample.
+//   E2 "WebGL1 + 8192 earns a POWER-OF-TWO 4096 tier"  -> the constraint that assertion protected against is
+//        GONE. It existed because 5400x2700 is NPOT and WebGL1 cannot give an NPOT texture mipmaps or REPEAT.
+//        Every tier is now power-of-two, so WebGL1 is no longer a reason to downgrade, and the restatement is
+//        the rule that actually mattered: no tier is EVER larger than MAX_TEXTURE_SIZE, and no tier resamples.
+//   E3 "WebGL2 below 5400 lands on the POT tier"       -> a 4096-max device gets the 4096 asset, natively.
+//   E7 "a capable device DOES earn the top tier"       -> unchanged in intent, new tier name.
+//
+// CAPS OBJECTS NOW STATE THE DEVICE EXPLICITLY. Node 21+ defines a global `navigator` carrying a real
+// hardwareConcurrency, so `pickTier({maxTextureSize, webgl2})` silently reads the HOST's core count - these
+// assertions were passing partly because the dev machine has 20 cores. Same assertion, 2-core CI runner,
+// different answer. Every caps object below names deviceMemory and hardwareConcurrency.
+var CAPS8 = { deviceMemory: 8, hardwareConcurrency: 8 };
+function caps(maxTex, gl2, extra) {
+  var o = { maxTextureSize: maxTex, webgl2: !!gl2, deviceMemory: CAPS8.deviceMemory, hardwareConcurrency: CAPS8.hardwareConcurrency };
+  for (var k in (extra || {})) o[k] = extra[k];
+  return o;
+}
+var tHigh = MAT.pickTier(caps(16384, true));
+eq(tHigh.tier, 'REAL_HIGH_8192', 'E1 a capable device with 16384 earns the largest tier');
 eq(tHigh.resample, 'NONE', 'E1 and uses the asset at native size — no resample, so no information is discarded');
-var tPot = MAT.pickTier({ maxTextureSize: 8192, webgl2: false });
-eq(tPot.tier, 'REAL_HIGH_4096_POT', 'E2 WebGL1 + 8192 earns a POWER-OF-TWO 4096 tier instead');
-eq(tPot.resample, 'DOWNSCALE_5400_TO_4096', 'E2 reached by DOWNSCALING the same source (never upscaling a smaller one)');
-eq(tPot.reason, 'WEBGL1_POT_MIPMAP_REQUIRED', 'E2 and the reason names the real constraint: WebGL1 NPOT cannot have mipmaps');
-eq(MAT.pickTier({ maxTextureSize: 4096, webgl2: true }).tier, 'REAL_HIGH_4096_POT',
-  'E3 WebGL2 whose MAX_TEXTURE_SIZE is below 5400 also lands on the POT tier');
-eq(MAT.pickTier({ maxTextureSize: 2048, webgl2: false }).tier, 'REAL_BASE_2048',
+eq(tHigh.asset, 'HIGH', 'E1 from the HIGH asset');
+var tPot = MAT.pickTier(caps(8192, false));
+eq(tPot.tier, 'REAL_HIGH_8192', 'E2 WebGL1 + 8192 now earns the SAME tier — every tier is power-of-two, so NPOT is no longer a constraint');
+eq(tPot.resample, 'NONE', 'E2 with no resample: the tier maps 1:1 onto a vendored asset');
+// The rule the old POT assertion existed to protect, stated directly and swept across the ladder.
+[[16384, 8192], [8192, 8192], [5400, 4096], [4096, 4096], [3000, 2048], [2048, 2048], [1024, 1024]].forEach(function (c) {
+  var t = MAT.pickTier(caps(c[0], true));
+  ok(t.gpuW <= c[0], 'E2 MAX_TEXTURE_SIZE ' + c[0] + ' is never exceeded (tier is ' + t.gpuW + ')');
+  eq(t.gpuW, c[1], 'E2 and ' + c[0] + ' lands on the ' + c[1] + ' tier');
+});
+eq(MAT.pickTier(caps(4096, true)).tier, 'REAL_MID_4096',
+  'E3 a device whose MAX_TEXTURE_SIZE is below 8192 lands on the 4096 tier');
+eq(MAT.pickTier(caps(4096, true)).resample, 'NONE', 'E3 natively, not by downscaling a larger asset at runtime');
+eq(MAT.pickTier(caps(2048, false)).tier, 'REAL_BASE_2048',
   'E4 a 2048-limited device gets the base tier');
 eq(MAT.pickTier({ maxTextureSize: 2048, webgl2: false }).reason, 'MAX_TEXTURE_SIZE_BELOW_4096', 'E4 with the reason stated');
 var tTiny = MAT.pickTier({ maxTextureSize: 1024, webgl2: false });
@@ -128,21 +164,48 @@ withNav({ deviceMemory: 8, hardwareConcurrency: 2 }, function () {
   eq(MAT.pickTier({ maxTextureSize: 16384, webgl2: true }).reason, 'LOW_CORE_COUNT', 'E7 low core count stays on the base tier');
 });
 withNav({ deviceMemory: 8, hardwareConcurrency: 8 }, function () {
-  eq(MAT.pickTier({ maxTextureSize: 16384, webgl2: true }).tier, 'REAL_HIGH_5400_NATIVE', 'E7 a fully identified capable device DOES earn the top tier');
+  eq(MAT.pickTier({ maxTextureSize: 16384, webgl2: true }).tier, 'REAL_HIGH_8192', 'E7 a fully identified capable device DOES earn the top tier');
+});
+// R3 §B11 — "do not ship an excessive file merely because 8192 is supported" is a rule DISTINCT from §B8, so it
+// gets its own check: a device that can hold the texture but reports only 4 GB of RAM is refused the top tier.
+withNav({ deviceMemory: 4, hardwareConcurrency: 16 }, function () {
+  var t = MAT.pickTier({ maxTextureSize: 16384, webgl2: true });
+  eq(t.tier, 'REAL_MID_4096', 'E7 capability alone does NOT earn the top tier (§B11)');
+  eq(t.reason, 'DEVICE_NOT_STRONG_ENOUGH_FOR_8192', 'E7 and the refusal names §B11 rather than a size limit');
+});
+// R3 §B6 — the budget is a real bound, not decoration: shrink it and the ladder actually descends.
+withNav({ deviceMemory: 32, hardwareConcurrency: 32 }, function () {
+  eq(MAT.pickTier({ maxTextureSize: 16384, webgl2: true, budgetBytes: 60 * 1024 * 1024 }).tier, 'REAL_MID_4096',
+    'E7 a 60 MB budget forces the mid tier');
+  eq(MAT.pickTier({ maxTextureSize: 16384, webgl2: true, budgetBytes: 20 * 1024 * 1024 }).tier, 'REAL_BASE_2048',
+    'E7 a 20 MB budget forces the base tier');
+  var top = MAT.pickTier({ maxTextureSize: 16384, webgl2: true });
+  ok(top.estimated_gpu_bytes <= MAT.GPU_TEXTURE_BUDGET_BYTES,
+    'E7 and the selected tier always fits the stated budget (' + Math.round(top.estimated_gpu_bytes / 1048576)
+    + ' MB <= ' + Math.round(MAT.GPU_TEXTURE_BUDGET_BYTES / 1048576) + ' MB)');
 });
 // §E — GPU memory is estimated, not guessed at
 eq(MAT.estimateGpuBytes(2048, 1024, false), 2048 * 1024 * 4, 'E8 GPU cost is 4 bytes/texel without mipmaps');
 eq(MAT.estimateGpuBytes(2048, 1024, true), Math.round(2048 * 1024 * 4 * 4 / 3), 'E8 a full mip chain adds one third');
 ok(MAT.estimateGpuBytes(5400, 2700, true) / 1048576 > 70 && MAT.estimateGpuBytes(5400, 2700, true) / 1048576 < 80,
   'E8 the native high tier is ~74 MB, which is why it is capability-gated rather than default');
-// §E/§I.5 — the low path must not even REQUEST the 2.5 MB asset
-ok(/if \(matTier\.asset !== 'HIGH'\) \{ applyRealBase\(''\); return; \}/.test(GLOBE),
-  'E9 a device that did not earn the high tier never requests the 2.5 MB asset (§I.5)');
+// §E/§I.5 — the low path must not even REQUEST the large asset.
+// RESTATED IN R3: the old ladder expressed this as a source-level special case (`if asset !== HIGH`). R3 replaced
+// the two bespoke paths with one ladder walk, so the guarantee is now STRUCTURAL and is asserted as behaviour:
+// the entry point requests exactly the tier that was selected, and the walk only ever steps DOWNWARD.
+ok(/function beginMaterialUpgrade\(\) \{ applyTier\(matTier\.asset, ''\); \}/.test(GLOBE),
+  'E9 the upgrade requests exactly the tier the device earned — never a larger one (§I.5/§B9)');
+ok(/var next = EARTH_TIER_ORDER_\[order \+ 1\] \|\| null;/.test(GLOBE),
+  'E9 and the fallback chain can only move DOWN the ladder');
+ok(/EARTH_TIER_ORDER_ = \['HIGH', 'MID', 'BASE'\]/.test(GLOBE), 'E9 which is ordered largest-first');
 // §E — allocation failure releases and falls back rather than leaving an incomplete texture
 ok(/matInfo\.fallback_reason = 'ALLOCATION_FAILED_0x' \+ texErr\.toString\(16\);/.test(GLOBE),
   'E10 a refused allocation is detected and NAMED with the GL error code');
-ok(/applyRealBase\(matInfo\.fallback_reason \|\| 'HIGH_UPLOAD_FAILED'\);/.test(GLOBE),
+// RESTATED IN R3: same intent, now expressed through the single ladder walk instead of a HIGH-specific call.
+ok(/stepDown\(\(why \? why \+ '_THEN_' : ''\) \+ assetKey \+ '_UPLOAD_' \+ \(matInfo\.fallback_reason \|\| 'FAILED'\)\);/.test(GLOBE),
   'E10 and falls back to a tier known to fit, carrying the reason');
+ok(/if \(next\) \{ applyTier\(next, reason\); \}\r?\n\s*else \{ applyProceduralFallback\(reason\); \}/.test(GLOBE),
+  'E10 with the procedural rasterizer as the LAST rung, not as a peer of the real tiers');
 ok(/texInfo\.allocation_verified = false;\r?\n\s*return false;/.test(GLOBE),
   'E10 the upload reports failure instead of pretending the texture is complete');
 
@@ -304,10 +367,13 @@ ok(/getTextureInfo: function \(\)/.test(GLOBE), 'I11 the pre-existing getTexture
 // happened, which is the case a single conflated field would hide.
 ok(/matInfo\.decoded_dimensions = decodedDims \|\| sourceDims;/.test(GLOBE),
   'I12 the decoded dimensions are recorded per upload, not left at the bootstrap value');
-ok(GLOBE.indexOf("matTier.resample, hi.w + 'x' + hi.h)") !== -1,
-  'I12 the high-tier upload passes the BROWSER-decoded dimensions as the decoded value');
-ok(GLOBE.indexOf("EARTH_ASSETS_.HIGH.w + 'x' + EARTH_ASSETS_.HIGH.h") !== -1,
-  'I12 and the ASSET dimensions as the source value, so the two stay distinguishable');
+// RESTATED IN R3: the two bespoke upload calls became one, so the same guarantee is asserted once — the upload
+// receives the ASSET dimensions as the source and the BROWSER-decoded dimensions as the decoded value, and they
+// remain two separate arguments rather than one conflated field.
+ok(GLOBE.indexOf("asset.product + ' [' + asset.file + ']', asset.w + 'x' + asset.h, resample, img.w + 'x' + img.h)") !== -1,
+  'I12 the tier upload passes the ASSET dimensions as the source and the BROWSER-decoded dimensions as the decoded value');
+ok(/var resample = \(gpuW === img\.w && gpuH === img\.h\) \? 'NONE' : \('DOWNSCALE_' \+ img\.w \+ '_TO_' \+ gpuW\);/.test(GLOBE),
+  'I12 and the resample field is DERIVED from the two, so it cannot claim a resample that did not happen');
 // I13 — the reported layer list must be derived from live state. A hardcoded list would keep claiming a relief
 // layer on a procedural fallback or on hardware without fragment highp, where there genuinely is none.
 ok(/function materialLayers\(\)/.test(GLOBE), 'I13 the layer list is computed, not a fixed string');
@@ -321,7 +387,7 @@ section('J. visual acceptance — measured against the real asset pixels');
 var V = VERIFY.run();
 eq(V.fail, 0, 'J1 every deterministic acceptance check passes (' + (V.checks.length - V.fail) + '/' + V.checks.length + ')');
 eq(V.views.length, 10, 'J2 all ten fixed views are evaluated');
-eq(V.assets.length, 2, 'J3 both vendored assets decode and are measured');
+eq(V.assets.length, 3, 'J3 all three runtime tiers decode and are measured');
 V.assets.forEach(function (a) {
   var landCls = {};
   a.land.forEach(function (l) { landCls[l.cls] = 1; });
@@ -338,7 +404,8 @@ V.assets.forEach(function (a) {
   });
 });
 // the specific geography claims §C names for North America
-var hi = V.assets.filter(function (a) { return a.file.indexOf('5400') !== -1; })[0];
+// RESTATED IN R3: the high tier is 8192, not 5400. Same claim, current filename.
+var hi = V.assets.filter(function (a) { return a.file.indexOf('8192') !== -1; })[0];
 function probe(a, n) { return a.land.filter(function (l) { return l.name === n; })[0]; }
 ok(hi, 'J9 the high asset was measured');
 if (hi) {
@@ -401,15 +468,36 @@ ok(/texture maps/.test(EARTH_PROV), 'L1 including the clause that names texture 
 ok(/NASA should be acknowledged[\s>]+as the source of the material/.test(EARTH_PROV), 'L1 and the attribution obligation is stated (quoted across the markdown line wrap)');
 ok(/copyright protected with the name of the copyright holder/.test(EARTH_PROV),
   'L1 with the third-party-content caveat checked rather than presumed');
-// TEXTURE-3-R2 §L2 — the high-tier digest moved with the asset (December -> July 2004). The digest is pinned
-// on purpose: the point of the pin is that a substituted or re-encoded upstream file is a hard failure. What is
-// NOT pinned is which month, because that is a content decision recorded in PROVENANCE.md, not an invariant.
-['d4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e',
- '4f4240673a3a1b173d61b92ca4b07bac5fd17059ea5f725ba6da5a9c5386b7ba'].forEach(function (h) {
-  ok(EARTH_PROV.indexOf(h) !== -1, 'L2 provenance pins the asset SHA-256 ' + h.slice(0, 12));
-  ok(FETCH.indexOf(h) !== -1, 'L2 and the fetch script verifies against the same digest');
+// L2 — RESTATED IN R3, AND THE OLD SHAPE IS WHY.
+//
+// This used to be a FROZEN LITERAL LIST of two digests. That list went stale the moment R3 regenerated the 2048
+// tier: the assertion kept passing because the retired 2002 digest was still SITTING IN the fetch script, while
+// the file on disk had different bytes entirely. A pin that checks a string against another string in the same
+// repository does not verify anything about the asset.
+//
+// So it is computed from the FILES. For every earth image actually on disk, its real digest must appear in
+// PROVENANCE.md and in whichever tool OWNS it - build-earth-tiers.js for the three generated runtime tiers,
+// fetch-earth-textures.js for the retained R2 acceptance baseline. A retired digest cannot satisfy this, and a
+// silently re-encoded file cannot either.
+var BUILD_TIERS = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'geo', 'build-earth-tiers.js'), 'utf8');
+var EARTH_IMG_DIR = path.join(__dirname, '..', 'img', 'earth');
+var earthFiles = fs.readdirSync(EARTH_IMG_DIR).filter(function (f) { return /\.jpg$/.test(f); }).sort();
+eq(earthFiles.length, 4, 'L2 four earth images are vendored: three runtime tiers plus the retained R2 baseline');
+earthFiles.forEach(function (f) {
+  var h = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(EARTH_IMG_DIR, f))).digest('hex');
+  ok(EARTH_PROV.indexOf(h) !== -1, 'L2 provenance records the ACTUAL digest of ' + f + ' (' + h.slice(0, 12) + ')');
+  var owner = (f === 'earth-albedo-5400.jpg') ? FETCH : BUILD_TIERS;
+  var ownerName = (f === 'earth-albedo-5400.jpg') ? 'fetch-earth-textures.js' : 'build-earth-tiers.js';
+  ok(owner.indexOf(h) !== -1, 'L2 and ' + ownerName + ' pins that same digest for ' + f);
 });
-ok(/REAL_EARTH_8K_SOURCE_ASSET_REQUIRED/.test(EARTH_PROV), 'L3 the outstanding 8K asset gap is named, not hidden');
+// No tool may still pin a digest for a file that is gone — that is exactly how the stale list above survived.
+ok(FETCH.indexOf('d4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e') === -1,
+  'L2 and the RETIRED 2002 Blue Marble digest is no longer pinned anywhere that could re-download it');
+// L3 — the gap markers. R3 CLOSES the 8K one, so the assertion now requires it to be recorded as closed rather
+// than merely present: a resolved gap that still reads as outstanding is its own kind of stale claim.
+ok(/REAL_EARTH_8K_SOURCE_ASSET_REQUIRED/.test(EARTH_PROV), 'L3 the 8K asset gap is named, not hidden');
+ok(/REAL_EARTH_8K_SOURCE_ASSET_REQUIRED[^\n]*(CLOSED|RESOLVED)/.test(EARTH_PROV),
+  'L3 and is recorded as CLOSED by TEXTURE-3-R3, not left reading as outstanding');
 ok(/REAL_EARTH_DEM_ASSET_REQUIRED/.test(EARTH_PROV), 'L3 as is the elevation-model gap');
 ok(/NASA/.test(GLOBE), 'L4 the engine itself carries the NASA attribution in the asset table');
 ok(/failures\+\+;\r?\n\s*console\.error\('REFUSED  '/.test(FETCH), 'L5 the fetch script is fail-closed on a digest mismatch');

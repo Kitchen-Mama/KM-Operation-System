@@ -29,15 +29,19 @@ var OUT_DIR = path.join(__dirname, '..', '..', 'assets', 'img', 'earth');
 
 // Pinned upstream identity. `sha256` is the digest of the upstream file AS SERVED; `bytes` is a cheap pre-check
 // that catches a truncated download before hashing. Both are recorded in PROVENANCE.md.
+// OWNERSHIP CHANGED IN TEXTURE-3-R3 §B, AND THIS TOOL WOULD HAVE CLOBBERED THE NEW TIERS IF IT HAD NOT.
+//
+// This file used to own `earth-albedo-2048.jpg` and pinned it to the 2002 Blue Marble `land_ocean_ice_2048.jpg`
+// (sha256 d4dc80a6...). R3 regenerates all three runtime tiers - 8192, 4096 and 2048 - from ONE pinned
+// 21600x10800 July 2004 source, so that filename now holds a DERIVED file with different bytes. Left as it was,
+// a plain run of this tool would have found a digest mismatch, re-downloaded the 2002 image and silently
+// replaced the generated BASE tier with a different product - undoing §B10 without a word.
+//
+// So the tiers are owned by tools/geo/build-earth-tiers.js, which generates and pins them, and this tool keeps
+// exactly one asset: `earth-albedo-5400.jpg`, which is no longer a runtime tier but IS the frozen acceptance
+// baseline that TEXTURE-3-R2's Canada gate measures. Retaining it costs 2.2 MB of repository weight and buys the
+// accepted gate; retiring it is a one-line decision for the reviewer, not one to take silently here.
 var ASSETS = [
-  {
-    out: 'earth-albedo-2048.jpg',
-    url: 'https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57730/land_ocean_ice_2048.jpg',
-    bytes: 266599,
-    sha256: 'd4dc80a6ef571939d0abe04a9bed3d3d1e6cd63e59514be1c5e43a6b069e6f1e',
-    width: 2048, height: 1024,
-    product: 'NASA Blue Marble (2002): land surface, ocean colour and sea ice'
-  },
   {
     out: 'earth-albedo-5400.jpg',
     // MAP-VISUAL-REAL-EARTH-TEXTURE-3-R2 §L2 — JULY, NOT DECEMBER, AND THE REASON THE PREVIOUS ROUND CHOSE

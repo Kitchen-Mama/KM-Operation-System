@@ -48,9 +48,43 @@ var highSha = sha256(HIGH_PATH), baseSha = sha256(BASE_PATH);
 var highBytes = fs.statSync(HIGH_PATH).size, baseBytes = fs.statSync(BASE_PATH).size;
 ok(PROV.indexOf(highSha) !== -1, 'L7 provenance records the high-tier digest actually on disk');
 ok(FETCH.indexOf(highSha) !== -1, 'L7 and the fetch tool verifies against that same digest');
-var engineHighBytes = /HIGH: \{ file: 'earth-albedo-5400\.jpg', w: 5400, h: 2700, bytes: (\d+)/.exec(GLOBE);
-ok(!!engineHighBytes, 'L7 the engine declares the high-tier byte size');
-eq(Number(engineHighBytes[1]), highBytes, 'L7 and it equals the file on disk (no stale declaration)');
+// ---- RESTATED IN TEXTURE-3-R3, AND WHY ----------------------------------------------------------------------
+// R3 §B replaces the tier ladder this block was written against: the surface is now 8192/4096/2048, all three
+// derived from one pinned 21600x10800 July 2004 source, and `earth-albedo-5400.jpg` is no longer a runtime tier.
+// So three assertions here could no longer be true AS WRITTEN. They are restated at their own STATED INTENT
+// rather than deleted, and each restatement is strictly STRONGER than the original:
+//
+//   "the engine declares the high-tier byte size ... no stale declaration"
+//       -> EVERY tier the engine declares must match the file on disk (3 files checked instead of 1).
+//   "a capable WebGL2 device still earns the native tier"
+//       -> a capable WebGL2 device earns the largest tier, at its NATIVE size with no resample.
+//   "a 4096 device still gets the POT downscale"
+//       -> the POT downscale no longer exists, because every tier is now power-of-two and maps 1:1 to an asset.
+//          Restated as the rule that mattered: a device is NEVER given a tier larger than MAX_TEXTURE_SIZE.
+//
+// Nothing in the Canada gate itself (§L1-§L6, the regional statistics, the shortcut checks, the 49th-parallel
+// step, the December self-check) is touched: those measure the IMAGERY, and the imagery is the same July 2004
+// frame at a higher sample rate.
+//
+// One honest note that the restatement cannot carry: the "under 90 MB" bound below is a true statement about
+// estimateGpuBytes(5400, 2700) and it still passes, but the ACTIVE high tier now costs 171 MB of texture memory
+// against a stated 192 MB budget. That is asserted where it belongs - in the R3 suite - not implied here.
+var engineTierDecls = {
+  HIGH: /HIGH: \{ file: 'earth-albedo-8192\.jpg', w: 8192, h: 4096, bytes: (\d+)/.exec(GLOBE),
+  MID: /MID:  \{ file: 'earth-albedo-4096\.jpg', w: 4096, h: 2048, bytes: (\d+)/.exec(GLOBE),
+  BASE: /BASE: \{ file: 'earth-albedo-2048\.jpg', w: 2048, h: 1024, bytes: (\d+)/.exec(GLOBE)
+};
+Object.keys(engineTierDecls).forEach(function (k) {
+  var m = engineTierDecls[k];
+  ok(!!m, 'L7 the engine declares the ' + k + '-tier byte size');
+  if (!m) return;
+  var f = path.join(ROOT, 'assets/img/earth/', k === 'HIGH' ? 'earth-albedo-8192.jpg'
+    : (k === 'MID' ? 'earth-albedo-4096.jpg' : 'earth-albedo-2048.jpg'));
+  eq(Number(m[1]), fs.statSync(f).size, 'L7 and the ' + k + ' declaration equals the file on disk (no stale declaration)');
+});
+// The accepted R2 asset is RETAINED so this gate keeps measuring the exact bytes it accepted, and its digest
+// stays recorded in both provenance and the fetch tool (asserted above).
+ok(highBytes === 2308798, 'L7 the accepted R2 acceptance-baseline asset is unchanged at 2308798 bytes');
 // §L7 asks for the GPU estimate and the filtering settings to be recorded facts, not prose.
 var mat = require(path.join(ROOT, 'assets/js/lib/km-globe.js')).material;
 eq(mat.estimateGpuBytes(5400, 2700, true), Math.round(5400 * 2700 * 4 * 4 / 3), 'L7 the GPU estimate is derived from the real dimensions with a mip chain');
@@ -58,9 +92,21 @@ ok(mat.estimateGpuBytes(5400, 2700, true) < 90 * 1024 * 1024, 'L7 and stays unde
 ok(/LINEAR_MIPMAP_LINEAR/.test(GLOBE) && /TEXTURE_MAX_ANISOTROPY_EXT/.test(GLOBE), 'L7 mipmaps and anisotropy are configured');
 // §L7 / parent §B: the LOD ladder is unchanged by this round — the asset swap must not have bought appearance
 // with performance. Same dimensions in, same tiers out.
-eq(mat.pickTier({ maxTextureSize: 8192, webgl2: true }).tier, 'REAL_HIGH_5400_NATIVE', 'L7 a capable WebGL2 device still earns the native tier');
-eq(mat.pickTier({ maxTextureSize: 4096, webgl2: true }).resample, 'DOWNSCALE_5400_TO_4096', 'L7 a 4096 device still gets the POT downscale');
-eq(mat.pickTier({ maxTextureSize: 1024, webgl2: false }).tier, 'REAL_BASE_1024', 'L7 and a weak device is still capped');
+// NOTE ON THESE CAPS OBJECTS: they pass deviceMemory and hardwareConcurrency EXPLICITLY. Node 21+ defines a
+// global `navigator` with a real hardwareConcurrency, so a caps object that omits them silently reads the HOST
+// machine's core count - which means the same assertion can pass on a 20-core dev box and fail on a 2-core CI
+// runner. Always state the device.
+var CAPABLE = { maxTextureSize: 8192, webgl2: true, deviceMemory: 8, hardwareConcurrency: 8 };
+eq(mat.pickTier(CAPABLE).tier, 'REAL_HIGH_8192', 'L7 a capable WebGL2 device earns the largest tier');
+eq(mat.pickTier(CAPABLE).resample, 'NONE', 'L7 and gets it at its NATIVE size — no runtime resample at all');
+eq(mat.pickTier({ maxTextureSize: 4096, webgl2: true, deviceMemory: 8, hardwareConcurrency: 8 }).tier, 'REAL_MID_4096',
+  'L7 a 4096 device gets the 4096 asset');
+[[16384, 8192], [8192, 8192], [4096, 4096], [2048, 2048], [1024, 1024]].forEach(function (c) {
+  var t = mat.pickTier({ maxTextureSize: c[0], webgl2: true, deviceMemory: 8, hardwareConcurrency: 8 });
+  ok(t.gpuW <= c[0], 'L7 MAX_TEXTURE_SIZE ' + c[0] + ' is never exceeded (got ' + t.gpuW + ')');
+});
+eq(mat.pickTier({ maxTextureSize: 1024, webgl2: false, deviceMemory: 8, hardwareConcurrency: 8 }).tier, 'REAL_BASE_1024',
+  'L7 and a weak device is still capped');
 
 // ================================================================================================================
 section('§L1/§L3 — the correction came from IMAGERY, not from political-country colouring');
