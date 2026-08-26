@@ -510,6 +510,13 @@
       available: true,
       render: safe(function () { return g.getRenderInfo(); }),
       texture: safe(function () { return g.getTextureInfo(); }),
+      // MAP-VISUAL-REAL-EARTH-TEXTURE-2 §I - the Earth MATERIAL reports itself: the live tier and why it was
+      // chosen, the source asset and its real dimensions, the decoded and GPU dimensions, whether a resample
+      // happened, the estimated GPU cost, MAX_TEXTURE_SIZE, filter/mipmap/anisotropy state, the WebGL version,
+      // how gamma is handled, the active layers, the high-detail load time, the effective magnification and the
+      // resolution-derived zoom limit - plus any fallback reason and the context-loss counters. A blurred globe
+      // then has an ANSWER instead of a guess about which of those went wrong.
+      material: safe(function () { return g.getMaterialInfo(); }),
       lod: safe(function () { return g.getLodInfo(); }),
       country_layer: safe(function () { return g.getCountryLayerInfo(); }),
       admin1_layer: safe(function () { return g.getAdmin1LayerInfo(); }),

@@ -195,9 +195,21 @@ ok(/getTextureInfo: function \(\)/.test(GLOBE), '16. the texture configuration i
 ok(/image-rendering/.test(GLOBE) === false, 'E5. no CSS image-upscaling trick is used as a fake quality fix');
 ok(/canvas\.style\.width = '100%'/.test(GLOBE) && /canvas\.style\.height = '100%'/.test(GLOBE), 'E5. the canvas CSS size stays 100% of its container — the buffer, not CSS, carries the resolution');
 // (18) no runtime network dependency
-['fetch(', 'XMLHttpRequest', 'new Image(', '.src =', 'http://', 'https://'].forEach(function (bad) {
-  ok(GLOBE.indexOf(bad) === -1, '18. the globe performs no runtime external texture fetch: no ' + bad);
+// SUPERSEDED, NOT WEAKENED. V3G6A had no image assets at all, so banning the SUBSTRINGS 'new Image(' and '.src ='
+// was a cheap proxy for "no external fetch". MAP-VISUAL-REAL-EARTH-TEXTURE-2 vendors the NASA Blue Marble albedo
+// INSIDE the repository, so the globe must now load a local image - and the proxy would forbid the very thing the
+// task requires while still permitting, say, a literal cross-origin URL passed through a variable. #18 therefore
+// pins the ACTUAL invariant, which is strictly stronger: no fetch/XHR, no protocol, no host, no protocol-relative
+// URL, no tile-server vocabulary, and EVERY image source resolves under the repo-local earth asset directory.
+['fetch(', 'XMLHttpRequest', 'http://', 'https://', 'crossOrigin', 'naciscdn', 'eoimages', 'new URL(', '{z}', '{x}'].forEach(function (bad) {
+  ok(GLOBE.indexOf(bad) === -1, '18. the globe performs no runtime EXTERNAL fetch: no ' + bad);
 });
+ok(/var EARTH_ASSET_DIR_ = 'assets\/img\/earth\/';/.test(GLOBE), '18. the only asset root is a repo-relative directory');
+// every assignment to an image .src must come from earthAssetPath(), never from a caller-supplied string
+var srcAssigns = (GLOBE.match(/\.src = [A-Za-z_$][\w$]*/g) || []);
+ok(srcAssigns.length === 1 && srcAssigns[0] === '.src = src', '18. exactly ONE image src assignment exists, and it is the resolved local path: ' + JSON.stringify(srcAssigns));
+ok(/rec = earthImgCache_\[src\] = \{ status: 'LOADING', asset: key, src: src,/.test(GLOBE) && /var src = earthAssetPath\(key\);/.test(GLOBE), '18. that path is produced by earthAssetPath() from the vendored asset table — not from a URL');
+ok(/function earthAssetPath\(key\)/.test(GLOBE) && /return a \? \(earthAssetDir\(\) \+ a\.file\) : '';/.test(GLOBE), '18. earthAssetPath can only ever concatenate the local directory with a table filename');
 ok(/window\.KM_WORLD_LAND/.test(GLOBE), '18. the texture is rasterized from the vendored same-origin land outline (no external asset, no licence question)');
 
 // (17) no coordinate mutation / jitter
@@ -215,7 +227,14 @@ var GLM = read('js/pages/global-logistics-map.js').replace(/\r\n/g, '\n');
 ok(/jitter|declutter|clusterMarkers/i.test(GLM) === false, 'G. and none is introduced in the map page either (marker overlap is untouched in V3G6A)');
 // the fidelity change touched only the texture path — geometry, projection and markers are untouched
 ok(/sphere = buildSphere\(48, 96, 1\);/.test(GLOBE), '21. the sphere geometry is unchanged');
-ok(/var MIN_D = 1\.35, MAX_D = 5\.0;/.test(GLOBE), '21. the camera zoom bounds are unchanged');
+ok(/var MIN_D = 1\.35, MAX_D = 5\.0;/.test(GLOBE), '21. the declared camera zoom bounds are unchanged');
+// 21b - MAP-VISUAL-REAL-EARTH-TEXTURE-2 §F adds a RESOLUTION GUARD on top of those bounds: when the active tier
+// genuinely cannot carry the closest view, MIN_D tightens rather than presenting magnified blur as detail. The
+// contract that matters is that the guard is BOUNDED - it can never open the zoom past the historical floor and
+// can never close it past the ceiling - so this is a small, provable constraint, not a silent behaviour change.
+ok(/var MAG_BUDGET_ = 6\.0, MIN_D_FLOOR_ = 1\.35, MIN_D_CEIL_ = 1\.85;/.test(GLOBE), '21b the resolution guard is bounded by an explicit floor (the historical MIN_D) and ceiling');
+ok(/return Math\.max\(MIN_D_FLOOR_, Math\.min\(MIN_D_CEIL_, 1 \+ needArc \/ ARC_PER_UNIT_\)\);/.test(GLOBE), '21b and it is clamped between them by construction, so it can only ever tighten slightly');
+ok(/MAX_D = 5\.0/.test(GLOBE) && GLOBE.indexOf('MAX_D =') === GLOBE.lastIndexOf('MAX_D ='), '21b the far bound MAX_D is written once and never adjusted by the material');
 ok(/function lonLatToVec3|focusAngles/.test(GLOBE), '21. the coordinate projection helpers are unchanged');
 
 // (19)(20) the shipped regressions still hold

@@ -429,7 +429,10 @@ ok(/advanceShipmentRoutePoint/.test(MAPJS), '16. the position writer is still wi
 ok(/V3G6A/.test(GLOBE), '17. the V3G6A texture-tier work is still present');
 ok(/gl\.generateMipmap\(gl\.TEXTURE_2D\); texInfo\.mipmaps = true;/.test(GLOBE), '17. mipmaps unchanged');
 ok(/EXT_texture_filter_anisotropic/.test(GLOBE), '17. anisotropy unchanged');
-ok(/TEX_BASE_W_ = 2048, TEX_BASE_H_ = 1024/.test(GLOBE), '17. the base texture tier is unchanged — the deferred material upgrade was not started');
+// The regex still holds, but its MESSAGE no longer does: MAP-VISUAL-REAL-EARTH-TEXTURE-2 started the deferred
+// material upgrade. What this suite actually needs to guarantee is that the COUNTRY layer is unaffected by it.
+ok(/TEX_BASE_W_ = 2048, TEX_BASE_H_ = 1024/.test(GLOBE), '17. the base raster size is still 2048x1024 (now the procedural bootstrap and offline fallback)');
+ok(COUNTRY_BLOCK.indexOf('uploadAlbedo') === -1 && COUNTRY_BLOCK.indexOf('matInfo') === -1, '17. and the country layer never touches the new material path either');
 ok(COUNTRY_BLOCK.indexOf('buildEarthCanvas') === -1, '17. and the country layer never touches the earth texture');
 
 // ==========================================================================================================

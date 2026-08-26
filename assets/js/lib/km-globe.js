@@ -522,6 +522,186 @@
     return cv;
   }
 
+  // ---------------- real-Earth material (MAP-VISUAL-REAL-EARTH-TEXTURE-2) ----------------
+  //
+  // WHY THIS SECTION EXISTS - the audited root cause, not a restatement of the symptom.
+  //
+  // buildEarthCanvas() above paints a careful, good-looking, ENTIRELY INVENTED Earth. Its only per-pixel input is
+  // window.KM_WORLD_LAND: a 110m land/ocean OUTLINE. Everything inside a coastline is therefore manufactured - a
+  // latitude colour ramp, thirteen hand-placed radial patches (Sahara, Amazon, Greenland...) and two octaves of
+  // value noise stretched up from a 384x192 tile. Three consequences follow, and they are the four classifications
+  // this task asked to be separated:
+  //
+  //   SOURCE_TEXTURE_DETAIL_LIMIT   the artwork holds no geography, so raising the raster 2048 -> 4096 reproduced
+  //                                 the SAME picture with more texels. That is why the previous fidelity tier did
+  //                                 not read as an improvement: it was never a resolution problem.
+  //   PROCEDURAL_NOISE_SMEARING     'relief' is uncorrelated value noise magnified ~5-11x by drawImage. Bilinear
+  //                                 magnification of white noise IS low-frequency mush - it looks precisely like
+  //                                 blur, and no amount of it becomes a mountain range.
+  //   OCEAN_MATERIAL_LIMIT          the ocean is one vertical linear gradient plus a 5% noise overlay and a blurred
+  //                                 coast stroke. There is no bathymetry, so there is nothing to vary.
+  //   SHADER_LIGHTING_LIMIT         one hardcoded light, one shade term, no land/ocean distinction, no specular, no
+  //                                 normal detail, and the multiply performed in gamma space (see FS_SPHERE §G).
+  //
+  // TEXTURE_MAGNIFICATION is real but SECONDARY and already mitigated (mipmaps + anisotropy + the 4K tier); it is
+  // bounded below by whatever a global albedo can physically carry, which is what minDistForTier() now measures.
+  // INTERMEDIATE_CANVAS_LIMIT applies only to the fallback rasterizer, which keeps its blurred shelf stroke.
+  // CAPABILITY_FALLBACK was already correct (unknown device -> base tier) and is preserved verbatim below.
+  // COLOR_SPACE_OR_GAMMA is addressed in FS_SPHERE. NONE of these is fixable by a larger buffer or a filter.
+  //
+  // THE FIX IS INFORMATION, NOT PIXELS: a genuinely higher-information source. NASA Blue Marble equirectangular
+  // albedo carries real MODIS land cover (forest, grassland, desert, snow and ice) AND real bathymetry, vendored
+  // REPO-LOCAL under assets/img/earth/. Provenance, dimensions, byte sizes, checksums and the licence are recorded
+  // in assets/img/earth/PROVENANCE.md and re-acquirable with tools/geo/fetch-earth-textures.js.
+  //
+  // NO RUNTIME NETWORK (§I.10): every source below is a repo-relative path. This file contains no URL, no protocol,
+  // no host, no fetch, no XHR and no tile server. buildEarthCanvas() is KEPT as the synchronous bootstrap and as
+  // the offline fallback, so the globe is never blank and never depends on an asset arriving.
+  var EARTH_ASSET_DIR_ = 'assets/img/earth/';
+  var EARTH_ASSETS_ = {
+    // BASE ships to every device: 239 KB, power-of-two, and REAL geography - so even the low-capability path stops
+    // showing an invented planet. HIGH is capability-gated and loaded only when the device has earned it.
+    BASE: { file: 'earth-albedo-2048.jpg', w: 2048, h: 1024, bytes: 266599,
+            product: 'NASA Blue Marble (2002): land surface, ocean colour and sea ice' },
+    HIGH: { file: 'earth-albedo-5400.jpg', w: 5400, h: 2700, bytes: 2566770,
+            product: 'NASA Blue Marble Next Generation, December 2004, topography and bathymetry' }
+  };
+  function earthAssetDir() {
+    var o = (typeof window !== 'undefined' && window.KM_GLOBE_EARTH_ASSET_DIR) || '';
+    return o ? String(o) : EARTH_ASSET_DIR_;
+  }
+  function earthAssetPath(key) {
+    var a = EARTH_ASSETS_[key];
+    return a ? (earthAssetDir() + a.file) : '';
+  }
+
+  // Decoded images are cached PER SESSION, keyed by path (§I.3): a second mount of the map, or a tier switch and
+  // back, reuses the decoded bitmap instead of decoding a 14.6-megapixel JPEG again.
+  var earthImgCache_ = {};
+  function earthNow_() {
+    try { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0; } catch (e) { return 0; }
+  }
+  function loadEarthImage(key) {
+    var src = earthAssetPath(key);
+    var rec = earthImgCache_[src];
+    if (rec && (rec.status === 'READY' || rec.status === 'ERROR')) return Promise.resolve(rec);
+    if (rec && rec.promise) return rec.promise;                  // single-flight: two mounts share one decode
+    rec = earthImgCache_[src] = { status: 'LOADING', asset: key, src: src, img: null, error: '', ms: 0, w: 0, h: 0 };
+    var t0 = earthNow_();
+    rec.promise = new Promise(function (resolve) {
+      var im;
+      try { im = document.createElement('img'); } catch (e) {
+        rec.status = 'ERROR'; rec.error = 'EARTH_ASSET_DECODER_UNAVAILABLE'; return resolve(rec);
+      }
+      im.onload = function () {
+        rec.w = im.naturalWidth || im.width || 0; rec.h = im.naturalHeight || im.height || 0;
+        rec.ms = Math.round(earthNow_() - t0);
+        // A decode that yields no pixels is a FAILURE, not a success with an empty image - saying so here is what
+        // keeps the globe from uploading a 0x0 texture and going black (§I.7).
+        if (!rec.w || !rec.h) { rec.status = 'ERROR'; rec.error = 'EARTH_ASSET_DECODED_EMPTY'; return resolve(rec); }
+        rec.status = 'READY'; rec.img = im; resolve(rec);
+      };
+      im.onerror = function () {
+        rec.status = 'ERROR'; rec.error = 'EARTH_ASSET_LOAD_FAILED'; rec.ms = Math.round(earthNow_() - t0); resolve(rec);
+      };
+      im.src = src;            // repo-relative path only - see the NO RUNTIME NETWORK note above
+    });
+    return rec.promise;
+  }
+
+  function isPot_(n) { return n > 0 && (n & (n - 1)) === 0; }
+
+  // §D - DOWNSCALE ONLY, and it refuses rather than inventing. Producing a bitmap LARGER than its source is
+  // exactly the forbidden "resize the texture and call it new detail", so that request returns null instead of a
+  // plausible-looking upscale. Native size short-circuits with NO intermediate canvas at all.
+  var earthResampleCache_ = {};
+  function earthResample(img, w, h) {
+    var sw = (img && (img.naturalWidth || img.width)) || 0, sh = (img && (img.naturalHeight || img.height)) || 0;
+    if (!sw || !sh || !w || !h) return null;
+    if (w > sw || h > sh) return null;                       // never upscale
+    if (w === sw && h === sh) return img;                    // native - zero copies, zero canvas
+    var key = (img.getAttribute ? (img.getAttribute('src') || '') : '') + '@' + w + 'x' + h;
+    if (earthResampleCache_[key]) return earthResampleCache_[key];
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var cx = cv.getContext('2d'); if (!cx) return null;
+    cx.imageSmoothingEnabled = true;
+    try { cx.imageSmoothingQuality = 'high'; } catch (e) {}
+    cx.drawImage(img, 0, 0, sw, sh, 0, 0, w, h);
+    earthResampleCache_[key] = cv;                           // once per session, not once per mount (§I.2/§I.3)
+    return cv;
+  }
+
+  // §E - CAPABILITY-GATED MATERIAL TIERS. Returns the tier the device has EARNED, never the largest one that
+  // exists. The device-capability rules are the ones already audited for the procedural tier and are deliberately
+  // unchanged, including the important one: an UNIDENTIFIED device stays low rather than gambling tens of MB.
+  //
+  // Why there are two high tiers instead of one: 5400x2700 is NOT power-of-two. In WebGL1 an NPOT texture is legal
+  // only with CLAMP_TO_EDGE and NO mip chain - which would buy close-zoom texels by paying with aliasing across the
+  // entire minified globe and the whole grazing-angle limb. That is a bad trade, so WebGL1 gets a POT DOWNSCALE of
+  // the same source and only WebGL2 - where NPOT textures may have mipmaps and REPEAT wrapping - uses the asset at
+  // its native resolution. No tier ever upscales anything.
+  function pickMaterialTier(caps) {
+    caps = caps || {};
+    var maxTex = Number(caps.maxTextureSize || 0), gl2 = !!caps.webgl2;
+    var out = { tier: 'REAL_BASE_2048', asset: 'BASE', gpuW: 2048, gpuH: 1024, resample: 'NONE', reason: 'BASE_TIER' };
+    if (maxTex && maxTex < 2048) {
+      out.tier = 'REAL_BASE_1024'; out.gpuW = 1024; out.gpuH = 512;
+      out.resample = 'DOWNSCALE_2048_TO_1024'; out.reason = 'MAX_TEXTURE_SIZE_BELOW_2048'; return out;
+    }
+    if (maxTex < 4096) { out.reason = 'MAX_TEXTURE_SIZE_BELOW_4096'; return out; }
+    var nav = (typeof navigator !== 'undefined') ? navigator : {};
+    var mem = Number(nav.deviceMemory || 0), cores = Number(nav.hardwareConcurrency || 0);
+    if (mem && mem < 4) { out.reason = 'LOW_DEVICE_MEMORY'; return out; }
+    if (cores && cores < 4) { out.reason = 'LOW_CORE_COUNT'; return out; }
+    if (!mem && !cores) { out.reason = 'DEVICE_CAPABILITY_UNKNOWN'; return out; }
+    if (gl2 && maxTex >= 5400) {
+      out.tier = 'REAL_HIGH_5400_NATIVE'; out.asset = 'HIGH'; out.gpuW = 5400; out.gpuH = 2700;
+      out.resample = 'NONE'; out.reason = 'WEBGL2_NPOT_NATIVE'; return out;
+    }
+    out.tier = 'REAL_HIGH_4096_POT'; out.asset = 'HIGH'; out.gpuW = 4096; out.gpuH = 2048;
+    out.resample = 'DOWNSCALE_5400_TO_4096';
+    out.reason = gl2 ? 'WEBGL2_MAX_TEXTURE_SIZE_BELOW_5400' : 'WEBGL1_POT_MIPMAP_REQUIRED';
+    return out;
+  }
+  // RGBA8 / SRGB8_ALPHA8 is 4 bytes per texel; a full mip chain adds one third.
+  function estimateGpuBytes(w, h, mips) {
+    var b = (w || 0) * (h || 0) * 4;
+    return Math.round(mips ? b * 4 / 3 : b);
+  }
+
+  // §F - ZOOM VERSUS TEXEL DENSITY, measured rather than asserted. The projection is a 45 degree vertical fov on a
+  // unit sphere, so at camera distance d the viewport height spans this much arc across the nearest surface:
+  var GLOBE_FOV_DEG_ = 45;
+  var ARC_PER_UNIT_ = 2 * Math.tan(GLOBE_FOV_DEG_ / 2 * DEG) / (2 * Math.PI) * 360;   // ~47.46 deg per world unit
+  function arcDegAtDist(d) { return Math.max(0, d - 1) * ARC_PER_UNIT_; }
+  // Device pixels per SOURCE TEXEL. 1.0 is pixel-perfect; the old configuration reached ~15 at MIN_D on a 1400px
+  // viewport, which is the "soft pixel field" this task exists to remove.
+  function magnificationAt(texH, dist, viewH) {
+    var arc = arcDegAtDist(dist);
+    if (!texH || !viewH || arc <= 0) return 0;
+    return viewH / ((texH / 180) * arc);
+  }
+  // The closest distance at which the ACTIVE tier still holds up, given the ACTUAL viewport. Bounded on both
+  // sides on purpose: it can never open the zoom past the engine's historical MIN_D (that would be a behaviour
+  // change nobody asked for), and it can never close it past MIN_D_CEIL_ - §F authorises constraining zoom
+  // "slightly" to avoid magnified blur, not taking the close view away. On the tier a capable desktop actually
+  // gets, the derived limit falls below the floor, so the full historical zoom range is retained unchanged.
+  var MAG_BUDGET_ = 6.0, MIN_D_FLOOR_ = 1.35, MIN_D_CEIL_ = 1.85;
+  function minDistForTier(texH, viewH) {
+    if (!texH || !viewH) return MIN_D_FLOOR_;
+    var needArc = viewH / ((texH / 180) * MAG_BUDGET_);
+    return Math.max(MIN_D_FLOOR_, Math.min(MIN_D_CEIL_, 1 + needArc / ARC_PER_UNIT_));
+  }
+
+  // §F option B - the relief layer is a CLOSE-ZOOM refinement only. At global zoom it is off, so the planet reads
+  // clean and the albedo's own shaded topography carries the terrain; it ramps in as the camera approaches. This
+  // is also what keeps it from ever registering as a repeating pattern at overview distance.
+  var DETAIL_MAX_ = 0.30, DETAIL_FAR_ = 2.60, DETAIL_NEAR_ = 1.55, OCEAN_SPEC_ = 0.30;
+  function detailForDistance(dist) {
+    var k = (DETAIL_FAR_ - dist) / (DETAIL_FAR_ - DETAIL_NEAR_);
+    return Math.max(0, Math.min(1, k)) * DETAIL_MAX_;
+  }
+
   // ---------------- geometry ----------------
   function buildSphere(rows, cols, r) {
     var pos = [], nrm = [], uv = [], idx = [];
@@ -560,12 +740,72 @@
     return p;
   }
 
-  var VS_SPHERE = 'attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;uniform mat4 uMVP;uniform mat4 uMV;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){gl_Position=uMVP*vec4(aPos,1.0);vUV=aUV;vN=mat3(uMV)*aNormal;vView=-(uMV*vec4(aPos,1.0)).xyz;}';
-  // UI-GLOBE-02B (visual only): calibrated lighting — LOWER ambient (0.66→0.46) + stronger diffuse (0.42→0.52) to
-  // de-fog and lift terrain contrast (readable shadow side, no overexposure since 0.46+0.52=0.98); NARROWER, subtler
-  // rim (pow 2.4→3.4, colour 0.14/0.28/0.50→0.10/0.20/0.38) so the atmosphere is an edge-only silhouette that never
-  // milks the surface. CONSTANT-ONLY changes; the shader structure, attributes and uniforms are byte-for-byte identical.
-  var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.46+0.52*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),3.4);col+=vec3(0.10,0.20,0.38)*rim;gl_FragColor=vec4(col,1.0);}';
+  // MAP-VISUAL-REAL-EARTH-TEXTURE-2 - the sphere now needs a TANGENT FRAME, because the relief layer
+  // perturbs the normal along the surface's east/north directions. Both are derived analytically from the
+  // vertex normal (the mesh is a UV sphere with equirectangular UVs, so east/north ARE the UV axes) and are
+  // transformed by the same matrix as the normal, so the frame stays consistent under rotation. The pole
+  // vertices are degenerate for cross(up, n), so they pick a different reference axis. THE ATTRIBUTES AND
+  // THE uMVP/uMV UNIFORMS ARE UNCHANGED - only varyings were added.
+  var VS_SPHERE = 'attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;uniform mat4 uMVP;uniform mat4 uMV;varying vec2 vUV;varying vec3 vN;varying vec3 vView;varying vec3 vT;varying vec3 vB;void main(){gl_Position=uMVP*vec4(aPos,1.0);vUV=aUV;mat3 nm=mat3(uMV);vN=nm*aNormal;vView=-(uMV*vec4(aPos,1.0)).xyz;vec3 ref=abs(aNormal.y)>0.999?vec3(1.0,0.0,0.0):vec3(0.0,1.0,0.0);vec3 ea=normalize(cross(ref,aNormal));vT=nm*ea;vB=nm*cross(aNormal,ea);}';
+  // MAP-VISUAL-REAL-EARTH-TEXTURE-2 §C/§G - THE REAL-EARTH SURFACE SHADER.
+  //
+  // SUPERSEDES the UI-GLOBE-02B single-term shade ('shade = 0.46 + 0.52*diff', one hardcoded light, no material
+  // distinction). That was the right shader for an INVENTED texture: with no land/ocean information in the image
+  // there was nothing to shade differently. A real albedo carries that information, so the surface can finally
+  // answer light the way land and water actually do. DELIBERATELY UNCHANGED: the sun direction, the rim exponent
+  // 3.4 and the rim colour 0.10/0.20/0.38 - the atmosphere silhouette is exactly the one already signed off.
+  //
+  // §G COLOUR SPACE, stated explicitly rather than assumed. JPEG and canvas pixels are sRGB-ENCODED. Multiplying
+  // an sRGB value by a light term - what the old shader did - is lighting in GAMMA space: darks crush, midtones
+  // flatten and terrain contrast is lost, which is part of why the old surface read as flat. Here the albedo is
+  // DECODED to linear, all lighting is accumulated in LINEAR space, and the result is re-ENCODED once at the end.
+  // uDecode is what prevents DOUBLE GAMMA: it is 0.0 when the sampler already decoded (WebGL2 SRGB8_ALPHA8) and
+  // 1.0 when the shader must do it (WebGL1). The rim is added AFTER the encode because it is an authored
+  // screen-space decoration rather than incident light - which also keeps it identical to the signed-off look.
+  //
+  // §C WATER MASK, DERIVED FROM THE ALBEDO'S OWN CHROMA. A vector coastline mask is the obvious choice and the
+  // wrong one: the 110m outline and real satellite imagery disagree by tens of kilometres, so specular would land
+  // on beaches while headlands went matte - exactly the coastline bleeding §G forbids. Reading water out of the
+  // image itself is ALIGNED BY CONSTRUCTION, and it correctly treats lakes and inland seas as water.
+  //
+  // §C/§F RELIEF. The albedo already contains real shaded topography and bathymetry, so its luminance gradient is
+  // a genuine, if indirect, terrain signal. The frame's handedness matters and was derived rather than assumed:
+  // ea = cross((0,1,0), n) is EAST (= +u), vB = cross(n, ea) is NORTH, and buildSphere's v runs (90-lat)/180 so
+  // +v points SOUTH. The v term is therefore (hd - hu), not (hu - hd) - the inverted form lights north-south
+  // slopes backwards while east-west slopes stay correct, which reads as inconsistent embossing, not relief.
+  // Perturbing the normal by this gradient recovers surface response at close zoom
+  // without inventing landforms and without a repeating detail tile. It is LAND-ONLY, ramps in only as the camera
+  // approaches (detailForDistance) and is small by design - a lighting refinement, not manufactured geography. A
+  // true elevation model would be strictly better and is recorded as the one remaining asset gap.
+  var FS_SPHERE =
+    '#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n' +
+    'uniform sampler2D uTex;uniform vec2 uTexel;uniform float uDecode;uniform float uDetail;uniform float uSpec;' +
+    'varying vec2 vUV;varying vec3 vN;varying vec3 vView;varying vec3 vT;varying vec3 vB;' +
+    'vec3 dec(vec3 c){return uDecode>0.5?pow(c,vec3(2.2)):c;}' +
+    'float lum(vec3 c){return dot(c,vec3(0.299,0.587,0.114));}' +
+    'void main(){' +
+      'vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));' +
+      'vec4 tex=texture2D(uTex,vUV);vec3 alb=dec(tex.rgb);' +
+      'float water=smoothstep(0.012,0.085,tex.b-max(tex.r,tex.g));' +
+      'vec3 nn=n;' +
+      'if(uDetail>0.0005){' +
+        'float hl=lum(dec(texture2D(uTex,vec2(vUV.x-uTexel.x,vUV.y)).rgb));' +
+        'float hr=lum(dec(texture2D(uTex,vec2(vUV.x+uTexel.x,vUV.y)).rgb));' +
+        'float hu=lum(dec(texture2D(uTex,vec2(vUV.x,vUV.y-uTexel.y)).rgb));' +
+        'float hd=lum(dec(texture2D(uTex,vec2(vUV.x,vUV.y+uTexel.y)).rgb));' +
+        'nn=normalize(n+(vT*(hl-hr)+vB*(hd-hu))*uDetail*(1.0-water));' +
+      '}' +
+      'float ndl=max(dot(nn,l),0.0);float wrap=max(dot(n,l),0.0);' +
+      'float diff=mix(ndl,wrap,0.28);' +
+      'float amb=mix(0.175,0.130,water);' +
+      'vec3 lit=alb*(amb+0.93*diff);' +
+      'vec3 hv=normalize(l+v);' +
+      'lit+=vec3(0.42,0.56,0.78)*pow(max(dot(n,hv),0.0),mix(30.0,86.0,water))*water*uSpec*step(0.001,wrap);' +
+      'vec3 col=pow(max(lit,0.0),vec3(1.0/2.2));' +
+      'float rim=pow(1.0-max(dot(n,v),0.0),3.4);' +
+      'col+=vec3(0.10,0.20,0.38)*rim;' +
+      'gl_FragColor=vec4(col,1.0);' +
+    '}';
   var VS_PTS = 'attribute vec3 aPos;attribute vec4 aColor;attribute float aSize;attribute float aRing;uniform mat4 uMVP;varying vec4 vColor;varying float vRing;void main(){gl_Position=uMVP*vec4(aPos,1.0);gl_PointSize=aSize;vColor=aColor;vRing=aRing;}';
   // UI-GLOBE-02 (visual only): layered marker — colored core → white halo → status ring → crisp dark rim, for
   // clean definition on the brighter Earth. CONSTANT-ONLY (thresholds/colors); still fully opaque (no blend),
@@ -604,16 +844,233 @@
     var labelCtx = null;
     try { labelCtx = labelCv.getContext('2d'); } catch (e) { labelCtx = null; }
 
-    var gl = null;
-    try { gl = canvas.getContext('webgl', { antialias: true, alpha: false }) || canvas.getContext('experimental-webgl', { antialias: true, alpha: false }); } catch (e) {}
+    // MAP-VISUAL-REAL-EARTH-TEXTURE-2 §G - WEBGL2 FIRST, WEBGL1 UNCHANGED BEHIND IT.
+    // WebGL2 is requested because it is the only path where two things this task needs are legal: a NON
+    // power-of-two texture with a full mip chain (so the 5400x2700 asset can be used at its NATIVE size instead of
+    // being downscaled) and an SRGB8_ALPHA8 internal format (so sRGB decode - and therefore mip filtering - happens
+    // in linear space in the sampler). Nothing else in this engine changes: GLSL ES 1.00 shaders, gl_PointSize,
+    // gl.LINES and Uint16 indices are all accepted by WebGL2 unchanged, and if WebGL2 is absent the WebGL1 path is
+    // exactly what it has always been. glVersion is reported in diagnostics rather than inferred.
+    var gl = null, glVersion = 0;
+    var glAttrs = { antialias: true, alpha: false };
+    try { gl = canvas.getContext('webgl2', glAttrs); if (gl) glVersion = 2; } catch (e) {}
+    if (!gl) { try { gl = canvas.getContext('webgl', glAttrs) || canvas.getContext('experimental-webgl', glAttrs); if (gl) glVersion = 1; } catch (e2) {} }
     if (!gl) { container.removeChild(canvas); return err('webgl', 'WebGL context could not be created'); }
 
+    // §I.6 - THE GLOBE MUST BE USABLE IMMEDIATELY, so the material is staged.
+    // buildEarthCanvas() is synchronous, so the BASE procedural raster is the bootstrap: it paints on the very
+    // first frame and guarantees the sphere is never blank or black while the real albedo is still decoding. It is
+    // deliberately built at BASE size only - building the 4K procedural raster and then discarding it 100 ms later
+    // would be exactly the wasteful per-mount canvas work §I.2 rules out. pickTextureTier remains the ladder for
+    // the PROCEDURAL FALLBACK (used only when the real asset cannot load at all); the real-Earth ladder is
+    // pickMaterialTier.
     var texTier = pickTextureTier(gl);
-    var earthCv = buildEarthCanvas(texTier.width, texTier.height);
+    var earthCv = buildEarthCanvas(TEX_BASE_W_, TEX_BASE_H_);
     if (!earthCv) { container.removeChild(canvas); return err('asset', 'Land outline asset (KM_WORLD_LAND) is missing or empty; cannot rasterize the Earth texture.'); }
-    var texInfo = { width: texTier.width, height: texTier.height, tier_reason: texTier.reason, mipmaps: false,
+    var texInfo = { width: TEX_BASE_W_, height: TEX_BASE_H_, tier_reason: 'PROCEDURAL_BOOTSTRAP', mipmaps: false,
       anisotropy: 1, max_anisotropy: 1, max_texture_size: 0, allocation_verified: false, downgraded_from: null };
     try { texInfo.max_texture_size = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0; } catch (e) {}
+
+    // §G - is highp actually available in the fragment stage? At 5400 texels a UV offset is 1.85e-4, which mediump
+    // (about 3 decimal digits) cannot represent, so the relief taps would read the WRONG texels and emboss noise.
+    // Rather than shipping that on weak hardware, the relief layer is switched OFF and says so in diagnostics.
+    var fragHighp = false;
+    try { var _pf = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT); fragHighp = !!(_pf && _pf.precision > 0); } catch (e) {}
+
+    var matDecode = 1, matGpuW = TEX_BASE_W_, matGpuH = TEX_BASE_H_, matDetailOn = fragHighp;
+    var matTier = pickMaterialTier({ maxTextureSize: texInfo.max_texture_size, webgl2: glVersion === 2 });
+    var matInfo = {
+      stage: 'PROCEDURAL_BOOTSTRAP', tier: 'PROCEDURAL_BASE', tier_reason: 'BOOTSTRAP',
+      target_tier: matTier.tier, target_tier_reason: matTier.reason,
+      source_asset: 'procedural (rasterized from KM_WORLD_LAND, 110m land outline)',
+      source_dimensions: TEX_BASE_W_ + 'x' + TEX_BASE_H_,
+      decoded_dimensions: TEX_BASE_W_ + 'x' + TEX_BASE_H_,
+      gpu_dimensions: TEX_BASE_W_ + 'x' + TEX_BASE_H_,
+      resample: 'NONE', gamma_decode: '', srgb_internalformat: '', webgl_version: glVersion,
+      estimated_gpu_bytes: 0, max_texture_size: texInfo.max_texture_size,
+      mipmaps: false, filter: '', wrap_s: '', anisotropy: 1, max_anisotropy: 1,
+      allocation_verified: false, fallback_reason: '', high_detail_load_ms: 0,
+      fragment_highp: fragHighp, detail_enabled: fragHighp, detail_strength: 0,
+      magnification_budget: MAG_BUDGET_, min_distance: MIN_D_FLOOR_, effective_magnification: 0,
+      context_lost: 0, context_restored: 0,
+      layers: []
+    };
+    // The layer list is DERIVED, never a fixed string: the relief layer is genuinely absent on a procedural
+    // fallback and on hardware without fragment highp, and a diagnostics field that claimed it anyway would be
+    // the exact kind of confident-but-wrong report this whole task is trying to remove.
+    function materialLayers() {
+      var l = ['albedo:' + matInfo.tier, 'water-mask:albedo-chroma', 'ocean-specular', 'atmosphere-rim'];
+      if (matInfo.detail_enabled) l.splice(2, 0, 'relief:albedo-luminance');
+      return l;
+    }
+
+    // ---------------- THE ONE ALBEDO UPLOAD PATH ----------------
+    // Bootstrap, tier upgrade, tier downgrade, procedural fallback and context restore ALL go through here. That
+    // is deliberate: mipmap generation, filter choice, wrap mode, anisotropy, sRGB handling and allocation
+    // verification are a single policy, and a second upload site is how such a policy silently diverges.
+    function uploadAlbedo(source, gpuW, gpuH, stage, tier, sourceLabel, sourceDims, resample, decodedDims) {
+      if (!source || !gpuW || !gpuH) { matInfo.fallback_reason = 'NO_SOURCE'; return false; }
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);   // v=0 is the image TOP, matching buildSphere's UVs
+      while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing errors so the check below is about US */ }
+      var decode = 1, ifmt = 'RGB8';
+      if (glVersion === 2 && gl.SRGB8_ALPHA8) {
+        // §G - the SAMPLER decodes sRGB, so mip filtering also averages in LINEAR space (strictly more correct
+        // than averaging gamma-encoded texels). SRGB8_ALPHA8 rather than SRGB8 because only the former is
+        // guaranteed colour-renderable, which is what generateMipmap requires.
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        decode = 0; ifmt = 'SRGB8_ALPHA8';
+      } else {
+        // §G - WebGL1 has no dependable hardware equivalent (EXT_sRGB's interaction with generateMipmap is not
+        // reliable across drivers), so the SHADER decodes instead. uDecode carries which of the two happened,
+        // and that is precisely what makes double gamma impossible rather than merely unlikely.
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, source);
+        decode = 1; ifmt = 'RGB8';
+      }
+      var texErr = gl.getError();
+      if (texErr !== gl.NO_ERROR) {
+        // §E - STILL ALLOCATION-VERIFIED. MAX_TEXTURE_SIZE, deviceMemory and hardwareConcurrency are hints, not
+        // promises: a driver that reports the capability can refuse the memory under pressure, and an unverified
+        // upload leaves an INCOMPLETE texture, which renders BLACK - the one outcome §I.7 forbids.
+        matInfo.fallback_reason = 'ALLOCATION_FAILED_0x' + texErr.toString(16);
+        texInfo.allocation_verified = false;
+        return false;
+      }
+      texInfo.allocation_verified = true;
+      // V3G6A(E4) - MIPMAPS. This fixes the shimmering/aliasing of MINIFIED texels (the zoomed-out globe and the
+      // whole grazing-angle limb), which plain gl.LINEAR could not. Magnification stays gl.LINEAR - the correct
+      // filter there. A driver may still refuse the chain, so the result is CHECKED, not assumed.
+      try { gl.generateMipmap(gl.TEXTURE_2D); texInfo.mipmaps = true; } catch (e) { texInfo.mipmaps = false; }
+      if (texInfo.mipmaps && gl.getError() !== gl.NO_ERROR) { texInfo.mipmaps = false; }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, texInfo.mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      // §G/§J.7 - THE DATELINE SEAM. Longitude wraps; latitude does not. So S REPEATS and T CLAMPS. Under
+      // CLAMP_TO_EDGE the two seam columns could only ever sample their own edge texel, leaving a half-texel
+      // discontinuity down the +/-180 meridian; REPEAT interpolates ACROSS the seam, which is what the geometry
+      // actually is - and it also makes the relief taps correct for pixels sitting on the seam. REPEAT requires
+      // power-of-two in WebGL1, so an NPOT texture there keeps CLAMP_TO_EDGE rather than becoming incomplete.
+      var canRepeat = (glVersion === 2) || (isPot_(gpuW) && isPot_(gpuH));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, canRepeat ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      // V3G6A(E4) - ANISOTROPY. On a sphere most of the visible surface is viewed at a grazing angle, where an
+      // isotropic mip level is chosen from the WORST axis and the terrain smears. Extension-gated; absent
+      // extension simply leaves anisotropy at 1.
+      try {
+        var aniso = gl.getExtension('EXT_texture_filter_anisotropic') || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') || gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+        if (aniso && texInfo.mipmaps) {
+          var maxA = gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+          texInfo.max_anisotropy = maxA;
+          if (maxA > 1) { gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, maxA); texInfo.anisotropy = maxA; }
+        }
+      } catch (e) {}
+      matDecode = decode; matGpuW = gpuW; matGpuH = gpuH;
+      texInfo.width = gpuW; texInfo.height = gpuH; texInfo.tier_reason = tier;
+      matInfo.stage = stage; matInfo.tier = tier;
+      matInfo.source_asset = sourceLabel; matInfo.source_dimensions = sourceDims;
+      // §I wants the SOURCE, DECODED and GPU dimensions reported separately, because they answer different
+      // questions: what the asset is, what the browser actually gave us, and what the GPU is sampling. They
+      // differ whenever a resample happened, and conflating them would hide exactly that.
+      matInfo.decoded_dimensions = decodedDims || sourceDims;
+      matInfo.gpu_dimensions = gpuW + 'x' + gpuH; matInfo.resample = resample || 'NONE';
+      matInfo.gamma_decode = decode ? 'SHADER_POW_2_2' : 'SAMPLER_SRGB8_ALPHA8';
+      matInfo.srgb_internalformat = ifmt;
+      matInfo.mipmaps = texInfo.mipmaps;
+      matInfo.filter = (texInfo.mipmaps ? 'LINEAR_MIPMAP_LINEAR' : 'LINEAR') + '/LINEAR';
+      matInfo.wrap_s = canRepeat ? 'REPEAT' : 'CLAMP_TO_EDGE';
+      matInfo.anisotropy = texInfo.anisotropy; matInfo.max_anisotropy = texInfo.max_anisotropy;
+      matInfo.allocation_verified = true;
+      matInfo.estimated_gpu_bytes = estimateGpuBytes(gpuW, gpuH, texInfo.mipmaps);
+      return true;
+    }
+
+    // §F - the zoom limit follows the ACTIVE tier and the ACTUAL viewport, so it tightens while a weak tier is
+    // showing and RELAXES again the moment a better one lands. Recomputed on resize and after every material
+    // change; it can only ever move inside [MIN_D_FLOOR_, MIN_D_CEIL_].
+    function recomputeZoomLimit() {
+      var viewH = canvas.height || 0;
+      MIN_D = minDistForTier(matGpuH, viewH);
+      matInfo.min_distance = Math.round(MIN_D * 1000) / 1000;
+      matInfo.effective_magnification = Math.round(magnificationAt(matGpuH, MIN_D, viewH) * 100) / 100;
+      if (cam.dist < MIN_D) { cam.dist = MIN_D; }
+    }
+
+    // The PROCEDURAL FALLBACK ladder - reached only when the real albedo cannot be loaded or uploaded at all,
+    // never as a silent substitute for it. This is where pickTextureTier's capability ladder still applies, and
+    // it is the one place buildEarthCanvas is asked for more than the base raster.
+    function applyProceduralFallback(reason) {
+      if (destroyed) return;
+      var cv = buildEarthCanvas(texTier.width, texTier.height);
+      if (!cv) return;
+      if (uploadAlbedo(cv, texTier.width, texTier.height, 'PROCEDURAL_FALLBACK', 'PROCEDURAL_' + texTier.reason,
+            'procedural (rasterized from KM_WORLD_LAND, 110m land outline)',
+            texTier.width + 'x' + texTier.height, 'NONE')) {
+        // Invented value noise must never be embossed as though it were terrain, so the relief layer is OFF on
+        // this path regardless of hardware. Reporting the reason is the point: a silent fallback would look
+        // exactly like the upgrade having been delivered.
+        matDetailOn = false; matInfo.detail_enabled = false;
+        matInfo.fallback_reason = reason;
+        recomputeZoomLimit(); schedule();
+      }
+    }
+
+    // ---- §E/§I.6 STAGED UPGRADE ----
+    //
+    // A REAL SEASONAL FINDING SHAPED THIS LADDER. The two vendored assets are different Blue Marble products:
+    // the 2048 base is an annual/growing-season composite (boreal Canada reads dark green, measured rgb ~49,54,22)
+    // while the only 5400x2700 topography+bathymetry image NASA publishes is DECEMBER 2004, in which the northern
+    // hemisphere is snow-covered (the same region measures rgb ~187,197,202). Verified by decoding both assets -
+    // see tools/geo/jpeg-dc-probe.js. Loading base and THEN high would therefore flip Canada and Siberia from
+    // green to white about a second after every page load, which looks like a bug rather than an upgrade.
+    //
+    // So there is exactly ONE visible material transition per device, never two:
+    //   capable device      procedural bootstrap -> REAL HIGH        (the base asset is not even requested)
+    //   low-capability      procedural bootstrap -> REAL BASE 2048   (the 2.5 MB asset is never requested, §I.5)
+    //   high failed         -> REAL BASE 2048, with the reason reported
+    //   asset unavailable   -> procedural fallback, with the reason reported
+    function applyRealBase(why) {
+      return loadEarthImage('BASE').then(function (base) {
+        if (destroyed) return;
+        if (base.status !== 'READY') { applyProceduralFallback((why ? why + '_THEN_' : '') + 'BASE_ASSET_' + base.error); return; }
+        var bw = (matTier.tier === 'REAL_BASE_1024') ? 1024 : 2048, bh = bw / 2;
+        var src = earthResample(base.img, bw, bh);
+        if (!src || !uploadAlbedo(src, bw, bh, 'REAL_BASE', 'REAL_BASE_' + bw,
+              EARTH_ASSETS_.BASE.product + ' [' + EARTH_ASSETS_.BASE.file + ']',
+              EARTH_ASSETS_.BASE.w + 'x' + EARTH_ASSETS_.BASE.h,
+              bw === base.w ? 'NONE' : 'DOWNSCALE_' + base.w + '_TO_' + bw, base.w + 'x' + base.h)) {
+          applyProceduralFallback((why ? why + '_THEN_' : '') + 'BASE_UPLOAD_' + (matInfo.fallback_reason || 'FAILED'));
+          return;
+        }
+        matDetailOn = fragHighp; matInfo.detail_enabled = matDetailOn;
+        if (why) matInfo.fallback_reason = why;
+        else if (!fragHighp) matInfo.fallback_reason = 'RELIEF_DISABLED_NO_FRAGMENT_HIGHP';
+        recomputeZoomLimit(); schedule();
+      });
+    }
+
+    function beginMaterialUpgrade() {
+      if (matTier.asset !== 'HIGH') { applyRealBase(''); return; }
+      loadEarthImage('HIGH').then(function (hi) {
+        if (destroyed) return;
+        matInfo.high_detail_load_ms = hi.ms || 0;
+        // §I.7 - a failed OPTIONAL layer degrades to the tier below and SAYS SO. It never blanks the map.
+        if (hi.status !== 'READY') { applyRealBase('HIGH_ASSET_' + hi.error); return; }
+        var src = earthResample(hi.img, matTier.gpuW, matTier.gpuH);
+        if (!src) { applyRealBase('HIGH_RESAMPLE_REFUSED_WOULD_UPSCALE'); return; }
+        if (!uploadAlbedo(src, matTier.gpuW, matTier.gpuH, 'REAL_HIGH', matTier.tier,
+              EARTH_ASSETS_.HIGH.product + ' [' + EARTH_ASSETS_.HIGH.file + ']',
+              EARTH_ASSETS_.HIGH.w + 'x' + EARTH_ASSETS_.HIGH.h,
+              matTier.resample, hi.w + 'x' + hi.h)) {
+          // §E.1-3 - abandon the attempt and fall back to a tier that is KNOWN to fit, so the globe is never left
+          // holding an incomplete texture. The reason travels with it instead of being swallowed.
+          applyRealBase(matInfo.fallback_reason || 'HIGH_UPLOAD_FAILED');
+          return;
+        }
+        matDetailOn = fragHighp; matInfo.detail_enabled = matDetailOn;
+        if (!fragHighp) matInfo.fallback_reason = 'RELIEF_DISABLED_NO_FRAGMENT_HIGHP';
+        recomputeZoomLimit(); schedule();
+      });
+    }
 
     var progSphere, progPts, progLine, sphere, buf = {}, tex;
     try {
@@ -626,50 +1083,19 @@
       buf.uv = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf.uv); gl.bufferData(gl.ARRAY_BUFFER, sphere.uv, gl.STATIC_DRAW);
       buf.idx = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphere.idx, gl.STATIC_DRAW);
       buf.pts = gl.createBuffer(); buf.line = gl.createBuffer();
-      tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      // MAP-VISUAL-REAL-EARTH-LOD-1 §D/§H.7 — ALLOCATION-VERIFIED TIER. The capability probe reads
-      // MAX_TEXTURE_SIZE, deviceMemory and hardwareConcurrency, but none of those is a promise that the driver
-      // will actually hand over the memory: a 4096x2048 RGB image plus its mip chain is ~32 MB, and a device
-      // that reports the capability can still fail the upload under pressure. Previously nothing checked, so a
-      // refused allocation left an INCOMPLETE texture and the globe rendered black — the one outcome §H.7
-      // forbids. The upload is now verified and falls back to the base tier, which is guaranteed-size and is
-      // re-rasterised (not rescaled) from the same vector source.
-      while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing errors so the check below is about US */ }
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, earthCv);
-      var texErr = gl.getError();
-      if (texErr !== gl.NO_ERROR && (texInfo.width > TEX_BASE_W_ || texInfo.height > TEX_BASE_H_)) {
-        var baseCv = buildEarthCanvas(TEX_BASE_W_, TEX_BASE_H_);
-        if (baseCv) {
-          texInfo.downgraded_from = texInfo.width + 'x' + texInfo.height;
-          texInfo.width = TEX_BASE_W_; texInfo.height = TEX_BASE_H_;
-          texInfo.tier_reason = 'DOWNGRADED_ALLOCATION_FAILED_0x' + texErr.toString(16);
-          earthCv = baseCv;
-          while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, earthCv);
-          texErr = gl.getError();
+      tex = gl.createTexture();
+      if (!uploadAlbedo(earthCv, TEX_BASE_W_, TEX_BASE_H_, 'PROCEDURAL_BOOTSTRAP', 'PROCEDURAL_BASE',
+                        matInfo.source_asset, TEX_BASE_W_ + 'x' + TEX_BASE_H_, 'NONE')) {
+        // Even 2048x1024 was refused. Do not leave an INCOMPLETE texture bound (that is the black-globe
+        // outcome); drop one rung and RE-RASTERISE from the vector source rather than rescale a bitmap.
+        var subCv = buildEarthCanvas(1024, 512);
+        if (subCv) {
+          texInfo.downgraded_from = TEX_BASE_W_ + 'x' + TEX_BASE_H_;
+          uploadAlbedo(subCv, 1024, 512, 'PROCEDURAL_BOOTSTRAP', 'PROCEDURAL_SUB_BASE',
+                       matInfo.source_asset, '1024x512', 'NONE');
+          texInfo.tier_reason = 'DOWNGRADED_ALLOCATION_FAILED_0x' + (matInfo.fallback_reason || '').replace(/^ALLOCATION_FAILED_0x/, '');
         }
       }
-      texInfo.allocation_verified = (texErr === gl.NO_ERROR);
-      // V3G6A(E4) - MIPMAPS. Both tiers are power-of-two, so WebGL1 can generate a full mip chain. This fixes
-      // the shimmering/aliasing of MINIFIED texels (the zoomed-out globe and the whole grazing-angle limb),
-      // which plain gl.LINEAR could not. Magnification still uses gl.LINEAR - the correct filter there.
-      try { gl.generateMipmap(gl.TEXTURE_2D); texInfo.mipmaps = true; } catch (e) { texInfo.mipmaps = false; }
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, texInfo.mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      // V3G6A(E4) - ANISOTROPY. On a sphere most of the visible surface is viewed at a grazing angle, where an
-      // isotropic mip level is chosen from the WORST axis and the terrain smears. Anisotropic filtering is the
-      // single largest fidelity win here. Extension-gated: absent extension simply leaves anisotropy at 1.
-      try {
-        var aniso = gl.getExtension('EXT_texture_filter_anisotropic') || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic') || gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
-        if (aniso && texInfo.mipmaps) {
-          var maxA = gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
-          texInfo.max_anisotropy = maxA;
-          if (maxA > 1) { gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, maxA); texInfo.anisotropy = maxA; }
-        }
-      } catch (e) {}
     } catch (e) { try { container.removeChild(canvas); } catch (x) {} return err('gl', 'GL init failed: ' + (e && e.message || e)); }
 
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
@@ -744,6 +1170,16 @@
       gl.uniformMatrix4fv(gl.getUniformLocation(progSphere, 'uMV'), false, new Float32Array(mv));
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.uniform1i(gl.getUniformLocation(progSphere, 'uTex'), 0);
+      // MAP-VISUAL-REAL-EARTH-TEXTURE-2 - the material uniforms. uTexel is the ACTIVE texture's texel size, so
+      // the relief taps stay one texel apart at every tier; uDecode records who performed the sRGB decode (see
+      // uploadAlbedo) so gamma is applied exactly once; uDetail ramps the relief in with zoom and is 0 whenever
+      // the surface is invented or highp is unavailable.
+      gl.uniform2f(gl.getUniformLocation(progSphere, 'uTexel'), 1 / (matGpuW || 1), 1 / (matGpuH || 1));
+      gl.uniform1f(gl.getUniformLocation(progSphere, 'uDecode'), matDecode);
+      var uDet = matDetailOn ? detailForDistance(cam.dist) : 0;
+      matInfo.detail_strength = Math.round(uDet * 1000) / 1000;
+      gl.uniform1f(gl.getUniformLocation(progSphere, 'uDetail'), uDet);
+      gl.uniform1f(gl.getUniformLocation(progSphere, 'uSpec'), OCEAN_SPEC_);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
       gl.drawElements(gl.TRIANGLES, sphere.idx.length, gl.UNSIGNED_SHORT, 0);
 
@@ -1054,6 +1490,9 @@
         // layers pixel-aligned by construction rather than by coincidence.
         labelCv.width = canvas.width; labelCv.height = canvas.height;
         rebuildPoints();   // point sizes scale with dpr
+        // §F - texel density is a function of the VIEWPORT as well as the tier, so the zoom limit is re-derived
+        // whenever the backing buffer changes (fullscreen, sidebar, browser zoom, DPR change).
+        recomputeZoomLimit();
         schedule(); return true;
       },
       zoomIn: function () { zoomBy(0.82); }, zoomOut: function () { zoomBy(1.22); },
@@ -1062,6 +1501,18 @@
       // V3G6A - read-only render/texture facts, so the fidelity configuration is observable instead of assumed.
       getRenderInfo: function () { return { dpr: dpr, device_pixel_ratio: (window.devicePixelRatio || 1), dpr_cap: 2, css_width: W, css_height: H, buffer_width: canvas.width, buffer_height: canvas.height }; },
       getTextureInfo: function () { return { width: texInfo.width, height: texInfo.height, tier_reason: texInfo.tier_reason, mipmaps: texInfo.mipmaps, anisotropy: texInfo.anisotropy, max_anisotropy: texInfo.max_anisotropy, max_texture_size: texInfo.max_texture_size, allocation_verified: texInfo.allocation_verified, downgraded_from: texInfo.downgraded_from }; },
+      // MAP-VISUAL-REAL-EARTH-TEXTURE-2 §I - the material is fully observable, so which tier is live, what it
+      // cost, how colour is handled and WHY anything degraded are all facts rather than inferences. Reported
+      // separately from getTextureInfo, which keeps its existing shape for the callers that already read it.
+      getMaterialInfo: function () {
+        var o = {}; for (var k in matInfo) { if (Object.prototype.hasOwnProperty.call(matInfo, k)) o[k] = matInfo[k]; }
+        o.layers = materialLayers();
+        o.estimated_gpu_mb = Math.round((matInfo.estimated_gpu_bytes / 1048576) * 10) / 10;
+        o.asset_dir = earthAssetDir();
+        o.zoom_min_floor = MIN_D_FLOOR_; o.zoom_min_ceiling = MIN_D_CEIL_; o.zoom_max = MAX_D;
+        o.viewport_device_px = canvas.height || 0;
+        return o;
+      },
       setReducedMotion: function (v) { reduced = !!v; },
       // ---- MAP-VISUAL-REAL-EARTH-LOD-1 — ADM1 reference layer (visual only) ----
       // The ADM1 asset is attached LATE. §H.4/§H.5 require that this ~0.5 MB geographic file never sits in the
@@ -1186,11 +1637,34 @@
     };
 
     // context-loss handling (e.g. GPU reset) — report, do not silently die
-    canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); status.ok = false; status.error = 'WebGL context lost'; err('contextlost', 'WebGL context lost'); });
+    canvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); status.ok = false; status.error = 'WebGL context lost'; matInfo.context_lost++; err('contextlost', 'WebGL context lost'); });
     // MAP-COUNTRY-BOUNDARY-1 §I — if the context is ever restored, the country buffer is rebuilt rather than left
     // dangling. It is deliberately the ONLY thing this handler claims to fix: the pre-existing behaviour for the
     // sphere, texture and programs is "report, do not silently die", and this task does not change that.
-    canvas.addEventListener('webglcontextrestored', function () { try { buf.country = null; rebuildCountryBuffer(); buf.admin1 = null; rebuildAdmin1Buffer(); schedule(); } catch (e) {} });
+    // §I - CONTEXT RESTORE. A lost context invalidates every GL object, so the texture must be RE-CREATED, not
+    // merely re-bound. It is re-uploaded FROM THE DECODED IMAGE ALREADY IN THE SESSION CACHE: no second network
+    // request, no second JPEG decode, and the same single upload path (so the restored texture gets the identical
+    // mipmap / filter / wrap / sRGB configuration rather than a subtly different one). If the real asset is not
+    // in cache for any reason this re-rasterises the procedural bootstrap instead, so the sphere is never blank.
+    // Re-creating the shader programs and vertex buffers is NOT part of this task and is unchanged.
+    function restoreMaterial() {
+      try { tex = gl.createTexture(); } catch (e) { return false; }
+      var want = (matInfo.stage === 'REAL_HIGH') ? 'HIGH' : 'BASE';
+      var rec = earthImgCache_[earthAssetPath(want)];
+      if (rec && rec.status === 'READY' && rec.img) {
+        var gw = (want === 'HIGH') ? matTier.gpuW : ((matTier.tier === 'REAL_BASE_1024') ? 1024 : 2048);
+        var gh = (want === 'HIGH') ? matTier.gpuH : gw / 2;
+        var src = earthResample(rec.img, gw, gh);
+        if (src && uploadAlbedo(src, gw, gh, matInfo.stage, matInfo.tier,
+              EARTH_ASSETS_[want].product + ' [' + EARTH_ASSETS_[want].file + ']',
+              EARTH_ASSETS_[want].w + 'x' + EARTH_ASSETS_[want].h,
+              matInfo.resample, rec.w + 'x' + rec.h)) { return true; }
+      }
+      var cv = buildEarthCanvas(TEX_BASE_W_, TEX_BASE_H_);
+      return !!(cv && uploadAlbedo(cv, TEX_BASE_W_, TEX_BASE_H_, 'PROCEDURAL_BOOTSTRAP', 'PROCEDURAL_BASE',
+        'procedural (rasterized from KM_WORLD_LAND, 110m land outline)', TEX_BASE_W_ + 'x' + TEX_BASE_H_, 'NONE'));
+    }
+    canvas.addEventListener('webglcontextrestored', function () { try { matInfo.context_restored++; restoreMaterial(); recomputeZoomLimit(); buf.country = null; rebuildCountryBuffer(); buf.admin1 = null; rebuildAdmin1Buffer(); schedule(); } catch (e) {} });
 
     var onWinResize = (function () { var t = 0; return function () { clearTimeout(t); t = setTimeout(function () { inst.resize(); }, 150); }; })();
     window.addEventListener('resize', onWinResize);
@@ -1202,6 +1676,11 @@
     inst.resize();
     inst.overview();
     schedule();
+    // §I.6/§I.8 - LAST, and NOT awaited. The globe is already interactive on the bootstrap raster by this point,
+    // and the material upgrade is a repo-local image decode that runs on its own: it cannot delay the first
+    // paint, and it touches no workspace read, no DB and no API. Failure downgrades and reports (see
+    // applyProceduralFallback) instead of leaving the map broken.
+    beginMaterialUpgrade();
     return inst;
   }
 
@@ -1210,10 +1689,36 @@
       math: MATH,
       isSupported: function () { try { var c = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl'))); } catch (e) { return false; } },
       buildEarthCanvas: buildEarthCanvas,
+      // MAP-VISUAL-REAL-EARTH-TEXTURE-2 - the material's PURE decisions (which tier a capability set earns, what
+      // it costs, how close the camera may get before texels run out, whether a resample is legal) are exported so
+      // they can be asserted directly instead of inferred from a rendered frame that Node cannot produce.
+      material: {
+        ASSETS: EARTH_ASSETS_, assetDir: earthAssetDir, assetPath: earthAssetPath,
+        pickTier: pickMaterialTier, estimateGpuBytes: estimateGpuBytes, resample: earthResample,
+        loadImage: loadEarthImage, isPot: isPot_,
+        arcDegAtDist: arcDegAtDist, magnificationAt: magnificationAt, minDistForTier: minDistForTier,
+        detailForDistance: detailForDistance,
+        MAG_BUDGET: MAG_BUDGET_, MIN_D_FLOOR: MIN_D_FLOOR_, MIN_D_CEIL: MIN_D_CEIL_,
+        DETAIL_MAX: DETAIL_MAX_, DETAIL_FAR: DETAIL_FAR_, DETAIL_NEAR: DETAIL_NEAR_, OCEAN_SPEC: OCEAN_SPEC_
+      },
       create: create
     };
   }
 
-  // Node/CommonJS export for unit testing the pure math.
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { math: MATH }; }
+  // Node/CommonJS export for unit testing the pure math and the pure material decisions. Both are exported so
+  // the regression suites can EXECUTE them (tier selection, texel-density limits, resample legality) rather than
+  // pattern-match their source, which is the difference between testing behaviour and testing spelling.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      math: MATH,
+      material: {
+        ASSETS: EARTH_ASSETS_, assetDir: earthAssetDir, assetPath: earthAssetPath,
+        pickTier: pickMaterialTier, estimateGpuBytes: estimateGpuBytes, resample: earthResample,
+        isPot: isPot_, arcDegAtDist: arcDegAtDist, magnificationAt: magnificationAt,
+        minDistForTier: minDistForTier, detailForDistance: detailForDistance,
+        MAG_BUDGET: MAG_BUDGET_, MIN_D_FLOOR: MIN_D_FLOOR_, MIN_D_CEIL: MIN_D_CEIL_,
+        DETAIL_MAX: DETAIL_MAX_, DETAIL_FAR: DETAIL_FAR_, DETAIL_NEAR: DETAIL_NEAR_, OCEAN_SPEC: OCEAN_SPEC_
+      }
+    };
+  }
 })();

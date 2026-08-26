@@ -41,7 +41,14 @@ ok((G.match(/requestAnimationFrame\(/g) || []).length === 3, 'R4 requestAnimatio
 // =====================================================================================================
 section('Shader interface unchanged (JS uniform/attribute bindings stay valid)');
 ok(/attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;uniform mat4 uMVP;uniform mat4 uMV;/.test(G), 'S1 VS_SPHERE attributes/uniforms (aPos/aNormal/aUV/uMVP/uMV) unchanged');
-ok(/uniform sampler2D uTex;/.test(G) && /texture2D\(uTex,vUV\)/.test(G), 'S2 FS_SPHERE still samples uTex (no uniform added/removed)');
+ok(/uniform sampler2D uTex;/.test(G) && /texture2D\(uTex,vUV\)/.test(G), 'S2 FS_SPHERE still samples uTex');
+// S2b - the material uniforms are NEW in MAP-VISUAL-REAL-EARTH-TEXTURE-2. Each is bound in draw(); a shader that
+// declares one the JS never sets (or the reverse) is the classic silent-black-globe bug, so both sides are pinned.
+['uTexel', 'uDecode', 'uDetail', 'uSpec'].forEach(function (u) {
+  ok(new RegExp('uniform (vec2|float) ' + u + ';').test(G), 'S2b FS_SPHERE declares the material uniform ' + u);
+  ok(G.indexOf("getUniformLocation(progSphere, '" + u + "')") >= 0, 'S2b draw() actually binds ' + u);
+});
+ok(/varying vec3 vT;varying vec3 vB;/.test(G) && /vT=nm\*ea;vB=nm\*cross\(aNormal,ea\);/.test(G), 'S2c the tangent frame is produced in the VERTEX shader and consumed as a varying (no derivatives extension needed)');
 ok((G.match(/uniform /g) || []).length === (G.match(/uniform /g) || []).length && /gl_Position=uMVP\*vec4\(aPos,1.0\)/.test(G), 'S3 vertex position pipeline intact');
 ok(/VS_PTS =/.test(G) && /FS_PTS =/.test(G) && /VS_LINE =/.test(G) && /FS_LINE =/.test(G), 'S4 point + line shader programs still present');
 // the JS binds exactly these sphere uniforms — must still match the shader
@@ -62,7 +69,16 @@ ok(/latLngToVec3\(m\.lat, m\.lng/.test(G) && /latLngToVec3\(p\[0\], p\[1\]/.test
 
 // =====================================================================================================
 section('Visual enhancements present (the actual change)');
-ok(/float shade=0\.46\+0\.52\*diff;/.test(G) && /pow\(1\.0-max\(dot\(n,v\),0\.0\),3\.4\)/.test(G) && /col\+=vec3\(0\.10,0\.20,0\.38\)\*rim;/.test(G), 'V1 FS_SPHERE UI-GLOBE-02B calibrated lighting: ambient 0.66→0.46 + diffuse 0.42→0.52 (de-fog, contrast, no overexposure) + narrower/subtler edge-only rim (constant-only; same attributes/uniforms)');
+// V1 SUPERSEDED, NOT DELETED. UI-GLOBE-02B pinned 'shade = 0.46 + 0.52*diff' to prove that batch changed only
+// constants. MAP-VISUAL-REAL-EARTH-TEXTURE-2 is an authorised MATERIAL replacement: a single multiply against an
+// sRGB-encoded texture is lighting in gamma space with no land/ocean distinction, which is one of the audited
+// causes of the flat surface. The one-term shade is therefore GONE ON PURPOSE, and V1 now pins the stronger
+// contract - plus the parts that genuinely did NOT change.
+ok(/float diff=mix\(ndl,wrap,0\.28\);/.test(G) && /vec3 lit=alb\*\(amb\+0\.93\*diff\);/.test(G), 'V1a FS_SPHERE lights in LINEAR space against a decoded albedo (the gamma-space multiply is gone)');
+ok(/vec3 dec\(vec3 c\)\{return uDecode>0\.5\?pow\(c,vec3\(2\.2\)\):c;\}/.test(G) && /vec3 col=pow\(max\(lit,0\.0\),vec3\(1\.0\/2\.2\)\);/.test(G), 'V1b decode is uDecode-gated and encode happens exactly once — double gamma is structurally impossible');
+ok(/float amb=mix\(0\.175,0\.130,water\);/.test(G) && /mix\(30\.0,86\.0,water\)/.test(G), 'V1c land and ocean have SEPARATE ambient and roughness response (§C), driven by the water mask');
+ok(/float water=smoothstep\(0\.012,0\.085,tex\.b-max\(tex\.r,tex\.g\)\);/.test(G), 'V1d the water mask is read from the ALBEDO CHROMA — aligned to the imagery, never from a mismatched vector coastline');
+ok(/l=normalize\(vec3\(0\.35,0\.25,1\.0\)\)/.test(G) && /pow\(1\.0-max\(dot\(n,v\),0\.0\),3\.4\)/.test(G) && /col\+=vec3\(0\.10,0\.20,0\.38\)\*rim;/.test(G), 'V1e UNCHANGED: the sun direction and the signed-off atmosphere rim (exponent 3.4, colour 0.10/0.20/0.38) are byte-identical, and the rim is still added AFTER encode as an authored decoration');
 // UI-GLOBE-02 premium Earth — all painted in buildEarthCanvas from the vendored land outline (pure canvas-2D)
 ok(/og\.addColorStop\(0\.50, '#134f70'\)/.test(G) && /var bg = ctx\.createLinearGradient/.test(G), 'V2 ocean depth gradient (UI-GLOBE-02B darker/calmer, less cyan) + latitude biome band gradient (desaturated toward natural tones)');
 ok(/var steps = 40;/.test(G), 'V3 smoother great-circle arcs (40 subdivisions, UNCHANGED)');
