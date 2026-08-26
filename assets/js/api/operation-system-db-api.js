@@ -3728,7 +3728,13 @@ function _kmClassifyBusinessError_(msg) {
 // Naming them changes nothing about the backend contract; it stops the browser from discarding the reason.
 var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
     'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED',
-    'ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED', 'K2_ROUTE_RECONCILIATION_REQUIRED'];
+    'ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED', 'K2_ROUTE_RECONCILIATION_REQUIRED',
+    // F1-7N-FB-4B — identity/idempotency refusals the writer names. Each is a PROVEN zero-write except
+    // LINE_OUTPUT_VERIFICATION_FAILED, which reports a write that WAS applied but did not verify.
+    'DUPLICATE_LINE_IDENTITY_IN_BATCH', 'LINE_IDENTITY_CONFLICT', 'LINE_PRIMARY_KEY_ALREADY_EXISTS',
+    'LINE_OUTPUT_VERIFICATION_FAILED',
+    // F1-7N-FB-4B-ADDENDUM — multi-route group pre-flight refusals (client-side, zero-write by construction).
+    'ROUTE_IDENTITY_NOT_PERSISTABLE', 'ROUTE_QUANTITY_CONFLICT', 'ROUTE_GROUP_PARTIAL_FAILURE'];
 function _kmExtractCanonicalCode_(msg) {
     var s = String(msg == null ? '' : msg).trim();
     // A production-safety schema refusal carries its own token; return it WITH the token so the UI can tell

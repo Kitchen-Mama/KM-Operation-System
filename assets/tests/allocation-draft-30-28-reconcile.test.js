@@ -83,7 +83,14 @@ ok(ensured.length > 0 && ensured.every(function (n) { return n === 'shipping_all
 
 // =====================================================================================================
 section('Frontend flush derives the header route (§7) + docs agree (§11.15)');
-ok(/var route0 = complete\[0\][\s\S]*?buildDraftHeaderPayload\(\{[\s\S]*?source_warehouse_id: route0\.source_warehouse_id/.test(PAGE), 'R16 flush derives the header route context from the scope\'s complete routes');
+// F1-7N-FB-4B-ADDENDUM — STRENGTHENED, not relaxed. This used to pin `route0 = complete[0]`: ONE header derived
+// from the FIRST complete route, which is precisely why a second route could not be persisted. The header route is
+// still derived from the complete routes, but now EVERY canonical route group derives its OWN header, so the
+// requirement is strictly stronger — no route may be dropped on the floor because it was not first.
+ok(/preflightRouteGroups\(ctx, sku, complete\)/.test(PAGE), 'R16a flush derives route groups from the scope\'s complete routes');
+ok(/pf\.groups\.forEach/.test(PAGE) && /_irPersistOneRouteGroup_\(sku, ctx, g\)/.test(PAGE), 'R16b EVERY route group is persisted, not just the first');
+ok(/source_warehouse_id: h\.recommended_source_warehouse_id/.test(PAGE), 'R16c each header route context comes from its OWN group');
+ok(!/var route0 = complete\[0\]/.test(PAGE), 'R16d the single-route "complete[0]" header derivation is GONE');
 ok(/recommended_shipping_method/.test(GS) && /planned_qty/.test(FREEZE) && /header-level/i.test(FREEZE), 'R17 freeze doc documents the header-level route + line qty mapping');
 ok(/Submit uses .*planned_qty.*recommended_qty|planned_qty.*when valid.*recommended_qty/i.test(FREEZE), 'R18 freeze doc records Submit qty authority (planned_qty before recommended_qty — SC-1)');
 

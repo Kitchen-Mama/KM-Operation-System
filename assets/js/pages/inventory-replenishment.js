@@ -2299,6 +2299,19 @@ async function submitReplenishmentPlans() {
             'consumes persisted draft rows, so an unsaved route would be silently missing from the plan.');
         return;   // fail CLOSED
     }
+    // F1-7N-FB-4B-ADDENDUM §E — a plan whose stored identity is ambiguous must not become a durable shipping
+    // plan. This uses the state the hydrate already computed, so it blocks even before any readback is attempted.
+    if (typeof _irHasDuplicateCorruption_ === 'function' && _irHasDuplicateCorruption_()) {
+        var _dupSkus = _irDuplicateCorruptedSkus_();
+        var _dupList = _irDuplicateLineIdentities_().slice(0, 8).map(function (d) {
+            return '  · ' + d.sku + ' — ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows';
+        }).join(String.fromCharCode(10));
+        alert('Cannot Submit Plan — duplicate rows exist in the database for ' + _dupSkus.join(', ') + '.' + NL2 +
+            _dupList + NL2 +
+            'One Execution Plan line must name exactly one stored row. Nothing was submitted and nothing was ' +
+            'written or deleted. Run the duplicate cleanup first, then Submit again.');
+        return;   // fail CLOSED
+    }
     var _db = window.KM && window.KM.DB;
     var _hasSubmitApi = !!(_db && _db.submitAllocationDraftsToShippingPlans);
     var _writeEligible = !!(_db && _db.isProductionWriteEligible && _db.isProductionWriteEligible());
@@ -2312,6 +2325,20 @@ async function submitReplenishmentPlans() {
         // blocks and is never reported as a verification (see _irVerifyPersistedRouteQuantities_).
         var _qv = { verdict: 'UNVERIFIABLE', drifted: [] };
         try { _qv = await _irVerifyPersistedRouteQuantities_((typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null); } catch (_eV) {}
+        if (_qv.verdict === 'CORRUPTED') {
+            alert('Cannot Submit Plan — the database holds duplicate rows under one Execution Plan line identity.' + NL2 +
+                (_qv.duplicates || []).slice(0, 8).map(function (d) { return '  · ' + d.sku + ' — ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows'; }).join(String.fromCharCode(10)) + NL2 +
+                'Nothing was submitted and nothing was written or deleted. Run the duplicate cleanup first.');
+            return;   // fail CLOSED
+        }
+        if (_qv.verdict === 'ROUTES_MISSING') {
+            alert('Cannot Submit Plan — ' + _qv.route_count.on_screen + ' route(s) are on screen but only ' +
+                _qv.route_count.in_database + ' are stored in the database.' + NL2 +
+                'On screen: ' + _qv.total_quantity.on_screen + ' unit(s); in database: ' + _qv.total_quantity.in_database + ' unit(s).' + NL2 +
+                'Submit only ever commits persisted routes, so the missing one would be silently absent from the ' +
+                'plan. Nothing was submitted and nothing was written. Re-save the missing route, then Submit again.');
+            return;   // fail CLOSED
+        }
         if (_qv.verdict === 'DRIFTED') {
             alert('Cannot Submit Plan — the saved quantities do not match what is on screen.' + NL2 +
                 _qv.drifted.slice(0, 8).map(function (d) { return '  · ' + d.sku + ' — on screen ' + d.on_screen + ', in database ' + d.in_database; }).join(String.fromCharCode(10)) + NL2 +
@@ -2500,6 +2527,55 @@ function _irRenderUnsavedBanner_() {
     host.insertAdjacentHTML('afterbegin', html);
     host.style.display = '';
 }
+
+// ================================================================================================================
+// F1-7N-FB-4B-ADDENDUM §E — DUPLICATE CORRUPTION IS DISCLOSED AND FAILS SUBMIT CLOSED.
+// ----------------------------------------------------------------------------------------------------------------
+// The writer can no longer create a second physical row under one primary key, but rows created BEFORE that fix
+// are still in the database (the three live SADL-K2-16F4E4F9 rows). Two rules apply while they remain:
+//   · the read path renders ONE row per primary key, so three 800-unit rows never display as 2400; and
+//   · the page says so plainly and Submit refuses the affected SKU, because committing a plan built on an
+//     ambiguous identity would carry the corruption into a durable shipping plan.
+// This is disclosure only. It never deletes, merges or rewrites a row — the cleanup stays a separate, gated,
+// user-authorized operation.
+function _irDuplicateLineIdentities_() {
+    try { return (replenAllocationDraft && replenAllocationDraft.duplicateLineIdentities) || []; } catch (e) { return []; }
+}
+function _irHasDuplicateCorruption_() { return _irDuplicateLineIdentities_().length > 0; }
+function _irDuplicateCorruptedSkus_() {
+    var seen = {}, out = [];
+    _irDuplicateLineIdentities_().forEach(function (d) {
+        var k = String(d.sku || '').trim();
+        if (k && !seen[k]) { seen[k] = 1; out.push(k); }
+    });
+    return out;
+}
+function _irRenderDuplicateCorruptionBanner_() {
+    var host = _irStateHost_(); if (!host) return;
+    var existing = host.querySelector('.replen-dupe-banner');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var dupes = _irDuplicateLineIdentities_();
+    if (!dupes.length) { if (!host.innerHTML) { host.style.display = 'none'; } return; }
+    var skus = _irDuplicateCorruptedSkus_();
+    var rows = dupes.slice(0, 6).map(function (d) {
+        return _irEsc_(String(d.sku || '')) + ' — ' + _irEsc_(String(d.allocation_draft_line_id || '')) +
+            ' names ' + _irEsc_(String(d.physical_rows)) + ' physical rows';
+    }).join('<br>');
+    var html = '<div class="replen-dupe-banner" role="alert" style="background:#FFF7ED;border-left:3px solid #EA580C;color:#9A3412;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+        '<strong>Duplicate plan rows found in the database.</strong> ' +
+        _irEsc_(String(dupes.length)) + ' Execution Plan line identit' + (dupes.length === 1 ? 'y names' : 'ies name') +
+        ' more than one stored row:<br>' + rows +
+        '<br>Only one row per identity is shown, so the quantities above are NOT inflated. ' +
+        'Submit Plan is blocked for ' + _irEsc_(skus.join(', ')) +
+        ' until the duplicates are cleaned up. Nothing has been deleted or changed.' +
+        '</div>';
+    host.insertAdjacentHTML('afterbegin', html);
+    host.style.display = '';
+}
+window._irDuplicateLineIdentities_ = _irDuplicateLineIdentities_;
+window._irHasDuplicateCorruption_ = _irHasDuplicateCorruption_;
+window._irDuplicateCorruptedSkus_ = _irDuplicateCorruptedSkus_;
+window._irRenderDuplicateCorruptionBanner_ = _irRenderDuplicateCorruptionBanner_;
 window._irUnsavedRoutes_ = function () { return _irUnsavedRoutes; };
 window._irHasUnsavedRoutes_ = _irHasUnsavedRoutes_;
 window._irSaveAcknowledged_ = _irSaveAcknowledged_;
@@ -2552,9 +2628,18 @@ function _newDraftLineId() {
 // BOTH stores must be updated. The draft model is what _flushDraftDbPersist reads, but a row's id is re-collected
 // from the DOM attribute (data-line-id) on the next edit, so leaving the attribute stale would put the placeholder
 // straight back and reopen the append loop this fixes.
-function _irAdoptPersistedLineIds_(sku, persistedLines) {
+//
+// F1-7N-FB-4B-ADDENDUM §D.9 — SCOPED TO ONE HEADER. The business identity (sku + site_sku + window_code) is
+// IDENTICAL for Route A and Route B of one SKU, because route is a HEADER dimension and deliberately not part of
+// line identity. Matching on identity alone across a multi-route save would therefore hand Route B's persisted id
+// to Route A's row and the next save would rewrite the wrong header's line. The draft id is the discriminator, so
+// only rows already bound to THIS header are eligible.
+function _irAdoptPersistedLineIds_(sku, draftId, persistedLines) {
     if (!persistedLines || !persistedLines.length) return 0;
-    var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
+    var wantDraft = String(draftId == null ? '' : draftId).trim();
+    var rows = ((replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || []).filter(function (r) {
+        return !wantDraft || String(r.allocation_draft_id || '').trim() === wantDraft;
+    });
     function k(o) {
         return [String(o.sku == null ? '' : o.sku).trim().toLowerCase(),
             String(o.site_sku == null ? '' : o.site_sku).trim().toLowerCase(),
@@ -2612,6 +2697,18 @@ window._newSubmitExecutionKey = _newSubmitExecutionKey;
 // a de-duplicated, non-blank id list — the ONLY submit selection the frontend sends (never authored plan lines).
 function _replenActiveAllocationDraftIds() {
     var ids = [];
+    // F1-7N-FB-4B-ADDENDUM §A.10 — Submit must send EVERY header the applied station's persisted routes belong to.
+    // One SKU with two routes is two headers, and selecting only the last one written would submit half the plan.
+    try {
+        var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(bySku).forEach(function (sku) {
+            (bySku[sku] || []).forEach(function (r) {
+                if (!_isRouteComplete(r)) return;
+                var id = String(r.allocation_draft_id || '').trim();
+                if (id) ids.push(id);
+            });
+        });
+    } catch (e0) {}
     try { if (replenAllocationDraft && replenAllocationDraft.allocationDraftId) ids.push(String(replenAllocationDraft.allocationDraftId).trim()); } catch (e) {}
     try { if (replenAllocationDraft && replenAllocationDraft.allocationDraftIds && replenAllocationDraft.allocationDraftIds.length) replenAllocationDraft.allocationDraftIds.forEach(function (x) { if (x) ids.push(String(x).trim()); }); } catch (e2) {}
     var seen = {}, out = []; ids.forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } }); return out;
@@ -2693,7 +2790,19 @@ async function _irVerifyPersistedRouteQuantities_(appliedScope) {
             marketplace: appliedScope.marketplace, source_page: 'inventory_replenishment' });
     } catch (e) { out.reason = 'READBACK_FAILED'; return out; }
     var data = (res && res.data) || {};
-    if (!res || res.success === false || data.status !== 'ACTIVE_DRAFT_FOUND') { out.reason = 'READBACK_' + String(data.status || 'INCONCLUSIVE'); return out; }
+    // F1-7N-FB-4B-ADDENDUM — a station holding several shipment groups reads back as ACTIVE_DRAFT_GROUP_FOUND.
+    // That is the normal multi-route state, not an inconclusive read, and its `lines` span every header.
+    if (!res || res.success === false || (data.status !== 'ACTIVE_DRAFT_FOUND' && data.status !== 'ACTIVE_DRAFT_GROUP_FOUND')) { out.reason = 'READBACK_' + String(data.status || 'INCONCLUSIVE'); return out; }
+    // §E — a proven duplicate identity blocks Submit outright. This is a PROVEN corruption, not an inconclusive
+    // read, so unlike a failed diagnostic it is allowed to stop the commit.
+    var dupes = data.duplicate_line_identities || [];
+    if (dupes.length) {
+        out.verdict = 'CORRUPTED';
+        out.duplicates = dupes;
+        out.reason = 'DUPLICATE_LINE_IDENTITY_PERSISTED';
+        return out;
+    }
+    out.draft_count = data.draft_count || (data.drafts ? data.drafts.length : 1);
     var persisted = {};
     (data.lines || []).forEach(function (l) {
         var id = String((l && l.allocation_draft_line_id) || '').trim();
@@ -2715,6 +2824,24 @@ async function _irVerifyPersistedRouteQuantities_(appliedScope) {
             }
         });
     });
+    // §D.10 — route count and total quantity, so a MISSING route is caught as well as a wrong one. A per-line
+    // comparison alone can pass while an entire route silently failed to persist.
+    var onScreenRoutes = 0, onScreenTotal = 0;
+    Object.keys(bySku).forEach(function (sku) {
+        (bySku[sku] || []).forEach(function (r) {
+            if (!_isRouteComplete(r)) return;
+            onScreenRoutes++; onScreenTotal += Number(r.planned_qty != null ? r.planned_qty : r.qty) || 0;
+        });
+    });
+    var dbRoutes = 0, dbTotal = 0;
+    Object.keys(persisted).forEach(function (id) { dbRoutes++; dbTotal += Number(persisted[id]) || 0; });
+    out.route_count = { on_screen: onScreenRoutes, in_database: dbRoutes };
+    out.total_quantity = { on_screen: onScreenTotal, in_database: dbTotal };
+    if (onScreenRoutes > dbRoutes) {
+        out.verdict = 'ROUTES_MISSING';
+        out.reason = 'ROUTE_COUNT_MISMATCH';
+        return out;
+    }
     out.verdict = out.drifted.length ? 'DRIFTED' : (out.checked ? 'VERIFIED' : 'UNVERIFIABLE');
     if (!out.checked) out.reason = 'NO_MATCHED_LINES';
     return out;
@@ -2821,14 +2948,66 @@ window._scheduleDraftDbPersist = _scheduleDraftDbPersist;
 // Soft-cancel the (now empty) Draft Header once its last valid line is gone (§5.3) — never a hard
 // delete, never an orphan/empty header. Upserts the header with status='cancelled' so it is excluded
 // from hydrate; the local id is cleared so a future complete route starts a fresh header.
-function _cancelAllocationDraftHeader() {
+//
+// F1-7N-FB-4B-ADDENDUM — one SKU losing its last route must not cancel a header ANOTHER SKU or another route
+// still occupies. _irCancelUnusedDraftHeaders_ computes which headers are still referenced by any live complete
+// route and cancels only the ones nothing points at any more.
+function _irCancelUnusedDraftHeaders_(sku) {
     try {
-        var draftId = replenAllocationDraft.allocationDraftId;
-        if (!draftId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft && window.IRDraft)) { replenAllocationDraft.allocationDraftId = ''; return; }
-        if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) { replenAllocationDraft.allocationDraftId = ''; return; }
+        var stillUsed = {};
+        var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(bySku).forEach(function (k) {
+            (bySku[k] || []).forEach(function (r) {
+                if (!_isRouteComplete(r)) return;
+                var id = String(r.allocation_draft_id || '').trim();
+                if (id) stillUsed[id] = 1;
+            });
+        });
+        var candidates = {};
+        (((replenAllocationDraft || {}).bySku || {})[sku] || []).forEach(function (r) {
+            var id = String(r.allocation_draft_id || '').trim();
+            if (id && !stillUsed[id]) candidates[id] = 1;
+        });
+        // every header this station is known to have written — the authority that survives a row losing its own
+        // binding when it became incomplete
+        ((replenAllocationDraft || {}).allocationDraftIds || []).forEach(function (x) {
+            var id = String(x || '').trim();
+            if (id && !stillUsed[id]) candidates[id] = 1;
+        });
+        // legacy single-id field: only a candidate when no live route references it
+        var legacy = String((replenAllocationDraft || {}).allocationDraftId || '').trim();
+        if (legacy && !stillUsed[legacy]) candidates[legacy] = 1;
+        var ids = Object.keys(candidates);
+        if (!ids.length) { if (!Object.keys(stillUsed).length) replenAllocationDraft.allocationDraftId = ''; return; }
+        replenAllocationDraft.allocationDraftIds = ((replenAllocationDraft || {}).allocationDraftIds || [])
+            .filter(function (x) { return !candidates[String(x || '').trim()]; });
+        return Promise.all(ids.map(function (id) { return _cancelAllocationDraftHeader(id); }));
+    } catch (e) { console.warn('[replen] header sweep error:', e); }
+}
+window._irCancelUnusedDraftHeaders_ = _irCancelUnusedDraftHeaders_;
+
+// Soft-cancel the queued lines, each under the header it actually belongs to. A line that is STILL a live
+// complete route this flush is never cancelled (the user cleared then retyped a Qty inside the debounce window).
+function _irDispatchLineCancels_(sku, cancels, complete) {
+    var liveIds = {};
+    (complete || []).forEach(function (r) { if (r.allocation_draft_line_id) liveIds[String(r.allocation_draft_line_id)] = 1; });
+    var seen = {};
+    (cancels || []).forEach(function (c) {
+        var lid = String(c.line_id || '');
+        if (!lid || seen[lid] || liveIds[lid]) return;
+        seen[lid] = 1;
+        if (typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lid, c.allocation_draft_id);
+    });
+}
+
+function _cancelAllocationDraftHeader(explicitDraftId) {
+    try {
+        var draftId = String(explicitDraftId == null ? '' : explicitDraftId).trim() || replenAllocationDraft.allocationDraftId;
+        if (!draftId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft && window.IRDraft)) { if (!explicitDraftId) replenAllocationDraft.allocationDraftId = ''; return; }
+        if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) { if (!explicitDraftId) replenAllocationDraft.allocationDraftId = ''; return; }
         var ctx = _replenCtx();
         var header = window.IRDraft.buildDraftHeaderPayload({ allocation_draft_id: draftId, company: ctx.company, country: ctx.country, marketplace: ctx.marketplace, status: 'cancelled' });
-        replenAllocationDraft.allocationDraftId = '';
+        if (String(replenAllocationDraft.allocationDraftId || '') === draftId) replenAllocationDraft.allocationDraftId = '';
         // F1-7N-FB-2A §D — the local id is cleared optimistically (a fresh complete route must start a new
         // header), so a FAILED cancel would otherwise be invisible: the draft stays active in the DB while the
         // page has forgotten it, and the next save resolves to a second active draft — a BLOCKED_CONFLICT with
@@ -2846,6 +3025,181 @@ function _cancelAllocationDraftHeader() {
 }
 window._cancelAllocationDraftHeader = _cancelAllocationDraftHeader;
 
+// ================================================================================================================
+// F1-7N-FB-4B-ADDENDUM — MULTI-ROUTE PERSISTENCE HELPERS.
+// One SKU may hold several Execution Plan routes. Each distinct canonical route group is its OWN shipment group and
+// therefore its OWN SADH-K2- header, with that SKU's line underneath it. These helpers keep the page's per-row
+// binding (which header a row belongs to) exact, so an id is never adopted across routes and a route that moved to
+// a different header does not leave a countable line behind on the old one.
+// ================================================================================================================
+
+// A short human label for one route group — used in operator-facing per-route reporting.
+function _irRouteLabel_(g) {
+    var r = (g && g.routes && g.routes[0]) || {};
+    var from = r.ship_from || (g && g.header && g.header.recommended_source_warehouse_id) || '?';
+    var to = r.destination || (g && g.header && g.header.recommended_destination_warehouse_id) || '?';
+    var m = r.shipping_method || (g && g.header && g.header.recommended_shipping_method) || '?';
+    return from + ' → ' + to + ' / ' + m;
+}
+
+// Bind every row of a group to the header the server actually resolved, in BOTH stores: the draft model that the
+// next flush reads, and the DOM attribute the next collect reads. Leaving either behind reopens the class of bug
+// where the page sends an identity the server never stored.
+function _irStampRouteGroupIds_(sku, g, draftId) {
+    var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
+    (g.routes || []).forEach(function (r) {
+        r.allocation_draft_id = draftId;
+        r.route_group_key = g.groupKey;
+    });
+    // re-stamp the DOM rows that belong to this group so a later collect carries the header binding
+    try {
+        var host = document.getElementById('shipping-methods-' + sku);
+        if (host) {
+            var els = host.querySelectorAll('[data-line-id]');
+            for (var i = 0; i < els.length; i++) {
+                var lid = els[i].getAttribute('data-line-id');
+                for (var j = 0; j < (g.routes || []).length; j++) {
+                    if (g.routes[j] && String(g.routes[j].allocation_draft_line_id || '') === String(lid)) {
+                        els[i].setAttribute('data-draft-id', draftId);
+                        els[i].setAttribute('data-group-key', g.groupKey);
+                    }
+                }
+            }
+        }
+    } catch (e) {}
+    return rows.length;
+}
+
+// A route whose route context changed belongs to a different header now. Soft-cancel its line under the header it
+// LEFT, so the plan is never counted under both. Never a hard delete; never a re-key of a stored identity.
+function _irQueueStaleGroupCancels_(sku, groups) {
+    (groups || []).forEach(function (g) {
+        (g.routes || []).forEach(function (r) {
+            var prevGroup = String(r.route_group_key || '');
+            var prevDraft = String(r.allocation_draft_id || '');
+            var prevLine = String(r.allocation_draft_line_id || '');
+            if (!prevGroup || !prevDraft || !prevLine) return;
+            if (prevGroup === g.groupKey) return;                       // unchanged route — nothing to release
+            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: prevLine, allocation_draft_id: prevDraft });
+            // the row is joining a new header; its identity there is resolved by the server, not carried over
+            r.allocation_draft_line_id = '';
+            r.allocation_draft_id = '';
+            r.route_group_key = '';
+        });
+    });
+}
+
+// Persist ONE canonical route group: resolve/create its header, then upsert its line under that header.
+// Returns a per-route outcome and never throws, so one failing route cannot abort the routes after it.
+function _irPersistOneRouteGroup_(sku, ctx, g) {
+    var h = g.header || {};
+    // NOTE: no allocation_draft_id is sent. The server resolves a route-complete header by the canonical K2 group
+    // key — same route REUSEs, different route CREATEs — which is idempotent by construction. Pinning the write to
+    // a stored id would rewrite whichever header the row last touched when its route changed.
+    var header = window.IRDraft.buildDraftHeaderPayload({
+        company: ctx.company, country: ctx.country, marketplace: ctx.marketplace,
+        source_warehouse_id: h.recommended_source_warehouse_id,
+        source_warehouse_code: h.source_warehouse_code,                 // display-name snapshot
+        destination_warehouse_id: h.recommended_destination_warehouse_id,   // '' for an Amazon logical destination
+        destination_warehouse_code: h.destination_warehouse_code,
+        shipping_method: h.recommended_shipping_method,
+        last_mile_delivery: h.recommended_last_mile_delivery || undefined,
+        destination_marketplace: h.destination_marketplace || undefined
+    });
+    var draftIdSeen = '';
+    return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header)).then(function (hres) {
+        if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
+        // F1-7N-FB-2A §D — a bare success flag is NOT proof of persistence. Require the persisted primary key AND
+        // the created/updated classification; anything less is a failed save, never a Saved one.
+        var ack = _irSaveAcknowledged_(hres);
+        if (!ack) throw _irMakeDraftSaveError_({ code: 'PERSISTENCE_NOT_ACKNOWLEDGED',
+            message: 'The save response did not contain a persisted allocation_draft_id with a created/updated classification, so the row cannot be treated as persisted.' },
+            'shipping_allocation_drafts', 'draft header upsert unacknowledged');
+        draftIdSeen = ack.allocation_draft_id;
+        var lines = (g.routes || []).map(function (r) {
+            return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
+        });
+        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftIdSeen, lines: lines }));
+    }).then(function (lres) {
+        if (!lres || lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
+        // §D.9 — adopt only into THIS header's rows, then bind the rows to it.
+        try { _irAdoptPersistedLineIds_(sku, draftIdSeen, (lres.data && lres.data.persisted_lines) || []); } catch (eA) {}
+        try { _irStampRouteGroupIds_(sku, g, draftIdSeen); } catch (eS) {}
+        // keep the legacy single-id field pointing at a real persisted header for older readers
+        replenAllocationDraft.allocationDraftId = draftIdSeen;
+        // Remember EVERY header this station has written. A row that later becomes incomplete drops its own
+        // allocation_draft_id, so without this list a second header would be orphaned as an active empty draft
+        // the moment its last route was cleared.
+        if (!replenAllocationDraft.allocationDraftIds) replenAllocationDraft.allocationDraftIds = [];
+        if (replenAllocationDraft.allocationDraftIds.indexOf(draftIdSeen) === -1) replenAllocationDraft.allocationDraftIds.push(draftIdSeen);
+        return { status: 'persisted', groupKey: g.groupKey, allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g),
+            line_count: (g.routes || []).length,
+            verification: (lres.data && lres.data.verification) || null,
+            persisted_lines: (lres.data && lres.data.persisted_lines) || [] };
+    })['catch'](function (err) {
+        var st = (err && err.structured) || {};
+        var code = String(st.code || (err && err.code) || 'SAVE_FAILED');
+        // §D.7 — a write whose outcome is genuinely unknown must not be reported as "not persisted". A transport
+        // failure or a timeout may have committed on the server; only a refusal the server itself named is a
+        // proven zero-write. The execution key is the group key, so a reconcile retry is idempotent.
+        var INDETERMINATE = { REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, HTTP_TRANSPORT_ERROR: 1, LINE_OUTPUT_VERIFICATION_FAILED: 1, PERSISTENCE_NOT_ACKNOWLEDGED: 1 };
+        return { status: INDETERMINATE[code] ? 'indeterminate' : 'not_persisted', groupKey: g.groupKey,
+            allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g), code: code,
+            message: String(st.message || (err && err.message) || err) };
+    });
+}
+
+// §D.6 — the operator-facing envelope for a pre-flight refusal. Nothing was written.
+function _irRouteGroupConflictEnvelope_(sku, conflicts) {
+    var c = (conflicts && conflicts[0]) || {};
+    var msg, next;
+    if (c.code === 'ROUTE_QUANTITY_CONFLICT') {
+        msg = 'The same route was entered twice for ' + sku + ' with two different quantities (' +
+            c.first_planned_qty + ' and ' + c.duplicate_planned_qty + '). One route carries one quantity, and there is ' +
+            'no safe way to choose between them.';
+        next = 'Delete one of the duplicated route rows, or make both quantities the same. Nothing was written to the database.';
+    } else if (c.code === 'ROUTE_IDENTITY_NOT_PERSISTABLE') {
+        msg = 'Two of these routes differ only in a value the Execution Plan header does not store, so both would ' +
+            'be saved as the SAME shipment group and one quantity would be lost.';
+        next = 'Give the routes different From / To / Method values, or enter them in separate Submit cycles. Nothing was written to the database.';
+    } else {
+        msg = 'The Execution Plan routes for ' + sku + ' could not be resolved into shipment groups.';
+        next = 'Review the routes for this SKU. Nothing was written to the database.';
+    }
+    return {
+        structured: { code: c.code || 'ROUTE_PREFLIGHT_FAILED', reasonCode: c.code || 'ROUTE_PREFLIGHT_FAILED',
+            table: 'shipping_allocation_draft_lines', zeroWrite: 'true', retryable: false,
+            message: msg, nextAction: next, conflicts: conflicts || [] },
+        message: (c.code || 'ROUTE_PREFLIGHT_FAILED') + ' — ' + msg + ' NOT SAVED TO DB.'
+    };
+}
+
+// §D.7 — per-route persisted / not_persisted / indeterminate, never a single ambiguous SAVE_FAILED.
+function _irMultiRouteOutcomeEnvelope_(sku, outcomes) {
+    var ok = outcomes.filter(function (o) { return o.status === 'persisted'; });
+    var no = outcomes.filter(function (o) { return o.status === 'not_persisted'; });
+    var un = outcomes.filter(function (o) { return o.status === 'indeterminate'; });
+    function list(a) { return a.map(function (o) { return '  · ' + o.route + (o.code ? (' — ' + o.code) : ''); }).join(String.fromCharCode(10)); }
+    var parts = [];
+    if (ok.length) parts.push('SAVED (' + ok.length + '):' + String.fromCharCode(10) + list(ok));
+    if (no.length) parts.push('NOT SAVED (' + no.length + '):' + String.fromCharCode(10) + list(no));
+    if (un.length) parts.push('OUTCOME UNKNOWN (' + un.length + ') — may or may not have been written:' + String.fromCharCode(10) + list(un));
+    var first = (no[0] || un[0] || {});
+    return {
+        structured: {
+            code: first.code || 'ROUTE_GROUP_PARTIAL_FAILURE', reasonCode: 'ROUTE_GROUP_PARTIAL_FAILURE',
+            table: 'shipping_allocation_draft_lines', retryable: true,
+            message: outcomes.length + ' route(s) for ' + sku + ': ' + ok.length + ' saved, ' + no.length +
+                ' not saved, ' + un.length + ' unknown.' + String.fromCharCode(10) + parts.join(String.fromCharCode(10)),
+            nextAction: un.length
+                ? 'Do NOT re-enter the unknown route by hand. Press Search to reload from the database and see which routes are actually stored, then correct only what is missing — a repeat of the same route updates the same row rather than adding one.'
+                : 'Correct and re-save the routes listed as NOT SAVED. Routes already saved are unaffected.',
+            outcomes: outcomes
+        },
+        message: 'ROUTE_GROUP_PARTIAL_FAILURE — ' + ok.length + '/' + outcomes.length + ' route(s) saved for ' + sku + '.'
+    };
+}
+
 // The actual DB sync for one SKU: soft-cancel any queued now-invalid lines, then upsert the header +
 // the COMPLETE line set (or cancel the header if nothing valid remains). Called by the debounced flush.
 function _flushDraftDbPersist(sku) {
@@ -2860,96 +3214,86 @@ function _flushDraftDbPersist(sku) {
         var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
         var complete = rows.filter(_isRouteComplete);
 
-        // De-dupe queued cancels and drop any id that is STILL a live complete line this flush (e.g. the
-        // user cleared then retyped a Qty within the debounce window) — never cancel a line we are about
-        // to upsert. Cancelling an id the DB never stored is a defensive no-op (see the backend guard).
-        var liveIds = {}; complete.forEach(function (r) { if (r.allocation_draft_line_id) liveIds[r.allocation_draft_line_id] = 1; });
-        var seen = {};
-        cancels = cancels.filter(function (id) { if (!id || seen[id] || liveIds[id]) return false; seen[id] = 1; return true; });
-        // Soft-cancel lines that became invalid this edit (keeps the DB free of stale/incomplete plans, §5).
-        cancels.forEach(function (id) { if (typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(id); });
+        // A queued cancel now carries the header it belongs to. Under multi-route there is no single "the"
+        // draft id, so a cancel that did not name its own header could soft-cancel a line under the wrong one.
+        // Bare strings are still accepted for back-compat and fall back to this SKU's most recent header.
+        function _normCancel(c) {
+            if (!c) return null;
+            if (typeof c === 'string') return { line_id: c, allocation_draft_id: '' };
+            return { line_id: String(c.line_id || ''), allocation_draft_id: String(c.allocation_draft_id || '') };
+        }
+        cancels = cancels.map(_normCancel).filter(function (c) { return c && c.line_id; });
 
-        // No valid line left → never keep an empty header (§5.3).
-        if (!complete.length) { _cancelAllocationDraftHeader(); return; }
-
-        // C2-D2 §7: Phase-1 = ONE route context per Draft. If the complete lines carry >1 distinct
-        // From/To/Method/Last-mile route context, BLOCK (MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1) — never
-        // silently persist only route0. Genuinely different routes → separate Submit cycles / Drafts (§3/§4).
-        var _routeKeys = (window.IRDraft && window.IRDraft.distinctRouteContexts) ? window.IRDraft.distinctRouteContexts(complete) : [];
-        if (_routeKeys.length > 1) {
-            // F1-7N-FB-4B §B.8 — a STRUCTURED envelope, not a bare sentence. Under the frozen K2 contract a Header
-            // IS one shipment group, so two DIFFERENT route contexts are two DIFFERENT headers — not two lines under
-            // one header. This refusal is therefore correct; what was missing was saying so in a form the operator
-            // can act on, with the reason code on the face of the message and zero rows written.
-            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, {
-                structured: {
-                    reasonCode: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1',
-                    message: _routeKeys.length + ' distinct From/To/Method route contexts were entered for this SKU. One Draft header is ONE shipment group (K2), so different routes belong to different headers — they cannot be two lines under one header.',
-                    zeroWrite: 'true', retryable: false,
-                    nextAction: 'Keep ONE route context per Submit cycle: save and submit this route, then enter the other route as a separate plan. Nothing was written to the database.'
-                },
-                message: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 — ' + _routeKeys.length + ' distinct From/To/Method routes in one Draft. NOT SAVED TO DB.'
-            });
-            if (typeof _irMarkRouteUnsaved_ === 'function') _irMarkRouteUnsaved_(sku, { structured: {
-                code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', reasonCode: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1',
-                table: 'shipping_allocation_draft_lines', retryable: false,
-                message: _routeKeys.length + ' distinct route contexts for one SKU; one Draft header is ONE shipment group (K2).',
-                nextAction: 'Keep ONE route context per Submit cycle. Nothing was written to the database.' } });
+        // No valid line left → never keep an empty header (§5.3). Cancels are dispatched first so the lines
+        // are released before their headers are.
+        if (!complete.length) {
+            _irDispatchLineCancels_(sku, cancels, complete);
+            _irCancelUnusedDraftHeaders_(sku);
             return;
         }
 
+        // F1-7N-FB-4B-ADDENDUM §D.1-§D.6 — RESOLVE AND PRE-FLIGHT THE WHOLE BATCH BEFORE THE FIRST WRITE.
+        //
+        // This used to refuse the SKU outright when it held more than one route context. The refusal reasoned
+        // correctly from the frozen K2 contract (a Header is ONE shipment group, so two routes can never be two
+        // lines under one header) and then drew the wrong conclusion: two routes are TWO HEADERS. `+ Add Route`
+        // is a real feature, so a second route must CREATE its own canonical header — never be rejected.
+        //
+        // Grouping is the client mirror of the server's 10-dimension K2 group key, so the partition computed here
+        // is exactly the set of headers sadResolveActiveDraftK2OrK3_ will resolve. A pre-flight failure returns
+        // before any request is issued, which is what makes the zero-write claim true rather than hopeful.
+        var pf = window.IRDraft.preflightRouteGroups(ctx, sku, complete);
+        if (!pf.ok) {
+            var c0 = pf.conflicts[0] || {};
+            var envelope = _irRouteGroupConflictEnvelope_(sku, pf.conflicts);
+            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, envelope);
+            if (typeof _irMarkRouteUnsaved_ === 'function') _irMarkRouteUnsaved_(sku, envelope);
+            console.warn('[replen] route pre-flight refused (zero rows written):', c0.code, c0.detail);
+            // A soft-cancel is itself a business write, so the queued cancels are PUT BACK rather than dispatched.
+            // That is what makes "nothing was written" literally true for a pre-flight refusal.
+            if (cancels.length) _pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels);
+            return;   // ZERO WRITE — no request was issued
+        }
+
+        // A route whose From/To/Method changed now belongs to a DIFFERENT header. Its line under the OLD header
+        // is not migrated (that would re-key an identity); it is soft-cancelled so the plan cannot be counted
+        // twice — once under the header it left and once under the header it joined.
+        _irQueueStaleGroupCancels_(sku, pf.groups);
+        cancels = cancels.concat((_pendingDraftCancels[sku] || []).map(_normCancel).filter(Boolean));
+        _pendingDraftCancels[sku] = [];
+        _irDispatchLineCancels_(sku, cancels, complete);
+
         _draftDbInFlight[sku] = true;
-        // C2-D1R: route context (From/To/Method) is HEADER-level in the approved 30-col schema. Phase-1 persists
-        // ONE route per Draft — the shared route of this scope's complete lines (route0). Genuinely different
-        // routes in the same week are handled via separate Submit cycles / subsequent Drafts (§3), never a
-        // multi-route single header. From/To ids + display-name snapshots map onto the header recommended_* fields.
-        var route0 = complete[0] || {};
-        var header = window.IRDraft.buildDraftHeaderPayload({
-            allocation_draft_id: replenAllocationDraft.allocationDraftId,
-            company: ctx.company, country: ctx.country, marketplace: ctx.marketplace,
-            source_warehouse_id: route0.source_warehouse_id,
-            source_warehouse_code: route0.ship_from,                       // Execution Plan has no separate code → display-name snapshot
-            destination_warehouse_id: route0.destination_warehouse_id,     // '' for an Amazon logical destination
-            destination_warehouse_code: route0.destination,
-            shipping_method: route0.shipping_method,
-            last_mile_delivery: route0.last_mile_delivery,                 // undefined → header blank (no last-mile field in the Execution Plan)
-            destination_marketplace: (route0.destination_type === 'MARKETPLACE_DESTINATION') ? (route0.destination_marketplace || route0.destination_country || ctx.marketplace) : undefined
+        // §D.3/§D.4 — each canonical group resolves/creates ITS OWN header and upserts ITS OWN line under it.
+        // Groups are written in sequence, never concurrently: two headers of one station are resolved by the same
+        // server-side group authority, and overlapping writes would race that resolution.
+        var outcomes = [];
+        var chain = Promise.resolve();
+        pf.groups.forEach(function (g) {
+            chain = chain.then(function () { return _irPersistOneRouteGroup_(sku, ctx, g); })
+                .then(function (o) { outcomes.push(o); });
         });
-        return window.KM.DB.upsertShippingAllocationDraft(header).then(function (hres) {
-            if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
-            // F1-7N-FB-2A §D — a bare success flag is NOT proof of persistence. Require the persisted primary
-            // key AND the created/updated classification the canonical handler returns; anything less is
-            // treated as a failed save (UNSAVED), never as Saved.
-            var ack = _irSaveAcknowledged_(hres);
-            if (!ack) throw _irMakeDraftSaveError_({ code: 'PERSISTENCE_NOT_ACKNOWLEDGED',
-                message: 'The save response did not contain a persisted allocation_draft_id with a created/updated classification, so the row cannot be treated as persisted.' },
-                'shipping_allocation_drafts', 'draft header upsert unacknowledged');
-            var draftId = ack.allocation_draft_id;
-            replenAllocationDraft.allocationDraftId = draftId;
-            var lines = complete.map(function (r) {
-                return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
-            });
-            return window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftId, lines: lines });
-        }).then(function (lres) {
-            if (lres && lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
-            // F1-7N-FB-4B §B — adopt the ids the server actually persisted BEFORE anything else can trigger a
-            // second flush. Without this the next save sends a stale local placeholder, the server cannot find it,
-            // and it appends another physical row under the same canonical primary key.
-            try { _irAdoptPersistedLineIds_(sku, (lres && lres.data && lres.data.persisted_lines) || []); } catch (eAdopt) {}
-            // Both writes acknowledged → this SKU's route is genuinely persisted. Clear any prior UNSAVED mark
-            // (a retry that reuses the same deterministic identity updates the same row — no duplicate).
-            _irClearRouteUnsaved_(sku);
-            if (typeof _irHideDraftSaveError === 'function') _irHideDraftSaveError(sku);
+        return chain.then(function () {
             _draftDbInFlight[sku] = false;
+            // §D.7 — report PER ROUTE. A single bare SAVE_FAILED across a multi-header write is exactly the
+            // ambiguity that leaves an operator unable to tell which route reached the database.
+            var bad = outcomes.filter(function (o) { return o.status !== 'persisted'; });
+            if (!bad.length) {
+                _irClearRouteUnsaved_(sku);
+                if (typeof _irHideDraftSaveError === 'function') _irHideDraftSaveError(sku);
+            } else {
+                var env = _irMultiRouteOutcomeEnvelope_(sku, outcomes);
+                _irMarkRouteUnsaved_(sku, env);
+                if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, env);
+                console.warn('[replen] one or more routes did NOT persist:', env.structured.message);
+            }
+            try { _persistAllocationDraft(); } catch (eP) {}
             if (_draftDbDirty[sku]) { _draftDbDirty[sku] = false; _flushDraftDbPersist(sku); }   // coalesced edit → one more write
         })['catch'](function (err) {
             _draftDbInFlight[sku] = false;
-            // F1-7N-FB-2A §D — FAIL CLOSED. Never fake success and never let the local cache stand in for the
-            // row: the route is recorded as UNSAVED (visible label + Submit blocked) and the typed values are
-            // kept only so the user can correct and retry.
             _irMarkRouteUnsaved_(sku, err);
             if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, err);
-            console.warn('[replen] Draft DB persistence FAILED — route marked UNSAVED (nothing was persisted):', err && err.message ? err.message : err);
+            console.warn('[replen] Draft DB persistence FAILED:', err && err.message ? err.message : err);
         });
     } catch (e) { _draftDbInFlight[sku] = false; console.warn('[replen] Draft DB persistence error:', e); }
 }
@@ -2998,7 +3342,14 @@ function _irMakeDraftSaveError_(raw, table, fallbackMsg) {
 var IR_DRAFT_TYPED_REASONS_ = ['ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED',
     'K2_ROUTE_RECONCILIATION_REQUIRED', 'PLAN_HEADER_INCOMPLETE', 'PLAN_LINE_INCOMPLETE', 'BLOCKED_CONFLICT',
     'IMMUTABLE_TERMINAL_STATUS', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'SOURCE_AVAILABLE_QTY_EXCEEDED',
-    'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PERSISTENCE_NOT_ACKNOWLEDGED'];
+    'PERSISTENCE_NOT_ACKNOWLEDGED',
+    // F1-7N-FB-4B — identity/idempotency refusals the writer names.
+    'DUPLICATE_LINE_IDENTITY_IN_BATCH', 'LINE_IDENTITY_CONFLICT', 'LINE_PRIMARY_KEY_ALREADY_EXISTS',
+    'LINE_OUTPUT_VERIFICATION_FAILED',
+    // F1-7N-FB-4B-ADDENDUM — multi-route group pre-flight refusals. MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 is
+    // deliberately GONE: several route contexts are several shipment groups, which is now persisted rather than
+    // refused, so keeping the token would let a stale deployment's message re-type as a supported state.
+    'ROUTE_IDENTITY_NOT_PERSISTABLE', 'ROUTE_QUANTITY_CONFLICT', 'ROUTE_GROUP_PARTIAL_FAILURE'];
 function _irTypedReasonCode_(code, message) {
     var m = String(message == null ? '' : message);
     var ps = m.match(/PRODUCTION_SAFETY:([A-Z_]+)/);
@@ -3090,11 +3441,13 @@ function _irHideDraftSaveError(sku) {
 }
 window._irHideDraftSaveError = _irHideDraftSaveError;
 // Soft-cancel ONE persisted draft line (Decision E §16) — never hard delete. line_status='cancelled'.
-function _cancelAllocationDraftLine(lineId) {
+function _cancelAllocationDraftLine(lineId, explicitDraftId) {
     try {
         if (!lineId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftLines && window.IRDraft)) return;
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return;
-        var draftId = replenAllocationDraft.allocationDraftId;
+        // Under multi-route the header MUST come from the line itself; there is no single "current" draft to
+        // fall back on without risking a soft-cancel against the wrong shipment group.
+        var draftId = String(explicitDraftId == null ? '' : explicitDraftId).trim() || replenAllocationDraft.allocationDraftId;
         if (!draftId) return;
         // F1-7N-FB-2A §D — a soft-cancel is a business WRITE. If it fails, the line still exists in the DB
         // while the UI shows it removed, which is the same false-persistence class as a failed save. Record it
@@ -3124,51 +3477,92 @@ function _hydrateAllocationDraftFromDb(ctx) {
         var drafts = window.KM.DB.getShippingAllocationDrafts() || [];
         var lines = window.KM.DB.getShippingAllocationDraftLines() || [];
         function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
-        var draft = drafts.filter(function (d) {
+        // F1-7N-FB-4B-ADDENDUM §F.9 — HYDRATE EVERY ACTIVE HEADER FOR THE STATION, NOT JUST THE NEWEST.
+        // This used to sort by updated_at and take [0]. Under the frozen K2 contract one station legitimately holds
+        // several shipment groups — that is what a second route IS — so taking one header silently dropped every
+        // other route on refresh and made a two-route plan look like a one-route plan.
+        var activeDrafts = drafts.filter(function (d) {
             return lo(d.country) === lo(ctx.country) && lo(d.marketplace) === lo(ctx.marketplace) &&
-                (!ctx.company || !d.company || lo(d.company) === lo(ctx.company)) && lo(d.status) !== 'cancelled';
-        }).sort(function (a, b) { return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1; })[0];
+                (!ctx.company || !d.company || lo(d.company) === lo(ctx.company)) &&
+                lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted';
+        }).sort(function (a, b) { return String(a.allocationDraftId || '') < String(b.allocationDraftId || '') ? -1 : 1; });
         if (myToken !== _replenHydrateToken) return false;   // a newer context request superseded this one
-        if (!draft) return false;
-        // R6F HYDRATION_FIELD_MAP fix: route context (From / To / Method / Last-Mile) is HEADER-level (recommended_*),
-        // NOT on the 30/31-col line, and there are NO selected_* columns. Read the route from the draft HEADER (shared
-        // by every line in the Phase-1 single-route model) and per-line qty/note/source from the line row. The line's
-        // only source axis is its own `source_warehouse_id` (R3C2 col 29), which overrides the header From when present.
-        var dh = draft.raw || draft || {};
-        function hstr(snake, camel) { var v = (dh[snake] != null && dh[snake] !== '') ? dh[snake] : (draft[camel] != null ? draft[camel] : ''); return String(v == null ? '' : v).trim(); }
-        var hFrom = hstr('recommended_source_warehouse_id', 'recommendedSourceWarehouseId');
-        var hTo = hstr('recommended_destination_warehouse_id', 'recommendedDestinationWarehouseId');
-        var hMethod = hstr('recommended_shipping_method', 'recommendedShippingMethod');
-        var hLastMile = hstr('recommended_last_mile_delivery', 'recommendedLastMileDelivery');
-        var hGenType = hstr('generation_type', 'generationType') || 'user_created';
+        if (!activeDrafts.length) return false;
+
         var bySku = {};
-        lines.filter(function (l) {
-            return l.allocationDraftId === draft.allocationDraftId && lo(l.lineStatus || l.line_status) !== 'cancelled';
-        }).forEach(function (l) {
-            var raw = l.raw || l;
-            var sku = raw.sku;
-            if (!sku) return;
-            var lineSrc = String(raw.source_warehouse_id == null ? '' : raw.source_warehouse_id).trim();
-            (bySku[sku] = bySku[sku] || []).push({
-                allocation_draft_line_id: raw.allocation_draft_line_id || '',
-                sku: sku,
-                site_sku: raw.site_sku || '',           // R6F: carry the natural-key fields so an edit reconciles the
-                window_code: raw.window_code || '',     //      exact generated line by natural key (16_ fallback).
-                route_no: raw.route_no || '',
-                planned_qty: Number(raw.planned_qty) || 0,
-                qty: Number(raw.planned_qty) || 0,
-                recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
-                note: raw.note == null ? '' : String(raw.note),
-                source_warehouse_id: lineSrc || hFrom,  // line-level source wins; else the header From (route on header)
-                destination_warehouse_id: hTo,          // To — header route (shared by all lines, Phase-1 single route)
-                destination_type: '',
-                destination_marketplace: '',
-                shipping_method: hMethod,               // Method — header route
-                last_mile_delivery: hLastMile,          // Last-Mile — header route
-                generation_type: hGenType               // generation_type is a HEADER column, not a line column
+        var corrupted = [];
+        activeDrafts.forEach(function (draft) {
+            // R6F HYDRATION_FIELD_MAP fix: route context (From / To / Method / Last-Mile) is HEADER-level
+            // (recommended_*), NOT on the 30/31-col line, and there are NO selected_* columns. Read the route from
+            // the draft HEADER — which under K2 IS the shipment group — and per-line qty/note/source from the line
+            // row. The line's only source axis is its own `source_warehouse_id` (R3C2 col 29), which overrides the
+            // header From when present.
+            var dh = draft.raw || draft || {};
+            function hstr(snake, camel) { var v = (dh[snake] != null && dh[snake] !== '') ? dh[snake] : (draft[camel] != null ? draft[camel] : ''); return String(v == null ? '' : v).trim(); }
+            var hFrom = hstr('recommended_source_warehouse_id', 'recommendedSourceWarehouseId');
+            var hTo = hstr('recommended_destination_warehouse_id', 'recommendedDestinationWarehouseId');
+            var hMethod = hstr('recommended_shipping_method', 'recommendedShippingMethod');
+            var hLastMile = hstr('recommended_last_mile_delivery', 'recommendedLastMileDelivery');
+            var hGenType = hstr('generation_type', 'generationType') || 'user_created';
+            var mine = lines.filter(function (l) {
+                return l.allocationDraftId === draft.allocationDraftId && lo(l.lineStatus || l.line_status) !== 'cancelled';
             });
+            // §E — DUPLICATE PRIMARY KEYS ARE DISCLOSED, NEVER SUMMED. The three live rows sharing
+            // SADL-K2-16F4E4F9 all carry planned_qty 800; adding them would render 2400 and present corrupt data
+            // as a larger healthy plan. Exactly ONE physical row per primary key is rendered and the duplication
+            // is recorded so the UI can say so and Submit can fail closed until the cleanup is run.
+            var seenPk = {};
+            mine.forEach(function (l) {
+                var raw = l.raw || l;
+                var sku = raw.sku;
+                if (!sku) return;
+                var pk = String(raw.allocation_draft_line_id || '').trim();
+                if (pk) {
+                    if (seenPk[pk]) {
+                        seenPk[pk].physical_rows++;
+                        return;   // do NOT render or count a second physical row under one primary key
+                    }
+                    seenPk[pk] = { allocation_draft_id: draft.allocationDraftId, allocation_draft_line_id: pk, sku: sku, physical_rows: 1 };
+                }
+                var lineSrc = String(raw.source_warehouse_id == null ? '' : raw.source_warehouse_id).trim();
+                (bySku[sku] = bySku[sku] || []).push({
+                    allocation_draft_line_id: pk,
+                    allocation_draft_id: draft.allocationDraftId,
+                    sku: sku,
+                    site_sku: raw.site_sku || '',           // R6F: carry the natural-key fields so an edit reconciles the
+                    window_code: raw.window_code || '',     //      exact generated line by natural key (16_ fallback).
+                    route_no: raw.route_no || '',
+                    planned_qty: Number(raw.planned_qty) || 0,
+                    qty: Number(raw.planned_qty) || 0,
+                    recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
+                    note: raw.note == null ? '' : String(raw.note),
+                    source_warehouse_id: lineSrc || hFrom,  // line-level source wins; else the header From (route on header)
+                    destination_warehouse_id: hTo,          // To — header route (the shipment group's destination)
+                    destination_type: hTo ? '' : 'MARKETPLACE_DESTINATION',
+                    destination_marketplace: hTo ? '' : (ctx.marketplace || ''),
+                    shipping_method: hMethod,               // Method — header route
+                    last_mile_delivery: hLastMile,          // Last-Mile — header route
+                    generation_type: hGenType               // generation_type is a HEADER column, not a line column
+                });
+            });
+            Object.keys(seenPk).forEach(function (k) { if (seenPk[k].physical_rows > 1) corrupted.push(seenPk[k]); });
         });
-        replenAllocationDraft = { context: ctx, allocationDraftId: draft.allocationDraftId, targetDays: replenAllocationDraft.targetDays || '', bySku: bySku };
+        // Recompute each hydrated row's canonical group key so a later edit can tell whether its route changed.
+        try {
+            Object.keys(bySku).forEach(function (sk) {
+                (bySku[sk] || []).forEach(function (r) { r.route_group_key = window.IRDraft.canonicalRouteGroupKey(ctx, r); });
+            });
+        } catch (eK) {}
+        var primaryId = activeDrafts.length === 1 ? activeDrafts[0].allocationDraftId : '';
+        replenAllocationDraft = { context: ctx, allocationDraftId: primaryId,
+            allocationDraftIds: activeDrafts.map(function (d) { return d.allocationDraftId; }),
+            duplicateLineIdentities: corrupted,
+            targetDays: replenAllocationDraft.targetDays || '', bySku: bySku };
+        try { _irRenderDuplicateCorruptionBanner_(); } catch (eB) {}
+        if (corrupted.length) {
+            console.warn('[replen] DUPLICATE_LINE_IDENTITY_PERSISTED — ' + corrupted.length +
+                ' primary key(s) name more than one physical row. Submit is blocked for the affected SKU(s) until the cleanup is run.');
+        }
         window.KM.shippingAllocationDraft = replenAllocationDraft;
         _persistAllocationDraft();
         return true;
@@ -3385,6 +3779,8 @@ function _saveAllocationDraftFromDom(sku) {
         var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
         var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
         var lineId = rowEl.getAttribute('data-line-id') || '';   // persisted Draft line identity (§6)
+        var boundDraftId = rowEl.getAttribute('data-draft-id') || '';   // the header this route is persisted under
+        var boundGroupKey = rowEl.getAttribute('data-group-key') || ''; // the route group it was persisted as
         // ALL rows are kept in the local render/recovery draft so an in-progress (still incomplete) route
         // survives collapse/expand. Whether a row is PERSISTED to the DB is decided ONLY by the shared
         // four-field completeness gate below — a truthy "any intent" check is NOT enough (§4).
@@ -3402,7 +3798,9 @@ function _saveAllocationDraftFromDom(sku) {
             destination_marketplace: isLogicalAmazon ? 'Amazon' : '',
             destination_country: isLogicalAmazon ? (destPayload.country || (ctx && ctx.country) || '') : '',
             expected_arrival: expectedArrival,
-            source_reason: 'pm_adjustment'
+            source_reason: 'pm_adjustment',
+            allocation_draft_id: boundDraftId,
+            route_group_key: boundGroupKey
         };
         if (_isRouteComplete(row)) {
             // A complete route is persistable. Assign a STABLE line id the first time so every later edit
@@ -3413,9 +3811,13 @@ function _saveAllocationDraftFromDom(sku) {
             // Was persisted, now incomplete → queue a soft-cancel and drop the persisted identity so we
             // never overwrite the stored line with a null/invalid payload (§5). It stays in the local
             // draft as editable temporary state, but is no longer a DB line.
-            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push(lineId);
+            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: lineId, allocation_draft_id: boundDraftId });
             rowEl.removeAttribute('data-line-id');
+            rowEl.removeAttribute('data-draft-id');
+            rowEl.removeAttribute('data-group-key');
             row.allocation_draft_line_id = '';
+            row.allocation_draft_id = '';
+            row.route_group_key = '';
         }
         rows.push(row);
     });
@@ -3818,6 +4220,11 @@ function _renderExecutionRoute(sku, route) {
     // Persisted Draft line identity (Round 4 Decision E) — enables incremental update + soft-cancel of
     // the SAME shipping_allocation_draft_lines row (empty for a new/unsaved route).
     if (route && route.allocation_draft_line_id) row.setAttribute('data-line-id', String(route.allocation_draft_line_id));
+    // F1-7N-FB-4B-ADDENDUM — the header this route is bound to. A collect rebuilds every row from the DOM, so
+    // without these the page would forget which of a SKU's several headers each route belongs to and the next
+    // save could soft-cancel or overwrite the wrong shipment group.
+    if (route && route.allocation_draft_id) row.setAttribute('data-draft-id', String(route.allocation_draft_id));
+    if (route && route.route_group_key) row.setAttribute('data-group-key', String(route.route_group_key));
     row.innerHTML =
         '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
         '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
@@ -3846,7 +4253,8 @@ function removeExecutionRoute(event, sku) {
     var row = event.target.closest('.exec-route-row');
     if (row) {
         var lineId = row.getAttribute('data-line-id');
-        if (lineId && typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId);
+        var lineDraftId = row.getAttribute('data-draft-id') || '';
+        if (lineId && typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId, lineDraftId);
         row.remove();
         onExecutionRouteEdit(sku);
         syncExpandPanelHeight(sku);

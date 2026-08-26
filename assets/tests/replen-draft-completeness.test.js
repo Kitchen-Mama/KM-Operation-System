@@ -53,11 +53,17 @@ ok(/_isRouteComplete\(row\)/.test(saveFn), 'P18: persistence is gated by the sha
 ok(!/if \(method \|\| qty > 0 \|\| sourceWarehouseId/.test(saveFn), 'P19: the old truthy "any intent" gate is GONE (§4)');
 ok(/getAttribute\('data-line-id'\)/.test(saveFn), 'P20: the persisted line identity (data-line-id) is read back on save (§6)');
 ok(/_newDraftLineId\(\)/.test(saveFn) && /setAttribute\('data-line-id'/.test(saveFn), 'P21: a stable line id is assigned to a newly-complete route (idempotent upsert)');
-ok(/_pendingDraftCancels\[sku\][\s\S]{0,40}push\(lineId\)/.test(saveFn) && /removeAttribute\('data-line-id'\)/.test(saveFn), 'P22: a route edited to incomplete queues a soft-cancel + drops its persisted identity (§5)');
+// F1-7N-FB-4B-ADDENDUM — STRENGTHENED: the queued cancel must now also name the HEADER the line belongs to.
+// Under multi-route there is no single "current" draft, so a cancel that did not carry its own header could
+// soft-cancel a line under the wrong shipment group.
+ok(/_pendingDraftCancels\[sku\][\s\S]{0,80}push\(\{ line_id: lineId, allocation_draft_id: boundDraftId \}\)/.test(saveFn) && /removeAttribute\('data-line-id'\)/.test(saveFn), 'P22: a route edited to incomplete queues a soft-cancel that NAMES ITS HEADER + drops its persisted identity (§5)');
 ok(/_scheduleDraftDbPersist\(sku\)/.test(saveFn), 'P23: the DB write is debounced (§5.4 — no per-keystroke upsert)');
 ok(/function _flushDraftDbPersist\(sku\)/.test(js) && /_draftDbInFlight\[sku\]/.test(js), 'P24: flush has an in-flight guard (no duplicate concurrent writes, §7)');
-ok(/if \(!complete\.length\) \{ _cancelAllocationDraftHeader\(\)/.test(js), 'P25: when no valid line remains the empty Header is soft-cancelled (§5.3 — never an orphan header)');
-ok(/function _cancelAllocationDraftHeader\(\)[\s\S]*?status: 'cancelled'/.test(js), 'P26: empty-header removal upserts status=cancelled (never a hard delete)');
+// F1-7N-FB-4B-ADDENDUM — STRENGTHENED: one SKU losing its last route must not cancel a header ANOTHER SKU or
+// another route still occupies, so the sweep cancels only headers nothing references any more.
+ok(/if \(!complete\.length\) \{[\s\S]{0,220}_irCancelUnusedDraftHeaders_\(sku\);/.test(js), 'P25: when no valid line remains the now-unreferenced Header(s) are soft-cancelled (§5.3 — never an orphan header)');
+ok(/function _irCancelUnusedDraftHeaders_\(sku\)[\s\S]*?stillUsed\[id\]/.test(js), 'P25b: a header still referenced by any live complete route is NEVER cancelled');
+ok(/function _cancelAllocationDraftHeader\(explicitDraftId\)[\s\S]*?status: 'cancelled'/.test(js), 'P26: empty-header removal upserts status=cancelled for the NAMED header (never a hard delete)');
 var compat = fs.readFileSync(path.join(__dirname, '..', 'js', 'utils', 'inventory-compat.js'), 'utf8');
 ok(/status: ctx\.status \|\| 'draft'/.test(compat), 'P27: header payload honors an optional cancel status (ctx.status)');
 

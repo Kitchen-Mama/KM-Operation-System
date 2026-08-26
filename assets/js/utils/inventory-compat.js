@@ -372,13 +372,141 @@
     (routes || []).forEach(function (r) { if (!isRouteComplete(r)) return; var k = routeContextKey(r); if (!seen[k]) { seen[k] = 1; keys.push(k); } });
     return keys;
   }
+  // ================================================================================================
+  // F1-7N-FB-4B-ADDENDUM — CANONICAL MULTI-ROUTE GROUPING (the client-side mirror of the server's K2 authority).
+  // ------------------------------------------------------------------------------------------------
+  // WHY THIS EXISTS. `+ Add Route` has always let one SKU carry several Execution Plan routes, but the persistence
+  // path refused any SKU holding more than one distinct route context (MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1).
+  // That refusal was reasoning correctly from the frozen K2 contract — a Header IS one shipment group, so two routes
+  // can never be two lines under one header — and then drawing the wrong conclusion. The right conclusion is that
+  // two routes are TWO HEADERS, which is exactly what the server already implements: sadResolveActiveDraftK2OrK3_
+  // resolves a route-complete header by the 10-dimension K2 group key, so a different route CREATEs its own
+  // SADH-K2- header and the same route REUSEs it. Nothing on the server had to change; the client simply never
+  // grouped, and sent every route of a SKU as lines under one header.
+  //
+  // These functions are the client-side mirror of SAD_K2_GROUP_DIMENSIONS_ / sadK2GroupKey_ /
+  // sadK2PartitionLinesIntoGroups_ in 16_shipping_allocation_handlers.gs. They are PURE so the grouping the page
+  // will persist is deterministically testable without a DB, and a test pins this dimension list against the
+  // server's so the two can never silently drift apart.
+  var IR_K2_GROUP_DIMENSIONS = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
+    'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+    'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'];
+
+  // The header field-set ONE route implies. This is the single place a route becomes header route context, so the
+  // grouping key and the payload that is actually written can never describe different routes.
+  function routeHeaderFields(scope, route) {
+    scope = scope || {}; route = route || {};
+    var isLogical = route.destination_type === 'MARKETPLACE_DESTINATION' ||
+      !!(route.destination_marketplace && String(route.destination_marketplace).trim());
+    return {
+      planning_cycle: scope.planning_cycle || '',
+      company: scope.company || '', country: scope.country || '', marketplace: scope.marketplace || '',
+      source_page: 'inventory_replenishment',
+      recommended_source_warehouse_id: String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim(),
+      recommended_destination_warehouse_id: isLogical ? '' : String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim(),
+      recommended_shipping_method: String(route.shipping_method == null ? '' : route.shipping_method).trim(),
+      recommended_last_mile_delivery: String(route.last_mile_delivery == null ? '' : route.last_mile_delivery).trim(),
+      // recommendation_group_no is a K2 dimension the Execution Plan does not author (Phase-1 freeze D-C2-1). It is
+      // carried explicitly as '' rather than omitted, so the key computed here is the FULL 10-dimension key.
+      recommendation_group_no: String(route.recommendation_group_no == null ? '' : route.recommendation_group_no).trim(),
+      // Accepted payload field (NOT a stored column) that makes an Amazon logical destination a valid To.
+      destination_marketplace: isLogical ? (route.destination_marketplace || route.destination_country || scope.marketplace || '') : '',
+      source_warehouse_code: route.ship_from || '',
+      destination_warehouse_code: route.destination || ''
+    };
+  }
+
+  // The EXACT key the server computes for the header this route implies: the 10 dimensions, trimmed, lowercased,
+  // '|'-joined in the frozen order. Two routes sharing this key are ONE shipment group and therefore one header.
+  function canonicalRouteGroupKey(scope, route) {
+    var h = routeHeaderFields(scope, route);
+    return IR_K2_GROUP_DIMENSIONS.map(function (d) {
+      return String(h[d] == null ? '' : h[d]).trim().toLowerCase();
+    }).join('|');
+  }
+
+  // Partition complete routes into canonical shipment groups — one entry per header that will be written.
+  // Order is first-seen so the persistence order is deterministic and reportable.
+  function partitionRoutesIntoGroups(scope, routes) {
+    var buckets = {}, order = [];
+    (routes || []).forEach(function (r, i) {
+      if (!isRouteComplete(r)) return;
+      var key = canonicalRouteGroupKey(scope, r);
+      if (!buckets[key]) {
+        buckets[key] = { groupKey: key, header: routeHeaderFields(scope, r), routes: [], indexes: [], routeContextKeys: [] };
+        order.push(key);
+      }
+      buckets[key].routes.push(r);
+      buckets[key].indexes.push(i);
+      var rc = routeContextKey(r);
+      if (buckets[key].routeContextKeys.indexOf(rc) === -1) buckets[key].routeContextKeys.push(rc);
+    });
+    return order.map(function (k) { return buckets[k]; });
+  }
+
+  function lineIdentityKey(sku, route) {
+    route = route || {};
+    return [String(sku == null ? '' : sku).trim().toLowerCase(),
+      String(route.site_sku == null ? '' : route.site_sku).trim().toLowerCase(),
+      String(route.window_code == null ? '' : route.window_code).trim().toLowerCase()].join('|');
+  }
+
+  // PURE pre-flight over the WHOLE batch, run before the first write so any refusal is a proven zero-write.
+  // Two distinct failures, each fail-closed rather than silently resolved:
+  //
+  //   ROUTE_IDENTITY_NOT_PERSISTABLE — two routes the UI treats as DIFFERENT collapse onto ONE canonical group
+  //     key. That can only happen when the dimension distinguishing them is not persisted, and the header schema
+  //     has exactly one such field: destination_marketplace is an accepted payload field but is NOT a stored
+  //     column, so a marketplace-logical To persists as a BLANK recommended_destination_warehouse_id. Writing
+  //     both would silently merge two shipment groups into one header and destroy a quantity. A blank column is
+  //     never allowed to stand in for a permanent identity, so this refuses instead.
+  //
+  //   ROUTE_QUANTITY_CONFLICT — the SAME route identity carries the SAME line identity twice with CONTRADICTORY
+  //     quantities. There is no non-arbitrary way to choose, so both are named and nothing is written.
+  //
+  //   (identical duplicates within one group are NOT a conflict — they are the same line stated twice and
+  //     collapse to one, which is what makes a replayed request idempotent.)
+  function preflightRouteGroups(scope, sku, routes) {
+    var groups = partitionRoutesIntoGroups(scope, routes);
+    var conflicts = [];
+    groups.forEach(function (g) {
+      if (g.routeContextKeys.length > 1) {
+        conflicts.push({
+          code: 'ROUTE_IDENTITY_NOT_PERSISTABLE', groupKey: g.groupKey,
+          routeContexts: g.routeContextKeys.slice(),
+          detail: 'these route contexts differ only in a dimension the shipping_allocation_drafts header does not store, so both would resolve to the same canonical header'
+        });
+      }
+      var byLine = {};
+      g.routes.forEach(function (r, i) {
+        var lk = lineIdentityKey(sku, r);
+        var qty = Number(r.planned_qty != null ? r.planned_qty : r.qty) || 0;
+        if (byLine[lk] === undefined) { byLine[lk] = { qty: qty, index: i }; return; }
+        if (Number(byLine[lk].qty) === qty) return;   // identical restatement — idempotent, collapses to one line
+        conflicts.push({
+          code: 'ROUTE_QUANTITY_CONFLICT', groupKey: g.groupKey, lineKey: lk, sku: String(sku == null ? '' : sku),
+          first_index: byLine[lk].index, first_planned_qty: byLine[lk].qty,
+          duplicate_index: i, duplicate_planned_qty: qty,
+          detail: 'the same route and the same line identity were given two different quantities'
+        });
+      });
+    });
+    return { ok: conflicts.length === 0, groups: groups, conflicts: conflicts };
+  }
+
   var IRDraft = {
     buildDraftHeaderPayload: buildDraftHeaderPayload,
     buildDraftLinePayload: buildDraftLinePayload,
     buildCancelLinePayload: buildCancelLinePayload,
     isRouteComplete: isRouteComplete,
     routeContextKey: routeContextKey,
-    distinctRouteContexts: distinctRouteContexts
+    distinctRouteContexts: distinctRouteContexts,
+    K2_GROUP_DIMENSIONS: IR_K2_GROUP_DIMENSIONS,
+    routeHeaderFields: routeHeaderFields,
+    canonicalRouteGroupKey: canonicalRouteGroupKey,
+    partitionRoutesIntoGroups: partitionRoutesIntoGroups,
+    lineIdentityKey: lineIdentityKey,
+    preflightRouteGroups: preflightRouteGroups
   };
 
   // ===== C2-D2A-UI: Allocation Draft persistence STATE MACHINE + Save/Cancel/Load orchestration =====
@@ -410,11 +538,21 @@
     return { ok: missing.length === 0, missing: missing };
   }
 
-  // Client-side Save validation → { ok, code, issues }. Multi-route BLOCK > header route > line qty.
+  // Client-side Save validation → { ok, code, issues }. Route-group pre-flight > header route > line qty.
+  //
+  // F1-7N-FB-4B-ADDENDUM — several distinct route contexts is NO LONGER a refusal. Each one is its own K2
+  // shipment group and therefore its own header, which is what `+ Add Route` has always meant. What IS still
+  // refused is a batch that cannot be resolved into distinct groups: two routes collapsing onto one canonical
+  // group key (an unstored dimension), or one route carrying contradictory quantities for one line identity.
   function draftValidateSave(payload) {
     payload = payload || {};
-    var keys = distinctRouteContexts(payload.routes || []);
-    if (keys.length > 1) return { ok: false, code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', issues: [{ code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', routeContexts: keys }] };
+    var routes = payload.routes || [];
+    if (routes.length) {
+      var scope = payload.scope || payload.header || {};
+      var sku = payload.sku || ((routes[0] && routes[0].sku) || '');
+      var pf = preflightRouteGroups(scope, sku, routes);
+      if (!pf.ok) return { ok: false, code: pf.conflicts[0].code, issues: pf.conflicts };
+    }
     var hr = draftHeaderRouteComplete(payload.header);
     if (!hr.ok) return { ok: false, code: 'PLAN_HEADER_INCOMPLETE', issues: [{ code: 'PLAN_HEADER_INCOMPLETE', missing: hr.missing }] };
     var lines = payload.lines || [];

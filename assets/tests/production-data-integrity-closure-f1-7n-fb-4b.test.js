@@ -164,7 +164,11 @@ ok(/var verify = sadVerifyDraftLines_\(draftId, lines, storedRows, isK2Draft\);/
 ok(/LINE_OUTPUT_VERIFICATION_FAILED/.test(keyed), '5. and reports a typed failure');
 ok(/persisted_lines: persisted/.test(keyed), '5. the response carries the ids ACTUALLY persisted');
 // the page adopts them — the loop that produced three rows is closed
-ok(/_irAdoptPersistedLineIds_\(sku, \(lres && lres\.data && lres\.data\.persisted_lines\) \|\| \[\]\)/.test(IR), '5. the page adopts the persisted ids on success');
+// F1-7N-FB-4B-ADDENDUM — STRENGTHENED: adoption is still required on success, and is now additionally SCOPED to
+// the header the ids came from. Route A and Route B of one SKU share the same line identity (route is a HEADER
+// dimension), so an unscoped adoption would hand Route B's persisted id to Route A.
+ok(/_irAdoptPersistedLineIds_\(sku, draftIdSeen, \(lres\.data && lres\.data\.persisted_lines\) \|\| \[\]\)/.test(IR), '5. the page adopts the persisted ids on success');
+ok(/function _irAdoptPersistedLineIds_\(sku, draftId, persistedLines\)/.test(IR), '5. and adoption is SCOPED to one header, so a route never adopts the id of another route');
 ok(/SADL-LOCAL-/.test(IR), '5. and its own generated id is now marked LOCAL, not a durable identity');
 var adopt = extractFn(IR, '_irAdoptPersistedLineIds_');
 ok(/setAttribute\('data-line-id', canonical\)/.test(adopt), '5. re-stamping the DOM attribute the next collect reads');

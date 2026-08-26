@@ -1649,18 +1649,111 @@ function sadReadLinesForDraft_(lsh, draftId) {
 // C2-D2 §9: targeted READ-ONLY Allocation-Draft readback. Reads ONLY shipping_allocation_drafts +
 // shipping_allocation_draft_lines (never getOperationDb). Body: { planning_cycle, company, country, marketplace,
 // source_page }. Returns { success, data:{ status, draft, lines, issues }, errors }.
+// F1-7N-FB-4B-ADDENDUM §D.10/§E — MULTI-SHIPMENT-GROUP READBACK.
+//
+// THE OLD RULE CONTRADICTED THE K2 CONTRACT IT WAS SERVING. This readback resolved through the K3 SCOPE
+// (planning_cycle + company + country + marketplace + source_page) and declared BLOCKED_CONFLICT the moment that
+// scope held more than one active header. But under the frozen K2 contract a header IS one shipment group, and one
+// station legitimately holds SEVERAL shipment groups — that is precisely what `+ Add Route` creates. So the read
+// path called the correct multi-route state a conflict, returned draft:null and lines:[], and made the very plan
+// the writer had just persisted unreadable: hydrate lost the second route and the pre-submit quantity verification
+// degraded to UNVERIFIABLE.
+//
+// THE CONFLICT TEST IS NOW THE GROUP KEY, NOT THE COUNT. Two active headers are a conflict when they claim the SAME
+// canonical K2 group key — two headers for ONE shipment group, which is exactly what sadK2ResolveActiveDraft_ has
+// always refused. Distinct group keys are distinct shipment groups and are returned together. Two legacy K3 rows
+// both carry blank route dims, so they still share one group key and STILL report BLOCKED_CONFLICT — the legacy
+// behaviour is preserved exactly rather than loosened.
+//
+// BACK-COMPAT IS EXACT. With one active header the response is byte-for-byte what it was: ACTIVE_DRAFT_FOUND +
+// draft + lines. With several, `draft` is deliberately NULL — naming one header as "the" draft would misreport a
+// two-route plan as a one-route plan — and the new `drafts` array carries every header with its own lines.
+//
+// §E — DUPLICATE CORRUPTION IS DISCLOSED, NEVER SMOOTHED OVER. Any allocation_draft_line_id appearing on more than
+// one physical row is reported in duplicate_line_identities. The reader must not silently sum such rows (the three
+// live 800-unit rows would read as 2400), and Submit must fail closed on them until the cleanup is run. Read-only.
 function handleGetShippingAllocationDraftWorkspace_(body) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
-    var k3 = sadResolveActiveDraft_(sh, { planning_cycle: (body && body.planning_cycle), company: (body && body.company),
-      country: (body && body.country), marketplace: (body && body.marketplace), source_page: (body && body.source_page) });
-    if (k3.status === 'NO_ACTIVE_DRAFT') return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', draft: null, lines: [], issues: [] }, errors: [] });
-    if (k3.status === 'BLOCKED_CONFLICT') return jsonResponse_({ success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, lines: [], issues: [{ code: 'BLOCKED_CONFLICT', conflictIds: k3.conflictIds }] }, errors: [] });
-    var draft = sadRowToObject_(sh, k3.row);
+    var scope = {
+      planning_cycle: String((body && body.planning_cycle) == null ? '' : body.planning_cycle).trim(),
+      company: String((body && body.company) == null ? '' : body.company).trim(),
+      country: String((body && body.country) == null ? '' : body.country).trim(),
+      marketplace: String((body && body.marketplace) == null ? '' : body.marketplace).trim(),
+      source_page: String((body && body.source_page) == null || body.source_page === '' ? 'inventory_replenishment' : body.source_page).trim()
+    };
+    var data = sh.getDataRange().getValues();
+    if (!data || data.length < 2) return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', draft: null, lines: [], drafts: [], draft_count: 0, duplicate_line_identities: [], issues: [] }, errors: [] });
+    var hdr = data[0].map(function (x) { return String(x).trim(); });
+    function ci(n) { return hdr.indexOf(n); }
+    var cPc = ci('planning_cycle'), cCo = ci('company'), cCy = ci('country'), cMk = ci('marketplace'),
+      cSp = ci('source_page'), cSt = ci('status');
+    function cell(r, c) { return c === -1 ? '' : String(data[r][c] == null ? '' : data[r][c]).trim(); }
+
+    var matched = [];
+    for (var r = 1; r < data.length; r++) {
+      var st = cell(r, cSt).toLowerCase();
+      if (st === 'submitted' || st === 'cancelled') continue;      // active = not terminal (unchanged rule)
+      if (scope.planning_cycle && cell(r, cPc) !== scope.planning_cycle) continue;
+      if (cell(r, cCo) !== scope.company) continue;
+      if (cell(r, cCy) !== scope.country) continue;
+      if (cell(r, cMk) !== scope.marketplace) continue;
+      if (cell(r, cSp) !== scope.source_page) continue;
+      matched.push(sadRowToObject_(sh, r + 1));
+    }
+    if (!matched.length) return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', draft: null, lines: [], drafts: [], draft_count: 0, duplicate_line_identities: [], issues: [] }, errors: [] });
+
+    // CONFLICT = two headers claiming ONE shipment group (the K2 rule), never merely "more than one header".
+    var byGroup = {}, groupOrder = [];
+    matched.forEach(function (o) {
+      var k = sadK2GroupKey_(o);
+      if (!byGroup[k]) { byGroup[k] = []; groupOrder.push(k); }
+      byGroup[k].push(o);
+    });
+    var contested = [];
+    groupOrder.forEach(function (k) {
+      if (byGroup[k].length > 1) {
+        byGroup[k].forEach(function (o) { contested.push(String(o.allocation_draft_id == null ? '' : o.allocation_draft_id).trim()); });
+      }
+    });
+    if (contested.length) {
+      return jsonResponse_({ success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, lines: [], drafts: [], draft_count: 0,
+        duplicate_line_identities: [], issues: [{ code: 'BLOCKED_CONFLICT', conflictIds: contested }] }, errors: [] });
+    }
+
     var lsh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
-    var lines = sadReadLinesForDraft_(lsh, k3.id);
-    return jsonResponse_({ success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: draft, lines: lines, issues: [] }, errors: [] });
+    var allLines = [], drafts = [], dupes = [], issues = [];
+    matched.forEach(function (o) {
+      var id = String(o.allocation_draft_id == null ? '' : o.allocation_draft_id).trim();
+      var ls = sadReadLinesForDraft_(lsh, id);
+      // §E — every primary key that names more than one physical row, named explicitly.
+      var pk = {};
+      ls.forEach(function (l) {
+        var k = String(l.allocation_draft_line_id == null ? '' : l.allocation_draft_line_id).trim();
+        if (!k) return;
+        if (String(l.line_status == null ? '' : l.line_status).trim().toLowerCase() === 'cancelled') return;
+        (pk[k] = pk[k] || []).push(l);
+      });
+      Object.keys(pk).forEach(function (k) {
+        if (pk[k].length <= 1) return;
+        dupes.push({ allocation_draft_id: id, allocation_draft_line_id: k, physical_rows: pk[k].length,
+          sku: String(pk[k][0].sku == null ? '' : pk[k][0].sku),
+          planned_qty_values: pk[k].map(function (x) { return String(x.planned_qty == null ? '' : x.planned_qty); }) });
+      });
+      if (id.indexOf('SADH-K2-') !== 0) issues.push({ code: 'LEGACY_HEADER_PRESENT_IN_SCOPE', allocation_draft_id: id });
+      drafts.push({ draft: o, lines: ls, allocation_draft_id: id, k2_group_key: sadK2GroupKey_(o) });
+      allLines = allLines.concat(ls);
+    });
+    if (dupes.length) issues.push({ code: 'DUPLICATE_LINE_IDENTITY_PERSISTED', count: dupes.length });
+
+    if (matched.length === 1) {
+      // EXACT back-compat for the single-shipment-group case.
+      return jsonResponse_({ success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: drafts[0].draft, lines: drafts[0].lines,
+        drafts: drafts, draft_count: 1, duplicate_line_identities: dupes, issues: issues }, errors: [] });
+    }
+    return jsonResponse_({ success: true, data: { status: 'ACTIVE_DRAFT_GROUP_FOUND', draft: null, lines: allLines,
+      drafts: drafts, draft_count: drafts.length, duplicate_line_identities: dupes, issues: issues }, errors: [] });
   } catch (e) {
     return jsonResponse_({ success: false, data: null, errors: [{ code: 'READBACK_ERROR', message: String(e && e.message ? e.message : e) }] });
   }

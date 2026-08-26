@@ -107,9 +107,22 @@ function makeWS(over) {
   var il = await w.ws.save(validPayload({ lines: [{ sku: 'CO1100-S', planned_qty: 0 }] }));
   ok(il.code === 'PLAN_LINE_INCOMPLETE' && w.counts.save === 0, 'T15 incomplete Line (Qty 0) blocks');
 
+  // F1-7N-FB-4B-ADDENDUM — REPLACED WITH THE STRONGER CONTRACT. Two routes that differ in Method are two K2
+  // shipment groups and therefore two headers; refusing them contradicted `+ Add Route`. They must now be ACCEPTED.
+  // What must still block is a batch that cannot be resolved into distinct groups at all, which is a strictly
+  // narrower and better-targeted refusal than the old blanket one.
   w = makeWS();
   var mr = await w.ws.save(validPayload({ routes: [{ source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'sea', planned_qty: 5 }, { source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'air', planned_qty: 3 }] }));
-  ok(mr.code === 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1' && w.counts.save === 0, 'T16 multiple route contexts block (no persist)');
+  ok(mr.code !== 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'T16a two distinct route contexts are NO LONGER refused (they are two shipment groups)');
+  var grp = require(path.join(__dirname, '..', 'js', 'utils', 'inventory-compat.js')).IRDraft.partitionRoutesIntoGroups({ company: 'KM', country: 'US', marketplace: 'Amazon' }, [
+    { source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'sea', planned_qty: 5 },
+    { source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'air', planned_qty: 3 }]);
+  ok(grp.length === 2, 'T16b they partition into TWO canonical headers');
+  w = makeWS();
+  var qc = await w.ws.save(validPayload({ sku: 'CO1100-S', routes: [
+    { sku: 'CO1100-S', source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'sea', planned_qty: 5 },
+    { sku: 'CO1100-S', source_warehouse_id: 'F', destination_warehouse_id: 'T', shipping_method: 'sea', planned_qty: 9 }] }));
+  ok(qc.code === 'ROUTE_QUANTITY_CONFLICT' && w.counts.save === 0, 'T16c ONE route identity with contradictory quantities still blocks with ZERO writes');
 
   w = makeWS({ readback: function () { return Promise.resolve(res(okDraft)); } });
   await w.ws.save(validPayload());
