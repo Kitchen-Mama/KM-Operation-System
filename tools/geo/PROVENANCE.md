@@ -130,3 +130,139 @@ the claim is checkable from the data.
 It is a **geographic reference only**. It is never a business coordinate, a warehouse identity, a route node or a
 shipment location, and no writer, handler or DB schema reads it. The runtime loads it once, same-origin, with no
 CDN and no fetch.
+
+---
+
+# ADM1 boundary asset — provenance, licence and deterministic regeneration
+
+**Task:** MAP-VISUAL-REAL-EARTH-LOD-1 · **Recorded:** 2026-08-26
+**Produced asset:** `assets/js/data/world-admin1-10m.js` (sets `window.KM_WORLD_ADMIN1`)
+**Generator:** `tools/geo/build-admin1-boundaries.js`
+
+## 1. Repository audit performed first
+
+The repository was searched for any existing ADM1 / state / province / prefecture / administrative-subdivision
+asset. **Result: none existed.** The two vendored vector assets are a 110m land outline (coastline only, no
+attribution) and the 110m admin-0 country asset above (national borders only). Neither can express a
+first-level administrative division, so a new asset was prepared.
+
+## 2. Source
+
+| field | value |
+| --- | --- |
+| Source | Natural Earth |
+| Dataset | `ne_10m_admin_1_states_provinces` |
+| Resolution | 1:10m (large scale) |
+| Version | **v5.1.2** (an immutable git tag — deliberately **not** `master`, which moves) |
+| URL | `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces.geojson` |
+| Input SHA-256 | `22d0e3ad85eb3e27f17cabf8ba2d50e554fbc27a87796ff891d958185da62fb5` |
+| Input size | 40,726,851 bytes · 4,596 features |
+
+### Why 10m and not 50m or 110m
+
+| dataset | features | countries covered | verdict |
+| --- | --- | --- | --- |
+| `ne_110m_admin_1_states_provinces` | few | a handful | far too sparse |
+| `ne_50m_admin_1_states_provinces` | 294 | **9** (AU, BR, CA, CN, ID, IN, RU, US, ZA) | **no Japan, no UK, no Germany** — cannot satisfy §E LOD-2 |
+| `ne_10m_admin_1_states_provinces` | 4,596 | **241** | chosen |
+
+The 50m layer was downloaded and inspected before being rejected; it carries **zero** Japanese prefectures, so
+§E's explicit "JP: prefectures" requirement is unmeetable from it. The 10m file is large, but it is an **input,
+not an output** — the generator simplifies it to a 0.54 MB vendored asset and the raw file is never committed.
+
+## 3. Licence
+
+**Public domain**, identical to the admin-0 asset above — same upstream project, same terms. Attribution is
+**not required**; the voluntary credit *"Made with Natural Earth."* is carried in the asset's `meta.credit`.
+Terms of use: <https://www.naturalearthdata.com/about/terms-of-use/>
+
+**No unlicensed map asset was copied and no third-party redistribution was used** — the file came from the
+upstream project's own repository at a pinned tag.
+
+## 4. Regeneration (deterministic)
+
+```sh
+curl -sSL -o ne_10m_admin_1_states_provinces.geojson \
+  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_1_states_provinces.geojson
+
+sha256sum ne_10m_admin_1_states_provinces.geojson
+# 22d0e3ad85eb3e27f17cabf8ba2d50e554fbc27a87796ff891d958185da62fb5
+
+node --max-old-space-size=4096 tools/geo/build-admin1-boundaries.js ne_10m_admin_1_states_provinces.geojson
+```
+
+Running it twice on the same input produces a **byte-identical** file (verified).
+Output SHA-256: `c109d22e922c5a157fcac0eb41bf994830d1dbf4060ddb73128d9569c6a6e14b`
+
+## 5. Reduction
+
+| measure | value |
+| --- | --- |
+| Source vertices | 1,290,908 |
+| Kept vertices | 76,931 (**94.0 % removed**) |
+| Divisions | 3,835 across 208 countries |
+| Rings | 5,081 (dropped: 2,227 sub-resolution islets, 1,143 degenerate) |
+| Output size | 538,175 bytes |
+
+Simplification is Douglas-Peucker at **0.08°** — the same tolerance the admin-0 asset already uses — with
+coordinates rounded to 2 decimals (~1.1 km). Rings whose bounding-box diagonal is under 0.15° are dropped: those
+are sub-pixel coastal islets that cost vertices and render as noise. **A division is never dropped for this
+reason, only its unresolvable slivers**, and every count above is recorded in the asset's own `meta.stats`.
+
+## 6. Ring encoding
+
+Rings are stored as **delta + zigzag + varint strings** over a 64-character URL-safe alphabet, not as coordinate
+arrays. This is a pure transport encoding: decoding is an exact integer prefix-sum divided by 100, so every
+reconstructed vertex is bit-for-bit the rounded coordinate. Measured effect: **2.20 MB → 0.54 MB**.
+
+The generator runs a **full round-trip self-check at build time** — all 76,931 vertices are decoded back and
+asserted to be in range and exactly quantised — so a broken encoder fails the build instead of shipping. The
+runtime decoder in `km-globe.js` is the exact inverse, and a regression test decodes the shipped asset with the
+shipped function and compares against the generator's alphabet and scale.
+
+## 7. Division label codes — the authority rule
+
+§E requires a short **authoritative** division code, and forbids arbitrary truncation or invented codes.
+
+| case | rule | count | example |
+| --- | --- | --- | --- |
+| ISO 3166-2 subdivision part is **alphabetic** | use it verbatim | 2,340 | `US-CA` → **CA**, `DE-BY` → **BY**, `AU-QLD` → **QLD** |
+| ISO 3166-2 subdivision part is **numeric** | use the **name** | 1,424 | `JP-13` → **Tokyo**, `FR-75` → **Paris** |
+| no ISO 3166-2 code at all | use the **name** | 71 | — |
+| neither code nor name | **no label** | 0 | — |
+
+Natural Earth's own `postal` field is deliberately **not** promoted to a displayed code: it is a cartographic
+abbreviation invented by the dataset (Ōita → `OT`), not a published standard, so using it would be exactly the
+invention §E forbids. Every record carries `t` (0/1/2) recording which rule produced its label, so the claim is
+checkable from the data.
+
+United States coverage is the full 51 (50 states + DC) with official codes — `CA`, `TX`, `NY`, `FL`, `AK`, `HI`
+all present. Canada 13, Australia 10, Japan 47 prefectures, Germany 16, China 31, Mexico 32.
+
+## 8. Label anchors
+
+`latitude` / `longitude` are Natural Earth's own cartographer-placed representative points, not centroids, and
+are preferred for the same reason as the admin-0 `LABEL_X/Y`: a bounding-box centre for Alaska lands in the sea.
+Where the source has no anchor the bbox centre is used and the record is flagged `f:1`.
+
+## 9. Antimeridian and geometry safety
+
+The ADM1 layer goes through **the same shared rasteriser** as the country layer (`ringsToSegments`), so the
+antimeridian and chord-sag guarantees are structurally shared rather than reimplemented:
+
+- every vertex is projected to a 3D unit vector **first** and interpolation is `slerp` — no longitude arithmetic
+  exists anywhere, so a line straight across the Pacific is impossible by construction;
+- each ring is an independent closed loop and rings are never concatenated, so two unrelated islands are never
+  joined by a false straight segment;
+- longest single source edge **16.47°**, subdivided at ≤2° → worst chord sag 0.00015, which is 20× under the
+  0.0030 surface offset, so a border can never sink into the sphere and be wrongly occluded.
+
+ADM1 sits at radius **1.0030**, *below* the country layer's 1.0035, so where a state border coincides with a
+national border the national border is the one that wins the depth test.
+
+## 10. What this asset is not
+
+It is a **geographic reference only**. It is never a business coordinate, a warehouse identity, a route node or a
+shipment location, and no writer, handler or DB schema reads it. It is **lazy-loaded** — same-origin, no CDN, no
+fetch, no runtime network — only once the zoom level first calls for it, so it is never in the path of the
+initial shipment workspace load.

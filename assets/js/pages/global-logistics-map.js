@@ -55,6 +55,14 @@
     // presentation state only: no DB row, no Script Property, no new preference table.
     showCountryBorders: true,
     showCountryLabels: true,
+    // MAP-VISUAL-REAL-EARTH-LOD-1 §G — the ADM1 layers are three-state ('auto' | 'on' | 'off') and default to
+    // AUTO, which is the requirement that an ordinary user must never have to flip a switch to get a correct
+    // picture: AUTO shows them exactly when the zoom level makes them meaningful.
+    admin1BordersMode: 'auto',
+    admin1LabelsMode: 'auto',
+    admin1Lod: 0,
+    admin1AssetState: 'IDLE',      // IDLE | LOADING | READY | FAILED
+    admin1AssetError: '',
     sourceMode: 'not-loaded', diag: null,
     debug: (function () { try { return /(?:[?&])glmdebug=1/.test(location.search) || !!window.KM_GLM_DEBUG; } catch (e) { return false; } })(),
     globe: null, globeHost: null, globeError: '', didFocus: false,
@@ -479,12 +487,92 @@
         // they are keyboard-reachable and expose checked state to assistive technology without extra ARIA.
         '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showCountryBorders"' + (state.showCountryBorders ? ' checked' : '') + '> Country borders</label>' +
         '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showCountryLabels"' + (state.showCountryLabels ? ' checked' : '') + '> Country labels</label>' +
+        // MAP-VISUAL-REAL-EARTH-LOD-1 §G — the two ADM1 layers are INDEPENDENT of each other and of the country
+        // layers, and they are tri-state rather than checkboxes because Auto is a real third behaviour, not the
+        // absence of a choice. Native <select> inside <label> stays keyboard-reachable and screen-reader-labelled.
+        adm1Select('admin1BordersMode', 'State / province borders') +
+        adm1Select('admin1LabelsMode', 'State / province labels') +
+        '<div class="glm-mcp__note" data-glm="adm1-note">' + esc(admin1StatusText()) + '</div>' +
       '</div>' : '';
     // §12 legend RELOCATED into the panel — reuse the SAME legendHtml() renderer (no duplicate, no second legend).
     var legend = '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Legend</span><div class="glm-mcp__legend">' + legendHtml() + '</div></div>';
     return '<div class="glm-mcp" data-glm="map-panel">' + head +
       '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + filters + layers + legend + '</div></div>';
   }
+  // MAP-VISUAL-REAL-EARTH-LOD-1 §H — ONE read-only diagnostics accessor for the whole map visual stack, so the
+  // active tier, the active LOD, the label counts and any degradation reason are OBSERVABLE rather than guessed.
+  // Pure read: it starts nothing, changes nothing, and calls no business API.
+  function mapGlobeDiagnostics() {
+    var g = state.globe;
+    if (!g) return { available: false, reason: state.globeError || 'globe not created' };
+    function safe(fn) { try { return fn(); } catch (e) { return null; } }
+    return {
+      available: true,
+      render: safe(function () { return g.getRenderInfo(); }),
+      texture: safe(function () { return g.getTextureInfo(); }),
+      lod: safe(function () { return g.getLodInfo(); }),
+      country_layer: safe(function () { return g.getCountryLayerInfo(); }),
+      admin1_layer: safe(function () { return g.getAdmin1LayerInfo(); }),
+      admin1_asset: { state: state.admin1AssetState, error: state.admin1AssetError || null,
+        borders_mode: state.admin1BordersMode, labels_mode: state.admin1LabelsMode },
+      status: safe(function () { return g.getStatus(); })
+    };
+  }
+  if (typeof window !== 'undefined') window.KM_MAP_GLOBE_DIAGNOSTICS = mapGlobeDiagnostics;
+
+  function adm1Select(key, label) {
+    var v = state[key];
+    return '<label class="glm-field glm-field--panel"><span>' + esc(label) + '</span>' +
+      '<select data-adm1="' + key + '" aria-label="' + esc(label) + '">' +
+      ['auto', 'on', 'off'].map(function (o) {
+        return '<option value="' + o + '"' + (v === o ? ' selected' : '') + '>' + (o === 'auto' ? 'Auto (by zoom)' : (o === 'on' ? 'Always on' : 'Off')) + '</option>';
+      }).join('') + '</select></label>';
+  }
+  // A plain-language line so the operator can tell "not zoomed in far enough" apart from "the data did not load".
+  function admin1StatusText() {
+    if (state.admin1AssetState === 'FAILED') return 'State / province detail unavailable (' + (state.admin1AssetError || 'asset failed to load') + '). The map, routes and shipments are unaffected.';
+    if (state.admin1AssetState === 'LOADING') return 'Loading state / province detail…';
+    var auto = state.admin1BordersMode === 'auto' || state.admin1LabelsMode === 'auto';
+    if (state.admin1AssetState === 'READY') return 'State / province detail ready.';
+    if (auto) return 'State / province detail appears automatically as you zoom in.';
+    return '';
+  }
+
+  // §H.4/§H.5 — LAZY, DECOUPLED ASSET LOAD. The ADM1 file is ~0.5 MB and is fetched only when the zoom level
+  // first calls for it, as a same-origin <script> — so it is nowhere near the initial shipment workspace read,
+  // it touches no business API, and a failure degrades this one reference layer and nothing else.
+  function ensureAdmin1Asset() {
+    if (state.admin1AssetState === 'LOADING' || state.admin1AssetState === 'READY') return;
+    if (typeof window !== 'undefined' && window.KM_WORLD_ADMIN1) { attachAdmin1(window.KM_WORLD_ADMIN1); return; }
+    if (typeof document === 'undefined') return;
+    state.admin1AssetState = 'LOADING'; renderAdmin1Note();
+    var el = document.createElement('script');
+    el.src = 'assets/js/data/world-admin1-10m.js';
+    el.async = true;
+    el.onload = function () {
+      if (window.KM_WORLD_ADMIN1) attachAdmin1(window.KM_WORLD_ADMIN1);
+      else { state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'asset loaded but defined no data'; renderAdmin1Note(); }
+    };
+    el.onerror = function () {
+      state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'asset could not be fetched';
+      renderAdmin1Note();
+    };
+    try { document.head.appendChild(el); } catch (e) { state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'script injection blocked'; }
+  }
+  function attachAdmin1(data) {
+    var ok = false;
+    try { ok = !!(state.globe && state.globe.setAdmin1Data && state.globe.setAdmin1Data(data)); } catch (e) { ok = false; }
+    state.admin1AssetState = ok ? 'READY' : 'FAILED';
+    if (!ok && !state.admin1AssetError) state.admin1AssetError = 'boundary buffer could not be built';
+    renderAdmin1Note();
+  }
+  function renderAdmin1Note() {
+    try {
+      var el = document.querySelector('[data-glm="adm1-note"]');
+      if (el) el.textContent = admin1StatusText();
+    } catch (e) {}
+  }
+
   // R12 — the approved filter controls, relocated into the panel with IDENTICAL data-filter keys + semantics as the
   // retired filter bar: search · company · destWarehouse (canonical Destination) · carrier · method · etaFrom/etaTo
   // (frozen ETA range) · clear-filters. Removed controls (Origin / Status / Stage / Exception·Delayed·Arriving
@@ -578,7 +666,14 @@
           reducedMotion: prefersReducedMotion(),
           onError: function (kind, msg) { state.globe = null; state.globeError = globeErrText(kind, msg); showGlobeError(); },
           onMarkerClick: function (id) { onPinClick(id); },
-          onMarkerHover: function (id) { showTip(id); }
+          onMarkerHover: function (id) { showTip(id); },
+          admin1Borders: state.admin1BordersMode,
+          admin1Labels: state.admin1LabelsMode,
+          // §H.3 — fires ONLY when the level actually changes, never per frame.
+          onLodChange: function (lod) {
+            state.admin1Lod = lod;
+            if (lod >= 2) ensureAdmin1Asset();
+          }
         });
       }
     }
@@ -650,6 +745,11 @@
   function updateCountryLayers() {
     if (!state.globe || typeof state.globe.setCountryLayers !== 'function') return;
     state.globe.setCountryLayers({ borders: !!state.showCountryBorders, labels: !!state.showCountryLabels });
+    if (typeof state.globe.setAdmin1Layers === 'function') {
+      state.globe.setAdmin1Layers({ borders: state.admin1BordersMode, labels: state.admin1LabelsMode });
+      // "Always on" is a request to see the layer NOW, so it must fetch the asset regardless of zoom.
+      if (state.admin1BordersMode === 'on' || state.admin1LabelsMode === 'on') ensureAdmin1Asset();
+    }
     var active = [], selected = [], nodes = [];
     try {
       var sel = state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null;
@@ -1150,6 +1250,7 @@
     });
     r.querySelectorAll('[data-tpl]').forEach(function (el) { el.onchange = function () { state.selectedTemplateId = el.value; state.didFocus = false; render(); }; });
     r.querySelectorAll('[data-toggle]').forEach(function (el) { el.onchange = function () { state[el.getAttribute('data-toggle')] = el.checked; updateGlobeLayers(); }; });
+    r.querySelectorAll('[data-adm1]').forEach(function (el) { el.onchange = function () { state[el.getAttribute('data-adm1')] = el.value; updateGlobeLayers(); renderAdmin1Note(); }; });
     r.querySelectorAll('[data-ship]').forEach(function (el) {
       el.onclick = function () { selectShipment(el.getAttribute('data-ship')); };
       el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectShipment(el.getAttribute('data-ship')); } };

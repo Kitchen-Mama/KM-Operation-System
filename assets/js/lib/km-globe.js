@@ -116,16 +116,15 @@
   //
   // RINGS ARE NEVER JOINED. Each ring emits its own closed loop of independent gl.LINES pairs, so two unrelated
   // islands of one MultiPolygon country are never connected by a false straight border segment.
-  function buildCountrySegments(dataset, opts) {
-    opts = opts || {};
-    var r = opts.radius || COUNTRY_R;
-    var maxSeg = (opts.maxSegmentDeg || COUNTRY_MAX_SEG_DEG) * DEG;
-    var col = opts.color || COUNTRY_COLOR;
-    var list = (dataset && dataset.countries) || [];
+  // THE SHARED RING RASTERISER. Both the country layer and the ADM1 layer go through this one function, so the
+  // antimeridian and sag guarantees above are STRUCTURALLY shared rather than reimplemented (and re-broken) per
+  // layer. `ringsOf(item)` lets each dataset keep its own storage shape.
+  function ringsToSegments(list, ringsOf, r, maxSegDeg, col, alpha) {
+    var maxSeg = maxSegDeg * DEG;
+    var a4 = alpha == null ? 1 : alpha;
     var out = [], ringCount = 0, segmentCount = 0, maxArc = 0;
-
     for (var ci = 0; ci < list.length; ci++) {
-      var rings = list[ci].rings || [];
+      var rings = ringsOf(list[ci]) || [];
       for (var ri = 0; ri < rings.length; ri++) {
         var flat = rings[ri];
         var n = flat.length / 2;
@@ -144,8 +143,8 @@
           var steps = Math.ceil(th / maxSeg); if (steps < 1) steps = 1;
           for (var sIdx = 0; sIdx < steps; sIdx++) {
             var p1 = slerp(A, B, sIdx / steps), p2 = slerp(A, B, (sIdx + 1) / steps);
-            out.push(p1[0] * r, p1[1] * r, p1[2] * r, col[0], col[1], col[2], 1);
-            out.push(p2[0] * r, p2[1] * r, p2[2] * r, col[0], col[1], col[2], 1);
+            out.push(p1[0] * r, p1[1] * r, p1[2] * r, col[0], col[1], col[2], a4);
+            out.push(p2[0] * r, p2[1] * r, p2[2] * r, col[0], col[1], col[2], a4);
             segmentCount++;
           }
         }
@@ -156,12 +155,113 @@
       vertexCount: out.length / 7,
       segmentCount: segmentCount,
       ringCount: ringCount,
-      countryCount: list.length,
       maxSourceArcDeg: maxArc / DEG,
       radius: r,
-      maxSegmentDeg: (opts.maxSegmentDeg || COUNTRY_MAX_SEG_DEG)
+      maxSegmentDeg: maxSegDeg
     };
   }
+
+  function buildCountrySegments(dataset, opts) {
+    opts = opts || {};
+    var list = (dataset && dataset.countries) || [];
+    var info = ringsToSegments(list, function (c) { return c.rings; },
+      opts.radius || COUNTRY_R, opts.maxSegmentDeg || COUNTRY_MAX_SEG_DEG, opts.color || COUNTRY_COLOR, 1);
+    info.countryCount = list.length;
+    return info;
+  }
+
+  // ==============================================================================================================
+  // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§F — ADM1 (first-level administrative division) layer.
+  // ==============================================================================================================
+  // The ADM1 asset stores each ring as a zigzag-varint STRING rather than a coordinate array, because the plain
+  // form measured 2.2 MB against 0.54 MB encoded. This decoder is the exact inverse of `encodeRing` in
+  // tools/geo/build-admin1-boundaries.js, and the generator runs a full round-trip self-check at build time so
+  // the two can never disagree about a single vertex.
+  var ADMIN1_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  var ADMIN1_ALPHA_IDX = (function () { var m = {}; for (var i = 0; i < ADMIN1_ALPHABET.length; i++) m[ADMIN1_ALPHABET.charAt(i)] = i; return m; })();
+  // Returns a FLAT [lng,lat,lng,lat,...] ring — the same shape the country dataset stores directly, so the
+  // shared rasteriser above consumes both without a special case.
+  function decodeAdmin1Ring(str, scale) {
+    scale = scale || 100;
+    var out = [], x = 0, y = 0, i = 0, n = str.length;
+    while (i < n) {
+      var shift = 1, res = 0, c, d;
+      for (;;) { c = ADMIN1_ALPHA_IDX[str.charAt(i++)]; d = c & 31; res += d * shift; if (!(c & 32)) break; shift *= 32; }
+      x += (res % 2) ? -((res + 1) / 2) : (res / 2);
+      shift = 1; res = 0;
+      for (;;) { c = ADMIN1_ALPHA_IDX[str.charAt(i++)]; d = c & 31; res += d * shift; if (!(c & 32)) break; shift *= 32; }
+      y += (res % 2) ? -((res + 1) / 2) : (res / 2);
+      out.push(x / scale, y / scale);
+    }
+    return out;
+  }
+
+  var ADMIN1_R = 1.0030;   // BELOW the country radius, so where a state border coincides with a national border
+                           // the NATIONAL border is the one that wins the depth test — §G's visual hierarchy.
+  var ADMIN1_MAX_SEG_DEG = 2;
+  var ADMIN1_COLOR = [0.30, 0.36, 0.45];   // dimmer than COUNTRY_COLOR: present, clearly subordinate.
+  var ADMIN1_ALPHA = 0.72;
+
+  // Decode + rasterise every division. Called ONCE (and again only on a GL context restore) — never per frame.
+  function buildAdmin1Segments(dataset, opts) {
+    opts = opts || {};
+    var list = (dataset && dataset.admin1) || [];
+    var scale = (dataset && dataset.meta && dataset.meta.coord_scale) || 100;
+    var only = opts.countries || null;           // optional ISO alpha-2 allow-list (low-capability degradation)
+    var use = only ? list.filter(function (d) { return only.indexOf(d.c) !== -1; }) : list;
+    var info = ringsToSegments(use, function (d) {
+      // decode lazily and cache on the record, so a rebuild after a context loss costs no second decode
+      if (!d.__rings) { d.__rings = (d.g || []).map(function (r) { return decodeAdmin1Ring(r, scale); }); }
+      return d.__rings;
+    }, opts.radius || ADMIN1_R, opts.maxSegmentDeg || ADMIN1_MAX_SEG_DEG, opts.color || ADMIN1_COLOR,
+      opts.alpha == null ? ADMIN1_ALPHA : opts.alpha);
+    info.divisionCount = use.length;
+    info.countryCount = (function () { var m = {}; use.forEach(function (d) { m[d.c] = 1; }); return Object.keys(m).length; })();
+    return info;
+  }
+
+  // ---- LOD (§E) -------------------------------------------------------------------------------------------
+  // cam.dist runs MIN_D 1.35 (close) .. MAX_D 5.0 (far), so LOD rises as distance falls.
+  //   LOD 0  global      — coastlines + national outlines + ISO country codes only
+  //   LOD 1  medium      — same, plus ADM1 geometry begins to fade in for what is actually on screen
+  //   LOD 2  country      — ADM1 outlines + authoritative division codes
+  //   LOD 3  close        — more division codes admitted
+  var LOD_THRESHOLDS = [2.60, 1.95, 1.62];
+  // HYSTERESIS. Each boundary is widened in the direction of travel, giving a 2*LOD_HYSTERESIS dead band: to
+  // LEAVE a level the camera must pass the boundary by the margin, not merely touch it. Without this a camera
+  // resting exactly on a threshold flips the ADM1 layer on and off on every frame of a slow zoom — the flicker
+  // §E forbids. It is a pure function of (distance, previous level): no clock, no counter, no random.
+  var LOD_HYSTERESIS = 0.08;
+  function lodForDistance(dist, prevLod) {
+    var prev = prevLod | 0, lod = 0;
+    for (var i = 0; i < LOD_THRESHOLDS.length; i++) {
+      var bound = LOD_THRESHOLDS[i] + (prev > i ? LOD_HYSTERESIS : -LOD_HYSTERESIS);
+      if (dist > bound) break;
+      lod = i + 1;
+    }
+    return lod;
+  }
+  // A layer mode is 'auto' | 'on' | 'off'. AUTO is what §G asks the default user to get: correct without touching
+  // a control. ADM1 geometry starts one level earlier than ADM1 text, so borders establish the shape before the
+  // labels arrive rather than everything appearing at once.
+  // BOTH start at LOD 2, and that is a deliberate reading of §E rather than an omission. §E.1 allows ADM1
+  // geometry to begin fading in at LOD 1, but only for "the important divisions of the currently visible area",
+  // and it forbids ever stuffing every division onto the screen at once. At LOD 1 the camera still sees most of
+  // a hemisphere, and this dataset holds 3,835 divisions / 76.8k segments worldwide; drawing them there would be
+  // precisely the wall of lines §E.1 rules out, and restricting to "the visible area" would need a per-frame
+  // point-in-polygon pass that §H.1 forbids. So ADM1 appears at LOD 2 — the "zoomed into one country" level §E.2
+  // actually describes — and the gradual part of the progression is carried by the LABEL BUDGET (22 at LOD 2,
+  // 42 at LOD 3) plus the caller-driven country restriction, neither of which costs a per-frame test.
+  var ADMIN1_BORDER_MIN_LOD = 2;
+  var ADMIN1_LABEL_MIN_LOD = 2;
+  function layerVisible(mode, lod, minLod) {
+    if (mode === 'on') return true;
+    if (mode === 'off') return false;
+    return lod >= minLod;
+  }
+  // How many ADM1 labels may be admitted at this level. §E: "must not instantly stuff every division and its
+  // text onto the screen"; the cap is the blunt guarantee behind the collision pass.
+  function admin1LabelBudget(lod) { return lod >= 3 ? 42 : (lod >= 2 ? 22 : 0); }
 
   // SCALE-AWARE VISIBILITY. cam.dist runs 1.35 (close) .. 5.0 (far). Natural Earth's LABELRANK (2 = a major
   // country, 7 = a minor one) is the dataset's OWN priority field, so the tiers are read from the data rather
@@ -268,7 +368,14 @@
     countryPriorityOf: countryPriorityOf, orderLabelCandidates: orderLabelCandidates,
     rectsOverlap: rectsOverlap, selectVisibleLabels: selectVisibleLabels,
     countryIsoIndex: countryIsoIndex,
-    COUNTRY_R: COUNTRY_R, COUNTRY_MAX_SEG_DEG: COUNTRY_MAX_SEG_DEG, COUNTRY_COLOR: COUNTRY_COLOR
+    COUNTRY_R: COUNTRY_R, COUNTRY_MAX_SEG_DEG: COUNTRY_MAX_SEG_DEG, COUNTRY_COLOR: COUNTRY_COLOR,
+    // MAP-VISUAL-REAL-EARTH-LOD-1 — exported so the regression suite executes the SHIPPED functions.
+    ringsToSegments: ringsToSegments, decodeAdmin1Ring: decodeAdmin1Ring,
+    buildAdmin1Segments: buildAdmin1Segments, lodForDistance: lodForDistance,
+    layerVisible: layerVisible, admin1LabelBudget: admin1LabelBudget,
+    ADMIN1_R: ADMIN1_R, ADMIN1_MAX_SEG_DEG: ADMIN1_MAX_SEG_DEG, ADMIN1_COLOR: ADMIN1_COLOR,
+    ADMIN1_ALPHABET: ADMIN1_ALPHABET, LOD_THRESHOLDS: LOD_THRESHOLDS, LOD_HYSTERESIS: LOD_HYSTERESIS,
+    ADMIN1_BORDER_MIN_LOD: ADMIN1_BORDER_MIN_LOD, ADMIN1_LABEL_MIN_LOD: ADMIN1_LABEL_MIN_LOD
   };
 
   // ---------------- earth texture (rasterized from vendored land outline) ----------------
@@ -504,7 +611,9 @@
     var texTier = pickTextureTier(gl);
     var earthCv = buildEarthCanvas(texTier.width, texTier.height);
     if (!earthCv) { container.removeChild(canvas); return err('asset', 'Land outline asset (KM_WORLD_LAND) is missing or empty; cannot rasterize the Earth texture.'); }
-    var texInfo = { width: texTier.width, height: texTier.height, tier_reason: texTier.reason, mipmaps: false, anisotropy: 1, max_anisotropy: 1 };
+    var texInfo = { width: texTier.width, height: texTier.height, tier_reason: texTier.reason, mipmaps: false,
+      anisotropy: 1, max_anisotropy: 1, max_texture_size: 0, allocation_verified: false, downgraded_from: null };
+    try { texInfo.max_texture_size = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0; } catch (e) {}
 
     var progSphere, progPts, progLine, sphere, buf = {}, tex;
     try {
@@ -519,7 +628,29 @@
       buf.pts = gl.createBuffer(); buf.line = gl.createBuffer();
       tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      // MAP-VISUAL-REAL-EARTH-LOD-1 §D/§H.7 — ALLOCATION-VERIFIED TIER. The capability probe reads
+      // MAX_TEXTURE_SIZE, deviceMemory and hardwareConcurrency, but none of those is a promise that the driver
+      // will actually hand over the memory: a 4096x2048 RGB image plus its mip chain is ~32 MB, and a device
+      // that reports the capability can still fail the upload under pressure. Previously nothing checked, so a
+      // refused allocation left an INCOMPLETE texture and the globe rendered black — the one outcome §H.7
+      // forbids. The upload is now verified and falls back to the base tier, which is guaranteed-size and is
+      // re-rasterised (not rescaled) from the same vector source.
+      while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing errors so the check below is about US */ }
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, earthCv);
+      var texErr = gl.getError();
+      if (texErr !== gl.NO_ERROR && (texInfo.width > TEX_BASE_W_ || texInfo.height > TEX_BASE_H_)) {
+        var baseCv = buildEarthCanvas(TEX_BASE_W_, TEX_BASE_H_);
+        if (baseCv) {
+          texInfo.downgraded_from = texInfo.width + 'x' + texInfo.height;
+          texInfo.width = TEX_BASE_W_; texInfo.height = TEX_BASE_H_;
+          texInfo.tier_reason = 'DOWNGRADED_ALLOCATION_FAILED_0x' + texErr.toString(16);
+          earthCv = baseCv;
+          while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, earthCv);
+          texErr = gl.getError();
+        }
+      }
+      texInfo.allocation_verified = (texErr === gl.NO_ERROR);
       // V3G6A(E4) - MIPMAPS. Both tiers are power-of-two, so WebGL1 can generate a full mip chain. This fixes
       // the shimmering/aliasing of MINIFIED texels (the zoomed-out globe and the whole grazing-angle limb),
       // which plain gl.LINEAR could not. Magnification still uses gl.LINEAR - the correct filter there.
@@ -556,6 +687,17 @@
     var countryIso = countryIsoIndex(countryData);
     var showBorders = opts.countryBorders !== false, showLabels = opts.countryLabels !== false;
     var countryPriority = { active: [], selected: [], nodes: [], high: [] };
+    // MAP-VISUAL-REAL-EARTH-LOD-1 — the ADM1 layer's own state. Its dataset is attached LATER (setAdmin1Data),
+    // because the asset is ~0.5 MB and §H forbids making the initial workspace load carry it: the page fetches it
+    // only when the LOD first calls for it. Until then this layer is simply absent and everything else works.
+    var admin1Data = (typeof window !== 'undefined' && window.KM_WORLD_ADMIN1) ? window.KM_WORLD_ADMIN1 : null;
+    var admin1Info = null, admin1VertexCount = 0, admin1BufferBuilds = 0, admin1BuildMs = 0;
+    var admin1Countries = null;             // optional allow-list used by the low-capability degradation path
+    var showAdmin1Borders = opts.admin1Borders || 'auto';   // 'auto' | 'on' | 'off'
+    var showAdmin1Labels = opts.admin1Labels || 'auto';
+    var lod = 0, lastLodNotified = -1;
+    var lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 };
+    var degradeReason = '';
     var prevLabelSet = {}, lastLabelStats = { candidates: 0, drawn: 0, tier: 0 };
     var W = 1, H = 1, dpr = 1;
     var mvp = mat4Identity(), model = mat4Identity(), mv = mat4Identity();
@@ -563,7 +705,21 @@
 
     function clampPitch(p) { return Math.max(-1.5, Math.min(1.5, p)); }
 
+    function updateLod() {
+      var next = lodForDistance(cam.dist, lod);
+      if (next === lod) return false;
+      lod = next;
+      // §H.3 — the page is told only when the level actually CHANGES, so a lazy asset fetch or a relayout is
+      // driven by a threshold crossing rather than by every frame of a drag.
+      if (lod !== lastLodNotified) {
+        lastLodNotified = lod;
+        try { if (opts.onLodChange) opts.onLodChange(lod); } catch (e) {}
+      }
+      return true;
+    }
+
     function recomputeMatrices() {
+      updateLod();
       model = modelMatrix(cam.yaw, cam.pitch);
       var view = mat4Translate(0, 0, -cam.dist);
       mv = mat4Mul(view, model);
@@ -595,6 +751,17 @@
       // STATIC buffer that is only bound here — no bufferData, no geometry work, no allocation in this path.
       // The depth test does the rest: at r=1.0035 the far-side rings are occluded by the sphere, and the arcs
       // (1.006) and markers (1.012) always win in front, which is what keeps this layer subordinate.
+      // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§F — ADM1 outlines, drawn BEFORE the national outlines so that where a
+      // state border runs along a national border the NATIONAL one is what the operator sees. Same STATIC buffer
+      // discipline as the country layer: bound here, never rebuilt from the render loop.
+      if (admin1BordersVisible() && admin1VertexCount) {
+        gl.useProgram(progLine);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.admin1);
+        stride7(progLine);
+        gl.uniformMatrix4fv(gl.getUniformLocation(progLine, 'uMVP'), false, new Float32Array(mvp));
+        gl.drawArrays(gl.LINES, 0, admin1VertexCount);
+      }
+
       if (showBorders && countryVertexCount) {
         gl.useProgram(progLine);
         gl.bindBuffer(gl.ARRAY_BUFFER, buf.country);
@@ -636,7 +803,11 @@
       if (!labelCtx) return;
       labelCtx.setTransform(1, 0, 0, 1, 0, 0);
       labelCtx.clearRect(0, 0, labelCv.width, labelCv.height);
-      if (!showLabels || !countryData || !countryData.countries) { lastLabelStats = { candidates: 0, drawn: 0, tier: 0 }; return; }
+      // §G LAYER INDEPENDENCE. This canvas now carries TWO layers, so it may only bail when NEITHER has
+      // anything to draw. Bailing whenever country labels were off would have silently chained the ADM1 label
+      // toggle to the country label toggle.
+      var wantCountry = showLabels && !!(countryData && countryData.countries);
+      if (!wantCountry && !admin1LabelsVisible()) { lastLabelStats = { candidates: 0, drawn: 0, tier: 0 }; lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
       labelCtx.scale(dpr, dpr);   // §F/§K DPR-aware: draw in CSS pixels onto a device-pixel backing store
 
       var fontPx = 11;
@@ -645,7 +816,8 @@
       labelCtx.textBaseline = 'middle';
 
       var tier = countryLabelTier(cam.dist);
-      var list = countryData.countries, cands = [];
+      var list = wantCountry ? countryData.countries : [];
+      var cands = [];
       for (var i = 0; i < list.length; i++) {
         var c = list[i];
         var pri = countryPriorityOf(c.iso, countryPriority);
@@ -670,20 +842,87 @@
         markerRects.push({ x0: mp.x - half, x1: mp.x + half, y0: mp.y - half, y1: mp.y + half });
       }
 
-      var drawn = selectVisibleLabels(cands, { pad: 3, stickyPad: 1, previous: prevLabelSet, markerRects: markerRects });
+      var drawn = wantCountry ? selectVisibleLabels(cands, { pad: 3, stickyPad: 1, previous: prevLabelSet, markerRects: markerRects }) : [];
       var next = {};
       labelCtx.lineJoin = 'round';
       labelCtx.lineWidth = 3;
       labelCtx.strokeStyle = 'rgba(6,10,20,0.86)';   // dark halo -> readable over ocean AND land (§F/§K)
+      var countryRects = [];
       for (var d2 = 0; d2 < drawn.length; d2++) {
         var lab = drawn[d2];
         next[lab.iso] = 1;
         labelCtx.fillStyle = lab.priority <= 1 ? 'rgba(250,224,140,0.98)' : 'rgba(226,235,248,0.92)';
         labelCtx.strokeText(lab.iso, lab.x, lab.y);
         labelCtx.fillText(lab.iso, lab.x, lab.y);
+        countryRects.push({ x0: lab.x - lab.w / 2 - 2, x1: lab.x + lab.w / 2 + 2, y0: lab.y - lab.h / 2 - 2, y1: lab.y + lab.h / 2 + 2 });
       }
       prevLabelSet = next;
       lastLabelStats = { candidates: cands.length, drawn: drawn.length, tier: tier };
+
+      // §G — ADM1 text is SUBORDINATE by construction: it is laid out after the country codes and is blocked by
+      // both those codes and the shipment markers, so a division code can never cover either.
+      drawAdmin1Labels(markerRects.concat(countryRects), fontPx);
+    }
+
+    // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§G — division codes. Same project -> filter -> order -> collide -> paint
+    // pipeline as the country codes, at a smaller size, admitted only from LOD 2 and capped by a budget.
+    var prevAdmin1Set = {};
+    function drawAdmin1Labels(blockers, countryFontPx) {
+      if (!admin1LabelsVisible() || !admin1Data || !admin1Data.admin1) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
+      var budget = admin1LabelBudget(lod);
+      if (budget <= 0) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
+
+      var fontPx = Math.max(8, countryFontPx - 2);   // §G: strictly smaller than a country code
+      labelCtx.font = '600 ' + fontPx + 'px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+      var list = admin1Data.admin1, cands = [];
+      for (var i = 0; i < list.length; i++) {
+        var d = list[i];
+        if (admin1Countries && admin1Countries.indexOf(d.c) === -1) continue;
+        var sp = projectToScreen(mvp, model, latLngToVec3(d.l[1], d.l[0], ADMIN1_R), W, H);
+        if (!sp || !sp.front) continue;                                              // §F rear hemisphere -> hidden
+        if (sp.x < -30 || sp.y < -16 || sp.x > W + 30 || sp.y > H + 16) continue;     // §F outside viewport -> hidden
+        cands.push({ iso: d.c + '/' + d.k, text: d.k, x: sp.x, y: sp.y,
+          w: labelCtx.measureText(d.k).width, h: fontPx, rank: d.r, priority: 4 });
+      }
+      // The budget is applied to the ORDERED candidate list, so what survives a crowded view is the highest-rank
+      // divisions rather than whichever happened to be first in the dataset.
+      var ordered = orderLabelCandidates(cands).slice(0, budget * 3);
+      var drawn = selectVisibleLabels(ordered, { pad: 2, stickyPad: 1, previous: prevAdmin1Set, markerRects: blockers }).slice(0, budget);
+      var next = {};
+      labelCtx.lineWidth = 2.5;
+      labelCtx.strokeStyle = 'rgba(6,10,20,0.80)';
+      labelCtx.fillStyle = 'rgba(196,212,232,0.86)';   // dimmer than a country code — subordinate, still legible
+      for (var j = 0; j < drawn.length; j++) {
+        next[drawn[j].iso] = 1;
+        labelCtx.strokeText(drawn[j].text, drawn[j].x, drawn[j].y);
+        labelCtx.fillText(drawn[j].text, drawn[j].x, drawn[j].y);
+      }
+      prevAdmin1Set = next;
+      lastAdmin1LabelStats = { candidates: cands.length, drawn: drawn.length, budget: budget };
+    }
+
+    function admin1BordersVisible() { return layerVisible(showAdmin1Borders, lod, ADMIN1_BORDER_MIN_LOD) && !!admin1Data; }
+    function admin1LabelsVisible() { return layerVisible(showAdmin1Labels, lod, ADMIN1_LABEL_MIN_LOD) && !!admin1Data; }
+
+    // Built ONCE per dataset (and again ONLY on a GL context restore). Never called from draw().
+    function rebuildAdmin1Buffer() {
+      if (!admin1Data || !admin1Data.admin1 || !admin1Data.admin1.length) { admin1VertexCount = 0; return; }
+      try {
+        var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+        admin1Info = buildAdmin1Segments(admin1Data, { countries: admin1Countries });
+        if (!buf.admin1) buf.admin1 = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.admin1);
+        gl.bufferData(gl.ARRAY_BUFFER, admin1Info.positions, gl.STATIC_DRAW);
+        admin1VertexCount = admin1Info.vertexCount;
+        admin1BufferBuilds++;
+        var t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+        admin1BuildMs = Math.round((t1 - t0) * 10) / 10;
+      } catch (e) {
+        // §H.7/§H.8 — a failed geographic layer must never take the map down. The base globe, the routes, the
+        // markers and every interaction keep working; only this reference layer is absent, and it says why.
+        admin1VertexCount = 0; admin1Info = null; degradeReason = 'ADMIN1_BUFFER_BUILD_FAILED';
+      }
     }
     // MAP-COUNTRY-BOUNDARY-1 §I — built ONCE per globe instance, and again ONLY if the GL context is restored.
     // Never called from draw(). STATIC_DRAW because the geometry is immutable for the life of the context.
@@ -822,8 +1061,74 @@
       getStatus: function () { return { ok: status.ok, error: status.error, dist: cam.dist }; },
       // V3G6A - read-only render/texture facts, so the fidelity configuration is observable instead of assumed.
       getRenderInfo: function () { return { dpr: dpr, device_pixel_ratio: (window.devicePixelRatio || 1), dpr_cap: 2, css_width: W, css_height: H, buffer_width: canvas.width, buffer_height: canvas.height }; },
-      getTextureInfo: function () { return { width: texInfo.width, height: texInfo.height, tier_reason: texInfo.tier_reason, mipmaps: texInfo.mipmaps, anisotropy: texInfo.anisotropy, max_anisotropy: texInfo.max_anisotropy }; },
+      getTextureInfo: function () { return { width: texInfo.width, height: texInfo.height, tier_reason: texInfo.tier_reason, mipmaps: texInfo.mipmaps, anisotropy: texInfo.anisotropy, max_anisotropy: texInfo.max_anisotropy, max_texture_size: texInfo.max_texture_size, allocation_verified: texInfo.allocation_verified, downgraded_from: texInfo.downgraded_from }; },
       setReducedMotion: function (v) { reduced = !!v; },
+      // ---- MAP-VISUAL-REAL-EARTH-LOD-1 — ADM1 reference layer (visual only) ----
+      // The ADM1 asset is attached LATE. §H.4/§H.5 require that this ~0.5 MB geographic file never sits in the
+      // path of the initial shipment workspace load, so the page fetches it only once the LOD asks for it and
+      // hands it in here. Everything before that point renders and interacts exactly as it did.
+      setAdmin1Data: function (data) {
+        if (!data || !data.admin1 || !data.admin1.length) return false;
+        if (admin1Data === data) return true;
+        admin1Data = data;
+        rebuildAdmin1Buffer();
+        schedule();
+        return admin1VertexCount > 0;
+      },
+      // Two INDEPENDENT toggles, each 'auto' | 'on' | 'off'. AUTO is the default and is what §G means by "the
+      // ordinary user must not have to flip a switch to get a correct picture".
+      setAdmin1Layers: function (o) {
+        o = o || {};
+        function mode(v, cur) {
+          if (v == null) return cur;
+          if (v === true) return 'on';
+          if (v === false) return 'off';
+          var t = String(v).toLowerCase();
+          return (t === 'on' || t === 'off' || t === 'auto') ? t : cur;
+        }
+        showAdmin1Borders = mode(o.borders, showAdmin1Borders);
+        showAdmin1Labels = mode(o.labels, showAdmin1Labels);
+        schedule();
+      },
+      // §H.6 — the low-capability degradation ladder, driven by the caller. Restricting the layer to the
+      // countries actually on screen (or to none) is the cheapest step and is done by REBUILDING the static
+      // buffer, never by filtering per frame.
+      setAdmin1Countries: function (list) {
+        admin1Countries = (list && list.length) ? list.slice() : null;
+        if (admin1Data) rebuildAdmin1Buffer();
+        schedule();
+      },
+      getLodInfo: function () {
+        return {
+          lod: lod, distance: cam.dist, min_distance: MIN_D, max_distance: MAX_D,
+          thresholds: LOD_THRESHOLDS.slice(), hysteresis: LOD_HYSTERESIS,
+          admin1_borders_mode: showAdmin1Borders, admin1_labels_mode: showAdmin1Labels,
+          admin1_borders_visible: admin1BordersVisible(), admin1_labels_visible: admin1LabelsVisible(),
+          admin1_border_min_lod: ADMIN1_BORDER_MIN_LOD, admin1_label_min_lod: ADMIN1_LABEL_MIN_LOD,
+          country_label_tier: countryLabelTier(cam.dist)
+        };
+      },
+      getAdmin1LayerInfo: function () {
+        return {
+          available: !!(admin1Data && admin1Data.admin1 && admin1Data.admin1.length),
+          dataset: (admin1Data && admin1Data.meta) ? admin1Data.meta.dataset : null,
+          resolution: (admin1Data && admin1Data.meta) ? admin1Data.meta.resolution : null,
+          division_count: admin1Info ? admin1Info.divisionCount : 0,
+          country_count: admin1Info ? admin1Info.countryCount : 0,
+          ring_count: admin1Info ? admin1Info.ringCount : 0,
+          segment_count: admin1Info ? admin1Info.segmentCount : 0,
+          vertex_count: admin1VertexCount,
+          buffer_bytes: admin1Info ? admin1Info.positions.byteLength : 0,
+          gpu_buffers: admin1Info && admin1VertexCount ? 1 : 0,
+          buffer_builds: admin1BufferBuilds,
+          build_ms: admin1BuildMs,
+          max_source_arc_deg: admin1Info ? admin1Info.maxSourceArcDeg : 0,
+          radius: ADMIN1_R, max_segment_deg: ADMIN1_MAX_SEG_DEG,
+          restricted_to_countries: admin1Countries ? admin1Countries.slice() : null,
+          labels: { candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn, budget: lastAdmin1LabelStats.budget },
+          degrade_reason: degradeReason || null
+        };
+      },
       // ---- MAP-COUNTRY-BOUNDARY-1 — country reference layers (visual only) ----
       // Two INDEPENDENT toggles: borders and labels never imply one another.
       setCountryLayers: function (o) {
@@ -885,7 +1190,7 @@
     // MAP-COUNTRY-BOUNDARY-1 §I — if the context is ever restored, the country buffer is rebuilt rather than left
     // dangling. It is deliberately the ONLY thing this handler claims to fix: the pre-existing behaviour for the
     // sphere, texture and programs is "report, do not silently die", and this task does not change that.
-    canvas.addEventListener('webglcontextrestored', function () { try { buf.country = null; rebuildCountryBuffer(); schedule(); } catch (e) {} });
+    canvas.addEventListener('webglcontextrestored', function () { try { buf.country = null; rebuildCountryBuffer(); buf.admin1 = null; rebuildAdmin1Buffer(); schedule(); } catch (e) {} });
 
     var onWinResize = (function () { var t = 0; return function () { clearTimeout(t); t = setTimeout(function () { inst.resize(); }, 150); }; })();
     window.addEventListener('resize', onWinResize);
@@ -893,6 +1198,7 @@
     try { if (window.ResizeObserver) { ro = new ResizeObserver(function () { inst.resize(); }); ro.observe(container); } } catch (e) {}
 
     rebuildCountryBuffer();   // ONCE, at creation — never from draw()
+    if (admin1Data) rebuildAdmin1Buffer();   // only when the asset was already present at construction
     inst.resize();
     inst.overview();
     schedule();

@@ -149,12 +149,24 @@ for (var v = 0; v + 13 < built.positions.length; v += 14) {
 }
 ok(maxSeg <= M.COUNTRY_MAX_SEG_DEG + 0.01, '4. NO emitted segment exceeds the ' + M.COUNTRY_MAX_SEG_DEG + '-degree subdivision limit (max ' + maxSeg.toFixed(3) + ')');
 ok(maxSeg < 5, '4. and certainly nothing spanning the Pacific');
-// structural: no longitude arithmetic exists in the builder at all
+// structural: no longitude arithmetic exists in the builder at all.
+// MAP-VISUAL-REAL-EARTH-LOD-1 — STRENGTHENED, not relaxed. The rasterising loop moved into the SHARED
+// ringsToSegments so the ADM1 layer inherits this guarantee instead of reimplementing (and re-breaking) it.
+// Both the country entry point AND the shared rasteriser are now checked, and the shared one is asserted to be
+// the ONLY place the interpolation lives.
 var bsrc = noStrings(extractFn(GLOBE, 'buildCountrySegments'));
+var rsrc = noStrings(extractFn(GLOBE, 'ringsToSegments'));
 ['+ 360', '- 360', '% 360', '180 -', 'unwrap', 'wrapLng'].forEach(function (k) {
-  ok(bsrc.indexOf(k) === -1, '4. the builder performs no longitude ' + JSON.stringify(k) + ' arithmetic');
+  ok(bsrc.indexOf(k) === -1, '4. the country entry point performs no longitude ' + JSON.stringify(k) + ' arithmetic');
+  ok(rsrc.indexOf(k) === -1, '4. the shared rasteriser performs no longitude ' + JSON.stringify(k) + ' arithmetic');
 });
-ok(/slerp\(A, B/.test(bsrc), '4. interpolation is slerp on 3D unit vectors, so the failure mode is structurally impossible');
+ok(/slerp\(A, B/.test(rsrc), '4. interpolation is slerp on 3D unit vectors, so the failure mode is structurally impossible');
+ok(/ringsToSegments\(/.test(bsrc), '4. the country builder DELEGATES to that shared rasteriser');
+// Scoped to the BOUNDARY layers. (The route-arc builder has its own, older, unrelated slerp call and is not
+// touched by this task.) Neither boundary entry point may carry an interpolation of its own.
+ok(noStrings(extractFn(GLOBE, 'buildCountrySegments')).indexOf('slerp(') === -1 &&
+   noStrings(extractFn(GLOBE, 'buildAdmin1Segments')).indexOf('slerp(') === -1,
+  '4. neither boundary builder interpolates on its own — both go through the one shared rasteriser');
 // sag: a subdivided chord must never sink below the surface offset
 var sag = 1 - Math.cos((M.COUNTRY_MAX_SEG_DEG / 2) * DEG);
 ok(sag < (M.COUNTRY_R - 1) / 5, '4. worst chord sag ' + sag.toFixed(6) + ' is far under the ' + (M.COUNTRY_R - 1).toFixed(4) + ' surface offset');
@@ -305,7 +317,19 @@ var api = GLOBE.slice(GLOBE.indexOf('setCountryLayers: function'), GLOBE.indexOf
 ok(/if \(o\.borders != null\) showBorders = !!o\.borders;/.test(api) && /if \(o\.labels != null\) showLabels = !!o\.labels;/.test(api),
   '11. the globe applies them independently — neither implies the other');
 ok(/if \(showBorders && countryVertexCount\)/.test(GLOBE), '11. borders off => no boundary draw call');
-ok(/if \(!showLabels \|\| !countryData/.test(GLOBE), '11. labels off => the overlay is cleared and nothing is drawn');
+// MAP-VISUAL-REAL-EARTH-LOD-1 — STRENGTHENED. This used to pin the literal early return
+// "if (!showLabels || !countryData) return", which was correct while the overlay carried ONE layer and became a
+// DEFECT once it carried two: bailing there switched the ADM1 labels off whenever country labels were off,
+// silently chaining two toggles §G requires to be independent. The requirement is now stated properly —
+// country labels off must suppress the COUNTRY candidates and nothing else.
+ok(/var wantCountry = showLabels && !!\(countryData && countryData\.countries\);/.test(GLOBE),
+  '11. country labels off suppresses the COUNTRY candidate set');
+ok(/var list = wantCountry \? countryData\.countries : \[\];/.test(GLOBE),
+  '11. with them off no country label is even considered');
+ok(/labelCtx\.clearRect\(0, 0, labelCv\.width, labelCv\.height\);/.test(GLOBE),
+  '11. the overlay is still cleared each pass, so nothing stale survives');
+ok(/if \(!wantCountry && !admin1LabelsVisible\(\)\)/.test(GLOBE),
+  '11. and the pass bails ONLY when neither label layer wants to draw');
 // no new persistence surface was created
 var mcode = noStrings(MAPJS);
 ok(mcode.indexOf('showCountryBorders') !== -1, '11. the toggles live in page state');
