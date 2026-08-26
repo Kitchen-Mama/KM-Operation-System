@@ -78,7 +78,13 @@
     return {
       x: (clip.x / clip.w * 0.5 + 0.5) * width,
       y: (1 - (clip.y / clip.w * 0.5 + 0.5)) * height,
-      front: mv.z > 0.02
+      front: mv.z > 0.02,
+      // TEXTURE-3-R3 §G — for a point on the unit sphere, mv.z IS the cosine of the angle between the
+      // surface normal and the view axis: 1 at the centre of the disc, 0 exactly at the limb. `front` only
+      // asks whether the point is on the near hemisphere at all, which is far too weak a test for a label -
+      // it admits text that is compressed into near-invisibility against the horizon. Exposed so the label
+      // layers can require a point to be genuinely FACING the camera rather than merely not behind it.
+      facing: mv.z
     };
   }
 
@@ -91,9 +97,34 @@
   // a static line buffer plus a screen-space label selection. A regression suite executes these functions.
   // ==============================================================================================================
 
-  // Just above the sphere (r=1) and BELOW the arcs (1.006) and markers (1.012), so the depth test alone makes the
-  // boundaries subordinate, occluded on the far side, and never in front of a route or a pin.
-  var COUNTRY_R = 1.0035;
+  // ==============================================================================================================
+  // TEXTURE-3-R3 §C — ONE GLOBE SURFACE. THE BORDER LAYERS NO LONGER FLOAT ABOVE IT.
+  // ==============================================================================================================
+  // WHAT WAS WRONG, AND IT WAS GEOMETRIC RATHER THAN COSMETIC. The boundary layers used to sit on their own
+  // radii - COUNTRY_R 1.0035 and ADMIN1_R 1.0030 - i.e. two concentric shells above the r=1 surface. §C forbids
+  // exactly that ("do not create an obvious second outer sphere to avoid z-fighting") for a reason that is
+  // measurable: a layer at radius 1+d, viewed at an angle t from the surface normal, is displaced from the
+  // ground it is meant to describe by d*tan(t). At Earth scale d=0.0035 is 22 km of altitude, and that
+  // displacement DIVERGES towards the limb - which is precisely where borders looked detached from the coast.
+  //
+  // THE FIX IS DEPTH, NOT ALTITUDE. Every boundary vertex now sits at EXACTLY r=1, so there is no parallax at
+  // any zoom or any angle - the line is on the ground by construction. Separation from the sphere is done in
+  // the DEPTH BUFFER instead, by biasing clip-space z toward the viewer by a constant fraction of w (see
+  // VS_RIBBON / VS_LINE). A constant NDC bias is scale-invariant, so one number works from the globe view to
+  // maximum zoom.
+  //
+  // WHY THE BIAS CAN BE THIS SMALL. The sphere is tessellated 48x96, so its triangles are CHORDS lying inside
+  // the true sphere: a point at r=1 is already up to 1-cos(1.875deg) = 5.4e-4 in front of the mesh everywhere
+  // except exactly at a mesh vertex. The bias only has to win at those vertices, so 2.5e-4 NDC is ample - about
+  // half the tessellation sag, and two orders of magnitude smaller than the 0.0035 radial offset it replaces.
+  var BORDER_R = 1.0;
+  var BORDER_DEPTH_BIAS_ = 0.00025;
+  // Arcs and markers KEEP their radial elevation, and that is a different decision rather than an inconsistent
+  // one: a shipment arc is not a property of the surface, it is an object above it, and its altitude is what
+  // makes it read as a flight path rather than a painted line. They are documented here so §C's audit has one
+  // place that lists every radius in the engine.
+  var ARC_R_ = 1.006, MARKER_R_ = 1.012;
+  var COUNTRY_R = BORDER_R;
   // Longer segments are subdivided along the GREAT CIRCLE. Two reasons, both measured against this dataset:
   //   · SAG. The dataset's longest single edge is ~18 deg (a simplified US ring). A straight chord across 18 deg
   //     sags 1-cos(9deg) = 0.0123 below the surface — nearly 4x the 0.0035 offset, so it would sink INTO the
@@ -103,6 +134,36 @@
   var COUNTRY_MAX_SEG_DEG = 2;
   var COUNTRY_COLOR = [0.38, 0.45, 0.56];   // muted slate: legible over ocean AND land, clearly subordinate to
                                             // the cyan route arcs and the coloured shipment markers.
+
+  // ==============================================================================================================
+  // TEXTURE-3-R3 §E — THE BORDER HIERARCHY, AS THREE DISTINCT CLASSES RATHER THAN TWO SHADES OF ONE
+  // ==============================================================================================================
+  // R2's own captures showed international and ADM1 borders at visibly the SAME weight, which §E requires to
+  // differ. The reason they could not differ is worth stating plainly: BOTH were drawn with gl.LINES, and Chrome
+  // clamps gl.lineWidth to 1.0. Every "make the national border heavier" lever available to the old code was
+  // therefore colour and alpha only - two shades of one line.
+  //
+  // So the national boundary is now a SCREEN-SPACE RIBBON: a triangle pair per segment, expanded perpendicular
+  // to the segment in pixel space by the vertex shader. That is what §E's "tune widths in screen-space terms so
+  // zooming does not make lines excessively thick" actually requires - a constant pixel width at every zoom,
+  // which a world-space thickness cannot give.
+  //
+  // The other two classes stay gl.LINES at the hardware minimum, and that is the right answer for both:
+  //   COASTLINE is largely REDUNDANT with the albedo's own coastline. §E warns against a "bright duplicated
+  //     rim", so its job is to firm up the edge, not to draw a second one. It is the dimmest thing on the globe.
+  //   ADM1 must be "thinner, lower opacity, subordinate" - and 1 px is as thin as hardware allows.
+  //
+  // Colours are a single neutral hue at three luminances, so the hierarchy reads as weight rather than as three
+  // different-coloured lines. No glow, no outline, no second pass: §E forbids neon and double lines, and there
+  // is no code here that could produce either.
+  var BORDER_STYLE_ = {
+    COASTLINE:     { color: [0.34, 0.38, 0.44], alpha: 0.55, widthPx: 0, rank: 1 },
+    INTERNATIONAL: { color: [0.62, 0.69, 0.78], alpha: 0.95, widthPx: 1.7, rank: 2 },
+    ADM1:          { color: [0.35, 0.39, 0.45], alpha: 0.62, widthPx: 0, rank: 3 }
+  };
+  // A ribbon narrower than about 1.2 px cannot be resolved and only produces alpha shimmer, so the ribbon path
+  // is used only where the width earns it; widthPx 0 means "use gl.LINES".
+  var RIBBON_MIN_PX_ = 1.2;
 
   // Build the STATIC gl.LINES vertex array for every country ring. Called ONCE per globe instance (and again only
   // on a GL context restore) — never per frame.
@@ -171,6 +232,136 @@
   }
 
   // ==============================================================================================================
+  // TEXTURE-3-R3 §D — RASTERISING THE CANONICAL TOPOLOGY (independent SEGMENTS, not rings)
+  // ==============================================================================================================
+  // ringsToSegments above walks CLOSED RINGS, which is what made every shared boundary appear twice. This
+  // consumes the deduplicated edge list from KM.geoTopology instead: a flat [lng,lat,lng,lat,...] list of
+  // INDEPENDENT segments where each physical boundary appears exactly once.
+  //
+  // The two guarantees ringsToSegments earned are preserved verbatim, because they live in the subdivision and
+  // not in the ring walk:
+  //   SAG — a straight chord across a long edge sinks below the surface. At r=1 exactly there is no altitude to
+  //     sink through, so sag now shows as the line cutting INTO the sphere and being depth-culled. Subdividing
+  //     at 2 deg keeps the worst sag at 1-cos(1deg) = 1.5e-4, below the depth bias, so it cannot happen.
+  //   ANTI-MERIDIAN — every endpoint is projected to a 3D unit vector FIRST and interpolation is slerp between
+  //     those vectors. No longitude is compared, averaged, wrapped or unwrapped anywhere, so 179 -> -179 is a
+  //     2 deg arc and Antarctica's (180,-90) -> (-180,-90) pair is a 0 deg arc between two identical points.
+  function segmentsToVertices(flat, r, maxSegDeg, col, alpha) {
+    var maxSeg = maxSegDeg * DEG;
+    var a4 = alpha == null ? 1 : alpha;
+    var count = flat.length / 4;
+    var out = [], segmentCount = 0, maxArc = 0, skipped = 0;
+    for (var i = 0; i < count; i++) {
+      var o = i * 4;
+      var A = latLngToVec3(flat[o + 1], flat[o], 1);
+      var B = latLngToVec3(flat[o + 3], flat[o + 2], 1);
+      var dot = A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
+      if (dot > 1) dot = 1; else if (dot < -1) dot = -1;
+      var th = Math.acos(dot);
+      if (th > maxArc) maxArc = th;
+      if (th < 1e-9) { skipped++; continue; }
+      var steps = Math.ceil(th / maxSeg); if (steps < 1) steps = 1;
+      for (var s = 0; s < steps; s++) {
+        var p1 = slerp(A, B, s / steps), p2 = slerp(A, B, (s + 1) / steps);
+        out.push(p1[0] * r, p1[1] * r, p1[2] * r, col[0], col[1], col[2], a4);
+        out.push(p2[0] * r, p2[1] * r, p2[2] * r, col[0], col[1], col[2], a4);
+        segmentCount++;
+      }
+    }
+    return {
+      positions: new Float32Array(out), vertexCount: out.length / 7,
+      segmentCount: segmentCount, sourceEdges: count, degenerateSkipped: skipped,
+      maxSourceArcDeg: maxArc / DEG, radius: r, maxSegmentDeg: maxSegDeg
+    };
+  }
+
+  // The RIBBON form of the same thing: six vertices per subdivided segment (two triangles), each carrying its
+  // own endpoint, the OTHER endpoint, and a side. The shader needs both endpoints to know which way is
+  // perpendicular in screen space, which is the only place a constant pixel width can be computed.
+  function segmentsToRibbon(flat, r, maxSegDeg, col, alpha) {
+    var maxSeg = maxSegDeg * DEG;
+    var a4 = alpha == null ? 1 : alpha;
+    var count = flat.length / 4;
+    var out = [], segmentCount = 0;
+    // side/corner pattern for the two triangles of a quad: (end, side) per vertex
+    var CORNERS = [[0, -1], [0, 1], [1, -1], [1, -1], [0, 1], [1, 1]];
+    for (var i = 0; i < count; i++) {
+      var o = i * 4;
+      var A = latLngToVec3(flat[o + 1], flat[o], 1);
+      var B = latLngToVec3(flat[o + 3], flat[o + 2], 1);
+      var dot = A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
+      if (dot > 1) dot = 1; else if (dot < -1) dot = -1;
+      var th = Math.acos(dot);
+      if (th < 1e-9) continue;
+      var steps = Math.ceil(th / maxSeg); if (steps < 1) steps = 1;
+      for (var s = 0; s < steps; s++) {
+        var p1 = slerp(A, B, s / steps), p2 = slerp(A, B, (s + 1) / steps);
+        for (var c = 0; c < 6; c++) {
+          var atEnd = CORNERS[c][0], side = CORNERS[c][1];
+          var here = atEnd ? p2 : p1, other = atEnd ? p1 : p2;
+          out.push(here[0] * r, here[1] * r, here[2] * r,
+                   other[0] * r, other[1] * r, other[2] * r,
+                   side, col[0], col[1], col[2], a4);
+        }
+        segmentCount++;
+      }
+    }
+    return {
+      positions: new Float32Array(out), vertexCount: out.length / 11,
+      segmentCount: segmentCount, sourceEdges: count, radius: r, maxSegmentDeg: maxSegDeg,
+      floatsPerVertex: 11
+    };
+  }
+
+  /**
+   * buildBorderLayers(topology, opts) — turn one canonical topology into the three renderable layers.
+   *
+   * §D's "shared edge rendered once" is inherited from the topology; what this adds is that the three classes
+   * are three SEPARATE buffers. That is what makes §E's hierarchy possible at all, and it is also why
+   * "international supersedes ADM1" needs no runtime comparison: an edge is in exactly one bucket.
+   *
+   * `opts.countries` is an ISO allow-list for low-capability degradation. IT FILTERS THE RENDERED EDGES, NEVER
+   * THE TOPOLOGY INPUT — classification must see the whole world or an edge shared with an excluded neighbour
+   * would be reclassified as coastline and drawn in the wrong class. That is a real trap: filtering first
+   * produces a plausible-looking globe with silently wrong borders.
+   */
+  function buildBorderLayers(topology, opts) {
+    opts = opts || {};
+    var only = opts.countries || null;
+    var maxSeg = opts.maxSegmentDeg || COUNTRY_MAX_SEG_DEG;
+    var r = opts.radius == null ? BORDER_R : opts.radius;
+    var out = { layers: {}, stats: { filtered_by_country: !!only } };
+    ['COASTLINE', 'INTERNATIONAL', 'ADM1'].forEach(function (cls) {
+      var edges = topology.edges[cls] || [];
+      var use = edges;
+      if (only) {
+        use = edges.filter(function (e) {
+          for (var i = 0; i < e.countries.length; i++) if (only.indexOf(e.countries[i]) !== -1) return true;
+          return false;
+        });
+      }
+      var flat = new Float64Array(use.length * 4);
+      for (var i = 0; i < use.length; i++) {
+        var e = use[i], o = i * 4;
+        flat[o] = e.a[0]; flat[o + 1] = e.a[1]; flat[o + 2] = e.b[0]; flat[o + 3] = e.b[1];
+      }
+      var st = BORDER_STYLE_[cls];
+      var ribbon = st.widthPx >= RIBBON_MIN_PX_;
+      var built = ribbon
+        ? segmentsToRibbon(flat, r, maxSeg, st.color, st.alpha)
+        : segmentsToVertices(flat, r, maxSeg, st.color, st.alpha);
+      built.mode = ribbon ? 'RIBBON' : 'LINES';
+      built.widthPx = st.widthPx;
+      built.rank = st.rank;
+      built.edgeCount = use.length;
+      built.edgeCountUnfiltered = edges.length;
+      out.layers[cls] = built;
+    });
+    out.stats.topology = topology.stats;
+    return out;
+  }
+
+  // ==============================================================================================================
   // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§F — ADM1 (first-level administrative division) layer.
   // ==============================================================================================================
   // The ADM1 asset stores each ring as a zigzag-varint STRING rather than a coordinate array, because the plain
@@ -196,7 +387,7 @@
     return out;
   }
 
-  var ADMIN1_R = 1.0030;   // BELOW the country radius, so where a state border coincides with a national border
+  var ADMIN1_R = BORDER_R;   // TEXTURE-3-R3 §C — was 1.0030, a second shell above the surface. Where a
                            // the NATIONAL border is the one that wins the depth test — §G's visual hierarchy.
   var ADMIN1_MAX_SEG_DEG = 2;
   var ADMIN1_COLOR = [0.30, 0.36, 0.45];   // dimmer than COUNTRY_COLOR: present, clearly subordinate.
@@ -254,6 +445,10 @@
   // 42 at LOD 3) plus the caller-driven country restriction, neither of which costs a per-frame test.
   var ADMIN1_BORDER_MIN_LOD = 2;
   var ADMIN1_LABEL_MIN_LOD = 2;
+  // §G — how far off the view axis a DIVISION label may still be placed. Country and continent labels keep
+  // the looser near-hemisphere test: naming the country at the edge of the disc is useful context, naming its
+  // provinces there is noise.
+  var ADMIN1_LABEL_MIN_FACING_ = 0.55;
   function layerVisible(mode, lod, minLod) {
     if (mode === 'on') return true;
     if (mode === 'off') return false;
@@ -262,6 +457,77 @@
   // How many ADM1 labels may be admitted at this level. §E: "must not instantly stuff every division and its
   // text onto the screen"; the cap is the blunt guarantee behind the collision pass.
   function admin1LabelBudget(lod) { return lod >= 3 ? 42 : (lod >= 2 ? 22 : 0); }
+
+  // TEXTURE-3-R3 §E — "introduced by zoom/LOD" and "must not crowd" are two requirements, and the LOD gate
+  // alone only satisfies the first. The captures made that plain: the moment LOD 2 was reached, EVERY
+  // country's divisions appeared at once, and over France, Germany, the UK and Italy the ADM1 mesh read as
+  // texture rather than as boundaries.
+  //
+  // So the layer FADES IN across the LOD-2 band instead of appearing at full strength. This is an alpha
+  // multiplier rather than a geometry filter on purpose: culling per viewport would mean re-uploading a
+  // 68,000-edge buffer on every camera move, which is a far worse trade than one uniform.
+  var ADMIN1_FADE_FAR_ = 1.95, ADMIN1_FADE_NEAR_ = 1.55;
+  function admin1BorderStrength(dist) {
+    if (!(dist > 0)) return 1;
+    var k = (ADMIN1_FADE_FAR_ - dist) / (ADMIN1_FADE_FAR_ - ADMIN1_FADE_NEAR_);
+    return k < 0 ? 0 : (k > 1 ? 1 : k);
+  }
+
+  // TEXTURE-3-R3 §G — THE LABEL SIZE LADDER, as one function so the three classes cannot drift apart.
+  //
+  // R2's captures showed country and division labels at nearly the same size, because the ADM1 size was
+  // "country - 2 px": at 11 px that is a 9 px division label, an 18% difference that reads as one class of
+  // text at slightly different sizes. §G requires the hierarchy to be VISIBLE, so the sizes are ratios of a
+  // base rather than offsets from each other, and the continent size is deliberately the LARGEST while its
+  // colour is the faintest - the cartographic convention for a label that names a region rather than a place.
+  var LABEL_BASE_PX_ = 12;
+  function labelSizes(dist) {
+    var base = LABEL_BASE_PX_;
+    return {
+      continent: Math.round(base * 1.45),   // 17 px
+      country: base,                        // 12 px
+      admin1: Math.max(9, Math.round(base * 0.75))   // 9 px
+    };
+  }
+  // Continents are a ZOOMED-OUT aid: they name what you are looking at before the countries are legible, and
+  // §G asks them to "fade when no longer useful". They are strongest on the full globe and gone by the time
+  // ADM1 appears, so the two never compete.
+  var CONTINENT_FADE_NEAR_ = 2.05, CONTINENT_FADE_FAR_ = 2.65;
+  function continentStrength(dist) {
+    if (!(dist > 0)) return 0;
+    var k = (dist - CONTINENT_FADE_NEAR_) / (CONTINENT_FADE_FAR_ - CONTINENT_FADE_NEAR_);
+    return k < 0 ? 0 : (k > 1 ? 1 : k);
+  }
+
+  // §G — CONTINENT ANCHORS ARE DERIVED, NOT INVENTED. There is no vendored continent geometry, and adding a
+  // hand-placed anchor table would be exactly the kind of unreviewed cartographic data this task keeps out
+  // of the repository. Instead each continent's anchor is the mean of its member countries' OWN vendored
+  // label anchors, averaged as 3D UNIT VECTORS and renormalised.
+  //
+  // Averaging in 3D rather than in lat/lng is the whole point: Oceania spans the anti-meridian, so a mean of
+  // longitudes would place it in the Atlantic. Weighting is by the dataset's own `lng_span_deg` size proxy so
+  // a scatter of small island states cannot drag a continent's label off the continent.
+  function continentAnchors(countryDataset, isoToContinent) {
+    var list = (countryDataset && countryDataset.countries) || [];
+    var acc = {};
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      var key = isoToContinent(c.iso);
+      if (!key) continue;
+      var w = Math.max(0.25, Number(c.lng_span_deg) || 0.25);
+      var v = latLngToVec3(c.label[1], c.label[0], 1);
+      var a = acc[key] || (acc[key] = { x: 0, y: 0, z: 0, w: 0, n: 0 });
+      a.x += v[0] * w; a.y += v[1] * w; a.z += v[2] * w; a.w += w; a.n++;
+    }
+    var out = [];
+    Object.keys(acc).sort().forEach(function (k) {
+      var a = acc[k];
+      var L = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+      if (!(L > 1e-9)) return;
+      out.push({ key: k, vec: [a.x / L, a.y / L, a.z / L], members: a.n });
+    });
+    return out;
+  }
 
   // SCALE-AWARE VISIBILITY. cam.dist runs 1.35 (close) .. 5.0 (far). Natural Earth's LABELRANK (2 = a major
   // country, 7 = a minor one) is the dataset's OWN priority field, so the tiers are read from the data rather
@@ -375,7 +641,20 @@
     layerVisible: layerVisible, admin1LabelBudget: admin1LabelBudget,
     ADMIN1_R: ADMIN1_R, ADMIN1_MAX_SEG_DEG: ADMIN1_MAX_SEG_DEG, ADMIN1_COLOR: ADMIN1_COLOR,
     ADMIN1_ALPHABET: ADMIN1_ALPHABET, LOD_THRESHOLDS: LOD_THRESHOLDS, LOD_HYSTERESIS: LOD_HYSTERESIS,
-    ADMIN1_BORDER_MIN_LOD: ADMIN1_BORDER_MIN_LOD, ADMIN1_LABEL_MIN_LOD: ADMIN1_LABEL_MIN_LOD
+    ADMIN1_BORDER_MIN_LOD: ADMIN1_BORDER_MIN_LOD, ADMIN1_LABEL_MIN_LOD: ADMIN1_LABEL_MIN_LOD,
+    ADMIN1_LABEL_MIN_FACING: ADMIN1_LABEL_MIN_FACING_,
+    // MAP-VISUAL-REAL-EARTH-TEXTURE-3-R3 §C/§D/§E — exported so the suites EXECUTE the shipped topology,
+    // hierarchy and surface-authority decisions instead of pattern-matching their source.
+    BORDER_R: BORDER_R, BORDER_DEPTH_BIAS: BORDER_DEPTH_BIAS_,
+    ARC_R: ARC_R_, MARKER_R: MARKER_R_,
+    BORDER_STYLE: BORDER_STYLE_, RIBBON_MIN_PX: RIBBON_MIN_PX_,
+    segmentsToVertices: segmentsToVertices, segmentsToRibbon: segmentsToRibbon,
+    buildBorderLayers: buildBorderLayers,
+    admin1BorderStrength: admin1BorderStrength, continentStrength: continentStrength,
+    labelSizes: labelSizes, continentAnchors: continentAnchors,
+    ADMIN1_FADE_FAR: ADMIN1_FADE_FAR_, ADMIN1_FADE_NEAR: ADMIN1_FADE_NEAR_,
+    CONTINENT_FADE_NEAR: CONTINENT_FADE_NEAR_, CONTINENT_FADE_FAR: CONTINENT_FADE_FAR_,
+    LABEL_BASE_PX: LABEL_BASE_PX_
   };
 
   // ---------------- earth texture (rasterized from vendored land outline) ----------------
@@ -883,8 +1162,42 @@
   // clean definition on the brighter Earth. CONSTANT-ONLY (thresholds/colors); still fully opaque (no blend),
   // same attributes/varyings, same geometry, same picking. Data-driven marker color (vColor) is untouched.
   var FS_PTS = 'precision mediump float;varying vec4 vColor;varying float vRing;void main(){vec2 c=gl_PointCoord-vec2(0.5);float d=length(c);if(d>0.5)discard;vec4 col=vColor;if(d>0.34)col=vec4(1.0,1.0,1.0,1.0);if(vRing>0.5&&d>0.40)col=vec4(1.0,0.82,0.2,1.0);if(d>0.46)col=vec4(0.05,0.09,0.16,1.0);gl_FragColor=col;}';
-  var VS_LINE = 'attribute vec3 aPos;attribute vec4 aColor;uniform mat4 uMVP;varying vec4 vColor;void main(){gl_Position=uMVP*vec4(aPos,1.0);vColor=aColor;}';
-  var FS_LINE = 'precision mediump float;varying vec4 vColor;void main(){gl_FragColor=vColor;}';
+  // TEXTURE-3-R3 §C — uBias shifts clip-space z toward the viewer by a constant fraction of w. That is a
+  // CONSTANT NDC offset, so it behaves identically at every camera distance, and it replaces the radial
+  // elevation the boundary layers used to rely on. uBias is 0 for the arc layer, which is genuinely above the
+  // surface and must be depth-tested against it honestly.
+  var VS_LINE = 'attribute vec3 aPos;attribute vec4 aColor;uniform mat4 uMVP;uniform float uBias;varying vec4 vColor;void main(){vec4 p=uMVP*vec4(aPos,1.0);p.z-=uBias*p.w;gl_Position=p;vColor=aColor;}';
+  // uAlphaMul is how the ADM1 layer FADES IN (§E) rather than switching on. It defaults to 1 and is set
+  // explicitly on every draw, because a GL uniform persists between draw calls and an unset one would leak
+  // the previous layer's fade onto the coastline.
+  var FS_LINE = 'precision mediump float;uniform float uAlphaMul;varying vec4 vColor;void main(){gl_FragColor=vec4(vColor.rgb,vColor.a*uAlphaMul);}';
+
+  // TEXTURE-3-R3 §E — THE SCREEN-SPACE RIBBON. Chrome clamps gl.lineWidth to 1.0, so a heavier national border
+  // is impossible with gl.LINES; this expands each segment into a quad whose half-width is a fixed number of
+  // DEVICE PIXELS, computed after projection. Because the width is applied in screen space it is invariant to
+  // zoom - §E's "zooming does not make lines excessively thick" - and because the expansion is perpendicular to
+  // the segment's own screen direction it stays a constant-width ribbon at any orientation, including at the
+  // limb where the segment is nearly edge-on.
+  //
+  // A vertex behind the eye has w <= 0 and its screen position is meaningless, so the perpendicular falls back
+  // to a fixed direction rather than producing a NaN that would blank the whole draw call. The far hemisphere is
+  // removed by the depth test as before, not by this.
+  var VS_RIBBON =
+    'attribute vec3 aPos;attribute vec3 aOther;attribute float aSide;attribute vec4 aColor;' +
+    'uniform mat4 uMVP;uniform vec2 uViewport;uniform float uHalfPx;uniform float uBias;' +
+    'varying vec4 vColor;varying float vSide;' +
+    'void main(){' +
+    'vec4 p=uMVP*vec4(aPos,1.0);vec4 q=uMVP*vec4(aOther,1.0);' +
+    'vec2 hp=uViewport*0.5;' +
+    'vec2 dir=vec2(0.0,1.0);' +
+    'if(p.w>0.0001&&q.w>0.0001){vec2 a=p.xy/p.w*hp;vec2 b=q.xy/q.w*hp;vec2 d=b-a;float L=length(d);' +
+    'if(L>0.0001){dir=d/L;}}' +
+    'vec2 nrm=vec2(-dir.y,dir.x);' +
+    'p.xy+=nrm*aSide*uHalfPx/hp*p.w;' +
+    'p.z-=uBias*p.w;' +
+    'gl_Position=p;vColor=aColor;vSide=aSide;}';
+  // No feathering, no glow: §E forbids a neon rim, and an alpha ramp across a 1.7 px ribbon would read as one.
+  var FS_RIBBON = 'precision mediump float;uniform float uAlphaMul;varying vec4 vColor;varying float vSide;void main(){gl_FragColor=vec4(vColor.rgb,vColor.a*uAlphaMul);}';
 
   // ---------------- instance ----------------
   function create(container, opts) {
@@ -1161,11 +1474,12 @@
 
     function beginMaterialUpgrade() { applyTier(matTier.asset, ''); }
 
-    var progSphere, progPts, progLine, sphere, buf = {}, tex;
+    var progSphere, progPts, progLine, progRibbon, sphere, buf = {}, tex;
     try {
       progSphere = program(gl, VS_SPHERE, FS_SPHERE);
       progPts = program(gl, VS_PTS, FS_PTS);
       progLine = program(gl, VS_LINE, FS_LINE);
+      progRibbon = program(gl, VS_RIBBON, FS_RIBBON);
       sphere = buildSphere(48, 96, 1);
       buf.pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf.pos); gl.bufferData(gl.ARRAY_BUFFER, sphere.pos, gl.STATIC_DRAW);
       buf.nrm = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf.nrm); gl.bufferData(gl.ARRAY_BUFFER, sphere.nrm, gl.STATIC_DRAW);
@@ -1188,6 +1502,9 @@
     } catch (e) { try { container.removeChild(canvas); } catch (x) {} return err('gl', 'GL init failed: ' + (e && e.message || e)); }
 
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+    // TEXTURE-3-R3 §E — the border classes carry alpha (coastline 0.55, ADM1 0.62) and the ADM1 layer fades
+    // in with zoom, so blending has to be enabled for any of that to be visible rather than rounded to on/off.
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(0.043, 0.055, 0.094, 1);   // deep-space background
 
     var MIN_D = 1.35, MAX_D = 5.0;
@@ -1214,6 +1531,7 @@
     var lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 };
     var degradeReason = '';
     var prevLabelSet = {}, lastLabelStats = { candidates: 0, drawn: 0, tier: 0 };
+    var prevContinentSet = {};
     var W = 1, H = 1, dpr = 1;
     var mvp = mat4Identity(), model = mat4Identity(), mv = mat4Identity();
     var anim = null, raf = 0, destroyed = false, status = { ok: true, error: '' };
@@ -1230,6 +1548,10 @@
         lastLodNotified = lod;
         try { if (opts.onLodChange) opts.onLodChange(lod); } catch (e) {}
       }
+      // TEXTURE-3-R3 §D — the active canonical topology follows the LOD. syncBorderSet() is a no-op unless
+      // the WANTED set actually differs, so a slow zoom across a threshold re-uploads once, not per frame,
+      // and the LOD hysteresis above is what keeps a camera resting on a boundary from thrashing it.
+      syncBorderSet();
       return true;
     }
 
@@ -1279,20 +1601,53 @@
       // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§F — ADM1 outlines, drawn BEFORE the national outlines so that where a
       // state border runs along a national border the NATIONAL one is what the operator sees. Same STATIC buffer
       // discipline as the country layer: bound here, never rebuilt from the render loop.
-      if (admin1BordersVisible() && admin1VertexCount) {
-        gl.useProgram(progLine);
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf.admin1);
-        stride7(progLine);
-        gl.uniformMatrix4fv(gl.getUniformLocation(progLine, 'uMVP'), false, new Float32Array(mvp));
-        gl.drawArrays(gl.LINES, 0, admin1VertexCount);
-      }
-
-      if (showBorders && countryVertexCount) {
-        gl.useProgram(progLine);
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf.country);
-        stride7(progLine);
-        gl.uniformMatrix4fv(gl.getUniformLocation(progLine, 'uMVP'), false, new Float32Array(mvp));
-        gl.drawArrays(gl.LINES, 0, countryVertexCount);
+      // TEXTURE-3-R3 §D/§E — the three canonical classes, drawn in HIERARCHY ORDER: coastline, then ADM1, then
+      // the international boundary last so it is the one that survives every overlap. There is no overlap to
+      // resolve in the geometry (an edge belongs to exactly one class), so this ordering is purely about which
+      // line wins where two DIFFERENT boundaries cross - and §D says the international one does.
+      //
+      // All three sit at r=1 and are separated from the surface by the depth bias only, so none of them can
+      // drift from the ground it describes. The far hemisphere is still removed by the depth test.
+      var activeSet = borderActive === 'FINE' ? layersFine : (borderActive === 'COARSE' ? layersCoarse : null);
+      if (activeSet && showBorders) {
+        var showAdm1 = admin1BordersVisible();
+        var adm1Strength = admin1BorderStrength(cam.dist);
+        // A fully transparent layer is still a full draw call over ~14,000 vertices, so it is skipped rather
+        // than drawn at alpha 0 — the fade must not cost anything at the distances where it is invisible.
+        if (adm1Strength <= 0.01) showAdm1 = false;
+        ['COASTLINE', 'ADM1', 'INTERNATIONAL'].forEach(function (cls) {
+          if (cls === 'ADM1' && !showAdm1) return;
+          var L = activeSet.layers[cls];
+          var n = borderCounts[cls];
+          if (!L || !n) return;
+          if (L.mode === 'RIBBON') {
+            gl.useProgram(progRibbon);
+            gl.bindBuffer(gl.ARRAY_BUFFER, borderBufs[cls]);
+            var rp = gl.getAttribLocation(progRibbon, 'aPos'), ro = gl.getAttribLocation(progRibbon, 'aOther'),
+                rs = gl.getAttribLocation(progRibbon, 'aSide'), rc = gl.getAttribLocation(progRibbon, 'aColor');
+            var RS = 11 * 4;
+            gl.enableVertexAttribArray(rp); gl.vertexAttribPointer(rp, 3, gl.FLOAT, false, RS, 0);
+            gl.enableVertexAttribArray(ro); gl.vertexAttribPointer(ro, 3, gl.FLOAT, false, RS, 3 * 4);
+            gl.enableVertexAttribArray(rs); gl.vertexAttribPointer(rs, 1, gl.FLOAT, false, RS, 6 * 4);
+            gl.enableVertexAttribArray(rc); gl.vertexAttribPointer(rc, 4, gl.FLOAT, false, RS, 7 * 4);
+            gl.uniformMatrix4fv(gl.getUniformLocation(progRibbon, 'uMVP'), false, new Float32Array(mvp));
+            // The viewport is in DEVICE pixels and so is the half-width, so the ribbon is a constant number of
+            // device pixels on a HiDPI screen rather than a constant number of CSS pixels.
+            gl.uniform2f(gl.getUniformLocation(progRibbon, 'uViewport'), gl.drawingBufferWidth, gl.drawingBufferHeight);
+            gl.uniform1f(gl.getUniformLocation(progRibbon, 'uHalfPx'), L.widthPx * 0.5 * dpr);
+            gl.uniform1f(gl.getUniformLocation(progRibbon, 'uBias'), BORDER_DEPTH_BIAS_);
+            gl.uniform1f(gl.getUniformLocation(progRibbon, 'uAlphaMul'), 1);
+            gl.drawArrays(gl.TRIANGLES, 0, n);
+          } else {
+            gl.useProgram(progLine);
+            gl.bindBuffer(gl.ARRAY_BUFFER, borderBufs[cls]);
+            stride7(progLine);
+            gl.uniformMatrix4fv(gl.getUniformLocation(progLine, 'uMVP'), false, new Float32Array(mvp));
+            gl.uniform1f(gl.getUniformLocation(progLine, 'uBias'), BORDER_DEPTH_BIAS_);
+            gl.uniform1f(gl.getUniformLocation(progLine, 'uAlphaMul'), cls === 'ADM1' ? adm1Strength : 1);
+            gl.drawArrays(gl.LINES, 0, n);
+          }
+        });
       }
 
       // arcs (depth-tested → back segments occluded by the sphere)
@@ -1301,6 +1656,11 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, buf.line); gl.bufferData(gl.ARRAY_BUFFER, lineData, gl.DYNAMIC_DRAW);
         stride7(progLine);
         gl.uniformMatrix4fv(gl.getUniformLocation(progLine, 'uMVP'), false, new Float32Array(mvp));
+        // uBias is EXPLICITLY zero here. A GL uniform persists on the program between draw calls, so
+        // without this the arcs would silently inherit the border layers' depth bias and be pulled toward
+        // the viewer - a shipment route is genuinely ABOVE the surface and must be depth-tested honestly.
+        gl.uniform1f(gl.getUniformLocation(progLine, 'uBias'), 0);
+        gl.uniform1f(gl.getUniformLocation(progLine, 'uAlphaMul'), 1);
         gl.drawArrays(gl.LINES, 0, lineCount);
       }
 
@@ -1322,6 +1682,78 @@
       drawCountryLabels();
     }
 
+    // TEXTURE-3-R3 §G — one clipping rule for all three label classes. A label is admitted only if its whole
+    // painted box, plus the halo width, fits inside the viewport. `PAD` is the halo's own outset: the stroke
+    // is 3 px wide and centred on the glyph edge, so the ink reaches 1.5 px beyond the measured box.
+    var LABEL_EDGE_PAD_ = 2;
+    function boxInsideViewport(x, y, w, h) {
+      var hw = w / 2 + LABEL_EDGE_PAD_, hh = h / 2 + LABEL_EDGE_PAD_;
+      return (x - hw) >= 0 && (x + hw) <= W && (y - hh) >= 0 && (y + hh) <= H;
+    }
+
+    // §G — THE CONTINENT LAYER. It did not exist before this round: §G asks for "restrained continent names"
+    // on the default globe view and for them to fade when no longer useful, and the globe drew none at all.
+    //
+    // Anchors are DERIVED from the vendored country label points (see continentAnchors) and the names come
+    // from the same KM.geoNames authority as everything else, at its ZH_HANT_REVIEWED_LIST level. Nothing
+    // here invents a name or a position.
+    var continentCache = null;
+    function continentList() {
+      if (continentCache) return continentCache;
+      var G = (typeof window !== 'undefined' && window.KM && window.KM.geoNames) ? window.KM.geoNames : null;
+      if (!G || !countryData) { continentCache = []; return continentCache; }
+      var anchors = continentAnchors(countryData, function (iso) {
+        try { return G.continentOfCountry(iso) || ''; } catch (e) { return ''; }
+      });
+      continentCache = anchors.map(function (a) {
+        var nm = a.key;
+        try { var r = G.continent(a.key); if (r && r.name) nm = r.name; } catch (e) {}
+        return { key: a.key, vec: a.vec, text: nm, members: a.members };
+      }).filter(function (a) {
+        // Antarctica's derived anchor is the pole, where an equirectangular label is meaningless and the
+        // projection is degenerate. It is dropped rather than placed badly.
+        return a.key !== 'Antarctica';
+      });
+      return continentCache;
+    }
+
+    var lastContinentStats = { candidates: 0, drawn: 0, strength: 0 };
+    function drawContinentLabels(blockers) {
+      var strength = continentStrength(cam.dist);
+      if (strength <= 0.02) { lastContinentStats = { candidates: 0, drawn: 0, strength: 0 }; return []; }
+      var list = continentList();
+      if (!list.length) { lastContinentStats = { candidates: 0, drawn: 0, strength: strength }; return []; }
+      var px = labelSizes(cam.dist).continent;
+      labelCtx.font = '600 ' + px + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      var cands = [];
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        var sp = projectToScreen(mvp, model, [a.vec[0] * BORDER_R, a.vec[1] * BORDER_R, a.vec[2] * BORDER_R], W, H);
+        if (!sp || !sp.front) continue;
+        var w = labelCtx.measureText(a.text).width;
+        if (!boxInsideViewport(sp.x, sp.y, w, px)) continue;
+        cands.push({ iso: 'CONT:' + a.key, text: a.text, x: sp.x, y: sp.y, w: w, h: px,
+          rank: 1, priority: 5, cls: 'CONTINENT' });
+      }
+      var drawn = selectVisibleLabels(cands, { pad: 6, stickyPad: 3, previous: prevContinentSet, markerRects: blockers });
+      // Restrained by design: a continent name is context, not a destination. Faint, letter-spaced in effect
+      // by the larger size, and it never competes with a country name for attention.
+      labelCtx.lineWidth = 3.5;
+      labelCtx.strokeStyle = 'rgba(6,10,20,' + (0.55 * strength).toFixed(3) + ')';
+      labelCtx.fillStyle = 'rgba(206,220,238,' + (0.62 * strength).toFixed(3) + ')';
+      var next = {}, rects = [];
+      for (var d = 0; d < drawn.length; d++) {
+        next[drawn[d].iso] = 1;
+        labelCtx.strokeText(drawn[d].text, drawn[d].x, drawn[d].y);
+        labelCtx.fillText(drawn[d].text, drawn[d].x, drawn[d].y);
+        rects.push({ x0: drawn[d].x - drawn[d].w / 2 - 2, x1: drawn[d].x + drawn[d].w / 2 + 2,
+                     y0: drawn[d].y - drawn[d].h / 2 - 2, y1: drawn[d].y + drawn[d].h / 2 + 2 });
+      }
+      prevContinentSet = next;
+      lastContinentStats = { candidates: cands.length, drawn: drawn.length, strength: Math.round(strength * 100) / 100 };
+      return rects;
+    }
+
     // MAP-COUNTRY-BOUNDARY-1 §F/§G — project, filter, order, collide, paint. One 2D canvas, cleared and redrawn;
     // no DOM node is created or removed here, and nothing is allocated per label beyond the small candidate list.
     function drawCountryLabels() {
@@ -1335,7 +1767,10 @@
       if (!wantCountry && !admin1LabelsVisible()) { lastLabelStats = { candidates: 0, drawn: 0, tier: 0 }; lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
       labelCtx.scale(dpr, dpr);   // §F/§K DPR-aware: draw in CSS pixels onto a device-pixel backing store
 
-      var fontPx = 11;
+      // TEXTURE-3-R3 §G — the three sizes come from ONE ladder (17 / 12 / 9 px) so the hierarchy cannot
+      // drift into three near-identical sizes, which is what R2's captures showed.
+      var SIZES = labelSizes(cam.dist);
+      var fontPx = SIZES.country;
       // TEXTURE-3 — A TRADITIONAL-CHINESE-PREFERRING STACK, NOT JUST ANY CJK FONT. Han characters shared between
       // the two orthographies have DIFFERENT GLYPH SHAPES per region, and a generic `system-ui` can resolve them
       // through a Simplified-Chinese face — which would render zh-Hant text in zh-Hans letterforms and quietly
@@ -1354,17 +1789,24 @@
         // A priority country is never hidden by the zoom tier — an active shipment's country must stay readable
         // however far out the operator is looking.
         if (pri > 3 && c.rank > tier) continue;
-        var sp = projectToScreen(mvp, model, latLngToVec3(c.label[1], c.label[0], COUNTRY_R), W, H);
+        var sp = projectToScreen(mvp, model, latLngToVec3(c.label[1], c.label[0], BORDER_R), W, H);
         if (!sp || !sp.front) continue;                                   // §F rear hemisphere -> hidden
-        if (sp.x < -40 || sp.y < -20 || sp.x > W + 40 || sp.y > H + 20) continue;   // §F outside viewport -> hidden
+        // TEXTURE-3-R3 §G — "no clipped label at the globe edge". The old bound allowed an anchor up to 40 px
+        // OUTSIDE the viewport, so a label whose anchor was just off-screen was still painted and arrived cut
+        // in half at the frame edge - visible in R2's Europe capture as `Indiana`, `Rondônia` and `Ceará`
+        // sliced down the left margin. The test is now on the label's own BOX, measured below, not on its
+        // anchor point, so a label is either wholly readable or absent.
+        if (!sp.front) continue;
         // TEXTURE-3 — the DISPLAYED text is the resolved Traditional Chinese country name; the ISO code stays
         // the label's IDENTITY. That separation matters: `iso` keys the previous-frame set that gives the
         // collision pass its hysteresis, so keying on display text would make a language change look like a
         // different label and reintroduce the flicker the hysteresis exists to stop. The width is measured on
         // the text actually painted, so collision boxes stay honest — a Chinese name is wider than two letters.
         var disp = countryLabelText(c.iso);
-        cands.push({ iso: c.iso, text: disp, x: sp.x, y: sp.y, w: labelCtx.measureText(disp).width, h: fontPx,
-          rank: c.rank, priority: pri });
+        var cw = labelCtx.measureText(disp).width;
+        if (!boxInsideViewport(sp.x, sp.y, cw, fontPx)) continue;
+        cands.push({ iso: c.iso, text: disp, x: sp.x, y: sp.y, w: cw, h: fontPx,
+          rank: c.rank, priority: pri, cls: 'COUNTRY' });
       }
 
       // Shipment markers are the business objects; a geographic reference may never sit on top of one.
@@ -1378,6 +1820,9 @@
         markerRects.push({ x0: mp.x - half, x1: mp.x + half, y0: mp.y - half, y1: mp.y + half });
       }
 
+      // §G PRIORITY ORDER: shipment/route labels, then COUNTRY, then CONTINENT, then ADM1. Countries are
+      // laid out BEFORE continents and passed in as blockers, so where the two compete the country wins -
+      // which is the order §G specifies, even though the continent label is the larger of the two.
       var drawn = wantCountry ? selectVisibleLabels(cands, { pad: 3, stickyPad: 1, previous: prevLabelSet, markerRects: markerRects }) : [];
       var next = {};
       labelCtx.lineJoin = 'round';
@@ -1395,9 +1840,12 @@
       prevLabelSet = next;
       lastLabelStats = { candidates: cands.length, drawn: drawn.length, tier: tier };
 
-      // §G — ADM1 text is SUBORDINATE by construction: it is laid out after the country codes and is blocked by
-      // both those codes and the shipment markers, so a division code can never cover either.
-      drawAdmin1Labels(markerRects.concat(countryRects), fontPx);
+      // §G — the continent layer is laid out AFTER the countries and is blocked by them and by the markers.
+      var continentRects = drawContinentLabels(markerRects.concat(countryRects));
+
+      // §G — ADM1 text is SUBORDINATE by construction: it is laid out last and is blocked by the country
+      // names, the continent names and the shipment markers, so a division label can never cover any of them.
+      drawAdmin1Labels(markerRects.concat(countryRects, continentRects), fontPx);
     }
 
     // ==========================================================================================================
@@ -1439,22 +1887,36 @@
       var budget = admin1LabelBudget(lod);
       if (budget <= 0) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
 
-      var fontPx = Math.max(8, countryFontPx - 2);   // §G: strictly smaller than a country label
+      // §G — from the shared ladder, not "country - 2": at 12 px base that was a 10 px division label, an
+      // 18% difference that reads as one class of text at two sizes rather than as a hierarchy.
+      var fontPx = labelSizes(cam.dist).admin1;
       labelCtx.font = '600 ' + fontPx + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
       var list = admin1Data.admin1, cands = [];
       for (var i = 0; i < list.length; i++) {
         var d = list[i];
         if (admin1Countries && admin1Countries.indexOf(d.c) === -1) continue;
-        var sp = projectToScreen(mvp, model, latLngToVec3(d.l[1], d.l[0], ADMIN1_R), W, H);
+        var sp = projectToScreen(mvp, model, latLngToVec3(d.l[1], d.l[0], BORDER_R), W, H);
         if (!sp || !sp.front) continue;                                              // §F rear hemisphere -> hidden
-        if (sp.x < -30 || sp.y < -16 || sp.x > W + 30 || sp.y > H + 16) continue;     // §F outside viewport -> hidden
+        // §G — AND NOT AT THE LIMB. `front` admits the whole near hemisphere, which is why the Europe capture
+        // carried Indiana, Rondonia, Ceara and Nagasaki-ken squeezed against the horizon while the camera was
+        // looking at Germany. A division label is a REGIONAL aid: 0.55 keeps it within about 57 degrees of the
+        // view axis, which is the part of the globe the operator is actually reading.
+        if (sp.facing < ADMIN1_LABEL_MIN_FACING_) continue;
+        // §G — same whole-box rule as the other two classes; measured after the text is resolved, below.
         // TEXTURE-3 — the division's Traditional Chinese name where the pinned source verifiably has one, else
         // the existing English name, else the existing code. 356 of 3,835 divisions legitimately fall back, so
         // this layer is EXPECTED to be mixed-language and that must not block anything.
         var dTxt = admin1LabelText(d);
-        cands.push({ iso: d.c + '/' + d.k, text: dTxt, x: sp.x, y: sp.y,
-          w: labelCtx.measureText(dTxt).width, h: fontPx, rank: d.r, priority: 4 });
+        var dW = labelCtx.measureText(dTxt).width;
+        if (!boxInsideViewport(sp.x, sp.y, dW, fontPx)) continue;
+        // TEXTURE-3-R3 §D — IDENTITY IS `d.a` (Natural Earth adm1_code), NOT `d.c + '/' + d.k`.
+        // The old key was `country|displayedCode`, which §D prohibits and which is measurably not unique:
+        // 35 keys collide across 53 rows, and BA|BIH alone covers nine Bosnian cantons. This key is the
+        // label layer's collision-memory key (prevAdmin1Set), so nine cantons shared one memory slot and
+        // the placement stickiness applied to whichever of them was drawn last.
+        cands.push({ iso: d.a || (d.c + '/' + d.k), text: dTxt, x: sp.x, y: sp.y,
+          w: dW, h: fontPx, rank: d.r, priority: 6, cls: 'ADM1' });
       }
       // The budget is applied to the ORDERED candidate list, so what survives a crowded view is the highest-rank
       // divisions rather than whichever happened to be first in the dataset.
@@ -1476,38 +1938,110 @@
     function admin1BordersVisible() { return layerVisible(showAdmin1Borders, lod, ADMIN1_BORDER_MIN_LOD) && !!admin1Data; }
     function admin1LabelsVisible() { return layerVisible(showAdmin1Labels, lod, ADMIN1_LABEL_MIN_LOD) && !!admin1Data; }
 
-    // Built ONCE per dataset (and again ONLY on a GL context restore). Never called from draw().
-    function rebuildAdmin1Buffer() {
-      if (!admin1Data || !admin1Data.admin1 || !admin1Data.admin1.length) { admin1VertexCount = 0; return; }
+    // ==========================================================================================================
+    // TEXTURE-3-R3 §D — TWO CANONICAL TOPOLOGIES, ONE ACTIVE AT A TIME
+    // ==========================================================================================================
+    // WHY TWO, AND WHY NOT MERGED. Measured: only 7 of the ADM1 dataset's 67,976 unique edges match a
+    // country-dataset edge exactly. The 110m country rings and the 10m ADM1 rings are independent
+    // generalisations of the same boundaries, so there is no shared vertex to join them on, and welding them
+    // would need a ~0.2 deg (about 20 km) snap tolerance - large enough to also fuse genuinely separate islands.
+    //
+    // So each dataset gets its own internally-consistent topology and EXACTLY ONE IS DRAWN:
+    //   LOD 0-1 (global, medium)  COARSE  from world-countries-110m — coastline + international, 6,656 edges
+    //   LOD 2+  (regional, close) FINE    from world-admin1-10m     — coastline + international + ADM1, 67,976
+    //
+    // That is what makes §D's "shared country edge rendered once" true ACROSS layers and not merely within one:
+    // the previous arrangement drew the 110m country outline AND the 10m ADM1 outer rings simultaneously, so
+    // every coastline was drawn twice at two different resolutions, about 0.2 deg apart. Switching the whole set
+    // per LOD means the outline changes resolution at the LOD boundary - which is what LOD is - instead of two
+    // resolutions of the same coastline being visible at once.
+    //
+    // The ADM1 topology is the one that makes the hierarchy complete, because it is the only dataset that knows
+    // where divisions are. Its coastline and international classes come from the SAME rings as its ADM1 class,
+    // so an ADM1 border meets the coast at a shared vertex rather than near it: combined dangling endpoints are
+    // 0 (measured), against 4,554 if the ADM1 class were drawn against a 110m coastline.
+    var topoCoarse = null, topoFine = null;
+    var layersCoarse = null, layersFine = null;
+    var borderBufs = { COASTLINE: null, INTERNATIONAL: null, ADM1: null };
+    var borderCounts = { COASTLINE: 0, INTERNATIONAL: 0, ADM1: 0 };
+    var borderActive = 'NONE';
+    var topoBuildMs = { coarse: 0, fine: 0 }, borderUploadMs = { coarse: 0, fine: 0 };
+
+    function topologyModule() {
+      return (typeof window !== 'undefined' && window.KM && window.KM.geoTopology) ? window.KM.geoTopology : null;
+    }
+    function nowMs() {
+      try { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0; } catch (e) { return 0; }
+    }
+
+    function buildCoarseTopology() {
+      var T = topologyModule();
+      if (!T || !countryData || !countryData.countries || !countryData.countries.length) return;
+      var t0 = nowMs();
+      var f = T.countryFeatures(countryData);
+      topoCoarse = T.build(f.features);
+      layersCoarse = buildBorderLayers(topoCoarse, {});
+      topoBuildMs.coarse = Math.round((nowMs() - t0) * 10) / 10;
+    }
+    function buildFineTopology() {
+      var T = topologyModule();
+      if (!T || !admin1Data || !admin1Data.admin1 || !admin1Data.admin1.length) return;
+      var t0 = nowMs();
+      var f = T.admin1Features(admin1Data, decodeAdmin1Ring);
+      // §D — a missing stable source identity is a NAMED failure, never a silent fall back to a colliding key.
+      if (f.missing_identity) { degradeReason = 'ADMIN1_MISSING_SOURCE_IDENTITY_' + f.missing_identity; }
+      if (f.colliding_identity) { degradeReason = 'ADMIN1_COLLIDING_SOURCE_IDENTITY_' + f.colliding_identity; }
+      topoFine = T.build(f.features);
+      layersFine = buildBorderLayers(topoFine, { countries: admin1Countries });
+      topoBuildMs.fine = Math.round((nowMs() - t0) * 10) / 10;
+    }
+
+    // Upload whichever set the current LOD calls for. Called on LOD transition, on dataset attach and on context
+    // restore — never from draw() when the active set has not changed.
+    function uploadBorderSet(which) {
+      var set = which === 'FINE' ? layersFine : layersCoarse;
+      if (!set) { borderActive = 'NONE'; borderCounts = { COASTLINE: 0, INTERNATIONAL: 0, ADM1: 0 }; return; }
+      var t0 = nowMs();
       try {
-        var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-        admin1Info = buildAdmin1Segments(admin1Data, { countries: admin1Countries });
-        if (!buf.admin1) buf.admin1 = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf.admin1);
-        gl.bufferData(gl.ARRAY_BUFFER, admin1Info.positions, gl.STATIC_DRAW);
-        admin1VertexCount = admin1Info.vertexCount;
-        admin1BufferBuilds++;
-        var t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-        admin1BuildMs = Math.round((t1 - t0) * 10) / 10;
+        ['COASTLINE', 'INTERNATIONAL', 'ADM1'].forEach(function (cls) {
+          var L = set.layers[cls];
+          if (!L || !L.vertexCount) { borderCounts[cls] = 0; return; }
+          if (!borderBufs[cls]) borderBufs[cls] = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, borderBufs[cls]);
+          gl.bufferData(gl.ARRAY_BUFFER, L.positions, gl.STATIC_DRAW);
+          borderCounts[cls] = L.vertexCount;
+        });
+        borderActive = which;
+        countryVertexCount = borderCounts.COASTLINE + borderCounts.INTERNATIONAL;
+        admin1VertexCount = borderCounts.ADM1;
+        countryInfo = set.layers.INTERNATIONAL;
+        admin1Info = set.layers.ADM1;
+        countryBufferBuilds++;
+        if (which === 'FINE') { admin1BufferBuilds++; admin1BuildMs = topoBuildMs.fine; }
+        borderUploadMs[which === 'FINE' ? 'fine' : 'coarse'] = Math.round((nowMs() - t0) * 10) / 10;
       } catch (e) {
         // §H.7/§H.8 — a failed geographic layer must never take the map down. The base globe, the routes, the
         // markers and every interaction keep working; only this reference layer is absent, and it says why.
-        admin1VertexCount = 0; admin1Info = null; degradeReason = 'ADMIN1_BUFFER_BUILD_FAILED';
+        borderActive = 'NONE';
+        borderCounts = { COASTLINE: 0, INTERNATIONAL: 0, ADM1: 0 };
+        countryVertexCount = 0; admin1VertexCount = 0;
+        degradeReason = 'BORDER_BUFFER_BUILD_FAILED';
       }
     }
-    // MAP-COUNTRY-BOUNDARY-1 §I — built ONCE per globe instance, and again ONLY if the GL context is restored.
-    // Never called from draw(). STATIC_DRAW because the geometry is immutable for the life of the context.
-    function rebuildCountryBuffer() {
-      if (!countryData || !countryData.countries || !countryData.countries.length) { countryVertexCount = 0; return; }
-      try {
-        countryInfo = buildCountrySegments(countryData);
-        if (!buf.country) buf.country = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf.country);
-        gl.bufferData(gl.ARRAY_BUFFER, countryInfo.positions, gl.STATIC_DRAW);
-        countryVertexCount = countryInfo.vertexCount;
-        countryBufferBuilds++;
-      } catch (e) { countryVertexCount = 0; }
+
+    // The set the current LOD wants. FINE needs the ADM1 dataset to have arrived; until it does, COARSE is used
+    // at every LOD, which is exactly the pre-attach behaviour and is why a slow ADM1 fetch is never a blank map.
+    function wantedBorderSet() {
+      if (layersFine && layerVisible(showAdmin1Borders, lod, ADMIN1_BORDER_MIN_LOD)) return 'FINE';
+      return layersCoarse ? 'COARSE' : 'NONE';
     }
+    function syncBorderSet() {
+      var want = wantedBorderSet();
+      if (want !== borderActive) uploadBorderSet(want);
+    }
+
+    function rebuildAdmin1Buffer() { buildFineTopology(); syncBorderSet(); }
+    function rebuildCountryBuffer() { buildCoarseTopology(); syncBorderSet(); }
 
     function bindAttr(prog, name, b, size) { var loc = gl.getAttribLocation(prog, name); if (loc < 0) return; gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0); }
     function stride7(prog) { var lp = gl.getAttribLocation(prog, 'aPos'), lc = gl.getAttribLocation(prog, 'aColor'), S = 7 * 4; gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, S, 0); gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc, 4, gl.FLOAT, false, S, 3 * 4); }
@@ -1694,14 +2228,65 @@
           country_label_tier: countryLabelTier(cam.dist)
         };
       },
+      // TEXTURE-3-R3 §D/§E/§I — THE TOPOLOGY IS OBSERVABLE. Every number the report has to state about the
+      // canonical edge set is read from here rather than recomputed by the reporter: which set is active, how
+      // many duplicate edges were removed, the per-class edge and vertex counts, the endpoint connectivity,
+      // the anti-meridian census, and the separate timings §I asks to be measured separately.
+      getTopologyInfo: function () {
+        function setInfo(name, topo, layers, buildMs, uploadMs) {
+          if (!topo || !layers) return { available: false, reason: name + '_NOT_BUILT' };
+          var st = topo.stats;
+          var cls = {};
+          ['COASTLINE', 'INTERNATIONAL', 'ADM1'].forEach(function (c) {
+            var L = layers.layers[c];
+            cls[c] = {
+              edges: L.edgeCount, edges_unfiltered: L.edgeCountUnfiltered,
+              segments_after_subdivision: L.segmentCount, vertices: L.vertexCount,
+              buffer_bytes: L.positions.byteLength, mode: L.mode, width_px: L.widthPx, rank: L.rank,
+              max_source_arc_deg: Math.round((L.maxSourceArcDeg || 0) * 100) / 100
+            };
+          });
+          return {
+            available: true,
+            input_features: st.input.features, input_rings: st.input.rings,
+            directed_edges: st.input.directed_edges, degenerate_edges: st.input.degenerate_edges,
+            unique_edges: st.input.unique_edges,
+            duplicate_edges_removed: st.duplicate_edges_removed,
+            duplicate_percent: st.duplicate_percent,
+            classes: cls,
+            endpoints: st.endpoints, antimeridian: st.antimeridian,
+            topology_build_ms: buildMs, buffer_upload_ms: uploadMs
+          };
+        }
+        return {
+          active_set: borderActive,
+          active_reason: borderActive === 'FINE'
+            ? 'LOD_' + lod + '_AT_OR_ABOVE_' + ADMIN1_BORDER_MIN_LOD + '_AND_ADM1_DATA_PRESENT'
+            : (layersFine ? 'LOD_' + lod + '_BELOW_' + ADMIN1_BORDER_MIN_LOD : 'ADM1_DATA_NOT_ATTACHED'),
+          surface_radius: 1, border_radius: BORDER_R, border_depth_bias: BORDER_DEPTH_BIAS_,
+          arc_radius: ARC_R_, marker_radius: MARKER_R_,
+          adm1_border_strength: Math.round(admin1BorderStrength(cam.dist) * 100) / 100,
+          continent_label_strength: Math.round(continentStrength(cam.dist) * 100) / 100,
+          label_sizes_px: labelSizes(cam.dist),
+          label_counts: {
+            country: { candidates: lastLabelStats.candidates, drawn: lastLabelStats.drawn },
+            continent: { candidates: lastContinentStats.candidates, drawn: lastContinentStats.drawn },
+            adm1: { candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn,
+                    budget: lastAdmin1LabelStats.budget }
+          },
+          coarse: setInfo('COARSE', topoCoarse, layersCoarse, topoBuildMs.coarse, borderUploadMs.coarse),
+          fine: setInfo('FINE', topoFine, layersFine, topoBuildMs.fine, borderUploadMs.fine),
+          degrade_reason: degradeReason || null
+        };
+      },
       getAdmin1LayerInfo: function () {
         return {
           available: !!(admin1Data && admin1Data.admin1 && admin1Data.admin1.length),
           dataset: (admin1Data && admin1Data.meta) ? admin1Data.meta.dataset : null,
           resolution: (admin1Data && admin1Data.meta) ? admin1Data.meta.resolution : null,
-          division_count: admin1Info ? admin1Info.divisionCount : 0,
-          country_count: admin1Info ? admin1Info.countryCount : 0,
-          ring_count: admin1Info ? admin1Info.ringCount : 0,
+          division_count: (admin1Data && admin1Data.admin1) ? admin1Data.admin1.length : 0,
+          country_count: (topoFine && topoFine.stats) ? topoFine.stats.input.features : 0,
+          ring_count: (topoFine && topoFine.stats) ? topoFine.stats.input.rings : 0,
           segment_count: admin1Info ? admin1Info.segmentCount : 0,
           vertex_count: admin1VertexCount,
           buffer_bytes: admin1Info ? admin1Info.positions.byteLength : 0,
@@ -1709,7 +2294,7 @@
           buffer_builds: admin1BufferBuilds,
           build_ms: admin1BuildMs,
           max_source_arc_deg: admin1Info ? admin1Info.maxSourceArcDeg : 0,
-          radius: ADMIN1_R, max_segment_deg: ADMIN1_MAX_SEG_DEG,
+          radius: BORDER_R, max_segment_deg: COUNTRY_MAX_SEG_DEG,
           restricted_to_countries: admin1Countries ? admin1Countries.slice() : null,
           labels: { candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn, budget: lastAdmin1LabelStats.budget },
           degrade_reason: degradeReason || null
@@ -1763,7 +2348,12 @@
           gl.deleteTexture(tex); gl.deleteBuffer(buf.pos); gl.deleteBuffer(buf.nrm); gl.deleteBuffer(buf.uv);
           gl.deleteBuffer(buf.idx); gl.deleteBuffer(buf.pts); gl.deleteBuffer(buf.line);
           if (buf.country) gl.deleteBuffer(buf.country);
+          if (buf.admin1) gl.deleteBuffer(buf.admin1);
+          ['COASTLINE', 'INTERNATIONAL', 'ADM1'].forEach(function (cls) {
+            if (borderBufs[cls]) gl.deleteBuffer(borderBufs[cls]);
+          });
           gl.deleteProgram(progSphere); gl.deleteProgram(progPts); gl.deleteProgram(progLine);
+          if (progRibbon) gl.deleteProgram(progRibbon);
           var lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
         } catch (e) {}
         try { if (canvas.parentNode) canvas.parentNode.removeChild(canvas); } catch (e) {}

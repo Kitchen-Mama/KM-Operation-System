@@ -99,6 +99,7 @@ function harnessHtml(view, forceTier) {
     '<script src="assets/js/data/world-countries-110m.js"></script>',
     '<script src="assets/js/data/geo-names-zh-hant.js"></script>',
     '<script src="assets/js/core/geo-name-resolver.js"></script>',
+    '<script src="assets/js/lib/km-geo-topology.js"></script>',
     '<script src="assets/js/lib/km-globe.js"></script>',
     '<script>',
     'var VIEW = ' + v + ';',

@@ -185,7 +185,29 @@ eq(nonQuant, 0, 'F6 decoding is lossless — every value is exactly the generato
 var info = M.buildAdmin1Segments(D);
 ok(info.vertexCount > 0 && info.segmentCount > 0, 'F7 the shipped builder produces real line geometry (' + info.segmentCount + ' segments)');
 eq(info.divisionCount, D.admin1.length, 'F8 every division contributes geometry');
-ok(info.radius < M.COUNTRY_R, 'F9 ADM1 sits BELOW the country layer, so a national border always wins the depth test');
+// RESTATED IN TEXTURE-3-R3 §C/§D. 'ADM1 sits below the country layer' was a RADIUS trick: ADMIN1_R 1.0030
+// under COUNTRY_R 1.0035, so where a state border ran along a national border the depth test picked the
+// national one. §C removed both shells (they floated 22 km above the ground at Earth scale) and §D removed
+// the need for the trick entirely: an edge with two countries on it is classified INTERNATIONAL and is
+// therefore NOT IN the ADM1 bucket at all. There is nothing left to win a depth test against, which is a
+// strictly stronger guarantee than winning one.
+eq(info.radius, M.BORDER_R, 'F9 the ADM1 layer is on the surface (r=1), not on a shell of its own');
+eq(M.BORDER_STYLE.ADM1.rank, 3, 'F9 and is rank 3 in the hierarchy, below coastline and international');
+ok(M.BORDER_STYLE.INTERNATIONAL.rank < M.BORDER_STYLE.ADM1.rank,
+  'F9 with the international class ranked above it');
+(function () {
+  // EXECUTED, not asserted from source: a boundary shared by two divisions of DIFFERENT countries must
+  // classify as INTERNATIONAL and must not appear in the ADM1 bucket.
+  var T = require(path.join(ROOT, 'assets/js/lib/km-geo-topology.js'));
+  var square = [0, 0, 1, 0, 1, 1, 0, 1];
+  var right = [1, 0, 2, 0, 2, 1, 1, 1];
+  var sameCountry = T.build([{ id: 'A', country: 'XX', rings: [square] }, { id: 'B', country: 'XX', rings: [right] }]);
+  var crossCountry = T.build([{ id: 'A', country: 'XX', rings: [square] }, { id: 'B', country: 'YY', rings: [right] }]);
+  eq(sameCountry.edges.ADM1.length, 1, 'F9 two divisions of ONE country share exactly one ADM1 edge');
+  eq(sameCountry.edges.INTERNATIONAL.length, 0, 'F9 and none of it is international');
+  eq(crossCountry.edges.INTERNATIONAL.length, 1, 'F9 the same shared edge across TWO countries is international');
+  eq(crossCountry.edges.ADM1.length, 0, 'F9 and is NOT also in the ADM1 bucket — international supersedes it');
+})();
 // ANTIMERIDIAN: no emitted segment may span the globe. A chord longer than the subdivision limit means longitude
 // arithmetic leaked in somewhere and a line was drawn straight across the Pacific.
 var pos = info.positions, worst = 0, longSegs = 0;
@@ -211,7 +233,11 @@ ok(code(GLOBE).indexOf('ringsToSegments') !== -1 && (code(GLOBE).match(/function
   'F14 country and ADM1 share ONE rasteriser, so the antimeridian guarantee cannot be reimplemented and re-broken');
 // chord sag must not sink a border into the sphere
 var sag = 1 - Math.cos((M.ADMIN1_MAX_SEG_DEG / 2) * Math.PI / 180);
-ok(sag < (M.ADMIN1_R - 1) / 2, 'F15 worst chord sag ' + sag.toFixed(6) + ' is well under the ' + (M.ADMIN1_R - 1).toFixed(4) + ' surface offset — borders never sink into the globe');
+// RESTATED IN TEXTURE-3-R3 §C: the ADM1 layer no longer sits on a shell above the surface, so there is no
+// radial offset to sink through. The chord sag must instead stay under the DEPTH BIAS that separates the
+// boundary from the sphere - the same bound the country layer's suite now uses.
+ok(sag < M.BORDER_DEPTH_BIAS, 'F15 worst chord sag ' + sag.toFixed(6) + ' stays under the ' +
+  M.BORDER_DEPTH_BIAS + ' depth bias, so a subdivided border never sinks into the globe');
 
 // ================================================================================================================
 section('§G — label collision: markers and country codes always win');
@@ -233,9 +259,18 @@ var a2 = M.selectVisibleLabels(pair.slice().reverse(), { previous: {} }).map(fun
 eq(a1, ['HIGH'], 'G2 the higher-ranked division wins a collision');
 eq(a1, a2, 'G3 the winner does NOT depend on array order — the collision result is deterministic');
 // structural: ADM1 text is laid out after, and blocked by, the country codes
-ok(GC.indexOf('drawAdmin1Labels(markerRects.concat(countryRects)') !== -1,
-  'G4 division codes are blocked by BOTH the shipment markers and the country codes');
-ok(GC.indexOf('Math.max(8, countryFontPx - 2)') !== -1, 'G5 a division code is strictly SMALLER than a country code');
+// RESTATED IN TEXTURE-3-R3 §G: the continent layer was added, so the ADM1 blocker list gained a third
+// member. §G's priority order is shipment, country, continent, ADM1 - so ADM1 is blocked by all three.
+ok(GC.indexOf('drawAdmin1Labels(markerRects.concat(countryRects, continentRects)') !== -1,
+  'G4 division labels are blocked by the shipment markers, the country names AND the continent names');
+// RESTATED IN TEXTURE-3-R3 §G. 'country - 2 px' was true but far too weak to satisfy §G's requirement that
+// the hierarchy be VISIBLE: at an 11 px country label it produced a 9 px division label, an 18% difference
+// that R2's captures showed reading as one class of text at two sizes. The sizes now come from one ladder.
+var SZ = M.labelSizes(2.0);
+ok(SZ.admin1 < SZ.country, 'G5 a division label is strictly SMALLER than a country label (' + SZ.admin1 + ' < ' + SZ.country + ')');
+ok(SZ.country < SZ.continent, 'G5 and a country label is smaller than a continent label (' + SZ.country + ' < ' + SZ.continent + ')');
+ok(SZ.admin1 / SZ.country <= 0.8, 'G5 with the division/country ratio at or below 0.8 (' + (SZ.admin1 / SZ.country).toFixed(2) + ')');
+ok(SZ.continent / SZ.country >= 1.3, 'G5 and the continent/country ratio at or above 1.3 (' + (SZ.continent / SZ.country).toFixed(2) + ')');
 ok(GC.indexOf('if (!sp || !sp.front) continue;') !== -1, 'G6 rear-hemisphere division codes are hidden — never shown through the globe');
 // front/back projection really does reject the far side
 var mvp = M.mat4Mul(M.mat4Perspective(45 * Math.PI / 180, 1, 0.01, 100), M.mat4Mul(M.mat4Translate(0, 0, -2.0), M.modelMatrix(0, 0)));
@@ -266,7 +301,11 @@ ok(labelFn.indexOf('wantCountry ? countryData.countries : []') !== -1,
 ok(labelFn.indexOf('drawAdmin1Labels(') !== -1 && labelFn.lastIndexOf('drawAdmin1Labels(') > labelFn.indexOf('!wantCountry'),
   'H4d ADM1 labels are still drawn on that path, so the two toggles are genuinely independent');
 ok(GC.indexOf('setAdmin1Countries') !== -1, 'H5 the degradation ladder can restrict ADM1 to a country subset');
-ok(GC.indexOf('ADMIN1_BUFFER_BUILD_FAILED') !== -1, 'H6 a failed ADM1 build is NAMED, not swallowed');
+// RESTATED IN TEXTURE-3-R3 §D: the two per-layer buffer builders became one ladder-aware uploader, so the
+// named failure covers all three classes rather than the ADM1 one alone.
+ok(GC.indexOf('BORDER_BUFFER_BUILD_FAILED') !== -1, 'H6 a failed border build is NAMED, not swallowed');
+ok(GC.indexOf('ADMIN1_MISSING_SOURCE_IDENTITY_') !== -1,
+  'H6 and a missing stable source identity is named too — never a silent fall back to a colliding key');
 ok(MC.indexOf("state.admin1AssetState = 'FAILED'") !== -1, 'H7 a failed asset fetch is recorded as a state, not an exception');
 ok(MC.indexOf('The map, routes and shipments are unaffected') !== -1,
   'H8 a geographic-layer failure explicitly does NOT take the shipment map down (§H.8)');
@@ -283,9 +322,20 @@ function extractFn(src, name) {
 var drawFn = code(extractFn(GLOBE, 'draw'));
 ok(drawFn.indexOf('buildAdmin1Segments') === -1, 'H9 the render loop NEVER rebuilds ADM1 geometry');
 ok(drawFn.indexOf('decodeAdmin1Ring') === -1, 'H10 the render loop NEVER re-parses the ADM1 asset');
-ok(drawFn.indexOf('buf.admin1') !== -1, 'H11 the render loop only BINDS the pre-built ADM1 buffer');
-var rebuildFn = code(extractFn(GLOBE, 'rebuildAdmin1Buffer'));
-ok(rebuildFn.indexOf('STATIC_DRAW') !== -1, 'H12 the ADM1 buffer is STATIC_DRAW — immutable for the life of the context');
+ok(drawFn.indexOf('borderBufs[cls]') !== -1, 'H11 the render loop only BINDS the pre-built class buffers');
+// Scoped to the BOUNDARY path: the arc and marker layers legitimately upload per frame because their
+// geometry is shipment data that changes; the boundary layers never do.
+// `drawFn` is COMMENT-STRIPPED, so '// arcs' is not in it: slicing to indexOf('// arcs') === -1 silently
+// ran to the end of the function and swallowed the arc layer's legitimate per-frame upload. The end marker
+// has to be code.
+var bSlice = drawFn.slice(drawFn.indexOf('activeSet && showBorders'), drawFn.indexOf('if (lineCount)'));
+ok(bSlice.length > 100 && bSlice.indexOf('bufferData') === -1,
+  'H11 and the boundary path performs no upload of its own');
+var rebuildFn = code(extractFn(GLOBE, 'uploadBorderSet'));
+ok(rebuildFn.indexOf('STATIC_DRAW') !== -1, 'H12 the class buffers are STATIC_DRAW — immutable for the life of the context');
+// §D — the topology itself is built OUTSIDE the upload path and outside draw(), once per dataset.
+ok(code(extractFn(GLOBE, 'buildFineTopology')).indexOf('admin1Features') !== -1,
+  'H12 the fine topology is built in its own function, not in the render or upload path');
 ok(GC.indexOf('webglcontextrestored') !== -1 && GC.indexOf('rebuildAdmin1Buffer(); schedule();') !== -1,
   'H13 a restored GL context rebuilds the ADM1 buffer rather than leaving it dangling');
 var lodFn = code(extractFn(GLOBE, 'updateLod'));

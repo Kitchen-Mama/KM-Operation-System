@@ -274,22 +274,56 @@ function main() {
     //   l = [lng, lat] label anchor      r = Natural Earth labelrank   t = code kind (0 ISO-alpha, 1 name
     //   because the ISO subdivision code is numeric, 2 name because there is no ISO code)
     //   g = rings, each a zigzag-varint string
-    var div = { c: country, k: lab.code, l: [roundCoord(lo), roundCoord(la)],
+    //
+    // TEXTURE-3-R3 §D — `a` = adm1_code, THE STABLE SOURCE FEATURE IDENTITY, added because §D prohibits the two
+    // keys this asset previously forced its consumers to invent an identity from, and MEASUREMENT shows why:
+    //   `country|displayedCode`  (c|k) has 35 colliding keys hiding 53 rows. BA|BIH covers NINE Bosnian
+    //                            cantons, MG|F five Malagasy provinces, IE|D three Dublin councils.
+    //   `country|fullEnglishName` has 13 colliding keys hiding 13 rows.
+    // Either would merge nine cantons into one geometry identity. `adm1_code` is Natural Earth's own per-feature
+    // key (e.g. "USA-3514"), unique by construction in the pinned source, and the generator ASSERTS its
+    // uniqueness across the whole emitted asset rather than assuming it.
+    // `iso_3166_2` is deliberately NOT carried. It was added and then removed: it cost 46 KB of the asset and
+    // nothing consumes it — it is not a geometry identity (absent or non-unique for exactly the rows above) and
+    // it is not in the §F display-name authority for divisions. A speculative 46 KB on every page load is a real
+    // cost paid for an imagined future reader.
+    var div = { c: country, k: lab.code, a: String(p.adm1_code == null ? '' : p.adm1_code).trim(),
+      l: [roundCoord(lo), roundCoord(la)],
       r: isFinite(Number(p.labelrank)) ? Number(p.labelrank) : 9,
       t: lab.kind === 'ISO_3166_2_ALPHA' ? 0 : (lab.kind === 'NAME_ISO_CODE_IS_NUMERIC' ? 1 : 2),
       g: rings };
+    if (!div.a) { excluded.push({ country: country, name: lab.name, reason: 'NO_ADM1_CODE_SOURCE_IDENTITY' }); return; }
     var fullName = lab.name || lab.code;
     if (fullName !== lab.code) div.n = fullName;
     if (!haveLabel) div.f = 1;                 // label anchor fell back to the bbox centre
     divisions.push(div);
   });
 
-  // DETERMINISTIC ORDER — country, then code, then name. Nothing downstream may depend on source order.
+  // TEXTURE-3-R3 §D — THE IDENTITY IS ASSERTED UNIQUE HERE, at the only place that can still fail loudly.
+  // An identity field that turns out to collide is worse than no identity field: every consumer would trust it.
+  var idSeen = {}, idDup = [];
+  divisions.forEach(function (d) {
+    if (idSeen[d.a]) idDup.push(d.a);
+    idSeen[d.a] = (idSeen[d.a] || 0) + 1;
+  });
+  if (idDup.length) {
+    console.error('REFUSED: adm1_code is not unique in this source — ' + idDup.length +
+      ' duplicate(s), e.g. ' + idDup.slice(0, 5).join(', '));
+    console.error('The vendored asset would then carry a geometry identity that silently merges features, ' +
+      'which is exactly what §D prohibits. Fix the source or the identity, do not write this file.');
+    process.exit(1);
+  }
+
+  // DETERMINISTIC ORDER — country, then code, then the stable source identity as the final tie-break. The
+  // previous ordering fell back to the NAME, which is not a total order: nine BA|BIH cantons with distinct
+  // geometry and, in some cases, equal names could legitimately swap places between runs of the same input.
+  // Sorting on `a` last makes the emitted order a function of the source alone.
   divisions.sort(function (a, b) {
     if (a.c !== b.c) return a.c < b.c ? -1 : 1;
     if (a.k !== b.k) return a.k < b.k ? -1 : 1;
     var an = a.n || a.k, bn = b.n || b.k;
-    return an < bn ? -1 : an > bn ? 1 : 0;
+    if (an !== bn) return an < bn ? -1 : 1;
+    return a.a < b.a ? -1 : a.a > b.a ? 1 : 0;
   });
   excluded.sort(function (a, b) { return String(a.name) < String(b.name) ? -1 : 1; });
 

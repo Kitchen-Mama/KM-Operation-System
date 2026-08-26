@@ -295,7 +295,10 @@ ok(/measureText\(dTxt\)/.test(GLOBE_C), 'I7 measured on the painted text too');
   ok(GLOBE.indexOf(f) !== -1, 'I8 the label font stack names the zh-TW face ' + f);
 });
 var fontLines = GLOBE.match(/labelCtx\.font =[^;]*/g) || [];
-eq(fontLines.length, 2, 'I9 exactly two label font declarations (country + ADM1)');
+// RESTATED IN TEXTURE-3-R3 §G: a CONTINENT label layer was added, so there are now three font declarations.
+// The load-bearing half of this assertion is the next line - EVERY declaration must carry the zh-TW stack -
+// and it now covers three layers instead of two.
+eq(fontLines.length, 3, 'I9 three label font declarations (continent + country + ADM1)');
 ok(fontLines.every(function (l) { return l.indexOf('JhengHei') !== -1; }), 'I9 and BOTH carry the CJK stack');
 ok(/return String\(iso == null \? '' : iso\);/.test(GLOBE_C), 'I10 with no resolver the country label falls back to the ISO code');
 ok((GLOBE_C.match(/catch \(e\) \{\}/g) || []).length >= 2, 'I11 both resolver calls are guarded - a missing asset degrades language only');

@@ -168,8 +168,15 @@ ok(noStrings(extractFn(GLOBE, 'buildCountrySegments')).indexOf('slerp(') === -1 
    noStrings(extractFn(GLOBE, 'buildAdmin1Segments')).indexOf('slerp(') === -1,
   '4. neither boundary builder interpolates on its own — both go through the one shared rasteriser');
 // sag: a subdivided chord must never sink below the surface offset
+// RESTATED IN TEXTURE-3-R3 §C. The original compared the chord sag against the boundary layer's RADIAL
+// OFFSET (COUNTRY_R - 1 = 0.0035). §C removed that offset - the layer now sits at exactly r=1 and is
+// separated from the surface in the DEPTH BUFFER - so the old comparison divides by zero and the number it
+// compared against no longer exists. The intent, 'a subdivided chord must never sink far enough to be
+// swallowed by the surface', is unchanged; the thing it must stay under is now the depth bias.
 var sag = 1 - Math.cos((M.COUNTRY_MAX_SEG_DEG / 2) * DEG);
-ok(sag < (M.COUNTRY_R - 1) / 5, '4. worst chord sag ' + sag.toFixed(6) + ' is far under the ' + (M.COUNTRY_R - 1).toFixed(4) + ' surface offset');
+ok(sag < M.BORDER_DEPTH_BIAS, '4. worst chord sag ' + sag.toFixed(6) + ' stays under the ' +
+  M.BORDER_DEPTH_BIAS + ' depth bias that separates the boundary from the surface');
+ok(M.BORDER_R === 1, '4. and the boundary layer is ON the surface (r=1), so there is no radial offset to sink through');
 ok(built.maxSourceArcDeg > 10, '4. (the source really does contain long edges — ' + built.maxSourceArcDeg.toFixed(1) + ' deg — so subdivision is not theoretical)');
 
 // ==========================================================================================================
@@ -222,7 +229,14 @@ ok(/never writes one, never derives a[\s\S]{0,12}coordinate from one/.test(MAPJS
 section('7. labels are hidden on the rear hemisphere');
 // ==========================================================================================================
 ok(/if \(!sp \|\| !sp\.front\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')), '7. a label with front=false is skipped');
-ok(/sp\.x < -40 \|\| sp\.y < -20 \|\| sp\.x > W \+ 40 \|\| sp\.y > H \+ 20/.test(extractFn(GLOBE, 'drawCountryLabels')), '7. and one outside the viewport is skipped');
+// RESTATED IN TEXTURE-3-R3 §G. The original bound allowed a label ANCHOR up to 40 px outside the viewport,
+// which is how R2's captures ended up with text sliced down the frame edge. §G requires no clipped label, so
+// the test is now on the label's whole BOX and is shared by all three label classes.
+ok(/function boxInsideViewport\(x, y, w, h\)/.test(GLOBE), '7. there is ONE whole-box viewport test');
+ok(/return \(x - hw\) >= 0 && \(x \+ hw\) <= W && \(y - hh\) >= 0 && \(y \+ hh\) <= H;/.test(GLOBE),
+  '7. and it requires the ENTIRE box inside the viewport, not just the anchor');
+ok(/if \(!boxInsideViewport\(sp\.x, sp\.y, cw, fontPx\)\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')),
+  '7. and a country label whose box would be clipped is skipped');
 // EXECUTE the real projection: the same authority marker hit-testing uses
 var mvpI = M.mat4Mul(M.mat4Perspective(45 * DEG, 1, 0.01, 100), M.mat4Mul(M.mat4Translate(0, 0, -3), M.modelMatrix(0, 0)));
 var modelI = M.modelMatrix(0, 0);
@@ -316,7 +330,8 @@ ok(/borders: !!state\.showCountryBorders, labels: !!state\.showCountryLabels/.te
 var api = GLOBE.slice(GLOBE.indexOf('setCountryLayers: function'), GLOBE.indexOf('setCountryPriority: function'));
 ok(/if \(o\.borders != null\) showBorders = !!o\.borders;/.test(api) && /if \(o\.labels != null\) showLabels = !!o\.labels;/.test(api),
   '11. the globe applies them independently — neither implies the other');
-ok(/if \(showBorders && countryVertexCount\)/.test(GLOBE), '11. borders off => no boundary draw call');
+// RESTATED IN TEXTURE-3-R3 §D: the single country buffer became three canonical classes behind one guard.
+ok(/if \(activeSet && showBorders\) \{/.test(GLOBE), '11. borders off => no boundary draw call at all');
 // MAP-VISUAL-REAL-EARTH-LOD-1 — STRENGTHENED. This used to pin the literal early return
 // "if (!showLabels || !countryData) return", which was correct while the overlay carried ONE layer and became a
 // DEFECT once it carried two: bailing there switched the ADM1 labels off whenever country labels were off,
@@ -378,14 +393,24 @@ ok(noStrings(GLOBE).indexOf('simplify(') === -1, '13. and no simplifier ships in
 section('14. the asset and its GPU buffer are not rebuilt per frame');
 // ==========================================================================================================
 var drawSrc = extractFn(GLOBE, 'draw');
-ok(/gl\.drawArrays\(gl\.LINES, 0, countryVertexCount\)/.test(drawSrc), '14. draw() issues ONE boundary draw call');
+// RESTATED IN TEXTURE-3-R3 §D/§E. There are now THREE boundary classes, so there are three draw calls - one
+// per class, which is the minimum possible once the classes have different styles. The intent of the
+// original - no per-frame geometry work and no per-frame upload - is asserted immediately below and is
+// unchanged.
+var clsDraws = (drawSrc.match(/gl\.drawArrays\(gl\.(LINES|TRIANGLES), 0, n\)/g) || []).length;
+eq(clsDraws, 2, '14. draw() issues exactly one draw call per boundary class (lines + ribbon)');
+ok(/\['COASTLINE', 'ADM1', 'INTERNATIONAL'\]\.forEach/.test(drawSrc), '14. over the three canonical classes');
 ok(drawSrc.indexOf('buildCountrySegments') === -1, '14. and never rebuilds the geometry');
 ok(drawSrc.indexOf('rebuildCountryBuffer') === -1, '14. and never rebuilds the buffer');
-var boundaryDraw = drawSrc.slice(drawSrc.indexOf('if (showBorders'), drawSrc.indexOf('// arcs'));
+var boundaryDraw = drawSrc.slice(drawSrc.indexOf('if (activeSet && showBorders'), drawSrc.indexOf('// arcs'));
 ok(boundaryDraw.indexOf('bufferData') === -1, '14. the boundary path performs NO bufferData upload per frame');
-ok(/gl\.bufferData\(gl\.ARRAY_BUFFER, countryInfo\.positions, gl\.STATIC_DRAW\)/.test(GLOBE), '14. the buffer is uploaded once as STATIC_DRAW');
-var rb = extractFn(GLOBE, 'rebuildCountryBuffer');
-ok(/if \(!buf\.country\) buf\.country = gl\.createBuffer\(\);/.test(rb), '14. the GL buffer object is created once and reused');
+ok(/gl\.bufferData\(gl\.ARRAY_BUFFER, L\.positions, gl\.STATIC_DRAW\)/.test(GLOBE),
+  '14. each class buffer is uploaded once as STATIC_DRAW');
+var rb = extractFn(GLOBE, 'uploadBorderSet');
+ok(/if \(!borderBufs\[cls\]\) borderBufs\[cls\] = gl\.createBuffer\(\);/.test(rb),
+  '14. the GL buffer object is created once per class and reused');
+ok(rb.indexOf('KM.geoTopology') === -1 && extractFn(GLOBE, 'draw').indexOf('geoTopology') === -1,
+  '14. and the topology is never built from the upload path or the render loop');
 ok(/rebuildCountryBuffer\(\);   \/\/ ONCE, at creation/.test(GLOBE), '14. and built once at creation');
 ok(/webglcontextrestored[\s\S]{0,200}rebuildCountryBuffer\(\)/.test(GLOBE), '14. a context restore rebuilds it safely');
 eq(built.vertexCount, 18140, '14. 18,140 line vertices');
@@ -410,10 +435,19 @@ section('15/16. route arcs, markers, current position and ETA are untouched');
 ok(/latLngToVec3\(p\[0\], p\[1\], 1\.006\)/.test(GLOBE), '15. route arcs still build at r=1.006');
 ok(/var steps = 40;   \/\/ UI-GLOBE-01/.test(GLOBE), '15. with the same 40-step great-circle subdivision');
 ok(/latLngToVec3\(m\.lat, m\.lng, m\.elev \|\| 1\.012\)/.test(GLOBE), '15. markers still build at their own elevation');
-ok(M.COUNTRY_R < 1.006, '15. the boundary radius (' + M.COUNTRY_R + ') is BELOW the arcs, so a border can never draw over a route');
-ok(M.COUNTRY_R > 1.0, '15. and above the sphere, so it is not z-fighting the surface');
+// RESTATED IN TEXTURE-3-R3 §C. The boundary layer no longer HAS a radius above the surface - that was the
+// 'obvious second outer sphere' §C prohibits, and at Earth scale 0.0035 is 22 km of altitude whose parallax
+// against the ground diverges towards the limb. Both halves of the original claim are still asserted, now
+// against the mechanism that actually provides them.
+eq(M.BORDER_R, 1, '15. the boundary layer is ON the surface, not on a shell above it');
+ok(M.BORDER_R < M.ARC_R && M.ARC_R < M.MARKER_R,
+  '15. and is below the arcs (' + M.ARC_R + ') and markers (' + M.MARKER_R + '), so a border never draws over a route');
+ok(M.BORDER_DEPTH_BIAS > 0 && M.BORDER_DEPTH_BIAS < 0.001,
+  '15. separation from the surface is a small depth bias (' + M.BORDER_DEPTH_BIAS + '), not altitude');
+// The bias only has to win where the tessellated sphere touches the true sphere: elsewhere the mesh chords
+// already sit INSIDE r=1 by up to 1-cos(1.875deg).
 // draw order: sphere -> boundaries -> arcs -> markers
-var iSphere = drawSrc.indexOf('drawElements'), iBorder = drawSrc.indexOf('countryVertexCount'),
+var iSphere = drawSrc.indexOf('drawElements'), iBorder = drawSrc.indexOf('activeSet && showBorders'),
     iArc = drawSrc.indexOf('if (lineCount)'), iPts = drawSrc.indexOf('if (ptCount)');
 ok(iSphere < iBorder && iBorder < iArc && iArc < iPts, '15. draw order is sphere -> boundaries -> arcs -> markers');
 // the ETA and current-position code paths are not in this diff at all

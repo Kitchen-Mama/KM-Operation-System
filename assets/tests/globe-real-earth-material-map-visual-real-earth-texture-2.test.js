@@ -309,12 +309,25 @@ ok(/if\(uDetail>0\.0005\)\{/.test(GLOBE), 'G8 and the four extra texture taps ar
 section('H. borders, labels and markers keep priority over the surface');
 // ================================================================================================================
 ok(/col\+=vec3\(0\.10,0\.20,0\.38\)\*rim;/.test(GLOBE), 'H1 the atmosphere rim is byte-identical to the signed-off value');
-ok(/COUNTRY_R = 1\.003/.test(GLOBE) && /ADMIN1_R = 1\.003/.test(GLOBE),
-  'H2 border radii are UNCHANGED — borders neither sink into nor float above the new surface');
+// RESTATED IN TEXTURE-3-R3 §C. This asserted the border radii were UNCHANGED by the texture work, and its
+// intent - 'borders neither sink into nor float above the surface' - is exactly what §C then found to be
+// FALSE of those radii: 1.0035 and 1.0030 are two shells ABOVE the surface, 22 km up at Earth scale, whose
+// parallax against the ground diverges towards the limb. The intent is now met properly: the borders are ON
+// the surface and separated in depth.
+eq(KMG.math.BORDER_R, 1, 'H2 borders sit ON the surface - they neither sink into nor float above it');
+ok(KMG.math.BORDER_DEPTH_BIAS > 0 && KMG.math.BORDER_DEPTH_BIAS < 0.001,
+  'H2 with a small depth bias, not altitude, keeping them off the sphere (' + KMG.math.BORDER_DEPTH_BIAS + ')');
 ok(GC.indexOf('uploadAlbedo') !== -1 && code(GLOBE).indexOf('bakeBorders') === -1,
   'H3 borders are never baked into the albedo — they stay an independent vector layer');
-ok(/FS_LINE = 'precision mediump float;varying vec4 vColor;void main\(\)\{gl_FragColor=vColor;\}'/.test(GLOBE),
-  'H4 the line shader is untouched, so borders are not gamma-processed with the surface');
+// RESTATED IN TEXTURE-3-R3 §C/§E. The line shader IS changed - it gained a depth bias (§C) and an alpha
+// multiplier for the ADM1 fade (§E). The intent was that borders are not gamma-processed with the surface,
+// and that is asserted directly instead of by requiring the shader to be byte-identical.
+ok(/uniform float uAlphaMul;varying vec4 vColor;void main\(\)\{gl_FragColor=vec4\(vColor\.rgb,vColor\.a\*uAlphaMul\)/.test(GLOBE),
+  'H4 the line shader passes colour through unchanged apart from alpha');
+ok(!/pow\(/.test(GLOBE.slice(GLOBE.indexOf('var FS_LINE'), GLOBE.indexOf('var VS_RIBBON'))),
+  'H4 so borders are NOT gamma-processed with the surface - no pow() anywhere in the line shader');
+ok(!/uDecode/.test(GLOBE.slice(GLOBE.indexOf('var FS_LINE'), GLOBE.indexOf('var VS_RIBBON'))),
+  'H4 and the sRGB decode uniform never reaches it');
 ok(/var c = m\.color \|\| \[0, 0\.5, 0\.73\]/.test(GLOBE) && /var c = a\.color \|\| \[0, 0\.5, 0\.73\]/.test(GLOBE),
   'H5 marker and arc colours still come from the data — the new material changed no business colour');
 ok(MAT.OCEAN_SPEC <= 0.35, 'H6 ocean specular is restrained (' + MAT.OCEAN_SPEC + '), so water stays quieter than routes');
