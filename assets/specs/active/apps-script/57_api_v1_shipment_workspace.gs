@@ -59,6 +59,25 @@ var SHIP_WS_PAGE_DEFAULT_ = 500;
 // PURE helpers (deterministic; no clock / no Spreadsheet)
 // --------------------------------------------------------------------------------------------------------
 function shipWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+// F1-7N-FB-4A §E — DATE-ONLY projection for the date-formatted shipment columns (eta / etd).
+//
+// THIS IS THE HALF OF THE ETA DEFECT THAT LIVED ON THE READ SIDE. shipments.eta is a DATE-FORMATTED column, so
+// getValues() hands back a Date OBJECT. shipWsStr_ is String(v), which turns that into
+// 'Thu Oct 15 2026 00:00:00 GMT+0800 (…)'. The Global Logistics Map tests an ETA with /^\d{4}-\d{2}-\d{2}$/
+// before putting it into its <input type="date">, so a perfectly good persisted ETA rendered as a BLANK date box
+// and a nonsense card line — indistinguishable from "the write did not happen".
+//
+// The legacy whole-DB read never had this problem because 02_ formatValue_ normalizes every Date to 'yyyy-MM-dd'
+// before it leaves the server. When the map moved to this SCOPED workspace it lost that normalization. Restoring
+// it here makes the scoped read agree with the broad read it replaced — the same contract, not a new one, and
+// the same timezone authority (Session.getScriptTimeZone()). Non-date values pass through untouched, so a row
+// that already stores plain text is byte-identical to before.
+function shipWsDateOnly_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]' && typeof shipEtaDateOnly_ === 'function') {
+    return shipEtaDateOnly_(v);
+  }
+  return shipWsStr_(v);
+}
 function shipWsNum_(v) { if (v === '' || v === null || v === undefined) return 0; var n = Number(v); return isFinite(n) ? n : 0; }
 function shipWsLc_(v) { return shipWsStr_(v).toLowerCase(); }
 
@@ -120,7 +139,7 @@ function shipMapShipment_(r, linesByShipment, docsByShipment) {
     company: shipWsStr_(r.company), country: shipWsStr_(r.country), marketplace: shipWsStr_(r.marketplace),
     sourceWarehouseId: shipWsStr_(r.source_warehouse_id), destinationWarehouseId: destWh,
     carrierId: shipWsStr_(r.carrier_id), shippingMethod: shipWsStr_(r.shipping_method), status: shipWsStr_(r.status),
-    etd: shipWsStr_(r.etd), eta: shipWsStr_(r.eta),
+    etd: shipWsDateOnly_(r.etd), eta: shipWsDateOnly_(r.eta),
     trackingNumber: shipWsStr_(r.tracking_number), containerNo: shipWsStr_(r.container_no),
     lineCount: lineCount, sumShipmentQty: totalQty, sumReceivedQty: receivedQty,
     updatedAt: shipWsStr_(r.updated_at),
@@ -169,7 +188,7 @@ function shipSortShipments_(rows, sort) {
     switch (field) {
       case 'status': return shipWsStr_(p.status); case 'company': return shipWsStr_(p.company);
       case 'country': return shipWsStr_(p.country); case 'shipment_no': case 'shipmentNo': return shipWsStr_(p.shipmentNo);
-      case 'etd': return shipWsStr_(p.etd); case 'eta': return shipWsStr_(p.eta);
+      case 'etd': return shipWsStr_(p.etd); case 'eta': return shipWsStr_(p.eta);   // already date-only via shipWsDateOnly_ in the mapper
       case 'created_at': case 'createdAt': return shipWsStr_(p.raw && p.raw.created_at);
       default: return shipWsStr_(p.updatedAt);
     }

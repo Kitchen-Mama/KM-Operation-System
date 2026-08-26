@@ -516,3 +516,53 @@ These are the **current live columns** for the runtime tables the map reads. **D
 
 - **`SRT-TOP-CN-DE-TR-P-V1`** (DE route, 15 nodes) — review Node 12 `BELGIUM_IMPORT_CUSTOMS` / "Belgium Import Customs" and Node 13 `BELGIUM_CARRIER_HANDOVER` / "Belgium Carrier Handover": confirm whether the real path is **Germany Transit Hub → Belgium Import / Handover → Final Delivery**. If real, keep as-is; if the DE route does not transit Belgium, correct the route nodes in a later pass. **Not changed this round.**
 - **Alashankou / Khorgos Gateway** — remains an **unresolved route variant**; the actual gateway must be chosen during `logistics_locations` mapping. **Do not assume a gateway this round.**
+
+## 32. Country Boundary Layer — DEFERRED requirement (F1-7N-FB-4A §I; audited 2026-08-26, NOT implemented)
+
+**Status: DEFERRED. Scoped here for the later visual-unification / globe-material task. Nothing was implemented
+this round; no dataset was downloaded and no network dependency was added.**
+
+### 32.1 Audit of what exists today
+
+The globe carries exactly **one** vendored vector dataset: `assets/js/data/world-land-110m.js` — Natural Earth
+110m **land outline**, **128 rings / 5,122 points**, simplified to 0.1°, `[lng,lat]` rings, loaded as a
+same-origin `<script>` that sets `window.KM_WORLD_LAND`.
+
+- It carries **no per-ring country name, no ISO code and no administrative attribution** — it is a coastline /
+  land mask, not an administrative boundary layer.
+- It is consumed only by `buildEarthCanvas()` in `assets/js/lib/km-globe.js`, which **rasterizes** it into a
+  2048×1024 equirectangular canvas texture. There is **no vector overlay pipeline** on the globe at all.
+- Provenance: Natural Earth is **public domain** (no attribution required). That settles the licence for the
+  existing asset **only**.
+
+**Conclusion: there is no reusable administrative-boundary asset.** A boundary layer requires a new dataset.
+
+### 32.2 Scoped requirement for the later task
+
+1. **Vector country boundary layer** — rendered as vector geometry, not baked into the earth texture, so boundary
+   line weight stays constant on screen as the globe zooms.
+2. **Country ISO labels** (`US`, `CN`, `CA`, …) drawn at each country's label point.
+3. **Scale-aware label visibility** — a label appears only when its country subtends enough screen area; the set
+   is monotonic in zoom (a label that has appeared does not flicker out on a small camera move).
+4. **Island label points** — small landmasses get an explicit label anchor rather than a polygon centroid, which
+   for archipelagos falls in the sea.
+5. **Collision suppression** — overlapping labels are dropped by a deterministic priority (larger subtended area
+   first, then ISO code ascending), never by draw order or by a random tie-break.
+6. **No coordinate jitter** — labels and boundaries are placed from the dataset's own coordinates. No snapping,
+   nudging or per-frame repositioning.
+7. **No route/event geometry change** — this layer is presentation only. `shipment_routes`, `shipment_events`,
+   marker placement, arc geometry, projection and interaction are untouched, and the current-position authority
+   (§ latest event coord → current route node) is unaffected.
+8. **Licence / provenance is a hard precondition** — any boundary dataset must be vendored same-origin (the
+   `world-land-110m.js` pattern: no runtime CDN, no fetch), and its source, version, simplification tolerance and
+   licence must be recorded in this spec before it is added. Natural Earth `ne_110m_admin_0_countries` is the
+   obvious candidate on licence grounds (public domain) and is the only one that may be adopted without a further
+   licence review.
+9. **Compatible with the planned high-resolution globe material upgrade** — the layer must not assume the current
+   2048×1024 texture tier. It draws from vector data at render time, so a higher-resolution earth material changes
+   nothing about it, and the two changes must be independently revertible.
+
+### 32.3 Explicitly out of scope for that task
+
+Disputed-boundary policy, sub-national (admin-1) boundaries, country fill/choropleth, and any label localisation
+beyond the ISO code.

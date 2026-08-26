@@ -216,6 +216,46 @@ function shipEtaValidate_(v) {
   return { ok: true, value: s, code: 'OK' };
 }
 
+// ------------------------------------------------------------------------------------------------------------
+// F1-7N-FB-4A §F — THE ETA DATE-ONLY ROUND-TRIP NORMALIZER.
+//
+// WHY A NORMALIZER IS THE FIX RATHER THAN A NICETY. `shipments.eta` is a DATE-FORMATTED column, and every writer
+// in this system stores it by handing Sheets a 'yyyy-MM-dd' STRING. Range.setValue parses a string exactly as if
+// a user had typed it, so the cell that comes back out of getValues() is a Date OBJECT, not the string that went
+// in. The Demo seed already states this mechanism verbatim ("a date/datetime written as a STRING will read back
+// as a Date OBJECT whenever the column is date-formatted"). The legacy whole-DB read has always coped, because
+// 02_ formatValue_ maps a Date to 'yyyy-MM-dd' before it leaves the server. The SCOPED shipment workspace (57_)
+// did not — it used a bare String(v) — so on the Global Logistics Map an ETA came back as
+// 'Thu Oct 15 2026 00:00:00 GMT+0800 (…)', failed the page's /^\d{4}-\d{2}-\d{2}$/ date-input test, and rendered
+// as a BLANK date box. The write had landed; the read could not show it. That is the whole "Update ETA does not
+// update shipments.eta" report.
+//
+// CONTRACT (not invented here — read off the canonical authorities):
+//   · eta is DATE-ONLY. The Demo seed's canonical field-class map declares eta:'date' (NOT 'datetime'), 12_ groups
+//     it with the *_date fields, every writer writes 'yyyy-MM-dd', and the map's control is <input type="date">.
+//     There is therefore NO time-of-day on an ETA to preserve or to invent, and no business decision is open.
+//   · TIMEZONE = Session.getScriptTimeZone() — the single authority 02_ formatValue_, 11_, 12_ and 13_
+//     procurementDateOnly_ all use. This is the same rule as procurementDateOnly_ with the timezone made an
+//     explicit parameter so a caller can be exact; the default is byte-identical to it. It is a named business
+//     timezone, never UTC, so a UTC day shift cannot occur.
+//   · No browser-locale parsing: the browser sends the raw 'YYYY-MM-DD' from a date input and the server never
+//     calls new Date() on a locale-formatted string.
+//   · Blank / unparseable → '' so the caller must fail closed rather than silently storing 'now'.
+function shipEtaDateOnly_(v, tz) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    if (isNaN(v.getTime())) return '';
+    if (typeof Utilities === 'undefined') return '';   // offline: no formatter, so claim nothing
+    var zone = tz || (typeof Session !== 'undefined' ? Session.getScriptTimeZone() : null);
+    if (!zone) return '';
+    return Utilities.formatDate(v, zone, 'yyyy-MM-dd');
+  }
+  var s = String(v).trim();
+  if (!s) return '';
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);   // already date-only, or a datetime with a date prefix
+  return m ? (m[1] + '-' + m[2] + '-' + m[3]) : '';
+}
+
 // ---- F1-7N-FB-1 — AUTOMATIC shipped -> in_transit PROMOTION (pure decision) --------------------------
 // Confirm Shipment now ends at `shipped` (22_), so nothing manual advances a shipment any more: the FIRST
 // authoritative Current Position update that proves movement BEYOND THE ORIGIN promotes it exactly once.
@@ -757,44 +797,115 @@ function handleAdvanceShipmentRoutePoint_(body) {
 }
 
 // ============================================================
-// action `shipment.eta.update` — bounded canonical ETA writer (F1-SHIPMENT-MAP-R10).
-// Body: { shipment_id, eta (YYYY-MM-DD), actor? }. Writes ONLY shipments.eta (+ updated_at/updated_by where
-// present). Never touches status / route / receipt / carton / warehouse — a dedicated bounded owner rather
-// than the broad handleUpdateShipment_ (which runs carton/ship-gate side effects). A past ETA is valid (§5).
+// action `shipment.eta.update` — THE ONE canonical ETA writer (F1-SHIPMENT-MAP-R10; F1-7N-FB-4A §E/§F/§G).
+// Body: { shipment_id (INTERNAL shipments.shipment_id — never external_shipment_id, never shipment_no),
+//         eta (YYYY-MM-DD), actor? }.
+//
+// WRITES EXACTLY THREE CELLS on exactly ONE row: eta, updated_at, updated_by. It never touches status, route,
+// current position, receipt, carton, warehouse or shipment_events — a dedicated bounded owner rather than the
+// broad handleUpdateShipment_ (which runs carton/ship-gate side effects). A past ETA is valid (§5).
+//
+// NO SHIPMENT EVENT IS APPENDED, ON CANONICAL AUTHORITY RATHER THAN ON PREFERENCE. The canonical
+// shipment_events.event_type enum is departed_origin / route_node_reached / received (partial_receipt reserved)
+// — see docs/planning/DEMO_SEED_SHIPPING_SHIPMENT_MAP_F1-7N-FA-4A.md §G. Every member is a physical movement or
+// receipt fact BOUND TO A GEOGRAPHIC ROUTE ROW, and the same spec forbids an event on a row with no bound
+// location. An ETA revision is a plan change with no location and no movement, and there is no eta_* member of
+// the enum to emit. So this writer appends nothing, and a regression test asserts that it cannot.
+//
+// ETA_STATUS_NOT_ALLOWED IS DELIBERATELY NOT EMITTED. §G makes it conditional on being canonically required, and
+// it is not: SHIPMENT_EDITABLE_FIELDS_ (12_) lists 'eta' with no status qualifier and handleUpdateShipment_
+// applies no terminal-status gate to a field edit. Inventing one here would be a new business rule.
+//
+// SUCCESS REQUIRES PROOF, NOT A RETURN CODE. Exactly one row must match; the eta header must exist; and the cell
+// is READ BACK after the flush and normalized through shipEtaDateOnly_ before anything is called a success. A
+// writer that reports success without re-reading is the same false-persistence class FB-2A fixed on the Site
+// Inventory side, and here it was actively masking the defect: the write DID land and the map still showed the
+// old value, because the SCOPED read could not render a Date cell.
 // ============================================================
+var SHIP_ETA_TZ_CONTRACT_ = 'Session.getScriptTimeZone() — the single date authority used by 02_ formatValue_, 11_, 12_ and 13_ procurementDateOnly_; a named business timezone, never UTC';
+
 function handleUpdateShipmentEta_(body) {
   body = body || {};
   var b0 = (body.payload && typeof body.payload === 'object') ? body.payload : body;
   var shipmentId = String(b0.shipment_id || b0.shipmentId || '').trim();
   var actor = String(b0.actor || b0.updated_by || 'system_user').trim();
-  var etaCheck = shipEtaValidate_(b0.eta != null ? b0.eta : b0.ETA);
-  if (!shipmentId) return jsonResponse_({ success: false, error: 'Missing shipment_id', code: 'INPUT' });
-  if (!etaCheck.ok) return jsonResponse_({ success: false, error: 'ETA must be a valid date (YYYY-MM-DD).', code: etaCheck.code });
+  var rawEta = (b0.eta != null ? b0.eta : b0.ETA);
+  var etaCheck = shipEtaValidate_(rawEta);
+  // Both gates are PRE-WRITE and pre-lock: a blank or invalid ETA never opens a sheet, never takes a lock and
+  // never touches a cell, so zero_write is a fact rather than a promise.
+  if (!shipmentId) return jsonResponse_({ success: false, error: 'shipment_id is required (the INTERNAL shipments.shipment_id).', code: 'SHIPMENT_ID_REQUIRED', zero_write: true });
+  if (!etaCheck.ok) return jsonResponse_({ success: false, error: 'ETA must be a valid calendar date in YYYY-MM-DD form.', code: 'ETA_INVALID', zero_write: true, received: String(rawEta == null ? '' : rawEta) });
 
+  var intended = etaCheck.value;   // already 'YYYY-MM-DD'; the browser sends the raw date-input value verbatim
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shipSheet = ss.getSheetByName('shipments');
-  if (!shipSheet) return jsonResponse_({ success: false, error: 'shipments sheet not found', code: 'LOAD' });
+  if (!shipSheet) return jsonResponse_({ success: false, error: 'shipments sheet not found', code: 'LOAD', zero_write: true });
 
   var lock = LockService.getScriptLock();
-  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', code: 'LOCK' }); }
-  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK' }); }
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry. Nothing was written.', code: 'LOCK', zero_write: true }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK', zero_write: true }); }
 
   try {
     var sh = shipmentReadSheet_(shipSheet);
     var sIdCol = sh.col('shipment_id'), sEtaCol = sh.col('eta');
-    var sUpdAt = sh.col('updated_at'), sUpdBy = sh.col('updated_by');
-    if (sIdCol === -1 || sEtaCol === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'shipments is missing a required column (shipment_id / eta).', code: 'CONTRACT' }); }
-    var row = -1;
-    for (var i = 1; i < sh.rows.length; i++) { if (String(sh.rows[i][sIdCol]).trim() === shipmentId) { row = i + 1; break; } }
-    if (row === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Shipment not found: ' + shipmentId, code: 'NOT_FOUND' }); }
+    var sUpdAt = sh.col('updated_at'), sUpdBy = sh.col('updated_by'), sStatus = sh.col('status');
+    if (sIdCol === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'shipments is missing the shipment_id column.', code: 'ETA_HEADER_MISSING', missing_header: 'shipment_id', zero_write: true }); }
+    if (sEtaCol === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'shipments is missing the eta column, so there is nowhere to store an ETA.', code: 'ETA_HEADER_MISSING', missing_header: 'eta', zero_write: true }); }
+
+    // EXACTLY ONE ROW. A duplicate shipment_id would make "which row did I update?" unanswerable, so it is a
+    // typed refusal rather than a first-match-wins write.
+    var matches = [];
+    for (var i = 1; i < sh.rows.length; i++) { if (String(sh.rows[i][sIdCol]).trim() === shipmentId) matches.push(i + 1); }
+    if (matches.length === 0) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Shipment not found: ' + shipmentId + '. This action takes the INTERNAL shipment_id, not external_shipment_id or shipment_no.', code: 'SHIPMENT_NOT_FOUND', zero_write: true }); }
+    if (matches.length > 1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'More than one shipments row carries this shipment_id (' + matches.length + '); refusing to guess which one to update.', code: 'SHIPMENT_IDENTITY_AMBIGUOUS', matched_rows: matches.length, zero_write: true }); }
+    var row = matches[0];
+
+    // BEFORE snapshot — the evidence for "status did not change" and "this was / was not a no-op".
+    var beforeEta = shipEtaDateOnly_(sh.rows[row - 1][sEtaCol]);
+    var beforeStatus = sStatus !== -1 ? String(sh.rows[row - 1][sStatus] || '').trim() : '';
 
     var now = shipmentTimestamp_();
-    shipSheet.getRange(row, sEtaCol + 1).setValue(etaCheck.value);   // ONLY the eta cell (+ audit stamps below)
+    shipSheet.getRange(row, sEtaCol + 1).setValue(intended);          // the ONLY business cell written
     if (sUpdAt !== -1) shipSheet.getRange(row, sUpdAt + 1).setValue(now);
     if (sUpdBy !== -1) shipSheet.getRange(row, sUpdBy + 1).setValue(actor);
     SpreadsheetApp.flush();
+
+    // ---- MANDATORY READ-AFTER-WRITE ------------------------------------------------------------------
+    // Sheets stores a date-formatted cell as a Date, so the persisted value is normalized back through the
+    // canonical date-only rule before it is compared. Equality here is what proves the stored value round-trips
+    // to the SAME calendar date the operator picked.
+    var afterRaw = shipSheet.getRange(row, sEtaCol + 1).getValue();
+    var persisted = shipEtaDateOnly_(afterRaw);
+    var afterStatus = sStatus !== -1 ? String(shipSheet.getRange(row, sStatus + 1).getValue() || '').trim() : '';
     lock.releaseLock();
-    return jsonResponse_({ success: true, data: { shipment_id: shipmentId, eta: etaCheck.value } });
+
+    if (!persisted) {
+      return jsonResponse_({ success: false, code: 'ETA_WRITE_NOT_ACKNOWLEDGED',
+        error: 'The ETA cell could not be read back after the write, so persistence is NOT confirmed. Re-open the shipment and check the stored ETA before retrying.',
+        shipment_id: shipmentId, intended_eta: intended, persisted_eta: '', zero_write: false });
+    }
+    if (persisted !== intended) {
+      return jsonResponse_({ success: false, code: 'ETA_READBACK_MISMATCH',
+        error: 'The stored ETA (' + persisted + ') is not the ETA that was sent (' + intended + '). The row was written but does not hold the intended calendar date — do NOT retry blindly; inspect the shipments row.',
+        shipment_id: shipmentId, intended_eta: intended, persisted_eta: persisted,
+        timezone_contract: SHIP_ETA_TZ_CONTRACT_, zero_write: false });
+    }
+
+    return jsonResponse_({ success: true, data: {
+      shipment_id: shipmentId,
+      eta: persisted,                       // the PERSISTED value, re-read and normalized — never the echoed input
+      eta_intended: intended,
+      eta_before: beforeEta,
+      changed: beforeEta !== persisted,
+      read_after_write: true,
+      rows_matched: 1,
+      timezone_contract: SHIP_ETA_TZ_CONTRACT_,
+      status: afterStatus,
+      status_unchanged: beforeStatus === afterStatus,
+      current_position_unchanged: true,     // no shipment_routes cell is addressed anywhere in this handler
+      shipment_events_appended: 0,          // canonical event enum has no ETA member (see the note above)
+      updated_at: now, updated_by: actor
+    } });
   } catch (err) {
     try { lock.releaseLock(); } catch (e) {}
     return jsonResponse_({ success: false, error: 'ETA update failed: ' + (err && err.message ? err.message : err), code: 'WRITE' });

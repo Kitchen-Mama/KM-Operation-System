@@ -770,6 +770,19 @@
     var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;
     el.textContent = text || ''; el.className = 'glm-receipt-msg' + (tone ? ' glm-receipt-msg--' + tone : '');
   }
+  // F1-7N-FB-4A §G — ETA status line, rendered at the ETA control itself.
+  function etaMsg(text, tone) {
+    var el = document.querySelector('[data-glm="eta-msg"]'); if (!el) return;
+    el.textContent = text || '';
+    el.className = 'glm-eta-msg' + (tone ? ' glm-eta-msg--' + tone : '');
+    el.style.color = tone === 'error' ? '#dc2626' : (tone === 'ok' ? '#15803d' : '');
+  }
+  // A successful ETA write triggers a bounded re-read and a full drawer re-render, which destroys the node the
+  // message was written into. The outcome is therefore parked here and replayed once the new drawer is wired, so
+  // a success state is actually SEEN rather than flashing for one frame.
+  var _glmEtaFlash = null;
+  function etaFlash(text, tone) { _glmEtaFlash = text ? { text: text, tone: tone } : null; }
+  function etaFlashReplay() { if (_glmEtaFlash) { etaMsg(_glmEtaFlash.text, _glmEtaFlash.tone); _glmEtaFlash = null; } }
   // The current node's sequence (the one flagged `current` in shipment_routes), else -1.
   function currentNodeSeq(vm) { return vm.currentNode ? vm.currentNode.sequenceNo : -1; }
   // Canonical node identity used for a route advance (template node id preferred; route id fallback).
@@ -813,9 +826,13 @@
     }
     // ---- ETA: editable canonical shipments.eta; a past date stays valid + visible (overdue) ----
     var etaVal = etaInputValue(vm.eta);
+    // F1-7N-FB-4A §G — the ETA control carries its OWN status line. It previously reported through receiptMsg,
+    // whose node lives in the RECEIVING section further down the drawer, so an ETA failure was announced somewhere
+    // the operator was not looking. A write must state its outcome where the operator clicked.
     var etaSection = '<label class="glm-field"><span>ETA</span><input type="date" data-eta-input value="' + esc(etaVal) + '"></label>' +
       (!etaVal && vm.eta ? '<p class="glm-muted">Current ETA: ' + esc(vm.eta) + ' (non-standard format — pick a date to normalize).</p>' : '') +
-      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="eta-update">Update ETA</button></div>';
+      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="eta-update">Update ETA</button></div>' +
+      '<p class="glm-eta-msg" data-glm="eta-msg" role="status" aria-live="polite"></p>';
 
     // ---- Receiving (collapsible; shipment_qty read-only; received editable cumulative; remaining derived) ----
     var lines = shipmentLinesFor(vm.shipmentId);
@@ -863,6 +880,7 @@
   }
   function wireReceiptControls(vm) {
     var r = root(); if (!r) return;
+    etaFlashReplay();   // §G — a proven ETA outcome survives the post-write re-render
     // live Remaining recompute as the user types (no write)
     r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
       inp.oninput = function () {
@@ -902,16 +920,51 @@
         }
       });
     };
-    // ETA update — bounded canonical shipments.eta writer (never status/route/receipt).
+    // ETA update — THE canonical shipments.eta writer (never status / route / current position / receipt /
+    // events). F1-7N-FB-4A §G: the identity sent is the INTERNAL shipment_id; the raw date-input value is sent
+    // verbatim (no locale parsing, no Date object, no toISOString — any of which can shift the calendar day);
+    // success is claimed ONLY from the server's read-back value; and an INDETERMINATE timeout RECONCILES the
+    // persisted ETA before it offers a retry, because repeating an indeterminate write is how a double-apply
+    // happens.
     var etaBtn = r.querySelector('[data-act="eta-update"]');
     if (etaBtn) etaBtn.onclick = function () {
-      if (!(window.KM.DB && window.KM.DB.updateShipmentEta)) { receiptMsg('ETA API unavailable.', 'error'); return; }
+      if (!(window.KM.DB && window.KM.DB.updateShipmentEta)) { etaMsg('ETA API unavailable — nothing was sent.', 'error'); return; }
       var inp = r.querySelector('[data-eta-input]'); var v = inp ? String(inp.value || '').trim() : '';
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { receiptMsg('Enter a valid ETA date (YYYY-MM-DD).', 'error'); return; }
-      etaBtn.disabled = true; receiptMsg('Updating ETA…', '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { etaMsg('Enter a valid ETA date (YYYY-MM-DD). Nothing was sent.', 'error'); return; }
+      etaBtn.disabled = true; etaMsg('Updating ETA…', '');
       window.KM.DB.updateShipmentEta({ shipment_id: vm.shipmentId, eta: v, actor: glmActor() }).then(function (resp) {
-        if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
-        else { etaBtn.disabled = false; receiptMsg((resp && resp.error ? resp.error : 'ETA update failed.'), 'error'); }
+        if (resp && resp.success) {
+          // The server returns the PERSISTED, re-read value. Show that, never the value that was typed.
+          var d = resp.data || {};
+          var shown = String(d.eta || v);
+          etaFlash('ETA saved and verified in the database: ' + shown
+            + (d.status_unchanged === false ? ' (WARNING: the shipment status also changed — report this)' : '')
+            + '. Shipment status and current position were not touched.', 'ok');
+          afterShipmentWrite(vm.shipmentId);
+          return;
+        }
+        var code = String((resp && resp.code) || '');
+        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' && window.KM.DB.reconcileShipmentEta) {
+          etaMsg('The request timed out and the outcome is UNKNOWN — checking what the database actually holds before doing anything else…', 'error');
+          window.KM.DB.reconcileShipmentEta(vm.shipmentId, v).then(function (rec) {
+            etaBtn.disabled = false;
+            if (rec && rec.success && rec.matches_intended) {
+              etaFlash('The timed-out request had in fact been applied: the database holds ' + rec.persisted_eta + '. No second write was sent.', 'ok');
+              afterShipmentWrite(vm.shipmentId);
+              return;
+            }
+            if (rec && rec.success) {
+              etaMsg('Timed out. The database still holds ' + (rec.persisted_eta || '(no ETA)') + ', not ' + v
+                + '. NOT SAVED — press Update ETA again to retry deliberately.', 'error');
+              return;
+            }
+            etaMsg('Timed out, and the stored ETA could not be re-read, so it is unknown whether the write landed. Re-open this shipment and check the ETA before retrying.', 'error');
+          });
+          return;
+        }
+        etaBtn.disabled = false;
+        var msg = (resp && resp.error) ? resp.error : 'ETA update failed.';
+        etaMsg('NOT SAVED — ' + (code ? '[' + code + '] ' : '') + msg, 'error');
       });
     };
     var advBtn = r.querySelector('[data-act="route-advance"]');

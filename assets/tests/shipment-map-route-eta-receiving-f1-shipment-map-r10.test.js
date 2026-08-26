@@ -41,12 +41,48 @@ eq(shipDeriveReceiptStatus_([{ shippedQty: 500, received: 0 }, { shippedQty: 600
 // ===== bounded ETA writer (31_) — only eta + audit stamps; no status/route/receipt =====
 var etaFn = extractFn(GS, 'handleUpdateShipmentEta_');
 ok(/shipEtaValidate_\(/.test(etaFn), 'ETA writer validates via the canonical pure validator');
-ok(/getRange\(row, sEtaCol \+ 1\)\.setValue\(etaCheck\.value\)/.test(etaFn), 'ETA writer writes ONLY the eta cell (normalized value)');
+ok(/getRange\(row, sEtaCol \+ 1\)\.setValue\(intended\)/.test(etaFn), 'ETA writer writes the eta cell from the NORMALIZED intended value');
+// F1-7N-FB-4A §G — STRICTLY STRONGER than the old single-line pin. Enumerate EVERY setValue target in the
+// handler and require each one to be the eta cell or an audit stamp. A new write to any other column now fails
+// this suite, which the old "the eta line is present" assertion could never have caught.
+var etaSetTargets = (etaFn.match(/getRange\([^)]*\)\.setValue\(/g) || []).map(function (m) { return m.replace(/\s+/g, ''); });
+ok(etaSetTargets.length === 3, 'ETA writer performs exactly THREE cell writes (got ' + etaSetTargets.length + ')');
+ok(etaSetTargets.every(function (t) { return /sEtaCol\+1|sUpdAt\+1|sUpdBy\+1/.test(t); }),
+  'ETA writer writes ONLY eta + updated_at + updated_by — no other column is addressed');
+// read-after-write is MANDATORY: success may not be claimed from the echoed input
+ok(/getRange\(row, sEtaCol \+ 1\)\.getValue\(\)/.test(etaFn) && /shipEtaDateOnly_\(/.test(etaFn),
+  'ETA writer READS THE CELL BACK and normalizes it before judging the outcome');
+ok(/ETA_READBACK_MISMATCH/.test(etaFn) && /ETA_WRITE_NOT_ACKNOWLEDGED/.test(etaFn),
+  'ETA writer has typed failures for an unreadable and a mismatched read-back');
+ok(/persisted !== intended/.test(etaFn), 'ETA writer compares the PERSISTED value against the intended one');
+ok(/eta: persisted/.test(etaFn), 'ETA writer returns the PERSISTED value, never the echoed input');
+ok(/SHIPMENT_NOT_FOUND/.test(etaFn) && /SHIPMENT_IDENTITY_AMBIGUOUS/.test(etaFn) && /ETA_HEADER_MISSING/.test(etaFn),
+  'ETA writer types not-found, ambiguous-identity and missing-header separately');
+ok(/matches\.length > 1/.test(etaFn), 'ETA writer refuses to guess when more than one row carries the id');
+// date-only round trip authority
+var dOnly = extractFn(GS, 'shipEtaDateOnly_');
+ok(/Session\.getScriptTimeZone\(\)/.test(dOnly) && !/UTC/.test(dOnly),
+  'the ETA normalizer uses the named script timezone and never UTC (no UTC day shift)');
+ok(!/new Date\(s\)/.test(dOnly), 'the ETA normalizer never locale-parses a string into a Date');
 ok(/LockService\.getScriptLock/.test(etaFn), 'ETA writer runs under a ScriptLock');
-ok(!/\bstatus\b/.test(etaFn) && !/shipment_received_qty/.test(etaFn) && !/shipment_routes/.test(etaFn), 'ETA writer never touches status / receipt / route');
+// F1-7N-FB-4A §G/§H — the handler now READS status to PROVE it did not change, so a bare "the word status does
+// not appear" test is no longer the right contract (and was never the strong one). The real guarantee is that no
+// status / receipt / route / event cell is WRITTEN and no event helper is called.
+// Strip comments first: an ABSENCE claim must be about the code, never about the prose that documents it.
+function noComments(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
+var etaCode = noComments(etaFn);
+var etaSheets = (etaCode.match(/getSheetByName\((['"])[^'"]*\1\)/g) || []);
+eq(etaSheets, ["getSheetByName('shipments')"], 'ETA writer opens EXACTLY ONE sheet, and it is shipments');
+ok(!/shipment_received_qty/.test(etaCode) && !/shipment_routes/.test(etaCode),
+  'ETA writer addresses no receipt or route column');
+ok(!/shipAppendLifecycleEvent_/.test(etaFn) && !/shipPromoteOnProgress_/.test(etaFn),
+  'ETA writer appends no shipment_event and runs no status promotion — the canonical event enum has no ETA member');
+ok(!/sStatus \+ 1\)\.setValue/.test(etaFn), 'ETA writer never WRITES the status cell (it only reads it back as proof)');
+ok(/status_unchanged/.test(etaFn) && /shipment_events_appended: 0/.test(etaFn),
+  'ETA writer reports status_unchanged and a zero event count as part of its success envelope');
 ok(/sUpdAt !== -1[\s\S]{0,60}updated_at/.test(GS) || /col\('updated_at'\)/.test(etaFn), 'ETA writer stamps updated_at/updated_by where present');
 ok(/action === 'shipment\.eta\.update'[\s\S]{0,80}handleUpdateShipmentEta_/.test(ROUTER), 'router routes shipment.eta.update → handleUpdateShipmentEta_');
-var etaAdapter = DBAPI.slice(DBAPI.indexOf('updateShipmentEta = async function'), DBAPI.indexOf('updateShipmentEta = async function') + 1400);
+var etaAdapter = DBAPI.slice(DBAPI.indexOf('updateShipmentEta = async function'), DBAPI.indexOf('updateShipmentEta = async function') + 2600);
 ok(/action: 'shipment\.eta\.update'/.test(etaAdapter) && /if \(json && json\.success\) \{ await _kmWriterPostWrite_\(\); \}/.test(etaAdapter), 'DB adapter posts shipment.eta.update + runs the post-write seam on success (F1-7K: page owns scoped readback; no whole-DB reload)');
 
 // ===== drawer UX (source guards) =====
