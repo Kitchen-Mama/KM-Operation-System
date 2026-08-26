@@ -129,18 +129,38 @@
     }
     // Fail-closed: NEVER fall back to the broad cache for the primary render (do NOT call render(), whose accessors would
     // otherwise read the broad getters when _srdReadModel is null).
+    // F1-7N-FB-4C-R1 §F — DEPLOYMENT_MISMATCH IS NOT AN ERROR, AND NEITHER IS EMPTY.
+    //
+    // The live failure printed "Couldn’t load regional details: Missing or invalid action parameter … [BACKEND_ERROR]"
+    // — a message with no action, no request id and no next step, offering a Retry for something a retry cannot
+    // fix. The classifier now names the real state, so this banner shows WHICH action failed, its code, its request
+    // id, and offers Retry ONLY where retrying can help. Nothing here is auto-retried.
+    var SRD_NO_RETRY_CODES = { DEPLOYMENT_CONTRACT_MISMATCH: 1, CLIENT_ACTION_REQUIRED: 1 };
     function _srdRenderError_(err) {
         _srdReadModel = null;
-        var rg = _srdRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
         var code = (err && err.code) || 'SKU_REGIONAL_READ_FAILED';
         var message = (err && err.message) || 'SKU Regional read failed';
+        var det = (err && err.details) || {};
+        var action = det.action || det.requested_action || SRD_READ_ACTION;
+        var reqId = det.request_id || det.requestId || null;
+        var mismatch = !!SRD_NO_RETRY_CODES[code];
+        var rg = _srdRegion_();
+        if (rg) rg.set(mismatch ? window.KM.loadState.STATES.DEPLOYMENT_MISMATCH : window.KM.loadState.STATES.ERROR);
+        var bits = 'action ' + esc(action) + ' · ' + esc(code) + (reqId ? ' · request ' + esc(reqId) : '');
+        var retry = mismatch
+            ? '<em>Retrying cannot fix this.</em> ' + esc(det.next_action || 'Publish a new Apps Script deployment version, then hard-reload the page.')
+            : '<button type="button" class="srd-btn srd-btn--default" onclick="srdRetry()">Retry</button>';
         var note = el('srd-mode-note');
-        if (note) note.innerHTML = '<span class="srd-note--error">Couldn’t load regional details: ' + esc(message) + ' [' + esc(code) + ']. <button type="button" class="srd-btn srd-btn--default" onclick="srdRetry()">Retry</button></span>';
+        if (note) note.innerHTML = '<span class="srd-note--error">Couldn’t load regional details: ' + esc(message) +
+            ' [' + bits + ']. ' + retry + '</span>';
         _empty('SKU Regional read error.');
     }
 
     // Scoped read: Workspace (canonical) → getWorkspace('skuDetails', {include:{regional:true}}) → adapt → _srdReadModel.
     // Fail-closed (rejects; NO silent legacy broad fallback). Keeps the prior read-model until the new one is assigned.
+    // The exact action this page depends on. Named here so the error banner and the deployment probe both refer to
+    // the same string the transport actually sends.
+    var SRD_READ_ACTION = 'skuDetails.workspace.get';
     function _srdWorkspaceRefresh_() {
         var mySeq = ++_srdReadSeq;
         var rg = _srdRegion_(); if (rg) rg.beginLoad(!!_srdReadModel);

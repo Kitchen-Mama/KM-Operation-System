@@ -50,6 +50,35 @@ function doGet(e) {
       return handleInventoryScopeRegistryGet_(e && e.parameter ? e.parameter : {});
     }
 
+    // F1-7N-FB-4C-R1 §B/§D — NAME THE METHOD DOWNGRADE INSTEAD OF REPORTING AN ANONYMOUS MISSING PARAMETER.
+    //
+    // Every workspace read is sent as a POST, but an Apps Script /exec POST is answered with a 302 to
+    // script.googleusercontent.com, and per the Fetch spec a 302 following a POST is re-issued as a GET WITH THE
+    // BODY DROPPED. When that chain resolves back to /exec the request lands HERE, and this function used to
+    // answer with a bare "Missing or invalid action parameter" — which the client could only report as a generic
+    // backend error. That is the SKU Details / SKU Regional Details first-load failure.
+    //
+    // The client now also puts the action in the query string (transport.post), where a method downgrade cannot
+    // remove it, so this branch can say exactly what happened and stay useful for an older client that does not.
+    // Both answers keep the ORIGINAL message text as `error` — the client's unknown-action classifier and the
+    // existing regression suites both key on it — and add the typed facts beside it.
+    var attempted = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';
+    var viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
+    if (attempted || viaPost) {
+      return jsonResponse_({
+        success: false,
+        error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get',
+        code: 'POST_ONLY_ACTION_ON_GET',
+        received_method: 'GET',
+        attempted_action: attempted || null,
+        request_id: (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null,
+        sent_as_post: viaPost,
+        zero_write: true,
+        message: 'The action "' + (attempted || '(none)') + '" is served by doPost, but this request arrived as a GET. ' +
+          'A POST answered by the GET handler means a redirect follow dropped the request body. Nothing was read or written.',
+        next_action: 'Retry the read; if it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established.'
+      });
+    }
     return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' });
 
   } catch (err) {

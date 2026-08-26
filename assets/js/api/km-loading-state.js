@@ -18,21 +18,38 @@
 // ========================================
 (function () {
     'use strict';
+    // F1-7N-FB-4C-R1 §F — PRE_LOAD and DEPLOYMENT_MISMATCH join the contract.
+    //
+    // PRE_LOAD makes the pre-first-load state EXPLICIT. It was previously `null`, which is indistinguishable from
+    // "no region bound" and cannot be asserted; `null` is still accepted as an alias so no existing caller changes.
+    //
+    // DEPLOYMENT_MISMATCH is its own terminal state and is deliberately NOT a flavour of ERROR: an error invites a
+    // retry, and retrying cannot publish an Apps Script deployment. It is also emphatically not EMPTY — the whole
+    // point of §F is that a failed read never renders as "there is no data".
     var STATES = {
+        PRE_LOAD: 'PRE_LOAD',
         INITIAL_LOADING: 'INITIAL_LOADING',
         READY: 'READY',
         REFRESHING: 'REFRESHING',
         EMPTY: 'EMPTY',
-        ERROR: 'ERROR'
+        ERROR: 'ERROR',
+        DEPLOYMENT_MISMATCH: 'DEPLOYMENT_MISMATCH'
     };
-    // Allowed transitions (pure). A region starts implicitly before INITIAL_LOADING (from === null).
+    // The two LOADING flavours §F asks for are INITIAL_LOADING (no prior content) and REFRESHING (content visible);
+    // isLoadingState covers both, so a page never has to know which one it is in.
+    var LOADING_STATES = [STATES.INITIAL_LOADING, STATES.REFRESHING];
+    // Allowed transitions (pure). A region starts at PRE_LOAD (from === null is the legacy alias for it).
     var NEXT = {
-        'null': ['INITIAL_LOADING', 'READY', 'EMPTY', 'ERROR'],
-        INITIAL_LOADING: ['READY', 'EMPTY', 'ERROR'],
-        READY: ['REFRESHING', 'READY', 'EMPTY', 'ERROR'],
-        REFRESHING: ['READY', 'EMPTY', 'ERROR'],
-        EMPTY: ['INITIAL_LOADING', 'REFRESHING', 'READY', 'ERROR'],
-        ERROR: ['INITIAL_LOADING', 'REFRESHING', 'READY', 'EMPTY']
+        'null': ['PRE_LOAD', 'INITIAL_LOADING', 'READY', 'EMPTY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        PRE_LOAD: ['INITIAL_LOADING', 'READY', 'EMPTY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        INITIAL_LOADING: ['READY', 'EMPTY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        READY: ['REFRESHING', 'READY', 'EMPTY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        REFRESHING: ['READY', 'EMPTY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        EMPTY: ['INITIAL_LOADING', 'REFRESHING', 'READY', 'ERROR', 'DEPLOYMENT_MISMATCH'],
+        ERROR: ['INITIAL_LOADING', 'REFRESHING', 'READY', 'EMPTY', 'DEPLOYMENT_MISMATCH'],
+        // A mismatch is only left by loading again (an explicit user retry after publishing) — never by drifting
+        // into EMPTY, which would present a publish problem as "no data".
+        DEPLOYMENT_MISMATCH: ['INITIAL_LOADING', 'REFRESHING', 'READY', 'ERROR']
     };
     function canTransition(from, to) {
         var key = (from === null || from === undefined) ? 'null' : String(from);
@@ -40,6 +57,9 @@
     }
     function isLoadingState(s) { return s === STATES.INITIAL_LOADING || s === STATES.REFRESHING; }
     function isDataState(s) { return s === STATES.READY || s === STATES.EMPTY; }
+    // §F — "ERROR is not EMPTY", written down as a predicate so a page cannot conflate them by accident.
+    function isFailureState(s) { return s === STATES.ERROR || s === STATES.DEPLOYMENT_MISMATCH; }
+    function isRetryableState(s) { return s === STATES.ERROR; }   // a mismatch needs a publish, not a retry
     // Given whether content already exists, which loading state should a (re)load enter?
     function loadEntryState(hasContent) { return hasContent ? STATES.REFRESHING : STATES.INITIAL_LOADING; }
 
@@ -76,7 +96,9 @@
                     el.setAttribute('data-load-state', state);
                     el.classList.add('km-region-refreshing');   // content stays visible
                 } else {
-                    // READY / EMPTY / ERROR → the page renders the real content; just clear the affordance.
+                    // PRE_LOAD / READY / EMPTY / ERROR / DEPLOYMENT_MISMATCH → the page renders the real content or
+                    // its own banner; this only clears the loading affordance. The state is still published as a
+                    // data-attribute so a test (and CSS) can see which one it is.
                     el.setAttribute('data-load-state', state);
                     el.classList.remove('km-region-refreshing');
                 }
@@ -86,9 +108,12 @@
 
     var api = {
         STATES: STATES,
+        LOADING_STATES: LOADING_STATES,
         canTransition: canTransition,
         isLoadingState: isLoadingState,
         isDataState: isDataState,
+        isFailureState: isFailureState,
+        isRetryableState: isRetryableState,
         loadEntryState: loadEntryState,
         createRegion: createRegion,
         bindElement: bindElement

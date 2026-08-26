@@ -57,22 +57,69 @@ var endTok = 'return { success: false, data: null, meta: outMeta, errors: _outEr
 var si = FND.indexOf(startTok), ei = FND.indexOf(endTok);
 ok(si !== -1 && ei !== -1 && ei > si, 'hardened failure branch present in km-api-foundation.js');
 var slice = FND.slice(si, ei);
+// F1-7N-FB-4C-R1 — the extracted slice now consults the shared unknown-action authority (that is the fix: the
+// router's terminal "I do not know this action" answer is no longer flattened into BACKEND_ERROR). The harness
+// therefore has to provide the same collaborators the shipped function has, extracted from the SAME source file
+// so this test cannot pass against a stale copy of them.
+function extractFn(src, name) {
+  var start = src.indexOf('function ' + name + '('); if (start < 0) throw new Error('not found: ' + name);
+  var i = src.indexOf('{', start), d = 0;
+  for (; i < src.length; i++) { var c = src[i]; if (c === '{') d++; else if (c === '}') { d--; if (d === 0) return src.slice(start, i + 1); } }
+  throw new Error('unbalanced: ' + name);
+}
+function extractVar(src, name) {
+  var m = new RegExp('var ' + name + '\\s*=').exec(src); if (!m) throw new Error('not found: ' + name);
+  var i = src.indexOf('=', m.index) + 1;
+  while (' \t\r\n'.indexOf(src[i]) >= 0) i++;
+  if (src[i] === '{' || src[i] === '[') {
+    var open = src[i], close = open === '{' ? '}' : ']', d = 0, j = i;
+    for (; j < src.length; j++) { if (src[j] === open) d++; else if (src[j] === close) { d--; if (d === 0) break; } }
+    return src.slice(m.index, j + 1) + ';';
+  }
+  return src.slice(m.index, src.indexOf(';', i) + 1);
+}
+eval(extractVar(FND, 'UNKNOWN_ACTION_PATTERNS'));
+eval(extractVar(FND, 'DOGET_TERMINAL_HINT'));
+eval(extractFn(FND, 'isUnknownActionText'));
+eval(extractFn(FND, 'looksLikeDoGetAnswer'));
+var API_ERROR_CODES = { CLIENT_ACTION_REQUIRED: 'CLIENT_ACTION_REQUIRED', DEPLOYMENT_CONTRACT_MISMATCH: 'DEPLOYMENT_CONTRACT_MISMATCH', REQUEST_METHOD_DOWNGRADED: 'REQUEST_METHOD_DOWNGRADED', RESPONSE_ACTION_MISMATCH: 'RESPONSE_ACTION_MISMATCH' };
+var dto = { action: 'weeklyShipping.workspace.get', requestId: 'REQ-TEST1' };
 eval('function _resolveErrs(serverEnv){ ' + slice + ' return _outErrs; }');
 // 1. errors[] present → surfaced verbatim (byte-compatible with prior behavior)
 eq(_resolveErrs({ success: false, errors: [{ code: 'IR_SCHEMA_MISSING', message: 'x', details: null }] }),
    [{ code: 'IR_SCHEMA_MISSING', message: 'x', details: null }], 'errors[] preferred + surfaced verbatim');
-// 2. no errors[] but string error → BACKEND_ERROR carrying the message (previously DROPPED → generic)
-eq(_resolveErrs({ success: false, error: 'Invalid POST action. Supported: ...' }),
-   [{ code: 'BACKEND_ERROR', message: 'Invalid POST action. Supported: ...', details: null }], 'string-form router error → BACKEND_ERROR (real message no longer masked)');
-eq(_resolveErrs({ success: false, error: 'handleFoo_ is not defined' }),
-   [{ code: 'BACKEND_ERROR', message: 'handleFoo_ is not defined', details: null }], 'ReferenceError-style string surfaced as BACKEND_ERROR');
-// 3. neither → generic WORKSPACE_ERROR (unchanged fallback)
-eq(_resolveErrs({ success: false }),
-   [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }], 'no errors[]/error → generic WORKSPACE_ERROR (unchanged)');
-eq(_resolveErrs({ success: false, error: '   ' }),
-   [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }], 'blank string error → generic (not BACKEND_ERROR)');
-eq(_resolveErrs({ success: false, errors: [] }),
-   [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }], 'empty errors[] → generic (unchanged)');
+// 2. no errors[] but a string error.
+//
+// SUPERSEDED BY F1-7N-FB-4C-R1, AND THIS IS THE POINT OF THAT ROUND. F1-7K was right to stop DROPPING the
+// router's `error` string; it was wrong to label every such string BACKEND_ERROR. "Invalid POST action" and
+// "Missing or invalid action parameter" are the router saying it does not know the action — a DEPLOYMENT fact
+// with a specific next step — not a backend business failure. Labelling them BACKEND_ERROR is exactly what
+// printed an unactionable banner on SKU Details and SKU Regional Details. A genuine business/runtime string is
+// still surfaced verbatim, so the F1-7K guarantee is intact.
+var _dm = _resolveErrs({ success: false, error: 'Invalid POST action. Supported: ...' })[0];
+eq(_dm.code, 'DEPLOYMENT_CONTRACT_MISMATCH', 'a router unknown-action string is a DEPLOYMENT fact, not a backend error');
+eq(_dm.details.retryable, false, 'and it is NOT retryable — retrying cannot publish a deployment');
+eq(_dm.details.missing_action, 'weeklyShipping.workspace.get', 'naming the action the caller asked for');
+eq(_dm.details.router_message, 'Invalid POST action. Supported: ...', 'while keeping the router text verbatim for diagnosis');
+// doGet's own terminal message is the distinguishable case: a POST answered by the GET handler.
+var _md = _resolveErrs({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' })[0];
+eq(_md.code, 'REQUEST_METHOD_DOWNGRADED', 'doGet\u2019s action list proves the POST was answered by doGet — a redirect downgrade');
+eq(_md.details.received_by, 'doGet', 'named explicitly');
+eq(_md.details.retryable, true, 'and it IS retryable — the deployment is fine, the request lost its body');
+// a genuine runtime/business string is still BACKEND_ERROR, verbatim
+var _be = _resolveErrs({ success: false, error: 'handleFoo_ is not defined' })[0];
+eq(_be.code, 'BACKEND_ERROR', 'ReferenceError-style string surfaced as BACKEND_ERROR');
+eq(_be.message, 'handleFoo_ is not defined', 'with its message verbatim');
+eq(_be.details.action, 'weeklyShipping.workspace.get', 'now carrying the action, so the banner can name it (\u00a7F)');
+eq(_be.details.request_id, 'REQ-TEST1', 'and the request id');
+// 3. neither → generic WORKSPACE_ERROR (code + message unchanged; details now carry the correlation \u00a7F needs)
+['no errors[]/error', 'blank string error', 'empty errors[]'].forEach(function (label, i) {
+  var input = [{ success: false }, { success: false, error: '   ' }, { success: false, errors: [] }][i];
+  var g = _resolveErrs(input)[0];
+  eq(g.code, 'WORKSPACE_ERROR', label + ' \u2192 generic WORKSPACE_ERROR (unchanged)');
+  eq(g.message, 'workspace returned failure', label + ' \u2192 with the unchanged generic message');
+  eq(g.details.action, 'weeklyShipping.workspace.get', label + ' \u2192 and the action for the banner');
+});
 // errors[] wins even if a string error is also present (precedence)
 eq(_resolveErrs({ success: false, errors: [{ code: 'A', message: 'a' }], error: 'ignored' }),
    [{ code: 'A', message: 'a' }], 'errors[] takes precedence over a co-present string error');

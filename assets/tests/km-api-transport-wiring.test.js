@@ -62,7 +62,19 @@ function wsApi(fetchFn, getUrl, legacy) {
   var r = await run(api2.client.getWorkspace('weeklyShipping', { requestId: 'REQ-USER7' }));
   ok(r.success === true && !(r.errors && r.errors.length), 'TX1 valid URL → success, no TRANSPORT_NOT_CONFIGURED');
   ok(f2._calls.length === 1, 'TX2 exactly one request (no dual request)');
-  ok(f2._calls[0].url === URL_OK && f2._calls[0].init.method === 'POST' && /text\/plain/.test(f2._calls[0].init.headers['Content-Type']), 'TX3 POST to the canonical Web App URL, text/plain');
+  // TX3 SUPERSEDED, NOT WEAKENED. F1-7N-FB-4C-R1 §E appends the action (and request id) to the POST URL ON
+// PURPOSE. An Apps Script /exec POST is answered with a 302, and per the Fetch spec a 302 following a POST is
+// re-issued as a GET WITH THE BODY DROPPED — which is how the action went missing on SKU Details / SKU Regional
+// Details. `redirect:'error'` is not available (that redirect is how Apps Script returns any POST response), so
+// the action is carried where a method downgrade cannot remove it. The endpoint, verb and content type are all
+// still pinned; only the query string is new, and it is now pinned too.
+var _c0 = f2._calls[0];
+ok(_c0.url.indexOf(URL_OK) === 0 && _c0.init.method === 'POST' && /text\/plain/.test(_c0.init.headers['Content-Type']),
+  'TX3 POST to the canonical Web App URL, text/plain');
+ok(_c0.url.indexOf('?') === URL_OK.length, 'TX3 the canonical endpoint is unchanged — the query is appended to it, not a second endpoint');
+ok(/[?&]action=weeklyShipping\.workspace\.get(&|$)/.test(_c0.url), 'TX3 and the URL carries the action, so a redirect downgrade cannot lose it');
+ok(/[?&]km_via=post(&|$)/.test(_c0.url), 'TX3 marked as POST-originated so the router can name a method downgrade');
+ok(JSON.parse(_c0.init.body).action === 'weeklyShipping.workspace.get', 'TX3 while the BODY remains the authority doPost reads');
   var body = JSON.parse(f2._calls[0].init.body);
   ok(body.action === 'weeklyShipping.workspace.get' && body.requestId === 'REQ-USER7' && body.payload, 'TX4 body carries action + requestId + payload (doPost contract)');
   ok(r.meta.requestId === 'REQ-USER7', 'TX5 requestId preserved through the response');

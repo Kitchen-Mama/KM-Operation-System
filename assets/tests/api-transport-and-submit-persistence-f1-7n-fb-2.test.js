@@ -184,8 +184,20 @@ checks.push(safeRead(fakeResp(200, 'text/html', '')).then(
 // a route/action-not-found is distinguishable from a transport failure
 ok(/UNKNOWN_ACTION/.test(FOUND) && /TRANSPORT_ERROR/.test(FOUND) && /TRANSPORT_NOT_CONFIGURED/.test(FOUND),
   '5. action-not-found, transport failure and unconfigured transport are separate codes');
-ok(/code: 'BACKEND_ERROR', message: serverEnv\.error/.test(FOUND),
-  '5. and a router-level business error is surfaced verbatim instead of being masked');
+// 5 STRENGTHENED by F1-7N-FB-4C-R1. F1-7K stopped the router's `error` STRING being dropped, which was right.
+// But it then labelled EVERY such string BACKEND_ERROR — including the router's terminal "I do not know this
+// action" answer, which is not a backend error at all. That is exactly what printed
+// "Missing or invalid action parameter … [BACKEND_ERROR]" on SKU Details / SKU Regional Details: a message with
+// no action, no request id and no next step. A genuine business string is still surfaced verbatim; the two
+// unknown-action cases are now named.
+ok(/_outErrs = \[\{ code: 'BACKEND_ERROR', message: _txt, details: \{ action: dto\.action, request_id: dto\.requestId \} \}\];/.test(FOUND),
+  '5. a genuine router-level business error is still surfaced verbatim (now with its action + request id)');
+ok(/if \(isUnknownActionText\(_txt\)\) \{/.test(FOUND),
+  '5. but the router unknown-action answer is classified instead of being called a backend error');
+ok(/code: API_ERROR_CODES\.REQUEST_METHOD_DOWNGRADED/.test(FOUND),
+  '5. a POST answered by doGet is REQUEST_METHOD_DOWNGRADED (retryable — the deployment is fine)');
+ok(/code: API_ERROR_CODES\.DEPLOYMENT_CONTRACT_MISMATCH/.test(FOUND),
+  '5. a genuinely absent action is DEPLOYMENT_CONTRACT_MISMATCH (not retryable — retrying cannot publish)');
 
 // =======================================================================================================
 section('FB2-6. the router cannot be the source of a 404 HTML body');

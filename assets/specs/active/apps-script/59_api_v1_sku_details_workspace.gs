@@ -55,6 +55,10 @@ var SKD_WS_ROW_MAX_ = 50000;
 // --------------------------------------------------------------------------------------------------------
 function skdWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 
+// F1-7N-FB-4C-R1 §D — the meta already carried the ACTION, which is what lets a client prove a response came
+// from this handler rather than from doGet's terminal branch. It now also echoes the caller's requestId, so a
+// response can be correlated to the exact request that asked for it. `requestId` is passed through untouched and
+// is never used as an idempotency key.
 function skdBuildEnvelope_(ok, data, errors, meta) {
   var m = { apiVersion: '1', source: 'workspace', action: 'skuDetails.workspace.get', workspace: 'skuDetails', cached: false };
   if (meta) { for (var k in meta) m[k] = meta[k]; }

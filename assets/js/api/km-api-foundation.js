@@ -57,8 +57,42 @@
     TRANSPORT_URL_INVALID: 'TRANSPORT_URL_INVALID',
     TRANSPORT_ERROR: 'TRANSPORT_ERROR',
     TRANSPORT_NON_JSON_RESPONSE: 'TRANSPORT_NON_JSON_RESPONSE',
+    // F1-7N-FB-4C-R1 — the four states that were previously all reported as BACKEND_ERROR, which is why a
+    // one-time load failure on SKU Details / SKU Regional Details looked like a mystery instead of a fact.
+    CLIENT_ACTION_REQUIRED: 'CLIENT_ACTION_REQUIRED',              // caught BEFORE any network call
+    DEPLOYMENT_CONTRACT_MISMATCH: 'DEPLOYMENT_CONTRACT_MISMATCH',  // the deployment does not know this action
+    REQUEST_METHOD_DOWNGRADED: 'REQUEST_METHOD_DOWNGRADED',        // a POST arrived at doGet (redirect follow)
+    RESPONSE_ACTION_MISMATCH: 'RESPONSE_ACTION_MISMATCH',          // the answer is not to the question we asked
     INTERNAL_ERROR: 'INTERNAL_ERROR'
   };
+
+  // F1-7N-FB-4C-R1 §E — THE ROUTER'S TERMINAL "I DO NOT KNOW THIS ACTION" RESPONSES.
+  //
+  // This is the SAME authority operation-system-db-api.js already uses (KM_UNKNOWN_ACTION_PATTERNS_). It is
+  // duplicated here deliberately and with the reason recorded, because km-api-foundation.js loads INDEPENDENTLY
+  // of the db-api module and must not acquire a load-order dependency on it; a mirrored regression test pins the
+  // two lists byte-identical so they cannot drift.
+  //
+  // WHY IT MATTERS HERE. The db-api runners already classified these strings as DEPLOYMENT_CONTRACT_MISMATCH and
+  // told the operator to publish a new deployment. The WORKSPACE path - the one both SKU pages use - did not: its
+  // normalizer turned any bare `error` string into { code:'BACKEND_ERROR' }. So the one response this codebase
+  // already knew how to explain reached these two pages as an unexplained backend error with no next action.
+  var UNKNOWN_ACTION_PATTERNS = [
+    /^Invalid POST action\b/i,
+    /^Missing or invalid action parameter\b/i,
+    /^Invalid action\b/i,
+    /^Unsupported action\b/i
+  ];
+  function isUnknownActionText(errText) {
+    var t = String(errText == null ? '' : errText).trim();
+    for (var i = 0; i < UNKNOWN_ACTION_PATTERNS.length; i++) { if (UNKNOWN_ACTION_PATTERNS[i].test(t)) return true; }
+    return false;
+  }
+  // doGet's terminal message lists ONLY the actions doGet itself serves. Seeing that specific list is therefore
+  // positive evidence that the request was answered by doGet - i.e. it arrived as a GET - even though every
+  // workspace read is sent as a POST. That is the redirect downgrade, not a stale deployment.
+  var DOGET_TERMINAL_HINT = /Use:\s*getOperationDb\s*,\s*getTable/i;
+  function looksLikeDoGetAnswer(errText) { return DOGET_TERMINAL_HINT.test(String(errText == null ? '' : errText)); }
 
   // ---- forbidden schema/structural operations (mirror of KMSAFE S0/S0.5 STRUCTURAL_OPS + schema verbs) ---
   // Authority is server-side KMSAFE (supply-planning-production-safety.js). This frozen mirror lets the API
@@ -256,6 +290,13 @@
     // ---- LegacyAdapter — the backward-compatibility bridge to KM.DB.* / WEB_APP_FETCH ------------------
     var legacyAdapter = {
       resolve: resolveLegacy,
+      // F1-7N-FB-4C-R1 §E — exported so a page (and the regression suite) can build/inspect a canonical envelope
+      // and assert the refusal, instead of trusting that every resolver remembered the rule.
+      buildRequestEnvelope: buildRequestEnvelope,
+      assertSendableEnvelope: assertSendableEnvelope,
+      isUnknownActionText: isUnknownActionText,
+      looksLikeDoGetAnswer: looksLikeDoGetAnswer,
+      unknownActionPatterns: function () { return UNKNOWN_ACTION_PATTERNS.map(function (r) { return r.source; }); },
       hasCommand: function (action) { return typeof resolveLegacy()[normName(action)] === 'function'; },
       command: function (action, payload) {
         var lg = resolveLegacy(), a = normName(action);
@@ -316,9 +357,35 @@
         if (typeof _fetcher !== 'function') return Promise.reject(txErr(API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED, 'no fetch available'));
         var c = classifyUrl(resolveBaseUrl());
         if (!c.ok) return Promise.reject(txErr(c.code));
-        var init = { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(isObj(body) ? body : {}) };
+        // F1-7N-FB-4C-R1 §E — THE ACTION IS NEVER ONLY IN THE BODY.
+        //
+        // THIS IS THE ROOT-CAUSE FIX. An Apps Script /exec POST is always answered with a 302 to
+        // script.googleusercontent.com, and the Fetch spec says a 302 following a POST is re-issued as a GET
+        // WITH THE BODY DROPPED. Normally the redirect target carries the computed response, so nobody notices.
+        // When that chain instead resolves back to /exec - which happens on a cold or re-authorising session -
+        // the request arrives at doGet carrying NOTHING, and doGet answers with its terminal
+        // "Missing or invalid action parameter. Use: getOperationDb, getTable, …" message. The action was built
+        // correctly; the TRANSPORT lost it. That is exactly the one-time first-load failure reported on SKU
+        // Details and SKU Regional Details, and exactly why a later retry looked fine.
+        //
+        // `redirect: 'error'` is NOT an option here: the googleusercontent redirect is how Apps Script returns
+        // any POST response at all, so refusing to follow it would break every write in the system. So instead
+        // the action and request id are ALSO placed in the query string, where a method downgrade cannot remove
+        // them. doPost still reads the body and is completely unaffected; a downgraded GET now arrives at doGet
+        // WITH its action, which lets the router name the fault (see 01_router.gs POST_ONLY_ACTION_ON_GET)
+        // instead of reporting an anonymous missing parameter.
+        var dto = isObj(body) ? body : {};
+        var url = c.url;
+        var act = normName(dto.action);
+        if (act !== '') {
+          var qp = 'action=' + encodeURIComponent(act) + '&km_via=post';
+          var rid = normName(dto.requestId);
+          if (rid !== '') qp += '&km_rid=' + encodeURIComponent(rid);
+          url += (url.indexOf('?') < 0 ? '?' : '&') + qp;
+        }
+        var init = { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(dto) };
         if (opts && opts.signal) init.signal = opts.signal;   // AbortSignal end-to-end (no client double-request)
-        return _fetcher(c.url, init);
+        return _fetcher(url, init);
       }
     };
     function getTransportStatus() {
@@ -425,16 +492,80 @@
       return wsEnabled[n] === true ? SOURCE.WORKSPACE : SOURCE.LEGACY;
     }
 
+    // ---- F1-7N-FB-4C-R1 §E · THE ONE CANONICAL IMMUTABLE REQUEST-ENVELOPE BUILDER ---------------------
+    //
+    // Every workspace DTO was previously an object literal built per resolver, then handed to transport.post.
+    // Nothing checked that `action` was present, nothing prevented a later options merge from removing it, and
+    // nothing froze the payload - so "the action went missing" was a possible outcome with no detection point.
+    // This builder makes a missing action IMPOSSIBLE TO SEND: it throws before any network call.
+    //
+    // The payload is deep-cloned and frozen, so a caller that keeps a reference to its own include/filter object
+    // and mutates it later (or a second page mount that reuses one) cannot change a request already in flight.
+    // Page include/filter parameters live inside `payload`; transport metadata (action, requestId, apiVersion)
+    // lives beside it and is frozen separately - they are never the same object.
+    function deepFreezeClone(v) {
+      if (v === null || typeof v !== 'object') return v;
+      if (Array.isArray(v)) { var arr = v.map(deepFreezeClone); return Object.freeze(arr); }
+      var out = {};
+      for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = deepFreezeClone(v[k]); }
+      return Object.freeze(out);
+    }
+    function actionRequiredError(action, where) {
+      var e = new Error('CLIENT_ACTION_REQUIRED: a request envelope was built without an action' + (where ? ' (' + where + ')' : '') +
+        '. No network call was made.');
+      e.apiCode = API_ERROR_CODES.CLIENT_ACTION_REQUIRED;
+      e.details = { action: (action === undefined ? null : action), zero_write: true, retryable: false,
+        next_action: 'This is a client-side construction fault, not a server or network problem. Reload the page; if it persists the page build is inconsistent with the API client build.' };
+      return e;
+    }
+    function buildRequestEnvelope(action, payload, context) {
+      var a = normName(action);
+      // BLANK ACTION THROWS BEFORE FETCH. undefined, null, '' and whitespace all land here.
+      if (a === '') throw actionRequiredError(action, 'buildRequestEnvelope');
+      var env = {
+        apiVersion: API_VERSION,
+        action: a,
+        requestId: makeRequestId(context && context.requestId),
+        payload: deepFreezeClone(isObj(payload) ? payload : {}),
+        context: deepFreezeClone({
+          actor: (context && context.actor) || null,
+          clientVersion: (context && context.clientVersion) || null
+        })
+      };
+      // Frozen, so `Object.assign(dto, opts)` / `delete dto.action` from any caller is a no-op rather than a
+      // silently malformed request. In strict mode it throws; in sloppy mode it is ignored - either way the
+      // action survives, which is the property that matters.
+      return Object.freeze(env);
+    }
+    // Last line of defence at the transport boundary: even a hand-built DTO cannot reach the network without an
+    // action. This is what makes §E's guarantee hold for every existing resolver without rewriting each one.
+    function assertSendableEnvelope(dto, where) {
+      if (!isObj(dto) || normName(dto.action) === '') throw actionRequiredError(dto && dto.action, where);
+      return dto;
+    }
+
     // ---- API-2 · requestId (correlation, NOT idempotency) + call sequence (stale-response protection) ---
     var _idSeq = 0, _callSeq = 0;
     var _idGen = (typeof deps.idGen === 'function') ? deps.idGen : function () { _idSeq++; return 'REQ-C' + ('000000' + _idSeq).slice(-6); };
     function makeRequestId(provided) { var p = normName(provided); return /^REQ-[A-Za-z0-9_-]{1,40}$/.test(p) ? p : _idGen(); }
 
     // ---- API-2 · workspace transport invoke → parsed canonical envelope (tests inject deps.workspaceInvoke) --
-    var _workspaceInvoke = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
+    var _workspaceInvokeRaw = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
       // transport.post resolves the canonical URL at call time and rejects with the specific transport code
       // (TRANSPORT_NOT_CONFIGURED / TRANSPORT_URL_INVALID) — surfaced verbatim via errorFromException.
       return transport.post(dto, { signal: signal }).then(function (resp) { return safeReadJsonResponse(resp); });
+    };
+    // F1-7N-FB-4C-R1 §E — ONE choke point every workspace read passes through, so the "action is required" rule
+    // holds for every existing resolver without each one having to remember it. A blank action throws here, and
+    // it throws SYNCHRONOUSLY relative to the network: no request is issued.
+    var _workspaceInvoke = function (action, dto, signal) {
+      assertSendableEnvelope(dto, 'workspaceInvoke:' + (normName(action) || '(blank)'));
+      if (normName(action) !== normName(dto.action)) {
+        // The two are the same value at every call site today; if they ever diverge the DTO is authoritative and
+        // the disagreement is a construction bug worth failing on rather than silently preferring one.
+        throw actionRequiredError(dto.action, 'workspaceInvoke: action argument "' + normName(action) + '" disagrees with envelope action "' + normName(dto.action) + '"');
+      }
+      return _workspaceInvokeRaw(action, dto, signal);
     };
 
     // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
@@ -460,21 +591,68 @@
       var outMeta = buildMeta(meta);
       if (isObj(serverEnv.meta)) { for (var k in serverEnv.meta) { if (outMeta[k] === null || outMeta[k] === undefined) outMeta[k] = serverEnv.meta[k]; } }
       outMeta.requestId = dto.requestId; outMeta.source = SOURCE.WORKSPACE; outMeta.workspace = 'weeklyShipping'; outMeta.action = dto.action; outMeta.sequence = seq;
+      // F1-7N-FB-4C-R1 §D — VERIFY THE ANSWER IS TO THE QUESTION WE ASKED.
+      //
+      // The server already stamps its own action into meta (skdBuildEnvelope_ and its siblings). The previous code
+      // then OVERWROTE outMeta.action with the request's action unconditionally, destroying the only evidence that
+      // would prove a response came from a different handler than the one addressed. It is now COMPARED first.
+      // Absence of the echo is tolerated (an older deployment does not send one, and that is a separate, reported
+      // condition); only a genuine MISMATCH fails, which cannot be a false positive.
+      var _serverAction = (isObj(serverEnv.meta) && typeof serverEnv.meta.action === 'string') ? normName(serverEnv.meta.action) : '';
+      outMeta.serverAction = _serverAction || null;
+      if (_serverAction && _serverAction !== normName(dto.action)) {
+        return { success: false, data: null, meta: outMeta, errors: [{
+          code: API_ERROR_CODES.RESPONSE_ACTION_MISMATCH,
+          message: 'The deployment answered a different action than the one requested (asked "' + dto.action + '", answered "' + _serverAction + '"). The response was discarded; nothing was read.',
+          details: { requested_action: dto.action, answered_action: _serverAction, request_id: dto.requestId, zero_write: true, retryable: true,
+            next_action: 'Reload the page. If it repeats, the deployment is serving mismatched handlers — publish a new deployment version.' }
+        }] };
+      }
+
       // A server business failure MUST stay success:false (never masked); a nested {success:false} is not a success.
       if (serverEnv.success !== true) {
         // F1-7K-HOTFIX-ROUTER-CLOSURE-R1 — error-envelope hardening. Precedence (unchanged errors[] behavior first):
         //   1. serverEnv.errors[] (array)      → surfaced verbatim (byte-compatible with prior behavior)
-        //   2. serverEnv.error (non-empty str) → { code:'BACKEND_ERROR', message: <that string> } — previously DROPPED,
-        //      which masked real router-level failures (unknown action / top-level catch) as the generic WORKSPACE_ERROR.
+        //   2. serverEnv.error (non-empty str) → classified (see below) — previously DROPPED, which masked real
+        //      router-level failures (unknown action / top-level catch) as the generic WORKSPACE_ERROR.
         //   3. neither                         → the generic WORKSPACE_ERROR (unchanged fallback).
         // No stack/secret is exposed beyond the already-returned safe message; success behavior is untouched.
         var _outErrs;
         if (Array.isArray(serverEnv.errors) && serverEnv.errors.length) {
           _outErrs = serverEnv.errors;
         } else if (typeof serverEnv.error === 'string' && serverEnv.error.trim()) {
-          _outErrs = [{ code: 'BACKEND_ERROR', message: serverEnv.error, details: null }];
+          var _txt = serverEnv.error;
+          // F1-7N-FB-4C-R1 §D — the router's terminal unknown-action answer is NOT a backend error. It is one of
+          // two named facts, and telling them apart is the whole point:
+          //
+          //   REQUEST_METHOD_DOWNGRADED   the message is doGet's own action list, so a POST was answered by
+          //                               doGet — a redirect follow dropped the body. Retryable; the deployment
+          //                               is fine. This is the SKU Details / SKU Regional Details failure.
+          //   DEPLOYMENT_CONTRACT_MISMATCH the deployment genuinely does not carry this action. NOT retryable —
+          //                               retrying cannot publish a deployment.
+          if (isUnknownActionText(_txt)) {
+            if (looksLikeDoGetAnswer(_txt)) {
+              _outErrs = [{
+                code: API_ERROR_CODES.REQUEST_METHOD_DOWNGRADED,
+                message: 'The request for "' + dto.action + '" was sent as a POST but was answered by the GET handler, so its body — and therefore its action — was dropped in transit. This is a redirect downgrade, not a backend failure. Nothing was read.',
+                details: { action: dto.action, request_id: dto.requestId, received_by: 'doGet', zero_write: true, retryable: true,
+                  router_message: _txt,
+                  next_action: 'Retry the read. If it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established.' }
+              }];
+            } else {
+              _outErrs = [{
+                code: API_ERROR_CODES.DEPLOYMENT_CONTRACT_MISMATCH,
+                message: 'The deployed Apps Script Web App does not contain the action "' + dto.action + '". The code may be saved in the editor without being published: create a NEW DEPLOYMENT VERSION, then reload. Nothing was read.',
+                details: { action: dto.action, missing_action: dto.action, request_id: dto.requestId, zero_write: true, retryable: false,
+                  router_message: _txt,
+                  next_action: 'Publish a new Apps Script deployment version containing this action, then hard-reload the page.' }
+              }];
+            }
+          } else {
+            _outErrs = [{ code: 'BACKEND_ERROR', message: _txt, details: { action: dto.action, request_id: dto.requestId } }];
+          }
         } else {
-          _outErrs = [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }];
+          _outErrs = [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: { action: dto.action, request_id: dto.requestId } }];
         }
         return { success: false, data: null, meta: outMeta, errors: _outErrs };
       }
@@ -650,15 +828,22 @@
     // deferred, trivial follow-up). Emits ONLY raw persisted master/reference rows — NO write side effects, NO Factory
     // Stock initialization (that stays with master-SKU creation), NO Forecast/Gap/Recommendation. The client keeps ALL
     // filtering/search/pagination (the page needs the complete set for its lifecycle sections + option universes).
+    // F1-7N-FB-4C-R1 §E — built through the CANONICAL IMMUTABLE BUILDER. This is the request both SKU Details and
+    // SKU Regional Details send (they differ only by include.regional), so it is the one that had to become
+    // unforgeable: the action is required and the payload is frozen, so neither a blank action nor a late mutation
+    // of a caller's include object can produce the malformed request this round was raised to fix. The remaining
+    // workspace resolvers still build literals and are covered by the _workspaceInvoke choke point, which refuses
+    // any envelope without an action.
+    var SKU_DETAILS_ACTION = 'skuDetails.workspace.get';
     function buildSkuDetailsRequestDTO(params) {
       params = params || {};
-      return {
-        apiVersion: API_VERSION, action: 'skuDetails.workspace.get', requestId: makeRequestId(params.requestId),
-        payload: {
-          include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
-        },
-        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
-      };
+      return buildRequestEnvelope(SKU_DETAILS_ACTION, {
+        include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+      }, {
+        requestId: params.requestId,
+        actor: (params.context && params.context.actor) || null,
+        clientVersion: (params.context && params.context.clientVersion) || null
+      });
     }
     function skuDetailsResolver(params, helpers, opts) {
       var signal = opts && opts.signal, seq = opts && opts.sequence;
@@ -666,7 +851,9 @@
       var dto = buildSkuDetailsRequestDTO(params);
       return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
         var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
-        env.meta.workspace = 'skuDetails'; env.meta.action = dto.action;
+        // meta.action is already dto.action, VERIFIED against the server's echo by the normalizer. Re-stamping it
+        // here is what previously erased the mismatch evidence, so it is deliberately not done.
+        env.meta.workspace = 'skuDetails';
         return env;
       });
     }
@@ -827,7 +1014,19 @@
         if (signal && signal.aborted) {
           return Promise.resolve(buildError('ABORTED', 'request aborted before dispatch', { workspace: normName(name) }, { workspace: normName(name), sequence: seq, source: SOURCE.GUARD }));
         }
-        return dispatch({ kind: REQUEST_KIND.WORKSPACE, name: name, params: params, mode: effectiveMode(name), signal: signal, sequence: seq });
+        // F1-7N-FB-4C-R1 §C.6/§E — SNAPSHOT THE CALLER'S PARAMS SYNCHRONOUSLY, HERE.
+        //
+        // This is a REAL defect the §G race tests caught, not a hypothetical. dispatchWorkspace runs the resolver
+        // inside `Promise.resolve().then(...)`, so the request DTO — and therefore the copy of the caller's
+        // include/filter object — was built one microtask AFTER getWorkspace returned. A page that called
+        // getWorkspace and then mutated its own options object (or two page mounts sharing one options object,
+        // which is exactly hypothesis §C.6) could still change a request that had already been issued.
+        //
+        // Freezing the DTO's payload was not enough, because the DTO did not exist yet. The snapshot has to be
+        // taken at the synchronous entry point, and it is: nothing the caller does after this line can reach the
+        // request. Cloning also removes the aliasing between two concurrent calls that passed the same object.
+        return dispatch({ kind: REQUEST_KIND.WORKSPACE, name: name, params: deepFreezeClone(isObj(params) ? params : {}),
+          mode: effectiveMode(name), signal: signal, sequence: seq });
       },
       executeCommand: function (action, payload) {
         // SECURITY: forbidden schema/structural ops are refused in BOTH modes, before anything runs.
@@ -878,7 +1077,13 @@
       cache: cache,
       legacyAdapter: legacyAdapter,
       // security predicate
-      isForbiddenAction: isForbiddenAction
+      isForbiddenAction: isForbiddenAction,
+      // F1-7N-FB-4C-R1 §E — exposed on the TOP-LEVEL surface (the one pages and tests actually hold) so the
+      // "action is required" rule can be exercised directly rather than inferred from a resolver’s behaviour.
+      buildRequestEnvelope: buildRequestEnvelope,
+      assertSendableEnvelope: assertSendableEnvelope,
+      isUnknownActionText: isUnknownActionText,
+      looksLikeDoGetAnswer: looksLikeDoGetAnswer
     };
   }
 

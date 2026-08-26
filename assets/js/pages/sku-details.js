@@ -121,12 +121,24 @@ function _skRegion_() {
     });
     return _skRegionCtl;
 }
+// F1-7N-FB-4C-R1 §F — the same contract as the regional page, for the same reason: the failure the operator saw
+// carried no action, no request id and no next step. DEPLOYMENT_MISMATCH is a distinct state and is never
+// auto-retried, because retrying cannot publish an Apps Script deployment.
+var SK_READ_ACTION = 'skuDetails.workspace.get';
+var SK_NO_RETRY_CODES = { DEPLOYMENT_CONTRACT_MISMATCH: 1, CLIENT_ACTION_REQUIRED: 1 };
 function _skRenderError_(err) {
     _skReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
-    var rg = _skRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
     var code = (err && err.code) || 'SKU_DETAILS_READ_FAILED';
     var message = (err && err.message) || 'SKU Details read failed';
-    var html = '<div class="fixed-row" style="color:#B91C1C;">SKU Details read error: ' + message + ' [' + code + ']</div>';
+    var det = (err && err.details) || {};
+    var action = det.action || det.requested_action || SK_READ_ACTION;
+    var reqId = det.request_id || det.requestId || null;
+    var mismatch = !!SK_NO_RETRY_CODES[code];
+    var rg = _skRegion_();
+    if (rg) rg.set(mismatch ? window.KM.loadState.STATES.DEPLOYMENT_MISMATCH : window.KM.loadState.STATES.ERROR);
+    var tail = 'action ' + action + ' · ' + code + (reqId ? ' · request ' + reqId : '');
+    var advice = mismatch ? ' — ' + (det.next_action || 'Publish a new Apps Script deployment version, then hard-reload.') : '';
+    var html = '<div class="fixed-row" style="color:#B91C1C;">SKU Details read error: ' + message + ' [' + tail + ']' + advice + '</div>';
     ['upcoming', 'running', 'phasing', 'closure'].forEach(function (s, idx) {
         var fb = document.getElementById(s + 'FixedBody'); var sb = document.getElementById(s + 'ScrollBody');
         if (fb) fb.innerHTML = (idx === 0) ? html : '';

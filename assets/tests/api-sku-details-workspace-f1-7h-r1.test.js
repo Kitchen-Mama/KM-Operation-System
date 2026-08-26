@@ -177,7 +177,14 @@ console.log('\n== activation + registration ==');
 ok(/WORKSPACE_CANONICAL = \{[^}]*skuDetails: true/.test(FND), 'skuDetails is CANONICAL');
 ok(/WORKSPACE_ENABLED_DEFAULT = \{[^}]*skuDetails: true/.test(FND), 'skuDetails per-workspace flag defaults ON');
 ok(/register\('skuDetails', \{[^}]*status: WORKSPACE_STATUS\.IMPLEMENTED, resolver: skuDetailsResolver/.test(FND), 'skuDetails registered IMPLEMENTED with resolver');
-ok(/action: 'skuDetails\.workspace\.get'/.test(FND), 'foundation DTO targets skuDetails.workspace.get');
+// F1-7N-FB-4C-R1 §E — the DTO is now produced by the CANONICAL IMMUTABLE BUILDER, so the action is named once in
+// a constant and passed in rather than written inline. What this assertion protects — that this resolver targets
+// exactly this action — is unchanged, and it now also pins the two properties the inline literal could not give:
+// the action is required (a blank one throws before any fetch) and the payload is frozen.
+ok(/var SKU_DETAILS_ACTION = 'skuDetails\.workspace\.get';/.test(FND), 'foundation DTO targets skuDetails.workspace.get');
+ok(/return buildRequestEnvelope\(SKU_DETAILS_ACTION,/.test(FND), 'and builds it through the canonical immutable request-envelope builder');
+ok(/if \(a === ''\) throw actionRequiredError\(action, 'buildRequestEnvelope'\);/.test(FND), 'which refuses a blank action BEFORE any network call');
+ok(/payload: deepFreezeClone\(isObj\(payload\) \? payload : \{\}\)/.test(FND), 'and freezes the payload so a caller cannot mutate an in-flight request');
 ok(/KM\.DB\.adaptSkuDetailsWorkspace = function/.test(DBAPI), 'db-api exposes adaptSkuDetailsWorkspace');
 
 console.log('\n== page: workspace primary read, no broad DB in the read path, fail-closed, write paths unchanged ==');

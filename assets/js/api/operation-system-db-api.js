@@ -3615,8 +3615,17 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     'requestOrder.sendWorkset.get', 'requestOrder.send.orchestrate', 'requestOrder.send.status',
     'requestOrder.allocationDraft.ensureAndEdit', 'system.allocationDraftIdentityDiagnostic',
     'system.executionPlanConflictDiagnostic', 'system.requestOrderSendDiagnosticStatus',
-    'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft'
+    'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft',
+    // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
+    // could only be discovered by the pages failing, which is precisely how this round started.
+    'skuDetails.workspace.get'
 ];
+// F1-7N-FB-4C-R1 §D — the actions each PAGE needs, so a mismatch can name the page rather than only the action.
+// The probe is still one request; this is the mapping used to phrase the message.
+var KM_PAGE_REQUIRED_ACTIONS_ = {
+    'sku-details': ['skuDetails.workspace.get'],
+    'sku-regional-details': ['skuDetails.workspace.get']
+};
 // Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
 // catches a half-finished, file-by-file Apps Script sync that still resolves every action.
 var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
@@ -3624,7 +3633,12 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     'shipEtaDateOnly_',                     // 31_ — the FB-4A ETA date-only round-trip normalizer
     'shipWsDateOnly_',                      // 57_ — the FB-4A scoped-read date projection
     'rosResolveCurrentPlanningCycle_',      // 66_ — the addendum planning-cycle authority
-    'TEMP_ROSEND_DIAG_OWNER_FILE_'          // TEMP_request_order_send_diagnostics.gs — the single diagnostic owner
+    'TEMP_ROSEND_DIAG_OWNER_FILE_',         // TEMP_request_order_send_diagnostics.gs — the single diagnostic owner
+    // F1-7N-FB-4C-R1 §D — the OWNER SYMBOLS behind the two SKU read paths. An action can resolve while its
+    // owning file is a round behind, which is the case a resolvable action list cannot see: these prove the
+    // files themselves were copied.
+    'skdWorkspaceBuild_',                   // 59_ — the SKU Details / SKU Regional read-model builder
+    'skdBuildEnvelope_'                     // 59_ — the envelope that carries the echoed action + requestId
 ];
 window.KM.DB.checkDeploymentContract = async function () {
     var res = await _kmGapRead_('system.health', {
@@ -3688,6 +3702,40 @@ window.KM.DB.checkDeploymentContract = async function () {
 // The read-only Request Order Send diagnostic ownership + cycle-resolution report (addendum §G), reachable from
 // the website so the operator never has to open the Apps Script editor to answer "which file owns this?".
 window.KM.DB.getRequestOrderSendDiagnosticStatus = function (payload) { return _kmGapRead_('system.requestOrderSendDiagnosticStatus', payload || {}); };
+// F1-7N-FB-4C-R1 §D — PAGE-SCOPED DEPLOYMENT VERDICT. A page mount asks "is the deployment able to serve MY
+// read?" and gets a typed answer naming the required action, the missing action or owner symbol, both builds, the
+// contract version and the request id. It reuses the ONE caller-driven probe above (no second request shape) and
+// deliberately does NOT auto-retry: a stale deployment is a publish step, and retrying cannot publish anything.
+window.KM.DB.checkPageDeploymentContract = async function (pageKey) {
+    var required = KM_PAGE_REQUIRED_ACTIONS_[String(pageKey || '')] || [];
+    var v = await window.KM.DB.checkDeploymentContract();
+    var id = v && v.identity;
+    var probe = id && id.caller_probe;
+    var missing = [];
+    if (probe) {
+        var miss = (probe.missing_actions || []).concat(probe.missing_symbols || []);
+        missing = miss.filter(function (m) { return required.indexOf(m) !== -1 || String(m).indexOf('skd') === 0; });
+    }
+    if (v && v.ok && !missing.length) {
+        return { ok: true, code: 'DEPLOYMENT_CONTRACT_OK', page: pageKey, required_actions: required };
+    }
+    return {
+        ok: false,
+        code: 'DEPLOYMENT_CONTRACT_MISMATCH',
+        page: pageKey,
+        required_actions: required,
+        missing: missing.length ? missing : ((probe && (probe.missing_actions || []).concat(probe.missing_symbols || [])) || []),
+        frontend_build: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
+        backend_build: (id && (id.build_id || null)),
+        contract_version: (id && id.deployed_action_contract_version) || null,
+        expected_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
+        request_id: (id && id.request_id) || null,
+        retryable: false,
+        message: (v && v.message) || 'The deployed Apps Script cannot serve this page\u2019s read contract.',
+        next_action: 'Publish a NEW Apps Script deployment version, then hard-reload this page. Retrying the read cannot publish a deployment.'
+    };
+};
+window.KM.DB.getPageRequiredActions = function (pageKey) { return (KM_PAGE_REQUIRED_ACTIONS_[String(pageKey || '')] || []).slice(); };
 window.KM.DB.getExpectedContract = function () {
     return { action_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
         registry_projection_version: KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ };
