@@ -306,12 +306,28 @@ ok(/Blocking record/.test(irErr), '3. and names the blocking record when the ser
 // ==========================================================================================================
 section('4. no migration or overwrite happens automatically');
 // ==========================================================================================================
-var G68code = noStrings(G68);
+// F1-7N-FB-4B §B.11 — 68_ now ALSO hosts a deliberately gated duplicate-cleanup tool, which necessarily contains
+// deleteRow and LockService. A file-wide ban would have to be deleted to accommodate it; scoping the absence to
+// the READ-ONLY diagnostic functions keeps the real guarantee and is stronger, because it survives the file
+// growing. The cleanup's own gates are asserted separately below.
+var G68code = noStrings([extractFn(G68, 'handleExecutionPlanConflictDiagnostic_'),
+  extractFn(G68, 'handleExecutionPlanDuplicateLineDiagnostic_'),
+  extractFn(G68, 'epcClassifyDuplicates_'), extractFn(G68, 'epcRepairFkEffects_'),
+  extractFn(G68, 'TEMP_EXECUTION_PLAN_CONFLICT_DIAGNOSE'),
+  extractFn(G68, 'TEMP_EXECUTION_PLAN_DUPLICATE_DIAGNOSE')].join('\n'));
 ['appendRow', 'setValue', 'setValues', 'insertSheet', 'deleteRow', 'deleteSheet', 'procurementEnsureSheet_',
   'LockService', 'DriveApp', 'MailApp', 'GmailApp', 'sendEmail', 'handleUpsertShippingAllocationDraft_',
   'sadUpsertDraftHeaderCore_', 'handleCancelShippingAllocationDraft_', 'setProperty'].forEach(function (k) {
-  ok(G68code.indexOf(k) === -1, '4. the diagnostic contains no ' + k);
+  ok(G68code.indexOf(k) === -1, '4. the READ-ONLY diagnostics contain no ' + k);
 });
+// the cleanup tool exists, but it cannot act without all three gates
+var cleanup = extractFn(G68, 'TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP');
+ok(/TEMP_DUPFIX_MODE_ = 'DRY_RUN'/.test(G68), '4. the cleanup tool defaults to DRY_RUN');
+ok(/String\(TEMP_DUPFIX_MODE_\)\.toUpperCase\(\) !== 'COMMIT'/.test(cleanup), '4. and returns before any delete unless the mode is exactly COMMIT');
+ok(/TEMP_DUPFIX_CONFIRMATION_\) !== epcStr_\(d\.repair_proposal\.confirmation_checksum\)/.test(cleanup), '4. a COMMIT also requires a confirmation checksum recomputed LIVE');
+ok(/safe_to_auto_repair === true/.test(cleanup), '4. and only byte-identical duplicate groups are ever touched');
+ok(/ROLLBACK-JOURNAL/.test(cleanup) && cleanup.indexOf('ROLLBACK-JOURNAL') < cleanup.indexOf('deleteRow'), '4. the rollback journal is written BEFORE the first delete');
+ok(/NOTHING WAS DELETED/.test(cleanup), '4. every refusal states that nothing was deleted');
 ok(/rows_migrated: 0/.test(G68) && /rows_deleted: 0/.test(G68), '4. and declares rows_migrated / rows_deleted = 0');
 ok(/PERFORMED NO WRITE, NO MIGRATION AND NO OVERWRITE/.test(G68), '4. and says so in its own zero-write statement');
 epcDispositions_({ existing_present: true, guard_reason: 'LEGACY_ROUTE_RECONCILIATION_REQUIRED' }).forEach(function (d) {

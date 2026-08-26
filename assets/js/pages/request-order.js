@@ -4184,10 +4184,40 @@ function _roCanonicalRowFor_(sku, bucket) {
 }
 // DISPLAY Order Qty for the grid (NOT the Send Request payload): an in-flight local edit wins; else a persisted
 // canonical-draft row shows its DB order_qty; else the frozen effective value. _roEffectiveOrderQty is untouched.
+// F1-7N-FB-4B §E — THE AUTHORITY LADDER, AND WHY THE LAST RUNG WAS THE DEFECT.
+//
+// LIVE EVIDENCE. CO1150-N showed Order Qty T1 = 400 in the UI while the database held 360, with NO user edit, and
+// Send Request was correctly blocked with QUANTITY_DRIFT. Both halves come from one line: when the persisted tier
+// row did not resolve, BOTH the display and the Send quantity fell through to _roEffectiveOrderQty — an EPHEMERAL
+// recomputation derived from the live recommendation. The page then displayed a number it had never persisted and
+// asserted it to the server, which compared it against the real 360 and refused. The barrier did its job; the
+// number should never have been produced.
+//
+// THE RULE (§E.3), now enforced rather than described:
+//   · recommendation / suggested is ADVISORY CALCULATION OUTPUT;
+//   · order_qty is the PERSISTED SEND AUTHORITY;
+//   · when a canonical draft EXISTS for this SKU, its persisted order_qty is the only display authority — a tier
+//     whose persisted row is missing or blank shows UNAVAILABLE, never a recommendation wearing its clothes;
+//   · the ephemeral value survives ONLY on the genuine manual path, where there is no canonical draft at all.
+//
+// This is also what makes §E.4 true by construction: display and Send now read the SAME authority, so a freshly
+// rendered AI-Plan row cannot assert a quantity that differs from its own DB output.
+function _roHasCanonicalDraft_(sku) {
+  var d = _roCanonicalDraftBySku[String(sku == null ? '' : sku).toUpperCase()];
+  return !!(d && d.draftId);
+}
 function _roRowOrderQtyDisplay_(item, idx, bucket, edit) {
   if (edit && edit.orderQty != null && edit.orderQty !== '') return Number(edit.orderQty);
   var ref = _roCanonicalRowFor_(item && item.sku, bucket);
-  if (ref && ref.line.order_qty != null && ref.line.order_qty !== '') return Number(ref.line.order_qty);
+  if (ref) {
+    var v = ref.line.order_qty;
+    // A persisted ZERO is a real decision (§E.6): 0 !== '' and 0 != null, so it returns 0 rather than falling through.
+    if (v != null && v !== '') return Number(v);
+    return null;   // the tier IS drafted but carries no persisted quantity — show nothing, never a recommendation
+  }
+  // FAIL CLOSED: a SKU that HAS a canonical draft never borrows an ephemeral number for a tier the draft does not
+  // carry. null renders as an empty cell, which is honest; 400-when-the-DB-says-360 is not.
+  if (_roHasCanonicalDraft_(item && item.sku)) return null;
   return _roEffectiveOrderQty(item, idx, edit);
 }
 // F1-4B-FM6-R4E4 §10 — Send Request execution quantity authority. For a SKU backed by a PERSISTED canonical draft
@@ -4195,7 +4225,15 @@ function _roRowOrderQtyDisplay_(item, idx, bucket, edit) {
 // only the manual / no-canonical-draft path falls back to the in-memory effective value (the ordinary manual flow).
 function _roSendOrderQty_(item, idx, bucket, edit) {
   var ref = _roCanonicalRowFor_(item && item.sku, bucket);
-  if (ref && ref.line.order_qty != null && ref.line.order_qty !== '') return Number(ref.line.order_qty);
+  if (ref) {
+    var v = ref.line.order_qty;
+    if (v != null && v !== '') return Number(v);   // includes a persisted 0 (§E.6)
+    return null;
+  }
+  // F1-7N-FB-4B §E — same fail-closed rule as the display. A SKU backed by a canonical draft may NEVER assert a
+  // recomputed quantity: that is precisely how the page came to send 400 against a persisted 360. Returning null
+  // contributes nothing to the Send intents, so the tier is simply not asserted rather than asserted wrongly.
+  if (_roHasCanonicalDraft_(item && item.sku)) return null;
   return _roEffectiveOrderQty(item, idx, edit);
 }
 // F1-4B-FM6-R4E5B — DETERMINISTIC manual allocation-draft id (grain + planning cycle). A manual (no-AI) Send must

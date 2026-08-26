@@ -2535,9 +2535,57 @@ window._isRouteComplete = _isRouteComplete;
 // Stable client-side draft line id (§6): assigned when a route first becomes COMPLETE so every later
 // edit upserts the SAME shipping_allocation_draft_lines row (idempotent — no duplicate lines). Survives
 // reload because the DB stores the row under this id and _hydrateAllocationDraftFromDb reads it back.
+// F1-7N-FB-4B §B — THIS IS A LOCAL PLACEHOLDER, NOT AN IDENTITY. The server owns line identity: under a K2 draft
+// it mints the canonical SADL-K2-<hash of sku|site_sku|window_code> and IGNORES whatever id arrives. Treating this
+// random value as a durable id is precisely what produced three physical rows under one primary key: the page kept
+// sending an id the database never stored, the server never found it, fell into its INSERT branch, minted the same
+// canonical id again and appended. _irAdoptPersistedLineIds_ below now replaces this placeholder with the id the
+// server reports it actually persisted, so the second save UPDATES instead of appending.
 function _newDraftLineId() {
     var rnd = (Math.random().toString(36).slice(2) + Date.now().toString(36)).toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return 'SADL-' + rnd.slice(0, 10);
+    return 'SADL-LOCAL-' + rnd.slice(0, 10);
+}
+
+// F1-7N-FB-4B §B — adopt the ids the SERVER reports it persisted. Matching is by the canonical business identity
+// (sku + site_sku + window_code) — the exact key the server resolves on — never by array position.
+//
+// BOTH stores must be updated. The draft model is what _flushDraftDbPersist reads, but a row's id is re-collected
+// from the DOM attribute (data-line-id) on the next edit, so leaving the attribute stale would put the placeholder
+// straight back and reopen the append loop this fixes.
+function _irAdoptPersistedLineIds_(sku, persistedLines) {
+    if (!persistedLines || !persistedLines.length) return 0;
+    var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
+    function k(o) {
+        return [String(o.sku == null ? '' : o.sku).trim().toLowerCase(),
+            String(o.site_sku == null ? '' : o.site_sku).trim().toLowerCase(),
+            String(o.window_code == null ? '' : o.window_code).trim().toLowerCase()].join('|');
+    }
+    var byKey = {};
+    persistedLines.forEach(function (p) {
+        if (String(p.line_status || '').trim().toLowerCase() === 'cancelled') return;
+        var id = String(p.allocation_draft_line_id || '').trim();
+        if (id) byKey[k(p)] = id;
+    });
+    var adopted = 0;
+    rows.forEach(function (r) {
+        var canonical = byKey[k(r)];
+        if (!canonical) return;
+        var previous = String(r.allocation_draft_line_id || '');
+        if (previous === canonical) return;
+        // re-stamp the DOM row that still carries the placeholder, so the next collect reads the canonical id
+        if (previous) {
+            try {
+                var els = document.querySelectorAll('[data-line-id]');
+                for (var i = 0; i < els.length; i++) {
+                    if (els[i].getAttribute('data-line-id') === previous) { els[i].setAttribute('data-line-id', canonical); break; }
+                }
+            } catch (e) {}
+        }
+        r.allocation_draft_line_id = canonical;
+        adopted++;
+    });
+    if (adopted) { try { _persistAllocationDraft(); } catch (e3) {} }
+    return adopted;
 }
 
 // F1-7N-FA-3C-R6E1-R1 — STABLE Submit execution key (idempotency). ONE key per Submit intention: generated once,
@@ -2829,7 +2877,24 @@ function _flushDraftDbPersist(sku) {
         // silently persist only route0. Genuinely different routes → separate Submit cycles / Drafts (§3/§4).
         var _routeKeys = (window.IRDraft && window.IRDraft.distinctRouteContexts) ? window.IRDraft.distinctRouteContexts(complete) : [];
         if (_routeKeys.length > 1) {
-            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, { message: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 — ' + _routeKeys.length + ' distinct From/To/Method routes in one Draft; Phase-1 persists one route per Draft (use separate Submit cycles). NOT SAVED TO DB.' });
+            // F1-7N-FB-4B §B.8 — a STRUCTURED envelope, not a bare sentence. Under the frozen K2 contract a Header
+            // IS one shipment group, so two DIFFERENT route contexts are two DIFFERENT headers — not two lines under
+            // one header. This refusal is therefore correct; what was missing was saying so in a form the operator
+            // can act on, with the reason code on the face of the message and zero rows written.
+            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, {
+                structured: {
+                    reasonCode: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1',
+                    message: _routeKeys.length + ' distinct From/To/Method route contexts were entered for this SKU. One Draft header is ONE shipment group (K2), so different routes belong to different headers — they cannot be two lines under one header.',
+                    zeroWrite: 'true', retryable: false,
+                    nextAction: 'Keep ONE route context per Submit cycle: save and submit this route, then enter the other route as a separate plan. Nothing was written to the database.'
+                },
+                message: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 — ' + _routeKeys.length + ' distinct From/To/Method routes in one Draft. NOT SAVED TO DB.'
+            });
+            if (typeof _irMarkRouteUnsaved_ === 'function') _irMarkRouteUnsaved_(sku, { structured: {
+                code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', reasonCode: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1',
+                table: 'shipping_allocation_draft_lines', retryable: false,
+                message: _routeKeys.length + ' distinct route contexts for one SKU; one Draft header is ONE shipment group (K2).',
+                nextAction: 'Keep ONE route context per Submit cycle. Nothing was written to the database.' } });
             return;
         }
 
@@ -2867,6 +2932,10 @@ function _flushDraftDbPersist(sku) {
             return window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftId, lines: lines });
         }).then(function (lres) {
             if (lres && lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
+            // F1-7N-FB-4B §B — adopt the ids the server actually persisted BEFORE anything else can trigger a
+            // second flush. Without this the next save sends a stale local placeholder, the server cannot find it,
+            // and it appends another physical row under the same canonical primary key.
+            try { _irAdoptPersistedLineIds_(sku, (lres && lres.data && lres.data.persisted_lines) || []); } catch (eAdopt) {}
             // Both writes acknowledged → this SKU's route is genuinely persisted. Clear any prior UNSAVED mark
             // (a retry that reuses the same deterministic identity updates the same row — no duplicate).
             _irClearRouteUnsaved_(sku);

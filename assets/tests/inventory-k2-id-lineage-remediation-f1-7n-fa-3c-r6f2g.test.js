@@ -48,11 +48,18 @@ section('B. 16_ cores wire K2-aware line-id minting');
 var atomicCore = extractFn(G16, 'sadAtomicUpsertCore_');
 ok(/var isK2Group = id \? sadIsK2Group_\(undefined, id, header\) : false;/.test(atomicCore), 'B4 atomic core classifies K2 from explicit id / header authority');
 ok(/isK2Group = sadIsK2Group_\(res\.k2, res\.id, header\);/.test(atomicCore), 'B4 atomic core classifies K2 from the resolver decision on CREATE/REUSE');
-ok(/if \(isK2Group\) lineId = sadK2DeterministicLineId_\(id, l\);\s*\n\s*else if \(!lineId\) lineId = sadDeterministicLineId_\(id, l\);/.test(atomicCore), 'B5 K2 CREATE mints SADL-K2- and NEVER trusts a caller-supplied id; generic honors explicit id else SADL-');
+// FB-4B §B — both cores now mint through the SAME canonical helper, which is K2-aware, and both assert the id is
+// absent before appending. That is strictly stronger than the branch this pinned.
+ok(/lineId = canonicalLineId;/.test(atomicCore), 'B5 atomic CREATE mints the CANONICAL id and NEVER trusts a caller-supplied id');
+ok(/var canonicalLineId = sadCanonicalLineId_\(isK2Group, id, l\);/.test(atomicCore), 'B5 via the shared K2-aware canonical helper');
+ok(/LINE_PRIMARY_KEY_ALREADY_EXISTS/.test(atomicCore), 'B5 and it refuses to append onto an existing primary key');
+ok(/function sadCanonicalLineId_\(isK2, draftId, l\) \{\s*\n?\s*return isK2 \? sadK2DeterministicLineId_\(draftId, l\) : sadDeterministicLineId_\(draftId, l\);/.test(G16),
+  'B5 the canonical helper is K2 -> SADL-K2-, generic -> SADL- (unchanged semantics)');
 ok(/setValue\(sadNewLineId_\(isK2Group, id, l\)\)/.test(atomicCore), 'B6 atomic heal-blank id path is K2-aware (REGENERATE missing-line uses the K2 authority)');
 var keyedCore = extractFn(G16, 'sadUpsertLinesKeyedCore_');
 ok(/var isK2Draft = \(String\(draftId\)\.indexOf\('SADH-K2-'\) === 0\);/.test(keyedCore), 'B7 keyed core classifies a stored SADH-K2- draft as K2');
-ok(/if \(isK2Draft\) lineId = sadK2DeterministicLineId_\(draftId, l\);\s*\n\s*else if \(!lineId\) lineId = sadDeterministicLineId_\(draftId, l\);/.test(keyedCore), 'B7 keyed K2 draft mints SADL-K2-; generic unchanged');
+ok(/var canonicalId = sadCanonicalLineId_\(isK2Draft, draftId, l\);/.test(keyedCore), 'B7 keyed core resolves the canonical id (K2 -> SADL-K2-, generic -> SADL-)');
+ok(/lineId = canonicalId;/.test(keyedCore), 'B7 and an INSERT uses it rather than any caller-supplied id');
 ok(/setValue\(sadNewLineId_\(isK2Draft, draftId, l\)\)/.test(keyedCore), 'B7 keyed heal-blank id path is K2-aware');
 
 // ---- REUSE stays zero-write; lineage fields excluded from the REUSE fingerprint ---------------------------------

@@ -78,6 +78,49 @@ function shipWsDateOnly_(v) {
   }
   return shipWsStr_(v);
 }
+
+// ------------------------------------------------------------------------------------------------------------
+// F1-7N-FB-4B §C — THE RAW PASSTHROUGH WAS THE HOLE, AND FB-4A ONLY CLOSED HALF THE PATH.
+//
+// FB-4A normalized the PROJECTED `eta` field (shipWsDateOnly_ above) and that was correct but INSUFFICIENT,
+// because nothing on the client reads the projected field: operation-system-db-api.js builds its shipment
+// view-model with normalizeShipmentRecord(s.raw) — from the RAW ROW PASSTHROUGH. A Sheets date cell is a Date
+// OBJECT, and JSON.stringify(Date) calls Date.prototype.toJSON -> toISOString(), so `raw.eta` left this server
+// as '2026-08-30T16:00:00.000Z' — Asia/Taipei midnight on the 31st, serialized as the previous day in UTC. The
+// operator saw "ETA saved and verified: 2026-08-31", a blank date input (the page's ^\d{4}-\d{2}-\d{2}$ test
+// fails on an ISO timestamp) and a card reading 2026-08-30T16:00:00.000Z. The write was right the whole time.
+//
+// So the normalization is applied HERE, at the serialization boundary every consumer passes through:
+//   · a DATE-ONLY column (eta / etd / the *_date family) -> 'yyyy-MM-dd'
+//   · any OTHER Date cell (created_at / updated_at / *_at) -> 'yyyy-MM-dd HH:mm:ss', the exact form
+//     shipmentTimestamp_ writes, so a timestamp keeps its time instead of being flattened or UTC-shifted
+//   · anything that is not a Date is passed through UNTOUCHED, so a row already stored as text is byte-identical
+// Both use Session.getScriptTimeZone() — the single date authority 02_ formatValue_, 11_, 12_ and 13_ share.
+// NO ISO-8601 / UTC / 'Z' string can leave this module for a shipments row.
+var SHIP_WS_DATE_ONLY_COLS_ = {
+  eta: 1, etd: 1,
+  actual_departure_date: 1, actual_arrival_date: 1, customs_clearance_date: 1, delivered_date: 1,
+  planned_arrival_date: 1, planned_departure_date: 1, inventory_snapshot_date: 1
+};
+function shipWsIsDate_(v) { return Object.prototype.toString.call(v) === '[object Date]'; }
+function shipWsDateTime_(v) {
+  if (!shipWsIsDate_(v) || isNaN(v.getTime())) return shipWsStr_(v);
+  if (typeof Utilities === 'undefined' || typeof Session === 'undefined') return shipWsStr_(v);
+  return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+}
+// Shallow copy with every Date cell normalized. Shallow on purpose: the row is a flat header-keyed object, and a
+// copy (rather than mutating `r`) keeps the caller's own read model untouched.
+function shipWsNormalizeRawRow_(r) {
+  if (!r || typeof r !== 'object') return r;
+  var out = {};
+  for (var k in r) {
+    if (!Object.prototype.hasOwnProperty.call(r, k)) continue;
+    var v = r[k];
+    if (!shipWsIsDate_(v)) { out[k] = v; continue; }
+    out[k] = SHIP_WS_DATE_ONLY_COLS_[k] === 1 ? shipWsDateOnly_(v) : shipWsDateTime_(v);
+  }
+  return out;
+}
 function shipWsNum_(v) { if (v === '' || v === null || v === undefined) return 0; var n = Number(v); return isFinite(n) ? n : 0; }
 function shipWsLc_(v) { return shipWsStr_(v).toLowerCase(); }
 
@@ -147,7 +190,10 @@ function shipMapShipment_(r, linesByShipment, docsByShipment) {
     documents: docs.documents, documentFolderUrl: docs.documentFolderUrl,
     documentGenerationStatus: docs.documentGenerationStatus, documentGenerationError: docs.documentGenerationError,
     canRetryDocuments: docs.canRetryDocuments,
-    raw: r   // read-only passthrough (same shipments table already read)
+    // FB-4B §C — the passthrough is still the SAME row, but with its Date cells rendered in the canonical
+    // timezone. Without this, JSON.stringify turns every date cell into a UTC ISO timestamp and the client — which
+    // builds its view-model from THIS object, not from the projected fields above — shows the wrong calendar day.
+    raw: shipWsNormalizeRawRow_(r)
   };
 }
 

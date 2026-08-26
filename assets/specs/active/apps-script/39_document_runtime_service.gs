@@ -332,6 +332,83 @@ function dgsSelectPoTemplate_(templates, ctx) {
   return { ok: true, template: cand[0], template_id: dgsStr_(cand[0].template_id), template_key: dgsStr_(cand[0].template_key), template_version: dgsNum_(cand[0].template_version) };
 }
 
+// ---- F1-7N-FB-4B §D.4 — WHY the PO template did not resolve, gate by gate --------------------------------
+//
+// dgsSelectPoTemplate_ answers PO_DOCUMENT_TEMPLATE_UNRESOLVED with a count of zero, which is true and useless:
+// it cannot distinguish "no template row exists at all" from "a row exists but its factory_id does not match"
+// from "a row matches but its effective window has closed". This evaluates EVERY gate INDEPENDENTLY for every
+// candidate row and names the exact reason each one was rejected, so the operator learns whether the blocker is
+// CONFIGURATION_REQUIRED (a row must be added or corrected) or a RUNTIME_DEFECT (rows exist that should match).
+//
+// PURE and read-only. It changes NO selection rule — dgsSelectPoTemplate_ remains the only authority, and this
+// deliberately introduces no fallback template of any kind.
+function dgsExplainPoTemplateCandidates_(templates, ctx) {
+  ctx = ctx || {};
+  var rows = (templates || []).map(function (t) {
+    var gates = [];
+    var entityOk = dgsLc_(t.related_entity_type) === 'purchase_order';
+    if (!entityOk) gates.push({ gate: 'related_entity_type', expected: 'purchase_order', found: dgsStr_(t.related_entity_type) || '(blank)' });
+    var typeOk = dgsLc_(t.document_type) === 'purchase_order';
+    if (!typeOk) gates.push({ gate: 'document_type', expected: 'purchase_order', found: dgsStr_(t.document_type) || '(blank)' });
+    var statusOk = dgsLc_(t.status) === 'active';
+    if (!statusOk) gates.push({ gate: 'status', expected: 'active', found: dgsStr_(t.status) || '(blank)' });
+    var flagOk = dgsBool_(t.is_active);
+    if (!flagOk) gates.push({ gate: 'is_active', expected: 'TRUE', found: dgsStr_(t.is_active) || '(blank)' });
+    var windowOk = dgsInWindow_(t, ctx.as_of);
+    if (!windowOk) gates.push({ gate: 'effective_window', expected: 'covers ' + (dgsStr_(ctx.as_of) || '(no as_of)'),
+      found: 'effective_from=' + (dgsStr_(t.effective_from) || '(blank)') + ' effective_to=' + (dgsStr_(t.effective_to) || '(blank)') });
+    // scope dimensions: a BLANK template dimension is a wildcard; a POPULATED one must match exactly
+    var scopeFails = [];
+    for (var i = 0; i < DGS_SCOPE_DIMS_.length; i++) {
+      var d = DGS_SCOPE_DIMS_[i], tv = dgsStr_(t[d]);
+      if (!tv) continue;                                  // wildcard
+      if (dgsLc_(tv) !== dgsLc_(ctx[d])) scopeFails.push({ gate: d, expected: dgsStr_(ctx[d]) || '(blank on this PO)', found: tv });
+    }
+    gates = gates.concat(scopeFails);
+    return {
+      template_id: dgsStr_(t.template_id), template_key: dgsStr_(t.template_key), template_name: dgsStr_(t.template_name),
+      template_version: dgsNum_(t.template_version),
+      declared_scope: (function () { var o = {}; for (var k = 0; k < DGS_SCOPE_DIMS_.length; k++) { o[DGS_SCOPE_DIMS_[k]] = dgsStr_(t[DGS_SCOPE_DIMS_[k]]) || '(wildcard)'; } return o; })(),
+      selected: gates.length === 0,
+      rejected_by: gates
+    };
+  });
+  var matched = rows.filter(function (r) { return r.selected; });
+  // A row that fails ONLY on scope is a configuration problem the operator can fix; a row that fails on
+  // related_entity_type/document_type is simply a different kind of template and is not evidence of anything.
+  var poShaped = rows.filter(function (r) {
+    return !r.rejected_by.some(function (g) { return g.gate === 'related_entity_type' || g.gate === 'document_type'; });
+  });
+  var verdict, detail;
+  if (matched.length === 1) { verdict = 'RESOLVED'; detail = 'exactly one active, in-window, correctly scoped purchase_order template matched'; }
+  else if (matched.length > 1) { verdict = 'RUNTIME_DEFECT'; detail = 'more than one template matched, so selection is ambiguous — the scope dimensions do not distinguish them'; }
+  else if (poShaped.length === 0) { verdict = 'CONFIGURATION_REQUIRED'; detail = 'document_templates contains NO purchase_order template row at all'; }
+  else { verdict = 'CONFIGURATION_REQUIRED'; detail = poShaped.length + ' purchase_order template row(s) exist but every one was rejected — see rejected_by for the exact gate on each'; }
+  return {
+    context: (function () { var o = { as_of: dgsStr_(ctx.as_of) || '(none)' }; for (var k = 0; k < DGS_SCOPE_DIMS_.length; k++) { o[DGS_SCOPE_DIMS_[k]] = dgsStr_(ctx[DGS_SCOPE_DIMS_[k]]) || '(blank)'; } return o; })(),
+    scope_dimensions: DGS_SCOPE_DIMS_.slice(),
+    total_template_rows: rows.length,
+    purchase_order_shaped_rows: poShaped.length,
+    candidate_count: matched.length,
+    candidates: rows,
+    verdict: verdict,
+    detail: detail,
+    // The exact row a configuration fix would need. Reported as a PROPOSAL — nothing is written.
+    required_configuration_row: matched.length ? null : (function () {
+      var row = { related_entity_type: 'purchase_order', document_type: 'purchase_order', status: 'active', is_active: 'TRUE',
+        template_key: '(choose a stable key, e.g. PO_STANDARD_' + (dgsStr_(ctx.factory_id) || 'DEFAULT') + ')',
+        template_version: 1, effective_from: '(blank = always)', effective_to: '(blank = always)' };
+      for (var k = 0; k < DGS_SCOPE_DIMS_.length; k++) {
+        var d = DGS_SCOPE_DIMS_[k];
+        row[d] = dgsStr_(ctx[d]) ? (dgsStr_(ctx[d]) + '  (or leave BLANK to act as a wildcard)') : '(blank = wildcard)';
+      }
+      return row;
+    })(),
+    authorization_note: 'PROPOSAL ONLY — no document_templates row was created or modified. Adding it is a separate, user-authorized action.',
+    no_fallback_note: 'No fallback template is introduced. dgsSelectPoTemplate_ remains the only selection authority and an unresolved template stays a HARD GATE with zero writes.'
+  };
+}
+
 // ---- §F deterministic checksum ---------------------------------------------------------------------------
 // Canonical JSON (object keys sorted) so the same facts always hash the same regardless of read order, then
 // FNV-1a/32. Used to prove the source data did not drift between readiness and generation.

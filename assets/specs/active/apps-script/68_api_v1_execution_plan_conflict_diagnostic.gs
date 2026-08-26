@@ -496,6 +496,270 @@ function handleExecutionPlanConflictDiagnostic_(body) {
   }, []);
 }
 
+
+// ==============================================================================================================
+// F1-7N-FB-4B §B.9/§B.10/§B.11 — DUPLICATE PRIMARY KEY DIAGNOSTIC, REPAIR PROPOSAL, AND A GATED CLEANUP.
+//
+// The live table holds three physical rows sharing one primary key (SADL-K2-16F4E4F9 under SADH-K2-E7AF9242,
+// CO1100-R, planned_qty 800). This reports them by ROW NUMBER and CONTENT CHECKSUM, classifies byte-identical
+// business content against a genuine content conflict, names the one row that would survive, lists the FK
+// effects, and stops. IT DELETES NOTHING. The cleanup entry point below is DRY RUN by default and refuses to
+// commit without a confirmation checksum that must match what the dry run reported.
+// ==============================================================================================================
+
+// The BUSINESS content of a line — identity + the fields a human would call "the same row". Audit columns
+// (created_at / updated_at / *_by) are deliberately EXCLUDED: three rows written at three different timestamps
+// are still byte-identical business content, and that distinction is the whole point of the classification.
+var EPC_LINE_BUSINESS_FIELDS_ = [
+  'allocation_draft_id', 'sku', 'site_sku', 'window_code', 'window_start_date', 'window_end_date',
+  'required_by_date', 'planned_qty', 'recommended_qty', 'units_per_carton', 'route_no',
+  'source_warehouse_id', 'source_warehouse_code_snapshot', 'line_status', 'override_reason', 'note'
+];
+
+function epcLineBusinessSignature_(row) {
+  var parts = [];
+  for (var i = 0; i < EPC_LINE_BUSINESS_FIELDS_.length; i++) {
+    var f = EPC_LINE_BUSINESS_FIELDS_[i];
+    parts.push(f + '=' + epcLc_((row || {})[f]));
+  }
+  return parts.join('|');
+}
+
+// PURE. Group physical rows by primary key and classify each group. `rows` carry a 1-based `__row` sheet number.
+function epcClassifyDuplicates_(rows) {
+  var byPk = {}, order = [];
+  (rows || []).forEach(function (r) {
+    var pk = epcStr_(r.allocation_draft_line_id);
+    if (!pk) return;
+    if (!byPk[pk]) { byPk[pk] = []; order.push(pk); }
+    byPk[pk].push(r);
+  });
+  var groups = [];
+  order.forEach(function (pk) {
+    var rs = byPk[pk];
+    if (rs.length < 2) return;
+    var sigs = {}, sigOrder = [];
+    rs.forEach(function (r) {
+      var sig = epcLineBusinessSignature_(r);
+      if (!sigs[sig]) { sigs[sig] = []; sigOrder.push(sig); }
+      sigs[sig].push(r);
+    });
+    var identical = sigOrder.length === 1;
+    // The survivor is the LOWEST sheet row of the group — the first physically written. It is a deterministic,
+    // explicable choice, and for byte-identical content every candidate is equivalent anyway.
+    var survivor = rs.slice().sort(function (a, b) { return a.__row - b.__row; })[0];
+    groups.push({
+      allocation_draft_line_id_ref: epcIdRef_(pk),
+      allocation_draft_id_ref: epcIdRef_(rs[0].allocation_draft_id),
+      sku: epcStr_(rs[0].sku), site_sku: epcStr_(rs[0].site_sku), window_code: epcStr_(rs[0].window_code),
+      physical_rows: rs.length,
+      classification: identical ? 'BYTE_IDENTICAL_BUSINESS_CONTENT' : 'CONTENT_CONFLICT',
+      distinct_content_variants: sigOrder.length,
+      rows: rs.map(function (r) {
+        return {
+          sheet_row: r.__row,
+          content_checksum: 'c:' + epcFnv1a_(epcLineBusinessSignature_(r)),
+          planned_qty: epcStr_(r.planned_qty), recommended_qty: epcStr_(r.recommended_qty),
+          line_status: epcStr_(r.line_status), route_no: epcStr_(r.route_no),
+          created_at: epcStr_(r.created_at), updated_at: epcStr_(r.updated_at),
+          is_proposed_survivor: r.__row === survivor.__row
+        };
+      }),
+      proposed_survivor_sheet_row: survivor.__row,
+      proposed_deleted_sheet_rows: rs.filter(function (r) { return r.__row !== survivor.__row; })
+        .map(function (r) { return r.__row; }).sort(function (a, b) { return b - a; }),   // descending: safe delete order
+      safe_to_auto_repair: identical,
+      reason: identical
+        ? 'every physical row carries byte-identical BUSINESS content (audit timestamps differ, which is expected for a repeated append), so keeping the first and removing the rest loses no information'
+        : 'the physical rows carry DIFFERENT business content, so which one is authoritative is a business decision and must not be guessed'
+    });
+  });
+  return groups;
+}
+
+// PURE. The FK surface a repair touches. shipping_allocation_draft_lines is referenced by allocation_draft_id
+// (its header) and consumed by the Submit authority, which re-reads lines by draft id — it does NOT store a
+// line id anywhere, so removing a duplicate PHYSICAL row cannot orphan a foreign key.
+function epcRepairFkEffects_(groups) {
+  var totalDeleted = 0;
+  (groups || []).forEach(function (g) { totalDeleted += g.proposed_deleted_sheet_rows.length; });
+  return {
+    physical_rows_proposed_for_deletion: totalDeleted,
+    header_effect: 'NONE — shipping_allocation_drafts is referenced BY the line (allocation_draft_id), never the reverse; no header column stores a line id.',
+    shipping_plan_effect: 'NONE — the Submit authority re-reads lines by allocation_draft_id and copies quantities into shipping_plan_lines; it stores no allocation_draft_line_id.',
+    quantity_effect: 'For BYTE_IDENTICAL_BUSINESS_CONTENT groups the surviving row carries the same planned_qty as the removed ones, so no quantity changes. For CONTENT_CONFLICT groups nothing is proposed at all.',
+    send_effect: 'A duplicate physical row currently makes the same line countable more than once by any consumer that does not de-duplicate; removing it restores one line per identity.',
+    reversibility: 'Every removed row is written verbatim into the rollback journal returned by the cleanup tool BEFORE any deletion, so the exact bytes can be re-appended.'
+  };
+}
+
+/**
+ * action `system.executionPlanDuplicateLineDiagnostic` — STRICTLY READ-ONLY (§B.9/§B.10).
+ * Body: { allocation_draft_id?, allocation_draft_line_id?, sku? }  — any subset narrows the scan.
+ * Reports duplicate primary keys by sheet row + content checksum, classifies them, and proposes a repair.
+ * IT DELETES NOTHING AND WRITES NOTHING.
+ */
+function handleExecutionPlanDuplicateLineDiagnostic_(body) {
+  body = body || {};
+  var b0 = (body.payload && typeof body.payload === 'object') ? body.payload : body;
+  var wantDraft = epcStr_(b0.allocation_draft_id || b0.allocationDraftId);
+  var wantLine = epcStr_(b0.allocation_draft_line_id || b0.allocationDraftLineId);
+  var wantSku = epcUc_(b0.sku);
+
+  var ss;
+  try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
+  catch (e) { return epcEnvelope_(false, null, [{ code: 'DB_NOT_REACHABLE', message: 'the configured production database could not be opened read-only' }]); }
+
+  var sh = null;
+  try { sh = ss.getSheetByName(EPC_DRAFT_LINES_TABLE_); } catch (e2) { sh = null; }
+  if (!sh) return epcEnvelope_(false, null, [{ code: 'LINES_TABLE_MISSING', message: EPC_DRAFT_LINES_TABLE_ + ' is not present' }]);
+
+  var data = sh.getDataRange().getValues();
+  var headers = (data[0] || []).map(function (h) { return epcStr_(h); });
+  var rows = [];
+  for (var r = 1; r < data.length; r++) {
+    var o = { __row: r + 1 };
+    for (var c = 0; c < headers.length; c++) if (headers[c]) o[headers[c]] = data[r][c];
+    if (wantDraft && epcStr_(o.allocation_draft_id) !== wantDraft) continue;
+    if (wantLine && epcStr_(o.allocation_draft_line_id) !== wantLine) continue;
+    if (wantSku && epcUc_(o.sku) !== wantSku) continue;
+    rows.push(o);
+  }
+
+  var groups = epcClassifyDuplicates_(rows);
+  var identical = groups.filter(function (g) { return g.classification === 'BYTE_IDENTICAL_BUSINESS_CONTENT'; });
+  var conflicting = groups.filter(function (g) { return g.classification === 'CONTENT_CONFLICT'; });
+
+  // The confirmation checksum a COMMIT must echo back. It covers the exact rows proposed for deletion, so if the
+  // table changes between the dry run and the commit the checksum no longer matches and the commit is refused.
+  var plan = groups.map(function (g) {
+    return g.allocation_draft_line_id_ref.hash + ':' + g.proposed_survivor_sheet_row + ':' + g.proposed_deleted_sheet_rows.join(',');
+  }).sort().join('|');
+  var confirmation = 'DUPFIX-' + epcFnv1a_(plan).toUpperCase();
+
+  return epcEnvelope_(true, {
+    build_version: EPC_BUILD_VERSION_,
+    read_only: true,
+    scanned_rows: rows.length,
+    scope: { allocation_draft_id_ref: epcIdRef_(wantDraft), allocation_draft_line_id_ref: epcIdRef_(wantLine), sku: wantSku || null },
+    duplicate_group_count: groups.length,
+    byte_identical_group_count: identical.length,
+    content_conflict_group_count: conflicting.length,
+    duplicate_groups: groups,
+    fk_effects: epcRepairFkEffects_(groups),
+    repair_proposal: {
+      auto_repairable_groups: identical.length,
+      manual_decision_groups: conflicting.length,
+      confirmation_checksum: confirmation,
+      statement: 'PROPOSAL ONLY. Nothing was deleted, changed or migrated. Executing it requires the separately gated cleanup entry point, an explicit COMMIT mode, and this exact confirmation checksum.',
+      how_to_run: 'Set TEMP_DUPFIX_DRAFT_ID_ / TEMP_DUPFIX_MODE_ = "DRY_RUN" in 68_api_v1_execution_plan_conflict_diagnostic.gs and Run TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP. It stays a dry run until BOTH the mode is set to "COMMIT" and TEMP_DUPFIX_CONFIRMATION_ matches the checksum above.'
+    },
+    zero_write_proof: {
+      db_writes: 0, rows_deleted: 0, rows_migrated: 0, drive_writes: 0, property_writes: 0, locks_taken: 0,
+      statement: 'THIS DIAGNOSTIC PERFORMED NO WRITE AND NO DELETION. It read ' + EPC_DRAFT_LINES_TABLE_ + ' and returned a report.'
+    },
+    next_action: groups.length
+      ? ('Review each group. ' + identical.length + ' can be repaired mechanically (byte-identical business content); ' + conflicting.length + ' need a business decision about which quantity is authoritative. NOTHING WAS DELETED.')
+      : 'No duplicate primary key was found in the scanned scope.'
+  }, []);
+}
+
+// ---- editor-runnable READ-ONLY duplicate report ---------------------------------------------------------
+var TEMP_DUPFIX_DRAFT_ID_ = 'SADH-K2-E7AF9242';   // the header from the live report; change as needed
+var TEMP_DUPFIX_LINE_ID_ = '';                    // optional: narrow to one line id
+var TEMP_DUPFIX_SKU_ = '';                        // optional: narrow to one SKU
+
+function TEMP_EXECUTION_PLAN_DUPLICATE_DIAGNOSE() {
+  var r = handleExecutionPlanDuplicateLineDiagnostic_({ payload: {
+    allocation_draft_id: TEMP_DUPFIX_DRAFT_ID_, allocation_draft_line_id: TEMP_DUPFIX_LINE_ID_, sku: TEMP_DUPFIX_SKU_ } });
+  if (!r.success) { Logger.log('[DUPFIX] FAILED ' + JSON.stringify(r.errors)); return; }
+  var d = r.data;
+  Logger.log('[DUPFIX] scanned=' + d.scanned_rows + ' duplicate_groups=' + d.duplicate_group_count
+    + ' byte_identical=' + d.byte_identical_group_count + ' content_conflict=' + d.content_conflict_group_count);
+  (d.duplicate_groups || []).forEach(function (g) {
+    Logger.log('[DUPFIX][group] ' + JSON.stringify(g.allocation_draft_line_id_ref) + ' sku=' + g.sku
+      + ' rows=' + g.physical_rows + ' class=' + g.classification + ' survivor_row=' + g.proposed_survivor_sheet_row
+      + ' delete_rows=' + g.proposed_deleted_sheet_rows.join(','));
+    g.rows.forEach(function (row) { Logger.log('[DUPFIX][row] ' + JSON.stringify(row)); });
+    Logger.log('[DUPFIX][why] ' + g.reason);
+  });
+  Logger.log('[DUPFIX][fk] ' + JSON.stringify(d.fk_effects));
+  Logger.log('[DUPFIX][proposal] ' + JSON.stringify(d.repair_proposal));
+  Logger.log('[DUPFIX] ' + d.zero_write_proof.statement);
+  Logger.log('[DUPFIX] next_action: ' + d.next_action);
+}
+
+// ---- SEPARATELY GATED CLEANUP (§B.11). DRY RUN BY DEFAULT. NOT EXECUTED BY THIS TASK. --------------------
+// Three independent gates must ALL be satisfied before a single row is removed:
+//   1. TEMP_DUPFIX_MODE_ must be exactly 'COMMIT'      (default 'DRY_RUN')
+//   2. TEMP_DUPFIX_CONFIRMATION_ must equal the confirmation checksum the read-only diagnostic just produced,
+//      recomputed live — so a table that changed since the dry run invalidates it
+//   3. only groups classified BYTE_IDENTICAL_BUSINESS_CONTENT are touched; a CONTENT_CONFLICT is never removed
+// Rows are deleted from the HIGHEST sheet row downward so earlier row numbers stay valid, and every removed row
+// is journaled verbatim BEFORE deletion so it can be re-appended.
+var TEMP_DUPFIX_MODE_ = 'DRY_RUN';        // 'DRY_RUN' | 'COMMIT'
+var TEMP_DUPFIX_CONFIRMATION_ = '';       // must match the diagnostic's confirmation_checksum for COMMIT
+
+function TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP() {
+  var diag = handleExecutionPlanDuplicateLineDiagnostic_({ payload: {
+    allocation_draft_id: TEMP_DUPFIX_DRAFT_ID_, allocation_draft_line_id: TEMP_DUPFIX_LINE_ID_, sku: TEMP_DUPFIX_SKU_ } });
+  if (!diag.success) { Logger.log('[DUPFIX-CLEANUP] BLOCKED — the read-only diagnostic failed: ' + JSON.stringify(diag.errors)); return; }
+  var d = diag.data;
+  var repairable = (d.duplicate_groups || []).filter(function (g) { return g.safe_to_auto_repair === true; });
+
+  Logger.log('[DUPFIX-CLEANUP] mode=' + TEMP_DUPFIX_MODE_ + ' groups=' + d.duplicate_group_count
+    + ' repairable=' + repairable.length + ' conflicts=' + d.content_conflict_group_count);
+  Logger.log('[DUPFIX-CLEANUP] live confirmation_checksum=' + d.repair_proposal.confirmation_checksum);
+  repairable.forEach(function (g) {
+    Logger.log('[DUPFIX-CLEANUP][would-keep] sheet_row=' + g.proposed_survivor_sheet_row + ' ' + JSON.stringify(g.allocation_draft_line_id_ref));
+    Logger.log('[DUPFIX-CLEANUP][would-delete] sheet_rows=' + g.proposed_deleted_sheet_rows.join(','));
+  });
+  (d.duplicate_groups || []).filter(function (g) { return !g.safe_to_auto_repair; }).forEach(function (g) {
+    Logger.log('[DUPFIX-CLEANUP][REFUSED] ' + JSON.stringify(g.allocation_draft_line_id_ref) + ' — ' + g.reason);
+  });
+
+  if (String(TEMP_DUPFIX_MODE_).toUpperCase() !== 'COMMIT') {
+    Logger.log('[DUPFIX-CLEANUP] DRY RUN — NOTHING WAS DELETED. To commit: set TEMP_DUPFIX_MODE_ = \'COMMIT\' and '
+      + 'TEMP_DUPFIX_CONFIRMATION_ = \'' + d.repair_proposal.confirmation_checksum + '\' in this file, then Run again.');
+    return;
+  }
+  if (epcStr_(TEMP_DUPFIX_CONFIRMATION_) !== epcStr_(d.repair_proposal.confirmation_checksum)) {
+    Logger.log('[DUPFIX-CLEANUP] REFUSED — TEMP_DUPFIX_CONFIRMATION_ does not match the LIVE confirmation checksum ('
+      + d.repair_proposal.confirmation_checksum + '). The table may have changed since the dry run. NOTHING WAS DELETED.');
+    return;
+  }
+  if (!repairable.length) { Logger.log('[DUPFIX-CLEANUP] nothing is safely repairable. NOTHING WAS DELETED.'); return; }
+
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) { Logger.log('[DUPFIX-CLEANUP] REFUSED — could not acquire the lock. NOTHING WAS DELETED.'); return; } }
+  catch (e) { Logger.log('[DUPFIX-CLEANUP] REFUSED — lock error. NOTHING WAS DELETED.'); return; }
+  try {
+    var ss = SpreadsheetApp.openById(prodExpectedDbId_());
+    var sh = ss.getSheetByName(EPC_DRAFT_LINES_TABLE_);
+    var all = sh.getDataRange().getValues();
+    // ROLLBACK JOURNAL FIRST — the exact bytes of every row about to be removed, logged before anything changes.
+    var journal = [];
+    repairable.forEach(function (g) {
+      g.proposed_deleted_sheet_rows.forEach(function (rowNum) { journal.push({ sheet_row: rowNum, values: all[rowNum - 1] }); });
+    });
+    Logger.log('[DUPFIX-CLEANUP][ROLLBACK-JOURNAL] ' + JSON.stringify(journal));
+
+    // delete from the highest row down, so lower row numbers remain valid
+    var toDelete = journal.map(function (j) { return j.sheet_row; }).sort(function (a, b) { return b - a; });
+    toDelete.forEach(function (rowNum) { sh.deleteRow(rowNum); });
+    SpreadsheetApp.flush();
+
+    // POST-CLEANUP EXACT VALIDATION — re-run the read-only diagnostic and require zero remaining duplicates.
+    var after = handleExecutionPlanDuplicateLineDiagnostic_({ payload: {
+      allocation_draft_id: TEMP_DUPFIX_DRAFT_ID_, allocation_draft_line_id: TEMP_DUPFIX_LINE_ID_, sku: TEMP_DUPFIX_SKU_ } });
+    var remaining = (after.success && after.data) ? after.data.byte_identical_group_count : -1;
+    Logger.log('[DUPFIX-CLEANUP] deleted ' + toDelete.length + ' physical row(s). remaining byte-identical duplicate groups=' + remaining);
+    if (remaining !== 0) Logger.log('[DUPFIX-CLEANUP] WARNING — validation did not reach zero. Use the rollback journal above.');
+  } catch (err) {
+    Logger.log('[DUPFIX-CLEANUP] ERROR during cleanup: ' + (err && err.message || err) + ' — use the rollback journal above.');
+  } finally { try { lock.releaseLock(); } catch (e2) {} }
+}
+
 // ============================================================================================================
 // EDITOR-RUNNABLE READ-ONLY WRAPPER. Fill the constants with the route exactly as the Execution Plan shows it,
 // then press Run. It reads and reports; it can never write. Warehouse endpoints may be given by warehouse_id,

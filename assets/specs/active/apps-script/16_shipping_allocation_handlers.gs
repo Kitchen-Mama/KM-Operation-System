@@ -576,6 +576,140 @@ function sadRegenerateLinePatch_(existing, incoming) {
 }
 
 // Private keyed shipping-line upsert core (reached ONLY under lock via the public handler above).
+// ================================================================================================================
+// F1-7N-FB-4B §B — LINE IDENTITY IS CANONICAL, NOT WHATEVER OPAQUE ID THE CALLER HAPPENS TO HOLD.
+//
+// THE LIVE CORRUPTION, AND EXACTLY HOW IT WAS PRODUCED. Three physical rows appeared with the SAME primary key
+// (SADL-K2-16F4E4F9 under SADH-K2-E7AF9242, CO1100-R, planned_qty 800, created 11:18:11 / 11:19:53 / 11:20:07).
+// The mechanism is a closed loop between two half-correct pieces:
+//
+//   1. The page mints a CLIENT-SIDE line id for a new route — _newDraftLineId() returns
+//      'SADL-' + Math.random()... — and stores it on the row element.
+//   2. This writer, for a K2 draft, DISCARDS that id and mints the canonical SADL-K2-<hash> instead
+//      (R6F2G, deliberately: an arbitrary caller id must never name a K2 line).
+//   3. The response never returned the id it actually persisted, and the page never adopted one.
+//   4. So the NEXT save sent the same client-side id again. procurementFindRow_ did not find it (the stored row
+//      carries the K2 id), the code fell into the INSERT branch, minted the SAME canonical id a second time —
+//      and appended, because nothing checked whether that minted id already existed.
+//
+// Every subsequent save of the same logical line appended one more physical row. Three saves, three rows.
+//
+// THE FIX IS TO STOP TREATING THE CALLER'S ID AS AN IDENTITY. A line's identity is its CANONICAL identity:
+// under K2 the deterministic SADL-K2- id (sku|site_sku|window_code within the draft — route and source are HEADER
+// dimensions by the frozen K2 contract), otherwise the deterministic SADL- natural key. An opaque id the caller
+// happens to be holding is at most a HINT. Resolution order is therefore:
+//   a) explicit id that resolves to a row — but only if that row's canonical identity MATCHES the incoming line,
+//      otherwise the caller is trying to rename a line's identity, which fails closed;
+//   b) the CANONICAL id;
+//   c) the natural-key scan (a generated line whose id column is still blank);
+//   d) only then INSERT — and even then the canonical id is asserted absent first.
+//
+// This is what makes a retry converge on ONE row instead of appending another.
+var SAD_LINE_IDENTITY_FIELDS_ = ['sku', 'site_sku', 'window_code'];
+
+// The canonical identity of an incoming line under a given draft. Pure.
+function sadCanonicalLineId_(isK2, draftId, l) {
+  return isK2 ? sadK2DeterministicLineId_(draftId, l) : sadDeterministicLineId_(draftId, l);
+}
+
+// Do two rows describe the SAME logical line? Compared on the identity fields only — quantities and notes are
+// CONTENT, and content changing is an edit, not a different line.
+function sadSameLineIdentity_(a, b) {
+  function s(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  for (var i = 0; i < SAD_LINE_IDENTITY_FIELDS_.length; i++) {
+    var f = SAD_LINE_IDENTITY_FIELDS_[i];
+    if (s((a || {})[f]) !== s((b || {})[f])) return false;
+  }
+  return true;
+}
+
+// PURE batch pre-flight, run BEFORE any write so a rejection is a proven zero-write.
+// Two incoming lines that resolve to the SAME canonical identity cannot both be persisted: under the frozen K2
+// contract a Header holds ONE line per (sku, site_sku, window_code), because route and source are HEADER
+// dimensions. Two routes for one SKU are therefore either the SAME line (same route group) or belong under
+// DIFFERENT headers (different route group) — never two lines under one header. Silently letting the second
+// overwrite the first would destroy the operator's first quantity, so it fails closed and names both.
+function sadPreflightLineBatch_(isK2, draftId, lines) {
+  var byId = {}, conflicts = [];
+  for (var i = 0; i < (lines || []).length; i++) {
+    var l = lines[i] || {};
+    if (String(l.line_status || '').trim().toLowerCase() === 'cancelled') continue;
+    var cid = sadCanonicalLineId_(isK2, draftId, l);
+    if (byId[cid] === undefined) { byId[cid] = i; continue; }
+    conflicts.push({
+      canonical_line_id: cid,
+      first_index: byId[cid], duplicate_index: i,
+      sku: String(l.sku == null ? '' : l.sku), site_sku: String(l.site_sku == null ? '' : l.site_sku),
+      window_code: String(l.window_code == null ? '' : l.window_code),
+      first_planned_qty: String((lines[byId[cid]] || {}).planned_qty == null ? '' : lines[byId[cid]].planned_qty),
+      duplicate_planned_qty: String(l.planned_qty == null ? '' : l.planned_qty)
+    });
+  }
+  return { ok: conflicts.length === 0, conflicts: conflicts };
+}
+
+// PURE read-after-write verification (§B.7). Given the rows actually stored for one draft and the lines the
+// caller intended, prove: every expected line exists EXACTLY ONCE, at the exact quantity, with no primary key
+// appearing twice, and with no unauthorized line under the draft. A count is not proof; this matches by identity.
+function sadVerifyDraftLines_(draftId, expectedLines, storedRows, isK2) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function L(v) { return S(v).toLowerCase(); }
+  function N(v) { var n = Number(S(v)); return isFinite(n) ? n : NaN; }
+  var out = { ok: false, failures: [], expected_line_count: 0, verified_line_count: 0, stored_line_count: 0, duplicate_primary_keys: [] };
+
+  var mine = (storedRows || []).filter(function (r) { return S(r && r.allocation_draft_id) === S(draftId); });
+  out.stored_line_count = mine.length;
+
+  // PK uniqueness across the whole draft — the exact defect this task exists to close.
+  var pkCount = {};
+  mine.forEach(function (r) { var k = S(r.allocation_draft_line_id); if (!k) return; pkCount[k] = (pkCount[k] || 0) + 1; });
+  Object.keys(pkCount).forEach(function (k) {
+    if (pkCount[k] > 1) {
+      out.duplicate_primary_keys.push({ allocation_draft_line_id: k, physical_rows: pkCount[k] });
+      out.failures.push({ code: 'DUPLICATE_PRIMARY_KEY', allocation_draft_line_id: k, physical_rows: pkCount[k] });
+    }
+  });
+
+  var active = mine.filter(function (r) { return ['cancelled', 'superseded', 'superseded_user_review'].indexOf(L(r.line_status)) === -1; });
+  var expected = (expectedLines || []).filter(function (l) { return L(l.line_status) !== 'cancelled'; });
+  out.expected_line_count = expected.length;
+
+  var claimed = {};
+  expected.forEach(function (l) {
+    var cid = sadCanonicalLineId_(isK2, draftId, l);
+    var hits = active.filter(function (r) { return S(r.allocation_draft_line_id) === cid; });
+    if (hits.length === 0) {
+      // fall back to identity matching, so a legacy row with a different stored id is reported as MISSING_ID
+      var byIdentity = active.filter(function (r) { return sadSameLineIdentity_(r, l); });
+      if (byIdentity.length === 0) { out.failures.push({ code: 'LINE_MISSING', canonical_line_id: cid, sku: S(l.sku) }); return; }
+      if (byIdentity.length > 1) { out.failures.push({ code: 'LINE_DUPLICATED', canonical_line_id: cid, sku: S(l.sku), physical_rows: byIdentity.length }); return; }
+      hits = byIdentity;
+    } else if (hits.length > 1) {
+      out.failures.push({ code: 'LINE_DUPLICATED', canonical_line_id: cid, sku: S(l.sku), physical_rows: hits.length });
+      return;
+    }
+    var row = hits[0];
+    claimed[S(row.allocation_draft_line_id) + '#' + S(row.sku) + '#' + S(row.site_sku) + '#' + S(row.window_code)] = 1;
+    var want = N(l.planned_qty), got = N(row.planned_qty);
+    if (l.planned_qty != null && String(l.planned_qty) !== '' && want !== got) {
+      out.failures.push({ code: 'LINE_QUANTITY_MISMATCH', canonical_line_id: cid, sku: S(l.sku), expected: want, found: got });
+      return;
+    }
+    if (!S(row.allocation_draft_line_id)) { out.failures.push({ code: 'LINE_ID_MISSING', sku: S(l.sku) }); return; }
+    out.verified_line_count++;
+  });
+
+  // No line under this draft that the caller did not authorise. This is how "no unauthorized line" is PROVEN
+  // rather than assumed — a count check could never see it.
+  active.forEach(function (r) {
+    var k = S(r.allocation_draft_line_id) + '#' + S(r.sku) + '#' + S(r.site_sku) + '#' + S(r.window_code);
+    if (!claimed[k]) out.failures.push({ code: 'UNEXPECTED_LINE', allocation_draft_line_id: S(r.allocation_draft_line_id), sku: S(r.sku) });
+  });
+
+  out.ok = out.failures.length === 0;
+  return out;
+}
+
 function sadUpsertLinesKeyedCore_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'allocation_draft_id required' });
@@ -603,6 +737,14 @@ function sadUpsertLinesKeyedCore_(body) {
     if (!sadLineIsComplete_(lv)) return jsonResponse_({ success: false, error: 'PLAN_LINE_INCOMPLETE — a manual Execution Plan line requires SKU + Qty>0 (zero rows written); route context is on the Draft header' });
   }
 
+  // FB-4B §B — batch pre-flight, BEFORE any write, so a rejection is a proven zero-write.
+  var pre = sadPreflightLineBatch_(isK2Draft, draftId, lines);
+  if (!pre.ok) {
+    return jsonResponse_({ success: false, error: 'DUPLICATE_LINE_IDENTITY_IN_BATCH — two incoming lines resolve to the SAME canonical line identity under this Draft header. Under the frozen K2 contract a Header holds ONE line per (sku, site_sku, window_code) because route and source are HEADER dimensions, so two routes for one SKU either ARE the same line (same route group) or belong under DIFFERENT headers (different route group). Persisting both would destroy one of the quantities. Zero rows written.',
+      stage: 'lines', zero_write: true,
+      data: { status: 'DUPLICATE_LINE_IDENTITY_IN_BATCH', allocation_draft_id: draftId, conflicts: pre.conflicts } });
+  }
+
   var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
 
   for (var i = 0; i < lines.length; i++) {
@@ -610,7 +752,35 @@ function sadUpsertLinesKeyedCore_(body) {
     var lineId = String(l.allocation_draft_line_id || '').trim();
     // R6F: explicit id match when present; otherwise reconcile a GENERATED line (blank id, keyed by natural key by the
     // KMPR generate path) BY NATURAL KEY so an edit updates that exact row instead of appending a duplicate.
-    var found = lineId ? procurementFindRow_(sh, 'allocation_draft_line_id', lineId) : sadFindLineByNaturalKey_(sh, draftId, l);
+    // FB-4B §B — CANONICAL identity resolution. The caller's id is a HINT, never the identity.
+    var canonicalId = sadCanonicalLineId_(isK2Draft, draftId, l);
+    var found = null, resolvedBy = '';
+    if (lineId) {
+      var byExplicit = procurementFindRow_(sh, 'allocation_draft_line_id', lineId);
+      if (byExplicit) {
+        // An explicit id that names a row describing a DIFFERENT logical line is an attempt to rename an
+        // identity. Fail closed rather than silently rewrite someone else's row.
+        var explicitRow = sadRowToObject_(sh, byExplicit.row);
+        if (!sadSameLineIdentity_(explicitRow, l)) {
+          return jsonResponse_({ success: false, error: 'LINE_IDENTITY_CONFLICT — the supplied allocation_draft_line_id names a stored row whose (sku, site_sku, window_code) differs from the incoming line, so honouring it would overwrite a different line. Zero rows written.',
+            stage: 'lines', zero_write: true,
+            data: { status: 'LINE_IDENTITY_CONFLICT', allocation_draft_id: draftId, supplied_line_id: lineId,
+              stored: { sku: String(explicitRow.sku || ''), site_sku: String(explicitRow.site_sku || ''), window_code: String(explicitRow.window_code || '') },
+              incoming: { sku: String(l.sku || ''), site_sku: String(l.site_sku || ''), window_code: String(l.window_code || '') } } });
+        }
+        found = byExplicit; resolvedBy = 'EXPLICIT_ID';
+      }
+    }
+    // THE FIX FOR THE LIVE DUPLICATE: before considering an INSERT, look the CANONICAL id up. A stale client-side
+    // id that no longer resolves used to fall straight through to append; now it converges on the existing row.
+    if (!found) {
+      var byCanonical = procurementFindRow_(sh, 'allocation_draft_line_id', canonicalId);
+      if (byCanonical) { found = byCanonical; resolvedBy = 'CANONICAL_ID'; }
+    }
+    if (!found) {
+      var byNatural = sadFindLineByNaturalKey_(sh, draftId, l);
+      if (byNatural) { found = byNatural; resolvedBy = 'NATURAL_KEY'; }
+    }
     // Defensive: a soft-cancel for a line that was never stored (e.g. an incomplete route the user
     // cleared before it was ever persisted) must NOT append a spurious cancelled row — skip it.
     if (!found && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
@@ -634,8 +804,13 @@ function sadUpsertLinesKeyedCore_(body) {
       // R6F: DETERMINISTIC id (frozen formula) so regeneration/edit of the same logical line reuses the same id
       // (no random-UUID drift, no duplicate on retry). Explicit ids from the frontend are honored as-is for a generic
       // draft; a K2 draft (R6F2G) ALWAYS mints the canonical K2 line id (never trusts an arbitrary caller id).
-      if (isK2Draft) lineId = sadK2DeterministicLineId_(draftId, l);
-      else if (!lineId) lineId = sadDeterministicLineId_(draftId, l);
+      lineId = canonicalId;
+      // Defence in depth: nothing may ever append onto an id that already exists. The three duplicate live rows
+      // are exactly what the absence of this assertion produced.
+      if (procurementFindRow_(sh, 'allocation_draft_line_id', lineId)) {
+        return jsonResponse_({ success: false, error: 'LINE_PRIMARY_KEY_ALREADY_EXISTS — refusing to append a second physical row under an existing allocation_draft_line_id. Nothing further was written.',
+          stage: 'lines', data: { status: 'LINE_PRIMARY_KEY_ALREADY_EXISTS', allocation_draft_id: draftId, allocation_draft_line_id: lineId, lines_committed: created + updated } });
+      }
       var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
       var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty)
         : (recQty !== '' ? recQty : '');   // first creation: planned_qty = recommended_qty
@@ -650,7 +825,27 @@ function sadUpsertLinesKeyedCore_(body) {
       created++;
     }
   }
-  return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated, created: created, updated: updated, skipped: skipped } });
+  // FB-4B §B.7 — EXACT READ-AFTER-WRITE VERIFICATION. A writer reporting created/updated counts is not proof:
+  // the live corruption produced a perfectly happy "created: 1" three times over. Re-read the draft's lines and
+  // check identity, exact quantity, PK uniqueness and the absence of any unauthorised line.
+  var storedRows = sadReadLinesForDraft_(sh, draftId);
+  var verify = sadVerifyDraftLines_(draftId, lines, storedRows, isK2Draft);
+  // FB-4B §B — the response now carries the ids ACTUALLY PERSISTED, so the caller can adopt them and stop
+  // sending an id the server never stored. That closed loop is what made every save append another row.
+  var persisted = storedRows.map(function (r) {
+    return { allocation_draft_line_id: String(r.allocation_draft_line_id || ''), sku: String(r.sku || ''),
+      site_sku: String(r.site_sku || ''), window_code: String(r.window_code || ''),
+      planned_qty: String(r.planned_qty == null ? '' : r.planned_qty), line_status: String(r.line_status || '') };
+  });
+  if (!verify.ok) {
+    return jsonResponse_({ success: false, error: 'LINE_OUTPUT_VERIFICATION_FAILED — the write was applied but the re-read does not match what was asked for. Nothing was rolled back; inspect the rows below before retrying.',
+      stage: 'verify',
+      data: { status: 'LINE_OUTPUT_VERIFICATION_FAILED', allocation_draft_id: draftId, verification: verify,
+        created: created, updated: updated, skipped: skipped, persisted_lines: persisted } });
+  }
+  return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated,
+    created: created, updated: updated, skipped: skipped,
+    verification: verify, persisted_lines: persisted } });
 }
 
 // C2-D1R line completeness (§8) — route context is HEADER-level, so a manual Execution Plan LINE is valid
@@ -855,7 +1050,12 @@ function sadAtomicUpsertCore_(body) {
     for (var i = 0; i < lines.length; i++) {
       var l = lines[i];
       var lineId = String(l.allocation_draft_line_id || '').trim();
-      var lf = lineId ? procurementFindRow_(lSh, 'allocation_draft_line_id', lineId) : sadFindLineByNaturalKey_(lSh, id, l);
+      // FB-4B §B — the same canonical-first resolution the keyed core uses. "An existing primary key must never
+      // be appended to" is a rule about the TABLE, so the AI-Plan atomic path obeys it too.
+      var canonicalLineId = sadCanonicalLineId_(isK2Group, id, l);
+      var lf = lineId ? procurementFindRow_(lSh, 'allocation_draft_line_id', lineId) : null;
+      if (!lf) lf = procurementFindRow_(lSh, 'allocation_draft_line_id', canonicalLineId);
+      if (!lf) lf = sadFindLineByNaturalKey_(lSh, id, l);
       if (!lf && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
       if (lf) {
         var cLS = lf.col('line_status'); var curLS = cLS !== -1 ? String(lSh.getRange(lf.row, cLS + 1).getValue()).trim().toLowerCase() : '';
@@ -879,8 +1079,11 @@ function sadAtomicUpsertCore_(body) {
       } else {
         // R6F2G (B): a K2 group ALWAYS mints the canonical K2 line id from the natural key (a caller-supplied arbitrary
         // id is never trusted to name a new K2 line); a generic/legacy draft honors an explicit id, else mints SADL-.
-        if (isK2Group) lineId = sadK2DeterministicLineId_(id, l);
-        else if (!lineId) lineId = sadDeterministicLineId_(id, l);
+        lineId = canonicalLineId;
+        // Defence in depth: never append onto an id that already exists.
+        if (procurementFindRow_(lSh, 'allocation_draft_line_id', lineId)) {
+          throw new Error('LINE_PRIMARY_KEY_ALREADY_EXISTS:' + lineId);
+        }
         var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
         var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty) : (recQty !== '' ? recQty : '');
         var rowObj = { allocation_draft_line_id: lineId, allocation_draft_id: id, created_at: now, updated_at: now, planned_qty: planned, recommended_qty: recQty };

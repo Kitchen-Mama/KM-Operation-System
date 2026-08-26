@@ -29,6 +29,8 @@ var _canonRow = null;
 function _roCanonicalRowFor_(sku, bucket) { return _canonRow; }
 var _effValue = null;
 function _roEffectiveOrderQty(item, idx, edit) { return _effValue; }
+var _hasDraft = false;
+function _roHasCanonicalDraft_(sku) { return _hasDraft; }
 eval(extractFn(RO, '_roSendOrderQty_'));
 
 console.log('\n== §10 Send quantity authority (A/B/H) ==');
@@ -38,8 +40,17 @@ _canonRow = { line: { order_qty: 800 } };
 eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), 800, 'B edited persisted order_qty (800) is the confirmed quantity');
 _canonRow = null; _effValue = 320;
 eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), 320, 'H no canonical draft → manual effective value (NO AI recompute)');
+// F1-7N-FB-4B §E — STRICTLY STRONGER than the fallback this pinned. A canonical row that exists but carries NO
+// persisted order_qty is a drafted tier with no persisted quantity; substituting a live recomputation there is
+// exactly how the page came to assert 400 against a persisted 360 and trip its own QUANTITY_DRIFT barrier. The
+// tier is now simply NOT asserted (null) — which is still "never a fabricated 0", and no longer a fabricated 77.
 _canonRow = { line: { order_qty: '' } }; _effValue = 77;
-eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), 77, 'blank canonical order_qty → manual effective fallback (never a fabricated 0)');
+eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), null, 'blank canonical order_qty → NOT asserted (never an ephemeral recompute, never a fabricated 0)');
+_canonRow = { line: { order_qty: 0 } }; _effValue = 999;
+eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), 0, 'a persisted ZERO is a real decision and is returned as 0 (§E.6)');
+_canonRow = null; _hasDraft = true; _effValue = 400;
+eq(_roSendOrderQty_({ sku: 'X' }, 0, 'T1', {}), null, 'a drafted SKU whose tier row is missing is NOT asserted from an ephemeral value (the CO1150-N defect)');
+_hasDraft = false;
 
 console.log('\n== §9 backend optimistic-lock verify (F) ==');
 // stub the bundle authority the backend confirm reuses
