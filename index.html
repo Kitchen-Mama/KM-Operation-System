@@ -467,6 +467,16 @@
     <!-- F1-7N-MAP-COUNTRY-BOUNDARY-1: vendored public-domain Natural Earth country boundaries + ISO alpha-2 label
          points. Same-origin <script>, no CDN, no runtime fetch — identical loading pattern to the land outline. -->
     <script src="assets/js/data/world-countries-110m.js?v=country-boundary-20260826"></script>
+    <!-- MAP-VISUAL-REAL-EARTH-TEXTURE-3 (localization authority): vendored Traditional Chinese (zh-Hant) geographic
+         NAMES ONLY - no geometry, no coordinates, no label anchors. Country names come from Natural Earth v5.1.2
+         NAME_ZHT (public domain, verified Traditional by measurement); ADM1 names from name_zht per division where
+         verified; continents from a hand-reviewed 7-name list. Loaded EAGERLY because country labels are needed at
+         LOD 0 - a lazy path would flash ISO codes before the Chinese names arrived. Same-origin <script>, no CDN,
+         no runtime fetch, no runtime translation. -->
+    <script src="assets/js/data/geo-names-zh-hant.js?v=map-zh-hant-20260826"></script>
+    <!-- The ONE geographic-name authority. Implements the deterministic per-class fallback order and reports WHICH
+         level answered, so a silent regression to ISO codes cannot look like a successful zh-Hant render. -->
+    <script src="assets/js/core/geo-name-resolver.js?v=map-zh-hant-20260826"></script>
     <script src="assets/js/lib/km-globe.js?v=map-earth-texture-20260826"></script>
     <script src="assets/js/pages/global-logistics-map.js?v=map-earth-texture-20260826"></script>
     <script src="assets/js/pages/automation-schedule.js?v=donenotice-20260811"></script>
