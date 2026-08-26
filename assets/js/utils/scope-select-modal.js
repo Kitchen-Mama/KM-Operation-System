@@ -64,35 +64,28 @@
     return !!(scope && str(scope.company) && str(scope.country) && str(scope.marketplace));
   }
 
-  // Legacy synchronous read of the BROAD cache. After F1-7L zero-prime this is null/[] on a cold session — kept only
-  // as a warm-session seed / defensive fallback, never the authoritative cold source (see getMarketplacesAsync).
-  function getMarketplaces() {
-    try { return (typeof window !== 'undefined' && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? (window.KM.DB.getMarketplaces() || []) : []; }
-    catch (e) { return []; }
-  }
+  // The broad-cache reader that used to seed this modal is GONE. Leaving it as a "defensive fallback" is what
+  // let an unprimed cache masquerade as "no countries configured"; there is now exactly one source.
 
-  // F1-7N — COLD-ELIGIBLE marketplace source. The Country/Marketplace universe must survive a cold F1-7L session
-  // where the broad _opDbCache is unprimed. Route through the EXISTING scoped reference owner
-  // window.KM.DB.getMarketplaceReference() (F1-7J-A2: bounded getTable('marketplaces') read, same normalizer+filter as
-  // getMarketplaces() → BEFORE==AFTER row universe, session-cached via KM.referenceCache, NEVER the broad cache / never
-  // getOperationDb). No new API/route. Falls back to the broad getter only if the reference owner is unavailable or
-  // returns empty (defensive; warm-session parity). Always resolves a Promise.
-  function getMarketplacesAsync() {
-    try {
-      if (typeof window !== 'undefined' && window.KM && window.KM.DB && typeof window.KM.DB.getMarketplaceReference === 'function') {
-        var p = window.KM.DB.getMarketplaceReference();
-        if (p && typeof p.then === 'function') {
-          return p.then(function (list) { return (list && list.length) ? list : getMarketplaces(); })
-                  .catch(function () { return getMarketplaces(); });
-        }
-        if (p && p.length) return Promise.resolve(p);              // defensive: a synchronous return
-      }
-    } catch (e) {}
-    return Promise.resolve(getMarketplaces());
+  // F1-7N-FB-4C §B2 — THE SINGLE CANONICAL SCOPE AUTHORITY.
+  //
+  // This modal used to carry its OWN second source: a synchronous seed from the broad `_opDbCache` (which no
+  // longer exists on a cold session, so it returned []) followed by `getMarketplaceReference()` — a WHOLE-TABLE
+  // `marketplaces` read through a different owner. Meanwhile the Site Inventory filter row read the slim,
+  // bounded registry action and worked. Two sources, two caches, two failure modes.
+  //
+  // The failure mode that produced the live symptom was silent: the async path swallowed a rejection and fell
+  // back to the empty seed, and filling the select from [] renders "Select country…" and nothing else — AN
+  // EMPTY SELECT PRESENTED AS SUCCESS. The user cannot tell "nothing is configured" from "the read failed".
+  //
+  // Both surfaces now go through KM.scopeRegistry. Consequences that are contract:
+  //   · already loaded  -> opening this modal costs ZERO requests;
+  //   · not yet loaded  -> exactly ONE request, shared with any other consumer asking at the same time;
+  //   · Country change  -> read from the loaded index, ZERO requests;
+  //   · READY / EMPTY / ERROR are distinct, and ERROR shows its code with a Retry that issues ONE request.
+  function registry_() {
+    return (typeof window !== 'undefined' && window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
   }
-
-  // ---- DOM (singleton; guarded) ---------------------------------------------------------------------------
-  var _dom = null, _state = null, _openToken = 0;
 
   function ensureDom() {
     if (typeof document === 'undefined') return null;
@@ -199,34 +192,106 @@
     refreshConfirm();
   }
 
+  // The modal's own scope-state line. It sits above the selects and is the ONLY place that reports why the
+  // Country list is not usable — so "no scopes are configured" and "the registry could not be read" can never
+  // look alike, and neither can look like success.
+  function _stateHost_() {
+    var d = _dom; if (!d || !d.modal) return null;
+    var el = d.modal.querySelector('[data-scope-state]');
+    if (el) return el;
+    el = document.createElement('div');
+    el.setAttribute('data-scope-state', '');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.cssText = 'font-size:12px;margin:0 0 8px;display:none;';
+    if (d.country && d.country.parentNode) d.country.parentNode.insertBefore(el, d.country);
+    else d.modal.insertBefore(el, d.modal.firstChild);
+    return el;
+  }
+  function _renderScopeState(status, error) {
+    var el = _stateHost_(); if (!el) return;
+    var d = _dom;
+    var disable = (status !== 'READY');
+    if (d.country) d.country.disabled = disable;
+    if (d.marketplace) d.marketplace.disabled = disable;
+    if (status === 'READY') { el.style.display = 'none'; el.innerHTML = ''; refreshConfirm(); return; }
+    var html = '';
+    if (status === 'LOADING') {
+      html = '<span style="color:#64748B;">Loading Country / Marketplace options…</span>';
+    } else if (status === 'EMPTY') {
+      // A REAL, successful configuration answer — not a failure, and never rendered as one.
+      html = '<span style="color:#92400E;">No active marketplace scopes are configured, so there is no scope to run against. Nothing was read or written.</span>';
+    } else {
+      var e = error || {};
+      var codeTxt = str(e.code) || 'SCOPE_REGISTRY_READ_FAILED';
+      var stale = (codeTxt === 'DEPLOYMENT_CONTRACT_MISMATCH');
+      var lead = stale
+        ? 'Country / Marketplace options unavailable — the deployed Apps Script is out of date.'
+        : 'Could not load the Country / Marketplace options.';
+      html = '<span role="alert" style="color:#B91C1C;">' +
+        '<strong>' + esc_(lead) + '</strong> ' + esc_(str(e.message)) +
+        ' <code>' + esc_(codeTxt) + '</code>' +
+        ' <button type="button" data-scope-retry style="margin-left:6px;padding:2px 8px;border:1px solid #EF4444;' +
+        'background:#fff;color:#B91C1C;border-radius:3px;cursor:pointer;font-size:11px;">' +
+        (stale ? 'Re-check' : 'Retry') + '</button></span>';
+    }
+    el.innerHTML = html;
+    el.style.display = '';
+    var btn = el.querySelector('[data-scope-retry]');
+    if (btn) btn.addEventListener('click', function () { _loadScopes(_state && _state.prefill, true); });
+  }
+  function esc_(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+
+  // Resolve the scope universe through the shared registry. `retry` is the ONLY way a previous ERROR re-issues
+  // a request — simply reopening the modal never silently re-drives a failed read.
+  function _loadScopes(prefill, retry) {
+    var reg = registry_();
+    var myToken = _openToken;
+    if (!reg) {
+      _renderScopeState('ERROR', { code: 'SCOPE_REGISTRY_MODULE_UNAVAILABLE', message: 'The shared scope registry is not loaded on this page.' });
+      return Promise.resolve();
+    }
+    // ALREADY RESOLVED → paint from the cache with ZERO requests.
+    if (!retry && reg.isReady && reg.isReady()) {
+      var snap0 = reg.getState();
+      _applyList((snap0.model && snap0.model.getMarketplaces) || [], prefill);
+      _renderScopeState(snap0.status === reg.STATUS.EMPTY ? 'EMPTY' : 'READY', null);
+      return Promise.resolve();
+    }
+    _renderScopeState('LOADING', null);
+    return Promise.resolve(reg.ensureLoaded(retry ? { retry: true } : {})).then(function (snap) {
+      if (myToken !== _openToken) return;                 // modal closed or reopened → drop this stale fill
+      if (!snap || snap.status === reg.STATUS.ERROR) { _renderScopeState('ERROR', snap && snap.error); return; }
+      _applyList((snap.model && snap.model.getMarketplaces) || [], prefill);
+      _renderScopeState(snap.status === reg.STATUS.EMPTY ? 'EMPTY' : 'READY', null);
+    })['catch'](function (err) {
+      if (myToken !== _openToken) return;
+      _renderScopeState('ERROR', { code: (err && err.code) || 'SCOPE_REGISTRY_READ_FAILED', message: (err && err.message) || String(err) });
+    });
+  }
+
   // open({ title, subtitle, confirmLabel, prefill:{country, marketplaceId}, onConfirm })
   function open(opts) {
     opts = opts || {};
     var d = ensureDom();
     if (!d) return;
     var prefill = opts.prefill || {};
-    // Synchronous seed from the broad cache — populates instantly on a WARM session; [] on a cold F1-7L session.
-    var seed = getMarketplaces();
-    _state = { list: seed, onConfirm: opts.onConfirm, scope: null };
+    // NO broad-cache seed and NO whole-table read. The shared registry is the only source; when it is already
+    // resolved this paints synchronously from its cache with zero requests, and when it is not the modal shows
+    // an honest LOADING state rather than an empty select.
+    _state = { list: [], onConfirm: opts.onConfirm, scope: null, prefill: prefill };
     d.title.textContent = str(opts.title) || 'AI Support';
     d.subtitle.textContent = str(opts.subtitle) || 'Select the scope';
     // F1-7N — distinct per-action confirm label so "AI Plan" and "Recalculate" read as different workflows.
     d.confirm.textContent = str(opts.confirmLabel) || 'Confirm';
-    _applyList(seed, prefill);
-    // F1-7N — cold affordance: when the broad seed is empty, show a transient loading hint until the reference resolves.
-    if (!seed.length) { d.country.innerHTML = '<option value="">Loading…</option>'; d.country.disabled = true; d.marketplace.disabled = true; }
     d.overlay.classList.add('is-open');
     d.modal.classList.add('is-open');
-    // F1-7N — authoritative COLD-ELIGIBLE refill from the scoped marketplace reference owner (never the broad cache).
-    // Guarded by an open token so a stale async fill from a prior open cannot clobber a reopened modal.
     var myToken = ++_openToken;
-    getMarketplacesAsync().then(function (list) {
-      if (!_state || myToken !== _openToken) return;               // modal closed or reopened → drop this stale fill
-      d.country.disabled = false;
-      // preserve any selection the user already made against the warm seed; else honor the prefill.
-      var keep = { country: d.country.value || prefill.country, marketplaceId: d.marketplace.value || prefill.marketplaceId };
-      _applyList((list && list.length) ? list : seed, keep);
-    });
+    _loadScopes(prefill, false);
     try { if (d.country.value) { (d.marketplace.value ? d.marketplace : d.country).focus(); } else { d.country.focus(); } } catch (e) { }
   }
 
@@ -244,11 +309,12 @@
     marketplacesForCountry: marketplacesForCountry,
     resolveScope: resolveScope,
     isConcreteScope: isConcreteScope,
-    // F1-7N cold-eligible marketplace source (tested directly)
-    _resolveMarketplacesAsync: getMarketplacesAsync,
+    // F1-7N-FB-4C — the scope source is now the ONE shared registry (tested directly through it).
+    _registry: registry_,
+    _loadScopes: _loadScopes,
     // DOM
     open: open,
     close: close,
-    _version: 'f1-7n-cold-ref-r1'
+    _version: 'f1-7n-fb-4c-shared-registry-r1'
   };
 });

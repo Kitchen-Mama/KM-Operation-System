@@ -711,7 +711,9 @@ var declaredBy = {
   'ROS_BUILD_VERSION_': (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   'ADI_BUILD_VERSION_': (G67.match(/var ADI_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   'EPC_BUILD_VERSION_': (G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'TEMP_ROSEND_DIAG_BUILD_VERSION_': (GTD.match(/var TEMP_ROSEND_DIAG_BUILD_VERSION_ = '([^']+)';/) || [])[1]
+  'TEMP_ROSEND_DIAG_BUILD_VERSION_': (GTD.match(/var TEMP_ROSEND_DIAG_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  // F1-7N-FB-4C - the AI Plan draft lifecycle joined the manifest, so this invariant now covers it too.
+  'AIPL_BUILD_VERSION_': (read('specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs').match(/var AIPL_BUILD_VERSION_ = '([^']+)';/) || [])[1]
 };
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
   eq(declaredBy[m.symbol], m.expected, '20. the manifest expectation for ' + m.file + ' matches what the file declares');

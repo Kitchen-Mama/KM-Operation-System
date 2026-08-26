@@ -42,43 +42,52 @@ function withWindow(win, fn) {
 
 (async function () {
   // ===============================================================================================================
-  section('COLD-ELIGIBLE source — resolves from getMarketplaceReference (never the broad cache)');
-  // (1) reference resolves non-empty → used verbatim; broad getter (sentinel) is NOT consulted.
-  var r1 = await withWindow({ KM: { DB: {
-    getMarketplaceReference: function () { return Promise.resolve(REF); },
-    getMarketplaces: function () { return BROAD_SENTINEL; }
-  } } }, function () { return MOD._resolveMarketplacesAsync(); });
-  ok(JSON.stringify(r1) === JSON.stringify(REF), 'A1 cold: reference universe used verbatim (marketplaceId MP-US-AMZ)');
-  ok(JSON.stringify(r1) !== JSON.stringify(BROAD_SENTINEL), 'A2 the broad _opDbCache getter is NOT the source when the reference resolves');
+  // F1-7N-FB-4C — REWRITTEN. This section proved that the modal's OWN marketplace resolver preferred a scoped
+  // reference read over the broad `_opDbCache`, and fell back to the broad getter when that read was empty,
+  // rejected, or unavailable.
+  //
+  // That resolver is GONE, because the fallback chain was the live defect: on a cold session the broad getter
+  // returns [], a rejection was swallowed into the same [], and filling the select from [] renders
+  // "Select country…" and nothing else — AN EMPTY SELECT PRESENTED AS SUCCESS. The user could not tell "nothing
+  // is configured" from "the read failed", which is precisely the reported symptom (a blank Country list in the
+  // AI Plan modal while the main page's list was populated).
+  //
+  // The modal now shares the ONE canonical slim-registry authority with the Site Inventory filter row. The
+  // replacement assertions are strictly stronger: no broad-cache fallback exists at all, and EMPTY and ERROR are
+  // separate terminal states that cannot be mistaken for one another or for success.
+  section('SINGLE CANONICAL SOURCE — the shared slim scope registry, with no broad-cache fallback');
+  var SREG = require(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'));
+  var MODAL_SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'utils', 'scope-select-modal.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 
-  // (2) reference resolves EMPTY → defensive fallback to the broad getter (warm-session parity).
-  var r2 = await withWindow({ KM: { DB: {
-    getMarketplaceReference: function () { return Promise.resolve([]); },
-    getMarketplaces: function () { return BROAD_SENTINEL; }
-  } } }, function () { return MOD._resolveMarketplacesAsync(); });
-  ok(JSON.stringify(r2) === JSON.stringify(BROAD_SENTINEL), 'A3 reference empty → falls back to the broad getter (no hard failure)');
+  ok(typeof MOD._resolveMarketplacesAsync === 'undefined',
+    'A1 the modal no longer owns a private marketplace resolver');
+  ok(!/getMarketplaceReference/.test(MODAL_SRC), 'A2 it no longer issues a whole-table marketplaces read');
+  ok(!/KM\.DB\.getMarketplaces/.test(MODAL_SRC), 'A3 and no longer seeds from the broad _opDbCache getter');
+  ok(/KM\.scopeRegistry/.test(MODAL_SRC), 'A4 it reads the ONE shared slim registry instead');
+  ok(typeof MOD._registry === 'function', 'A5 exposing that authority for inspection');
 
-  // (3) reference REJECTS → fallback to broad (never throws to the caller).
-  var r3 = await withWindow({ KM: { DB: {
-    getMarketplaceReference: function () { return Promise.reject(new Error('net')); },
-    getMarketplaces: function () { return BROAD_SENTINEL; }
-  } } }, function () { return MOD._resolveMarketplacesAsync(); });
-  ok(JSON.stringify(r3) === JSON.stringify(BROAD_SENTINEL), 'A4 reference rejection → fallback to broad (resolver never rejects)');
-
-  // (4) reference owner ABSENT → broad getter.
-  var r4 = await withWindow({ KM: { DB: { getMarketplaces: function () { return BROAD_SENTINEL; } } } },
-    function () { return MOD._resolveMarketplacesAsync(); });
-  ok(JSON.stringify(r4) === JSON.stringify(BROAD_SENTINEL), 'A5 no reference owner → defensive broad fallback');
-
-  // (5) no window at all → resolves [] (never throws).
-  var r5 = await withWindow(undefined, function () { return MOD._resolveMarketplacesAsync(); });
-  ok(Array.isArray(r5) && r5.length === 0, 'A6 no window → resolves [] (defensive, no throw)');
+  // EMPTY and ERROR are distinct, and neither is success — proved by executing the shared authority.
+  var sEmpty = await SREG.create({ read: function () { return Promise.resolve({ success: true, data: { marketplaces: [], empty: true } }); } }).ensureLoaded();
+  ok(sEmpty.status === 'EMPTY', 'A6 an EMPTY registry resolves EMPTY — a real configuration answer');
+  var sErr = await SREG.create({ read: function () { return Promise.resolve({ success: false, error: { code: 'DEPLOYMENT_CONTRACT_MISMATCH', message: 'stale' } }); } }).ensureLoaded();
+  ok(sErr.status === 'ERROR' && sErr.error.code === 'DEPLOYMENT_CONTRACT_MISMATCH',
+    'A7 a FAILED read resolves ERROR and KEEPS its code — it can never masquerade as "nothing configured"');
+  var sRej = await SREG.create({ read: function () { return Promise.reject(new Error('net')); } }).ensureLoaded();
+  ok(sRej.status === 'ERROR', 'A8 a REJECTION is ERROR too — never silently downgraded to an empty list');
+  var sNone = await SREG.create({ read: function () { return Promise.resolve(null); } }).ensureLoaded();
+  ok(sNone.status === 'ERROR', 'A9 and a missing response is ERROR — the promise still settles, never hangs');
 
   // ===============================================================================================================
-  section('open() seeds sync then authoritatively refills from the cold-eligible reference');
-  ok(/getMarketplacesAsync\(\)\.then\(/.test(MC), 'B1 open() refills from getMarketplacesAsync() (the cold-eligible source)');
-  ok(/getMarketplaceReference/.test(MC), 'B2 modal references the scoped reference owner getMarketplaceReference');
-  ok(/var seed = getMarketplaces\(\);/.test(MC), 'B3 warm-session sync seed retained (instant populate when the cache is warm)');
+  section('open() paints from the shared registry — zero requests when it is already loaded');
+  ok(/_loadScopes\(prefill, false\)/.test(MC), 'B1 open() resolves its options through the shared registry');
+  ok(/reg\.isReady\(\)/.test(MC), 'B2 and paints straight from the cache when it is already resolved (0 requests)');
+  // The broad-cache "warm seed" is deliberately GONE: it is what let an unprimed cache render as an empty
+  // Country list. The instant-populate benefit is preserved WITHOUT it, because the shared registry keeps its own
+  // resolved model and the modal paints from that cache synchronously when it is ready.
+  ok(!/getMarketplaces\(\)/.test(MC), 'B3 the broad-cache warm seed is gone — one source, no silent empty');
+  ok(/_applyList\(\(snap0\.model && snap0\.model\.getMarketplaces\) \|\| \[\], prefill\)/.test(MC),
+    'B3b instant populate is preserved by painting from the shared registry cache');
   ok(/Loading/.test(MODAL_SRC), 'B4 cold affordance: a Loading hint shows until the reference resolves');
   ok(/myToken !== _openToken/.test(MC), 'B5 stale-fill guard: a reopened modal drops a prior async fill');
   ok(/d\.confirm\.textContent = str\(opts\.confirmLabel\)/.test(MC), 'B6 per-action confirm label wired');
@@ -107,8 +116,8 @@ function withWindow(win, fn) {
   // ===============================================================================================================
   section('reference owner unchanged (BEFORE==AFTER universe) + cache token bumped');
   ok(/getMarketplaceReference = function\(\)/.test(DBAPI) && /getOperationDbTableFromSheet\('marketplaces'\)/.test(DBAPI), 'E1 getMarketplaceReference still the bounded getTable(marketplaces) owner (no new API/route)');
-  ok(/scope-select-modal\.js\?v=f1-7n-cold-ref-20260819/.test(INDEX), 'E2 index.html cache token bumped so the changed modal refetches');
-  ok(MOD._version === 'f1-7n-cold-ref-r1', 'E3 modal version tag bumped');
+  ok(/scope-select-modal\.js\?v=fb4c-shared-registry-20260826/.test(INDEX), 'E2 index.html cache token bumped so the changed modal refetches');
+  ok(MOD._version === 'f1-7n-fb-4c-shared-registry-r1', 'E3 modal version tag bumped');
 
   console.log('\n----------------------------------------');
   console.log('AI PLAN / RECALC SCOPE WIRING (F1-7N): ' + pass + ' passed, ' + fail + ' failed');

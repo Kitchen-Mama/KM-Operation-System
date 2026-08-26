@@ -183,9 +183,21 @@ var regFn = extractFn(INV, '_irEnsureRegistryLoaded_');
 ok(!/_irWorkspaceRefresh_/.test(code(regFn)), 'D1. a registry failure cannot start an inventory workspace read');
 ok(!/_irSearch\.applied/.test(code(regFn)), 'D1. and never touches the table\'s applied filters');
 ok(/table stays PRE_SEARCH/.test(regFn), 'D1. which the source states at the failure site');
-ok(/if \(_irRegistryPending\) return _irRegistryPending;/.test(regFn), 'D2. single-flight');
-eq((code(regFn).match(/getInventoryScopeRegistry\(\)/g) || []).length, 1,
-  'D2. exactly ONE request per load — a Retry therefore issues exactly one');
+ok(/if \(_irRegistryPending\) return _irRegistryPending;/.test(regFn), 'D2. single-flight at the page');
+// F1-7N-FB-4C — STRENGTHENED. "exactly one request per load" used to be inferred by counting call sites in a
+// page function. It is now PROVED by executing the shared authority that owns the request: four concurrent
+// consumers, one request; a resolved registry, zero further requests.
+var SREG_ = require(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'));
+(function () {
+  var calls = { n: 0 };
+  var reg = SREG_.create({ read: function () { calls.n++; return Promise.resolve({ success: true, data: { marketplaces: [{ marketplace_id: 'M1', country: 'US', marketplace: 'Amazon', company: 'KM' }] } }); } });
+  Promise.all([reg.ensureLoaded(), reg.ensureLoaded(), reg.ensureLoaded(), reg.ensureLoaded()]).then(function () {
+    eq(calls.n, 1, 'D2. exactly ONE request per load — four concurrent consumers share it (single-flight)');
+    return reg.ensureLoaded();
+  }).then(function () {
+    eq(calls.n, 1, 'D2b. and a consumer arriving after it resolved issues ZERO further requests');
+  });
+})();
 ok(/function _irReloadScopeRegistry_\(\) \{ return _irEnsureRegistryLoaded_\(\{ force: true \}\); \}/.test(INV),
   'D2. and Retry is a single forced load, not a loop');
 var regRender = extractFn(INV, '_irRenderRegistryState_');

@@ -46,18 +46,29 @@ eq(elig.length, 2, 'B1 two country-level (blank-marketplace) methods eligible fo
 ok(elig.some(function (m) { return m.value === 'Air' && m.label === 'Air Freight'; }), 'B2 label falls back to shipping_method_label');
 ok(!elig.some(function (m) { return m.value === 'Courier'; }), 'B3 a marketplace-SPECIFIC card does not match a different marketplace (non-blank exact)');
 
-// EP predicate extracted from the live page — asserts byte-identical eligible sets (G, no frontend/backend disagreement)
+// EP predicate — asserts byte-identical eligible sets (G, no frontend/backend disagreement).
+//
+// F1-7N-FB-4C — the front-end method AUTHORITY moved out of the page and into KM.methodRegistry, which owns the
+// catalogue, its per-scope cache and the five real states. The parity invariant is unchanged and is what matters:
+// the set of methods the Execution Plan offers must byte-match the set the backend route authority (KMRA) would
+// accept. It is now measured against the SHIPPED registry function that actually produces that set, which is a
+// stronger test than a page function wrapped around an injected fixture accessor.
 var PAGE = read('js/pages/inventory-replenishment.js');
-var epFactory = eval('(function(){'
-  + 'var _irCarrierFixture=[];'
-  + 'function _irCarrierGet(){ return _irCarrierFixture; }'
-  + extractFn(PAGE, '_execRateCardUsable') + '\n'
-  + extractFn(PAGE, '_execRateCardMethods') + '\n'
-  + 'return { methods: _execRateCardMethods, set: function(c){ _irCarrierFixture = c; } };'
-  + '})');
-var epScope = epFactory();
-epScope._execRateCardMethods = epScope.methods;
-epScope._set = epScope.set;
+var MREG = require(require('path').join(__dirname, '..', 'js', 'core', 'method-registry.js'));
+var epScope = (function () {
+  var fixture = [];
+  return {
+    _set: function (c) { fixture = c; },
+    // the registry returns { value, label, carrierId }; the parity comparison is over { value, label }, which is
+    // exactly what the picker renders and what KMRA.eligibleMethods emits.
+    _execRateCardMethods: function (originCountry, destCountry, marketplace) {
+      return MREG.methodsForRoute(fixture, {
+        originCountry: originCountry, destinationCountry: destCountry, marketplace: marketplace,
+        destinationWarehouseCode: ''
+      }).map(function (m) { return { value: m.value, label: m.label }; });
+    }
+  };
+})();
 // the EP model uses camelCase; build the same fixture in camelCase and RAW snake_case for KMRA
 function toCamel(rc) { return { originCountry: rc.origin_country, destinationCountry: rc.destination_country, marketplace: rc.marketplace, shippingMethod: rc.shipping_method, shippingMethodLabel: rc.shipping_method_label, status: rc.status }; }
 var parityFixtures = [

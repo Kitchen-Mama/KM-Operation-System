@@ -294,7 +294,22 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   // carry the DONE GAP-INV run id (cycle-matched) as calculation_run_id; without it the run fails closed (zero rows).
   var lineage = weeklyAiPlanResolveGapRunLineage_(request.planningCycle, harvest, request);
   if (!lineage.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(lineage.reason, 'K2 generation blocked: authoritative GAP-INV run lineage unavailable or mismatched (' + lineage.reason + '); zero rows written', { planning_cycle: request.planningCycle })] });
+
   var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
+
+  // DELIBERATELY PLACED AFTER THE AUTHORIZATION GATE REGION. The gate above authorizes ONLY from the internal
+  // controlled capability via verify(); a standing regression test asserts that region reads NO `body.` field,
+  // because anything it reads from the request is something a caller could try to authorize itself with. The run
+  // id is identity, not authorization — but it does read the body, so it belongs outside that region rather than
+  // weakening the invariant that protects it.
+  // F1-7N-FB-4C §E Stage 1 — THE IMMUTABLE GENERATION RUN ID. Minted ONCE, before any write, and stamped on
+  // every header this run touches. It is what makes "rows of an OLDER run" a decidable question later, and what
+  // makes a retry idempotent: the caller's execution key derives the same id, so a repeat run REUSEs its own
+  // committed rows instead of creating a second current run.
+  var executionKey = weeklyAiPlanStr_(body && (body.execution_key || body.executionKey)) ||
+    ('AIPLAN-' + sadFnv1a_([request.planningCycle, scope0.company, scope0.country, requestedMkt, lineage.calculation_run_id].join('|')).toUpperCase());
+  var generationRunId = 'AIRUN-' + sadFnv1a_(executionKey).toUpperCase();
+
   Object.keys(byMkt).sort().forEach(function (M) {
     var plan = KMWRR.buildK2GenerationPlan({
       scope: { planning_cycle: request.planningCycle, company: scope0.company, country: scope0.country, marketplace: M, source_page: scope0.source_page },
@@ -315,6 +330,9 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       g.header.formula_version = lineage.formula_version;
       g.header.calculated_at = lineage.calculated_at;
       g.header.source_data_as_of = lineage.source_data_as_of;
+      // FB-4C §D — provenance for the lifecycle. `generation_run_id` marks WHICH run owns this row; without it
+      // no later run can tell its own rows from the ones it is replacing.
+      g.header.generation_run_id = generationRunId;
       var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: g.header, lines: g.lines, enforce_k2_grouping: true }));
       var d = (resp && resp.data) ? resp.data : {};
       var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (d.outcome || 'CREATED')) : ((d && d.reason) ? d.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));
@@ -332,18 +350,79 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   if (requestedMkt && !scopeEqual) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('APPLIED_SCOPE_WIDENED', 'applied scope ' + JSON.stringify(appliedList) + ' != requested marketplace ' + requestedMkt + ' — refused (no out-of-scope rows)')] });
   // job-level status: COMPLETED only if every group ok; else PARTIAL (never claim whole-job success on partial commit).
   var jobStatus = groupsWritten.length === 0 ? (blockedTotal.length ? 'ALL_BLOCKED' : 'NO_DEMAND') : (anyFail ? (anyOk ? 'PARTIAL' : 'FAILED') : 'COMPLETED');
+
+  // F1-7N-FB-4C §E — A ZERO-RESULT RUN IS A SUCCESSFUL RUN. Computing no recommendations is a real answer about
+  // the world ("nothing needs shipping this cycle"), not a failure, and it must still replace the previous
+  // proposal — otherwise last week's plan silently stays active and looks like this week's advice. It writes NO
+  // empty header and NO empty line. ALL_BLOCKED is NOT this case: something went wrong there, so nothing expires.
+  var zeroResult = (jobStatus === 'NO_DEMAND');
+  var runSucceeded = zeroResult || (anyOk && !anyFail);
+
+  // §E Stage 3 steps 5-7 — EXPIRE ONLY AFTER THE CURRENT RUN IS COMMITTED AND VERIFIED. A failed or partial run
+  // expires NOTHING, so the operator is never left without an active plan because a replacement half-landed.
+  var lifecycle = { attempted: false, ok: null, expired_headers: 0, expired_lines: 0, reason: null, verification: null, manifest: null };
+  if (runSucceeded) {
+    if (typeof aiplExpireSupersededDrafts_ !== 'function') {
+      lifecycle.reason = 'AI_PLAN_LIFECYCLE_MODULE_MISSING';
+    } else {
+      lifecycle.attempted = true;
+      var committedIds = groupsWritten.filter(function (g) { return g.ok && g.allocation_draft_id; })
+        .map(function (g) { return String(g.allocation_draft_id); });
+      var expScopes = requestedMkt ? [requestedMkt] : appliedList;
+      var agg = { ok: true, expired_headers: 0, expired_lines: 0, verification: [], manifest: [], blockers: [] };
+      expScopes.forEach(function (M) {
+        var r = aiplExpireSupersededDrafts_(ss, {
+          scope: { company: scope0.company, country: scope0.country, marketplace: M,
+            planning_cycle: request.planningCycle, source_page: WEEKLY_AI_PLAN_SOURCE_PAGE_ },
+          generation_run_id: generationRunId, committed_ids: committedIds,
+          actor: weeklyAiPlanStr_(body && body.actor) || 'inventory-ai-plan'
+        });
+        if (!r.ok) agg.ok = false;
+        agg.expired_headers += r.expired_headers || 0;
+        agg.expired_lines += r.expired_lines || 0;
+        if (r.verification) agg.verification.push({ marketplace: M, verification: r.verification });
+        if (r.manifest) agg.manifest.push({ marketplace: M, checksum: r.manifest.checksum, expire_count: r.manifest.expire_count, preserve_count: r.manifest.preserve_count });
+        if (r.blockers && r.blockers.length) agg.blockers.push({ marketplace: M, blockers: r.blockers });
+      });
+      lifecycle.ok = agg.ok;
+      lifecycle.expired_headers = agg.expired_headers;
+      lifecycle.expired_lines = agg.expired_lines;
+      lifecycle.verification = agg.verification;
+      lifecycle.manifest = agg.manifest;
+      if (!agg.ok) lifecycle.reason = agg.blockers.length ? 'EXPIRATION_BLOCKED' : 'EXPIRATION_VERIFICATION_FAILED';
+      if (agg.blockers.length) lifecycle.blockers = agg.blockers;
+    }
+  } else {
+    lifecycle.reason = 'RUN_NOT_SUCCESSFUL_NOTHING_EXPIRED';
+  }
+
+  var activeCount = groupsWritten.filter(function (g) { return g.ok; }).length;
   return jsonResponse_({
-    success: anyOk && !anyFail,
+    success: runSucceeded,
     data: {
       mode: 'K2_ROUTE_GROUP', job_status: jobStatus, planningCycle: request.planningCycle, businessScope: scope0,
+      // §G — the projection the frontend needs to refresh honestly.
+      generation_run_id: generationRunId, execution_key: executionKey,
+      scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || null, planning_cycle: request.planningCycle },
+      created_headers: groupsWritten.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).length,
+      updated_headers: groupsWritten.filter(function (g) { return g.ok && (g.outcome === 'UPDATED' || g.outcome === 'REGENERATED' || g.outcome === 'REUSED'); }).length,
+      created_lines: groupsWritten.filter(function (g) { return g.ok && g.outcome === 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
+      updated_lines: groupsWritten.filter(function (g) { return g.ok && g.outcome !== 'CREATED'; }).reduce(function (a, g) { return a + (g.line_count || 0); }, 0),
+      expired_headers: lifecycle.expired_headers, expired_lines: lifecycle.expired_lines,
+      active_count: activeCount, expired_count: lifecycle.expired_headers, zero_result: zeroResult,
+      verification: { lifecycle_ok: lifecycle.ok, lifecycle_reason: lifecycle.reason, detail: lifecycle.verification, manifest: lifecycle.manifest },
+      lifecycle: lifecycle,
       requested_scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || 'ALL_MARKETPLACES(company/country fan-out)' },
       applied_scope: { company: scope0.company, country: scope0.country, marketplaces: appliedList }, applied_equals_requested: scopeEqual ? 'YES' : 'NO',
       groups_written: groupsWritten.length, per_group_outcome_counts: outcomeCounts, groups: groupsWritten,
       blocked_count: blockedTotal.length, blocked: blockedTotal,
       conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal,
-      atomicity_note: 'Each K2 group is atomic under its own lock; the job is NOT a single all-or-nothing transaction across groups — a PARTIAL job is reported truthfully per group, and a retry REUSEs committed groups by deterministic identity (no duplicates).'
+      atomicity_note: 'Each K2 group is atomic under its own lock; the job is NOT a single all-or-nothing transaction across groups — a PARTIAL job is reported truthfully per group, and a retry REUSEs committed groups by deterministic identity (no duplicates). Superseded AI drafts are expired ONLY after this run has committed and verified.'
     },
-    errors: anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups did not commit; see data.groups (per-group outcome)')] : []
+    errors: (anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups did not commit; see data.groups (per-group outcome)')] : [])
+      .concat(lifecycle.attempted && lifecycle.ok === false
+        ? [weeklyAiPlanErr_('AI_PLAN_EXPIRATION_INCOMPLETE', 'the current run committed, but superseded drafts were not fully expired; the previous plan may still be active. See data.lifecycle.', { reason: lifecycle.reason })]
+        : [])
   });
 }
 

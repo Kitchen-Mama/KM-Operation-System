@@ -70,7 +70,11 @@ eval(extractFn(G16, 'sadLineNaturalKey_'));
 eval(extractFn(G16, 'sadDeterministicLineId_'));
 eval(extractFn(G16, 'sadK2LineNaturalKey_'));
 eval(extractFn(G16, 'sadK2DeterministicLineId_'));
+// F1-7N-FB-4C - the shipped guards now read the named terminal-status sets (which gained `expired`), so the
+// eval list has to carry them. No assertion below changes.
 eval(extractVar(G16, 'SAD_LINE_IDENTITY_FIELDS_'));
+eval(extractVar(G16, 'SAD_TERMINAL_STATUSES_'));
+eval(extractVar(G16, 'SAD_TERMINAL_LINE_STATUSES_'));
 eval(extractFn(G16, 'sadCanonicalLineId_'));
 eval(extractFn(G16, 'sadSameLineIdentity_'));
 eval(extractFn(G16, 'sadPreflightLineBatch_'));

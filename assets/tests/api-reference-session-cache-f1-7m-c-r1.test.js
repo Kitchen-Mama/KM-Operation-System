@@ -110,9 +110,22 @@ ok(RC && typeof RC.get === 'function' && typeof RC.invalidate === 'function' && 
   console.log('\n== C5 IR primary payload UNCHANGED (lazy-include deferred); C6 guards already exist ==');
   // C5: the IR primary read still passes NO include object (all base tables) — deferred (needs coordinated 60_ + refactor).
   ok(/getWorkspace\('inventoryReplenishment', \{\}\)/.test(IR), 'C5 deferred: IR primary read still {} (base payload BEFORE==AFTER)');
-  ok(/getWorkspace\('inventoryReplenishment', \{ include: \{ carrierPlanning: true \} \}\)/.test(IR), 'IR carrier planning already lazy via the existing include mechanism');
-  // C6: the existing once-guards are untouched.
-  ok(/if \(_irCarrierModel\) return Promise\.resolve\(_irCarrierModel\);/.test(IR), 'C6: IR carrier once-guard present (unchanged)');
+  // F1-7N-FB-4C — STRENGTHENED. The include-gated lazy read and the once-guard are both intact; both moved into
+  // KM.methodRegistry, which owns the request, the per-scope cache and the single-flight latch. The once-guard is
+  // now PROVED by execution (a second ensureLoaded issues no request) rather than by grepping for a variable.
+  var MREG_ = require(require('path').join(__dirname, '..', 'js', 'core', 'method-registry.js'));
+  var MREG_SRC_ = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'method-registry.js'), 'utf8');
+  ok(/getWorkspace\('inventoryReplenishment', \{ include: \{ carrierPlanning: true \} \}\)/.test(MREG_SRC_),
+    'IR carrier planning is still lazy via the existing include mechanism (now owned by the method registry)');
+  (function () {
+    var calls = { n: 0 };
+    var reg = MREG_.create({ read: function () { calls.n++; return Promise.resolve({ success: true, data: {} }); },
+      adapt: function () { return { getCarrierRateCards: [], getCarrierLeadTimes: [] }; } });
+    var sc = { company: 'KM', country: 'US', marketplace: 'Amazon' };
+    reg.ensureLoaded(sc).then(function () { return reg.ensureLoaded(sc); }).then(function () {
+      ok(calls.n === 1, 'C6: IR carrier once-guard present (unchanged) — a second load issues NO request');
+    });
+  })();
   ok(/var _fcSecondaryLoaded = false;/.test(read('js/pages/fc-summary.js')) && /function _fcResetSecondaryCache\(\)/.test(read('js/pages/fc-summary.js')), 'C6: FC secondary once-guard + reset present (unchanged)');
   ok(/var _roL2Ready = false;/.test(read('js/pages/request-order.js')), 'C6: RO L2 once-guard present (unchanged)');
 

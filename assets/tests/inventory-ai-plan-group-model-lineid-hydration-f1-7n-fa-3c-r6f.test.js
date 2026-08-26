@@ -75,7 +75,14 @@ ok(/LINE_PRIMARY_KEY_ALREADY_EXISTS/.test(G16), 'B1. and an insert onto an exist
 ok(/LockService\.getScriptLock\(\)/.test(G16) && /tryLock\(30000\)/.test(G16), 'B1/D. the public lines handler wraps the check-and-write in a 30s ScriptLock');
 var execBlock = G16.slice(G16.indexOf("var EXEC_FIELDS"), G16.indexOf("var EXEC_FIELDS") + 160);
 ok(/planned_qty/.test(execBlock) && /note/.test(execBlock) && /route_no/.test(execBlock), 'D. planned_qty + note + route_no are user-editable EXEC fields (blank note = deliberate overwrite)');
-ok(/'submitted', 'cancelled', 'superseded'/.test(G16), 'D. terminal rows (submitted/cancelled/superseded) never mutated (stale/terminal guard)');
+// F1-7N-FB-4C — STRENGTHENED. The inline list became a NAMED set so `expired` could join it without four call
+// sites drifting apart. The guarantee is unchanged and now covers one more terminal status.
+ok(/SAD_TERMINAL_LINE_STATUSES_ = \{ submitted: 1, cancelled: 1, expired: 1, superseded: 1, superseded_user_review: 1 \}/.test(G16),
+  'D. the terminal LINE statuses are a named set — submitted/cancelled/expired/superseded/superseded_user_review');
+ok(/if \(SAD_TERMINAL_LINE_STATUSES_\[curLS\]\) \{ skipped\+\+; continue; \}/.test(G16),
+  'D. terminal rows are never mutated (stale/terminal guard reads that set)');
+ok(/SAD_TERMINAL_STATUSES_ = \{ submitted: 1, cancelled: 1, expired: 1 \}/.test(G16),
+  'D. and the terminal HEADER statuses likewise — an expired header is immutable history');
 
 section('B2. hydration reads header recommended_* + line source_warehouse_id; NO selected_*');
 var hydb = IR.slice(IR.indexOf('function _hydrateAllocationDraftFromDb'), IR.indexOf('function _clearAllocationDraft'));

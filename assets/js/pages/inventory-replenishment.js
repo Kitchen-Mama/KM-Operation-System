@@ -3949,40 +3949,63 @@ function _execRateCardUsable(rc) {
     return true;
 }
 
-// Distinct { value, label } shipping methods from carrier_rate_cards for a route. originCountry may be ''
-// (From not yet chosen) — then origin is not constrained; destination + marketplace still narrow the set.
-// A rate card field that is blank does not exclude it (blank = wildcard on that axis).
+// F1-7N-FB-4C §C — the Method picker now asks the SCOPED METHOD REGISTRY (KM.methodRegistry), which owns the
+// catalogue request, its cache, its single-flight latch and the five real states. This function stays as the
+// page's adapter: it builds the CANONICAL route context the registry scopes on and returns the resolution.
+//
+// The route context is built from IDENTITIES, never from the text in a dropdown: the source warehouse id, the
+// destination warehouse CODE (or blank for a marketplace-logical destination), and the applied station's
+// country + marketplace. A label is display metadata and is never an eligibility input.
+function _execMethodRouteCtx(originCountry, destCountry, marketplace, sourceWarehouseId, destWarehouseCode) {
+    return {
+        originCountry: String(originCountry == null ? '' : originCountry).trim(),
+        destinationCountry: String(destCountry == null ? '' : destCountry).trim(),
+        marketplace: String(marketplace == null ? '' : marketplace).trim(),
+        sourceWarehouseId: String(sourceWarehouseId == null ? '' : sourceWarehouseId).trim(),
+        destinationWarehouseCode: String(destWarehouseCode == null ? '' : destWarehouseCode).trim()
+    };
+}
+// Returns the FULL registry resolution { status, methods, error?, configuration? } for a route.
+function _execResolveMethods(routeCtx) {
+    var reg = (typeof window !== 'undefined' && window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (!reg) return { status: 'ERROR', methods: [], error: { code: 'METHOD_REGISTRY_MODULE_UNAVAILABLE', message: 'The shared method registry is not loaded on this page.' } };
+    return reg.resolve(_irMethodScope_(), routeCtx);
+}
+// The APPLIED station a catalogue belongs to. Deliberately the APPLIED scope, not the live selects: a picker
+// must answer about the station whose rows are on screen, and a changed-but-unapplied selector is exactly the
+// STALE_SCOPE case the registry reports rather than answering about the wrong station.
+function _irMethodScope_() {
+    var applied = (typeof _irSearch !== 'undefined' && _irSearch && _irSearch.applied) ? _irSearch.applied : null;
+    if (applied) return { company: applied.company || '', country: applied.country || '', marketplace: applied.marketplace || '' };
+    var sc = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
+    return { company: sc.company || '', country: sc.country || '', marketplace: sc.marketplace || '' };
+}
+// Back-compat shim for callers that only want the option list.
 function _execRateCardMethods(originCountry, destCountry, marketplace) {
-    var cards = _irCarrierGet('getCarrierRateCards');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
-    function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
-    var seen = {}, out = [];
-    cards.forEach(function (rc) {
-        if (!_execRateCardUsable(rc)) return;
-        if (destCountry && rc.destinationCountry && lo(rc.destinationCountry) !== lo(destCountry)) return;
-        if (originCountry && rc.originCountry && lo(rc.originCountry) !== lo(originCountry)) return;
-        if (marketplace && rc.marketplace && lo(rc.marketplace) !== lo(marketplace)) return;
-        var value = String(rc.shippingMethod || '').trim();
-        if (!value) return;
-        var label = String(rc.shippingMethodLabel || '').trim() || value;
-        var k = value.toLowerCase();
-        if (seen[k]) return;
-        seen[k] = 1;
-        out.push({ value: value, label: label });
-    });
-    out.sort(function (a, b) { return a.label.localeCompare(b.label); });
-    return out;
+    return _execResolveMethods(_execMethodRouteCtx(originCountry, destCountry, marketplace, '', '')).methods || [];
 }
 
 // Build the Method <select> option HTML. Empty match set → single explicit empty-state option (never a
 // fabricated method). A previously-saved method that is no longer in the set is dropped (not re-added).
-function _execMethodOptionsHtml(methods, selected) {
-    if (!methods || !methods.length) {
-        // F1-7N-FA-3C-R6E-P0 — distinguish LOADING from a genuine empty result. NEVER show "No matching method"
-        // before the catalog lookup actually completes (the live "options appear only slowly / momentarily none" bug).
-        var st = (typeof _irMethodsState_ === 'function') ? _irMethodsState_() : 'LOADED';
-        if (st === 'LOADING') return '<option value="">Loading methods…</option>';
-        if (st === 'ERROR') return '<option value="">Unable to load methods — Retry</option>';
-        return '<option value="">No matching method</option>';
+// F1-7N-FB-4C §C — FIVE STATES, FIVE SENTENCES. The old version had one branch for "not loaded yet", ONE for
+// every possible failure ("Unable to load methods"), and one for empty. A stale deployment, a failed read and a
+// missing rate card are different problems with different fixes, so they can no longer share a sentence — and a
+// genuine empty configuration is never reported as a transport failure.
+// `resolution` is the registry's own answer; the legacy (methods, selected) call shape is still accepted.
+function _execMethodOptionsHtml(resolution, selected) {
+    var res = (resolution && resolution.status) ? resolution
+        : { status: (resolution && resolution.length) ? 'READY' : 'EMPTY_CONFIGURATION', methods: resolution || [] };
+    var methods = res.methods || [];
+    if (!methods.length) {
+        if (res.status === 'LOADING' || res.status === 'IDLE') return '<option value="">Loading methods…</option>';
+        if (res.status === 'STALE_SCOPE') return '<option value="">Press Search to load methods for this station</option>';
+        if (res.status === 'ERROR') {
+            var code = (res.error && res.error.code) || 'METHOD_REGISTRY_READ_FAILED';
+            return '<option value="">Methods unavailable (' + _execEsc(code) + ') — Retry</option>';
+        }
+        // EMPTY_CONFIGURATION — the catalogue was read successfully and simply covers nothing here. This is a
+        // CONFIGURATION answer, and it must never read like a failure.
+        return '<option value="">No eligible method configured for this route</option>';
     }
     var html = '<option value="">Method…</option>';
     methods.forEach(function (m) {
@@ -4000,19 +4023,37 @@ function _execRebuildMethodOptions(sku) {
     var scope = _replenSelectedScope();
     list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
         var fromEl = rowEl.querySelector('[data-field="source_warehouse_id"]');
+        var toEl = rowEl.querySelector('[data-field="destination_warehouse_id"]');
         var methodEl = rowEl.querySelector('[data-field="shipping_method"]');
         if (!methodEl) return;
-        var originCountry = '';
+        var originCountry = '', sourceId = '';
         if (fromEl && fromEl.options && fromEl.selectedIndex >= 0) {
             var opt = fromEl.options[fromEl.selectedIndex];
             originCountry = opt ? String(opt.getAttribute('data-wh-country') || '').trim() : '';
+            sourceId = String(fromEl.value || '').trim();
         }
-        var methods = _execRateCardMethods(originCountry, scope.country, scope.marketplace);
+        // Canonical destination identity: a real warehouse contributes its CODE; an Amazon logical destination
+        // contributes none (it is identified by the marketplace axis instead), which is why the code is blank
+        // rather than the word "Amazon".
+        var destCode = '';
+        if (toEl && toEl.options && toEl.selectedIndex >= 0) {
+            var topt = toEl.options[toEl.selectedIndex];
+            var isLogical = topt && String(topt.getAttribute('data-wh-type') || '') === 'MARKETPLACE_DESTINATION';
+            if (!isLogical) destCode = topt ? String(topt.getAttribute('data-wh-code') || '').trim() : '';
+        }
+        var res = _execResolveMethods(_execMethodRouteCtx(originCountry, scope.country, scope.marketplace, sourceId, destCode));
+        var methods = res.methods || [];
         var current = methodEl.value;
         var stillValid = methods.some(function (m) { return m.value === current; });
-        methodEl.innerHTML = _execMethodOptionsHtml(methods, stillValid ? current : '');
+        methodEl.innerHTML = _execMethodOptionsHtml(res, stillValid ? current : '');
         if (!stillValid) methodEl.value = '';
         methodEl.disabled = !methods.length;
+        // The reason lives next to the control, so an operator never has to guess which of the five states
+        // produced the placeholder they are looking at.
+        methodEl.setAttribute('data-method-state', res.status);
+        if (res.status === 'ERROR' && res.error) methodEl.setAttribute('title', res.error.code + ' — ' + (res.error.message || ''));
+        else if (res.status === 'EMPTY_CONFIGURATION' && res.configuration) methodEl.setAttribute('title', res.configuration.code + ' — ' + res.configuration.next_action);
+        else methodEl.removeAttribute('title');
     });
 }
 
@@ -4146,7 +4187,11 @@ function _execWhOption(w, selectedId, ambiguous) {
     var label = name;
     if (ambiguous) { var extra = [w.warehouseCode, w.country].filter(Boolean).join(' / '); if (extra) label = name + ' (' + extra + ')'; }
     var sel = (selectedId && String(w.warehouseId) === String(selectedId)) ? ' selected' : '';
+    // F1-7N-FB-4C - data-wh-code carries the warehouse CODE, which is the canonical destination axis the
+    // carrier_rate_cards catalogue is keyed on (destination_warehouse_code). Without it the Method picker had to
+    // fall back to country text, so it could not tell two destinations in one country apart.
     return '<option value="' + _execEsc(String(w.warehouseId)) + '" data-wh-name="' + _execEsc(name) +
+        '" data-wh-code="' + _execEsc(w.warehouseCode || '') +
         '" data-wh-type="' + _execEsc(w.warehouseType || '') + '" data-wh-country="' + _execEsc(w.country || '') + '"' + sel + '>' + _execEsc(label) + '</option>';
 }
 function _execFromOptionsHtml(list, selectedId) {
@@ -4212,8 +4257,11 @@ function _renderExecutionRoute(sku, route) {
     // destination country + marketplace. No hardcoded fallback.
     var fromWh = cand.from.filter(function (w) { return String(w.warehouseId) === String(fromSelId); })[0];
     var originCountry = fromWh ? fromWh.country : '';
-    var methods = _execRateCardMethods(originCountry, destCountry, scope.marketplace);
-    var methodOpts = _execMethodOptionsHtml(methods, route.shipping_method);
+    var toWh = cand.to.filter(function (w) { return !w.logicalDestination && String(w.warehouseId) === String(toSelId); })[0];
+    var _mres = _execResolveMethods(_execMethodRouteCtx(originCountry, destCountry, scope.marketplace,
+        fromSelId || '', toWh ? (toWh.warehouseCode || '') : ''));
+    var methods = _mres.methods || [];
+    var methodOpts = _execMethodOptionsHtml(_mres, route.shipping_method);
     var methodDisabled = methods.length ? '' : ' disabled';
     var row = document.createElement('div');
     row.className = 'exec-route-row ir-exec-plan__grid';
@@ -5076,22 +5124,30 @@ function _irEnsureRegistryLoaded_(opts) {
     var force = !!(opts && opts.force);
     if (!force && _irRegistry.status === 'READY' && _irRegistry.model) return Promise.resolve(_irRegistry.model);
     if (_irRegistryPending) return _irRegistryPending;                                          // single-flight
-    var db = window.KM && window.KM.DB;
-    if (!(db && typeof db.getInventoryScopeRegistry === 'function')) {
+
+    // F1-7N-FB-4C §B2 — THE REQUEST, THE CACHE AND THE SINGLE-FLIGHT LATCH NOW LIVE IN ONE PLACE.
+    // This page and the "AI Plan — Inventory" scope modal used to be two independent registry consumers with
+    // two caches and two failure modes; the modal's had no visible ERROR state at all. Both now go through
+    // KM.scopeRegistry, so the registry is fetched at most once per session, concurrent consumers share that
+    // one request, and READY / EMPTY / ERROR mean the same thing on both surfaces.
+    // This function keeps ownership of its OWN UI (the selector-row state line + the filter repopulate);
+    // only the data layer moved.
+    var reg = _irSharedRegistry_();
+    if (!reg) {
         _irRegistry.status = 'ERROR';
-        _irRegistry.error = { code: 'SCOPE_REGISTRY_ACTION_UNAVAILABLE', message: 'The scope registry action is not available to this page.' };
+        _irRegistry.error = { code: 'SCOPE_REGISTRY_MODULE_UNAVAILABLE', message: 'The shared scope registry module is not loaded on this page.' };
         _irRenderRegistryState_();
         return Promise.resolve(null);
     }
     var mySeq = ++_irRegistry.seq;
     _irRegistry.status = 'LOADING'; _irRegistry.error = null;
     _irRenderRegistryState_();
-    _irRegistryPending = Promise.resolve(db.getInventoryScopeRegistry()).then(function (res) {
+    _irRegistryPending = Promise.resolve(reg.ensureLoaded({ force: force, retry: true })).then(function (snap) {
         _irRegistryPending = null;
         if (mySeq !== _irRegistry.seq) return _irRegistry.model;      // superseded by a newer load
-        if (!res || res.success === false) {
+        if (!snap || snap.status === reg.STATUS.ERROR) {
             _irRegistry.status = 'ERROR';
-            _irRegistry.error = (res && res.error) || { code: 'SCOPE_REGISTRY_READ_FAILED', message: 'The scope registry could not be read.' };
+            _irRegistry.error = (snap && snap.error) || { code: 'SCOPE_REGISTRY_READ_FAILED', message: 'The scope registry could not be read.' };
             // F1-7N-FB-3A §C — a registry failure NEVER starts an inventory workspace read and never advances
             // the table's own state: _irSearch.applied stays null, so the table stays PRE_SEARCH. Only Search
             // reads the inventory workspace, and only a successful Search applies filters. Recovery is the
@@ -5099,8 +5155,8 @@ function _irEnsureRegistryLoaded_(opts) {
             _irRenderRegistryState_();
             return null;
         }
-        _irRegistry.model = _irAdaptScopeRegistry_(res.data);
-        _irRegistry.status = _irRegistry.model.empty ? 'EMPTY' : 'READY';
+        _irRegistry.model = snap.model;
+        _irRegistry.status = (snap.status === reg.STATUS.EMPTY) ? 'EMPTY' : 'READY';
         _irRenderRegistryState_();
         if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
         return _irRegistry.model;
@@ -5113,6 +5169,9 @@ function _irEnsureRegistryLoaded_(opts) {
         return null;   // TERMINAL — never a hanging promise, so no caller can be left latched
     });
     return _irRegistryPending;
+}
+function _irSharedRegistry_() {
+    return (typeof window !== 'undefined' && window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
 }
 function _irReloadScopeRegistry_() { return _irEnsureRegistryLoaded_({ force: true }); }
 window._irEnsureRegistryLoaded_ = _irEnsureRegistryLoaded_;
@@ -5250,37 +5309,60 @@ var _irCarrierSeq = 0;
 // state (never a false "No available method" before the catalog resolves) and concurrent row-expands share ONE fetch.
 var _irCarrierPending = null;   // the single in-flight catalog promise (dedupe)
 var _irCarrierStatus = 'IDLE';  // IDLE | LOADING | LOADED | ERROR
+// F1-7N-FB-4C §C — THE CATALOGUE NOW HAS ONE OWNER. These three functions used to hold the request, the cache,
+// the in-flight latch and a three-value status between them, and they threw the ERROR CODE away — which is why
+// a stale deployment, a failed read and a schema refusal all reached the user as "Unable to load methods".
+// KM.methodRegistry owns all of that now, keyed by APPLIED SCOPE, so a catalogue can never answer for a station
+// it does not belong to. These remain as the page's adapters.
 function _irCarrierGet(name) {
-    if (_irEffectiveWorkspace()) return _irCarrierModel ? (_irCarrierModel[name] || []) : [];   // scoped only — no broad fallback
+    var reg = (window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (reg) {
+        var sc = _irMethodScope_();
+        if (name === 'getCarrierRateCards') return reg.getRateCards(sc) || [];
+        if (name === 'getCarrierLeadTimes') return reg.getLeadTimes(sc) || [];
+    }
+    if (_irEffectiveWorkspace()) return [];                                                         // scoped only — no broad fallback
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];   // Legacy
 }
-// R6E — Method dropdown state: LOADING (catalog in flight) vs LOADED (resolved; empty set = "No matching method") vs
-// ERROR (fetch failed). Legacy mode reads the broad cache synchronously → always LOADED.
+// Legacy three-value view kept for older callers. The picker itself now reads the registry's FIVE states.
 function _irMethodsState_() {
-    if (!_irEffectiveWorkspace()) return 'LOADED';
-    if (_irCarrierModel) return 'LOADED';
-    if (_irCarrierStatus === 'ERROR') return 'ERROR';
+    var reg = (window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (!reg) return _irEffectiveWorkspace() ? 'ERROR' : 'LOADED';
+    var sc = _irMethodScope_();
+    if (reg.isLoaded(sc)) return 'LOADED';
+    if (reg.getError(sc)) return 'ERROR';
     return 'LOADING';
 }
+// Preload the catalogue for the APPLIED scope. Deduped and cached by the registry, so one Search preloads once
+// and every later row-expand — twenty SKUs or twenty routes inside one SKU — costs ZERO further requests.
+// Deliberately returns a promise the caller may ignore: §C forbids blocking the first paint of inventory rows.
 function _irLoadCarrierPlanning_() {
-    if (!_irEffectiveWorkspace()) return Promise.resolve(null);        // Legacy → carrier from broad getter, no fetch
-    if (_irCarrierModel) return Promise.resolve(_irCarrierModel);      // cache once per page load (survives SPA remount)
-    if (_irCarrierPending) return _irCarrierPending;                   // R6E: coalesce concurrent expands → ONE fetch
-    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) return Promise.resolve(null);
-    var my = ++_irCarrierSeq; _irCarrierStatus = 'LOADING';
-    _irCarrierPending = Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } })).then(function (env) {
-        _irCarrierPending = null;
-        if (my !== _irCarrierSeq) return _irCarrierModel;             // a newer load superseded this one → drop stale response
-        if (env && env.success && env.data) {
-            var adapted = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
-            _irCarrierModel = { getCarrierLeadTimes: adapted.getCarrierLeadTimes || [], getCarrierRateCards: adapted.getCarrierRateCards || [] };
-            _irCarrierStatus = 'LOADED';
-            return _irCarrierModel;
-        }
-        _irCarrierStatus = 'ERROR'; return null;
-    }).catch(function () { _irCarrierPending = null; _irCarrierStatus = 'ERROR'; return null; });   // reference read: never throw into the panel
-    return _irCarrierPending;
+    var reg = (window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (!reg) return Promise.resolve(null);
+    return Promise.resolve(reg.ensureLoaded(_irMethodScope_()));
 }
+// Explicit operator retry from the Method picker's ERROR state — exactly ONE request, then a repaint.
+function _irRetryMethodRegistry_(sku) {
+    var reg = (window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (!reg) return Promise.resolve(null);
+    return Promise.resolve(reg.retry(_irMethodScope_())).then(function () {
+        if (sku && typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
+        else if (typeof _irRebuildAllMethodOptions_ === 'function') _irRebuildAllMethodOptions_();
+    });
+}
+window._irRetryMethodRegistry_ = _irRetryMethodRegistry_;
+// Repaint every expanded SKU's Method pickers (used after a retry / after a scope change).
+function _irRebuildAllMethodOptions_() {
+    if (typeof document === 'undefined') return;
+    try {
+        var lists = document.querySelectorAll('[id^="shipping-methods-"]');
+        for (var i = 0; i < lists.length; i++) {
+            var sku = String(lists[i].id || '').replace('shipping-methods-', '');
+            if (sku && typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
+        }
+    } catch (e) {}
+}
+window._irRebuildAllMethodOptions_ = _irRebuildAllMethodOptions_;
 
 // Bounded loading/error region for the main table (reuses KM.loadState — no new loading infra).
 var _irRegionCtl = null;
@@ -5430,8 +5512,16 @@ function _irApplySearch_(pending, mySeq) {
     // confirmed Search; never per SKU; never both engines.
     if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
     // The Execution-Plan Method catalog is only reachable after a Search (it needs an expanded row), so it is
-    // preloaded HERE rather than on mount. Deduped inside _irLoadCarrierPlanning_ — never one fetch per expand.
-    if (typeof _irLoadCarrierPlanning_ === 'function') { try { _irLoadCarrierPlanning_(); } catch (e) {} }
+    // preloaded HERE rather than on mount. Deduped and cached per APPLIED SCOPE inside the method registry —
+    // never one fetch per expand, and never a fetch for a station the user has not applied.
+    // NOT AWAITED: §C forbids the catalogue blocking the first paint of the inventory rows.
+    if (typeof _irLoadCarrierPlanning_ === 'function') {
+        try {
+            _irLoadCarrierPlanning_().then(function () {
+                if (typeof _irRebuildAllMethodOptions_ === 'function') _irRebuildAllMethodOptions_();
+            });
+        } catch (e) {}
+    }
 }
 window.searchReplenishment = searchReplenishment;
 window._irApplySearch_ = _irApplySearch_;
@@ -5683,14 +5773,29 @@ function _irClassifyGenerationResult_(res) {
     var draftIds = mkts.map(function (m) { return m && m.draftId; }).filter(Boolean);
     var blocked = mkts.filter(function (m) { return m && (m.status === 'BLOCKED_CONFLICT' || m.success === false); });
     var backendOk = !!(res && res.success) && (status === 'COMPLETED' || status === 'PARTIAL');
+    // F1-7N-FB-4C §E/§G — a ZERO-RESULT run is a SUCCESSFUL run. "This cycle needs no shipping" is a real
+    // answer, and the backend treats it as success precisely so it still replaces the previous proposal. The
+    // classifier must agree, or the page would refuse to refresh after a run that did expire last week's plan.
+    var zeroResult = (d.zero_result === true) || String(d.job_status || '') === 'NO_DEMAND';
     return {
-        ok: backendOk, status: status,
+        ok: backendOk || (zeroResult && !!(res && res.success)), status: status,
         marketplaceCount: (d.marketplaceCount != null ? d.marketplaceCount : mkts.length),
         skuCount: (d.skuCount != null ? d.skuCount : null),
         lineTotal: lineTotal, draftIds: draftIds, blockedCount: blocked.length,
         marketplaceResults: mkts,
+        // §G — the lifecycle projection, reported verbatim. These are the numbers that let an operator see that
+        // the previous plan was replaced rather than merely that a new one appeared.
+        generationRunId: d.generation_run_id || null,
+        executionKey: d.execution_key || null,
+        createdHeaders: Number(d.created_headers) || 0, updatedHeaders: Number(d.updated_headers) || 0,
+        createdLines: Number(d.created_lines) || 0, updatedLines: Number(d.updated_lines) || 0,
+        expiredHeaders: Number(d.expired_headers) || 0, expiredLines: Number(d.expired_lines) || 0,
+        activeCount: Number(d.active_count) || 0, expiredCount: Number(d.expired_count) || 0,
+        zeroResult: zeroResult,
+        verification: d.verification || null,
+        lifecycle: d.lifecycle || null,
         errors: (res && res.errors) || [],
-        reason: status === 'NO_DEMAND' ? 'no allocation needed'
+        reason: zeroResult ? 'no allocation needed this cycle'
             : status === 'BLOCKED_INPUT' ? 'blocked (input)'
             : (blocked.length ? 'blocked/conflict on ' + blocked.length + ' marketplace(s)' : '')
     };
@@ -5704,8 +5809,13 @@ function _irRunInventoryAiPlanGeneration_(btn) {
     var payload = { company: ctx.company, country: ctx.country, mode: 'MANUAL_REGENERATE', currentMarketplace: ctx.marketplace, actor: 'inventory-replenishment' };
     return Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)).then(function (res) {
         var cls = _irClassifyGenerationResult_(res);
+        // §G.8 — an AI Plan FAILURE must never clear the current Execution Plan. The only path that re-hydrates
+        // is a SUCCESSFUL run (including a zero-result one, which legitimately empties the AI half); a failure
+        // leaves every on-screen route exactly where it was and just reports why.
         if (cls.ok) {
             // Atomic hydration from the DB readback (E) — mirror the mount's hydrate-then-render sequence.
+            // The readback excludes `expired` rows server-side, so §G.3 (never show an expired row) holds by
+            // construction rather than by a client-side filter that could drift.
             return Promise.resolve(window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']))
                 .then(function () { try { _hydrateAllocationDraftFromDb(_replenCtx()); } catch (e) {} renderReplenishment(); })
                 .then(function () { _irShowAiPlanResult_(cls); if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); } });
@@ -5722,12 +5832,26 @@ function _irRunInventoryAiPlanGeneration_(btn) {
 function _irShowAiPlanResult_(cls) {
     if (typeof document === 'undefined') return;
     var esc = (typeof escapeReplenHtml === 'function') ? escapeReplenHtml : function (v) { return String(v == null ? '' : v); };
+    // §G — say what was REPLACED, not only what was created. A run that quietly expired eight superseded routes
+    // and created three new ones is a very different event from one that created three, and the operator has to
+    // be able to tell them apart without opening the database.
+    var replaced = cls.expiredHeaders
+        ? (' Replaced ' + cls.expiredHeaders + ' superseded route(s) (now expired, kept for audit).')
+        : '';
     var headline = cls.ok
-        ? ('AI Plan generated — ' + (cls.marketplaceCount || 0) + ' marketplace(s), ' + (cls.lineTotal || 0) + ' line(s).')
-        : (cls.status === 'NO_DEMAND' ? 'AI Plan: no allocation needed for the current scope.'
-            : cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready.'
-            : ('AI Plan could not complete' + (cls.reason ? ' — ' + esc(cls.reason) : '') + '.'));
+        ? (cls.zeroResult
+            ? ('AI Plan: no recommendation for this scope this cycle.' + replaced)
+            : ('AI Plan generated — ' + (cls.marketplaceCount || 0) + ' marketplace(s), ' + (cls.lineTotal || 0) + ' line(s).' + replaced))
+        : (cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready. Your current Execution Plan is unchanged.'
+            : ('AI Plan could not complete' + (cls.reason ? ' — ' + esc(cls.reason) : '') + '. Your current Execution Plan is unchanged.'));
     var rows = '<div><strong>Status:</strong> ' + esc(cls.status || '') + '</div>';
+    if (cls.generationRunId) rows += '<div><strong>Run:</strong> ' + esc(cls.generationRunId) + '</div>';
+    rows += '<div><strong>Headers:</strong> ' + cls.createdHeaders + ' created · ' + cls.updatedHeaders + ' updated · ' + cls.expiredHeaders + ' expired</div>';
+    rows += '<div><strong>Lines:</strong> ' + cls.createdLines + ' created · ' + cls.updatedLines + ' updated · ' + cls.expiredLines + ' expired</div>';
+    if (cls.lifecycle && cls.lifecycle.ok === false) {
+        rows += '<div style="color:#B91C1C;"><strong>Lifecycle:</strong> superseded drafts were NOT fully expired (' +
+            esc(cls.lifecycle.reason || 'unknown') + '). The previous plan may still be active — do not submit until this is resolved.</div>';
+    }
     (cls.marketplaceResults || []).forEach(function (m) {
         rows += '<div><strong>' + esc(m && m.marketplace) + ':</strong> ' + esc(m && m.status) + ' — ' + (Number(m && m.lineCount) || 0) + ' line(s)' + ((m && m.draftId) ? ' · draft ' + esc(m.draftId) : '') + ((m && m.reason) ? ' · ' + esc(m.reason) : '') + '</div>';
     });

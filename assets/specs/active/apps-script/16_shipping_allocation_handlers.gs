@@ -69,7 +69,15 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
 ];
 
-var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };
+// F1-7N-FB-4C §D — `expired` joins the enum. It is NOT a synonym for `cancelled`: cancelled is a human
+// decision to abandon a plan, expired is the system recording that a NEWER SUCCESSFUL AI Plan run replaced this
+// one. They have different causes, different audit columns and different meanings in a report, so conflating
+// them would destroy the distinction the lifecycle exists to record.
+// An expired row is READ-ONLY: it is not editable, not submittable, and not part of any active set below.
+var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1, expired: 1 };
+// The statuses no writer may mutate. `expired` is terminal for the same reason `submitted` is: it is history.
+var SAD_TERMINAL_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1 };
+var SAD_TERMINAL_LINE_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1, superseded: 1, superseded_user_review: 1 };
 var SAD_GENERATION_TYPES_ = { scheduled: 1, manual_refresh: 1, user_created: 1 };
 
 // The recommendation-snapshot fields — written only when the incoming line supplies them, so an
@@ -130,7 +138,7 @@ function handleUpsertShippingAllocationDraft_(body) {
     if (id0) {
       var sh0 = procurementEnsureSheet_(ss0, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
       var f0 = procurementFindRow_(sh0, 'allocation_draft_id', id0);
-      if (f0) { var cS0 = f0.col('status'); var st0 = cS0 !== -1 ? String(sh0.getRange(f0.row, cS0 + 1).getValue()).trim().toLowerCase() : ''; if (st0 === 'submitted' || st0 === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st0, stage: 'terminal' }); }
+      if (f0) { var cS0 = f0.col('status'); var st0 = cS0 !== -1 ? String(sh0.getRange(f0.row, cS0 + 1).getValue()).trim().toLowerCase() : ''; if (SAD_TERMINAL_STATUSES_[st0]) return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st0, stage: 'terminal' }); }
     }
     return sadUpsertDraftHeaderCore_(body);
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
@@ -262,7 +270,7 @@ function handleUpsertShippingAllocationDraftLines_(body) {
     if (did) {
       var hsh = procurementEnsureSheet_(ss0, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
       var hf = procurementFindRow_(hsh, 'allocation_draft_id', did);
-      if (hf) { var cs = hf.col('status'); var stt = cs !== -1 ? String(hsh.getRange(hf.row, cs + 1).getValue()).trim().toLowerCase() : ''; if (stt === 'submitted' || stt === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + stt, stage: 'terminal' }); }
+      if (hf) { var cs = hf.col('status'); var stt = cs !== -1 ? String(hsh.getRange(hf.row, cs + 1).getValue()).trim().toLowerCase() : ''; if (SAD_TERMINAL_STATUSES_[stt]) return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + stt, stage: 'terminal' }); }
     }
     return sadUpsertLinesKeyedCore_(body);
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
@@ -670,7 +678,7 @@ function sadVerifyDraftLines_(draftId, expectedLines, storedRows, isK2) {
     }
   });
 
-  var active = mine.filter(function (r) { return ['cancelled', 'superseded', 'superseded_user_review'].indexOf(L(r.line_status)) === -1; });
+  var active = mine.filter(function (r) { return !SAD_TERMINAL_LINE_STATUSES_[L(r.line_status)] || L(r.line_status) === 'submitted'; });
   var expected = (expectedLines || []).filter(function (l) { return L(l.line_status) !== 'cancelled'; });
   out.expected_line_count = expected.length;
 
@@ -788,7 +796,7 @@ function sadUpsertLinesKeyedCore_(body) {
       // Round 1H: NEVER mutate a line-terminal row (submitted/cancelled/superseded) — skip it.
       var cLS = found.col('line_status');
       var curLS = cLS !== -1 ? String(sh.getRange(found.row, cLS + 1).getValue()).trim().toLowerCase() : '';
-      if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
+      if (SAD_TERMINAL_LINE_STATUSES_[curLS]) { skipped++; continue; }   // FB-4C: `expired` is terminal too
       // R6F: heal a blank generated-line id with the deterministic SADL id so future edits/readback carry a stable id
       // (idempotent — a nonblank id is never overwritten).
       var cId0 = found.col('allocation_draft_line_id');
@@ -967,7 +975,7 @@ function sadAtomicUpsertCore_(body) {
   }
   if (found) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
-    if (st === 'submitted' || st === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
+    if (SAD_TERMINAL_STATUSES_[st]) return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
     // A: editing an existing route-INCOMPLETE (legacy) row is fail-closed unless an explicit USER migration is requested.
     // FB-4A §D — the REQUEST header goes to the guard here too. The AI-Plan generation path runs through THIS core,
     // and it is the path that mints a K2 id over the four route dimensions the generation engine leaves blank, so it
@@ -1059,7 +1067,7 @@ function sadAtomicUpsertCore_(body) {
       if (!lf && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
       if (lf) {
         var cLS = lf.col('line_status'); var curLS = cLS !== -1 ? String(lSh.getRange(lf.row, cLS + 1).getValue()).trim().toLowerCase() : '';
-        if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
+        if (SAD_TERMINAL_LINE_STATUSES_[curLS]) { skipped++; continue; }   // FB-4C: `expired` is terminal too
         var cId0 = lf.col('allocation_draft_line_id');
         if (cId0 !== -1) { var curId0 = String(lSh.getRange(lf.row, cId0 + 1).getValue()).trim(); if (!curId0) lSh.getRange(lf.row, cId0 + 1).setValue(sadNewLineId_(isK2Group, id, l)); }
         (function (found2, line) {
@@ -1251,6 +1259,10 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     var status = String(header.status || '').trim().toLowerCase();
     var isSubmitted = (status === 'submitted');
     if (status === 'cancelled') { errors.push({ allocation_draft_id: id, reason: 'DRAFT_CANCELLED' }); return; } // (13) not terminal-cancelled
+    // F1-7N-FB-4C §F/§G.9 — an EXPIRED draft may never enter the Submit workset. It is refused with its OWN
+    // reason rather than the generic STATUS_NOT_SUBMITTABLE, because "a newer AI Plan run replaced this" is a
+    // different fact from "this status is not on the allow-list", and the operator's next action differs.
+    if (status === 'expired') { errors.push({ allocation_draft_id: id, reason: 'DRAFT_EXPIRED_SUPERSEDED_BY_NEWER_AI_PLAN' }); return; }
     if (!isSubmitted && status !== 'draft' && status !== 'site_confirmed' && status !== 'partially_submitted') { errors.push({ allocation_draft_id: id, reason: 'STATUS_NOT_SUBMITTABLE:' + status }); return; } // (2)
     if (!isSubmitted && expectedVersions && expectedVersions[id] != null && String(expectedVersions[id]).trim() !== String(header.draft_version == null ? '' : header.draft_version).trim()) { errors.push({ allocation_draft_id: id, reason: 'STALE_VERSION', expected: String(expectedVersions[id]), current: String(header.draft_version) }); return; } // (12)
     if (!String(header.planning_cycle || '').trim()) { errors.push({ allocation_draft_id: id, reason: 'PLANNING_CYCLE_MISSING' }); return; } // (10)
@@ -1265,7 +1277,8 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
       if (seenLineIds[lineId]) { lineErr = 'DUPLICATE_LINE_ID:' + lineId; break; }                              // (5) no duplicate line ids
       seenLineIds[lineId] = 1;
       if (String(ln.allocation_draft_id || '').trim() !== id) { lineErr = 'FK_MISMATCH:' + lineId; break; }     // (4) FK integrity
-      if (String(ln.line_status || '').trim().toLowerCase() === 'cancelled') continue;                          // (8) non-cancelled only
+      var lnSt = String(ln.line_status || '').trim().toLowerCase();
+      if (lnSt === 'cancelled' || lnSt === 'expired') continue;                                                 // (8) non-cancelled, non-expired only
       var nat = [id, String(ln.sku || '').trim().toLowerCase(), String(ln.site_sku || '').trim().toLowerCase(), String(ln.window_code || '').trim().toLowerCase()].join('|');
       if (natKeys[nat]) { lineErr = 'DUPLICATE_NATURAL_KEY:' + nat; break; }                                    // (6) no duplicate natural keys
       natKeys[nat] = 1;
@@ -1467,7 +1480,7 @@ function sadResolveActiveDraft_(sh, scope) {
   var matches = [];
   for (var r = 1; r < data.length; r++) {
     var st = String(data[r][ci.st] == null ? '' : data[r][ci.st]).trim().toLowerCase();
-    if (st === 'submitted' || st === 'cancelled') continue;   // active = not terminal
+    if (SAD_TERMINAL_STATUSES_[st]) continue;   // active = not terminal (submitted / cancelled / expired)
     if (String(data[r][ci.pc]).trim() === want.pc && String(data[r][ci.co]).trim() === want.co &&
         String(data[r][ci.cy]).trim() === want.cy && String(data[r][ci.mk]).trim() === want.mk &&
         String(data[r][ci.sp]).trim() === want.sp) {
@@ -1638,7 +1651,8 @@ function sadReadLinesForDraft_(lsh, draftId) {
   var out = [];
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][di]).trim() !== draftId) continue;
-    if (si !== -1 && String(data[r][si] == null ? '' : data[r][si]).trim().toLowerCase() === 'cancelled') continue;
+    var lst_ = si !== -1 ? String(data[r][si] == null ? '' : data[r][si]).trim().toLowerCase() : '';
+    if (lst_ === 'cancelled' || lst_ === 'expired') continue;   // FB-4C: expired lines are audit history, never active
     var o = {};
     for (var c = 0; c < hdr.length; c++) if (hdr[c]) o[hdr[c]] = data[r][c];
     out.push(o);
@@ -1694,7 +1708,7 @@ function handleGetShippingAllocationDraftWorkspace_(body) {
     var matched = [];
     for (var r = 1; r < data.length; r++) {
       var st = cell(r, cSt).toLowerCase();
-      if (st === 'submitted' || st === 'cancelled') continue;      // active = not terminal (unchanged rule)
+      if (SAD_TERMINAL_STATUSES_[st]) continue;      // active = not terminal (submitted / cancelled / expired)
       if (scope.planning_cycle && cell(r, cPc) !== scope.planning_cycle) continue;
       if (cell(r, cCo) !== scope.company) continue;
       if (cell(r, cCy) !== scope.country) continue;
@@ -1732,7 +1746,8 @@ function handleGetShippingAllocationDraftWorkspace_(body) {
       ls.forEach(function (l) {
         var k = String(l.allocation_draft_line_id == null ? '' : l.allocation_draft_line_id).trim();
         if (!k) return;
-        if (String(l.line_status == null ? '' : l.line_status).trim().toLowerCase() === 'cancelled') return;
+        var lst = String(l.line_status == null ? '' : l.line_status).trim().toLowerCase();
+        if (lst === 'cancelled' || lst === 'expired') return;   // FB-4C: an expired line is audit, never active
         (pk[k] = pk[k] || []).push(l);
       });
       Object.keys(pk).forEach(function (k) {

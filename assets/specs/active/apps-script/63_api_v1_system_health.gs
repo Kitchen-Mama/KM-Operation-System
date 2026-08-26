@@ -152,7 +152,10 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send orchestration + planning-cycle authority' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
   { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Execution Plan identity conflict diagnostic' },
-  { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' }
+  { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
+  // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
+  // still write its own rows and simply expire nothing, leaving last week's plan active and looking like advice.
+  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FB-4C', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' }
 ];
 
 function sysGlobalValue_(name) {

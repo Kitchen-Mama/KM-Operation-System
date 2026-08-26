@@ -414,7 +414,12 @@
     <script src="assets/js/utils/inventory-compat.js?v=r6f2b-edit-ownership-20260822"></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
     <script src="assets/js/utils/gap-recalc-transport.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/scope-select-modal.js?v=f1-7n-cold-ref-20260819"></script>
+    <!-- F1-7N-FB-4C - the ONE canonical Country/Marketplace scope registry. Must load BEFORE any consumer
+         (the scope modal and the Site Inventory page both read window.KM.scopeRegistry). -->
+    <script src="assets/js/core/scope-registry.js?v=fb4c-scope-registry-20260826"></script>
+    <!-- F1-7N-FB-4C - the scoped shipping-method registry (Execution Plan Method picker owner). -->
+    <script src="assets/js/core/method-registry.js?v=fb4c-method-registry-20260826"></script>
+    <script src="assets/js/utils/scope-select-modal.js?v=fb4c-shared-registry-20260826"></script>
     <!-- F1-4B-FM5-R1: canonical cartonization owner (KMCALC) — KMREC delegates the actionable-total carton rounding here -->
     <script src="assets/js/core/supply-planning-calculations.js?v=donenotice-20260811"></script>
     <!-- F1-7N-FB-4B: READ-ONLY recommendation/order-qty authority + cartonization audit. Computes no quantity and changes no rule. -->

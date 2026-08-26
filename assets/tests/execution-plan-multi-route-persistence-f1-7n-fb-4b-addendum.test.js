@@ -94,7 +94,11 @@ eval(extractFn(G13, 'procurementAppendByHeader_'));
 eval(extractFn(G13, 'procurementFindRow_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
+// F1-7N-FB-4C — the shipped guards now read the named terminal-status sets (which gained `expired`), so
+// the eval list has to carry them. No assertion below changes.
 eval(extractVar(G16, 'SAD_STATUSES_'));
+eval(extractVar(G16, 'SAD_TERMINAL_STATUSES_'));
+eval(extractVar(G16, 'SAD_TERMINAL_LINE_STATUSES_'));
 eval(extractVar(G16, 'SAD_GENERATION_TYPES_'));
 eval(extractVar(G16, 'SAD_RECOMMENDATION_FIELDS_'));
 eval(extractVar(G16, 'SAD_LINE_LEGACY_ALIASES_'));

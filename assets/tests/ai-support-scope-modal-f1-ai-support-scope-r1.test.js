@@ -126,7 +126,8 @@ ok(/gr\.runJob|window\.KM\.gapRecalc/.test(INV_JS + RO_JS), 'U/V scoped recalc r
 section('cache-version + wiring — new module is loaded and version bumped');
 ok(/scope-select-modal\.js\?v=[\w-]+/.test(INDEX), 'index.html loads scope-select-modal.js with a cache token (bumped per later rounds)');
 ok(!/\?v=fmr1-20260810/.test(INDEX), 'no stale ?v=fmr1-20260810 remains (all local assets refetch)');
-ok(MOD._version === 'f1-7n-cold-ref-r1', 'scope modal module version tag present (bumped for F1-7N cold-eligible source)');
+ok(MOD._version === 'f1-7n-fb-4c-shared-registry-r1',
+  'scope modal module version tag present (bumped for the F1-7N-FB-4C shared-registry source)');
 
 console.log('\n----------------------------------------');
 console.log('AI SUPPORT SCOPE MODAL (F1-AI-SUPPORT-SCOPE-R1): ' + pass + ' passed, ' + fail + ' failed');

@@ -157,8 +157,21 @@ var irAdaptedBase = window.KM.DB.adaptInventoryReplenishmentWorkspace(irBase);
 eq(irAdaptedBase.getCarrierLeadTimes, [], 'S6: base adapt → getCarrierLeadTimes [] (carrier lazy-loaded only for Execution Plan)');
 
 // source: carrier reads route through the scoped carrier accessor; lazy load via include.carrierPlanning; warehouse via _irWsGet.
-ok(/_irCarrierGet\('getCarrierRateCards'\)/.test(IR_JS) && /_irCarrierGet\('getCarrierLeadTimes'\)/.test(IR_JS), 'S6: ETA + method reads route through _irCarrierGet');
-ok(/getWorkspace\('inventoryReplenishment',\s*\{\s*include:\s*\{\s*carrierPlanning:\s*true\s*\}\s*\}\)/.test(IR_JS), 'S6: lazy carrier fetch uses include.carrierPlanning');
+// F1-7N-FB-4C — STRENGTHENED. The include-gated lazy carrier read is unchanged; what moved is its OWNER. The
+// request, cache and single-flight latch now live in KM.methodRegistry, so the page can no longer hold a
+// catalogue that belongs to a different applied station and cannot discard the error code on a failure.
+var MREG_SRC_ = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'method-registry.js'), 'utf8');
+ok(/_irCarrierGet\('getCarrierLeadTimes'\)/.test(IR_JS), 'S6: ETA reads still route through the scoped carrier accessor');
+ok(/_execResolveMethods\(/.test(IR_JS) && /KM\.methodRegistry/.test(IR_JS),
+  'S6a: METHOD reads route through the scoped method registry — the accessor no longer owns the catalogue');
+ok(/reg\.getRateCards\(sc\)/.test(IR_JS),
+  'S6a2: and the accessor itself now reads the registry cache, so there is ONE catalogue for both consumers');
+ok(/getWorkspace\('inventoryReplenishment',\s*\{\s*include:\s*\{\s*carrierPlanning:\s*true\s*\}\s*\}\)/.test(MREG_SRC_),
+  'S6: the lazy carrier fetch still uses include.carrierPlanning — now issued by the method registry that owns it');
+ok(!/getWorkspace\('inventoryReplenishment',\s*\{\s*include:\s*\{\s*carrierPlanning/.test(IR_JS),
+  'S6b: and the page no longer issues that read itself — there is exactly one owner');
+ok(/getRateCards|getLeadTimes/.test(MREG_SRC_) && /scopeKey/.test(MREG_SRC_),
+  'S6c: the catalogue is keyed by APPLIED SCOPE, so it can never answer for another station');
 ok(/function _execWarehouseCandidates\(\)[\s\S]*_irWsGet\('getWarehouses'\)/.test(IR_JS), 'S6: Execution-Plan warehouse candidates via _irWsGet (no broad getWarehouses)');
 ok((IR_JS.match(/window\.KM\.DB\.getCarrierLeadTimes\(\)|window\.KM\.DB\.getCarrierRateCards\(\)/g) || []).length === 0, 'S6: no direct broad carrier getter calls remain');
 

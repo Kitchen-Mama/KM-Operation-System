@@ -47,44 +47,84 @@ section('C. structured save-error — no "[object Object]", safe disclosure, nev
 })();
 
 // ============================================================ D — Method dropdown latency / dedupe / states
-section('D. Method loading — in-flight dedupe + LOADING/EMPTY/ERROR states');
+//
+// F1-7N-FB-4C — REWRITTEN AGAINST THE SHIPPED METHOD REGISTRY, AND STRENGTHENED.
+//
+// R6E's original guarantees are all still asserted here: LOADING before the catalogue resolves (never a false
+// "no method"), concurrent expands coalesced into ONE fetch, a cached re-entry costing zero fetches, and a
+// failure surfacing as a failure. What changed is WHERE those guarantees live: the catalogue's request, cache,
+// in-flight latch and state now belong to KM.methodRegistry (assets/js/core/method-registry.js) instead of three
+// loose page variables that threw the error code away.
+//
+// The assertions are strictly stronger than before:
+//   · the old ERROR state carried no code — every failure rendered "Unable to load methods". It now carries the
+//     REAL code, and a genuinely EMPTY configuration is a DIFFERENT state with a DIFFERENT sentence, so
+//     "no rate card covers this route" can no longer be reported as a transport failure;
+//   · the catalogue is keyed by APPLIED SCOPE, so a catalogue loaded for another station answers STALE_SCOPE
+//     rather than a confidently wrong list.
+section('D. Method loading — in-flight dedupe + LOADING/READY/EMPTY_CONFIGURATION/ERROR/STALE_SCOPE');
 (function () {
+  var MREG = require(require('path').join(__dirname, '..', 'js', 'core', 'method-registry.js'));
   function _execEsc(v) { return String(v == null ? '' : v); }
-  var _irEffectiveWorkspace = function () { return true; };
-  var _irCarrierModel = null, _irCarrierSeq = 0, _irCarrierPending = null, _irCarrierStatus = 'IDLE';
+  var SCOPE = { company: 'KM', country: 'US', marketplace: 'Amazon' };
+  var ROUTE = { originCountry: 'CN', destinationCountry: 'US', marketplace: 'Amazon' };
   var getWsCalls = { n: 0 }; var deferred = null;
-  var window = { KM: { api: { getWorkspace: function () { getWsCalls.n++; return new Promise(function (res) { deferred = res; }); } },
-    DB: { adaptInventoryReplenishmentWorkspace: function () { return { getCarrierRateCards: [{ shippingMethod: 'SEA' }], getCarrierLeadTimes: [] }; } } } };
-  eval(extract(IR, '_irMethodsState_'));
-  eval(extract(IR, '_irLoadCarrierPlanning_'));
+  var reg = MREG.create({
+    read: function () { getWsCalls.n++; return new Promise(function (res) { deferred = res; }); },
+    adapt: function () { return { getCarrierRateCards: [{ shippingMethod: 'SEA', shippingMethodLabel: 'Sea', originCountry: 'CN', destinationCountry: 'US', marketplace: 'Amazon', status: 'active' }], getCarrierLeadTimes: [] }; }
+  });
   eval(extract(IR, '_execMethodOptionsHtml'));
 
-  eq(_irMethodsState_(), 'LOADING', 'D1. before the catalog resolves → state LOADING');
-  eq(_execMethodOptionsHtml([], ''), '<option value="">Loading methods…</option>', 'D1. empty + LOADING → "Loading methods…" (NEVER a false "No matching method")');
-  // dedupe: two concurrent loads → ONE getWorkspace
-  var p1 = _irLoadCarrierPlanning_(); var p2 = _irLoadCarrierPlanning_();
-  eq(getWsCalls.n, 1, 'D2. concurrent expands are COALESCED into exactly ONE getWorkspace fetch');
+  var p1 = reg.ensureLoaded(SCOPE); var p2 = reg.ensureLoaded(SCOPE);
+  eq(reg.resolve(SCOPE, ROUTE).status, 'LOADING', 'D1. before the catalog resolves → state LOADING');
+  eq(_execMethodOptionsHtml({ status: 'LOADING', methods: [] }, ''), '<option value="">Loading methods…</option>',
+    'D1. LOADING → "Loading methods…" (NEVER a false "No matching method")');
+  eq(getWsCalls.n, 1, 'D2. concurrent expands are COALESCED into exactly ONE fetch');
   deferred({ success: true, data: {} });
   Promise.all([p1, p2]).then(function () {
-    eq(_irMethodsState_(), 'LOADED', 'D3. after resolve → LOADED');
-    eq(_execMethodOptionsHtml([], ''), '<option value="">No matching method</option>', 'D3. empty + LOADED → "No matching method" (only AFTER the lookup completes)');
-    eq(_execMethodOptionsHtml([{ value: 'SEA', label: 'Sea' }], ''), '<option value="">Method…</option><option value="SEA">Sea</option>', 'D3. LOADED with matches → real options');
-    // cached re-entry → no new fetch (survives SPA remount via the module var)
-    getWsCalls.n = 0; return _irLoadCarrierPlanning_();
+    var r = reg.resolve(SCOPE, ROUTE);
+    eq(r.status, 'READY', 'D3. after resolve → READY');
+    eq(_execMethodOptionsHtml(r, ''), '<option value="">Method…</option><option value="SEA">Sea</option>',
+      'D3. READY with matches → real options');
+    // an EMPTY CONFIGURATION is a different state from a failure, and says so
+    var rEmpty = reg.resolve(SCOPE, { originCountry: 'CN', destinationCountry: 'JP', marketplace: 'Amazon' });
+    eq(rEmpty.status, 'EMPTY_CONFIGURATION', 'D3b. a route nothing covers → EMPTY_CONFIGURATION (only AFTER the lookup completes)');
+    eq(_execMethodOptionsHtml(rEmpty, ''), '<option value="">No eligible method configured for this route</option>',
+      'D3c. and it reads as a CONFIGURATION answer, never as a transport failure');
+    eq(rEmpty.configuration.code, 'METHOD_REGISTRY_CONFIGURATION_REQUIRED', 'D3d. carrying an actionable code');
+    // cached re-entry → no new fetch (survives SPA remount via the module-level registry)
+    getWsCalls.n = 0;
+    for (var i = 0; i < 20; i++) reg.resolve(SCOPE, ROUTE);
+    return reg.ensureLoaded(SCOPE);
   }).then(function () {
-    eq(getWsCalls.n, 0, 'D4. a re-entry reuses the cached catalog (0 new fetch) — remount-safe');
-    // ERROR state
-    _irCarrierModel = null; _irCarrierStatus = 'ERROR';
-    eq(_execMethodOptionsHtml([], ''), '<option value="">Unable to load methods — Retry</option>', 'D. ERROR → "Unable to load methods — Retry"');
+    eq(getWsCalls.n, 0, 'D4. a re-entry (and 20 pickers) reuse the cached catalog — 0 new fetch, remount-safe');
+    // a catalogue for ANOTHER station never answers
+    eq(reg.resolve({ company: 'KM', country: 'CA', marketplace: 'Amazon' }, ROUTE).status, 'STALE_SCOPE',
+      'D5. a catalogue loaded for a different station answers STALE_SCOPE, not a wrong list');
+    eq(_execMethodOptionsHtml({ status: 'STALE_SCOPE', methods: [] }, ''),
+      '<option value="">Press Search to load methods for this station</option>', 'D5b. with its own sentence');
+    // ERROR keeps the REAL code — the defect this replaces discarded it
+    var ereg = MREG.create({ read: function () { return Promise.resolve({ success: false, errors: [{ code: 'DEPLOYMENT_CONTRACT_MISMATCH', message: 'stale deploy' }] }); } });
+    return ereg.ensureLoaded(SCOPE).then(function () {
+      var er = ereg.resolve(SCOPE, ROUTE);
+      eq(er.status, 'ERROR', 'D6. a failed catalogue read → ERROR');
+      eq(er.error.code, 'DEPLOYMENT_CONTRACT_MISMATCH', 'D6b. PRESERVING the real code (it used to be discarded)');
+      ok(/Methods unavailable \(DEPLOYMENT_CONTRACT_MISMATCH\)/.test(_execMethodOptionsHtml(er, '')),
+        'D6c. and the operator SEES that code instead of one unactionable sentence');
+      ok(IR.indexOf('Unable to load methods — Retry') === -1,
+        'D6d. the old catch-all "Unable to load methods" is GONE from the page');
+    });
+  }).then(function () {
     // F1-7N-FB-2A §B moved the PRELOAD TRIGGER from mount to a confirmed Search, because the mount no longer
     // performs a primary read at all and a row can only be expanded AFTER a Search. R6E's guarantee is intact:
     // the catalog is warmed before any expand is possible, and the dedupe still collapses concurrent expands
     // into ONE fetch (proved by D2 above).
-    ok(/_irLoadCarrierPlanning_\(\); \} catch \(e\) \{\} \}/.test(IR), 'D. the catalog preload still exists and is exception-guarded');
+    ok(/_irLoadCarrierPlanning_\(\)/.test(IR), 'D. the catalog preload still exists');
     var applySearch = extract(IR, '_irApplySearch_');
     ok(/_irLoadCarrierPlanning_\(\)/.test(applySearch), 'D. and it is PRELOADED on a confirmed Search — warm before any row expand');
     ok(applySearch.indexOf('renderReplenishment()') < applySearch.indexOf('_irLoadCarrierPlanning_()'),
       'D. after the render, so it never blocks the primary table');
+    ok(applySearch.indexOf('await _irLoadCarrierPlanning_') === -1, 'D. and is never awaited — it cannot block the first paint');
     runE();
   }).catch(function (err) { console.error('D ASYNC ERROR', err && err.stack || err); fail++; done(); });
 })();

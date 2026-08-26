@@ -177,7 +177,16 @@ eq((G64.match(/function handleInventoryScopeRegistryGet_\(/g) || []).length, 1, 
 section('C. selector loading and inventory loading are INDEPENDENT (defect B1)');
 
 var regFn = extractFn(INV, '_irEnsureRegistryLoaded_');
-ok(/getInventoryScopeRegistry\(\)/.test(regFn), 'C1. the selectors are fed by the slim registry action');
+// F1-7N-FB-4C — STRENGTHENED. The registry's REQUEST, CACHE and single-flight latch moved into the ONE shared
+// authority (KM.scopeRegistry) so the Site Inventory filter row and the "AI Plan — Inventory" modal can no longer
+// be two consumers with two caches — which is exactly why the modal's Country list was blank while this page's
+// was populated. The guarantee is unchanged and is now asserted at its new home by EXECUTING the shipped module,
+// which is stronger than grepping for a call in a page function.
+var SREG_ = require(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'));
+ok(/reg\.ensureLoaded\(/.test(regFn) && /_irSharedRegistry_/.test(regFn),
+  'C1. the selectors are fed through the ONE shared slim-registry authority');
+ok(/getInventoryScopeRegistry/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'), 'utf8')),
+  'C1b. and that authority reads the slim registry action');
 ok(!/_irWorkspaceRefresh_/.test(code(regFn)), 'C1. and NEVER by the inventory workspace read');
 ok(!/_irRegion_|beginLoad/.test(code(regFn)), 'C1. so it cannot touch the inventory table load region');
 // that region is what printed the offending message
@@ -201,11 +210,19 @@ ok(!/replenScrollBody|replenFixedBody/.test(code(regHost) + code(regRender)),
   'C4. and never inside the table bodies');
 // the registry loader is terminal on every path
 ok(/_irRegistry\.status = 'ERROR'/.test(regFn), 'C5. an error is terminal');
-ok(/_irRegistry\.model\.empty \? 'EMPTY' : 'READY'/.test(regFn), 'C5. empty and ready are distinct terminal states');
+ok(/_irRegistry\.status = \(snap\.status === reg\.STATUS\.EMPTY\) \? 'EMPTY' : 'READY'/.test(regFn),
+  'C5. empty and ready are distinct terminal states');
+// executed, not grepped: the shared authority must classify an empty registry as EMPTY and a failure as ERROR
+SREG_.create({ read: function () { return Promise.resolve({ success: true, data: { marketplaces: [], empty: true } }); } })
+  .ensureLoaded().then(function (s1) { ok(s1.status === 'EMPTY', 'C5b. an EMPTY registry is EMPTY — a configuration answer'); });
+SREG_.create({ read: function () { return Promise.resolve({ success: false, error: { code: 'X_FAILED', message: 'm' } }); } })
+  .ensureLoaded().then(function (s2) { ok(s2.status === 'ERROR' && s2.error.code === 'X_FAILED', 'C5c. a FAILED read is ERROR and keeps its code — never a fake EMPTY'); });
 ok(/\['catch'\]\(function \(err\)/.test(regFn), 'C5. and a rejection is caught, so no caller is left latched');
 ok(/if \(_irRegistryPending\) return _irRegistryPending;/.test(regFn), 'C5. single-flight');
 ok(/mySeq !== _irRegistry\.seq/.test(regFn), 'C5. sequence-guarded against a stale response');
-ok(/SCOPE_REGISTRY_ACTION_UNAVAILABLE/.test(regFn), 'C5. and a missing action is a named terminal state, not a hang');
+ok(/SCOPE_REGISTRY_MODULE_UNAVAILABLE/.test(regFn), 'C5. a missing shared module is a named terminal state, not a hang');
+ok(/SCOPE_REGISTRY_ACTION_UNAVAILABLE/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'), 'utf8')),
+  'C5d. and a missing ACTION is likewise named by the authority that owns the call');
 // scope resolution works pre-Search from the registry alone
 var wsGet = extractFn(INV, '_irWsGet');
 ok(/name === 'getMarketplaces' && typeof _irRegistry !== 'undefined' && _irRegistry && _irRegistry\.model/.test(wsGet),

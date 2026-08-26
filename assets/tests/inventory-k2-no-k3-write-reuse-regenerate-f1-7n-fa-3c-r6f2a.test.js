@@ -13,7 +13,11 @@ var G61 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '61_
 var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 // bring the pure 16_ helpers into scope
+// F1-7N-FB-4C — the shipped guards now read the named terminal-status sets (which gained `expired`), so
+// the eval list has to carry them. No assertion below changes.
 eval(G16.match(/var SAD_STATUSES_ = \{[\s\S]*?\};/)[0]);
+eval(G16.match(/var SAD_TERMINAL_STATUSES_ = \{[\s\S]*?\};/)[0]);
+eval(G16.match(/var SAD_TERMINAL_LINE_STATUSES_ = \{[\s\S]*?\};/)[0]);
 eval(G16.match(/var SAD_RECOMMENDATION_FIELDS_ = \[[\s\S]*?\];/)[0]);
 eval(G16.match(/var SAD_K2_HEADER_FP_ = \[[\s\S]*?\];/)[0]);
 eval(G16.match(/var SAD_K2_LINE_FP_ = \[[\s\S]*?\];/)[0]);
@@ -94,7 +98,16 @@ ok(/line_status[\s\S]{0,120}(submitted|cancelled|superseded)[\s\S]{0,80}skipped\
 section('G. per-group outcome + truthful partial job status');
 var genK2 = extractFn(G61, 'weeklyAiPlanGenerateK2_');
 ok(/per_group_outcome_counts/.test(genK2) && /job_status/.test(genK2), 'G1. reports per-group outcome counts + a job status');
-ok(/success: anyOk && !anyFail/.test(genK2), 'G2. whole-job success ONLY when every group committed');
+// F1-7N-FB-4C — STRENGTHENED. The rule "a partial commit is never whole-job success" is unchanged and is still
+// asserted below; what was ADDED is the one other legitimate success: a run that successfully computed ZERO
+// recommendations. That is a real answer about the world, and §E requires it to still supersede the previous
+// plan — so the assertion now pins BOTH halves instead of a single expression that could not express them.
+ok(/var runSucceeded = zeroResult \|\| \(anyOk && !anyFail\)/.test(genK2),
+  'G2. whole-job success requires every group committed — or a genuine zero-result run');
+ok(/var zeroResult = \(jobStatus === 'NO_DEMAND'\)/.test(genK2),
+  'G2b. and a zero-result run is exactly NO_DEMAND — never ALL_BLOCKED, PARTIAL or FAILED');
+ok(/success: runSucceeded/.test(genK2), 'G2c. the envelope reports exactly that decision');
+ok(/anyFail = true/.test(genK2) && /'PARTIAL'/.test(genK2), 'G2d. a partial commit is still tracked and reported as PARTIAL');
 ok(/anyFail \? \(anyOk \? 'PARTIAL' : 'FAILED'\) : 'COMPLETED'/.test(genK2), 'G2. truthful PARTIAL when only some groups commit');
 ok(/atomicity_note/.test(genK2) && /NOT a single all-or-nothing transaction across groups/.test(genK2), 'G3. documents truthful per-group (not cross-group transaction) atomicity');
 ok(/REUSED[\s\S]{0,200}deterministic identity[\s\S]{0,80}never duplicates|retry[\s\S]{0,120}REUSEs committed groups/.test(genK2), 'G4. retry reuses committed groups by deterministic identity (no duplicate)');

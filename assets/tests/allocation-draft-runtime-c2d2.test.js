@@ -24,7 +24,11 @@ function extractFn(src, name) {
   throw new Error('unbalanced: ' + name);
 }
 
+// F1-7N-FB-4C - the shipped guards now read the named terminal-status sets (which gained `expired`), so the
+// eval list has to carry them. No assertion below changes.
 eval(GS.match(/var SHIPPING_ALLOCATION_DRAFTS_HEADERS_ = \[[\s\S]*?\];/)[0]);
+eval(GS.match(/var SAD_TERMINAL_STATUSES_ = \{[\s\S]*?\};/)[0]);
+eval(GS.match(/var SAD_TERMINAL_LINE_STATUSES_ = \{[\s\S]*?\};/)[0]);
 eval(extractFn(GS, 'sadResolveActiveDraft_'));
 var H = SHIPPING_ALLOCATION_DRAFTS_HEADERS_;
 function draftRow(o) { var r = H.map(function () { return ''; }); Object.keys(o).forEach(function (k) { var i = H.indexOf(k); if (i >= 0) r[i] = o[k]; }); return r; }

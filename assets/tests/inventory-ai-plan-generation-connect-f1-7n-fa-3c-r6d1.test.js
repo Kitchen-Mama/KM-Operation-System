@@ -77,7 +77,15 @@ eval(_r6d1Fns);
     section('D. truthful result classification');
     eq(_irClassifyGenerationResult_({ success: true, data: { status: 'COMPLETED', marketplaceResults: [{ lineCount: 2 }] } }).ok, true, 'COMPLETED → ok');
     eq(_irClassifyGenerationResult_({ success: true, data: { status: 'PARTIAL', marketplaceResults: [] } }).ok, true, 'PARTIAL → ok');
-    eq(_irClassifyGenerationResult_({ success: false, data: { status: 'NO_DEMAND', marketplaceResults: [] } }).reason, 'no allocation needed', 'NO_DEMAND → "no allocation needed"');
+    // F1-7N-FB-4C — a zero-result run is now a SUCCESS (§E): "nothing needs shipping this cycle" is a real answer
+    // and must still supersede the previous proposal, so the classifier reports it as a zero-result success
+    // rather than as a non-ok outcome. The reason text says so explicitly.
+    var noDemand = _irClassifyGenerationResult_({ success: true, data: { status: 'NO_DEMAND', job_status: 'NO_DEMAND', zero_result: true, marketplaceResults: [] } });
+    eq(noDemand.reason, 'no allocation needed this cycle', 'NO_DEMAND → "no allocation needed this cycle"');
+    eq(noDemand.zeroResult, true, 'NO_DEMAND is classified as a ZERO-RESULT run');
+    eq(noDemand.ok, true, 'and a zero-result run is a SUCCESS, so the page refreshes and the old plan is replaced');
+    eq(_irClassifyGenerationResult_({ success: false, data: { status: 'FAILED', marketplaceResults: [] } }).ok, false,
+      'a genuinely FAILED run is still not ok — a failure never refreshes or expires anything');
     eq(_irClassifyGenerationResult_({ success: false, data: { status: 'BLOCKED_INPUT', marketplaceResults: [] } }).ok, false, 'BLOCKED_INPUT → not ok');
     eq(_irClassifyGenerationResult_({ success: false, data: { status: 'FAILED', marketplaceResults: [{ status: 'BLOCKED_CONFLICT', success: false, draftId: 'RD::y' }] } }).blockedCount, 1, 'FAILED with a blocked marketplace → blockedCount, draftId preserved (never conceals committed rows)');
 

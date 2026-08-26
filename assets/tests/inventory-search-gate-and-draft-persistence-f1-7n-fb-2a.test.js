@@ -164,7 +164,22 @@ ok(!/ltsFilter/.test(code(regFn)) && !/ltsFilter/.test(code(extractFn(INV, 'sear
   'C5. no read path sends the LTS value to the server');
 ok(/if \(_irRegistryPending\) return _irRegistryPending;/.test(regFn), 'C6. the registry load is single-flight');
 // F1-7N-FB-3 §C — selector population is now a SEPARATE slim action, so it can never load the inventory table.
-ok(/getInventoryScopeRegistry\(\)/.test(regFn), 'C6. the selectors are fed by the slim scope registry action');
+// F1-7N-FB-4C — STRENGTHENED. The registry's REQUEST, CACHE and single-flight latch moved into the ONE shared
+// authority (KM.scopeRegistry) so the Site Inventory filter row and the "AI Plan — Inventory" modal can no longer
+// be two consumers with two caches — which is exactly why the modal's Country list was blank while this page's
+// was populated. The guarantee is unchanged and is now asserted at its new home by EXECUTING the shipped module,
+// which is stronger than grepping for a call in a page function.
+var SREG_ = require(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'));
+ok(/reg\.ensureLoaded\(/.test(regFn) && /_irSharedRegistry_/.test(regFn),
+  'C6. the selectors are fed through the ONE shared slim-registry authority');
+ok(/getInventoryScopeRegistry/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'), 'utf8')),
+  'C6b. and that authority reads the slim scope registry action — never a whole-DB read');
+// this suite's code() is a per-LINE quote-aware stripper and does not remove a multi-line /* */ header, so the
+// block comment is dropped explicitly before the check.
+var SREG_SRC_ = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'core', 'scope-registry.js'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ');
+ok(!/getOperationDb|_opDbCache/.test(code(SREG_SRC_)),
+  'C6c. with no broad-cache or whole-DB fallback in its CODE (comments stripped, so prose cannot satisfy or fail it)');
 ok(!/_irWorkspaceRefresh_/.test(code(regFn)),
   'C6. and NEVER by the inventory workspace read — which is what used to put the TABLE into loading (defect B1)');
 ok(!/_irRegion_|beginLoad/.test(code(regFn)),
