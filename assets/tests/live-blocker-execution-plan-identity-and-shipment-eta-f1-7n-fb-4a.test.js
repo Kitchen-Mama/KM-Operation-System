@@ -589,7 +589,10 @@ ok(acv >= 6, '19. the action-contract version advanced because a router action w
 eq(pinned, acv, '19. and the frontend pins exactly it, so a stale deployment is named DEPLOYMENT_CONTRACT_MISMATCH');
 ok(/system\.executionPlanConflictDiagnostic/.test(G63), '19. the new action is in the required-action list');
 // §I — audited and deferred, with nothing implemented
-ok(/## 32\. Country Boundary Layer \u2014 DEFERRED requirement/.test(MAPSPEC), '19. the deferred boundary requirement is recorded in the owning map spec');
+// FB-4A recorded this as DEFERRED; F1-7N-MAP-COUNTRY-BOUNDARY-1 then implemented it. The STATUS word was
+// never the contract — pinning it would fail the moment the deferred work was actually done. What must
+// remain true either way is that the owning map spec carries the section and its scoped requirements.
+ok(/## 32\. Country Boundary Layer/.test(MAPSPEC), '19. the boundary requirement is recorded in the owning map spec');
 ['vector country boundary layer', 'ISO labels', 'Scale-aware label visibility', 'Island label points',
   'Collision suppression', 'No coordinate jitter', 'No route/event geometry change', 'Licence / provenance',
   'high-resolution globe material'].forEach(function (k) {

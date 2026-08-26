@@ -51,6 +51,10 @@
     ref: { search: '', country: '', type: '' },
     showPlannedRoute: true,
     showReference: false,
+    // MAP-COUNTRY-BOUNDARY-1 §H — two INDEPENDENT geographic-reference layers, both ON by default. They are
+    // presentation state only: no DB row, no Script Property, no new preference table.
+    showCountryBorders: true,
+    showCountryLabels: true,
     sourceMode: 'not-loaded', diag: null,
     debug: (function () { try { return /(?:[?&])glmdebug=1/.test(location.search) || !!window.KM_GLM_DEBUG; } catch (e) { return false; } })(),
     globe: null, globeHost: null, globeError: '', didFocus: false,
@@ -471,6 +475,10 @@
       '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Layers</span>' +
         '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showPlannedRoute"' + (state.showPlannedRoute ? ' checked' : '') + '> Route arcs</label>' +
         '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showReference"' + (state.showReference ? ' checked' : '') + '> Reference pins</label>' +
+        // MAP-COUNTRY-BOUNDARY-1 §H — independent country-reference toggles. Native checkboxes inside <label>, so
+        // they are keyboard-reachable and expose checked state to assistive technology without extra ARIA.
+        '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showCountryBorders"' + (state.showCountryBorders ? ' checked' : '') + '> Country borders</label>' +
+        '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showCountryLabels"' + (state.showCountryLabels ? ' checked' : '') + '> Country labels</label>' +
       '</div>' : '';
     // §12 legend RELOCATED into the panel — reuse the SAME legendHtml() renderer (no duplicate, no second legend).
     var legend = '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Legend</span><div class="glm-mcp__legend">' + legendHtml() + '</div></div>';
@@ -549,7 +557,10 @@
   function legendHtml() {
     function row(c, lbl) { return '<div class="glm-legend__row"><span class="glm-legend__dot glm-mk--' + c + '"></span>' + esc(lbl) + '</div>'; }
     return row('pos', 'Current position') + row('done', 'Completed node') + row('upcoming', 'Upcoming node') +
-      row('customs', 'Customs') + row('exc', 'Exception / delayed') + row('endpoint', 'Origin / destination endpoint') + row('ref', 'Reference location');
+      row('customs', 'Customs') + row('exc', 'Exception / delayed') + row('endpoint', 'Origin / destination endpoint') + row('ref', 'Reference location') +
+      // MAP-COUNTRY-BOUNDARY-1 §H — say what the country layer IS, so an ISO label is never read as a shipment node.
+      '<p class="glm-legend__note">Country borders and ISO labels (US, CN, …) are a geographic reference only — ' +
+      'they are not shipment nodes, warehouses or route points, and they carry no shipment data.</p>';
   }
 
   // ---------- globe management (persist across re-renders) ----------
@@ -625,6 +636,7 @@
     }
     state.globe.setMarkers(markers);
     state.globe.setArcs(state.showPlannedRoute || state.mode !== 'runtime' ? arcs : []);
+    updateCountryLayers();
     // one-time initial framing per data load: focus the primary distribution, else global overview
     if (!state.didFocus) {
       state.didFocus = true;
@@ -632,6 +644,29 @@
       else state.globe.overview();
     }
   }
+  // MAP-COUNTRY-BOUNDARY-1 §F/§G — hand the globe the two independent toggles and the country PRIORITY sets.
+  // This reads country FIELDS that already exist on the shipment view-model; it never writes one, never derives a
+  // coordinate from one, and a value that does not resolve to a dataset ISO code is simply dropped.
+  function updateCountryLayers() {
+    if (!state.globe || typeof state.globe.setCountryLayers !== 'function') return;
+    state.globe.setCountryLayers({ borders: !!state.showCountryBorders, labels: !!state.showCountryLabels });
+    var active = [], selected = [], nodes = [];
+    try {
+      var sel = state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null;
+      if (sel) {
+        [sel.originCountry, sel.destCountry].forEach(function (c) { if (c) selected.push(c); });
+        (sel.nodes || []).forEach(function (n) { if (n && n.country) nodes.push(n.country); });
+      }
+      // "Active" = the origin/destination of every shipment currently ON the map, so an operator can always read
+      // where the live work is even when zoomed out past the normal label tier.
+      filteredVms().forEach(function (v) {
+        if (v.originCountry) active.push(v.originCountry);
+        if (v.destCountry) active.push(v.destCountry);
+      });
+    } catch (e) {}
+    state.globe.setCountryPriority({ active: active, selected: selected, nodes: nodes, high: [] });
+  }
+
   function buildSelectedShipment(vm, markers, arcs, focusPts) {
     var seq = [];
     vm.nodes.forEach(function (n) {

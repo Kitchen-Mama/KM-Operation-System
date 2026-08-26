@@ -517,10 +517,12 @@ These are the **current live columns** for the runtime tables the map reads. **D
 - **`SRT-TOP-CN-DE-TR-P-V1`** (DE route, 15 nodes) — review Node 12 `BELGIUM_IMPORT_CUSTOMS` / "Belgium Import Customs" and Node 13 `BELGIUM_CARRIER_HANDOVER` / "Belgium Carrier Handover": confirm whether the real path is **Germany Transit Hub → Belgium Import / Handover → Final Delivery**. If real, keep as-is; if the DE route does not transit Belgium, correct the route nodes in a later pass. **Not changed this round.**
 - **Alashankou / Khorgos Gateway** — remains an **unresolved route variant**; the actual gateway must be chosen during `logistics_locations` mapping. **Do not assume a gateway this round.**
 
-## 32. Country Boundary Layer — DEFERRED requirement (F1-7N-FB-4A §I; audited 2026-08-26, NOT implemented)
+## 32. Country Boundary Layer — **IMPLEMENTED** (F1-7N-MAP-COUNTRY-BOUNDARY-1, 2026-08-26)
 
-**Status: DEFERRED. Scoped here for the later visual-unification / globe-material task. Nothing was implemented
-this round; no dataset was downloaded and no network dependency was added.**
+**Status: IMPLEMENTED.** Scoped and audited under F1-7N-FB-4A §I (the audit below is retained as the record of
+what existed beforehand), then built as its own independent visual task. The deferred high-resolution globe
+texture/material upgrade is a SEPARATE item and remains untouched — this layer draws vector geometry at render
+time and does not assume the current 2048x1024 texture tier.
 
 ### 32.1 Audit of what exists today
 
@@ -566,3 +568,143 @@ same-origin `<script>` that sets `window.KM_WORLD_LAND`.
 
 Disputed-boundary policy, sub-national (admin-1) boundaries, country fill/choropleth, and any label localisation
 beyond the ISO code.
+
+### 32.4 What was built (F1-7N-MAP-COUNTRY-BOUNDARY-1)
+
+**Dataset.** Natural Earth `ne_110m_admin_0_countries` **v5.1.2** (an immutable tag, not `master`), **public
+domain**, fetched from the canonical upstream `nvkelso/natural-earth-vector` and processed by
+`tools/geo/build-country-boundaries.js` into `assets/js/data/world-countries-110m.js` (**138,068 bytes**, 175
+countries, 285 rings, 8,733 vertices). Full provenance, licence text, input SHA-256 and the deterministic
+regeneration command: `tools/geo/PROVENANCE.md`. Same-origin `<script>`; **no CDN and no runtime fetch**.
+
+**Two ISO-less features were EXCLUDED, never invented:** N. Cyprus and Somaliland carry `-99` in every ISO field.
+The exclusion is recorded inside the asset's own `meta.excluded`.
+
+**Boundaries.** One **static** `gl.LINES` buffer built **once** per globe instance (and again only on a GL context
+restore): 9,070 segments / 18,140 vertices / **507,920 bytes**, at radius **1.0035** — above the sphere (1.0) and
+**below** the route arcs (1.006) and markers (1.012), so the depth test alone makes the layer subordinate, occludes
+the far side, and guarantees a border can never draw over a route. Segments longer than **2°** are subdivided by
+`slerp` on 3D unit vectors; the longest source edge is 18.06°, whose straight chord would sag 0.0123 and sink into
+the sphere, while at 2° the worst sag is 0.00015 (23× under the offset).
+
+**Antimeridian safety is structural.** Every vertex is projected to a 3D unit vector *before* any interpolation and
+no code performs longitude arithmetic, so the "line across the Pacific" cannot be produced. The dataset contains
+the definitive case: Antarctica has a consecutive pair `(180,−90) → (−180,−90)` — a **360° longitude jump** that is
+a **0.000° great-circle arc**. Rings are never concatenated, so two islands of one country are never joined by a
+false border segment.
+
+**Labels.** ISO alpha-2 on a single pointer-transparent 2D overlay canvas sized from the *same* CSS box and dpr as
+the WebGL canvas. Rear-hemisphere and off-viewport labels are culled with the same `projectToScreen` authority
+marker hit-testing uses. Label points are Natural Earth's **cartographer-placed** `LABEL_X`/`LABEL_Y` for all 175
+records — not centroids, because a centroid is measurably wrong for Russia (45° off), the United States (22°),
+France (25°), Indonesia (16°) and Fiji.
+
+**Priority and collision (deterministic).** Order is priority → `LABELRANK` → ISO ascending; ISO is the final
+tie-break, so the winner between two colliding labels never depends on array order, screen position or time.
+A label is **hidden, never moved**. Priority 0 (an active shipment's origin/destination country) ignores the zoom
+tier entirely. A label is dropped rather than cover a shipment marker. Hysteresis is a function of the previous
+accepted set only — no randomness anywhere in the layer.
+
+**Zoom tiers** are read from the dataset's own rank distribution: `dist > 2.6` → rank ≤ 2 (36 majors);
+`> 1.9` → rank ≤ 4 (125); closer → all 175 that survive collision.
+
+**Controls.** Two independent checkboxes under the existing Layers panel (Country borders, Country labels), both
+ON by default, native `<input type="checkbox">` inside their `<label>` so keyboard access and checked state come
+for free. Page state only — no DB row, no Script Property, no new preference table. A legend note states that the
+labels are a geographic reference and not shipment nodes.
+
+### 32.5 §M view verification (deterministic, reproducible)
+
+A WebGL globe cannot be rendered in the offline build environment, so instead of claiming screenshots
+`tools/geo/verify-views.js` computes exactly what each of the eight named views would draw, using the shipped
+projection, priority and collision functions against the real dataset. Re-run it with `node tools/geo/verify-views.js`.
+
+```
+=== BOUNDARY GEOMETRY (view-independent, one static GPU buffer) ===
+  countries=175  rings=285  segments=9070  lineVertices=18140  bufferBytes=507920  radius=1.0035  maxSegmentDeg=2  longestSourceEdgeDeg=18.06
+
+=== 1. full globe — major country labels ===
+  viewport=1280x800  dist=3  labelTier=2  bordersDrawn=YES (9070 segments)  labelsDrawn=23
+  candidates=26  culled: rear=10 tier=139 viewport=0 collision=3
+  ISO drawn: AR BE BR CA CD CO EG ES ET FR GB IR IT KE MX NG PE PT RU SA TR US ZA
+  labels overlapping a shipment marker: 0
+    present: US
+    present: CA
+    present: MX
+
+=== 2. North America close — US / CA / MX ===
+  viewport=1280x800  dist=1.8  labelTier=99  bordersDrawn=YES (9070 segments)  labelsDrawn=28
+  candidates=32  culled: rear=84 tier=0 viewport=59 collision=4
+  ISO drawn: BF BR BS CA CI CU DO DZ EH ES GN GW GY JM JP LR LY MA ML MR MX PR PT SN SR TN US VE
+  labels overlapping a shipment marker: 0
+    present: US
+    present: CA
+    present: JP
+    present: MX
+
+=== 3. East Asia — CN / JP / KR / TW ===
+  viewport=1280x800  dist=1.8  labelTier=99  bordersDrawn=YES (9070 segments)  labelsDrawn=47
+  candidates=65  culled: rear=71 tier=0 viewport=39 collision=18
+  ISO drawn: AE AZ BA BD BT CN DJ EG ER ET FJ GR IL IN IQ IR JP KE KG KH KP KR KZ LA LK LY MG MK MM MN NP OM PH PK SA SB SD SO SY TH TR TW TZ UG UZ VN YE
+  labels overlapping a shipment marker: 0
+    present: CN
+    present: JP
+    present: KR
+    present: TW
+    present: FJ
+
+=== 4. island region — Fiji / Pacific (antimeridian) ===
+  viewport=1280x800  dist=1.6  labelTier=99  bordersDrawn=YES (9070 segments)  labelsDrawn=11
+  candidates=11  culled: rear=152 tier=0 viewport=12 collision=0
+  ISO drawn: CN FJ KH LA MX NC SB TH TW VN VU
+  labels overlapping a shipment marker: 0
+    present: CN
+    present: MX
+    present: TW
+    present: FJ
+
+=== 5. selected CN->US shipment ===
+  viewport=1280x800  dist=2.4  labelTier=4  bordersDrawn=YES (9070 segments)  labelsDrawn=30
+  candidates=41  culled: rear=79 tier=50 viewport=5 collision=11
+  ISO drawn: AU BD BY CA CN CU DK GB IE JP KG KH KP KR KZ MN MX NC NP NZ PA PG PH PL RU SB TH UA US UZ
+  labels overlapping a shipment marker: 0 (of 2 visible markers)
+    present: US
+    present: CN
+    present: CA
+    present: JP
+    present: AU
+    present: MX
+    present: KR
+    present: NZ
+
+=== 6. labels OFF / borders ON ===
+  viewport=1280x800  dist=3  labelTier=2  bordersDrawn=YES (9070 segments)  labelsDrawn=NO (toggle off)
+  candidates=26  culled: rear=10 tier=139 viewport=0 collision=26
+  labels overlapping a shipment marker: 0
+
+=== 7. borders OFF / labels ON ===
+  viewport=1280x800  dist=3  labelTier=2  bordersDrawn=NO (toggle off)  labelsDrawn=23
+  candidates=26  culled: rear=10 tier=139 viewport=0 collision=3
+  ISO drawn: AR BE BR CA CD CO EG ES ET FR GB IR IT KE MX NG PE PT RU SA TR US ZA
+  labels overlapping a shipment marker: 0
+    present: US
+    present: CA
+    present: MX
+
+=== 8. fullscreen / high-DPR (2560x1440 @ dpr2) ===
+  viewport=2560x1440  dist=3  labelTier=2  bordersDrawn=YES (9070 segments)  labelsDrawn=24
+  candidates=26  culled: rear=10 tier=139 viewport=0 collision=2
+  ISO drawn: AR BE BR CA CD CO DE EG ES ET FR GB IR IT KE MX NG PE PT RU SA TR US ZA
+  labels overlapping a shipment marker: 0
+    present: US
+    present: CA
+    present: MX
+```
+
+**Read of that output:** the full globe stays a readable reference (23 labels, not a wall of text); North America
+shows US/CA/MX; East Asia shows CN/JP/KR/TW; the Pacific view shows FJ plus the island states SB/VU/NC; the
+CN→US selection forces **CN and US** visible even though the zoom tier is rank ≤ 4, and **zero** labels overlap
+either shipment marker; and the two toggles are independent in both directions.
+
+**Not covered by this harness:** actual pixel appearance — font rendering, colour contrast against the live earth
+texture, and crispness at high DPI. Those need a browser and are the user's visual check.
