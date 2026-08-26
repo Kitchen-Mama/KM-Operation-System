@@ -170,6 +170,11 @@ var DB = fs.readFileSync(path.join(ROOT, 'js', 'api', 'operation-system-db-api.j
   function getOperationDbTableFromSheet(n) { return Promise.resolve([{ id: 1 }]); }
   function normalizeOperationDb(raw) { return { marketplaces: (raw && raw.marketplaces) || [] }; }
   var _kmRefreshCacheTables_;
+  // F1-7N-FB-4E — the two multi-table loaders now share ONE bounded reader (_kmReadTablesBounded_) instead of
+  // each fanning out `Promise.all(names.map(...))`, so the harness extracts it too. An ADDITION to what this
+  // suite executes; every assertion below is unchanged.
+  var KM_SCOPED_READ_CONCURRENCY_ = 2, _kmReadTablesBounded_;
+  eval('_kmReadTablesBounded_ = async ' + extract(DB, '_kmReadTablesBounded_'));
   eval('_kmRefreshCacheTables_ = async ' + extract(DB, '_kmRefreshCacheTables_'));
   _kmRefreshCacheTables_(['marketplaces']).then(function () {
     eq(window._opDbCache._sourceMode, 'google-sheet', 'R6C: refreshCacheTables STAMPS _sourceMode=google-sheet after a live scoped read (no longer leaves the cache unmarked)');

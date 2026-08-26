@@ -40,8 +40,13 @@ eval(DBSRC.match(/var KM_CANONICAL_CODES = \[[\s\S]*?\];/)[0]);   // C2-D2A-UI: 
 // business classifier can flatten it, so those two helpers and the pattern list join the set as well.
 var KM_READ_TIMEOUT_MS_ = 45000, KM_WRITE_TIMEOUT_MS_ = 90000, KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 3;
 eval(DBSRC.match(/var KM_UNKNOWN_ACTION_PATTERNS_ = \[[\s\S]*?\];/)[0]);
+// F1-7N-FB-4E — the runner now classifies through the shared evidence helpers, so they join the extraction
+// list. This ADDS to what the suite executes; every assertion below is unchanged, and A3/A4/A7 still pin the
+// SAME legacy codes, which is exactly the point: the alias survives while the typed classification rides beside it.
+var KM_TRANSPORT_EVIDENCE_BUILD_ = 'F1-7N-FB-4E';
 eval(['_kmClassifyBusinessError_', '_kmExtractCanonicalCode_', '_kmZeroWriteProven_', '_kmTimeoutMs_',
-  '_kmTimeoutError_', '_kmIsUnknownActionResponse_', '_kmDeploymentMismatchError_', '_kmCmdOk_', '_kmCmdErr_'].map(function (n) { return extractFn(DBSRC, n); }).join('\n')
+  '_kmTimeoutError_', '_kmIsUnknownActionResponse_', '_kmDeploymentMismatchError_', '_kmCmdOk_', '_kmCmdErr_',
+  '_kmTransportFactory_', '_kmWireEvidence_', '_kmClassifyAnswer_', '_kmTypedTransportMessage_'].map(function (n) { return extractFn(DBSRC, n); }).join('\n')
   + '\nasync ' + extractFn(DBSRC, '_kmFetchBounded_')
   + '\nasync ' + extractFn(DBSRC, '_kmWeeklyCommand_'));
 

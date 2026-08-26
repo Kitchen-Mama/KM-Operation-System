@@ -41,30 +41,114 @@ var OperationDbState = {
 // API Fetch Functions
 // ========================================
 
+// F1-7N-FB-4E §A/§C — the WHOLE-DB reader had the same three gaps as the per-table one: an unbounded wait, a
+// blind `resp.json()` that turned an HTML 404 into an opaque SyntaxError, and a bare status string that threw
+// away which URL answered. It is the most expensive read in the system, so it is also the one whose failure
+// most needs to be named rather than guessed at. Same shared classification, same bound, same thrown shape.
 async function getOperationDbFromSheet() {
     if (!isOperationDbApiConfigured()) {
-        throw new Error('Operation DB API not configured');
+        var eCfg = new Error('Operation DB API not configured');
+        eCfg.kmTransport = { code: 'API_ENDPOINT_CONFIGURATION_INVALID', phase: 'BUILD', retryable: false, action: 'getOperationDb' };
+        throw eCfg;
     }
-    const url = OP_DB_API_BASE_URL + '?action=getOperationDb&_ts=' + Date.now();
-    const resp = await fetch(url, { method: 'GET', cache: 'no-store' });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    const json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'API returned success=false');
+    var url = OP_DB_API_BASE_URL + '?action=getOperationDb&_ts=' + Date.now();
+    var resp;
+    try { resp = await _kmFetchBounded_(url, { method: 'GET', cache: 'no-store' }, 'read'); }
+    catch (netErr) {
+        var eNet = new Error(netErr && netErr.kmTimeout
+            ? 'The whole-database read exceeded the client time limit and was aborted.'
+            : 'Network error: ' + ((netErr && netErr.message) || netErr));
+        eNet.kmTransport = { code: (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
+            phase: 'DISPATCH', retryable: true, action: 'getOperationDb' };
+        throw eNet;
+    }
+    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+    var cls = _kmClassifyAnswer_('getOperationDb', 'read', resp, text, url);
+    if (!cls.ok) {
+        OperationDbState.lastFetchStatus = 'error';
+        var eCls = new Error(_kmTypedTransportMessage_('getOperationDb', cls));
+        eCls.kmTransport = Object.assign({}, cls.typed, cls.wire);
+        eCls.code = cls.legacyCode;
+        throw eCls;
+    }
+    var json; try { json = JSON.parse(String(text).trim()); }
+    catch (pe) {
+        var ePar = new Error('The whole-database read returned a body that is not JSON.');
+        ePar.kmTransport = { code: 'TRANSPORT_NON_JSON_RESPONSE', phase: 'PARSE', retryable: false, action: 'getOperationDb' };
+        throw ePar;
+    }
+    if (!json.success) {
+        var eBiz = new Error(json.error || 'API returned success=false');
+        eBiz.kmTransport = { code: _kmIsUnknownActionResponse_(json.error) ? 'DEPLOYMENT_CONTRACT_MISMATCH' : 'BACKEND_BUSINESS_REJECTION',
+            phase: 'CONTRACT_VALIDATE', retryable: false, action: 'getOperationDb' };
+        throw eBiz;
+    }
     OperationDbState.lastFetchUrl = url;
     OperationDbState.lastFetchStatus = 'success';
     return json.data;
 }
 
+// ============================================================================================================
+// F1-7N-FB-4E §A/§C — THE THIRD TRANSPORT PATH, AND THE ONE THE FOUR HTML-404 PAGES ACTUALLY USE.
+// ------------------------------------------------------------------------------------------------------------
+// This reader is what `loadScopedTables` calls, which is what Factory Inventory, Overseas Inventory, FC Summary
+// and Shipment Draft mount on. It had none of the protections the workspace path gained in earlier rounds, and
+// every one of its four gaps shows up in the reported symptoms:
+//
+//   1. `await resp.json()` was a BLIND PARSE. An HTML body — a 404 page, a Google sign-in page, an expired
+//      redirect target — became the opaque "Unexpected token '<' ... is not valid JSON", the exact failure
+//      F1-4B-FM4b-R fixed for the workspace path and never for this one. Now read TEXT-FIRST and classified.
+//   2. No BOUNDED wait. There was no timeout at all, so an unanswered request held the page mount open
+//      indefinitely; the shared read bound now applies here as it does everywhere else.
+//   3. `throw new Error('API returned ' + status)` DISCARDED the evidence — the final URL, whether a redirect
+//      occurred, the content type and the body — which is why the live "HTTP 404, text/html" could not be
+//      attributed to any of its four possible sources. The typed classification now rides on the thrown error.
+//   4. It is called from a `Promise.all` FAN-OUT, so a four-table page opened FOUR simultaneous requests to a
+//      backend whose per-user execution is serialized. See loadScopedTables for the bound that fixes that.
+//
+// The thrown-Error shape is preserved (callers catch and read `.message`), with the typed facts attached as
+// properties so a page can render a real reason instead of an empty table.
+// ============================================================================================================
 async function getOperationDbTableFromSheet(tableName) {
     if (!isOperationDbApiConfigured()) {
-        throw new Error('Operation DB API not configured');
+        var eCfg = new Error('Operation DB API not configured');
+        eCfg.kmTransport = { code: 'API_ENDPOINT_CONFIGURATION_INVALID', phase: 'BUILD', retryable: false, action: 'getTable' };
+        throw eCfg;
     }
-    const url = OP_DB_API_BASE_URL + '?action=getTable&table=' + encodeURIComponent(tableName) + '&_ts=' + Date.now();
-    const resp = await fetch(url, { method: 'GET', cache: 'no-store' });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    const json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'API returned success=false');
-    return json.data.rows || [];
+    var url = OP_DB_API_BASE_URL + '?action=getTable&table=' + encodeURIComponent(tableName) + '&_ts=' + Date.now();
+    var resp;
+    var _tt0 = Date.now();
+    try { resp = await _kmFetchBounded_(url, { method: 'GET', cache: 'no-store' }, 'read'); }
+    catch (netErr) {
+        var eNet = new Error(netErr && netErr.kmTimeout
+            ? 'The table read exceeded the client time limit and was aborted.'
+            : 'Network error: ' + ((netErr && netErr.message) || netErr));
+        eNet.kmTransport = { code: (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
+            phase: 'DISPATCH', retryable: true, action: 'getTable', table: tableName };
+        throw eNet;
+    }
+    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+    var cls = _kmClassifyAnswer_('getTable', 'read', resp, text, url);
+    try { if (typeof _kmReportSample_ === 'function') _kmReportSample_('getTable', 'read', _tt0, cls.ok ? null : cls.typed.code, cls.ok ? 'SUCCESS' : cls.typed.phase, String(text || '').length); } catch (e) {}
+    if (!cls.ok) {
+        var eCls = new Error(_kmTypedTransportMessage_('getTable', cls));
+        eCls.kmTransport = Object.assign({ table: tableName }, cls.typed, cls.wire);
+        eCls.code = cls.legacyCode;
+        throw eCls;
+    }
+    var json; try { json = JSON.parse(String(text).trim()); }
+    catch (pe) {
+        var ePar = new Error('The table read returned a body that is not JSON.');
+        ePar.kmTransport = { code: 'TRANSPORT_NON_JSON_RESPONSE', phase: 'PARSE', retryable: false, action: 'getTable', table: tableName };
+        throw ePar;
+    }
+    if (!json.success) {
+        var eBiz = new Error(json.error || 'API returned success=false');
+        eBiz.kmTransport = { code: _kmIsUnknownActionResponse_(json.error) ? 'DEPLOYMENT_CONTRACT_MISMATCH' : 'BACKEND_BUSINESS_REJECTION',
+            phase: 'CONTRACT_VALIDATE', retryable: false, action: 'getTable', table: tableName };
+        throw eBiz;
+    }
+    return (json.data && json.data.rows) || [];
 }
 
 // ========================================
@@ -2208,12 +2292,42 @@ window.KM.DB.loadOperationDb = loadOperationDb;
 // []. Reuses getTable (NO new API/route). NEVER mutates the global window._opDbCache (returns a private scoped object the
 // caller holds as a page read-model). Rejects on transport error → the page shows a bounded ERROR, NEVER a silent broad
 // fallback. This is how the non-workspace primary pages drop their whole-DB loadOperationDb dependency.
+// F1-7N-FB-4E §D — BOUND THE FAN-OUT. `Promise.all` over the name list opened ONE SIMULTANEOUS REQUEST PER
+// TABLE, so a four-table page mount (Factory Inventory, Overseas Inventory) fired four concurrent requests at
+// a backend whose per-user execution is SERIALIZED: the tail latency is the sum either way, but four in flight
+// multiplies the chance that one of them is the one that flakes — and one rejection fails the whole
+// `Promise.all`, which is how a single transient answer emptied an entire page.
+//
+// The bound is a small concurrency window rather than a strict serial loop: serial would make a four-table
+// mount four full round trips of head-of-line waiting, and the point is to stop the STORM, not to slow the
+// page down. KM_SCOPED_READ_CONCURRENCY_ is the single knob and it is deliberately small.
+//
+// It is also FAIL-FAST-FREE in the reporting sense: the first rejection still rejects (callers depend on that),
+// but the rejected error now carries the typed classification from getOperationDbTableFromSheet, so a page can
+// say WHICH table failed and WHY instead of rendering an empty grid.
+var KM_SCOPED_READ_CONCURRENCY_ = 2;
+window.KM.DB.getScopedReadConcurrency = function () { return KM_SCOPED_READ_CONCURRENCY_; };
+// ONE bounded multi-table reader, shared by BOTH fan-out sites (loadScopedTables and _kmRefreshCacheTables_).
+// A single knob, so the bound cannot hold in one place and be missing in the other - which is exactly how the
+// second site kept its unbounded fan-out through several earlier rounds.
+async function _kmReadTablesBounded_(names) {
+    var rawDb = {};
+    var next = 0;
+    async function worker() {
+        while (true) {
+            var i = next++;
+            if (i >= names.length) return;
+            rawDb[names[i]] = await getOperationDbTableFromSheet(names[i]);
+        }
+    }
+    var lanes = Math.max(1, Math.min(KM_SCOPED_READ_CONCURRENCY_, names.length));
+    var pool = []; for (var w = 0; w < lanes; w++) pool.push(worker());
+    await Promise.all(pool);
+    return rawDb;
+}
 window.KM.DB.loadScopedTables = async function(tableNames) {
     var names = (tableNames || []).filter(Boolean);
-    var rawDb = {};
-    await Promise.all(names.map(async function(n) {
-        rawDb[n] = await getOperationDbTableFromSheet(n);
-    }));
+    var rawDb = await _kmReadTablesBounded_(names);
     var scoped = normalizeOperationDb(rawDb);
     scoped._sourceMode = 'google-sheet';
     scoped._scopedTables = names.slice();
@@ -2865,8 +2979,10 @@ var _KM_TABLE_CACHE_KEY_ = {
 async function _kmRefreshCacheTables_(tableNames) {
     var names = (tableNames || []).filter(Boolean);
     if (!names.length) return;
-    var rawDb = {};
-    await Promise.all(names.map(async function (n) { rawDb[n] = await getOperationDbTableFromSheet(n); }));
+    // F1-7N-FB-4E §D — the SECOND fan-out site, and it had the same unbounded `Promise.all(names.map(...))`
+    // shape: the FC builder, the Request Order second-layer expand and the allocation-draft hydrate each opened
+    // one simultaneous request per table. Same shared bound as loadScopedTables, one knob for both.
+    var rawDb = await _kmReadTablesBounded_(names);
     var norm = normalizeOperationDb(rawDb);
     if (!window._opDbCache) window._opDbCache = normalizeOperationDb({});
     names.forEach(function (n) {
@@ -3467,6 +3583,108 @@ window.KM.DB.createShippingPlansBatch = async function(payload) {
 // explicit user retry that reuses the SAME idempotency identity is safe, and the caller owns that decision.
 var KM_READ_TIMEOUT_MS_ = 45000;    // a bounded scoped read
 var KM_WRITE_TIMEOUT_MS_ = 90000;   // a locked DB write; Apps Script cold start + lock wait is legitimately slow
+// ============================================================================================================
+// F1-7N-FB-4E §A/§C — CAPTURE THE EVIDENCE, THEN CLASSIFY. ONE PLACE.
+// ------------------------------------------------------------------------------------------------------------
+// THE DEFECT THIS CLOSES. Both shared runners answered a non-2xx with `'API HTTP ' + resp.status` and then
+// DISCARDED everything that could say what had actually happened: `resp.url` (which URL finally answered),
+// `resp.redirected` (whether a hop occurred at all), the content type, and the body. So the live
+// "HTTP 404, text/html" could not be attributed to any of its four possible sources — a GitHub Pages 404, an
+// Apps Script deployment 404, a Google login/access page, or an expired script.googleusercontent.com redirect
+// target — and every one of those has a different fix. A 404 was also treated as an ordinary transport error,
+// which is wrong in the one way that matters: none of the four is repaired by asking again.
+//
+// TWO CODES, ONE DECISION. `legacyCode` is what the existing consumers and write barriers key on
+// (`code === 'HTTP_TRANSPORT_ERROR' || code === 'NON_JSON_RESPONSE'`), so it is preserved EXACTLY. It is now
+// DERIVED FROM the typed FB-4E classification rather than computed separately — there is one decision and one
+// alias of it, not two classifiers that can disagree. `typed` is the authority: the §C code, the state-machine
+// phase, the masked endpoint identity and the HTML fingerprint.
+//
+// SAFETY. The raw HTML body never leaves this function. KM.transport reduces it to booleans plus at most six
+// short tokens, and the Script ID is masked out of every URL before anything is recorded.
+// ============================================================================================================
+var KM_TRANSPORT_EVIDENCE_BUILD_ = 'F1-7N-FB-4E';
+function _kmTransportFactory_() {
+    try {
+        if (typeof window !== 'undefined' && window.KM && window.KM.transportFactory) return window.KM.transportFactory;
+    } catch (e) {}
+    return null;
+}
+// The safe wire facts, read off a Response WITHOUT consuming its body (callers already read text()).
+function _kmWireEvidence_(resp, requestedUrl) {
+    var tf = _kmTransportFactory_();
+    var mask = (tf && typeof tf.maskEndpoint === 'function') ? tf.maskEndpoint : function () { return ''; };
+    var ctype = '';
+    try { if (resp && resp.headers && typeof resp.headers.get === 'function') ctype = resp.headers.get('content-type') || ''; } catch (e) { ctype = ''; }
+    return {
+        httpStatus: (resp && typeof resp.status === 'number') ? resp.status : null,
+        contentType: ctype || null,
+        redirected: !!(resp && resp.redirected === true),
+        maskedFinalEndpoint: mask(resp && resp.url) || null,
+        maskedRequestedEndpoint: mask(requestedUrl) || null,
+        transport_build: KM_TRANSPORT_EVIDENCE_BUILD_
+    };
+}
+// Classify ONE answered request. `kind` is 'read' or 'write' and decides only the zero-write/indeterminate
+// wording — never the classification itself.
+//   -> { ok, legacyCode, typed:{ code, phase, html_source, fingerprint, ... }, wire }
+function _kmClassifyAnswer_(action, kind, resp, text, requestedUrl) {
+    var wire = _kmWireEvidence_(resp, requestedUrl);
+    var tf = _kmTransportFactory_();
+    var trimmed = String(text == null ? '' : text).trim();
+    var status = wire.httpStatus;
+    var htmlish = trimmed === '' || trimmed.charAt(0) === '<'
+        || (/text\/html/i.test(wire.contentType || '') && trimmed.charCodeAt(0) !== 123);   // 123 = JSON object start
+    if (htmlish) {
+        var fp = (tf && typeof tf.fingerprintHtml === 'function') ? tf.fingerprintHtml({
+            body: trimmed, status: status, contentType: wire.contentType, finalUrl: (resp && resp.url) || '',
+            requestedUrl: requestedUrl, redirected: wire.redirected,
+            frontendOrigin: (typeof window !== 'undefined' && window.location && window.location.origin) ? String(window.location.origin) : ''
+        }) : null;
+        var typedCode = (tf && typeof tf.codeForHtml === 'function') ? tf.codeForHtml(fp)
+            : (status === 404 ? 'HTTP_NOT_FOUND_HTML' : 'TRANSPORT_NON_JSON_RESPONSE');
+        return { ok: false,
+            // A non-2xx keeps the alias the page barriers already recognise; the REASON is the typed code beside it.
+            legacyCode: (status !== null && !(status >= 200 && status < 300)) ? 'HTTP_TRANSPORT_ERROR' : 'NON_JSON_RESPONSE',
+            typed: { code: typedCode, phase: 'REDIRECT_RESPONSE', html_source: (fp && fp.source) || null,
+                fingerprint: fp, retryable: false, zero_write: (kind !== 'write'), action: action },
+            wire: wire };
+    }
+    if (status !== null && !(status >= 200 && status < 300)) {
+        var retryable = (kind === 'read') && (status === 408 || status === 429 || status >= 500);
+        return { ok: false, legacyCode: 'HTTP_TRANSPORT_ERROR',
+            typed: { code: 'HTTP_TRANSPORT_ERROR', phase: 'REDIRECT_RESPONSE', html_source: null, fingerprint: null,
+                retryable: retryable, zero_write: (kind !== 'write'), action: action }, wire: wire };
+    }
+    if (trimmed.charCodeAt(0) !== 123) {
+        return { ok: false, legacyCode: 'NON_JSON_RESPONSE',
+            typed: { code: 'TRANSPORT_NON_JSON_RESPONSE', phase: 'PARSE', html_source: null, fingerprint: null,
+                retryable: false, zero_write: (kind !== 'write'), action: action }, wire: wire };
+    }
+    return { ok: true, legacyCode: null, typed: null, wire: wire };
+}
+// F1-7N-FB-4E §E — report one request's outcome to the shared metric. Duration, bytes and a code; never a URL,
+// a payload or a row. Wrapped so a missing transport module can never break a read.
+function _kmReportSample_(action, kind, startedAt, code, phase, bytes) {
+    try {
+        if (typeof window !== 'undefined' && window.KM && window.KM.transport && typeof window.KM.transport.recordExternal === 'function') {
+            window.KM.transport.recordExternal({ action: action, kind: kind, code: code || null, phase: phase || null,
+                ms: (startedAt ? (Date.now() - startedAt) : 0), bytes: bytes || 0 });
+        }
+    } catch (e) { /* observation must never affect the read */ }
+}
+// The safe operator-facing sentence for a typed transport failure. No URL beyond the masked identity, no body.
+function _kmTypedTransportMessage_(action, cls) {
+    var t = cls.typed || {}, w = cls.wire || {};
+    var src = t.html_source || '';
+    if (t.code === 'AUTH_OR_ACCESS_HTML') return 'The API answered with a Google sign-in or access page instead of data, so "' + action + '" never ran. Nothing was read.';
+    if (src === 'GITHUB_PAGES_404' || src === 'FRONTEND_ORIGIN_RESPONSE') return 'The request for "' + action + '" was answered by the WEBSITE itself with a 404 page, not by the API — the configured endpoint is not reaching the Apps Script Web App.';
+    if (src === 'EXPIRED_USERCONTENT_REDIRECT') return 'The API redirect target for "' + action + '" had already expired, so a 404 page came back instead of data. Nothing was read.';
+    if (src === 'APPS_SCRIPT_DEPLOYMENT_404') return 'The Apps Script deployment did not answer "' + action + '" — it returned HTTP ' + w.httpStatus + ' as a web page. The deployment may be unpublished, superseded or access-restricted.';
+    if (t.code === 'HTTP_NOT_FOUND_HTML') return 'The API answered HTTP 404 with a web page instead of data. Nothing was read.';
+    if (t.code === 'TRANSPORT_NON_JSON_RESPONSE') return 'The API answered with a body that is not JSON (HTTP ' + w.httpStatus + ', ' + (w.contentType || 'unknown type') + '). Nothing was read.';
+    return 'API HTTP ' + w.httpStatus;
+}
 function _kmTimeoutMs_(kind) {
     try {
         var o = (typeof window !== 'undefined' && window.KM_REQUEST_TIMEOUT_MS) || null;
@@ -3574,6 +3792,21 @@ function _kmWriterError_(json, fallbackMessage) {
 // honest thing the client can do is say so.
 var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
+// F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
+//
+// `missing_actions=[]` cannot see any of the four faults §H requires to be distinguishable, and neither can the
+// action contract alone. They are now four different codes with four different next actions:
+//
+//   API_ENDPOINT_CONFIGURATION_INVALID  the request never reached Apps Script — fix the /exec URL. Decided
+//                                       LOCALLY, so it is reported without a network call at all.
+//   TRANSPORT_CONTRACT_MISMATCH         it reached the deployment, but that deployment's ROUTER cannot state
+//                                       which handler answered, so a method downgrade cannot be proved —
+//                                       publish a deployment whose router carries the typed identity fields.
+//   DEPLOYMENT_CONTRACT_MISMATCH        the deployment does not know an action this build calls — publish.
+//   DEPLOYMENT_PARTIAL_SYNC             every action resolves but an owner FILE is a round behind — re-copy.
+//
+// Bump this when the frontend starts depending on new router response-identity fields.
+var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = 1;
 // The router's terminal "I do not know this action" responses, on both verbs. Matching these is how a missing
 // action is told apart from a genuine business rejection — a business handler never answers with them.
 var KM_UNKNOWN_ACTION_PATTERNS_ = [
@@ -3656,9 +3889,37 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     'SAD_BUILD_VERSION_',                   // 16_ — allocation handler owner build stamp
     'SP_BUILD_VERSION_',                    // 11_ — shipping plan Submit owner build stamp
     'RTR_BUILD_VERSION_',                   // 01_ — router build stamp
-    'SKD_BUILD_VERSION_'                    // 59_ — SKU workspace owner build stamp
+    'SKD_BUILD_VERSION_',                   // 59_ — SKU workspace owner build stamp
+    // F1-7N-FB-4E §H — the SHARED-TRANSPORT owners. A router one round behind still answers every action; it
+    // simply cannot say WHICH HANDLER answered, which is the fact the client's method-downgrade proof needs.
+    // Probing the constant is the only way the site can tell "the deployment is fine" apart from "the
+    // deployment cannot describe itself", and those have different fixes.
+    'SYS_TRANSPORT_CONTRACT_VERSION_'       // 63_ — the transport-contract axis (separate from the action axis)
 ];
+// A masked, read-only classification of the endpoint this build would actually use. It is part of the
+// deployment verdict because "the site behaves oddly" has an answer that needs no network at all when the
+// configured URL is a /dev URL, an editor URL, an expired redirect target or the website's own origin.
+window.KM.DB.getEndpointClassification = function () {
+    var tf = _kmTransportFactory_();
+    var raw = (typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || '';
+    if (!tf || typeof tf.classifyEndpoint !== 'function') {
+        return { ok: !!raw, endpointClass: raw ? 'UNCLASSIFIED' : 'BLANK', maskedEndpoint: '', reason: 'the shared transport authority is not loaded' };
+    }
+    var fo = '';
+    try { fo = (window.location && window.location.origin) ? String(window.location.origin) : ''; } catch (e) { fo = ''; }
+    var c = tf.classifyEndpoint(raw, { frontendOrigin: fo });
+    return { ok: c.ok, endpointClass: c.endpointClass, maskedEndpoint: c.maskedEndpoint, reason: c.reason || null };
+};
 window.KM.DB.checkDeploymentContract = async function () {
+    // F1-7N-FB-4E §B6/§H — REFUSE LOCALLY FIRST. A wrong endpoint is knowable without the network, and
+    // reporting it as a health failure (which is what happened before) makes an unreachable URL look like an
+    // unhealthy deployment. These are different faults with different fixes, so they get different answers.
+    var _ep = window.KM.DB.getEndpointClassification();
+    if (_ep.ok === false) {
+        return { ok: false, code: 'API_ENDPOINT_CONFIGURATION_INVALID', identity: null, endpoint: _ep,
+            message: 'The configured API endpoint is not the stable Apps Script Web App /exec URL, so no request was sent. '
+                + (_ep.reason || '') + ' Correct the endpoint; retrying cannot change the configuration.' };
+    }
     var res = await _kmGapRead_('system.health', {
         probe_actions: KM_REQUIRED_DEPLOYED_ACTIONS_, probe_symbols: KM_REQUIRED_DEPLOYED_SYMBOLS_ });
     if (!res || res.success === false) {
@@ -3670,6 +3931,12 @@ window.KM.DB.checkDeploymentContract = async function () {
         build_id: h.build_id || h.build_version || null,
         contract_version: h.contract_version || h.api_contract_version || null,
         deployed_action_contract_version: (h.deployed_action_contract_version == null) ? null : Number(h.deployed_action_contract_version),
+        // F1-7N-FB-4E §H — the transport axis and the router's own build, so a router that cannot name its own
+        // handler is a NAMED fault rather than an unexplained gap in the method-downgrade proof.
+        transport_contract_version: (h.transport_contract_version == null) ? null : Number(h.transport_contract_version),
+        router_build: h.router_build || null,
+        router_response_identity: h.router_response_identity || null,
+        answered_by_handler: h.handler || null,
         inventory_registry_projection_version: h.inventory_registry_projection_version || null,
         required_action_list_version: (h.required_action_list_version == null) ? null : Number(h.required_action_list_version),
         missing_actions: h.missing_actions || [],
@@ -3685,25 +3952,36 @@ window.KM.DB.checkDeploymentContract = async function () {
     // A deployment that predates the identity block cannot report its own action contract — which is itself
     // conclusive evidence that it is older than this frontend.
     if (identity.deployed_action_contract_version == null) {
-        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity, endpoint: _ep,
             message: 'The deployed Apps Script does not report an action-contract version, so it is older than this ' +
                 'frontend build. Publish a new deployment version.' };
     }
     if (identity.deployed_action_contract_version < KM_EXPECTED_ACTION_CONTRACT_VERSION_) {
-        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity, endpoint: _ep,
             message: 'The deployed Apps Script action contract is v' + identity.deployed_action_contract_version +
                 ' but this frontend needs v' + KM_EXPECTED_ACTION_CONTRACT_VERSION_ + '. Publish a new deployment version.' };
+    }
+    // F1-7N-FB-4E §H — the transport axis, checked SEPARATELY and named separately. A deployment can satisfy
+    // every action and still be unable to say which handler answered, which is precisely the condition that
+    // leaves a method downgrade unprovable — so it must not be reported as a healthy deployment.
+    if (identity.transport_contract_version == null || identity.transport_contract_version < KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_) {
+        return { ok: false, code: 'TRANSPORT_CONTRACT_MISMATCH', identity: identity, endpoint: _ep,
+            message: 'The deployed Apps Script reports transport contract '
+                + (identity.transport_contract_version == null ? 'NONE' : ('v' + identity.transport_contract_version))
+                + ' but this frontend needs v' + KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ + '. Its router cannot state which handler '
+                + 'answered a request, so a POST answered by the GET handler cannot be proved. Publish a NEW deployment '
+                + 'version (router build ' + (identity.router_build || 'unknown') + ').' };
     }
     // FB-4A addendum §H — a deployment that does not answer our explicit probe is older than the probe itself,
     // which is conclusive on its own. Checked BEFORE the per-item verdict so a silent old build cannot pass.
     if (!identity.caller_probe) {
-        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity, endpoint: _ep,
             message: 'The deployed Apps Script did not answer the explicit action/symbol probe, so it predates this ' +
                 'frontend build. Re-copy the Apps Script files and publish a NEW deployment version.' };
     }
     if (identity.caller_probe.all_present === false) {
         var miss = (identity.caller_probe.missing_actions || []).concat(identity.caller_probe.missing_symbols || []);
-        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity,
+        return { ok: false, code: 'DEPLOYMENT_CONTRACT_MISMATCH', identity: identity, endpoint: _ep,
             message: 'The deployment is missing ' + miss.length + ' item(s) this frontend needs: ' + miss.join(', ') +
                 '. Re-copy the owning Apps Script files and publish a NEW deployment version.' };
     }
@@ -3711,11 +3989,11 @@ window.KM.DB.checkDeploymentContract = async function () {
     // compiled build constant. This is the case the live report suspected and nothing previously could name.
     if (identity.mixed_deployment === true) {
         var bad = (identity.stale_modules || []).concat(identity.absent_modules || []);
-        return { ok: false, code: 'DEPLOYMENT_PARTIAL_SYNC', identity: identity,
+        return { ok: false, code: 'DEPLOYMENT_PARTIAL_SYNC', identity: identity, endpoint: _ep,
             message: 'The Apps Script project is only PARTIALLY synchronized: ' + bad.join(', ') +
                 ' (deployment build ' + identity.build_id + '). Re-copy those files and publish a NEW deployment version.' };
     }
-    return { ok: true, code: 'DEPLOYMENT_CONTRACT_OK', identity: identity, message: '' };
+    return { ok: true, code: 'DEPLOYMENT_CONTRACT_OK', identity: identity, endpoint: _ep, message: '' };
 };
 // The read-only Request Order Send diagnostic ownership + cycle-resolution report (addendum §G), reachable from
 // the website so the operator never has to open the Apps Script editor to answer "which file owns this?".
@@ -3754,9 +4032,101 @@ window.KM.DB.checkPageDeploymentContract = async function (pageKey) {
     };
 };
 window.KM.DB.getPageRequiredActions = function (pageKey) { return (KM_PAGE_REQUIRED_ACTIONS_[String(pageKey || '')] || []).slice(); };
+// ============================================================================================================
+// F1-7N-FB-4E §E — READ-ONLY PERFORMANCE + REQUEST-COUNT DIAGNOSTIC.
+// ------------------------------------------------------------------------------------------------------------
+// "Pages feel materially slower than before" is not actionable, and neither is a guess about why. This reports
+// MEASURED numbers for the representative page reads, per phase, with the request COUNTS beside them — because
+// the dominant cost in this system has repeatedly turned out to be the number of round trips rather than the
+// duration of any one of them, and a count is the one thing a comment can never fake.
+//
+// STRICTLY READ-ONLY and non-sensitive: durations, counts, byte totals and masked endpoint identities. No row
+// content, no table content, no URL beyond the mask, no id. It issues NO requests of its own — it reports what
+// the session has already done, so calling the diagnostic can never change what it measures.
+//
+// The ACCEPTANCE TARGETS are recorded here as data so a live run is compared against a written number rather
+// than an impression, and so a missed target names its own dominant phase.
+// ============================================================================================================
+var KM_PERF_TARGETS_ = {
+    metadata_cold: { p50_ms: 1500, p95_ms: 4000, what: 'registry / capabilities / health — a session-stable read' },
+    workspace_scoped: { p50_ms: 3000, p95_ms: 8000, what: 'one scoped business workspace read after Search' },
+    cache_hit: { requests: 0, what: 'a shared registry that is already READY must cost ZERO requests' }
+};
+// The eight representative reads §E names, with the action each one actually issues. Kept as data so the
+// diagnostic and the live runbook cannot describe different things.
+var KM_PERF_SURFACES_ = [
+    { surface: 'Site Inventory registry', action: 'inventoryScope.registry.get', klass: 'metadata_cold' },
+    { surface: 'Site Inventory workspace (after Search)', action: 'inventoryReplenishment.workspace.get', klass: 'workspace_scoped' },
+    { surface: 'Order Planning workspace', action: 'aiPlanFirstLayer.get', klass: 'workspace_scoped' },
+    { surface: 'Factory Inventory', action: 'getTable', klass: 'workspace_scoped' },
+    { surface: 'Overseas Inventory', action: 'getTable', klass: 'workspace_scoped' },
+    { surface: 'FC Summary', action: 'weeklyShipping.workspace.get', klass: 'workspace_scoped' },
+    { surface: 'Shipment Draft', action: 'shipment.workspace.get', klass: 'workspace_scoped' },
+    { surface: 'SKU Details', action: 'skuDetails.workspace.get', klass: 'workspace_scoped' }
+];
+window.KM.DB.getPerformanceTargets = function () { return JSON.parse(JSON.stringify(KM_PERF_TARGETS_)); };
+window.KM.DB.getPerformanceSurfaces = function () { return JSON.parse(JSON.stringify(KM_PERF_SURFACES_)); };
+function _kmPercentile_(sorted, q) {
+    if (!sorted.length) return null;
+    var i = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
+    return sorted[i];
+}
+window.__kmTransportReport = function () {
+    var tp = null;
+    try { tp = (window.KM && window.KM.transport) || null; } catch (e) { tp = null; }
+    var m = (tp && typeof tp.metrics === 'function') ? tp.metrics() : { requests: 0, retries: 0, byAction: {}, byCode: {}, samples: [] };
+    var perAction = {};
+    (m.samples || []).forEach(function (sm) {
+        var k = sm.action || '(unknown)';
+        var a = perAction[k] || (perAction[k] = { requests: 0, failures: 0, bytes: 0, durations: [] });
+        a.requests += 1;
+        if (sm.code) a.failures += 1;
+        a.bytes += Number(sm.bytes) || 0;
+        if (typeof sm.ms === 'number') a.durations.push(sm.ms);
+    });
+    var rows = KM_PERF_SURFACES_.map(function (sf) {
+        var a = perAction[sf.action];
+        var d = a ? a.durations.slice().sort(function (x, y) { return x - y; }) : [];
+        var t = KM_PERF_TARGETS_[sf.klass] || {};
+        var p50 = _kmPercentile_(d, 0.5), p95 = _kmPercentile_(d, 0.95);
+        return {
+            surface: sf.surface, action: sf.action, target_class: sf.klass,
+            requests: a ? a.requests : 0, failures: a ? a.failures : 0,
+            response_bytes_total: a ? a.bytes : 0,
+            p50_ms: p50, p95_ms: p95,
+            target_p50_ms: t.p50_ms || null, target_p95_ms: t.p95_ms || null,
+            within_p50: (p50 == null || !t.p50_ms) ? null : (p50 <= t.p50_ms),
+            within_p95: (p95 == null || !t.p95_ms) ? null : (p95 <= t.p95_ms),
+            measured: !!a
+        };
+    });
+    var reg = null;
+    try {
+        if (window.KM && window.KM.scopeRegistry && typeof window.KM.scopeRegistry.requestCount === 'function') {
+            reg = { registry_requests_this_session: window.KM.scopeRegistry.requestCount(),
+                registry_status: window.KM.scopeRegistry.getState().status };
+        }
+    } catch (e2) { reg = null; }
+    return {
+        transport_build: m.transport_build || null,
+        transport_contract_version: m.transport_contract_version || null,
+        endpoint: window.KM.DB.getEndpointClassification(),
+        totals: { requests: m.requests, retries: m.retries, by_code: m.byCode },
+        scoped_read_concurrency: window.KM.DB.getScopedReadConcurrency(),
+        shared_registry: reg,
+        surfaces: rows,
+        targets: KM_PERF_TARGETS_,
+        // Named so nobody reads this as a live measurement it is not: it reports THIS SESSION only, and a
+        // surface with `measured:false` has simply not been exercised yet.
+        note: 'read-only; reports only what this browser session already issued; no request is made by this call'
+    };
+};
 window.KM.DB.getExpectedContract = function () {
     return { action_contract_version: KM_EXPECTED_ACTION_CONTRACT_VERSION_,
-        registry_projection_version: KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ };
+        registry_projection_version: KM_EXPECTED_REGISTRY_PROJECTION_VERSION_,
+        // F1-7N-FB-4E §H — both axes, so the website can prove its own expectation as well as the deployment's.
+        transport_contract_version: KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_,
+        frontend_transport_build: (function () { var tf = _kmTransportFactory_(); return (tf && tf.TRANSPORT_BUILD) || null; })() };
 };
 
 // ---- Weekly command reliability (Round C1) ----------------------------------------------------------
@@ -3824,6 +4194,7 @@ async function _kmWeeklyCommand_(command, payload) {
     if (!isOperationDbApiConfigured()) return _kmCmdErr_(command, 'TRANSPORT_NOT_CONFIGURED', 'Operation DB API not configured');
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
     var resp;
+    var _tw0 = Date.now();
     try {
         // F1-7N-FB-3 §D — bounded. An expired WRITE is INDETERMINATE, never "nothing was written": the server
         // may have committed after we stopped listening, so it is reported as such and never auto-retried.
@@ -3839,9 +4210,16 @@ async function _kmWeeklyCommand_(command, payload) {
     }
     var text = '';
     try { text = await resp.text(); } catch (e) { text = ''; }
-    if (!resp.ok) return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'API HTTP ' + resp.status, { httpStatus: resp.status });
+    // F1-7N-FB-4E §A — the same single classification for the write path. The legacy code and message shape are
+    // unchanged (the write barriers and the INDETERMINATE set key on them); the typed evidence rides alongside.
+    var _wcls = _kmClassifyAnswer_(command, 'write', resp, text, url);
+    try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(command, 'write', _tw0, _wcls.ok ? null : _wcls.typed.code, _wcls.ok ? 'SUCCESS' : _wcls.typed.phase, String(text || '').length); } catch (e) {}
+    if (!_wcls.ok) {
+        return _kmCmdErr_(command, _wcls.legacyCode,
+            _wcls.legacyCode === 'HTTP_TRANSPORT_ERROR' ? 'API HTTP ' + resp.status : 'Non-JSON response from Web App',
+            Object.assign({ httpStatus: resp.status, transport: Object.assign({}, _wcls.typed, _wcls.wire) }, _wcls.wire));
+    }
     var trimmed = String(text || '').trim();
-    if (trimmed.charCodeAt(0) !== 123) return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Non-JSON response from Web App', { snippet: trimmed.slice(0, 80) });   // 123 = open-brace char code (JSON object start)
     var json; try { json = JSON.parse(trimmed); } catch (pe) { return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Malformed JSON response', { snippet: trimmed.slice(0, 80) }); }
     if (!json.success) {
         // R4J-LIVE7 §0/§3 — the gap-job family (START / CANCEL) returns a STRUCTURED envelope from gapBatchEnvelope_
@@ -3909,17 +4287,29 @@ async function _kmGapRead_(action, payload) {
     if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
     var resp;
+    var _t0 = Date.now();
     // F1-7N-FB-3 §D — bounded: an unanswered read can no longer hold its caller's latch forever.
     try { resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }, 'read'); }
     catch (netErr) {
+        try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
         if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
         return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
     }
     var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
-    if (!resp.ok) return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'API HTTP ' + resp.status } };
+    // F1-7N-FB-4E §A — ONE classification, carrying the evidence the previous three lines deleted.
+    var _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);
+    try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, _cls.ok ? null : _cls.typed.code, _cls.ok ? 'SUCCESS' : _cls.typed.phase, String(text || '').length); } catch (e) {}
+    if (!_cls.ok) {
+        return { success: false, error: {
+            code: _cls.legacyCode,                                   // preserved alias (existing page consumers)
+            message: _kmTypedTransportMessage_(action, _cls),
+            transport: Object.assign({}, _cls.typed, _cls.wire),     // the §C authority: code + phase + fingerprint
+            details: Object.assign({ action: action }, _cls.typed, _cls.wire)
+        } };
+    }
     var trimmed = String(text || '').trim();
-    if (trimmed.charCodeAt(0) !== 123) return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Non-JSON response', snippet: trimmed.slice(0, 80) } };
-    var json; try { json = JSON.parse(trimmed); } catch (pe) { return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Malformed JSON response' } }; }
+    var json; try { json = JSON.parse(trimmed); } catch (pe) { return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Malformed JSON response',
+        transport: { code: 'TRANSPORT_NON_JSON_RESPONSE', phase: 'PARSE', retryable: false, zero_write: true, action: action } } }; }
     if (!json.success) {
         // F1-7N-FB-3A §C — the router's terminal unknown-action envelope carries no errors[], which is exactly
         // how it used to become the meaningless "GAP_READ_ERROR — gap read failed". Name it for what it is.
@@ -3941,7 +4331,27 @@ window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPla
 // The backend 00_config.gs flags are the owner-of-record; getClientCapabilities (01_/03_) is the ONE wire channel
 // that exposes their EFFECTIVE values. This replaces three independently hardcoded frontend booleans with a single
 // read → single apply path (KM.api.applyClientCapabilities). READ-ONLY; never mutates the DB.
-window.KM.DB.getClientCapabilities = function() { return _kmGapRead_('getClientCapabilities', {}); };
+// F1-7N-FB-4E §D1 — SESSION-STABLE METADATA IS SINGLE-FLIGHTED THROUGH THE SHARED LATCH.
+//
+// Both of these are immutable for a session (a backend flag set, and a deployment's own identity), and both
+// were called from more than one place at mount — so two concurrent consumers issued two identical requests
+// against a backend whose per-user execution is serialized. That is a measurable part of "pages feel slower".
+// The latch lives in KM.transport with an ALLOWLIST, so a business workspace can never be coalesced by
+// accident (§D4), and a REJECTED promise is evicted immediately (§D2), so one failure cannot make every later
+// consumer inherit it — which is what turns a transient fault into "only a hard reload fixes it".
+function _kmMetadataSingleFlight_(key, fn) {
+    try {
+        if (typeof window !== 'undefined' && window.KM && window.KM.transport
+            && typeof window.KM.transport.singleFlight === 'function'
+            && window.KM.transport.isMetadataKey(key)) {
+            return window.KM.transport.singleFlight(key, fn);
+        }
+    } catch (e) { /* fall through — never let the optimisation break the read */ }
+    return Promise.resolve().then(fn);
+}
+window.KM.DB.getClientCapabilities = function() {
+    return _kmMetadataSingleFlight_('getClientCapabilities', function () { return _kmGapRead_('getClientCapabilities', {}); });
+};
 
 // F1-7N-FB-3 §C — SLIM SCOPE REGISTRY for the Site Inventory selectors (owner = 64_). ONE table, a six-column
 // bounded projection: countries + marketplaces (+ the country -> marketplace_id index that lets a Country

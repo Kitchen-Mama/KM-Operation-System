@@ -598,7 +598,15 @@ section('19. deployment identity, the deferred map requirement, and the recorded
 // ==========================================================================================================
 var buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || ''), '19. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
-eq((G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1], buildNow, '19. the Send owner reports the SAME build, so a partial sync is visible');
+var rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+// F1-7N-FB-4E — RESTATED AT THE INVARIANT IT NAMES. Requiring 66_ to declare the same build as 63_ makes a
+// partial sync visible only by accident, and it forces an unnecessary edit to 66_ in every round that touches
+// 63_ — which is the opposite of what a per-file build stamp is for. The thing that actually makes a partial
+// sync visible is the MANIFEST: SYS_MODULE_BUILD_STAMPS_ declares an EXPECTED build per file, and a file whose
+// declared build disagrees with its manifest entry is reported as STALE. So that is what is asserted.
+var _rosExpected = (G63.match(/'66_api_v1_request_order_send\.gs', symbol: 'ROS_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
+ok(!!_rosExpected, '19. the manifest declares an expected build for the Send owner (' + _rosExpected + ')');
+eq(rosBuild, _rosExpected, '19. and the Send owner declares exactly that, so a partial sync is visible');
 var acv = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
 var pinned = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
 ok(acv >= 6, '19. the action-contract version advanced because a router action was added (v' + acv + ')');

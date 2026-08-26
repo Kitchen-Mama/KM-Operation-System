@@ -3490,12 +3490,26 @@ function _fcRegion_() {
   });
   return _fcRegionCtl;
 }
+// F1-7N-FB-4E §F — the safe error field set, from the ONE shared formatter (KM.transport.errorLine). The
+// banner previously showed "<message> [<code>]", which named neither the action, nor the request id, nor
+// whether retrying could possibly help. It degrades to the old two-field form if the transport module is
+// absent, so a load failure costs detail rather than the banner itself.
+function _fcErrDetail_(err) {
+    try {
+        if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+            return window.KM.transport.errorLine(err);
+        }
+    } catch (e) {}
+    return String((err && err.message) || 'failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
+}
 function _fcRenderError_(err) {
   _fcReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
   var rg = _fcRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
   var code = (err && err.code) || 'FC_SUMMARY_READ_FAILED';
   var message = (err && err.message) || 'FC Summary read failed';
-  var html = '<div class="empty-row" style="color:#B91C1C;">FC Summary read error: ' + message + ' [' + code + ']</div>';
+  var html = '<div class="empty-row" role="alert" style="color:#B91C1C;text-align:left;overflow-wrap:break-word;word-break:break-word;">'
+    + 'FC Summary read error: ' + _fcEscapeHtml(_fcErrDetail_({ code: code, message: message, transport: (err && (err.transport || err.kmTransport)) || null }))
+    + '</div>';
   var reg = document.getElementById('fc-regular-scroll-body'); if (reg) reg.innerHTML = html;
   var evt = document.getElementById('fc-event-scroll-body'); if (evt) evt.innerHTML = html;
   var rf = document.getElementById('fc-regular-fixed-body'); if (rf) rf.innerHTML = '';

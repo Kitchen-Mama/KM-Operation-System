@@ -475,6 +475,18 @@ function _opLoadFirstLayerComposer_(refGate) {
     }
   }).catch(function (e) { if (my !== _opFirstLayerSeq) return; _opFirstLayerError_({ code: 'AI_PLAN_READ_FAILED', message: String(e && e.message || e) }); });
 }
+// F1-7N-FB-4E §F — the safe error field set, from the ONE shared formatter (KM.transport.errorLine). The
+// banner previously showed "<message> [<code>]", which named neither the action, nor the request id, nor
+// whether retrying could possibly help. It degrades to the old two-field form if the transport module is
+// absent, so a load failure costs detail rather than the banner itself.
+function _roErrDetail_(err) {
+    try {
+        if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+            return window.KM.transport.errorLine(err);
+        }
+    } catch (e) {}
+    return String((err && err.message) || 'failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
+}
 function _opFirstLayerError_(err) {
   requestOrderState.data = [];
   _roBaseDataStatus = 'ERROR';   // R6B1 — a real API/read error (distinct from a legitimate empty result)
@@ -482,7 +494,7 @@ function _opFirstLayerError_(err) {
   var fixedBody = (typeof document !== 'undefined') ? document.getElementById('ro-fixed-body') : null;
   var scrollBody = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
   if (fixedBody) fixedBody.innerHTML = '';
-  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" style="color:#B91C1C;">AI Plan read error: ' + _roEsc((err && err.message) || 'failed') + ' [' + _roEsc((err && err.code) || 'READ_FAILED') + ']</div>';
+  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" role="alert" style="color:#B91C1C;text-align:left;overflow-wrap:break-word;word-break:break-word;">AI Plan read error: ' + _roEsc(_roErrDetail_(err)) + '</div>';
 }
 
 // F1-7N-FA-3C-R6B1 — SPA remount lifecycle. Each mount bumps _roMountEpoch and REBINDS the composer region to the

@@ -131,6 +131,11 @@ eval(extractAssignedFn(DBAPI, 'var codeDisplay_ =') + ';');
 eval(normNames.map(function (n) { return extractFn(DBAPI, n); }).join('\n'));
 eval(extractFn(DBAPI, 'normalizeOperationDb'));
 eval(extractAssignedFn(DBAPI, 'var _KM_TABLE_CACHE_KEY_ =') + ';');
+// F1-7N-FB-4E — the two multi-table loaders now share ONE bounded reader (_kmReadTablesBounded_) instead of
+// each fanning out `Promise.all(names.map(...))`, so the harness extracts it too. An ADDITION to what this
+// suite executes; every assertion below is unchanged.
+var KM_SCOPED_READ_CONCURRENCY_ = 2;
+eval('async ' + extractFn(DBAPI, '_kmReadTablesBounded_'));
 eval('async ' + extractFn(DBAPI, '_kmRefreshCacheTables_'));
 
 var window = {};

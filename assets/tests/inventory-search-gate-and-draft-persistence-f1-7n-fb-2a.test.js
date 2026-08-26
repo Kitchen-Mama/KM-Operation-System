@@ -114,8 +114,13 @@ ok(/function procurementEnsureSheet_\(ss, name, headers\) \{\s*\n\s*return prodR
 ok(/throw prodSchemaError_\('SCHEMA_NOT_PROVISIONED'/.test(G29) && /throw prodSchemaError_\(report\.schemaStatus/.test(G29),
   'A4. prodRequireSheet_ THROWS a deterministic PRODUCTION_SAFETY token with zero mutation');
 ok(/new Error\('PRODUCTION_SAFETY:' \+ token/.test(G29), 'A4. and the token travels in err.message');
-ok(/\} catch \(err\) \{[\s\S]*?return jsonResponse_\(\{ success: false, error: err\.message \}\);/.test(RTR),
+// F1-7N-FB-4E — the invariant is that `err.message` reaches the browser VERBATIM as the `error` field. The
+// previous form additionally required the response object to END there, so adding the handler identity beside
+// it (which is what lets a doPost answer be told apart from a doGet one) failed a test about the message.
+ok(/\} catch \(err\) \{[\s\S]*?return jsonResponse_\(\{ success: false, error: err\.message[,\s}]/.test(RTR),
   'A4. the router surfaces that message verbatim — a schema refusal reaches the browser as an error STRING');
+ok(!/error: String\(err\.message\)|error: 'An error occurred'|error: sysStr_\(err/.test(RTR),
+  'A4. and it is never wrapped, replaced or generalised on the way out');
 var upsertCore = extractFn(G16, 'sadUpsertDraftHeaderCore_');
 ok(upsertCore.indexOf("procurementEnsureSheet_(ss, 'shipping_allocation_drafts'") !== -1,
   'A4. and the draft header upsert hits that gate before any payload logic runs');

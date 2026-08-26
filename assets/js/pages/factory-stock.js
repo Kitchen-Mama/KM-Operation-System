@@ -52,6 +52,95 @@ function _fsAfterWrite(cb) {
         .catch(function () { if (cb) cb(); });
 }
 
+
+// ============================================================================================================
+// F1-7N-FB-4E §C/§F — THE READ STATE THIS PAGE NEVER HAD.
+// ------------------------------------------------------------------------------------------------------------
+// THE DEFECT, EXACTLY. The mount's scoped read ended in `.catch(function () { initFactoryStockPage(); })` — the error was
+// SWALLOWED, the page re-entered with its read model still null, and the table body then printed
+// "尚未連接資料來源" ("no data source connected yet"). So an HTTP 404, an expired redirect, a Google sign-in
+// page and a genuinely empty table all produced the same sentence, and the one thing the operator could read
+// from the screen was the one thing that was not true: the data source was connected, it just failed.
+//
+// Worse, `_fsDbLoadTried` is a MODULE-level flag that is never cleared, so after one failure NO later mount
+// issued a request. Navigating away and back could not recover, and only a full browser reload could — which
+// is exactly the reported symptom, and exactly what §D9 and §F forbid.
+//
+// So: the read now records a STATE, a failure clears the tried-flag so recovery needs no reload, and the four
+// outcomes are four different renders. "尚未連接資料來源" is reachable ONLY from EMPTY_CONFIGURATION — a
+// genuinely unconfigured API — which is the one case where it is true.
+// ============================================================================================================
+var _fsLoad = { status: 'IDLE', error: null, requests: 0 };
+function _fsLoadState_() { return _fsLoad; }
+function _fsConfiguredApi_() {
+    try { return !!(window.KM && window.KM.DB && typeof window.KM.DB.isProductionWriteEligible === 'function'
+        && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()); } catch (e) { return false; }
+}
+// The typed reason a page may safely show: code, action, request id, retryability, next action. Never a raw
+// HTML body, never a URL beyond the masked identity — the transport layer has already reduced both.
+function _fsReadFailure_(err) {
+    var t = (err && err.kmTransport) || {};
+    var code = t.code || (err && err.code) || 'READ_FAILED';
+    var nonRetryable = (code === 'API_ENDPOINT_CONFIGURATION_INVALID' || code === 'HTTP_NOT_FOUND_HTML'
+        || code === 'AUTH_OR_ACCESS_HTML' || code === 'DEPLOYMENT_CONTRACT_MISMATCH');
+    return {
+        code: code, phase: t.phase || null, action: t.action || null, table: t.table || null,
+        httpStatus: (t.httpStatus === undefined ? null : t.httpStatus), contentType: t.contentType || null,
+        maskedEndpoint: t.maskedFinalEndpoint || t.maskedRequestedEndpoint || null,
+        htmlSource: t.html_source || null,
+        retryable: nonRetryable ? false : (t.retryable !== false),
+        uiState: nonRetryable ? 'NON_RETRYABLE_CONFIGURATION_OR_DEPLOYMENT_ERROR' : 'TRANSIENT_ERROR',
+        message: (err && err.message) ? String(err.message) : 'The read failed.',
+        nextAction: nonRetryable
+            ? 'This will not be fixed by retrying: correct the Web App endpoint, sign in, or publish a new Apps Script deployment version.'
+            : 'Press Retry. It issues exactly one new request.'
+    };
+}
+function _fsEscHtml_(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+}
+// ONE renderer for the two states that are NOT rows: a real failure, and a genuinely unconfigured API. Anything
+// else is the caller's normal empty/rows render.
+function _fsStateHtml_() {
+    if (_fsLoad.status === 'LOADING') {
+        return '<div style="padding:20px;text-align:center;color:#94A3B8">Loading…</div>';
+    }
+    if (_fsLoad.status === 'EMPTY_CONFIGURATION') {
+        return '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+    }
+    if (_fsLoad.status === 'ERROR' && _fsLoad.error) {
+        var e = _fsLoad.error;
+        var bits = ['Reason: ' + e.code];
+        if (e.action) bits.push('Action: ' + e.action);
+        if (e.table) bits.push('Table: ' + e.table);
+        if (e.httpStatus != null) bits.push('HTTP ' + e.httpStatus);
+        if (e.contentType) bits.push(e.contentType);
+        if (e.htmlSource) bits.push('Source: ' + e.htmlSource);
+        if (e.maskedEndpoint) bits.push('Endpoint: ' + e.maskedEndpoint);
+        bits.push(e.retryable ? 'Retryable: yes' : 'Retryable: no');
+        return '<div role="alert" style="padding:12px;margin:8px;border-left:3px solid #B91C1C;background:#FEF2F2;color:#7F1D1D;'
+            + 'font-size:12px;text-align:left;overflow-wrap:break-word;word-break:break-word;">'
+            + '<div style="font-weight:600;margin-bottom:4px;">Could not load — nothing was read.</div>'
+            + '<div style="margin-bottom:4px;">' + _fsEscHtml_(e.message) + '</div>'
+            + '<div style="opacity:.85;margin-bottom:6px;">' + _fsEscHtml_(bits.join(' · ')) + '</div>'
+            + '<div style="margin-bottom:6px;">' + _fsEscHtml_(e.nextAction) + '</div>'
+            + (e.retryable ? '<button type="button" onclick="window._fsRetryRead_ && window._fsRetryRead_()" '
+                + 'style="font-size:12px;padding:4px 10px;border:1px solid #B91C1C;background:#fff;color:#7F1D1D;cursor:pointer;">Retry</button>' : '')
+            + '</div>';
+    }
+    return null;                       // not a state this renderer owns
+}
+// One Retry = exactly ONE new request (§C/§F). It clears the tried-flag and the cached failure first, so the
+// recovery path is a real request rather than a re-render of the old error.
+function _fsRetryRead_() {
+    if (_fsLoad.status === 'LOADING') return;      // never a second concurrent read
+    _fsLoad = { status: 'IDLE', error: null, requests: _fsLoad.requests };
+    _factoryDbLoadTried = false;
+    initFactoryStockPage();
+}
+window._fsRetryRead_ = _fsRetryRead_;
+window._fsLoadState_ = _fsLoadState_;
+
 function initFactoryStockPage() {
     console.log('✅ Factory Stock: initFactoryStockPage called');
     const root = document.querySelector('#factory-stock-section');
@@ -67,10 +156,18 @@ function initFactoryStockPage() {
     // → broad loadOperationDb. Fail-closed: on scoped-read failure re-init WITHOUT a broad fallback (renders empty/bounded).
     if (!demoOn && _fsScopedActive() && !_fsReadModel && !_factoryDbLoadTried) {
         _factoryDbLoadTried = true;
+        _fsLoad = { status: 'LOADING', error: null, requests: _fsLoad.requests + 1 };
         _fsShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
+        // F1-7N-FB-4E §C/§F/§D9 — see the note above _fsLoad: the rejection is classified and the tried-flag is
+        // cleared, so a transient failure no longer needs a browser reload to recover from.
         window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
-            .then(function (m) { _fsReadModel = m; initFactoryStockPage(); })
-            .catch(function () { initFactoryStockPage(); });
+            .then(function (m) { _fsReadModel = m; _fsLoad = { status: 'READY', error: null, requests: _fsLoad.requests }; initFactoryStockPage(); })
+            .catch(function (err) {
+                _factoryDbLoadTried = false;
+                _fsLoad = { status: _fsConfiguredApi_() ? 'ERROR' : 'EMPTY_CONFIGURATION',
+                    error: _fsConfiguredApi_() ? _fsReadFailure_(err) : null, requests: _fsLoad.requests };
+                initFactoryStockPage();
+            });
         return;
     }
     if (!demoOn && !_fsScopedActive() && !window._opDbCache && !_factoryDbLoadTried) {
@@ -701,10 +798,13 @@ function renderFactoryMovementTable(root) {
         return;
     }
 
+    // F1-7N-FB-4E §F — a transport failure is NOT an empty table and is NOT an unconfigured data source.
+    var _stF = _fsStateHtml_();
+    if (_stF) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _stF; return; }
     var data = _getDbFactoryMovementData();
     if (!data || data.length === 0) {
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No movement logs for the selected filters.</div>';
         return;
     }
 

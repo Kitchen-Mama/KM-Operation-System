@@ -114,7 +114,14 @@ ok(/!_osScopedActive\(\)/.test(osInit), 'overseas legacy branch guarded by !_osS
 // ===================================================================================================================
 console.log('\n== §7 Overseas cold first-open requests the 4 canonical tables (no Movement-specific hardening) ==');
 ok(/var _OS_TABLES = \['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'\];/.test(OS), '_OS_TABLES unchanged: the 4 canonical Overseas tables');
-ok(/loadScopedTables\(_OS_TABLES\)\.then\(function \(m\) \{ _osReadModel = m; initOverseasStockPage\(\); \}\)/.test(OS), 'overseas cold first-open loads _OS_TABLES via scoped read');
+// F1-7N-FB-4E — the resolve arm additionally records a READ STATE, because the previous
+// `.catch(function () { init(); })` swallowed the failure and the page then printed
+// "尚未連接資料來源" for what was an HTTP 404. The claim this assertion makes — the cold first open
+// loads _OS_TABLES through the scoped read and re-enters the page — is unchanged and is asserted on both arms.
+ok(/loadScopedTables\(_OS_TABLES\)/.test(OS), 'overseas cold first-open loads _OS_TABLES via scoped read');
+ok(/_osReadModel = m;[\s\S]{0,120}initOverseasStockPage\(\);/.test(OS), 'overseas: the success arm adopts the model and re-enters the page');
+ok(/\.catch\(function \(err\) \{[\s\S]{0,400}initOverseasStockPage\(\);/.test(OS), 'overseas: the failure arm re-enters too — but now with a classified reason');
+ok(/_overseasDbLoadTried = false;/.test(OS), 'overseas: and it CLEARS the tried-flag, so recovery needs no browser reload');
 
 // ===================================================================================================================
 console.log('\n== §8/§4 B4/B5 post-write bounded readback contracts preserved (2 mutable tables + merge) ==');

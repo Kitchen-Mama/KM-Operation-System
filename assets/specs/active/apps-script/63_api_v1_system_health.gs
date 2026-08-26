@@ -37,7 +37,21 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-4A';
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E';
+// ------------------------------------------------------------------------------------------------------------
+// F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
+//
+// `deployed_action_contract_version` answers "does this deployment know the actions the pages call?". It cannot
+// answer "does this deployment speak the transport dialect the frontend needs?" — and that is the axis this
+// round added, because the typed method/handler/body facts the client's §L proof depends on are emitted by the
+// ROUTER, not by any action. A deployment can know every action and still be unable to say which handler
+// answered, and a frontend on a newer transport contract must be able to name THAT rather than report a
+// mysterious classification gap.
+//
+// Bump this when the router's response IDENTITY fields change (handler / received_method / post_body_present /
+// action_present_in_query / router_build). v1 = the FB-4E set.
+// ------------------------------------------------------------------------------------------------------------
+var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // Incremented when the set of router actions changes. The frontend compares this against its own pinned
 // minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
 // through a confusing per-action failure.
@@ -148,7 +162,7 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'deployment identity + health' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E', owns: 'deployment identity + health + transport contract' },
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send orchestration + planning-cycle authority' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
   { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan identity conflict diagnostic + scope-reporting duplicate diagnostic' },
@@ -157,7 +171,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // never detect a partial sync of them. Only the declared build can.
   { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan allocation draft header/line writer (pre-write duplicate-PK gate, route group keys)' },
   { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FA-4B2', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner' },
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'doGet/doPost action routing' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E', owns: 'doGet/doPost action routing + typed handler/method response identity' },
   { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'SKU Details / SKU Regional scoped read workspace' },
   { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
@@ -284,6 +298,20 @@ function handleSystemHealth_(body) {
     // the answering code, so together they identify exactly which deployment replied.
     build_id: SYS_BUILD_VERSION_,
     contract_version: SYS_API_CONTRACT_VERSION_,
+    // F1-7N-FB-4E §H — the transport axis, plus the router's own build and the identity fields it can emit.
+    // A frontend compares all three: a mismatch on the ACTION contract means "publish a deployment with this
+    // action"; a mismatch here means "publish a deployment whose ROUTER can name its own handler"; and neither
+    // is the same fault as an endpoint that never reached Apps Script at all (which never gets this far).
+    transport_contract_version: SYS_TRANSPORT_CONTRACT_VERSION_,
+    router_build: (typeof RTR_BUILD_VERSION_ !== 'undefined') ? RTR_BUILD_VERSION_ : null,
+    router_response_identity: {
+      emits_handler: true, emits_received_method: true, emits_post_body_present: true,
+      emits_action_present_in_query: true, emits_router_build: true
+    },
+    // The handler that answered THIS probe. system.health is routed on both verbs, so a caller can prove which
+    // entry point served it instead of inferring it from a message.
+    handler: (body && body.__km_handler) ? String(body.__km_handler) : 'doPost',
+    received_method: (body && body.__km_handler === 'doGet') ? 'GET' : 'POST',
     request_order_send_diagnostic_owner: (typeof TEMP_ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? TEMP_ROSEND_DIAG_OWNER_FILE_ : null,
     deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
     inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,

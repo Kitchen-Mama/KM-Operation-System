@@ -79,6 +79,16 @@ function successEnv(action, extraMeta) {
   return { success: true, data: { skuDetails: [{ sku: 'KM-1' }], skuRegionalDetails: [], marketplaceSkus: [], taxReferralRates: [], taxRateComponents: [] }, meta: meta, errors: [] };
 }
 function routerUnknownActionEnv(text) { return { success: false, error: text }; }
+// F1-7N-FB-4E §L — the router's REAL answer for a downgraded POST (01_router.gs doGet, POST_ONLY_ACTION_ON_GET).
+// It carries the five typed facts that make the downgrade PROVABLE instead of inferred from the prose, including
+// the caller's own request id, which is what ties the answer to this request.
+function routerDowngradeEnv(text, init) {
+  var rid = null;
+  try { rid = JSON.parse((init && init.body) || '{}').requestId || null; } catch (e) { rid = null; }
+  return { success: false, error: text, code: 'POST_ONLY_ACTION_ON_GET', handler: 'doGet',
+    received_method: 'GET', sent_as_post: true, post_body_present: false, action_present_in_query: true,
+    attempted_action: 'skuDetails.workspace.get', request_id: rid, zero_write: true };
+}
 function api(fetcher) { var c = client(fetcher); return (c && c.client) ? c.client : c; }
 
 var SKU_ACTION = 'skuDetails.workspace.get';
@@ -221,19 +231,40 @@ eq(fChoke._calls.length, 0, 'G8 with no network call');
 section('§G.9/§G.10 — the live failure, classified');
 // ================================================================================================================
 // §G.10 — THE EXACT LIVE RESPONSE. This is the assertion that pins the reported defect.
+// F1-7N-FB-4E §L SUPERSEDES THE FB-4C-R1 DECISION PROCEDURE, NOT ITS CONCLUSION.
+// FB-4C-R1 concluded REQUEST_METHOD_DOWNGRADED by REGEX-MATCHING the router's prose. §L forbids that, because
+// the message alone proves only WHO answered — and the sentence it produced then contradicted itself, claiming
+// the action had been "dropped in transit" about a request whose action was in the query string and had just
+// been named back by the router. So both cases are asserted now, separately:
+//   G10a  a BARE answer (a deployment older than the typed contract) -> RESPONSE_CORRELATION_UNPROVEN
+//   G10b  the router's TYPED answer                                  -> REQUEST_METHOD_DOWNGRADED, proved
 var f10 = makeFetch(routerUnknownActionEnv(DOGET_TERMINAL));
 checks.push(api(f10).getWorkspace('skuDetails', { include: { regional: true } }).then(function (env) {
-  eq(env.success, false, 'G10 the live doGet answer is a failure');
+  eq(env.success, false, 'G10a the live doGet answer is a failure');
   var e0 = env.errors[0];
-  eq(e0.code, 'REQUEST_METHOD_DOWNGRADED',
-    'G10 classified as a METHOD DOWNGRADE — NOT the BACKEND_ERROR the operator saw');
-  eq(e0.details.received_by, 'doGet', 'G10 naming who answered');
-  eq(e0.details.action, SKU_ACTION, 'G10 and which action was lost');
-  ok(!!e0.details.request_id, 'G10 with the request id for correlation');
-  eq(e0.details.zero_write, true, 'G10 proven zero-write');
-  eq(e0.details.retryable, true, 'G10 retryable — the deployment is fine, the body was dropped');
-  eq(e0.details.router_message, DOGET_TERMINAL, 'G10 keeping the router text verbatim for diagnosis');
-  ok(e0.code !== 'BACKEND_ERROR', 'G10 and it is emphatically not BACKEND_ERROR any more');
+  eq(e0.code, 'RESPONSE_CORRELATION_UNPROVEN',
+    'G10a a bare doGet answer proves the HANDLER, not the downgrade — NOT the BACKEND_ERROR the operator saw');
+  eq(e0.details.received_by, 'doGet', 'G10a naming who answered');
+  eq(e0.details.action, SKU_ACTION, 'G10a and which action was asked for');
+  ok(!!e0.details.request_id, 'G10a with the request id for correlation');
+  eq(e0.details.zero_write, true, 'G10a proven zero-write');
+  eq(e0.details.retryable, true, 'G10a retryable — nothing here says the deployment is broken');
+  eq(e0.details.router_message, DOGET_TERMINAL, 'G10a keeping the router text verbatim for diagnosis');
+  ok(e0.code !== 'BACKEND_ERROR', 'G10a and it is emphatically not BACKEND_ERROR any more');
+  eq(e0.details.evidence.request_id_correlated, false, 'G10a the missing correlation is RECORDED, not assumed away');
+}));
+var f10b = makeFetch(function (n, url, init) { return routerDowngradeEnv(DOGET_TERMINAL, init); });
+checks.push(api(f10b).getWorkspace('skuDetails', { include: { regional: true } }).then(function (env) {
+  var e0 = env.errors[0];
+  eq(e0.code, 'REQUEST_METHOD_DOWNGRADED', 'G10b the router\u2019s TYPED facts DO prove a method downgrade');
+  eq(e0.details.evidence.router_received_method, 'GET', 'G10b fact 2: it arrived as a GET');
+  eq(e0.details.evidence.router_handler, 'doGet', 'G10b fact 3: doGet answered');
+  eq(e0.details.evidence.post_body_present, false, 'G10b fact 4: the POST body was unavailable');
+  eq(e0.details.evidence.request_id_correlated, true, 'G10b fact 5: the answer is THIS request\u2019s');
+  eq(e0.details.retryable, true, 'G10b retryable — the deployment is fine, the request lost its body');
+  // §M — the contradiction is gone: the action is not claimed lost when the query carried it.
+  ok(!/therefore its action/.test(e0.message), 'G10b the message no longer claims the action was dropped');
+  ok(/survived in the request URL/.test(e0.message), 'G10b it says what actually happened to the action');
 }));
 
 // §G.9 — an OLD backend that does not know the action at all.
@@ -264,7 +295,7 @@ checks.push(api(fNoEcho).getWorkspace('skuDetails', {}).then(function (env) {
 section('§G.11-§G.13 — retry, stale responses and cache');
 // ================================================================================================================
 // §G.11 — retry produces exactly one new request.
-var f11 = makeFetch(function (n) { return n === 1 ? routerUnknownActionEnv(DOGET_TERMINAL) : successEnv(SKU_ACTION); });
+var f11 = makeFetch(function (n, url, init) { return n === 1 ? routerDowngradeEnv(DOGET_TERMINAL, init) : successEnv(SKU_ACTION); });
 var c11 = api(f11);
 checks.push(c11.getWorkspace('skuDetails', {}).then(function (first) {
   eq(f11._calls.length, 1, 'G11 the failing read was one request');

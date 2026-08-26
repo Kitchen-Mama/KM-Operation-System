@@ -20,13 +20,28 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function section(n) { console.log('\n== ' + n + ' =='); }
 function run(p) { return Promise.resolve(p).then(function (v) { return v; }, function (e) { return { success: false, errors: [{ code: 'REJECTED', message: String(e) }] }; }); }
 
-function serverEnv(okFlag) {
+function serverEnv(okFlag, reqId) {
   return { success: okFlag, data: okFlag ? { plans: [{ planId: 'SP-1' }], summary: {} } : null,
-    meta: { requestId: 'REQ-SVR', serverDurationMs: 7, tablesRead: 4 },
+    meta: { requestId: (reqId === undefined ? null : reqId), serverDurationMs: 7, tablesRead: 4 },
     errors: okFlag ? [] : [{ code: 'WRONG_SPREADSHEET_TARGET', message: 'x', details: null }] };
 }
-// fake fetch returning a Response-like object; records calls
-function makeFetch(env) { var calls = []; var f = function (url, init) { calls.push({ url: url, init: init }); return Promise.resolve({ json: function () { return Promise.resolve(env); } }); }; f._calls = calls; return f; }
+// fake fetch returning a Response-like object; records calls.
+// F1-7N-FB-4E — it now ECHOES THE CALLER'S requestId, because that is what the deployment does: all fourteen
+// workspace owners compute `reqId` as `<body>.requestId || <generated>`, so a caller-supplied id returns
+// verbatim. The previous fixture answered with a constant 'REQ-SVR' regardless of what was asked, which no
+// handler does and which the new fail-closed correlation check correctly refuses.
+function makeFetch(env) {
+  var calls = []; var f = function (url, init) {
+    calls.push({ url: url, init: init });
+    var e = env;
+    try {
+      var sent = JSON.parse((init && init.body) || '{}');
+      if (e && e.meta && sent.requestId && e.meta.requestId === null) e = JSON.parse(JSON.stringify(e)), e.meta.requestId = sent.requestId;
+    } catch (err) { /* leave the fixture as-is */ }
+    return Promise.resolve({ json: function () { return Promise.resolve(e); } });
+  };
+  f._calls = calls; return f;
+}
 function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: function () { calls.push('getOperationDb'); return { tables: {} }; }, updateShippingPlanStatus: function () { calls.push('write'); return { ok: 1 }; } }; }
 // build a Workspace-enabled foundation whose URL comes from window.KM.DB.getApiBaseUrl (proves reuse)
 function wsApi(fetchFn, getUrl, legacy) {
@@ -39,7 +54,12 @@ function wsApi(fetchFn, getUrl, legacy) {
   // =====================================================================================================
   section('Single URL authority — no duplicate literal, canonical getter');
   ok(/window\.KM\.DB\.getApiBaseUrl\s*=\s*function/.test(DBAPI_SRC) && /OP_DB_API_BASE_URL/.test(DBAPI_SRC), 'U1 operation-system-db-api.js exposes the canonical getApiBaseUrl() (reuses OP_DB_API_BASE_URL)');
-  ok(FND_SRC.indexOf('macros/s/') < 0 && FND_SRC.indexOf('AKfyc') < 0, 'U2 the Foundation contains NO duplicated literal Web App URL / Script ID');
+  // F1-7N-FB-4E — restated at its own intent: no URL LITERAL and no Script ID in the Foundation's CODE.
+  // The previous form banned the substrings anywhere in the file, so describing the required /exec shape in
+  // a comment failed a test about duplicated URLs. Comment-stripped, it tests the thing it names.
+  var FND_CODE = String(FND_SRC).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+  ok(FND_CODE.indexOf('macros/s/') < 0 && FND_CODE.indexOf('AKfyc') < 0 && !/https:\/\/script\.google\.com/.test(FND_CODE),
+    'U2 the Foundation contains NO duplicated literal Web App URL / Script ID');
   ok(/window\.KM\.DB\.getApiBaseUrl/.test(FND_SRC) && /resolveBaseUrl/.test(FND_SRC), 'U3 the Foundation resolves the URL through the KM.DB authority');
 
   // =====================================================================================================
@@ -86,6 +106,19 @@ ok(JSON.parse(_c0.init.body).action === 'weeklyShipping.workspace.get', 'TX3 whi
   var api3 = wsApi(f3, function () { return URL_OK; }, lg);
   var rf = await run(api3.client.getWorkspace('weeklyShipping'));
   ok(rf.success === false && rf.errors[0].code === 'WRONG_SPREADSHEET_TARGET', 'AS1 server success:false → outer failure (not masked)');
+  // F1-7N-FB-4E §C/§J12 — a response carrying SOMEONE ELSE'S request id is refused, not adopted. Without this
+  // two concurrent reads of the same action are indistinguishable, so a slow first answer could repaint over a
+  // newer one and be read as stale data instead of a correlation fault.
+  var fRid = makeFetch(serverEnv(true, 'REQ-SOMEONE-ELSE'));
+  var apiRid = wsApi(fRid, function () { return URL_OK; });
+  var rRid = await run(apiRid.client.getWorkspace('weeklyShipping'));
+  ok(rRid.success === false && rRid.errors[0].code === 'RESPONSE_REQUEST_ID_MISMATCH', 'AS2 a foreign request id fails closed');
+  ok(rRid.errors[0].details.zero_write === true && rRid.errors[0].details.retryable === true, 'AS2 reported as a retryable zero-write');
+  ok(rRid.meta.requestIdCorrelation === 'MISMATCH', 'AS2 and the correlation verdict is on the envelope');
+  // absence is still tolerated: an older deployment that echoes no id is REPORTED, never treated as proof.
+  var fNoRid = makeFetch({ success: true, data: { plans: [] }, meta: { serverDurationMs: 1 }, errors: [] });
+  var rNoRid = await run(wsApi(fNoRid, function () { return URL_OK; }).client.getWorkspace('weeklyShipping'));
+  ok(rNoRid.success === true && rNoRid.meta.requestIdCorrelation === 'NOT_ECHOED', 'AS3 a missing echo is reported, not failed');
   ok(lg._calls.indexOf('getOperationDb') < 0, 'AS2 NO silent Legacy fallback after the Workspace request started');
 
   // transport error also does not fall back to Legacy

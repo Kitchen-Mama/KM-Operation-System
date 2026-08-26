@@ -92,8 +92,25 @@ ok(kiScoped.length === 1 && kiScoped[0].sku === 'GA0450', 'A3: knowledge merge p
 // ===================================================================================================================
 console.log('\n== loadScopedTables enabler: reuses getTable, defensive normalize, never mutates global cache ==');
 ok(/window\.KM\.DB\.loadScopedTables\s*=\s*async function/.test(DBAPI), 'A3: KM.DB.loadScopedTables exists');
-ok(/loadScopedTables[\s\S]*getOperationDbTableFromSheet\(n\)[\s\S]*normalizeOperationDb\(rawDb\)/.test(DBAPI), 'A3: loadScopedTables = per-table getTable fetch + normalizeOperationDb (reuse; NO new API)');
-ok(!/loadScopedTables[\s\S]{0,400}window\._opDbCache\s*=/.test(DBAPI), 'A3: loadScopedTables NEVER assigns the global window._opDbCache');
+// F1-7N-FB-4E — the per-table fetch now lives in the SHARED bounded reader (_kmReadTablesBounded_) that both
+// multi-table loaders call, instead of being inlined in each. The assertion's intent is unchanged and is
+// restated against that reader: it is still per-table getTable + normalizeOperationDb and still NO new API.
+ok(/async function _kmReadTablesBounded_[\s\S]*getOperationDbTableFromSheet\(names\[i\]\)/.test(DBAPI),
+  'A3: the shared bounded reader is per-table getTable (reuse; NO new API)');
+ok(/loadScopedTables[\s\S]{0,300}_kmReadTablesBounded_\(names\)[\s\S]{0,200}normalizeOperationDb\(rawDb\)/.test(DBAPI),
+  'A3: loadScopedTables = that bounded per-table read + normalizeOperationDb');
+// F1-7N-FB-4E — restated against the FUNCTION BODY instead of a 400-character window after the name. The
+// proximity form failed the moment a COMMENT elsewhere mentioned loadScopedTables near an unrelated
+// `window._opDbCache =` (in _kmRefreshCacheTables_, whose whole job IS to patch that cache). Sliced to the
+// actual body, it tests the thing it names and cannot be tripped by prose.
+var _lstStart = DBAPI.indexOf('window.KM.DB.loadScopedTables = async function');
+ok(_lstStart > 0, 'A3: loadScopedTables body is locatable');
+var _lstBody = DBAPI.slice(_lstStart, DBAPI.indexOf(String.fromCharCode(10) + '};', _lstStart) + 3);
+ok(_lstBody.length > 40 && !/window\._opDbCache\s*=/.test(_lstBody), 'A3: loadScopedTables NEVER assigns the global window._opDbCache');
+// And the bound itself, which is the reason the reader was factored out: a four-table page mount no longer
+// opens four simultaneous requests against a backend whose per-user execution is serialized.
+ok(/KM_SCOPED_READ_CONCURRENCY_/.test(DBAPI) && !/await Promise\.all\(names\.map\(/.test(DBAPI),
+  'A3: and the fan-out is BOUNDED rather than one simultaneous request per table');
 ok(/function normalizeOperationDb[\s\S]*db\.factory_stock \|\| \[\]/.test(DBAPI), 'A3: normalizeOperationDb is defensive (|| []) → partial input is safe');
 ok(ROUTER.indexOf("action === 'getTable'") >= 0, 'A3: getTable route already exists (reused) — NO new router action');
 

@@ -63,6 +63,12 @@
     DEPLOYMENT_CONTRACT_MISMATCH: 'DEPLOYMENT_CONTRACT_MISMATCH',  // the deployment does not know this action
     REQUEST_METHOD_DOWNGRADED: 'REQUEST_METHOD_DOWNGRADED',        // a POST arrived at doGet (redirect follow)
     RESPONSE_ACTION_MISMATCH: 'RESPONSE_ACTION_MISMATCH',          // the answer is not to the question we asked
+    // F1-7N-FB-4E §C/§L — the codes that let a shared transport fault be NAMED rather than approximated.
+    API_ENDPOINT_CONFIGURATION_INVALID: 'API_ENDPOINT_CONFIGURATION_INVALID',  // refused LOCALLY, before the network
+    HTTP_NOT_FOUND_HTML: 'HTTP_NOT_FOUND_HTML',                    // a 404 web page — source identified separately
+    AUTH_OR_ACCESS_HTML: 'AUTH_OR_ACCESS_HTML',                    // a Google sign-in / access page
+    RESPONSE_REQUEST_ID_MISMATCH: 'RESPONSE_REQUEST_ID_MISMATCH',  // the answer belongs to a different request
+    RESPONSE_CORRELATION_UNPROVEN: 'RESPONSE_CORRELATION_UNPROVEN',// cannot be tied to this request either way
     INTERNAL_ERROR: 'INTERNAL_ERROR'
   };
 
@@ -326,8 +332,35 @@
       }
       return '';
     }
+    // F1-7N-FB-4E §B — THE ENDPOINT CHECK USED TO ACCEPT ANY HTTPS STRING.
+    //
+    // That is how a `/dev` URL, an Apps Script EDITOR URL, an already-consumed `script.googleusercontent.com`
+    // echo target and the site's OWN GitHub Pages origin could all be dispatched: each one is a well-formed
+    // https URL, so the only thing that could reject them was the network — as a 404 HTML page, which is
+    // exactly the failure this round is closing. A URL fault is knowable WITHOUT asking the network, so it is
+    // now decided locally by the shared authority (KM.transport), which requires the stable
+    // `/macros/s/<deployment>/exec` shape and NAMES what it found instead.
+    //
+    // The two legacy codes are retained as the reported code for the two legacy cases (blank / malformed) so
+    // existing assertions and consumers keep their meaning; everything the old check silently ACCEPTED now
+    // reports API_ENDPOINT_CONFIGURATION_INVALID with an endpointClass and a reason.
     function classifyUrl(u) {
       var s = (typeof u === 'string') ? u.trim() : '';
+      var tf = null;
+      try { if (typeof window !== 'undefined' && window.KM && window.KM.transportFactory) tf = window.KM.transportFactory; } catch (e) { tf = null; }
+      if (!tf && typeof deps.transportFactory !== 'undefined') tf = deps.transportFactory;
+      if (tf && typeof tf.classifyEndpoint === 'function') {
+        var fo = (typeof deps.frontendOrigin === 'string') ? deps.frontendOrigin
+          : (function () { try { return (typeof window !== 'undefined' && window.location && window.location.origin) ? String(window.location.origin) : ''; } catch (e2) { return ''; } })();
+        var c = tf.classifyEndpoint(s, { frontendOrigin: fo });
+        if (c.ok) return { ok: true, url: s, endpointClass: c.endpointClass, maskedEndpoint: c.maskedEndpoint };
+        var code = (c.endpointClass === 'BLANK') ? API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED
+          : (c.endpointClass === 'RELATIVE' || c.endpointClass === 'NOT_HTTPS') ? API_ERROR_CODES.TRANSPORT_URL_INVALID
+          : API_ERROR_CODES.API_ENDPOINT_CONFIGURATION_INVALID;
+        return { ok: false, code: code, endpointClass: c.endpointClass, reason: c.reason, maskedEndpoint: c.maskedEndpoint };
+      }
+      // The shared authority is not loaded (a bare unit context). Keep the original decision EXACTLY, so the
+      // fallback can never be more permissive than the authority it stands in for on the one axis it knows.
       if (s === '') return { ok: false, code: API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED };
       var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(s);
       var isHttps = s.indexOf('https://') === 0;
@@ -385,7 +418,22 @@
         }
         var init = { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(dto) };
         if (opts && opts.signal) init.signal = opts.signal;   // AbortSignal end-to-end (no client double-request)
-        return _fetcher(url, init);
+        // F1-7N-FB-4E §E — REPORT THE REQUEST COUNT AND DURATION. This is the path every one of the six failing
+        // pages reads through, so leaving it unmeasured would make the performance report structurally blind to
+        // the exact surfaces the incident is about. Observation only: no URL, no payload, no row, and wrapped so
+        // it can never affect the request.
+        // THE CLOCK STAYS OUT OF THIS FILE. The Foundation is held to a determinism rule - no wall clock, no
+        // RNG, no locale collation - and its own suite asserts it. So the measurement is taken by asking the
+        // transport module for a timing closure; this layer records WHAT happened and never WHEN.
+        var _pdone = null;
+        try {
+          if (typeof window !== 'undefined' && window.KM && window.KM.transport && typeof window.KM.transport.beginExternal === 'function') {
+            _pdone = window.KM.transport.beginExternal(act, 'read');
+          }
+        } catch (e0) { _pdone = null; }
+        function _reportPost(code) { try { if (_pdone) _pdone(code); } catch (e) { /* observation must never affect the request */ } }
+        return Promise.resolve(_fetcher(url, init)).then(function (r) { _reportPost(null); return r; },
+          function (e) { _reportPost('HTTP_TRANSPORT_ERROR'); throw e; });
       }
     };
     function getTransportStatus() {
@@ -609,6 +657,25 @@
         }] };
       }
 
+      // F1-7N-FB-4E §C — AND VERIFY THE ANSWER BELONGS TO THIS REQUEST.
+      //
+      // The action echo proves the answer is to the right QUESTION; it does not prove it is to the right ASK.
+      // Two concurrent reads of the same action are indistinguishable without the request id, so a slow first
+      // answer could repaint over a newer one and look like stale data rather than a correlation fault. Only a
+      // genuine MISMATCH fails; a deployment that echoes no id is REPORTED (requestIdCorrelation), never
+      // silently treated as proof.
+      var _echoRid = normName(serverEnv.request_id || (isObj(serverEnv.meta) ? serverEnv.meta.requestId : ''));
+      outMeta.requestIdCorrelation = !normName(dto.requestId) ? 'NOT_REQUESTED'
+        : (_echoRid === '' ? 'NOT_ECHOED' : (_echoRid === normName(dto.requestId) ? 'MATCH' : 'MISMATCH'));
+      if (outMeta.requestIdCorrelation === 'MISMATCH') {
+        return { success: false, data: null, meta: outMeta, errors: [{
+          code: API_ERROR_CODES.RESPONSE_REQUEST_ID_MISMATCH,
+          message: 'The answer carried a different request id than the one sent, so it belongs to another request. It was discarded; nothing was read.',
+          details: { action: dto.action, request_id: dto.requestId, answered_request_id: _echoRid, zero_write: true, retryable: true,
+            next_action: 'Retry the read. If it repeats, reload the page so the Apps Script session redirect is re-established.' }
+        }] };
+      }
+
       // A server business failure MUST stay success:false (never masked); a nested {success:false} is not a success.
       if (serverEnv.success !== true) {
         // F1-7K-HOTFIX-ROUTER-CLOSURE-R1 — error-envelope hardening. Precedence (unchanged errors[] behavior first):
@@ -631,13 +698,64 @@
           //   DEPLOYMENT_CONTRACT_MISMATCH the deployment genuinely does not carry this action. NOT retryable —
           //                               retrying cannot publish a deployment.
           if (isUnknownActionText(_txt)) {
-            if (looksLikeDoGetAnswer(_txt)) {
+            // F1-7N-FB-4E §L/§M — DECIDE FROM EVIDENCE, NOT FROM THE MESSAGE.
+            //
+            // The previous code concluded REQUEST_METHOD_DOWNGRADED from a REGEX ON THE ROUTER'S PROSE
+            // (/Use:\s*getOperationDb\s*,\s*getTable/) and then printed a sentence that CONTRADICTED ITSELF:
+            // "its body — and therefore its action — was dropped in transit", said about a request whose
+            // action was sitting in the query string and had just been NAMED BACK by the router. Both halves
+            // cannot be true, and §M requires the contradiction to be fixed rather than reworded.
+            //
+            // §L allows the downgrade claim only when ALL FIVE facts are proved. Each now comes from a
+            // specific place, and none of them is the message:
+            //   1. the client dispatched POST      — this transport has no GET path for a workspace read
+            //   2. it reached the router as a GET  — serverEnv.received_method === 'GET'
+            //   3. doGet answered                  — serverEnv.handler, or code POST_ONLY_ACTION_ON_GET
+            //   4. the POST body was unavailable    — serverEnv.post_body_present === false, or that same code
+            //   5. the answer is THIS request's     — serverEnv.request_id === the id we sent
+            // Short of that we report the narrower truth. A deployment older than the typed contract sends
+            // none of these fields, so its answer is RESPONSE_CORRELATION_UNPROVEN — a GET handler plainly
+            // answered (only doGet emits that action list) but nothing ties the answer to this request, and
+            // the same publish step fixes either reading.
+            var _rcode = normName(serverEnv.code);
+            var _rmethod = String(serverEnv.received_method == null ? '' : serverEnv.received_method).toUpperCase();
+            var _rhandler = normName(serverEnv.handler);
+            var _rid = normName(serverEnv.request_id);
+            var _bodyPresent = serverEnv.post_body_present;
+            var _actionInQuery = (serverEnv.action_present_in_query === undefined)
+              ? (normName(serverEnv.attempted_action) !== '' ? true : null)
+              : (serverEnv.action_present_in_query === true);
+            var _evidence = {
+              client_dispatched_post: true,
+              router_received_method: _rmethod || null,
+              router_handler: _rhandler || (_rcode === 'POST_ONLY_ACTION_ON_GET' ? 'doGet' : null),
+              router_code: _rcode || null,
+              post_body_present: (_bodyPresent === undefined) ? null : (_bodyPresent === true),
+              action_present_in_query: _actionInQuery,
+              sent_as_post_marker: serverEnv.sent_as_post === true,
+              request_id_echoed: _rid || null,
+              request_id_correlated: (_rid !== '' && _rid === normName(dto.requestId))
+            };
+            var _getHandlerAnswered = (_rmethod === 'GET') || (_evidence.router_handler === 'doGet') || (_rcode === 'POST_ONLY_ACTION_ON_GET');
+            var _bodyLost = (_bodyPresent === false) || (_rcode === 'POST_ONLY_ACTION_ON_GET');
+            if (_getHandlerAnswered && _bodyLost && _evidence.request_id_correlated) {
               _outErrs = [{
                 code: API_ERROR_CODES.REQUEST_METHOD_DOWNGRADED,
-                message: 'The request for "' + dto.action + '" was sent as a POST but was answered by the GET handler, so its body — and therefore its action — was dropped in transit. This is a redirect downgrade, not a backend failure. Nothing was read.',
+                message: 'This read was sent as a POST but reached the server as a GET, so the POST body was lost and the server could not run it. '
+                  + (_actionInQuery === true
+                      ? 'The action itself survived in the request URL — that is how the server could name it — so nothing was misaddressed, and nothing was read or written.'
+                      : 'Nothing was read or written.'),
                 details: { action: dto.action, request_id: dto.requestId, received_by: 'doGet', zero_write: true, retryable: true,
-                  router_message: _txt,
+                  evidence: _evidence, router_message: _txt,
                   next_action: 'Retry the read. If it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established.' }
+              }];
+            } else if (_getHandlerAnswered || looksLikeDoGetAnswer(_txt)) {
+              _outErrs = [{
+                code: API_ERROR_CODES.RESPONSE_CORRELATION_UNPROVEN,
+                message: 'The GET handler answered this read, but the answer carries no evidence tying it to the request that was sent, so it proves nothing about what happened and was discarded. Nothing was read.',
+                details: { action: dto.action, request_id: dto.requestId, received_by: 'doGet', zero_write: true, retryable: true,
+                  evidence: _evidence, router_message: _txt,
+                  next_action: 'Retry the read once. If it repeats, publish a NEW Apps Script deployment version so the router reports the typed method/handler facts, then reload.' }
               }];
             } else {
               _outErrs = [{

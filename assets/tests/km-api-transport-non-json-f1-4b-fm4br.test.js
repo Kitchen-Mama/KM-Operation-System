@@ -56,8 +56,18 @@ var LOGIN_HTML = '<!DOCTYPE html><html><head><title>Sign in - Google Accounts</t
   ok(pfx.indexOf('\n') < 0, 'F3 whitespace collapsed (no raw newlines)');
 
   section('G · valid JSON response UNCHANGED');
-  var goodEnv = { success: true, data: { lines: [{ sku: 'CO1100-R' }], pagination: { page: 1 } }, meta: { requestId: 'REQ-OK' }, errors: [] };
-  var fG = fetchReturning(respText(200, 'application/json', JSON.stringify(goodEnv)));
+  // F1-7N-FB-4E §C — the envelope now ECHOES THE CALLER'S requestId, which is what the deployment actually does:
+  // all fourteen workspace owners resolve `reqId` as `<body>.requestId || <generated>`. The previous fixture
+  // answered with a constant 'REQ-OK' no matter what was asked, and the new fail-closed correlation check
+  // correctly refuses an answer carrying another request's id.
+  var goodEnv = { success: true, data: { lines: [{ sku: 'CO1100-R' }], pagination: { page: 1 } }, meta: {}, errors: [] };
+  var fG = fetchReturning(null);
+  fG = (function () { var calls = []; var f = function (u, init) {
+    calls.push({ u: u, init: init });
+    var env = JSON.parse(JSON.stringify(goodEnv));
+    try { env.meta.requestId = JSON.parse((init && init.body) || '{}').requestId || null; } catch (e) { env.meta.requestId = null; }
+    return Promise.resolve(respText(200, 'application/json', JSON.stringify(env)));
+  }; f._calls = calls; return f; })();
   var envG = await run(api(fG).client.getWorkspace('recommendation', {}));
   ok(envG.success === true && envG.data && envG.data.lines[0].sku === 'CO1100-R', 'G1 valid JSON parsed + not double-wrapped');
 

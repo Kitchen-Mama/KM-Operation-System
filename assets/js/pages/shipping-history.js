@@ -756,11 +756,23 @@ function _shRefresh_(renderFn) {
         }
     }).catch(function (e) { if (mySeq !== _shReadSeq) return; _shRenderError_({ code: 'SHIPMENT_READ_FAILED', message: String(e && e.message || e) }); });
 }
+// F1-7N-FB-4E §F — the safe error field set, from the ONE shared formatter (KM.transport.errorLine). The
+// banner previously showed "<message> [<code>]", which named neither the action, nor the request id, nor
+// whether retrying could possibly help. It degrades to the old two-field form if the transport module is
+// absent, so a load failure costs detail rather than the banner itself.
+function _shErrDetail_(err) {
+    try {
+        if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+            return window.KM.transport.errorLine(err);
+        }
+    } catch (e) {}
+    return String((err && err.message) || 'failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
+}
 function _shRenderError_(err) {
     _shReadModel = null;
     var rg = _shRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
     var el = _shActiveListEl_();
-    if (el) { el.hidden = false; el.innerHTML = '<div style="color:#B91C1C;padding:12px;font-size:13px;">Shipment read error: ' + _shEsc((err && err.message) || 'failed') + ' [' + _shEsc((err && err.code) || 'READ_FAILED') + ']</div>'; }
+    if (el) { el.hidden = false; el.innerHTML = '<div role="alert" style="color:#B91C1C;padding:12px;font-size:13px;text-align:left;overflow-wrap:break-word;word-break:break-word;">Shipment read error: ' + _shEsc(_shErrDetail_(err)) + '</div>'; }
 }
 
 // Re-render whichever Shipment page is currently active. Called by the card action handlers after a write. In Workspace

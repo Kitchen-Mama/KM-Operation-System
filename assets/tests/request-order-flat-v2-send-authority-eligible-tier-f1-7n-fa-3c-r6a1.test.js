@@ -128,6 +128,13 @@ ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false\s*;/.test(CONFIG)
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'K. KM.RELEASE = r6a1-request-send-20260822');
-ok(/request-order\.js\?v=r6a1-request-send-20260822/.test(INDEX), 'K. changed request-order.js carries the R6A1 token (Send fix cache-busts)');
+// F1-7N-FB-4E — RESTATED AS THE RULE, NOT THE LITERAL. The claim is "the changed file cache-busts"; pinning
+// the exact R6A1 string instead makes every legitimate LATER bump fail this suite, which is the same trap
+// that let the FB-4B addendum ship with no cache-bust at all. What must hold is that the token is present
+// and has moved past every pre-R6A1 value.
+var _roTok = (/request-order\.js\?v=([^"']+)/.exec(INDEX) || [])[1];
+var _preR6A1 = ['donenotice-20260811', 'catseries-20260820', 'whmoreopts-20260820', 'r6c-navlifecycle-20260822'];
+ok(!!_roTok, 'K. request-order.js carries a cache-bust token at all');
+ok(!!_roTok && _preR6A1.indexOf(_roTok) < 0, 'K. changed request-order.js carries a token at or after R6A1 (' + _roTok + ')');
 
 done();

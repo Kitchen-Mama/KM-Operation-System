@@ -82,7 +82,16 @@ eval(extractVar(FND, 'UNKNOWN_ACTION_PATTERNS'));
 eval(extractVar(FND, 'DOGET_TERMINAL_HINT'));
 eval(extractFn(FND, 'isUnknownActionText'));
 eval(extractFn(FND, 'looksLikeDoGetAnswer'));
-var API_ERROR_CODES = { CLIENT_ACTION_REQUIRED: 'CLIENT_ACTION_REQUIRED', DEPLOYMENT_CONTRACT_MISMATCH: 'DEPLOYMENT_CONTRACT_MISMATCH', REQUEST_METHOD_DOWNGRADED: 'REQUEST_METHOD_DOWNGRADED', RESPONSE_ACTION_MISMATCH: 'RESPONSE_ACTION_MISMATCH' };
+// F1-7N-FB-4E — the evidence branch normalizes the router's typed fields, so the shared normalizer joins the
+// extraction list. An ADDITION to what the suite executes; nothing below it changes meaning.
+eval(extractFn(FND, 'normName'));
+// F1-7N-FB-4E — the hand-written 4-key stub could silently make a NEW code resolve to `undefined`, so the
+// harness now takes the taxonomy from the SAME source file as the slice. It cannot drift from what ships.
+eval(extractVar(FND, 'API_ERROR_CODES'));
+['CLIENT_ACTION_REQUIRED', 'DEPLOYMENT_CONTRACT_MISMATCH', 'REQUEST_METHOD_DOWNGRADED', 'RESPONSE_ACTION_MISMATCH',
+ 'RESPONSE_CORRELATION_UNPROVEN', 'RESPONSE_REQUEST_ID_MISMATCH', 'API_ENDPOINT_CONFIGURATION_INVALID'].forEach(function (k) {
+  ok(API_ERROR_CODES[k] === k, 'taxonomy carries ' + k + ' (self-named)');
+});
 var dto = { action: 'weeklyShipping.workspace.get', requestId: 'REQ-TEST1' };
 eval('function _resolveErrs(serverEnv){ ' + slice + ' return _outErrs; }');
 // 1. errors[] present → surfaced verbatim (byte-compatible with prior behavior)
@@ -101,11 +110,28 @@ eq(_dm.code, 'DEPLOYMENT_CONTRACT_MISMATCH', 'a router unknown-action string is 
 eq(_dm.details.retryable, false, 'and it is NOT retryable — retrying cannot publish a deployment');
 eq(_dm.details.missing_action, 'weeklyShipping.workspace.get', 'naming the action the caller asked for');
 eq(_dm.details.router_message, 'Invalid POST action. Supported: ...', 'while keeping the router text verbatim for diagnosis');
-// doGet's own terminal message is the distinguishable case: a POST answered by the GET handler.
-var _md = _resolveErrs({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' })[0];
-eq(_md.code, 'REQUEST_METHOD_DOWNGRADED', 'doGet\u2019s action list proves the POST was answered by doGet — a redirect downgrade');
+// doGet's own terminal message says WHO answered. F1-7N-FB-4E §L is explicit that this alone is NOT enough to
+// claim a method downgrade: that claim needs the client to have dispatched POST, the router to report it
+// received a GET, doGet to have answered, the POST body to have been unavailable, AND the answer to correlate
+// to this request. A bare message (a deployment older than the typed contract) proves only the handler, so the
+// honest verdict is the narrower RESPONSE_CORRELATION_UNPROVEN — and the same publish step fixes either reading.
+var _mdBare = _resolveErrs({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' })[0];
+eq(_mdBare.code, 'RESPONSE_CORRELATION_UNPROVEN', 'doGet\u2019s action list alone proves the handler, NOT the downgrade');
+eq(_mdBare.details.received_by, 'doGet', 'the handler is still named explicitly');
+eq(_mdBare.details.retryable, true, 'and it is retryable — nothing says the deployment is broken');
+// WITH the router's typed evidence, the downgrade IS proved and is claimed.
+var _md = _resolveErrs({ success: false, code: 'POST_ONLY_ACTION_ON_GET', received_method: 'GET', handler: 'doGet',
+  sent_as_post: true, post_body_present: false, action_present_in_query: true, request_id: 'REQ-TEST1',
+  error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' })[0];
+eq(_md.code, 'REQUEST_METHOD_DOWNGRADED', 'the router\u2019s typed method/handler/body facts DO prove a redirect downgrade');
 eq(_md.details.received_by, 'doGet', 'named explicitly');
 eq(_md.details.retryable, true, 'and it IS retryable — the deployment is fine, the request lost its body');
+eq(_md.details.evidence.post_body_present, false, 'the proof is recorded, not inferred');
+eq(_md.details.evidence.request_id_correlated, true, 'including that the answer belongs to this request');
+// §M — and the message may NOT claim the action was dropped when the query string carried it and the router
+// named it back. That sentence contradicted itself and is the contradiction §M requires fixing.
+ok(!/therefore its action . was dropped/.test(_md.message) && /survived in the request URL/.test(_md.message),
+  'the message states only what the evidence supports');
 // a genuine runtime/business string is still BACKEND_ERROR, verbatim
 var _be = _resolveErrs({ success: false, error: 'handleFoo_ is not defined' })[0];
 eq(_be.code, 'BACKEND_ERROR', 'ReferenceError-style string surfaced as BACKEND_ERROR');

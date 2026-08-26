@@ -19,7 +19,7 @@
 // round that last changed it (F1-7N-FB-4C-R1, the POST_ONLY_ACTION_ON_GET terminal answer). The router is the
 // one file whose staleness is invisible from the client: a stale router still answers every request, it just
 // answers an older contract.
-var RTR_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E';
 
 function doGet(e) {
   try {
@@ -44,7 +44,11 @@ function doGet(e) {
     // code contains the actions the pages are about to call (a partial Apps Script sync is otherwise
     // indistinguishable from a transport fault). Returns no spreadsheet id, Drive id, token or row data.
     if (action === 'system.health') {
-      return handleSystemHealth_(e && e.parameter ? e.parameter : {});
+      // F1-7N-FB-4E §H — stamp the entry point so the answer can state WHICH handler served it as a fact
+      // rather than the caller inferring it. system.health is routed on both verbs deliberately.
+      var _hg = e && e.parameter ? e.parameter : {};
+      _hg.__km_handler = 'doGet';
+      return handleSystemHealth_(_hg);
     }
 
     // F1-7N-FB-3 §C — SLIM SCOPE REGISTRY (owner = 64_). One table, a six-column bounded projection: the only
@@ -71,13 +75,30 @@ function doGet(e) {
     var attempted = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';
     var viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
     if (attempted || viaPost) {
+      // F1-7N-FB-4E §L — THE CLIENT MUST NOT HAVE TO READ THIS PROSE TO KNOW WHAT HAPPENED.
+      //
+      // The client previously concluded "a POST was answered by doGet" by REGEX-MATCHING the sentence below,
+      // which is unsound: any doGet answer carrying that sentence was labelled a method downgrade, and the
+      // resulting message then asserted the action had been dropped even though the query string carried it.
+      // §L allows the downgrade claim only on proof, so the three facts it still lacked are now stated
+      // EXPLICITLY and machine-readably, beside the two that were already here:
+      //   handler                 WHO answered (doGet), so a doPost answer can never be mistaken for one
+      //   post_body_present       whether a body arrived at all — the fact that makes "the body was lost" true
+      //   action_present_in_query whether the action survived the hop, so the client cannot claim it was lost
+      // The `error` string is unchanged: existing classifiers and regression suites key on it.
+      var _bodyPresent = !!(e && e.postData && typeof e.postData.contents === 'string' && e.postData.contents !== '');
       return jsonResponse_({
         success: false,
         error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get',
         code: 'POST_ONLY_ACTION_ON_GET',
         received_method: 'GET',
+        handler: 'doGet',
+        router_build: RTR_BUILD_VERSION_,
+        post_body_present: _bodyPresent,
+        action_present_in_query: attempted !== '',
         attempted_action: attempted || null,
         request_id: (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null,
+        client_transport_contract: (e && e.parameter && e.parameter.km_tc) ? String(e.parameter.km_tc) : null,
         sent_as_post: viaPost,
         zero_write: true,
         message: 'The action "' + (attempted || '(none)') + '" is served by doPost, but this request arrived as a GET. ' +
@@ -85,11 +106,14 @@ function doGet(e) {
         next_action: 'Retry the read; if it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established.'
       });
     }
-    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get' });
+    // F1-7N-FB-4E §A/§L — even the ANONYMOUS answer names its handler and method. Without that the browser
+    // cannot tell a doGet answer from a doPost answer, and "who answered" was the one thing it could not prove.
+    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get',
+      handler: 'doGet', received_method: 'GET', router_build: RTR_BUILD_VERSION_, zero_write: true });
 
   } catch (err) {
     Logger.log(err.stack);
-    return jsonResponse_({ success: false, error: err.message });
+    return jsonResponse_({ success: false, error: err.message, handler: 'doGet', received_method: 'GET', router_build: RTR_BUILD_VERSION_ });
   }
 }
 
@@ -110,6 +134,7 @@ function doPost(e) {
 
     // F1-7N-FB-2 §D/§K — read-only health + Submit-to-Map flow readiness (zero writes, no Drive, no lock).
     if (action === 'system.health') {
+      body.__km_handler = 'doPost';
       return handleSystemHealth_(body);
     }
     if (action === 'system.submitFlowDiagnostic') {
@@ -773,10 +798,14 @@ function doPost(e) {
       return handleFactoryOperationConfigSave_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save' });
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save',
+      // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
+      // as a method downgrade. This is the negative half of the proof and it was previously absent.
+      handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,
+      post_body_present: true, action_present_in_query: !!(e && e.parameter && e.parameter.action), zero_write: true });
 
   } catch (err) {
     Logger.log(err.stack);
-    return jsonResponse_({ success: false, error: err.message });
+    return jsonResponse_({ success: false, error: err.message, handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_ });
   }
 }

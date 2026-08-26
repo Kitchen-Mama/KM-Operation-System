@@ -60,6 +60,95 @@ function _osShowInitialLoading_(root) {
         if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, 'Loading overseas stock…').beginLoad(false);
     } catch (e) {}
 }
+
+// ============================================================================================================
+// F1-7N-FB-4E §C/§F — THE READ STATE THIS PAGE NEVER HAD.
+// ------------------------------------------------------------------------------------------------------------
+// THE DEFECT, EXACTLY. The mount's scoped read ended in `.catch(function () { initOverseasStockPage(); })` — the error was
+// SWALLOWED, the page re-entered with its read model still null, and the table body then printed
+// "尚未連接資料來源" ("no data source connected yet"). So an HTTP 404, an expired redirect, a Google sign-in
+// page and a genuinely empty table all produced the same sentence, and the one thing the operator could read
+// from the screen was the one thing that was not true: the data source was connected, it just failed.
+//
+// Worse, `_osDbLoadTried` is a MODULE-level flag that is never cleared, so after one failure NO later mount
+// issued a request. Navigating away and back could not recover, and only a full browser reload could — which
+// is exactly the reported symptom, and exactly what §D9 and §F forbid.
+//
+// So: the read now records a STATE, a failure clears the tried-flag so recovery needs no reload, and the four
+// outcomes are four different renders. "尚未連接資料來源" is reachable ONLY from EMPTY_CONFIGURATION — a
+// genuinely unconfigured API — which is the one case where it is true.
+// ============================================================================================================
+var _osLoad = { status: 'IDLE', error: null, requests: 0 };
+function _osLoadState_() { return _osLoad; }
+function _osConfiguredApi_() {
+    try { return !!(window.KM && window.KM.DB && typeof window.KM.DB.isProductionWriteEligible === 'function'
+        && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()); } catch (e) { return false; }
+}
+// The typed reason a page may safely show: code, action, request id, retryability, next action. Never a raw
+// HTML body, never a URL beyond the masked identity — the transport layer has already reduced both.
+function _osReadFailure_(err) {
+    var t = (err && err.kmTransport) || {};
+    var code = t.code || (err && err.code) || 'READ_FAILED';
+    var nonRetryable = (code === 'API_ENDPOINT_CONFIGURATION_INVALID' || code === 'HTTP_NOT_FOUND_HTML'
+        || code === 'AUTH_OR_ACCESS_HTML' || code === 'DEPLOYMENT_CONTRACT_MISMATCH');
+    return {
+        code: code, phase: t.phase || null, action: t.action || null, table: t.table || null,
+        httpStatus: (t.httpStatus === undefined ? null : t.httpStatus), contentType: t.contentType || null,
+        maskedEndpoint: t.maskedFinalEndpoint || t.maskedRequestedEndpoint || null,
+        htmlSource: t.html_source || null,
+        retryable: nonRetryable ? false : (t.retryable !== false),
+        uiState: nonRetryable ? 'NON_RETRYABLE_CONFIGURATION_OR_DEPLOYMENT_ERROR' : 'TRANSIENT_ERROR',
+        message: (err && err.message) ? String(err.message) : 'The read failed.',
+        nextAction: nonRetryable
+            ? 'This will not be fixed by retrying: correct the Web App endpoint, sign in, or publish a new Apps Script deployment version.'
+            : 'Press Retry. It issues exactly one new request.'
+    };
+}
+function _osEscHtml_(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+}
+// ONE renderer for the two states that are NOT rows: a real failure, and a genuinely unconfigured API. Anything
+// else is the caller's normal empty/rows render.
+function _osStateHtml_() {
+    if (_osLoad.status === 'LOADING') {
+        return '<div style="padding:20px;text-align:center;color:#94A3B8">Loading…</div>';
+    }
+    if (_osLoad.status === 'EMPTY_CONFIGURATION') {
+        return '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+    }
+    if (_osLoad.status === 'ERROR' && _osLoad.error) {
+        var e = _osLoad.error;
+        var bits = ['Reason: ' + e.code];
+        if (e.action) bits.push('Action: ' + e.action);
+        if (e.table) bits.push('Table: ' + e.table);
+        if (e.httpStatus != null) bits.push('HTTP ' + e.httpStatus);
+        if (e.contentType) bits.push(e.contentType);
+        if (e.htmlSource) bits.push('Source: ' + e.htmlSource);
+        if (e.maskedEndpoint) bits.push('Endpoint: ' + e.maskedEndpoint);
+        bits.push(e.retryable ? 'Retryable: yes' : 'Retryable: no');
+        return '<div role="alert" style="padding:12px;margin:8px;border-left:3px solid #B91C1C;background:#FEF2F2;color:#7F1D1D;'
+            + 'font-size:12px;text-align:left;overflow-wrap:break-word;word-break:break-word;">'
+            + '<div style="font-weight:600;margin-bottom:4px;">Could not load — nothing was read.</div>'
+            + '<div style="margin-bottom:4px;">' + _osEscHtml_(e.message) + '</div>'
+            + '<div style="opacity:.85;margin-bottom:6px;">' + _osEscHtml_(bits.join(' · ')) + '</div>'
+            + '<div style="margin-bottom:6px;">' + _osEscHtml_(e.nextAction) + '</div>'
+            + (e.retryable ? '<button type="button" onclick="window._osRetryRead_ && window._osRetryRead_()" '
+                + 'style="font-size:12px;padding:4px 10px;border:1px solid #B91C1C;background:#fff;color:#7F1D1D;cursor:pointer;">Retry</button>' : '')
+            + '</div>';
+    }
+    return null;                       // not a state this renderer owns
+}
+// One Retry = exactly ONE new request (§C/§F). It clears the tried-flag and the cached failure first, so the
+// recovery path is a real request rather than a re-render of the old error.
+function _osRetryRead_() {
+    if (_osLoad.status === 'LOADING') return;      // never a second concurrent read
+    _osLoad = { status: 'IDLE', error: null, requests: _osLoad.requests };
+    _overseasDbLoadTried = false;
+    initOverseasStockPage();
+}
+window._osRetryRead_ = _osRetryRead_;
+window._osLoadState_ = _osLoadState_;
+
 function initOverseasStockPage() {
     console.log('✅ Overseas Stock: initOverseasStockPage called');
     var root = document.querySelector('#overseas-stock-section');
@@ -72,8 +161,19 @@ function initOverseasStockPage() {
     // F1-7J-A3: canonical → bounded scoped read; Legacy kill-switch → broad loadOperationDb. Fail-closed (no broad fallback).
     if (_osScopedActive() && !_osReadModel && !_overseasDbLoadTried) {
         _overseasDbLoadTried = true;
+        _osLoad = { status: 'LOADING', error: null, requests: _osLoad.requests + 1 };
         _osShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
-        window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; initOverseasStockPage(); }).catch(function () { initOverseasStockPage(); });
+        // F1-7N-FB-4E §C/§F/§D9 — the rejection is CLASSIFIED and the tried-flag is CLEARED. Previously it was
+        // swallowed with a bare `catch(function(){ init(); })`, so the failure became an empty table labelled
+        // "no data source connected" and the flag kept every later mount from ever asking again.
+        window.KM.DB.loadScopedTables(_OS_TABLES)
+            .then(function (m) { _osReadModel = m; _osLoad = { status: 'READY', error: null, requests: _osLoad.requests }; initOverseasStockPage(); })
+            .catch(function (err) {
+                _overseasDbLoadTried = false;                       // recovery must not require a browser reload
+                _osLoad = { status: _osConfiguredApi_() ? 'ERROR' : 'EMPTY_CONFIGURATION',
+                    error: _osConfiguredApi_() ? _osReadFailure_(err) : null, requests: _osLoad.requests };
+                initOverseasStockPage();
+            });
         return;
     }
     if (!_osScopedActive() && !window._opDbCache && !_overseasDbLoadTried) {
@@ -350,11 +450,14 @@ function renderOverseasSnapshotTable(root) {
     var scrollBody = root.querySelector('#overseas-snapshot-scroll-body');
     if (!fixedBody || !scrollBody) { console.error('❌ Overseas Stock: snapshot DOM not found'); return; }
 
+    // F1-7N-FB-4E §F — a transport failure is NOT an empty table and is NOT an unconfigured data source.
+    var _st = _osStateHtml_();
+    if (_st) { _overseasSnapshotRendered = []; fixedBody.innerHTML = ''; scrollBody.innerHTML = _st; return; }
     var data = _getDbOverseasSnapshotData();
     if (!data || data.length === 0) {
         _overseasSnapshotRendered = [];
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No overseas inventory rows for the current filters.</div>';
         return;
     }
 
@@ -457,10 +560,12 @@ function renderOverseasMovementTable(root) {
         return;
     }
 
+    var _stM = _osStateHtml_();
+    if (_stM) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _stM; return; }
     var data = _getDbOverseasMovementData();
     if (!data || data.length === 0) {
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No movement records for the selected filters.</div>';
         return;
     }
 

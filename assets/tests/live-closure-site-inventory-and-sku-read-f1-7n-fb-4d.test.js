@@ -96,12 +96,24 @@ ok(G16C.indexOf('LINE_PRIMARY_KEY_ALREADY_EXISTS') !== -1, 'A2.4 the server pre-
 var STALE_2026_08_22 = /(inventory-replenishment\.js|inventory-compat\.js)\?v=[^"']*20260822/;
 ok(!STALE_2026_08_22.test(INDEX),
   'A2.5 neither Site Inventory file is still pinned at a pre-addendum 20260822 token (THE delivery defect)');
+var _fb4dTokens = [];
 ['assets/js/pages/inventory-replenishment.js', 'assets/js/utils/inventory-compat.js',
   'assets/js/pages/sku-details.js', 'assets/js/api/operation-system-db-api.js'].forEach(function (f) {
   var m = new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
   ok(!!m, 'A2.6 ' + f + ' has a cache-bust token at all');
-  ok(!!m && m[1] === 'fb4d-site-inventory-20260826', 'A2.7 ' + f + ' is advanced to the FB-4D token');
+  // F1-7N-FB-4E — RESTATED AS THE RULE THE COMMENT ABOVE ALREADY STATES: the token must have MOVED off the
+  // pre-addendum values, and the co-deployed set must SHARE one token. Pinning the literal FB-4D string made
+  // every legitimate later bump look like a regression — which is the same trap that let the FB-4B addendum
+  // ship without a cache-bust in the first place, now from the opposite direction.
+  var STALE_TOKENS_4D = ['r6a1-request-send-20260822', 'donenotice-20260811', 'catseries-20260820',
+    'whmoreopts-20260820', 'sku-read-path-20260826'];
+  ok(!!m && STALE_TOKENS_4D.indexOf(m[1]) < 0, 'A2.7 ' + f + ' carries a token that MOVED past the pre-FB-4D values (' + (m ? m[1] : 'none') + ')');
+  _fb4dTokens.push(m ? m[1] : null);
 });
+// The other half of the delivery rule: this set is co-deployed, so a token that moves for one of them and not
+// the others can still ship a half-updated page — which is the failure mode A2.5 exists for.
+ok(_fb4dTokens.length === 4 && _fb4dTokens.every(function (v) { return v === _fb4dTokens[0]; }),
+  'A2.8 and all four co-deployed files share ONE token, so they cannot deploy out of step');
 // no other cache-busting mechanism exists, so the token IS the delivery contract
 ok(!fs.existsSync(path.join(ROOT, 'sw.js')) && !fs.existsSync(path.join(ROOT, 'service-worker.js')),
   'A2.8 there is no service worker, so a stale token cannot be compensated elsewhere');
@@ -768,7 +780,14 @@ var stamps = extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_');
 // each stamp must match what its file really declares
 eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4D', 'E2 16_ declares the FB-4D build (it changed)');
 eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FA-4B2', 'E2 11_ declares its own last behavioural round (FB-4D did not change it)');
-eq((G01.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4C-R1', 'E2 01_ likewise');
+// F1-7N-FB-4E — 01_router.gs changed this round (it now states which handler answered), so pinning the FB-4C-R1
+// literal would report a real, intended bump as a regression. The invariant that matters is the one the
+// manifest enforces: a file's declared build must equal what SYS_MODULE_BUILD_STAMPS_ expects for it, because
+// that disagreement is exactly what a partial Apps Script sync looks like.
+var _rtrDeclared = (G01.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+var _rtrExpected = (G63.match(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
+ok(!!_rtrDeclared && /^F1-7N-[A-Z]+-\d+[A-Z](-R\d+)?$/.test(_rtrDeclared), 'E2 01_ declares a real build (' + _rtrDeclared + ')');
+eq(_rtrDeclared, _rtrExpected, 'E2 and it is exactly what the manifest expects for it — a partial sync stays visible');
 eq((G59.match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4C-R1', 'E2 and 59_ — the SKU repair was client-side');
 eq((G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4D', 'E2 68_ moved with its behaviour');
 // the action contract is NOT bumped, because no action was added or removed
