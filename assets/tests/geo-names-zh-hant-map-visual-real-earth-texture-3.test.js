@@ -277,6 +277,33 @@ ok(GEN_C.indexOf('http') === -1 || !/require\(['"]https?['"]\)/.test(GEN_C), 'H3
   eq(k.slice().sort().join(''), k.join(''), 'H4 ' + m + ' keys are emitted in sorted order');
 });
 
+// ================================================================================================================
+section('I - the globe LABEL LAYER consumes the authority (content only; hierarchy untouched)');
+// ================================================================================================================
+var GLOBE = read('assets/js/lib/km-globe.js');
+var GLOBE_C = code(GLOBE);
+ok(/function countryLabelText\(iso\)/.test(GLOBE_C), 'I1 the globe resolves country label text through one function');
+ok(/window\.KM\.geoNames\.country\(iso\)/.test(GLOBE_C), 'I2 which calls the KM.geoNames authority');
+ok(/labelCtx\.fillText\(lab\.text, lab\.x, lab\.y\)/.test(GLOBE_C), 'I3 and PAINTS the resolved text');
+ok(!/labelCtx\.fillText\(lab\.iso,/.test(GLOBE_C), 'I3 the ISO code is no longer painted as the country label');
+ok(/next\[lab\.iso\] = 1;/.test(GLOBE_C), 'I4 the previous-frame set is still keyed by ISO - identity, not display');
+ok(/iso: c\.iso, text: disp/.test(GLOBE_C), 'I4 candidates carry identity AND display text separately');
+ok(/measureText\(disp\)/.test(GLOBE_C), 'I5 the collision box is measured on the text actually painted');
+ok(/function admin1LabelText\(d\)/.test(GLOBE_C), 'I6 ADM1 labels resolve through the same authority');
+ok(/measureText\(dTxt\)/.test(GLOBE_C), 'I7 measured on the painted text too');
+['Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC'].forEach(function (f) {
+  ok(GLOBE.indexOf(f) !== -1, 'I8 the label font stack names the zh-TW face ' + f);
+});
+var fontLines = GLOBE.match(/labelCtx\.font =[^;]*/g) || [];
+eq(fontLines.length, 2, 'I9 exactly two label font declarations (country + ADM1)');
+ok(fontLines.every(function (l) { return l.indexOf('JhengHei') !== -1; }), 'I9 and BOTH carry the CJK stack');
+ok(/return String\(iso == null \? '' : iso\);/.test(GLOBE_C), 'I10 with no resolver the country label falls back to the ISO code');
+ok((GLOBE_C.match(/catch \(e\) \{\}/g) || []).length >= 2, 'I11 both resolver calls are guarded - a missing asset degrades language only');
+ok(/function admin1LabelBudget/.test(GLOBE_C) && /function countryLabelTier/.test(GLOBE_C),
+  'I12 the existing budget and tier machinery is unchanged - hierarchy is not this round');
+var tok3 = /km-globe\.js\?v=([^"']+)/.exec(INDEX);
+ok(!!tok3 && tok3[1] === tok[1], 'I13 km-globe.js shares the new token - it changed and must re-fetch');
+
 console.log('\n----------------------------------------');
 if (fail === 0) console.log('GEO NAMES zh-Hant (MAP-VISUAL-REAL-EARTH-TEXTURE-3): ' + pass + ' passed, 0 failed');
 else console.log('GEO NAMES zh-Hant (MAP-VISUAL-REAL-EARTH-TEXTURE-3): ' + pass + ' passed, ' + fail + ' FAILED');

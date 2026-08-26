@@ -410,7 +410,10 @@ ok(/REAL_EARTH_8K_SOURCE_ASSET_REQUIRED/.test(EARTH_PROV), 'L3 the outstanding 8
 ok(/REAL_EARTH_DEM_ASSET_REQUIRED/.test(EARTH_PROV), 'L3 as is the elevation-model gap');
 ok(/NASA/.test(GLOBE), 'L4 the engine itself carries the NASA attribution in the asset table');
 ok(/failures\+\+;\r?\n\s*console\.error\('REFUSED  '/.test(FETCH), 'L5 the fetch script is fail-closed on a digest mismatch');
-ok(/km-globe\.js\?v=map-earth-texture-20260826/.test(INDEX), 'L6 index.html cache-busts the changed engine');
+var __globeTok = /km-globe\.js\?v=([^"']+)/.exec(INDEX);
+ok(!!__globeTok, 'L6 index.html cache-busts the engine');
+ok(!!__globeTok && __globeTok[1] !== 'map-lod-20260826',
+  'L6 and it is off the pre-TEXTURE-2 map-lod token, so the changed engine really re-fetches');
 ok(/global-logistics-map\.js\?v=map-earth-texture-20260826/.test(INDEX), 'L6 and the changed page');
 ok(INDEX.indexOf('earth-albedo') === -1,
   'L7 the assets are NOT preloaded in index.html — they are fetched by the globe only when the map is opened');

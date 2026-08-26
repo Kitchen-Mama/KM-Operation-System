@@ -1247,7 +1247,12 @@
       labelCtx.scale(dpr, dpr);   // §F/§K DPR-aware: draw in CSS pixels onto a device-pixel backing store
 
       var fontPx = 11;
-      labelCtx.font = '700 ' + fontPx + 'px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      // TEXTURE-3 — A TRADITIONAL-CHINESE-PREFERRING STACK, NOT JUST ANY CJK FONT. Han characters shared between
+      // the two orthographies have DIFFERENT GLYPH SHAPES per region, and a generic `system-ui` can resolve them
+      // through a Simplified-Chinese face — which would render zh-Hant text in zh-Hans letterforms and quietly
+      // undo the whole point of sourcing verified Traditional names. The zh-TW faces are therefore named first
+      // (Windows, macOS/iOS, then Noto), with the previous Latin stack retained behind them unchanged.
+      labelCtx.font = '700 ' + fontPx + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       labelCtx.textAlign = 'center';
       labelCtx.textBaseline = 'middle';
 
@@ -1263,7 +1268,13 @@
         var sp = projectToScreen(mvp, model, latLngToVec3(c.label[1], c.label[0], COUNTRY_R), W, H);
         if (!sp || !sp.front) continue;                                   // §F rear hemisphere -> hidden
         if (sp.x < -40 || sp.y < -20 || sp.x > W + 40 || sp.y > H + 20) continue;   // §F outside viewport -> hidden
-        cands.push({ iso: c.iso, x: sp.x, y: sp.y, w: labelCtx.measureText(c.iso).width, h: fontPx,
+        // TEXTURE-3 — the DISPLAYED text is the resolved Traditional Chinese country name; the ISO code stays
+        // the label's IDENTITY. That separation matters: `iso` keys the previous-frame set that gives the
+        // collision pass its hysteresis, so keying on display text would make a language change look like a
+        // different label and reintroduce the flicker the hysteresis exists to stop. The width is measured on
+        // the text actually painted, so collision boxes stay honest — a Chinese name is wider than two letters.
+        var disp = countryLabelText(c.iso);
+        cands.push({ iso: c.iso, text: disp, x: sp.x, y: sp.y, w: labelCtx.measureText(disp).width, h: fontPx,
           rank: c.rank, priority: pri });
       }
 
@@ -1288,8 +1299,8 @@
         var lab = drawn[d2];
         next[lab.iso] = 1;
         labelCtx.fillStyle = lab.priority <= 1 ? 'rgba(250,224,140,0.98)' : 'rgba(226,235,248,0.92)';
-        labelCtx.strokeText(lab.iso, lab.x, lab.y);
-        labelCtx.fillText(lab.iso, lab.x, lab.y);
+        labelCtx.strokeText(lab.text, lab.x, lab.y);
+        labelCtx.fillText(lab.text, lab.x, lab.y);
         countryRects.push({ x0: lab.x - lab.w / 2 - 2, x1: lab.x + lab.w / 2 + 2, y0: lab.y - lab.h / 2 - 2, y1: lab.y + lab.h / 2 + 2 });
       }
       prevLabelSet = next;
@@ -1300,6 +1311,37 @@
       drawAdmin1Labels(markerRects.concat(countryRects), fontPx);
     }
 
+    // ==========================================================================================================
+    // TEXTURE-3 — GEOGRAPHIC LABEL TEXT. One place, so the language rule cannot drift between the two layers.
+    // ----------------------------------------------------------------------------------------------------------
+    // The name authority is KM.geoNames (assets/js/core/geo-name-resolver.js) over the vendored zh-Hant asset.
+    // It is consulted through a guarded call rather than assumed present: if the asset or the resolver has not
+    // loaded, these fall back to exactly what the globe painted before this round — the ISO code and the division
+    // code — so a missing asset degrades the LANGUAGE and never the map.
+    //
+    // No conversion happens here and no name is invented. Whatever the resolver returns is painted verbatim.
+    // ==========================================================================================================
+    function countryLabelText(iso) {
+      try {
+        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.country === 'function') {
+          var r = window.KM.geoNames.country(iso);
+          if (r && r.name) return r.name;
+        }
+      } catch (e) {}
+      return String(iso == null ? '' : iso);
+    }
+    function admin1LabelText(d) {
+      var code = String((d && d.k) == null ? '' : d.k);
+      var full = (d && d.n != null && d.n !== '') ? String(d.n) : code;
+      try {
+        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.admin1 === 'function') {
+          var r = window.KM.geoNames.admin1(d && d.c, code, { english: full });
+          if (r && r.name) return r.name;
+        }
+      } catch (e) {}
+      return code;
+    }
+
     // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§G — division codes. Same project -> filter -> order -> collide -> paint
     // pipeline as the country codes, at a smaller size, admitted only from LOD 2 and capped by a budget.
     var prevAdmin1Set = {};
@@ -1308,8 +1350,8 @@
       var budget = admin1LabelBudget(lod);
       if (budget <= 0) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
 
-      var fontPx = Math.max(8, countryFontPx - 2);   // §G: strictly smaller than a country code
-      labelCtx.font = '600 ' + fontPx + 'px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      var fontPx = Math.max(8, countryFontPx - 2);   // §G: strictly smaller than a country label
+      labelCtx.font = '600 ' + fontPx + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
       var list = admin1Data.admin1, cands = [];
       for (var i = 0; i < list.length; i++) {
@@ -1318,8 +1360,12 @@
         var sp = projectToScreen(mvp, model, latLngToVec3(d.l[1], d.l[0], ADMIN1_R), W, H);
         if (!sp || !sp.front) continue;                                              // §F rear hemisphere -> hidden
         if (sp.x < -30 || sp.y < -16 || sp.x > W + 30 || sp.y > H + 16) continue;     // §F outside viewport -> hidden
-        cands.push({ iso: d.c + '/' + d.k, text: d.k, x: sp.x, y: sp.y,
-          w: labelCtx.measureText(d.k).width, h: fontPx, rank: d.r, priority: 4 });
+        // TEXTURE-3 — the division's Traditional Chinese name where the pinned source verifiably has one, else
+        // the existing English name, else the existing code. 356 of 3,835 divisions legitimately fall back, so
+        // this layer is EXPECTED to be mixed-language and that must not block anything.
+        var dTxt = admin1LabelText(d);
+        cands.push({ iso: d.c + '/' + d.k, text: dTxt, x: sp.x, y: sp.y,
+          w: labelCtx.measureText(dTxt).width, h: fontPx, rank: d.r, priority: 4 });
       }
       // The budget is applied to the ORDERED candidate list, so what survives a crowded view is the highest-rank
       // divisions rather than whichever happened to be first in the dataset.
