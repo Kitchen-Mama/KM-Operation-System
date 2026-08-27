@@ -692,6 +692,65 @@
     // retained after settlement: an OPEN request is shared, a finished one is not, so no stale answer and no
     // poisoned failure. A signal-bearing call is never shared, because one caller's abort must not cancel
     // another's read.
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R4A — THE PHYSICAL-REQUEST RECORD.
+    //
+    // THE RULE R3 BROKE, stated as the invariant it violated:
+    //
+    //     A REQUEST ID BELONGS TO ONE PHYSICAL WIRE REQUEST, NOT TO EVERY CONSUMER ATTACHED TO ITS PROMISE.
+    //
+    // R3 §E made one physical read serve several equivalent consumers, and that part was right: the key is
+    // action + canonical scope, the payload is in the key, nothing is retained after settlement. What was wrong
+    // was WHERE the sharing boundary sat. `_workspaceInvoke` shared the RAW envelope, and each consumer then ran
+    // `normalizeWorkspaceEnvelope(serverEnv, ITS OWN dto, seq)` — comparing the id the server echoed against an
+    // id THAT CONSUMER NEVER SENT. Every consumer but the physical sender was told
+    // RESPONSE_REQUEST_ID_MISMATCH and threw away a valid answer. That is the live report exactly: a workspace
+    // page shows the correlation error, and leaving and returning "fixes" it — because the second visit is no
+    // longer racing the first and becomes the physical sender itself.
+    //
+    // Note which half was correct. The COALESCING was correct; the CORRELATION was correct; they were merely
+    // composed in the wrong order. So the repair is to move the boundary, not to weaken either half:
+    // correlation is decided ONCE, against the id that actually went on the wire, and every consumer reads that
+    // one verdict.
+    //
+    // WHY A WeakMap AND NOT A FIELD ON THE ENVELOPE. The record has to be unforgeable by the thing being
+    // checked. A marker stamped onto the parsed response (`serverEnv.__km_physical_request_id`) could be
+    // supplied by the response JSON itself, and any server or proxy could then nominate its own answer as
+    // correlated — which is precisely the check this exists to make impossible. A WeakMap keyed by the parsed
+    // envelope object cannot be reached from JSON, is created from the DTO WE DISPATCHED, and is collected with
+    // the envelope. Nothing about the response can put an entry in it.
+    //
+    // FAIL-CLOSED IN THREE PLACES, because a correlation check that can be talked out of failing is not one:
+    //   * no record (an injected transport, no WeakMap, a non-object answer) -> the consumer's own id is used,
+    //     which is exactly the pre-R3 behaviour: no path silently loses validation.
+    //   * one envelope object seen for two different physical ids (a stub that returns a shared constant) ->
+    //     AMBIGUOUS, and the consumer's own id is used again rather than trusting an unclear record.
+    //   * a record whose action is not this consumer's action -> not this answer; the local id is used.
+    // ------------------------------------------------------------------------------------------------------
+    var _physicalRequests = (typeof WeakMap === 'function') ? new WeakMap() : null;
+    var _PHYSICAL_AMBIGUOUS = '\u0000AMBIGUOUS';
+    function recordPhysicalRequest(serverEnv, dto) {
+      if (!_physicalRequests || !isObj(serverEnv)) return serverEnv;
+      var sent = normName(dto && dto.requestId);
+      var prior = _physicalRequests.get(serverEnv);
+      if (prior) {
+        // The same parsed object answering two different physical requests cannot be attributed to either.
+        if (prior.requestId !== sent) prior.requestId = _PHYSICAL_AMBIGUOUS;
+        return serverEnv;
+      }
+      _physicalRequests.set(serverEnv, { requestId: sent, action: normName(dto && dto.action) });
+      return serverEnv;
+    }
+    // The id THIS answer was actually asked for. Not "the id this consumer holds" — that is the bug — and not
+    // anything read out of the response.
+    function sentRequestIdFor(serverEnv, dto) {
+      var local = normName(dto && dto.requestId);
+      if (!_physicalRequests || !isObj(serverEnv)) return local;
+      var rec = _physicalRequests.get(serverEnv);
+      if (!rec || rec.requestId === _PHYSICAL_AMBIGUOUS) return local;
+      if (rec.action && normName(dto && dto.action) && rec.action !== normName(dto && dto.action)) return local;
+      return rec.requestId;
+    }
     function _sharedTransport() {
       try { return (typeof window !== 'undefined' && window.KM && window.KM.transport) ? window.KM.transport : null; }
       catch (e) { return null; }
@@ -704,12 +763,21 @@
         throw actionRequiredError(dto.action, 'workspaceInvoke: action argument "' + normName(action) + '" disagrees with envelope action "' + normName(dto.action) + '"');
       }
       var tp = _sharedTransport();
+      // THE id this function will put on the wire. Named here, once, so that everything downstream reasons
+      // about the PHYSICAL request rather than about whichever consumer happens to be asking.
+      var physicalRequestId = normName(dto.requestId);
 
-      function once() { return Promise.resolve(_workspaceInvokeRaw(action, dto, signal)); }
+      // Every answer is attributed to the request that actually fetched it, at the moment it arrives — first
+      // attempt and retry alike, since both are dispatched from this same physical DTO.
+      function once() {
+        return Promise.resolve(_workspaceInvokeRaw(action, dto, signal)).then(function (serverEnv) {
+          return recordPhysicalRequest(serverEnv, dto);
+        });
+      }
       function withBoundedDowngradeRetry() {
         return once().then(function (serverEnv) {
           if (!isObj(serverEnv) || serverEnv.success === true) return serverEnv;
-          var pf = downgradeProof(serverEnv, dto.requestId);
+          var pf = downgradeProof(serverEnv, physicalRequestId);
           if (!pf.proved) return serverEnv;
           // The shared transport owns the answer to "may this be replayed?". Asked, never assumed.
           var allowed = tp && typeof tp.isAutoRetryable === 'function'
@@ -780,14 +848,33 @@
       // answer could repaint over a newer one and look like stale data rather than a correlation fault. Only a
       // genuine MISMATCH fails; a deployment that echoes no id is REPORTED (requestIdCorrelation), never
       // silently treated as proof.
+      //
+      // F1-7N-FB-4E-R4A — COMPARED AGAINST THE ID THAT WAS ACTUALLY SENT, WHICH IS NOT ALWAYS THIS CONSUMER'S.
+      //
+      // When a read is coalesced, several consumers hold their own request ids and exactly ONE of those ids was
+      // dispatched. Comparing the echo against a consumer-local id that never left the browser produced a
+      // MISMATCH on a valid answer — the R4A defect. The comparison now uses the PHYSICAL id (see
+      // sentRequestIdFor), and the check is not weakened by it: the physical id comes from the DTO this client
+      // dispatched, never from the response, so an answer still cannot nominate itself as correlated. A
+      // genuinely foreign id — including another live request's real id — still fails, and fails for every
+      // attached consumer rather than for whichever one lost the race.
+      var _sentRid = sentRequestIdFor(serverEnv, dto);
+      outMeta.physicalRequestId = _sentRid || null;
+      // Stated rather than inferred: this consumer attached to a request it did not issue. The page keeps its
+      // own handle in meta.requestId, so a log can still tie a render back to the call that asked for it.
+      outMeta.coalesced = (_sentRid !== '' && _sentRid !== normName(dto.requestId));
       var _echoRid = normName(serverEnv.request_id || (isObj(serverEnv.meta) ? serverEnv.meta.requestId : ''));
-      outMeta.requestIdCorrelation = !normName(dto.requestId) ? 'NOT_REQUESTED'
-        : (_echoRid === '' ? 'NOT_ECHOED' : (_echoRid === normName(dto.requestId) ? 'MATCH' : 'MISMATCH'));
+      outMeta.requestIdCorrelation = !_sentRid ? 'NOT_REQUESTED'
+        : (_echoRid === '' ? 'NOT_ECHOED' : (_echoRid === _sentRid ? 'MATCH' : 'MISMATCH'));
       if (outMeta.requestIdCorrelation === 'MISMATCH') {
         return { success: false, data: null, meta: outMeta, errors: [{
           code: API_ERROR_CODES.RESPONSE_REQUEST_ID_MISMATCH,
           message: 'The answer carried a different request id than the one sent, so it belongs to another request. It was discarded; nothing was read.',
-          details: { action: dto.action, request_id: dto.requestId, answered_request_id: _echoRid, zero_write: true, retryable: true,
+          // request_id is the id that WAS SENT. consumer_request_id appears only when this consumer attached to
+          // someone else's request, so an operator reading the message is never shown an id no one dispatched.
+          details: { action: dto.action, request_id: _sentRid, answered_request_id: _echoRid,
+            consumer_request_id: outMeta.coalesced ? dto.requestId : null, coalesced: outMeta.coalesced,
+            zero_write: true, retryable: true,
             next_action: 'Retry the read. If it repeats, reload the page so the Apps Script session redirect is re-established.' }
         }] };
       }
@@ -835,7 +922,11 @@
             // the same publish step fixes either reading.
             // F1-7N-FB-4E-R3 §D — ONE derivation, shared with the retry gate (see downgradeProof above), so the
             // decision to retry and the message shown can never be based on different readings of the answer.
-            var _pf = downgradeProof(serverEnv, dto.requestId);
+            // F1-7N-FB-4E-R4A — the SECOND consumer-local comparison, and it had the same defect: fact 5 of
+            // the five-fact proof is "the answer is THIS request's", and for a coalesced consumer that was
+            // false for the wrong reason. A real downgrade would then be demoted to the narrower
+            // RESPONSE_CORRELATION_UNPROVEN — a true statement about the wrong request. Same physical id.
+            var _pf = downgradeProof(serverEnv, _sentRid);
             var _evidence = _pf.evidence;
             var _actionInQuery = _pf.action_in_query;
             var _getHandlerAnswered = _pf.get_handler_answered;

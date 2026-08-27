@@ -297,11 +297,23 @@ R3_CHANGED.forEach(function (a) {
 });
 var distinct = Object.keys(tok).map(function (k) { return tok[k]; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
 eq(distinct.length, 1, 'G9 every asset R3 changed shares ONE token, so they cannot deploy out of step');
-ok(distinct[0] && distinct[0].indexOf('fb4er3') === 0, 'G9 and it is this round\'s token (' + distinct[0] + ')');
-['donenotice-20260811', 'fb4c-scope-registry-20260826', 'fb4er2-action-registry-20260827', 'fb4e-transport-20260826']
-  .forEach(function (stale) {
-    ok(distinct.indexOf(stale) === -1, 'G9 and not the earlier round token ' + stale);
-  });
+// F1-7N-FB-4E-R4A — RESTATED FROM A PINNED LITERAL TO THE RULE, WITH A MONOTONIC FLOOR.
+//
+// This asserted indexOf('fb4er3') === 0, which made a CORRECT later bump look like a regression: R4A changes
+// km-api-foundation.js, has to move the shared token, and would have failed a suite that was right about the
+// property and wrong about how to state it. What G9 actually defends is that these assets cannot deploy out of
+// step, and that they are not stranded on a superseded token.
+var ROUND_TOKENS = ['donenotice-20260811', 'fb4e-transport-20260826', 'fb4c-scope-registry-20260826',
+  'fb4er1-contract-probe-20260827', 'fb4er2-action-registry-20260827', 'fb4er3-lifecycle-20260827',
+  'fb4er4a-correlation-20260827'];
+var FLOOR = ROUND_TOKENS.indexOf('fb4er3-lifecycle-20260827');
+var at = ROUND_TOKENS.indexOf(distinct[0]);
+ok(at >= FLOOR, 'G9 the token is at or after R3 in the release order (' + distinct[0] + ') — a monotonic floor, not a pinned literal');
+// NOT asserted: that the whole page shares one token. index.html versions assets PER COUPLED GROUP, and a
+// check written on the assumption that one token covers everything is simply false about this file — it was
+// written that way here first and caught by running it. What matters is that this group moves together and
+// that its token is a real release token rather than a typo that would silently disable cache-busting.
+ok(at !== -1, 'G9 and the token is a known release token, not a typo (' + distinct[0] + ')');
 
 // G10 — the contract versions moved together and the client agrees.
 var ACT = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(G63)[1]);

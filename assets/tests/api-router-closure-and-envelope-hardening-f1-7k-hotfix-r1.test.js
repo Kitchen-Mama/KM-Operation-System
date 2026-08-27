@@ -97,6 +97,22 @@ eval(extractFn(FND, 'isObj'));
   ok(API_ERROR_CODES[k] === k, 'taxonomy carries ' + k + ' (self-named)');
 });
 var dto = { action: 'weeklyShipping.workspace.get', requestId: 'REQ-TEST1' };
+// F1-7N-FB-4E-R4A — THE SLICE NOW DEPENDS ON THE PHYSICAL REQUEST ID, AND HERE IS WHY THE STUB IS HONEST.
+//
+// R4A moved the request-id comparison off the consumer's own id and onto the id that actually went on the wire
+// (a coalesced read has several consumer ids and exactly one dispatched id). That value, `_sentRid`, is computed
+// ONCE above this slice in the shipped function, so the extraction has to supply it — the same reason
+// downgradeProof joined the list in R3.
+//
+// These fixtures are all SINGLE-CONSUMER, so the physical id and the consumer id are the same value and the
+// classification under test is unaffected. What must not happen is the stub drifting away from the real thing,
+// so the two assertions below pin the shipped source: `_sentRid` is derived from sentRequestIdFor (never from
+// the response), and the proof call inside the slice uses it rather than a consumer-local id.
+var _sentRid = dto.requestId;
+ok(/var _sentRid = sentRequestIdFor\(serverEnv, dto\);/.test(FND),
+   'R4A: the shipped normalizer derives the sent id from the PHYSICAL request record, not from the envelope');
+ok(/downgradeProof\(serverEnv, _sentRid\)/.test(slice),
+   'R4A: the extracted slice proves the downgrade against the id that was actually sent');
 eval('function _resolveErrs(serverEnv){ ' + slice + ' return _outErrs; }');
 // 1. errors[] present → surfaced verbatim (byte-compatible with prior behavior)
 eq(_resolveErrs({ success: false, errors: [{ code: 'IR_SCHEMA_MISSING', message: 'x', details: null }] }),

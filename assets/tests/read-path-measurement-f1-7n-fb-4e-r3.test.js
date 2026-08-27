@@ -405,13 +405,26 @@ checks.push((function () {
   var c = makeClient();
   var api = c.win.KM.api;
   return Promise.all([api.getWorkspace('skuDetails', {}), api.getWorkspace('skuDetails', {})])
-    .then(function () {
+    .then(function (r) {
       // BEFORE R3 §E this was 2: every getWorkspace call issued its own request, so leaving a page mid-read and
       // returning started a second identical one. It is now keyed by action + canonical scope in the shared
       // transport, so the second caller attaches to the same open promise.
       eq(c.log.length, 1, 'A2 getWorkspace: two concurrent identical reads now share ONE request (was 2)');
       var tp = c.win.KM.transport;
       eq(tp.metrics().coalesced >= 1, true, 'A2 and the coalescing is COUNTED, not assumed');
+      // F1-7N-FB-4E-R4A - THE ASSERTION THIS CHECK WAS MISSING, AND HOW R4A'S DEFECT SHIPPED THROUGH IT.
+      //
+      // The two lines above measure the REQUEST COUNT and stop there. They passed while the attached consumer
+      // was being handed RESPONSE_REQUEST_ID_MISMATCH and throwing the answer away, because nobody asked what
+      // the consumers actually RECEIVED. One physical request that serves one consumer and fails the other is
+      // not coalescing, it is a dropped read with a good-looking metric - so the outcome is now asserted, for
+      // BOTH consumers, right next to the count.
+      var outcomes = r.map(function (e) {
+        return e && e.success === true ? 'OK' : ((e && e.errors && e.errors[0] && e.errors[0].code) || '(none)');
+      });
+      eq(outcomes.join('/'), 'OK/OK', 'A2 and BOTH consumers were SERVED, not just counted');
+      eq((r[0].meta.requestIdCorrelation || '') + '/' + (r[1].meta.requestIdCorrelation || ''), 'MATCH/MATCH',
+        'A2 both correlate to the request that was actually sent (see FB-4E-R4A)');
       lifecycle.push(['*.workspace.get', 'SHARED_TRANSPORT', 'scope-keyed in-flight reuse (action + payload)', 'CORRECT']);
     }, function (e) { ok(false, 'A2 workspace concurrency probe failed: ' + (e && (e.message || e.apiCode))); });
 })());

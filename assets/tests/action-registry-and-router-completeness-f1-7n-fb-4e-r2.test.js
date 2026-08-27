@@ -469,8 +469,27 @@ catch (e) { gsChanged = 'GIT_ERROR'; }
 // Split without a regex literal: this file is written by tooling and an escaped newline class is fragile here.
 var gsList = gsChanged ? gsChanged.split(String.fromCharCode(10))
   .map(function (x) { return x.trim().split('/').pop(); }).filter(Boolean).sort() : [];
-eq(gsList.join(','), '01_router.gs,63_api_v1_system_health.gs,68_api_v1_execution_plan_conflict_diagnostic.gs',
-  '8. exactly three Apps Script files changed this round, and they are the three this trace names');
+// F1-7N-FB-4E-R4A — RESTATED, AND THE REASON IS WORTH RECORDING.
+//
+// This was an EXACT-LIST assertion pinned to the R1 commit, so it could only ever be correct until the next
+// round legitimately added an Apps Script file. R3 added 70_api_v1_overseas_stock_workspace.gs and this line
+// began failing at 8d42ca1 — before R4A existed, and it was NOT reported in the R3 completion report. The
+// failure was confirmed independent of R4A: the git query it runs returns the same four files with a clean tree.
+//
+// A correct bump must not look like a regression, so the rule is stated as what it defends: this line touches
+// only Apps Script files it OWNS, and never the four business writers (asserted separately above, unchanged).
+// The set is therefore a SUBSET check against an allowlist that names the owning round — an unexpected file
+// still fails, which is the property that mattered, while a later round adding its own file does not.
+var GS_OWNED_SINCE_R1 = {
+  '01_router.gs': 'FB-4E-R2 dispatch + FB-4E-R3 overseas action',
+  '63_api_v1_system_health.gs': 'FB-4E-R2 registry entries + FB-4E-R3 contract 9',
+  '68_api_v1_execution_plan_conflict_diagnostic.gs': 'FB-4E-R2 routed-path scope guard',
+  '70_api_v1_overseas_stock_workspace.gs': 'FB-4E-R3 overseas scoped workspace owner (new file)'
+};
+var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
+eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');
+ok(gsList.indexOf('01_router.gs') !== -1 && gsList.indexOf('63_api_v1_system_health.gs') !== -1,
+  '8. and the two files R2 itself had to change are still among them');
 // And within 68_, only the duplicate diagnostic's boundary changed: the conflict diagnostic's own logic is intact.
 ok(/function handleExecutionPlanConflictDiagnostic_/.test(G68), '8. the conflict diagnostic handler still exists');
 eq((G68.match(/DIAGNOSTIC_SCOPE_REQUIRED/g) || []).length, 1, '8. the new guard appears exactly once, on the routed path only');
