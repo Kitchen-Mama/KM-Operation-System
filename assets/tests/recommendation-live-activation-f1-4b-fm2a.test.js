@@ -91,7 +91,15 @@ function failEnv(code) { return { success: false, data: null, meta: {}, errors: 
   delete global.window;
 
   section('F. source: single registration, ownership, bundle modules');
-  ok((ROUTER.match(/recommendation\.workspace\.get/g) || []).length === 1, 'F1 router registers recommendation.workspace.get exactly once');
+  // F1-7N-FB-4E-R4A1 — single OWNERSHIP, not a single mention. The action is now dispatched on GET as well as
+  // POST (an Apps Script POST cannot survive the /exec 302), and both verbs name the same handler.
+  ok((ROUTER.match(/action === 'recommendation\.workspace\.get'/g) || []).length === 1,
+    'F1 router has exactly ONE dispatch branch for recommendation.workspace.get');
+  var _fmGet = /'recommendation\.workspace\.get':\s*(handle\w+_)/.exec(ROUTER);
+  if (_fmGet) {
+    ok(new RegExp("action === 'recommendation\\.workspace\\.get'[\\s\\S]{0,400}?" + _fmGet[1]).test(ROUTER),
+      'F1 the GET route dispatches to the SAME handler, not a second implementation');
+  }
   ok(/handleRecommendationWorkspaceGet_\(body\)/.test(ROUTER), 'F2 router delegates to the handler');
   ok(/function handleRecommendationWorkspaceGet_/.test(GS), 'F3 42_api_v1_recommendation_workspace.gs owns the handler');
   ok(/KMDR/.test(BUNDLE) && /KMDA/.test(BUNDLE) && /KMPS/.test(BUNDLE) && /KMPA/.test(BUNDLE) && /KMPCX/.test(BUNDLE), 'F4 generated bundle contains the runtime modules (KMDR/KMDA/KMPS/KMPA/KMPCX)');

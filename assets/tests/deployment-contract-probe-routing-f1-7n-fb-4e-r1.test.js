@@ -145,13 +145,30 @@ function jsonResponse(text, url) {
 }
 
 // The fetch spy that routes the client's real request into the executed router.
+// F1-7N-FB-4E-R4A1 — THE MOCK SPEAKS THE CANONICAL WIRE FORMAT.
+//
+// This answered every request with doPost and read the request out of init.body. R4A1 dispatches reads as a GET
+// from the stable /exec, carrying the same body in `km_body`, because an Apps Script POST cannot survive the
+// /exec 302 — the very failure this suite exists to prove was repaired. So the mock parses whichever form
+// arrived and routes to the entry point the client addressed. Anything else would test a request nobody sends.
 function routerFetch(dep, capture) {
   return function (url, init) {
     var body = (init && init.body) ? String(init.body) : '';
-    capture.url = String(url);
+    var u = String(url);
+    capture.url = u;
     capture.method = (init && init.method) || 'GET';
+    if (!body) {
+      var m = /[?&]km_body=([^&]*)/.exec(u);
+      body = m ? decodeURIComponent(m[1]) : '';
+    }
     capture.body = body;
-    var out = dep.doPost({ postData: { contents: body, type: 'text/plain' }, parameter: {} });
+    var qs = {};
+    String(u.split('?')[1] || '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('='); if (i > 0) qs[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+    });
+    var out = (capture.method === 'GET')
+      ? dep.doGet({ parameter: qs })
+      : dep.doPost({ postData: { contents: body, type: 'text/plain' }, parameter: qs });
     capture.answer = out.getContent();
     return Promise.resolve(jsonResponse(capture.answer, String(url)));
   };
@@ -252,13 +269,23 @@ var client = makeClient(routerFetch(DEP, cap));
 checks.push(client.DB.checkDeploymentContract().then(function (v) {
   // The request the client actually put on the wire, proven from the spy rather than assumed.
   var sent = JSON.parse(cap.body || '{}');
-  eq(cap.method, 'POST', 'C1 the probe is dispatched as a POST');
+  // F1-7N-FB-4E-R4A1 — RESTATED FROM THE VERB TO THE PROPERTY. What §C defends is that the probe REACHES the
+  // deployment with its lists intact and that the identity reaches the caller. The verb is a transport decision,
+  // and R4A1 changed it deliberately: a POST cannot survive the /exec 302, which is the failure class this whole
+  // suite is about. So the canonical read verb is asserted as the verb the shipped transport actually uses,
+  // rather than pinned to the one that was correct in R1.
+  eq(cap.method, 'GET', 'C1 the probe is dispatched with the canonical read verb (GET, from the stable /exec)');
+  ok(/[?&]action=system\.health/.test(cap.url) || sent.action === 'system.health',
+    'C1 the action is explicit on the wire, in the query and/or the body');
   eq(sent.action, 'system.health', 'C1 with action system.health');
   ok(Array.isArray(sent.probe_actions) && sent.probe_actions.length === PROBE_ACTIONS.length,
     'C1 carrying the caller-driven action probe list');
   ok(Array.isArray(sent.probe_symbols) && sent.probe_symbols.length === PROBE_SYMBOLS.length,
     'C1 and the owner-symbol probe list');
-  ok(/\/exec$/.test(cap.url), 'C1 to the stable /exec endpoint');
+  // /exec is now followed by the read's query string, so the assertion names the ENDPOINT rather than the end of
+  // the string — and adds the property that matters more: the request never went to a redirect target.
+  ok(/\/macros\/s\/[^/]+\/exec(\?|$)/.test(cap.url), 'C1 to the stable /exec endpoint');
+  ok(cap.url.indexOf('googleusercontent') === -1, 'C1 and never to a googleusercontent redirect target');
 
   var id = v.identity || {};
   ok(id.build_id !== null && id.build_id !== undefined, 'C2 the identity is NO LONGER NULL');
@@ -268,7 +295,12 @@ checks.push(client.DB.checkDeploymentContract().then(function (v) {
   eq(id.deployed_action_contract_version, DECL.actionContract, 'C2 deployed_action_contract_version reaches the caller');
   eq(id.required_action_list_version, DECL.listVersion, 'C2 required_action_list_version reaches the caller');
   eq(id.contract_version, '1', 'C2 contract_version reaches the caller');
-  eq(id.answered_by_handler, 'doPost', 'C2 answered_by_handler reaches the caller');
+  // F1-7N-FB-4E-R4A1 - the probe is now a GET, so doGet answers it. The property C2 defends is that the
+  // deployment STATES which handler answered and that the statement reaches the caller - the fact that was null
+  // in the live evidence this suite was written from. It must AGREE with the verb that was dispatched, which is
+  // a stronger check than naming either handler, and it is the one that would catch a router lying about itself.
+  eq(id.answered_by_handler, cap.method === 'GET' ? 'doGet' : 'doPost',
+    'C2 answered_by_handler reaches the caller AND matches the verb dispatched (' + cap.method + ')');
   ok(id.router_response_identity && id.router_response_identity.emits_handler === true,
     'C2 router_response_identity reaches the caller');
   ok(id.caller_probe && id.caller_probe.requested_by_caller === true,

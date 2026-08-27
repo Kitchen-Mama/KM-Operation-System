@@ -22,11 +22,139 @@
 // F1-7N-FB-4E-R2 §3 — R2 CHANGED THIS FILE, so the stamp moves and the action contract moves with it.
 // system.executionPlanDuplicateLineDiagnostic had a handler in 68_ and a docstring declaring it an action, and
 // NO dispatch branch in any commit ever — so the handler was unreachable while the frontend required it.
-var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R3';
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4A1';
+
+// =============================================================================================================
+// F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
+//
+// MEASURED, NOT ASSUMED. An Apps Script /exec request is never answered at /exec: it is answered with a 302 to
+// script.googleusercontent.com/macros/echo?user_content_key=..., and the browser follows that itself. The R4A1
+// matrix executed every shape through this router behind that hop:
+//
+//   browser navigation GET          302 -> echo 200   handler ran    JSON success=true
+//   fetch GET (getTable)            302 -> echo 200   handler ran    JSON success=true
+//   repeated fetch GET from /exec   302 -> echo 200   5/5 success
+//   fetch POST                      302 -> echo 404   NO handler     body LOST      -> HTTP_TRANSPORT_ERROR
+//   fetch POST (echo resolves back) 302 -> doGet 200  handler ran    body LOST      -> REQUEST_METHOD_DOWNGRADED
+//   direct GET to an echo target    no redirect, 404 — a googleusercontent URL is not a re-usable endpoint
+//
+// Both live failures are properties of a POST crossing that hop, and per the Fetch spec they are UNAVOIDABLE
+// for a POST: a 302 following a POST is re-issued as a GET with the body dropped. A GET has nothing to lose --
+// everything the router needs is already in the URL — which is exactly why the only reads this app has always
+// sent as GET (getTable, getOperationDb) have never shown either failure, and why pasting the /exec URL into a
+// browser has always worked.
+//
+// So reads are served on GET. This is NOT a workaround and NOT a second contract: the GET carries the SAME body
+// it would have POSTed, in `km_body`, and dispatches to the SAME handler the POST entry point dispatches to — the
+// table below holds function REFERENCES, so a handler cannot be renamed for one verb and not the other.
+//
+// WRITES ARE NOT IN THIS TABLE AND CANNOT BE. Every entry is a read whose zero-write behaviour is asserted
+// BEHAVIOURALLY by the R4A1 suite: each action is executed against an instrumented spreadsheet whose write
+// primitives record every call, and membership requires that count to be zero. A write reaching a GET would
+// otherwise be replayable by a browser prefetch, a crawler or a history revisit, which is the one thing that
+// must never become possible.
+// =============================================================================================================
+
+// The GET body cap. Google's practical URL ceiling is several kilobytes; this is set well below it so an
+// oversized read FAILS CLOSED with a named reason instead of being silently truncated into a different request.
+var RTR_GET_BODY_MAX_ = 4000;
+
+function rtrGetReadHandlers_() {
+  return {
+    // Scoped page workspaces (read-only owners; the client's primary render reads)
+    'skuDetails.workspace.get':                    handleSkuDetailsWorkspaceGet_,
+    'weeklyShipping.workspace.get':                handleWeeklyShippingWorkspaceGet_,
+    'fcSummary.workspace.get':                     handleFcSummaryWorkspaceGet_,
+    'purchaseOrder.workspace.get':                 handlePurchaseOrderWorkspaceGet_,
+    'requestOrder.workspace.get':                  handleRequestOrderWorkspaceGet_,
+    'inventoryReplenishment.workspace.get':        handleInventoryReplenishmentWorkspaceGet_,
+    'overseasStock.workspace.get':                 handleOverseasStockWorkspaceGet_,
+    'shipment.workspace.get':                      handleShipmentWorkspaceGet_,
+    'recommendation.workspace.get':                handleRecommendationWorkspaceGet_,
+    // Scoped gap / composer reads
+    'inventoryReplenishmentGap.get':               handleGetInventoryReplenishmentGap_,
+    'orderPlanningGap.get':                        handleGetOrderPlanningGap_,
+    'aiPlanFirstLayer.get':                        handleAiPlanFirstLayerGet_,
+    'gapJob.status.get':                           handleGetGapJobStatus_,
+    // Request Order read-backs and send-state reads (NO send, NO draft creation, NO conversion)
+    'requestOrder.sendWorkset.get':                handleRequestOrderSendWorksetGet_,
+    'requestOrder.send.status':                    handleRequestOrderSendStatus_,
+    'requestOrderDraft.job.status':                handleGetRequestOrderDraftJobStatus_,
+    'requestOrderDraft.getActive':                 handleGetActiveRequestOrderDraftReadback_,
+    // Read-only diagnostics the pages consume
+    'system.requestOrderSendDiagnosticStatus':     handleRequestOrderSendDiagnosticStatus_,
+    'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
+    'system.allocationDraftIdentityDiagnostic':    handleAllocationDraftIdentityDiagnostic_,
+    // Config read (Script Properties; the UPDATE twin stays POST-only and is deliberately absent here)
+    'automationSchedule.get':                      handleAutomationScheduleGet_
+  };
+}
+
+function rtrGetReadActionList_() {
+  var t = rtrGetReadHandlers_(), out = [];
+  for (var k in t) { if (Object.prototype.hasOwnProperty.call(t, k)) out.push(k); }
+  return out.sort();
+}
+
+// Reconstruct the request body from the query string. Every failure here is TYPED and answers with zero reads:
+// a malformed or oversized read must be a named refusal, never a partially-parsed request that runs anyway.
+function rtrParseGetBody_(e, action) {
+  var p = (e && e.parameter) ? e.parameter : {};
+  var raw = (p.km_body === undefined || p.km_body === null) ? '' : String(p.km_body);
+  function refuse(code, message, extra) {
+    var out = { success: false, error: message, code: code, handler: 'doGet', received_method: 'GET',
+      router_build: RTR_BUILD_VERSION_, attempted_action: action, zero_write: true, rows_read: 0,
+      request_id: p.km_rid ? String(p.km_rid) : null,
+      next_action: 'This is a client-side request-construction fault. Nothing was read. Retrying the same request cannot change it.' };
+    if (extra) { for (var k in extra) out[k] = extra[k]; }
+    return { error: out };
+  }
+  if (raw.length > RTR_GET_BODY_MAX_) {
+    return refuse('READ_BODY_TOO_LARGE',
+      'The read parameters exceed the GET body limit, so the request was refused without reading anything.',
+      { body_bytes: raw.length, body_bytes_max: RTR_GET_BODY_MAX_ });
+  }
+  var body;
+  if (raw === '') { body = {}; }
+  else {
+    try { body = JSON.parse(raw); }
+    catch (err) { return refuse('READ_BODY_MALFORMED', 'The read parameters were not valid JSON, so nothing was read.'); }
+  }
+  if (!body || typeof body !== 'object' || Object.prototype.toString.call(body) === '[object Array]') {
+    return refuse('READ_BODY_MALFORMED', 'The read parameters were not a JSON object, so nothing was read.');
+  }
+  // The action in the URL and the action in the body must agree. They are built from one value by the client, so
+  // a disagreement is a construction fault — and answering it would mean serving an action nobody asked for.
+  var bodyAction = (body.action === undefined || body.action === null) ? '' : String(body.action).trim();
+  if (bodyAction !== '' && bodyAction !== action) {
+    return refuse('READ_BODY_ACTION_MISMATCH',
+      'The action in the URL and the action in the read parameters disagree, so nothing was read.',
+      { body_action: bodyAction });
+  }
+  body.action = action;
+  // The correlation id survives the URL exactly. It is the ONE identity field a GET read carries, and the
+  // handlers echo it so the client can prove the answer belongs to the request it sent.
+  if (!body.requestId && p.km_rid) body.requestId = String(p.km_rid);
+  return { body: body };
+}
 
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) || '';
+
+    // F1-7N-FB-4E-R4A1 §3 — ONE body for every GET read, parsed once and refused once if malformed.
+    //
+    // A GET read carries the body it would have POSTed in `km_body`. That is not only the new read table's
+    // concern: system.health reads its probe list from the BODY, and while its branch looked only at the query
+    // map, sending that read as a GET silently dropped the list and produced a confident "this deployment
+    // predates the frontend" verdict about a deployment that was correct. So the parse happens HERE, above every
+    // branch, and the merged form (query first, body last, so real arrays win over query strings) is what the
+    // pre-existing GET branches receive — their previous `e.parameter` behaviour is preserved as the base.
+    var _rtrGet = rtrParseGetBody_(e, action);
+    if (_rtrGet.error) return jsonResponse_(_rtrGet.error);
+    var _rtrGetBody = {};
+    if (e && e.parameter) { for (var _pk in e.parameter) { if (Object.prototype.hasOwnProperty.call(e.parameter, _pk)) _rtrGetBody[_pk] = e.parameter[_pk]; } }
+    for (var _bk in _rtrGet.body) { if (Object.prototype.hasOwnProperty.call(_rtrGet.body, _bk)) _rtrGetBody[_bk] = _rtrGet.body[_bk]; }
 
     if (action === 'getOperationDb') {
       return handleGetOperationDb_();
@@ -49,7 +177,8 @@ function doGet(e) {
     if (action === 'system.health') {
       // F1-7N-FB-4E §H — stamp the entry point so the answer can state WHICH handler served it as a fact
       // rather than the caller inferring it. system.health is routed on both verbs deliberately.
-      var _hg = e && e.parameter ? e.parameter : {};
+      // F1-7N-FB-4E-R4A1 — the MERGED body, so a GET read keeps its probe list (see the note above).
+      var _hg = _rtrGetBody;
       _hg.__km_handler = 'doGet';
       return handleSystemHealth_(_hg);
     }
@@ -60,7 +189,9 @@ function doGet(e) {
     // that drove the inventory table's own load state, printing "Loading Inventory Replenishment…" while the
     // selectors were still unselected. Pure read: routed on BOTH verbs.
     if (action === 'inventoryScope.registry.get') {
-      return handleInventoryScopeRegistryGet_(e && e.parameter ? e.parameter : {});
+      // F1-7N-FB-4E-R4A1 — the merged body, for the same reason: a scoped read must not lose its scope to the
+      // verb it was sent with.
+      return handleInventoryScopeRegistryGet_(_rtrGetBody);
     }
 
     // F1-7N-FB-4C-R1 §B/§D — NAME THE METHOD DOWNGRADE INSTEAD OF REPORTING AN ANONYMOUS MISSING PARAMETER.
@@ -75,6 +206,17 @@ function doGet(e) {
     // remove it, so this branch can say exactly what happened and stay useful for an older client that does not.
     // Both answers keep the ORIGINAL message text as `error` — the client's unknown-action classifier and the
     // existing regression suites both key on it — and add the typed facts beside it.
+    // F1-7N-FB-4E-R4A1 §3 — THE READ TABLE. Same handler, same body, one verb that survives the hop.
+    var _rtrRead = rtrGetReadHandlers_();
+    var _viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
+    if (Object.prototype.hasOwnProperty.call(_rtrRead, action) && !_viaPost) {
+      var _parsed = _rtrGet;
+      // Stamp the entry point, as the other GET-routed reads already do, so an answer can state WHICH handler
+      // served it as a fact rather than the caller inferring it from the verb.
+      _parsed.body.__km_handler = 'doGet';
+      return jsonResponse_(_rtrRead[action](_parsed.body));
+    }
+
     var attempted = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';
     var viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
     if (attempted || viaPost) {

@@ -285,7 +285,16 @@ ok(/may or may not have been committed/.test(wt.message), 'D3. and it says so in
 
 // the bound is applied at BOTH canonical runners, so every business request in both verticals inherits it
 var gapRead = extractFn(API, '_kmGapRead_');
-ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'read'\)/.test(gapRead), 'D4. the canonical READ runner is bounded');
+// F1-7N-FB-4E-R4A1 — RESTATED TO THE BOUND, NOT TO THE CALL'S PUNCTUATION.
+//
+// This required the init object to be written INLINE at the call site. R4A1 builds it above the call because it
+// differs by verb (a read is a GET with no body; a write stays a POST with one), so the read is still bounded and
+// the assertion stopped matching. The bound is what D4 defends, so the bound is what is asserted — plus the two
+// properties that make the read safe, which the old form never checked at all.
+ok(/_kmFetchBounded_\(\s*url\s*,[^;]*?,\s*'read'\s*\)/.test(gapRead), 'D4. the canonical READ runner is bounded');
+ok(/cache: 'no-store'/.test(gapRead), 'D4. and it never serves a read from a cache');
+ok(/method: 'GET'/.test(gapRead) && /method: 'POST'/.test(gapRead),
+  'D4. and it chooses its verb explicitly — GET for an allowlisted read, POST for everything else');
 ok(/netErr && netErr\.kmTimeout/.test(gapRead), 'D4. and classifies an expiry distinctly from a network error');
 var cmd = extractFn(API, '_kmWeeklyCommand_');
 ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'write'\)/.test(cmd), 'D5. the canonical COMMAND runner is bounded');

@@ -587,17 +587,27 @@ checks.push((function () {
   section('§6 — THE CONTRACT IS UNTOUCHED (a client-side boundary fix must not need a publish)');
   var health = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
   function num(sym) { var m = new RegExp('var ' + sym + ' = (\\d+)').exec(health); return m ? Number(m[1]) : null; }
-  eq(num('SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'), 9, '6.1 action contract stays 9');
-  eq(num('SYS_REQUIRED_ACTION_LIST_VERSION_'), 9, '6.2 required action list stays 9');
+  // F1-7N-FB-4E-R4A1 - RESTATED FROM "STAYS 9" TO WHAT THIS SECTION ACTUALLY DEFENDS.
+  //
+  // R4A's claim was that ITS OWN change needed no publish. That is still true and still asserted, but as a fact
+  // about R4A's commit range (see section 8), not as a claim that the world stays at 9 forever. R4A1 legitimately
+  // moved the action contract to 10 because the router now serves read actions on a verb it did not serve before,
+  // and a suite that reads that as a regression is wrong about the axis rather than protective of it.
+  var ACT9 = num('SYS_DEPLOYED_ACTION_CONTRACT_VERSION_');
+  ok(ACT9 >= 9, '6.1 the action contract is at or above R4A\'s floor of 9 (' + ACT9 + ')');
+  ok(num('SYS_REQUIRED_ACTION_LIST_VERSION_') >= 9, '6.2 the required action list is at or above 9');
   eq(num('SYS_TRANSPORT_CONTRACT_VERSION_'), 1, '6.3 transport contract stays 1');
   var pin = /var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read('assets/js/api/operation-system-db-api.js'));
-  eq(pin && Number(pin[1]), 9, '6.4 the client pin stays 9 — no version was moved to make a test pass');
+  eq(pin && Number(pin[1]), ACT9,
+    '6.4 the client pin AGREES with the deployment - no version was moved on one side only');
+  ok(pin && Number(pin[1]) >= 9, '6.5 ... and it is raised, never lowered');
   // And the deployment contract still reaches OK against the executed router.
   var c = makeClient();
   return Promise.resolve(c.DB.checkDeploymentContract()).then(function (res) {
     eq(res && res.code, 'DEPLOYMENT_CONTRACT_OK', '6.5 checkDeploymentContract() = DEPLOYMENT_CONTRACT_OK');
     eq(res.identity && res.identity.transport_contract_version, 1, '6.6 transport_contract_version = 1 as reported live');
-    eq(res.identity && res.identity.deployed_action_contract_version, 9, '6.7 deployed_action_contract_version = 9');
+    eq(res.identity && res.identity.deployed_action_contract_version, ACT9,
+      '6.7 the reported action contract equals what 63_ declares (' + ACT9 + ')');
   }, function (e) { ok(false, '6.x contract probe threw: ' + (e && (e.message || e.apiCode))); });
 })());
 
@@ -695,18 +705,25 @@ checks.push((function () {
 // =============================================================================================================
 checks.push(Promise.resolve().then(function () {
   section('§8 -- DEPLOYMENT SURFACE');
+  // F1-7N-FB-4E-R4A1 - A ROUND'S CLAIM IS ABOUT ITS OWN COMMIT RANGE, NOT ABOUT "SINCE THEN".
+  //
+  // These compared PRE_SHA against the WORKING TREE, so every later round's files were attributed to R4A and the
+  // assertion broke the moment anything else shipped. This is the third time that shape has bitten this line
+  // (FB-4E-R2 section 8, R3 G9, here), so the range is now closed at R4A's own POST commit: the claim becomes
+  // permanently true and stays meaningful.
   var cp = require('child_process');
+  var POST_SHA = '47c5e8b';
   function changedUnder(pathspec) {
     try {
-      var out = cp.execSync('git diff --name-only ' + PRE_SHA + ' -- "' + pathspec + '"', { cwd: ROOT, encoding: 'utf8' });
+      var out = cp.execSync('git diff --name-only ' + PRE_SHA + ' ' + POST_SHA + ' -- "' + pathspec + '"', { cwd: ROOT, encoding: 'utf8' });
       return out.trim() ? out.trim().split(String.fromCharCode(10)).map(function (x) { return x.trim(); }).filter(Boolean).sort() : [];
     } catch (e) { return ['GIT_ERROR:' + (e && e.message)]; }
   }
   eq(changedUnder('assets/specs/active/apps-script').join(','), '',
-    '8.1 NO Apps Script file changed since ' + PRE_SHA + ' -- the sync manifest for R4A is genuinely NONE');
+    '8.1 R4A changed NO Apps Script file in ' + PRE_SHA + '..' + POST_SHA + ' - its sync manifest was genuinely NONE');
   var runtime = changedUnder('assets/js').concat(changedUnder('assets/css'));
   eq(runtime.join(','), 'assets/js/api/km-api-foundation.js',
-    '8.2 exactly one runtime asset changed, and it is the file that owns the boundary');
+    '8.2 R4A changed exactly one runtime asset, and it is the file that owns the boundary');
   // The coupled read-path group moves on ONE token, so a browser can never pair a new foundation with an old
   // transport. The two halves of the coalescing contract have to arrive together, which is why the token is
   // bumped for the whole group and not only for the one file whose bytes changed.
@@ -720,7 +737,13 @@ checks.push(Promise.resolve().then(function () {
     if (m && toks.indexOf(m[1]) === -1) toks.push(m[1]);
   });
   eq(toks.length, 1, '8.4 the coupled read-path group shares ONE token, so it cannot deploy out of step');
-  eq(toks[0], 'fb4er4a-correlation-20260827', "8.5 and it is this round's token");
+  // F1-7N-FB-4E-R4A1 - not pinned to R4A's literal: a later round that moves the token forward is correct, and
+  // pinning the literal is what made three earlier assertions in this line fail on a correct change. The rule is
+  // that the group is in lockstep on a KNOWN release token, at or after this round's position in the order.
+  var KNOWN_TOKENS = ['fb4er3-lifecycle-20260827', 'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827'];
+  ok(KNOWN_TOKENS.indexOf(toks[0]) !== -1, '8.5 and it is a known release token (' + toks[0] + ')');
+  ok(KNOWN_TOKENS.indexOf(toks[0]) >= KNOWN_TOKENS.indexOf('fb4er4a-correlation-20260827'),
+    '8.6 at or after R4A in the release order - a monotonic floor');
 }));
 
 Promise.all(checks).then(function () {

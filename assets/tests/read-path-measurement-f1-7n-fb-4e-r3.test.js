@@ -291,7 +291,9 @@ checks.push((function () {
     RESULTS.overseas = summarize('overseas-stock (R3 workspace)', c.log, c.dep);
     eq(RESULTS.overseas.requests, 1, 'A1 the R3 scoped workspace mount is ONE request (was 4)');
     eq(Object.keys(RESULTS.overseas.actions).join(','), 'overseasStock.workspace.get', 'A1 through the new scoped action');
-    eq(c.log[0].method, 'POST', 'A1 dispatched as POST');
+    // F1-7N-FB-4E-R4A1 -- the canonical READ verb. A POST cannot survive the /exec 302 (see the R4A1 matrix),
+    // so a read is a GET from the stable /exec carrying the same body in km_body. The count is what A1 measures.
+    eq(c.log[0].method, 'GET', 'A1 dispatched with the canonical read verb (GET)');
     eq(RESULTS.overseas.wholeDb, 0, 'A1 and getOperationDb never appears');
     eq(c.dep.__violations.length, 0, 'A1 zero write primitives were reached');
     // BEFORE == AFTER on the rows the page actually renders.
@@ -336,8 +338,11 @@ checks.push((function () {
     RESULTS.skuDetails = summarize('sku-details (workspace)', c.log, c.dep);
     eq(RESULTS.skuDetails.requests, 1, 'A1 sku-details mount issues ONE request');
     eq(Object.keys(RESULTS.skuDetails.actions).join(','), 'skuDetails.workspace.get', 'A1 through the scoped workspace action');
-    eq(c.log[0].method, 'POST', 'A1 dispatched as POST');
-    eq(c.log[0].viaPost, true, 'A1 with the km_via=post correlation marker in the query string');
+    // F1-7N-FB-4E-R4A1 -- the canonical READ verb. A POST cannot survive the /exec 302 (see the R4A1 matrix),
+    // so a read is a GET from the stable /exec carrying the same body in km_body. The count is what A1 measures.
+    eq(c.log[0].method, 'GET', 'A1 dispatched with the canonical read verb (GET)');
+    ok(/[?&]km_via=get/.test(c.log[0].url || '') || c.log[0].viaPost === false,
+      'A1 marked as a canonical GET read rather than a downgraded POST');
     ok(env && env.meta, 'A1 and it returns a canonical envelope');
   }, function (e) { ok(false, 'A1 sku-details workspace read rejected: ' + (e && (e.message || e.apiCode))); });
 })());
@@ -461,10 +466,21 @@ section('§A.3 — SKU DETAILS: THE METHOD DOWNGRADE, REPRODUCED AND LOCATED');
       var envErr = (v && v.env && Array.isArray(v.env.errors) && v.env.errors[0]) || null;
       var code = (e && (e.apiCode || e.code)) || (envErr && envErr.code) || '';
       ok(code !== 'REQUEST_METHOD_DOWNGRADED', 'A3 ABSORBED: the caller no longer sees the downgrade (code=' + (code || 'none') + ')');
-      eq(c.log.length, 2, 'A3 because the workspace path now retries exactly ONCE');
-      eq(c.log[0].downgraded, true, 'A3 attempt 1 was the downgraded hop');
-      eq(c.log[1].method, 'POST', 'A3 attempt 2 was a fresh POST, never a GET');
-      ok(!c.log[1].downgraded, 'A3 and attempt 2 reached doPost');
+      // F1-7N-FB-4E-R4A1 -- ONE request, because the downgrade class is now UNREACHABLE for a read: the read is
+      // a GET, and a GET has no body to lose across the 302. The retry that used to absorb it is not needed, so
+      // the honest measurement is 1. The POLICY is still asserted below rather than dropped.
+      eq(c.log.length, 1, 'A3 ONE request: a GET read cannot be downgraded, so nothing needs absorbing');
+      eq(c.log[0].method, 'GET', 'A3 and that request was the canonical read verb');
+      var _tpA3 = c.win.KM.transport;
+      eq(_tpA3.isAutoRetryable({ kind: 'read', code: 'REQUEST_METHOD_DOWNGRADED' }), true,
+        'A3 the absorb-a-downgrade policy still exists and still answers yes for a read');
+      eq(_tpA3.isAutoRetryable({ kind: 'write', code: 'REQUEST_METHOD_DOWNGRADED' }), false,
+        'A3 and still refuses to replay a write');
+      // The harness injects the downgrade by answering with doGet. For a request that was ALREADY a GET that is
+      // not a downgrade at all -- it is the normal answer -- which is precisely why the class is unreachable now.
+      // Asserted rather than implied, and the assertion no longer indexes an attempt that correctly does not exist.
+      ok(c.log[0].method === 'GET', 'A3 the single attempt was a GET, so no body could be lost across the 302');
+      eq(c.log.length < 2, true, 'A3 and there is no second attempt to inspect, because none was needed');
     }
     return Promise.resolve(c.win.KM.api.getWorkspace('skuDetails', {}))
       .then(function (env) { verdict({ env: env }); }, function (err) { verdict({ err: err }); });
@@ -480,10 +496,11 @@ section('§A.3 — SKU DETAILS: THE METHOD DOWNGRADE, REPRODUCED AND LOCATED');
       // layer does not surface it — it retries once, on a fresh POST that reaches doPost. Whether THAT request
       // then succeeds depends on the synthetic spreadsheet behind it, which is a property of this harness and
       // not of the transport, so it is deliberately not asserted here.
-      eq(c.log.length, 2, 'A3 the SHARED transport retries exactly ONCE (bounded) after a downgraded hop');
-      eq(c.log[0].downgraded, true, 'A3 attempt 1 was the downgraded hop');
-      ok(!c.log[1].downgraded, 'A3 attempt 2 was NOT downgraded');
-      eq(c.log[1].method, 'POST', 'A3 and attempt 2 was dispatched as a real POST, reaching doPost');
+      // F1-7N-FB-4E-R4A1 -- see above: a GET read cannot be downgraded, so the bounded retry has nothing to
+      // absorb and one request is the correct count. The policy itself is asserted at the policy layer.
+      eq(c.log.length, 1, 'A3 ONE request: the downgrade class is unreachable on the canonical read verb');
+      eq(c.log[0].method, 'GET', 'A3 the shared transport dispatched the read as a GET');
+      eq(c.log.length < 2, true, 'A3 and needed no second attempt');
       ok(res.code !== 'REQUEST_METHOD_DOWNGRADED',
         'A3 => so REQUEST_METHOD_DOWNGRADED is NOT what the caller sees. The retry policy EXISTS; '
         + 'the workspace read path simply does not use it.');

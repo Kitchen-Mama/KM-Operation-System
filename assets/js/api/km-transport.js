@@ -48,7 +48,7 @@
   // produce four different reason codes. `missing_actions=[]` cannot see any of them.
   // ==========================================================================================================
   var TRANSPORT_CONTRACT_VERSION = 1;
-  var TRANSPORT_BUILD = 'F1-7N-FB-4E';
+  var TRANSPORT_BUILD = 'F1-7N-FB-4E-R4A1';
 
   // ==========================================================================================================
   // THE STATE MACHINE (§C). Every request walks these in order and stops at SUCCESS or TYPED_FAILURE.
@@ -73,6 +73,15 @@
     AUTH_OR_ACCESS_HTML: 'AUTH_OR_ACCESS_HTML',
     TRANSPORT_NON_JSON_RESPONSE: 'TRANSPORT_NON_JSON_RESPONSE',
     HTTP_TRANSPORT_ERROR: 'HTTP_TRANSPORT_ERROR',
+    // F1-7N-FB-4E-R4A1 — A REDIRECT TARGET THAT 404s IS NOT A BUSINESS 404, AND THE DIFFERENCE IS ACTIONABLE.
+    //
+    // Apps Script answers every /exec request with a 302 to script.googleusercontent.com/macros/echo. When THAT
+    // target cannot be read the answer is a 404 page — and the live evidence showed a DIFFERENT user_content_key
+    // on each attempt, so it is not a stale cached URL being reused. It says nothing about whether the
+    // deployment exists, which is precisely what a deployment 404 (script.google.com) or a frontend-origin 404
+    // does say. Same status code, opposite meanings, opposite fixes: this one is worth ONE fresh attempt from
+    // the stable /exec; the others are not worth any, and are still HTTP_NOT_FOUND_HTML.
+    REDIRECT_TARGET_NOT_FOUND: 'REDIRECT_TARGET_NOT_FOUND',
     REQUEST_TIMEOUT: 'REQUEST_TIMEOUT',
     REQUEST_TIMEOUT_WRITE_INDETERMINATE: 'REQUEST_TIMEOUT_WRITE_INDETERMINATE',
     REQUEST_ABORTED: 'REQUEST_ABORTED',
@@ -253,6 +262,12 @@
   function codeForHtml(fp) {
     if (!fp) return CODES.TRANSPORT_NON_JSON_RESPONSE;
     if (fp.source === HTML_SOURCE.GOOGLE_AUTH_OR_ACCESS) return CODES.AUTH_OR_ACCESS_HTML;
+    // F1-7N-FB-4E-R4A1 §6 — ordered BEFORE the generic 404 on purpose. The redirect target is the only 404
+    // source that is worth asking again about, and it is identified by three facts together, not by the status
+    // alone: the request was redirected, it ended on the echo host, and that host answered 404.
+    if (fp.httpStatus === 404 && fp.redirected === true && fp.source === HTML_SOURCE.EXPIRED_USERCONTENT_REDIRECT) {
+      return CODES.REDIRECT_TARGET_NOT_FOUND;
+    }
     if (fp.httpStatus === 404) return CODES.HTTP_NOT_FOUND_HTML;
     if (fp.source === HTML_SOURCE.GITHUB_PAGES_404 || fp.source === HTML_SOURCE.FRONTEND_ORIGIN_RESPONSE) return CODES.HTTP_NOT_FOUND_HTML;
     return CODES.TRANSPORT_NON_JSON_RESPONSE;
@@ -286,6 +301,9 @@
       return RETRYABLE_STATUS[st] === 1;
     }
     if (code === CODES.REQUEST_METHOD_DOWNGRADED) return true;         // the deployment is fine; the hop lost the body
+    // F1-7N-FB-4E-R4A1 — the deployment is fine; one hop's target could not be read. A fresh attempt from the
+    // STABLE /exec gets a new redirect target. Reads only (the guard above), and bounded to one by maxRetries.
+    if (code === CODES.REDIRECT_TARGET_NOT_FOUND) return true;
     return false;
   }
   // Bounded exponential delay with jitter. `random` is injected, so the suite asserts the exact number.
@@ -334,7 +352,7 @@
     // ---- metrics (§D/§E) -------------------------------------------------------------------------------
     // Counts and durations only. No URL, no action payload, no row. `requests` is the number that makes
     // "exactly one request" a measured fact instead of a claim in a comment.
-    var _metrics = { requests: 0, retries: 0, coalesced: 0, byAction: {}, byCode: {}, samples: [] };
+    var _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [] };
     function bump(map, key) { if (!key) return; map[key] = (map[key] || 0) + 1; }
     function record(sample) {
       _metrics.requests += 1;
@@ -351,12 +369,16 @@
         // Reported because §E's whole claim is "navigating away and back creates zero additional requests",
         // and a claim about requests that were never made needs a counter of its own to be checkable.
         coalesced: _metrics.coalesced,
+        // F1-7N-FB-4E-R4A1 §8 — how many reads needed the bounded redirect-target recovery. Reported because
+        // a recovery is a SECOND physical request with its own request id, and a recovery that were happening on
+        // every read would mean the primary path is wrong. Silent recovery would hide exactly that.
+        recoveries: _metrics.recoveries,
         byAction: JSON.parse(JSON.stringify(_metrics.byAction)),
         byCode: JSON.parse(JSON.stringify(_metrics.byCode)),
         samples: _metrics.samples.slice()
       };
     }
-    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, byAction: {}, byCode: {}, samples: [] }; }
+    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [] }; }
     // The legacy runners (the workspace POST path and the getTable reader) still own their own fetch, so they
     // report their outcome HERE rather than being rewritten wholesale in one round. Without this the §E report
     // would be structurally empty in production while looking like a measurement — which is worse than no
@@ -474,6 +496,42 @@
     //   kind      'read' | 'write'  — decides the timeout bound and the retry ban
     //   signal    an AbortSignal; an abort is ABORTED/SUPERSEDED, never a red error (§C/§F)
     //   maxRetries default 1 for reads, always 0 for writes
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R4A1 §2/§3 — THE CANONICAL READ URL, AND THE ENDPOINT AUTHORITY RULE.
+    //
+    // A read is dispatched as a GET whose query string carries the SAME body a POST would have sent, under
+    // `km_body`. Chosen from the executed matrix, not from preference: a POST crossing the Apps Script 302 loses
+    // its body by specification, and the live evidence shows both consequences (an unreadable echo target, and
+    // an echo that resolves back into doGet with nothing). A GET has nothing to lose.
+    //
+    // ENDPOINT AUTHORITY. Every attempt — first or recovery — is built HERE from `endpoint()`, which is the
+    // stable script.google.com/macros/s/<id>/exec and nothing else. A googleusercontent target is never stored,
+    // never re-requested and never returned as a next target: `classifyEndpoint` already refuses that host, and
+    // the recovery below rebuilds from ep.url rather than from anything the response said.
+    //
+    // NO EXTRA CACHE-BUSTING VALUE IS ADDED, and that is a measured decision rather than an omission. §1 showed
+    // a DIFFERENT user_content_key on every attempt, so browser redirect reuse is not what is failing; and the
+    // request id is already in the query, so two physical reads never share a URL. `cache: 'no-store'` stays.
+    // Adding a nonce would also have to be excluded from the single-flight key by hand, and a key dimension that
+    // must be remembered to be excluded is a defect waiting to happen.
+    // ------------------------------------------------------------------------------------------------------
+    function readQuery(action, body, requestId) {
+      var qp = 'action=' + encodeURIComponent(action) + '&km_via=get&km_tc=' + TRANSPORT_CONTRACT_VERSION;
+      if (requestId) qp += '&km_rid=' + encodeURIComponent(requestId);
+      var payload = JSON.stringify(isObj(body) ? body : {});
+      if (payload !== '{}') qp += '&km_body=' + encodeURIComponent(payload);
+      return qp;
+    }
+    // The size a read would occupy as a URL. Exposed so the URL-size proof measures the real thing.
+    function readUrl(action, body, requestId) {
+      var ep2 = endpoint();
+      var base = ep2.ok ? ep2.url : '';
+      return base + (base.indexOf('?') < 0 ? '?' : '&') + readQuery(str(action), body, str(requestId));
+    }
+    // Well under Google's practical URL ceiling. A read that exceeds it is REFUSED before dispatch with a named
+    // reason — never silently truncated, and never silently switched to the verb that is known to fail.
+    var READ_URL_MAX = 6000;
+
     function request(opts) {
       opts = opts || {};
       var action = str(opts.action);
@@ -516,16 +574,51 @@
       // and this classifier name a method downgrade instead of reporting an anonymous missing parameter. It is
       // NOT a workaround — no workspace payload is ever put in the query, no write payload is ever put in the
       // query, and the POST is never converted to a GET.
-      var qp = 'action=' + encodeURIComponent(action) + '&km_via=post&km_tc=' + TRANSPORT_CONTRACT_VERSION;
-      if (requestId) qp += '&km_rid=' + encodeURIComponent(requestId);
-      var url = ep.url + (ep.url.indexOf('?') < 0 ? '?' : '&') + qp;
+      var isRead = (kind !== 'write');
+      // F1-7N-FB-4E-R4A1 — WRITES ARE UNCHANGED. POST, body in the body, action and id ALSO in the query for
+      // correlation only (§M). No write is ever dispatched as a GET, and maxRetries is already 0 for a write, so
+      // no write can enter the read recovery path below.
+      function postQuery(rid) {
+        var q = 'action=' + encodeURIComponent(action) + '&km_via=post&km_tc=' + TRANSPORT_CONTRACT_VERSION;
+        if (rid) q += '&km_rid=' + encodeURIComponent(rid);
+        return q;
+      }
       var body = JSON.stringify(dto);
+      function urlFor(rid) {
+        var q = isRead ? readQuery(action, Object.assign({}, dto, rid ? { requestId: rid } : {}), rid) : postQuery(rid);
+        return ep.url + (ep.url.indexOf('?') < 0 ? '?' : '&') + q;
+      }
+      // A read whose parameters will not fit a URL is refused HERE, before any socket is opened. It is not
+      // silently truncated (a different request), and it is not silently sent as a POST (the verb the matrix
+      // proved fails). No read in this application is anywhere near the limit; this exists so that if one ever
+      // becomes so, it says so.
+      if (isRead) {
+        var probeUrl = urlFor(requestId);
+        if (probeUrl.length > READ_URL_MAX) {
+          var eBig = fail(PHASE.BUILD, CODES.API_ENDPOINT_CONFIGURATION_INVALID,
+            'This read\'s parameters are too large to send as a URL (' + probeUrl.length + ' > ' + READ_URL_MAX + ' characters), so no request was issued.',
+            { action: action, request_id: requestId || null, url_chars: probeUrl.length, url_chars_max: READ_URL_MAX,
+              zero_write: true, retryable: false,
+              next_action: 'Narrow the read (fewer filters, a smaller page) or give this action a scoped server-side parameter. Retrying cannot make the URL shorter.' }, t);
+          record({ action: action, kind: kind, code: eBig.code, phase: eBig.phase, ms: 0, bytes: 0 });
+          return Promise.resolve(eBig);
+        }
+      }
+
+      // The id THIS physical attempt carries. A recovery is a SECOND physical request, so R4A's rule applies to
+      // it in full: it gets its own id, and its answer is validated against that id — never against the first
+      // attempt's, and never against a consumer's.
+      function ridForAttempt(n) { return (n <= 1 || !requestId) ? requestId : (requestId + '-R' + n); }
 
       function attempt(n) {
+        var attemptRid = ridForAttempt(n);
+        var url = urlFor(attemptRid);
         // ---- DISPATCH ----
         var ctl = null;
         try { ctl = (typeof AbortController === 'function') ? new AbortController() : null; } catch (e) { ctl = null; }
-        var init = { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: body };
+        var init = isRead
+          ? { method: 'GET', cache: 'no-store' }
+          : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: body };
         if (ctl) init.signal = ctl.signal;
         var ms = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;
         var timedOut = false, aborted = false, timer = null;
@@ -577,7 +670,7 @@
                   requestedUrl: url, redirected: redirected, frontendOrigin: frontendOrigin() });
                 var code = codeForHtml(fp);
                 var r = fail(PHASE.REDIRECT_RESPONSE, code, messageForHtml(code, fp, action),
-                  Object.assign({}, wire, { action: action, request_id: requestId || null, zero_write: (kind !== 'write'),
+                  Object.assign({}, wire, { action: action, request_id: attemptRid || null, zero_write: (kind !== 'write'),
                     html_source: fp.source, fingerprint: fp, retryable: false,
                     next_action: nextActionForHtml(fp.source) }), t);
                 r.fingerprint = fp;
@@ -587,7 +680,7 @@
                 // JSON-shaped but a non-2xx status — a real HTTP failure, and the only place a bounded retry is
                 // even considered.
                 return fail(PHASE.REDIRECT_RESPONSE, CODES.HTTP_TRANSPORT_ERROR, 'The API answered HTTP ' + status + '.',
-                  Object.assign({}, wire, { action: action, request_id: requestId || null, zero_write: (kind !== 'write'),
+                  Object.assign({}, wire, { action: action, request_id: attemptRid || null, zero_write: (kind !== 'write'),
                     retryable: isAutoRetryable({ kind: kind, code: CODES.HTTP_TRANSPORT_ERROR, httpStatus: status }) }), t);
               }
               // ---- PARSE ----
@@ -602,7 +695,13 @@
               t.parse = _now() - pStart;
               // ---- CONTRACT_VALIDATE ----
               var vStart = _now();
-              var v = validate(json, { action: action, requestId: requestId, kind: kind, wire: wire, dispatchedMethod: 'POST' });
+              // Validated against the id THIS attempt sent, and told the verb THIS attempt used. Passing 'POST'
+              // for a GET would make the five-fact downgrade proof claim a POST was dispatched when none was.
+              var v = validate(json, { action: action, requestId: attemptRid, kind: kind, wire: wire,
+                dispatchedMethod: isRead ? 'GET' : 'POST' });
+              // The router's own answer, kept verbatim beside the classification. The workspace layer classifies
+              // from the envelope, so handing it back is what lets ONE dispatch boundary serve both.
+              if (v && !v.envelope) v.envelope = json;
               t.validate = _now() - vStart;
               return v;
             });
@@ -635,6 +734,13 @@
             if (res.success) return res;
             if (n <= maxRetries && isAutoRetryable({ kind: kind, code: res.code, httpStatus: res.details && res.details.httpStatus })) {
               _metrics.retries += 1;
+              // F1-7N-FB-4E-R4A1 §6 — the recovery is COUNTED and NAMED, and it states where it will start:
+              // the stable /exec, rebuilt from endpoint(), never the redirect target that just failed.
+              if (res.code === CODES.REDIRECT_TARGET_NOT_FOUND) {
+                _metrics.recoveries += 1;
+                res.details.recovery_from = 'STABLE_EXEC';
+                res.details.recovery_request_id = ridForAttempt(n + 1);
+              }
               var d = retryDelayMs(n, _random, deps.retryBaseMs, deps.retryCapMs);
               res.details.retry_scheduled_ms = d;
               return Promise.resolve(_sleep(d)).then(function () { return attempt(n + 1); });
@@ -878,6 +984,9 @@
       endpoint: endpoint, classifyEndpoint: classifyEndpoint, maskEndpoint: maskEndpoint,
       // machine
       request: request, validate: validate, fingerprintHtml: fingerprintHtml, codeForHtml: codeForHtml,
+      // F1-7N-FB-4E-R4A1 - the canonical read URL, exposed so the URL-size proof measures what is dispatched
+      // rather than a reconstruction of it, and so the workspace layer cannot invent a second URL shape.
+      readUrl: readUrl, readQuery: readQuery, READ_URL_MAX: READ_URL_MAX,
       // policy
       isAutoRetryable: isAutoRetryable, retryDelayMs: retryDelayMs,
       // concurrency

@@ -36,6 +36,25 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var TP = require(path.join(ROOT, 'assets/js/api/km-transport.js'));
+
+// F1-7N-FB-4E-R4A1 - READ THE REQUEST THE WAY THE CANONICAL TRANSPORT ACTUALLY SENDS IT.
+//
+// Every mock below parsed `init.body`, which assumed the read verb. R4A1 dispatches reads as a GET from the
+// stable /exec with the same body carried in `km_body`, because an Apps Script POST cannot survive the /exec 302
+// (both live failures are consequences of that hop). A mock that only understands one verb stops testing the
+// shipped request, so `wireSent` understands both: the body when there is one, the query when there is not.
+function wireSent(url, init) {
+  var body = (init && init.body) ? String(init.body) : '';
+  if (body) { try { return JSON.parse(body); } catch (e) { return {}; } }
+  var m = /[?&]km_body=([^&]*)/.exec(String(url));
+  if (m) { try { return JSON.parse(decodeURIComponent(m[1])); } catch (e) { return {}; } }
+  // A read with no parameters carries only its action and correlation id in the query.
+  var q = {};
+  String(String(url).split('?')[1] || '').split('&').forEach(function (kv) {
+    var k = kv.indexOf('='); if (k > 0) q[kv.slice(0, k)] = decodeURIComponent(kv.slice(k + 1));
+  });
+  return { action: q.action || '', requestId: q.km_rid || '' };
+}
 var DA = require(path.join(ROOT, 'assets/js/api/km-data-access.js'));
 var KMAPI = require(path.join(ROOT, 'assets/js/api/km-api-foundation.js'));
 
@@ -561,7 +580,7 @@ var SEED = [
 var tG = TP.create({
   baseUrl: EXEC, frontendOrigin: ORIGIN, now: function () { return 0; },
   fetch: spy(function (n, url, init) {
-    var sent = JSON.parse(init.body);
+    var sent = wireSent(url, init);
     var sc = sent.payload.scope, pr = sent.payload.projection, pg = sent.payload.pagination;
     var rows = SEED.filter(function (r) {
       return (!sc.country || r.country === sc.country) && (!sc.marketplace || r.marketplace === sc.marketplace) && (!sc.sku || r.sku === sc.sku);
@@ -616,7 +635,7 @@ checks.push(DA.createRepository(DA.appsScriptAdapter({ transport: tGerr })).quer
     eq(env.state, 'NON_RETRYABLE_CONFIGURATION_OR_DEPLOYMENT_ERROR', 'G4 with the matching non-retryable state');
   }));
 var tGbiz = TP.create({ baseUrl: EXEC, frontendOrigin: ORIGIN, now: function () { return 0; },
-  fetch: spy(function (n, u, init) { var s = JSON.parse(init.body);
+  fetch: spy(function (n, u, init) { var s = wireSent(u, init);
     return resp({ json: { success: false, meta: { action: s.action, requestId: s.requestId }, errors: [{ code: 'IR_SCHEMA_MISSING', message: 'not provisioned' }] } }); }) });
 checks.push(DA.createRepository(DA.appsScriptAdapter({ transport: tGbiz })).query({ resource: 'siteInventory', requestId: 'REQ-E2' })
   .then(function (env) {
@@ -736,7 +755,7 @@ var clock = 0;
 var tMetrics = TP.create({
   baseUrl: EXEC, frontendOrigin: ORIGIN,
   now: function () { clock += 10; return clock; },
-  fetch: spy(function (n, u, init) { var s = JSON.parse(init.body);
+  fetch: spy(function (n, u, init) { var s = wireSent(u, init);
     return resp({ json: { success: true, data: { rows: [{ a: 1 }] }, meta: { action: s.action, requestId: s.requestId } } }); })
 });
 checks.push(tMetrics.request({ action: IR_ACTION, requestId: 'REQ-M1', kind: 'read', payload: { payload: {} } }).then(function (r) {
@@ -760,7 +779,7 @@ var tRetry = TP.create({
   random: function () { return 0; }, sleep: function () { return Promise.resolve(); },
   fetch: spy(function (n, u, init) {
     if (n === 1) return resp({ status: 503, contentType: 'application/json', body: '{}' });
-    var s = JSON.parse(init.body);
+    var s = wireSent(u, init);
     return resp({ json: { success: true, data: { rows: [] }, meta: { action: s.action, requestId: s.requestId } } });
   })
 });

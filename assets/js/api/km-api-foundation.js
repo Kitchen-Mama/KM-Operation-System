@@ -649,9 +649,56 @@
     function makeRequestId(provided) { var p = normName(provided); return /^REQ-[A-Za-z0-9_-]{1,40}$/.test(p) ? p : _idGen(); }
 
     // ---- API-2 · workspace transport invoke → parsed canonical envelope (tests inject deps.workspaceInvoke) --
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R4A1 §4 — ONE READ BOUNDARY, NOT ONE PER LAYER.
+    //
+    // This file used to dispatch every workspace read through its own private POST shim: no endpoint classifier,
+    // no HTML fingerprint, no redirect-target classification, no retry policy and no metrics. That is why the
+    // shared transport already knew that an Apps Script POST cannot survive the /exec 302 while every workspace
+    // read kept sending one — the knowledge and the code path were in different files.
+    //
+    // Reads now go through KM.transport.request({ kind: 'read' }), which dispatches a GET from the stable /exec
+    // with the same body in `km_body`, owns the bounded redirect-target recovery, and hands back the router's own
+    // envelope VERBATIM. Everything below this line is unchanged: the envelope is still classified by
+    // normalizeWorkspaceEnvelope, which remains the single authority on action echo, request-id correlation and
+    // the five-fact downgrade proof.
+    //
+    // A GENUINE transport failure has no envelope — an HTML 404, a dead network, a timeout. Rather than let the
+    // normalizer report that as a malformed response, it is expressed as a client-side envelope carrying the
+    // TYPED transport code, so the page shows what actually happened. That envelope deliberately does NOT claim
+    // an echoed request id: nothing answered, so correlation is NOT_ECHOED (reported, tolerated) rather than a
+    // manufactured match.
+    // ------------------------------------------------------------------------------------------------------
+    function transportFailureEnvelope(action, res) {
+      var d = (res && isObj(res.details)) ? res.details : {};
+      return {
+        success: false,
+        data: null,
+        meta: { action: normName(action), source: 'transport', __km_synthesized: true },
+        errors: [{
+          code: (res && res.code) || API_ERROR_CODES.TRANSPORT_ERROR,
+          message: (res && res.message) || 'The read could not be completed.',
+          details: Object.assign({}, d, { action: normName(action), zero_write: true })
+        }]
+      };
+    }
     var _workspaceInvokeRaw = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
-      // transport.post resolves the canonical URL at call time and rejects with the specific transport code
-      // (TRANSPORT_NOT_CONFIGURED / TRANSPORT_URL_INVALID) — surfaced verbatim via errorFromException.
+      var tp = _sharedTransport();
+      if (tp && typeof tp.request === 'function') {
+        return tp.request({ action: action, kind: 'read', payload: dto,
+          requestId: dto && dto.requestId, signal: signal })
+          .then(function (res) {
+            var env = (res && isObj(res.envelope)) ? res.envelope : transportFailureEnvelope(action, res);
+            // The transport is the ONLY layer that knows which id went on the wire, so it is the one that
+            // records it. A bounded recovery is a second physical request with its own id, and this is where
+            // that fact reaches the correlation check instead of being lost.
+            var wireRid = (res && isObj(res.details) && res.details.request_id) ? res.details.request_id : (dto && dto.requestId);
+            recordPhysicalRequest(env, { requestId: wireRid, action: action });
+            return env;
+          });
+      }
+      // FALLBACK for a page that loaded without the transport module: the previous private POST shim. It keeps
+      // working, and it keeps its old failure modes — which is why it is a fallback and not the path.
       return transport.post(dto, { signal: signal }).then(function (resp) { return safeReadJsonResponse(resp); });
     };
     // F1-7N-FB-4C-R1 §E — ONE choke point every workspace read passes through, so the "action is required" rule
@@ -729,11 +776,17 @@
     // ------------------------------------------------------------------------------------------------------
     var _physicalRequests = (typeof WeakMap === 'function') ? new WeakMap() : null;
     var _PHYSICAL_AMBIGUOUS = '\u0000AMBIGUOUS';
-    function recordPhysicalRequest(serverEnv, dto) {
+    function recordPhysicalRequest(serverEnv, dto, opts) {
       if (!_physicalRequests || !isObj(serverEnv)) return serverEnv;
       var sent = normName(dto && dto.requestId);
       var prior = _physicalRequests.get(serverEnv);
       if (prior) {
+        // F1-7N-FB-4E-R4A1 — `ifAbsent` exists because two layers can now know about the same answer, and only
+        // ONE of them knows the truth. The shared transport knows the id it actually put on the wire, including
+        // when a bounded redirect recovery made that a SECOND request with its own id. This choke point only
+        // knows the id it asked for. So the transport records authoritatively and this layer records only when
+        // nothing is on file — rather than treating the disagreement as ambiguity and discarding both.
+        if (opts && opts.ifAbsent) return serverEnv;
         // The same parsed object answering two different physical requests cannot be attributed to either.
         if (prior.requestId !== sent) prior.requestId = _PHYSICAL_AMBIGUOUS;
         return serverEnv;
@@ -771,13 +824,17 @@
       // attempt and retry alike, since both are dispatched from this same physical DTO.
       function once() {
         return Promise.resolve(_workspaceInvokeRaw(action, dto, signal)).then(function (serverEnv) {
-          return recordPhysicalRequest(serverEnv, dto);
+          // ifAbsent: the shared transport records the id it actually sent. This is the fallback for an
+          // injected or private dispatcher, and it must not overwrite a more authoritative record.
+          return recordPhysicalRequest(serverEnv, dto, { ifAbsent: true });
         });
       }
       function withBoundedDowngradeRetry() {
         return once().then(function (serverEnv) {
           if (!isObj(serverEnv) || serverEnv.success === true) return serverEnv;
-          var pf = downgradeProof(serverEnv, physicalRequestId);
+          // The id THIS answer was actually asked for — which after a bounded recovery is not the id this
+          // function started with. Read from the record rather than assumed from the DTO.
+          var pf = downgradeProof(serverEnv, sentRequestIdFor(serverEnv, dto) || physicalRequestId);
           if (!pf.proved) return serverEnv;
           // The shared transport owns the answer to "may this be replayed?". Asked, never assumed.
           var allowed = tp && typeof tp.isAutoRetryable === 'function'

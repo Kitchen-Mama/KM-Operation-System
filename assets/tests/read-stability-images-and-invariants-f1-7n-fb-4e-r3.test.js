@@ -305,7 +305,7 @@ eq(distinct.length, 1, 'G9 every asset R3 changed shares ONE token, so they cann
 // step, and that they are not stranded on a superseded token.
 var ROUND_TOKENS = ['donenotice-20260811', 'fb4e-transport-20260826', 'fb4c-scope-registry-20260826',
   'fb4er1-contract-probe-20260827', 'fb4er2-action-registry-20260827', 'fb4er3-lifecycle-20260827',
-  'fb4er4a-correlation-20260827'];
+  'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827'];
 var FLOOR = ROUND_TOKENS.indexOf('fb4er3-lifecycle-20260827');
 var at = ROUND_TOKENS.indexOf(distinct[0]);
 ok(at >= FLOOR, 'G9 the token is at or after R3 in the release order (' + distinct[0] + ') — a monotonic floor, not a pinned literal');
@@ -319,8 +319,12 @@ ok(at !== -1, 'G9 and the token is a known release token, not a typo (' + distin
 var ACT = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(G63)[1]);
 var LIST = Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(G63)[1]);
 var PIN = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI)[1]);
-eq(ACT, 9, 'G10 the action contract moved to 9 (a new router action was added)');
-eq(LIST, 9, 'G10 the required-action list version moved to 9');
+// F1-7N-FB-4E-R4A1 - RESTATED AS A FLOOR. "moved to 9" was a statement about R3, not about the axis, so a
+// later round that legitimately moves it reads as a regression. R4A1 moved the action contract to 10
+// because the router now serves read actions on a verb it did not serve before. What G10 defends is that
+// the two axes move MONOTONICALLY and that the client pin agrees with the deployment - both asserted.
+ok(ACT >= 9, 'G10 the action contract is at or above the R3 floor of 9 (' + ACT + ')');
+ok(LIST >= 9, 'G10 the required-action list version is at or above 9 (' + LIST + ')');
 eq(PIN, ACT, 'G10 and the client pin agrees with the deployment');
 ok(PIN >= 9, 'G10 raised, never lowered');
 eq(/var OSW_BUILD_VERSION_ = '([^']+)'/.exec(G70)[1], 'F1-7N-FB-4E-R3', 'G10 70_ declares this round\'s stamp');

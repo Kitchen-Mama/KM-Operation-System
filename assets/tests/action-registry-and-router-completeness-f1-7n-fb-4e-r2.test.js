@@ -66,8 +66,20 @@ function registryEntry(a) {
   return m ? { handler: m[1], used_by: m[2] } : null;
 }
 function handlerDefined(h) { return new RegExp('function\\s+' + h + '\\s*\\(').test(GS_ALL); }
-var DO_GET = RTR.slice(RTR.indexOf('function doGet'), RTR.indexOf('function doPost'));
-var DO_POST = RTR.slice(RTR.indexOf('function doPost'));
+// F1-7N-FB-4E-R4A1 — ANCHORED TO THE DECLARATION, NOT TO THE FIRST MENTION.
+//
+// These used indexOf('function doPost'), which matches PROSE as readily as code. An R4A1 comment containing the
+// words "function doPost" moved the split above doGet, doPost swallowed the entire file, and G4 then reported
+// that doPost dispatches system.health twice — a confident assertion about text it had mis-sliced. The anchors
+// are now the declarations themselves, at the start of a line, and the slice is verified before it is used.
+var _gAt = RTR.search(/(^|\n)function doGet\s*\(/);
+var _pAt = RTR.search(/(^|\n)function doPost\s*\(/);
+ok(_gAt > -1 && _pAt > _gAt, 'ROUTER SLICE doGet and doPost are located, in that order (' + _gAt + '/' + _pAt + ')');
+var DO_GET = RTR.slice(_gAt, _pAt);
+var DO_POST = RTR.slice(_pAt);
+ok(/function doGet\s*\(/.test(DO_GET) && !/function doPost\s*\(/.test(DO_GET),
+  'ROUTER SLICE the doGet slice contains doGet and not doPost');
+ok(/function doPost\s*\(/.test(DO_POST), 'ROUTER SLICE the doPost slice contains doPost');
 
 // =============================================================================================================
 // THE DEPLOYMENT, EXECUTED — with every write primitive instrumented so "read-only" is measured, not asserted.
@@ -326,16 +338,48 @@ checks.push((function () {
 // =============================================================================================================
 section('§6 — THE JOINED PRODUCTION-LIKE PROBE: all four resolve, and it STILL fails closed');
 // =============================================================================================================
+// F1-7N-FB-4E-R4A1 — THE MOCK SPEAKS THE CANONICAL WIRE FORMAT, NOT ONE VERB'S VERSION OF IT.
+//
+// This mock read the probe list out of `init.body` and answered every request with doPost. Both halves assumed
+// the read verb. R4A1 dispatches reads as a GET from the stable /exec (an Apps Script POST cannot survive the
+// /exec 302), with the same body carried in `km_body` — so `init.body` was empty and `sent.probe_actions` threw.
+// Nothing was wrong with the client. The mock now parses whichever form arrived and routes to the entry point the
+// client actually addressed, which is the only way this stays a test of the shipped request.
 var cap = {};
+function _wireOf(url, init) {
+  var body = (init && init.body) ? String(init.body) : '';
+  if (body) return { method: 'POST', body: body };
+  var m = /[?&]km_body=([^&]*)/.exec(String(url));
+  return { method: 'GET', body: m ? decodeURIComponent(m[1]) : '{}' };
+}
+function _qsOf(url) {
+  var qs = {};
+  String(String(url).split('?')[1] || '').split('&').forEach(function (kv) {
+    var i = kv.indexOf('='); if (i > 0) qs[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+  });
+  return qs;
+}
 var client = makeClient(function (url, init) {
-  cap.body = (init && init.body) ? String(init.body) : '';
-  var out = DEP.doPost({ postData: { contents: cap.body, type: 'text/plain' }, parameter: {} });
+  var w = _wireOf(url, init);
+  cap.body = w.body;
+  cap.method = w.method;
+  var out;
+  if (w.method === 'GET') {
+    // The router reconstructs the body from km_body itself, so the query map is what a GET actually delivers.
+    out = DEP.doGet({ parameter: _qsOf(url) });
+  } else {
+    out = DEP.doPost({ postData: { contents: w.body, type: 'text/plain' }, parameter: _qsOf(url) });
+  }
   cap.answer = out.getContent();
   return Promise.resolve(jsonResp(cap.answer, String(url)));
 });
 checks.push(client.DB.checkDeploymentContract().then(function (v) {
   var probe = (v.identity || {}).caller_probe || {};
   var sent = JSON.parse(cap.body || '{}');
+  // The probe list must reach the deployment whichever verb carries it. That is the property §6 depends on, and
+  // it was previously implied by the mock rather than asserted.
+  ok(!!sent.probe_actions && sent.probe_actions.length > 0,
+    '6. the probe list reached the deployment (via ' + cap.method + ')');
   THE_FOUR.forEach(function (t) {
     ok(sent.probe_actions.indexOf(t.action) !== -1, '6. the shipped client still PROBES ' + t.action + ' — none was removed');
     var row = (probe.actions || []).filter(function (a) { return a.action === t.action; })[0];

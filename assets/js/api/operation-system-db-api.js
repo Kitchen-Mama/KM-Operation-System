@@ -3888,7 +3888,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // has no fan-out left to fall back to, so a deployment below action contract 9 cannot render that page at all.
 // The version gate must say so first, with the message that names the fix, rather than letting the page
 // discover it as a failed read.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 9;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 10;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -4427,21 +4427,102 @@ window.KM.DB.cancelOrderPlanningGapJob = function(runId) { return _kmWeeklyComma
 // `envelope` is the parsed answer EXACTLY as the deployment sent it. It is additive: `data` keeps its meaning
 // and every existing gap-read consumer is untouched. Nothing here is synthesized — a field absent from the wire
 // is absent from `envelope`.
+// =============================================================================================================
+// F1-7N-FB-4E-R4A1 §3/§4 — THE READ ACTIONS THIS CLIENT MAY DISPATCH AS A GET.
+//
+// WHY THERE IS A LIST AND NOT A RULE. This function serves 16 call sites and ONE of them is a WRITE
+// (automationSchedule.update). A blanket verb change here would have converted a write into a GET — which a
+// browser prefetch, a crawler or a history revisit could then replay. So the verb is decided by an explicit
+// allowlist of READS: an action not named here keeps the existing POST, which means a future write added to this
+// path is POST by default rather than GET by accident. The default is the safe one.
+//
+// Membership is not a matter of naming. Every entry is asserted by the R4A1 suite to be (a) served on GET by the
+// deployed router — a subset of the router's own GET read table plus the three actions that already had their
+// own GET branches — and (b) zero-write when EXECUTED against an instrumented spreadsheet.
+// =============================================================================================================
+var _KM_GET_READ_ACTIONS_ = {
+    // Already GET-routed before R4A1 (their own branches in doGet); now dispatched as GET by the client too.
+    'system.health': 1,
+    'getClientCapabilities': 1,
+    'inventoryScope.registry.get': 1,
+    // Served on GET by the R4A1 router read table.
+    'inventoryReplenishmentGap.get': 1,
+    'orderPlanningGap.get': 1,
+    'aiPlanFirstLayer.get': 1,
+    'gapJob.status.get': 1,
+    'requestOrder.sendWorkset.get': 1,
+    'requestOrder.send.status': 1,
+    'requestOrderDraft.job.status': 1,
+    'requestOrderDraft.getActive': 1,
+    'system.requestOrderSendDiagnosticStatus': 1,
+    'system.requestOrderSendReconcile': 1,
+    'system.allocationDraftIdentityDiagnostic': 1,
+    'automationSchedule.get': 1
+    // automationSchedule.update is DELIBERATELY ABSENT. It is a write.
+};
+var _KM_READ_RID_SEQ_ = 0;
+function _kmNextReadRequestId_() { _KM_READ_RID_SEQ_++; return 'REQ-G' + ('000000' + _KM_READ_RID_SEQ_).slice(-6); }
+function _kmSharedTransport_() {
+    try { return (typeof window !== 'undefined' && window.KM && window.KM.transport) ? window.KM.transport : null; }
+    catch (e) { return null; }
+}
+// ONE URL shape for every read in this application. Built by the shared transport when it is present, so this
+// file cannot drift into a second read-URL format; the local form is an identical fallback for the case where
+// the transport module has not loaded yet.
+function _kmReadUrl_(base, action, dto, rid) {
+    var tp = _kmSharedTransport_();
+    if (tp && typeof tp.readQuery === 'function') {
+        return base + (base.indexOf('?') < 0 ? '?' : '&') + tp.readQuery(action, dto, rid);
+    }
+    var qp = 'action=' + encodeURIComponent(action) + '&km_via=get';
+    if (rid) qp += '&km_rid=' + encodeURIComponent(rid);
+    var pj = JSON.stringify(dto || {});
+    if (pj !== '{}') qp += '&km_body=' + encodeURIComponent(pj);
+    return base + (base.indexOf('?') < 0 ? '?' : '&') + qp;
+}
+
 async function _kmGapRead_(action, payload) {
     if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
-    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
-    var resp;
+    var base = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var isRead = _KM_GET_READ_ACTIONS_[action] === 1;
+    var resp, url, _cls, text = '';
     var _t0 = Date.now();
+
+    // F1-7N-FB-4E-R4A1 — GET FOR READS, AND ONE BOUNDED RECOVERY THAT STARTS AT THE STABLE /exec.
+    //
+    // An /exec answer always arrives through a 302 to script.googleusercontent.com. A POST cannot survive that
+    // hop — per the Fetch spec the redirect is re-issued as a GET with the body dropped — and the two live
+    // failures are its two consequences: an unreadable echo target (404) and an echo that resolves back into
+    // doGet with no body. A GET has nothing to lose, which is why the reads this app already sent as GET never
+    // failed this way. When the echo target itself 404s the deployment is fine and one hop simply could not be
+    // read, so ONE fresh attempt from the STABLE endpoint gets a fresh target. The redirect URL is never stored,
+    // never re-requested and never treated as an endpoint: every attempt is rebuilt from `base`. The recovery
+    // carries its OWN request id, because it is a second physical request and R4A's rule applies to it in full.
+    for (var attemptN = 1; attemptN <= 2; attemptN++) {
+        var rid = isRead ? _kmNextReadRequestId_() : '';
+        var dto = Object.assign({ action: action }, payload || {});
+        if (rid) dto.requestId = rid;
+        url = isRead ? _kmReadUrl_(base, action, dto, rid) : base;
+        var init = isRead
+            ? { method: 'GET', cache: 'no-store' }
+            : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(dto) };
     // F1-7N-FB-3 §D — bounded: an unanswered read can no longer hold its caller's latch forever.
-    try { resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }, 'read'); }
-    catch (netErr) {
-        try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
-        if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
-        return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+        try { resp = await _kmFetchBounded_(url, init, 'read'); }
+        catch (netErr) {
+            try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
+            if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
+            return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+        }
+        text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+        _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);
+        var redirectTarget404 = !_cls.ok && _cls.typed && _cls.typed.code === 'REDIRECT_TARGET_NOT_FOUND';
+        if (!(isRead && attemptN === 1 && redirectTarget404)) break;
+        // Ask the shared policy rather than deciding here, so there is ONE answer to "may this be replayed?".
+        var tpR = _kmSharedTransport_();
+        var allowed = (tpR && typeof tpR.isAutoRetryable === 'function')
+            ? tpR.isAutoRetryable({ kind: 'read', code: 'REDIRECT_TARGET_NOT_FOUND' }) : false;
+        if (!allowed) break;
     }
-    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
-    // F1-7N-FB-4E §A — ONE classification, carrying the evidence the previous three lines deleted.
-    var _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);
     try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, _cls.ok ? null : _cls.typed.code, _cls.ok ? 'SUCCESS' : _cls.typed.phase, String(text || '').length); } catch (e) {}
     if (!_cls.ok) {
         return { success: false, error: {
