@@ -239,7 +239,14 @@ ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*getShippingAllocationDra
 console.log('\n== I/J/K · no new API route / workspace / formula / authority drift ==');
 var routeActions = ['skuDetails.workspace.get', 'purchaseOrder.workspace.get', 'inventoryReplenishment.workspace.get', 'weeklyShipping.workspace.get'];
 routeActions.forEach(function (a) { ok(ROUTER.indexOf(a) >= 0, 'I: existing route present (reused, not new): ' + a); });
-ok((FND.match(/register\('/g) || []).length === 8, 'I: still exactly 8 workspaces registered (no new workspace added)');
+// F1-7N-FB-4E-R3 — this round's claim was "no new workspace added", and that was true OF THIS ROUND. A later
+// round legitimately adds one (R3: overseasStock, replacing a four-request fan-out), so the durable rule is that
+// the eight this round relied on are all still registered and none was removed.
+['weeklyShipping', 'inventoryReplenishment', 'requestOrder', 'purchaseOrder', 'shipment', 'fcSummary',
+ 'skuDetails', 'recommendation'].forEach(function (w) {
+  ok(FND.indexOf("register('" + w + "'") >= 0, 'I: workspace still registered (none removed): ' + w);
+});
+ok((FND.match(/register\('/g) || []).length >= 8, 'I: the registry never shrinks below the 8 this round reused');
 ok(!/inventoryReplenishment\.workspace\.get[\s\S]{0,4000}sku_details/.test('') , 'J: (sentinel) no new backend formula introduced'); // trivially true; real proof is A/B/D/F source assertions above
 ok(!/loadOperationDb/.test(POL_JS.slice(POL_JS.indexOf('function view(id)'), POL_JS.indexOf('function closeView'))), 'H: PO view() migrated path never calls loadOperationDb');
 

@@ -57,11 +57,42 @@ function getNormalizedSkuImage(item) {
     return resolveSkuImageUrl(raw);
 }
 
+// F1-7N-FB-4E-R3 §F — RESOLVE THE STORED VALUE INTO SOMETHING A BROWSER WILL ACTUALLY FETCH.
+//
+// The stored field is not the problem. R3 §A traced it by execution: the sheet's `image_url` survives the scoped
+// read as `image`, survives buildSkuKnowledgeItems and survives getNormalizedSkuImage. Nothing in the pipeline
+// drops or renames it. So a page full of placeholders is not a lost field — it is a URL the browser refused.
+//
+// THE ONE REFUSAL THIS FUNCTION CAN ACTUALLY FIX, and it fits the report exactly ("images that PREVIOUSLY
+// appeared now show the placeholder"): an `http://` image on an `https://` page is MIXED CONTENT, and browsers
+// block it. Nothing has to change in the sheet for that to start happening — the page moving to https, or a
+// browser tightening its default, is enough. So an http:// image is upgraded to https:// when the page itself is
+// https. If the host does not serve https the image fails either way, and it fails the same way it already does,
+// with the failure now REPORTED rather than silently swapped for an icon.
+//
+// This changes no stored data and invents no URL: it rewrites the scheme of a value that is already on the row,
+// at render time only. Everything else is passed through untouched — a relative path stays relative, and a
+// protocol-relative `//host/x` already inherits the page scheme.
 function resolveSkuImageUrl(imageUrl) {
     if (!imageUrl || !String(imageUrl).trim()) return '';
     var url = String(imageUrl).trim();
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.indexOf('http://') === 0) {
+        var pageHttps = false;
+        try { pageHttps = (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:'); }
+        catch (e) { pageHttps = false; }
+        if (pageHttps) return 'https://' + url.slice('http://'.length);
+    }
     return url;
+}
+// Why a given SKU has no rendered image, as a value rather than as a look. `ABSENT` and `PRESENT` are decidable
+// here; whether a PRESENT url actually loads is only knowable in the browser, which is what the renderer reports.
+function classifySkuImageSource(item) {
+    var raw = (item && (getSkuImageOverride(item.sku) || item.image || item.imageUrl || item.image_url)) || '';
+    raw = String(raw).trim();
+    if (raw === '') return { state: 'ABSENT', reason: 'NO_IMAGE_URL_ON_RECORD', url: '' };
+    var resolved = resolveSkuImageUrl(raw);
+    var note = (raw.indexOf('http://') === 0 && resolved.indexOf('https://') === 0) ? 'UPGRADED_HTTP_TO_HTTPS' : null;
+    return { state: 'PRESENT', reason: null, url: resolved, note: note };
 }
 
 // Get all SKU data with overrides applied, grouped by lifecycle.
@@ -304,6 +335,8 @@ _skuPurgeLegacyLifecycleOverride();
 window.getSkuImageOverride = getSkuImageOverride;
 window.getNormalizedSkuStatus = getNormalizedSkuStatus;
 window.getNormalizedSkuImage = getNormalizedSkuImage;
+window.resolveSkuImageUrl = resolveSkuImageUrl;
+window.classifySkuImageSource = classifySkuImageSource;
 window.resolveSkuImageUrl = resolveSkuImageUrl;
 window.getAllSkuDataWithOverrides = getAllSkuDataWithOverrides;
 window.setSkuImageOverride = setSkuImageOverride;

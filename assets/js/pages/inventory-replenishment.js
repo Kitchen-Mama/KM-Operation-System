@@ -5204,6 +5204,151 @@ function _irEnsureRegistryLoaded_(opts) {
 function _irSharedRegistry_() {
     return (typeof window !== 'undefined' && window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
 }
+
+// =============================================================================================================
+// F1-7N-FB-4E-R3 §B — ONE COHERENT BOOTSTRAP, WITHOUT LOADING EVERY SITE'S INVENTORY.
+//
+// WHAT WAS ACTUALLY WRONG, because it was not the search gate. R3 §A measured this mount at ONE request (the slim
+// scope registry) and the Search at ONE more (the scoped workspace) — no whole-DB read, and no per-site loading.
+// The explicit Search gate is a FROZEN UX CONTRACT and stays exactly as it is: it is what stopped a dropdown
+// touch from costing a 20-table read. What the user experienced as "two loading phases" is the SEQUENCE for a
+// RETURNING user: wait for the registry, re-pick the scope you already had, then wait again for the data.
+//
+// So neither request is removed and neither is widened. What changes is that a returning user stops WAITING
+// TWICE for something already known:
+//
+//   REMEMBERED SCOPE (the returning case): the registry validation and the scoped workspace read start
+//     TOGETHER, under ONE loading state, and the table paints ONCE when both have resolved and the scope has
+//     been VALIDATED against the registry. The two waits become one, and the registry half is usually already
+//     answered from its versioned TTL snapshot, so in practice one request overlaps zero.
+//
+//   NO REMEMBERED SCOPE (first use): registry only, then wait for a choice. Byte-for-byte today's behaviour,
+//     because there is nothing to overlap and guessing a scope would be worse than asking for one.
+//
+// §B.5 IS STRUCTURAL HERE, NOT BEST-EFFORT. `applied` is assigned in exactly one place (_irApplySearch_) and
+// nothing renders scope-dependent data from anything else, so a scope that fails validation is never applied and
+// therefore CANNOT be painted — not even for a frame. A remembered scope the registry rejects is discarded and
+// the page falls back to the pre-search state, with the reason available rather than silent.
+// =============================================================================================================
+var _IR_SCOPE_MEMORY_KEY = 'km_site_inventory_last_scope_v1';
+var _IR_SCOPE_MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // a month: this is a convenience, not an authority
+var _irBootstrap = { ran: false, mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
+function _irScopeStore_() {
+    try { return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage : null; } catch (e) { return null; }
+}
+function _irRememberScope_(scope) {
+    var st = _irScopeStore_(); if (!st || !scope || !scope.country || !scope.marketplaceId) return false;
+    try { st.setItem(_IR_SCOPE_MEMORY_KEY, JSON.stringify({ country: String(scope.country), marketplaceId: String(scope.marketplaceId), at: Date.now() })); return true; }
+    catch (e) { return false; }                       // private mode / quota: a lost convenience, never an error
+}
+function _irForgetScope_() { var st = _irScopeStore_(); if (st) { try { st.removeItem(_IR_SCOPE_MEMORY_KEY); } catch (e) {} } }
+function _irRestoreScope_() {
+    var st = _irScopeStore_(); if (!st) return null;
+    try {
+        var o = JSON.parse(st.getItem(_IR_SCOPE_MEMORY_KEY) || 'null');
+        if (!o || !o.country || !o.marketplaceId || typeof o.at !== 'number') return null;
+        if ((Date.now() - o.at) > _IR_SCOPE_MEMORY_TTL_MS) { _irForgetScope_(); return null; }
+        return { country: String(o.country), marketplaceId: String(o.marketplaceId) };
+    } catch (e) { return null; }
+}
+// Is a remembered scope still a REAL option? Asked of the registry, which is the picker authority (§B.1) — never
+// assumed, because a marketplace can be retired between visits and offering it would be worse than asking again.
+function _irScopeIsValid_(model, scope) {
+    if (!model || !scope) return false;
+    var list = model.getMarketplaces || [];
+    for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (String(m.marketplace_id || m.marketplaceId || '') === scope.marketplaceId
+            && String(m.country || '') === scope.country) return true;
+    }
+    return false;
+}
+function _irSetSelectors_(scope) {
+    if (typeof document === 'undefined' || !scope) return;
+    try {
+        var c = document.getElementById('replenCountry'); if (c) c.value = scope.country;
+        var m = document.getElementById('replenMarketplace'); if (m) m.value = scope.marketplaceId;
+    } catch (e) {}
+}
+// THE MOUNT ENTRY POINT. Replaces the bare _irEnsureRegistryLoaded_() call, and is the only thing that changed
+// about when requests are issued.
+function _irBootstrapScope_() {
+    _irBootstrap = { ran: true, mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
+    var remembered = _irRestoreScope_();
+    if (!remembered) {
+        _irBootstrap.mode = 'REGISTRY_ONLY';
+        _irBootstrap.reason = 'no remembered scope — the registry alone, then wait for a choice';
+        _irBootstrap.registryRequests = 1;
+        return Promise.resolve(_irEnsureRegistryLoaded_());
+    }
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) {
+        _irBootstrap.mode = 'REGISTRY_ONLY';
+        _irBootstrap.reason = 'Demo owns its own static options';
+        return Promise.resolve(_irEnsureRegistryLoaded_());
+    }
+    _irBootstrap.mode = 'COALESCED';
+    _irBootstrap.reason = 'a remembered scope: registry validation and the scoped workspace read run together';
+    _irBootstrap.registryRequests = 1;
+    _irBootstrap.workspaceRequests = 1;
+    var mySeq = ++_irSearch.seq;
+    _irSearch.status = 'LOADING';
+    _irSearch.error = null;
+    var rg = _irRegion_(); if (rg && window.KM && window.KM.loadState) rg.beginLoad(false);   // ONE loading state
+    // STARTED TOGETHER. The workspace read is scope-INDEPENDENT (the server returns the primary-render table set
+    // and the client scopes it), which is exactly why it can overlap the validation instead of following it.
+    var regP = Promise.resolve(_irEnsureRegistryLoaded_())['catch'](function () { return null; });
+    var wsP = Promise.resolve(_irWorkspaceRefresh_()).then(function (m) { return { ok: true, model: m }; },
+        function (err) { return { ok: false, error: err }; });
+    return Promise.all([regP, wsP]).then(function (r) {
+        if (mySeq !== _irSearch.seq) return null;                    // a real Search superseded the bootstrap
+        var model = _irRegistry.model;
+        var valid = _irScopeIsValid_(model, remembered);
+        _irBootstrap.scopeValid = valid;
+        if (!valid) {
+            // The scope is gone, or the registry could not be read. Either way: forget it, apply nothing, and
+            // leave the page in its ordinary pre-search state. Nothing scope-dependent has been rendered.
+            _irForgetScope_();
+            _irBootstrap.reason = model
+                ? 'the remembered scope is no longer offered by the registry — discarded, pre-search state'
+                : 'the registry could not be read — the remembered scope cannot be validated, so it is not applied';
+            _irSearch.status = 'PRE_SEARCH';
+            if (typeof _irRenderSearchGate_ === 'function') _irRenderSearchGate_();
+            return null;
+        }
+        var ws = r[1];
+        if (!ws || !ws.ok) {
+            _irSearch.status = 'PRE_SEARCH';
+            _irBootstrap.reason = 'the scoped workspace read failed — reported, and the scope is NOT applied';
+            if (typeof _irRenderError_ === 'function') _irRenderError_(ws && ws.error);
+            return null;
+        }
+        _irSetSelectors_(remembered);
+        // ONE paint, through the SAME single assignment point a manual Search uses. No second code path can
+        // make data appear, which is what keeps §B.5 true by construction.
+        _irApplySearch_(remembered, mySeq);
+        return remembered;
+    });
+}
+// Read-only: what the mount actually did, so "why two phases / why one" has an answer without guessing.
+window._irBootstrapDiagnostic_ = function () {
+    var reg = _irSharedRegistry_();
+    var snap = reg ? reg.getState() : null;
+    return {
+        mode: _irBootstrap.mode, reason: _irBootstrap.reason, scope_valid: _irBootstrap.scopeValid,
+        registry_requests: _irBootstrap.registryRequests, workspace_requests: _irBootstrap.workspaceRequests,
+        registry_from_cache: snap ? (snap.from_cache === true) : null,
+        registry_total_requests: snap ? snap.requests : null,
+        remembered_scope: _irRestoreScope_(),
+        note: 'COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together '
+            + 'under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. '
+            + 'Neither mode loads every site inventory, and neither reads the whole database.'
+    };
+};
+window._irBootstrapScope_ = _irBootstrapScope_;
+window._irRememberScope_ = _irRememberScope_;
+window._irRestoreScope_ = _irRestoreScope_;
+window._irForgetScope_ = _irForgetScope_;
+window._irScopeIsValid_ = _irScopeIsValid_;
 function _irReloadScopeRegistry_() { return _irEnsureRegistryLoaded_({ force: true }); }
 window._irEnsureRegistryLoaded_ = _irEnsureRegistryLoaded_;
 window._irReloadScopeRegistry_ = _irReloadScopeRegistry_;
@@ -5546,6 +5691,10 @@ function _irApplySearch_(pending, mySeq) {
     if (mySeq !== _irSearch.seq) return;                  // superseded while resolving
     if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
+    // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
+    // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
+    if (typeof _irRememberScope_ === 'function') _irRememberScope_(_irSearch.applied);
     _irSearch.stale = false;
     _irSearch.error = null;
     _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
@@ -8185,7 +8334,11 @@ if (window.KM && window.KM.lifecycle) {
                     // so the selectors are usable immediately. It issues ZERO inventoryReplenishment workspace
                     // reads and never puts the inventory table into a loading state — the table stays PRE_SEARCH.
                     // Its own loading/empty/error state renders beside the selectors, with its own Retry.
-                    if (typeof _irEnsureRegistryLoaded_ === 'function') { try { _irEnsureRegistryLoaded_(); } catch (e) {} }
+                    // F1-7N-FB-4E-R3 §B — one coherent bootstrap. With no remembered scope this is exactly the
+                    // registry-only call it replaces; with one, the registry validation and the scoped workspace
+                    // read run TOGETHER under one loading state and the table paints once, validated.
+                    if (typeof _irBootstrapScope_ === 'function') { try { _irBootstrapScope_(); } catch (e) {} }
+                    else if (typeof _irEnsureRegistryLoaded_ === 'function') { try { _irEnsureRegistryLoaded_(); } catch (e) {} }
                     // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
                     // calculation month / planning cycle). Populates options + restores explicit session
                     // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.

@@ -46,11 +46,24 @@ var PROD_DB_ID = (/var PRODUCTION_DB_SPREADSHEET_ID_ = '([^']+)'/.exec(read('ass
 // =============================================================================================================
 function table(headers, rows) { return [headers].concat(rows); }
 var DB = {
-  sku_details: table(
-    ['sku', 'product_name', 'series', 'category', 'lifecycle', 'image_url', 'units_per_carton', 'msrp', 'selling_price', 'pm'],
-    [['SKU-A', 'Can Opener', 'Mama', 'Kitchen', 'Running in the Market', 'https://cdn.example.com/a.jpg', 12, '19.99', '14.99', 'VZ'],
-     ['SKU-B', 'Jar Opener', 'Mama', 'Kitchen', 'Running in the Market', 'https://cdn.example.com/b.jpg', 6, '9.99', '7.99', 'VZ'],
-     ['SKU-C', 'No Image SKU', 'Papa', 'Kitchen', 'Phasing Out', '', 6, '9.99', '7.99', 'VZ']]),
+  // sku_details is the WIDEST table in the database, and that width is the point: Overseas Stock reads four
+  // fields from it. A narrow fixture would make the server-side column projection look worthless, so the extra
+  // columns below stand in for the real ones (dimensions, weights, customs, pricing) at representative width.
+  sku_details: (function () {
+    var head = ['sku', 'product_name', 'series', 'category', 'lifecycle', 'image_url', 'units_per_carton', 'msrp', 'selling_price', 'pm'];
+    var wide = ['product_name_cn', 'product_use', 'gs1_code', 'gs1_type', 'amz_asin',
+      'item_length', 'item_width', 'item_height', 'item_dimension_unit', 'item_weight', 'item_weight_unit',
+      'item_length_2', 'item_width_2', 'item_height_2',
+      'package_length', 'package_width', 'package_height', 'package_dimension_unit', 'package_weight', 'package_weight_unit',
+      'carton_length', 'carton_width', 'carton_height', 'carton_dimension_unit', 'carton_weight', 'carton_weight_unit',
+      'material', 'battery_type', 'magnet_type', 'minimum_price', 'base_currency', 'hscode'];
+    function row(base) { return base.concat(wide.map(function (c) { return c + '-value-for-' + base[0]; })); }
+    return table(head.concat(wide), [
+      row(['SKU-A', 'Can Opener', 'Mama', 'Kitchen', 'Running in the Market', 'https://cdn.example.com/a.jpg', 12, '19.99', '14.99', 'VZ']),
+      row(['SKU-B', 'Jar Opener', 'Mama', 'Kitchen', 'Running in the Market', 'https://cdn.example.com/b.jpg', 6, '9.99', '7.99', 'VZ']),
+      row(['SKU-C', 'No Image SKU', 'Papa', 'Kitchen', 'Phasing Out', '', 6, '9.99', '7.99', 'VZ'])
+    ]);
+  })(),
   product_features: table(['feature_id', 'scope_type', 'scope_id', 'product_title', 'product_description', 'bullet_points', 'language'],
     [['PF1', 'sku', 'SKU-A', 'Can Opener', 'Opens cans.', 'a|b|c', 'en']]),
   sku_handbook_summaries: table(['summary_id', 'sku', 'summary_text', 'review_status'],
@@ -91,7 +104,22 @@ function makeDeployment() {
       getName: function () { return name; },
       getDataRange: function () { return { getValues: function () { return t.map(function (r) { return r.slice(); }); } }; },
       getLastRow: function () { return t.length; }, getLastColumn: function () { return t[0].length; },
-      getRange: function () { return { setValue: forbid('setValue'), setValues: forbid('setValues'), getValue: function () { return ''; }, getValues: function () { return []; }, clearContent: forbid('clearContent') }; },
+      // getRange has to answer with the REAL cells for the requested window: the production-safety adapter reads
+      // the header row through getRange(1,1,1,lastCol).getValues()[0], and a stub returning [] makes every gated
+      // read throw on `undefined.map` — a harness fault that would read as a defect in the code under test.
+      getRange: function (row, col, numRows, numCols) {
+        var r0 = Math.max(1, row || 1) - 1, c0 = Math.max(1, col || 1) - 1;
+        var nr = numRows || 1, nc = numCols || 1;
+        var win = [];
+        for (var i = 0; i < nr; i++) {
+          var src = t[r0 + i] || [];
+          var line = [];
+          for (var j = 0; j < nc; j++) line.push(src[c0 + j] === undefined ? '' : src[c0 + j]);
+          win.push(line);
+        }
+        return { setValue: forbid('setValue'), setValues: forbid('setValues'), clearContent: forbid('clearContent'),
+          getValue: function () { return win[0][0]; }, getValues: function () { return win; } };
+      },
       appendRow: forbid('appendRow'), deleteRow: forbid('deleteRow'), deleteRows: forbid('deleteRows'),
       insertRowAfter: forbid('insertRowAfter'), clear: forbid('clear'), clearContents: forbid('clearContents')
     };
@@ -245,17 +273,36 @@ console.log('        each request is a separate Apps Script Web App execution.')
 // =============================================================================================================
 var checks = [];
 
-// ---- Overseas Inventory: the reported slow page ------------------------------------------------------------
+// ---- Overseas Inventory: the reported slow page. BEFORE R3 §C this was FOUR requests. ---------------------
+var OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'];
+// Sequential on purpose: the after must be compared against a before that has already been measured.
 checks.push((function () {
   var c = makeClient();
-  var OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'];
   return c.DB.loadScopedTables(OS_TABLES).then(function (m) {
-    RESULTS.overseas = summarize('overseas-stock (mount)', c.log, c.dep);
-    eq(RESULTS.overseas.requests, 4, 'A1 overseas-stock mount issues FOUR requests (the fan-out FB-4E named)');
-    eq(RESULTS.overseas.wholeDb, 0, 'A1 and no whole-DB read');
-    eq(Object.keys(RESULTS.overseas.actions).join(','), 'getTable', 'A1 all four are getTable');
-    ok(m.overseasInventorySnapshot && m.overseasInventorySnapshot.length === 3, 'A1 and the read model is populated');
+    RESULTS.overseasLegacy = summarize('overseas-stock (LEGACY fan-out)', c.log, c.dep);
+    eq(RESULTS.overseasLegacy.requests, 4, 'A1 the legacy fan-out is FOUR requests (kept as the measured baseline)');
+    eq(Object.keys(RESULTS.overseasLegacy.actions).join(','), 'getTable', 'A1 all four are getTable');
+    ok(m.overseasInventorySnapshot && m.overseasInventorySnapshot.length === 3, 'A1 and it populates the read model');
+    RESULTS.legacyModel = m;
+  }).then(function () {
+  var c2 = makeClient();
+  return c2.DB.loadOverseasStockWorkspace({}).then(function (m) {
+    var c = c2;
+    RESULTS.overseas = summarize('overseas-stock (R3 workspace)', c.log, c.dep);
+    eq(RESULTS.overseas.requests, 1, 'A1 the R3 scoped workspace mount is ONE request (was 4)');
+    eq(Object.keys(RESULTS.overseas.actions).join(','), 'overseasStock.workspace.get', 'A1 through the new scoped action');
+    eq(c.log[0].method, 'POST', 'A1 dispatched as POST');
+    eq(RESULTS.overseas.wholeDb, 0, 'A1 and getOperationDb never appears');
     eq(c.dep.__violations.length, 0, 'A1 zero write primitives were reached');
+    // BEFORE == AFTER on the rows the page actually renders.
+    ok(m.overseasInventorySnapshot && m.overseasInventorySnapshot.length === 3, 'A1 the snapshot rows are all present');
+    ok(m.overseasInventoryMovements && m.overseasInventoryMovements.length === 2, 'A1 the movement log is present');
+    ok(m._workspaceMeta && m._workspaceMeta.requests === 1, 'A1 and the model reports it took one request');
+    var lb = RESULTS.overseasLegacy.bytes, wb = RESULTS.overseas.bytes;
+    console.log('     BEFORE/AFTER  requests 4 -> 1   bytes ' + lb + ' -> ' + wb
+      + '  (' + (wb < lb ? '-' : '+') + Math.abs(Math.round((wb - lb) / lb * 100)) + '%)');
+    ok(wb < lb, 'A1 and the scoped projection returns FEWER bytes than the fan-out (' + wb + ' < ' + lb + ')');
+  }, function (e) { ok(false, 'A1 overseas workspace read failed: ' + (e && (e.message || e.apiCode))); });
   });
 })());
 

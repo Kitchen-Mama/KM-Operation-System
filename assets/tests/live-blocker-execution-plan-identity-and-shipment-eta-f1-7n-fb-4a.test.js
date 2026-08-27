@@ -732,7 +732,10 @@ var declaredBy = {
   'SAD_BUILD_VERSION_': (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   'SP_BUILD_VERSION_': (read('specs/active/apps-script/11_shipping_plan_handlers.gs').match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1],
   'RTR_BUILD_VERSION_': (read('specs/active/apps-script/01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'SKD_BUILD_VERSION_': (read('specs/active/apps-script/59_api_v1_sku_details_workspace.gs').match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1]
+  'SKD_BUILD_VERSION_': (read('specs/active/apps-script/59_api_v1_sku_details_workspace.gs').match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+  // F1-7N-FB-4E-R3 — the Overseas Stock workspace owner joined the manifest, so its lookup joins this map. The
+  // note above is the reason: a manifest entry with no lookup here would make the comparison compare undefined.
+  'OSW_BUILD_VERSION_': (read('specs/active/apps-script/70_api_v1_overseas_stock_workspace.gs').match(/var OSW_BUILD_VERSION_ = '([^']+)';/) || [])[1]
 };
 // Guard the guard: a manifest entry with no declaredBy lookup would make the comparison vacuous.
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {

@@ -84,13 +84,69 @@
     return { company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), marketplaceId: id };
   }
 
+  // ------------------------------------------------------------------------------------------------------
+  // F1-7N-FB-4E-R3 §B.4 — AN EXPLICIT VERSION + TTL CACHE, SO A RETURNING USER DOES NOT WAIT FOR PHASE ONE.
+  //
+  // The registry was already single-flighted and cached FOR THE SESSION, which is why two consumers share one
+  // request and a second modal open costs nothing. What it could not do is survive a reload: every fresh page
+  // load paid a blocking round trip before the selectors were usable, and that wait is the first of the two
+  // loading phases the user reported.
+  //
+  // So the snapshot is persisted, and it is STALE-WHILE-REVALIDATE: a valid stored entry seeds the state
+  // immediately (selectors usable with ZERO blocking requests) and a revalidation still runs, exactly once,
+  // through the same single-flight. The user never waits for what has not changed, and the server still gets the
+  // final word.
+  //
+  // TWO GUARDS, BOTH EXPLICIT, because a stale scope list is worse than a slow one — it can offer a marketplace
+  // that no longer exists:
+  //   VERSION  the stored entry records the projection version it came from. A backend that changes the
+  //            projection invalidates every stored entry by definition, with no cache-clearing step to remember.
+  //   TTL      a bounded age, so an entry cannot outlive a change that did NOT move the version.
+  // Only a SUCCESSFUL read is ever written, so a failure can never be cached, and any storage error at all
+  // (private mode, quota, disabled) degrades to the previous behaviour rather than breaking the page.
+  // ------------------------------------------------------------------------------------------------------
+  var CACHE_KEY = 'km_scope_registry_snapshot_v1';
+  var CACHE_TTL_MS = 6 * 60 * 60 * 1000;        // 6 hours: marketplace configuration changes rarely, not never
+  function _store() {
+    try { return (typeof root !== 'undefined' && root.localStorage) ? root.localStorage : null; } catch (e) { return null; }
+  }
+  function _expectedVersion() {
+    try {
+      if (typeof root !== 'undefined' && root.KM_EXPECTED_REGISTRY_PROJECTION_VERSION_) return String(root.KM_EXPECTED_REGISTRY_PROJECTION_VERSION_);
+    } catch (e) {}
+    return null;
+  }
+  function cacheRead(nowMs) {
+    var st = _store(); if (!st) return null;
+    try {
+      var raw = st.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || !o.data || typeof o.at !== 'number') return null;
+      if ((nowMs - o.at) > CACHE_TTL_MS) return null;                       // aged out
+      var want = _expectedVersion();
+      if (want && String(o.v || '') !== want) return null;                  // projection moved
+      return o;
+    } catch (e) { return null; }
+  }
+  function cacheWrite(data, version, nowMs) {
+    var st = _store(); if (!st) return false;
+    try { st.setItem(CACHE_KEY, JSON.stringify({ v: version == null ? null : String(version), at: nowMs, data: data })); return true; }
+    catch (e) { return false; }                                             // quota / private mode: not an error
+  }
+  function cacheClear() { var st = _store(); if (!st) return; try { st.removeItem(CACHE_KEY); } catch (e) {} }
+
   function create(deps) {
     deps = deps || {};
     var state = { status: STATUS.IDLE, model: null, error: null };
     var pending = null, seq = 0, requests = 0;
     var listeners = [];
+    var nowMs = (typeof deps.now === 'function') ? deps.now : function () { return Date.now(); };
+    var persist = deps.persist !== false;
+    var seededFromCache = false, revalidated = false;
 
-    function snapshot() { return { status: state.status, model: state.model, error: state.error, requests: requests }; }
+    function snapshot() { return { status: state.status, model: state.model, error: state.error, requests: requests,
+      from_cache: seededFromCache, revalidated: revalidated }; }
     function emit() { listeners.slice().forEach(function (fn) { try { fn(snapshot()); } catch (e) {} }); }
     function set(status, model, error) { state.status = status; state.model = model; state.error = error || null; emit(); }
 
@@ -110,8 +166,29 @@
     //   otherwise                     -> exactly 1 request
     // ERROR is NOT sticky: a previous failure may be retried, but only by an explicit call (a consumer opening
     // a modal does not silently re-drive a failed read on every open).
+    // Seed from the persisted snapshot, once, before the first request is considered. Kept separate from
+    // ensureLoaded so "did this come from cache?" stays a fact in the snapshot rather than an inference.
+    function seedFromCache() {
+      if (seededFromCache || !persist || state.model) return false;
+      var o = cacheRead(nowMs());
+      if (!o) return false;
+      var model;
+      try { model = adapt(o.data); } catch (e) { cacheClear(); return false; }
+      if (!model || (!model.empty && !(model.getMarketplaces || []).length)) { cacheClear(); return false; }
+      seededFromCache = true;
+      set(model.empty || !model.getMarketplaces.length ? STATUS.EMPTY : STATUS.READY, model, null);
+      return true;
+    }
+
     function ensureLoaded(opts) {
       var force = !!(opts && opts.force);
+      // A stored snapshot answers immediately AND still revalidates: the selectors are usable now, the server
+      // still gets the final word, and the revalidation is the same single request ensureLoaded would have made.
+      if (!force && !state.model && seedFromCache()) {
+        var seeded = snapshot();
+        if (!revalidated) { revalidated = true; try { ensureLoaded({ force: true, revalidation: true }); } catch (e) {} }
+        return Promise.resolve(seeded);
+      }
       if (!force && (state.status === STATUS.READY || state.status === STATUS.EMPTY) && state.model) return Promise.resolve(snapshot());
       if (!force && state.status === STATUS.ERROR && !(opts && opts.retry)) return Promise.resolve(snapshot());
       if (pending) return pending;                          // single-flight across every consumer
@@ -129,6 +206,13 @@
         // EMPTY is a real, successful configuration answer — "there are no eligible scopes" — and must never be
         // shown as an error. ERROR is "we could not find out". They are different facts and different fixes.
         set(model.empty || !model.getMarketplaces.length ? STATUS.EMPTY : STATUS.READY, model, null);
+        // Only a SUCCESSFUL read is ever stored, so a failure cannot be cached (§E.6). The version comes off the
+        // wire; when the deployment does not report one the entry is still TTL-bounded.
+        if (persist) {
+          var ver = null;
+          try { ver = (res.envelope && res.envelope.meta && res.envelope.meta.projection_version) || (res.meta && res.meta.projection_version) || null; } catch (e2) { ver = null; }
+          cacheWrite(res.data, ver, nowMs());
+        }
         return snapshot();
       })['catch'](function (err) {
         pending = null;
@@ -145,7 +229,10 @@
       isReady: function () { return (state.status === STATUS.READY || state.status === STATUS.EMPTY) && !!state.model; },
       getModel: function () { return state.model; },
       ensureLoaded: ensureLoaded,
-      reload: function () { return ensureLoaded({ force: true }); },
+      reload: function () { cacheClear(); return ensureLoaded({ force: true }); },
+      // Exposed so a scope change or a write that invalidates configuration can drop the stored snapshot
+      // explicitly (§E.7) rather than waiting for the TTL.
+      clearPersisted: cacheClear,
       retry: function () { return ensureLoaded({ retry: true }); },
       subscribe: function (fn) { if (typeof fn === 'function') listeners.push(fn); return function () { var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
       // Diagnostics (§H): how many registry REQUESTS this session has actually issued. The regression suite

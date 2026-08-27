@@ -135,6 +135,13 @@
       tables: ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'campaigns', 'campaign_sku_lines', 'marketplace_skus'], legacyRead: 'getOperationDb' },
     { name: 'skuDetails', label: 'SKU Details',
       tables: ['sku_details', 'tax_referral_rates', 'tax_rate_components', 'marketplace_skus', 'sku_regional_details'], legacyRead: 'getOperationDb' },
+    // F1-7N-FB-4E-R3 §C — Overseas Stock. Its FOUR tables were four separate getTable requests at mount, which
+    // R3 §A measured; on Apps Script each request is a separate Web App execution, so this collapses four cold
+    // starts into one. `legacyRead` is the four-table scoped fan-out, NOT getOperationDb: the fallback for this
+    // page has never been a whole-DB read and must not become one.
+    { name: 'overseasStock', label: 'Overseas Stock',
+      tables: ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'],
+      legacyRead: 'getTable(x4)' },
     // Recommendation READ-ONLY workspace (F1-4B-A) — targeted canonical tables consumed by KMPA/KMPS (never getOperationDb).
     { name: 'recommendation', label: 'Recommendation',
       tables: ['sku_details', 'marketplace_skus', 'warehouses', 'marketplaces', 'fc_regular_forecast', 'fc_special_events',
@@ -455,8 +462,8 @@
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
     // F1-7C: purchaseOrder READ is now production-canonical too.
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true };
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true, overseasStock: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true, overseasStock: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -1070,6 +1077,35 @@
       });
     }
     register('skuDetails', { label: 'SKU Details', tables: getWorkspace('skuDetails').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: skuDetailsResolver });
+
+    // ---- F1-7N-FB-4E-R3 §C - Overseas Stock READ workspace resolver ------------------------------------
+    // ONE scoped read replacing the four-request getTable fan-out. The server (70_) returns RAW passthrough under
+    // the sheet's own column names, so the client normalizes it with the SAME normalizeOperationDb the fan-out
+    // fed and the render is unchanged. Built through the canonical immutable builder, like skuDetails: the action
+    // is required and the payload is frozen, so neither a blank action nor a late mutation can produce a
+    // malformed request.
+    var OVERSEAS_STOCK_ACTION = 'overseasStock.workspace.get';
+    function buildOverseasStockRequestDTO(params) {
+      params = params || {};
+      return buildRequestEnvelope(OVERSEAS_STOCK_ACTION, {
+        include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+      }, {
+        requestId: params.requestId,
+        actor: (params.context && params.context.actor) || null,
+        clientVersion: (params.context && params.context.clientVersion) || null
+      });
+    }
+    function overseasStockResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildOverseasStockRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'overseasStock';
+        return env;
+      });
+    }
+    register('overseasStock', { label: 'Overseas Stock', tables: getWorkspace('overseasStock').tables, legacyRead: 'getTable(x4)', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: overseasStockResolver });
 
     // ---- F1-7I · Inventory Replenishment READ workspace resolver -------------------------------------------
     // Scoped read for the Inventory Replenishment page primary render (the main-table assembly). The server (60_) returns

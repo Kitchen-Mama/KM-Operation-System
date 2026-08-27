@@ -22,7 +22,7 @@
 // F1-7N-FB-4E-R2 §3 — R2 CHANGED THIS FILE, so the stamp moves and the action contract moves with it.
 // system.executionPlanDuplicateLineDiagnostic had a handler in 68_ and a docstring declaring it an action, and
 // NO dispatch branch in any commit ever — so the handler was unreachable while the frontend required it.
-var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R2';
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R3';
 
 function doGet(e) {
   try {
@@ -344,6 +344,13 @@ function doPost(e) {
     // getOperationDb. Returns raw passthrough of the FULL tables (the pages' filter/lifecycle/country universes need the
     // complete set; client keeps all filtering/pagination). Authors NO write side effects — does NOT create sku_details/
     // marketplace_skus and does NOT initialize Factory Stock (that stays with master-SKU creation). No business logic here.
+    // F1-7N-FB-4E-R3 §C — OVERSEAS STOCK scoped READ workspace (owner = 70_). Replaces the four-request
+    // getTable fan-out the page mounted on: R3 §A measured that mount at FOUR requests, and on Apps Script each
+    // request is a separate Web App execution, so four is four cold starts for one page. Read-only, no lock, no
+    // write; routed on POST only, like the other body-carrying workspace reads.
+    if (action === 'overseasStock.workspace.get') {
+      return jsonResponse_(handleOverseasStockWorkspaceGet_(body));
+    }
     if (action === 'skuDetails.workspace.get') {
       return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
     }

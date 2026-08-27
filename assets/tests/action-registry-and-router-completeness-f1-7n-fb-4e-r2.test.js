@@ -178,9 +178,13 @@ THE_FOUR.forEach(function (t) {
     '1. ' + t.action + ' — the branch delegates to its handler and answers through jsonResponse_');
 });
 // The owner build stamps, which are what a partial sync is caught by.
-eq(/var RTR_BUILD_VERSION_ = '([^']+)'/.exec(RTR)[1], 'F1-7N-FB-4E-R2', '1. the ROUTER build stamp moved: R2 changed it');
-eq(/var EPC_BUILD_VERSION_ = '([^']+)'/.exec(G68)[1], 'F1-7N-FB-4E-R2', '1. the 68_ owner stamp moved: R2 changed it');
-eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(G63)[1], 'F1-7N-FB-4E-R2', '1. the 63_ owner stamp moved: R2 changed it');
+// F1-7N-FB-4E-R3 — STAMPS ARE CHECKED AS A RULE, NOT AS FROZEN STRINGS. R2 moved these three; R3 moved 01_ and
+// 63_ again (a new routed action and a new registry entry) and left 68_ alone. Pinning the literal made R3's
+// correct change look like a regression, which is the trap this repo already documents for release tokens. What
+// must hold: each is at R2 or later, and 68_ — unchanged in R3 — is still exactly R2.
+ok(/var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R[2-9]/.test(RTR), '1. the ROUTER build stamp is at R2 or later');
+eq(/var EPC_BUILD_VERSION_ = '([^']+)'/.exec(G68)[1], 'F1-7N-FB-4E-R2', '1. 68_ moved in R2 and NOT since — R3 did not touch it');
+ok(/var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R[2-9]/.test(G63), '1. the 63_ owner stamp is at R2 or later');
 // 31_ and 59_ were NOT changed, so their stamps must NOT move — a stamp that moves without a change is noise.
 ok(/SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1'/.test(G63), '1. 59_ is unchanged this round and keeps its FB-4C-R1 stamp');
 ok(!/SKD_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(GS_ALL), '1. and nothing bumped it just to look current');
@@ -192,7 +196,9 @@ section('§2 — THE THREE REGISTRY ADDITIONS ARE CANONICAL AND NON-DUPLICATE');
 // =============================================================================================================
 var regRows = [], rre = /\{ action: '([^']+)',\s*handler: '([^']+)', used_by: '([^']*)' \}/g, rm;
 while ((rm = rre.exec(G63))) regRows.push({ action: rm[1], handler: rm[2], used_by: rm[3] });
-eq(regRows.length, 39, '2. SYS_REQUIRED_ACTIONS_ holds 39 entries (35 before R2, plus the four)');
+// 35 before R2, +4 in R2 = 39, +1 in R3 (overseasStock.workspace.get) = 40. The count grows; the rule is that
+// it never SHRINKS below what R2 established and that every entry is still routed and handled (G1 below).
+ok(regRows.length >= 39, '2. SYS_REQUIRED_ACTIONS_ holds at least the 39 entries R2 established (now ' + regRows.length + ')');
 var seenAction = {}, dupAction = [];
 regRows.forEach(function (r) { if (seenAction[r.action]) dupAction.push(r.action); seenAction[r.action] = true; });
 eq(dupAction.length, 0, '2. no action is registered twice' + (dupAction.length ? ': ' + dupAction.join(', ') : ''));
@@ -290,8 +296,10 @@ var TRANSPORT_CONTRACT = Number(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.ex
 var CLIENT_ACTION_PIN = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI_SRC)[1]);
 var CLIENT_TRANSPORT_PIN = Number(/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI_SRC)[1]);
 
-eq(ACTION_CONTRACT, 8, '5. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ 7 -> 8, because a router ACTION was added');
-eq(LIST_VERSION, 8, '5. SYS_REQUIRED_ACTION_LIST_VERSION_ 7 -> 8, because SYS_REQUIRED_ACTIONS_ changed');
+// R2 took these 7 -> 8; R3 took them 8 -> 9 for the same reasons (a new router action, a changed registry).
+// Floored at R2's values so a future round may raise them and nothing can quietly lower one.
+ok(ACTION_CONTRACT >= 8, '5. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ is at R2 level or later (v' + ACTION_CONTRACT + ')');
+ok(LIST_VERSION >= 8, '5. SYS_REQUIRED_ACTION_LIST_VERSION_ is at R2 level or later (v' + LIST_VERSION + ')');
 eq(TRANSPORT_CONTRACT, 1, '5. SYS_TRANSPORT_CONTRACT_VERSION_ stays 1 — no router response-identity field changed');
 eq(CLIENT_ACTION_PIN, ACTION_CONTRACT, '5. the client pin AGREES with the deployment contract');
 eq(CLIENT_TRANSPORT_PIN, TRANSPORT_CONTRACT, '5. and so does the transport pin');
@@ -301,16 +309,17 @@ ok(ACTION_CONTRACT >= 8 && LIST_VERSION >= 8, '5. and neither deployment stamp w
 var H = post({ action: 'system.health' });
 eq(H.deployed_action_contract_version, ACTION_CONTRACT, '5. EXECUTED: the answer reports the action contract it declares');
 eq(H.required_action_list_version, LIST_VERSION, '5. EXECUTED: and the list version it declares');
-eq(H.required_action_count, 39, '5. EXECUTED: and counts all 39 registered actions');
+eq(H.required_action_count, regRows.length, '5. EXECUTED: and counts exactly the registered actions');
 // A deployment one contract behind is now rejected BY VERSION, which is the second gate the bump buys.
 checks.push((function () {
   var behind = JSON.parse(JSON.stringify(H));
-  behind.deployed_action_contract_version = 7;
+  behind.deployed_action_contract_version = ACTION_CONTRACT - 1;
   behind.caller_probe = { requested_by_caller: true, all_present: true, missing_actions: [], missing_symbols: [] };
   return makeClient(function (u) { return Promise.resolve(jsonResp(JSON.stringify(behind), String(u))); })
     .DB.checkDeploymentContract().then(function (v) {
-      eq(v.ok, false, '5. a deployment at contract v7 is REFUSED by the raised pin');
-      ok(/action contract is v7 but this frontend needs v8/.test(v.message), '5. naming both versions and the fix');
+      eq(v.ok, false, '5. a deployment one contract version behind is REFUSED by the raised pin');
+      ok(new RegExp('action contract is v' + (ACTION_CONTRACT - 1) + ' but this frontend needs v' + ACTION_CONTRACT).test(v.message),
+        '5. naming both versions and the fix');
     });
 })());
 

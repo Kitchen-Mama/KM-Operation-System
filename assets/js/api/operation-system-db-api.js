@@ -2377,6 +2377,52 @@ window.KM.DB.loadScopedTables = async function(tableNames) {
     return scoped;
 };
 
+// F1-7N-FB-4E-R3 §C - ONE SCOPED WORKSPACE READ FOR OVERSEAS STOCK, RETURNING THE SAME MODEL SHAPE.
+//
+// Overseas Inventory mounted on loadScopedTables(4 tables) = FOUR requests, measured in R3 §A. Each Apps Script
+// request is a separate Web App execution, so the mount paid four cold starts, four spreadsheet opens and four
+// round trips to draw one page. This is the single-request replacement.
+//
+// IT RETURNS EXACTLY WHAT loadScopedTables RETURNED, and that is the whole reason the page change is one line.
+// 70_ answers with RAW rows under the sheet's own column names, so those rows go through the SAME
+// normalizeOperationDb the fan-out fed. Same normalizers, same camelCase keys, same filters and quantities and
+// warning thresholds computed on the client from the same rows: BEFORE == AFTER by construction, not by
+// inspection.
+//
+// FAIL-CLOSED, AND NEVER TOWARDS A BROADER READ. On any failure this REJECTS with the typed transport/business
+// error. It does not fall back to the four-table fan-out and it certainly does not fall back to getOperationDb:
+// a page that silently widens its read when the narrow one fails is how whole-DB reads came back last time. The
+// caller decides what to show; this decides nothing.
+window.KM.DB.loadOverseasStockWorkspace = async function (opts) {
+    var api = (window.KM && window.KM.api) ? window.KM.api : null;
+    if (!api || typeof api.getWorkspace !== 'function') {
+        var eNo = new Error('The workspace API layer is not loaded on this page.');
+        eNo.apiCode = 'WORKSPACE_API_UNAVAILABLE';
+        throw eNo;
+    }
+    var env = await api.getWorkspace('overseasStock', opts || {});
+    if (!env || env.success === false) {
+        var first = (env && Array.isArray(env.errors) && env.errors[0]) || null;
+        var eBad = new Error((first && first.message) || 'The Overseas Stock workspace read failed.');
+        eBad.apiCode = (first && first.code) || 'OVERSEAS_STOCK_WORKSPACE_READ_FAILED';
+        eBad.details = (first && first.details) || null;
+        throw eBad;
+    }
+    var d = env.data || {};
+    var rawDb = {
+        overseas_inventory_snapshot: d.overseas_inventory_snapshot || [],
+        overseas_inventory_movements: d.overseas_inventory_movements || [],
+        warehouses: d.warehouses || [],
+        sku_details: d.sku_details || []
+    };
+    var scoped = normalizeOperationDb(rawDb);
+    scoped._sourceMode = 'google-sheet';
+    scoped._scopedTables = Object.keys(rawDb);
+    scoped._workspaceMeta = { action: 'overseasStock.workspace.get', counts: d.counts || null,
+        capped: d.capped || null, projection: d.projection || null, requests: 1 };
+    return scoped;
+};
+
 window.KM.DB.getSkuDetails = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.skuDetails || [];
@@ -3838,7 +3884,11 @@ function _kmWriterError_(json, fallbackMessage) {
 // — R2 is the round that added the branch. Leaving the pin at 7 would let a v7 deployment pass the
 // VERSION gate and then fail the per-action probe, reporting the same fact twice as two different-looking
 // problems. Raising it makes the version comparison decide first, with the message that names the fix.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 8;      // the minimum deployed_action_contract_version this build needs
+// F1-7N-FB-4E-R3 §C: 8 -> 9, RAISED. Overseas Inventory has been CUT OVER to overseasStock.workspace.get and
+// has no fan-out left to fall back to, so a deployment below action contract 9 cannot render that page at all.
+// The version gate must say so first, with the message that names the fix, rather than letting the page
+// discover it as a failed read.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 9;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -3900,6 +3950,10 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
     // could only be discovered by the pages failing, which is precisely how this round started.
     'skuDetails.workspace.get',
+    // F1-7N-FB-4E-R3 §C — the Overseas Stock read. Probed from the round that introduces it: the page has been
+    // cut over, so a deployment without this action cannot render Overseas Inventory at all, and that must be a
+    // named deployment fact rather than a failed read the user has to interpret.
+    'overseasStock.workspace.get',
     // F1-7N-FB-4D §E — the Site Inventory WRITE chain. Every step of Add Route -> save -> readback -> Submit
     // depends on these, and a deployment missing any one of them fails in a way that looks like a data problem.
     'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
@@ -3942,7 +3996,11 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     // simply cannot say WHICH HANDLER answered, which is the fact the client's method-downgrade proof needs.
     // Probing the constant is the only way the site can tell "the deployment is fine" apart from "the
     // deployment cannot describe itself", and those have different fixes.
-    'SYS_TRANSPORT_CONTRACT_VERSION_'       // 63_ — the transport-contract axis (separate from the action axis)
+    'SYS_TRANSPORT_CONTRACT_VERSION_',      // 63_ — the transport-contract axis (separate from the action axis)
+    // F1-7N-FB-4E-R3 §C — the Overseas workspace OWNER FILE. The action resolving is not enough: a deployment
+    // carrying the R3 router but not 70_ would route to an undefined handler, and this page has no fan-out left
+    // to fall back to. Probing the owner symbol is the only way the site can tell those two apart.
+    'OSW_BUILD_VERSION_'                    // 70_ — the Overseas Stock scoped read owner
 ];
 // A masked, read-only classification of the endpoint this build would actually use. It is part of the
 // deployment verdict because "the site behaves oddly" has an answer that needs no network at all when the

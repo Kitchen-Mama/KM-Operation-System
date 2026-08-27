@@ -105,7 +105,13 @@ var osInit = stripComments(extractFn(OS, 'initOverseasStockPage'));
 // Scoped branch (loadScopedTables) precedes the legacy branch (loader({ force: true }) → loadOperationDb). Comment
 // text is stripped first so a "→ broad loadOperationDb" comment above the scoped branch cannot fool the ordering.
 ok(fsInit.indexOf('loadScopedTables(') !== -1 && fsInit.indexOf('loadScopedTables(') < fsInit.indexOf('loader({ force: true })'), 'factory init: scoped loadScopedTables precedes legacy loadOperationDb');
-ok(osInit.indexOf('loadScopedTables(') !== -1 && osInit.indexOf('loadScopedTables(') < osInit.indexOf('loader({ force: true })'), 'overseas init: scoped loadScopedTables precedes legacy loadOperationDb');
+// F1-7N-FB-4E-R3 — Overseas Stock was cut over to ONE scoped workspace read, so its mount now calls
+// _osLoadPrimary_() instead of loadScopedTables directly. The invariant is unchanged and is what is asserted:
+// the SCOPED branch still precedes the legacy whole-DB branch, and the scoped branch is still what runs first.
+ok(osInit.indexOf('_osLoadPrimary_(') !== -1 && osInit.indexOf('_osLoadPrimary_(') < osInit.indexOf('loader({ force: true })'),
+  'overseas init: the scoped read precedes the legacy loadOperationDb branch');
+ok(/loadOverseasStockWorkspace/.test(stripComments(extractFn(OS, '_osLoadPrimary_'))),
+  'overseas init: and the scoped read is the ONE-request workspace action');
 ok(/if \(_fsScopedActive\(\)/.test(fsInit) || /_fsScopedActive\(\) &&/.test(fsInit), 'factory scoped branch guarded by _fsScopedActive()');
 ok(/_osScopedActive\(\) &&/.test(osInit), 'overseas scoped branch guarded by _osScopedActive()');
 ok(/!_fsScopedActive\(\)/.test(fsInit), 'factory legacy branch guarded by !_fsScopedActive() (only when NOT scoped)');
@@ -138,7 +144,13 @@ console.log('\n== §5 F1-7L zero-prime invariants preserved ==');
 ok(APP.indexOf('loadOperationDb') === -1, 'CANONICAL_STARTUP_WHOLE_DB_PRIME = 0: app.js still makes no whole-DB prime');
 ok(!/setTimeout\([^)]*loadOperationDb|setInterval\([^)]*loadOperationDb/.test(APP), 'APP_PRIME_READ_DEPENDENCY = 0: no delayed/background prime');
 // The scoped branch itself performs NO whole-DB read (loadScopedTables only, no getOperationDb).
-ok(extractFn(OS, 'initOverseasStockPage').match(/loadScopedTables\(_OS_TABLES\)/) && !/getOperationDbFromSheet/.test(OS), 'overseas scoped path uses getTable-based loadScopedTables (never getOperationDbFromSheet)');
+// F1-7N-FB-4E-R3 — the scoped path is now the workspace read, with the four-table getTable fan-out kept only
+// as the deployment-window fallback. Neither is a whole-DB read, which is the property this asserts.
+var osPrimary = stripComments(extractFn(OS, '_osLoadPrimary_'));
+ok(/loadOverseasStockWorkspace/.test(osPrimary), 'overseas scoped path is the ONE-request scoped workspace read');
+ok(/loadScopedTables\(_OS_TABLES\)/.test(osPrimary), 'and its only fallback is the bounded getTable fan-out');
+ok(!/getOperationDbFromSheet/.test(OS) && !/loadOperationDb\(/.test(osPrimary),
+  'overseas scoped path never reaches a whole-DB read');
 // The helper made scoped ACTIVE cold, so canonical cold first-open no longer reaches loadOperationDb:
 //   predicate true (cold cloud) → scoped branch → return → legacy branch unreachable this mount.
 ok(runPredicate(extractFn(OS, '_osScopedActive'), '_osScopedActive', coldCloudWin()) === true, 'CANONICAL_COLD_GET_OPERATION_DB_COUNT → 0: overseas cold predicate is ACTIVE, so scoped branch wins over legacy');

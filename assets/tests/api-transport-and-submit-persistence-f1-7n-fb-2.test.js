@@ -265,7 +265,9 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // all along, but absent from SYS_REQUIRED_ACTIONS_, so the deployment reported them missing from itself), and
   // this probe counts definitions across the list above — so their owner has to be in it or the probe reads a
   // registered handler as undefined. That is exactly the case the list's own note warns about.
-  read('specs/active/apps-script/31_shipment_receipt_route_handlers.gs')].join(String.fromCharCode(10));
+  read('specs/active/apps-script/31_shipment_receipt_route_handlers.gs'),
+  // F1-7N-FB-4E-R3: the Overseas Stock scoped read owner, registered in the same round that routes it.
+  read('specs/active/apps-script/70_api_v1_overseas_stock_workspace.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;
