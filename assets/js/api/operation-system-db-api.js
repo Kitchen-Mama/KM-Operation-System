@@ -3941,7 +3941,24 @@ window.KM.DB.checkDeploymentContract = async function () {
         return { ok: false, code: (res && res.error && res.error.code) || 'HEALTH_UNAVAILABLE',
             message: (res && res.error && res.error.message) || 'system.health did not answer.', identity: null };
     }
-    var h = res.data || {};
+    // F1-7N-FB-4E-R1 §1 — READ THE IDENTITY FROM WHERE THE DEPLOYMENT ACTUALLY PUTS IT.
+    //
+    // THE BUG THIS REPLACES. This line read `res.data`. `handleSystemHealth_` (63_) answers through
+    // `jsonResponse_(payload)`, which serializes the payload VERBATIM — so build_id, contract_version,
+    // transport_contract_version, router_build, deployed_action_contract_version, required_action_list_version,
+    // handler and caller_probe are all TOP-LEVEL keys and the answer has NO `data` key at all. The runner above
+    // returned `json.data || { rows: [] }`, so `res.data` was `{ rows: [] }`, every field below read `undefined`
+    // and normalized to null, and the function reported DEPLOYMENT_CONTRACT_MISMATCH with an ALL-NULL identity
+    // and an empty missing_actions.
+    //
+    // That verdict was UNFALSIFIABLE. It did not depend on the deployment at all: no published version, however
+    // current, could ever satisfy it, and the message it printed — "the deployed Apps Script does not report an
+    // action-contract version, so it is older than this frontend build" — told the operator to publish again,
+    // which could never change the answer. A gate that cannot pass is worse than no gate: it sends people to
+    // fix a deployment that was already correct.
+    //
+    // This is a CLIENT defect end to end. Nothing in the Apps Script project had to change to fix it.
+    var h = res.envelope || res.data || {};
     var identity = {
         build_id: h.build_id || h.build_version || null,
         contract_version: h.contract_version || h.api_contract_version || null,
@@ -4297,7 +4314,28 @@ window.KM.DB.cancelOrderPlanningGapJob = function(runId) { return _kmWeeklyComma
 // F1-4B-FM5-R1 · MATERIALIZED READ (page reads STORED gap rows; NO calculation, NO whole-DB reload). Bounded
 // POST read of inventory_replenishment_gap / order_planning_gap for one scope. Text-first + fail-safe: on a
 // transport/non-JSON/business failure returns { success:false, error } so the page can show a truthful state and
-// NEVER silently fall back to a browser/live calculation. Returns { success, data:{ rows:[...] }, error }.
+// NEVER silently fall back to a browser/live calculation.
+//
+// Returns { success, data:{ rows: [...] }, envelope, error }.
+//
+// F1-7N-FB-4E-R1 §1 — WHY `envelope` EXISTS, AND THE BUG THAT PROVED IT HAD TO.
+//
+// This runner was written for the GAP READS, whose handlers answer { success, data: { rows: [...] } }. On
+// success it returned ONLY `json.data`, so every other key in the answer was discarded. That is correct for a
+// gap read and silently destructive for any action whose handler answers with a FLAT envelope — and three do:
+//
+//   system.health                             63_  identity + contract versions + caller_probe, all top-level
+//   system.requestOrderSendReconcile          65_  the whole reconciliation verdict, top-level
+//   system.allocationDraftIdentityDiagnostic  67_  the whole identity report, top-level
+//
+// None of those handlers puts anything under `data`, so `json.data || { rows: [] }` handed the caller an EMPTY
+// ROW LIST that looked like a successful read of nothing. For system.health that meant checkDeploymentContract
+// read every identity field as undefined and reported the deployment as older than the frontend — while the
+// deployment had in fact answered with a complete, correct identity block. See the note there.
+//
+// `envelope` is the parsed answer EXACTLY as the deployment sent it. It is additive: `data` keeps its meaning
+// and every existing gap-read consumer is untouched. Nothing here is synthesized — a field absent from the wire
+// is absent from `envelope`.
 async function _kmGapRead_(action, payload) {
     if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
     var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
@@ -4331,7 +4369,7 @@ async function _kmGapRead_(action, payload) {
         if (_kmIsUnknownActionResponse_(json.error)) return { success: false, error: _kmDeploymentMismatchError_(action) };
         return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
     }
-    return { success: true, data: json.data || { rows: [] } };
+    return { success: true, data: json.data || { rows: [] }, envelope: json };
 }
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ inventory_replenishment_gap rows ] } }.
 window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_('inventoryReplenishmentGap.get', { payload: { scope: scope || {} } }); };

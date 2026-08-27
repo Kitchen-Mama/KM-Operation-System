@@ -673,8 +673,12 @@ var CHANGED_ASSETS = ['assets/js/api/km-transport.js', 'assets/js/api/km-data-ac
   'assets/js/pages/fc-summary.js', 'assets/js/pages/request-order.js',
   'assets/js/pages/inventory-replenishment.js', 'assets/js/pages/shipping-history.js',
   'assets/js/utils/inventory-compat.js', 'assets/js/pages/sku-details.js'];
+// F1-7N-FB-4E-R1: this round changed operation-system-db-api.js AFTER FB-4E had shipped to production, so
+// 'fb4e-transport-20260826' is now itself an EARLIER round's token for this set and joins the stale list. The
+// whole co-deployed set moves together, which is what the one-token assertion below exists to enforce.
 var STALE_TOKENS = ['fb4d-site-inventory-20260826', 'sku-read-path-20260826', 'catseries-20260820',
-  'whmoreopts-20260820', 'donenotice-20260811', 'r6a1-request-send-20260822'];
+  'whmoreopts-20260820', 'donenotice-20260811', 'r6a1-request-send-20260822',
+  'fb4e-transport-20260826'];
 var tokens = {};
 CHANGED_ASSETS.forEach(function (a) {
   var m = new RegExp('src="' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([^"]+)"').exec(HTML);
