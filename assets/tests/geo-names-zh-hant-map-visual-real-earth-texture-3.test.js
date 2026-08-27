@@ -287,20 +287,38 @@ ok(/window\.KM\.geoNames\.country\(iso\)/.test(GLOBE_C), 'I2 which calls the KM.
 ok(/labelCtx\.fillText\(lab\.text, lab\.x, lab\.y\)/.test(GLOBE_C), 'I3 and PAINTS the resolved text');
 ok(!/labelCtx\.fillText\(lab\.iso,/.test(GLOBE_C), 'I3 the ISO code is no longer painted as the country label');
 ok(/next\[lab\.iso\] = 1;/.test(GLOBE_C), 'I4 the previous-frame set is still keyed by ISO - identity, not display');
-ok(/iso: c\.iso, text: disp/.test(GLOBE_C), 'I4 candidates carry identity AND display text separately');
-ok(/measureText\(disp\)/.test(GLOBE_C), 'I5 the collision box is measured on the text actually painted');
+// RESTATED IN TEXTURE-3-R4 §C: text resolution and measurement moved AFTER the ordering (the ordering keys do
+// not need the text) and both are now cached by identity. Identity and display text are still separate fields
+// and the box is still measured on the painted string — which is what these two assertions are about.
+ok(/cands\.push\(\{ iso: c\.iso, x: _proj\.x/.test(GLOBE_C) && /cc\.text = countryLabelText\(cc\.iso\);/.test(GLOBE_C),
+  'I4 candidates carry identity AND display text separately');
+ok(/cc\.w = measureCached\(countryFont, cc\.text\);/.test(GLOBE_C),
+  'I5 the collision box is measured on the text actually painted');
 ok(/function admin1LabelText\(d\)/.test(GLOBE_C), 'I6 ADM1 labels resolve through the same authority');
-ok(/measureText\(dTxt\)/.test(GLOBE_C), 'I7 measured on the painted text too');
+ok(/ac\.w = measureCached\(admin1Font, ac\.text\);/.test(GLOBE_C), 'I7 measured on the painted text too');
+ok(/w = labelCtx\.measureText\(text\)\.width;/.test(GLOBE_C),
+  'I7 and the cache measures the real string — it memoises the call, it does not estimate');
 ['Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC'].forEach(function (f) {
   ok(GLOBE.indexOf(f) !== -1, 'I8 the label font stack names the zh-TW face ' + f);
 });
-var fontLines = GLOBE.match(/labelCtx\.font =[^;]*/g) || [];
-// RESTATED IN TEXTURE-3-R3 §G: a CONTINENT label layer was added, so there are now three font declarations.
-// The load-bearing half of this assertion is the next line - EVERY declaration must carry the zh-TW stack -
-// and it now covers three layers instead of two.
-eq(fontLines.length, 3, 'I9 three label font declarations (continent + country + ADM1)');
-ok(fontLines.every(function (l) { return l.indexOf('JhengHei') !== -1; }), 'I9 and BOTH carry the CJK stack');
-ok(/return String\(iso == null \? '' : iso\);/.test(GLOBE_C), 'I10 with no resolver the country label falls back to the ISO code');
+// RESTATED IN TEXTURE-3-R4 §C. There used to be three separate font declarations and the load-bearing half of
+// this assertion was that EVERY one of them carried the zh-TW stack. There is now ONE builder that every class
+// goes through, which makes that guarantee structural instead of a property three sites happen to share — so
+// the assertion is that the builder is the only source, and that all three classes use it.
+eq((GLOBE.match(/function fontFor\(px, weight\)/g) || []).length, 1,
+  'I9 ONE font builder serves every label class');
+var fontForSrc = GLOBE.slice(GLOBE.indexOf('function fontFor(px, weight)'),
+                            GLOBE.indexOf('function fontFor(px, weight)') + 400);
+ok(/Microsoft JhengHei[\s\S]{0,200}Noto Sans CJK TC/.test(fontForSrc),
+  'I9 and the zh-TW faces are named FIRST inside it');
+['countryFont = fontFor(fontPx', 'continentFont = fontFor(SIZES.continent', 'admin1Font = fontFor(SIZES.admin1']
+  .forEach(function (u) {
+    ok(GLOBE.indexOf(u) !== -1, 'I9 the CJK stack reaches every class via the builder: ' + u.split(' =')[0]);
+  });
+var fontLines = GLOBE.match(/labelCtx\.font = [A-Za-z]+;/g) || [];
+ok(fontLines.length >= 3, 'I9 and it is assigned per class before painting (' + fontLines.length + ' sites)');
+ok(/var out = String\(iso == null \? '' : iso\);/.test(GLOBE_C),
+  'I10 with no resolver the country label falls back to the ISO code');
 ok((GLOBE_C.match(/catch \(e\) \{\}/g) || []).length >= 2, 'I11 both resolver calls are guarded - a missing asset degrades language only');
 ok(/function admin1LabelBudget/.test(GLOBE_C) && /function countryLabelTier/.test(GLOBE_C),
   'I12 the existing budget and tier machinery is unchanged - hierarchy is not this round');

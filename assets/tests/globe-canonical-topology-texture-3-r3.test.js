@@ -116,7 +116,12 @@ ok(M.BORDER_R < M.ARC_R && M.ARC_R < M.MARKER_R,
 // §C — "do not create an obvious second outer sphere". Nothing may reintroduce one.
 ok(!/1\.0035|1\.0030/.test(GC), 'C6 the old 1.0035 / 1.0030 boundary shells are gone from the code');
 // The label layers must anchor on the SAME radius as the geometry, or the text drifts from its own border.
-ok(GC.indexOf('latLngToVec3(c.label[1], c.label[0], BORDER_R)') !== -1, 'C7 country labels anchor at BORDER_R');
+// RESTATED IN TEXTURE-3-R4 §C: the anchors are precomputed once per dataset instead of per label per frame.
+// The radius is the load-bearing part and both label classes are now checked, not just the country one.
+ok(GC.indexOf('latLngToVec3(list[i].label[1], list[i].label[0], BORDER_R)') !== -1,
+  'C7 country labels anchor at BORDER_R');
+ok(GC.indexOf('latLngToVec3(d.l[1], d.l[0], BORDER_R)') !== -1,
+  'C7 and so do division labels — the same radius as the geometry they name');
 ok(GC.indexOf('latLngToVec3(d.l[1], d.l[0], BORDER_R)') !== -1, 'C7 and so do division labels');
 ok(GC.indexOf('a.vec[0] * BORDER_R') !== -1, 'C7 and so do continent labels');
 // The depth bias must be applied in CLIP SPACE as a fraction of w, so it is invariant to camera distance.

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * tools/geo/build-geo-display-aliases.js
- * MAP-VISUAL-REAL-EARTH-TEXTURE-3-R3 §F — the zh-TW DISPLAY-NAME authority, above the vendored formal names.
+ * MAP-VISUAL-REAL-EARTH-TEXTURE-3-R3 §F / R4 §A — the zh-TW DISPLAY-NAME authority, above the vendored
+ * formal names, plus the recorded TW/CN product decision.
  *
  * WHAT §F ASKS FOR, AND WHAT MEASUREMENT SHOWED. §F keeps the verified Natural Earth `NAME_ZHT` as the FULL-name
  * authority but requires map LABELS to prefer, in order: verified CLDR zh-Hant `alt-short`, then a reviewed local
@@ -37,7 +38,13 @@
  *   node tools/geo/build-geo-display-aliases.js --report    # print the report only, write nothing
  *
  * NAMES ONLY. The emitted asset contains no coordinate, no ring and no label anchor - §F says "a deterministic
- * reviewed alias asset containing names only", and that is enforced by the regression suite.
+ * reviewed alias asset containing names only", and that is enforced by the regression suite, which also scans
+ * the emitted file for BUSINESS VOCABULARY and fails on any. That is the mechanical proof of the R4 §A rule:
+ *
+ *   THE ISO ALPHA-2 CODE IS IDENTITY, NOT PRESENTATION. TW stays TW and CN stays CN in the database, in a
+ *   shipment's origin and destination, in warehouse mapping, in every filter, join and route, and in every API
+ *   payload. This asset decides ONE thing - which characters the map paints - and it is read by the label layer
+ *   and by nothing else. A localized string never becomes a key, and a key is never localized.
  *
  * This is a BUILD tool. It is never loaded by the page.
  */
@@ -72,12 +79,57 @@ var CLDR = {
 // the cases where choosing between the vendored formal name and the CLDR common name is a statement about
 // sovereignty in the product's own locale, and where a build tool has no business picking. Everything else is a
 // transliteration or a formal/common distinction, which is a cartographic choice with a verifiable authority.
-var SENSITIVE_ISO = {
-  TW: 'How a Taiwan-facing product names Taiwan. NAME_ZHT gives the formal state name; CLDR zh-Hant gives the ' +
-      'common name. Both are in ordinary use in Taiwan and the choice is editorial, not cartographic.',
-  CN: 'The counterpart decision for China. Shortening the formal state name to the common one carries the same ' +
-      'editorial weight in a zh-TW product and must be made by the same person who decides TW.'
+var UNDECIDED_SENSITIVE = {
+  // (empty) Every geopolitically weighted name this generator knows about now carries a RECORDED decision
+  // below. An ISO listed here would be REFUSED and reported for review instead of being applied, which is
+  // what TW and CN were in R3.
 };
+
+// ---------------------------------------------------------------------------------------------------------
+// R4 §A — THE TW/CN DECISION, MADE BY THE USER AND RECORDED HERE.
+// ---------------------------------------------------------------------------------------------------------
+// R3 refused these two and reported both candidates, because choosing between the vendored formal state name
+// and the CLDR common name is a statement about sovereignty in the product's own locale and a build tool has
+// no business making it. What has changed is not the PRINCIPLE - a tool still may not decide one of these -
+// but the INPUT: there is now an answer to record.
+//
+// THE DECISION IS A SEPARATION, NOT A RENAME, AND THAT IS THE WHOLE POINT:
+//   map label   TW 台灣             CN 中國                   - what is painted on the globe
+//   detail      TW 中華民國（TW）     CN 中華人民共和國（CN）      - what a tooltip or an inspect panel shows
+//   identity    TW                 CN                       - ISO alpha-2, unchanged everywhere
+//
+// The formal name is not lost and the code is not localized; the three live at three different levels and each
+// stays reachable. `display` is what the label layer paints, `full` remains the FORMAL-name authority (Natural
+// Earth NAME_ZHT), and the detail form is COMPOSED from the two by the resolver rather than stored as a fourth
+// string - a stored fourth string is a copy, and a copy can drift out of agreement with the authority.
+//
+// WHY THIS IS ITS OWN LEVEL, ABOVE CLDR. An explicit product decision outranks a mechanical authority: if a
+// later CLDR release changed 台灣 to something else, the decision recorded here is still what the product
+// means, and the build should FAIL rather than quietly follow upstream. That is enforced below.
+var USER_APPROVED = {
+  TW: {
+    display: '台灣',
+    decided_by: 'USER',
+    decision: 'MAP-VISUAL-REAL-EARTH-TEXTURE-3-R4 §A',
+    rationale: 'The product owner chose the common map name for the label and kept the formal state name for ' +
+      'the detail presentation. Both are in ordinary use in Taiwan; the map layer needs the short one and the ' +
+      'inspect layer needs the formal one, so the decision is a separation rather than a replacement.',
+    previously: 'REFUSED_IN_R3_AS_GEOPOLITICALLY_WEIGHTED'
+  },
+  CN: {
+    display: '中國',
+    decided_by: 'USER',
+    decision: 'MAP-VISUAL-REAL-EARTH-TEXTURE-3-R4 §A',
+    rationale: 'The counterpart decision, made by the same person in the same turn so the pair is consistent: ' +
+      'the common map name on the label, the formal state name in the detail presentation.',
+    previously: 'REFUSED_IN_R3_AS_GEOPOLITICALLY_WEIGHTED'
+  }
+};
+
+// §A — the detail form is COMPOSED, never stored, so it cannot drift from the formal-name authority. It is ONE
+// rule for every country rather than a special case for these two: formal name, then the ISO code in fullwidth
+// parentheses. For TW and CN it yields exactly what the decision specifies.
+function detailForm(full, iso) { return String(full) + '（' + String(iso) + '）'; }
 
 // A reviewed alias is only worth applying if the displayed name is genuinely SHORTER (or equal) in rendered
 // characters. §F's concern is a long formal name crowding the map; a "common" name that is longer than the
@@ -133,7 +185,8 @@ function main() {
     var v = loadVendored();
     var isoList = v.countries.countries.map(function (c) { return String(c.iso).toUpperCase(); }).sort();
 
-    var altShort = {}, reviewed = {}, unresolved = [], keptExisting = [], agreed = 0, noCldr = [];
+    var approved = {}, altShort = {}, reviewed = {}, unresolved = [], keptExisting = [], agreed = 0,
+        noCldr = [];
 
     isoList.forEach(function (iso) {
       var full = String((v.names.countries || {})[iso] || '');       // NAME_ZHT — the FULL-name authority
@@ -150,7 +203,7 @@ function main() {
           source: 'UNICODE_CLDR_' + CLDR.version + '_' + CLDR.locale + '_ALT_SHORT',
           rationale: 'CLDR publishes an explicit alt-short form (' + alt + ') for this territory; §F ranks it ' +
             'first. Shortens the label from ' + charLen(full) + ' to ' + charLen(alt) + ' characters.',
-          review_recommended: !!SENSITIVE_ISO[iso] || iso === 'PS',
+          review_recommended: !!UNDECIDED_SENSITIVE[iso] || iso === 'PS',
           review_note: iso === 'PS'
             ? 'Applied because CLDR alt-short is the authority §F ranks first, but the naming of Palestine is ' +
               'politically contested. Flagged so the choice is visible rather than buried.'
@@ -161,14 +214,48 @@ function main() {
 
       if (std === full) { agreed++; return; }
 
-      // §F/§D — geopolitically weighted: REFUSE and report both candidates.
-      if (SENSITIVE_ISO[iso]) {
+      // R4 §A — LEVEL 0: a RECORDED USER DECISION. This is above every mechanical authority, and it is the
+      // only branch in this tool that applies a geopolitically weighted name at all.
+      //
+      // THE GUARD MATTERS AS MUCH AS THE VALUE. The decision was made against a SPECIFIC candidate that was put
+      // to the user - the CLDR zh-Hant common name. If a future CLDR release changed that name, silently
+      // following it would mean the product displayed something nobody approved, so the build STOPS instead.
+      // Equally the formal name must still be present, because the detail form is composed from it.
+      if (USER_APPROVED[iso]) {
+        var ua = USER_APPROVED[iso];
+        if (ua.display !== std) {
+          throw new Error('APPROVED_DISPLAY_NO_LONGER_MATCHES_SOURCE ' + iso + ': the recorded decision is ' +
+            ua.display + ' but ' + CLDR.locale + ' ' + CLDR.version + ' now gives ' + std + '. A user decision ' +
+            'may not be silently re-pointed at a different name - re-confirm it.');
+        }
+        if (!full) {
+          throw new Error('APPROVED_WITHOUT_FORMAL_NAME ' + iso + ': the detail presentation is composed from ' +
+            'the formal NAME_ZHT authority, which is empty here.');
+        }
+        approved[iso] = {
+          display: ua.display, full: full, detail: detailForm(full, iso), english: en,
+          source: 'USER_DECISION',
+          decision: ua.decision, decided_by: ua.decided_by, previously: ua.previously,
+          candidate_source: 'UNICODE_CLDR_' + CLDR.version + '_' + CLDR.locale,
+          display_chars: charLen(ua.display), full_chars: charLen(full),
+          rationale: ua.rationale,
+          // NO PROSE ABOUT THE BUSINESS LAYER GOES IN THE ASSET. The regression suite scans the emitted file for
+          // business vocabulary and fails if it finds any, which is how it proves the asset is a NAME table and
+          // not a place where operational meaning accumulated. A sentence explaining that the ISO code is still
+          // the identity would trip that scan for the sake of documentation — so the explanation lives in this
+          // generator and in the resolver, and the asset carries `display_only: true`.
+          display_only: true
+        };
+        return;
+      }
+      // §F/§D — geopolitically weighted and NOT decided: REFUSE and report both candidates.
+      if (UNDECIDED_SENSITIVE[iso]) {
         unresolved.push({
           iso: iso, english: en,
           current_displayed: full, current_source: 'NATURAL_EARTH_NAME_ZHT',
           candidate: std, candidate_source: 'UNICODE_CLDR_' + CLDR.version + '_' + CLDR.locale,
           current_chars: charLen(full), candidate_chars: charLen(std),
-          why_unresolved: SENSITIVE_ISO[iso],
+          why_unresolved: UNDECIDED_SENSITIVE[iso],
           decision_required_from: 'USER'
         });
         return;
@@ -253,6 +340,17 @@ function main() {
       keptExisting.length + ' kept (CLDR longer) · ' + unresolved.length + ' UNRESOLVED' +
       (noCldr.length ? ' · ' + noCldr.length + ' no CLDR entry (' + noCldr.join(',') + ')' : ''));
 
+    if (Object.keys(approved).length) {
+      console.log('\nLEVEL 0 — RECORDED USER DECISION (R4 §A):');
+      Object.keys(approved).sort().forEach(function (iso) {
+        var a = approved[iso];
+        console.log('  ' + iso + '   map label ' + a.display + '   detail ' + a.detail +
+          '   identity ' + iso + ' (unchanged)');
+        console.log('        formal-name authority : ' + a.full + '  (NAME_ZHT, ' + a.full_chars + ' chars)');
+        console.log('        candidate put to user : ' + a.candidate_source);
+        console.log('        ' + a.rationale);
+      });
+    }
     if (Object.keys(altShort).length) {
       console.log('\nLEVEL 1 — verified CLDR zh-Hant alt-short:');
       Object.keys(altShort).sort().forEach(function (iso) {
@@ -281,6 +379,10 @@ function main() {
           k.cldr_rejected + ' (' + k.cldr_chars + ')');
       });
     }
+    if (!unresolved.length) {
+      console.log('\nUNRESOLVED: none. Every geopolitically weighted name this tool knows about carries a');
+      console.log('  recorded decision, so unresolvedNames() reports an empty list.');
+    }
     if (unresolved.length) {
       console.log('\nUNRESOLVED — REQUIRES A USER DECISION (§F: do not silently decide geopolitical naming):');
       unresolved.forEach(function (u) {
@@ -305,12 +407,19 @@ function main() {
         generator: 'tools/geo/build-geo-display-aliases.js',
         default_language: 'zh-TW',
         authority_order: [
+          '0 USER_APPROVED_ALIAS (a recorded product decision — outranks every mechanical authority)',
           '1 UNICODE_CLDR_ALT_SHORT (verified, pinned)',
           '2 REVIEWED_DISPLAY_ALIAS (this asset, reviewed against CLDR)',
           '3 ZH_HANT_PINNED_SOURCE (Natural Earth NAME_ZHT)',
           '4 ENGLISH_CANONICAL',
           '5 CODE (ISO alpha-2)'
         ],
+        detail_form: 'formalName + U+FF08 + isoAlpha2 + U+FF09 — COMPOSED by the resolver from the formal-name ' +
+          'authority, never stored, so it cannot drift from it.',
+        display_only: true,
+        identity_is_never_localized: 'Every code in this system is IDENTITY, not presentation. Nothing here is ' +
+          'read outside the map label layer. See tools/geo/build-geo-display-aliases.js for the full statement ' +
+          'of what that means — it is deliberately not restated in this file, which carries names only.',
         cldr: {
           version: CLDR.version, locale: CLDR.locale, url: CLDR.url,
           bytes: CLDR.bytes, sha256: CLDR.sha256,
@@ -318,6 +427,7 @@ function main() {
         },
         counts: {
           countries: isoList.length, identical: agreed,
+          user_approved: Object.keys(approved).length,
           cldr_alt_short: Object.keys(altShort).length,
           reviewed_alias: Object.keys(reviewed).length,
           kept_existing_cldr_longer: keptExisting.length,
@@ -325,6 +435,7 @@ function main() {
         },
         runtime_network_dependency: 'none — loaded as a same-origin <script>'
       },
+      approved: sorted(approved),
       cldrAltShort: sorted(altShort),
       reviewed: sorted(reviewed),
       keptExisting: keptExisting,
@@ -346,6 +457,10 @@ function main() {
       ' * UNRESOLVED entries are NOT applied. They are carried so the map can report that a naming decision is',
       ' * outstanding rather than making it silently — see meta.counts.unresolved.',
       ' *',
+      ' * `approved` carries RECORDED USER DECISIONS (R4 §A) and outranks every other level. Each entry keeps',
+      ' * the map label, the formal name and the composed detail form separate; the ISO code is IDENTITY and is',
+      ' * never localized anywhere.',
+      ' *',
       ' * No runtime CDN/network: loaded as a same-origin <script> that sets window.KM_GEO_DISPLAY_ALIASES.',
       ' */',
       'window.KM_GEO_DISPLAY_ALIASES=' + JSON.stringify(payload) + ';',
@@ -360,7 +475,8 @@ function main() {
   });
 }
 
-module.exports = { CLDR: CLDR, SENSITIVE_ISO: SENSITIVE_ISO, charLen: charLen };
+module.exports = { CLDR: CLDR, UNDECIDED_SENSITIVE: UNDECIDED_SENSITIVE, USER_APPROVED: USER_APPROVED,
+                   detailForm: detailForm, charLen: charLen };
 
 if (require.main === module) {
   main().then(function (c) { process.exit(c || 0); }, function (e) {

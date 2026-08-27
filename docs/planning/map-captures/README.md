@@ -12,6 +12,7 @@ Performance is **not** measured here — see "Why performance lives in a differe
 | `before/` | R2, the **December 2004** 5400×2700 surface, old border layers. Kept as the seasonal before/after. |
 | `after/` | R2, the **July 2004** 5400×2700 surface. |
 | `after-r3/` | R3: **8192×4096** July surface, canonical shared-edge topology, three-class border hierarchy, continent labels, zh-TW display aliases. **19 views.** |
+| `after-r4/` | R4: the approved TW/CN display decision, division-level zh-TW names, the bounded label pass, and a deterministic flicker probe per view. **21 views.** |
 
 ## §H — the fourteen required views, and the per-view review
 
@@ -63,13 +64,93 @@ covered **countries**; the division-level alias asset is **not built**, and the 
   international boundary is visibly heavier than the state boundaries; at LOD 0/1 the ADM1 layer is absent
   entirely, which is why the rank column reads `—` for those rows.
 
+## §F (R4) — the twenty-one views, the nine checks, and what looking at them found
+
+R4 adds two views to R3's nineteen: `tw-cn` and `tw-cn-wide`. §A is a decision about what two specific labels
+say, and a decision about text is not verified by an assertion on a string — the question is whether 台灣 and
+中國 read correctly at the zoom where both are on screen together.
+
+Every row was **looked at**. `—` means the check does not apply to that view (there is no ADM1 layer to rank
+below LOD 2, because §E fades it out entirely).
+
+Check 9 is not a judgement: `flicker` in `captures.json` records a **deterministic camera sequence** per view —
+six redraws of a stationary camera, then a 0.48-wide zoom out and back — and reports whether the drawn label set
+changed while the camera was still, and how many LOD transitions the sweep produced.
+
+| # | view | sharp | season | coast align | no 2nd shell | no dup border | nat/ADM1 rank | zh-TW labels | collision/LOD | no flicker |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `na-globe` | pass | **pass** | pass | pass | pass | — | pass | pass | **pass** |
+| 2 | `canada-regional` | pass | **pass** | pass | pass | pass | — | pass | pass | **pass** |
+| 3 | `us-ca-border` | pass | pass | pass | pass | pass | **pass** | pass | pass | **pass** |
+| 4 | `us-mx-border` | pass | — | pass | pass | pass | **pass** | pass | pass | **pass** |
+| 5 | `jp-kr-cn` | pass | — | pass | pass | pass | pass | pass | pass | **pass** |
+| 6 | `europe-dense` | pass | — | pass | pass | pass | **pass** | pass (gap) | pass | **pass** |
+| 7 | `antimeridian` | pass | — | pass | pass | pass | — | pass | pass | **pass** |
+| 8 | `route-na` | pass | pass | pass | pass | pass | — | pass | pass | **pass** |
+| 9 | `globe-limb` | pass | pass | **pass** | **pass** | pass | — | pass | pass | **pass** |
+| 10 | `arctic-greenland` | pass | **pass** | pass | pass | pass | — | pass | pass | **pass** |
+| 11 | `us-adm1-dense` | pass | pass | pass | pass | pass | **pass** | **pass** | pass | **pass** |
+| 12 | `south-america` | pass | — | pass | pass | pass | — | pass | pass | **pass** |
+| 13 | `africa` | pass | — | pass | pass | pass | — | pass | pass | **pass** |
+| 14 | `oceania` | pass | — | pass | pass | pass | — | pass | pass | **pass** |
+| **R4-1** | **`tw-cn`** | pass | — | pass | pass | pass | **pass** | **pass** (gap) | pass | **pass** |
+| **R4-2** | **`tw-cn-wide`** | pass | — | pass | pass | pass | — | **pass** | pass | **pass** |
+| L5-2 | `canada-bc` | pass | **pass** | pass | pass | pass | pass | pass | pass | **pass** |
+| L5-3 | `canada-prairies` | pass | **pass** | pass | pass | pass | pass | pass | pass | **pass** |
+| L5-4 | `canada-greatlakes` | pass | **pass** | pass | pass | pass | pass | pass | pass | **pass** |
+| L5-5 | `canada-rockies` | pass | **pass** | pass | pass | pass | pass | pass | pass | **pass** |
+| L5-6 | `canada-boreal` | pass | **pass** | pass | pass | pass | pass | pass | pass | **pass** |
+
+**Flicker: 21 of 21 stationary-camera probes are byte-identical across six redraws**, and no sweep produced more
+than **2** LOD transitions — one out and one back, which is what a hysteresis band of 0.08 should give across a
+sweep that crosses one threshold. A third transition would be the oscillation §C forbids.
+
+### What the R4 views showed that the R3 set could not
+
+- **`us-adm1-dense` is no longer qualified.** R3's one qualified cell was this view labelling `Indiana` in
+  Latin. It now reads **印第安納州**, and every visible US state is Traditional Chinese. `Maine` — the other US
+  gap — is **緬因州**. Both came from the QID-joined fill level.
+- **`tw-cn` shows the §A decision working.** 中國 and 台灣 are the labels; 北韓, 南韓, 日本, 越南, 泰國, 緬甸 and
+  菲律賓 are all the reviewed zh-TW forms; China's provinces render as 內蒙古自治區, 新疆維吾爾自治區,
+  廣西壯族自治區 and so on. The formal names are not gone — `KM.geoNames.countryDetail('TW')` still returns
+  中華民國（TW）— they are simply not what the map paints.
+- **`europe-dense` still carries English division names**, and that is reported rather than described as a pass:
+  `Komi`, `Karelia`, `Udmurt`, `Kalmyk`, `Ingush` and `Altay`. Six of R3's nine named Russian republics were
+  resolved this round (`Bashkortostan` → 巴什科爾托斯坦共和國, `Mordovia` → 莫爾多維亞共和國, `Adygey` →
+  阿迪格共和國, plus Tatarstan, Chechnya and Crimea); the remaining six have **no verified Traditional name in
+  any pinned authority**, and inventing one is what §B.5 forbids. `tw-cn` shows the same gap once, as
+  `Meghalaya`.
+
+### A DEFECT THE CAPTURES FOUND, WHICH NO ASSERTION WOULD HAVE
+
+The first `tw-cn` capture painted **利比亞 (Libya) over the Tibetan Plateau**. The projection was not wrong:
+Libya's anchor was at `facing` **0.043** — 87.5° off the view axis — and near the limb an enormous span of
+longitude compresses into a few pixels, so a geometrically correct label reads as a label on the wrong continent.
+
+R3 gave division labels a facing threshold (0.55) and deliberately left countries on the bare rear-hemisphere
+test (`mv.z > 0.02`, i.e. 88.9°), on the reasoning that naming the country at the edge of the disc is useful
+context. That reasoning holds — right up to the point where the label is compressed into meaninglessness.
+`COUNTRY_LABEL_MIN_FACING_` is now **0.08** (85.4°), a deliberately small tightening: in that view it removes
+Libya (0.043), Tanzania (0.047), France (0.044) and Mozambique (0.028), and keeps Turkey (0.345), Egypt (0.200)
+and Italy (0.112). Four to nine labels per view, all of them at the extreme limb.
+
 ## What is committed here, and why not all of it
 
-The 19 views come to **25 MB of PNG** for one run. `assets/img/earth/PROVENANCE.md` §6 declines a 29.9 MB
+The 21 views come to **28 MB of PNG** for one run. `assets/img/earth/PROVENANCE.md` §6 declines a 29.9 MB
 upstream image on the grounds that "~30 MB is an unacceptable page and repository weight", and it would be
-inconsistent to commit 25 MB of screenshots. Screenshots of a photographic globe also compress poorly.
+inconsistent to commit 28 MB of screenshots. Screenshots of a photographic globe also compress poorly.
 
-Committed from `after-r3/`:
+Committed from `after-r4/`:
+
+| | |
+| --- | --- |
+| `captures.json` | **all 21 views** — every per-view fact the report states, plus the R4 `flicker` probe and the §C label funnel (`considered` / `after_facing` / `on_screen` / `measured` / `drawn`) per class |
+| `tw-cn.png` | §A — 中國 and 台灣 as the map labels, with the formal names still reachable through `countryDetail` |
+| `us-adm1-dense.png` | §B — R3's one qualified cell closed: `Indiana` is now 印第安納州 |
+| `europe-dense.png` | §B the six divisions that still fall back, §E the border hierarchy, §C density at LOD 2 |
+| `globe-limb.png` | §C borders adhering to the surface at the limb, and the country facing threshold in effect |
+
+Kept from `after-r3/`:
 
 | | |
 | --- | --- |
@@ -79,16 +160,18 @@ Committed from `after-r3/`:
 | `europe-dense.png` | §E dense borders, §F the live display aliases (捷克, 克羅埃西亞, 巴勒斯坦), §G label ranking |
 | `na-globe.png` | §G the continent layer, §A Canada |
 
-The other 15 are **deterministically regenerable in one command**. They are evidence, not artefacts anything
+The other 17 are **deterministically regenerable in one command**. They are evidence, not artefacts anything
 depends on.
+
 
 ## Regenerating
 
 ```sh
-node tools/geo/capture-views.js --tag after-r3          # all 19 views
-node tools/geo/capture-views.js --only globe-limb       # one view
-node tools/geo/measure-perf.js                          # §I performance (separate tool — see below)
+node tools/geo/capture-views.js --tag after-r4          # all 21 views
+node tools/geo/capture-views.js --only tw-cn            # one view
+node tools/geo/measure-perf.js                          # §C/§I performance (separate tool — see below)
 ```
+
 
 Determinism is pinned in the harness rather than hoped for: `reducedMotion: true` makes the camera placement
 instant instead of an eased tween, `--virtual-time-budget` drains timers and rAF before the capture,

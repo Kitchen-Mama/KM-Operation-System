@@ -131,7 +131,11 @@ eq(G.country('KP', { form: 'full' }).name, NAMES.countries.KP,
 section('§F — the geopolitical cases are REFUSED, not decided');
 // ================================================================================================================
 ok(Array.isArray(A.unresolved), 'F8 the asset carries an unresolved list');
-ok(A.unresolved.length > 0, 'F8 which is not empty (' + A.unresolved.length + ' case(s))');
+// RESTATED IN TEXTURE-3-R4 §A. R3 REFUSED TW and CN and reported both candidates, and this suite asserted that
+// refusal. The user has since made the decision, so the assertion that must hold now is the opposite one — and
+// it is a STRONGER claim than "the list is non-empty": the list is empty BECAUSE each case carries a recorded
+// decision, not because the asset failed to load or the cases were dropped.
+eq(A.unresolved.length, 0, 'F8 which is now EMPTY — every case it held has been decided');
 A.unresolved.forEach(function (u) {
   ok(!!u.iso && !!u.current_displayed && !!u.candidate, 'F8 ' + u.iso + ' records both candidates');
   ok(!!u.why_unresolved && u.why_unresolved.length > 40, 'F8 ' + u.iso + ' says WHY it is unresolved');
@@ -141,10 +145,12 @@ A.unresolved.forEach(function (u) {
   eq(G.country(u.iso).name, u.current_displayed, 'F8 ' + u.iso + ' still paints the status quo (' + u.current_displayed + ')');
   ok(G.country(u.iso).name !== u.candidate, 'F8 and NOT the candidate (' + u.candidate + ')');
 });
-// The two the task's own domain makes unavoidable.
-var unresolvedIso = A.unresolved.map(function (u) { return u.iso; }).sort();
-ok(unresolvedIso.indexOf('TW') !== -1, 'F8 TW is reported for user review rather than decided here');
-ok(unresolvedIso.indexOf('CN') !== -1, 'F8 and so is CN — the counterpart decision');
+// The two the task's own domain makes unavoidable — decided by the user in R4 §A, and recorded as decisions
+// rather than merely removed from the list. The full battery for §A lives in the R4 suite.
+var approvedIso = Object.keys(A.approved || {}).sort();
+eq(approvedIso.join(','), 'CN,TW', 'F8 TW and CN carry a RECORDED decision instead of a pending one');
+eq(A.approved.TW.decided_by, 'USER', 'F8 attributed to the person who owns the choice');
+eq(A.approved.CN.decided_by, 'USER', 'F8 and so is CN — the counterpart decision');
 // Surfaced through the resolver, so the product can SHOW that a decision is outstanding.
 eq(G.unresolvedNames().length, A.unresolved.length, 'F9 the resolver exposes the unresolved list');
 // And the rejected-but-considered set is recorded rather than silently dropped.
@@ -166,8 +172,13 @@ section('§J13 — business ISO values are NEVER localised');
 ok(GC.indexOf('KM.geoNames.country') !== -1, 'J13 the engine consults the resolver for LABEL TEXT');
 // The label layer must key its own state on the code, not on the painted text — otherwise a language change
 // looks like a different label and the collision hysteresis breaks.
-ok(/cands\.push\(\{ iso: c\.iso, text: disp,/.test(GLOBE),
-  'J13 and the country label keeps the ISO code as its IDENTITY, separate from the displayed text');
+// RESTATED IN TEXTURE-3-R4 §C: the candidate is built BEFORE its text is resolved, because the ordering keys
+// are known without the text and resolving it earlier is the wasted work §C removes. Identity and display text
+// are still separate fields, which is the whole point of the assertion.
+ok(/cands\.push\(\{ iso: c\.iso, x: _proj\.x/.test(GLOBE),
+  'J13 the country candidate is keyed by ISO — identity, not display text');
+ok(/cc\.text = countryLabelText\(cc\.iso\);/.test(GLOBE),
+  'J13 and the displayed text is resolved FROM that identity into a separate field');
 var MAPJS = read('assets/js/pages/global-logistics-map.js');
 ok(MAPJS.indexOf('geoNames') === -1 || !/warehouse|shipment_id|sku/i.test(MAPJS.slice(Math.max(0, MAPJS.indexOf('geoNames') - 200), MAPJS.indexOf('geoNames') + 200)),
   'J13 the page never routes a business identifier through the name resolver');
@@ -188,7 +199,11 @@ ok(SZ.admin1 < SZ.country && SZ.country < SZ.continent, 'G1 three DISTINCT, orde
 ok(SZ.admin1 / SZ.country <= 0.8, 'G1 the division/country ratio is visible (' + (SZ.admin1 / SZ.country).toFixed(2) + ')');
 ok(SZ.continent / SZ.country >= 1.3, 'G1 and so is the continent/country ratio (' + (SZ.continent / SZ.country).toFixed(2) + ')');
 // §G — continent labels exist at all, which they did not before this round.
-ok(/function drawContinentLabels\(/.test(GLOBE), 'G2 a continent label layer exists');
+// RESTATED IN TEXTURE-3-R4 §C: the three classes are planned together, so the continent layer is a CLASS in
+// the plan rather than a function of its own. Asserted through the shipped planner.
+ok(M.LABEL_CLASS_ORDER.indexOf('CONTINENT') !== -1, 'G2 a continent label layer exists');
+ok(/cls: 'CONTINENT'/.test(GLOBE) && /function continentList\(\)/.test(GLOBE),
+  'G2 with its own derived anchors and its own candidate class');
 ok(/function continentAnchors\(/.test(GLOBE), 'G2 with derived anchors');
 // Anchors are derived in 3D. A longitude mean would put Oceania in the Atlantic, so this is executed.
 (function () {
@@ -239,7 +254,8 @@ eq((GLOBE.match(/boxInsideViewport\(/g) || []).length, 4, 'G4 declared once and 
 // §G — a division label must be FACING the camera, not merely on the near hemisphere.
 ok(M.ADMIN1_LABEL_MIN_FACING > 0.4 && M.ADMIN1_LABEL_MIN_FACING < 0.9,
   'G5 division labels require a real facing threshold (' + M.ADMIN1_LABEL_MIN_FACING + ')');
-ok(/if \(sp\.facing < ADMIN1_LABEL_MIN_FACING_\) continue;/.test(GLOBE), 'G5 which is applied');
+ok(/if \(facingOf\(model, an\.x, an\.y, an\.z\) < ADMIN1_LABEL_MIN_FACING_\) continue;/.test(GLOBE),
+  'G5 which is applied — and now BEFORE the projection, so a rejected label costs three multiplies');
 ok(/facing: mv\.z/.test(GLOBE), 'G5 from the surface-normal cosine, not from a screen-space guess');
 // §G priority: shipment/route, country, continent, ADM1.
 ok(GLOBE.indexOf("priority: 5, cls: 'CONTINENT'") !== -1, 'G6 continents rank below countries (priority 5)');

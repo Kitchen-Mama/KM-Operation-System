@@ -482,15 +482,21 @@
          verified; continents from a hand-reviewed 7-name list. Loaded EAGERLY because country labels are needed at
          LOD 0 - a lazy path would flash ISO codes before the Chinese names arrived. Same-origin <script>, no CDN,
          no runtime fetch, no runtime translation. -->
-    <script src="assets/js/data/geo-names-zh-hant.js?v=map-texture3-r3-20260826"></script>
+    <script src="assets/js/data/geo-names-zh-hant.js?v=map-texture3-r4-20260827"></script>
     <!-- The ONE geographic-name authority. Implements the deterministic per-class fallback order and reports WHICH
          level answered, so a silent regression to ISO codes cannot look like a successful zh-Hant render. -->
     <!-- TEXTURE-3-R3 §F — zh-TW MAP DISPLAY names, above the vendored formal names. Names only: no geometry,
          no coordinates, no anchors. Loaded BEFORE the resolver, which reads it as its top two authority levels. -->
-    <script src="assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r3-20260826"></script>
-    <script src="assets/js/core/geo-name-resolver.js?v=map-texture3-r3-20260826"></script>
-    <script src="assets/js/lib/km-geo-topology.js?v=map-texture3-r3-20260826"></script>
-    <script src="assets/js/lib/km-globe.js?v=map-texture3-r3-20260826"></script>
+    <script src="assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r4-20260827"></script>
+    <!-- TEXTURE-3-R4 §B — zh-TW DIVISION (ADM1) display names, keyed by the stable adm1_code. Names only. The
+         sources are the pinned Natural Earth name_zht field and a vendored, QID-joined Wikidata snapshot (CC0),
+         each verified fully Traditional by the same two-source detector. CLDR publishes NO zh-Hant subdivision
+         data at all; the vendored stub that proves it is a build input and is never served. Loaded before the
+         resolver, which reads this as two of its division levels. -->
+    <script src="assets/js/data/geo-admin1-display-names-zh-tw.js?v=map-texture3-r4-20260827"></script>
+    <script src="assets/js/core/geo-name-resolver.js?v=map-texture3-r4-20260827"></script>
+    <script src="assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827"></script>
+    <script src="assets/js/lib/km-globe.js?v=map-texture3-r4-20260827"></script>
     <script src="assets/js/pages/global-logistics-map.js?v=map-earth-texture-20260826"></script>
     <script src="assets/js/pages/automation-schedule.js?v=donenotice-20260811"></script>
 

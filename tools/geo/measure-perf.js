@@ -24,7 +24,7 @@
  *   image decode            the engine's own asset-load time minus the Resource Timing transfer window
  *   GPU upload              the engine's `gpu_upload_ms` - texImage2D + generateMipmap only
  *   topology preparation    the engine's `topology_prepare_coarse` / `_fine`
- *   label placement         the engine's `label_placement_last_frame`
+ *   label placement         measureFrames()'s `label_mean_ms` / `label_p95_ms`, collected per sample
  *   first render            the engine's `first_render`, from create() to the end of the first complete frame
  *   steady rotate/zoom      `measureFrames()`, which drives real frames and calls gl.finish() per sample
  *
@@ -79,6 +79,7 @@ function page(scenes, samples) {
     '<script src="assets/js/data/world-countries-110m.js"></script>',
     '<script src="assets/js/data/geo-names-zh-hant.js"></script>',
     '<script src="assets/js/data/geo-display-aliases-zh-tw.js"></script>',
+    '<script src="assets/js/data/geo-admin1-display-names-zh-tw.js"></script>',
     '<script src="assets/js/core/geo-name-resolver.js"></script>',
     '<script src="assets/js/lib/km-geo-topology.js"></script>',
     '<script src="assets/js/lib/km-globe.js"></script>',
@@ -148,7 +149,9 @@ function page(scenes, samples) {
     '            out.scenes.push({ id: s.id, requested_dist: s.dist, perf: perf,',
     '              lod: topo && topo.coarse ? undefined : undefined,',
     '              active_set: topo.active_set, phases_ms: topo.phases_ms, frames_drawn: topo.frames_drawn,',
-    '              label_counts: topo.label_counts, adm1_strength: topo.adm1_border_strength,',
+    '              label_counts: topo.label_counts, label_collision: topo.label_collision,',
+    '              label_measure_factor: topo.label_measure_factor,',
+    '              adm1_strength: topo.adm1_border_strength,',
     '              continent_strength: topo.continent_label_strength,',
     '              classes: topo.active_set === "FINE" ? (topo.fine && topo.fine.classes) : (topo.coarse && topo.coarse.classes),',
     '              tier: mat.tier, gpu_mb: mat.estimated_gpu_mb, renderer: mat.renderer });',
@@ -243,15 +246,41 @@ function main() {
 
   console.log('\nSTEADY ROTATE/ZOOM, PER SCENE:');
   console.log('  ' + 'scene'.padEnd(16) + 'set'.padEnd(8) + 'mean'.padStart(8) + 'p50'.padStart(8) +
-              'p95'.padStart(8) + 'max'.padStart(8) + '   borderVerts   label ms   labels C/Cont/A');
+              'p95'.padStart(8) + 'max'.padStart(8) + '   borderVerts  labelMs m/p95  labels C/Cont/A');
   d.scenes.forEach(function (s) {
     var p = s.perf || {}, lc = s.label_counts || {};
     console.log('  ' + s.id.padEnd(16) + String(s.active_set || '?').padEnd(8) +
       String(p.mean_ms).padStart(8) + String(p.p50_ms).padStart(8) +
       String(p.p95_ms).padStart(8) + String(p.max_ms).padStart(8) +
       String(p.border_vertices || 0).padStart(14) +
-      String((s.phases_ms || {}).label_placement_last_frame).padStart(11) + '   ' +
+      String((s.perf || {}).label_mean_ms).padStart(7) + '/' + String((s.perf || {}).label_p95_ms).padEnd(6) + ' ' +
       (lc.country ? lc.country.drawn + '/' + lc.continent.drawn + '/' + lc.adm1.drawn : '?'));
+  });
+
+  // TEXTURE-3-R4 §C — the density table. The drawn count alone cannot show whether the pass got cheaper, so
+  // every stage of the funnel is printed: what the dataset holds, what survived the facing cull, what was
+  // projected, what was actually text-measured, and what was painted. The gap between `screen` and `measured`
+  // is the layout work that used to be done and discarded.
+  console.log('\n§C LABEL DENSITY FUNNEL (ADM1 class):');
+  console.log('  ' + 'scene'.padEnd(16) + 'dataset'.padStart(8) + 'facing'.padStart(8) + 'screen'.padStart(8) +
+              'measured'.padStart(9) + 'cap'.padStart(6) + 'drawn'.padStart(7) + 'collisionTests'.padStart(16) +
+              '  labelMs mean/p95');
+  d.scenes.forEach(function (s) {
+    var a = (s.label_counts && s.label_counts.adm1) || {}, col = s.label_collision || {};
+    console.log('  ' + s.id.padEnd(16) + String(a.considered || 0).padStart(8) +
+      String(a.after_facing || 0).padStart(8) + String(a.on_screen || 0).padStart(8) +
+      String(a.measured || 0).padStart(9) + String(a.measure_cap || 0).padStart(6) +
+      String(a.drawn || 0).padStart(7) + String(col.total_tests == null ? '?' : col.total_tests).padStart(16) +
+      String((s.perf || {}).label_mean_ms).padStart(9) + ' /' +
+      String((s.perf || {}).label_p95_ms).padStart(6));
+  });
+  console.log('\n§C COUNTRY / CONTINENT (readability must not regress):');
+  d.scenes.forEach(function (s) {
+    var c = (s.label_counts && s.label_counts.country) || {}, ct = (s.label_counts && s.label_counts.continent) || {};
+    console.log('  ' + s.id.padEnd(16) + 'country considered ' + String(c.considered || 0).padStart(4) +
+      '  facing ' + String(c.after_facing || 0).padStart(4) + '  measured ' + String(c.measured || 0).padStart(4) +
+      '  drawn ' + String(c.drawn || 0).padStart(3) +
+      '   ·  continent drawn ' + String(ct.drawn || 0));
   });
 
   console.log('\nGEOMETRY BY CLASS (the active set of the last scene):');

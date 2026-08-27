@@ -261,8 +261,25 @@ eq(a1, a2, 'G3 the winner does NOT depend on array order — the collision resul
 // structural: ADM1 text is laid out after, and blocked by, the country codes
 // RESTATED IN TEXTURE-3-R3 §G: the continent layer was added, so the ADM1 blocker list gained a third
 // member. §G's priority order is shipment, country, continent, ADM1 - so ADM1 is blocked by all three.
-ok(GC.indexOf('drawAdmin1Labels(markerRects.concat(countryRects, continentRects)') !== -1,
-  'G4 division labels are blocked by the shipment markers, the country names AND the continent names');
+// RESTATED IN TEXTURE-3-R4 §C/§D. The precedence used to be implicit in the ORDER of three calls and in what
+// each was handed as blockers. It is now an explicit staged plan, so the assertion can EXECUTE it instead of
+// pattern-matching the call site: a division label placed on top of a country label must lose, and an
+// operational rectangle must beat both.
+(function () {
+  var country = [{ iso: 'JP', text: '日本', x: 200, y: 200, w: 40, h: 12, rank: 2, priority: 4, cls: 'COUNTRY' }];
+  var adm1 = [{ iso: 'JPN-1860', text: '東京都', x: 204, y: 202, w: 40, h: 9, rank: 2, priority: 6, cls: 'ADM1' }];
+  var cont = [{ iso: 'CONT:Asia', text: '亞洲', x: 202, y: 201, w: 40, h: 17, rank: 1, priority: 5, cls: 'CONTINENT' }];
+  var p = M.planLabelSet({ operational: [], country: country, continent: cont, adm1: adm1 }, {});
+  eq(p.counts.country, 1, 'G4 the country label is placed');
+  eq(p.counts.continent, 0, 'G4 the continent label loses to the country label it overlaps');
+  eq(p.counts.adm1, 0, 'G4 and the division label is blocked by both');
+  var op = [{ x0: 190, x1: 215, y0: 190, y1: 215 }];
+  var q = M.planLabelSet({ operational: op, country: country, continent: cont, adm1: adm1 }, {});
+  eq(q.counts.country + q.counts.continent + q.counts.adm1, 0,
+    'G4 a shipment marker rectangle beats every geographic class');
+})();
+eq(M.LABEL_CLASS_ORDER.join('>'), 'OPERATIONAL>COUNTRY>CONTINENT>ADM1',
+  'G4 and the precedence is declared in one place');
 // RESTATED IN TEXTURE-3-R3 §G. 'country - 2 px' was true but far too weak to satisfy §G's requirement that
 // the hierarchy be VISIBLE: at an 11 px country label it produced a 9 px division label, an 18% difference
 // that R2's captures showed reading as one class of text at two sizes. The sizes now come from one ladder.
@@ -294,12 +311,15 @@ ok(MC.indexOf('data-toggle="showCountryBorders"') !== -1 && MC.indexOf('data-tog
 // labels are off would silently switch the ADM1 labels off with them. It must bail only when NEITHER layer
 // wants to draw.
 var labelFn = code(extractFnEarly(GLOBE, 'drawCountryLabels'));
-ok(labelFn.indexOf('!wantCountry && !admin1LabelsVisible()') !== -1,
+ok(labelFn.indexOf('!wantCountry && !wantAdmin1') !== -1,
   'H4b the shared label canvas bails ONLY when neither layer has anything to draw');
-ok(labelFn.indexOf('wantCountry ? countryData.countries : []') !== -1,
+ok(labelFn.indexOf('if (wantCountry && countryAnchors)') !== -1,
   'H4c turning country labels off suppresses only the COUNTRY candidates');
-ok(labelFn.indexOf('drawAdmin1Labels(') !== -1 && labelFn.lastIndexOf('drawAdmin1Labels(') > labelFn.indexOf('!wantCountry'),
-  'H4d ADM1 labels are still drawn on that path, so the two toggles are genuinely independent');
+// RESTATED IN TEXTURE-3-R4 §C: the three classes are built and planned inside ONE pass rather than by three
+// nested calls, so independence is now that the ADM1 branch reads its OWN flag after the shared bail.
+ok(labelFn.indexOf('var budget = wantAdmin1 ? admin1LabelBudget(lod) : 0;') !== -1 &&
+   labelFn.indexOf('var budget = wantAdmin1') > labelFn.indexOf('!wantCountry && !wantAdmin1'),
+  'H4d ADM1 labels are still built on that path, so the two toggles are genuinely independent');
 ok(GC.indexOf('setAdmin1Countries') !== -1, 'H5 the degradation ladder can restrict ADM1 to a country subset');
 // RESTATED IN TEXTURE-3-R3 §D: the two per-layer buffer builders became one ladder-aware uploader, so the
 // named failure covers all three classes rather than the ADM1 one alone.
@@ -381,7 +401,13 @@ var newCode = GC.split('MAP-VISUAL-REAL-EARTH-LOD-1');
 ok(GC.indexOf('setMarkers') !== -1 || GC.indexOf('markers') !== -1, 'I2 the marker pipeline is still present');
 ok(GC.indexOf('latLngToVec3(mk.lat, mk.lng') !== -1,
   'I3 shipment markers still project from their OWN lat/lng — no coordinate was reinterpreted');
-ok(GC.indexOf('mk.elev || 1.012') !== -1, 'I4 markers still sit ABOVE both reference layers (1.012 > 1.0035 > 1.0030)');
+// RESTATED IN TEXTURE-3-R3 §C: the two floating boundary shells (1.0035 / 1.0030) were replaced by r = 1 plus a
+// clip-space depth bias, so the literals they were compared against no longer exist. The ORDERING is the load-
+// bearing part and it is now asserted on the exported constants rather than on a magic number in a string.
+ok(GC.indexOf('mk.elev || MARKER_R_') !== -1, 'I4 markers project at the marker radius');
+eq(M.MARKER_R, 1.012, 'I4 which is still 1.012');
+ok(M.BORDER_R < M.ARC_R && M.ARC_R < M.MARKER_R,
+  'I4 markers still sit ABOVE both reference layers (' + M.BORDER_R + ' < ' + M.ARC_R + ' < ' + M.MARKER_R + ')');
 // the ADM1 asset must never be mistaken for business data
 ok(ASSET_SRC.indexOf('GEOGRAPHIC REFERENCE ONLY') !== -1,
   'I5 the asset declares itself geographic reference only — never a business coordinate');

@@ -426,4 +426,16 @@ function main() {
   console.log('  long formal names : ' + longNames.length + ' (recorded, not shortened)');
 }
 
-main();
+// R4 §B — the DETECTOR IS SHARED, NOT COPIED. tools/geo/build-admin1-display-names.js applies exactly this
+// test to a DIFFERENT source (Wikidata labels), and two copies of a rule about which characters are Simplified
+// would be two rules the moment one of them was corrected. Requiring this file therefore must not run the
+// build, hence the guard below.
+module.exports = {
+  buildUnihanTraditionalMap: buildUnihanTraditionalMap,
+  harvestCorpus: harvestCorpus,
+  buildDetector: buildDetector,
+  firstSimplified: firstSimplified,
+  PINNED: PINNED
+};
+
+if (require.main === module) main();

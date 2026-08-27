@@ -70,6 +70,33 @@
     var s = Math.sin(th), w1 = Math.sin((1 - t) * th) / s, w2 = Math.sin(t * th) / s;
     return [a[0] * w1 + b[0] * w2, a[1] * w1 + b[1] * w2, a[2] * w1 + b[2] * w2];
   }
+  // TEXTURE-3-R4 §C — FACING WITHOUT PROJECTING, AND IT IS THE SAME NUMBER, NOT AN APPROXIMATION.
+  //
+  // `projectToScreen` returns `facing` = (model * v).z. For a rotation matrix the translation column is zero, so
+  // that value is exactly model[2]*x + model[6]*y + model[10]*z — three multiplies and two adds, with no matrix
+  // multiply, no 4-component apply and no object allocated. The regression suite asserts the two agree to the
+  // bit rather than taking this comment's word for it.
+  //
+  // WHY IT MATTERS: the division label pass projected all 3,835 anchors every frame to keep ~22 of them. The
+  // facing test is what rejects the overwhelming majority, and it can now run BEFORE the expensive part instead
+  // of after it.
+  function facingOf(model, x, y, z) { return model[2] * x + model[6] * y + model[10] * z; }
+
+  // The same projection as projectToScreen, written into a CALLER-OWNED object. Identical arithmetic; the only
+  // difference is that a frame which projects a few thousand anchors no longer allocates a few thousand objects
+  // and two temporaries each. Returns false when the point is behind the eye.
+  function projectInto(mvp, model, x, y, z, width, height, out) {
+    var cw = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+    if (cw <= 1e-6) return false;
+    var cx = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12];
+    var cy = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13];
+    out.x = (cx / cw * 0.5 + 0.5) * width;
+    out.y = (1 - (cy / cw * 0.5 + 0.5)) * height;
+    out.facing = facingOf(model, x, y, z);
+    out.front = out.facing > 0.02;
+    return true;
+  }
+
   // World point -> screen pixel + visibility. modelZ>0 means front hemisphere (not occluded by the sphere).
   function projectToScreen(mvp, model, v3, width, height) {
     var clip = mat4Apply(mvp, v3);
@@ -449,6 +476,20 @@
   // the looser near-hemisphere test: naming the country at the edge of the disc is useful context, naming its
   // provinces there is noise.
   var ADMIN1_LABEL_MIN_FACING_ = 0.55;
+  // TEXTURE-3-R4 §F — AND THE COUNTRY CLASS NEEDS ONE TOO, WHICH THE CAPTURES ARE WHAT SHOWED.
+  //
+  // R3 gave divisions a facing threshold and deliberately left countries on the bare `front` test (mv.z > 0.02),
+  // on the reasoning that naming the country at the edge of the disc is useful context. The R4 Taiwan/China
+  // capture shows where that reasoning runs out: with the camera on eastern Asia, LIBYA - facing 0.043, which is
+  // 87.5 degrees off the view axis - was painted over the Tibetan Plateau. The projection is not wrong; near the
+  // limb an enormous span of longitude compresses into a few pixels, so a label that is geometrically correct
+  // reads as a label on the wrong continent.
+  //
+  // 0.08 is about 85.4 degrees, a deliberately SMALL tightening of the 88.9 degrees `front` already allowed. It
+  // removes the labels that are compressed into meaninglessness (Libya 0.043, Tanzania 0.047, France 0.044,
+  // Mozambique 0.028 in that view) and keeps the ones that genuinely orient the reader (Turkey 0.345, Egypt 0.2,
+  // Italy 0.112). Continents use the same bound: a continent name at the limb has the same failure.
+  var COUNTRY_LABEL_MIN_FACING_ = 0.08;
   function layerVisible(mode, lod, minLod) {
     if (mode === 'on') return true;
     if (mode === 'off') return false;
@@ -560,9 +601,14 @@
   // Total order: priority, then the dataset's LABELRANK, then ISO ascending. ISO is the final tie-break, so the
   // winner between two colliding labels never depends on array order, screen position, or time — which is what
   // stops labels swapping back and forth while the globe rotates. Nothing here consults a clock or a PRNG.
+  // TEXTURE-3-R4 §D — CLASS FIRST, then the existing keys. A candidate with no `cls` gets the same rank as
+  // every other candidate with no `cls`, so a caller that has never heard of classes sees the identical order
+  // it saw before; the key only separates candidates that actually declare different classes.
   function orderLabelCandidates(cands) {
     return cands.slice().sort(function (a, b) {
-      return (a.priority - b.priority) || (a.rank - b.rank) || (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
+      return (labelClassRank(a.cls) - labelClassRank(b.cls)) ||
+             (a.priority - b.priority) || (a.rank - b.rank) ||
+             (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
     });
   }
 
@@ -583,6 +629,10 @@
     var stickyPad = opts.stickyPad == null ? 0 : opts.stickyPad;
     var prev = opts.previous || {};
     var markerRects = opts.markerRects || [];
+    // TEXTURE-3-R4 §C — an OPTIONAL counter object. §C asks for the collision-test count to be measured rather
+    // than asserted, and a caller that does not care passes nothing and pays nothing. It is written to, never
+    // read, so it cannot change which labels are chosen.
+    var stats = opts.stats || null;
     var accepted = [], placed = [];
     var ordered = orderLabelCandidates(cands);
     for (var i = 0; i < ordered.length; i++) {
@@ -590,16 +640,93 @@
       var pd = (prev[c.iso] ? stickyPad : pad);
       var rect = { x0: c.x - c.w / 2 - pd, x1: c.x + c.w / 2 + pd, y0: c.y - c.h / 2 - pd, y1: c.y + c.h / 2 + pd };
       var blocked = false;
-      for (var j = 0; j < placed.length; j++) { if (rectsOverlap(rect, placed[j])) { blocked = true; break; } }
+      for (var j = 0; j < placed.length; j++) { if (stats) stats.tests++; if (rectsOverlap(rect, placed[j])) { blocked = true; break; } }
       // Never let a geographic reference cover a shipment marker — the marker is the business object.
       if (!blocked) {
-        for (var k = 0; k < markerRects.length; k++) { if (rectsOverlap(rect, markerRects[k])) { blocked = true; break; } }
+        for (var k = 0; k < markerRects.length; k++) { if (stats) stats.tests++; if (rectsOverlap(rect, markerRects[k])) { blocked = true; break; } }
       }
       if (blocked) continue;
       placed.push(rect);
       accepted.push(c);
     }
     return accepted;
+  }
+
+  // ============================================================================================================
+  // TEXTURE-3-R4 §C/§D — THE FOUR LABEL CLASSES, AND ONE PLACE THAT DECIDES BETWEEN THEM.
+  // ------------------------------------------------------------------------------------------------------------
+  // §C fixes the precedence: operational, then country, then continent, then ADM1. Before this round that order
+  // was real but IMPLICIT - it emerged from the sequence of three calls inside the draw function and from the
+  // fact that each pass was handed the previous passes' rectangles as blockers. Implicit is not testable, and
+  // §D asks for the cross-class outcomes to be proven, so the orchestration is lifted out here as a PURE
+  // function the engine calls and the suite calls.
+  //
+  // WHY STAGED RATHER THAN ONE FLAT SORT. Each class is measured in its OWN font, and a flat sort would have to
+  // measure everything up front - which is exactly the cost §C is about. Staging lets each class be measured
+  // only after the classes above it have taken their space.
+  //
+  // OPERATIONAL IS A CLASS HERE, NOT A SIDE CHANNEL. Shipment markers used to be passed in as a bare rectangle
+  // list. They are the business objects and they outrank every geographic label, which is a PRECEDENCE fact, so
+  // they enter as class 0 candidates and the same comparator explains why they win.
+  var LABEL_CLASS_ORDER_ = ['OPERATIONAL', 'COUNTRY', 'CONTINENT', 'ADM1'];
+  function labelClassRank(cls) {
+    var i = LABEL_CLASS_ORDER_.indexOf(String(cls || ''));
+    return i === -1 ? LABEL_CLASS_ORDER_.length : i;
+  }
+
+  // How many candidates may be MEASURED per label the budget allows. §C forbids rejected labels consuming
+  // layout work, and an unbounded pass over a crowded view is what that rule is about: at the dense-Europe zoom
+  // 1,706 divisions were text-resolved and text-measured to place 22. Three attempts per slot leaves room for
+  // collisions to be resolved without the work scaling with the dataset.
+  var LABEL_MEASURE_FACTOR_ = 3;
+
+  // §C/§D — the whole frame's label decision, as one deterministic function of (candidates, blockers, previous
+  // set). No clock, no PRNG, no dependence on input array order: every stage sorts with orderLabelCandidates,
+  // whose final tie-break is immutable identity.
+  //
+  // `input.operational` are pre-placed rectangles: they are never dropped and never measured, because a marker's
+  // size is a property of the marker and not of any text.
+  function planLabelSet(input, opts) {
+    input = input || {}; opts = opts || {};
+    var pads = opts.pad || {}, sticky = opts.stickyPad || {}, prev = opts.previous || {};
+    function padOf(cls, dflt) { return pads[cls] == null ? dflt : pads[cls]; }
+    function stickyOf(cls, dflt) { return sticky[cls] == null ? dflt : sticky[cls]; }
+
+    var operational = (input.operational || []).slice();
+    var blockers = operational.map(function (r) { return r; });
+    var out = { operational: operational, country: [], continent: [], adm1: [] };
+    var counts = { operational: operational.length, country: 0, continent: 0, adm1: 0 };
+    var tests = { operational: 0, country: 0, continent: 0, adm1: 0 };
+
+    function stage(key, cands, dfltPad, dfltSticky, prevKey) {
+      var list = cands || [];
+      if (!list.length) return;
+      var st = { tests: 0 };
+      var accepted = selectVisibleLabels(list, {
+        pad: padOf(key.toUpperCase(), dfltPad),
+        stickyPad: stickyOf(key.toUpperCase(), dfltSticky),
+        previous: prev[prevKey] || {},
+        markerRects: blockers,
+        stats: st
+      });
+      tests[key] = st.tests;
+      out[key] = accepted;
+      counts[key] = accepted.length;
+      for (var i = 0; i < accepted.length; i++) {
+        var a = accepted[i], m = 2;
+        blockers.push({ x0: a.x - a.w / 2 - m, x1: a.x + a.w / 2 + m,
+                        y0: a.y - a.h / 2 - m, y1: a.y + a.h / 2 + m });
+      }
+    }
+
+    // The order below IS §C's precedence. Each stage's accepted rectangles become the next stage's blockers, so
+    // a country label can hide a continent label and a continent label can hide a division label, never the
+    // reverse - and an operational rectangle blocks all three.
+    stage('country', input.country, 3, 1, 'country');
+    stage('continent', input.continent, 6, 3, 'continent');
+    stage('adm1', input.adm1, 2, 1, 'adm1');
+    return { accepted: out, counts: counts, collision_tests: tests,
+             class_order: LABEL_CLASS_ORDER_.slice() };
   }
 
   // Map a shipment's country value onto an ISO alpha-2 present in the dataset. Accepts an already-2-letter code
@@ -643,6 +770,7 @@
     ADMIN1_ALPHABET: ADMIN1_ALPHABET, LOD_THRESHOLDS: LOD_THRESHOLDS, LOD_HYSTERESIS: LOD_HYSTERESIS,
     ADMIN1_BORDER_MIN_LOD: ADMIN1_BORDER_MIN_LOD, ADMIN1_LABEL_MIN_LOD: ADMIN1_LABEL_MIN_LOD,
     ADMIN1_LABEL_MIN_FACING: ADMIN1_LABEL_MIN_FACING_,
+    COUNTRY_LABEL_MIN_FACING: COUNTRY_LABEL_MIN_FACING_,
     // MAP-VISUAL-REAL-EARTH-TEXTURE-3-R3 §C/§D/§E — exported so the suites EXECUTE the shipped topology,
     // hierarchy and surface-authority decisions instead of pattern-matching their source.
     BORDER_R: BORDER_R, BORDER_DEPTH_BIAS: BORDER_DEPTH_BIAS_,
@@ -652,6 +780,11 @@
     buildBorderLayers: buildBorderLayers,
     admin1BorderStrength: admin1BorderStrength, continentStrength: continentStrength,
     labelSizes: labelSizes, continentAnchors: continentAnchors,
+    // TEXTURE-3-R4 §C/§D — exported so the determinism suite executes the SHIPPED planner and the SHIPPED
+    // facing test rather than a re-implementation of either.
+    facingOf: facingOf, projectInto: projectInto,
+    labelClassRank: labelClassRank, planLabelSet: planLabelSet,
+    LABEL_CLASS_ORDER: LABEL_CLASS_ORDER_, LABEL_MEASURE_FACTOR: LABEL_MEASURE_FACTOR_,
     ADMIN1_FADE_FAR: ADMIN1_FADE_FAR_, ADMIN1_FADE_NEAR: ADMIN1_FADE_NEAR_,
     CONTINENT_FADE_NEAR: CONTINENT_FADE_NEAR_, CONTINENT_FADE_FAR: CONTINENT_FADE_FAR_,
     LABEL_BASE_PX: LABEL_BASE_PX_
@@ -1551,9 +1684,12 @@
     var showAdmin1Borders = opts.admin1Borders || 'auto';   // 'auto' | 'on' | 'off'
     var showAdmin1Labels = opts.admin1Labels || 'auto';
     var lod = 0, lastLodNotified = -1;
-    var lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 };
+    var lastAdmin1LabelStats = { considered: 0, after_facing: 0, on_screen: 0, measured: 0, measure_cap: 0,
+                                 candidates: 0, drawn: 0, budget: 0 };
     var degradeReason = '';
-    var prevLabelSet = {}, lastLabelStats = { candidates: 0, drawn: 0, tier: 0 };
+    var prevLabelSet = {}, prevAdmin1Set = {},
+        lastLabelStats = { considered: 0, after_facing: 0, on_screen: 0, measured: 0, candidates: 0,
+                           drawn: 0, tier: 0 };
     var lastLabelMs = 0, firstRenderMs = 0, framesDrawn = 0, lastFrameMs = 0, createT0 = nowMsGlobal_();
     var prevContinentSet = {};
     var W = 1, H = 1, dpr = 1;
@@ -1712,21 +1848,89 @@
       lastFrameMs = Math.round((nowMsGlobal_() - __frameT0) * 100) / 100;
     }
 
-    // TEXTURE-3-R3 §G — one clipping rule for all three label classes. A label is admitted only if its whole
-    // painted box, plus the halo width, fits inside the viewport. `PAD` is the halo's own outset: the stroke
-    // is 3 px wide and centred on the glyph edge, so the ink reaches 1.5 px beyond the measured box.
+    // TEXTURE-3-R3 §G — one clipping rule for all label classes. A label is admitted only if its whole painted
+    // box, plus the halo width, fits inside the viewport. `PAD` is the halo's own outset: the stroke is 3 px
+    // wide and centred on the glyph edge, so the ink reaches 1.5 px beyond the measured box.
     var LABEL_EDGE_PAD_ = 2;
     function boxInsideViewport(x, y, w, h) {
       var hw = w / 2 + LABEL_EDGE_PAD_, hh = h / 2 + LABEL_EDGE_PAD_;
       return (x - hw) >= 0 && (x + hw) <= W && (y - hh) >= 0 && (y + hh) <= H;
     }
+    // A cheap ANCHOR test used before the text is resolved, when the box is not known yet. It is deliberately
+    // generous - half the viewport's shorter side - so it only removes anchors that no label of any plausible
+    // width could reach into frame from. The exact box test above still runs on everything that survives.
+    function anchorNearViewport(x, y) {
+      var m = Math.max(64, Math.min(W, H) * 0.5);
+      return x >= -m && x <= W + m && y >= -m && y <= H + m;
+    }
 
-    // §G — THE CONTINENT LAYER. It did not exist before this round: §G asks for "restrained continent names"
-    // on the default globe view and for them to fade when no longer useful, and the globe drew none at all.
+    // ==========================================================================================================
+    // TEXTURE-3-R4 §C — WHY THIS PASS IS SHAPED THE WAY IT IS.
+    // ----------------------------------------------------------------------------------------------------------
+    // MEASURED BEFORE: at the dense-Europe zoom the label pass was 3.1 ms of a 3.44 ms frame, and the reason was
+    // in the counters rather than in the renderer - 1,706 division candidates were projected, name-resolved and
+    // text-measured to draw 22. Ninety-nine per cent of the layout work was thrown away, which is exactly what
+    // §C's "labels rejected by collision must not consume draw/layout work" forbids.
     //
-    // Anchors are DERIVED from the vendored country label points (see continentAnchors) and the names come
-    // from the same KM.geoNames authority as everything else, at its ZH_HANT_REVIEWED_LIST level. Nothing
-    // here invents a name or a position.
+    // THREE THINGS CHANGED, IN THIS ORDER:
+    //
+    //   1 A CULL THAT COSTS THREE MULTIPLIES. `facing` is (model * v).z, and for a rotation matrix that is one
+    //     dot product. It now runs BEFORE the projection instead of being read off the projection's result, so
+    //     the ~97% of divisions that face away are rejected without a 4x4 apply or a single allocation.
+    //
+    //   2 MEASUREMENT IS BOUNDED BY THE BUDGET, NOT BY THE DATASET. The ordering keys - class, priority,
+    //     LABELRANK, identity - are all known WITHOUT the text, so the candidates are ordered and cut to
+    //     budget x LABEL_MEASURE_FACTOR first, and only those are name-resolved and measured. The count that is
+    //     actually measured is reported, so a cut is visible rather than silent.
+    //
+    //   3 RESOLVED TEXT AND TEXT METRICS ARE CACHED BY IDENTITY. Both are pure functions of inputs that do not
+    //     change between frames; recomputing them per frame was work with no output.
+    //
+    // WHAT DID NOT CHANGE: which labels are chosen. The cull is the same predicate the pass already applied, the
+    // ordering is the same total order, and the collision pass is the same function. This is the same answer
+    // computed without the discarded work.
+    // ==========================================================================================================
+
+    // Unit-sphere anchors, built once per dataset. Rebuilding a vector per label per frame was ~4,000 array
+    // allocations a frame for a value that is a property of the data.
+    var countryAnchors = null, admin1Anchors = null;
+    function buildCountryAnchors() {
+      var list = (countryData && countryData.countries) || [];
+      countryAnchors = new Array(list.length);
+      for (var i = 0; i < list.length; i++) {
+        var v = latLngToVec3(list[i].label[1], list[i].label[0], BORDER_R);
+        countryAnchors[i] = { d: list[i], x: v[0], y: v[1], z: v[2] };
+      }
+    }
+    function buildAdmin1Anchors() {
+      var list = (admin1Data && admin1Data.admin1) || [];
+      admin1Anchors = new Array(list.length);
+      for (var i = 0; i < list.length; i++) {
+        var d = list[i], v = latLngToVec3(d.l[1], d.l[0], BORDER_R);
+        admin1Anchors[i] = { d: d, x: v[0], y: v[1], z: v[2] };
+      }
+    }
+
+    // Text and metrics caches. The resolver is pure and the fonts are fixed per class, so both keys are stable
+    // for the life of the instance. Bounded by the dataset: at most one entry per division per font size.
+    var labelTextCache = {}, labelMetricCache = {};
+    function measureCached(font, text) {
+      var k = font + '\u0000' + text;
+      var w = labelMetricCache[k];
+      if (w === undefined) {
+        if (labelCtx.font !== font) labelCtx.font = font;
+        w = labelCtx.measureText(text).width;
+        labelMetricCache[k] = w;
+      }
+      return w;
+    }
+
+    var _proj = { x: 0, y: 0, facing: 0, front: false };
+
+    // §G — THE CONTINENT LAYER. §G asks for restrained continent names on the default globe view and for them to
+    // fade when no longer useful. Anchors are DERIVED from the vendored country label points (see
+    // continentAnchors) and the names come from the same KM.geoNames authority as everything else, at its
+    // ZH_HANT_REVIEWED_LIST level. Nothing here invents a name or a position.
     var continentCache = null;
     function continentList() {
       if (continentCache) return continentCache;
@@ -1747,227 +1951,276 @@
       return continentCache;
     }
 
-    var lastContinentStats = { candidates: 0, drawn: 0, strength: 0 };
-    function drawContinentLabels(blockers) {
-      var strength = continentStrength(cam.dist);
-      if (strength <= 0.02) { lastContinentStats = { candidates: 0, drawn: 0, strength: 0 }; return []; }
-      var list = continentList();
-      if (!list.length) { lastContinentStats = { candidates: 0, drawn: 0, strength: strength }; return []; }
-      var px = labelSizes(cam.dist).continent;
-      labelCtx.font = '600 ' + px + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-      var cands = [];
-      for (var i = 0; i < list.length; i++) {
-        var a = list[i];
-        var sp = projectToScreen(mvp, model, [a.vec[0] * BORDER_R, a.vec[1] * BORDER_R, a.vec[2] * BORDER_R], W, H);
-        if (!sp || !sp.front) continue;
-        var w = labelCtx.measureText(a.text).width;
-        if (!boxInsideViewport(sp.x, sp.y, w, px)) continue;
-        cands.push({ iso: 'CONT:' + a.key, text: a.text, x: sp.x, y: sp.y, w: w, h: px,
-          rank: 1, priority: 5, cls: 'CONTINENT' });
-      }
-      var drawn = selectVisibleLabels(cands, { pad: 6, stickyPad: 3, previous: prevContinentSet, markerRects: blockers });
-      // Restrained by design: a continent name is context, not a destination. Faint, letter-spaced in effect
-      // by the larger size, and it never competes with a country name for attention.
-      labelCtx.lineWidth = 3.5;
-      labelCtx.strokeStyle = 'rgba(6,10,20,' + (0.55 * strength).toFixed(3) + ')';
-      labelCtx.fillStyle = 'rgba(206,220,238,' + (0.62 * strength).toFixed(3) + ')';
-      var next = {}, rects = [];
-      for (var d = 0; d < drawn.length; d++) {
-        next[drawn[d].iso] = 1;
-        labelCtx.strokeText(drawn[d].text, drawn[d].x, drawn[d].y);
-        labelCtx.fillText(drawn[d].text, drawn[d].x, drawn[d].y);
-        rects.push({ x0: drawn[d].x - drawn[d].w / 2 - 2, x1: drawn[d].x + drawn[d].w / 2 + 2,
-                     y0: drawn[d].y - drawn[d].h / 2 - 2, y1: drawn[d].y + drawn[d].h / 2 + 2 });
-      }
-      prevContinentSet = next;
-      lastContinentStats = { candidates: cands.length, drawn: drawn.length, strength: Math.round(strength * 100) / 100 };
-      return rects;
+    // ==========================================================================================================
+    // TEXTURE-3 — GEOGRAPHIC LABEL TEXT. One place, so the language rule cannot drift between the layers.
+    // ----------------------------------------------------------------------------------------------------------
+    // The name authority is KM.geoNames (assets/js/core/geo-name-resolver.js) over the vendored zh-Hant assets.
+    // It is consulted through a guarded call rather than assumed present: if an asset or the resolver has not
+    // loaded, these fall back to exactly what the globe painted before localization - the ISO code and the
+    // division code - so a missing asset degrades the LANGUAGE and never the map.
+    //
+    // No conversion happens here and no name is invented. Whatever the resolver returns is painted verbatim.
+    // ==========================================================================================================
+    function countryLabelText(iso) {
+      var key = 'C:' + iso;
+      var hit = labelTextCache[key];
+      if (hit !== undefined) return hit;
+      var out = String(iso == null ? '' : iso);
+      try {
+        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.country === 'function') {
+          var r = window.KM.geoNames.country(iso);
+          if (r && r.name) out = r.name;
+        }
+      } catch (e) {}
+      labelTextCache[key] = out;
+      return out;
+    }
+    // TEXTURE-3-R4 §B — the division's name is resolved with its `adm1_code`, because two of the three levels
+    // above the English fallback are keyed on that stable source identity. Passing only the DISPLAYED code would
+    // reach the wrong row: `country|displayedCode` collides across 53 rows, BA|BIH alone over nine cantons.
+    function admin1LabelText(d) {
+      var code = String((d && d.k) == null ? '' : d.k);
+      var adm1 = String((d && d.a) == null ? '' : d.a);
+      var key = 'A:' + (adm1 || (d && d.c) + '/' + code);
+      var hit = labelTextCache[key];
+      if (hit !== undefined) return hit;
+      var full = (d && d.n != null && d.n !== '') ? String(d.n) : code;
+      var out = code;
+      try {
+        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.admin1 === 'function') {
+          var r = window.KM.geoNames.admin1(d && d.c, code, { english: full, adm1Code: adm1 });
+          if (r && r.name) out = r.name;
+        }
+      } catch (e) {}
+      labelTextCache[key] = out;
+      return out;
     }
 
-    // MAP-COUNTRY-BOUNDARY-1 §F/§G — project, filter, order, collide, paint. One 2D canvas, cleared and redrawn;
-    // no DOM node is created or removed here, and nothing is allocated per label beyond the small candidate list.
+    function fontFor(px, weight) {
+      return weight + ' ' + px + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ' +
+        'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    }
+
+    var lastContinentStats = { candidates: 0, drawn: 0, strength: 0 };
+    var lastLabelPlan = null;
+
+    // MAP-COUNTRY-BOUNDARY-1 §F/§G, TEXTURE-3-R4 §C — build every class's candidates, plan once, paint once.
+    // One 2D canvas, cleared and redrawn; no DOM node is created or removed here.
     function drawCountryLabels() {
       if (!labelCtx) return;
       // §I — LABEL PLACEMENT is a separate phase from rendering: it is synchronous CPU work on a 2D canvas
-      // (project, filter, order, collide, paint) and it is charged to no GPU. Measuring it separately is how
-      // the first frame-timing attempt was caught measuring labels instead of frames.
+      // (cull, project, order, measure, collide, paint) and it is charged to no GPU. Measuring it separately is
+      // how the first frame-timing attempt was caught measuring labels instead of frames.
       var __lblT0 = nowMsGlobal_();
       labelCtx.setTransform(1, 0, 0, 1, 0, 0);
       labelCtx.clearRect(0, 0, labelCv.width, labelCv.height);
-      // §G LAYER INDEPENDENCE. This canvas now carries TWO layers, so it may only bail when NEITHER has
-      // anything to draw. Bailing whenever country labels were off would have silently chained the ADM1 label
-      // toggle to the country label toggle.
+      // §G LAYER INDEPENDENCE. This canvas carries several layers, so it may only bail when NONE has anything to
+      // draw. Bailing whenever country labels were off would silently chain the ADM1 toggle to the country one.
       var wantCountry = showLabels && !!(countryData && countryData.countries);
-      if (!wantCountry && !admin1LabelsVisible()) { lastLabelStats = { candidates: 0, drawn: 0, tier: 0 }; lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
+      var wantAdmin1 = admin1LabelsVisible() && !!(admin1Data && admin1Data.admin1);
+      if (!wantCountry && !wantAdmin1) {
+        lastLabelStats = { considered: 0, after_facing: 0, on_screen: 0, measured: 0, candidates: 0, drawn: 0, tier: 0 };
+        lastAdmin1LabelStats = { considered: 0, after_facing: 0, on_screen: 0, measured: 0, measure_cap: 0,
+                                 candidates: 0, drawn: 0, budget: 0 };
+        lastContinentStats = { candidates: 0, drawn: 0, strength: 0 };
+        lastLabelPlan = null;
+        lastLabelMs = Math.round((nowMsGlobal_() - __lblT0) * 100) / 100;
+        return;
+      }
       labelCtx.scale(dpr, dpr);   // §F/§K DPR-aware: draw in CSS pixels onto a device-pixel backing store
+      labelCtx.textAlign = 'center';
+      labelCtx.textBaseline = 'middle';
+      labelCtx.lineJoin = 'round';
 
-      // TEXTURE-3-R3 §G — the three sizes come from ONE ladder (17 / 12 / 9 px) so the hierarchy cannot
-      // drift into three near-identical sizes, which is what R2's captures showed.
+      // TEXTURE-3-R3 §G — the sizes come from ONE ladder (17 / 12 / 9 px) so the hierarchy cannot drift into
+      // three near-identical sizes, which is what R2's captures showed.
       var SIZES = labelSizes(cam.dist);
       var fontPx = SIZES.country;
       // TEXTURE-3 — A TRADITIONAL-CHINESE-PREFERRING STACK, NOT JUST ANY CJK FONT. Han characters shared between
       // the two orthographies have DIFFERENT GLYPH SHAPES per region, and a generic `system-ui` can resolve them
-      // through a Simplified-Chinese face — which would render zh-Hant text in zh-Hans letterforms and quietly
+      // through a Simplified-Chinese face - which would render zh-Hant text in zh-Hans letterforms and quietly
       // undo the whole point of sourcing verified Traditional names. The zh-TW faces are therefore named first
       // (Windows, macOS/iOS, then Noto), with the previous Latin stack retained behind them unchanged.
-      labelCtx.font = '700 ' + fontPx + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-      labelCtx.textAlign = 'center';
-      labelCtx.textBaseline = 'middle';
+      var countryFont = fontFor(fontPx, '700');
+      var continentFont = fontFor(SIZES.continent, '600');
+      var admin1Font = fontFor(SIZES.admin1, '600');
 
-      var tier = countryLabelTier(cam.dist);
-      var list = wantCountry ? countryData.countries : [];
-      var cands = [];
-      for (var i = 0; i < list.length; i++) {
-        var c = list[i];
-        var pri = countryPriorityOf(c.iso, countryPriority);
-        // A priority country is never hidden by the zoom tier — an active shipment's country must stay readable
-        // however far out the operator is looking.
-        if (pri > 3 && c.rank > tier) continue;
-        var sp = projectToScreen(mvp, model, latLngToVec3(c.label[1], c.label[0], BORDER_R), W, H);
-        if (!sp || !sp.front) continue;                                   // §F rear hemisphere -> hidden
-        // TEXTURE-3-R3 §G — "no clipped label at the globe edge". The old bound allowed an anchor up to 40 px
-        // OUTSIDE the viewport, so a label whose anchor was just off-screen was still painted and arrived cut
-        // in half at the frame edge - visible in R2's Europe capture as `Indiana`, `Rondônia` and `Ceará`
-        // sliced down the left margin. The test is now on the label's own BOX, measured below, not on its
-        // anchor point, so a label is either wholly readable or absent.
-        if (!sp.front) continue;
-        // TEXTURE-3 — the DISPLAYED text is the resolved Traditional Chinese country name; the ISO code stays
-        // the label's IDENTITY. That separation matters: `iso` keys the previous-frame set that gives the
-        // collision pass its hysteresis, so keying on display text would make a language change look like a
-        // different label and reintroduce the flicker the hysteresis exists to stop. The width is measured on
-        // the text actually painted, so collision boxes stay honest — a Chinese name is wider than two letters.
-        var disp = countryLabelText(c.iso);
-        var cw = labelCtx.measureText(disp).width;
-        if (!boxInsideViewport(sp.x, sp.y, cw, fontPx)) continue;
-        cands.push({ iso: c.iso, text: disp, x: sp.x, y: sp.y, w: cw, h: fontPx,
-          rank: c.rank, priority: pri, cls: 'COUNTRY' });
-      }
-
-      // Shipment markers are the business objects; a geographic reference may never sit on top of one.
+      // ---- CLASS 0: OPERATIONAL ----------------------------------------------------------------------------
+      // Shipment markers are the business objects; a geographic reference may never sit on top of one. They are
+      // pre-sized rectangles rather than text, so they are never measured and never dropped.
       var markerRects = [];
       for (var m = 0; m < markers.length; m++) {
         var mk = markers[m];
         if (!isFinite(mk.lat) || !isFinite(mk.lng)) continue;
-        var mp = projectToScreen(mvp, model, latLngToVec3(mk.lat, mk.lng, mk.elev || 1.012), W, H);
-        if (!mp || !mp.front) continue;
+        var mv3 = latLngToVec3(mk.lat, mk.lng, mk.elev || MARKER_R_);
+        if (!projectInto(mvp, model, mv3[0], mv3[1], mv3[2], W, H, _proj) || !_proj.front) continue;
         var half = ((mk.size || 10) / 2) + 3;
-        markerRects.push({ x0: mp.x - half, x1: mp.x + half, y0: mp.y - half, y1: mp.y + half });
+        markerRects.push({ x0: _proj.x - half, x1: _proj.x + half, y0: _proj.y - half, y1: _proj.y + half });
       }
 
-      // §G PRIORITY ORDER: shipment/route labels, then COUNTRY, then CONTINENT, then ADM1. Countries are
-      // laid out BEFORE continents and passed in as blockers, so where the two compete the country wins -
-      // which is the order §G specifies, even though the continent label is the larger of the two.
-      var drawn = wantCountry ? selectVisibleLabels(cands, { pad: 3, stickyPad: 1, previous: prevLabelSet, markerRects: markerRects }) : [];
-      var next = {};
-      labelCtx.lineJoin = 'round';
+      // ---- CLASS 1: COUNTRY --------------------------------------------------------------------------------
+      if (!countryAnchors && countryData) buildCountryAnchors();
+      var tier = countryLabelTier(cam.dist);
+      var cands = [], cConsidered = 0, cFacing = 0, cScreen = 0;
+      if (wantCountry && countryAnchors) {
+        cConsidered = countryAnchors.length;
+        for (var i = 0; i < countryAnchors.length; i++) {
+          var a = countryAnchors[i], c = a.d;
+          // §C — the cull first, and it costs three multiplies. Everything below it is more expensive.
+          // §F — and it is the COUNTRY threshold, not the bare rear-hemisphere test: see the note on
+          // COUNTRY_LABEL_MIN_FACING_ for the capture that made the difference visible.
+          if (facingOf(model, a.x, a.y, a.z) < COUNTRY_LABEL_MIN_FACING_) continue;
+          cFacing++;
+          var pri = countryPriorityOf(c.iso, countryPriority);
+          // A priority country is never hidden by the zoom tier — an active shipment's country must stay
+          // readable however far out the operator is looking.
+          if (pri > 3 && c.rank > tier) continue;
+          if (!projectInto(mvp, model, a.x, a.y, a.z, W, H, _proj)) continue;
+          if (!anchorNearViewport(_proj.x, _proj.y)) continue;
+          cScreen++;
+          cands.push({ iso: c.iso, x: _proj.x, y: _proj.y, rank: c.rank, priority: pri, cls: 'COUNTRY' });
+        }
+      }
+      // §C — ordered BEFORE the text is resolved, because every ordering key is known without it. The country
+      // class has no budget: §C requires country readability not to regress, and 175 cached measurements cost
+      // nothing after the first frame.
+      var cOrdered = orderLabelCandidates(cands), cMeasured = 0, countryCands = [];
+      for (var ci = 0; ci < cOrdered.length; ci++) {
+        var cc = cOrdered[ci];
+        // TEXTURE-3 — the DISPLAYED text is the resolved Traditional Chinese country name; the ISO code stays
+        // the label's IDENTITY. That separation matters: `iso` keys the previous-frame set that gives the
+        // collision pass its hysteresis, so keying on display text would make a language change look like a
+        // different label and reintroduce the flicker the hysteresis exists to stop. The width is measured on
+        // the text actually painted, so collision boxes stay honest - a Chinese name is wider than two letters.
+        cc.text = countryLabelText(cc.iso);
+        cc.w = measureCached(countryFont, cc.text);
+        cc.h = fontPx;
+        cMeasured++;
+        // TEXTURE-3-R3 §G — "no clipped label at the globe edge", tested on the label's own BOX rather than on
+        // its anchor, so a label is either wholly readable or absent.
+        if (!boxInsideViewport(cc.x, cc.y, cc.w, cc.h)) continue;
+        countryCands.push(cc);
+      }
+
+      // ---- CLASS 2: CONTINENT ------------------------------------------------------------------------------
+      var contStrength = continentStrength(cam.dist), continentCands = [];
+      if (contStrength > 0.02) {
+        var clist = continentList();
+        for (var k2 = 0; k2 < clist.length; k2++) {
+          var ca = clist[k2];
+          if (facingOf(model, ca.vec[0] * BORDER_R, ca.vec[1] * BORDER_R, ca.vec[2] * BORDER_R) < COUNTRY_LABEL_MIN_FACING_) continue;
+          if (!projectInto(mvp, model, ca.vec[0] * BORDER_R, ca.vec[1] * BORDER_R, ca.vec[2] * BORDER_R, W, H, _proj)) continue;
+          var cw2 = measureCached(continentFont, ca.text);
+          if (!boxInsideViewport(_proj.x, _proj.y, cw2, SIZES.continent)) continue;
+          continentCands.push({ iso: 'CONT:' + ca.key, text: ca.text, x: _proj.x, y: _proj.y,
+            w: cw2, h: SIZES.continent, rank: 1, priority: 5, cls: 'CONTINENT' });
+        }
+      }
+
+      // ---- CLASS 3: ADM1 -----------------------------------------------------------------------------------
+      var budget = wantAdmin1 ? admin1LabelBudget(lod) : 0;
+      var measureCap = budget * LABEL_MEASURE_FACTOR_;
+      var aConsidered = 0, aFacing = 0, aScreen = 0, aMeasured = 0, admin1Cands = [];
+      if (budget > 0) {
+        if (!admin1Anchors) buildAdmin1Anchors();
+        aConsidered = admin1Anchors.length;
+        var raw = [];
+        for (var ai = 0; ai < admin1Anchors.length; ai++) {
+          var an = admin1Anchors[ai], d = an.d;
+          if (admin1Countries && admin1Countries.indexOf(d.c) === -1) continue;
+          // §G — AND NOT AT THE LIMB. `front` admits the whole near hemisphere, which is why the Europe capture
+          // carried Indiana, Rondonia, Ceara and Nagasaki-ken squeezed against the horizon while the camera was
+          // looking at Germany. A division label is a REGIONAL aid: 0.55 keeps it within about 57 degrees of the
+          // view axis, which is the part of the globe the operator is actually reading. §C: this rejection now
+          // happens before any projection, so a back-facing label consumes no layout work at all.
+          if (facingOf(model, an.x, an.y, an.z) < ADMIN1_LABEL_MIN_FACING_) continue;
+          aFacing++;
+          if (!projectInto(mvp, model, an.x, an.y, an.z, W, H, _proj)) continue;
+          if (!anchorNearViewport(_proj.x, _proj.y)) continue;
+          aScreen++;
+          // TEXTURE-3-R3 §D — IDENTITY IS `d.a` (Natural Earth adm1_code), NOT `d.c + '/' + d.k`. The old key was
+          // `country|displayedCode`, which §D prohibits and which is measurably not unique: 35 keys collide
+          // across 53 rows, and BA|BIH alone covers nine Bosnian cantons. This key is the label layer's
+          // collision-memory key, so nine cantons shared one memory slot.
+          raw.push({ iso: d.a || (d.c + '/' + d.k), x: _proj.x, y: _proj.y,
+            rank: d.r, priority: 6, cls: 'ADM1', d: d });
+        }
+        // §C — THE BOUND. Ordering needs no text, so it happens first and the list is cut to what the budget
+        // could possibly consume. `measured` and `measure_cap` are both reported: a cut is a fact, not a silence.
+        var aOrdered = orderLabelCandidates(raw).slice(0, measureCap);
+        for (var aj = 0; aj < aOrdered.length; aj++) {
+          var ac = aOrdered[aj];
+          ac.text = admin1LabelText(ac.d);
+          ac.w = measureCached(admin1Font, ac.text);
+          ac.h = SIZES.admin1;
+          aMeasured++;
+          if (!boxInsideViewport(ac.x, ac.y, ac.w, ac.h)) continue;
+          admin1Cands.push(ac);
+        }
+      }
+
+      // ---- ONE PLAN ----------------------------------------------------------------------------------------
+      // §C/§D — the precedence lives in planLabelSet, not in the order these paint calls happen to appear in.
+      var plan = planLabelSet(
+        { operational: markerRects, country: countryCands, continent: continentCands, adm1: admin1Cands },
+        { previous: { country: prevLabelSet, continent: prevContinentSet, adm1: prevAdmin1Set } });
+      lastLabelPlan = plan;
+
+      // ---- PAINT -------------------------------------------------------------------------------------------
+      var drawn = plan.accepted.country, next = {};
+      labelCtx.font = countryFont;
       labelCtx.lineWidth = 3;
       labelCtx.strokeStyle = 'rgba(6,10,20,0.86)';   // dark halo -> readable over ocean AND land (§F/§K)
-      var countryRects = [];
       for (var d2 = 0; d2 < drawn.length; d2++) {
         var lab = drawn[d2];
         next[lab.iso] = 1;
         labelCtx.fillStyle = lab.priority <= 1 ? 'rgba(250,224,140,0.98)' : 'rgba(226,235,248,0.92)';
         labelCtx.strokeText(lab.text, lab.x, lab.y);
         labelCtx.fillText(lab.text, lab.x, lab.y);
-        countryRects.push({ x0: lab.x - lab.w / 2 - 2, x1: lab.x + lab.w / 2 + 2, y0: lab.y - lab.h / 2 - 2, y1: lab.y + lab.h / 2 + 2 });
       }
       prevLabelSet = next;
-      lastLabelStats = { candidates: cands.length, drawn: drawn.length, tier: tier };
+      lastLabelStats = { considered: cConsidered, after_facing: cFacing, on_screen: cScreen,
+                         measured: cMeasured, candidates: countryCands.length, drawn: drawn.length, tier: tier };
 
-      // §G — the continent layer is laid out AFTER the countries and is blocked by them and by the markers.
-      var continentRects = drawContinentLabels(markerRects.concat(countryRects));
+      // Restrained by design: a continent name is context, not a destination. Faint, and larger rather than
+      // louder, which is the cartographic convention for a label that names a region rather than a place.
+      var cdrawn = plan.accepted.continent, cnext = {};
+      if (cdrawn.length) {
+        labelCtx.font = continentFont;
+        labelCtx.lineWidth = 3.5;
+        labelCtx.strokeStyle = 'rgba(6,10,20,' + (0.55 * contStrength).toFixed(3) + ')';
+        labelCtx.fillStyle = 'rgba(206,220,238,' + (0.62 * contStrength).toFixed(3) + ')';
+        for (var d3 = 0; d3 < cdrawn.length; d3++) {
+          cnext[cdrawn[d3].iso] = 1;
+          labelCtx.strokeText(cdrawn[d3].text, cdrawn[d3].x, cdrawn[d3].y);
+          labelCtx.fillText(cdrawn[d3].text, cdrawn[d3].x, cdrawn[d3].y);
+        }
+      }
+      prevContinentSet = cnext;
+      lastContinentStats = { candidates: continentCands.length, drawn: cdrawn.length,
+                             strength: Math.round(contStrength * 100) / 100 };
 
-      // §G — ADM1 text is SUBORDINATE by construction: it is laid out last and is blocked by the country
-      // names, the continent names and the shipment markers, so a division label can never cover any of them.
-      drawAdmin1Labels(markerRects.concat(countryRects, continentRects), fontPx);
+      // §E — the budget is the blunt guarantee behind the collision pass: "must not instantly stuff every
+      // division and its text onto the screen". It is applied to the ORDERED accepted list, so what survives a
+      // crowded view is the highest-rank divisions rather than whichever happened to be first in the dataset.
+      var adrawn = plan.accepted.adm1.slice(0, budget), anext = {};
+      if (adrawn.length) {
+        labelCtx.font = admin1Font;
+        labelCtx.lineWidth = 2.5;
+        labelCtx.strokeStyle = 'rgba(6,10,20,0.80)';
+        labelCtx.fillStyle = 'rgba(196,212,232,0.86)';   // dimmer than a country name — subordinate, still legible
+        for (var d4 = 0; d4 < adrawn.length; d4++) {
+          anext[adrawn[d4].iso] = 1;
+          labelCtx.strokeText(adrawn[d4].text, adrawn[d4].x, adrawn[d4].y);
+          labelCtx.fillText(adrawn[d4].text, adrawn[d4].x, adrawn[d4].y);
+        }
+      }
+      prevAdmin1Set = anext;
+      lastAdmin1LabelStats = { considered: aConsidered, after_facing: aFacing, on_screen: aScreen,
+                               measured: aMeasured, measure_cap: measureCap,
+                               candidates: admin1Cands.length, drawn: adrawn.length, budget: budget };
+
       lastLabelMs = Math.round((nowMsGlobal_() - __lblT0) * 100) / 100;
-    }
-
-    // ==========================================================================================================
-    // TEXTURE-3 — GEOGRAPHIC LABEL TEXT. One place, so the language rule cannot drift between the two layers.
-    // ----------------------------------------------------------------------------------------------------------
-    // The name authority is KM.geoNames (assets/js/core/geo-name-resolver.js) over the vendored zh-Hant asset.
-    // It is consulted through a guarded call rather than assumed present: if the asset or the resolver has not
-    // loaded, these fall back to exactly what the globe painted before this round — the ISO code and the division
-    // code — so a missing asset degrades the LANGUAGE and never the map.
-    //
-    // No conversion happens here and no name is invented. Whatever the resolver returns is painted verbatim.
-    // ==========================================================================================================
-    function countryLabelText(iso) {
-      try {
-        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.country === 'function') {
-          var r = window.KM.geoNames.country(iso);
-          if (r && r.name) return r.name;
-        }
-      } catch (e) {}
-      return String(iso == null ? '' : iso);
-    }
-    function admin1LabelText(d) {
-      var code = String((d && d.k) == null ? '' : d.k);
-      var full = (d && d.n != null && d.n !== '') ? String(d.n) : code;
-      try {
-        if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.admin1 === 'function') {
-          var r = window.KM.geoNames.admin1(d && d.c, code, { english: full });
-          if (r && r.name) return r.name;
-        }
-      } catch (e) {}
-      return code;
-    }
-
-    // MAP-VISUAL-REAL-EARTH-LOD-1 §E/§G — division codes. Same project -> filter -> order -> collide -> paint
-    // pipeline as the country codes, at a smaller size, admitted only from LOD 2 and capped by a budget.
-    var prevAdmin1Set = {};
-    function drawAdmin1Labels(blockers, countryFontPx) {
-      if (!admin1LabelsVisible() || !admin1Data || !admin1Data.admin1) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
-      var budget = admin1LabelBudget(lod);
-      if (budget <= 0) { lastAdmin1LabelStats = { candidates: 0, drawn: 0, budget: 0 }; return; }
-
-      // §G — from the shared ladder, not "country - 2": at 12 px base that was a 10 px division label, an
-      // 18% difference that reads as one class of text at two sizes rather than as a hierarchy.
-      var fontPx = labelSizes(cam.dist).admin1;
-      labelCtx.font = '600 ' + fontPx + 'px "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-
-      var list = admin1Data.admin1, cands = [];
-      for (var i = 0; i < list.length; i++) {
-        var d = list[i];
-        if (admin1Countries && admin1Countries.indexOf(d.c) === -1) continue;
-        var sp = projectToScreen(mvp, model, latLngToVec3(d.l[1], d.l[0], BORDER_R), W, H);
-        if (!sp || !sp.front) continue;                                              // §F rear hemisphere -> hidden
-        // §G — AND NOT AT THE LIMB. `front` admits the whole near hemisphere, which is why the Europe capture
-        // carried Indiana, Rondonia, Ceara and Nagasaki-ken squeezed against the horizon while the camera was
-        // looking at Germany. A division label is a REGIONAL aid: 0.55 keeps it within about 57 degrees of the
-        // view axis, which is the part of the globe the operator is actually reading.
-        if (sp.facing < ADMIN1_LABEL_MIN_FACING_) continue;
-        // §G — same whole-box rule as the other two classes; measured after the text is resolved, below.
-        // TEXTURE-3 — the division's Traditional Chinese name where the pinned source verifiably has one, else
-        // the existing English name, else the existing code. 356 of 3,835 divisions legitimately fall back, so
-        // this layer is EXPECTED to be mixed-language and that must not block anything.
-        var dTxt = admin1LabelText(d);
-        var dW = labelCtx.measureText(dTxt).width;
-        if (!boxInsideViewport(sp.x, sp.y, dW, fontPx)) continue;
-        // TEXTURE-3-R3 §D — IDENTITY IS `d.a` (Natural Earth adm1_code), NOT `d.c + '/' + d.k`.
-        // The old key was `country|displayedCode`, which §D prohibits and which is measurably not unique:
-        // 35 keys collide across 53 rows, and BA|BIH alone covers nine Bosnian cantons. This key is the
-        // label layer's collision-memory key (prevAdmin1Set), so nine cantons shared one memory slot and
-        // the placement stickiness applied to whichever of them was drawn last.
-        cands.push({ iso: d.a || (d.c + '/' + d.k), text: dTxt, x: sp.x, y: sp.y,
-          w: dW, h: fontPx, rank: d.r, priority: 6, cls: 'ADM1' });
-      }
-      // The budget is applied to the ORDERED candidate list, so what survives a crowded view is the highest-rank
-      // divisions rather than whichever happened to be first in the dataset.
-      var ordered = orderLabelCandidates(cands).slice(0, budget * 3);
-      var drawn = selectVisibleLabels(ordered, { pad: 2, stickyPad: 1, previous: prevAdmin1Set, markerRects: blockers }).slice(0, budget);
-      var next = {};
-      labelCtx.lineWidth = 2.5;
-      labelCtx.strokeStyle = 'rgba(6,10,20,0.80)';
-      labelCtx.fillStyle = 'rgba(196,212,232,0.86)';   // dimmer than a country code — subordinate, still legible
-      for (var j = 0; j < drawn.length; j++) {
-        next[drawn[j].iso] = 1;
-        labelCtx.strokeText(drawn[j].text, drawn[j].x, drawn[j].y);
-        labelCtx.fillText(drawn[j].text, drawn[j].x, drawn[j].y);
-      }
-      prevAdmin1Set = next;
-      lastAdmin1LabelStats = { candidates: cands.length, drawn: drawn.length, budget: budget };
     }
 
     function admin1BordersVisible() { return layerVisible(showAdmin1Borders, lod, ADMIN1_BORDER_MIN_LOD) && !!admin1Data; }
@@ -2227,7 +2480,11 @@
         // gl.finish() blocks until the pipeline has drained, which is what makes the number a frame time.
         var doFinish = o.finish !== false;
         var saved = { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist };
-        var t = [], i;
+        // TEXTURE-3-R4 §C — the LABEL time is collected per sample too. `label_placement_last_frame` is one
+        // sample, and one sample of a pass that swings with what happens to be on screen is not a number a
+        // before can be compared against. Both arrays are filled by the same loop, so the label figure is
+        // always a subset of the frame figure it sits beside.
+        var t = [], lbl = [], i;
         try {
           // One untimed frame first, so a lazily-compiled shader or a first-use buffer binding is not charged to
           // sample 0 - that would show up as a p95 that never happens again in practice.
@@ -2240,6 +2497,7 @@
             recomputeMatrices(); draw();
             if (doFinish) gl.finish();
             t.push(nowMs() - t0);
+            lbl.push(lastLabelMs);
           }
         } catch (e) {
           cam.yaw = saved.yaw; cam.pitch = saved.pitch; cam.dist = saved.dist;
@@ -2250,11 +2508,16 @@
         recomputeMatrices(); draw();
         var sorted = t.slice().sort(function (a, b) { return a - b; });
         function pct(p) { return Math.round(sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] * 100) / 100; }
+        var lsorted = lbl.slice().sort(function (a, b) { return a - b; });
+        function lpct(p) { return lsorted.length ? Math.round(lsorted[Math.min(lsorted.length - 1, Math.floor(p * lsorted.length))] * 100) / 100 : 0; }
         var sum = 0; for (i = 0; i < t.length; i++) sum += t[i];
+        var lsum = 0; for (i = 0; i < lbl.length; i++) lsum += lbl[i];
         return {
           samples: t.length,
           mean_ms: Math.round(sum / t.length * 100) / 100,
           p50_ms: pct(0.5), p95_ms: pct(0.95), min_ms: pct(0), max_ms: pct(0.999),
+          label_mean_ms: lbl.length ? Math.round(lsum / lbl.length * 100) / 100 : 0,
+          label_p50_ms: lpct(0.5), label_p95_ms: lpct(0.95), label_max_ms: lpct(0.999),
           // Reported so the reader is never left to assume hardware numbers. The renderer string comes from the
           // driver, not from this file.
           renderer: matInfo.renderer || 'UNKNOWN',
@@ -2292,6 +2555,11 @@
         if (!data || !data.admin1 || !data.admin1.length) return false;
         if (admin1Data === data) return true;
         admin1Data = data;
+        // TEXTURE-3-R4 §C — the anchor cache and the two label caches are DERIVED from this dataset, so a new
+        // dataset must drop them. Keeping them would paint the previous dataset's names at the previous
+        // dataset's positions, which is the class of bug §E's "cannot reuse stale buffers" is about.
+        admin1Anchors = null;
+        labelTextCache = {};
         rebuildAdmin1Buffer();
         schedule();
         return admin1VertexCount > 0;
@@ -2369,12 +2637,32 @@
           adm1_border_strength: Math.round(admin1BorderStrength(cam.dist) * 100) / 100,
           continent_label_strength: Math.round(continentStrength(cam.dist) * 100) / 100,
           label_sizes_px: labelSizes(cam.dist),
+          // TEXTURE-3-R4 §C — the counters the density work is JUDGED by, not just the drawn count.
+          // `considered` is the whole dataset, `after_facing` what survived the three-multiply cull,
+          // `on_screen` what was projected and near the viewport, `measured` how many were text-resolved and
+          // text-measured, and `drawn` what was painted. The gap between `on_screen` and `measured` is the work
+          // that used to be done and thrown away.
           label_counts: {
-            country: { candidates: lastLabelStats.candidates, drawn: lastLabelStats.drawn },
+            country: { considered: lastLabelStats.considered, after_facing: lastLabelStats.after_facing,
+                       on_screen: lastLabelStats.on_screen, measured: lastLabelStats.measured,
+                       candidates: lastLabelStats.candidates, drawn: lastLabelStats.drawn },
             continent: { candidates: lastContinentStats.candidates, drawn: lastContinentStats.drawn },
-            adm1: { candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn,
+            adm1: { considered: lastAdmin1LabelStats.considered, after_facing: lastAdmin1LabelStats.after_facing,
+                    on_screen: lastAdmin1LabelStats.on_screen, measured: lastAdmin1LabelStats.measured,
+                    measure_cap: lastAdmin1LabelStats.measure_cap,
+                    candidates: lastAdmin1LabelStats.candidates, drawn: lastAdmin1LabelStats.drawn,
                     budget: lastAdmin1LabelStats.budget }
           },
+          // §C — the collision work itself, so "rejected labels do not consume layout work" is a number.
+          label_collision: (function () {
+            if (!lastLabelPlan) return { placed: { operational: 0, country: 0, continent: 0, adm1: 0 },
+                                         tests: { operational: 0, country: 0, continent: 0, adm1: 0 }, total_tests: 0 };
+            var t = lastLabelPlan.collision_tests || {};
+            return { placed: lastLabelPlan.counts, tests: t,
+                     total_tests: (t.operational || 0) + (t.country || 0) + (t.continent || 0) + (t.adm1 || 0) };
+          })(),
+          label_class_order: LABEL_CLASS_ORDER_.slice(),
+          label_measure_factor: LABEL_MEASURE_FACTOR_,
           // §I — THE PHASES, MEASURED SEPARATELY. `asset_load_ms` is what the browser reports for fetching
           // AND decoding the image together; `gpu_upload_ms` is the texImage2D + generateMipmap copy after
           // that. Resource Timing can split fetch from decode, and tools/geo/measure-perf.js does so - it is

@@ -35,6 +35,12 @@
         // rather than decide it. Collapsing them would lose exactly that distinction — and the asset carries an
         // `unresolved` list of names it deliberately did NOT apply, which is only meaningful because level 2
         // exists separately.
+        // R4 §A — LEVEL 0, a RECORDED PRODUCT DECISION, above every mechanical authority. R3 refused TW and
+        // CN and reported both candidates; the user has now decided them, and a decision is a different KIND of
+        // source from CLDR or Natural Earth, not a better-ranked instance of the same kind. Keeping it as its
+        // own level is what lets a caller — and a test — prove that what the map paints is the DECISION and not
+        // a coincidence of upstream data.
+        USER_APPROVED_ALIAS: 'USER_APPROVED_ALIAS',       // countries 0 (display)
         CLDR_ALT_SHORT: 'CLDR_ALT_SHORT',                 // countries 1 (display)
         REVIEWED_DISPLAY_ALIAS: 'REVIEWED_DISPLAY_ALIAS', // countries 2 (display)
         ZH_HANT_PINNED_SOURCE: 'ZH_HANT_PINNED_SOURCE',   // countries 3 · admin1 1 — and the FULL-name authority
@@ -42,6 +48,14 @@
         ZH_HANT_REVIEWED_LIST: 'ZH_HANT_REVIEWED_LIST',   // continents 1 · oceans 1
         ENGLISH_CANONICAL: 'ENGLISH_CANONICAL',           // countries 4 · continents 2 · admin1 3
         CODE: 'CODE',                                     // countries 5 · admin1 4
+        // R4 §A — the DETAIL presentation: the formal name plus the ISO code, for a tooltip or an inspect
+        // panel. It is a distinct level because it answers a different question from either the map label or
+        // the bare formal name, and the caller must be able to tell which one it received.
+        FORMAL_WITH_CODE: 'FORMAL_WITH_CODE',             // countries — detail presentation
+        // R4 §B — a division name from the vendored Wikidata zh-TW/zh-Hant snapshot, used ONLY where the
+        // pinned Natural Earth field has no Traditional name at all.
+        WIKIDATA_ZH_TW: 'WIKIDATA_ZH_TW',                 // admin1 2
+        REVIEWED_ADMIN1_ALIAS: 'REVIEWED_ADMIN1_ALIAS',   // admin1 1 (above every source)
         HIDDEN: 'HIDDEN'                                  // continents 3 · oceans 3 — no reliable name exists
     };
 
@@ -57,6 +71,13 @@
     // mapping was vendored. Keeping the branch means adding one later needs no change here.
     function aliases() {
         return (typeof window !== 'undefined' && window.KM_GEO_DISPLAY_ALIASES) ? window.KM_GEO_DISPLAY_ALIASES : null;
+    }
+    // R4 §B — the DIVISION display-name asset, keyed by `adm1_code`. Separate from the country alias asset
+    // because it answers a different question from a different set of sources, and because keeping the two
+    // apart is what lets the division layer be missing without the country layer degrading.
+    function admin1Aliases() {
+        return (typeof window !== 'undefined' && window.KM_GEO_ADMIN1_DISPLAY_NAMES)
+            ? window.KM_GEO_ADMIN1_DISPLAY_NAMES : null;
     }
 
     // §F — the FULL formal name, always available whatever the map is painting. This is what a tooltip or a detail
@@ -75,6 +96,33 @@
         return { name: code, level: LEVEL.CODE, iso: code };
     }
 
+    // R4 §A — THE DETAIL PRESENTATION. `台灣` is what the globe paints; `中華民國（TW）` is what an inspect
+    // surface shows. Both must exist at once, and the ISO code must be visible in the detail form so the reader
+    // can see the IDENTITY that the rest of the system actually uses.
+    //
+    // COMPOSED, NOT STORED. The alias asset carries a `detail` string too, but this function does not read it:
+    // it rebuilds the form from `countryFull` every time. A stored string is a copy of the formal-name
+    // authority, and a copy can drift out of agreement with it; recomposing cannot. The asset's copy exists so
+    // the build's own report can print it, and the regression suite asserts the two agree.
+    var DETAIL_OPEN_ = '\uFF08', DETAIL_CLOSE_ = '\uFF09';
+    function countryDetail(iso, opts) {
+        opts = opts || {};
+        var code = upper(iso);
+        if (!code) return { name: '', level: LEVEL.HIDDEN, iso: '' };
+        var f = countryFull(code, opts);
+        var disp = country(code, opts);
+        if (!f.name) return { name: code, level: LEVEL.CODE, iso: code, full: '', display: disp.name };
+        return {
+            name: f.name + DETAIL_OPEN_ + code + DETAIL_CLOSE_,
+            level: LEVEL.FORMAL_WITH_CODE,
+            iso: code,
+            full: f.name,
+            full_level: f.level,
+            display: disp.name,
+            display_level: disp.level
+        };
+    }
+
     function country(iso, opts) {
         opts = opts || {};
         var code = upper(iso);
@@ -91,6 +139,12 @@
         if (opts.form !== 'full') {
             var a = aliases();
             if (a) {
+                // R4 §A — LEVEL 0 first. A recorded decision is not overridden by any data source.
+                var ap = a.approved && a.approved[code];
+                if (ap && str(ap.display)) {
+                    return { name: str(ap.display), level: LEVEL.USER_APPROVED_ALIAS, iso: code,
+                             full: str(ap.full), source: ap.source, decision: ap.decision };
+                }
                 var as = a.cldrAltShort && a.cldrAltShort[code];
                 if (as && str(as.display)) {
                     return { name: str(as.display), level: LEVEL.CLDR_ALT_SHORT, iso: code,
@@ -139,34 +193,67 @@
     }
 
     // ---- ADMIN-1 -----------------------------------------------------------------------------------------
-    // 1 verified zh-Hant from the pinned source · 2 vendored zh-Hant subdivision source (none is vendored: no
-    // properly licensed bounded source was available, so the level is wired and empty) · 3 the existing English
-    // name · 4 the existing administrative code.
-    //
-    // Missing Chinese coverage here is EXPECTED and must never block the country/continent layer: 356 of 3,835
-    // divisions fall back, concentrated in Latin America, Indonesia and the Benelux. `division.n` (full English
-    // name) and `division.k` (division code) are exactly the values the geometry asset already carries.
+    // Missing Chinese coverage here is EXPECTED and must never block the country/continent layer. R4 §B took it
+    // from 356 fallbacks to 254 by adding a QID-joined Wikidata fill level; the remainder have no verified
+    // Traditional name in ANY pinned authority, and inventing one would be the machine translation the
+    // localization rule forbids. `division.n` (full English name) and `division.k` (division code) are exactly
+    // the values the geometry asset already carries.
     // THE LOOKUP KEY IS COUNTRY + FULL ENGLISH NAME, not the displayed division code. `country|displayedCode`
     // is measurably NOT unique in the geometry asset - 35 keys collide across 53 rows, and BA|BIH alone covers
     // nine different Bosnian cantons - so keying on it would give nine cantons one canton's name. The full name
     // is `division.n`, falling back to `division.k` for the divisions where the asset omits `n` because the two
     // are identical.
+    // R4 §B — THE ORDER, AND WHY WIKIDATA SITS WHERE IT DOES.
+    //   1 REVIEWED_ADMIN1_ALIAS   a documented exception, each with a reason and an authority
+    //   2 ZH_HANT_PINNED_SOURCE   Natural Earth name_zht, accepted only when verified fully Traditional
+    //   3 WIKIDATA_ZH_TW          an explicitly stored zh-tw/zh-hant label, joined by QID — FILL ONLY
+    //   4 ENGLISH_CANONICAL       the division's full English name
+    //   5 CODE                    the stable administrative code
+    //
+    // §B ranks a CLDR zh-Hant subdivision name above Wikidata. That level is absent because the DATA is absent:
+    // CLDR 46 publishes a 458-byte stub with zero <subdivision> elements, vendored under tools/geo/data/ so the
+    // absence is a checked fact rather than an assumption.
+    //
+    // WIKIDATA IS BELOW NATURAL EARTH, NOT ABOVE IT, AND THAT IS A MEASURED DECISION. Across the divisions that
+    // already have a verified Traditional name the two disagree 351 times, and the disagreements include
+    // Wikidata giving the MAINLAND form (US Oklahoma), a Simplified character inside a zh-tw label (US North
+    // Carolina) and a division type dropped that every sibling carries (KR Incheon). So it answers only where
+    // Natural Earth has nothing at all.
+    //
+    // IDENTITY IS `adm1_code`. The two alias levels key on it, never on the displayed division code — which is
+    // measurably not unique (35 keys across 53 rows; BA|BIH alone covers nine Bosnian cantons).
     function admin1(iso, divisionCode, opts) {
         opts = opts || {};
         var c = upper(iso), k = str(divisionCode);
         var d = dataset();
         var lang = opts.lang || 'zh-TW';
         var english = str(opts.english);          // caller passes division.n (absent when identical to the code)
+        var adm1Code = str(opts.adm1Code);        // caller passes division.a — the stable source identity
         if (!c || !k) return { name: k, level: LEVEL.CODE, key: c + '|' + k };
         var key = c + '|' + (english || k).toLowerCase();
         if (lang !== 'en') {
+            var A = admin1Aliases();
+            if (A && adm1Code) {
+                var rv = A.reviewed && A.reviewed[adm1Code];
+                if (rv && str(rv.name)) {
+                    return { name: str(rv.name), level: LEVEL.REVIEWED_ADMIN1_ALIAS, key: key,
+                             adm1: adm1Code, was: str(rv.was), authority: rv.authority };
+                }
+            }
             var zh = d && d.admin1 ? str(d.admin1[key]) : '';
-            if (zh) return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, key: key };
+            if (zh) return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, key: key, adm1: adm1Code };
+            if (A && adm1Code) {
+                var wd = A.wikidata && A.wikidata[adm1Code];
+                if (wd && str(wd.name)) {
+                    return { name: str(wd.name), level: LEVEL.WIKIDATA_ZH_TW, key: key, adm1: adm1Code,
+                             qid: wd.qid, lang_tag: wd.lang };
+                }
+            }
             var vend = d && d.admin1Vendored ? str(d.admin1Vendored[key]) : '';
-            if (vend) return { name: vend, level: LEVEL.ZH_HANT_VENDORED_CLDR, key: key };
+            if (vend) return { name: vend, level: LEVEL.ZH_HANT_VENDORED_CLDR, key: key, adm1: adm1Code };
         }
-        if (english) return { name: english, level: LEVEL.ENGLISH_CANONICAL, key: key };
-        return { name: k, level: LEVEL.CODE, key: key };
+        if (english) return { name: english, level: LEVEL.ENGLISH_CANONICAL, key: key, adm1: adm1Code };
+        return { name: k, level: LEVEL.CODE, key: key, adm1: adm1Code };
     }
 
     // ---- OCEANS ------------------------------------------------------------------------------------------
@@ -203,7 +290,22 @@
             admin1: Object.keys(d.admin1 || {}).length,
             coverage: m.coverage || null,
             country_field: (m.country_name_source && m.country_name_source.field) || null,
-            admin1_field: (m.admin1_name_source && m.admin1_name_source.field) || null
+            admin1_field: (m.admin1_name_source && m.admin1_name_source.field) || null,
+            // R4 §B — the DIVISION display asset, reported separately so "the division layer is English" can be
+            // told apart from "the division asset did not load".
+            admin1_display: (function () {
+                var A = admin1Aliases();
+                if (!A) return { loaded: false, reason: 'KM_GEO_ADMIN1_DISPLAY_NAMES_ABSENT' };
+                var am = A.meta || {}, ac = am.counts || {};
+                return {
+                    loaded: true,
+                    reviewed: Object.keys(A.reviewed || {}).length,
+                    wikidata_fill: Object.keys(A.wikidata || {}).length,
+                    with_verified_chinese_name: ac.with_verified_chinese_name || 0,
+                    still_english_fallback: ac.still_english_fallback || 0,
+                    cldr_subdivisions_exist: !!(am.cldr_zh_hant_subdivisions && am.cldr_zh_hant_subdivisions.exists)
+                };
+            })()
         };
     }
 
@@ -214,11 +316,26 @@
         return (a && a.unresolved) ? a.unresolved.slice() : [];
     }
 
+    // R4 §A — the decisions that HAVE been made, so "TW is no longer unresolved" is provable rather than
+    // inferred from an empty list. An empty `unresolved` could equally mean the asset failed to load.
+    function approvedNames() {
+        var a = aliases(), out = [];
+        if (!a || !a.approved) return out;
+        Object.keys(a.approved).sort().forEach(function (k) {
+            var v = a.approved[k];
+            out.push({ iso: k, display: str(v.display), full: str(v.full), detail: str(v.detail),
+                       decision: v.decision || '', decided_by: v.decided_by || '' });
+        });
+        return out;
+    }
+
     var api = {
         LEVEL: LEVEL,
         country: country,
         countryFull: countryFull,
+        countryDetail: countryDetail,
         unresolvedNames: unresolvedNames,
+        approvedNames: approvedNames,
         continent: continent,
         continentOfCountry: continentOfCountry,
         admin1: admin1,

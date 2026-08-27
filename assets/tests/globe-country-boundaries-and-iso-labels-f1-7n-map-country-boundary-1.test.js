@@ -228,14 +228,35 @@ ok(/never writes one, never derives a[\s\S]{0,12}coordinate from one/.test(MAPJS
 // ==========================================================================================================
 section('7. labels are hidden on the rear hemisphere');
 // ==========================================================================================================
-ok(/if \(!sp \|\| !sp\.front\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')), '7. a label with front=false is skipped');
+// RESTATED IN TEXTURE-3-R4 §C. The rear-hemisphere rejection is unchanged in MEANING and now happens EARLIER:
+// `facing` is (model * v).z, so the pass tests it directly instead of reading it off a projection it then
+// discards. The test is behavioural rather than textual — facingOf must agree with the projection it replaces.
+(function () {
+  var mdl = M.modelMatrix(0.7, -0.3);
+  var v = M.latLngToVec3(35, 139, 1);
+  var mvp = M.mat4Mul(M.mat4Perspective(45 * Math.PI / 180, 1.4, 0.01, 100),
+                      M.mat4Mul(M.mat4Translate(0, 0, -2), mdl));
+  var sp = M.projectToScreen(mvp, mdl, v, 1280, 900);
+  eq(M.facingOf(mdl, v[0], v[1], v[2]), sp.facing, '7. facingOf IS the projection\'s own facing value, bit for bit');
+  var back = M.latLngToVec3(-35, -41, 1);
+  var sb = M.projectToScreen(mvp, mdl, back, 1280, 900);
+  eq(M.facingOf(mdl, back[0], back[1], back[2]) > 0.02, sb.front, '7. and it agrees with `front` on the rear hemisphere');
+})();
+// TEXTURE-3-R4 §F tightened the country bound from the bare rear-hemisphere test to a real facing threshold,
+// because the Taiwan/China capture showed Libya painted over the Tibetan Plateau at facing 0.043. The rear
+// hemisphere is still excluded — it is now excluded by a STRICTER rule, so the original guarantee is intact.
+ok(/if \(facingOf\(model, a\.x, a\.y, a\.z\) < COUNTRY_LABEL_MIN_FACING_\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')),
+  '7. a label below the country facing threshold is skipped before it is projected');
+ok(M.COUNTRY_LABEL_MIN_FACING > 0.02, '7. and that threshold is STRICTER than the old rear-hemisphere test');
+ok(M.COUNTRY_LABEL_MIN_FACING < M.ADMIN1_LABEL_MIN_FACING,
+  '7. while still far looser than the division one — a country at the edge of the disc is useful context');
 // RESTATED IN TEXTURE-3-R3 §G. The original bound allowed a label ANCHOR up to 40 px outside the viewport,
 // which is how R2's captures ended up with text sliced down the frame edge. §G requires no clipped label, so
 // the test is now on the label's whole BOX and is shared by all three label classes.
 ok(/function boxInsideViewport\(x, y, w, h\)/.test(GLOBE), '7. there is ONE whole-box viewport test');
 ok(/return \(x - hw\) >= 0 && \(x \+ hw\) <= W && \(y - hh\) >= 0 && \(y \+ hh\) <= H;/.test(GLOBE),
   '7. and it requires the ENTIRE box inside the viewport, not just the anchor');
-ok(/if \(!boxInsideViewport\(sp\.x, sp\.y, cw, fontPx\)\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')),
+ok(/if \(!boxInsideViewport\(cc\.x, cc\.y, cc\.w, cc\.h\)\) continue;/.test(extractFn(GLOBE, 'drawCountryLabels')),
   '7. and a country label whose box would be clipped is skipped');
 // EXECUTE the real projection: the same authority marker hit-testing uses
 var mvpI = M.mat4Mul(M.mat4Perspective(45 * DEG, 1, 0.01, 100), M.mat4Mul(M.mat4Translate(0, 0, -3), M.modelMatrix(0, 0)));
@@ -339,12 +360,16 @@ ok(/if \(activeSet && showBorders\) \{/.test(GLOBE), '11. borders off => no boun
 // country labels off must suppress the COUNTRY candidates and nothing else.
 ok(/var wantCountry = showLabels && !!\(countryData && countryData\.countries\);/.test(GLOBE),
   '11. country labels off suppresses the COUNTRY candidate set');
-ok(/var list = wantCountry \? countryData\.countries : \[\];/.test(GLOBE),
+// RESTATED IN TEXTURE-3-R4 §C: the candidate loop is now guarded by `wantCountry` rather than fed an empty
+// list, so with country labels off not even the cull runs. Same guarantee, less work.
+ok(/if \(wantCountry && countryAnchors\) \{/.test(GLOBE),
   '11. with them off no country label is even considered');
 ok(/labelCtx\.clearRect\(0, 0, labelCv\.width, labelCv\.height\);/.test(GLOBE),
   '11. the overlay is still cleared each pass, so nothing stale survives');
-ok(/if \(!wantCountry && !admin1LabelsVisible\(\)\)/.test(GLOBE),
+ok(/if \(!wantCountry && !wantAdmin1\) \{/.test(GLOBE),
   '11. and the pass bails ONLY when neither label layer wants to draw');
+ok(/var wantAdmin1 = admin1LabelsVisible\(\) && !!\(admin1Data && admin1Data\.admin1\);/.test(GLOBE),
+  '11. where the ADM1 half of that condition is the ADM1 layer\'s own visibility, not the country one\'s');
 // no new persistence surface was created
 var mcode = noStrings(MAPJS);
 ok(mcode.indexOf('showCountryBorders') !== -1, '11. the toggles live in page state');
