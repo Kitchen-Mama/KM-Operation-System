@@ -103,8 +103,10 @@ async function getOperationDbFromSheet() {
 //   3. `throw new Error('API returned ' + status)` DISCARDED the evidence — the final URL, whether a redirect
 //      occurred, the content type and the body — which is why the live "HTTP 404, text/html" could not be
 //      attributed to any of its four possible sources. The typed classification now rides on the thrown error.
-//   4. It is called from a `Promise.all` FAN-OUT, so a four-table page opened FOUR simultaneous requests to a
-//      backend whose per-user execution is serialized. See loadScopedTables for the bound that fixes that.
+//   4. It is called from a `Promise.all` FAN-OUT, so a four-table page opened FOUR simultaneous requests at
+//      once. Apps Script and the Spreadsheet service are QUOTA'D AND CONTENDED, and unbounded client fan-out
+//      raises peak request pressure — which raises the chance that one of the four is the one that fails, and
+//      one rejection fails the whole `Promise.all`. See loadScopedTables for the bound that fixes that.
 //
 // The thrown-Error shape is preserved (callers catch and read `.message`), with the typed facts attached as
 // properties so a page can render a real reason instead of an empty table.
@@ -2294,13 +2296,26 @@ window.KM.DB.loadOperationDb = loadOperationDb;
 // fallback. This is how the non-workspace primary pages drop their whole-DB loadOperationDb dependency.
 // F1-7N-FB-4E §D — BOUND THE FAN-OUT. `Promise.all` over the name list opened ONE SIMULTANEOUS REQUEST PER
 // TABLE, so a four-table page mount (Factory Inventory, Overseas Inventory) fired four concurrent requests at
-// a backend whose per-user execution is SERIALIZED: the tail latency is the sum either way, but four in flight
-// multiplies the chance that one of them is the one that flakes — and one rejection fails the whole
-// `Promise.all`, which is how a single transient answer emptied an entire page.
+// once, and one rejection failed the whole `Promise.all` — which is how a single transient answer emptied an
+// entire page.
+//
+// WHAT THIS IS AND IS NOT, STATED PRECISELY, BECAUSE AN EARLIER VERSION OF THIS COMMENT GOT IT WRONG.
+//
+// It claimed the backend's "per-user execution is SERIALIZED" and concluded "the tail latency is the sum
+// either way". BOTH HALVES ARE WRONG. Apps Script does NOT guarantee that one user's executions are
+// serialized — multiple executions MAY overlap — so the tail latency of four concurrent reads is NOT the sum,
+// and this bound is NOT free. Anyone reading the old rationale would have concluded the change could not cost
+// anything, which is exactly the premise that stops a real measurement from being taken.
+//
+// THE HONEST JUSTIFICATION IS DIFFERENT AND DOES NOT NEED THAT PREMISE. Apps Script and the Spreadsheet
+// service carry QUOTAS AND CONTENTION. Unbounded client fan-out raises PEAK REQUEST PRESSURE, and higher peak
+// pressure makes partial failure more likely — and under `Promise.all` any single partial failure is a total
+// page failure. This is a BOUNDED-PRESSURE CONTROL. It is a reliability measure; whether it also makes the
+// page faster is an open question that only live measurement can answer, and it may cost latency.
 //
 // The bound is a small concurrency window rather than a strict serial loop: serial would make a four-table
-// mount four full round trips of head-of-line waiting, and the point is to stop the STORM, not to slow the
-// page down. KM_SCOPED_READ_CONCURRENCY_ is the single knob and it is deliberately small.
+// mount four full round trips of head-of-line waiting, and the point is to lower peak pressure, not to slow
+// the page down. KM_SCOPED_READ_CONCURRENCY_ is the single knob and it is deliberately small.
 //
 // It is also FAIL-FAST-FREE in the reporting sense: the first rejection still rejects (callers depend on that),
 // but the rejected error now carries the typed classification from getOperationDbTableFromSheet, so a page can
@@ -4334,8 +4349,10 @@ window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPla
 // F1-7N-FB-4E §D1 — SESSION-STABLE METADATA IS SINGLE-FLIGHTED THROUGH THE SHARED LATCH.
 //
 // Both of these are immutable for a session (a backend flag set, and a deployment's own identity), and both
-// were called from more than one place at mount — so two concurrent consumers issued two identical requests
-// against a backend whose per-user execution is serialized. That is a measurable part of "pages feel slower".
+// were called from more than one place at mount — so two concurrent consumers issued two IDENTICAL requests
+// for a value that cannot differ between them. Removing a duplicate request is worth doing on its own terms:
+// it is one less unit of load against a quota'd, contended backend and one less thing that can fail. It is
+// NOT claimed here to be a measurable share of "pages feel slower" — that has not been measured.
 // The latch lives in KM.transport with an ALLOWLIST, so a business workspace can never be coalesced by
 // accident (§D4), and a REJECTED promise is evicted immediately (§D2), so one failure cannot make every later
 // consumer inherit it — which is what turns a transient fault into "only a hard reload fixes it".

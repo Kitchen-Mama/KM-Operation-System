@@ -800,6 +800,77 @@ ok(!/DemoData|demoSeed|DEMO_SEED/.test(code(TPSRC) + code(DASRC)), 'I3 and neith
 ok(/read_only: true/.test(HLTH), 'I4 system.health remains declared read-only');
 ok(/zero_write: true/.test(RTR), 'I4 and the router’s terminal answers still declare zero writes');
 
+
+// =============================================================================================================
+section('§D-CORRECTION — the bound is a BOUNDED-PRESSURE control, not reliance on server serialization');
+// =============================================================================================================
+// THE CLAIM THAT WAS WRONG. Three comments in operation-system-db-api.js and one in the cutover suite justified
+// this round's concurrency bound with "a backend whose per-user execution is serialized", and one of them drew
+// a conclusion from it: "the tail latency is the sum either way".
+//
+// Apps Script gives NO such guarantee. Multiple executions for one user MAY overlap. So the tail latency of
+// four concurrent reads is NOT the sum, and this bound is NOT free — the old rationale would have told the next
+// reader the change could not cost anything, which is precisely the premise that stops a real measurement from
+// being taken.
+//
+// The correct statement, and the one this section pins:
+//   · multiple executions may overlap;
+//   · Apps Script and the Spreadsheet service carry quotas and contention;
+//   · unbounded client fan-out raises peak request pressure and makes partial failure more likely;
+//   · the limiter is a bounded-pressure control, NOT reliance on guaranteed server serialization.
+(function () {
+  var SRCS = [['operation-system-db-api.js', DBAPI], ['km-transport.js', TPSRC], ['km-data-access.js', DASRC],
+              ['api-non-workspace-primary-scoped-cutover', read('assets/tests/api-non-workspace-primary-scoped-cutover-f1-7j-a3-r1.test.js')]];
+  // C1 — nothing may ASSERT serialization as a platform contract. The one surviving mention is the paragraph
+  // that REFUTES it, so the test is "every occurrence sits next to its refutation", not "the words are absent"
+  // — a word ban would forbid explaining the correction at all.
+  SRCS.forEach(function (p) {
+    var name = p[0], src = String(p[1] || '');
+    var re = /execution[s]?\s+(?:is|are)\s+SERIALIZED/gi, m, sites = 0, refuted = 0;
+    while ((m = re.exec(src))) {
+      sites++;
+      var around = src.slice(Math.max(0, m.index - 600), m.index + 600);
+      if (/BOTH HALVES ARE WRONG|no such guarantee|does NOT guarantee|may overlap/i.test(around)) refuted++;
+    }
+    eq(sites, refuted, 'C1 ' + name + ': every "executions are serialized" mention is a refutation, not a contract (' +
+      refuted + '/' + sites + ')');
+  });
+  // C2 — the corrected reasoning is actually present where the bound is defined, so a reader arrives at the
+  // right premise rather than at no premise.
+  var band = DBAPI.slice(Math.max(0, DBAPI.indexOf('KM_SCOPED_READ_CONCURRENCY_') - 2600),
+                         DBAPI.indexOf('KM_SCOPED_READ_CONCURRENCY_') + 400);
+  ok(/may overlap/i.test(band), 'C2 the bound cites that executions MAY overlap');
+  ok(/quota/i.test(band), 'C2 and that the services are quota-bound');
+  ok(/peak (request )?pressure/i.test(band), 'C2 and that unbounded fan-out raises peak request pressure');
+  ok(/partial failure|one partial failure/i.test(band), 'C2 and that this makes partial failure more likely');
+  ok(/BOUNDED[- ]PRESSURE CONTROL/i.test(band), 'C2 and names the limiter a bounded-pressure control');
+  // C3 — and it does NOT claim a speed win it has not measured.
+  ok(/reliability measure/i.test(band) && /only live measurement can answer|open question/i.test(band),
+    'C3 the rationale states this is a reliability measure whose speed effect is unmeasured');
+
+  // C4 — THE BEHAVIOURAL HALF, WHICH IS WHY THIS IS A COMMENT REPAIR AND NOT A CODE REPAIR. The bounded reader
+  // must be correct whether or not the server overlaps executions: a worker pool writing into a keyed object,
+  // with no ordering assumption, no read-after-write and no dependence on request N finishing before N+1.
+  var rdStart = DBAPI.indexOf('async function _kmReadTablesBounded_');
+  ok(rdStart > 0, 'C4 the bounded reader is locatable');
+  var rd = DBAPI.slice(rdStart, DBAPI.indexOf('\n}', rdStart) + 2);
+  ok(/rawDb\[names\[i\]\] = await getOperationDbTableFromSheet\(names\[i\]\)/.test(rd),
+    'C4 each table lands under its OWN key — arrival order cannot change the result');
+  // Stated as what it IS rather than as a ban on characters: the accumulator is an OBJECT keyed by table
+  // name and that object is what comes back. An earlier version of this line banned `push(`, which matched the
+  // worker-pool construction `pool.push(worker())` — a false positive on the one push that has to be there.
+  ok(/var rawDb = \{\};/.test(rd) && /return rawDb;/.test(rd),
+    'C4 results accumulate in a NAME-KEYED object, never in an order-dependent list');
+  ok(!/rawDb\.push|rawDb\[i\]|rawDb\[w\]/.test(rd),
+    'C4 and never by position, so completion order cannot change the answer');
+  ok(!/sleep|setTimeout|Date\.now|performance\.now/.test(rd),
+    'C4 and it waits on nothing but the requests themselves — no timing assumption about the server');
+  // C5 — the metadata latch is likewise keyed and evicts on either outcome, so overlapping executions cannot
+  // make one consumer inherit another's failure.
+  ok(/if \(_inflight\[k\]\) return _inflight\[k\]/.test(TPSRC), 'C5 the single-flight latch is keyed, not global');
+  ok(/p\.then\(evict, evict\)/.test(TPSRC), 'C5 and evicts on BOTH outcomes — a rejection is never inherited');
+})();
+
 // =============================================================================================================
 Promise.all(checks).then(function () {
   console.log('\n----------------------------------------');

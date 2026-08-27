@@ -108,7 +108,9 @@ ok(_lstStart > 0, 'A3: loadScopedTables body is locatable');
 var _lstBody = DBAPI.slice(_lstStart, DBAPI.indexOf(String.fromCharCode(10) + '};', _lstStart) + 3);
 ok(_lstBody.length > 40 && !/window\._opDbCache\s*=/.test(_lstBody), 'A3: loadScopedTables NEVER assigns the global window._opDbCache');
 // And the bound itself, which is the reason the reader was factored out: a four-table page mount no longer
-// opens four simultaneous requests against a backend whose per-user execution is serialized.
+// opens four simultaneous requests at once. NOT because the backend serializes them — Apps Script gives no
+// such guarantee and executions may overlap — but because unbounded fan-out raises peak pressure on a quota'd,
+// contended service, and under `Promise.all` one partial failure is a total page failure.
 ok(/KM_SCOPED_READ_CONCURRENCY_/.test(DBAPI) && !/await Promise\.all\(names\.map\(/.test(DBAPI),
   'A3: and the fan-out is BOUNDED rather than one simultaneous request per table');
 ok(/function normalizeOperationDb[\s\S]*db\.factory_stock \|\| \[\]/.test(DBAPI), 'A3: normalizeOperationDb is defensive (|| []) → partial input is safe');
