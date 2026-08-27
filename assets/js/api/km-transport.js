@@ -334,7 +334,7 @@
     // ---- metrics (§D/§E) -------------------------------------------------------------------------------
     // Counts and durations only. No URL, no action payload, no row. `requests` is the number that makes
     // "exactly one request" a measured fact instead of a claim in a comment.
-    var _metrics = { requests: 0, retries: 0, byAction: {}, byCode: {}, samples: [] };
+    var _metrics = { requests: 0, retries: 0, coalesced: 0, byAction: {}, byCode: {}, samples: [] };
     function bump(map, key) { if (!key) return; map[key] = (map[key] || 0) + 1; }
     function record(sample) {
       _metrics.requests += 1;
@@ -347,12 +347,16 @@
         transport_build: TRANSPORT_BUILD,
         transport_contract_version: TRANSPORT_CONTRACT_VERSION,
         requests: _metrics.requests, retries: _metrics.retries,
+        // F1-7N-FB-4E-R3 §E — how many reads ATTACHED to an already-open request instead of issuing one.
+        // Reported because §E's whole claim is "navigating away and back creates zero additional requests",
+        // and a claim about requests that were never made needs a counter of its own to be checkable.
+        coalesced: _metrics.coalesced,
         byAction: JSON.parse(JSON.stringify(_metrics.byAction)),
         byCode: JSON.parse(JSON.stringify(_metrics.byCode)),
         samples: _metrics.samples.slice()
       };
     }
-    function resetMetrics() { _metrics = { requests: 0, retries: 0, byAction: {}, byCode: {}, samples: [] }; }
+    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, byAction: {}, byCode: {}, samples: [] }; }
     // The legacy runners (the workspace POST path and the getTable reader) still own their own fetch, so they
     // report their outcome HERE rather than being rewritten wholesale in one round. Without this the §E report
     // would be structurally empty in production while looking like a measurement — which is worse than no
@@ -401,6 +405,61 @@
       return p;
     }
     function inflightKeys() { return Object.keys(_inflight); }
+
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R3 §E — SCOPE-KEYED IN-FLIGHT REUSE, AND WHY IT IS A SEPARATE FACILITY.
+    //
+    // `singleFlight` above refuses to share anything that is not a METADATA key, and that refusal is correct:
+    // its key is the ACTION ALONE, and two business reads of the same action are routinely two DIFFERENT reads.
+    // Sharing those would hand one scope's rows to another scope's page, which is a data-correctness fault and
+    // strictly worse than a duplicate request. So this does NOT relax that guard and does NOT add business
+    // actions to METADATA_KEYS.
+    //
+    // What it adds is the thing that makes sharing SAFE: a key that carries the whole scope. R3 §E.2 requires
+    // in-flight reads to be keyed by action + canonical scope + payload version, and with such a key two
+    // requests that collide are, by construction, requests for the same answer.
+    //
+    // FAIL-CLOSED. If either the action or the scope key is missing, this does NOT invent a key and does NOT
+    // share — it simply runs the function, which is exactly today's behaviour. An unshareable read stays
+    // unshared rather than becoming a guess.
+    //
+    // EVICTS ON EITHER OUTCOME, for the same reason the metadata latch does: a rejected promise left in the map
+    // is the "reload fixes it" bug, and §E.6 requires that a failed request never poisons anything. Nothing is
+    // retained after settlement, so this cannot serve a stale answer — it shares an OPEN request only. Bounded
+    // TTL / stale-while-revalidate is a separate decision and is deliberately NOT taken here.
+    // ------------------------------------------------------------------------------------------------------
+    var _scopedInflight = {};
+    function scopeKeyOf(action, scope) {
+      var a = str(action), sc = str(scope);
+      if (a === '' || sc === '') return '';
+      return a + '\u0000' + sc;
+    }
+    function scopedSingleFlight(action, scope, fn) {
+      var k = scopeKeyOf(action, scope);
+      if (k === '') return Promise.resolve().then(fn);                  // unshareable: run it, share nothing
+      if (_scopedInflight[k]) { _metrics.coalesced += 1; return _scopedInflight[k]; }
+      var p = Promise.resolve().then(fn);
+      _scopedInflight[k] = p;
+      var evict = function () { if (_scopedInflight[k] === p) delete _scopedInflight[k]; };
+      p.then(evict, evict);
+      return p;
+    }
+    function scopedInflightKeys() { return Object.keys(_scopedInflight); }
+    // A stable serialization for a request payload: sorted keys at every level, so two equivalent payloads
+    // produce the SAME key regardless of construction order, and two different ones never collide.
+    function canonicalScope(value) {
+      function walk(v) {
+        if (v === null || v === undefined) return 'n';
+        if (Array.isArray(v)) return '[' + v.map(walk).join(',') + ']';
+        if (typeof v === 'object') {
+          var ks = Object.keys(v).sort();
+          return '{' + ks.map(function (k) { return k + ':' + walk(v[k]); }).join(',') + '}';
+        }
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        return JSON.stringify(str(v));
+      }
+      try { return walk(value); } catch (e) { return ''; }             // uncomputable scope => unshareable
+    }
 
     // ---- the request ----------------------------------------------------------------------------------
     function fail(phase, code, message, details, timings) {
@@ -823,6 +882,8 @@
       isAutoRetryable: isAutoRetryable, retryDelayMs: retryDelayMs,
       // concurrency
       singleFlight: singleFlight, isMetadataKey: isMetadataKey, inflightKeys: inflightKeys,
+      // F1-7N-FB-4E-R3 §E — scope-keyed in-flight reuse for BUSINESS reads (separate from the metadata latch)
+      scopedSingleFlight: scopedSingleFlight, scopedInflightKeys: scopedInflightKeys, canonicalScope: canonicalScope,
       metadataKeys: function () { return Object.keys(METADATA_KEYS); },
       // observation
       metrics: metrics, resetMetrics: resetMetrics, recordExternal: recordExternal, uiState: uiState, describe: describe,

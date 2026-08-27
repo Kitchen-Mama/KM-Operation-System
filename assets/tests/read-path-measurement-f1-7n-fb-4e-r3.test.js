@@ -35,6 +35,10 @@ function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 var GS_FILES = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); }).sort();
 // The real configured endpoint, read from the shipped module so the classifier sees a genuine STABLE_EXEC URL.
 var EXEC_URL = (/const OP_DB_API_BASE_URL = '([^']+)'/.exec(read('assets/js/api/operation-system-db-api.js')) || [])[1];
+// The production-safety adapter asserts the exact spreadsheet id on every gated read, so the synthetic sheet has
+// to answer with the CONFIGURED one or every workspace read fails closed on WRONG_SPREADSHEET_TARGET — which
+// would be the harness misconfiguring itself, not a finding.
+var PROD_DB_ID = (/var PRODUCTION_DB_SPREADSHEET_ID_ = '([^']+)'/.exec(read('assets/specs/active/apps-script/00_config.gs')) || [])[1];
 
 // =============================================================================================================
 // A SYNTHETIC SPREADSHEET. Column names are the REAL sheet headers the normalizers read, so a field that the
@@ -94,7 +98,7 @@ function makeDeployment() {
   }
   var ss = {
     getSheetByName: function (n) { return DB[n] ? sheet(n) : null; },
-    getId: function () { return 'TEST-DB'; }, getName: function () { return 'TEST'; },
+    getId: function () { return PROD_DB_ID; }, getName: function () { return 'TEST'; },
     insertSheet: forbid('insertSheet'), deleteSheet: forbid('deleteSheet'),
     getSheets: function () { return Object.keys(DB).map(sheet); }
   };
@@ -337,9 +341,15 @@ checks.push((function () {
 checks.push((function () {
   var c = makeClient();
   return Promise.all([c.DB.loadScopedTables(['warehouses']), c.DB.loadScopedTables(['warehouses'])]).then(function () {
-    var n = c.log.length;
-    ok(n === 2, 'A2 loadScopedTables: two concurrent identical reads issue TWO requests — NO single-flight (n=' + n + ')');
-    lifecycle.push(['getTable (loadScopedTables)', 'PAGE_LOCAL', 'module-scoped _xxReadModel, no key, no TTL', 'DUPLICATES']);
+    // BEFORE R3 §E this was 2. Now a MOUNT read shares an open request keyed by table name.
+    eq(c.log.length, 1, 'A2 loadScopedTables: two concurrent identical MOUNT reads now share ONE request (was 2)');
+    lifecycle.push(['getTable (loadScopedTables)', 'SHARED_TRANSPORT', 'scope-keyed in-flight reuse (table name)', 'CORRECT']);
+    // And the post-write refresh path deliberately does NOT share, so a write can never be read back stale.
+    var before = c.log.length;
+    return Promise.all([c.DB.loadScopedTables(['factory_stock']), c.DB.refreshCacheTables(['factory_stock'])])
+      .then(function () {
+        eq(c.log.length - before, 2, 'A2 a post-write refresh issues its OWN request — it never attaches to a mount read');
+      });
   });
 })());
 
@@ -349,10 +359,14 @@ checks.push((function () {
   var api = c.win.KM.api;
   return Promise.all([api.getWorkspace('skuDetails', {}), api.getWorkspace('skuDetails', {})])
     .then(function () {
-      var n = c.log.length;
-      ok(n === 2, 'A2 getWorkspace: two concurrent identical reads issue TWO requests — NO single-flight (n=' + n + ')');
-      lifecycle.push(['*.workspace.get', 'PER-CALL', 'sequence guard only; no in-flight reuse', 'DUPLICATES']);
-    }, function () { ok(true, 'A2 workspace concurrency probe completed'); });
+      // BEFORE R3 §E this was 2: every getWorkspace call issued its own request, so leaving a page mid-read and
+      // returning started a second identical one. It is now keyed by action + canonical scope in the shared
+      // transport, so the second caller attaches to the same open promise.
+      eq(c.log.length, 1, 'A2 getWorkspace: two concurrent identical reads now share ONE request (was 2)');
+      var tp = c.win.KM.transport;
+      eq(tp.metrics().coalesced >= 1, true, 'A2 and the coalescing is COUNTED, not assumed');
+      lifecycle.push(['*.workspace.get', 'SHARED_TRANSPORT', 'scope-keyed in-flight reuse (action + payload)', 'CORRECT']);
+    }, function (e) { ok(false, 'A2 workspace concurrency probe failed: ' + (e && (e.message || e.apiCode))); });
 })());
 
 // (4) The metadata latch FB-4E added — the one place in-flight reuse already exists, for comparison.
@@ -379,14 +393,18 @@ section('§A.3 — SKU DETAILS: THE METHOD DOWNGRADE, REPRODUCED AND LOCATED');
     var c = makeClient({ forceDowngradeOn: { 'skuDetails.workspace.get': 1 } });
     // The workspace path may REJECT or RESOLVE-with-errors depending on the resolver; both are read here so
     // the measurement reports what actually happens rather than what one shape would imply.
+    // BEFORE R3 §D this reported REQUEST_METHOD_DOWNGRADED after exactly ONE request and never retried, which is
+    // the first-load failure the user saw. The bounded single retry now absorbs the hop, so the caller must NOT
+    // see a downgrade — and the retry must be a second POST, never a GET.
     function verdict(v) {
       var e = v && v.err ? v.err : null;
       var envErr = (v && v.env && Array.isArray(v.env.errors) && v.env.errors[0]) || null;
       var code = (e && (e.apiCode || e.code)) || (envErr && envErr.code) || '';
-      var msg = String((e && e.message) || (envErr && envErr.message) || '');
-      eq(code, 'REQUEST_METHOD_DOWNGRADED', 'A3 REPRODUCED: one downgraded hop fails the first mount outright');
-      eq(c.log.length, 1, 'A3 and the workspace path issued exactly ONE request — IT NEVER RETRIED');
-      ok(/reached the server as a GET/.test(msg), 'A3 with the message the user reported');
+      ok(code !== 'REQUEST_METHOD_DOWNGRADED', 'A3 ABSORBED: the caller no longer sees the downgrade (code=' + (code || 'none') + ')');
+      eq(c.log.length, 2, 'A3 because the workspace path now retries exactly ONCE');
+      eq(c.log[0].downgraded, true, 'A3 attempt 1 was the downgraded hop');
+      eq(c.log[1].method, 'POST', 'A3 attempt 2 was a fresh POST, never a GET');
+      ok(!c.log[1].downgraded, 'A3 and attempt 2 reached doPost');
     }
     return Promise.resolve(c.win.KM.api.getWorkspace('skuDetails', {}))
       .then(function (env) { verdict({ env: env }); }, function (err) { verdict({ err: err }); });

@@ -2325,14 +2325,41 @@ window.KM.DB.getScopedReadConcurrency = function () { return KM_SCOPED_READ_CONC
 // ONE bounded multi-table reader, shared by BOTH fan-out sites (loadScopedTables and _kmRefreshCacheTables_).
 // A single knob, so the bound cannot hold in one place and be missing in the other - which is exactly how the
 // second site kept its unbounded fan-out through several earlier rounds.
-async function _kmReadTablesBounded_(names) {
+async function _kmReadTablesBounded_(names, opts) {
+    // F1-7N-FB-4E-R3 §E — SHARE AN OPEN MOUNT READ; NEVER SHARE A POST-WRITE READ.
+    //
+    // THE DEFECT. Leaving a page while its tables were still loading and coming back started the whole read
+    // again, and two pages that both need `sku_details` or `warehouses` each fetched their own copy. Measured,
+    // not assumed: two concurrent identical loadScopedTables calls issued two requests.
+    //
+    // WHY THIS IS OPT-IN RATHER THAN AUTOMATIC, which is the part that matters for correctness.
+    // `_kmRefreshCacheTables_` calls this function too, to re-read the mutable tables AFTER A WRITE. If that
+    // read attached to a mount read that was already open when the write landed, it would return PRE-WRITE rows
+    // and the page would render the value the user just changed as if the change had not happened. So sharing is
+    // requested explicitly by the MOUNT path and is never given to the refresh path: a post-write read always
+    // issues its own request.
+    //
+    // What is shared is an OPEN request only — the shared transport evicts the key on either outcome, so
+    // nothing is retained after settlement. There is no TTL and no stored copy here, which is deliberate: it
+    // means this can neither serve a stale table nor let one failure poison a later read (§E.6).
+    var share = !!(opts && opts.share);
+    var tp = null;
+    try { tp = (window.KM && window.KM.transport) || null; } catch (e) { tp = null; }
+    function readOne(name) {
+        if (share && tp && typeof tp.scopedSingleFlight === 'function') {
+            // The table name IS the complete scope: getTable takes no filter, so two reads of one table are the
+            // same read. That is what makes this key scope-complete rather than merely convenient.
+            return tp.scopedSingleFlight('getTable', name, function () { return getOperationDbTableFromSheet(name); });
+        }
+        return getOperationDbTableFromSheet(name);
+    }
     var rawDb = {};
     var next = 0;
     async function worker() {
         while (true) {
             var i = next++;
             if (i >= names.length) return;
-            rawDb[names[i]] = await getOperationDbTableFromSheet(names[i]);
+            rawDb[names[i]] = await readOne(names[i]);
         }
     }
     var lanes = Math.max(1, Math.min(KM_SCOPED_READ_CONCURRENCY_, names.length));
@@ -2342,7 +2369,8 @@ async function _kmReadTablesBounded_(names) {
 }
 window.KM.DB.loadScopedTables = async function(tableNames) {
     var names = (tableNames || []).filter(Boolean);
-    var rawDb = await _kmReadTablesBounded_(names);
+    // MOUNT read: shareable. See the note in _kmReadTablesBounded_ for why the post-write refresh path is not.
+    var rawDb = await _kmReadTablesBounded_(names, { share: true });
     var scoped = normalizeOperationDb(rawDb);
     scoped._sourceMode = 'google-sheet';
     scoped._scopedTables = names.slice();

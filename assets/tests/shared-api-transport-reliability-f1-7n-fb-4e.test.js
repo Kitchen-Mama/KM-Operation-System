@@ -444,7 +444,12 @@ ok(!/await Promise\.all\(names\.map\(/.test(DBAPIC), 'D6 and no longer fans out 
 // Request Order second-layer expand and the allocation-draft hydrate) had the identical unbounded shape, and a
 // bound that holds in one place and is missing in the other is not a bound.
 ok(/_kmReadTablesBounded_/.test(DBAPIC), 'D7 one shared bounded multi-table reader exists');
-eq((DBAPIC.match(/await _kmReadTablesBounded_\(names\)/g) || []).length, 2, 'D7 and BOTH fan-out sites go through it');
+// F1-7N-FB-4E-R3 — the MOUNT site now passes { share: true } and the post-write refresh deliberately does not,
+// so the two call sites no longer have identical text. What must hold is that there are still exactly TWO and
+// that both go through the ONE bounded reader.
+eq((DBAPIC.match(/await _kmReadTablesBounded_\(names[^)]*\)/g) || []).length, 2, 'D7 and BOTH fan-out sites go through it');
+ok(/await _kmReadTablesBounded_\(names, \{ share: true \}\)/.test(DBAPIC), 'D7 the MOUNT site opts into sharing');
+ok(/await _kmReadTablesBounded_\(names\);/.test(DBAPIC), 'D7 and the post-write refresh site does NOT');
 ok(/_kmRefreshCacheTables_/.test(DBAPIC), 'D7 including the secondary/hydrate path');
 
 // §D1 — the two session-stable metadata reads go through the shared latch, not through two private ones.
@@ -697,7 +702,10 @@ var STALE_TOKENS = ['fb4d-site-inventory-20260826', 'sku-read-path-20260826', 'c
   'fb4e-transport-20260826',
   // F1-7N-FB-4E-R2: R1's token joins the list for the same reason FB-4E's did -- R1 shipped, R2 changed
   // operation-system-db-api.js again, so carrying R1's token would serve the pre-R2 client from cache.
-  'fb4er1-contract-probe-20260827'];
+  'fb4er1-contract-probe-20260827',
+  // F1-7N-FB-4E-R3: R2's token joins the list — R3 changed km-transport.js, km-api-foundation.js and
+  // operation-system-db-api.js again, and a cached pre-R3 copy of any of the three is a different program.
+  'fb4er2-action-registry-20260827'];
 var tokens = {};
 CHANGED_ASSETS.forEach(function (a) {
   var m = new RegExp('src="' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([^"]+)"').exec(HTML);
@@ -877,8 +885,13 @@ section('§D-CORRECTION — the bound is a BOUNDED-PRESSURE control, not relianc
   var rdStart = DBAPI.indexOf('async function _kmReadTablesBounded_');
   ok(rdStart > 0, 'C4 the bounded reader is locatable');
   var rd = DBAPI.slice(rdStart, DBAPI.indexOf('\n}', rdStart) + 2);
-  ok(/rawDb\[names\[i\]\] = await getOperationDbTableFromSheet\(names\[i\]\)/.test(rd),
+  // F1-7N-FB-4E-R3 — the per-table fetch is now reached through `readOne`, which either shares an open request
+  // or calls getOperationDbTableFromSheet directly. The INVARIANT is unchanged and is what is asserted: each
+  // answer lands under its own NAME, never at a loop position, so arrival order still cannot change the result.
+  ok(/rawDb\[names\[i\]\] = await readOne\(names\[i\]\)/.test(rd),
     'C4 each table lands under its OWN key — arrival order cannot change the result');
+  ok(/return getOperationDbTableFromSheet\(name\)/.test(rd),
+    'C4 and the per-table getTable read is still what is ultimately called');
   // Stated as what it IS rather than as a ban on characters: the accumulator is an OBJECT keyed by table
   // name and that object is what comes back. An earlier version of this line banned `push(`, which matched the
   // worker-pool construction `pool.push(worker())` — a false positive on the one push that has to be there.

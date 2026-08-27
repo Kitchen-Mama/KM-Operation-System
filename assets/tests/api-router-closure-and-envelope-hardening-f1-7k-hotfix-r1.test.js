@@ -88,6 +88,10 @@ eval(extractFn(FND, 'normName'));
 // F1-7N-FB-4E — the hand-written 4-key stub could silently make a NEW code resolve to `undefined`, so the
 // harness now takes the taxonomy from the SAME source file as the slice. It cannot drift from what ships.
 eval(extractVar(FND, 'API_ERROR_CODES'));
+// F1-7N-FB-4E-R3 — the five-fact downgrade proof was extracted out of this slice so the bounded retry gate
+// and the classifier share ONE derivation. It is a dependency of the slice, so it joins the extraction list.
+eval(extractFn(FND, 'downgradeProof'));
+eval(extractFn(FND, 'isObj'));
 ['CLIENT_ACTION_REQUIRED', 'DEPLOYMENT_CONTRACT_MISMATCH', 'REQUEST_METHOD_DOWNGRADED', 'RESPONSE_ACTION_MISMATCH',
  'RESPONSE_CORRELATION_UNPROVEN', 'RESPONSE_REQUEST_ID_MISMATCH', 'API_ENDPOINT_CONFIGURATION_INVALID'].forEach(function (k) {
   ok(API_ERROR_CODES[k] === k, 'taxonomy carries ' + k + ' (self-named)');

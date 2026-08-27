@@ -558,6 +558,50 @@
       for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = deepFreezeClone(v[k]); }
       return Object.freeze(out);
     }
+    // ----------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R3 §D — THE METHOD-DOWNGRADE PROOF, IN ONE PLACE, BECAUSE TWO PLACES NOW NEED IT.
+    //
+    // The five facts were computed inline inside normalizeWorkspaceEnvelope, which was fine while the only
+    // consumer was the error classifier. R3 adds a second consumer — the bounded retry gate — and a retry
+    // that decided on its own re-derivation of the same evidence could disagree with the message the user is
+    // shown. So the derivation moves here and both call it.
+    //
+    // The facts, each from a specific field and none of them from the router's prose:
+    //   1. the client dispatched POST      — this transport has no GET path for a workspace read
+    //   2. it reached the router as a GET  — received_method === 'GET'
+    //   3. doGet answered                  — handler === 'doGet', or code POST_ONLY_ACTION_ON_GET
+    //   4. the POST body was unavailable   — post_body_present === false, or that same code
+    //   5. the answer is THIS request's    — request_id echoes the id we sent
+    // ----------------------------------------------------------------------------------------------------
+    function downgradeProof(serverEnv, sentRequestId) {
+      var env = isObj(serverEnv) ? serverEnv : {};
+      var rcode = normName(env.code);
+      var rmethod = String(env.received_method == null ? '' : env.received_method).toUpperCase();
+      var rhandler = normName(env.handler);
+      var rid = normName(env.request_id);
+      var bodyPresent = env.post_body_present;
+      var actionInQuery = (env.action_present_in_query === undefined)
+        ? (normName(env.attempted_action) !== '' ? true : null)
+        : (env.action_present_in_query === true);
+      var evidence = {
+        client_dispatched_post: true,
+        router_received_method: rmethod || null,
+        router_handler: rhandler || (rcode === 'POST_ONLY_ACTION_ON_GET' ? 'doGet' : null),
+        router_code: rcode || null,
+        post_body_present: (bodyPresent === undefined) ? null : (bodyPresent === true),
+        action_present_in_query: actionInQuery,
+        sent_as_post_marker: env.sent_as_post === true,
+        request_id_echoed: rid || null,
+        request_id_correlated: (rid !== '' && rid === normName(sentRequestId))
+      };
+      var getHandlerAnswered = (rmethod === 'GET') || (evidence.router_handler === 'doGet') || (rcode === 'POST_ONLY_ACTION_ON_GET');
+      var bodyLost = (bodyPresent === false) || (rcode === 'POST_ONLY_ACTION_ON_GET');
+      return {
+        evidence: evidence, action_in_query: actionInQuery,
+        get_handler_answered: getHandlerAnswered, body_lost: bodyLost,
+        proved: !!(getHandlerAnswered && bodyLost && evidence.request_id_correlated)
+      };
+    }
     function actionRequiredError(action, where) {
       var e = new Error('CLIENT_ACTION_REQUIRED: a request envelope was built without an action' + (where ? ' (' + where + ')' : '') +
         '. No network call was made.');
@@ -606,6 +650,45 @@
     // F1-7N-FB-4C-R1 §E — ONE choke point every workspace read passes through, so the "action is required" rule
     // holds for every existing resolver without each one having to remember it. A blank action throws here, and
     // it throws SYNCHRONOUSLY relative to the network: no request is issued.
+    // F1-7N-FB-4E-R3 §D/§E — THE CHOKE POINT NOW ALSO OWNS RETRY AND IN-FLIGHT REUSE, AND BOTH POLICIES
+    // COME FROM THE SHARED TRANSPORT RATHER THAN BEING RE-DECIDED HERE.
+    //
+    // §D — THE FIRST-LOAD FAILURE, AND WHY IT WAS NEVER A MISSING POLICY. An Apps Script /exec POST is answered
+    // with a 302 to script.googleusercontent.com, and per the Fetch spec a 302 following a POST is re-issued as
+    // a GET WITH THE BODY DROPPED. On a cold or re-authorising session that chain resolves back to /exec, the
+    // request lands at doGet carrying only the query string, and the read cannot run. km-transport.js already
+    // classes that as REQUEST_METHOD_DOWNGRADED and already treats it as auto-retryable for a READ, with a
+    // bounded single attempt — and it is right to: the deployment is fine, one hop lost the body, and a fresh
+    // POST re-establishes the session redirect.
+    //
+    // But EVERY workspace read went through this file's own private transport shim, which has no classifier, no
+    // contract validator and no retry. So the policy existed and the one read path that needed it did not use
+    // it, and the user was performing the retry by hand — navigating away and coming back until a load stuck.
+    // That is the SKU Details first-load failure exactly.
+    //
+    // The gate is deliberately narrow. It fires ONLY on the five-fact proof (downgradeProof above, the same
+    // derivation the message is built from), ONLY for a workspace READ, and ONLY ONCE. It is NOT a blanket GET
+    // retry, it is NOT applied to writes — no write reaches this function; _kmWeeklyCommand_ and the direct
+    // writers are separate paths and keep their existing no-replay rule — and the retry is a fresh POST, never
+    // a GET. A downgrade that repeats on the second attempt is returned unchanged, so §D.7 holds: a genuinely
+    // downgraded request is still reported as REQUEST_METHOD_DOWNGRADED.
+    //
+    // There is no back-off delay, and that is deliberate rather than an omission: this Foundation is held to a
+    // determinism rule (no wall clock, no RNG — its own suite asserts it), and a redirect-session artifact is
+    // not congestion, so waiting would add latency without adding a chance of success.
+    //
+    // §E — IN-FLIGHT REUSE, KEYED BY ACTION + CANONICAL SCOPE. Leaving a page mid-read and returning used to
+    // start a second identical request; now the second caller attaches to the SAME promise and issues nothing.
+    // The key carries the whole payload (canonicalScope sorts keys at every level), so a read of scope A can
+    // never be handed to a page showing scope B — which is why this uses the transport's scope-keyed facility
+    // and not its metadata latch, whose action-only key is unsafe for business reads by design. Nothing is
+    // retained after settlement: an OPEN request is shared, a finished one is not, so no stale answer and no
+    // poisoned failure. A signal-bearing call is never shared, because one caller's abort must not cancel
+    // another's read.
+    function _sharedTransport() {
+      try { return (typeof window !== 'undefined' && window.KM && window.KM.transport) ? window.KM.transport : null; }
+      catch (e) { return null; }
+    }
     var _workspaceInvoke = function (action, dto, signal) {
       assertSendableEnvelope(dto, 'workspaceInvoke:' + (normName(action) || '(blank)'));
       if (normName(action) !== normName(dto.action)) {
@@ -613,7 +696,33 @@
         // the disagreement is a construction bug worth failing on rather than silently preferring one.
         throw actionRequiredError(dto.action, 'workspaceInvoke: action argument "' + normName(action) + '" disagrees with envelope action "' + normName(dto.action) + '"');
       }
-      return _workspaceInvokeRaw(action, dto, signal);
+      var tp = _sharedTransport();
+
+      function once() { return Promise.resolve(_workspaceInvokeRaw(action, dto, signal)); }
+      function withBoundedDowngradeRetry() {
+        return once().then(function (serverEnv) {
+          if (!isObj(serverEnv) || serverEnv.success === true) return serverEnv;
+          var pf = downgradeProof(serverEnv, dto.requestId);
+          if (!pf.proved) return serverEnv;
+          // The shared transport owns the answer to "may this be replayed?". Asked, never assumed.
+          var allowed = tp && typeof tp.isAutoRetryable === 'function'
+            ? tp.isAutoRetryable({ kind: 'read', code: 'REQUEST_METHOD_DOWNGRADED' })
+            : false;
+          if (!allowed) return serverEnv;
+          if (signal && signal.aborted) return serverEnv;
+          return once();                                  // exactly one more attempt, again as a POST
+        });
+      }
+
+      // A scope key needs the payload; without one the read is simply not shared (fail-closed to old behaviour).
+      var scope = '';
+      if (tp && typeof tp.canonicalScope === 'function' && !signal) {
+        scope = tp.canonicalScope({ v: dto.apiVersion || null, p: dto.payload || null });
+      }
+      if (tp && typeof tp.scopedSingleFlight === 'function' && scope !== '') {
+        return tp.scopedSingleFlight(normName(dto.action), scope, withBoundedDowngradeRetry);
+      }
+      return withBoundedDowngradeRetry();
     };
 
     // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
@@ -717,28 +826,13 @@
             // none of these fields, so its answer is RESPONSE_CORRELATION_UNPROVEN — a GET handler plainly
             // answered (only doGet emits that action list) but nothing ties the answer to this request, and
             // the same publish step fixes either reading.
-            var _rcode = normName(serverEnv.code);
-            var _rmethod = String(serverEnv.received_method == null ? '' : serverEnv.received_method).toUpperCase();
-            var _rhandler = normName(serverEnv.handler);
-            var _rid = normName(serverEnv.request_id);
-            var _bodyPresent = serverEnv.post_body_present;
-            var _actionInQuery = (serverEnv.action_present_in_query === undefined)
-              ? (normName(serverEnv.attempted_action) !== '' ? true : null)
-              : (serverEnv.action_present_in_query === true);
-            var _evidence = {
-              client_dispatched_post: true,
-              router_received_method: _rmethod || null,
-              router_handler: _rhandler || (_rcode === 'POST_ONLY_ACTION_ON_GET' ? 'doGet' : null),
-              router_code: _rcode || null,
-              post_body_present: (_bodyPresent === undefined) ? null : (_bodyPresent === true),
-              action_present_in_query: _actionInQuery,
-              sent_as_post_marker: serverEnv.sent_as_post === true,
-              request_id_echoed: _rid || null,
-              request_id_correlated: (_rid !== '' && _rid === normName(dto.requestId))
-            };
-            var _getHandlerAnswered = (_rmethod === 'GET') || (_evidence.router_handler === 'doGet') || (_rcode === 'POST_ONLY_ACTION_ON_GET');
-            var _bodyLost = (_bodyPresent === false) || (_rcode === 'POST_ONLY_ACTION_ON_GET');
-            if (_getHandlerAnswered && _bodyLost && _evidence.request_id_correlated) {
+            // F1-7N-FB-4E-R3 §D — ONE derivation, shared with the retry gate (see downgradeProof above), so the
+            // decision to retry and the message shown can never be based on different readings of the answer.
+            var _pf = downgradeProof(serverEnv, dto.requestId);
+            var _evidence = _pf.evidence;
+            var _actionInQuery = _pf.action_in_query;
+            var _getHandlerAnswered = _pf.get_handler_answered;
+            if (_pf.proved) {
               _outErrs = [{
                 code: API_ERROR_CODES.REQUEST_METHOD_DOWNGRADED,
                 message: 'This read was sent as a POST but reached the server as a GET, so the POST body was lost and the server could not run it. '

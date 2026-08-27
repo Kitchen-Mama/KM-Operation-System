@@ -95,7 +95,11 @@ ok(/window\.KM\.DB\.loadScopedTables\s*=\s*async function/.test(DBAPI), 'A3: KM.
 // F1-7N-FB-4E — the per-table fetch now lives in the SHARED bounded reader (_kmReadTablesBounded_) that both
 // multi-table loaders call, instead of being inlined in each. The assertion's intent is unchanged and is
 // restated against that reader: it is still per-table getTable + normalizeOperationDb and still NO new API.
-ok(/async function _kmReadTablesBounded_[\s\S]*getOperationDbTableFromSheet\(names\[i\]\)/.test(DBAPI),
+// F1-7N-FB-4E-R3 — the reader now reaches the per-table fetch through `readOne`, which may share an OPEN
+// request. Still per-table getTable, still no new API: the assertion follows the same chain to the same call.
+ok(/async function _kmReadTablesBounded_[\s\S]*rawDb\[names\[i\]\] = await readOne\(names\[i\]\)/.test(DBAPI),
+  'A3: the shared bounded reader keys each answer by table name');
+ok(/function readOne\(name\)[\s\S]{0,600}getOperationDbTableFromSheet\(name\)/.test(DBAPI),
   'A3: the shared bounded reader is per-table getTable (reuse; NO new API)');
 ok(/loadScopedTables[\s\S]{0,300}_kmReadTablesBounded_\(names\)[\s\S]{0,200}normalizeOperationDb\(rawDb\)/.test(DBAPI),
   'A3: loadScopedTables = that bounded per-table read + normalizeOperationDb');
