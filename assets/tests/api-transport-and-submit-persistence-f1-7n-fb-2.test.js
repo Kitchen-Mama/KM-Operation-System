@@ -260,7 +260,12 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // be defined exactly once across these sources, so a new owner file has to be listed or the probe cannot see it.
   read('specs/active/apps-script/66_api_v1_request_order_send.gs'),
   // F1-7N-FB-3C: the read-only allocation-draft identity reconciliation owner.
-  read('specs/active/apps-script/67_api_v1_allocation_draft_identity.gs')].join('\n');
+  read('specs/active/apps-script/67_api_v1_allocation_draft_identity.gs'),
+  // F1-7N-FB-4E-R2: the shipment ETA + route-advance writers. R2 REGISTERED them (they were routed and served
+  // all along, but absent from SYS_REQUIRED_ACTIONS_, so the deployment reported them missing from itself), and
+  // this probe counts definitions across the list above — so their owner has to be in it or the probe reads a
+  // registered handler as undefined. That is exactly the case the list's own note warns about.
+  read('specs/active/apps-script/31_shipment_receipt_route_handlers.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;

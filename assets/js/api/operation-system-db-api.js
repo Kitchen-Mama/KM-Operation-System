@@ -3805,7 +3805,12 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7;      // the minimum deployed_action_contract_version this build needs
+// F1-7N-FB-4E-R2 §5: 7 -> 8, RAISED, never lowered. This build requires
+// system.executionPlanDuplicateLineDiagnostic, which no deployment below action contract 8 routes at all
+// — R2 is the round that added the branch. Leaving the pin at 7 would let a v7 deployment pass the
+// VERSION gate and then fail the per-action probe, reporting the same fact twice as two different-looking
+// problems. Raising it makes the version comparison decide first, with the message that names the fix.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 8;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

@@ -789,12 +789,18 @@ var _rtrExpected = (G63.match(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', ex
 ok(!!_rtrDeclared && /^F1-7N-[A-Z]+-\d+[A-Z](-R\d+)?$/.test(_rtrDeclared), 'E2 01_ declares a real build (' + _rtrDeclared + ')');
 eq(_rtrDeclared, _rtrExpected, 'E2 and it is exactly what the manifest expects for it — a partial sync stays visible');
 eq((G59.match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4C-R1', 'E2 and 59_ — the SKU repair was client-side');
-eq((G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4D', 'E2 68_ moved with its behaviour');
-// the action contract is NOT bumped, because no action was added or removed
-eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '7',
-  'E3 the ACTION contract version is unchanged — FB-4D added no router action');
-eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '7',
-  'E3 and the client still pins the same one');
+// F1-7N-FB-4E-R2 — STATED AS THE RULE THIS WAS DEFENDING. FB-4D pinned 68_'s stamp and the action
+// contract as literals. R2 moved both, correctly and by those constants' own rules: 68_ changed because its
+// duplicate diagnostic became REACHABLE for the first time and needed a scope guard on the routed path, and
+// the action contract moved because that route is a new router ACTION. What FB-4D actually needed to defend is
+// that 68_ is at FB-4D or later and that the two sides of the action contract AGREE — neither of which a
+// frozen string can express.
+var _epcNow = (G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+ok(/^F1-7N-FB-4[D-Z]/.test(_epcNow || ''), 'E2 68_ is at FB-4D or later, and moved with its behaviour (' + _epcNow + ')');
+var _actNow = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+var _actPin = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+ok(_actNow >= 7, 'E3 the ACTION contract is at FB-4D level or later and never went backwards (v' + _actNow + ')');
+eq(_actPin, _actNow, 'E3 and the client pins exactly it, so the two sides cannot drift apart');
 // the client probes the write chain and the FB-4D gate symbol
 ['upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
   'submitAllocationDraftsToShippingPlans', 'system.executionPlanDuplicateLineDiagnostic'].forEach(function (a) {

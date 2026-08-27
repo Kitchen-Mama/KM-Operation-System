@@ -19,7 +19,10 @@
 // round that last changed it (F1-7N-FB-4C-R1, the POST_ONLY_ACTION_ON_GET terminal answer). The router is the
 // one file whose staleness is invisible from the client: a stale router still answers every request, it just
 // answers an older contract.
-var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E';
+// F1-7N-FB-4E-R2 §3 — R2 CHANGED THIS FILE, so the stamp moves and the action contract moves with it.
+// system.executionPlanDuplicateLineDiagnostic had a handler in 68_ and a docstring declaring it an action, and
+// NO dispatch branch in any commit ever — so the handler was unreachable while the frontend required it.
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R2';
 
 function doGet(e) {
   try {
@@ -160,6 +163,29 @@ function doPost(e) {
       return jsonResponse_(handleRequestOrderSendDiagnosticStatus_(body));
     }
     // F1-7N-FB-3 §C — slim scope registry (see the doGet registration above for why it exists).
+    // F1-7N-FB-4E-R2 §3 — READ-ONLY Execution Plan DUPLICATE-LINE diagnostic (owner = 68_).
+    //
+    // WHY THIS BRANCH DID NOT EXIST UNTIL NOW, STATED PLAINLY. handleExecutionPlanDuplicateLineDiagnostic_ has
+    // been defined in 68_ since 83fc33f, that file documents it as the action
+    // `system.executionPlanDuplicateLineDiagnostic`, and the frontend has required it in
+    // KM_REQUIRED_DEPLOYED_ACTIONS_ since 88306ce — but it was never routed. Three artifacts asserted the
+    // action existed and only the router disagreed, so the handler sat unreachable and the deployment-contract
+    // probe reported a missing action that no publish could ever supply.
+    //
+    // It reports duplicate primary keys and PROPOSES a repair. It deletes nothing and writes nothing: the only
+    // thing that can delete is TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP, which is editor-only, is NOT routed here,
+    // and additionally requires TEMP_DUPFIX_MODE_ === 'COMMIT' plus a confirmation checksum covering the exact
+    // rows. Exposing the REPORT does not expose the REPAIR.
+    //
+    // __km_handler is set for the same reason system.health sets it: so the answer states WHICH entry point
+    // served it as a fact rather than the caller inferring it. 68_ also reads it as the "arrived over the
+    // network" signal that makes an explicit scope mandatory, so an unscoped whole-table scan is refused here
+    // while the editor path keeps its behaviour. Read-only, and it never writes, so it is routed on POST only
+    // like its sibling diagnostic above.
+    if (action === 'system.executionPlanDuplicateLineDiagnostic') {
+      body.__km_handler = 'doPost';
+      return jsonResponse_(handleExecutionPlanDuplicateLineDiagnostic_(body));
+    }
     if (action === 'inventoryScope.registry.get') {
       return handleInventoryScopeRegistryGet_(body);
     }

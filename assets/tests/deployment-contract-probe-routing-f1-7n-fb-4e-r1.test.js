@@ -41,6 +41,27 @@ var vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
 var GS_DIR = path.join(ROOT, 'assets', 'specs', 'active', 'apps-script');
 
+// F1-7N-FB-4E-R2 — EXPECTATIONS ARE DERIVED FROM THE DECLARING SOURCE, PLUS A MONOTONIC FLOOR.
+//
+// R1 pinned 'F1-7N-FB-4E', 7 and 7 as literals, and R2 legitimately moved all three. A literal makes a correct
+// bump look like a regression, which is the trap the FB-4E suite already documents for release tokens. So each
+// expectation is read from the file that DECLARES it — the answer must equal what its own source says — and
+// floored at the R2 values so a future round can raise them but nothing can quietly lower them. That is
+// strictly what §8 requires ("do not lower expected versions") expressed as an assertion rather than a
+// promise.
+var DECL = (function () {
+  function pick(file, re) { var m = re.exec(read('assets/specs/active/apps-script/' + file)); return m ? m[1] : null; }
+  return {
+    sysBuild: pick('63_api_v1_system_health.gs', /var SYS_BUILD_VERSION_ = '([^']+)'/),
+    rtrBuild: pick('01_router.gs', /var RTR_BUILD_VERSION_ = '([^']+)'/),
+    actionContract: Number(pick('63_api_v1_system_health.gs', /var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/)),
+    listVersion: Number(pick('63_api_v1_system_health.gs', /var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/)),
+    transportContract: Number(pick('63_api_v1_system_health.gs', /var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/))
+  };
+})();
+var FLOOR_ACTION_CONTRACT = 8;   // F1-7N-FB-4E-R2 added a router action; nothing may go below this
+var FLOOR_LIST_VERSION = 8;      // F1-7N-FB-4E-R2 added four registry entries
+
 var passed = 0, failed = 0, checks = [];
 function ok(c, m) { if (c) { passed++; } else { failed++; console.log('  FAIL ' + m); } }
 function eq(a, b, m) { ok(a === b, m + '  (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')'); }
@@ -154,19 +175,26 @@ var PROBE_ACTIONS = probeClient.sb.KM_REQUIRED_DEPLOYED_ACTIONS_;
 var PROBE_SYMBOLS = probeClient.sb.KM_REQUIRED_DEPLOYED_SYMBOLS_;
 ok(Array.isArray(PROBE_ACTIONS) && PROBE_ACTIONS.length > 0, 'A2 the client publishes its caller-driven action probe list');
 ok(Array.isArray(PROBE_SYMBOLS) && PROBE_SYMBOLS.length > 0, 'A2 and its owner-symbol probe list');
-eq(probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_, 7, 'A2 the client pins action contract v7');
-eq(probeClient.sb.KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_, 1, 'A2 and transport contract v1');
+ok(probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_ >= FLOOR_ACTION_CONTRACT,
+  'A2 the client pins action contract at or above v' + FLOOR_ACTION_CONTRACT +
+  ' (got v' + probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_ + ')');
+eq(probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_, DECL.actionContract,
+  'A2 and it AGREES with the contract the deployment declares — neither side may drift alone');
+eq(probeClient.sb.KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_, DECL.transportContract,
+  'A2 the transport axis likewise agrees with the deployment');
 
 var EXACT_BODY = { action: 'system.health', probe_actions: PROBE_ACTIONS, probe_symbols: PROBE_SYMBOLS };
 var postOut = DEP.doPost({ postData: { contents: JSON.stringify(EXACT_BODY), type: 'text/plain' }, parameter: {} });
 var H = JSON.parse(postOut.getContent());
 
 ok(H.success === true, 'A3 the executed router answers the probe successfully');
-eq(H.build_id, 'F1-7N-FB-4E', 'A3 build_id');
-eq(H.router_build, 'F1-7N-FB-4E', 'A3 router_build');
-eq(H.transport_contract_version, 1, 'A3 transport_contract_version');
-eq(H.deployed_action_contract_version, 7, 'A3 deployed_action_contract_version');
-eq(H.required_action_list_version, 7, 'A3 required_action_list_version');
+eq(H.build_id, DECL.sysBuild, 'A3 build_id equals what 63_ declares');
+eq(H.router_build, DECL.rtrBuild, 'A3 router_build equals what 01_router.gs declares');
+eq(H.transport_contract_version, DECL.transportContract, 'A3 transport_contract_version');
+eq(H.deployed_action_contract_version, DECL.actionContract, 'A3 deployed_action_contract_version');
+ok(H.deployed_action_contract_version >= FLOOR_ACTION_CONTRACT, 'A3 and it is at or above the R2 floor of ' + FLOOR_ACTION_CONTRACT);
+eq(H.required_action_list_version, DECL.listVersion, 'A3 required_action_list_version');
+ok(H.required_action_list_version >= FLOOR_LIST_VERSION, 'A3 and it is at or above the R2 floor of ' + FLOOR_LIST_VERSION);
 eq(H.contract_version, '1', 'A3 contract_version');
 eq(H.handler, 'doPost', 'A3 answered_by_handler names the entry point that served it');
 eq(H.received_method, 'POST', 'A3 and the method it arrived on');
@@ -186,7 +214,7 @@ ok(H.missing_actions_is_self_referential === true,
 // system.health is routed on BOTH verbs, so a caller can probe with either.
 var getOut = DEP.doGet({ parameter: { action: 'system.health', probe_actions: PROBE_ACTIONS, probe_symbols: PROBE_SYMBOLS } });
 var HG = JSON.parse(getOut.getContent());
-eq(HG.build_id, 'F1-7N-FB-4E', 'A5 doGet answers the SAME identity');
+eq(HG.build_id, H.build_id, 'A5 doGet answers the SAME identity as doPost');
 eq(HG.handler, 'doGet', 'A5 and names itself as the handler, so a downgrade can never be mistaken for a POST answer');
 eq(HG.received_method, 'GET', 'A5 with the method it arrived on');
 
@@ -234,11 +262,11 @@ checks.push(client.DB.checkDeploymentContract().then(function (v) {
 
   var id = v.identity || {};
   ok(id.build_id !== null && id.build_id !== undefined, 'C2 the identity is NO LONGER NULL');
-  eq(id.build_id, 'F1-7N-FB-4E', 'C2 build_id reaches the caller');
-  eq(id.router_build, 'F1-7N-FB-4E', 'C2 router_build reaches the caller');
-  eq(id.transport_contract_version, 1, 'C2 transport_contract_version reaches the caller');
-  eq(id.deployed_action_contract_version, 7, 'C2 deployed_action_contract_version reaches the caller');
-  eq(id.required_action_list_version, 7, 'C2 required_action_list_version reaches the caller');
+  eq(id.build_id, DECL.sysBuild, 'C2 build_id reaches the caller');
+  eq(id.router_build, DECL.rtrBuild, 'C2 router_build reaches the caller');
+  eq(id.transport_contract_version, DECL.transportContract, 'C2 transport_contract_version reaches the caller');
+  eq(id.deployed_action_contract_version, DECL.actionContract, 'C2 deployed_action_contract_version reaches the caller');
+  eq(id.required_action_list_version, DECL.listVersion, 'C2 required_action_list_version reaches the caller');
   eq(id.contract_version, '1', 'C2 contract_version reaches the caller');
   eq(id.answered_by_handler, 'doPost', 'C2 answered_by_handler reaches the caller');
   ok(id.router_response_identity && id.router_response_identity.emits_handler === true,
@@ -259,21 +287,25 @@ checks.push(client.DB.checkDeploymentContract().then(function (v) {
   eq(v.endpoint && v.endpoint.endpointClass, 'STABLE_EXEC', 'C4 the endpoint classifies as STABLE_EXEC');
   eq(v.endpoint && v.endpoint.ok, true, 'C4 and the endpoint gate passes, as the live report showed');
 
-  // §D — WHAT IS STILL GENUINELY WRONG. The identity now flows, so the verdict is decided on real evidence.
-  section('§D — THE VERDICT IS NOW DECIDED ON TRUE EVIDENCE, AND IT NAMES A SECOND, SEPARATE FAULT');
+  // §D — WHAT R1 LEFT OPEN, AND WHAT R2 CLOSED.
+  //
+  // R1 repaired the lost envelope, and the verdict then became a mismatch decided on REAL evidence: four probed
+  // actions unresolved. R1 deliberately did not fix them, because both corrections moved Apps Script contract
+  // stamps the published deployment carried. R2 made those corrections, so this section now asserts the CLOSED
+  // state — and keeps R1's structural findings, inverted: what R1 proved absent, R2 proves present.
+  section('§D — R1 FOUND FOUR UNRESOLVED ACTIONS; R2 CLOSED ALL FOUR AND THE GATE NOW PASSES');
   var probe = id.caller_probe || {};
-  eq(probe.all_present, false, 'D1 the caller probe reports items missing — on evidence, not on a lost envelope');
   eq((probe.missing_symbols || []).length, 0, 'D1 every owner SYMBOL the frontend requires is present');
-  var miss = probe.missing_actions || [];
-  eq(miss.length, 4, 'D1 exactly four probed ACTIONS are unresolved: ' + miss.join(', '));
-  eq(v.ok, false, 'D2 so the verdict is still a mismatch');
-  eq(v.code, 'DEPLOYMENT_CONTRACT_MISMATCH', 'D2 and it is the ACTION-contract mismatch, not the null-identity one');
-  ok(/is missing 4 item/.test(v.message), 'D2 the message now names how many and which, instead of "does not report a version"');
-  ok(!/does not report an action-contract version/.test(v.message),
-    'D2 the unfalsifiable message is gone — the deployment DID report one');
-  return miss;
-}).then(function (miss) {
-  // The four are NOT one fault. Three are a registry omission; one is a genuinely unrouted action.
+  eq((probe.missing_actions || []).length, 0,
+    'D1 and every probed ACTION now resolves — R1 reported four: ' + (probe.missing_actions || []).join(', '));
+  eq(probe.all_present, true, 'D1 so the non-self-referential caller probe is satisfied');
+  eq(v.ok, true, 'D2 the verdict is DEPLOYMENT_CONTRACT_OK');
+  eq(v.code, 'DEPLOYMENT_CONTRACT_OK', 'D2 reached against the real executed router, not a synthetic answer');
+  eq(v.message, '', 'D2 with no remaining complaint to make');
+  return probe;
+}).then(function () {
+  // The four, each proven on BOTH axes now: a real router branch AND a registry entry. R1 proved three had the
+  // branch but no entry, and one had neither.
   var RTR = read('assets/specs/active/apps-script/01_router.gs');
   var G63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
   var GS_ALL = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); })
@@ -281,22 +313,22 @@ checks.push(client.DB.checkDeploymentContract().then(function (v) {
   function routed(a) { return new RegExp("action === '" + a.replace(/\./g, '\\.') + "'").test(RTR); }
   function registered(a) { return new RegExp("action: '" + a.replace(/\./g, '\\.') + "'").test(G63); }
 
-  ['shipment.eta.update', 'shipment.route.advance', 'skuDetails.workspace.get'].forEach(function (a) {
-    ok(miss.indexOf(a) !== -1, 'D3 ' + a + ' is reported missing');
-    ok(routed(a), 'D3 ...but 01_router.gs DOES dispatch it, so the deployment can serve it');
-    ok(!registered(a), 'D3 ...and it is ABSENT from SYS_REQUIRED_ACTIONS_, which is the only table sysProbeRequested_ '
-      + 'resolves against — so this is a FALSE missing report caused by an incomplete registry, not a stale deployment');
+  [['shipment.eta.update', 'handleUpdateShipmentEta_'],
+   ['shipment.route.advance', 'handleAdvanceShipmentRoutePoint_'],
+   ['skuDetails.workspace.get', 'handleSkuDetailsWorkspaceGet_']].forEach(function (p) {
+    ok(routed(p[0]), 'D3 ' + p[0] + ' is routed (it always was — R1 proved this)');
+    ok(registered(p[0]), 'D3 ...and R2 added the SYS_REQUIRED_ACTIONS_ entry that was missing, so the probe can '
+      + 'now resolve a deployment that was serving it all along');
+    ok(new RegExp('function\\s+' + p[1] + '\\s*\\(').test(GS_ALL), 'D3 ...against a handler that is defined');
   });
-  var UNROUTED = 'system.executionPlanDuplicateLineDiagnostic';
-  ok(miss.indexOf(UNROUTED) !== -1, 'D4 ' + UNROUTED + ' is reported missing');
-  ok(/function handleExecutionPlanDuplicateLineDiagnostic_/.test(GS_ALL),
-    'D4 ...its handler EXISTS in 68_ and is documented there as an action');
-  ok(!routed(UNROUTED), 'D4 ...but 01_router.gs has NO dispatch branch for it, so the handler is UNREACHABLE');
-  ok(!registered(UNROUTED), 'D4 ...and it is unregistered too — this one is a TRUE missing action');
 
-  // Pinned deliberately: both corrections move Apps Script contract stamps that the published deployment
-  // carries, so they are a separate, user-owned release decision and are NOT made silently here.
-  ok(true, 'D5 both remaining faults are Apps Script source corrections, reported rather than assumed');
+  var WAS_UNROUTED = 'system.executionPlanDuplicateLineDiagnostic';
+  ok(routed(WAS_UNROUTED), 'D4 ' + WAS_UNROUTED + ' now HAS a router dispatch branch — R1 proved it had none in '
+    + 'any commit ever, while its handler sat defined and unreachable');
+  ok(registered(WAS_UNROUTED), 'D4 ...and a registry entry');
+  ok(/function handleExecutionPlanDuplicateLineDiagnostic_/.test(GS_ALL), 'D4 ...bound to the handler 68_ already had');
+  ok(/body\.__km_handler = 'doPost';\s*\n\s*return jsonResponse_\(handleExecutionPlanDuplicateLineDiagnostic_\(body\)\)/.test(RTR),
+    'D4 ...and the branch sets the canonical __km_handler marker before delegating');
 }));
 
 // =============================================================================================================
@@ -318,12 +350,13 @@ checks.push(withAnswer(function (b) { delete b.deployed_action_contract_version;
   eq(v.code, 'DEPLOYMENT_CONTRACT_MISMATCH', 'E1 as a contract mismatch');
   ok(/does not report an action-contract version/.test(v.message),
     'E1 with the message that is now reachable ONLY when the deployment genuinely omits the field');
-  eq(v.identity.build_id, 'F1-7N-FB-4E', 'E1 and the identity it DID report is still carried, not blanked');
+  eq(v.identity.build_id, DECL.sysBuild, 'E1 and the identity it DID report is still carried, not blanked');
 }));
 
 checks.push(withAnswer(function (b) { b.deployed_action_contract_version = 6; }).then(function (v) {
   eq(v.ok, false, 'E2 a LOWER action contract is still refused');
-  ok(/action contract is v6 but this frontend needs v7/.test(v.message), 'E2 naming both versions');
+  ok(new RegExp('action contract is v6 but this frontend needs v' + DECL.actionContract).test(v.message),
+    'E2 naming both versions: the deployed v6 and the pin this build actually carries');
 }));
 
 checks.push(withAnswer(function (b) { b.transport_contract_version = null; }).then(function (v) {
@@ -350,12 +383,14 @@ checks.push(withAnswer(function (b) {
 }).then(function (v) {
   eq(v.ok, true, 'E6 with every probed item present the gate PASSES — it is falsifiable in both directions now');
   eq(v.code, 'DEPLOYMENT_CONTRACT_OK', 'E6 and reports the contract as OK');
-  eq(v.identity.build_id, 'F1-7N-FB-4E', 'E6 carrying the real identity');
+  eq(v.identity.build_id, DECL.sysBuild, 'E6 carrying the real identity');
 }));
 
 // The client pins are not lowered, and no identity value is defaulted to a literal.
-eq(probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_, 7, 'E7 the pinned action-contract minimum is unchanged at 7');
-eq(probeClient.sb.KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_, 1, 'E7 the pinned transport-contract minimum is unchanged at 1');
+ok(probeClient.sb.KM_EXPECTED_ACTION_CONTRACT_VERSION_ >= FLOOR_ACTION_CONTRACT,
+  'E7 the pinned action-contract minimum is never LOWERED below v' + FLOOR_ACTION_CONTRACT);
+eq(probeClient.sb.KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_, DECL.transportContract,
+  'E7 and the transport-contract pin still agrees with the deployment');
 var cdcSrc = DBAPI_SRC.slice(DBAPI_SRC.indexOf('window.KM.DB.checkDeploymentContract'),
   DBAPI_SRC.indexOf('window.KM.DB.getRequestOrderSendDiagnosticStatus'));
 ok(!/build_id\s*[:=]\s*['"]F1-/.test(cdcSrc), 'E8 the client never defaults build_id to a literal build id');

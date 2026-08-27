@@ -652,13 +652,29 @@ ok(!/missing_actions=\[\]/.test(DBAPIC) || /missing_actions_is_self_referential/
   ok(RTR.indexOf(f) > 0, 'H6 the router emits ' + f.replace(':', ''));
 });
 ok(/handler: 'doPost'/.test(RTR), 'H6 including on the doPost side, so its answer can never read as a downgrade');
-ok(/RTR_BUILD_VERSION_ = 'F1-7N-FB-4E'/.test(RTR), 'H7 the router build stamp advanced');
-ok(/SYS_BUILD_VERSION_ = 'F1-7N-FB-4E'/.test(HLTH), 'H7 as did the health owner’s');
-ok(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E'/.test(HLTH), 'H7 and the manifest expects the new router build');
-ok(/'63_api_v1_system_health\.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E'/.test(HLTH), 'H7 and the new health build');
-// The ACTION contract deliberately did NOT move: no router action was added or removed this round.
-ok(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 7/.test(HLTH), 'H8 the ACTION contract stays v7 — no action was added or removed');
-ok(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7/.test(DBAPIC), 'H8 and the frontend still expects v7 — the two axes are independent');
+// F1-7N-FB-4E-R2 — STATED AS A RULE, NOT AS FROZEN STRINGS. This block pinned 'F1-7N-FB-4E' and 7 as
+// literals, and R2 legitimately moved both: it added a router action, which is exactly the condition the
+// action contract's own rule names. Literals here made a CORRECT bump look like a regression — the same trap
+// this file already documents for release tokens twenty lines below, so it gets the same treatment. What must
+// hold is that the stamps are FB-4E or later, that the manifest expects what the files declare, and that the
+// two contract axes stay independent.
+var RTR_STAMP = /RTR_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(RTR);
+var SYS_STAMP = /SYS_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(HLTH);
+ok(!!RTR_STAMP, 'H7 the router build stamp is FB-4E or a later revision of it');
+ok(!!SYS_STAMP, 'H7 as is the health owner’s');
+ok(RTR_STAMP && new RegExp("'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + RTR_STAMP[1] + "'").test(HLTH),
+  'H7 and the manifest expects exactly the router build the router declares');
+ok(SYS_STAMP && new RegExp("'63_api_v1_system_health\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + SYS_STAMP[1] + "'").test(HLTH),
+  'H7 and exactly the health build 63_ declares');
+// THE TWO AXES ARE INDEPENDENT, which is the claim this section actually exists to defend. FB-4E moved the
+// TRANSPORT contract and left the ACTION contract alone; R2 did the reverse. Both are correct, and neither may
+// go backwards.
+var ACT = Number(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(HLTH)[1]);
+var ACT_PIN = Number(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPIC)[1]);
+ok(ACT >= 7, 'H8 the ACTION contract is v7 or later (v' + ACT + ') and never goes backwards');
+eq(ACT_PIN, ACT, 'H8 and the frontend pin agrees with it, so the two sides cannot drift apart');
+ok(/SYS_TRANSPORT_CONTRACT_VERSION_ = 1/.test(HLTH) && /KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = 1/.test(DBAPIC),
+  'H8 while the TRANSPORT axis stays v1 — no router response-identity field changed — which is what makes them independent');
 
 // =============================================================================================================
 section('§H/§J14 — every changed transport-critical asset carries the NEW release token');
@@ -678,7 +694,10 @@ var CHANGED_ASSETS = ['assets/js/api/km-transport.js', 'assets/js/api/km-data-ac
 // whole co-deployed set moves together, which is what the one-token assertion below exists to enforce.
 var STALE_TOKENS = ['fb4d-site-inventory-20260826', 'sku-read-path-20260826', 'catseries-20260820',
   'whmoreopts-20260820', 'donenotice-20260811', 'r6a1-request-send-20260822',
-  'fb4e-transport-20260826'];
+  'fb4e-transport-20260826',
+  // F1-7N-FB-4E-R2: R1's token joins the list for the same reason FB-4E's did -- R1 shipped, R2 changed
+  // operation-system-db-api.js again, so carrying R1's token would serve the pre-R2 client from cache.
+  'fb4er1-contract-probe-20260827'];
 var tokens = {};
 CHANGED_ASSETS.forEach(function (a) {
   var m = new RegExp('src="' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([^"]+)"').exec(HTML);

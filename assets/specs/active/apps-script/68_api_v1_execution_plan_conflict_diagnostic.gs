@@ -30,7 +30,10 @@
 
 // FB-4D §C changed this file: the duplicate diagnostic now reports its SCOPE and can no longer answer an
 // unqualified zero. The stamp moves with the behaviour.
-var EPC_BUILD_VERSION_ = 'F1-7N-FB-4D';
+// F1-7N-FB-4E-R2 changed this file again: the duplicate diagnostic became REACHABLE over the network for the
+// first time, which required a scope guard on the routed path and an envelope that names the action it is
+// actually answering. The stamp moves with the behaviour.
+var EPC_BUILD_VERSION_ = 'F1-7N-FB-4E-R2';
 var EPC_DRAFTS_TABLE_ = 'shipping_allocation_drafts';
 var EPC_DRAFT_LINES_TABLE_ = 'shipping_allocation_draft_lines';
 var EPC_PLANS_TABLE_ = 'shipping_plans';
@@ -196,12 +199,17 @@ function epcDispositions_(ctx) {
 // IMPURE layer — read-only sheet access
 // ============================================================================================================
 
-function epcEnvelope_(ok, data, errors) {
+// F1-7N-FB-4E-R2 — THE ENVELOPE NOW NAMES THE ACTION IT IS ANSWERING. It was hardcoded to
+// 'system.executionPlanConflictDiagnostic' for both handlers in this file, which was harmless while only the
+// conflict diagnostic was routed and became a lie the moment the duplicate diagnostic got a route: a response
+// whose own meta misidentifies the action is exactly the class of self-description defect this round exists to
+// remove. The parameter DEFAULTS to the previous value, so the conflict diagnostic's output is unchanged.
+function epcEnvelope_(ok, data, errors, action) {
   return {
     success: !!ok,
     data: ok ? (data === undefined ? null : data) : null,
     errors: ok ? [] : (errors || []),
-    meta: { apiVersion: '1', action: 'system.executionPlanConflictDiagnostic', build: EPC_BUILD_VERSION_,
+    meta: { apiVersion: '1', action: action || 'system.executionPlanConflictDiagnostic', build: EPC_BUILD_VERSION_,
       read_only: true, db_writes: 0, drive_writes: 0, property_writes: 0, status_transitions: 0, emails: 0,
       rows_migrated: 0, rows_deleted: 0, locks_taken: 0, demo_mutations: 0 }
   };
@@ -616,13 +624,44 @@ function handleExecutionPlanDuplicateLineDiagnostic_(body) {
   var wantLine = epcStr_(b0.allocation_draft_line_id || b0.allocationDraftLineId);
   var wantSku = epcUc_(b0.sku);
 
+  // F1-7N-FB-4E-R2 §4 — THE MINIMUM GUARD REQUIRED TO EXPOSE THIS OVER THE NETWORK, AND WHY IT IS THIS ONE.
+  //
+  // WHAT WAS ALREADY TRUE, so none of it is re-implemented here. This handler holds no write primitive at all:
+  // its only Google-service call is SpreadsheetApp.openById, and it takes no lock, sets no value, appends no
+  // row and deletes none. Deletion lives in TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP, which is editor-only, is not
+  // routed, and additionally demands TEMP_DUPFIX_MODE_ === 'COMMIT' and a confirmation checksum covering the
+  // exact rows — so a route to the REPORT cannot become a route to the repair. It already fails closed on an
+  // unreachable database and on a missing lines table, and it already masks ids through epcIdRef_.
+  //
+  // WHAT WAS MISSING, and it only becomes a problem once this is reachable from a browser: every filter is
+  // OPTIONAL, so an empty body scanned the ENTIRE shipping_allocation_draft_lines table. That is defensible for
+  // an editor-run report and is an unbounded read once it has a URL. So a ROUTED request must NAME A SCOPE.
+  //
+  // The gate keys on __km_handler, which the router sets: an editor invocation never carries it, so
+  // TEMP_EXECUTION_PLAN_DUPLICATE_DIAGNOSE keeps its whole-table behaviour exactly. It refuses BEFORE the
+  // spreadsheet is opened, so a refused request reads nothing at all.
+  //
+  // THIS IS A BOUND ON EXPOSURE, NOT AN AUTHORIZATION MODEL, and the difference is worth stating rather than
+  // blurring. This project has no per-user role gate anywhere in the API layer: 45_ says so outright, and its
+  // authority helper returns { ok: true, model: 'DEPLOYMENT_ACCESS' } precisely so it does not fabricate an
+  // identity check. The boundary for every action, this one included, is who can reach the Web App deployment.
+  // Inventing a role check here would add no boundary; it would only add a place where one appears to exist.
+  if (body.__km_handler && !wantDraft && !wantLine && !wantSku) {
+    return epcEnvelope_(false, null, [{
+      code: 'DIAGNOSTIC_SCOPE_REQUIRED',
+      message: 'This diagnostic is read-only, but over the network it must be given a scope: supply at least one of '
+        + 'allocation_draft_id, allocation_draft_line_id or sku. Nothing was read.',
+      read_only: true, db_writes: 0, rows_read: 0
+    }], 'system.executionPlanDuplicateLineDiagnostic');
+  }
+
   var ss;
   try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
-  catch (e) { return epcEnvelope_(false, null, [{ code: 'DB_NOT_REACHABLE', message: 'the configured production database could not be opened read-only' }]); }
+  catch (e) { return epcEnvelope_(false, null, [{ code: 'DB_NOT_REACHABLE', message: 'the configured production database could not be opened read-only' }], 'system.executionPlanDuplicateLineDiagnostic'); }
 
   var sh = null;
   try { sh = ss.getSheetByName(EPC_DRAFT_LINES_TABLE_); } catch (e2) { sh = null; }
-  if (!sh) return epcEnvelope_(false, null, [{ code: 'LINES_TABLE_MISSING', message: EPC_DRAFT_LINES_TABLE_ + ' is not present' }]);
+  if (!sh) return epcEnvelope_(false, null, [{ code: 'LINES_TABLE_MISSING', message: EPC_DRAFT_LINES_TABLE_ + ' is not present' }], 'system.executionPlanDuplicateLineDiagnostic');
 
   var data = sh.getDataRange().getValues();
   var headers = (data[0] || []).map(function (h) { return epcStr_(h); });
@@ -776,7 +815,7 @@ function handleExecutionPlanDuplicateLineDiagnostic_(body) {
       : (scopeMismatch
         ? ('DIAGNOSTIC_SCOPE_MISMATCH (' + scopeMismatch.reason + ') — this run compared NOTHING, so it is not evidence that the table is clean. ' + scopeMismatch.detail)
         : ('No duplicate primary key exists in the scanned scope: ' + rows.length + ' row(s) matched out of ' + physicalRows + ' scanned, and every primary key appeared exactly once.'))
-  }, []);
+  }, [], 'system.executionPlanDuplicateLineDiagnostic');
 }
 
 // ---- editor-runnable READ-ONLY duplicate report ---------------------------------------------------------

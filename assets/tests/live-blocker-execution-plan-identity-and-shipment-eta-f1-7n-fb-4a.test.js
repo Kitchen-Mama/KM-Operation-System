@@ -597,7 +597,11 @@ ok(DEMO.indexOf('F1-7N-FB-4A') === -1, '18. the Demo seed carries no FB-4A marke
 section('19. deployment identity, the deferred map requirement, and the recorded baseline');
 // ==========================================================================================================
 var buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || ''), '19. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
+// F1-7N-FB-4E-R2 — the pattern admits a REVISION suffix. This project already stamps revisions
+// (59_ declares F1-7N-FB-4C-R1 and the manifest expects exactly that), so a rule that accepted only
+// F1-7N-FB-<n><A-Z> rejected a legitimate build the moment one was made. It still requires the canonical
+// shape; it no longer requires the round to have been a first cut.
+ok(/^F1-7N-FB-\d+[A-Z](-R\d+)?$/.test(buildNow || ''), '19. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
 var rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // F1-7N-FB-4E — RESTATED AT THE INVARIANT IT NAMES. Requiring 66_ to declare the same build as 63_ makes a
 // partial sync visible only by accident, and it forces an unnecessary edit to 66_ in every round that touches
