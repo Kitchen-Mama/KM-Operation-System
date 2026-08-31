@@ -5230,6 +5230,48 @@ function _irSharedRegistry_() {
 // therefore CANNOT be painted — not even for a frame. A remembered scope the registry rejects is discarded and
 // the page falls back to the pre-search state, with the reason available rather than silent.
 // =============================================================================================================
+// F1-7N-FB-4E-R4B §A -- WHY THE PAGE SAID "Searching..." OVER AN ANSWER IT ALREADY HAD.
+//
+// R3 gave the mount a coalesced bootstrap: with a remembered scope it validates the registry and reads the
+// scoped workspace TOGETHER under one loading state. That was right for a page that has nothing. It was wrong
+// for a page that has EVERYTHING: leaving Site Inventory and coming back re-entered LOADING unconditionally, so
+// the table painted "Searching..." over a model that was still in memory and a scope that was still applied.
+// Pressing Search then "restored" the result instantly -- which is the tell: nothing had to be fetched at all.
+// The bootstrap simply had no branch for "the answer is already here".
+//
+// R4A1 §E's in-flight reuse cannot help. It shares an OPEN request and evicts on settlement, by design: it is
+// what stops two mounts issuing two reads, not what lets a finished read be reused. Reuse of a FINISHED result
+// is a different mechanism, and this is it.
+//
+// WHAT MAKES REUSE SAFE HERE, and it is a property of this page rather than a general licence:
+//   * the workspace read is scope-INDEPENDENT -- the server returns the primary-render table set and the CLIENT
+//     scopes it at render time from `applied`. So a retained model is not "the previous scope's data"; the
+//     scope lives in `applied`, which is assigned in exactly one validated place (§B.5).
+//   * only a SUCCESSFUL read is retained, and only a successful read stamps a completion time, so a failure is
+//     never restorable and never paints as current.
+//   * the restore is BOUNDED by that stamp. An aged result is not painted; it is re-read like any other.
+//   * an explicit Search never restores. It always performs a fresh read, because a person pressing Search is
+//     asking for exactly that.
+//   * revalidation runs QUIETLY: it may replace data, it may never replace a valid table with a loading one.
+var _IR_RESULT_TTL_MS = 10 * 60 * 1000;   // ten minutes: long enough for navigation, short enough to be current
+var _irReadModelAt = 0;                    // when the retained model COMPLETED (0 = never)
+function _irNowMs_() { try { return Date.now(); } catch (e) { return 0; } }
+// Canonical scope equality. Compared field by field on normalized strings, never by object identity and never
+// by JSON key order, so two equivalent scopes built at different times compare equal and two different ones
+// never do.
+function _irSameScope_(a, b) {
+    if (!a || !b) return false;
+    return String(a.country || '') === String(b.country || '')
+        && String(a.marketplaceId || '') === String(b.marketplaceId || '');
+}
+// Is there a completed result that may be painted right now, for THIS scope?
+function _irRestorableResult_(scope) {
+    if (!scope || !_irReadModel || !_irReadModelAt) return { ok: false, reason: 'NO_COMPLETED_RESULT' };
+    if (!_irSameScope_(_irSearch.applied, scope)) return { ok: false, reason: 'SCOPE_NOT_APPLIED' };
+    var age = _irNowMs_() - _irReadModelAt;
+    if (age < 0 || age > _IR_RESULT_TTL_MS) return { ok: false, reason: 'RESULT_EXPIRED', ageMs: age };
+    return { ok: true, ageMs: age };
+}
 var _IR_SCOPE_MEMORY_KEY = 'km_site_inventory_last_scope_v1';
 var _IR_SCOPE_MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // a month: this is a convenience, not an authority
 var _irBootstrap = { ran: false, mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
@@ -5286,6 +5328,36 @@ function _irBootstrapScope_() {
         _irBootstrap.reason = 'Demo owns its own static options';
         return Promise.resolve(_irEnsureRegistryLoaded_());
     }
+    // F1-7N-FB-4E-R4B §A -- THE RESTORE BRANCH, and it comes BEFORE anything that can paint a loading state.
+    // A validated completed result for this exact scope is painted immediately: zero blocking requests, no
+    // "Searching...", the table exactly as it was left. Revalidation still runs, quietly, so the server keeps the
+    // final word without the screen going empty to ask for it.
+    var restorable = _irRestorableResult_(remembered);
+    if (restorable.ok) {
+        _irBootstrap.mode = 'RESTORED';
+        _irBootstrap.reason = 'a completed result for this scope was still valid (' + Math.round(restorable.ageMs / 1000) + 's old) -- painted immediately, revalidating quietly';
+        _irBootstrap.registryRequests = 0;
+        _irBootstrap.workspaceRequests = 0;
+        _irSetSelectors_(remembered);
+        _irSearch.status = 'READY';
+        _irSearch.error = null;
+        if (typeof renderReplenishment === 'function') renderReplenishment();
+        // QUIET revalidation. It never touches `status`, so it cannot turn a painted table back into a loading
+        // one, and a failure leaves the restored result exactly where it is -- the data on screen was valid when
+        // it was read and a failed revalidation does not make it invalid.
+        _irBootstrap.revalidating = true;
+        var qSeq = _irSearch.seq;
+        Promise.resolve(_irWorkspaceRefresh_({ quiet: true })).then(function () {
+            if (qSeq !== _irSearch.seq) return;                  // a real Search superseded the restore
+            if (!_irSameScope_(_irSearch.applied, remembered)) return;   // the scope moved on
+            _irBootstrap.revalidating = false;
+            _irBootstrap.revalidated = true;
+            if (typeof renderReplenishment === 'function') renderReplenishment();
+        }, function () { _irBootstrap.revalidating = false; _irBootstrap.revalidateFailed = true; });
+        return Promise.resolve(remembered);
+    }
+    _irBootstrap.restoreReason = restorable.reason;
+
     _irBootstrap.mode = 'COALESCED';
     _irBootstrap.reason = 'a remembered scope: registry validation and the scoped workspace read run together';
     _irBootstrap.registryRequests = 1;
@@ -5335,6 +5407,13 @@ window._irBootstrapDiagnostic_ = function () {
     var snap = reg ? reg.getState() : null;
     return {
         mode: _irBootstrap.mode, reason: _irBootstrap.reason, scope_valid: _irBootstrap.scopeValid,
+        // F1-7N-FB-4E-R4B §A
+        restore_reason: _irBootstrap.restoreReason || null,
+        revalidating: _irBootstrap.revalidating === true,
+        revalidated: _irBootstrap.revalidated === true,
+        revalidate_failed: _irBootstrap.revalidateFailed === true,
+        result_age_ms: _irReadModelAt ? (_irNowMs_() - _irReadModelAt) : null,
+        result_ttl_ms: _IR_RESULT_TTL_MS,
         registry_requests: _irBootstrap.registryRequests, workspace_requests: _irBootstrap.workspaceRequests,
         registry_from_cache: snap ? (snap.from_cache === true) : null,
         registry_total_requests: snap ? snap.requests : null,
@@ -5581,9 +5660,13 @@ function _irRenderError_(err) {
 
 // Scoped read: Workspace (canonical) → getWorkspace('inventoryReplenishment') → adapt → _irReadModel. Fail-closed (throws;
 // NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
-function _irWorkspaceRefresh_() {
+function _irWorkspaceRefresh_(opts) {
     var mySeq = ++_irReadSeq;
-    var rg = _irRegion_(); if (rg) rg.beginLoad(!!_irReadModel);
+    // F1-7N-FB-4E-R4B §A -- a QUIET read drives no load region at all. This is the difference between "refresh
+    // the data behind a table that is already correct" and "tell the user we have nothing", and the two must not
+    // share a code path: the second is what painted "Searching..." over a valid result.
+    var quiet = !!(opts && opts.quiet);
+    var rg = quiet ? null : _irRegion_(); if (rg) rg.beginLoad(!!_irReadModel);
     if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
         return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'Inventory Replenishment Workspace API unavailable.' });
     }
@@ -5591,6 +5674,9 @@ function _irWorkspaceRefresh_() {
         if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
         if (env && env.success && env.data) {
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            // F1-7N-FB-4E-R4B §A — the completion stamp. Only a SUCCESSFUL read sets it, so a failure can never
+            // present itself as a completed result, and an aged result can be told from a current one.
+            _irReadModelAt = _irNowMs_();
             if (rg) rg.set((_irReadModel.getMarketplaceSkus && _irReadModel.getMarketplaceSkus.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
             return _irReadModel;
         }

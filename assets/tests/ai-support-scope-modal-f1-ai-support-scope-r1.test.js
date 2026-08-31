@@ -88,7 +88,14 @@ ok(/_openReplenScopeModal[\s\S]{0,600}window\.KM\.scopeModal\.open\(/.test(INV_J
 section('E/G — Order Planning: AI Plan + Recalculate Current Scope open the modal');
 ok(/runRoAiSupport[\s\S]{0,220}kind === 'aiplan'[\s\S]{0,40}_openRoScopeModal\('aiplan'\)/.test(RO_JS), 'G OP aiplan → _openRoScopeModal(aiplan)');
 ok(/kind === 'recalcScope'[\s\S]{0,40}_openRoScopeModal\('recalc'\)/.test(RO_JS), 'E OP recalcScope → _openRoScopeModal(recalc)');
-ok(/_openRoScopeModal[\s\S]{0,600}window\.KM\.scopeModal\.open\(/.test(RO_JS), 'E2 _openRoScopeModal calls window.KM.scopeModal.open');
+// F1-7N-FB-4E-R4B — anchored on the FUNCTION, not on a character window. R4B added a guard above the delegation
+// so the modal-unavailable branch can no longer end in a silent `return` (§D forbids a click that ends in
+// silence), and that pushed the two past the old 600-character window. The rule this line defends is that the
+// entry point delegates to the shared modal, so it is now checked inside the function that must do so.
+var _roModalFn = /function _openRoScopeModal\(action\) \{[\s\S]*?\n\}/.exec(RO_JS);
+ok(!!_roModalFn, 'E2 _openRoScopeModal exists');
+ok(_roModalFn && /window\.KM\.scopeModal\.open\(/.test(_roModalFn[0]), 'E2 _openRoScopeModal calls window.KM.scopeModal.open');
+ok(_roModalFn && !/\n        return;\n/.test(_roModalFn[0]), 'E2 and no branch of it ends in a bare silent return');
 
 section('H — current toolbar scope prefills the modal');
 ok(/prefill:\s*_irScopeModalPrefill_\(\)/.test(INV_JS) && /getElementById\('replenCountry'\)/.test(INV_JS) && /getElementById\('replenMarketplace'\)/.test(INV_JS), 'H Inventory prefill reads toolbar country/marketplace');

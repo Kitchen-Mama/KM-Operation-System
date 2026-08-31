@@ -26,12 +26,41 @@
     // Authority levels, reported back so a caller (and a test) can prove which source answered.
     // The numbers match the ordered lists in the localization authority decision.
     var LEVEL = {
+        // F1-7N-FB-4E-R4B §E — the HOUSE display name, and why it is a LEVEL rather than an edit to the asset.
+        //
+        // The vendored asset carries Natural Earth's NAME_ZHT, which labels CN as 中華人民共和國 and TW as 中華民國.
+        // Those are the formal state names; this operation's users read the map in the short forms 中國 and 台灣.
+        // Three things follow from that, and each is why this sits here:
+        //
+        //   · IT IS A LABEL, NOT DATA. The asset is a pinned, checksummed vendor extract with a documented
+        //     provenance chain (source, dataset, version, sha256). Editing it would break that chain and would
+        //     make the map branch's regenerated asset conflict on merge. The asset is untouched.
+        //   · IT IS ONE-WAY. Nothing resolves a label back into an identifier — the ISO code is the identity and
+        //     is returned beside the name on every call, exactly as before.
+        //   · IT MUST BE OBSERVABLE. A bare override would make "the house name answered" and "the vendored name
+        //     answered" indistinguishable, which is the failure this module was built to prevent. So it reports
+        //     its own level, and a test asserts the level rather than only the string.
+        ZH_HANT_HOUSE_DISPLAY: 'ZH_HANT_HOUSE_DISPLAY',   // countries 0 — house short form, ahead of the vendor
         ZH_HANT_PINNED_SOURCE: 'ZH_HANT_PINNED_SOURCE',   // countries 1 · admin1 1
         ZH_HANT_VENDORED_CLDR: 'ZH_HANT_VENDORED_CLDR',   // countries 2 (unused: level 1 covers every ISO country)
         ZH_HANT_REVIEWED_LIST: 'ZH_HANT_REVIEWED_LIST',   // continents 1 · oceans 1
         ENGLISH_CANONICAL: 'ENGLISH_CANONICAL',           // countries 3 · continents 2 · admin1 3
         CODE: 'CODE',                                     // countries 4 · admin1 4
         HIDDEN: 'HIDDEN'                                  // continents 3 · oceans 3 — no reliable name exists
+    };
+
+    // F1-7N-FB-4E-R4B §E — the house display names. Deliberately TINY and explicit: two entries, keyed by ISO
+    // code, applied only to the geographic zh label. Adding a third requires an explicit decision, which is the
+    // point — this is not a translation layer and must not become one.
+    //
+    // MAINLINE/MAP-BRANCH RECONCILIATION NOTE: `feature/map-texture-3` regenerates
+    // assets/js/data/geo-names-zh-hant.js from Natural Earth. That regeneration cannot conflict with this table,
+    // because this table is in a different file and overrides the asset rather than editing it. On merge, keep
+    // BOTH: the regenerated asset AND this override. If the map branch ever adds its own alias mechanism, this
+    // block is the one to remove — not the entries, which are the user-facing decision.
+    var HOUSE_COUNTRY_ZH = {
+        CN: '\u4e2d\u570b',      // 中國   (asset: 中華人民共和國)
+        TW: '\u53f0\u7063'       // 台灣   (asset: 中華民國)
     };
 
     function dataset() {
@@ -55,6 +84,10 @@
             return en0 ? { name: en0, level: LEVEL.ENGLISH_CANONICAL, iso: code }
                        : { name: code, level: LEVEL.CODE, iso: code };
         }
+        // The house short form comes first, and ONLY for the zh label — `lang: 'en'` above already returned, so
+        // the English/ISO surfaces are untouched by construction rather than by a second rule.
+        var house = str(HOUSE_COUNTRY_ZH[code]);
+        if (house) return { name: house, level: LEVEL.ZH_HANT_HOUSE_DISPLAY, iso: code };
         var zh = d && d.countries ? str(d.countries[code]) : '';
         if (zh) return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, iso: code };
         var cldr = d && d.countriesCldr ? str(d.countriesCldr[code]) : '';

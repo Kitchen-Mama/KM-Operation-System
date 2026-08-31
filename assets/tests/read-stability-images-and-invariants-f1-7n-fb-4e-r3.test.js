@@ -305,7 +305,7 @@ eq(distinct.length, 1, 'G9 every asset R3 changed shares ONE token, so they cann
 // step, and that they are not stranded on a superseded token.
 var ROUND_TOKENS = ['donenotice-20260811', 'fb4e-transport-20260826', 'fb4c-scope-registry-20260826',
   'fb4er1-contract-probe-20260827', 'fb4er2-action-registry-20260827', 'fb4er3-lifecycle-20260827',
-  'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827'];
+  'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831'];
 var FLOOR = ROUND_TOKENS.indexOf('fb4er3-lifecycle-20260827');
 var at = ROUND_TOKENS.indexOf(distinct[0]);
 ok(at >= FLOOR, 'G9 the token is at or after R3 in the release order (' + distinct[0] + ') — a monotonic floor, not a pinned literal');

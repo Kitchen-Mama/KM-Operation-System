@@ -1055,19 +1055,26 @@ checks.push(Promise.resolve().then(function () {
     '9.10 and still expects 70_ at R3 — an unchanged file is not restamped to look current');
 
   // The deployment surface of this round, asserted rather than described.
+  // F1-7N-FB-4E-R4B — CLOSED AT BOTH ENDS, and this is the second time in two rounds.
+  //
+  // R4A's §8 was fixed in R4A1 with exactly this reasoning — "a claim about a round belongs to that round's
+  // COMMIT RANGE" — and then R4A1's own §9 was written the brittle way again: PRE_SHA against the WORKING TREE,
+  // so the next round's files get attributed to R4A1. The next round is this one, and it broke, exactly as the
+  // R4A1 commit message predicted for the general case. The range now ends at R4A1's own POST commit.
   var cp = require('child_process');
+  var POST_SHA = '99990f0';
   function changedUnder(spec) {
     try {
-      var out = cp.execSync('git diff --name-only ' + PRE_SHA + ' -- "' + spec + '"', { cwd: ROOT, encoding: 'utf8' });
+      var out = cp.execSync('git diff --name-only ' + PRE_SHA + ' ' + POST_SHA + ' -- "' + spec + '"', { cwd: ROOT, encoding: 'utf8' });
       return out.trim() ? out.trim().split(String.fromCharCode(10)).map(function (x) { return x.trim(); }).filter(Boolean).sort() : [];
     } catch (e) { return ['GIT_ERROR:' + (e && e.message)]; }
   }
   var gs = changedUnder('assets/specs/active/apps-script');
   eq(gs.map(function (f) { return f.split('/').pop(); }).join(','), '01_router.gs,63_api_v1_system_health.gs',
-    '9.11 exactly two Apps Script files changed — the sync manifest is those two, in that order');
+    '9.11 R4A1 changed exactly two Apps Script files in its own commit range — that was its sync manifest');
   var runtime = changedUnder('assets/js').concat(changedUnder('assets/css'));
   eq(runtime.join(','), 'assets/js/api/km-api-foundation.js,assets/js/api/km-transport.js,assets/js/api/operation-system-db-api.js',
-    '9.12 exactly three runtime assets changed, and all three are the read boundary');
+    '9.12 R4A1 changed exactly three runtime assets, and all three are the read boundary');
   var HTML = read('index.html');
   var GROUP = ['assets/js/api/km-transport.js', 'assets/js/api/km-api-foundation.js',
     'assets/js/api/operation-system-db-api.js', 'assets/js/core/scope-registry.js'];
@@ -1078,7 +1085,10 @@ checks.push(Promise.resolve().then(function () {
     if (m && toks.indexOf(m[1]) === -1) toks.push(m[1]);
   });
   eq(toks.length, 1, '9.14 the coupled read-path group shares ONE token, so it cannot deploy out of step');
-  eq(toks[0], 'fb4er4a1-readtransport-20260827', '9.15 and it is this round\'s token');
+  // F1-7N-FB-4E-R4B — not pinned to R4A1's literal. The property is LOCKSTEP on a KNOWN release token, not one
+  // round's string; pinning the literal is what broke this on the very next round.
+  var KNOWN = ['fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831'];
+  ok(KNOWN.indexOf(toks[0]) !== -1, '9.15 and it is a known release token (' + toks[0] + ')');
 }));
 
 Promise.all(checks).then(function () {

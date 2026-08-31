@@ -88,10 +88,19 @@ eq(D.meta.country_name_source.sha256, '6866c877d39cba9c357620878839b336d569f8c66
   'B9 with the input SHA-256 recorded');
 
 // EXECUTE the resolver: level 1 for a real country
-[['TW', '中華民國'], ['US', '美國'], ['JP', '日本'], ['CN', '中華人民共和國'], ['GB', '英國'],
+[['US', '美國'], ['JP', '日本'], ['GB', '英國'],
  ['DE', '德國'], ['VN', '越南'], ['TH', '泰國'], ['MY', '馬來西亞'], ['KR', '大韓民國']].forEach(function (p) {
   var r = R.country(p[0]);
   eq([r.name, r.level], [p[1], R.LEVEL.ZH_HANT_PINNED_SOURCE], 'B10 ' + p[0] + ' resolves to zh-Hant from the pinned source');
+});
+// F1-7N-FB-4E-R4B §E — CN and TW are labelled by the HOUSE short form, ahead of the vendored formal state name.
+// Split out of the list above rather than deleted: the same two properties are still asserted (a real zh-Hant
+// name, from a NAMED authority) — only the owning authority differs, and the level proves which one answered.
+[['CN', '中國', '中華人民共和國'], ['TW', '台灣', '中華民國']].forEach(function (p) {
+  var r = R.country(p[0]);
+  eq([r.name, r.level], [p[1], R.LEVEL.ZH_HANT_HOUSE_DISPLAY], 'B10 ' + p[0] + ' resolves to the HOUSE short form');
+  eq(D.countries[p[0]], p[2], 'B10 ' + p[0] + ' — and the vendored asset is UNTOUCHED, still ' + p[2]);
+  eq(r.iso, p[0], 'B10 ' + p[0] + ' — the identifier is unchanged and still returned beside the name');
 });
 // every resolved country name must be free of Simplified-only characters. The control set is the one the
 // generator's own two-source test produced; a name containing any of them would be a leak.
@@ -118,7 +127,12 @@ eq([unknown.name, unknown.level], ['ZZ', R.LEVEL.CODE], 'B14 an unknown ISO code
 // ISO codes remain legal for operational/logistics use — an explicit language override, never the default
 var en = R.country('TW', { lang: 'en' });
 eq([en.name, en.level], ['Taiwan', R.LEVEL.ENGLISH_CANONICAL], 'B15 lang:en gives the operational English name');
-eq(R.country('TW').level, R.LEVEL.ZH_HANT_PINNED_SOURCE, 'B15 while the DEFAULT stays zh-TW');
+// F1-7N-FB-4E-R4B §E — B15 is about the LANGUAGE default, not about which zh authority answers. TW is now
+// labelled by the house short form, which is still a zh label and still not the English/ISO surface.
+var _tw15 = R.country('TW');
+ok(_tw15.level === R.LEVEL.ZH_HANT_HOUSE_DISPLAY || _tw15.level === R.LEVEL.ZH_HANT_PINNED_SOURCE,
+  'B15 while the DEFAULT stays zh-TW (level ' + _tw15.level + ')');
+ok(_tw15.name !== 'Taiwan' && _tw15.name !== 'TW', 'B15 and the default is never the English name or the code');
 
 // ================================================================================================================
 section('C — CONTINENTS: reviewed list, and the unnamed case is HIDDEN');
@@ -258,10 +272,17 @@ delete global.window.KM_GEO_NAMES_ZH_HANT;
 var s2 = R.status();
 eq([s2.loaded, s2.reason], [false, 'KM_GEO_NAMES_ZH_HANT_ABSENT'], 'G7 an ABSENT asset is a named fact');
 ok(/falls back to English or an ISO code/.test(s2.effect), 'G7 stating the consequence');
-var degraded = R.country('TW');
-eq(degraded.level, R.LEVEL.CODE, 'G8 and with no asset the resolver degrades to the ISO code — never throws');
+// F1-7N-FB-4E-R4B §E — probed with JP, not TW. The house display names do not come from the asset, so TW
+// legitimately keeps its label when the asset is absent; using it here would have tested the house table rather
+// than the degradation rule. JP is asset-owned, so it is the honest probe — and the house behaviour under an
+// absent asset is asserted immediately below rather than left as an unexamined side effect.
+var degraded = R.country('JP');
+eq(degraded.level, R.LEVEL.CODE, 'G8 and with no asset an asset-owned name degrades to the ISO code — never throws');
+var degradedHouse = R.country('TW');
+eq([degradedHouse.name, degradedHouse.level], ['台灣', R.LEVEL.ZH_HANT_HOUSE_DISPLAY],
+  'G8 a HOUSE name survives an absent asset, because it never depended on it');
 global.window.KM_GEO_NAMES_ZH_HANT = savedGlobal;
-eq(R.country('TW').name, '中華民國', 'G9 restoring the asset restores zh-Hant');
+eq(R.country('JP').name, '日本', 'G9 restoring the asset restores zh-Hant');
 
 // ================================================================================================================
 section('H — determinism');

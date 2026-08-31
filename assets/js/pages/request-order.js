@@ -1454,11 +1454,35 @@ function _roScopeModalPrefill_() {
     } catch (e) {}
     return out;
 }
+// F1-7N-FB-4E-R4B §D -- A CLICK MUST NEVER END IN SILENCE, AND THIS ONE DID.
+//
+// When window.KM.scopeModal is absent this fell through to the handlers WITHOUT a scope and, failing that,
+// to a bare `return`. A person clicking "AI Plan" then got nothing at all: no modal, no pending state, no
+// error -- which is exactly the live report, for both controls, from one missing script tag (§D, index.html).
+//
+// The tag is now there, so this branch should never run again. It is kept, and made LOUD, because "should
+// never run" is precisely the assumption that produced the silence: if the module ever fails to load, the
+// page now SAYS so instead of swallowing the click.
+function _roScopeModalUnavailable_(action) {
+    var msg = 'The scope selector could not be opened, so "' + (action === 'aiplan' ? 'AI Plan' : 'Recalculate Current Scope')
+        + '" was not started. Nothing was run and nothing was changed. Reload the page; if it repeats, the page '
+        + 'is missing assets/js/utils/scope-select-modal.js.';
+    try {
+        if (window.KM && window.KM.toast && typeof window.KM.toast.error === 'function') { window.KM.toast.error(msg); return true; }
+    } catch (e) {}
+    try { if (typeof window.alert === 'function') { window.alert(msg); return true; } } catch (e) {}
+    try { if (typeof console !== 'undefined' && console.error) console.error('[RO][SCOPE_MODAL_UNAVAILABLE] ' + msg); } catch (e) {}
+    return false;
+}
 function _openRoScopeModal(action) {
     if (!(window.KM && window.KM.scopeModal && typeof window.KM.scopeModal.open === 'function')) {
-        if (action === 'aiplan' && typeof handleRequestOrderAiPlan === 'function') return handleRequestOrderAiPlan();
-        if (action === 'recalc' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
-        return;
+        // A concrete scope on the toolbar is still enough to run without the picker. Only when there is NOT one
+        // does this become a refusal -- and then it is a stated refusal, never a dropped click.
+        var pre = (typeof _roScopeModalPrefill_ === 'function') ? _roScopeModalPrefill_() : null;
+        var concrete = !!(pre && pre.country && pre.marketplaceId);
+        if (concrete && action === 'aiplan' && typeof handleRequestOrderAiPlan === 'function') return handleRequestOrderAiPlan();
+        if (concrete && action === 'recalc' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
+        return _roScopeModalUnavailable_(action);
     }
     window.KM.scopeModal.open({
         title: action === 'aiplan' ? 'AI Plan — Order Planning' : 'Recalculate Current Scope — Order Planning',
