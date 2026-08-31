@@ -22,8 +22,26 @@ function section(t) { console.log('\n' + t); }
 function readRepo(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 function readGs(f) { return fs.readFileSync(path.join(GS, f), 'utf8'); }
 
+// F1-7N-FB-4F-B1 §H — THE DIAGNOSTIC MOVED OUT OF THE APPS SCRIPT SYNC DIRECTORY, and this suite follows it.
+//
+// It was in assets/specs/active/apps-script/, which is the set of files the owner guard in
+// action-registry-and-router-completeness-f1-7n-fb-4e-r2 watches with
+// `git diff --name-only <R1> -- "assets/specs/active/apps-script"`. That guard was therefore RIGHT to fail: a
+// read-only diagnostic sitting in the deploy directory is, as far as any mechanical check can tell, an active
+// runtime file. The guard was not weakened and the file was not added to the owner list — it simply is not a
+// runtime file, so it does not live where runtime files live.
+//
+// It stays fully testable from here: this suite reads and executes it exactly as before, and the user may delete
+// it from the live Apps Script editor whenever convenient. No deployment version is needed for its removal,
+// because nothing routes to it.
 var TEMP_FILE = 'TEMP_legacy_allocation_draft_reconcile_diagnose.gs';
-var TEMP_SRC = readGs(TEMP_FILE);
+var TEMP_DIR = path.join(ROOT, 'assets', 'tools', 'apps-script-diagnostics');
+var TEMP_PATH = path.join(TEMP_DIR, TEMP_FILE);
+var TEMP_SRC = fs.readFileSync(TEMP_PATH, 'utf8');
+// And it is NOT in the deploy directory any more — asserted here so a future round cannot quietly move it back.
+ok(!fs.existsSync(path.join(GS, TEMP_FILE)),
+  'H1 the TEMP diagnostic is NOT in the Apps Script sync directory');
+ok(fs.existsSync(TEMP_PATH), 'H1b it is in assets/tools/apps-script-diagnostics/ instead');
 var SAD_SRC = readGs('16_shipping_allocation_handlers.gs');
 var EPC_SRC = readGs('68_api_v1_execution_plan_conflict_diagnostic.gs');
 
@@ -161,9 +179,13 @@ function build(opts) {
   sb.globalThis = sb;
   var ctx = vm.createContext(sb);
   var loadErrors = [];
-  ['29_production_safety_adapter.gs', '16_shipping_allocation_handlers.gs',
-    '68_api_v1_execution_plan_conflict_diagnostic.gs', TEMP_FILE].forEach(function (f) {
-    try { vm.runInContext(readGs(f), ctx, { filename: f }); }
+  // FB-4F-B1 §H — the three RUNTIME files still come from the Apps Script sync directory; the DIAGNOSTIC comes
+  // from the tooling directory it now lives in. Same source, same execution, different — and correct — home,
+  // which is the whole point: it is not a runtime file, so it does not sit where runtime files sit.
+  [['29_production_safety_adapter.gs', GS], ['16_shipping_allocation_handlers.gs', GS],
+    ['68_api_v1_execution_plan_conflict_diagnostic.gs', GS], [TEMP_FILE, TEMP_DIR]].forEach(function (pair) {
+    var f = pair[0];
+    try { vm.runInContext(fs.readFileSync(path.join(pair[1], f), 'utf8'), ctx, { filename: f }); }
     catch (e) { loadErrors.push(f + ': ' + e.message); }
   });
   return {

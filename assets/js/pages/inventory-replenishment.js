@@ -4275,14 +4275,47 @@ function _execRebuildMethodOptions(sku) {
     });
 }
 
-// Map an Execution Plan method label to a carrier_lead_times.shipping_method value.
+// F1-7N-FB-4F-B1 §A/§F — EXACT SERVICE IDENTITY. THIS FUNCTION USED TO TURN sea_express INTO Sea.
+//
+// It was a prefix ladder:
+//
+//     if (m.indexOf('air') === 0) return 'Air';
+//     if (m.indexOf('sea express') === 0) return 'Sea Express';   // a SPACE
+//     if (m.indexOf('sea') === 0) return 'Sea';                   // caught sea_express
+//
+// The canonical enum is `sea_express` with an UNDERSCORE (CARRIER_AND_ROUTE_SPEC §4.5), so it missed the second
+// line and matched the third. Measured, not inferred: 'sea_express' -> 'Sea'. Every Expected Arrival shown for an
+// express-ocean route was therefore computed from the REGULAR ocean lead time, which is a different service with
+// different transit days — a silently wrong date on a planning screen, which is worse than a blank one.
+//
+// It is the exact defect class the round was told to hunt: startsWith('sea') as a family fallback. So there is no
+// ladder any more. Two explicit tables, canonical enum and display label, and an unknown value maps to NOTHING —
+// the caller already renders 'Lead time unavailable' for that, which is the correct answer for a service whose
+// lead time nobody has configured. Guessing the neighbouring service's number is not.
+//
+// `carrier_lead_times.shipping_method` holds the main-mode DISPLAY vocabulary (Sea / Sea Express / Air / Courier,
+// CARRIER_AND_ROUTE_SPEC v1.5), which is why this mapping exists at all; `transit_type` holds the enum. Rail and
+// truck have no lead-time vocabulary entry and are left unmapped rather than invented.
+var IR_SERVICE_TO_LEAD_KEY_ = {
+    'air': 'Air',
+    'sea': 'Sea',
+    'sea_express': 'Sea Express',
+    'courier': 'Courier'
+    // rail / truck: deliberately absent — no carrier_lead_times vocabulary for them
+};
+// The display forms the picker or a carrier import may legitimately carry, mapped EXACTLY. No prefix, no
+// family, no transport-mode collapse. '美森海卡' is an express-ocean service and resolves to Sea Express,
+// never to Sea — the label is display, `sea_express` is the identity.
+var IR_LABEL_TO_LEAD_KEY_ = {
+    'air': 'Air', 'sea': 'Sea', 'sea express': 'Sea Express', 'courier': 'Courier', 'express': 'Courier',
+    '空運': 'Air', '普船': 'Sea', '快船': 'Sea Express', '美森海卡': 'Sea Express'
+};
 function _irMethodToLeadKey(method) {
     var m = String(method || '').trim().toLowerCase();
-    if (m.indexOf('air') === 0) return 'Air';
-    if (m.indexOf('sea express') === 0) return 'Sea Express';
-    if (m.indexOf('sea') === 0) return 'Sea';
-    if (m.indexOf('express') === 0 || m.indexOf('courier') === 0) return 'Courier';
-    return '';   // Rail / unknown → no lead-time mapping
+    if (!m) return '';
+    if (IR_SERVICE_TO_LEAD_KEY_.hasOwnProperty(m)) return IR_SERVICE_TO_LEAD_KEY_[m];
+    if (IR_LABEL_TO_LEAD_KEY_.hasOwnProperty(m)) return IR_LABEL_TO_LEAD_KEY_[m];
+    return '';   // unknown service -> no lead-time mapping, and no neighbouring service's number
 }
 
 // Expected Arrival for an Execution Plan route (§11.3). ETA priority: runtime actual ETA → formal

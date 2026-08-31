@@ -533,7 +533,13 @@ var GS_OWNED_SINCE_R1 = {
   '47_api_v1_recommendation_generation.gs': 'FB-4E-R4B-R1 flat scope readback: real submittedSkus + derived noDraftSkus',
   '56_api_v1_ai_plan_first_layer.gs': 'FB-4E-R4B-R1 Order Planning factory column = the KMFSA site allocation, not the whole pool',
   '90_generated_supply_planning_bundle.gs': 'FB-4E-R4B-R1 regenerated (KMFSA added, KMRDV2P readback fix) - GENERATED, never hand-edited',
-  'TEMP_order_planning_draft_readback_diagnose.gs': 'FB-4E-R4B-R1 read-only live diagnostic (new file; NOT routed)'
+  'TEMP_order_planning_draft_readback_diagnose.gs': 'FB-4E-R4B-R1 read-only live diagnostic (new file; NOT routed)',
+  // F1-7N-FB-4F-B1 - the route identity + append-only schema CONTRACT. A NEW file, deliberately, because this
+  // suite asserts by name that 16_shipping_allocation_handlers.gs (the allocation writer) is UNCHANGED - and
+  // that guard is right: B1 is a contract round and must not touch the live writer. Not routed, no registry
+  // symbol, no manifest entry, no live wiring. The owned-set entry is an OWNERSHIP RECORD, which is what this
+  // map is for; the guard itself is untouched and an unexpected file still fails.
+  '69_api_v1_route_identity_contract.gs': 'FB-4F-B1 frozen route identity + schema contract (new file; NOT routed)'
 };
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');

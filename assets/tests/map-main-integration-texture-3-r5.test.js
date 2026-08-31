@@ -289,10 +289,16 @@ section('§C — what the merge had to bring across from main, intact');
         'C4 the action contract is pinned at 10');
     ok(/KM_REQUIRED_DEPLOYED_SYMBOLS_/.test(API), 'C4 the required-symbol list is present');
     // FB-4F-A landed on main between the merge-base and this merge, so it must be here too.
-    ['assets/specs/active/apps-script/TEMP_legacy_allocation_draft_reconcile_diagnose.gs',
-     'assets/tests/legacy-allocation-draft-reconcile-diagnosis-f1-7n-fb-4f-a.test.js',
-     'docs/planning/LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md'].forEach(function (f) {
-        ok(exists(f), 'C5 FB-4F-A file carried across the merge: ' + path.basename(f));
+    // FB-4F-B1 §H — the diagnostic moved from assets/specs/active/apps-script/ (the Apps Script DEPLOY
+    // directory) to assets/tools/apps-script-diagnostics/, because a read-only diagnostic sitting in the deploy
+    // directory is indistinguishable from an active runtime file to any mechanical owner check. What this
+    // assertion is FOR is that FB-4F-A's three artefacts survived the map merge — so it follows the file rather
+    // than pinning a location a later round is entitled to change.
+    [['assets/tools/apps-script-diagnostics/TEMP_legacy_allocation_draft_reconcile_diagnose.gs',
+      'assets/specs/active/apps-script/TEMP_legacy_allocation_draft_reconcile_diagnose.gs'],
+     ['assets/tests/legacy-allocation-draft-reconcile-diagnosis-f1-7n-fb-4f-a.test.js'],
+     ['docs/planning/LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md']].forEach(function (cands) {
+        ok(cands.some(exists), 'C5 FB-4F-A file carried across the merge: ' + path.basename(cands[0]));
     });
     // And its refusal is untouched by this round.
     var SAH = read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs');
