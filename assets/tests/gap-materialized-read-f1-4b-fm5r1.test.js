@@ -65,7 +65,22 @@ eq([opEnv.success, opEnv.data.rows.length], [true, 1], 'SRV6 order-planning read
 eq([opEnv.data.rows[0].t2_gap_qty, opEnv.data.rows[0].t2_suggested_qty, opEnv.data.rows[0].t1_gap_qty], [1500, 1520, 0], 'SRV7 T1–T4 stored values verbatim (valid zero preserved)');
 
 section('WIRING · router + KM.DB read endpoints');
-ok((ROUTER.match(/inventoryReplenishmentGap\.get/g) || []).length === 1 && (ROUTER.match(/orderPlanningGap\.get/g) || []).length === 1, 'W1 router registers both READ actions once');
+// F1-7N-FB-4E-R4A1 — RESTATED FROM "MENTIONED ONCE" TO "OWNED ONCE".
+//
+// R4A1 serves read actions on GET as well as POST, because a POST cannot survive the Apps Script /exec 302.
+// Each action therefore appears twice in the router: once as the doPost `action === '...'` branch and once in the
+// GET read table, BOTH naming the same handler. Counting mentions made that correct change look like a duplicate
+// registration. What matters is single ownership: exactly one dispatch branch, and a GET entry that dispatches to
+// the same handler rather than to a second implementation.
+['inventoryReplenishmentGap.get', 'orderPlanningGap.get'].forEach(function (a) {
+  var branches = (ROUTER.match(new RegExp("action === '" + a.replace(/\./g, '\\.') + "'", 'g')) || []).length;
+  eq(branches, 1, 'W1 ' + a + ' has exactly ONE dispatch branch');
+  var getEntry = new RegExp("'" + a.replace(/\./g, '\\.') + "':\\s*(handle\\w+_)").exec(ROUTER);
+  if (getEntry) {
+    ok(new RegExp("action === '" + a.replace(/\./g, '\\.') + "'[\\s\\S]{0,400}?" + getEntry[1]).test(ROUTER),
+      'W1 ' + a + ' is served on GET by the SAME handler as on POST');
+  }
+});
 ok(/getInventoryReplenishmentGap = function/.test(DBAPI) && /getOrderPlanningGap = function/.test(DBAPI), 'W2 KM.DB exposes both materialized readers');
 
 // ========================= INVENTORY FRONTEND READ CUTOVER =========================

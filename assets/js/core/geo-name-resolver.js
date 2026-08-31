@@ -45,6 +45,23 @@
         REVIEWED_DISPLAY_ALIAS: 'REVIEWED_DISPLAY_ALIAS', // countries 2 (display)
         ZH_HANT_PINNED_SOURCE: 'ZH_HANT_PINNED_SOURCE',   // countries 3 · admin1 1 — and the FULL-name authority
         ZH_HANT_VENDORED_CLDR: 'ZH_HANT_VENDORED_CLDR',   // admin1 2 (wired, empty: no bounded source vendored)
+        // ------------------------------------------------------------------------------------------------
+        // TEXTURE-3-R5 §B — ONE AUTHORITY. `main` reached this file by a different road: F1-7N-FB-4E-R4B §E
+        // added a `ZH_HANT_HOUSE_DISPLAY` level backed by a two-entry inline `HOUSE_COUNTRY_ZH` table, to make
+        // CN read 中國 and TW read 台灣. That is the SAME user decision this branch records in
+        // assets/js/data/geo-display-aliases-zh-tw.js, expressed twice.
+        //
+        // Two mechanisms for one decision is the defect, not the duplication of effort: they can disagree, and
+        // whichever is consulted first wins silently. The generated asset is kept because it carries provenance
+        // (source, licence, SHA-256, the candidate the name was decided against) and scales past two entries;
+        // the inline table is removed. `main`'s own comment on that table asked for exactly this — "if the map
+        // branch ever adds its own alias mechanism, this block is the one to remove, not the entries".
+        //
+        // THE ENTRIES ARE NOT REMOVED WITH IT. They live in the asset, and REQUIRE_APPROVED_ALIAS_ below makes
+        // their absence a visible refusal instead of a silent fall-through to the vendor's formal name.
+        // ------------------------------------------------------------------------------------------------
+        APPROVED_ALIAS_UNAVAILABLE: 'APPROVED_ALIAS_UNAVAILABLE',  // countries — a required decision is missing
+        APPROVED_WITH_CODE: 'APPROVED_WITH_CODE',         // countries — detail presentation of a DECIDED name
         ZH_HANT_REVIEWED_LIST: 'ZH_HANT_REVIEWED_LIST',   // continents 1 · oceans 1
         ENGLISH_CANONICAL: 'ENGLISH_CANONICAL',           // countries 4 · continents 2 · admin1 3
         CODE: 'CODE',                                     // countries 5 · admin1 4
@@ -58,6 +75,35 @@
         REVIEWED_ADMIN1_ALIAS: 'REVIEWED_ADMIN1_ALIAS',   // admin1 1 (above every source)
         HIDDEN: 'HIDDEN'                                  // continents 3 · oceans 3 — no reliable name exists
     };
+
+    // TEXTURE-3-R5 §B — WHERE THE TWO NAMES WENT.
+    //
+    // `main` carried a two-entry HOUSE_COUNTRY_ZH table here. It has been REMOVED, and the decision it encoded
+    // is not lost: CN → 中國 and TW → 台灣 are recorded in the `approved` block of
+    // assets/js/data/geo-display-aliases-zh-tw.js, with the source, the licence, the candidate they were decided
+    // against and who decided them — none of which an inline object literal can hold.
+    //
+    // What stays behind is a list of CODES, not names. A code list cannot contradict the asset; a second name
+    // table can, and did. Membership here means one thing: this country's zh label MUST come from a recorded
+    // decision, so if the asset is absent the resolver reports APPROVED_ALIAS_UNAVAILABLE instead of quietly
+    // labelling the map with the vendored formal name.
+    //
+    // MAINLINE / MAP-BRANCH RECONCILIATION — DONE, NOT PENDING. `main`'s table carried a note saying that on a
+    // merge with `feature/map-texture-3` both mechanisms should be kept, and that if that branch ever brought
+    // its own alias mechanism, the table — not the entries — was the thing to remove. It did, and it was. The
+    // note is kept in the past tense rather than deleted, because the next person to see two ways of naming CN
+    // needs to know this was decided once already.
+    //
+    // AND THE THING THAT NOTE WAS RIGHT ABOUT: geo-display-aliases-zh-tw.js is GENERATED. Regenerating it must
+    // carry the `approved` block forward — its generator aborts with APPROVED_DISPLAY_NO_LONGER_MATCHES_SOURCE
+    // rather than silently following a CLDR bump away from a decided name. Regeneration is also why the decision
+    // belongs in that asset and not here: this file is hand-written and would have to be edited by hand every
+    // time, which is exactly how two authorities appear in the first place.
+    //
+    // Adding a code here without adding the matching `approved` entry makes that country fall back to English.
+    // That is deliberate: it is loud, deterministic and correct-by-omission, which is what a missing decision
+    // should look like.
+    var REQUIRE_APPROVED_ALIAS_ = ['CN', 'TW'];
 
     function dataset() {
         return (typeof window !== 'undefined' && window.KM_GEO_NAMES_ZH_HANT) ? window.KM_GEO_NAMES_ZH_HANT : null;
@@ -80,10 +126,17 @@
             ? window.KM_GEO_ADMIN1_DISPLAY_NAMES : null;
     }
 
-    // §F — the FULL formal name, always available whatever the map is painting. This is what a tooltip or a detail
-    // panel asks for, and it is deliberately a SEPARATE function rather than an option on the display path: the
-    // display name is allowed to be short, the full name is not allowed to be lossy, and one function cannot be
-    // the authority for both without one of those guarantees quietly winning.
+    // §F — the FULL formal name, always available whatever the map is painting. It is deliberately a SEPARATE
+    // function rather than an option on the display path: the display name is allowed to be short, the full name
+    // is not allowed to be lossy, and one function cannot be the authority for both without one of those
+    // guarantees quietly winning.
+    //
+    // TEXTURE-3-R5 §B — NOT A DISPLAY SURFACE. §F originally described this as "what a tooltip or a detail panel
+    // asks for". Under R5 that is no longer true and the sentence is corrected rather than left to mislead: for
+    // CN and TW this returns 中華人民共和國 and 中華民國, which §B forbids on every surface a
+    // user reads. It is the MATCHING AND AUDIT authority — the provenance §B expressly allows to keep source
+    // terminology. A tooltip asks country(); an inspect panel asks countryDetail(). A regression test asserts
+    // that no served page or library calls this function, so the formal name cannot reach a label by accident.
     function countryFull(iso, opts) {
         opts = opts || {};
         var code = upper(iso);
@@ -96,14 +149,24 @@
         return { name: code, level: LEVEL.CODE, iso: code };
     }
 
-    // R4 §A — THE DETAIL PRESENTATION. `台灣` is what the globe paints; `中華民國（TW）` is what an inspect
-    // surface shows. Both must exist at once, and the ISO code must be visible in the detail form so the reader
-    // can see the IDENTITY that the rest of the system actually uses.
+    // THE DETAIL PRESENTATION — the formal name plus the ISO code, for a tooltip or an inspect panel. The ISO
+    // code is visible in it so the reader can see the IDENTITY the rest of the system actually uses.
     //
-    // COMPOSED, NOT STORED. The alias asset carries a `detail` string too, but this function does not read it:
-    // it rebuilds the form from `countryFull` every time. A stored string is a copy of the formal-name
-    // authority, and a copy can drift out of agreement with it; recomposing cannot. The asset's copy exists so
-    // the build's own report can print it, and the regression suite asserts the two agree.
+    // TEXTURE-3-R5 §B SUPERSEDES R4 §A HERE, AND THE REVERSAL IS DELIBERATE. R4 §A split the two forms: the
+    // globe painted `台灣` and an inspect surface showed `中華民國（TW）`. R5 §B withdraws the second half —
+    // the detail view must ALSO read `台灣`, and `中華民國（TW）` is named as a forbidden output. So for a
+    // country with a RECORDED DECISION the detail form is now composed from the decided name; for every other
+    // country the R4 rule is untouched, and 日本（JP） and 捷克共和國（CZ） still come out as they did.
+    //
+    // The formal name is not destroyed by that — it is still returned, as `full`, beside the displayed string.
+    // §B allows provenance to keep source terminology as long as it does not BECOME the displayed result, and
+    // `name` is the displayed result while `full` is the record.
+    //
+    // COMPOSED, NOT STORED. The alias asset carries a `detail` string too, and this function still does not read
+    // it. That mattered under R4 because a stored copy of a composed form can drift; it matters more under R5,
+    // because the asset's stored copy is the R4-era `中華民國（TW）` and reading it would reintroduce exactly
+    // the string §B forbids. approvedNames() therefore reports this composition as `detail` and keeps the
+    // asset's own string as `recorded_detail`, where it is evidence rather than output.
     var DETAIL_OPEN_ = '\uFF08', DETAIL_CLOSE_ = '\uFF09';
     function countryDetail(iso, opts) {
         opts = opts || {};
@@ -112,6 +175,34 @@
         var f = countryFull(code, opts);
         var disp = country(code, opts);
         if (!f.name) return { name: code, level: LEVEL.CODE, iso: code, full: '', display: disp.name };
+        // §B5 REACHES THIS FUNCTION TOO, which the first cut of this resolution missed and a measurement of the
+        // asset-absent path caught: guarding only country() left countryDetail() composing 中華民國（TW） from
+        // countryFull the moment the alias asset failed to load — the precise string §B forbids, on a surface
+        // §B names. A guard that covers the label and not the inspect panel is not a guard.
+        if (disp.level === LEVEL.APPROVED_ALIAS_UNAVAILABLE) {
+            return {
+                name: disp.name + DETAIL_OPEN_ + code + DETAIL_CLOSE_,
+                level: LEVEL.APPROVED_ALIAS_UNAVAILABLE,
+                iso: code,
+                full: f.name,                 // evidence, not output
+                full_level: f.level,
+                display: disp.name,
+                display_level: disp.level,
+                requires_approved_alias: true
+            };
+        }
+        // A recorded decision governs every user-visible surface, this one included.
+        if (disp.level === LEVEL.USER_APPROVED_ALIAS && disp.name) {
+            return {
+                name: disp.name + DETAIL_OPEN_ + code + DETAIL_CLOSE_,
+                level: LEVEL.APPROVED_WITH_CODE,
+                iso: code,
+                full: f.name,
+                full_level: f.level,
+                display: disp.name,
+                display_level: disp.level
+            };
+        }
         return {
             name: f.name + DETAIL_OPEN_ + code + DETAIL_CLOSE_,
             level: LEVEL.FORMAL_WITH_CODE,
@@ -156,6 +247,23 @@
                              full: str(rv.full), source: rv.source };
                 }
             }
+        }
+        // TEXTURE-3-R5 §B4/§B5 — THE FALLBACK, AND WHY IT REFUSES RATHER THAN FALLS THROUGH.
+        //
+        // Removing `main`'s inline table left one hole, and it is the hole §B5 names: if the alias asset does
+        // not load, the next level down is ZH_HANT_PINNED_SOURCE — Natural Earth's NAME_ZHT — which is
+        // 中華人民共和國 for CN and 中華民國 for TW. A missing script would therefore have RESTORED
+        // exactly the terminology the decision removed, on the surface an operator actually reads.
+        //
+        // So the guard holds ISO CODES ONLY and no names. That is what keeps this from becoming the second
+        // authority we just deleted: it cannot disagree with the asset about what CN is called, because it does
+        // not know. It only knows that CN must not be labelled by the vendor, and it says so out loud.
+        if (opts.form !== 'full' && REQUIRE_APPROVED_ALIAS_.indexOf(code) !== -1) {
+            var fen = (d && d.countryEnglish && str(d.countryEnglish[code])) || str(opts.english);
+            return { name: fen || code,
+                     level: LEVEL.APPROVED_ALIAS_UNAVAILABLE,
+                     name_source: fen ? LEVEL.ENGLISH_CANONICAL : LEVEL.CODE,
+                     iso: code, requires_approved_alias: true };
         }
         var zh = d && d.countries ? str(d.countries[code]) : '';
         if (zh) return { name: zh, level: LEVEL.ZH_HANT_PINNED_SOURCE, iso: code };
@@ -323,7 +431,11 @@
         if (!a || !a.approved) return out;
         Object.keys(a.approved).sort().forEach(function (k) {
             var v = a.approved[k];
-            out.push({ iso: k, display: str(v.display), full: str(v.full), detail: str(v.detail),
+            // `detail` is the COMPOSED R5 form, so a caller that prints it cannot print the R4-era
+            // 中華民國（TW） the asset still stores. That string is kept, renamed to what it now is: evidence
+            // of the earlier decision, reported so the change is auditable rather than invisible.
+            out.push({ iso: k, display: str(v.display), full: str(v.full),
+                       detail: countryDetail(k).name, recorded_detail: str(v.detail),
                        decision: v.decision || '', decided_by: v.decided_by || '' });
         });
         return out;

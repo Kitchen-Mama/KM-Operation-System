@@ -40,6 +40,13 @@ var _OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements',
 // tables and MERGE their fresh slices onto the retained model. normalizeOperationDb returns every key (empties for absent
 // ones), so only the two named camelCase slices are overlaid — a blanket assign would clobber the retained static tables.
 var _OS_MUTABLE_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements'];
+// F1-7N-FB-4E-R3 §C.6 — ONE LOADING STATE, ONE STRING.
+//
+// The page showed "Loading…" and then "Loading overseas stock…" — two different messages for one read, because
+// the initial affordance and the state renderer each owned their own text and the second render replaced the
+// first. Two messages read as two phases, and there was only ever one. There is now exactly one string, used by
+// both, so the state is deterministic and a test can assert there is no second one.
+var _OS_LOADING_TEXT = 'Loading overseas stock…';
 function _osAfterWrite(cb) {
     if (!_osScopedActive()) { if (cb) cb(); return; }
     if (!_osReadModel) {
@@ -57,7 +64,7 @@ function _osAfterWrite(cb) {
 function _osShowInitialLoading_(root) {
     try {
         var el = root && root.querySelector('#overseas-snapshot-scroll-body');
-        if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, 'Loading overseas stock…').beginLoad(false);
+        if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, _OS_LOADING_TEXT).beginLoad(false);
     } catch (e) {}
 }
 
@@ -111,7 +118,7 @@ function _osEscHtml_(v) {
 // else is the caller's normal empty/rows render.
 function _osStateHtml_() {
     if (_osLoad.status === 'LOADING') {
-        return '<div style="padding:20px;text-align:center;color:#94A3B8">Loading…</div>';
+        return '<div style="padding:20px;text-align:center;color:#94A3B8">' + _OS_LOADING_TEXT + '</div>';
     }
     if (_osLoad.status === 'EMPTY_CONFIGURATION') {
         return '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
@@ -149,6 +156,46 @@ function _osRetryRead_() {
 window._osRetryRead_ = _osRetryRead_;
 window._osLoadState_ = _osLoadState_;
 
+// F1-7N-FB-4E-R3 §C — THE PRIMARY READ, AND THE ONE REASON THE OLD FAN-OUT IS STILL REACHABLE.
+//
+// Primary: ONE request (overseasStock.workspace.get). The fan-out is kept for exactly ONE condition — the
+// deployed Apps Script does not carry the action yet — and for no other. That condition is real and temporary:
+// the frontend and the Apps Script project are published by hand as TWO SEPARATE STEPS, so there is a window in
+// which the new page is live against the old deployment. Failing the page outright during that window would be a
+// regression introduced by this change, and a fallback that only triggers on a NAMED, provable deployment fact is
+// not the "silently widen the read when the narrow one fails" pattern that brought whole-DB reads back before.
+//
+// Everything else FAILS CLOSED and is reported: a transport fault, a schema gap, an auth page, a timeout and a
+// business rejection all reject with their typed code and render the error state. The fan-out is never a retry,
+// never a performance fallback and never reached twice for one mount, and it is still four bounded getTable reads
+// — never getOperationDb.
+var _osFellBackToFanOut = false;
+function _osDeploymentLacksAction_(err) {
+    var code = String((err && (err.apiCode || err.code)) || '');
+    return code === 'DEPLOYMENT_CONTRACT_MISMATCH' || code === 'WORKSPACE_API_UNAVAILABLE';
+}
+function _osLoadPrimary_() {
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.loadOverseasStockWorkspace === 'function')) {
+        return window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osFellBackToFanOut = true; return m; });
+    }
+    return window.KM.DB.loadOverseasStockWorkspace({}).catch(function (err) {
+        if (!_osDeploymentLacksAction_(err)) throw err;             // every other failure is reported, not widened
+        _osFellBackToFanOut = true;
+        return window.KM.DB.loadScopedTables(_OS_TABLES);
+    });
+}
+// Read-only: which path actually served the mount, so "is the new endpoint live?" has an answer.
+window._osReadPathDiagnostic_ = function () {
+    return {
+        primary_action: 'overseasStock.workspace.get',
+        served_by: _osFellBackToFanOut ? 'LEGACY_FAN_OUT_4_REQUESTS' : 'SCOPED_WORKSPACE_1_REQUEST',
+        requests_at_mount: _osFellBackToFanOut ? 4 : 1,
+        workspace_meta: (_osReadModel && _osReadModel._workspaceMeta) || null,
+        note: 'The fan-out is reachable ONLY when the deployment does not carry the action yet. Publish the Apps '
+            + 'Script project (70_ + 01_ + 63_) and reload; served_by must then read SCOPED_WORKSPACE_1_REQUEST.'
+    };
+};
+
 function initOverseasStockPage() {
     console.log('✅ Overseas Stock: initOverseasStockPage called');
     var root = document.querySelector('#overseas-stock-section');
@@ -158,15 +205,22 @@ function initOverseasStockPage() {
     }
 
     // Ensure page data is loaded once, then re-init. (Overseas Stock has no demo data layer.)
-    // F1-7J-A3: canonical → bounded scoped read; Legacy kill-switch → broad loadOperationDb. Fail-closed (no broad fallback).
+    // F1-7N-FB-4E-R3 §C — ONE SCOPED WORKSPACE REQUEST AT MOUNT, INSTEAD OF FOUR.
+    //
+    // R3 §A measured this mount at FOUR requests: loadScopedTables over overseas_inventory_snapshot,
+    // overseas_inventory_movements, warehouses and sku_details. On Apps Script each request is a separate Web App
+    // EXECUTION, so four is four cold starts, four spreadsheet opens and four round trips to draw one page --
+    // which is what "cold load is materially slow" was. overseasStock.workspace.get (owner = 70_) returns the
+    // same four tables in one answer, and the loader normalizes them with the SAME normalizeOperationDb, so the
+    // read model handed to the render is the same shape it always was.
+    //
+    // getOperationDb IS STILL NEVER CALLED and no timeout was raised. The only fallback below is the OLD FOUR-
+    // TABLE FAN-OUT, and it is reachable for exactly one reason.
     if (_osScopedActive() && !_osReadModel && !_overseasDbLoadTried) {
         _overseasDbLoadTried = true;
         _osLoad = { status: 'LOADING', error: null, requests: _osLoad.requests + 1 };
         _osShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
-        // F1-7N-FB-4E §C/§F/§D9 — the rejection is CLASSIFIED and the tried-flag is CLEARED. Previously it was
-        // swallowed with a bare `catch(function(){ init(); })`, so the failure became an empty table labelled
-        // "no data source connected" and the flag kept every later mount from ever asking again.
-        window.KM.DB.loadScopedTables(_OS_TABLES)
+        _osLoadPrimary_()
             .then(function (m) { _osReadModel = m; _osLoad = { status: 'READY', error: null, requests: _osLoad.requests }; initOverseasStockPage(); })
             .catch(function (err) {
                 _overseasDbLoadTried = false;                       // recovery must not require a browser reload

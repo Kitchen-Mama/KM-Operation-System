@@ -451,9 +451,65 @@ function handleGenerateRequestOrderDraftFromGap_(body) {
 // never creates a sheet. SKU PRESENT → the single active draft (R4E2 one-SKU DTO, unchanged, backward compatible).
 // SKU OMITTED → SCOPE-LEVEL: enumerate eligible READY-gap SKUs and classify each as PERSISTED / NO_DRAFT /
 // BLOCKED_CONFLICT — one request returns the whole Order Allocation grid for the future R4E3 UI. ACTIVE = draft|site_confirmed.
+// F1-7N-FB-4E-R4B-R2 §3 - the hard maximum for a bounded multi-scope readback. It is a REFUSAL bound, not a
+// truncation: an oversized request is rejected before any row is read, so a caller can never believe it received
+// a complete answer that was quietly cut short.
+var REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ = 25;
+
+// Canonicalize + dedupe + sort an explicit scope list. Returns { ok, scopes } or { ok:false, error, message }.
+// A blank field anywhere is a malformed scope, never an "all" wildcard - see the matcher note in KMRDV2P.
+// F1-7N-FB-4E-R4B-R3 §1 - OWNER BUILD STAMP. Registered in SYS_MODULE_BUILD_STAMPS_ (63_). The value names the
+// round this file last changed behaviourally (R4B-R2 added the bounded multi-scope readback); the constant itself
+// was introduced in R3, so a pre-R3 copy is reported ABSENT by the health manifest.
+var RECGEN_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R2';
+
+function recGenNormalizeScopeList_(list) {
+  if (!list || Object.prototype.toString.call(list) !== '[object Array]') {
+    return { ok: false, error: 'INVALID_SCOPE', message: 'scopes must be an array of {company,country,marketplace}' };
+  }
+  if (list.length === 0) {
+    return { ok: false, error: 'INVALID_SCOPE', message: 'scopes must name at least one concrete scope' };
+  }
+  if (list.length > REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_) {
+    return { ok: false, error: 'TOO_MANY_SCOPES', message: 'at most ' + REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ + ' scopes per readback; got ' + list.length };
+  }
+  var seen = {}, out = [];
+  for (var i = 0; i < list.length; i++) {
+    var s = list[i] || {};
+    var c = r4e2Str_(s.company), co = r4e2Str_(s.country), m = r4e2Str_(s.marketplace);
+    if (!c || !co || !m) {
+      return { ok: false, error: 'INVALID_SCOPE', message: 'scopes[' + i + '] needs company + country + marketplace (a blank field is not "all")' };
+    }
+    var k = c.toUpperCase() + '|' + co.toUpperCase() + '|' + m.toUpperCase();
+    if (seen[k]) continue;
+    seen[k] = 1; out.push({ company: c, country: co, marketplace: m, __k: k });
+  }
+  out.sort(function (a, b) { return a.__k < b.__k ? -1 : (a.__k > b.__k ? 1 : 0); });
+  for (var j = 0; j < out.length; j++) delete out[j].__k;
+  return { ok: true, scopes: out };
+}
+
 function handleGetActiveRequestOrderDraftReadback_(body) {
   try {
     var b0 = (body && body.payload) || body || {};   // accept {payload:{scope}} (adapter convention) or flat {scope}
+    // R4B-R2 §3 - the BOUNDED MULTI-SCOPE form. The single-scope path below is untouched and byte-identical for
+    // every existing caller; `scopes` is an additive, explicitly-named alternative for the All-level view, which
+    // was otherwise issuing one cold Apps Script execution per visible scope.
+    if (b0.scopes !== undefined) {
+      var norm = recGenNormalizeScopeList_(b0.scopes);
+      if (!norm.ok) return jsonResponse_({ success: false, error: norm.error, message: norm.message });
+      var ssM = SpreadsheetApp.getActiveSpreadsheet();
+      var cycleM = r4e2Str_(b0.planningCycle);
+      var results = [];
+      for (var si = 0; si < norm.scopes.length; si++) {
+        var one = recGenFlatReadback_(ssM, norm.scopes[si], '', cycleM);
+        if (!one.success) return jsonResponse_(one);       // fail the WHOLE request; never a partial answer
+        results.push(one.data);
+      }
+      return jsonResponse_({ success: true, data: { status: 'MULTI_SCOPE_READBACK',
+        scopeCount: norm.scopes.length, maxScopes: REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_,
+        scopes: norm.scopes, results: results } });
+    }
     var scope = b0.scope || b0;
     var company = r4e2Str_(scope.company), country = r4e2Str_(scope.country),
         marketplace = r4e2Str_(scope.marketplace), sku = r4e2Str_(scope.sku),
@@ -509,11 +565,31 @@ function recGenFlatReadback_(ss, scope3, sku, planningCycle) {
     if (one.length > 1) return { success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, conflictIds: one.map(function (d) { return d.draftId; }) } };
     return { success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: one[0] } };
   }
-  var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,
-    businessScope: { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' } });
-  // Same envelope keys as the legacy scope readback so the frontend normalizer is coherent under cutover ON.
-  // submittedSkus = flat drafts whose header is submitted; conflicts left [] (readActiveFlatForScope returns one
-  // active row per natural scope; a duplicate is surfaced per-SKU via the one-SKU BLOCKED_CONFLICT path).
-  var submitted = all.filter(function (d) { return String(d.status) === 'submitted'; }).map(function (d) { return d.scope.sku; });
-  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all, conflicts: [], noDraftSkus: [], submittedSkus: submitted } };
+  var bScope = { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' };
+  var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle, businessScope: bScope });
+  // F1-7N-FB-4E-R4B-R1 §2 - submittedSkus WAS DEAD BY CONSTRUCTION. It filtered `all` for status 'submitted',
+  // but readActiveFlatForScope excludes 'submitted' by definition (ACTIVE_FLAT_STATUSES), so the list was empty
+  // for every scope under the flat cutover. The frontend's §14/§18/§20 rule - a SKU with a terminal submitted
+  // allocation is excluded from a new Send, so a re-send cannot create a second Request Order - therefore never
+  // fired. It now reads the submitted rows from their own query.
+  var submittedDtos = (typeof KMRDV2P.readSubmittedFlatForScope === 'function')
+    ? KMRDV2P.readSubmittedFlatForScope(built.set, { planningCycle: cycle, businessScope: bScope })
+    : [];
+  var submitted = submittedDtos.map(function (d) { return d.scope.sku; });
+  // noDraftSkus WAS HARDCODED []. The legacy readback derived it from the READY order_planning_gap rows for the
+  // scope, which is what §12 means by "this SKU was explicitly reported NO_DRAFT" - and the frontend's honest
+  // "execution row unavailable" state was unreachable under the cutover because the list was always empty. It is
+  // now derived from the SAME eligibility source the legacy path used; no second notion of eligibility is
+  // introduced. A SKU is NO_DRAFT when it is eligible and carries neither an active nor a submitted flat row.
+  var haveDraft = {};
+  all.forEach(function (d) { haveDraft[String(d.scope.sku).trim().toUpperCase()] = 1; });
+  submittedDtos.forEach(function (d) { haveDraft[String(d.scope.sku).trim().toUpperCase()] = 1; });
+  var noDraftSkus = [];
+  try {
+    recGenEnumerateEligibleGapRows_(gapReadObjects_(ss, OP_GAP_TABLE_), scope3).forEach(function (e) {
+      var k = String(e.sku).trim().toUpperCase();
+      if (k && !haveDraft[k]) noDraftSkus.push(e.sku);
+    });
+  } catch (e) { noDraftSkus = []; }   // gap table absent -> report nothing rather than a wrong NO_DRAFT
+  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all, conflicts: [], noDraftSkus: noDraftSkus, submittedSkus: submitted } };
 }

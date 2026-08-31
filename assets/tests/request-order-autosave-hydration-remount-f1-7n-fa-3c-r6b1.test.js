@@ -38,12 +38,24 @@ var db = {
   getShippingAllocationDraftLines: function () { draftLineCalls.count++; return []; }
 };
 window.KM = { DB: db };
-var _r6bFns = ['_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_',
+// F1-7N-FB-4E-R4B-R2 - the canonical draft join key became the SITE (company|country|marketplace|sku) after
+// All-level hydration was proven to let one company's draft overwrite another's under a SKU-only key. The
+// identity helpers are part of the same extracted unit now, so they are named here rather than left to a
+// ReferenceError at run time.
+var _r6bFns = ['_roDraftKey_', '_roDraftKeyFromSku_', '_roDraftSku_', '_roKeyPart_', '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_',
   '_roIsCanonicalDraftSku_', '_roDraftUiState_', '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_',
-  '_roReadActiveDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roLoadCanonicalDraftsForScope_', '_roBuildTierEditCommand_',
-  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_',
-  '_roAutosaveFlush_', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_', '_roDebugSnapshot_'].map(function (n) { return extract(RO, n); }).join('\n');
+  '_roApplyScopeReadbackData_', '_roReadActiveDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roLoadCanonicalDraftsForScope_', '_roBuildTierEditCommand_',
+  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roCreateCanonicalDraftFromEdit_', '_roFindRowForRef_', '_roFindRowBySku_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_',
+  '_roAutosaveFlush_', '_roAllocKey', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_', '_roDebugSnapshot_'].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_r6bFns);
+
+// F1-7N-FB-4E-R4B-R2 - the canonical draft map is keyed by the SITE now (company|country|marketplace|sku),
+// because a SKU alone is not an identity: at All level two companies selling the same master SKU on the
+// same country+marketplace shared one key and the second overwrote the first. Every fixture lookup below
+// goes through the REAL key owner, so this suite cannot drift from the page's own join rule.
+var _RO_KEY_AMBIGUOUS_ = (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO) || [])[1]
+  ? JSON.parse('"' + (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO))[1] + '"') : String.fromCharCode(0) + 'AMBIGUOUS';
+function _k(sku) { return _roDraftKey_({ sku: sku, company: 'ResUS', country: 'US', marketplace: 'Amazon' }); }
 
 function flatDto(scopeSku, over) {
   over = over || {};
@@ -53,17 +65,21 @@ function flatDto(scopeSku, over) {
       { tier: 'T2', month: '2026-09', orderQty: over.t2q != null ? over.t2q : 320, recommendedQty: 300, cartonQty: 8, status: 'draft', note: over.t2note || '' },
       { tier: 'T3', month: '2026-10', orderQty: 7520, recommendedQty: 7520, cartonQty: 188, status: 'draft', note: '' } ] };
 }
-function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: value, title: '', dataset: { sku: sku, bucket: bucket, field: field, country: 'US', marketplace: 'Amazon', month: '2026-09' }, classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; } } }; }
+function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: value, title: '', dataset: { sku: sku, bucket: bucket, field: field, company: 'ResUS', country: 'US', marketplace: 'Amazon', month: '2026-09' }, classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; } } }; }
 
 (function run() {
   section('B. per-SKU allocation UI state (fixes D2 misleading blank)');
+  // R4B-R2 - the fixture maps are keyed by the SITE identity now, through the page's own key owner, and the
+  // loaded row is present so a bare-SKU lookup can resolve to exactly one site (which is the case being tested).
+  requestOrderState.data = [{ sku: 'CO1100-R', company: 'ResUS', country: 'US', marketplace: 'Amazon' }];
+  var _kd = {};
   _roHydrationStatus = 'LOADING'; _roCanonicalDraftBySku = {}; _roNoDraftSkus = {};
   eq(_roDraftUiState_('CO1100-R'), 'DRAFT_LOADING', '11/12. during LOADING the SKU is DRAFT_LOADING (inputs disabled, never blank-editable)');
-  _roHydrationStatus = 'LOADED'; _roNoDraftSkus = { 'CO1100-R': true };
+  _roHydrationStatus = 'LOADED'; _roNoDraftSkus = {}; _roNoDraftSkus[_k('CO1100-R')] = true;
   eq(_roDraftUiState_('CO1100-R'), 'NO_SAVED_DRAFT', '14. explicit no-saved-draft state (never a Suggested→Order Qty fallback)');
-  _roNoDraftSkus = {}; _roCanonicalDraftBySku = { 'CO1100-R': { conflict: true } };
+  _roNoDraftSkus = {}; _roCanonicalDraftBySku = {}; _roCanonicalDraftBySku[_k('CO1100-R')] = { conflict: true };
   eq(_roDraftUiState_('CO1100-R'), 'DRAFT_CONFLICT', 'duplicate → DRAFT_CONFLICT (fail closed)');
-  _roCanonicalDraftBySku = { 'CO1100-R': { draftId: TARGET, lines: {} } };
+  _roCanonicalDraftBySku = {}; _roCanonicalDraftBySku[_k('CO1100-R')] = { draftId: TARGET, lines: {} };
   eq(_roDraftUiState_('CO1100-R'), 'DRAFT_LOADED', '13. resolved draft → DRAFT_LOADED (DB values shown together)');
   _roCanonicalDraftBySku = {}; _roNoDraftSkus = {}; _roHydrationStatus = 'IDLE';
   eq(_roDraftUiState_('MANUAL-SKU'), 'MANUAL', 'a SKU outside any AI read-back keeps the ordinary MANUAL flow (unchanged)');
@@ -108,34 +124,36 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
   }).then(function () {
     eq([dbWrites.count, lastCmd.edits[0].fields.note], [1, ''], '7. empty Note clears the DB value (note:"" sent)');
 
-    section('A. confirmation states — Saved only after server confirm; failure never Saved');
+    // R4B-R2 - the save calls below pass input.dataset, exactly as the shipped page does now that the rendered
+  // input carries data-company. A bare SKU is no longer a complete draft reference.
+  section('A. confirmation states — Saved only after server confirm; failure never Saved');
     dbWrites.count = 0; updateResponse = { success: true, data: { status: 'COMPLETED', draftVersion: 6 } };
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; var okInp = fakeInput('note', 'CO1100-R', 'T2', 'done');
-    return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'done' }, okInp).then(function () {
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; var okInp = fakeInput('note', 'CO1100-R', 'T2', 'done');
+    return _roSaveTierEditToCanonicalDraft_(okInp.dataset, 'T2', { note: 'done' }, okInp).then(function () {
       ok(okInp.classList.contains('is-saved'), '5/10. Saved appears ONLY after the confirmed server response');
-      eq([_roCanonicalDraftBySku['CO1100-R'].lines.T2.note, _roCanonicalDraftBySku['CO1100-R'].draftVersion], ['done', 6], '5. DB-confirmed note updates local DTO + version/token');
+      eq([_roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, _roCanonicalDraftBySku[_k('CO1100-R')].draftVersion], ['done', 6], '5. DB-confirmed note updates local DTO + version/token');
     });
   }).then(function () {
     updateResponse = { success: false, error: { code: 'SERVER_ERROR' }, data: {} }; var failInp = fakeInput('note', 'CO1100-R', 'T2', 'z');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null;
-    return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'z' }, failInp).then(function () {
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null;
+    return _roSaveTierEditToCanonicalDraft_(failInp.dataset, 'T2', { note: 'z' }, failInp).then(function () {
       ok(!failInp.classList.contains('is-saved') && failInp.classList.contains('is-invalid'), '8. a failed request NEVER shows Saved (Retry state)');
       eq(failInp.value, 'z', '8/11. the typed value is retained on failure');
     });
   }).then(function () {
     updateResponse = { success: false, error: { code: 'CONCURRENCY_TOKEN_MISMATCH' }, data: {} };
     getActiveResponse = { data: { drafts: [flatDto('CO1100-R')], noDraftSkus: [], submittedSkus: [], conflicts: [] } };
-    var cf = fakeInput('note', 'CO1100-R', 'T2', 'typed'); _roCanonicalDraftBySku['CO1100-R'].expectedToken = null;
-    return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'typed' }, cf).then(function () {
+    var cf = fakeInput('note', 'CO1100-R', 'T2', 'typed'); _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null;
+    return _roSaveTierEditToCanonicalDraft_(cf.dataset, 'T2', { note: 'typed' }, cf).then(function () {
       ok(cf.classList.contains('is-conflict') && cf.value === 'typed', '9. conflict → retains typed value + Retry (no silent overwrite)');
     });
   }).then(function () {
     section('A12. concurrent same-draft edits are serialized (no self-conflict)');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; tokenFetches.count = 0; dbWrites.count = 0; _roDraftEditQueue_ = {};
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; tokenFetches.count = 0; dbWrites.count = 0; _roDraftEditQueue_ = {};
     updateResponse = { success: true, data: { status: 'COMPLETED', draftVersion: 7 } };
     var i1 = fakeInput('qty', 'CO1100-R', 'T2', '360'), i2 = fakeInput('note', 'CO1100-R', 'T2', 'serial');
-    var p1 = _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { order_qty: 360 }, i1);
-    var p2 = _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'serial' }, i2);
+    var p1 = _roSaveTierEditToCanonicalDraft_(i1.dataset, 'T2', { order_qty: 360 }, i1);
+    var p2 = _roSaveTierEditToCanonicalDraft_(i2.dataset, 'T2', { note: 'serial' }, i2);
     return Promise.all([p1, p2, tick().then(tick).then(tick)]).then(function () {
       eq(dbWrites.count, 2, 'A12. both edits wrote (serialized, both COMPLETED)');
       ok(tokenFetches.count >= 2, 'A12. the second edit re-fetched a fresh token after the first advanced it (no stale self-conflict)');

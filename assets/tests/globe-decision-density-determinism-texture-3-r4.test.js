@@ -88,19 +88,40 @@ ok(lvOrder.indexOf('1 UNICODE_CLDR_ALT_SHORT') !== -1 && lvOrder.indexOf('2 REVI
   'A1 with the R3 levels intact below it');
 
 // A.2 — the detail presentation, and it must be DISTINCT from the label.
-eq(G.countryDetail('TW').name, '中華民國（TW）', 'A2 the TW detail presentation is 中華民國（TW）');
-eq(G.countryDetail('CN').name, '中華人民共和國（CN）', 'A2 the CN detail presentation is 中華人民共和國（CN）');
+//
+// SUPERSEDED BY TEXTURE-3-R5 §B, AND RE-AIMED RATHER THAN DELETED. R4 §A recorded a SEPARATION: the globe
+// paints 台灣 and an inspect surface shows 中華民國（TW）. R5 §B withdraws the second half and names
+// 中華民國（TW） as a FORBIDDEN output on every user-visible surface, the detail view included. The five
+// assertions below used to pin the old strings; they now pin the new ones, and the two that were really about
+// STRUCTURE rather than about those strings — "distinct from the label", "reports its own level" — are kept
+// exactly as they were, because R5 did not change what they were protecting.
+eq(G.countryDetail('TW').name, '台灣（TW）', 'A2/R5 the TW detail presentation is 台灣（TW）');
+eq(G.countryDetail('CN').name, '中國（CN）', 'A2/R5 the CN detail presentation is 中國（CN）');
+ok(G.countryDetail('TW').name.indexOf('中華民國') === -1,
+  'A2/R5 and the formal name does NOT appear in it');
+ok(G.countryDetail('CN').name.indexOf('中華人民共和國') === -1, 'A2/R5 for CN too');
 ok(G.countryDetail('TW').name !== G.country('TW').name, 'A2 which is DISTINCT from the map label');
 ok(G.countryDetail('CN').name !== G.country('CN').name, 'A2 for CN too');
-eq(G.countryDetail('TW').level, 'FORMAL_WITH_CODE', 'A2 and it reports its own level');
-// The formal name is not lost — it is still reachable on its own.
+eq(G.countryDetail('TW').level, 'APPROVED_WITH_CODE', 'A2 and it reports its own level');
+// The formal name is not lost — it is still reachable on the AUDIT surfaces, which is what §B permits.
 eq(G.countryFull('TW').name, '中華民國', 'A2 the FORMAL name is still reachable unchanged');
 eq(G.countryFull('CN').name, '中華人民共和國', 'A2 for CN too');
 eq(G.country('TW', { form: 'full' }).name, '中華民國', 'A2 and form:full still bypasses every display level');
-// COMPOSED, NOT STORED. The asset carries a `detail` string for its own report; the resolver rebuilds it. If the
-// two ever disagreed, the stored copy would have drifted from the authority — so they are compared.
-eq(G.countryDetail('TW').name, A.approved.TW.detail, 'A2 the composed form agrees with the asset\'s own record');
-eq(G.countryDetail('CN').name, A.approved.CN.detail, 'A2 for CN too');
+eq(G.countryDetail('TW').full, '中華民國', 'A2/R5 the detail result still CARRIES the formal name as evidence');
+// COMPOSED, NOT STORED — and under R5 this assertion INVERTS, which is the point. The asset's stored `detail`
+// is the R4-era string; reading it would reintroduce exactly what §B forbids. So the composed form must now
+// DISAGREE with the stored one, and the stored one must still be reported, under a name that says what it is.
+ok(G.countryDetail('TW').name !== A.approved.TW.detail,
+  'A2/R5 the composed form deliberately DIFFERS from the asset\'s R4-era stored string');
+ok(G.countryDetail('CN').name !== A.approved.CN.detail, 'A2/R5 for CN too');
+(function () {
+  var ap = {}; G.approvedNames().forEach(function (r) { ap[r.iso] = r; });
+  eq(ap.TW.detail, '台灣（TW）', 'A2/R5 approvedNames reports the COMPOSED detail, not the stored one');
+  eq(ap.TW.recorded_detail, A.approved.TW.detail,
+    'A2/R5 and keeps the stored string as `recorded_detail` — evidence, not output');
+  eq(ap.CN.detail, '中國（CN）', 'A2/R5 for CN too');
+  eq(ap.CN.recorded_detail, A.approved.CN.detail, 'A2/R5 and CN\'s record too');
+})();
 ok(extractFn(RESOLVER_SRC, 'countryDetail').indexOf('countryFull(code, opts)') !== -1,
   'A2 and it is COMPOSED from the formal-name authority rather than read from the asset');
 // The rule is one rule, not a special case for these two.
@@ -828,17 +849,55 @@ ok(SZ.admin1 < SZ.country && SZ.country < SZ.continent, 'G-R3 the three label si
 ok(/earth-albedo-8192\.jpg/.test(GLOBE) && /earth-albedo-4096\.jpg/.test(GLOBE) && /earth-albedo-2048\.jpg/.test(GLOBE),
   'G-R3 the three-tier same-source ladder is intact');
 ok(/jul2004/.test(GLOBE), 'G-R2 and it is still the July 2004 frame');
-// Cache tokens: every CHANGED runtime asset must re-fetch, and the co-deployed set must share one token.
+// Cache tokens: every CHANGED runtime asset must re-fetch.
+//
+// SUPERSEDED BY TEXTURE-3-R5 §D, AND MADE DERIVED RATHER THAN PINNED. R4 asserted that the whole co-deployed
+// map set shares ONE token. R5 §D replaces that rule: "introduce one new map-specific token for only the
+// changed map files — do not rotate unrelated application assets", which is the same principle FB-4E-R4B-R3
+// §1 states for build stamps ("move only the stamps of files actually changed").
+//
+// A flat "all equal" check cannot express that, and a list of which file should carry which literal token
+// would rot every round — which is the failure mode that cost FB-4E three suites. So the rule is DERIVED from
+// the files themselves: a map file that carries THIS round's marker in its source must carry THIS round's
+// token, and one that does not must not. Next round maintains itself.
 (function () {
   var files = ['km-globe.js', 'geo-name-resolver.js', 'geo-names-zh-hant.js', 'geo-display-aliases-zh-tw.js',
                'geo-admin1-display-names-zh-tw.js', 'km-geo-topology.js'];
+  var SRC_OF = {
+    'km-globe.js': 'assets/js/lib/km-globe.js',
+    'geo-name-resolver.js': 'assets/js/core/geo-name-resolver.js',
+    'geo-names-zh-hant.js': 'assets/js/data/geo-names-zh-hant.js',
+    'geo-display-aliases-zh-tw.js': 'assets/js/data/geo-display-aliases-zh-tw.js',
+    'geo-admin1-display-names-zh-tw.js': 'assets/js/data/geo-admin1-display-names-zh-tw.js',
+    'km-geo-topology.js': 'assets/js/lib/km-geo-topology.js'
+  };
+  // Append-only, oldest to newest. A new round APPENDS; it never edits an existing entry.
+  var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
+                          'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
+  var CURRENT = MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1];
+  var CURRENT_MARKER = /TEXTURE-3-R5/;
   var toks = files.map(function (f) {
     var m = new RegExp(f.replace(/\./g, '\\.') + '\\?v=([^"\']+)').exec(INDEX);
     ok(!!m, 'G index.html cache-busts ' + f);
     return m ? m[1] : null;
   });
-  ok(toks.every(function (t) { return t === toks[0]; }),
-    'G and the co-deployed map set shares ONE token (' + toks[0] + ')');
+  toks.forEach(function (t, i) {
+    ok(MAP_TOKEN_SERIES.indexOf(t) !== -1,
+      'G/R5 ' + files[i] + '\'s token belongs to the map series (' + t + ')');
+    var changedThisRound = CURRENT_MARKER.test(read(SRC_OF[files[i]]));
+    if (changedThisRound) {
+      eq(t, CURRENT, 'G/R5 ' + files[i] + ' carries this round\'s marker, so it must carry this round\'s token');
+    } else {
+      ok(t !== CURRENT,
+        'G/R5 ' + files[i] + ' did NOT change this round, so it must NOT be rotated (' + t + ')');
+    }
+  });
+  // The protection the old "one token" rule really gave: nothing may be served from a token OLDER than the
+  // round its own content last moved in. Expressed as: the newest token in use is this round's, and it is
+  // carried by at least one file that actually changed.
+  ok(toks.indexOf(CURRENT) !== -1, 'G/R5 this round\'s token is actually in use');
+  ok(files.some(function (f, i) { return toks[i] === CURRENT && CURRENT_MARKER.test(read(SRC_OF[f])); }),
+    'G/R5 and the file carrying it is one that genuinely changed');
   // NOT pinned to a literal: the assertion is that they AGREE, so a future release can move them together.
   ok(/^[a-z0-9-]+$/.test(String(toks[0])), 'G which is a plain token this test does not pin to a value');
 })();

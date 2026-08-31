@@ -166,7 +166,14 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   ok(!/getOperationDb|loadOperationDb/.test(irCode) && !/getOperationDb|loadOperationDb/.test(roCode), 'F6 neither READ block triggers a whole-DB reload');
   // single router registration (unchanged from FM1-T) + clockless Foundation preserved.
   var ROUTER = read('specs/active/apps-script/01_router.gs');
-  ok((ROUTER.match(/recommendation\.workspace\.get/g) || []).length === 1, 'F7 router still registers recommendation.workspace.get exactly once');
+  // F1-7N-FB-4E-R4A1 — see FM2A F1: single ownership, two verbs, one handler.
+  ok((ROUTER.match(/action === 'recommendation\.workspace\.get'/g) || []).length === 1,
+    'F7 router still has exactly ONE dispatch branch for recommendation.workspace.get');
+  var _f7Get = /'recommendation\.workspace\.get':\s*(handle\w+_)/.exec(ROUTER);
+  if (_f7Get) {
+    ok(new RegExp("action === 'recommendation\\.workspace\\.get'[\\s\\S]{0,400}?" + _f7Get[1]).test(ROUTER),
+      'F7 and the GET route shares that handler');
+  }
   ok(!/new Date\(|Date\.now\(/.test(FOUND), 'F8 the Foundation remains clockless (determinism preserved)');
   // one bounded page per request (no per-SKU / per-destination HTTP loop).
   ok(/pagination:\s*\{\s*page:\s*1,\s*size:\s*100\s*\}/.test(IR) && /pagination:\s*\{\s*page:\s*1,\s*size:\s*100\s*\}/.test(RO), 'F9 one bounded page (size 100) per request in both consumers');

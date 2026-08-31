@@ -1,0 +1,6231 @@
+{
+  "tag": "after-r5",
+  "browser": "chrome.exe",
+  "views": [
+    {
+      "view": {
+        "id": "na-globe",
+        "title": "I1/L5-1 whole globe - North America",
+        "focus": [
+          48,
+          -100
+        ],
+        "dist": 2.9,
+        "w": 1280,
+        "h": 900,
+        "admin1": false
+      },
+      "png_bytes": 731705,
+      "diag": {
+        "id": "na-globe",
+        "title": "I1/L5-1 whole globe - North America",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 51,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 711,
+          "load_ms_by_tier": {
+            "HIGH": 51
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 0,
+          "distance": 2.9,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "off",
+          "admin1_labels_mode": "off",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 2
+        },
+        "admin1": {
+          "available": false,
+          "dataset": null,
+          "resolution": null,
+          "division_count": 0,
+          "country_count": 0,
+          "ring_count": 0,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "ADM1_DATA_NOT_ATTACHED",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0,
+          "continent_label_strength": 1,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 84,
+              "on_screen": 17,
+              "measured": 17,
+              "candidates": 17,
+              "drawn": 14
+            },
+            "continent": {
+              "candidates": 3,
+              "drawn": 2
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 14,
+              "continent": 2,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 94,
+              "continent": 35,
+              "adm1": 0
+            },
+            "total_tests": 129
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 51
+            },
+            "gpu_upload": 711,
+            "topology_prepare_coarse": 41.2,
+            "topology_prepare_fine": 0,
+            "border_buffer_upload_coarse": 1,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0,
+            "first_render": 125.3,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 6,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 41.2,
+            "buffer_upload_ms": 1
+          },
+          "fine": {
+            "available": false,
+            "reason": "FINE_NOT_BUILT"
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 0,
+          "distance": 2.9,
+          "adm1_visible": false,
+          "border_vertices": 22452,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0",
+            "14/2/0"
+          ],
+          "lod_path": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "lod_transitions": 0
+        },
+        "camera": {
+          "focus": [
+            48,
+            -100
+          ],
+          "dist": 2.9,
+          "mode": "focus"
+        },
+        "admin1_requested": false,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-regional",
+        "title": "I2 Canada regional",
+        "focus": [
+          58,
+          -100
+        ],
+        "dist": 1.95,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1499546,
+      "diag": {
+        "id": "canada-regional",
+        "title": "I2 Canada regional",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 41,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.186,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 545.8,
+          "load_ms_by_tier": {
+            "HIGH": 41
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 1,
+          "distance": 1.95,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 4
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "LOD_1_BELOW_2",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 100,
+              "on_screen": 65,
+              "measured": 65,
+              "candidates": 26,
+              "drawn": 21
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 21,
+              "continent": 0,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 253,
+              "continent": 0,
+              "adm1": 0
+            },
+            "total_tests": 253
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 41
+            },
+            "gpu_upload": 545.8,
+            "topology_prepare_coarse": 35.9,
+            "topology_prepare_fine": 333.2,
+            "border_buffer_upload_coarse": 1,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0,
+            "first_render": 65.8,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 6,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 35.9,
+            "buffer_upload_ms": 1
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 333.2,
+            "buffer_upload_ms": 0
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 2,
+          "distance": 1.95,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "21/0/0",
+            "21/0/0",
+            "21/0/0",
+            "21/0/0",
+            "21/0/0",
+            "21/0/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "3/0/22",
+            "6/0/22",
+            "7/0/22",
+            "8/0/22",
+            "8/0/22",
+            "15/0/22",
+            "18/0/22",
+            "19/0/22",
+            "21/0/22",
+            "22/0/22",
+            "24/0/22",
+            "24/0/0",
+            "27/1/0",
+            "28/1/0",
+            "28/1/0",
+            "29/1/0",
+            "29/1/0",
+            "29/1/0",
+            "27/1/0",
+            "27/1/0",
+            "27/1/0",
+            "24/0/0",
+            "24/0/0",
+            "23/0/0",
+            "21/0/0",
+            "19/0/0",
+            "18/0/0",
+            "15/0/22",
+            "8/0/22",
+            "8/0/22",
+            "7/0/22",
+            "6/0/22",
+            "3/0/22"
+          ],
+          "lod_path": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            58,
+            -100
+          ],
+          "dist": 1.95,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "us-ca-border",
+        "title": "I3/L5-8 US-Canada international border",
+        "focus": [
+          49,
+          -105
+        ],
+        "dist": 1.5,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1476833,
+      "diag": {
+        "id": "us-ca-border",
+        "title": "I3/L5-8 US-Canada international border",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 43,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.3,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 569.1,
+          "load_ms_by_tier": {
+            "HIGH": 43
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 3,
+          "distance": 1.5,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 351.8,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 30,
+            "drawn": 30,
+            "budget": 42
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_3_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 1,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 83,
+              "on_screen": 83,
+              "measured": 83,
+              "candidates": 2,
+              "drawn": 2
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 477,
+              "on_screen": 474,
+              "measured": 126,
+              "measure_cap": 126,
+              "candidates": 30,
+              "drawn": 30,
+              "budget": 42
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 2,
+              "continent": 0,
+              "adm1": 30
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 495
+            },
+            "total_tests": 496
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 43
+            },
+            "gpu_upload": 569.1,
+            "topology_prepare_coarse": 31.6,
+            "topology_prepare_fine": 351.8,
+            "border_buffer_upload_coarse": 0.7,
+            "border_buffer_upload_fine": 2,
+            "label_placement_last_frame": 0,
+            "first_render": 62.2,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 31.6,
+            "buffer_upload_ms": 0.7
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 351.8,
+            "buffer_upload_ms": 2
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.5,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "2/0/30",
+            "2/0/30",
+            "2/0/30",
+            "2/0/30",
+            "2/0/30",
+            "2/0/30"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/9",
+            "0/0/10",
+            "0/0/14",
+            "0/0/16",
+            "1/0/19",
+            "1/0/22",
+            "1/0/27",
+            "2/0/28",
+            "2/0/30",
+            "2/0/34",
+            "2/0/37",
+            "2/0/42",
+            "3/0/42",
+            "3/0/42",
+            "5/0/42",
+            "8/0/22",
+            "9/0/22",
+            "8/0/22",
+            "5/0/22",
+            "3/0/22",
+            "3/0/22",
+            "2/0/22",
+            "2/0/22",
+            "2/0/34",
+            "2/0/30",
+            "2/0/28",
+            "1/0/27",
+            "1/0/22",
+            "1/0/19",
+            "0/0/16",
+            "0/0/14",
+            "0/0/10",
+            "0/0/9"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            49,
+            -105
+          ],
+          "dist": 1.5,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-bc",
+        "title": "L5-2 Vancouver / British Columbia",
+        "focus": [
+          50,
+          -122
+        ],
+        "dist": 1.5,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1345125,
+      "diag": {
+        "id": "canada-bc",
+        "title": "L5-2 Vancouver / British Columbia",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 38,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.3,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 561.1,
+          "load_ms_by_tier": {
+            "HIGH": 38
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 3,
+          "distance": 1.5,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 319.5,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 16,
+            "drawn": 16,
+            "budget": 42
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_3_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 1,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 71,
+              "on_screen": 71,
+              "measured": 71,
+              "candidates": 2,
+              "drawn": 2
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 317,
+              "on_screen": 315,
+              "measured": 126,
+              "measure_cap": 126,
+              "candidates": 16,
+              "drawn": 16,
+              "budget": 42
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 2,
+              "continent": 0,
+              "adm1": 16
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 152
+            },
+            "total_tests": 153
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 38
+            },
+            "gpu_upload": 561.1,
+            "topology_prepare_coarse": 29.7,
+            "topology_prepare_fine": 319.5,
+            "border_buffer_upload_coarse": 0.4,
+            "border_buffer_upload_fine": 1.4,
+            "label_placement_last_frame": 0,
+            "first_render": 74.6,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 29.7,
+            "buffer_upload_ms": 0.4
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 319.5,
+            "buffer_upload_ms": 1.4
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.5,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "2/0/16",
+            "2/0/16",
+            "2/0/16",
+            "2/0/16",
+            "2/0/16",
+            "2/0/16"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/6",
+            "0/0/7",
+            "0/0/8",
+            "0/0/8",
+            "0/0/9",
+            "0/0/12",
+            "0/0/14",
+            "1/0/15",
+            "2/0/16",
+            "2/0/17",
+            "3/0/21",
+            "3/0/24",
+            "3/0/29",
+            "4/0/32",
+            "5/0/35",
+            "5/0/22",
+            "6/0/22",
+            "5/0/22",
+            "5/0/22",
+            "4/0/22",
+            "3/0/22",
+            "3/0/22",
+            "3/0/21",
+            "2/0/17",
+            "2/0/16",
+            "1/0/15",
+            "0/0/14",
+            "0/0/12",
+            "0/0/9",
+            "0/0/8",
+            "0/0/8",
+            "0/0/7",
+            "0/0/6"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            50,
+            -122
+          ],
+          "dist": 1.5,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-prairies",
+        "title": "L5-3 Alberta / Saskatchewan / Manitoba",
+        "focus": [
+          51,
+          -105
+        ],
+        "dist": 1.55,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1538955,
+      "diag": {
+        "id": "canada-prairies",
+        "title": "L5-3 Alberta / Saskatchewan / Manitoba",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 37,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.3,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 513.5,
+          "load_ms_by_tier": {
+            "HIGH": 37
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 2,
+          "distance": 1.55,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 326.2,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 36,
+            "drawn": 22,
+            "budget": 22
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_2_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 1,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 85,
+              "on_screen": 85,
+              "measured": 85,
+              "candidates": 2,
+              "drawn": 2
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 498,
+              "on_screen": 498,
+              "measured": 66,
+              "measure_cap": 66,
+              "candidates": 36,
+              "drawn": 22,
+              "budget": 22
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 2,
+              "continent": 0,
+              "adm1": 35
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 689
+            },
+            "total_tests": 690
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 37
+            },
+            "gpu_upload": 513.5,
+            "topology_prepare_coarse": 33.1,
+            "topology_prepare_fine": 326.2,
+            "border_buffer_upload_coarse": 0.6,
+            "border_buffer_upload_fine": 2,
+            "label_placement_last_frame": 0,
+            "first_render": 57.7,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 33.1,
+            "buffer_upload_ms": 0.6
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 326.2,
+            "buffer_upload_ms": 2
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.55,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "2/0/22",
+            "2/0/22",
+            "2/0/22",
+            "2/0/22",
+            "2/0/22",
+            "2/0/22"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/9",
+            "0/0/14",
+            "0/0/15",
+            "1/0/19",
+            "1/0/20",
+            "2/0/24",
+            "2/0/25",
+            "2/0/31",
+            "2/0/35",
+            "2/0/38",
+            "3/0/42",
+            "3/0/42",
+            "4/0/42",
+            "5/0/42",
+            "9/0/22",
+            "10/0/22",
+            "12/0/22",
+            "10/0/22",
+            "9/0/22",
+            "5/0/22",
+            "4/0/22",
+            "3/0/22",
+            "3/0/22",
+            "2/0/22",
+            "2/0/22",
+            "2/0/31",
+            "2/0/25",
+            "2/0/24",
+            "1/0/20",
+            "1/0/19",
+            "0/0/15",
+            "0/0/14",
+            "0/0/9"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            51,
+            -105
+          ],
+          "dist": 1.55,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-greatlakes",
+        "title": "L5-4 Great Lakes / S Ontario / Quebec",
+        "focus": [
+          45,
+          -78
+        ],
+        "dist": 1.5,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1254069,
+      "diag": {
+        "id": "canada-greatlakes",
+        "title": "L5-4 Great Lakes / S Ontario / Quebec",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 39,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.3,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 2158.6,
+          "load_ms_by_tier": {
+            "HIGH": 39
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 3,
+          "distance": 1.5,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 328.1,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 43,
+            "drawn": 42,
+            "budget": 42
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_3_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 1,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 102,
+              "on_screen": 97,
+              "measured": 97,
+              "candidates": 1,
+              "drawn": 1
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 935,
+              "on_screen": 839,
+              "measured": 126,
+              "measure_cap": 126,
+              "candidates": 43,
+              "drawn": 42,
+              "budget": 42
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 42
+            },
+            "tests": {
+              "operational": 0,
+              "country": 0,
+              "continent": 0,
+              "adm1": 915
+            },
+            "total_tests": 915
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 39
+            },
+            "gpu_upload": 2158.6,
+            "topology_prepare_coarse": 47.7,
+            "topology_prepare_fine": 328.1,
+            "border_buffer_upload_coarse": 0.8,
+            "border_buffer_upload_fine": 2.3,
+            "label_placement_last_frame": 0,
+            "first_render": 75.6,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 47.7,
+            "buffer_upload_ms": 0.8
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 328.1,
+            "buffer_upload_ms": 2.3
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.5,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "1/0/42",
+            "1/0/42",
+            "1/0/42",
+            "1/0/42",
+            "1/0/42",
+            "1/0/42"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/18",
+            "0/0/19",
+            "0/0/26",
+            "0/0/27",
+            "0/0/29",
+            "0/0/30",
+            "1/0/35",
+            "1/0/41",
+            "1/0/42",
+            "1/0/42",
+            "1/0/42",
+            "1/0/42",
+            "4/0/42",
+            "4/0/42",
+            "5/0/42",
+            "7/0/22",
+            "9/0/22",
+            "7/0/22",
+            "5/0/22",
+            "4/0/22",
+            "4/0/22",
+            "1/0/22",
+            "1/0/22",
+            "1/0/42",
+            "1/0/42",
+            "1/0/41",
+            "1/0/35",
+            "0/0/30",
+            "0/0/29",
+            "0/0/27",
+            "0/0/26",
+            "0/0/19",
+            "0/0/18"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            45,
+            -78
+          ],
+          "dist": 1.5,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-rockies",
+        "title": "L5-5 Canadian Rockies",
+        "focus": [
+          51.5,
+          -117
+        ],
+        "dist": 1.45,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1349103,
+      "diag": {
+        "id": "canada-rockies",
+        "title": "L5-5 Canadian Rockies",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 50,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.3,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 521.6,
+          "load_ms_by_tier": {
+            "HIGH": 50
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 3,
+          "distance": 1.45,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 332.4,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 13,
+            "drawn": 13,
+            "budget": 42
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_3_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 1,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 75,
+              "on_screen": 71,
+              "measured": 71,
+              "candidates": 2,
+              "drawn": 2
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 332,
+              "on_screen": 326,
+              "measured": 126,
+              "measure_cap": 126,
+              "candidates": 13,
+              "drawn": 13,
+              "budget": 42
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 2,
+              "continent": 0,
+              "adm1": 13
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 104
+            },
+            "total_tests": 105
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 50
+            },
+            "gpu_upload": 521.6,
+            "topology_prepare_coarse": 53.4,
+            "topology_prepare_fine": 332.4,
+            "border_buffer_upload_coarse": 0.8,
+            "border_buffer_upload_fine": 2.1,
+            "label_placement_last_frame": 0,
+            "first_render": 203.4,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 53.4,
+            "buffer_upload_ms": 0.8
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 332.4,
+            "buffer_upload_ms": 2.1
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.45,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "2/0/13",
+            "2/0/13",
+            "2/0/13",
+            "2/0/13",
+            "2/0/13",
+            "2/0/13"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/5",
+            "0/0/5",
+            "0/0/5",
+            "0/0/5",
+            "0/0/10",
+            "0/0/12",
+            "1/0/12",
+            "2/0/12",
+            "2/0/13",
+            "2/0/17",
+            "2/0/19",
+            "2/0/25",
+            "2/0/28",
+            "2/0/30",
+            "2/0/36",
+            "4/0/39",
+            "4/0/42",
+            "4/0/39",
+            "2/0/36",
+            "2/0/30",
+            "2/0/28",
+            "2/0/25",
+            "2/0/19",
+            "2/0/17",
+            "2/0/13",
+            "2/0/12",
+            "1/0/12",
+            "0/0/12",
+            "0/0/10",
+            "0/0/5",
+            "0/0/5",
+            "0/0/5",
+            "0/0/5"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 0
+        },
+        "camera": {
+          "focus": [
+            51.5,
+            -117
+          ],
+          "dist": 1.45,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "canada-boreal",
+        "title": "L5-6 northern mainland / boreal-tundra transition",
+        "focus": [
+          63,
+          -100
+        ],
+        "dist": 1.7,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1648616,
+      "diag": {
+        "id": "canada-boreal",
+        "title": "L5-6 northern mainland / boreal-tundra transition",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 37,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.257,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 2256.1,
+          "load_ms_by_tier": {
+            "HIGH": 37
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 2,
+          "distance": 1.7,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 334.7,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 30,
+            "drawn": 22,
+            "budget": 22
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_2_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0.63,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 106,
+              "on_screen": 106,
+              "measured": 106,
+              "candidates": 4,
+              "drawn": 4
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 925,
+              "on_screen": 925,
+              "measured": 66,
+              "measure_cap": 66,
+              "candidates": 30,
+              "drawn": 22,
+              "budget": 22
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 4,
+              "continent": 0,
+              "adm1": 28
+            },
+            "tests": {
+              "operational": 0,
+              "country": 6,
+              "continent": 0,
+              "adm1": 500
+            },
+            "total_tests": 506
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 37
+            },
+            "gpu_upload": 2256.1,
+            "topology_prepare_coarse": 38.4,
+            "topology_prepare_fine": 334.7,
+            "border_buffer_upload_coarse": 0.6,
+            "border_buffer_upload_fine": 2,
+            "label_placement_last_frame": 0,
+            "first_render": 63.8,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 38.4,
+            "buffer_upload_ms": 0.6
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 334.7,
+            "buffer_upload_ms": 2
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.7,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "4/0/22",
+            "4/0/22",
+            "4/0/22",
+            "4/0/22",
+            "4/0/22",
+            "4/0/22"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "1/0/9",
+            "1/0/9",
+            "1/0/11",
+            "1/0/13",
+            "1/0/15",
+            "1/0/18",
+            "2/0/22",
+            "2/0/23",
+            "4/0/28",
+            "6/0/22",
+            "8/0/22",
+            "9/0/22",
+            "10/0/22",
+            "11/0/22",
+            "18/0/22",
+            "20/0/22",
+            "23/0/22",
+            "20/0/22",
+            "18/0/22",
+            "11/0/22",
+            "10/0/22",
+            "9/0/22",
+            "8/0/22",
+            "6/0/22",
+            "4/0/22",
+            "2/0/22",
+            "2/0/22",
+            "1/0/18",
+            "1/0/15",
+            "1/0/13",
+            "1/0/11",
+            "1/0/9",
+            "1/0/9"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            63,
+            -100
+          ],
+          "dist": 1.7,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "arctic-greenland",
+        "title": "L5-7 Arctic Archipelago and Greenland",
+        "focus": [
+          75,
+          -60
+        ],
+        "dist": 1.9,
+        "w": 1280,
+        "h": 900,
+        "admin1": false
+      },
+      "png_bytes": 1584634,
+      "diag": {
+        "id": "arctic-greenland",
+        "title": "L5-7 Arctic Archipelago and Greenland",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 56,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.2,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 776.6,
+          "load_ms_by_tier": {
+            "HIGH": 56
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 1,
+          "distance": 1.9,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "off",
+          "admin1_labels_mode": "off",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": false,
+          "dataset": null,
+          "resolution": null,
+          "division_count": 0,
+          "country_count": 0,
+          "ring_count": 0,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "ADM1_DATA_NOT_ATTACHED",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0.13,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 130,
+              "on_screen": 130,
+              "measured": 130,
+              "candidates": 58,
+              "drawn": 36
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 36,
+              "continent": 0,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1078,
+              "continent": 0,
+              "adm1": 0
+            },
+            "total_tests": 1078
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 56
+            },
+            "gpu_upload": 776.6,
+            "topology_prepare_coarse": 30.4,
+            "topology_prepare_fine": 0,
+            "border_buffer_upload_coarse": 0.8,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0,
+            "first_render": 73.6,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 6,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 30.4,
+            "buffer_upload_ms": 0.8
+          },
+          "fine": {
+            "available": false,
+            "reason": "FINE_NOT_BUILT"
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 2,
+          "distance": 1.9,
+          "adm1_visible": false,
+          "border_vertices": 22452,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "36/0/0",
+            "36/0/0",
+            "36/0/0",
+            "36/0/0",
+            "36/0/0",
+            "36/0/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "5/0/0",
+            "8/0/0",
+            "11/0/0",
+            "13/0/0",
+            "17/0/0",
+            "25/0/0",
+            "31/0/0",
+            "35/0/0",
+            "37/0/0",
+            "39/0/0",
+            "43/0/0",
+            "46/0/0",
+            "47/0/0",
+            "47/0/0",
+            "47/1/0",
+            "47/1/0",
+            "48/1/0",
+            "48/1/0",
+            "47/1/0",
+            "47/0/0",
+            "47/0/0",
+            "47/0/0",
+            "44/0/0",
+            "39/0/0",
+            "36/0/0",
+            "35/0/0",
+            "30/0/0",
+            "25/0/0",
+            "17/0/0",
+            "13/0/0",
+            "11/0/0",
+            "8/0/0",
+            "5/0/0"
+          ],
+          "lod_path": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            75,
+            -60
+          ],
+          "dist": 1.9,
+          "mode": "focus"
+        },
+        "admin1_requested": false,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "alaska-yukon",
+        "title": "R5-E1 Alaska / Yukon - the 141st-meridian border",
+        "focus": [
+          63,
+          -141
+        ],
+        "dist": 1.6,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 1527586,
+      "diag": {
+        "id": "alaska-yukon",
+        "title": "R5-E1 Alaska / Yukon - the 141st-meridian border",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 49,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0.286,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 518.1,
+          "load_ms_by_tier": {
+            "HIGH": 49
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 2,
+          "distance": 1.6,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": true,
+          "admin1_labels_visible": true,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 99
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 6940,
+          "vertex_count": 13880,
+          "buffer_bytes": 388640,
+          "gpu_buffers": 1,
+          "buffer_builds": 1,
+          "build_ms": 238.9,
+          "max_source_arc_deg": 11.009999999999954,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 11,
+            "drawn": 11,
+            "budget": 22
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "FINE",
+          "active_reason": "LOD_2_AT_OR_ABOVE_2_AND_ADM1_DATA_PRESENT",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0.87,
+          "continent_label_strength": 0,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 97,
+              "on_screen": 97,
+              "measured": 97,
+              "candidates": 2,
+              "drawn": 2
+            },
+            "continent": {
+              "candidates": 0,
+              "drawn": 0
+            },
+            "adm1": {
+              "considered": 3835,
+              "after_facing": 264,
+              "on_screen": 264,
+              "measured": 66,
+              "measure_cap": 66,
+              "candidates": 11,
+              "drawn": 11,
+              "budget": 22
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 2,
+              "continent": 0,
+              "adm1": 11
+            },
+            "tests": {
+              "operational": 0,
+              "country": 1,
+              "continent": 0,
+              "adm1": 77
+            },
+            "total_tests": 78
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 49
+            },
+            "gpu_upload": 518.1,
+            "topology_prepare_coarse": 44.5,
+            "topology_prepare_fine": 238.9,
+            "border_buffer_upload_coarse": 0.7,
+            "border_buffer_upload_fine": 1.6,
+            "label_placement_last_frame": 0,
+            "first_render": 120.3,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 44.5,
+            "buffer_upload_ms": 0.7
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 238.9,
+            "buffer_upload_ms": 1.6
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 3,
+          "distance": 1.6,
+          "adm1_visible": true,
+          "border_vertices": 141608,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "2/0/11",
+            "2/0/11",
+            "2/0/11",
+            "2/0/11",
+            "2/0/11",
+            "2/0/11"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "0/0/4",
+            "0/0/4",
+            "0/0/5",
+            "0/0/5",
+            "0/0/6",
+            "1/0/8",
+            "1/0/10",
+            "1/0/11",
+            "2/0/12",
+            "3/0/15",
+            "4/0/18",
+            "5/0/19",
+            "5/0/18",
+            "7/0/20",
+            "7/0/22",
+            "9/0/22",
+            "12/0/22",
+            "9/0/22",
+            "7/0/22",
+            "7/0/20",
+            "5/0/18",
+            "5/0/17",
+            "4/0/16",
+            "3/0/13",
+            "2/0/11",
+            "1/0/10",
+            "1/0/10",
+            "1/0/8",
+            "0/0/6",
+            "0/0/5",
+            "0/0/5",
+            "0/0/4",
+            "0/0/4"
+          ],
+          "lod_path": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "lod_transitions": 2
+        },
+        "camera": {
+          "focus": [
+            63,
+            -141
+          ],
+          "dist": 1.6,
+          "mode": "focus"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "route-pacific",
+        "title": "R5-E2 Pacific route - Shanghai to Los Angeles",
+        "focus": [
+          45,
+          -165
+        ],
+        "dist": 2.9,
+        "w": 1280,
+        "h": 900,
+        "admin1": false,
+        "route": [
+          {
+            "id": "SHA",
+            "lat": 31.2,
+            "lng": 121.5
+          },
+          {
+            "id": "LAX",
+            "lat": 33.9,
+            "lng": -118.4
+          }
+        ]
+      },
+      "png_bytes": 638056,
+      "diag": {
+        "id": "route-pacific",
+        "title": "R5-E2 Pacific route - Shanghai to Los Angeles",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 35,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 2153,
+          "load_ms_by_tier": {
+            "HIGH": 35
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 0,
+          "distance": 2.9,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "off",
+          "admin1_labels_mode": "off",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 2
+        },
+        "admin1": {
+          "available": false,
+          "dataset": null,
+          "resolution": null,
+          "division_count": 0,
+          "country_count": 0,
+          "ring_count": 0,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "ADM1_DATA_NOT_ATTACHED",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0,
+          "continent_label_strength": 1,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 63,
+              "on_screen": 13,
+              "measured": 13,
+              "candidates": 13,
+              "drawn": 10
+            },
+            "continent": {
+              "candidates": 4,
+              "drawn": 4
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 2,
+              "country": 10,
+              "continent": 4,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 72,
+              "continent": 54,
+              "adm1": 0
+            },
+            "total_tests": 126
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 35
+            },
+            "gpu_upload": 2153,
+            "topology_prepare_coarse": 36.7,
+            "topology_prepare_fine": 0,
+            "border_buffer_upload_coarse": 1.8,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0.1,
+            "first_render": 67.7,
+            "last_frame_submit": 0.3
+          },
+          "frames_drawn": 6,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 36.7,
+            "buffer_upload_ms": 1.8
+          },
+          "fine": {
+            "available": false,
+            "reason": "FINE_NOT_BUILT"
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0.17,
+          "p50_ms": 0.1,
+          "p95_ms": 0.2,
+          "min_ms": 0.1,
+          "max_ms": 1.2,
+          "label_mean_ms": 0.12,
+          "label_p50_ms": 0.1,
+          "label_p95_ms": 0.2,
+          "label_max_ms": 1.2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 0,
+          "distance": 2.9,
+          "adm1_visible": false,
+          "border_vertices": 22452,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0",
+            "10/4/0"
+          ],
+          "lod_path": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "lod_transitions": 0
+        },
+        "camera": {
+          "focus": [
+            45,
+            -165
+          ],
+          "dist": 2.9,
+          "mode": "focus"
+        },
+        "admin1_requested": false,
+        "route": true,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "route-atlantic",
+        "title": "R5-E3 Atlantic route - Rotterdam to New York",
+        "focus": [
+          47,
+          -40
+        ],
+        "dist": 2.9,
+        "w": 1280,
+        "h": 900,
+        "admin1": false,
+        "route": [
+          {
+            "id": "RTM",
+            "lat": 51.9,
+            "lng": 4.5
+          },
+          {
+            "id": "JFK",
+            "lat": 40.6,
+            "lng": -73.8
+          }
+        ]
+      },
+      "png_bytes": 778442,
+      "diag": {
+        "id": "route-atlantic",
+        "title": "R5-E3 Atlantic route - Rotterdam to New York",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 40,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 459.9,
+          "load_ms_by_tier": {
+            "HIGH": 40
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 0,
+          "distance": 2.9,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "off",
+          "admin1_labels_mode": "off",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 2
+        },
+        "admin1": {
+          "available": false,
+          "dataset": null,
+          "resolution": null,
+          "division_count": 0,
+          "country_count": 0,
+          "ring_count": 0,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "ADM1_DATA_NOT_ATTACHED",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0,
+          "continent_label_strength": 1,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 135,
+              "on_screen": 24,
+              "measured": 24,
+              "candidates": 24,
+              "drawn": 22
+            },
+            "continent": {
+              "candidates": 4,
+              "drawn": 2
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 2,
+              "country": 22,
+              "continent": 2,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 283,
+              "continent": 60,
+              "adm1": 0
+            },
+            "total_tests": 343
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 40
+            },
+            "gpu_upload": 459.9,
+            "topology_prepare_coarse": 40.8,
+            "topology_prepare_fine": 0,
+            "border_buffer_upload_coarse": 0.6,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0,
+            "first_render": 66.1,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 6,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 40.8,
+            "buffer_upload_ms": 0.6
+          },
+          "fine": {
+            "available": false,
+            "reason": "FINE_NOT_BUILT"
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 0,
+          "distance": 2.9,
+          "adm1_visible": false,
+          "border_vertices": 22452,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0",
+            "22/2/0"
+          ],
+          "lod_path": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "lod_transitions": 0
+        },
+        "camera": {
+          "focus": [
+            47,
+            -40
+          ],
+          "dist": 2.9,
+          "mode": "focus"
+        },
+        "admin1_requested": false,
+        "route": true,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    },
+    {
+      "view": {
+        "id": "map-default",
+        "title": "R5-E4 default On-the-Way Map view (engine overview)",
+        "overview": true,
+        "focus": [
+          0,
+          0
+        ],
+        "dist": 3,
+        "w": 1280,
+        "h": 900,
+        "admin1": true
+      },
+      "png_bytes": 692374,
+      "diag": {
+        "id": "map-default",
+        "title": "R5-E4 default On-the-Way Map view (engine overview)",
+        "ok": true,
+        "preconditions": {
+          "KMGlobe": true,
+          "land": true,
+          "countries": true,
+          "names": true,
+          "resolver": true,
+          "webgl": true
+        },
+        "material": {
+          "stage": "REAL_HIGH",
+          "tier": "REAL_HIGH_8192",
+          "tier_reason": "BOOTSTRAP",
+          "target_tier": "REAL_HIGH_8192",
+          "target_tier_reason": "CAPABLE_AND_WITHIN_BUDGET",
+          "source_asset": "NASA Blue Marble Next Generation, July 2004, topography and bathymetry (8192 tier) [earth-albedo-8192.jpg]",
+          "source_dimensions": "8192x4096",
+          "decoded_dimensions": "8192x4096",
+          "gpu_dimensions": "8192x4096",
+          "resample": "NONE",
+          "gamma_decode": "SAMPLER_SRGB8_ALPHA8",
+          "srgb_internalformat": "SRGB8_ALPHA8",
+          "webgl_version": 2,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "estimated_gpu_bytes": 178956971,
+          "max_texture_size": 8192,
+          "mipmaps": true,
+          "filter": "LINEAR_MIPMAP_LINEAR/LINEAR",
+          "wrap_s": "REPEAT",
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "allocation_verified": true,
+          "fallback_reason": "",
+          "high_detail_load_ms": 159,
+          "fragment_highp": true,
+          "detail_enabled": true,
+          "detail_strength": 0,
+          "magnification_budget": 6,
+          "min_distance": 1.35,
+          "effective_magnification": 2.38,
+          "context_lost": 0,
+          "context_restored": 0,
+          "layers": [
+            "albedo:REAL_HIGH_8192",
+            "water-mask:albedo-chroma",
+            "relief:albedo-luminance",
+            "ocean-specular",
+            "atmosphere-rim"
+          ],
+          "gpu_upload_ms": 363.7,
+          "load_ms_by_tier": {
+            "HIGH": 159
+          },
+          "estimated_gpu_mb": 170.7,
+          "asset_dir": "assets/img/earth/",
+          "zoom_min_floor": 1.35,
+          "zoom_min_ceiling": 1.85,
+          "zoom_max": 5,
+          "viewport_device_px": 900
+        },
+        "texture": {
+          "width": 8192,
+          "height": 4096,
+          "tier_reason": "REAL_HIGH_8192",
+          "mipmaps": true,
+          "anisotropy": 16,
+          "max_anisotropy": 16,
+          "max_texture_size": 8192,
+          "allocation_verified": true,
+          "downgraded_from": null
+        },
+        "render": {
+          "dpr": 1,
+          "device_pixel_ratio": 1,
+          "dpr_cap": 2,
+          "css_width": 1280,
+          "css_height": 900,
+          "buffer_width": 1280,
+          "buffer_height": 900
+        },
+        "lod": {
+          "lod": 0,
+          "distance": 3,
+          "min_distance": 1.35,
+          "max_distance": 5,
+          "thresholds": [
+            2.6,
+            1.95,
+            1.62
+          ],
+          "hysteresis": 0.08,
+          "admin1_borders_mode": "auto",
+          "admin1_labels_mode": "auto",
+          "admin1_borders_visible": false,
+          "admin1_labels_visible": false,
+          "admin1_border_min_lod": 2,
+          "admin1_label_min_lod": 2,
+          "country_label_tier": 2
+        },
+        "admin1": {
+          "available": true,
+          "dataset": "ne_10m_admin_1_states_provinces",
+          "resolution": "1:10m",
+          "division_count": 3835,
+          "country_count": 3835,
+          "ring_count": 5081,
+          "segment_count": 0,
+          "vertex_count": 0,
+          "buffer_bytes": 0,
+          "gpu_buffers": 0,
+          "buffer_builds": 0,
+          "build_ms": 0,
+          "max_source_arc_deg": 0,
+          "radius": 1,
+          "max_segment_deg": 2,
+          "restricted_to_countries": null,
+          "labels": {
+            "candidates": 0,
+            "drawn": 0,
+            "budget": 0
+          },
+          "degrade_reason": null
+        },
+        "topology": {
+          "active_set": "COARSE",
+          "active_reason": "LOD_0_BELOW_2",
+          "surface_radius": 1,
+          "border_radius": 1,
+          "border_depth_bias": 0.00025,
+          "arc_radius": 1.006,
+          "marker_radius": 1.012,
+          "adm1_border_strength": 0,
+          "continent_label_strength": 1,
+          "label_sizes_px": {
+            "continent": 17,
+            "country": 12,
+            "admin1": 9
+          },
+          "label_counts": {
+            "country": {
+              "considered": 175,
+              "after_facing": 145,
+              "on_screen": 26,
+              "measured": 26,
+              "candidates": 26,
+              "drawn": 21
+            },
+            "continent": {
+              "candidates": 4,
+              "drawn": 3
+            },
+            "adm1": {
+              "considered": 0,
+              "after_facing": 0,
+              "on_screen": 0,
+              "measured": 0,
+              "measure_cap": 0,
+              "candidates": 0,
+              "drawn": 0,
+              "budget": 0
+            }
+          },
+          "label_collision": {
+            "placed": {
+              "operational": 0,
+              "country": 21,
+              "continent": 3,
+              "adm1": 0
+            },
+            "tests": {
+              "operational": 0,
+              "country": 240,
+              "continent": 85,
+              "adm1": 0
+            },
+            "total_tests": 325
+          },
+          "label_class_order": [
+            "OPERATIONAL",
+            "COUNTRY",
+            "CONTINENT",
+            "ADM1"
+          ],
+          "label_measure_factor": 3,
+          "phases_ms": {
+            "asset_load_fetch_plus_decode": {
+              "HIGH": 159
+            },
+            "gpu_upload": 363.7,
+            "topology_prepare_coarse": 36.7,
+            "topology_prepare_fine": 319.4,
+            "border_buffer_upload_coarse": 0.5,
+            "border_buffer_upload_fine": 0,
+            "label_placement_last_frame": 0,
+            "first_render": 65.9,
+            "last_frame_submit": 0
+          },
+          "frames_drawn": 7,
+          "coarse": {
+            "available": true,
+            "input_features": 175,
+            "input_rings": 285,
+            "directed_edges": 8733,
+            "degenerate_edges": 4,
+            "unique_edges": 6656,
+            "duplicate_edges_removed": 2073,
+            "duplicate_percent": 23.74,
+            "classes": {
+              "COASTLINE": {
+                "edges": 4583,
+                "edges_unfiltered": 4583,
+                "segments_after_subdivision": 4758,
+                "vertices": 9516,
+                "buffer_bytes": 266448,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 18.06
+              },
+              "INTERNATIONAL": {
+                "edges": 2073,
+                "edges_unfiltered": 2073,
+                "segments_after_subdivision": 2156,
+                "vertices": 12936,
+                "buffer_bytes": 569184,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 0,
+                "edges_unfiltered": 0,
+                "segments_after_subdivision": 0,
+                "vertices": 0,
+                "buffer_bytes": 0,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 0
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 4562,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 21
+              },
+              "INTERNATIONAL": {
+                "vertices": 2206,
+                "dangling_endpoints": 341,
+                "odd_degree": 414,
+                "junctions": 74
+              },
+              "ADM1": {
+                "vertices": 0,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 0
+              },
+              "ALL": {
+                "vertices": 6405,
+                "dangling_endpoints": 0,
+                "odd_degree": 414,
+                "junctions": 456
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 36.7,
+            "buffer_upload_ms": 0.5
+          },
+          "fine": {
+            "available": true,
+            "input_features": 3835,
+            "input_rings": 5081,
+            "directed_edges": 76931,
+            "degenerate_edges": 914,
+            "unique_edges": 67976,
+            "duplicate_edges_removed": 8041,
+            "duplicate_percent": 10.45,
+            "classes": {
+              "COASTLINE": {
+                "edges": 59935,
+                "edges_unfiltered": 59935,
+                "segments_after_subdivision": 60309,
+                "vertices": 120618,
+                "buffer_bytes": 3377304,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 1,
+                "max_source_arc_deg": 16.47
+              },
+              "INTERNATIONAL": {
+                "edges": 1174,
+                "edges_unfiltered": 1174,
+                "segments_after_subdivision": 1185,
+                "vertices": 7110,
+                "buffer_bytes": 312840,
+                "mode": "RIBBON",
+                "width_px": 1.7,
+                "rank": 2,
+                "max_source_arc_deg": 0
+              },
+              "ADM1": {
+                "edges": 6867,
+                "edges_unfiltered": 6867,
+                "segments_after_subdivision": 6940,
+                "vertices": 13880,
+                "buffer_bytes": 388640,
+                "mode": "LINES",
+                "width_px": 0,
+                "rank": 3,
+                "max_source_arc_deg": 11.01
+              }
+            },
+            "endpoints": {
+              "COASTLINE": {
+                "vertices": 55793,
+                "dangling_endpoints": 0,
+                "odd_degree": 0,
+                "junctions": 4026
+              },
+              "INTERNATIONAL": {
+                "vertices": 1639,
+                "dangling_endpoints": 930,
+                "odd_degree": 930,
+                "junctions": 0
+              },
+              "ADM1": {
+                "vertices": 9134,
+                "dangling_endpoints": 4554,
+                "odd_degree": 4572,
+                "junctions": 19
+              },
+              "ALL": {
+                "vertices": 60994,
+                "dangling_endpoints": 0,
+                "odd_degree": 5480,
+                "junctions": 9455
+              }
+            },
+            "antimeridian": {
+              "antimeridian_edges": 1,
+              "wide_edges": 0,
+              "polar_edges": 3,
+              "worst_delta_lng": 360
+            },
+            "topology_build_ms": 319.4,
+            "buffer_upload_ms": 0
+          },
+          "degrade_reason": null
+        },
+        "perf": {
+          "samples": 24,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "min_ms": 0,
+          "max_ms": 0,
+          "label_mean_ms": 0,
+          "label_p50_ms": 0,
+          "label_p95_ms": 0,
+          "label_max_ms": 0,
+          "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+          "pipeline_drained": true,
+          "measures": "matrix update + GL submission + 2D label pass + gl.finish() (pipeline drained)",
+          "lod": 0,
+          "distance": 3,
+          "adm1_visible": false,
+          "border_vertices": 22452,
+          "sphere_triangles": 9216
+        },
+        "flicker": {
+          "still_frames": 6,
+          "still_stable": true,
+          "still_sets": [
+            "21/3/0",
+            "21/3/0",
+            "21/3/0",
+            "21/3/0",
+            "21/3/0",
+            "21/3/0"
+          ],
+          "sweep_steps": 33,
+          "sweep_sets": [
+            "20/2/0",
+            "20/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "18/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0",
+            "19/2/0"
+          ],
+          "lod_path": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "lod_transitions": 0
+        },
+        "camera": {
+          "focus": [
+            0,
+            0
+          ],
+          "dist": 3,
+          "mode": "overview"
+        },
+        "admin1_requested": true,
+        "route": false,
+        "font_probe": {
+          "Microsoft JhengHei": 72,
+          "PingFang TC": 72,
+          "Noto Sans TC": 72,
+          "Noto Sans CJK TC": 72,
+          "sans-serif": 72,
+          "__fallback": 72,
+          "__any_cjk": true
+        }
+      }
+    }
+  ]
+}

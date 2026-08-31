@@ -241,19 +241,61 @@ var highSha = sha256File(path.join(IMG, 'earth-albedo-8192.jpg'));
 ok(imgTok && imgTok[1].indexOf(highSha.slice(0, 8)) !== -1,
   'J17 pinned to the HIGH tier content digest (' + (imgTok ? imgTok[1] : '?') + ' contains ' + highSha.slice(0, 8) + ')');
 ok(imgTok && imgTok[1] !== 'jul2004-4f424067', 'J17 and it MOVED — the R2 token would have served the old bytes');
-// The co-deployed script set shares ONE token. R2 broke this by giving km-globe.js a token of its own while
-// assets/tests/geo-names-zh-hant-...test.js requires the engine and the name asset to share one; that suite
-// failed from a086104 onward. Asserted here so the set cannot drift apart again unnoticed.
-var coDeployed = ['km-globe.js', 'geo-names-zh-hant.js', 'geo-name-resolver.js'];
+// The co-deployed script set. R3 required these to share ONE token, because R2 had given km-globe.js a token
+// of its own and left the name asset behind, which broke a sibling suite from a086104 onward.
+//
+// TEXTURE-3-R5 §D REPLACES THAT RULE, and the replacement is narrower rather than looser. §D asks for "one new
+// map-specific token for only the CHANGED map files", because rotating a file whose bytes did not move
+// re-downloads it for every user and tells the next round nothing about what actually changed. String equality
+// cannot express that — it is equally satisfied by rotating everything. What R3 was really protecting against
+// was a STALE PAIRING: an old consumer served against a new asset. That is what is asserted now, over an
+// append-only ordered series.
+var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
+                        'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
+// Ordered by DEPENDENCY: the name asset, then the resolver that reads it, then the engine that reads the
+// resolver. The order is the assertion, so writing it wrongly would be visible rather than silent.
+var coDeployed = ['geo-names-zh-hant.js', 'geo-name-resolver.js', 'km-globe.js'];
 var toks = coDeployed.map(function (f) {
-  var m = new RegExp(f.replace('.', '\\.') + '\\?v=([^"\']+)').exec(INDEX);
+  var m = new RegExp(f.replace('.', '[.]') + '[?]v=([^"\']+)').exec(INDEX);
   ok(!!m, 'J17 index.html cache-busts ' + f);
   return m ? m[1] : null;
 });
-ok(toks.every(function (t) { return t === toks[0]; }),
-  'J17 and the co-deployed map set shares ONE token (' + toks.join(' / ') + ')');
-ok(toks[0] !== 'map-texture3-r2-20260826' && toks[0] !== 'map-zh-hant-20260826',
-  'J17 which is a NEW token, so the changed files really re-fetch');
+toks.forEach(function (t, i) {
+  ok(MAP_TOKEN_SERIES.indexOf(t) !== -1,
+    'J17 ' + coDeployed[i] + ' carries a token from the map series (' + t + ')');
+});
+// AND THE RULE IS: A FILE'S TOKEN MOVES WHEN THAT FILE MOVES. Derived from the sources rather than pinned to
+// a list of filenames, so next round maintains itself.
+//
+// The first attempt at this replacement asserted the tokens were NON-DECREASING along the dependency chain,
+// on the reasoning that an old consumer against a new provider is the pairing that breaks. That was wrong, and
+// wrong in an instructive direction: under §D a provider moving while its consumer stays put is the NORMAL
+// case, so the assertion forbade precisely what §D mandates. It failed on the very state it was written to
+// describe — km-globe.js at R4 reading a resolver at R5 — which is a rule contradicting its own round.
+//
+// A cache token is not a compatibility number. It answers one question: will the browser re-fetch this file.
+// So that is what is asserted, and the interface question is left to the suites that actually exercise the
+// interface.
+var CURRENT_TOKEN = MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1];
+var SRC_OF = {
+  'geo-names-zh-hant.js': 'assets/js/data/geo-names-zh-hant.js',
+  'geo-name-resolver.js': 'assets/js/core/geo-name-resolver.js',
+  'km-globe.js': 'assets/js/lib/km-globe.js'
+};
+coDeployed.forEach(function (f, i) {
+  var changedThisRound = /TEXTURE-3-R5/.test(read(SRC_OF[f]));
+  if (changedThisRound) {
+    eq(toks[i], CURRENT_TOKEN, 'J17 ' + f + ' changed this round, so it carries this round\'s token');
+  } else {
+    ok(toks[i] !== CURRENT_TOKEN,
+      'J17 ' + f + ' did NOT change this round, so it was not needlessly rotated (' + toks[i] + ')');
+  }
+});
+// R2's tokens are retired everywhere, so R3's tier change really does re-fetch.
+toks.forEach(function (t, i) {
+  ok(t !== 'map-texture3-r2-20260826' && t !== 'map-zh-hant-20260826',
+    'J17 ' + coDeployed[i] + ' carries a post-R2 token, so the changed files really re-fetch');
+});
 
 // ================================================================================================================
 section('§J18 — the accepted Canada gate holds on EVERY tier, on the grid it was calibrated for');

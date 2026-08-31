@@ -457,10 +457,73 @@ function renderSkuHandbookStats(data) {
     `;
 }
 
+// F1-7N-FB-4E-R3 §F — THE PLACEHOLDER USED TO MEAN TWO DIFFERENT THINGS, AND THAT IS WHY NOBODY COULD TELL A
+// DATA PROBLEM FROM A HOSTING PROBLEM.
+//
+// A card showed the same 📦 icon whether (a) the row carries no image_url at all, or (b) the row carries one and
+// the browser refused to load it — because the inline `onerror` replaced the container with the identical
+// placeholder. Those two have completely different fixes (fill in the sheet vs fix the image host), and the page
+// erased the difference before anyone could see it. §F.4 asks for the placeholder to be used only when the image
+// is absent OR GENUINELY FAILS; being able to tell those apart is the prerequisite for that, and for §F.2's
+// question about which cause is actually in play.
+//
+// So: ABSENT renders the placeholder, a FAILURE renders a different marked state, both carry a machine-readable
+// data-skuh-img attribute and a title saying which, and both are COUNTED (window._skuhImageDiagnostic_).
+//
+// The url and alt are also ESCAPED. These are live spreadsheet strings interpolated straight into HTML
+// attributes, and an unescaped quote in either one silently breaks the very tag that was supposed to show the
+// image — a value on the row that renders as no image at all.
+var _skuhImgStats = { absent: 0, present: 0, failed: 0, upgraded: 0 };
+function _skuhAttr(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// NON-DESTRUCTIVE, unlike the inline handler it replaces: the failure marker swaps out THE IMG ONLY, never the
+// container's innerHTML, so nothing else inside the card can be discarded by a failed image. Declared once,
+// globally, instead of being re-inlined into every card.
+window._skuhImgFailed = function (img) {
+    try {
+        if (!img || img.getAttribute('data-skuh-failed') === '1') return;
+        img.setAttribute('data-skuh-failed', '1');
+        _skuhImgStats.failed += 1;
+        var box = document.createElement('div');
+        box.className = 'skuh-placeholder';
+        box.setAttribute('data-skuh-img', 'failed');
+        box.setAttribute('title', 'An image URL is on record for this SKU but the browser could not load it. '
+            + 'That is an image-hosting or permission problem, not missing data.');
+        box.textContent = '⚠';
+        if (img.parentNode) img.parentNode.replaceChild(box, img);
+    } catch (e) { /* a diagnostic must never be able to break a card */ }
+};
+// Read-only counts, so "why are the images gone" has an answer instead of a guess.
+window._skuhImageDiagnostic_ = function () {
+    return {
+        skus_with_image_url: _skuhImgStats.present,
+        skus_without_image_url: _skuhImgStats.absent,
+        images_on_record_that_failed_to_load: _skuhImgStats.failed,
+        http_urls_upgraded_to_https: _skuhImgStats.upgraded,
+        note: 'skus_without_image_url is a DATA gap — fill in sku_details.image_url. '
+            + 'images_on_record_that_failed_to_load is a HOSTING or permission problem at the image URL itself. '
+            + 'They are different faults with different fixes, and they used to render identically.'
+    };
+};
+function _skuhImgHtml(item, failGlyph, extraStyle) {
+    var cls = window.classifySkuImageSource ? classifySkuImageSource(item)
+        : { state: (item && item.image) ? 'PRESENT' : 'ABSENT', url: (item && item.image) || '', note: null };
+    if (cls.state === 'ABSENT') {
+        _skuhImgStats.absent += 1;
+        return '<div class="skuh-placeholder" data-skuh-img="absent"' + (extraStyle || '')
+            + ' title="No image URL is on record for this SKU (sku_details.image_url is empty).">'
+            + (failGlyph || '📦') + '</div>';
+    }
+    _skuhImgStats.present += 1;
+    if (cls.note === 'UPGRADED_HTTP_TO_HTTPS') _skuhImgStats.upgraded += 1;
+    return '<img src="' + _skuhAttr(cls.url) + '" alt="' + _skuhAttr(item && item.productName)
+        + '" data-skuh-img="present" loading="lazy" onerror="window._skuhImgFailed(this)">';
+}
 function renderSkuCard(item) {
-    const imgHtml = item.image
-        ? `<img src="${item.image}" alt="${item.productName}" onerror="this.parentElement.innerHTML='<div class=\\'skuh-placeholder\\'>📦</div>'">`
-        : '<div class="skuh-placeholder">📦</div>';
+    const imgHtml = _skuhImgHtml(item);
 
     let badgeClass = 'skuh-badge--lifecycle';
     if (item.lifecycle === 'Upcoming SKU') badgeClass = 'skuh-badge--upcoming';
@@ -564,9 +627,8 @@ function renderSkuDetailModal(item) {
     const modal = document.getElementById('skuh-modal-body');
     if (!modal) return;
 
-    const imgHtml = item.image
-        ? `<img src="${item.image}" alt="${item.productName}" onerror="this.parentElement.innerHTML='<div class=\\'skuh-placeholder\\' style=\\'font-size:3rem;color:#cbd5e1\\'>IMG</div>'">`
-        : '<div class="skuh-placeholder" style="font-size:3rem;color:#cbd5e1">IMG</div>';
+    // Same rule in the modal: absent and failed are different states and are reported as such.
+    const imgHtml = _skuhImgHtml(item, 'IMG', ' style="font-size:3rem;color:#cbd5e1"');
 
     let badgeClass = 'skuh-badge--lifecycle';
     if (item.lifecycle === 'Upcoming SKU') badgeClass = 'skuh-badge--upcoming';

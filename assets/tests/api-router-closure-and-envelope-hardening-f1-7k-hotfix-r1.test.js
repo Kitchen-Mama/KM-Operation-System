@@ -88,11 +88,31 @@ eval(extractFn(FND, 'normName'));
 // F1-7N-FB-4E — the hand-written 4-key stub could silently make a NEW code resolve to `undefined`, so the
 // harness now takes the taxonomy from the SAME source file as the slice. It cannot drift from what ships.
 eval(extractVar(FND, 'API_ERROR_CODES'));
+// F1-7N-FB-4E-R3 — the five-fact downgrade proof was extracted out of this slice so the bounded retry gate
+// and the classifier share ONE derivation. It is a dependency of the slice, so it joins the extraction list.
+eval(extractFn(FND, 'downgradeProof'));
+eval(extractFn(FND, 'isObj'));
 ['CLIENT_ACTION_REQUIRED', 'DEPLOYMENT_CONTRACT_MISMATCH', 'REQUEST_METHOD_DOWNGRADED', 'RESPONSE_ACTION_MISMATCH',
  'RESPONSE_CORRELATION_UNPROVEN', 'RESPONSE_REQUEST_ID_MISMATCH', 'API_ENDPOINT_CONFIGURATION_INVALID'].forEach(function (k) {
   ok(API_ERROR_CODES[k] === k, 'taxonomy carries ' + k + ' (self-named)');
 });
 var dto = { action: 'weeklyShipping.workspace.get', requestId: 'REQ-TEST1' };
+// F1-7N-FB-4E-R4A — THE SLICE NOW DEPENDS ON THE PHYSICAL REQUEST ID, AND HERE IS WHY THE STUB IS HONEST.
+//
+// R4A moved the request-id comparison off the consumer's own id and onto the id that actually went on the wire
+// (a coalesced read has several consumer ids and exactly one dispatched id). That value, `_sentRid`, is computed
+// ONCE above this slice in the shipped function, so the extraction has to supply it — the same reason
+// downgradeProof joined the list in R3.
+//
+// These fixtures are all SINGLE-CONSUMER, so the physical id and the consumer id are the same value and the
+// classification under test is unaffected. What must not happen is the stub drifting away from the real thing,
+// so the two assertions below pin the shipped source: `_sentRid` is derived from sentRequestIdFor (never from
+// the response), and the proof call inside the slice uses it rather than a consumer-local id.
+var _sentRid = dto.requestId;
+ok(/var _sentRid = sentRequestIdFor\(serverEnv, dto\);/.test(FND),
+   'R4A: the shipped normalizer derives the sent id from the PHYSICAL request record, not from the envelope');
+ok(/downgradeProof\(serverEnv, _sentRid\)/.test(slice),
+   'R4A: the extracted slice proves the downgrade against the id that was actually sent');
 eval('function _resolveErrs(serverEnv){ ' + slice + ' return _outErrs; }');
 // 1. errors[] present → surfaced verbatim (byte-compatible with prior behavior)
 eq(_resolveErrs({ success: false, errors: [{ code: 'IR_SCHEMA_MISSING', message: 'x', details: null }] }),

@@ -13,6 +13,7 @@ Performance is **not** measured here — see "Why performance lives in a differe
 | `after/` | R2, the **July 2004** 5400×2700 surface. |
 | `after-r3/` | R3: **8192×4096** July surface, canonical shared-edge topology, three-class border hierarchy, continent labels, zh-TW display aliases. **19 views.** |
 | `after-r4/` | R4: the approved TW/CN display decision, division-level zh-TW names, the bounded label pass, and a deterministic flicker probe per view. **21 views.** |
+| `after-r5/` | R5: the **main-integration** run. Canada re-verified after merging `main` into the branch, plus the four §E views no earlier round contained. **13 views.** |
 
 ## §H — the fourteen required views, and the per-view review
 
@@ -133,6 +134,72 @@ context. That reasoning holds — right up to the point where the label is compr
 `COUNTRY_LABEL_MIN_FACING_` is now **0.08** (85.4°), a deliberately small tightening: in that view it removes
 Libya (0.043), Tanzania (0.047), France (0.044) and Mozambique (0.028), and keeps Turkey (0.345), Egypt (0.200)
 and Italy (0.112). Four to nine labels per view, all of them at the extreme limb.
+
+
+## R5 §E — Canada re-verified AFTER the integration, and the four views that did not exist
+
+R5 merged `main` (7a0bff6) into this branch. The Canada correction itself was not touched — no earth asset
+changed a byte — so the question §E asks is not "is the texture right" but "did integrating a fortnight of
+application work move anything that Canada depends on". Thirteen views were captured to answer it, eleven of
+them the set §E names.
+
+FOUR OF THOSE VIEWS DID NOT EXIST, and their absence was itself a gap worth recording. R2/R3/R4 had no
+Alaska–Yukon camera, only one hard-coded shipment route, and no capture of the map's OWN opening view — so the
+surface an operator actually meets first had never been in an acceptance set at all.
+
+| §E view | captured as | finding |
+| --- | --- | --- |
+| Canada overview | `canada-regional` | vegetated across the whole mainland; no white mass |
+| Canada–US border | `us-ca-border` | **the decisive one.** Surface tone is continuous across the 49th parallel; the national line is a single edge, drawn heavier than the provincial lines beside it |
+| Western Canada / prairies | `canada-prairies`, `canada-bc` | prairie soil and cropland; Coast Range and Rockies snow retained |
+| Eastern Canada | `canada-greatlakes` | Great Lakes, S Ontario and Quebec continuous with the northern US |
+| Canadian Arctic | `canada-boreal`, `arctic-greenland` | boreal → tundra → ice reads as a gradient, not a step |
+| Alaska–Yukon | `alaska-yukon` **(new)** | no discontinuity along the 141st meridian; St Elias glaciers intact |
+| Greenland–Baffin | `arctic-greenland` | Greenland and Ellesmere fully ice; **the ice was not erased, the season was corrected** |
+| North America overview | `na-globe` | the view the original complaint was about |
+| Pacific route | `route-pacific` **(new)** | Aleutians and BC under the track, both correct |
+| Atlantic route | `route-atlantic` **(new)** | Newfoundland and the Gulf of St Lawrence align with the July coast |
+| default On-the-Way Map | `map-default` **(new)** | the engine's own `overview()`, not an approximation of it |
+
+MEASURED ON ALL FOUR PUBLISHED TIERS, not only the one this desktop earned
+(`node tools/geo/verify-earth-tiers.js`, 22/22):
+
+| tier | prairie | boreal | tundra | arctic | arctic − prairie | 49th-parallel max step |
+| --- | --- | --- | --- | --- | --- | --- |
+| 5400 (frozen baseline, not served) | L68 | L35 | L88 | L152 | **+85** | 21 |
+| 8192 HIGH | L68 | L35 | L89 | L153 | **+85** | 20 |
+| 4096 MID | L68 | L35 | L89 | L153 | **+85** | 21 |
+| 2048 BASE | L68 | L35 | L88 | L153 | **+85** | 22 |
+| *December 2004, for contrast* | *L192* | *L159* | *L238* | *L176* | ***−13*** | *72* |
+
+All four tiers agree within **0.8 luminance**, and tier-to-tier geography agrees at meanAbsDiff 1.85 / 2.08
+against a bound of 3 — with a control proving that a one-degree misregistration would be REJECTED at 8.4 / 8.1.
+That control is why "the coastlines align" is a measurement here rather than an impression.
+
+### Two things seen in these captures that R5 did NOT change
+
+Both were checked against the pre-merge branch and are identical there, so neither is an integration effect.
+They are recorded rather than fixed, because R5's scope is Canada and the integration.
+
+- **`Seven seas (open ocean)` renders in English** on the default view. The resolver's own comment says an
+  unnameable ocean should be HIDDEN rather than labelled with a value that reads like a continent; it currently
+  returns the English string at `ENGLISH_CANONICAL`. Byte-identical behaviour at `5fc0249`.
+- **Route arcs are not visible** in any route capture. Markers draw correctly and the arcs are submitted, but no
+  line appears between them — including in `route-na`, whose code path R5 did not touch. Captured both ways to
+  be sure the R5 route parameterisation was not the cause; it is not.
+
+### Committed from `after-r5/`
+
+Nine of the thirteen PNGs were removed after inspection, on this file's existing standard. Regenerate any of
+them with `node tools/geo/capture-views.js --tag after-r5 --only <id>`.
+
+| | |
+| --- | --- |
+| `captures.json` | **all 13 views**, every per-view field, including the new `camera.mode` that records whether a view used `focus()` or the engine's `overview()` |
+| `us-ca-border.png` | the 49th parallel — the single view that would show the December defect if it had returned |
+| `arctic-greenland.png` | the two-sided proof: mainland vegetated AND Greenland/Ellesmere still ice |
+| `alaska-yukon.png` | the new §E view — the 141st meridian, and Alaska not inheriting a discontinuity |
+| `na-globe.png` | the overview the original report was written against |
 
 ## What is committed here, and why not all of it
 

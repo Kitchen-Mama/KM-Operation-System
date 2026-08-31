@@ -103,8 +103,10 @@ async function getOperationDbFromSheet() {
 //   3. `throw new Error('API returned ' + status)` DISCARDED the evidence — the final URL, whether a redirect
 //      occurred, the content type and the body — which is why the live "HTTP 404, text/html" could not be
 //      attributed to any of its four possible sources. The typed classification now rides on the thrown error.
-//   4. It is called from a `Promise.all` FAN-OUT, so a four-table page opened FOUR simultaneous requests to a
-//      backend whose per-user execution is serialized. See loadScopedTables for the bound that fixes that.
+//   4. It is called from a `Promise.all` FAN-OUT, so a four-table page opened FOUR simultaneous requests at
+//      once. Apps Script and the Spreadsheet service are QUOTA'D AND CONTENDED, and unbounded client fan-out
+//      raises peak request pressure — which raises the chance that one of the four is the one that fails, and
+//      one rejection fails the whole `Promise.all`. See loadScopedTables for the bound that fixes that.
 //
 // The thrown-Error shape is preserved (callers catch and read `.message`), with the typed facts attached as
 // properties so a page can render a real reason instead of an empty table.
@@ -2294,13 +2296,26 @@ window.KM.DB.loadOperationDb = loadOperationDb;
 // fallback. This is how the non-workspace primary pages drop their whole-DB loadOperationDb dependency.
 // F1-7N-FB-4E §D — BOUND THE FAN-OUT. `Promise.all` over the name list opened ONE SIMULTANEOUS REQUEST PER
 // TABLE, so a four-table page mount (Factory Inventory, Overseas Inventory) fired four concurrent requests at
-// a backend whose per-user execution is SERIALIZED: the tail latency is the sum either way, but four in flight
-// multiplies the chance that one of them is the one that flakes — and one rejection fails the whole
-// `Promise.all`, which is how a single transient answer emptied an entire page.
+// once, and one rejection failed the whole `Promise.all` — which is how a single transient answer emptied an
+// entire page.
+//
+// WHAT THIS IS AND IS NOT, STATED PRECISELY, BECAUSE AN EARLIER VERSION OF THIS COMMENT GOT IT WRONG.
+//
+// It claimed the backend's "per-user execution is SERIALIZED" and concluded "the tail latency is the sum
+// either way". BOTH HALVES ARE WRONG. Apps Script does NOT guarantee that one user's executions are
+// serialized — multiple executions MAY overlap — so the tail latency of four concurrent reads is NOT the sum,
+// and this bound is NOT free. Anyone reading the old rationale would have concluded the change could not cost
+// anything, which is exactly the premise that stops a real measurement from being taken.
+//
+// THE HONEST JUSTIFICATION IS DIFFERENT AND DOES NOT NEED THAT PREMISE. Apps Script and the Spreadsheet
+// service carry QUOTAS AND CONTENTION. Unbounded client fan-out raises PEAK REQUEST PRESSURE, and higher peak
+// pressure makes partial failure more likely — and under `Promise.all` any single partial failure is a total
+// page failure. This is a BOUNDED-PRESSURE CONTROL. It is a reliability measure; whether it also makes the
+// page faster is an open question that only live measurement can answer, and it may cost latency.
 //
 // The bound is a small concurrency window rather than a strict serial loop: serial would make a four-table
-// mount four full round trips of head-of-line waiting, and the point is to stop the STORM, not to slow the
-// page down. KM_SCOPED_READ_CONCURRENCY_ is the single knob and it is deliberately small.
+// mount four full round trips of head-of-line waiting, and the point is to lower peak pressure, not to slow
+// the page down. KM_SCOPED_READ_CONCURRENCY_ is the single knob and it is deliberately small.
 //
 // It is also FAIL-FAST-FREE in the reporting sense: the first rejection still rejects (callers depend on that),
 // but the rejected error now carries the typed classification from getOperationDbTableFromSheet, so a page can
@@ -2310,14 +2325,41 @@ window.KM.DB.getScopedReadConcurrency = function () { return KM_SCOPED_READ_CONC
 // ONE bounded multi-table reader, shared by BOTH fan-out sites (loadScopedTables and _kmRefreshCacheTables_).
 // A single knob, so the bound cannot hold in one place and be missing in the other - which is exactly how the
 // second site kept its unbounded fan-out through several earlier rounds.
-async function _kmReadTablesBounded_(names) {
+async function _kmReadTablesBounded_(names, opts) {
+    // F1-7N-FB-4E-R3 §E — SHARE AN OPEN MOUNT READ; NEVER SHARE A POST-WRITE READ.
+    //
+    // THE DEFECT. Leaving a page while its tables were still loading and coming back started the whole read
+    // again, and two pages that both need `sku_details` or `warehouses` each fetched their own copy. Measured,
+    // not assumed: two concurrent identical loadScopedTables calls issued two requests.
+    //
+    // WHY THIS IS OPT-IN RATHER THAN AUTOMATIC, which is the part that matters for correctness.
+    // `_kmRefreshCacheTables_` calls this function too, to re-read the mutable tables AFTER A WRITE. If that
+    // read attached to a mount read that was already open when the write landed, it would return PRE-WRITE rows
+    // and the page would render the value the user just changed as if the change had not happened. So sharing is
+    // requested explicitly by the MOUNT path and is never given to the refresh path: a post-write read always
+    // issues its own request.
+    //
+    // What is shared is an OPEN request only — the shared transport evicts the key on either outcome, so
+    // nothing is retained after settlement. There is no TTL and no stored copy here, which is deliberate: it
+    // means this can neither serve a stale table nor let one failure poison a later read (§E.6).
+    var share = !!(opts && opts.share);
+    var tp = null;
+    try { tp = (window.KM && window.KM.transport) || null; } catch (e) { tp = null; }
+    function readOne(name) {
+        if (share && tp && typeof tp.scopedSingleFlight === 'function') {
+            // The table name IS the complete scope: getTable takes no filter, so two reads of one table are the
+            // same read. That is what makes this key scope-complete rather than merely convenient.
+            return tp.scopedSingleFlight('getTable', name, function () { return getOperationDbTableFromSheet(name); });
+        }
+        return getOperationDbTableFromSheet(name);
+    }
     var rawDb = {};
     var next = 0;
     async function worker() {
         while (true) {
             var i = next++;
             if (i >= names.length) return;
-            rawDb[names[i]] = await getOperationDbTableFromSheet(names[i]);
+            rawDb[names[i]] = await readOne(names[i]);
         }
     }
     var lanes = Math.max(1, Math.min(KM_SCOPED_READ_CONCURRENCY_, names.length));
@@ -2327,10 +2369,57 @@ async function _kmReadTablesBounded_(names) {
 }
 window.KM.DB.loadScopedTables = async function(tableNames) {
     var names = (tableNames || []).filter(Boolean);
-    var rawDb = await _kmReadTablesBounded_(names);
+    // MOUNT read: shareable. See the note in _kmReadTablesBounded_ for why the post-write refresh path is not.
+    var rawDb = await _kmReadTablesBounded_(names, { share: true });
     var scoped = normalizeOperationDb(rawDb);
     scoped._sourceMode = 'google-sheet';
     scoped._scopedTables = names.slice();
+    return scoped;
+};
+
+// F1-7N-FB-4E-R3 §C - ONE SCOPED WORKSPACE READ FOR OVERSEAS STOCK, RETURNING THE SAME MODEL SHAPE.
+//
+// Overseas Inventory mounted on loadScopedTables(4 tables) = FOUR requests, measured in R3 §A. Each Apps Script
+// request is a separate Web App execution, so the mount paid four cold starts, four spreadsheet opens and four
+// round trips to draw one page. This is the single-request replacement.
+//
+// IT RETURNS EXACTLY WHAT loadScopedTables RETURNED, and that is the whole reason the page change is one line.
+// 70_ answers with RAW rows under the sheet's own column names, so those rows go through the SAME
+// normalizeOperationDb the fan-out fed. Same normalizers, same camelCase keys, same filters and quantities and
+// warning thresholds computed on the client from the same rows: BEFORE == AFTER by construction, not by
+// inspection.
+//
+// FAIL-CLOSED, AND NEVER TOWARDS A BROADER READ. On any failure this REJECTS with the typed transport/business
+// error. It does not fall back to the four-table fan-out and it certainly does not fall back to getOperationDb:
+// a page that silently widens its read when the narrow one fails is how whole-DB reads came back last time. The
+// caller decides what to show; this decides nothing.
+window.KM.DB.loadOverseasStockWorkspace = async function (opts) {
+    var api = (window.KM && window.KM.api) ? window.KM.api : null;
+    if (!api || typeof api.getWorkspace !== 'function') {
+        var eNo = new Error('The workspace API layer is not loaded on this page.');
+        eNo.apiCode = 'WORKSPACE_API_UNAVAILABLE';
+        throw eNo;
+    }
+    var env = await api.getWorkspace('overseasStock', opts || {});
+    if (!env || env.success === false) {
+        var first = (env && Array.isArray(env.errors) && env.errors[0]) || null;
+        var eBad = new Error((first && first.message) || 'The Overseas Stock workspace read failed.');
+        eBad.apiCode = (first && first.code) || 'OVERSEAS_STOCK_WORKSPACE_READ_FAILED';
+        eBad.details = (first && first.details) || null;
+        throw eBad;
+    }
+    var d = env.data || {};
+    var rawDb = {
+        overseas_inventory_snapshot: d.overseas_inventory_snapshot || [],
+        overseas_inventory_movements: d.overseas_inventory_movements || [],
+        warehouses: d.warehouses || [],
+        sku_details: d.sku_details || []
+    };
+    var scoped = normalizeOperationDb(rawDb);
+    scoped._sourceMode = 'google-sheet';
+    scoped._scopedTables = Object.keys(rawDb);
+    scoped._workspaceMeta = { action: 'overseasStock.workspace.get', counts: d.counts || null,
+        capped: d.capped || null, projection: d.projection || null, requests: 1 };
     return scoped;
 };
 
@@ -3790,7 +3879,16 @@ function _kmWriterError_(json, fallbackMessage) {
 // what to do instead of what failed. Note what this is NOT: it is not a retry, not a fallback data source,
 // not a broad-loader substitute, and not a longer timeout. A stale deployment is a publish step, and the only
 // honest thing the client can do is say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7;      // the minimum deployed_action_contract_version this build needs
+// F1-7N-FB-4E-R2 §5: 7 -> 8, RAISED, never lowered. This build requires
+// system.executionPlanDuplicateLineDiagnostic, which no deployment below action contract 8 routes at all
+// — R2 is the round that added the branch. Leaving the pin at 7 would let a v7 deployment pass the
+// VERSION gate and then fail the per-action probe, reporting the same fact twice as two different-looking
+// problems. Raising it makes the version comparison decide first, with the message that names the fix.
+// F1-7N-FB-4E-R3 §C: 8 -> 9, RAISED. Overseas Inventory has been CUT OVER to overseasStock.workspace.get and
+// has no fan-out left to fall back to, so a deployment below action contract 9 cannot render that page at all.
+// The version gate must say so first, with the message that names the fix, rather than letting the page
+// discover it as a failed read.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 10;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -3852,6 +3950,10 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
     // could only be discovered by the pages failing, which is precisely how this round started.
     'skuDetails.workspace.get',
+    // F1-7N-FB-4E-R3 §C — the Overseas Stock read. Probed from the round that introduces it: the page has been
+    // cut over, so a deployment without this action cannot render Overseas Inventory at all, and that must be a
+    // named deployment fact rather than a failed read the user has to interpret.
+    'overseasStock.workspace.get',
     // F1-7N-FB-4D §E — the Site Inventory WRITE chain. Every step of Add Route -> save -> readback -> Submit
     // depends on these, and a deployment missing any one of them fails in a way that looks like a data problem.
     'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
@@ -3894,7 +3996,19 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     // simply cannot say WHICH HANDLER answered, which is the fact the client's method-downgrade proof needs.
     // Probing the constant is the only way the site can tell "the deployment is fine" apart from "the
     // deployment cannot describe itself", and those have different fixes.
-    'SYS_TRANSPORT_CONTRACT_VERSION_'       // 63_ — the transport-contract axis (separate from the action axis)
+    'SYS_TRANSPORT_CONTRACT_VERSION_',      // 63_ — the transport-contract axis (separate from the action axis)
+    // F1-7N-FB-4E-R3 §C — the Overseas workspace OWNER FILE. The action resolving is not enough: a deployment
+    // carrying the R3 router but not 70_ would route to an undefined handler, and this page has no fan-out left
+    // to fall back to. Probing the owner symbol is the only way the site can tell those two apart.
+    'OSW_BUILD_VERSION_',                   // 70_ — the Overseas Stock scoped read owner
+    // F1-7N-FB-4E-R4B-R3 §1/§5 — THE OWNERS R4B ADDED, PROBED BY THE CALLER THAT DEPENDS ON THEM.
+    // 90_ is GENERATED and self-identifies by CONTENT (KM_BUNDLE_INFO.bundleHash), so pinning a hash in 63_
+    // would create a second source of truth that has to move on every rebuild. Probing the symbols instead is
+    // derived rather than pinned: a deployment whose bundle predates R4B-R1 has no KMFSA, and says so.
+    'KM_BUNDLE_INFO',                       // 90_ — the generated bundle's own content manifest
+    'KMFSA',                                // 90_ — the canonical factory site-allocation projection (R4B-R1)
+    'RECGEN_BUILD_VERSION_',                // 47_ — recommendation generation + bounded multi-scope readback
+    'APL_BUILD_VERSION_'                    // 56_ — AI Plan first layer (reads KMFSA)
 ];
 // A masked, read-only classification of the endpoint this build would actually use. It is part of the
 // deployment verdict because "the site behaves oddly" has an answer that needs no network at all when the
@@ -3926,7 +4040,24 @@ window.KM.DB.checkDeploymentContract = async function () {
         return { ok: false, code: (res && res.error && res.error.code) || 'HEALTH_UNAVAILABLE',
             message: (res && res.error && res.error.message) || 'system.health did not answer.', identity: null };
     }
-    var h = res.data || {};
+    // F1-7N-FB-4E-R1 §1 — READ THE IDENTITY FROM WHERE THE DEPLOYMENT ACTUALLY PUTS IT.
+    //
+    // THE BUG THIS REPLACES. This line read `res.data`. `handleSystemHealth_` (63_) answers through
+    // `jsonResponse_(payload)`, which serializes the payload VERBATIM — so build_id, contract_version,
+    // transport_contract_version, router_build, deployed_action_contract_version, required_action_list_version,
+    // handler and caller_probe are all TOP-LEVEL keys and the answer has NO `data` key at all. The runner above
+    // returned `json.data || { rows: [] }`, so `res.data` was `{ rows: [] }`, every field below read `undefined`
+    // and normalized to null, and the function reported DEPLOYMENT_CONTRACT_MISMATCH with an ALL-NULL identity
+    // and an empty missing_actions.
+    //
+    // That verdict was UNFALSIFIABLE. It did not depend on the deployment at all: no published version, however
+    // current, could ever satisfy it, and the message it printed — "the deployed Apps Script does not report an
+    // action-contract version, so it is older than this frontend build" — told the operator to publish again,
+    // which could never change the answer. A gate that cannot pass is worse than no gate: it sends people to
+    // fix a deployment that was already correct.
+    //
+    // This is a CLIENT defect end to end. Nothing in the Apps Script project had to change to fix it.
+    var h = res.envelope || res.data || {};
     var identity = {
         build_id: h.build_id || h.build_version || null,
         contract_version: h.contract_version || h.api_contract_version || null,
@@ -4282,22 +4413,124 @@ window.KM.DB.cancelOrderPlanningGapJob = function(runId) { return _kmWeeklyComma
 // F1-4B-FM5-R1 · MATERIALIZED READ (page reads STORED gap rows; NO calculation, NO whole-DB reload). Bounded
 // POST read of inventory_replenishment_gap / order_planning_gap for one scope. Text-first + fail-safe: on a
 // transport/non-JSON/business failure returns { success:false, error } so the page can show a truthful state and
-// NEVER silently fall back to a browser/live calculation. Returns { success, data:{ rows:[...] }, error }.
+// NEVER silently fall back to a browser/live calculation.
+//
+// Returns { success, data:{ rows: [...] }, envelope, error }.
+//
+// F1-7N-FB-4E-R1 §1 — WHY `envelope` EXISTS, AND THE BUG THAT PROVED IT HAD TO.
+//
+// This runner was written for the GAP READS, whose handlers answer { success, data: { rows: [...] } }. On
+// success it returned ONLY `json.data`, so every other key in the answer was discarded. That is correct for a
+// gap read and silently destructive for any action whose handler answers with a FLAT envelope — and three do:
+//
+//   system.health                             63_  identity + contract versions + caller_probe, all top-level
+//   system.requestOrderSendReconcile          65_  the whole reconciliation verdict, top-level
+//   system.allocationDraftIdentityDiagnostic  67_  the whole identity report, top-level
+//
+// None of those handlers puts anything under `data`, so `json.data || { rows: [] }` handed the caller an EMPTY
+// ROW LIST that looked like a successful read of nothing. For system.health that meant checkDeploymentContract
+// read every identity field as undefined and reported the deployment as older than the frontend — while the
+// deployment had in fact answered with a complete, correct identity block. See the note there.
+//
+// `envelope` is the parsed answer EXACTLY as the deployment sent it. It is additive: `data` keeps its meaning
+// and every existing gap-read consumer is untouched. Nothing here is synthesized — a field absent from the wire
+// is absent from `envelope`.
+// =============================================================================================================
+// F1-7N-FB-4E-R4A1 §3/§4 — THE READ ACTIONS THIS CLIENT MAY DISPATCH AS A GET.
+//
+// WHY THERE IS A LIST AND NOT A RULE. This function serves 16 call sites and ONE of them is a WRITE
+// (automationSchedule.update). A blanket verb change here would have converted a write into a GET — which a
+// browser prefetch, a crawler or a history revisit could then replay. So the verb is decided by an explicit
+// allowlist of READS: an action not named here keeps the existing POST, which means a future write added to this
+// path is POST by default rather than GET by accident. The default is the safe one.
+//
+// Membership is not a matter of naming. Every entry is asserted by the R4A1 suite to be (a) served on GET by the
+// deployed router — a subset of the router's own GET read table plus the three actions that already had their
+// own GET branches — and (b) zero-write when EXECUTED against an instrumented spreadsheet.
+// =============================================================================================================
+var _KM_GET_READ_ACTIONS_ = {
+    // Already GET-routed before R4A1 (their own branches in doGet); now dispatched as GET by the client too.
+    'system.health': 1,
+    'getClientCapabilities': 1,
+    'inventoryScope.registry.get': 1,
+    // Served on GET by the R4A1 router read table.
+    'inventoryReplenishmentGap.get': 1,
+    'orderPlanningGap.get': 1,
+    'aiPlanFirstLayer.get': 1,
+    'gapJob.status.get': 1,
+    'requestOrder.sendWorkset.get': 1,
+    'requestOrder.send.status': 1,
+    'requestOrderDraft.job.status': 1,
+    'requestOrderDraft.getActive': 1,
+    'system.requestOrderSendDiagnosticStatus': 1,
+    'system.requestOrderSendReconcile': 1,
+    'system.allocationDraftIdentityDiagnostic': 1,
+    'automationSchedule.get': 1
+    // automationSchedule.update is DELIBERATELY ABSENT. It is a write.
+};
+var _KM_READ_RID_SEQ_ = 0;
+function _kmNextReadRequestId_() { _KM_READ_RID_SEQ_++; return 'REQ-G' + ('000000' + _KM_READ_RID_SEQ_).slice(-6); }
+function _kmSharedTransport_() {
+    try { return (typeof window !== 'undefined' && window.KM && window.KM.transport) ? window.KM.transport : null; }
+    catch (e) { return null; }
+}
+// ONE URL shape for every read in this application. Built by the shared transport when it is present, so this
+// file cannot drift into a second read-URL format; the local form is an identical fallback for the case where
+// the transport module has not loaded yet.
+function _kmReadUrl_(base, action, dto, rid) {
+    var tp = _kmSharedTransport_();
+    if (tp && typeof tp.readQuery === 'function') {
+        return base + (base.indexOf('?') < 0 ? '?' : '&') + tp.readQuery(action, dto, rid);
+    }
+    var qp = 'action=' + encodeURIComponent(action) + '&km_via=get';
+    if (rid) qp += '&km_rid=' + encodeURIComponent(rid);
+    var pj = JSON.stringify(dto || {});
+    if (pj !== '{}') qp += '&km_body=' + encodeURIComponent(pj);
+    return base + (base.indexOf('?') < 0 ? '?' : '&') + qp;
+}
+
 async function _kmGapRead_(action, payload) {
     if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
-    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
-    var resp;
+    var base = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var isRead = _KM_GET_READ_ACTIONS_[action] === 1;
+    var resp, url, _cls, text = '';
     var _t0 = Date.now();
+
+    // F1-7N-FB-4E-R4A1 — GET FOR READS, AND ONE BOUNDED RECOVERY THAT STARTS AT THE STABLE /exec.
+    //
+    // An /exec answer always arrives through a 302 to script.googleusercontent.com. A POST cannot survive that
+    // hop — per the Fetch spec the redirect is re-issued as a GET with the body dropped — and the two live
+    // failures are its two consequences: an unreadable echo target (404) and an echo that resolves back into
+    // doGet with no body. A GET has nothing to lose, which is why the reads this app already sent as GET never
+    // failed this way. When the echo target itself 404s the deployment is fine and one hop simply could not be
+    // read, so ONE fresh attempt from the STABLE endpoint gets a fresh target. The redirect URL is never stored,
+    // never re-requested and never treated as an endpoint: every attempt is rebuilt from `base`. The recovery
+    // carries its OWN request id, because it is a second physical request and R4A's rule applies to it in full.
+    for (var attemptN = 1; attemptN <= 2; attemptN++) {
+        var rid = isRead ? _kmNextReadRequestId_() : '';
+        var dto = Object.assign({ action: action }, payload || {});
+        if (rid) dto.requestId = rid;
+        url = isRead ? _kmReadUrl_(base, action, dto, rid) : base;
+        var init = isRead
+            ? { method: 'GET', cache: 'no-store' }
+            : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(dto) };
     // F1-7N-FB-3 §D — bounded: an unanswered read can no longer hold its caller's latch forever.
-    try { resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }, 'read'); }
-    catch (netErr) {
-        try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
-        if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
-        return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+        try { resp = await _kmFetchBounded_(url, init, 'read'); }
+        catch (netErr) {
+            try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
+            if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
+            return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+        }
+        text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+        _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);
+        var redirectTarget404 = !_cls.ok && _cls.typed && _cls.typed.code === 'REDIRECT_TARGET_NOT_FOUND';
+        if (!(isRead && attemptN === 1 && redirectTarget404)) break;
+        // Ask the shared policy rather than deciding here, so there is ONE answer to "may this be replayed?".
+        var tpR = _kmSharedTransport_();
+        var allowed = (tpR && typeof tpR.isAutoRetryable === 'function')
+            ? tpR.isAutoRetryable({ kind: 'read', code: 'REDIRECT_TARGET_NOT_FOUND' }) : false;
+        if (!allowed) break;
     }
-    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
-    // F1-7N-FB-4E §A — ONE classification, carrying the evidence the previous three lines deleted.
-    var _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);
     try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, _cls.ok ? null : _cls.typed.code, _cls.ok ? 'SUCCESS' : _cls.typed.phase, String(text || '').length); } catch (e) {}
     if (!_cls.ok) {
         return { success: false, error: {
@@ -4316,7 +4549,7 @@ async function _kmGapRead_(action, payload) {
         if (_kmIsUnknownActionResponse_(json.error)) return { success: false, error: _kmDeploymentMismatchError_(action) };
         return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
     }
-    return { success: true, data: json.data || { rows: [] } };
+    return { success: true, data: json.data || { rows: [] }, envelope: json };
 }
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ inventory_replenishment_gap rows ] } }.
 window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_('inventoryReplenishmentGap.get', { payload: { scope: scope || {} } }); };
@@ -4334,8 +4567,10 @@ window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPla
 // F1-7N-FB-4E §D1 — SESSION-STABLE METADATA IS SINGLE-FLIGHTED THROUGH THE SHARED LATCH.
 //
 // Both of these are immutable for a session (a backend flag set, and a deployment's own identity), and both
-// were called from more than one place at mount — so two concurrent consumers issued two identical requests
-// against a backend whose per-user execution is serialized. That is a measurable part of "pages feel slower".
+// were called from more than one place at mount — so two concurrent consumers issued two IDENTICAL requests
+// for a value that cannot differ between them. Removing a duplicate request is worth doing on its own terms:
+// it is one less unit of load against a quota'd, contended backend and one less thing that can fail. It is
+// NOT claimed here to be a measurable share of "pages feel slower" — that has not been measured.
 // The latch lives in KM.transport with an ALLOWLIST, so a business workspace can never be coalesced by
 // accident (§D4), and a REJECTED promise is evicted immediately (§D2), so one failure cannot make every later
 // consumer inherit it — which is what turns a transient fault into "only a hard reload fixes it".
@@ -4478,6 +4713,10 @@ window.KM.DB.getRequestOrderDraftJobStatus = function(runId) { return _kmGapRead
 window.KM.DB.cancelRequestOrderDraftJob = function(runId) { return _kmWeeklyCommand_('requestOrderDraft.job.cancel', { payload: { runId: runId || null } }); };
 // scope read-back (SKU omitted → { drafts, conflicts, noDraftSkus }). READ ONLY. { success, data:{...} }.
 window.KM.DB.getActiveRequestOrderDrafts = function(scope) { return _kmGapRead_('requestOrderDraft.getActive', { payload: { scope: scope || {} } }); };
+// F1-7N-FB-4E-R4B-R2 §3 - ONE bounded multi-scope readback. The All-level Order Planning view knows exactly which
+// scopes are on screen; it used to turn that into one cold Apps Script execution per scope. The list is explicit,
+// deduplicated, sorted and capped server-side, and an oversized list is REFUSED rather than truncated.
+window.KM.DB.getActiveRequestOrderDraftsForScopes = function(scopes) { return _kmGapRead_('requestOrderDraft.getActive', { payload: { scopes: scopes || [] } }); };
 // canonical concurrency token for a draft (25_) → { success, data:{ expectedToken:{draft_version,userEditFingerprint} } }.
 window.KM.DB.getRecommendationDraftToken = function(recommendationType, draftId) { return _kmWeeklyCommand_('getRecommendationDraftToken', { recommendationType: recommendationType, draftId: draftId }); };
 // canonical LOCKED user-decision edit (25_). payload: { recommendationType, draftId, edits:[{naturalKey,fields}], expectedToken, actor? }.

@@ -764,9 +764,19 @@ window.IRMap = (function () {
     };
   }
 
-  // Factory CN / TW = Σ factory_stock.current_stock joined to warehouses by warehouse_id,
-  // filtered by warehouse country (CN / TW).
-  function factoryByCountry(factoryRows, warehouses, sku, countryCode) {
+  // ===== FACTORY: PHYSICAL TOTAL vs THIS SITE'S ALLOCATION (F1-7N-FB-4E-R4B-R1 §1) =========================
+  //
+  // These are two different numbers and the page used to show only the first one, under every scope. The
+  // physical total below is the whole pool; it is a WAREHOUSE fact and belongs to Factory Inventory. What a
+  // marketplace site may plan against is its ALLOCATION of that pool, which is what the CN / TW columns render.
+  //
+  // physicalFactoryByCountry is kept because the conservation proof needs the undivided figure to compare
+  // against, and because "what does the factory physically hold" is a real question. It must NEVER be rendered
+  // in a marketplace-scoped column again: that is the defect (one pool shown N times as if each site owned it).
+  //
+  // Σ factory_stock.current_stock joined to warehouses by warehouse_id, filtered by warehouse country (CN / TW).
+  // NOTE it sums current_stock, NOT the canonical available quantity - it is the PHYSICAL total by definition.
+  function physicalFactoryByCountry(factoryRows, warehouses, sku, countryCode) {
     if (!factoryRows || !factoryRows.length) return 0;
     var whById = {};
     (warehouses || []).forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
@@ -780,6 +790,41 @@ window.IRMap = (function () {
       if (eq(c, countryCode)) total += num(f.currentStock);
     });
     return total;
+  }
+
+  // THIS SITE's factory availability - the canonical projection (KMFSA), shared verbatim with Order Planning.
+  // ctx = { scope, factoryRows, warehouses, mpSkus, fcRows, calculationMonth }
+  // Returns { cn, tw, state, projection }. state names WHY a number is what it is, so a real zero (this site is
+  // not an eligible receiver of the TW source) can never be mistaken for a missing one:
+  //   OK                      - allocated from at least one pool
+  //   NO_FACTORY_STOCK        - no factory_stock row for this SKU at all
+  //   NOT_ELIGIBLE            - pools exist but this site is in no eligible receiver set
+  //   NO_FORECAST_DENOMINATOR - eligible, but the rolling 4-month FC of the whole receiver set is 0
+  //   UNAVAILABLE             - the projection module is not loaded (never a silent physical-total fallback)
+  function factorySiteAllocation(ctx) {
+    var K = (typeof window !== 'undefined' && window.KM && window.KM.factorySiteAllocation) || null;
+    if (!K) return { cn: null, tw: null, state: 'UNAVAILABLE', projection: null };
+    var proj;
+    try {
+      proj = K.project({
+        sku: ctx.scope.sku, factoryRows: ctx.factoryRows, warehouses: ctx.warehouses,
+        sites: ctx.mpSkus, forecastRows: ctx.fcRows, calculationMonth: ctx.calculationMonth
+      });
+    } catch (e) { return { cn: null, tw: null, state: 'UNAVAILABLE', projection: null }; }
+    var mine = K.siteFactoryAvailability(proj, ctx.scope);
+    var state = 'OK';
+    if (!proj.pools.length) state = 'NO_FACTORY_STOCK';
+    else if (mine.total === 0) {
+      var eligibleAnywhere = false, zeroDenom = false;
+      proj.pools.forEach(function (p) {
+        if (p.eligibleSiteKeys.indexOf(mine.siteKey) !== -1) {
+          eligibleAnywhere = true;
+          if (p.unallocatedReason === 'ZERO_FORECAST_DENOMINATOR') zeroDenom = true;
+        }
+      });
+      state = !eligibleAnywhere ? 'NOT_ELIGIBLE' : (zeroDenom ? 'NO_FORECAST_DENOMINATOR' : 'OK');
+    }
+    return { cn: mine.cn, tw: mine.tw, state: state, projection: proj };
   }
 
   function daysOfSupply(currentStock, avgPerDay) {
@@ -818,7 +863,8 @@ window.IRMap = (function () {
     num: num, latestSnapshot: latestSnapshot, stockCard: stockCard,
     longTermStorage: longTermStorage, salesTrend7d: salesTrend7d, avgSalesPerDay: avgSalesPerDay,
     targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty, upcomingEvents: upcomingEvents,
-    thirdPartyStock: thirdPartyStock, factoryByCountry: factoryByCountry,
+    thirdPartyStock: thirdPartyStock, physicalFactoryByCountry: physicalFactoryByCountry,
+    factorySiteAllocation: factorySiteAllocation,
     eligible3plWarehouses: eligible3plWarehouses, sharedPhysicalPool: sharedPhysicalPool,
     sitePlanningAllocation: sitePlanningAllocation,
     daysOfSupply: daysOfSupply, dosColorClass: dosColorClass,
@@ -1679,6 +1725,153 @@ function _irApplyInventoryColumnModel(fulfillmentModel) {
     return m;
 }
 
+// =============================================================================================================
+// F1-7N-FB-4E-R4B-R3 §2/§3 — THE ROW BUILDERS AND THE RENDER-INTEGRITY CONTRACT.
+//
+// The row markup lives in named builders (not inline in renderReplenishment) for one reason: the render loop
+// can then wrap EACH row in its own try/catch, so a single malformed row fails closed as one visibly-typed row
+// instead of aborting the map and erasing every row after it.
+//
+// The leaf-column contract is DERIVED, never pinned: S(data-leaf-span) across the level-1 group header row IS
+// how many body cells one row must carry. A number written here would be a second source of truth and would
+// drift the first time a column is added.
+// =============================================================================================================
+function _irHeaderLeafSpan_() {
+    var cells = document.querySelectorAll('#ops-section .km-table__header-row--level1 .km-table__header-cell');
+    if (!cells || !cells.length) return 0;
+    var n = 0;
+    for (var i = 0; i < cells.length; i++) {
+        var v = parseInt(cells[i].getAttribute('data-leaf-span'), 10);
+        n += (isNaN(v) ? 1 : v);
+    }
+    return n;
+}
+// A REAL zero and an unavailable figure are different statements, and the cell says which it is.
+var _IR_FACTORY_STATE_TITLE_ = {
+    OK: 'Allocated share of the physical factory pool (frozen rolling 4-month FC share).',
+    NO_FACTORY_STOCK: 'Zero: there is no factory_stock row for this SKU.',
+    NOT_ELIGIBLE: 'Zero: this site is not an eligible receiver of this factory source.',
+    NO_FORECAST_DENOMINATOR: 'Zero: the rolling 4-month Regular FC of the whole eligible receiver set is 0, so no share can be computed. Nothing was allocated.',
+    UNAVAILABLE: 'Unavailable: the factory site-allocation projection could not run. This is NOT a zero allocation.'
+};
+function _irFactoryCellTitle_(item) {
+    var s = String((item && item.factoryAllocState) || '');
+    var t = Object.prototype.hasOwnProperty.call(_IR_FACTORY_STATE_TITLE_, s) ? _IR_FACTORY_STATE_TITLE_[s] : '';
+    return escapeReplenHtml(t ? (s + ' — ' + t) : s);
+}
+function _irFactoryCellHtml_(v, item) {
+    // null = the projection could not run; 0 = a real, computed zero. `|| 0` would collapse the two.
+    return '<div class="scroll-cell" data-factory-state="' + escapeReplenHtml(String((item && item.factoryAllocState) || '')) +
+        '" title="' + _irFactoryCellTitle_(item) + '">' + (v == null ? '--' : v) + '</div>';
+}
+function _irFixedRowHtml_(item) {
+    const arg = _irSkuArg(item.sku);
+    const skuText = escapeReplenHtml(item.sku);
+    return '\n        <div class="fixed-row" data-sku="' + item.sku + '" data-rowkey="' + escapeReplenHtml(_irRowKey(item)) + '" onclick="_replenRowClick(event, \'' + arg + '\')">' +
+        '<button type="button" class="replen-row-chevron" aria-expanded="false" aria-controls="' + _irPanelId(item.sku) + '"' +
+        ' aria-label="Toggle replenishment details for ' + skuText + '"' +
+        ' onclick="_replenChevronClick(event, \'' + arg + '\')">' +
+        '<span class="replen-row-chevron__icon" aria-hidden="true">&#9656;</span>' +
+        '</button>' +
+        '<span class="replen-row-sku">' + skuText + '</span>' +
+        '</div>\n    ';
+}
+// The Days-of-Supply cell's colour class, resolved where the cell is emitted. Computing it ahead of the row
+// would put item.daysOfSupply in the SOURCE before Current Stock, and the body-cell ORDER is a contract read
+// from this builder - source order and render order must not be allowed to disagree.
+function _irDosCellClass_(item) {
+    return (window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '') + (item.needsAlert ? ' alert-red' : '');
+}
+function _irScrollRowHtml_(item) {
+    return '\n        <div class="scroll-row" data-sku="' + item.sku + '" data-rowkey="' + escapeReplenHtml(_irRowKey(item)) + '" onclick="_replenRowClick(event, \'' + _irSkuArg(item.sku) + '\')">' +
+        '<div class="scroll-cell">' + _replenPlanningModelLabel(item.replenishmentModel) + '</div>' +
+        '<div class="scroll-cell">' + item.company + '</div>' +
+        '<div class="scroll-cell">' + _replenMarketplaceLabel(item.marketplace, item.company, item.country) + '</div>' +
+        '<div class="scroll-cell replen-cell--current-stock">' + item.currentInventory + '</div>' +
+        '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
+        '<div class="scroll-cell">' + item.onTheWay + '</div>' +
+        '<div class="scroll-cell">' + item.avgDailySales + '</div>' +
+        '<div class="scroll-cell">' + item.forecast60d + '</div>' +
+        '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
+        '<div class="scroll-cell ' + _irDosCellClass_(item) + '">' + item.daysOfSupply + '</div>' +
+        '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
+        _irFactoryCellHtml_(item.cnStock, item) +
+        _irFactoryCellHtml_(item.twStock, item) +
+        '<div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, \'' + _irSkuArg(item.sku) + '\')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">' +
+        '<span class="ai-action-cell__text">View Recommendation</span>' +
+        '</div>' +
+        '</div>\n    ';
+}
+// A row that could not be built. It keeps its SKU identity and its leaf-column count so the table stays aligned,
+// and it says so — it is never a blank row and never a fabricated number.
+var _irRowFailures = [];
+function _irNoteRowFailure_(item, err, side) {
+    _irRowFailures.push({ sku: (item && item.sku) || '', side: side, message: String((err && err.message) || err) });
+    try { console.error('[Replenishment] row render failed (' + side + ') for SKU ' + ((item && item.sku) || '?'), err); } catch (_e) {}
+}
+function _irFixedRowFailedHtml_(item) {
+    var sku = escapeReplenHtml((item && item.sku) || '');
+    return '\n        <div class="fixed-row fixed-row--failed" data-sku="' + sku + '" data-row-failed="1">' +
+        '<span class="replen-row-sku">' + sku + '</span></div>\n    ';
+}
+function _irScrollRowFailedHtml_(item) {
+    var sku = escapeReplenHtml((item && item.sku) || '');
+    var leaves = _irHeaderLeafSpan_() || 1;
+    var cells = '';
+    for (var i = 0; i < leaves; i++) {
+        cells += '<div class="scroll-cell">' + (i === 0 ? 'row unavailable' : '--') + '</div>';
+    }
+    return '\n        <div class="scroll-row scroll-row--failed" data-sku="' + sku + '" data-row-failed="1" ' +
+        'title="This row could not be rendered. Nothing was read or written for it; every other row is unaffected.">' +
+        cells + '</div>\n    ';
+}
+// The render checks its own output. A render that silently emits fewer rows than it was given, or rows whose
+// leaf-column count disagrees with the header, is exactly the failure R4B-R3 had to diagnose from a screenshot;
+// it is now reported by the page itself, with numbers.
+function _irVerifyRenderedRows_(expectedRows) {
+    var scope = document.querySelectorAll ? document : null;
+    if (!scope) return null;
+    var fixed = scope.querySelectorAll('#ops-section .fixed-body .fixed-row').length;
+    var rows = scope.querySelectorAll('#ops-section .scroll-body .scroll-row');
+    var leafSpan = _irHeaderLeafSpan_();
+    var badCells = 0, seen = {}, duplicate = 0;
+    for (var i = 0; i < rows.length; i++) {
+        if (leafSpan && rows[i].querySelectorAll('.scroll-cell').length !== leafSpan) badCells++;
+        var k = rows[i].getAttribute('data-sku') || '';
+        if (seen[k]) duplicate++; else seen[k] = 1;
+    }
+    var res = {
+        expected: expectedRows, fixedRows: fixed, scrollRows: rows.length,
+        leafSpan: leafSpan, rowsWithWrongCellCount: badCells, duplicateRowKeys: duplicate,
+        failedRows: _irRowFailures.length,
+        ok: (fixed === expectedRows && rows.length === expectedRows && badCells === 0 && duplicate === 0)
+    };
+    _irRenderIntegrity = res;
+    _irRenderIntegrityNotice_(res);
+    return res;
+}
+var _irRenderIntegrity = null;
+function _irRenderIntegrityNotice_(res) {
+    var host = document.getElementById('replen-render-integrity');
+    if (res && res.ok && !res.failedRows) { if (host && host.remove) host.remove(); return; }
+    if (!host) {
+        var tbl = document.getElementById('replen-detail-table');
+        if (!tbl || !tbl.parentNode) return;
+        host = document.createElement('div');
+        host.id = 'replen-render-integrity';
+        host.setAttribute('role', 'alert');
+        host.style.cssText = 'margin:8px 0;padding:8px 10px;border:1px solid #EF4444;background:#FEF2F2;color:#B91C1C;font-size:12px;border-radius:4px;';
+        tbl.parentNode.insertBefore(host, tbl);
+    }
+    host.textContent = 'Inventory table render incomplete — ' + res.scrollRows + ' of ' + res.expected +
+        ' rows rendered' + (res.rowsWithWrongCellCount ? ', ' + res.rowsWithWrongCellCount + ' row(s) do not match the ' + res.leafSpan + '-column header' : '') +
+        (res.failedRows ? ', ' + res.failedRows + ' row(s) failed to build' : '') +
+        '. Nothing was read or written. Reload and search again; if it persists, report this line.';
+}
+window._irVerifyRenderedRows_ = _irVerifyRenderedRows_;
+window._irHeaderLeafSpan_ = _irHeaderLeafSpan_;
+window._irRenderIntegrity_ = function () { return _irRenderIntegrity; };
+
 function renderReplenishment() {
     // F1-7N-FB-2A §B — THE gate. Placed before getReplenishmentData() so that NO caller of
     // renderReplenishment() — the mount, an LTS change, a post-write reconcile, the async recommendation
@@ -1707,48 +1900,40 @@ function renderReplenishment() {
         : allData.filter(function (it) { return _replenCategoryOf(it) === replenCategoryTab; });
 
     currentExpandedRow = null;
-    
+    _irRowFailures = [];
     // Render fixed column (chevron + SKU). The chevron is a native <button> (Enter/Space operable) with
     // aria-expanded synced to the open state and aria-controls pointing at the detail panel it opens.
     // Clicking it stopPropagation()s so the row + chevron handlers never double-fire.
+    // F1-7N-FB-4E-R4B-R3 §3 — ONE row, ONE builder, and a failure that cannot take the table with it. A row
+    // that throws is rendered as a TYPED failed row (same leaf-column count, so the header can still line up)
+    // and every later row still renders.
     fixedBody.innerHTML = data.map(item => {
-        const arg = _irSkuArg(item.sku);
-        const skuText = escapeReplenHtml(item.sku);
-        return `
-        <div class="fixed-row" data-sku="${item.sku}" data-rowkey="${escapeReplenHtml(_irRowKey(item))}" onclick="_replenRowClick(event, '${arg}')">
-            <button type="button" class="replen-row-chevron" aria-expanded="false" aria-controls="${_irPanelId(item.sku)}"
-                    aria-label="Toggle replenishment details for ${skuText}"
-                    onclick="_replenChevronClick(event, '${arg}')">
-                <span class="replen-row-chevron__icon" aria-hidden="true">▸</span>
-            </button>
-            <span class="replen-row-sku">${skuText}</span>
-        </div>
-    `;
+        try { return _irFixedRowHtml_(item); }
+        catch (e) { _irNoteRowFailure_(item, e, 'fixed'); return _irFixedRowFailedHtml_(item); }
     }).join('');
 
-    // Render scrollable columns
-    scrollBody.innerHTML = data.map(item => `
-        <div class="scroll-row" data-sku="${item.sku}" data-rowkey="${escapeReplenHtml(_irRowKey(item))}" onclick="_replenRowClick(event, '${_irSkuArg(item.sku)}')">
-            <div class="scroll-cell">${_replenPlanningModelLabel(item.replenishmentModel)}</div>
-            <div class="scroll-cell">${item.company}</div>
-            <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
-            <div class="scroll-cell replen-cell--current-stock">${item.currentInventory}</div>
-            <div class="scroll-cell" title="${(item.thirdPartyTitle || '').replace(/"/g, '&quot;')}">${item.thirdPartyStock}</div>
-            <div class="scroll-cell">${item.onTheWay}</div>
-            <div class="scroll-cell">${item.avgDailySales}</div>
-            <div class="scroll-cell">${item.forecast60d}</div>
-            <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
-            <div class="scroll-cell ${(window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '')}${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
-            <div class="scroll-cell replen-suggested-cell">
-                ${_irSuggestedCellHtml(item)}
-            </div>
-            <div class="scroll-cell">${item.cnStock || 0}</div>
-            <div class="scroll-cell">${item.twStock || 0}</div>
-            <div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, '${_irSkuArg(item.sku)}')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">
-                <span class="ai-action-cell__text">View Recommendation</span>
-            </div>
-        </div>
-    `).join('');
+    // Render scrollable columns.
+    //
+    // F1-7N-FB-4E-R4B-R3 §2 — WHY THERE IS NO HTML COMMENT IN THIS TEMPLATE, EVER.
+    //
+    // R4B-R1 put an explanatory HTML comment INSIDE this template literal, and that comment contained a pair
+    // of BACKTICKS around a code fragment. A backtick ends a template literal, so the row template silently
+    // became  `…allocated share, and ` || 0 `…the entire rest of the row…`  — a truthy string OR-ed with a
+    // tagged template that short-circuit evaluation never reaches. Every row was therefore emitted TRUNCATED,
+    // ending in an unterminated `<!--`, and the browser swallowed CN, TW, AI Action AND every subsequent row
+    // into that comment. `node --check` passes on it and every unit test passed on it; only the EMITTED HTML
+    // shows it. Two rules follow, and they are enforced below rather than remembered:
+    //   1. no HTML comment is emitted inside a row — explanations live in JS comments, out here;
+    //   2. the render VERIFIES its own output (_irVerifyRenderedRows_) instead of trusting it.
+    //
+    // THE FACTORY CELLS. A real zero prints 0 — a site that is an eligible receiver and was allocated nothing,
+    // a TW pool outside ResUS, and a zero forecast denominator are all REAL zeros, and each carries its reason
+    // in the cell's title. null means the projection could not run at all, and prints the same em dash every
+    // other unavailable number on this page uses. `|| 0` would erase that difference.
+    scrollBody.innerHTML = data.map(item => {
+        try { return _irScrollRowHtml_(item); }
+        catch (e) { _irNoteRowFailure_(item, e, 'scroll'); return _irScrollRowFailedHtml_(item); }
+    }).join('');
     
     // F1-7N-FB-2A §B — EMPTY is a distinct state and reachable ONLY from a rendered (i.e. successful,
     // applied) Search. It is never shown before one: PRE_SEARCH owns that case. Placed after the row render
@@ -1765,6 +1950,8 @@ function renderReplenishment() {
     initReplenHeaderSync();
     // F1-7N: adapt the Inventory columns to the selected marketplace's fulfillment model (SELF_FULFILLED hides Current Stock).
     _irApplyInventoryColumnModel(_irScopeFulfillmentModel());
+    // F1-7N-FB-4E-R4B-R3 §3 - the render checks its own output rather than trusting it.
+    _irVerifyRenderedRows_(data.length);
 }
 
 function initReplenHeaderSync() {
@@ -5204,6 +5391,230 @@ function _irEnsureRegistryLoaded_(opts) {
 function _irSharedRegistry_() {
     return (typeof window !== 'undefined' && window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
 }
+
+// =============================================================================================================
+// F1-7N-FB-4E-R3 §B — ONE COHERENT BOOTSTRAP, WITHOUT LOADING EVERY SITE'S INVENTORY.
+//
+// WHAT WAS ACTUALLY WRONG, because it was not the search gate. R3 §A measured this mount at ONE request (the slim
+// scope registry) and the Search at ONE more (the scoped workspace) — no whole-DB read, and no per-site loading.
+// The explicit Search gate is a FROZEN UX CONTRACT and stays exactly as it is: it is what stopped a dropdown
+// touch from costing a 20-table read. What the user experienced as "two loading phases" is the SEQUENCE for a
+// RETURNING user: wait for the registry, re-pick the scope you already had, then wait again for the data.
+//
+// So neither request is removed and neither is widened. What changes is that a returning user stops WAITING
+// TWICE for something already known:
+//
+//   REMEMBERED SCOPE (the returning case): the registry validation and the scoped workspace read start
+//     TOGETHER, under ONE loading state, and the table paints ONCE when both have resolved and the scope has
+//     been VALIDATED against the registry. The two waits become one, and the registry half is usually already
+//     answered from its versioned TTL snapshot, so in practice one request overlaps zero.
+//
+//   NO REMEMBERED SCOPE (first use): registry only, then wait for a choice. Byte-for-byte today's behaviour,
+//     because there is nothing to overlap and guessing a scope would be worse than asking for one.
+//
+// §B.5 IS STRUCTURAL HERE, NOT BEST-EFFORT. `applied` is assigned in exactly one place (_irApplySearch_) and
+// nothing renders scope-dependent data from anything else, so a scope that fails validation is never applied and
+// therefore CANNOT be painted — not even for a frame. A remembered scope the registry rejects is discarded and
+// the page falls back to the pre-search state, with the reason available rather than silent.
+// =============================================================================================================
+// F1-7N-FB-4E-R4B §A -- WHY THE PAGE SAID "Searching..." OVER AN ANSWER IT ALREADY HAD.
+//
+// R3 gave the mount a coalesced bootstrap: with a remembered scope it validates the registry and reads the
+// scoped workspace TOGETHER under one loading state. That was right for a page that has nothing. It was wrong
+// for a page that has EVERYTHING: leaving Site Inventory and coming back re-entered LOADING unconditionally, so
+// the table painted "Searching..." over a model that was still in memory and a scope that was still applied.
+// Pressing Search then "restored" the result instantly -- which is the tell: nothing had to be fetched at all.
+// The bootstrap simply had no branch for "the answer is already here".
+//
+// R4A1 §E's in-flight reuse cannot help. It shares an OPEN request and evicts on settlement, by design: it is
+// what stops two mounts issuing two reads, not what lets a finished read be reused. Reuse of a FINISHED result
+// is a different mechanism, and this is it.
+//
+// WHAT MAKES REUSE SAFE HERE, and it is a property of this page rather than a general licence:
+//   * the workspace read is scope-INDEPENDENT -- the server returns the primary-render table set and the CLIENT
+//     scopes it at render time from `applied`. So a retained model is not "the previous scope's data"; the
+//     scope lives in `applied`, which is assigned in exactly one validated place (§B.5).
+//   * only a SUCCESSFUL read is retained, and only a successful read stamps a completion time, so a failure is
+//     never restorable and never paints as current.
+//   * the restore is BOUNDED by that stamp. An aged result is not painted; it is re-read like any other.
+//   * an explicit Search never restores. It always performs a fresh read, because a person pressing Search is
+//     asking for exactly that.
+//   * revalidation runs QUIETLY: it may replace data, it may never replace a valid table with a loading one.
+var _IR_RESULT_TTL_MS = 10 * 60 * 1000;   // ten minutes: long enough for navigation, short enough to be current
+var _irReadModelAt = 0;                    // when the retained model COMPLETED (0 = never)
+function _irNowMs_() { try { return Date.now(); } catch (e) { return 0; } }
+// Canonical scope equality. Compared field by field on normalized strings, never by object identity and never
+// by JSON key order, so two equivalent scopes built at different times compare equal and two different ones
+// never do.
+function _irSameScope_(a, b) {
+    if (!a || !b) return false;
+    return String(a.country || '') === String(b.country || '')
+        && String(a.marketplaceId || '') === String(b.marketplaceId || '');
+}
+// Is there a completed result that may be painted right now, for THIS scope?
+function _irRestorableResult_(scope) {
+    if (!scope || !_irReadModel || !_irReadModelAt) return { ok: false, reason: 'NO_COMPLETED_RESULT' };
+    if (!_irSameScope_(_irSearch.applied, scope)) return { ok: false, reason: 'SCOPE_NOT_APPLIED' };
+    var age = _irNowMs_() - _irReadModelAt;
+    if (age < 0 || age > _IR_RESULT_TTL_MS) return { ok: false, reason: 'RESULT_EXPIRED', ageMs: age };
+    return { ok: true, ageMs: age };
+}
+var _IR_SCOPE_MEMORY_KEY = 'km_site_inventory_last_scope_v1';
+var _IR_SCOPE_MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // a month: this is a convenience, not an authority
+var _irBootstrap = { ran: false, mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
+function _irScopeStore_() {
+    try { return (typeof window !== 'undefined' && window.localStorage) ? window.localStorage : null; } catch (e) { return null; }
+}
+function _irRememberScope_(scope) {
+    var st = _irScopeStore_(); if (!st || !scope || !scope.country || !scope.marketplaceId) return false;
+    try { st.setItem(_IR_SCOPE_MEMORY_KEY, JSON.stringify({ country: String(scope.country), marketplaceId: String(scope.marketplaceId), at: Date.now() })); return true; }
+    catch (e) { return false; }                       // private mode / quota: a lost convenience, never an error
+}
+function _irForgetScope_() { var st = _irScopeStore_(); if (st) { try { st.removeItem(_IR_SCOPE_MEMORY_KEY); } catch (e) {} } }
+function _irRestoreScope_() {
+    var st = _irScopeStore_(); if (!st) return null;
+    try {
+        var o = JSON.parse(st.getItem(_IR_SCOPE_MEMORY_KEY) || 'null');
+        if (!o || !o.country || !o.marketplaceId || typeof o.at !== 'number') return null;
+        if ((Date.now() - o.at) > _IR_SCOPE_MEMORY_TTL_MS) { _irForgetScope_(); return null; }
+        return { country: String(o.country), marketplaceId: String(o.marketplaceId) };
+    } catch (e) { return null; }
+}
+// Is a remembered scope still a REAL option? Asked of the registry, which is the picker authority (§B.1) — never
+// assumed, because a marketplace can be retired between visits and offering it would be worse than asking again.
+function _irScopeIsValid_(model, scope) {
+    if (!model || !scope) return false;
+    var list = model.getMarketplaces || [];
+    for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (String(m.marketplace_id || m.marketplaceId || '') === scope.marketplaceId
+            && String(m.country || '') === scope.country) return true;
+    }
+    return false;
+}
+function _irSetSelectors_(scope) {
+    if (typeof document === 'undefined' || !scope) return;
+    try {
+        var c = document.getElementById('replenCountry'); if (c) c.value = scope.country;
+        var m = document.getElementById('replenMarketplace'); if (m) m.value = scope.marketplaceId;
+    } catch (e) {}
+}
+// THE MOUNT ENTRY POINT. Replaces the bare _irEnsureRegistryLoaded_() call, and is the only thing that changed
+// about when requests are issued.
+function _irBootstrapScope_() {
+    _irBootstrap = { ran: true, mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
+    var remembered = _irRestoreScope_();
+    if (!remembered) {
+        _irBootstrap.mode = 'REGISTRY_ONLY';
+        _irBootstrap.reason = 'no remembered scope — the registry alone, then wait for a choice';
+        _irBootstrap.registryRequests = 1;
+        return Promise.resolve(_irEnsureRegistryLoaded_());
+    }
+    if (typeof _replenDemoOn === 'function' && _replenDemoOn()) {
+        _irBootstrap.mode = 'REGISTRY_ONLY';
+        _irBootstrap.reason = 'Demo owns its own static options';
+        return Promise.resolve(_irEnsureRegistryLoaded_());
+    }
+    // F1-7N-FB-4E-R4B §A -- THE RESTORE BRANCH, and it comes BEFORE anything that can paint a loading state.
+    // A validated completed result for this exact scope is painted immediately: zero blocking requests, no
+    // "Searching...", the table exactly as it was left. Revalidation still runs, quietly, so the server keeps the
+    // final word without the screen going empty to ask for it.
+    var restorable = _irRestorableResult_(remembered);
+    if (restorable.ok) {
+        _irBootstrap.mode = 'RESTORED';
+        _irBootstrap.reason = 'a completed result for this scope was still valid (' + Math.round(restorable.ageMs / 1000) + 's old) -- painted immediately, revalidating quietly';
+        _irBootstrap.registryRequests = 0;
+        _irBootstrap.workspaceRequests = 0;
+        _irSetSelectors_(remembered);
+        _irSearch.status = 'READY';
+        _irSearch.error = null;
+        if (typeof renderReplenishment === 'function') renderReplenishment();
+        // QUIET revalidation. It never touches `status`, so it cannot turn a painted table back into a loading
+        // one, and a failure leaves the restored result exactly where it is -- the data on screen was valid when
+        // it was read and a failed revalidation does not make it invalid.
+        _irBootstrap.revalidating = true;
+        var qSeq = _irSearch.seq;
+        Promise.resolve(_irWorkspaceRefresh_({ quiet: true })).then(function () {
+            if (qSeq !== _irSearch.seq) return;                  // a real Search superseded the restore
+            if (!_irSameScope_(_irSearch.applied, remembered)) return;   // the scope moved on
+            _irBootstrap.revalidating = false;
+            _irBootstrap.revalidated = true;
+            if (typeof renderReplenishment === 'function') renderReplenishment();
+        }, function () { _irBootstrap.revalidating = false; _irBootstrap.revalidateFailed = true; });
+        return Promise.resolve(remembered);
+    }
+    _irBootstrap.restoreReason = restorable.reason;
+
+    _irBootstrap.mode = 'COALESCED';
+    _irBootstrap.reason = 'a remembered scope: registry validation and the scoped workspace read run together';
+    _irBootstrap.registryRequests = 1;
+    _irBootstrap.workspaceRequests = 1;
+    var mySeq = ++_irSearch.seq;
+    _irSearch.status = 'LOADING';
+    _irSearch.error = null;
+    var rg = _irRegion_(); if (rg && window.KM && window.KM.loadState) rg.beginLoad(false);   // ONE loading state
+    // STARTED TOGETHER. The workspace read is scope-INDEPENDENT (the server returns the primary-render table set
+    // and the client scopes it), which is exactly why it can overlap the validation instead of following it.
+    var regP = Promise.resolve(_irEnsureRegistryLoaded_())['catch'](function () { return null; });
+    var wsP = Promise.resolve(_irWorkspaceRefresh_()).then(function (m) { return { ok: true, model: m }; },
+        function (err) { return { ok: false, error: err }; });
+    return Promise.all([regP, wsP]).then(function (r) {
+        if (mySeq !== _irSearch.seq) return null;                    // a real Search superseded the bootstrap
+        var model = _irRegistry.model;
+        var valid = _irScopeIsValid_(model, remembered);
+        _irBootstrap.scopeValid = valid;
+        if (!valid) {
+            // The scope is gone, or the registry could not be read. Either way: forget it, apply nothing, and
+            // leave the page in its ordinary pre-search state. Nothing scope-dependent has been rendered.
+            _irForgetScope_();
+            _irBootstrap.reason = model
+                ? 'the remembered scope is no longer offered by the registry — discarded, pre-search state'
+                : 'the registry could not be read — the remembered scope cannot be validated, so it is not applied';
+            _irSearch.status = 'PRE_SEARCH';
+            if (typeof _irRenderSearchGate_ === 'function') _irRenderSearchGate_();
+            return null;
+        }
+        var ws = r[1];
+        if (!ws || !ws.ok) {
+            _irSearch.status = 'PRE_SEARCH';
+            _irBootstrap.reason = 'the scoped workspace read failed — reported, and the scope is NOT applied';
+            if (typeof _irRenderError_ === 'function') _irRenderError_(ws && ws.error);
+            return null;
+        }
+        _irSetSelectors_(remembered);
+        // ONE paint, through the SAME single assignment point a manual Search uses. No second code path can
+        // make data appear, which is what keeps §B.5 true by construction.
+        _irApplySearch_(remembered, mySeq);
+        return remembered;
+    });
+}
+// Read-only: what the mount actually did, so "why two phases / why one" has an answer without guessing.
+window._irBootstrapDiagnostic_ = function () {
+    var reg = _irSharedRegistry_();
+    var snap = reg ? reg.getState() : null;
+    return {
+        mode: _irBootstrap.mode, reason: _irBootstrap.reason, scope_valid: _irBootstrap.scopeValid,
+        // F1-7N-FB-4E-R4B §A
+        restore_reason: _irBootstrap.restoreReason || null,
+        revalidating: _irBootstrap.revalidating === true,
+        revalidated: _irBootstrap.revalidated === true,
+        revalidate_failed: _irBootstrap.revalidateFailed === true,
+        result_age_ms: _irReadModelAt ? (_irNowMs_() - _irReadModelAt) : null,
+        result_ttl_ms: _IR_RESULT_TTL_MS,
+        registry_requests: _irBootstrap.registryRequests, workspace_requests: _irBootstrap.workspaceRequests,
+        registry_from_cache: snap ? (snap.from_cache === true) : null,
+        registry_total_requests: snap ? snap.requests : null,
+        remembered_scope: _irRestoreScope_(),
+        note: 'COALESCED = a remembered scope, so registry validation and the scoped workspace read ran together '
+            + 'under one loading state. REGISTRY_ONLY = first use: the registry alone, then wait for a choice. '
+            + 'Neither mode loads every site inventory, and neither reads the whole database.'
+    };
+};
+window._irBootstrapScope_ = _irBootstrapScope_;
+window._irRememberScope_ = _irRememberScope_;
+window._irRestoreScope_ = _irRestoreScope_;
+window._irForgetScope_ = _irForgetScope_;
+window._irScopeIsValid_ = _irScopeIsValid_;
 function _irReloadScopeRegistry_() { return _irEnsureRegistryLoaded_({ force: true }); }
 window._irEnsureRegistryLoaded_ = _irEnsureRegistryLoaded_;
 window._irReloadScopeRegistry_ = _irReloadScopeRegistry_;
@@ -5436,9 +5847,13 @@ function _irRenderError_(err) {
 
 // Scoped read: Workspace (canonical) → getWorkspace('inventoryReplenishment') → adapt → _irReadModel. Fail-closed (throws;
 // NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
-function _irWorkspaceRefresh_() {
+function _irWorkspaceRefresh_(opts) {
     var mySeq = ++_irReadSeq;
-    var rg = _irRegion_(); if (rg) rg.beginLoad(!!_irReadModel);
+    // F1-7N-FB-4E-R4B §A -- a QUIET read drives no load region at all. This is the difference between "refresh
+    // the data behind a table that is already correct" and "tell the user we have nothing", and the two must not
+    // share a code path: the second is what painted "Searching..." over a valid result.
+    var quiet = !!(opts && opts.quiet);
+    var rg = quiet ? null : _irRegion_(); if (rg) rg.beginLoad(!!_irReadModel);
     if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
         return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'Inventory Replenishment Workspace API unavailable.' });
     }
@@ -5446,6 +5861,9 @@ function _irWorkspaceRefresh_() {
         if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
         if (env && env.success && env.data) {
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            // F1-7N-FB-4E-R4B §A — the completion stamp. Only a SUCCESSFUL read sets it, so a failure can never
+            // present itself as a completed result, and an aged result can be told from a current one.
+            _irReadModelAt = _irNowMs_();
             if (rg) rg.set((_irReadModel.getMarketplaceSkus && _irReadModel.getMarketplaceSkus.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
             return _irReadModel;
         }
@@ -5546,6 +5964,10 @@ function _irApplySearch_(pending, mySeq) {
     if (mySeq !== _irSearch.seq) return;                  // superseded while resolving
     if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
+    // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
+    // real result. Remembering a merely SELECTED scope would persist something that was never proven to work.
+    if (typeof _irRememberScope_ === 'function') _irRememberScope_(_irSearch.applied);
     _irSearch.stale = false;
     _irSearch.error = null;
     _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
@@ -5586,21 +6008,38 @@ function _irShowCancel_(show) { var c = _irCancelBtn_(); if (c) { c.style.displa
 // 'CURRENT_SCOPE', company?, country?, marketplace? }; omitted ⇒ ALL_SITES (the existing button, unchanged). The
 // scope is passed to the backend job START; nothing else about the lifecycle changes (one START → poll → refresh).
 function handleRecalcAllInventoryGap(scopeSpec) {
-  if (_irRecalcAllBusy) return;
+  // F1-7N-FB-4E-R4B-R3 §4 - every one of these early returns used to end the click in silence, because the only
+  // surface they had was a menu item the click itself had already hidden.
+  if (_irRecalcAllBusy) {
+    _irAiSupportNotice_('info', 'Recalculate', 'A recalculation is already running. The click was ignored; nothing was started twice.');
+    return;
+  }
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.startInventoryReplenishmentGapJob === 'function')) {
+    _irAiSupportTriggerIdle_('recalc');
+    _irAiSupportNotice_('bad', 'Recalculate', 'Recalculation service is unavailable (Operation DB API not configured). Nothing was run and nothing was changed.');
     alert('Recalculation service is unavailable (Operation DB API not configured).');
     return;
   }
   var _scopeMode = (scopeSpec && scopeSpec.mode) ? String(scopeSpec.mode) : 'ALL_SITES';
   var _scopeText = _scopeMode === 'CURRENT_SCOPE' ? 'the SELECTED site' : (_scopeMode === 'CURRENT_COUNTRY' ? 'the SELECTED country' : 'ALL sites');
-  if (typeof window.confirm === 'function' && !window.confirm('Start a recalculation of the materialized replenishment gap for ' + _scopeText + '?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest result per site/SKU is overwritten.')) return;
+  if (typeof window.confirm === 'function' && !window.confirm('Start a recalculation of the materialized replenishment gap for ' + _scopeText + '?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest result per site/SKU is overwritten.')) {
+    _irAiSupportTriggerIdle_('recalc');
+    _irAiSupportNotice_('info', 'Recalculate', 'Recalculation was not confirmed. Nothing was run and nothing was changed.');
+    return;
+  }
   var btn = _irRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
   _irRecalcAllBusy = true; _irActiveRunId = null; _irCancelRequested = false;
-  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  // The menu item lives inside a panel the click already hid, so every state it is given is MIRRORED onto the
+  // trigger, which stays on screen. Without this the whole progress lifecycle is painted where nobody can see it.
+  function setBtn(txt, disabled) {
+    if (btn) { btn.disabled = !!disabled; btn.textContent = txt; }
+    if (disabled) _irAiSupportTriggerBusy_('recalc', txt); else _irAiSupportTriggerIdle_('recalc');
+  }
   // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle (used by every terminal path).
-  function restore() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); }
+  function restore() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); _irAiSupportTriggerIdle_('recalc'); }
+  var _recalcTitle = (_scopeMode === 'CURRENT_SCOPE') ? 'Recalculate Current Scope' : 'Recalculate All Sites';
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
   var startFn = function () { return window.KM.DB.startInventoryReplenishmentGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); };   // the WRITE POST — exactly ONCE (optional bounded scope §13)
   var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY'); };            // READ-ONLY poll
@@ -5621,9 +6060,9 @@ function handleRecalcAllInventoryGap(scopeSpec) {
       // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: this MANUAL runJob done() fires only on terminal DONE, AFTER refresh() — so the
       // notice is truthful and never precedes fresh data. Keyed to _irActiveRunId (one notice per manual run). The
       // resume-on-mount done() below deliberately does NOT announce, so scheduled/resumed jobs stay silent.
-      done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      failed: function (st) { alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
+      done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} _irAiSupportNotice_('ok', _recalcTitle, 'Recalculation completed and the materialized replenishment gap was refreshed.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} _irAiSupportNotice_('warn', _recalcTitle, 'Recalculation was cancelled. The latest completed results are preserved.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      failed: function (st) { _irAiSupportNotice_('bad', _recalcTitle, _irGapJobFailMsg_('Inventory', st)); alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
     }
   });
 }
@@ -5764,7 +6203,10 @@ function _irRecoActionHtml(skuData) {
 }
 function handleReplenAiPlan(scope) {
     var btn = document.getElementById('replen-ai-plan-btn');
-    if (btn && btn.disabled) return;
+    if (btn && btn.disabled) {
+        _irAiSupportNotice_('info', 'AI Plan', 'An AI Plan run is already in progress. The click was ignored; nothing was started twice.');
+        return;
+    }
     // F1-AI-SUPPORT-SCOPE-R1: capture the user-chosen { company, country, marketplace, marketplaceId } DTO when the
     // scope modal supplied one. HONEST BOUNDARY: the canonical page-level AI Plan generator (window.KMREC) is not
     // yet FM6-R4 scope-parameterized — it deterministically derives from the MATERIALIZED gap rows already loaded
@@ -5783,6 +6225,8 @@ function handleReplenAiPlan(scope) {
     } catch (err) {
         if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); if (btn) btn.disabled = false; }
         console.error('[AI Plan] recommendation generation failed:', err);
+        _irAiSupportTriggerIdle_('aiplan');
+        _irAiSupportNotice_('bad', 'AI Plan', 'Recommendation generation failed: ' + String((err && err.message) || err) + '. Nothing was written.');
         return;
     }
     // F1-7N-FA-3C-R6D1 — DB-BACKED GENERATION (staged behind a backend-owned flag; DEFAULT OFF). handleReplenAiPlan is the
@@ -5795,6 +6239,11 @@ function handleReplenAiPlan(scope) {
         return;
     }
     if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); btn.disabled = false; }
+    // The success styling above lands on a menu item inside a panel the click already hid. The visible outcome is
+    // this notice, and it states the COUNT so that "it ran" and "it produced nothing" are not the same message.
+    _irAiSupportTriggerIdle_('aiplan');
+    _irAiSupportNotice_('ok', 'AI Plan',
+        'Recommendations regenerated for ' + Object.keys(_irRecoByKey || {}).length + ' SKU(s) from the materialized gap already loaded. Nothing was written to the database.');
 }
 window.handleReplenAiPlan = handleReplenAiPlan;
 // R6D1 — the DB-generation feature flag (mirrors the backend owner-of-record via KM.api). Default OFF (fail-safe: if the
@@ -5990,6 +6439,27 @@ function _getCloudReplenishmentData() {
     var _irTodayMs = Date.UTC(_irNow.getFullYear(), _irNow.getMonth(), _irNow.getDate());
     var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs, lineReceiverById);
 
+    // F1-7N-FB-4E-R4B-R1 - the factory projection's window anchor is INJECTED (the module never reads a clock),
+    // and the whole-SKU projection is computed ONCE per SKU rather than once per marketplace row.
+    var _irFactoryCalcMonth = (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); })();
+    var _irFactoryAllocCache = {};
+    function _irFactoryAllocFor_(sku, siteScope, factoryRows, whRows, siteRows, fcRowsIn) {
+        var k = String(sku == null ? '' : sku).toUpperCase();
+        if (!Object.prototype.hasOwnProperty.call(_irFactoryAllocCache, k)) {
+            _irFactoryAllocCache[k] = IR.factorySiteAllocation({
+                scope: siteScope, factoryRows: factoryRows, warehouses: whRows, mpSkus: siteRows,
+                fcRows: fcRowsIn, calculationMonth: _irFactoryCalcMonth
+            });
+        }
+        var proj = _irFactoryAllocCache[k].projection;
+        if (!proj) return _irFactoryAllocCache[k];
+        // The projection is per-SKU; the SITE slice is per row, so it is read fresh for this scope.
+        var K = (typeof window !== 'undefined' && window.KM && window.KM.factorySiteAllocation) || null;
+        if (!K) return _irFactoryAllocCache[k];
+        var mine = K.siteFactoryAvailability(proj, siteScope);
+        return { cn: mine.cn, tw: mine.tw, state: _irFactoryAllocCache[k].state, projection: proj };
+    }
+
     var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
     var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     var cm = new Date().getMonth();
@@ -6047,8 +6517,13 @@ function _getCloudReplenishmentData() {
           : (thirdPartyPlan.state === 'MISSING_SNAPSHOT') ? 'No Data'
           : (thirdPartyPlan.state === 'OK' || _tpBreakdown.hasRows) ? String(Math.round(_tpBreakdown.total).toLocaleString())
           : '—';
-        var cnStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'CN');
-        var twStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'TW');
+        // F1-7N-FB-4E-R4B-R1 §1 - THIS SITE's share of each physical factory pool, from the ONE canonical
+        // projection Order Planning also reads. Previously both lines were the COMPLETE physical quantity, which
+        // is why every marketplace scope showed the same full factory number. Memoized per SKU: the projection
+        // is a whole-SKU calculation and the row map would otherwise repeat it once per marketplace.
+        var _fa = _irFactoryAllocFor_(mp.sku, scope, factory, warehouses, mpSkus, fcRows);
+        var cnStock = _fa.cn;
+        var twStock = _fa.tw;
         var need = IR.needBuckets();
 
         var currentStock = stock.available + stock.fcTransfer + stock.fcProcessing;
@@ -6117,6 +6592,9 @@ function _getCloudReplenishmentData() {
             suggestedQty: need.suggestedQty,
             cnStock: cnStock,
             twStock: twStock,
+            // F1-7N-FB-4E-R4B-R3 §3 - the projection's own verdict travels with the number, so a real zero
+            // (not an eligible receiver / zero FC denominator) can never be read as a missing one.
+            factoryAllocState: _fa.state,
             unitsPerCarton: det.unitsPerCarton || 0,   // from sku_details — drives carton validation
             // AI Suggestion buckets (Phase 1 structure — engine not implemented)
             need0_18: need.need0_18, need19_30: need.need19_30, need31_45: need.need31_45, need46_90: need.need46_90,
@@ -7987,16 +8465,83 @@ function toggleReplenAiSupportMenu(ev) {
     var e = _replenAiEls(); if (!e.list) return;
     if (e.list.hidden) _replenAiOpen(); else _replenAiClose(false);
 }
-// One item → one existing handler (no duplicated calculation logic). Close first so a backend job's button-state
-// updates land on the (now-hidden) menu item without holding the menu open.
-// F1-AI-SUPPORT-SCOPE-R1: "AI Plan" and "Recalculate Current Scope" now open the shared scope-selection modal so
-// the user picks a CONCRETE Country / Marketplace before running; on Confirm they delegate to the SAME existing
+// F1-7N-FB-4E-R4B-R3 §4 — SITE INVENTORY'S AI SUPPORT NOW HAS A PLACE TO SPEAK.
+//
+// R4B-R1 gave Order Planning a notice surface OUTSIDE the menu panel and left this page without one, so even
+// when the shared modal started throwing there was nowhere for the failure to appear. The menu is closed by the
+// first line of runReplenAiSupport, and `.km-action-menu__panel[hidden] { display: none }` means anything painted
+// into it is invisible — so the trigger (which stays on screen) and a body-mounted notice are the only two
+// surfaces a click can use. Both are used here, and they mirror the Order Planning contract exactly.
+var _irAiSupportTriggerOwner = null;          // 'aiplan' | 'recalc' | null — one owner at a time
+function _irAiSupportTriggerEl_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replenAiSupportTrigger') : null; }
+function _irAiSupportTriggerBusy_(owner, text) {
+    var t = _irAiSupportTriggerEl_(); if (!t) return false;
+    if (_irAiSupportTriggerOwner && _irAiSupportTriggerOwner !== owner) return false;   // the other flow owns it
+    _irAiSupportTriggerOwner = owner;
+    if (t.dataset && t.dataset.idleLabel == null) t.dataset.idleLabel = t.textContent;
+    t.textContent = '✦ ' + String(text == null ? '' : text);
+    t.setAttribute('aria-busy', 'true');
+    return true;
+}
+function _irAiSupportTriggerIdle_(owner) {
+    var t = _irAiSupportTriggerEl_();
+    if (_irAiSupportTriggerOwner && owner && _irAiSupportTriggerOwner !== owner) return;
+    _irAiSupportTriggerOwner = null;
+    if (!t) return;
+    var idle = (t.dataset && t.dataset.idleLabel) ? t.dataset.idleLabel : '✦ AI Support';
+    t.textContent = idle; t.removeAttribute('aria-busy');
+    if (t.dataset) delete t.dataset.idleLabel;
+}
+// Its OWN id, so it never races the AI Plan RESULT panel (#replen-ai-plan-result) for one element.
+function _irAiSupportNoticeEl_() {
+    if (typeof document === 'undefined' || !document.getElementById) return null;
+    var el = document.getElementById('replen-ai-support-notice');
+    if (!el && document.body) {
+        el = document.createElement('div');
+        el.id = 'replen-ai-support-notice'; el.className = 'replen-ai-plan-result'; el.hidden = true;
+        el.setAttribute('aria-live', 'polite');
+        document.body.appendChild(el);
+    }
+    return el || null;
+}
+function _irClearAiSupportNotice_() { var el = _irAiSupportNoticeEl_(); if (el) { el.hidden = true; el.innerHTML = ''; } }
+// tone: 'ok' | 'info' | 'warn' | 'bad'. Returns TRUE when something visible was actually painted — the callers
+// use the return value, so a missing DOM degrades to alert()/console rather than to silence.
+function _irAiSupportNotice_(tone, title, message) {
+    var el = _irAiSupportNoticeEl_();
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); };
+    if (el) {
+        el.className = 'replen-ai-plan-result replen-ai-plan-result--' + (tone || 'info');
+        el.setAttribute('role', tone === 'bad' ? 'alert' : 'status');
+        el.setAttribute('aria-live', tone === 'bad' ? 'assertive' : 'polite');
+        el.innerHTML = '<div class="replen-ai-plan-result__head"><span>' + esc(title) + '</span>' +
+            '<button type="button" class="replen-ai-plan-result__close" onclick="_irClearAiSupportNotice_()" aria-label="Close">×</button></div>' +
+            '<div class="replen-ai-plan-result__msg">' + esc(message) + '</div>';
+        el.hidden = false;
+        return true;
+    }
+    try { if (typeof window.alert === 'function') { window.alert(title + ' - ' + message); return true; } } catch (e) {}
+    try { if (typeof console !== 'undefined' && console.error) console.error('[IR][AI_SUPPORT] ' + title + ' - ' + message); } catch (e) {}
+    return false;
+}
+function _irAiActionTitle_(action) { return action === 'aiplan' ? 'AI Plan' : 'Recalculate Current Scope'; }
+// One item -> one existing handler (no duplicated calculation logic). Close first so a backend job's button-state
+// updates land on the (now-hidden) menu item without holding the menu open; everything this click has to say from
+// here on is said on the trigger or in the notice, both of which stay visible.
+// F1-AI-SUPPORT-SCOPE-R1: "AI Plan" and "Recalculate Current Scope" open the shared scope-selection modal so the
+// user picks a CONCRETE Country / Marketplace before running; on Confirm they delegate to the SAME existing
 // handlers (no new route/engine). "Recalculate All Sites" is unchanged (runs directly against the all-sites job).
 function runReplenAiSupport(kind) {
     _replenAiClose(false);
+    _irClearAiSupportNotice_();
     if (kind === 'aiplan') return _openReplenScopeModal('aiplan');
     if (kind === 'recalcScope') return _openReplenScopeModal('recalc');
-    if (kind === 'recalcAll' && typeof handleRecalcAllInventoryGap === 'function') return handleRecalcAllInventoryGap();
+    if (kind === 'recalcAll') {
+        if (typeof handleRecalcAllInventoryGap === 'function') return handleRecalcAllInventoryGap();
+        return _irAiSupportNotice_('bad', 'Recalculate All Sites', 'The recalculation handler is not available on this page. Nothing was run and nothing was changed.');
+    }
+    // An unrecognised item used to return undefined and leave the operator with a closed menu and no explanation.
+    return _irAiSupportNotice_('bad', 'AI Support', 'Unrecognised action "' + String(kind) + '". Nothing was run and nothing was changed.');
 }
 // Prefill the modal from the current toolbar scope (DOM-held). The Marketplace select value is a marketplace_id
 // on the live path; "All"/blank is left unselected (never silently treated as a concrete current scope — §6).
@@ -8005,29 +8550,57 @@ function _irScopeModalPrefill_() {
     var m = document.getElementById('replenMarketplace');
     return { country: (c && c.value) ? String(c.value) : '', marketplaceId: (m && m.value) ? String(m.value) : '' };
 }
+// F1-7N-FB-4E-R4B-R3 §4 — GUARD THE OUTCOME, NOT THE PRESENCE.
+//
+// The previous guard asked whether window.KM.scopeModal.open was a function. It WAS one. It threw on its first
+// statement (see scope-select-modal.js), and a throw inside an inline onclick is swallowed by the browser — so
+// "the module is loaded" and "the click did something" were being treated as the same fact for five days. They
+// are now separate: the call is made inside a try, and a throw becomes a stated refusal that names the error.
+function _irScopeModalUnavailable_(action, detail) {
+    var msg = 'The scope selector could not be opened, so "' + _irAiActionTitle_(action) + '" was not started. '
+        + 'Nothing was run and nothing was changed.' + (detail ? ' (' + detail + ')' : '')
+        + ' Reload the page; if it repeats, assets/js/utils/scope-select-modal.js is missing or failed to load.';
+    return _irAiSupportNotice_('bad', _irAiActionTitle_(action), msg);
+}
 function _openReplenScopeModal(action) {
     if (!(window.KM && window.KM.scopeModal && typeof window.KM.scopeModal.open === 'function')) {
-        // Graceful fallback if the shared modal is unavailable: use the argument-less current-on-screen scope path.
+        // Graceful fallback if the shared modal is unavailable: the argument-less current-on-screen scope path.
+        // It is a FALLBACK, never a silent return — if the handler is missing too, the refusal is stated.
         if (action === 'aiplan' && typeof handleReplenAiPlan === 'function') return handleReplenAiPlan();
         if (action === 'recalc' && typeof recalcInventoryGapCurrentScope === 'function') return recalcInventoryGapCurrentScope();
-        return;
+        return _irScopeModalUnavailable_(action, 'SCOPE_MODAL_UNAVAILABLE');
     }
-    window.KM.scopeModal.open({
-        title: action === 'aiplan' ? 'AI Plan — Inventory' : 'Recalculate Current Scope — Inventory',
-        subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
-        confirmLabel: action === 'aiplan' ? 'Generate AI Plan' : 'Recalculate Scope',
-        prefill: _irScopeModalPrefill_(),
-        onConfirm: function (scope) {
-            if (action === 'aiplan') {
-                if (typeof handleReplenAiPlan === 'function') handleReplenAiPlan(scope);
-            } else {
-                // EXISTING CURRENT_SCOPE gap job (LIVE10 contract) — one site scope = one existing job. No new route.
-                if (typeof handleRecalcAllInventoryGap === 'function') {
-                    handleRecalcAllInventoryGap({ mode: 'CURRENT_SCOPE', company: scope.company, country: scope.country, marketplace: scope.marketplace });
+    try {
+        window.KM.scopeModal.open({
+            title: action === 'aiplan' ? 'AI Plan — Inventory' : 'Recalculate Current Scope — Inventory',
+            subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
+            confirmLabel: action === 'aiplan' ? 'Generate AI Plan' : 'Recalculate Scope',
+            prefill: _irScopeModalPrefill_(),
+            // A DISMISSED modal is an outcome. Without this the operator cannot tell "I cancelled" from
+            // "the click vanished", which is the same class of silence this whole section exists to end.
+            onCancel: function () {
+                _irAiSupportNotice_('info', _irAiActionTitle_(action), 'Scope selection was cancelled. Nothing was run and nothing was changed.');
+            },
+            onConfirm: function (scope) {
+                if (action === 'aiplan') {
+                    if (typeof handleReplenAiPlan !== 'function') {
+                        return _irAiSupportNotice_('bad', 'AI Plan', 'The AI Plan handler is not available on this page. Nothing was run and nothing was changed.');
+                    }
+                    _irAiSupportTriggerBusy_('aiplan', 'AI Plan…');
+                    return handleReplenAiPlan(scope);
                 }
+                // EXISTING CURRENT_SCOPE gap job (LIVE10 contract) — one site scope = one existing job. No new route.
+                if (typeof handleRecalcAllInventoryGap !== 'function') {
+                    return _irAiSupportNotice_('bad', 'Recalculate Current Scope', 'The recalculation handler is not available on this page. Nothing was run and nothing was changed.');
+                }
+                _irAiSupportTriggerBusy_('recalc', 'Starting…');
+                return handleRecalcAllInventoryGap({ mode: 'CURRENT_SCOPE', company: scope.company, country: scope.country, marketplace: scope.marketplace });
             }
-        }
-    });
+        });
+    } catch (e) {
+        return _irScopeModalUnavailable_(action, String((e && e.message) || e));
+    }
+    return true;
 }
 function _replenBindAiSupportGlobal() {
     if (_replenAiSupportBound) return;
@@ -8053,6 +8626,10 @@ function _replenBindAiSupportGlobal() {
 }
 window.toggleReplenAiSupportMenu = toggleReplenAiSupportMenu;
 window.runReplenAiSupport = runReplenAiSupport;
+window._irAiSupportNotice_ = _irAiSupportNotice_;
+window._irClearAiSupportNotice_ = _irClearAiSupportNotice_;
+window._irAiSupportTriggerBusy_ = _irAiSupportTriggerBusy_;
+window._irAiSupportTriggerIdle_ = _irAiSupportTriggerIdle_;
 
 window.debugInventoryDemoData = function() {
     var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
@@ -8185,7 +8762,11 @@ if (window.KM && window.KM.lifecycle) {
                     // so the selectors are usable immediately. It issues ZERO inventoryReplenishment workspace
                     // reads and never puts the inventory table into a loading state — the table stays PRE_SEARCH.
                     // Its own loading/empty/error state renders beside the selectors, with its own Retry.
-                    if (typeof _irEnsureRegistryLoaded_ === 'function') { try { _irEnsureRegistryLoaded_(); } catch (e) {} }
+                    // F1-7N-FB-4E-R3 §B — one coherent bootstrap. With no remembered scope this is exactly the
+                    // registry-only call it replaces; with one, the registry validation and the scoped workspace
+                    // read run TOGETHER under one loading state and the table paints once, validated.
+                    if (typeof _irBootstrapScope_ === 'function') { try { _irBootstrapScope_(); } catch (e) {} }
+                    else if (typeof _irEnsureRegistryLoaded_ === 'function') { try { _irEnsureRegistryLoaded_(); } catch (e) {} }
                     // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
                     // calculation month / planning cycle). Populates options + restores explicit session
                     // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.

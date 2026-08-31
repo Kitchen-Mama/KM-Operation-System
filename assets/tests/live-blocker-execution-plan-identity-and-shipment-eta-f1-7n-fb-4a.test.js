@@ -597,7 +597,13 @@ ok(DEMO.indexOf('F1-7N-FB-4A') === -1, '18. the Demo seed carries no FB-4A marke
 section('19. deployment identity, the deferred map requirement, and the recorded baseline');
 // ==========================================================================================================
 var buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || ''), '19. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
+// F1-7N-FB-4E-R2 — the pattern admits a REVISION suffix. This project already stamps revisions
+// (59_ declares F1-7N-FB-4C-R1 and the manifest expects exactly that), so a rule that accepted only
+// F1-7N-FB-<n><A-Z> rejected a legitimate build the moment one was made. It still requires the canonical
+// shape; it no longer requires the round to have been a first cut.
+// F1-7N-FB-4E-R4B-R3 - and now a REVISION OF A REVISION (F1-7N-FB-4E-R4B-R3). The canonical pattern is shared
+// so that four suites cannot disagree about it: assets/tests/_release-order.js.
+ok(require('./_release-order.js').BUILD_STAMP_RE.test(buildNow || ''), '19. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
 var rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // F1-7N-FB-4E — RESTATED AT THE INVARIANT IT NAMES. Requiring 66_ to declare the same build as 63_ makes a
 // partial sync visible only by accident, and it forces an unnecessary edit to 66_ in every round that touches
@@ -714,22 +720,17 @@ eval(extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_'));
 eval(extractFn(G63, 'sysModuleBuildStamps_'));
 var SYS_BUILD_VERSION_ = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // the manifest must match what the files ACTUALLY declare, or the check is a lie on day one
-var declaredBy = {
-  'SYS_BUILD_VERSION_': SYS_BUILD_VERSION_,
-  'ROS_BUILD_VERSION_': (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'ADI_BUILD_VERSION_': (G67.match(/var ADI_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'EPC_BUILD_VERSION_': (G68.match(/var EPC_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'TEMP_ROSEND_DIAG_BUILD_VERSION_': (GTD.match(/var TEMP_ROSEND_DIAG_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  // F1-7N-FB-4C - the AI Plan draft lifecycle joined the manifest, so this invariant now covers it too.
-  'AIPL_BUILD_VERSION_': (read('specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs').match(/var AIPL_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  // F1-7N-FB-4C-ADDENDUM-MIGRATION - and so did the lifecycle schema migration owner. Every manifest entry must
-  // appear here or the check below silently compares `undefined`, which is how a manifest invariant rots.
-  'TEMP_AIMIG_BUILD_VERSION_': (read('specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs').match(/var TEMP_AIMIG_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'SAD_BUILD_VERSION_': (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'SP_BUILD_VERSION_': (read('specs/active/apps-script/11_shipping_plan_handlers.gs').match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'RTR_BUILD_VERSION_': (read('specs/active/apps-script/01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1],
-  'SKD_BUILD_VERSION_': (read('specs/active/apps-script/59_api_v1_sku_details_workspace.gs').match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1]
-};
+// F1-7N-FB-4E-R4B-R3 - DERIVED, not hand-listed. This map had one line per manifest entry and a comment warning
+// that a missing line makes the comparison vacuous - a warning that was correct and still had to be obeyed by
+// hand every time an owner joined the manifest. R4B-R3 added two owners (47_ and 56_, which had changed in R4B
+// and carried no stamp at all) and the map went stale in the same commit. It now reads each manifest entry's
+// OWN file for its OWN symbol, so the guard below cannot be outrun by the manifest it guards.
+var declaredBy = {};
+SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
+  var body = '';
+  try { body = read('specs/active/apps-script/' + m.file); } catch (e) { body = ''; }
+  declaredBy[m.symbol] = (body.match(new RegExp('var\\s+' + m.symbol + " = '([^']+)';")) || [])[1];
+});
 // Guard the guard: a manifest entry with no declaredBy lookup would make the comparison vacuous.
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
   ok(Object.prototype.hasOwnProperty.call(declaredBy, m.symbol),

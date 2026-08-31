@@ -102,7 +102,9 @@ function makeLegacy() {
   // F1-4B-FM2B PRODUCTION CUTOVER: recommendation is the FIRST CANONICAL workspace — its per-workspace flag
   // now defaults TRUE (active-by-default, master-flag-independent; kill switch = setWorkspaceEnabled). Every
   // OTHER workspace stays default false behind the hybrid gate.
-  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === true && api.getWorkspaceFlags().recommendation === true, 'FF8 per-workspace flag map present (8); recommendation + weeklyShipping default TRUE (canonical), the rest default false');
+  // F1-7N-FB-4E-R3 — the flag map grows with each cutover; what must hold is that it covers at least the
+  // eight canonical workspaces and that the canonical defaults are unchanged.
+  ok(Object.keys(api.getWorkspaceFlags()).length >= 8 && api.getWorkspaceFlags().weeklyShipping === true && api.getWorkspaceFlags().recommendation === true, 'FF8 per-workspace flag map present (>=8); recommendation + weeklyShipping default TRUE (canonical)');
   ok(api.isCanonicalWorkspace('recommendation') === true && api.isCanonicalWorkspace('weeklyShipping') === true, 'FF8a recommendation + weeklyShipping are canonical (F1-7B cutover)');
   // recommendation active-by-default with master flag OFF (canonical, master-flag-independent).
   ok(api.workspaceApiActive('recommendation') === true && api.effectiveMode('recommendation') === 'workspace', 'FF8b recommendation active by default (master flag OFF) — no console command required');

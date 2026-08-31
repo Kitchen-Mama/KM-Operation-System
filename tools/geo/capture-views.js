@@ -105,6 +105,27 @@ var VIEWS = [
   // ---- specific labels say, and a decision about text is not verified by an assertion on a string: the
   // ---- question is whether 台灣 and 中國 read correctly at the zoom where both are on screen together.
   { id: 'tw-cn', title: 'R4-F1 Taiwan / China - the §A display decision', focus: [26, 119], dist: 1.7, w: 1280, h: 900, admin1: true },
+  // ---- TEXTURE-3-R5 §E — the four views §E requires that the R2/R3/R4 set never contained. §E asks for
+  // ---- Canada to be verified on the surfaces an OPERATOR meets, which includes the two long-haul route views
+  // ---- and the map's own opening camera — none of which any earlier round captured.
+  //
+  // ALASKA-YUKON. §E asks whether Alaska inherited a discontinuity from the Canada correction. That cannot be
+  // answered from canada-bc (too far south) or arctic-greenland (too far east), so it gets its own camera on
+  // the 141st meridian, where the US/Canada land border runs dead straight and any seam would be obvious.
+  { id: 'alaska-yukon', title: 'R5-E1 Alaska / Yukon - the 141st-meridian border', focus: [63, -141], dist: 1.6, w: 1280, h: 900, admin1: true },
+  // THE PACIFIC ROUTE, over the great-circle track that actually passes Canada. A CN->US arc leaves the
+  // Aleutians and British Columbia directly under the line, so this view answers "does the route layer read
+  // correctly against the corrected surface" for the coast the correction changed most.
+  { id: 'route-pacific', title: 'R5-E2 Pacific route - Shanghai to Los Angeles', focus: [45, -165], dist: 2.9, w: 1280, h: 900, admin1: false,
+    route: [{ id: 'SHA', lat: 31.2, lng: 121.5 }, { id: 'LAX', lat: 33.9, lng: -118.4 }] },
+  // THE ATLANTIC ROUTE. Rotterdam -> New York passes Newfoundland and the Gulf of St Lawrence, which is the
+  // eastern-Canada coastline §E asks to see aligned with the July surface.
+  { id: 'route-atlantic', title: 'R5-E3 Atlantic route - Rotterdam to New York', focus: [47, -40], dist: 2.9, w: 1280, h: 900, admin1: false,
+    route: [{ id: 'RTM', lat: 51.9, lng: 4.5 }, { id: 'JFK', lat: 40.6, lng: -73.8 }] },
+  // THE DEFAULT ON-THE-WAY MAP VIEW. Not a focus() at all: the page opens on KMGlobe's overview(), so a
+  // focus-based approximation of it would be a different camera and would prove nothing about what an
+  // operator sees first. `overview: true` drives the engine's own opening call.
+  { id: 'map-default', title: 'R5-E4 default On-the-Way Map view (engine overview)', overview: true, focus: [0, 0], dist: 3.0, w: 1280, h: 900, admin1: true },
   // §F — wide enough to carry the divisions of China, Taiwan, Japan and Korea at once, which is where the §B
   // division work and the §C density work are visible in the same frame.
   { id: 'tw-cn-wide', title: 'R4-F2 Taiwan / China / Japan / Korea regional', focus: [30, 122], dist: 2.05, w: 1280, h: 900, admin1: true }
@@ -158,12 +179,22 @@ function harnessHtml(view, forceTier) {
     '    else {',
     '      g.resize();',
     '      if (VIEW.route) {',
-    // A live-style route: Shanghai -> Los Angeles -> Chicago, with markers, so §I.8 shows route data over geography.
-    '        g.setMarkers([{ id: "SHA", lat: 31.2, lng: 121.5, color: [0.25, 0.65, 1], size: 13, ring: false },',
-    '                      { id: "LAX", lat: 33.9, lng: -118.4, color: [1, 0.72, 0.2], size: 14, ring: true },',
-    '                      { id: "ORD", lat: 41.9, lng: -87.6, color: [0.35, 0.9, 0.55], size: 13, ring: false }]);',
-    '        g.setArcs([{ from: [31.2, 121.5], to: [33.9, -118.4], color: [0.35, 0.75, 1, 0.95] },',
-    '                   { from: [33.9, -118.4], to: [41.9, -87.6], color: [1, 0.72, 0.2, 0.95] }]);',
+    // TEXTURE-3-R5 §E — the route is now DATA. It used to be one hard-coded Shanghai -> LA -> Chicago leg, so
+    // every route view was the same route and §E's Pacific and Atlantic views would both have shown it. A view
+    // may pass its own list of stops; `route: true` keeps the original three-stop leg for I8.
+    '        var stops = (VIEW.route === true)',
+    '          ? [{ id: "SHA", lat: 31.2, lng: 121.5 }, { id: "LAX", lat: 33.9, lng: -118.4 }, { id: "ORD", lat: 41.9, lng: -87.6 }]',
+    '          : VIEW.route;',
+    '        var PAL = [[0.25, 0.65, 1], [1, 0.72, 0.2], [0.35, 0.9, 0.55]];',
+    '        g.setMarkers(stops.map(function (s, i) {',
+    '          return { id: s.id, lat: s.lat, lng: s.lng, color: PAL[i % PAL.length], size: 13, ring: i === 1 };',
+    '        }));',
+    '        var arcs = [];',
+    '        for (var ai2 = 0; ai2 < stops.length - 1; ai2++) {',
+    '          arcs.push({ from: [stops[ai2].lat, stops[ai2].lng], to: [stops[ai2 + 1].lat, stops[ai2 + 1].lng],',
+    '                      color: (PAL[ai2 % PAL.length]).concat([0.95]) });',
+    '        }',
+    '        g.setArcs(arcs);',
     '      }',
     '      if (VIEW.admin1 && g.setAdmin1Data) {',
     '        var s = document.createElement("script");',
@@ -173,7 +204,8 @@ function harnessHtml(view, forceTier) {
     '        document.body.appendChild(s);',
     '      } else { place(); }',
     '      function place() {',
-    '        g.focus(VIEW.focus[0], VIEW.focus[1], { dist: VIEW.dist });',
+    // TEXTURE-3-R5 §E — the DEFAULT view is the engine's own overview(), not a focus() that resembles it.
+    '        if (VIEW.overview) { g.overview(); } else { g.focus(VIEW.focus[0], VIEW.focus[1], { dist: VIEW.dist }); }',
     // Two frames of settle, then read the diagnostics the report must quote.
     '        setTimeout(function () {',
     '          var mi = {}, ti = {}, ri = {}, li = {}, ai = {}, tp = {}, pf = {}, fl = {};',
@@ -197,7 +229,7 @@ function harnessHtml(view, forceTier) {
     '          out.ok = true;',
     '          done({ material: mi, texture: ti, render: ri, lod: li, admin1: ai, topology: tp, perf: pf,',
     '                 flicker: fl,',
-    '                 camera: { focus: VIEW.focus, dist: VIEW.dist },',
+    '                 camera: { focus: VIEW.focus, dist: VIEW.dist, mode: VIEW.overview ? "overview" : "focus" },',
     '                 admin1_requested: !!VIEW.admin1, route: !!VIEW.route,',
     '                 font_probe: fontProbe() });',
     '        }, 900);',

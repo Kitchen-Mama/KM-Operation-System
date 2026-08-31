@@ -277,7 +277,11 @@ section('2. a user 0 -> positive edit CREATES the canonical Flat-V2 draft on sav
 
 // the client no longer drops the edit when no draft exists
 const saveFn = extractFn(RO, '_roSaveTierEditToCanonicalDraft_');
-ok(/_roCreateCanonicalDraftFromEdit_\(sku, bucket, Number\(patch\.order_qty\), patch, input\)/.test(saveFn),
+// F1-7N-FB-4E-R4B-R2 - RESTATED FROM THE ARGUMENT TO THE ROUTING. These pinned the exact value passed at
+// the call site (a bare SKU). R4B-R2 proved a SKU is not a draft identity - at All level two companies
+// share one - so the call sites now pass the full site reference (input.dataset / item). The ROUTING is
+// what these lines defend, and it is unchanged; only the completeness of the reference improved.
+ok(/_roCreateCanonicalDraftFromEdit_\((ref|sku), bucket, Number\(patch\.order_qty\), patch, input\)/.test(saveFn),
   '2. an order_qty edit with NO existing draft routes to the canonical create path');
 ok(/if \(!hasQty\) return Promise\.resolve\(null\)/.test(saveFn),
   '2. but a NOTE-only edit on a draft-less SKU still creates nothing (the boundary is not widened)');
@@ -795,7 +799,13 @@ const buildNow = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // The bump RULE, not a frozen literal. Pinning the exact string makes this suite fail on every legitimate future
 // bump, which is the opposite of guarding the deployment identity. What must hold is that the id is a real
 // F1-7N-FB-<n><letter> build and that the Send owner reports the SAME one, so a partial Apps Script sync shows up.
-ok(/^F1-7N-FB-\d+[A-Z]$/.test(buildNow || ''), '20. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
+// F1-7N-FB-4E-R2 — the pattern admits a REVISION suffix. This project already stamps revisions
+// (59_ declares F1-7N-FB-4C-R1 and the manifest expects exactly that), so a rule that accepted only
+// F1-7N-FB-<n><A-Z> rejected a legitimate build the moment one was made. It still requires the canonical
+// shape; it no longer requires the round to have been a first cut.
+// F1-7N-FB-4E-R4B-R3 - the shape now admits a REVISION OF A REVISION (F1-7N-FB-4E-R4B-R3 is the third revision
+// of the second revision of round 4E). The canonical pattern is shared - assets/tests/_release-order.js.
+ok(require('./_release-order.js').BUILD_STAMP_RE.test(buildNow || ''), '20. SYS_BUILD_VERSION_ names a current build (' + buildNow + ')');
 // F1-7N-FB-4E — RESTATED AT THE INVARIANT IT NAMES. Requiring 66_ to declare the same build as 63_ makes a
 // partial sync visible only by accident, and it forces an unnecessary edit to 66_ in every round that touches
 // 63_ — which is the opposite of what a per-file build stamp is for. The thing that actually makes a partial

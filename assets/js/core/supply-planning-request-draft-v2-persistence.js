@@ -41,6 +41,32 @@
   var SCOPE_FIELDS = ['company', 'country', 'marketplace', 'sku', 'draft_purpose'];
   // A flat header is the ACTIVE workspace while it can still change (never once fully submitted/cancelled).
   var ACTIVE_FLAT_STATUSES = { draft: 1, partially_submitted: 1, site_confirmed: 1 };
+  var SUBMITTED_FLAT_STATUS = 'submitted';
+
+  // F1-7N-FB-4E-R4B-R1 §2 - THE READER AND ITS OWN DTO DISAGREED ABOUT WHAT A BLANK CELL MEANS.
+  //
+  // flatReadbackDto has always defaulted a blank `status` to 'draft' and a blank `draft_purpose' to 'regular'.
+  // The FILTER did not: ACTIVE_FLAT_STATUSES[''] is undefined, and scopeMatches_ compared a literal '' against
+  // the query's 'regular'. So a row the DTO would happily describe as an active regular draft was invisible to
+  // the very function whose job is to find it - the row exists in the table and never reaches the page.
+  //
+  // The writer settles which side is wrong. projectFlatDraftRow writes `draft_purpose = str(...) || 'regular'`
+  // and the R4C migration normalizes a blank purpose to 'regular' before staging. Blank IS regular, everywhere
+  // in this module except the one place that filtered on it. Same for status: 'draft' is the DTO's own default.
+  //
+  // So the defaults are hoisted into ONE function used by the filter, the DTO and the persistence loader. This
+  // is not a loosened filter: 'submitted' and 'cancelled' are still excluded, exactly as before. It removes an
+  // incoherence, and normalizedCount makes the rescued rows countable rather than a silent behaviour change.
+  function withFlatDefaults_(o) {
+    if (!isObj(o)) return o;
+    var st = str(o.status), dp = str(o.draft_purpose);
+    if (st !== '' && dp !== '') return o;                     // the overwhelmingly common case - untouched
+    var c = {}; for (var k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) c[k] = o[k]; }
+    if (st === '') c.status = 'draft';
+    if (dp === '') c.draft_purpose = 'regular';
+    return c;
+  }
+  function neededFlatDefaults_(o) { return isObj(o) && (str(o.status) === '' || str(o.draft_purpose) === ''); }
 
   // ---- schema authority: derived from KMRDV2.V2_HEADERS (no hand-maintained 53-col copy → cannot drift) ---------
   // The MONTHLY_ORDER V2 authorized-table set is EXACTLY the flat drafts table + the shared run journal. It
@@ -89,13 +115,36 @@
   // compared ONLY when a non-blank cycle is supplied — a scope-level READBACK with no cycle returns all active rows
   // for the scope (parity with the legacy line-join readback, which filtered by cycle only when present). The WRITE
   // path (loadActiveFlat / generation) always supplies a normalized non-blank cycle, so its exact-match is unchanged.
+  // F1-7N-FB-4E-R4B-R2 §3 - A BLANK BUSINESS SCOPE IS NOT A WILDCARD, AND IT IS NOT AN EMPTY IDENTITY EITHER.
+  //
+  // Every field here was optional: a blank query value meant "do not filter on it". For `sku` and `draft_purpose`
+  // that is the intended and used semantic (a scope-level readback asks for all SKUs). For the three SITE fields
+  // it silently turned a scope-less query into a whole-table one - a blank {company,country,marketplace} matched
+  // all 46 rows of a two-company fixture. Nothing in this module prevented that; only the handler's own guard
+  // did, one layer up, which means the rule lived somewhere other than where the matching happens.
+  //
+  // The site is now REQUIRED. A blank company / country / marketplace matches NOTHING, so the failure mode of a
+  // scope-less read is an empty result a caller must handle, never a whole-table response it might not notice.
+  var REQUIRED_SITE_FIELDS = ['company', 'country', 'marketplace'];
   function scopeMatches_(row, scope, cycle) {
     var c = str(cycle);
     if (c !== '' && str(row.planning_cycle) !== c) return false;
+    for (var s = 0; s < REQUIRED_SITE_FIELDS.length; s++) {
+      var sf = REQUIRED_SITE_FIELDS[s], sq = str(scope[sf]);
+      if (sq === '') return false;                       // blank site field -> matches nothing (never everything)
+      if (str(row[sf]) !== sq) return false;
+    }
     for (var i = 0; i < SCOPE_FIELDS.length; i++) {
       var f = SCOPE_FIELDS[i], q = str(scope[f]);
-      if (q !== '' && str(row[f]) !== q) return false;
+      if (REQUIRED_SITE_FIELDS.indexOf(f) !== -1) continue;   // already decided, and decided strictly
+      if (q !== '' && str(row[f]) !== q) return false;        // sku / draft_purpose keep the optional semantic
     }
+    return true;
+  }
+  // Is this a usable business scope at all? Exported so a caller can refuse BEFORE reading rather than discover
+  // it from an empty result.
+  function isConcreteScope(scope) {
+    for (var i = 0; i < REQUIRED_SITE_FIELDS.length; i++) { if (str((scope || {})[REQUIRED_SITE_FIELDS[i]]) === '') return false; }
     return true;
   }
   function loadActiveFlat(sheetSet, query) {
@@ -107,7 +156,7 @@
       planning_cycle: cycle, company: str(scope.company), country: str(scope.country),
       marketplace: str(scope.marketplace), draft_purpose: str(scope.draft_purpose), sku: str(scope.sku)
     });
-    var matches = t.rows.map(function (r) { return rowObj_(t.headers, r); }).filter(function (o) {
+    var matches = t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); }).filter(function (o) {
       return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle);
     });
     if (matches.length === 0) return { status: 'CREATE', activeKey: RECOMMENDATION_TYPE + '::' + scopeKey, draftId: null, businessScopeKey: scopeKey };
@@ -390,6 +439,18 @@
     };
   }
   // scope-level flat readback: active flat rows for a query → DTOs (header table only, NEVER the child-line table)
+  // Rows whose STATUS is terminal-submitted for a scope. readActiveFlatForScope deliberately excludes them, so
+  // the caller could not derive them from its result - it tried, and `submittedSkus` was empty by construction
+  // for every scope readback under the flat cutover (F1-7N-FB-4E-R4B-R1 §2). Now it has a real source.
+  function readSubmittedFlatForScope(sheetSet, query) {
+    var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readSubmittedFlatForScope: missing ' + HEADER_TABLE);
+    var raw = str(query.planningCycle);
+    var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
+    var scope = query.businessScope || {};
+    return t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); })
+      .filter(function (o) { return str(o.status) === SUBMITTED_FLAT_STATUS && scopeMatches_(o, scope, cycle); })
+      .map(flatReadbackDto);
+  }
   function readActiveFlatForScope(sheetSet, query) {
     var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readActiveFlatForScope: missing ' + HEADER_TABLE);
     // R5A-P0: a blank cycle means "no cycle filter" (scope-level readback); a NON-blank cycle is still strictly
@@ -397,9 +458,32 @@
     var raw = str(query.planningCycle);
     var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
     var scope = query.businessScope || {};
-    return t.rows.map(function (r) { return rowObj_(t.headers, r); })
+    return t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); })
       .filter(function (o) { return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle); })
       .map(flatReadbackDto);
+  }
+  // READ-ONLY census of the flat table for one scope. It is what the TEMP live diagnostic reports and what the
+  // tests assert against: how many rows exist, how many the reader accepts, and - the part that matters - how
+  // many were only accepted BECAUSE of the blank-field defaults above.
+  function auditFlatForScope(sheetSet, query) {
+    var t = sheetSet[HEADER_TABLE];
+    if (!t || !Array.isArray(t.headers)) return { tablePresent: false, totalRows: 0, headerCount: 0, scopeRows: 0, active: 0, submitted: 0, other: 0, defaulted: 0, byStatus: {} };
+    var raw = str(query && query.planningCycle);
+    var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
+    var scope = (query && query.businessScope) || {};
+    var out = { tablePresent: true, totalRows: t.rows.length, headerCount: t.headers.length, scopeRows: 0, active: 0, submitted: 0, other: 0, defaulted: 0, byStatus: {} };
+    t.rows.forEach(function (r) {
+      var o0 = rowObj_(t.headers, r), o = withFlatDefaults_(o0);
+      if (!scopeMatches_(o, scope, cycle)) return;
+      out.scopeRows++;
+      if (neededFlatDefaults_(o0)) out.defaulted++;
+      var st = str(o.status);
+      out.byStatus[st] = (out.byStatus[st] || 0) + 1;
+      if (ACTIVE_FLAT_STATUSES[st] === 1) out.active++;
+      else if (st === SUBMITTED_FLAT_STATUS) out.submitted++;
+      else out.other++;
+    });
+    return out;
   }
 
   // ---- R4 one-time MIGRATION planner (pure; orchestrates the frozen KMRDV2 authority — no second algorithm) -----
@@ -592,7 +676,10 @@
     tokenForDraft: tokenForDraft, editMonthlyFlat: editMonthlyFlat, submitMonthlyFlat: submitMonthlyFlat,
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
+    readSubmittedFlatForScope: readSubmittedFlatForScope, auditFlatForScope: auditFlatForScope,
+    isConcreteScope: isConcreteScope, MAX_READBACK_SCOPES: 25,
+    withFlatDefaults: withFlatDefaults_,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fa3c-r5a-1'
+    VERSION: 'kmrdv2p-fb4e-r4b-r1-1'
   };
 });

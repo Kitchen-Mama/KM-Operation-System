@@ -33,15 +33,25 @@ function makeLegacy() {
   ok(typeof KMAPI.createApiFoundation === 'function', 'S1 factory exported');
   ok(typeof KMAPI.createDefault === 'function', 'S2 createDefault exported');
   ok(KMAPI.FEATURE_FLAGS_DEFAULT.USE_WORKSPACE_API === false, 'S3 USE_WORKSPACE_API default is false (production = legacy)');
-  ok(KMAPI.DEFAULT_WORKSPACES.length === 8, 'S4 exactly 8 domain workspaces seeded (7 + recommendation, F1-4B-A)');
+  // F1-7N-FB-4E-R3 — the seeded set GROWS as pages are cut over to scoped reads (R3 added overseasStock). The
+  // invariant is that it never SHRINKS below the eight that were canonical, and that each seed names its tables.
+  ok(KMAPI.DEFAULT_WORKSPACES.length >= 8, 'S4 at least the 8 canonical domain workspaces are seeded (now '
+    + KMAPI.DEFAULT_WORKSPACES.length + ')');
+  ok(KMAPI.DEFAULT_WORKSPACES.every(function (w) { return w.name && Array.isArray(w.tables) && w.tables.length > 0; }),
+    'S4 and every seeded workspace names a non-empty scoped table set');
   ok(KMAPI.API_ERROR_CODES.FORBIDDEN_OPERATION === 'FORBIDDEN_OPERATION', 'S5 error taxonomy present');
 
   // =====================================================================================================
   section('Workspace Registry');
   var api = KMAPI.createApiFoundation({ legacy: makeLegacy() });
   var names = api.registry.list().map(function (w) { return w.name; }).sort();
-  ok(JSON.stringify(names) === JSON.stringify(['fcSummary', 'inventoryReplenishment', 'purchaseOrder', 'recommendation', 'requestOrder', 'shipment', 'skuDetails', 'weeklyShipping']),
-    'R1 the 8 canonical workspaces are registered (incl. recommendation, F1-4B-A)');
+  // F1-7N-FB-4E-R3 — asserted as a SUPERSET: these eight must all still be registered. A later round adding a
+  // ninth (R3: overseasStock) is a cutover, not a regression, and an exact-list assertion could not say that.
+  ['fcSummary', 'inventoryReplenishment', 'purchaseOrder', 'recommendation', 'requestOrder', 'shipment',
+   'skuDetails', 'weeklyShipping'].forEach(function (w) {
+    ok(names.indexOf(w) !== -1, 'R1 the canonical workspace ' + w + ' is still registered');
+  });
+  ok(names.length >= 8, 'R1 and the registry never shrinks below those eight (now ' + names.length + ')');
   ok(api.registry.has('weeklyShipping') && !api.registry.has('nope'), 'R2 has() works');
   // API-2 / F1-4B-A / F1-7C / F1-7D / F1-7F / F1-7G / F1-7H: weeklyShipping + recommendation + purchaseOrder + requestOrder + shipment + fcSummary + skuDetails are IMPLEMENTED; only inventoryReplenishment REGISTERED-only.
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'R3a weeklyShipping is IMPLEMENTED (API-2)');

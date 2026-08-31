@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 339223bb7714d97716abdd2a35171ee48fab82702bf5680df552ada67541b062
+// bundle_sha256 = d782ea6d8d4f97f7031fd9718b16020628e4a3a92b5984f8895a2198a61c36ac
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -58,7 +58,8 @@
 //   supply-planning-ongoing-order-runtime  37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2
 //   supply-planning-surplus-reallocation  283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c
 //   supply-planning-request-draft-v2  20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505
-//   supply-planning-request-draft-v2-persistence  9ab5325126d759e1c25617d8c16bb9403f300b8ec46cc3c486454e079ea5d063
+//   supply-planning-request-draft-v2-persistence  8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54
+//   supply-planning-factory-site-allocation  cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96
 // ============================================================================
 
 var __kmModules = {};
@@ -14299,6 +14300,32 @@ function __kmRequire(p) {
   var SCOPE_FIELDS = ['company', 'country', 'marketplace', 'sku', 'draft_purpose'];
   // A flat header is the ACTIVE workspace while it can still change (never once fully submitted/cancelled).
   var ACTIVE_FLAT_STATUSES = { draft: 1, partially_submitted: 1, site_confirmed: 1 };
+  var SUBMITTED_FLAT_STATUS = 'submitted';
+
+  // F1-7N-FB-4E-R4B-R1 §2 - THE READER AND ITS OWN DTO DISAGREED ABOUT WHAT A BLANK CELL MEANS.
+  //
+  // flatReadbackDto has always defaulted a blank `status` to 'draft' and a blank `draft_purpose' to 'regular'.
+  // The FILTER did not: ACTIVE_FLAT_STATUSES[''] is undefined, and scopeMatches_ compared a literal '' against
+  // the query's 'regular'. So a row the DTO would happily describe as an active regular draft was invisible to
+  // the very function whose job is to find it - the row exists in the table and never reaches the page.
+  //
+  // The writer settles which side is wrong. projectFlatDraftRow writes `draft_purpose = str(...) || 'regular'`
+  // and the R4C migration normalizes a blank purpose to 'regular' before staging. Blank IS regular, everywhere
+  // in this module except the one place that filtered on it. Same for status: 'draft' is the DTO's own default.
+  //
+  // So the defaults are hoisted into ONE function used by the filter, the DTO and the persistence loader. This
+  // is not a loosened filter: 'submitted' and 'cancelled' are still excluded, exactly as before. It removes an
+  // incoherence, and normalizedCount makes the rescued rows countable rather than a silent behaviour change.
+  function withFlatDefaults_(o) {
+    if (!isObj(o)) return o;
+    var st = str(o.status), dp = str(o.draft_purpose);
+    if (st !== '' && dp !== '') return o;                     // the overwhelmingly common case - untouched
+    var c = {}; for (var k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) c[k] = o[k]; }
+    if (st === '') c.status = 'draft';
+    if (dp === '') c.draft_purpose = 'regular';
+    return c;
+  }
+  function neededFlatDefaults_(o) { return isObj(o) && (str(o.status) === '' || str(o.draft_purpose) === ''); }
 
   // ---- schema authority: derived from KMRDV2.V2_HEADERS (no hand-maintained 53-col copy → cannot drift) ---------
   // The MONTHLY_ORDER V2 authorized-table set is EXACTLY the flat drafts table + the shared run journal. It
@@ -14347,13 +14374,36 @@ function __kmRequire(p) {
   // compared ONLY when a non-blank cycle is supplied — a scope-level READBACK with no cycle returns all active rows
   // for the scope (parity with the legacy line-join readback, which filtered by cycle only when present). The WRITE
   // path (loadActiveFlat / generation) always supplies a normalized non-blank cycle, so its exact-match is unchanged.
+  // F1-7N-FB-4E-R4B-R2 §3 - A BLANK BUSINESS SCOPE IS NOT A WILDCARD, AND IT IS NOT AN EMPTY IDENTITY EITHER.
+  //
+  // Every field here was optional: a blank query value meant "do not filter on it". For `sku` and `draft_purpose`
+  // that is the intended and used semantic (a scope-level readback asks for all SKUs). For the three SITE fields
+  // it silently turned a scope-less query into a whole-table one - a blank {company,country,marketplace} matched
+  // all 46 rows of a two-company fixture. Nothing in this module prevented that; only the handler's own guard
+  // did, one layer up, which means the rule lived somewhere other than where the matching happens.
+  //
+  // The site is now REQUIRED. A blank company / country / marketplace matches NOTHING, so the failure mode of a
+  // scope-less read is an empty result a caller must handle, never a whole-table response it might not notice.
+  var REQUIRED_SITE_FIELDS = ['company', 'country', 'marketplace'];
   function scopeMatches_(row, scope, cycle) {
     var c = str(cycle);
     if (c !== '' && str(row.planning_cycle) !== c) return false;
+    for (var s = 0; s < REQUIRED_SITE_FIELDS.length; s++) {
+      var sf = REQUIRED_SITE_FIELDS[s], sq = str(scope[sf]);
+      if (sq === '') return false;                       // blank site field -> matches nothing (never everything)
+      if (str(row[sf]) !== sq) return false;
+    }
     for (var i = 0; i < SCOPE_FIELDS.length; i++) {
       var f = SCOPE_FIELDS[i], q = str(scope[f]);
-      if (q !== '' && str(row[f]) !== q) return false;
+      if (REQUIRED_SITE_FIELDS.indexOf(f) !== -1) continue;   // already decided, and decided strictly
+      if (q !== '' && str(row[f]) !== q) return false;        // sku / draft_purpose keep the optional semantic
     }
+    return true;
+  }
+  // Is this a usable business scope at all? Exported so a caller can refuse BEFORE reading rather than discover
+  // it from an empty result.
+  function isConcreteScope(scope) {
+    for (var i = 0; i < REQUIRED_SITE_FIELDS.length; i++) { if (str((scope || {})[REQUIRED_SITE_FIELDS[i]]) === '') return false; }
     return true;
   }
   function loadActiveFlat(sheetSet, query) {
@@ -14365,7 +14415,7 @@ function __kmRequire(p) {
       planning_cycle: cycle, company: str(scope.company), country: str(scope.country),
       marketplace: str(scope.marketplace), draft_purpose: str(scope.draft_purpose), sku: str(scope.sku)
     });
-    var matches = t.rows.map(function (r) { return rowObj_(t.headers, r); }).filter(function (o) {
+    var matches = t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); }).filter(function (o) {
       return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle);
     });
     if (matches.length === 0) return { status: 'CREATE', activeKey: RECOMMENDATION_TYPE + '::' + scopeKey, draftId: null, businessScopeKey: scopeKey };
@@ -14648,6 +14698,18 @@ function __kmRequire(p) {
     };
   }
   // scope-level flat readback: active flat rows for a query → DTOs (header table only, NEVER the child-line table)
+  // Rows whose STATUS is terminal-submitted for a scope. readActiveFlatForScope deliberately excludes them, so
+  // the caller could not derive them from its result - it tried, and `submittedSkus` was empty by construction
+  // for every scope readback under the flat cutover (F1-7N-FB-4E-R4B-R1 §2). Now it has a real source.
+  function readSubmittedFlatForScope(sheetSet, query) {
+    var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readSubmittedFlatForScope: missing ' + HEADER_TABLE);
+    var raw = str(query.planningCycle);
+    var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
+    var scope = query.businessScope || {};
+    return t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); })
+      .filter(function (o) { return str(o.status) === SUBMITTED_FLAT_STATUS && scopeMatches_(o, scope, cycle); })
+      .map(flatReadbackDto);
+  }
   function readActiveFlatForScope(sheetSet, query) {
     var t = sheetSet[HEADER_TABLE]; aType(t && Array.isArray(t.headers), 'readActiveFlatForScope: missing ' + HEADER_TABLE);
     // R5A-P0: a blank cycle means "no cycle filter" (scope-level readback); a NON-blank cycle is still strictly
@@ -14655,9 +14717,32 @@ function __kmRequire(p) {
     var raw = str(query.planningCycle);
     var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
     var scope = query.businessScope || {};
-    return t.rows.map(function (r) { return rowObj_(t.headers, r); })
+    return t.rows.map(function (r) { return withFlatDefaults_(rowObj_(t.headers, r)); })
       .filter(function (o) { return ACTIVE_FLAT_STATUSES[str(o.status)] === 1 && scopeMatches_(o, scope, cycle); })
       .map(flatReadbackDto);
+  }
+  // READ-ONLY census of the flat table for one scope. It is what the TEMP live diagnostic reports and what the
+  // tests assert against: how many rows exist, how many the reader accepts, and - the part that matters - how
+  // many were only accepted BECAUSE of the blank-field defaults above.
+  function auditFlatForScope(sheetSet, query) {
+    var t = sheetSet[HEADER_TABLE];
+    if (!t || !Array.isArray(t.headers)) return { tablePresent: false, totalRows: 0, headerCount: 0, scopeRows: 0, active: 0, submitted: 0, other: 0, defaulted: 0, byStatus: {} };
+    var raw = str(query && query.planningCycle);
+    var cycle = (raw === '') ? '' : KMRDV2.normalizePlanningCycleMonthly(raw);
+    var scope = (query && query.businessScope) || {};
+    var out = { tablePresent: true, totalRows: t.rows.length, headerCount: t.headers.length, scopeRows: 0, active: 0, submitted: 0, other: 0, defaulted: 0, byStatus: {} };
+    t.rows.forEach(function (r) {
+      var o0 = rowObj_(t.headers, r), o = withFlatDefaults_(o0);
+      if (!scopeMatches_(o, scope, cycle)) return;
+      out.scopeRows++;
+      if (neededFlatDefaults_(o0)) out.defaulted++;
+      var st = str(o.status);
+      out.byStatus[st] = (out.byStatus[st] || 0) + 1;
+      if (ACTIVE_FLAT_STATUSES[st] === 1) out.active++;
+      else if (st === SUBMITTED_FLAT_STATUS) out.submitted++;
+      else out.other++;
+    });
+    return out;
   }
 
   // ---- R4 one-time MIGRATION planner (pure; orchestrates the frozen KMRDV2 authority — no second algorithm) -----
@@ -14850,11 +14935,387 @@ function __kmRequire(p) {
     tokenForDraft: tokenForDraft, editMonthlyFlat: editMonthlyFlat, submitMonthlyFlat: submitMonthlyFlat,
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
+    readSubmittedFlatForScope: readSubmittedFlatForScope, auditFlatForScope: auditFlatForScope,
+    isConcreteScope: isConcreteScope, MAX_READBACK_SCOPES: 25,
+    withFlatDefaults: withFlatDefaults_,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fa3c-r5a-1'
+    VERSION: 'kmrdv2p-fb4e-r4b-r1-1'
   };
 });
   __kmRegister("supply-planning-request-draft-v2-persistence", module.exports);
+})();
+
+// ----- module: supply-planning-factory-site-allocation (verbatim from assets/js/core/supply-planning-factory-site-allocation.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Canonical FACTORY SITE ALLOCATION owner (F1-7N-FB-4E-R4B-R1, KMFSA).
+// -----------------------------------------------------------------------------------------------------
+// THE ONE authority that turns a PHYSICAL factory pool into PER-SITE factory availability. It exists because
+// three surfaces each carried their own factory number and none of them allocated anything:
+//
+//   · Site Inventory  (inventory-replenishment.js IR.factoryByCountry) — S current_stock per country, per SKU
+//   · Order Planning  (request-order.js _buildRequestOrderRowsFromDb)  — S current_stock across ALL factories
+//   · Order Planning  (56_api_v1_ai_plan_first_layer.gs, the LIVE one) — S current_stock across ALL factories
+//
+// Every one of them showed the COMPLETE physical quantity under EVERY marketplace scope, which is the live
+// defect: one pool displayed N times as if each site owned all of it. This module replaces all three with one
+// projection, so a change of rule can never again be half-applied.
+//
+// AUTHORIZED SOURCE POLICY (F1-7N-FB-4E-R4B-R1 §1 — the business decision that resolved the R4B §B gate):
+//
+//   CN factory source -> SHARED across all eligible active marketplace site scopes; the eligible receiver set may
+//                        span KM / ResUS / ResTW, and the denominator is CROSS-COMPANY.
+//   TW factory source -> eligible ONLY for active ResUS marketplace site scopes; KM and ResTW receive ZERO.
+//
+// This is an explicit FACTORY-SOURCE policy. It narrowly supersedes, for TW only, the former default that factory
+// warehouses are shared across KM / ResUS / ResTW (which remains the default wherever no explicit source policy
+// exists — i.e. CN, and any future factory country until one is authorized). It is NOT modelled as a company
+// mismatch, a warehouse-id rule or a user-authorization rule: eligibility is a property of the SOURCE, decided
+// here and nowhere else, and no warehouse-access mapping is invented (none exists).
+//
+// WEIGHT = the FROZEN rolling future four-month Regular FC window (M+1..M+4), the same window the recommendation
+// planning context uses. Special Event FC is NEVER folded in. MISSING is not 0 — a site with no FC row for the
+// window contributes 0 weight AND is reported, so a silent zero can be told apart from a real zero.
+//
+// PURE / deterministic: no clock (the calculation month is injected), no RNG, no I/O, no mutation of inputs. It
+// allocates NOTHING in the database: it creates no allocation row, no reservation, no movement, and is safe to
+// run inside a read.
+//
+// GRAIN. One pool = ONE physical factory warehouse x ONE master SKU (the frozen FACTORY pool identity
+// FACTORY_SHARED | source_factory_warehouse_id | masterSku | FACTORY). Pools are allocated SEPARATELY and a
+// site's displayed quantity is the SUM of its shares. Two factories in the same country never merge into one
+// denominator, so a site can never be allocated the same unit twice.
+//
+// AVAILABLE QUANTITY. The runtime already defines the canonical allocatable factory quantity — Factory Inventory
+// computes available_factory_stock = MAX(current_stock - reserved_stock, 0) (assets/js/pages/factory-stock.js).
+// This module uses THAT, never raw current_stock, so Site Inventory can no longer show more than Factory
+// Inventory says exists.
+
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.factorySiteAllocation = api; }
+  if (typeof root !== 'undefined' && root) { root.KMFSA = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  var VERSION = 'kmfsa-fb4e-r4b-r1-1';
+
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function up(v) { return str(v).toUpperCase(); }
+  function low(v) { return str(v).toLowerCase(); }
+  function numOr0(v) {
+    if (v === '' || v === null || v === undefined) return 0;
+    var n = typeof v === 'number' ? v : parseFloat(v);
+    return (typeof n === 'number' && isFinite(n)) ? n : 0;
+  }
+  // Company IDENTITY key. The same company is spelled "ResUS" / "Res US" / "RES-US" across sheets, so identity is
+  // compared on alphanumerics only. It NEVER rewrites a stored value — resolution only (same rule as KMCID).
+  function companyKey(v) { return up(v).replace(/[^A-Z0-9]+/g, ''); }
+  var RESUS_KEY = 'RESUS';
+
+  // ---- the authorized factory-source policy table -------------------------------------------------------------
+  // receiverCompanyKeys === null  -> every eligible active site scope (shared; cross-company denominator)
+  // receiverCompanyKeys === [..]  -> ONLY those companies; every other company is allocated exactly 0
+  // A factory country ABSENT from this table is NOT allocated at all (fail closed, typed) — a new factory country
+  // is a business decision, not a default.
+  var FACTORY_SOURCE_POLICY = {
+    CN: { receiverCompanyKeys: null, label: 'SHARED_ALL_ELIGIBLE' },
+    TW: { receiverCompanyKeys: [RESUS_KEY], label: 'RESUS_ONLY' }
+  };
+  function policyFor(countryCode) {
+    var c = up(countryCode);
+    return Object.prototype.hasOwnProperty.call(FACTORY_SOURCE_POLICY, c) ? FACTORY_SOURCE_POLICY[c] : null;
+  }
+  function isEligibleReceiver(policy, siteCompany) {
+    if (!policy) return false;
+    if (policy.receiverCompanyKeys === null) return true;
+    var k = companyKey(siteCompany);
+    for (var i = 0; i < policy.receiverCompanyKeys.length; i++) { if (policy.receiverCompanyKeys[i] === k) return true; }
+    return false;
+  }
+
+  // ---- the frozen rolling future four-month window ------------------------------------------------------------
+  var MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  // calculationMonth "YYYY-MM" -> the four months M+1..M+4 as [{ year:'YYYY', key:'jan', label:'YYYY-MM' }].
+  // Throws on a malformed month: the window anchor is injected by the caller and is never guessed from a clock.
+  function forecastWindowMonths(calculationMonth) {
+    var m = /^(\d{4})-(\d{1,2})$/.exec(str(calculationMonth));
+    if (!m) throw new Error('INVALID_CALCULATION_MONTH: expected YYYY-MM, got "' + str(calculationMonth) + '"');
+    var y = Number(m[1]), mo = Number(m[2]);
+    if (mo < 1 || mo > 12) throw new Error('INVALID_CALCULATION_MONTH: month out of range in "' + str(calculationMonth) + '"');
+    var out = [];
+    for (var i = 1; i <= 4; i++) {
+      var idx = (mo - 1) + i, yy = y + Math.floor(idx / 12), mm = idx % 12;
+      out.push({ year: String(yy), key: MONTH_KEYS[mm], label: String(yy) + '-' + (mm + 1 < 10 ? '0' : '') + String(mm + 1) });
+    }
+    return out;
+  }
+
+  // ---- canonical site identity --------------------------------------------------------------------------------
+  // IMMUTABLE identity, and the deterministic tie-break for equal rounding remainders. marketplace_id is the real
+  // site identity (the same marketplace NAME belongs to two companies), so it is preferred; the composite key is
+  // the fallback for a row that predates the id. Display text is never the identity.
+  function siteKey(site) {
+    var id = str(site && site.marketplaceId);
+    if (id) return 'MKT:' + id;
+    return 'CCM:' + up(site && site.company) + '|' + up(site && site.country) + '|' + low(site && site.marketplace);
+  }
+
+  // ---- input normalization (accepts BOTH the browser camelCase shape and raw snake_case sheet objects) ---------
+  function normFactoryRow(r) {
+    r = r || {};
+    var cur = (r.currentStock !== undefined) ? r.currentStock : (r.fac_current_stock !== undefined ? r.fac_current_stock : r.current_stock);
+    var res = (r.reservedStock !== undefined) ? r.reservedStock : (r.fac_reserved_stock !== undefined ? r.fac_reserved_stock : r.reserved_stock);
+    return {
+      sku: str(r.sku),
+      warehouseId: str(r.warehouseId !== undefined ? r.warehouseId : r.warehouse_id),
+      currentStock: numOr0(cur),
+      reservedStock: numOr0(res)
+    };
+  }
+  function truthy(v) {
+    if (v === true) return true;
+    var s = low(v);
+    return s === 'true' || s === '1' || s === 'yes' || s === 'y';
+  }
+  function falsy(v) {
+    if (v === false) return true;
+    var s = low(v);
+    return s === 'false' || s === '0' || s === 'no' || s === 'n';
+  }
+  function normWarehouse(w) {
+    w = w || {};
+    var fac = (w.isFactoryWarehouse !== undefined) ? w.isFactoryWarehouse : w.is_factory_warehouse;
+    var act = (w.isActive !== undefined) ? w.isActive : w.is_active;
+    return {
+      warehouseId: str(w.warehouseId !== undefined ? w.warehouseId : w.warehouse_id),
+      company: str(w.company),
+      country: str(w.country),
+      warehouseName: str(w.warehouseName !== undefined ? w.warehouseName : w.warehouse_name),
+      isFactory: truthy(fac),
+      // Tri-state: only an EXPLICIT false excludes. A blank is_active on a factory row must not silently delete a
+      // real physical pool from the picture — it is reported instead (INACTIVE is explicit, unknown is not).
+      isInactive: falsy(act)
+    };
+  }
+  function normSite(s) {
+    s = s || {};
+    return {
+      marketplaceId: str(s.marketplaceId !== undefined ? s.marketplaceId : s.marketplace_id),
+      company: str(s.company),
+      country: str(s.country),
+      marketplace: str(s.marketplace),
+      sku: str(s.sku)
+    };
+  }
+  function normFcRow(r) {
+    r = r || {};
+    var out = {
+      year: str(r.year), company: str(r.company), country: str(r.country),
+      marketplace: str(r.marketplace), sku: str(r.sku)
+    };
+    for (var i = 0; i < MONTH_KEYS.length; i++) { var k = MONTH_KEYS[i]; out[k] = numOr0(r[k]); }
+    return out;
+  }
+
+  // ---- forecast weight ----------------------------------------------------------------------------------------
+  // S Regular FC over M+1..M+4 for ONE site scope. Keyed on company|country|marketplace|sku: company is part of
+  // the key because KM/US/Amazon and ResUS/US/Amazon are DIFFERENT sites that share a country and a marketplace
+  // name, and merging them would inflate one company's weight with the other's demand.
+  function fcIndex(fcRows) {
+    var idx = {};
+    (fcRows || []).forEach(function (raw) {
+      var r = normFcRow(raw);
+      var k = companyKey(r.company) + '|' + up(r.country) + '|' + low(r.marketplace) + '|' + up(r.sku) + '|' + r.year;
+      (idx[k] = idx[k] || []).push(r);
+    });
+    return idx;
+  }
+  function forecastWeight(idx, site, months) {
+    var base = companyKey(site.company) + '|' + up(site.country) + '|' + low(site.marketplace) + '|' + up(site.sku) + '|';
+    var total = 0, matchedMonths = 0;
+    for (var i = 0; i < months.length; i++) {
+      var mo = months[i], rows = idx[base + mo.year];
+      if (!rows || !rows.length) continue;
+      var sum = 0;
+      for (var j = 0; j < rows.length; j++) { sum += numOr0(rows[j][mo.key]); }
+      total += sum; matchedMonths++;
+    }
+    return { qty: total, matchedMonths: matchedMonths, windowMonths: months.length };
+  }
+
+  // ---- deterministic integer allocation (largest remainder) ---------------------------------------------------
+  // S allocations === available whenever the denominator is > 0 (exact conservation, no unit invented or lost);
+  // remainders are awarded largest-first and equal remainders are broken by the IMMUTABLE canonical site key, so
+  // the same inputs always produce byte-identical output regardless of input order.
+  function largestRemainder(available, weighted) {
+    var out = {};
+    var i;
+    // Keys are emitted in CANONICAL SITE ORDER, not in caller order, so the result object is byte-identical
+    // however the caller happened to sort its inputs. Determinism that depends on argument order is not
+    // determinism, and a serialized comparison is exactly how that difference shows up.
+    var ordered = weighted.slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });
+    for (i = 0; i < ordered.length; i++) out[ordered[i].key] = 0;
+    var sumW = 0;
+    for (i = 0; i < weighted.length; i++) sumW += weighted[i].weight;
+    if (!(available > 0) || !(sumW > 0) || !weighted.length) return { byKey: out, allocated: 0 };
+    var rows = [];
+    for (i = 0; i < weighted.length; i++) {
+      var raw = available * weighted[i].weight / sumW;
+      var fl = Math.floor(raw);
+      rows.push({ key: weighted[i].key, floor: fl, frac: raw - fl });
+      out[weighted[i].key] = fl;
+    }
+    var assigned = 0;
+    for (i = 0; i < rows.length; i++) assigned += rows[i].floor;
+    var remainder = available - assigned;
+    rows.sort(function (a, b) {
+      if (b.frac !== a.frac) return b.frac - a.frac;                 // (1) largest remainder
+      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);           // (2) immutable canonical scope identity
+    });
+    for (i = 0; i < rows.length && remainder > 0; i++) { out[rows[i].key] += 1; remainder -= 1; }
+    var allocated = 0;
+    for (i = 0; i < weighted.length; i++) allocated += out[weighted[i].key];
+    return { byKey: out, allocated: allocated };
+  }
+
+  // ---- the projection -----------------------------------------------------------------------------------------
+  // input = { sku, factoryRows, warehouses, sites, forecastRows, calculationMonth }
+  //   sites = the candidate marketplace site scopes for this SKU (marketplace_skus rows). The caller supplies the
+  //           universe; this module decides ELIGIBILITY per pool from the source policy, never from the caller.
+  function project(input) {
+    input = input || {};
+    var sku = str(input.sku);
+    var months = forecastWindowMonths(input.calculationMonth);
+    var issues = [];
+    function issue(code, ref, message) { issues.push({ code: code, ref: str(ref), message: str(message) }); }
+
+    var whById = {};
+    (input.warehouses || []).forEach(function (raw) { var w = normWarehouse(raw); if (w.warehouseId) whById[w.warehouseId] = w; });
+
+    var sites = [];
+    var seenSite = {};
+    (input.sites || []).forEach(function (raw) {
+      var s = normSite(raw);
+      if (up(s.sku) !== up(sku)) return;
+      if (!s.company || !s.country || !s.marketplace) { issue('SITE_SCOPE_INCOMPLETE', siteKey(s), 'site scope missing company/country/marketplace — excluded from every eligible receiver set'); return; }
+      var k = siteKey(s);
+      if (seenSite[k]) return;                      // dedupe by canonical identity (never by display text)
+      seenSite[k] = 1;
+      sites.push({ key: k, site: s });
+    });
+
+    var idx = fcIndex(input.forecastRows);
+    sites.forEach(function (row) {
+      var w = forecastWeight(idx, row.site, months);
+      row.weight = w.qty; row.fcMatchedMonths = w.matchedMonths;
+      if (w.matchedMonths === 0) issue('SITE_FORECAST_WINDOW_MISSING', row.key, 'no Regular FC row for any month of the rolling four-month window — contributes weight 0');
+    });
+
+    // one pool per PHYSICAL factory warehouse x this SKU
+    var poolByWh = {};
+    (input.factoryRows || []).forEach(function (raw) {
+      var f = normFactoryRow(raw);
+      if (up(f.sku) !== up(sku)) return;
+      if (!f.warehouseId) { issue('FACTORY_ROW_WITHOUT_WAREHOUSE', f.sku, 'factory_stock row carries no warehouse_id — cannot resolve a source country, excluded'); return; }
+      var p = poolByWh[f.warehouseId] || (poolByWh[f.warehouseId] = { warehouseId: f.warehouseId, currentQty: 0, reservedQty: 0 });
+      p.currentQty += f.currentStock; p.reservedQty += f.reservedStock;
+    });
+
+    var pools = Object.keys(poolByWh).sort().map(function (id) {
+      var p = poolByWh[id], wh = whById[id] || null;
+      // CANONICAL allocatable quantity — the same MAX(current - reserved, 0) Factory Inventory displays.
+      p.availableQty = Math.max(p.currentQty - p.reservedQty, 0);
+      p.warehouseName = wh ? (wh.warehouseName || id) : id;
+      p.sourceCountry = wh ? up(wh.country) : '';
+      p.allocations = {}; p.allocated = 0; p.eligibleSiteKeys = []; p.denominator = 0;
+      p.unallocated = p.availableQty; p.unallocatedReason = ''; p.policy = '';
+
+      if (!wh) { p.unallocatedReason = 'FACTORY_WAREHOUSE_UNKNOWN'; issue('FACTORY_WAREHOUSE_UNKNOWN', id, 'no warehouses row for this factory warehouse_id — source country unresolved, nothing allocated'); return p; }
+      if (!wh.isFactory) { p.unallocatedReason = 'NOT_A_FACTORY_WAREHOUSE'; issue('NOT_A_FACTORY_WAREHOUSE', id, 'factory_stock row points at a warehouse that is not flagged is_factory_warehouse'); return p; }
+      if (wh.isInactive) { p.unallocatedReason = 'FACTORY_WAREHOUSE_INACTIVE'; issue('FACTORY_WAREHOUSE_INACTIVE', id, 'factory warehouse is explicitly inactive — its stock is not allocated to any site'); return p; }
+      var policy = policyFor(p.sourceCountry);
+      if (!policy) { p.unallocatedReason = 'NO_AUTHORIZED_SOURCE_POLICY'; issue('NO_AUTHORIZED_SOURCE_POLICY', id, 'no authorized factory-source policy for country "' + p.sourceCountry + '" — fail closed, nothing allocated'); return p; }
+      p.policy = policy.label;
+
+      var eligible = sites.filter(function (row) { return isEligibleReceiver(policy, row.site.company); });
+      p.eligibleSiteKeys = eligible.map(function (r) { return r.key; });
+      if (!eligible.length) { p.unallocatedReason = 'NO_ELIGIBLE_RECEIVER'; return p; }
+
+      var weighted = eligible.map(function (r) { return { key: r.key, weight: Math.max(r.weight, 0) }; });
+      p.denominator = weighted.reduce(function (a, x) { return a + x.weight; }, 0);
+      if (!(p.denominator > 0)) {
+        // EXPLICIT: zero denominator allocates ZERO — never an arbitrary equal split and never a 100% fallback.
+        eligible.forEach(function (r) { p.allocations[r.key] = 0; });
+        p.unallocatedReason = 'ZERO_FORECAST_DENOMINATOR';
+        return p;
+      }
+      if (!(p.availableQty > 0)) { eligible.forEach(function (r) { p.allocations[r.key] = 0; }); p.unallocatedReason = 'NO_AVAILABLE_STOCK'; return p; }
+
+      var res = largestRemainder(p.availableQty, weighted);
+      p.allocations = res.byKey; p.allocated = res.allocated;
+      p.unallocated = p.availableQty - res.allocated;
+      if (p.unallocated > 0) p.unallocatedReason = 'ROUNDING_REMAINDER';
+      return p;
+    });
+
+    var bySite = {}, byCountry = {};
+    // Same reason as largestRemainder: canonical site order, never input order.
+    sites.slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); })
+      .forEach(function (row) { bySite[row.key] = { site: row.site, total: 0, byCountry: {}, forecastWeight: row.weight }; });
+    var totalAvail = 0, totalAlloc = 0;
+    pools.forEach(function (p) {
+      totalAvail += p.availableQty; totalAlloc += p.allocated;
+      var c = p.sourceCountry || 'UNKNOWN';
+      var bc = byCountry[c] || (byCountry[c] = { available: 0, allocated: 0, unallocated: 0 });
+      bc.available += p.availableQty; bc.allocated += p.allocated; bc.unallocated += p.unallocated;
+      Object.keys(p.allocations).forEach(function (k) {
+        var q = p.allocations[k]; if (!bySite[k]) return;
+        bySite[k].total += q;
+        bySite[k].byCountry[c] = (bySite[k].byCountry[c] || 0) + q;
+      });
+    });
+
+    return {
+      sku: sku, calculationMonth: str(input.calculationMonth),
+      windowMonths: months.map(function (m) { return m.label; }),
+      pools: pools, bySite: bySite, byCountry: byCountry,
+      totals: { available: totalAvail, allocated: totalAlloc, unallocated: totalAvail - totalAlloc },
+      issues: issues, version: VERSION
+    };
+  }
+
+  // ---- the display seam both pages call ------------------------------------------------------------------------
+  // ONE site's factory availability, split by source country. This is what Site Inventory's CN / TW columns and
+  // Order Planning's Factory Stock column render — the SAME number from the SAME projection, so the two pages can
+  // no longer disagree. Returns zeros (never the physical total) when the site is not an eligible receiver.
+  function siteFactoryAvailability(projection, site) {
+    var k = siteKey(normSite(site));
+    var e = projection && projection.bySite ? projection.bySite[k] : null;
+    var byCountry = (e && e.byCountry) || {};
+    return {
+      siteKey: k, total: (e ? e.total : 0),
+      cn: byCountry.CN || 0, tw: byCountry.TW || 0,
+      byCountry: byCountry, resolved: !!e
+    };
+  }
+
+  return {
+    project: project,
+    siteFactoryAvailability: siteFactoryAvailability,
+    siteKey: siteKey, companyKey: companyKey,
+    forecastWindowMonths: forecastWindowMonths,
+    policyFor: policyFor, isEligibleReceiver: isEligibleReceiver,
+    largestRemainder: largestRemainder,
+    FACTORY_SOURCE_POLICY: FACTORY_SOURCE_POLICY,
+    VERSION: VERSION
+  };
+});
+  __kmRegister("supply-planning-factory-site-allocation", module.exports);
 })();
 
 // ----- Apps Script global namespace exposure -----
@@ -14912,6 +15373,7 @@ var KMOOR = __kmModules["supply-planning-ongoing-order-runtime"];
 var KMFSR = __kmModules["supply-planning-surplus-reallocation"];
 var KMRDV2 = __kmModules["supply-planning-request-draft-v2"];
 var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
+var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"339223bb7714d97716abdd2a35171ee48fab82702bf5680df552ada67541b062","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"9ab5325126d759e1c25617d8c16bb9403f300b8ec46cc3c486454e079ea5d063"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"d782ea6d8d4f97f7031fd9718b16020628e4a3a92b5984f8895a2198a61c36ac","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"}]};

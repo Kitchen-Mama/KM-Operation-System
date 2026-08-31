@@ -24,11 +24,22 @@ function setTimeout2(fn) { _timers.push(fn); return _timers.length; } function f
 var setTimeout = setTimeout2;
 function tick() { flushT(); var p = Promise.resolve(); for (var k = 0; k < 12; k++) p = p.then(function () { flushT(); }); return p; }
 var _els = {};
-function mkEl(id) { var cls = {}; return { id: id, disabled: false, style: {}, innerHTML: '', classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; } }, setAttribute: function () {}, appendChild: function () {} }; }
+// F1-7N-FB-4E-R4B-R3 - createElement used to hard-code the id 'replen-ai-plan-result' and appendChild used to
+// FILE every created element under that one key, so this harness could not tell two different elements apart.
+// The page now creates a second, separate element (the AI Support notice, which has its own id precisely so it
+// cannot race the AI Plan result panel), and the old stub reported it as the result popup. Elements are now
+// filed under the id the page actually gives them.
+function mkEl(id) {
+  var cls = {}, attrs = {};
+  return { id: id, hidden: false, disabled: false, style: {}, innerHTML: '', textContent: '', dataset: {},
+    classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; } },
+    setAttribute: function (k, v) { attrs[k] = String(v); }, getAttribute: function (k) { return attrs[k] === undefined ? null : attrs[k]; },
+    removeAttribute: function (k) { delete attrs[k]; }, appendChild: function () {} };
+}
 var document = {
   getElementById: function (id) { return _els[id] || null; },
-  createElement: function () { return mkEl('replen-ai-plan-result'); },
-  body: { appendChild: function (el) { _els['replen-ai-plan-result'] = el; } }
+  createElement: function () { return mkEl(''); },
+  body: { appendChild: function (el) { _els[el.id || '__anonymous__'] = el; } }
 };
 function escapeReplenHtml(v) { return String(v == null ? '' : v); }
 function renderReplenishment() { renderCalls.n++; }
@@ -48,8 +59,13 @@ var window = {
 };
 var genResponse = { success: true, data: { status: 'COMPLETED', marketplaceCount: 1, skuCount: 3, marketplaceResults: [{ marketplace: 'Amazon', success: true, status: 'CREATED', draftId: 'RD::WEEKLY_SHIPPING::RECO-2026-08::…', draftVersion: 1, lineCount: 3 }] }, errors: [] };
 // extract the real functions — join + eval ONCE at top level (eval inside a forEach callback would scope them locally).
-var _r6d1Fns = [ '_replenCtx', '_irRecoNow_', '_irInventoryAiPlanDbGenerationEnabled_', '_irAiPlanDbGenEligible_', '_irClassifyGenerationResult_', '_irRunInventoryAiPlanGeneration_', '_irShowAiPlanResult_', 'handleReplenAiPlan' ].map(function (n) { return extract(IR, n); }).join('\n');
-eval(_r6d1Fns);
+// F1-7N-FB-4E-R4B-R3 - handleReplenAiPlan now REPORTS its outcome (a click that ran and produced nothing used
+// to look exactly like a click that did nothing), so the AI Support notice/trigger helpers it calls have to be
+// extracted with it. The two module-scope vars cannot be pulled by extract(), which only understands function
+// declarations, so they are mirrored here - and mirrored deliberately, not defaulted, so a rename fails loudly.
+var _r6d1Vars = 'var _irAiSupportTriggerOwner = null;';   // _irRecoByKey is already declared by this harness
+var _r6d1Fns = [ '_replenCtx', '_irRecoNow_', '_irInventoryAiPlanDbGenerationEnabled_', '_irAiPlanDbGenEligible_', '_irClassifyGenerationResult_', '_irRunInventoryAiPlanGeneration_', '_irShowAiPlanResult_', '_irAiSupportTriggerEl_', '_irAiSupportTriggerBusy_', '_irAiSupportTriggerIdle_', '_irAiSupportNoticeEl_', '_irClearAiSupportNotice_', '_irAiSupportNotice_', 'handleReplenAiPlan' ].map(function (n) { return extract(IR, n); }).join('\n');
+eval(_r6d1Vars + '\n' + _r6d1Fns);
 
 (function run() {
   section('B. flag OFF (default) → page-state only, NO DB generation');

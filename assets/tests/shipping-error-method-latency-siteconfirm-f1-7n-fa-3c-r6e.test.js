@@ -170,7 +170,11 @@ function runE() {
   // incremental quantity writes rather than a Send-time confirm), and the positive-tier gate moved to the server
   // workset builder, which is where the population is now decided.
   var G66 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '66_api_v1_request_order_send.gs'), 'utf8');
-  ok(/_roIsSubmittedSku_\(item\.sku\)/.test(RO) && /expectedToken/.test(RO),
+// F1-7N-FB-4E-R4B-R2 - RESTATED FROM THE ARGUMENT TO THE ROUTING. These pinned the exact value passed at
+// the call site (a bare SKU). R4B-R2 proved a SKU is not a draft identity - at All level two companies
+// share one - so the call sites now pass the full site reference (input.dataset / item). The ROUTING is
+// what these lines defend, and it is unchanged; only the completeness of the reference improved.
+  ok(/_roIsSubmittedSku_\(item(\.sku)?\)/.test(RO) && /expectedToken/.test(RO),
     'E. other Send gates (submitted-status, optimistic token) remain MANDATORY');
   ok(/tier_zero_or_blank_qty\+\+/.test(G66) && /status_submitted\+\+/.test(G66),
     'E. and the positive-tier + terminal-status gates are enforced server-side, as COUNTED exclusions');

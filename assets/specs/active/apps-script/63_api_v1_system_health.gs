@@ -37,7 +37,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E';
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -55,10 +55,23 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // Incremented when the set of router actions changes. The frontend compares this against its own pinned
 // minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
 // through a confusing per-action failure.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 7;
+// F1-7N-FB-4E-R2: 7 -> 8. A router ACTION was added (system.executionPlanDuplicateLineDiagnostic), which is
+// precisely the condition this constant's rule names. The frontend raises its pinned minimum to 8 in the same
+// change, so a deployment that predates the new route is rejected BY VERSION rather than only by the per-action
+// probe — two independent gates for the same fact, which is the point of having both.
+// F1-7N-FB-4E-R3: 8 -> 9. overseasStock.workspace.get is a NEW router ACTION, which is exactly the condition
+// this constant's rule names. The frontend raises its pinned minimum to 9 in the same change: an Overseas page
+// that has been cut over to the workspace read CANNOT work against a deployment that does not route it, so the
+// version gate must reject that deployment by version rather than let the page discover it as a failed read.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 7;
+// F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
+// to let a caller tell a "nothing missing" answer computed from an OLD list apart from one computed from the
+// current list. Not bumping it would make the R2 registry indistinguishable from the R1 registry that omitted
+// four actions — which is the exact failure this constant exists to prevent.
+// F1-7N-FB-4E-R3: 8 -> 9. SYS_REQUIRED_ACTIONS_ gained overseasStock.workspace.get.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 9;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -109,7 +122,26 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'document.retry', handler: 'handleDocumentRetry_', used_by: 'Document retry' },
   { action: 'document.diagnostic.purchaseOrder', handler: 'handlePoDocumentDiagnostic_', used_by: 'PO diagnostic' },
   { action: 'document.diagnostic.shipment', handler: 'handleShipmentDocumentDiagnostic_', used_by: 'Shipment diagnostic' },
-  { action: 'finalizeShipmentFinalOutput', handler: 'handleFinalizeShipmentFinalOutput_', used_by: 'Shipment snapshot' }
+  { action: 'finalizeShipmentFinalOutput', handler: 'handleFinalizeShipmentFinalOutput_', used_by: 'Shipment snapshot' },
+  // F1-7N-FB-4E-R2 §2 — FOUR ACTIONS THE FRONTEND REQUIRES THAT THIS LIST DID NOT NAME.
+  //
+  // sysProbeRequested_ resolves a caller-named action ONLY through this table. So an action that is routed, has
+  // a defined handler and is served correctly still came back `known_to_this_build: false` — and the
+  // deployment-contract probe reported it MISSING from a deployment that was in fact serving it. Three of the
+  // four below were exactly that: a registry omission reported as a stale deployment, which sends an operator
+  // to re-publish something that was never wrong. The list is part of how this deployment describes itself, and
+  // a self-description that omits what it serves is a defect in the same family as one that overstates it.
+  //
+  // The first three were routed all along (31_ and 59_); only their registry rows were missing. The fourth was
+  // genuinely unreachable until R2 added its router branch — see 01_router.gs and 68_.
+  { action: 'shipment.eta.update', handler: 'handleUpdateShipmentEta_', used_by: 'Shipment Map ETA edit (bounded eta-only writer; owner = 31_)' },
+  { action: 'shipment.route.advance', handler: 'handleAdvanceShipmentRoutePoint_', used_by: 'Shipment Map route-point advance (owner = 31_)' },
+  { action: 'skuDetails.workspace.get', handler: 'handleSkuDetailsWorkspaceGet_', used_by: 'SKU Details / SKU Regional Details scoped read (owner = 59_)' },
+  { action: 'system.executionPlanDuplicateLineDiagnostic', handler: 'handleExecutionPlanDuplicateLineDiagnostic_', used_by: 'F1-7N-FB-4E-R2 §3 read-only Execution Plan duplicate-line diagnostic (owner = 68_)' },
+  // F1-7N-FB-4E-R3 §C — the Overseas Stock scoped read. Registered in the SAME change that routes it, because
+  // R2 exists precisely because an action was routed without being registered and the probe then reported a
+  // deployment missing something it was serving.
+  { action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' }
 ];
 
 // The tables the Submit-to-Map vertical slice reads or writes. Reported as present/row-count only.
@@ -162,16 +194,34 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E', owns: 'deployment identity + health + transport contract' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'deployment identity + health + transport contract' },
+  // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
+  // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
+  // to an undefined handler, and the page has no fan-out left to fall back to.
+  { file: '70_api_v1_overseas_stock_workspace.gs', symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3', owns: 'Overseas Stock scoped read workspace' },
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send orchestration + planning-cycle authority' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
-  { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan identity conflict diagnostic + scope-reporting duplicate diagnostic' },
+  // F1-7N-FB-4E-R2: 68_ changed because its duplicate diagnostic became REACHABLE for the first time and
+  // needed a scope guard on the routed path. A deployment carrying the R2 router but a FB-4D copy of 68_ would
+  // route to a handler with no guard, so this pairing must be provable rather than assumed.
+  { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R2', owns: 'Execution Plan identity conflict diagnostic + routed read-only duplicate-line diagnostic' },
+  // 68_ did NOT change in R3, so its stamp deliberately stays at R2. A stamp bumped to look current would make
+  // this manifest useless for detecting the thing it exists to detect.
   // F1-7N-FB-4D §E — the four owners the Site Inventory and SKU chains actually depend on. Each of these
   // files answers every one of its actions even when it is a round behind, so a resolvable action list can
   // never detect a partial sync of them. Only the declared build can.
   { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan allocation draft header/line writer (pre-write duplicate-PK gate, route group keys)' },
   { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FA-4B2', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner' },
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E', owns: 'doGet/doPost action routing + typed handler/method response identity' },
+  // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
+  // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'doGet/doPost action routing (incl. the GET read table) + typed handler/method response identity' },
+  // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
+  // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
+  // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
+  // introduced in R4B-R3, so a copy older than R3 reports ABSENT rather than stale - a stronger signal, not a
+  // weaker one, and the reason the value is not bumped to R3 just to look current.
+  { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R2', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
+  { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
   { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'SKU Details / SKU Regional scoped read workspace' },
   { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would

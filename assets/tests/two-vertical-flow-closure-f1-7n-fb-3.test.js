@@ -233,11 +233,31 @@ ok(wsGet.indexOf('_irReadModel') < wsGet.indexOf('_irRegistry'),
   'C6. with the inventory read model still taking precedence once a Search has loaded it');
 // mount: registry only
 var mountRegion = code(region(INV, '// F1-7N-FB-3 §C — the mount requests ONLY the slim scope registry', '};'));
-ok(/_irEnsureRegistryLoaded_\(\)/.test(mountRegion), 'C7. the mount requests the slim registry');
-ok(!/_irWorkspaceRefresh_/.test(mountRegion), 'C7. and performs ZERO inventory workspace reads');
-// the mount calls it bare; the Retry calls it with { force: true }. Both, and nothing else.
-eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 3,
-  'C7. exactly three references: the declaration, the mount call and the explicit Retry — no other loader path');
+// F1-7N-FB-4E-R3 — RESTATED, BECAUSE THE BEHAVIOUR GENUINELY CHANGED AND A TEXTUAL PASS WOULD HAVE HIDDEN IT.
+//
+// FB-3's claim was "the mount performs ZERO inventory workspace reads", and it was the right claim: a dropdown
+// touch used to cost a 20-table read. R3 §B keeps that for FIRST USE and adds ONE named exception: when a
+// PREVIOUSLY VALIDATED scope is remembered, the registry validation and the scoped workspace read run TOGETHER
+// so a returning user waits once instead of twice. The mount region still contains no workspace read, so the
+// original two assertions would have kept passing while the behaviour moved underneath them — which is exactly
+// the kind of vacuous pass this suite exists to prevent. So the invariant is restated at the level where it is
+// still true, and the exception is asserted rather than tolerated.
+ok(/_irBootstrapScope_\(\)/.test(mountRegion), 'C7. the mount goes through the ONE bootstrap entry point');
+ok(!/_irWorkspaceRefresh_/.test(mountRegion), 'C7. and the mount region itself still contains no workspace read');
+var bootFn = code(extractFn(INV, '_irBootstrapScope_'));
+ok(/_irRestoreScope_\(\)/.test(bootFn), 'C7. the bootstrap decides from a REMEMBERED scope, not from a guess');
+ok(/REGISTRY_ONLY/.test(bootFn) && /_irEnsureRegistryLoaded_\(\)/.test(bootFn),
+  'C7. with no remembered scope it is registry-only — FB-3 behaviour, unchanged');
+var regOnlyIdx = bootFn.indexOf('REGISTRY_ONLY'), wsIdx = bootFn.indexOf('_irWorkspaceRefresh_');
+ok(regOnlyIdx > 0 && wsIdx > regOnlyIdx,
+  'C7. and the registry-only branch RETURNS before any workspace read can be reached');
+ok(/_irScopeIsValid_\(/.test(bootFn), 'C7. a remembered scope is VALIDATED against the registry before it is applied');
+ok(/_irApplySearch_\(/.test(bootFn) && (bootFn.match(/_irSearch\.applied\s*=/g) || []).length === 0,
+  'C7. and it applies through the SAME single assignment point a manual Search uses — never its own');
+// Every reference to the registry loader, enumerated: declaration, explicit Retry, and the bootstrap's three
+// branches (no remembered scope, Demo, and the coalesced start). No other loader path exists.
+eq((code(INV).match(/_irEnsureRegistryLoaded_\(/g) || []).length, 6,
+  'C7. the registry loader has exactly six references and no other loader path');
 ok(/function _irReloadScopeRegistry_\(\) \{ return _irEnsureRegistryLoaded_\(\{ force: true \}\); \}/.test(INV),
   'C7. and the Retry is the only forcing caller');
 
@@ -265,7 +285,16 @@ ok(/may or may not have been committed/.test(wt.message), 'D3. and it says so in
 
 // the bound is applied at BOTH canonical runners, so every business request in both verticals inherits it
 var gapRead = extractFn(API, '_kmGapRead_');
-ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'read'\)/.test(gapRead), 'D4. the canonical READ runner is bounded');
+// F1-7N-FB-4E-R4A1 — RESTATED TO THE BOUND, NOT TO THE CALL'S PUNCTUATION.
+//
+// This required the init object to be written INLINE at the call site. R4A1 builds it above the call because it
+// differs by verb (a read is a GET with no body; a write stays a POST with one), so the read is still bounded and
+// the assertion stopped matching. The bound is what D4 defends, so the bound is what is asserted — plus the two
+// properties that make the read safe, which the old form never checked at all.
+ok(/_kmFetchBounded_\(\s*url\s*,[^;]*?,\s*'read'\s*\)/.test(gapRead), 'D4. the canonical READ runner is bounded');
+ok(/cache: 'no-store'/.test(gapRead), 'D4. and it never serves a read from a cache');
+ok(/method: 'GET'/.test(gapRead) && /method: 'POST'/.test(gapRead),
+  'D4. and it chooses its verb explicitly — GET for an allowlisted read, POST for everything else');
 ok(/netErr && netErr\.kmTimeout/.test(gapRead), 'D4. and classifies an expiry distinctly from a network error');
 var cmd = extractFn(API, '_kmWeeklyCommand_');
 ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'write'\)/.test(cmd), 'D5. the canonical COMMAND runner is bounded');

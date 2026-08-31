@@ -36,6 +36,25 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var TP = require(path.join(ROOT, 'assets/js/api/km-transport.js'));
+
+// F1-7N-FB-4E-R4A1 - READ THE REQUEST THE WAY THE CANONICAL TRANSPORT ACTUALLY SENDS IT.
+//
+// Every mock below parsed `init.body`, which assumed the read verb. R4A1 dispatches reads as a GET from the
+// stable /exec with the same body carried in `km_body`, because an Apps Script POST cannot survive the /exec 302
+// (both live failures are consequences of that hop). A mock that only understands one verb stops testing the
+// shipped request, so `wireSent` understands both: the body when there is one, the query when there is not.
+function wireSent(url, init) {
+  var body = (init && init.body) ? String(init.body) : '';
+  if (body) { try { return JSON.parse(body); } catch (e) { return {}; } }
+  var m = /[?&]km_body=([^&]*)/.exec(String(url));
+  if (m) { try { return JSON.parse(decodeURIComponent(m[1])); } catch (e) { return {}; } }
+  // A read with no parameters carries only its action and correlation id in the query.
+  var q = {};
+  String(String(url).split('?')[1] || '').split('&').forEach(function (kv) {
+    var k = kv.indexOf('='); if (k > 0) q[kv.slice(0, k)] = decodeURIComponent(kv.slice(k + 1));
+  });
+  return { action: q.action || '', requestId: q.km_rid || '' };
+}
 var DA = require(path.join(ROOT, 'assets/js/api/km-data-access.js'));
 var KMAPI = require(path.join(ROOT, 'assets/js/api/km-api-foundation.js'));
 
@@ -444,7 +463,12 @@ ok(!/await Promise\.all\(names\.map\(/.test(DBAPIC), 'D6 and no longer fans out 
 // Request Order second-layer expand and the allocation-draft hydrate) had the identical unbounded shape, and a
 // bound that holds in one place and is missing in the other is not a bound.
 ok(/_kmReadTablesBounded_/.test(DBAPIC), 'D7 one shared bounded multi-table reader exists');
-eq((DBAPIC.match(/await _kmReadTablesBounded_\(names\)/g) || []).length, 2, 'D7 and BOTH fan-out sites go through it');
+// F1-7N-FB-4E-R3 — the MOUNT site now passes { share: true } and the post-write refresh deliberately does not,
+// so the two call sites no longer have identical text. What must hold is that there are still exactly TWO and
+// that both go through the ONE bounded reader.
+eq((DBAPIC.match(/await _kmReadTablesBounded_\(names[^)]*\)/g) || []).length, 2, 'D7 and BOTH fan-out sites go through it');
+ok(/await _kmReadTablesBounded_\(names, \{ share: true \}\)/.test(DBAPIC), 'D7 the MOUNT site opts into sharing');
+ok(/await _kmReadTablesBounded_\(names\);/.test(DBAPIC), 'D7 and the post-write refresh site does NOT');
 ok(/_kmRefreshCacheTables_/.test(DBAPIC), 'D7 including the secondary/hydrate path');
 
 // §D1 — the two session-stable metadata reads go through the shared latch, not through two private ones.
@@ -556,7 +580,7 @@ var SEED = [
 var tG = TP.create({
   baseUrl: EXEC, frontendOrigin: ORIGIN, now: function () { return 0; },
   fetch: spy(function (n, url, init) {
-    var sent = JSON.parse(init.body);
+    var sent = wireSent(url, init);
     var sc = sent.payload.scope, pr = sent.payload.projection, pg = sent.payload.pagination;
     var rows = SEED.filter(function (r) {
       return (!sc.country || r.country === sc.country) && (!sc.marketplace || r.marketplace === sc.marketplace) && (!sc.sku || r.sku === sc.sku);
@@ -611,7 +635,7 @@ checks.push(DA.createRepository(DA.appsScriptAdapter({ transport: tGerr })).quer
     eq(env.state, 'NON_RETRYABLE_CONFIGURATION_OR_DEPLOYMENT_ERROR', 'G4 with the matching non-retryable state');
   }));
 var tGbiz = TP.create({ baseUrl: EXEC, frontendOrigin: ORIGIN, now: function () { return 0; },
-  fetch: spy(function (n, u, init) { var s = JSON.parse(init.body);
+  fetch: spy(function (n, u, init) { var s = wireSent(u, init);
     return resp({ json: { success: false, meta: { action: s.action, requestId: s.requestId }, errors: [{ code: 'IR_SCHEMA_MISSING', message: 'not provisioned' }] } }); }) });
 checks.push(DA.createRepository(DA.appsScriptAdapter({ transport: tGbiz })).query({ resource: 'siteInventory', requestId: 'REQ-E2' })
   .then(function (env) {
@@ -652,13 +676,29 @@ ok(!/missing_actions=\[\]/.test(DBAPIC) || /missing_actions_is_self_referential/
   ok(RTR.indexOf(f) > 0, 'H6 the router emits ' + f.replace(':', ''));
 });
 ok(/handler: 'doPost'/.test(RTR), 'H6 including on the doPost side, so its answer can never read as a downgrade');
-ok(/RTR_BUILD_VERSION_ = 'F1-7N-FB-4E'/.test(RTR), 'H7 the router build stamp advanced');
-ok(/SYS_BUILD_VERSION_ = 'F1-7N-FB-4E'/.test(HLTH), 'H7 as did the health owner’s');
-ok(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E'/.test(HLTH), 'H7 and the manifest expects the new router build');
-ok(/'63_api_v1_system_health\.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E'/.test(HLTH), 'H7 and the new health build');
-// The ACTION contract deliberately did NOT move: no router action was added or removed this round.
-ok(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 7/.test(HLTH), 'H8 the ACTION contract stays v7 — no action was added or removed');
-ok(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 7/.test(DBAPIC), 'H8 and the frontend still expects v7 — the two axes are independent');
+// F1-7N-FB-4E-R2 — STATED AS A RULE, NOT AS FROZEN STRINGS. This block pinned 'F1-7N-FB-4E' and 7 as
+// literals, and R2 legitimately moved both: it added a router action, which is exactly the condition the
+// action contract's own rule names. Literals here made a CORRECT bump look like a regression — the same trap
+// this file already documents for release tokens twenty lines below, so it gets the same treatment. What must
+// hold is that the stamps are FB-4E or later, that the manifest expects what the files declare, and that the
+// two contract axes stay independent.
+var RTR_STAMP = /RTR_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(RTR);
+var SYS_STAMP = /SYS_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(HLTH);
+ok(!!RTR_STAMP, 'H7 the router build stamp is FB-4E or a later revision of it');
+ok(!!SYS_STAMP, 'H7 as is the health owner’s');
+ok(RTR_STAMP && new RegExp("'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + RTR_STAMP[1] + "'").test(HLTH),
+  'H7 and the manifest expects exactly the router build the router declares');
+ok(SYS_STAMP && new RegExp("'63_api_v1_system_health\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + SYS_STAMP[1] + "'").test(HLTH),
+  'H7 and exactly the health build 63_ declares');
+// THE TWO AXES ARE INDEPENDENT, which is the claim this section actually exists to defend. FB-4E moved the
+// TRANSPORT contract and left the ACTION contract alone; R2 did the reverse. Both are correct, and neither may
+// go backwards.
+var ACT = Number(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(HLTH)[1]);
+var ACT_PIN = Number(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPIC)[1]);
+ok(ACT >= 7, 'H8 the ACTION contract is v7 or later (v' + ACT + ') and never goes backwards');
+eq(ACT_PIN, ACT, 'H8 and the frontend pin agrees with it, so the two sides cannot drift apart');
+ok(/SYS_TRANSPORT_CONTRACT_VERSION_ = 1/.test(HLTH) && /KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = 1/.test(DBAPIC),
+  'H8 while the TRANSPORT axis stays v1 — no router response-identity field changed — which is what makes them independent');
 
 // =============================================================================================================
 section('§H/§J14 — every changed transport-critical asset carries the NEW release token');
@@ -673,8 +713,18 @@ var CHANGED_ASSETS = ['assets/js/api/km-transport.js', 'assets/js/api/km-data-ac
   'assets/js/pages/fc-summary.js', 'assets/js/pages/request-order.js',
   'assets/js/pages/inventory-replenishment.js', 'assets/js/pages/shipping-history.js',
   'assets/js/utils/inventory-compat.js', 'assets/js/pages/sku-details.js'];
+// F1-7N-FB-4E-R1: this round changed operation-system-db-api.js AFTER FB-4E had shipped to production, so
+// 'fb4e-transport-20260826' is now itself an EARLIER round's token for this set and joins the stale list. The
+// whole co-deployed set moves together, which is what the one-token assertion below exists to enforce.
 var STALE_TOKENS = ['fb4d-site-inventory-20260826', 'sku-read-path-20260826', 'catseries-20260820',
-  'whmoreopts-20260820', 'donenotice-20260811', 'r6a1-request-send-20260822'];
+  'whmoreopts-20260820', 'donenotice-20260811', 'r6a1-request-send-20260822',
+  'fb4e-transport-20260826',
+  // F1-7N-FB-4E-R2: R1's token joins the list for the same reason FB-4E's did -- R1 shipped, R2 changed
+  // operation-system-db-api.js again, so carrying R1's token would serve the pre-R2 client from cache.
+  'fb4er1-contract-probe-20260827',
+  // F1-7N-FB-4E-R3: R2's token joins the list — R3 changed km-transport.js, km-api-foundation.js and
+  // operation-system-db-api.js again, and a cached pre-R3 copy of any of the three is a different program.
+  'fb4er2-action-registry-20260827'];
 var tokens = {};
 CHANGED_ASSETS.forEach(function (a) {
   var m = new RegExp('src="' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([^"]+)"').exec(HTML);
@@ -705,7 +755,7 @@ var clock = 0;
 var tMetrics = TP.create({
   baseUrl: EXEC, frontendOrigin: ORIGIN,
   now: function () { clock += 10; return clock; },
-  fetch: spy(function (n, u, init) { var s = JSON.parse(init.body);
+  fetch: spy(function (n, u, init) { var s = wireSent(u, init);
     return resp({ json: { success: true, data: { rows: [{ a: 1 }] }, meta: { action: s.action, requestId: s.requestId } } }); })
 });
 checks.push(tMetrics.request({ action: IR_ACTION, requestId: 'REQ-M1', kind: 'read', payload: { payload: {} } }).then(function (r) {
@@ -729,7 +779,7 @@ var tRetry = TP.create({
   random: function () { return 0; }, sleep: function () { return Promise.resolve(); },
   fetch: spy(function (n, u, init) {
     if (n === 1) return resp({ status: 503, contentType: 'application/json', body: '{}' });
-    var s = JSON.parse(init.body);
+    var s = wireSent(u, init);
     return resp({ json: { success: true, data: { rows: [] }, meta: { action: s.action, requestId: s.requestId } } });
   })
 });
@@ -799,6 +849,82 @@ ok(!/DemoData|demoSeed|DEMO_SEED/.test(code(TPSRC) + code(DASRC)), 'I3 and neith
 // The router and health owner stay read-only on the paths this round touched.
 ok(/read_only: true/.test(HLTH), 'I4 system.health remains declared read-only');
 ok(/zero_write: true/.test(RTR), 'I4 and the router’s terminal answers still declare zero writes');
+
+
+// =============================================================================================================
+section('§D-CORRECTION — the bound is a BOUNDED-PRESSURE control, not reliance on server serialization');
+// =============================================================================================================
+// THE CLAIM THAT WAS WRONG. Three comments in operation-system-db-api.js and one in the cutover suite justified
+// this round's concurrency bound with "a backend whose per-user execution is serialized", and one of them drew
+// a conclusion from it: "the tail latency is the sum either way".
+//
+// Apps Script gives NO such guarantee. Multiple executions for one user MAY overlap. So the tail latency of
+// four concurrent reads is NOT the sum, and this bound is NOT free — the old rationale would have told the next
+// reader the change could not cost anything, which is precisely the premise that stops a real measurement from
+// being taken.
+//
+// The correct statement, and the one this section pins:
+//   · multiple executions may overlap;
+//   · Apps Script and the Spreadsheet service carry quotas and contention;
+//   · unbounded client fan-out raises peak request pressure and makes partial failure more likely;
+//   · the limiter is a bounded-pressure control, NOT reliance on guaranteed server serialization.
+(function () {
+  var SRCS = [['operation-system-db-api.js', DBAPI], ['km-transport.js', TPSRC], ['km-data-access.js', DASRC],
+              ['api-non-workspace-primary-scoped-cutover', read('assets/tests/api-non-workspace-primary-scoped-cutover-f1-7j-a3-r1.test.js')]];
+  // C1 — nothing may ASSERT serialization as a platform contract. The one surviving mention is the paragraph
+  // that REFUTES it, so the test is "every occurrence sits next to its refutation", not "the words are absent"
+  // — a word ban would forbid explaining the correction at all.
+  SRCS.forEach(function (p) {
+    var name = p[0], src = String(p[1] || '');
+    var re = /execution[s]?\s+(?:is|are)\s+SERIALIZED/gi, m, sites = 0, refuted = 0;
+    while ((m = re.exec(src))) {
+      sites++;
+      var around = src.slice(Math.max(0, m.index - 600), m.index + 600);
+      if (/BOTH HALVES ARE WRONG|no such guarantee|does NOT guarantee|may overlap/i.test(around)) refuted++;
+    }
+    eq(sites, refuted, 'C1 ' + name + ': every "executions are serialized" mention is a refutation, not a contract (' +
+      refuted + '/' + sites + ')');
+  });
+  // C2 — the corrected reasoning is actually present where the bound is defined, so a reader arrives at the
+  // right premise rather than at no premise.
+  var band = DBAPI.slice(Math.max(0, DBAPI.indexOf('KM_SCOPED_READ_CONCURRENCY_') - 2600),
+                         DBAPI.indexOf('KM_SCOPED_READ_CONCURRENCY_') + 400);
+  ok(/may overlap/i.test(band), 'C2 the bound cites that executions MAY overlap');
+  ok(/quota/i.test(band), 'C2 and that the services are quota-bound');
+  ok(/peak (request )?pressure/i.test(band), 'C2 and that unbounded fan-out raises peak request pressure');
+  ok(/partial failure|one partial failure/i.test(band), 'C2 and that this makes partial failure more likely');
+  ok(/BOUNDED[- ]PRESSURE CONTROL/i.test(band), 'C2 and names the limiter a bounded-pressure control');
+  // C3 — and it does NOT claim a speed win it has not measured.
+  ok(/reliability measure/i.test(band) && /only live measurement can answer|open question/i.test(band),
+    'C3 the rationale states this is a reliability measure whose speed effect is unmeasured');
+
+  // C4 — THE BEHAVIOURAL HALF, WHICH IS WHY THIS IS A COMMENT REPAIR AND NOT A CODE REPAIR. The bounded reader
+  // must be correct whether or not the server overlaps executions: a worker pool writing into a keyed object,
+  // with no ordering assumption, no read-after-write and no dependence on request N finishing before N+1.
+  var rdStart = DBAPI.indexOf('async function _kmReadTablesBounded_');
+  ok(rdStart > 0, 'C4 the bounded reader is locatable');
+  var rd = DBAPI.slice(rdStart, DBAPI.indexOf('\n}', rdStart) + 2);
+  // F1-7N-FB-4E-R3 — the per-table fetch is now reached through `readOne`, which either shares an open request
+  // or calls getOperationDbTableFromSheet directly. The INVARIANT is unchanged and is what is asserted: each
+  // answer lands under its own NAME, never at a loop position, so arrival order still cannot change the result.
+  ok(/rawDb\[names\[i\]\] = await readOne\(names\[i\]\)/.test(rd),
+    'C4 each table lands under its OWN key — arrival order cannot change the result');
+  ok(/return getOperationDbTableFromSheet\(name\)/.test(rd),
+    'C4 and the per-table getTable read is still what is ultimately called');
+  // Stated as what it IS rather than as a ban on characters: the accumulator is an OBJECT keyed by table
+  // name and that object is what comes back. An earlier version of this line banned `push(`, which matched the
+  // worker-pool construction `pool.push(worker())` — a false positive on the one push that has to be there.
+  ok(/var rawDb = \{\};/.test(rd) && /return rawDb;/.test(rd),
+    'C4 results accumulate in a NAME-KEYED object, never in an order-dependent list');
+  ok(!/rawDb\.push|rawDb\[i\]|rawDb\[w\]/.test(rd),
+    'C4 and never by position, so completion order cannot change the answer');
+  ok(!/sleep|setTimeout|Date\.now|performance\.now/.test(rd),
+    'C4 and it waits on nothing but the requests themselves — no timing assumption about the server');
+  // C5 — the metadata latch is likewise keyed and evicts on either outcome, so overlapping executions cannot
+  // make one consumer inherit another's failure.
+  ok(/if \(_inflight\[k\]\) return _inflight\[k\]/.test(TPSRC), 'C5 the single-flight latch is keyed, not global');
+  ok(/p\.then\(evict, evict\)/.test(TPSRC), 'C5 and evicts on BOTH outcomes — a rejection is never inherited');
+})();
 
 // =============================================================================================================
 Promise.all(checks).then(function () {

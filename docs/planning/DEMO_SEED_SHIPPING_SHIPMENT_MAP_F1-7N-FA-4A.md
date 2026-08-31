@@ -878,6 +878,13 @@ No canonical file needed changing, and **no canonical document contradicts the f
 
 **No conflict to report.** `SHIPMENT_CENTER_SPEC.md` §22.0(E)–(H) does filter candidates by Company, but that pipeline is explicitly the **destination** Warehouse Picker and FACTORY is explicitly excluded from it — a **scope distinction, not a contradiction**. The company filter never governed a factory *source*.
 
+> **SUPERSEDED IN PART — F1-7N-FB-4E-R4B-R1 (2026-08-31).** Points (4) and (6) below remain the default **only
+> where no explicit factory-source policy exists**. An explicit policy is now authorized in
+> `SUPPLY_PLANNING_CALCULATION_RULES.md` §13.1: **CN** factory stock is shared across all eligible receiver site
+> scopes (cross-company), while **TW** factory stock is eligible for **active ResUS scopes only**. That is a
+> narrow supersession for TW; it is a property of the SOURCE, not a company-mismatch or warehouse-authorization
+> rule, and it does not change anything in the shipment/route reading of these eleven points.
+
 **Frozen rule (all eleven points recorded):** (1) `warehouses.company` is administrative/account ownership attribution. (2) `warehouse_owner` identifies owner/operator attribution. (3) Neither is an exclusive usage authorization. (4) Factory warehouses are shared operational sources across KM / ResUS / ResTW. (5) A shipment company need not equal the factory warehouse company. (6) Absent an explicit warehouse-access mapping (none exists), company mismatch must not reject a valid factory source. (7) Country remains authoritative for route geography. (8) `is_active` remains authoritative for lifecycle eligibility. (9) `is_factory_warehouse` remains authoritative for the blank-template fallback. (10) `warehouse_id` remains the business identity. (11) `logistics_location_id` and route `location_ref_id` remain geography only and never replace warehouse identity.
 
 ## B — final resolver matrix

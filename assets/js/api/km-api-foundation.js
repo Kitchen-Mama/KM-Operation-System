@@ -135,6 +135,13 @@
       tables: ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'campaigns', 'campaign_sku_lines', 'marketplace_skus'], legacyRead: 'getOperationDb' },
     { name: 'skuDetails', label: 'SKU Details',
       tables: ['sku_details', 'tax_referral_rates', 'tax_rate_components', 'marketplace_skus', 'sku_regional_details'], legacyRead: 'getOperationDb' },
+    // F1-7N-FB-4E-R3 §C — Overseas Stock. Its FOUR tables were four separate getTable requests at mount, which
+    // R3 §A measured; on Apps Script each request is a separate Web App execution, so this collapses four cold
+    // starts into one. `legacyRead` is the four-table scoped fan-out, NOT getOperationDb: the fallback for this
+    // page has never been a whole-DB read and must not become one.
+    { name: 'overseasStock', label: 'Overseas Stock',
+      tables: ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'],
+      legacyRead: 'getTable(x4)' },
     // Recommendation READ-ONLY workspace (F1-4B-A) — targeted canonical tables consumed by KMPA/KMPS (never getOperationDb).
     { name: 'recommendation', label: 'Recommendation',
       tables: ['sku_details', 'marketplace_skus', 'warehouses', 'marketplaces', 'fc_regular_forecast', 'fc_special_events',
@@ -455,8 +462,8 @@
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
     // F1-7C: purchaseOrder READ is now production-canonical too.
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true };
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true, overseasStock: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true, overseasStock: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -558,6 +565,50 @@
       for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = deepFreezeClone(v[k]); }
       return Object.freeze(out);
     }
+    // ----------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R3 §D — THE METHOD-DOWNGRADE PROOF, IN ONE PLACE, BECAUSE TWO PLACES NOW NEED IT.
+    //
+    // The five facts were computed inline inside normalizeWorkspaceEnvelope, which was fine while the only
+    // consumer was the error classifier. R3 adds a second consumer — the bounded retry gate — and a retry
+    // that decided on its own re-derivation of the same evidence could disagree with the message the user is
+    // shown. So the derivation moves here and both call it.
+    //
+    // The facts, each from a specific field and none of them from the router's prose:
+    //   1. the client dispatched POST      — this transport has no GET path for a workspace read
+    //   2. it reached the router as a GET  — received_method === 'GET'
+    //   3. doGet answered                  — handler === 'doGet', or code POST_ONLY_ACTION_ON_GET
+    //   4. the POST body was unavailable   — post_body_present === false, or that same code
+    //   5. the answer is THIS request's    — request_id echoes the id we sent
+    // ----------------------------------------------------------------------------------------------------
+    function downgradeProof(serverEnv, sentRequestId) {
+      var env = isObj(serverEnv) ? serverEnv : {};
+      var rcode = normName(env.code);
+      var rmethod = String(env.received_method == null ? '' : env.received_method).toUpperCase();
+      var rhandler = normName(env.handler);
+      var rid = normName(env.request_id);
+      var bodyPresent = env.post_body_present;
+      var actionInQuery = (env.action_present_in_query === undefined)
+        ? (normName(env.attempted_action) !== '' ? true : null)
+        : (env.action_present_in_query === true);
+      var evidence = {
+        client_dispatched_post: true,
+        router_received_method: rmethod || null,
+        router_handler: rhandler || (rcode === 'POST_ONLY_ACTION_ON_GET' ? 'doGet' : null),
+        router_code: rcode || null,
+        post_body_present: (bodyPresent === undefined) ? null : (bodyPresent === true),
+        action_present_in_query: actionInQuery,
+        sent_as_post_marker: env.sent_as_post === true,
+        request_id_echoed: rid || null,
+        request_id_correlated: (rid !== '' && rid === normName(sentRequestId))
+      };
+      var getHandlerAnswered = (rmethod === 'GET') || (evidence.router_handler === 'doGet') || (rcode === 'POST_ONLY_ACTION_ON_GET');
+      var bodyLost = (bodyPresent === false) || (rcode === 'POST_ONLY_ACTION_ON_GET');
+      return {
+        evidence: evidence, action_in_query: actionInQuery,
+        get_handler_answered: getHandlerAnswered, body_lost: bodyLost,
+        proved: !!(getHandlerAnswered && bodyLost && evidence.request_id_correlated)
+      };
+    }
     function actionRequiredError(action, where) {
       var e = new Error('CLIENT_ACTION_REQUIRED: a request envelope was built without an action' + (where ? ' (' + where + ')' : '') +
         '. No network call was made.');
@@ -598,14 +649,165 @@
     function makeRequestId(provided) { var p = normName(provided); return /^REQ-[A-Za-z0-9_-]{1,40}$/.test(p) ? p : _idGen(); }
 
     // ---- API-2 · workspace transport invoke → parsed canonical envelope (tests inject deps.workspaceInvoke) --
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R4A1 §4 — ONE READ BOUNDARY, NOT ONE PER LAYER.
+    //
+    // This file used to dispatch every workspace read through its own private POST shim: no endpoint classifier,
+    // no HTML fingerprint, no redirect-target classification, no retry policy and no metrics. That is why the
+    // shared transport already knew that an Apps Script POST cannot survive the /exec 302 while every workspace
+    // read kept sending one — the knowledge and the code path were in different files.
+    //
+    // Reads now go through KM.transport.request({ kind: 'read' }), which dispatches a GET from the stable /exec
+    // with the same body in `km_body`, owns the bounded redirect-target recovery, and hands back the router's own
+    // envelope VERBATIM. Everything below this line is unchanged: the envelope is still classified by
+    // normalizeWorkspaceEnvelope, which remains the single authority on action echo, request-id correlation and
+    // the five-fact downgrade proof.
+    //
+    // A GENUINE transport failure has no envelope — an HTML 404, a dead network, a timeout. Rather than let the
+    // normalizer report that as a malformed response, it is expressed as a client-side envelope carrying the
+    // TYPED transport code, so the page shows what actually happened. That envelope deliberately does NOT claim
+    // an echoed request id: nothing answered, so correlation is NOT_ECHOED (reported, tolerated) rather than a
+    // manufactured match.
+    // ------------------------------------------------------------------------------------------------------
+    function transportFailureEnvelope(action, res) {
+      var d = (res && isObj(res.details)) ? res.details : {};
+      return {
+        success: false,
+        data: null,
+        meta: { action: normName(action), source: 'transport', __km_synthesized: true },
+        errors: [{
+          code: (res && res.code) || API_ERROR_CODES.TRANSPORT_ERROR,
+          message: (res && res.message) || 'The read could not be completed.',
+          details: Object.assign({}, d, { action: normName(action), zero_write: true })
+        }]
+      };
+    }
     var _workspaceInvokeRaw = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
-      // transport.post resolves the canonical URL at call time and rejects with the specific transport code
-      // (TRANSPORT_NOT_CONFIGURED / TRANSPORT_URL_INVALID) — surfaced verbatim via errorFromException.
+      var tp = _sharedTransport();
+      if (tp && typeof tp.request === 'function') {
+        return tp.request({ action: action, kind: 'read', payload: dto,
+          requestId: dto && dto.requestId, signal: signal })
+          .then(function (res) {
+            var env = (res && isObj(res.envelope)) ? res.envelope : transportFailureEnvelope(action, res);
+            // The transport is the ONLY layer that knows which id went on the wire, so it is the one that
+            // records it. A bounded recovery is a second physical request with its own id, and this is where
+            // that fact reaches the correlation check instead of being lost.
+            var wireRid = (res && isObj(res.details) && res.details.request_id) ? res.details.request_id : (dto && dto.requestId);
+            recordPhysicalRequest(env, { requestId: wireRid, action: action });
+            return env;
+          });
+      }
+      // FALLBACK for a page that loaded without the transport module: the previous private POST shim. It keeps
+      // working, and it keeps its old failure modes — which is why it is a fallback and not the path.
       return transport.post(dto, { signal: signal }).then(function (resp) { return safeReadJsonResponse(resp); });
     };
     // F1-7N-FB-4C-R1 §E — ONE choke point every workspace read passes through, so the "action is required" rule
     // holds for every existing resolver without each one having to remember it. A blank action throws here, and
     // it throws SYNCHRONOUSLY relative to the network: no request is issued.
+    // F1-7N-FB-4E-R3 §D/§E — THE CHOKE POINT NOW ALSO OWNS RETRY AND IN-FLIGHT REUSE, AND BOTH POLICIES
+    // COME FROM THE SHARED TRANSPORT RATHER THAN BEING RE-DECIDED HERE.
+    //
+    // §D — THE FIRST-LOAD FAILURE, AND WHY IT WAS NEVER A MISSING POLICY. An Apps Script /exec POST is answered
+    // with a 302 to script.googleusercontent.com, and per the Fetch spec a 302 following a POST is re-issued as
+    // a GET WITH THE BODY DROPPED. On a cold or re-authorising session that chain resolves back to /exec, the
+    // request lands at doGet carrying only the query string, and the read cannot run. km-transport.js already
+    // classes that as REQUEST_METHOD_DOWNGRADED and already treats it as auto-retryable for a READ, with a
+    // bounded single attempt — and it is right to: the deployment is fine, one hop lost the body, and a fresh
+    // POST re-establishes the session redirect.
+    //
+    // But EVERY workspace read went through this file's own private transport shim, which has no classifier, no
+    // contract validator and no retry. So the policy existed and the one read path that needed it did not use
+    // it, and the user was performing the retry by hand — navigating away and coming back until a load stuck.
+    // That is the SKU Details first-load failure exactly.
+    //
+    // The gate is deliberately narrow. It fires ONLY on the five-fact proof (downgradeProof above, the same
+    // derivation the message is built from), ONLY for a workspace READ, and ONLY ONCE. It is NOT a blanket GET
+    // retry, it is NOT applied to writes — no write reaches this function; _kmWeeklyCommand_ and the direct
+    // writers are separate paths and keep their existing no-replay rule — and the retry is a fresh POST, never
+    // a GET. A downgrade that repeats on the second attempt is returned unchanged, so §D.7 holds: a genuinely
+    // downgraded request is still reported as REQUEST_METHOD_DOWNGRADED.
+    //
+    // There is no back-off delay, and that is deliberate rather than an omission: this Foundation is held to a
+    // determinism rule (no wall clock, no RNG — its own suite asserts it), and a redirect-session artifact is
+    // not congestion, so waiting would add latency without adding a chance of success.
+    //
+    // §E — IN-FLIGHT REUSE, KEYED BY ACTION + CANONICAL SCOPE. Leaving a page mid-read and returning used to
+    // start a second identical request; now the second caller attaches to the SAME promise and issues nothing.
+    // The key carries the whole payload (canonicalScope sorts keys at every level), so a read of scope A can
+    // never be handed to a page showing scope B — which is why this uses the transport's scope-keyed facility
+    // and not its metadata latch, whose action-only key is unsafe for business reads by design. Nothing is
+    // retained after settlement: an OPEN request is shared, a finished one is not, so no stale answer and no
+    // poisoned failure. A signal-bearing call is never shared, because one caller's abort must not cancel
+    // another's read.
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7N-FB-4E-R4A — THE PHYSICAL-REQUEST RECORD.
+    //
+    // THE RULE R3 BROKE, stated as the invariant it violated:
+    //
+    //     A REQUEST ID BELONGS TO ONE PHYSICAL WIRE REQUEST, NOT TO EVERY CONSUMER ATTACHED TO ITS PROMISE.
+    //
+    // R3 §E made one physical read serve several equivalent consumers, and that part was right: the key is
+    // action + canonical scope, the payload is in the key, nothing is retained after settlement. What was wrong
+    // was WHERE the sharing boundary sat. `_workspaceInvoke` shared the RAW envelope, and each consumer then ran
+    // `normalizeWorkspaceEnvelope(serverEnv, ITS OWN dto, seq)` — comparing the id the server echoed against an
+    // id THAT CONSUMER NEVER SENT. Every consumer but the physical sender was told
+    // RESPONSE_REQUEST_ID_MISMATCH and threw away a valid answer. That is the live report exactly: a workspace
+    // page shows the correlation error, and leaving and returning "fixes" it — because the second visit is no
+    // longer racing the first and becomes the physical sender itself.
+    //
+    // Note which half was correct. The COALESCING was correct; the CORRELATION was correct; they were merely
+    // composed in the wrong order. So the repair is to move the boundary, not to weaken either half:
+    // correlation is decided ONCE, against the id that actually went on the wire, and every consumer reads that
+    // one verdict.
+    //
+    // WHY A WeakMap AND NOT A FIELD ON THE ENVELOPE. The record has to be unforgeable by the thing being
+    // checked. A marker stamped onto the parsed response (`serverEnv.__km_physical_request_id`) could be
+    // supplied by the response JSON itself, and any server or proxy could then nominate its own answer as
+    // correlated — which is precisely the check this exists to make impossible. A WeakMap keyed by the parsed
+    // envelope object cannot be reached from JSON, is created from the DTO WE DISPATCHED, and is collected with
+    // the envelope. Nothing about the response can put an entry in it.
+    //
+    // FAIL-CLOSED IN THREE PLACES, because a correlation check that can be talked out of failing is not one:
+    //   * no record (an injected transport, no WeakMap, a non-object answer) -> the consumer's own id is used,
+    //     which is exactly the pre-R3 behaviour: no path silently loses validation.
+    //   * one envelope object seen for two different physical ids (a stub that returns a shared constant) ->
+    //     AMBIGUOUS, and the consumer's own id is used again rather than trusting an unclear record.
+    //   * a record whose action is not this consumer's action -> not this answer; the local id is used.
+    // ------------------------------------------------------------------------------------------------------
+    var _physicalRequests = (typeof WeakMap === 'function') ? new WeakMap() : null;
+    var _PHYSICAL_AMBIGUOUS = '\u0000AMBIGUOUS';
+    function recordPhysicalRequest(serverEnv, dto, opts) {
+      if (!_physicalRequests || !isObj(serverEnv)) return serverEnv;
+      var sent = normName(dto && dto.requestId);
+      var prior = _physicalRequests.get(serverEnv);
+      if (prior) {
+        // F1-7N-FB-4E-R4A1 — `ifAbsent` exists because two layers can now know about the same answer, and only
+        // ONE of them knows the truth. The shared transport knows the id it actually put on the wire, including
+        // when a bounded redirect recovery made that a SECOND request with its own id. This choke point only
+        // knows the id it asked for. So the transport records authoritatively and this layer records only when
+        // nothing is on file — rather than treating the disagreement as ambiguity and discarding both.
+        if (opts && opts.ifAbsent) return serverEnv;
+        // The same parsed object answering two different physical requests cannot be attributed to either.
+        if (prior.requestId !== sent) prior.requestId = _PHYSICAL_AMBIGUOUS;
+        return serverEnv;
+      }
+      _physicalRequests.set(serverEnv, { requestId: sent, action: normName(dto && dto.action) });
+      return serverEnv;
+    }
+    // The id THIS answer was actually asked for. Not "the id this consumer holds" — that is the bug — and not
+    // anything read out of the response.
+    function sentRequestIdFor(serverEnv, dto) {
+      var local = normName(dto && dto.requestId);
+      if (!_physicalRequests || !isObj(serverEnv)) return local;
+      var rec = _physicalRequests.get(serverEnv);
+      if (!rec || rec.requestId === _PHYSICAL_AMBIGUOUS) return local;
+      if (rec.action && normName(dto && dto.action) && rec.action !== normName(dto && dto.action)) return local;
+      return rec.requestId;
+    }
+    function _sharedTransport() {
+      try { return (typeof window !== 'undefined' && window.KM && window.KM.transport) ? window.KM.transport : null; }
+      catch (e) { return null; }
+    }
     var _workspaceInvoke = function (action, dto, signal) {
       assertSendableEnvelope(dto, 'workspaceInvoke:' + (normName(action) || '(blank)'));
       if (normName(action) !== normName(dto.action)) {
@@ -613,7 +815,46 @@
         // the disagreement is a construction bug worth failing on rather than silently preferring one.
         throw actionRequiredError(dto.action, 'workspaceInvoke: action argument "' + normName(action) + '" disagrees with envelope action "' + normName(dto.action) + '"');
       }
-      return _workspaceInvokeRaw(action, dto, signal);
+      var tp = _sharedTransport();
+      // THE id this function will put on the wire. Named here, once, so that everything downstream reasons
+      // about the PHYSICAL request rather than about whichever consumer happens to be asking.
+      var physicalRequestId = normName(dto.requestId);
+
+      // Every answer is attributed to the request that actually fetched it, at the moment it arrives — first
+      // attempt and retry alike, since both are dispatched from this same physical DTO.
+      function once() {
+        return Promise.resolve(_workspaceInvokeRaw(action, dto, signal)).then(function (serverEnv) {
+          // ifAbsent: the shared transport records the id it actually sent. This is the fallback for an
+          // injected or private dispatcher, and it must not overwrite a more authoritative record.
+          return recordPhysicalRequest(serverEnv, dto, { ifAbsent: true });
+        });
+      }
+      function withBoundedDowngradeRetry() {
+        return once().then(function (serverEnv) {
+          if (!isObj(serverEnv) || serverEnv.success === true) return serverEnv;
+          // The id THIS answer was actually asked for — which after a bounded recovery is not the id this
+          // function started with. Read from the record rather than assumed from the DTO.
+          var pf = downgradeProof(serverEnv, sentRequestIdFor(serverEnv, dto) || physicalRequestId);
+          if (!pf.proved) return serverEnv;
+          // The shared transport owns the answer to "may this be replayed?". Asked, never assumed.
+          var allowed = tp && typeof tp.isAutoRetryable === 'function'
+            ? tp.isAutoRetryable({ kind: 'read', code: 'REQUEST_METHOD_DOWNGRADED' })
+            : false;
+          if (!allowed) return serverEnv;
+          if (signal && signal.aborted) return serverEnv;
+          return once();                                  // exactly one more attempt, again as a POST
+        });
+      }
+
+      // A scope key needs the payload; without one the read is simply not shared (fail-closed to old behaviour).
+      var scope = '';
+      if (tp && typeof tp.canonicalScope === 'function' && !signal) {
+        scope = tp.canonicalScope({ v: dto.apiVersion || null, p: dto.payload || null });
+      }
+      if (tp && typeof tp.scopedSingleFlight === 'function' && scope !== '') {
+        return tp.scopedSingleFlight(normName(dto.action), scope, withBoundedDowngradeRetry);
+      }
+      return withBoundedDowngradeRetry();
     };
 
     // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
@@ -664,14 +905,33 @@
       // answer could repaint over a newer one and look like stale data rather than a correlation fault. Only a
       // genuine MISMATCH fails; a deployment that echoes no id is REPORTED (requestIdCorrelation), never
       // silently treated as proof.
+      //
+      // F1-7N-FB-4E-R4A — COMPARED AGAINST THE ID THAT WAS ACTUALLY SENT, WHICH IS NOT ALWAYS THIS CONSUMER'S.
+      //
+      // When a read is coalesced, several consumers hold their own request ids and exactly ONE of those ids was
+      // dispatched. Comparing the echo against a consumer-local id that never left the browser produced a
+      // MISMATCH on a valid answer — the R4A defect. The comparison now uses the PHYSICAL id (see
+      // sentRequestIdFor), and the check is not weakened by it: the physical id comes from the DTO this client
+      // dispatched, never from the response, so an answer still cannot nominate itself as correlated. A
+      // genuinely foreign id — including another live request's real id — still fails, and fails for every
+      // attached consumer rather than for whichever one lost the race.
+      var _sentRid = sentRequestIdFor(serverEnv, dto);
+      outMeta.physicalRequestId = _sentRid || null;
+      // Stated rather than inferred: this consumer attached to a request it did not issue. The page keeps its
+      // own handle in meta.requestId, so a log can still tie a render back to the call that asked for it.
+      outMeta.coalesced = (_sentRid !== '' && _sentRid !== normName(dto.requestId));
       var _echoRid = normName(serverEnv.request_id || (isObj(serverEnv.meta) ? serverEnv.meta.requestId : ''));
-      outMeta.requestIdCorrelation = !normName(dto.requestId) ? 'NOT_REQUESTED'
-        : (_echoRid === '' ? 'NOT_ECHOED' : (_echoRid === normName(dto.requestId) ? 'MATCH' : 'MISMATCH'));
+      outMeta.requestIdCorrelation = !_sentRid ? 'NOT_REQUESTED'
+        : (_echoRid === '' ? 'NOT_ECHOED' : (_echoRid === _sentRid ? 'MATCH' : 'MISMATCH'));
       if (outMeta.requestIdCorrelation === 'MISMATCH') {
         return { success: false, data: null, meta: outMeta, errors: [{
           code: API_ERROR_CODES.RESPONSE_REQUEST_ID_MISMATCH,
           message: 'The answer carried a different request id than the one sent, so it belongs to another request. It was discarded; nothing was read.',
-          details: { action: dto.action, request_id: dto.requestId, answered_request_id: _echoRid, zero_write: true, retryable: true,
+          // request_id is the id that WAS SENT. consumer_request_id appears only when this consumer attached to
+          // someone else's request, so an operator reading the message is never shown an id no one dispatched.
+          details: { action: dto.action, request_id: _sentRid, answered_request_id: _echoRid,
+            consumer_request_id: outMeta.coalesced ? dto.requestId : null, coalesced: outMeta.coalesced,
+            zero_write: true, retryable: true,
             next_action: 'Retry the read. If it repeats, reload the page so the Apps Script session redirect is re-established.' }
         }] };
       }
@@ -717,28 +977,17 @@
             // none of these fields, so its answer is RESPONSE_CORRELATION_UNPROVEN — a GET handler plainly
             // answered (only doGet emits that action list) but nothing ties the answer to this request, and
             // the same publish step fixes either reading.
-            var _rcode = normName(serverEnv.code);
-            var _rmethod = String(serverEnv.received_method == null ? '' : serverEnv.received_method).toUpperCase();
-            var _rhandler = normName(serverEnv.handler);
-            var _rid = normName(serverEnv.request_id);
-            var _bodyPresent = serverEnv.post_body_present;
-            var _actionInQuery = (serverEnv.action_present_in_query === undefined)
-              ? (normName(serverEnv.attempted_action) !== '' ? true : null)
-              : (serverEnv.action_present_in_query === true);
-            var _evidence = {
-              client_dispatched_post: true,
-              router_received_method: _rmethod || null,
-              router_handler: _rhandler || (_rcode === 'POST_ONLY_ACTION_ON_GET' ? 'doGet' : null),
-              router_code: _rcode || null,
-              post_body_present: (_bodyPresent === undefined) ? null : (_bodyPresent === true),
-              action_present_in_query: _actionInQuery,
-              sent_as_post_marker: serverEnv.sent_as_post === true,
-              request_id_echoed: _rid || null,
-              request_id_correlated: (_rid !== '' && _rid === normName(dto.requestId))
-            };
-            var _getHandlerAnswered = (_rmethod === 'GET') || (_evidence.router_handler === 'doGet') || (_rcode === 'POST_ONLY_ACTION_ON_GET');
-            var _bodyLost = (_bodyPresent === false) || (_rcode === 'POST_ONLY_ACTION_ON_GET');
-            if (_getHandlerAnswered && _bodyLost && _evidence.request_id_correlated) {
+            // F1-7N-FB-4E-R3 §D — ONE derivation, shared with the retry gate (see downgradeProof above), so the
+            // decision to retry and the message shown can never be based on different readings of the answer.
+            // F1-7N-FB-4E-R4A — the SECOND consumer-local comparison, and it had the same defect: fact 5 of
+            // the five-fact proof is "the answer is THIS request's", and for a coalesced consumer that was
+            // false for the wrong reason. A real downgrade would then be demoted to the narrower
+            // RESPONSE_CORRELATION_UNPROVEN — a true statement about the wrong request. Same physical id.
+            var _pf = downgradeProof(serverEnv, _sentRid);
+            var _evidence = _pf.evidence;
+            var _actionInQuery = _pf.action_in_query;
+            var _getHandlerAnswered = _pf.get_handler_answered;
+            if (_pf.proved) {
               _outErrs = [{
                 code: API_ERROR_CODES.REQUEST_METHOD_DOWNGRADED,
                 message: 'This read was sent as a POST but reached the server as a GET, so the POST body was lost and the server could not run it. '
@@ -976,6 +1225,35 @@
       });
     }
     register('skuDetails', { label: 'SKU Details', tables: getWorkspace('skuDetails').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: skuDetailsResolver });
+
+    // ---- F1-7N-FB-4E-R3 §C - Overseas Stock READ workspace resolver ------------------------------------
+    // ONE scoped read replacing the four-request getTable fan-out. The server (70_) returns RAW passthrough under
+    // the sheet's own column names, so the client normalizes it with the SAME normalizeOperationDb the fan-out
+    // fed and the render is unchanged. Built through the canonical immutable builder, like skuDetails: the action
+    // is required and the payload is frozen, so neither a blank action nor a late mutation can produce a
+    // malformed request.
+    var OVERSEAS_STOCK_ACTION = 'overseasStock.workspace.get';
+    function buildOverseasStockRequestDTO(params) {
+      params = params || {};
+      return buildRequestEnvelope(OVERSEAS_STOCK_ACTION, {
+        include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+      }, {
+        requestId: params.requestId,
+        actor: (params.context && params.context.actor) || null,
+        clientVersion: (params.context && params.context.clientVersion) || null
+      });
+    }
+    function overseasStockResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildOverseasStockRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'overseasStock';
+        return env;
+      });
+    }
+    register('overseasStock', { label: 'Overseas Stock', tables: getWorkspace('overseasStock').tables, legacyRead: 'getTable(x4)', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: overseasStockResolver });
 
     // ---- F1-7I · Inventory Replenishment READ workspace resolver -------------------------------------------
     // Scoped read for the Inventory Replenishment page primary render (the main-table assembly). The server (60_) returns

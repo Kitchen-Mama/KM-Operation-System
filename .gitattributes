@@ -1,0 +1,20 @@
+# TEXTURE-3-R5 §F — CHECKSUM-PINNED BUILD INPUTS MUST NOT BE REWRITTEN ON CHECKOUT.
+#
+# The repository is developed on Windows with core.autocrlf=true and carried no .gitattributes, so Git
+# translated LF to CRLF for every file it guessed was text. For ordinary source that is invisible. For a
+# VENDORED INPUT PINNED BY SHA-256 it is not: the checked-out bytes stop being the bytes that were pinned,
+# and the guard that exists to detect a substituted upstream file fails on a file nobody touched.
+#
+# Measured before this line was written, on a clean checkout of 5fc0249:
+#
+#   tools/geo/data/cldr-46-subdivisions-zh_Hant.xml   committed 458 B      checked out 472 B      (+14 CR)
+#   tools/geo/data/wikidata-admin1-zh.json            committed 360,992 B  checked out 364,668 B  (+3,676 CR)
+#
+# Exactly one byte per line, and the committed blob's digest e8685bde… is the digest the asset pins. So the
+# vendored data was never wrong and the pins were never wrong — the checkout was. That is worth fixing at the
+# cause rather than by relaxing the assertion, because relaxing it would delete the only check that would
+# notice a genuinely substituted source.
+#
+# Scoped deliberately to the vendored inputs. A repository-wide `* -text` would restate the line endings of
+# every file in the tree, which is a much larger change than the defect justifies.
+tools/geo/data/** -text

@@ -83,12 +83,30 @@ ok(/if\s*\(!isConcreteScope\(scope\)\)\s*return/.test(MODAL_SRC), 'I4 confirm ha
 section('D/F — Inventory: AI Plan + Recalculate Current Scope open the modal');
 ok(/runReplenAiSupport[\s\S]{0,220}kind === 'aiplan'[\s\S]{0,40}_openReplenScopeModal\('aiplan'\)/.test(INV_JS), 'F Inventory aiplan → _openReplenScopeModal(aiplan)');
 ok(/kind === 'recalcScope'[\s\S]{0,40}_openReplenScopeModal\('recalc'\)/.test(INV_JS), 'D Inventory recalcScope → _openReplenScopeModal(recalc)');
-ok(/_openReplenScopeModal[\s\S]{0,600}window\.KM\.scopeModal\.open\(/.test(INV_JS), 'D2 _openReplenScopeModal calls window.KM.scopeModal.open');
+// F1-7N-FB-4E-R4B-R3 - read the function's own body instead of a 600-character window from its name. R4B-R3
+// documented why the previous guard (open EXISTS) was not enough - it existed and threw - and the explanation
+// pushed the call past the window. The contract is that this function calls the shared modal, not where.
+var _D2 = (INV_JS.match(/function _openReplenScopeModal\(action\)[\s\S]*?\n}/) || [''])[0];
+ok(/window\.KM\.scopeModal\.open\(/.test(_D2), 'D2 _openReplenScopeModal calls window.KM.scopeModal.open');
 
 section('E/G — Order Planning: AI Plan + Recalculate Current Scope open the modal');
-ok(/runRoAiSupport[\s\S]{0,220}kind === 'aiplan'[\s\S]{0,40}_openRoScopeModal\('aiplan'\)/.test(RO_JS), 'G OP aiplan → _openRoScopeModal(aiplan)');
+// F1-7N-FB-4E-R4B-R1 - anchored on the FUNCTION, not on a character window. R4B-R1 added the visible-outcome
+// guard inside runRoAiSupport (the click used to close the menu and then paint its result onto the element it
+// had just hidden), which pushed these two past their 220/70-character windows. The rule being defended is that
+// this dispatcher routes each kind to its owner, and it is now checked inside the function that must do so.
+var _roDispatchFn = /function runRoAiSupport\(kind\) \{[\s\S]*?\n\}/.exec(RO_JS);
+ok(!!_roDispatchFn, 'G runRoAiSupport exists');
+var _roDispatch = _roDispatchFn ? _roDispatchFn[0] : '';
+ok(/kind === 'aiplan'[\s\S]{0,40}_openRoScopeModal\('aiplan'\)/.test(_roDispatch), 'G OP aiplan → _openRoScopeModal(aiplan)');
 ok(/kind === 'recalcScope'[\s\S]{0,40}_openRoScopeModal\('recalc'\)/.test(RO_JS), 'E OP recalcScope → _openRoScopeModal(recalc)');
-ok(/_openRoScopeModal[\s\S]{0,600}window\.KM\.scopeModal\.open\(/.test(RO_JS), 'E2 _openRoScopeModal calls window.KM.scopeModal.open');
+// F1-7N-FB-4E-R4B — anchored on the FUNCTION, not on a character window. R4B added a guard above the delegation
+// so the modal-unavailable branch can no longer end in a silent `return` (§D forbids a click that ends in
+// silence), and that pushed the two past the old 600-character window. The rule this line defends is that the
+// entry point delegates to the shared modal, so it is now checked inside the function that must do so.
+var _roModalFn = /function _openRoScopeModal\(action\) \{[\s\S]*?\n\}/.exec(RO_JS);
+ok(!!_roModalFn, 'E2 _openRoScopeModal exists');
+ok(_roModalFn && /window\.KM\.scopeModal\.open\(/.test(_roModalFn[0]), 'E2 _openRoScopeModal calls window.KM.scopeModal.open');
+ok(_roModalFn && !/\n        return;\n/.test(_roModalFn[0]), 'E2 and no branch of it ends in a bare silent return');
 
 section('H — current toolbar scope prefills the modal');
 ok(/prefill:\s*_irScopeModalPrefill_\(\)/.test(INV_JS) && /getElementById\('replenCountry'\)/.test(INV_JS) && /getElementById\('replenMarketplace'\)/.test(INV_JS), 'H Inventory prefill reads toolbar country/marketplace');
@@ -99,8 +117,14 @@ ok(/handleRecalcAllInventoryGap\(\{\s*mode:\s*'CURRENT_SCOPE'/.test(INV_JS), 'M 
 ok(/handleRecalcAllOrderPlanningGap\(\{\s*mode:\s*'CURRENT_SCOPE'/.test(RO_JS), 'N OP recalc → handleRecalcAllOrderPlanningGap({mode:CURRENT_SCOPE,...})');
 
 section('O — Recalculate All Sites still delegates to the existing all-sites owner, unchanged');
-ok(/kind === 'recalcAll'[\s\S]{0,70}handleRecalcAllInventoryGap\(\)/.test(INV_JS), 'O Inventory recalcAll → handleRecalcAllInventoryGap() (no scope = ALL_SITES)');
-ok(/kind === 'recalcAll'[\s\S]{0,70}handleRecalcAllOrderPlanningGap\(\)/.test(RO_JS), 'O2 OP recalcAll → handleRecalcAllOrderPlanningGap()');
+// F1-7N-FB-4E-R4B-R3 - the branch now also states a refusal when the handler is absent (a click must never end
+// in silence), which is more than 70 characters of addition. Asserted on the branch, not on its length.
+var _O = (INV_JS.match(/if \(kind === 'recalcAll'\)[\s\S]*?\n    \}/) || [''])[0];
+ok(/handleRecalcAllInventoryGap\(\)/.test(_O), 'O Inventory recalcAll → handleRecalcAllInventoryGap() (no scope = ALL_SITES)');
+ok(/_irAiSupportNotice_\('bad'/.test(_O), 'O2 ... and a MISSING all-sites handler is a stated refusal, not a dropped click');
+ok(/kind === 'recalcAll'[\s\S]{0,220}handleRecalcAllOrderPlanningGap\(\)/.test(_roDispatch), 'O2 OP recalcAll → handleRecalcAllOrderPlanningGap()');
+// ... and the property R4B-R1 actually added: no branch of the dispatcher returns without saying something.
+ok(!/\n    return;\n/.test(_roDispatch), 'O3 no branch of runRoAiSupport ends in a bare silent return');
 
 section('P/Q/R/W — no per-SKU loop, no page-side formula, no second engine, no DB/schema write in the modal');
 var MC = code(MODAL_SRC);
@@ -126,8 +150,12 @@ ok(/gr\.runJob|window\.KM\.gapRecalc/.test(INV_JS + RO_JS), 'U/V scoped recalc r
 section('cache-version + wiring — new module is loaded and version bumped');
 ok(/scope-select-modal\.js\?v=[\w-]+/.test(INDEX), 'index.html loads scope-select-modal.js with a cache token (bumped per later rounds)');
 ok(!/\?v=fmr1-20260810/.test(INDEX), 'no stale ?v=fmr1-20260810 remains (all local assets refetch)');
-ok(MOD._version === 'f1-7n-fb-4c-shared-registry-r1',
-  'scope modal module version tag present (bumped for the F1-7N-FB-4C shared-registry source)');
+// F1-7N-FB-4E-R4B-R1 - monotonic floor over a known list (see the same restatement in the R1 wiring suite).
+var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported',
+  'f1-7n-fb-4e-r4b-r3-state-restored'];   // R4B-R3 restored the module's own _dom/_state/_openToken
+var _MODAL_FLOOR = _MODAL_VERSIONS.indexOf('f1-7n-fb-4c-shared-registry-r1');
+ok(_MODAL_VERSIONS.indexOf(MOD._version) >= _MODAL_FLOOR,
+  'scope modal version tag is at or after the shared-registry round and is a KNOWN version (' + MOD._version + ')');
 
 console.log('\n----------------------------------------');
 console.log('AI SUPPORT SCOPE MODAL (F1-AI-SUPPORT-SCOPE-R1): ' + pass + ' passed, ' + fail + ' failed');

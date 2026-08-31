@@ -26,15 +26,23 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 
 var ASSET_SRC = read('assets/js/data/geo-names-zh-hant.js');
+var ALIAS_SRC = read('assets/js/data/geo-display-aliases-zh-tw.js');
 var RESOLVER_SRC = read('assets/js/core/geo-name-resolver.js');
 var GEN_SRC = read('tools/geo/build-geo-names-zh-hant.js');
 var PROV = read('tools/geo/PROVENANCE.md');
 var INDEX = read('index.html');
 var RESOLVER_C = code(RESOLVER_SRC), GEN_C = code(GEN_SRC);
 
-// load the asset exactly as a browser would
+// load the assets exactly as a browser would.
+//
+// TEXTURE-3-R5 §B — THE ALIAS ASSET IS LOADED HERE NOW, AND ITS ABSENCE WAS A REAL GAP. This suite used to
+// load only the names asset, because on `main` the CN/TW short forms came from a table compiled INTO the
+// resolver and needed nothing else. After the merge they come from a generated asset that index.html loads as
+// its own <script>, so a harness that omits it is not reproducing the page — it is reproducing a broken
+// deployment, and would have reported the guard's fallback as if it were the normal result.
 var W = { window: {} };
 new Function('window', ASSET_SRC).call(W, W.window);
+new Function('window', ALIAS_SRC).call(W, W.window);
 var D = W.window.KM_GEO_NAMES_ZH_HANT;
 global.window = W.window;
 var R = require(path.join(ROOT, 'assets/js/core/geo-name-resolver.js'));
@@ -88,10 +96,37 @@ eq(D.meta.country_name_source.sha256, '6866c877d39cba9c357620878839b336d569f8c66
   'B9 with the input SHA-256 recorded');
 
 // EXECUTE the resolver: level 1 for a real country
-[['TW', '中華民國'], ['US', '美國'], ['JP', '日本'], ['CN', '中華人民共和國'], ['GB', '英國'],
- ['DE', '德國'], ['VN', '越南'], ['TH', '泰國'], ['MY', '馬來西亞'], ['KR', '大韓民國']].forEach(function (p) {
+[['US', '美國'], ['JP', '日本'], ['GB', '英國'],
+ ['DE', '德國'], ['VN', '越南'], ['TH', '泰國'], ['MY', '馬來西亞']].forEach(function (p) {
   var r = R.country(p[0]);
   eq([r.name, r.level], [p[1], R.LEVEL.ZH_HANT_PINNED_SOURCE], 'B10 ' + p[0] + ' resolves to zh-Hant from the pinned source');
+});
+// TEXTURE-3-R5 — KR MOVED OUT OF THAT LIST, AND IT IS A FINDING RATHER THAN AN ADJUSTMENT. `main` asserted
+// KR = 大韓民國 at ZH_HANT_PINNED_SOURCE, which was true while this suite loaded only the vendored names.
+// The map branch's R3 §F reviewed 大韓民國 as a FORMAL state name where a Taiwan-standard common map name
+// exists, and records 南韓. So once the alias asset is loaded — as index.html has loaded it since R3, and as
+// this suite now does — KR legitimately resolves one level higher. The old expectation was not describing the
+// page; it was describing a harness that omitted a script the page loads.
+(function () {
+  var r = R.country('KR');
+  eq([r.name, r.level], ['南韓', R.LEVEL.REVIEWED_DISPLAY_ALIAS],
+    'B10 KR resolves to the REVIEWED common map name, above the vendored formal one');
+  eq(D.countries.KR, '大韓民國', 'B10 and the vendored asset still carries the formal name underneath');
+  eq(R.countryFull('KR').name, '大韓民國', 'B10 which the formal-name authority still returns');
+})();
+// CN and TW are labelled by the decided short form, ahead of the vendored formal state name.
+//
+// TEXTURE-3-R5 §B — THE AUTHORITY CHANGED, THE ASSERTION DID NOT. F1-7N-FB-4E-R4B §E supplied these two
+// names from an inline HOUSE table; the integration removed that table and kept the map branch's generated
+// alias asset, which records the same decision with its provenance. What is asserted here is unchanged — a
+// real zh-Hant name, from a NAMED authority, with the vendored asset untouched underneath — and the level
+// still proves WHICH authority answered, which is the whole reason the level is asserted rather than only the
+// string. Only the expected level moves.
+[['CN', '中國', '中華人民共和國'], ['TW', '台灣', '中華民國']].forEach(function (p) {
+  var r = R.country(p[0]);
+  eq([r.name, r.level], [p[1], R.LEVEL.USER_APPROVED_ALIAS], 'B10 ' + p[0] + ' resolves to the DECIDED short form');
+  eq(D.countries[p[0]], p[2], 'B10 ' + p[0] + ' — and the vendored asset is UNTOUCHED, still ' + p[2]);
+  eq(r.iso, p[0], 'B10 ' + p[0] + ' — the identifier is unchanged and still returned beside the name');
 });
 // every resolved country name must be free of Simplified-only characters. The control set is the one the
 // generator's own two-source test produced; a name containing any of them would be a leak.
@@ -118,7 +153,12 @@ eq([unknown.name, unknown.level], ['ZZ', R.LEVEL.CODE], 'B14 an unknown ISO code
 // ISO codes remain legal for operational/logistics use — an explicit language override, never the default
 var en = R.country('TW', { lang: 'en' });
 eq([en.name, en.level], ['Taiwan', R.LEVEL.ENGLISH_CANONICAL], 'B15 lang:en gives the operational English name');
-eq(R.country('TW').level, R.LEVEL.ZH_HANT_PINNED_SOURCE, 'B15 while the DEFAULT stays zh-TW');
+// F1-7N-FB-4E-R4B §E — B15 is about the LANGUAGE default, not about which zh authority answers. TW is now
+// labelled by the house short form, which is still a zh label and still not the English/ISO surface.
+var _tw15 = R.country('TW');
+ok(_tw15.level === R.LEVEL.USER_APPROVED_ALIAS || _tw15.level === R.LEVEL.ZH_HANT_PINNED_SOURCE,
+  'B15 while the DEFAULT stays zh-TW (level ' + _tw15.level + ')');
+ok(_tw15.name !== 'Taiwan' && _tw15.name !== 'TW', 'B15 and the default is never the English name or the code');
 
 // ================================================================================================================
 section('C — CONTINENTS: reviewed list, and the unnamed case is HIDDEN');
@@ -245,7 +285,19 @@ ok(iRes < iGlobe, 'G2 and the resolver before its consumer km-globe.js');
 var tok = /geo-names-zh-hant\.js\?v=([^"']+)/.exec(INDEX);
 var tok2 = /geo-name-resolver\.js\?v=([^"']+)/.exec(INDEX);
 ok(!!tok && !!tok2, 'G3 both carry a cache-bust token');
-eq(tok[1], tok2[1], 'G3 and they share one token, so they can never be deployed out of step');
+// TEXTURE-3-R5 §D — "one shared token" is replaced by "one token per file, moved when that file moves".
+// The protection G3 was really giving was against a STALE pairing: the resolver reading a global whose shape
+// changed in an asset the browser did not re-fetch. That is expressed directly below, and it is stronger than
+// string equality — equal tokens would also be satisfied by rotating both when only one changed, which §D
+// forbids because it re-fetches assets that did not change.
+var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
+                        'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
+ok(MAP_TOKEN_SERIES.indexOf(tok[1]) !== -1, 'G3 the asset token belongs to the map series (' + tok[1] + ')');
+ok(MAP_TOKEN_SERIES.indexOf(tok2[1]) !== -1, 'G3 as does the resolver token (' + tok2[1] + ')');
+// The resolver may be NEWER than the asset it reads (it changed this round and the asset did not), but never
+// OLDER — an older resolver against a newer asset is the out-of-step pairing that actually breaks.
+ok(MAP_TOKEN_SERIES.indexOf(tok2[1]) >= MAP_TOKEN_SERIES.indexOf(tok[1]),
+  'G3 and the resolver is never deployed OLDER than the asset it reads');
 // eager, unlike the 538 KB ADM1 geometry which stays lazy
 ok(INDEX.indexOf('world-admin1-10m.js') === -1, 'G4 the ADM1 GEOMETRY stays lazy-loaded (absent from index.html)');
 ok(!/defer|async/.test(INDEX.slice(iData, iData + 120)), 'G5 the name asset is eager — country labels are needed at LOD 0');
@@ -258,10 +310,20 @@ delete global.window.KM_GEO_NAMES_ZH_HANT;
 var s2 = R.status();
 eq([s2.loaded, s2.reason], [false, 'KM_GEO_NAMES_ZH_HANT_ABSENT'], 'G7 an ABSENT asset is a named fact');
 ok(/falls back to English or an ISO code/.test(s2.effect), 'G7 stating the consequence');
-var degraded = R.country('TW');
-eq(degraded.level, R.LEVEL.CODE, 'G8 and with no asset the resolver degrades to the ISO code — never throws');
+// Probed with JP, not TW. The DECIDED display names do not come from this asset, so TW legitimately keeps its
+// label when the names asset is absent; using it here would have tested the decision rather than the
+// degradation rule. JP is asset-owned, so it is the honest probe — and the decided-name behaviour under an
+// absent names asset is asserted immediately below rather than left as an unexamined side effect.
+var degraded = R.country('JP');
+eq(degraded.level, R.LEVEL.CODE, 'G8 and with no asset an asset-owned name degrades to the ISO code — never throws');
+// TEXTURE-3-R5 §B — the SAME property, from the surviving authority. The decision lives in a different file
+// from the vendored names, so losing the names asset cannot un-decide it. That was true of the inline table and
+// it is true of the alias asset, which is exactly why the alias asset was the one kept.
+var degradedDecided = R.country('TW');
+eq([degradedDecided.name, degradedDecided.level], ['台灣', R.LEVEL.USER_APPROVED_ALIAS],
+  'G8 a DECIDED name survives an absent names asset, because it never depended on it');
 global.window.KM_GEO_NAMES_ZH_HANT = savedGlobal;
-eq(R.country('TW').name, '中華民國', 'G9 restoring the asset restores zh-Hant');
+eq(R.country('JP').name, '日本', 'G9 restoring the asset restores zh-Hant');
 
 // ================================================================================================================
 section('H — determinism');
