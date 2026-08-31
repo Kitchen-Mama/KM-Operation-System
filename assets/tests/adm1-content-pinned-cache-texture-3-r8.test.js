@@ -400,33 +400,49 @@ section('§C/§D.9–12 — the manifest, laziness, and what did NOT move');
         while ((m = re.exec(INDEX))) out.push({ src: m[1], tok: m[2] || null });
         return out;
     })();
-    function tokOf(src) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === src) return TAGS[i].tok; } return null; }
+    // TEXTURE-3-R9 — the shared parser, which also reads <link href> so the inventory's stylesheet is visible.
+    function tokOf(src) { var m = RO.parseIndexTokens(INDEX); return (src in m) ? m[src] : null; }
 
-    // §D.11 — exactly one R8 reference, and it is the file R8 changed.
-    var R8 = RO.currentMapToken();
-    eq(R8, 'map-texture3-r8-20260831', 'C1 the shared release order says R8 is the current map round');
-    eq(RO.currentMapRoundMarker(), 'TEXTURE-3-R8', 'C1b with its marker DERIVED from the token, not restated');
-    eq((INDEX.match(new RegExp(R8, 'g')) || []).length, 1, 'C2 exactly one browser reference carries the R8 token');
-    eq(tokOf(MAP_PAGE_REL), R8, 'C2b and it is global-logistics-map.js, the file R8 changed');
-    ok(/TEXTURE-3-R8/.test(MAP_SRC), 'C2c which does carry the R8 marker in its source');
+    // §D.11 — R8's rotation, stated as a FLOOR.
+    //
+    // TEXTURE-3-R9 — this block pinned `map-texture3-r8-20260831` as "the current map round" and "exactly one
+    // reference", which was true for exactly as long as R8 was the newest round. R9 changed the same file again
+    // and four assertions here failed while describing a correct state — the fourth consecutive round in which a
+    // round's own suite pinned itself as the present. What R8 needs to hold forever is that the file R8 changed
+    // still says so, and is never served from a token older than R8.
+    var R8 = 'map-texture3-r8-20260831';
+    ok(RO.isMapToken(R8), 'C1 R8\'s token is in the shared series');
+    eq(RO.mapRoundMarker(R8), 'TEXTURE-3-R8', 'C1b with its marker DERIVED from the token, not restated');
+    ok(/TEXTURE-3-R8/.test(MAP_SRC), 'C2 global-logistics-map.js carries R8\'s marker in its source');
+    ok(RO.mapTokenAtOrAfter(tokOf(MAP_PAGE_REL), R8),
+        'C2b so it is never served OLDER than R8 (' + tokOf(MAP_PAGE_REL) + ')');
+    eq(Object.keys(RO.parseIndexTokens(INDEX)).filter(function (k) {
+        return RO.parseIndexTokens(INDEX)[k] === R8;
+    }).length <= 1, true, 'C2c and R8\'s token is carried by at most the one file R8 changed');
 
     // §D.12 — THE DERIVED RULE, over the shared inventory. A file that changed this round carries this round's
     // token; one that did not must NOT be rotated, or every browser refetches the whole map set for nothing.
-    eq(RO.MAP_BROWSER_FILES.length, 7, 'C3 the shared map browser inventory has all seven files');
-    var marker = new RegExp(RO.currentMapRoundMarker());
+    ok(RO.MAP_BROWSER_FILES.length >= 7, 'C3 the shared map browser inventory (' + RO.MAP_BROWSER_FILES.length + ' files)');
+    // TEXTURE-3-R9 — the rule is about the CURRENT round, and R8 is now a historical floor rather than "now".
+    // Conflating the two is what made this block fail: it compared this round's changed files against R8's token.
+    var marker = RO.currentMapRoundMarkerRe();
+    var CUR = RO.currentMapToken();
     RO.MAP_BROWSER_FILES.forEach(function (rel) {
         var t = tokOf(rel), base = rel.split('/').pop();
         ok(!!t, 'C4 index.html cache-busts ' + base);
         ok(RO.isMapToken(t), 'C4b ' + base + ' carries a series token (' + t + ')');
-        if (marker.test(read(rel))) eq(t, R8, 'C4c ' + base + ' changed this round, so it carries this round\'s token');
-        else ok(t !== R8, 'C4d ' + base + ' did not change this round, so it was not rotated (' + t + ')');
+        if (marker.test(read(rel))) eq(t, CUR, 'C4c ' + base + ' changed this round, so it carries this round\'s token');
+        else ok(t !== CUR, 'C4d ' + base + ' did not change this round, so it was not rotated (' + t + ')');
     });
-    // The two R6 files specifically, because R8 must not disturb the round that closed the labels and arcs.
-    eq(tokOf('assets/js/core/geo-name-resolver.js'), 'map-texture3-r6-20260831', 'C5 the resolver still serves at R6');
-    eq(tokOf('assets/js/lib/km-globe.js'), 'map-texture3-r6-20260831', 'C5b and so does the globe');
+    // The R6 files, because R8 must not pull the round that closed the labels and arcs BACKWARDS. A later round
+    // may legitimately move them forward — R9 moved km-globe.js — so this is a floor too.
+    ['assets/js/core/geo-name-resolver.js', 'assets/js/lib/km-globe.js'].forEach(function (rel) {
+        ok(RO.mapTokenAtOrAfter(tokOf(rel), 'map-texture3-r6-20260831'),
+            'C5 ' + rel.split('/').pop() + ' is served at or after R6 (' + tokOf(rel) + ')');
+    });
     ['assets/js/data/geo-names-zh-hant.js', 'assets/js/data/geo-display-aliases-zh-tw.js',
      'assets/js/data/geo-admin1-display-names-zh-tw.js', 'assets/js/lib/km-geo-topology.js'].forEach(function (rel) {
-        eq(tokOf(rel), 'map-texture3-r4-20260827', 'C5c ' + rel.split('/').pop() + ' still serves at R4');
+        eq(tokOf(rel), 'map-texture3-r4-20260827', 'C5c ' + rel.split('/').pop() + ' still serves at R4 — unchanged since');
     });
     // The retired pre-series token is gone, and did not leak anywhere else.
     ok(INDEX.indexOf('map-earth-texture-20260826') === -1,
@@ -508,11 +524,16 @@ function staleRefused(src) {
     return h.scripts().length === 2 && h.scripts()[1]._attrs.src === EXPECTED_URL;
 }
 function indexOk(idx) {
-    var r8 = (idx.match(/map-texture3-r8-20260831/g) || []).length;
+    // TEXTURE-3-R9 — was `r8 === 1`, which stopped being true the moment a later round moved the one file R8
+    // had rotated. A negative test's baseline predicate has to be TRUE on a correct tree in EVERY future round,
+    // or the baselines go dirty and the CAUGHT results become worthless — which is exactly what happened to N6
+    // and N7 here. What must hold: this round's token is in use, the application token is untouched, and no
+    // script is loaded twice.
+    var cur = (idx.match(new RegExp(RO.currentMapToken(), 'g')) || []).length;
     var app = (idx.match(/fb4er4br3-liveclosure-20260831/g) || []).length;
     var re = /<script src="([^"?]+)/g, m, seen = {}, dup = 0;
     while ((m = re.exec(idx))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
-    return r8 === 1 && app === 18 && dup === 0;
+    return cur >= 1 && app === 18 && dup === 0;
 }
 
 // N1 — the query token removed altogether.
@@ -552,7 +573,7 @@ mutate('N5 stale element allowed to satisfy the versioned request',
 mutate('N6 loader script tag duplicated',
     function () { return indexOk(INDEX); },
     function () {
-        var tag = '<script src="' + MAP_PAGE_REL + '?v=map-texture3-r8-20260831"></script>';
+        var tag = '<script src="' + MAP_PAGE_REL + '?v=' + RO.currentMapToken() + '"></script>';
         return indexOk(INDEX.replace(tag, tag + '\n    ' + tag));
     });
 

@@ -1914,6 +1914,38 @@
     // Text and metrics caches. The resolver is pure and the fonts are fixed per class, so both keys are stable
     // for the life of the instance. Bounded by the dataset: at most one entry per division per font size.
     var labelTextCache = {}, labelMetricCache = {};
+    // TEXTURE-3-R9 §B — ONE label mode for the two GEOGRAPHIC label layers, and one canonical pair of values.
+    // 'zh-TW' | 'code'. Not a boolean, because `isEnglish`/`useCode`/`showZh` scattered across files is how two
+    // callers end up disagreeing about which of them means "the other one" — the defect class R5 spent its
+    // conflict resolution removing from the name resolver. The engine holds it as render state; the PAGE owns
+    // the preference and its persistence and pushes it down, exactly as it already does for the ADM1 tri-states.
+    var labelMode = 'zh-TW';
+    // §C/§D — a bounded diagnostic for divisions and countries that HAVE no authoritative code. Bounded on
+    // purpose: 1,495 of 3,835 divisions carry no alphabetic ISO 3166-2 code (measured: t=1 x1424, t=2 x71), so an
+    // unbounded list would be a slow leak that grows with every repaint.
+    var codeFallback = { countries: 0, admin1: 0, examples: [] };
+    var CODE_FALLBACK_EXAMPLE_CAP = 12;
+    function noteCodeFallback(kind, id, reason) {
+        if (kind === 'country') codeFallback.countries++; else codeFallback.admin1++;
+        if (codeFallback.examples.length < CODE_FALLBACK_EXAMPLE_CAP) {
+            for (var i = 0; i < codeFallback.examples.length; i++) { if (codeFallback.examples[i].id === id) return; }
+            codeFallback.examples.push({ kind: kind, id: id, reason: reason });
+        }
+    }
+    // The country layer's own identity IS the ISO 3166-1 alpha-2 code — all 175 features carry a clean two-letter
+    // one (measured). It is still validated rather than trusted: a future asset with a Natural Earth '-99'
+    // placeholder for a disputed territory must fall back to the reviewed name, never paint '-99' or invent an
+    // abbreviation from the name.
+    function isoAlpha2(v) { var t = String(v == null ? '' : v).toUpperCase(); return /^[A-Z]{2}$/.test(t) ? t : ''; }
+    // A division's code is authoritative ONLY when the asset says so. `t` is the asset's own answer: 0 = `k` IS
+    // the ISO 3166-2 alphabetic code, 1 = `k` is a NAME because the ISO subdivision code is numeric, 2 = `k` is a
+    // name because there is no ISO code at all. So `t === 0` is the whole test, and nothing here reads `n` or the
+    // Chinese label to guess a code from initials.
+    function adm1Alpha(d) {
+        if (!d || d.t !== 0) return '';
+        var t = String(d.k == null ? '' : d.k).toUpperCase();
+        return /^[A-Z0-9]{1,3}$/.test(t) ? t : '';
+    }
     function measureCached(font, text) {
       var k = font + '\u0000' + text;
       var w = labelMetricCache[k];
@@ -1984,10 +2016,21 @@
     // No conversion happens here and no name is invented. Whatever the resolver returns is painted verbatim.
     // ==========================================================================================================
     function countryLabelText(iso) {
-      var key = 'C:' + iso;
+      // TEXTURE-3-R9 — THE MODE IS PART OF THE CACHE KEY, not something a setter has to remember to invalidate.
+      // Keying it makes a stale label structurally impossible instead of procedurally avoided, and switching back
+      // and forth recomputes nothing.
+      var key = 'C:' + labelMode + ':' + iso;
       var hit = labelTextCache[key];
       if (hit !== undefined) return hit;
       var out = String(iso == null ? '' : iso);
+      // CODE MODE IS NOT A SECOND DICTIONARY. It is the canonical identity this feature already carries, which is
+      // also — exactly — what this function painted before localization existed. There is nothing to look up.
+      if (labelMode === 'code') {
+        var cc = isoAlpha2(iso);
+        if (cc) { labelTextCache[key] = cc; return cc; }
+        noteCodeFallback('country', String(iso), 'NOT_ISO_ALPHA2');
+        // fall through to the reviewed name rather than paint a placeholder
+      }
       try {
         if (window.KM && window.KM.geoNames && typeof window.KM.geoNames.country === 'function') {
           var r = window.KM.geoNames.country(iso);
@@ -2003,9 +2046,20 @@
     function admin1LabelText(d) {
       var code = String((d && d.k) == null ? '' : d.k);
       var adm1 = String((d && d.a) == null ? '' : d.a);
-      var key = 'A:' + (adm1 || (d && d.c) + '/' + code);
+      var key = 'A:' + labelMode + ':' + (adm1 || (d && d.c) + '/' + code);
       var hit = labelTextCache[key];
       if (hit !== undefined) return hit;
+      // TEXTURE-3-R9 §D — the displayed local suffix, when the asset certifies it is one. `US-CA` is the stored
+      // identity and `CA` is what a map label has room for; the country stays in the layer, not in the string.
+      // A division with no alphabetic ISO code keeps its reviewed Chinese name — 39% of divisions are in that
+      // position, so this is the ordinary path and not an edge case, and inventing an abbreviation for them would
+      // be worse than showing the name the operator already recognises.
+      if (labelMode === 'code') {
+        var ac = adm1Alpha(d);
+        if (ac) { labelTextCache[key] = ac; return ac; }
+        noteCodeFallback('admin1', (adm1 || ((d && d.c) + '/' + code)),
+                         (d && d.t === 1) ? 'ISO_CODE_IS_NUMERIC' : ((d && d.t === 2) ? 'NO_ISO_CODE' : 'CODE_NOT_CERTIFIED'));
+      }
       var full = (d && d.n != null && d.n !== '') ? String(d.n) : code;
       var out = code;
       try {
@@ -2678,6 +2732,36 @@
         if (admin1Data) rebuildAdmin1Buffer();
         schedule();
       },
+      // TEXTURE-3-R9 §B/§F — the validated setter. Repainting is a scheduled frame and nothing more: no geometry
+      // is rebuilt, no buffer is re-uploaded, no asset is refetched, no listener is added and the camera is not
+      // touched. An unrecognised value is REFUSED and the current mode kept, so a caller cannot put the engine
+      // into a third state by passing a typo.
+      setLabelMode: function (m) {
+        var t = String(m == null ? '' : m);
+        if (t !== 'zh-TW' && t !== 'code') return labelMode;
+        if (t === labelMode) return labelMode;
+        labelMode = t;
+        schedule();
+        return labelMode;
+      },
+      // Read-only, and the only inspection surface these labels have: there is no country or division hover
+      // tooltip in this map. Reports the active mode and the BOUNDED census of features that had no
+      // authoritative code, so "why is that one still Chinese in code mode" has an answer.
+      getLabelModeInfo: function () {
+        return {
+          mode: labelMode,
+          accepted: ['zh-TW', 'code'],
+          code_fallback_countries: codeFallback.countries,
+          code_fallback_admin1: codeFallback.admin1,
+          code_fallback_examples: codeFallback.examples.slice(),
+          example_cap: CODE_FALLBACK_EXAMPLE_CAP,
+          cached_label_keys: Object.keys(labelTextCache).length
+        };
+      },
+      // The two resolvers, exposed for inspection and for tests, so a label's text can be asked for WITHOUT a
+      // camera, a frame or a guess about which division happens to be on screen.
+      resolveCountryLabel: function (iso) { return countryLabelText(iso); },
+      resolveAdmin1Label: function (d) { return admin1LabelText(d); },
       getLodInfo: function () {
         return {
           lod: lod, distance: cam.dist, min_distance: MIN_D, max_distance: MAX_D,

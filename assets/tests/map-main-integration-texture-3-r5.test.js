@@ -366,14 +366,20 @@ var TAGS = (function () {
     // still hard-coded "which round is now" — and failed the moment R6 rotated a file, while describing the
     // correct state. Both now come from assets/tests/_release-order.js, where a round appends one line.
     var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
-    var CUR = RO.currentMapToken(), MARK = new RegExp(RO.currentMapRoundMarker());
-    function tokOf(src) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === src) return TAGS[i].tok; } return null; }
+    var CUR = RO.currentMapToken(), MARK = RO.currentMapRoundMarkerRe();
+    // TEXTURE-3-R9 — the local TAGS list reads <script> only, and the inventory now contains a STYLESHEET. The
+    // parser moved to the shared authority rather than growing a second one here.
+    var IDX_TOKENS = RO.parseIndexTokens(INDEX);
+    function tokOf(src) { return (src in IDX_TOKENS) ? IDX_TOKENS[src] : null; }
     // TEXTURE-3-R8 — THE FILE LIST WAS THE HALF OF THIS RULE R6 DID NOT DERIVE. It was six paths written out
     // here, and R8 changed a seventh (global-logistics-map.js, which owns the lazy ADM1 loader), so the
     // at-least-one assertion below failed while describing a true state — the inventory was short, not the
     // token. Both halves now come from assets/tests/_release-order.js.
     var MAP_SOURCES = RO.MAP_BROWSER_FILES.map(function (rel) { return [rel, read(rel)]; });
-    eq(MAP_SOURCES.length, 7, 'D5 the map browser inventory is the shared one, all seven files');
+    // TEXTURE-3-R9 — a FLOOR, not an equality. The inventory grows when a round puts a new browser file under
+    // the discipline (R8 added the map page, R9 its stylesheet); pinning the count made this suite fail for the
+    // one reason it should never fail: the rule being applied to more files than before.
+    ok(MAP_SOURCES.length >= 7, 'D5 the map browser inventory is the shared one (' + MAP_SOURCES.length + ' files)');
     MAP_SOURCES.forEach(function (p) {
         var tok = tokOf(p[0]);
         ok(RO.isMapToken(tok), 'D5 ' + path.basename(p[0]) + ' carries a series token (' + tok + ')');

@@ -46,7 +46,8 @@ var MAP_TOKEN_SERIES = [
   'map-texture3-r4-20260827',
   'map-texture3-r5-20260831',
   'map-texture3-r6-20260831',
-  'map-texture3-r8-20260831'
+  'map-texture3-r8-20260831',
+  'map-labelmode-r9-20260831'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.
@@ -67,6 +68,9 @@ function currentMapToken() { return MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1
 // So the inventory lives here as well. A round that touches a map browser file now appends nothing at all; a
 // round that introduces one appends ONE line here and no suite changes.
 // ---------------------------------------------------------------------------------------------------------
+// TEXTURE-3-R9 — the map page's STYLESHEET joins the inventory. R8 added the page because R8 was the round that
+// changed it; R9 is the round that changes its CSS, and a stylesheet a browser caches is exactly as capable of
+// serving a stale segmented control as a script is of serving stale behaviour.
 var MAP_BROWSER_FILES = [
   'assets/js/data/geo-names-zh-hant.js',
   'assets/js/data/geo-display-aliases-zh-tw.js',
@@ -74,18 +78,64 @@ var MAP_BROWSER_FILES = [
   'assets/js/core/geo-name-resolver.js',
   'assets/js/lib/km-geo-topology.js',
   'assets/js/lib/km-globe.js',
-  'assets/js/pages/global-logistics-map.js'
+  'assets/js/pages/global-logistics-map.js',
+  'assets/css/pages/global-logistics-map.css'
 ];
 
 // The in-source marker that identifies work done in a given round, derived FROM the token so the two cannot
-// disagree: 'map-texture3-r6-20260831' -> 'TEXTURE-3-R6'. The pre-texture3 token has no marker of this shape,
-// which is correct — it predates the convention — and returns ''.
+// disagree: 'map-texture3-r6-20260831' -> 'TEXTURE-3-R6'. The pre-texture3 tokens have no marker of this shape,
+// which is correct — they predate the convention — and return ''.
+//
+// TEXTURE-3-R9 — THE FAMILY SEGMENT IS NOT THE MARKER. This pattern was pinned to the literal `texture3`, and
+// R9's token is `map-labelmode-r9-20260831` — a different family on the same round series. The old pattern
+// returned '' for it, and an EMPTY marker is worse than a wrong one: every caller does
+// `new RegExp(currentMapRoundMarker())`, and `new RegExp('')` matches every file, so every map file would have
+// been judged "changed this round" and required to carry the R9 token. A rule that silently becomes universal is
+// the failure mode this derivation exists to prevent, so the family is now any segment and the ROUND is what is
+// captured. The marker prefix stays TEXTURE-3 because that is the line these rounds belong to, whatever a given
+// round's token is named after.
+//
+// The empty case is still reachable for a genuinely pre-convention token, so callers that build a RegExp from it
+// must not be handed ''. currentMapRoundMarkerRe() below is the guarded way to ask.
 function mapRoundMarker(token) {
-  var m = /^map-texture3-(r\d+[a-z]?\d*)-/.exec(String(token || ''));
+  var m = /^map-[a-z0-9]+-(r\d+[a-z]?\d*)-/.exec(String(token || ''));
   return m ? ('TEXTURE-3-' + m[1].toUpperCase()) : '';
 }
 function currentMapRoundMarker() { return mapRoundMarker(currentMapToken()); }
+// The guarded form. Returns a RegExp that matches the current round's marker, or — if the current token carries
+// no derivable round — one that matches NOTHING, rather than the everything-matching /(?:)/ that `new RegExp('')`
+// would hand back. A suite asking "did this file change this round?" must get 'no' from a broken derivation, not
+// 'yes' for every file in the tree.
+function currentMapRoundMarkerRe() {
+  var m = currentMapRoundMarker();
+  return m ? new RegExp(m) : /(?!)/;
+}
 function isMapToken(t) { return MAP_TOKEN_SERIES.indexOf(String(t)) !== -1; }
+function mapTokenIndex(t) { return MAP_TOKEN_SERIES.indexOf(String(t)); }
+// THE FLOOR COMPARISON, and the reason a round's suite needs it. Four rounds running, a round's own suite has
+// asserted "this file carries MY token" as an equality — and then the next round legitimately moved the file
+// and the assertion failed while describing a correct state. R5 broke R4's, R6 broke R5's, R8 broke R6's, R9
+// broke R6's and R8's.
+//
+// The durable statement is not an equality with "now". It is a FLOOR: a file whose content moved in round N must
+// never be served from a token OLDER than N. That still catches the defect the equality was written for — a
+// round that changed a file and forgot to rotate it — and it stays true forever afterwards, because later rounds
+// only ever move the token forward.
+function mapTokenAtOrAfter(t, floorToken) {
+  var i = mapTokenIndex(t), f = mapTokenIndex(floorToken);
+  return i !== -1 && f !== -1 && i >= f;
+}
+// index.html versions BOTH <script src> and <link href>, and until R9 every consumer of this file parsed only
+// the script tags — written out separately in each suite. R9 puts a stylesheet under the same token discipline,
+// so the parser becomes shared rather than copied a third time.
+function parseIndexTokens(indexHtml) {
+  var out = {}, m;
+  var reScript = /<script[^>]*\ssrc="([^"?]+)(?:\?v=([^"]*))?"/g;
+  while ((m = reScript.exec(String(indexHtml)))) { if (!(m[1] in out)) out[m[1]] = m[2] === undefined ? null : m[2]; }
+  var reLink = /<link[^>]*\shref="([^"?]+)(?:\?v=([^"]*))?"/g;
+  while ((m = reLink.exec(String(indexHtml)))) { if (!(m[1] in out)) out[m[1]] = m[2] === undefined ? null : m[2]; }
+  return out;
+}
 
 // The CANONICAL SHAPE of an Apps Script owner build stamp. The project stamps revisions of revisions
 // (F1-7N-FB-4E-R4B-R3 is the third revision of the second revision of round 4E), so the revision segment
@@ -107,8 +157,12 @@ module.exports = {
   MAP_BROWSER_FILES: MAP_BROWSER_FILES,
   currentMapToken: currentMapToken,
   currentMapRoundMarker: currentMapRoundMarker,
+  currentMapRoundMarkerRe: currentMapRoundMarkerRe,
   mapRoundMarker: mapRoundMarker,
   isMapToken: isMapToken,
+  mapTokenIndex: mapTokenIndex,
+  mapTokenAtOrAfter: mapTokenAtOrAfter,
+  parseIndexTokens: parseIndexTokens,
   BUILD_STAMP_RE: BUILD_STAMP_RE,
   tokenIndex: tokenIndex,
   tokenAtOrAfter: tokenAtOrAfter

@@ -41,6 +41,41 @@
     { id: 'deliveredToday', label: 'Delivered Today', tone: 'done' }
   ];
 
+  // ==========================================================================================================
+  // TEXTURE-3-R9 §B — THE LABEL MODE AUTHORITY (read half). Declared before `state` because `state` restores the
+  // preference at construction, and the alternative was a second copy of the key and the accepted values inside
+  // the initializer. The write half sits with the other helpers below.
+  //
+  // 'zh-TW' | 'code'. Deliberately NOT a boolean: `isEnglish` / `useCode` / `showZh` spread across a page, an
+  // engine and a resolver is how two callers end up disagreeing about which of them means "the other one", and
+  // it is also how a third mode gets bolted on later by inverting a flag. Two named values cannot be inverted.
+  //
+  // AND IT IS NOT CALLED ENGLISH, because it is not English. `CN`, `US`, `BC` and `TX` are geographic codes:
+  // ISO 3166-1 alpha-2 for countries and ISO 3166-2 subdivision codes for divisions. Labelling the control "EN"
+  // would promise `China` and `British Columbia` and deliver something else.
+  //
+  // PRESENTATION STATE ONLY. It is read by the globe's two geographic label layers and by this one control. It
+  // never enters an API request, a route key, a shipment record or a DB write — there is no code path from here
+  // into the adapter, and the R9 suite asserts that by scanning for one.
+  // ==========================================================================================================
+  var LABEL_MODE_KEY = 'km.map.labelMode.v1';
+  var LABEL_MODES = ['zh-TW', 'code'];
+  var LABEL_MODE_DEFAULT = 'zh-TW';
+  function validLabelMode(v) { var t = String(v == null ? '' : v); return LABEL_MODES.indexOf(t) !== -1 ? t : ''; }
+  // A deterministic default, and recovery from a value this version does not accept. The stored garbage is
+  // DROPPED rather than carried: the key is versioned precisely so that a future vocabulary uses .v2, which means
+  // an unrecognised .v1 value is not a newer preference to preserve — it is noise that would otherwise be
+  // re-read and re-rejected on every load. Every access is guarded: a browser with storage disabled, a private
+  // window, or a quota error must cost the map nothing at all.
+  function readLabelMode() {
+    var raw = null;
+    try { raw = window.localStorage.getItem(LABEL_MODE_KEY); } catch (e) { return LABEL_MODE_DEFAULT; }
+    var v = validLabelMode(raw);
+    if (v) return v;
+    if (raw != null) { try { window.localStorage.removeItem(LABEL_MODE_KEY); } catch (e2) {} }
+    return LABEL_MODE_DEFAULT;
+  }
+
   var state = {
     loading: true, error: '', partial: '',
     mode: 'runtime',                 // 'runtime' (primary) | 'template' | 'global'
@@ -63,11 +98,48 @@
     admin1Lod: 0,
     admin1AssetState: 'IDLE',      // IDLE | LOADING | READY | FAILED
     admin1AssetError: '',
+    // TEXTURE-3-R9 — restored from local storage at construction, so a reload paints the chosen mode on the
+    // FIRST frame rather than flashing Chinese and correcting itself. The read half of the authority is declared
+    // ABOVE this object for exactly that reason: a second inline copy of the key and the accepted vocabulary
+    // here would be two places to change, which is the duplication R8 spent its round removing from the token
+    // rules. One key, one vocabulary, one reader.
+    labelMode: readLabelMode(),
+    labelModePersisted: true,
     sourceMode: 'not-loaded', diag: null,
     debug: (function () { try { return /(?:[?&])glmdebug=1/.test(location.search) || !!window.KM_GLM_DEBUG; } catch (e) { return false; } })(),
     globe: null, globeHost: null, globeError: '', didFocus: false,
     lastFocusEl: null, escInstalled: false
   };
+
+  // TEXTURE-3-R9 §B — THE LABEL MODE AUTHORITY (write half). The read half, the key and the accepted values are
+  // declared above `state`; nothing is restated here.
+  var labelModeSubs = [];
+  function writeLabelMode(v) {
+    try { window.localStorage.setItem(LABEL_MODE_KEY, v); return true; } catch (e) { return false; }
+  }
+  function getLabelMode() { return validLabelMode(state.labelMode) || LABEL_MODE_DEFAULT; }
+  // WRITE. Validate, keep, persist, notify. A refused value changes nothing and says so by returning false, so a
+  // caller cannot half-apply a typo: the UI would then show one mode and the globe paint the other.
+  function setLabelMode(v) {
+    var t = validLabelMode(v);
+    if (!t) return false;
+    if (t === getLabelMode()) return true;
+    state.labelMode = t;
+    state.labelModePersisted = writeLabelMode(t);
+    for (var i = 0; i < labelModeSubs.length; i++) { try { labelModeSubs[i](t); } catch (e) {} }
+    return true;
+  }
+  function onLabelModeChange(fn) {
+    if (typeof fn !== 'function') return function () {};
+    labelModeSubs.push(fn);
+    return function () { var i = labelModeSubs.indexOf(fn); if (i !== -1) labelModeSubs.splice(i, 1); };
+  }
+  // The two subscribers, registered ONCE at module scope rather than per render — which is why a remount cannot
+  // accumulate them. They are the whole reason the subscription exists; it is not decoration.
+  onLabelModeChange(function (m) {
+    if (state.globe && typeof state.globe.setLabelMode === 'function') { try { state.globe.setLabelMode(m); } catch (e) {} }
+  });
+  onLabelModeChange(function () { paintLabelModeControl(); });
 
   // ---------- helpers ----------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -478,6 +550,10 @@
         '<label class="glm-field glm-field--panel"><span>Map View</span><select data-mode-select aria-label="Map view / layer">' +
           MODE_TABS.map(function (m) { return '<option value="' + m.id + '"' + (state.mode === m.id ? ' selected' : '') + '>' + esc(m.label) + '</option>'; }).join('') +
         '</select></label></div>';
+    // TEXTURE-3-R9 §A — the label switch sits with the View controls and BEFORE the filters, because it changes
+    // how the map READS rather than what it shows. Ungated by map mode: the geographic label layers exist in
+    // every view, so a control that vanished in two of them would look broken.
+    var labelModeCtl = renderLabelModeControl();
     var filters = isRuntime ? '<div class="glm-mcp__sec glm-mcp__sec--filters"><span class="glm-mcp__lbl">Filters</span>' + renderPanelFilters() + '</div>' : '';
     var layers = isRuntime ?
       '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Layers</span>' +
@@ -497,7 +573,40 @@
     // §12 legend RELOCATED into the panel — reuse the SAME legendHtml() renderer (no duplicate, no second legend).
     var legend = '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Legend</span><div class="glm-mcp__legend">' + legendHtml() + '</div></div>';
     return '<div class="glm-mcp" data-glm="map-panel">' + head +
-      '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + filters + layers + legend + '</div></div>';
+      '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + labelModeCtl + filters + layers + legend + '</div></div>';
+  }
+  // A two-state segmented control with real radiogroup semantics: ONE tab stop for the group (roving tabindex),
+  // arrows to move between options, Space/Enter to choose, aria-checked carrying the state and an aria-label
+  // naming the group. Not a checkbox — a checkbox would have to mean "code: on/off", which says nothing about
+  // what the other state is.
+  function renderLabelModeControl() {
+    var cur = getLabelMode();
+    function seg(v, txt, hint) {
+      var on = cur === v;
+      return '<button type="button" class="glm-seg__btn' + (on ? ' is-on' : '') + '" role="radio"' +
+        ' aria-checked="' + (on ? 'true' : 'false') + '" tabindex="' + (on ? '0' : '-1') + '"' +
+        ' data-labelmode="' + v + '" title="' + esc(hint) + '">' + esc(txt) + '</button>';
+    }
+    return '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Label Display</span>' +
+      '<div class="glm-seg" role="radiogroup" aria-label="Geographic label display — Chinese names or geographic codes" data-glm="labelmode">' +
+        seg('zh-TW', '中文', 'Country and state / province labels in Traditional Chinese') +
+        seg('code', 'Code', 'Country and state / province labels as geographic codes (CN, US, BC, TX)') +
+      '</div></div>';
+  }
+  // Repaints the control IN PLACE. Deliberately not a render(): re-rendering the page would rebuild the panel,
+  // drop focus, reset its scroll position and re-run every binding — for a change that affects two attributes
+  // and one class on two buttons.
+  function paintLabelModeControl() {
+    var r = root(); if (!r) return;
+    var cur = getLabelMode();
+    try {
+      r.querySelectorAll('[data-labelmode]').forEach(function (el) {
+        var on = el.getAttribute('data-labelmode') === cur;
+        el.setAttribute('aria-checked', on ? 'true' : 'false');
+        el.setAttribute('tabindex', on ? '0' : '-1');
+        if (el.classList) { if (on) el.classList.add('is-on'); else el.classList.remove('is-on'); }
+      });
+    } catch (e) {}
   }
   // MAP-VISUAL-REAL-EARTH-LOD-1 §H — ONE read-only diagnostics accessor for the whole map visual stack, so the
   // active tier, the active LOD, the label counts and any degradation reason are OBSERVABLE rather than guessed.
@@ -818,6 +927,12 @@
   function updateCountryLayers() {
     if (!state.globe || typeof state.globe.setCountryLayers !== 'function') return;
     state.globe.setCountryLayers({ borders: !!state.showCountryBorders, labels: !!state.showCountryLabels });
+    // TEXTURE-3-R9 — pushed HERE rather than at create time, so one line covers globe creation, every remount
+    // and every layer update. The setter is idempotent and returns early when the mode has not moved, so this
+    // costs nothing on the paths where nothing changed.
+    if (typeof state.globe.setLabelMode === 'function') {
+      try { state.globe.setLabelMode(getLabelMode()); } catch (e) {}
+    }
     if (typeof state.globe.setAdmin1Layers === 'function') {
       state.globe.setAdmin1Layers({ borders: state.admin1BordersMode, labels: state.admin1LabelsMode });
       // "Always on" is a request to see the layer NOW, so it must fetch the asset regardless of zoom.
@@ -1324,6 +1439,31 @@
     r.querySelectorAll('[data-tpl]').forEach(function (el) { el.onchange = function () { state.selectedTemplateId = el.value; state.didFocus = false; render(); }; });
     r.querySelectorAll('[data-toggle]').forEach(function (el) { el.onchange = function () { state[el.getAttribute('data-toggle')] = el.checked; updateGlobeLayers(); }; });
     r.querySelectorAll('[data-adm1]').forEach(function (el) { el.onchange = function () { state[el.getAttribute('data-adm1')] = el.value; updateGlobeLayers(); renderAdmin1Note(); }; });
+    // TEXTURE-3-R9 §A/§F — the label switch. `el.onclick = fn` ASSIGNS rather than adds, so re-binding after a
+    // render REPLACES the handler and a remount cannot accumulate listeners. That is the existing convention in
+    // this function, and R9 does not introduce an addEventListener that would break it.
+    r.querySelectorAll('[data-labelmode]').forEach(function (el) {
+      function choose(target) {
+        if (!target) return;
+        setLabelMode(target.getAttribute('data-labelmode'));
+        try { target.focus(); } catch (e) {}
+      }
+      el.onclick = function () { choose(el); };
+      el.onkeydown = function (e) {
+        var k = e.key;
+        if (k === 'Enter' || k === ' ' || k === 'Spacebar') { e.preventDefault(); choose(el); return; }
+        // Radiogroup arrow behaviour. With exactly two options every arrow moves to — and selects — the other,
+        // which is what a two-option group means; Home and End would name the same two buttons.
+        if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowUp' || k === 'Home' || k === 'End') {
+          e.preventDefault();
+          var group = el.parentNode ? el.parentNode.querySelectorAll('[data-labelmode]') : null;
+          if (!group || group.length < 2) return;
+          var other = null;
+          for (var i = 0; i < group.length; i++) { if (group[i] !== el) { other = group[i]; break; } }
+          choose(other);
+        }
+      };
+    });
     r.querySelectorAll('[data-ship]').forEach(function (el) {
       el.onclick = function () { selectShipment(el.getAttribute('data-ship')); };
       el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectShipment(el.getAttribute('data-ship')); } };

@@ -383,8 +383,16 @@ section('§D/§E — the live page contract, lifecycle and disposal');
 section('§G — cache tokens: only what changed, and nothing else');
 // ================================================================================================================
 (function () {
+    // TEXTURE-3-R9 — THE SEVENTH PRIVATE COPY OF THE SERIES, and the second time this suite's §G asserted its
+    // own round as an EQUALITY with the present. R6 rotated exactly two files and that was correct; R9 then moved
+    // km-globe.js on legitimately, and three assertions here failed while describing a correct state.
+    //
+    // What R6 actually needs to protect is that the files R6 CHANGED are never served from a token older than R6.
+    // Expressed as a floor it stays true for every round after R6, and it still bites the defect it was written
+    // for — R6 changing a file and forgetting to rotate it. The series comes from the shared authority.
+    var RO_ = require(path.join(ROOT, 'assets/tests/_release-order.js'));
     var R6 = 'map-texture3-r6-20260831';
-    var SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
+    var LEGACY_SERIES_UNUSED_ = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
                   'map-texture3-r4-20260827', 'map-texture3-r5-20260831', R6];
     var MAP_FILES = {
         'assets/js/data/geo-names-zh-hant.js': 'assets/js/data/geo-names-zh-hant.js',
@@ -399,13 +407,27 @@ section('§G — cache tokens: only what changed, and nothing else');
         var m = new RegExp(f.replace(/[.\/]/g, '\\$&') + '\\?v=([^"\']+)').exec(INDEX);
         ok(!!m, 'G1 index.html cache-busts ' + f);
         var tok = m ? m[1] : '';
-        ok(SERIES.indexOf(tok) !== -1, 'G1 ' + path.basename(f) + ' carries a series token (' + tok + ')');
+        ok(RO_.isMapToken(tok), 'G1 ' + path.basename(f) + ' carries a series token (' + tok + ')');
         var changed = /TEXTURE-3-R6/.test(read(MAP_FILES[f]));
-        if (changed) eq(tok, R6, 'G2 ' + path.basename(f) + ' changed in R6, so it carries the R6 token');
-        else ok(tok !== R6, 'G2 ' + path.basename(f) + ' did not change, so it was not rotated (' + tok + ')');
+        if (changed) {
+            ok(RO_.mapTokenAtOrAfter(tok, R6),
+                'G2 ' + path.basename(f) + ' changed in R6, so it is never served OLDER than R6 (' + tok + ')');
+        } else {
+            ok(!RO_.mapTokenAtOrAfter(tok, R6) || tok !== R6,
+                'G2 ' + path.basename(f) + ' did not change in R6, so R6 did not rotate it (' + tok + ')');
+        }
     });
-    // Exactly the two files R6 touched.
-    eq((INDEX.match(new RegExp(R6, 'g')) || []).length, 2, 'G3 exactly two map files carry the R6 token');
+    // The two files R6 touched both still carry the R6 marker, whatever token they are served from now. That is
+    // the part of "exactly two" that was ever about R6: the round changed two files and said so in both.
+    eq(Object.keys(MAP_FILES).filter(function (f) { return /TEXTURE-3-R6/.test(read(MAP_FILES[f])); }).length, 2,
+        'G3 exactly two map files carry R6\'s marker in their source');
+    // And nothing in the map set is served from a token older than the round its own content last moved in.
+    Object.keys(MAP_FILES).forEach(function (f) {
+        if (!/TEXTURE-3-R6/.test(read(MAP_FILES[f]))) return;
+        var t = RO_.parseIndexTokens(INDEX)[f];
+        ok(RO_.mapTokenIndex(t) >= RO_.mapTokenIndex(R6),
+            'G3 ' + path.basename(f) + ' is served at or after R6 (' + t + ')');
+    });
     // The application token and the earth content token must NOT have moved.
     eq((INDEX.match(/fb4er4br3-liveclosure-20260831/g) || []).length, 18,
         'G4 main\'s application token is untouched, all 18 references');

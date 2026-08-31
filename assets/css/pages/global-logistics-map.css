@@ -225,6 +225,26 @@
 .glm-mcp__sec { display: flex; flex-direction: column; gap: 7px; }
 .glm-mcp__lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-dark-ink); opacity: 0.68; }
 .glm-mcp__legend { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #cbd5e1; }
+/* TEXTURE-3-R9 -- LABEL DISPLAY, a two-state segmented switch. Sized off the panel content width so the two
+   options always fit side by side: 264px panel, 24px padding, so `1fr 1fr` cannot overflow horizontally at any
+   of the three panel widths (264 / 244 / calc(100% - 84px)). Buttons, not styled native inputs, because the
+   group carries role=radiogroup and the active option is expressed through [aria-checked] -- so the STATE and
+   the STYLE read from the same attribute and cannot disagree. */
+.glm-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; background: rgba(15,23,42,0.55);
+  border: 1px solid var(--glm-dark-line); border-radius: var(--glm-r-xs); }
+.glm-seg__btn { -webkit-appearance: none; appearance: none; min-width: 0; padding: 6px 4px; border: 1px solid transparent;
+  border-radius: calc(var(--glm-r-xs) - 2px); background: transparent; color: var(--glm-dark-ink); opacity: 0.66;
+  font: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; text-align: center; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 120ms ease, opacity 120ms ease; }
+.glm-seg__btn:hover { opacity: 0.9; background: rgba(148,163,184,0.14); }
+/* The active option is driven by the ARIA state, so a repaint that updated the class but not aria-checked (or
+   the reverse) would be visible instead of silent. */
+.glm-seg__btn[aria-checked="true"], .glm-seg__btn.is-on { opacity: 1; background: rgba(148,163,184,0.24);
+  border-color: var(--glm-dark-line); box-shadow: 0 1px 4px rgba(2,6,23,0.30); }
+/* Visible focus for keyboard users, and never removed for mouse users on a control this small. */
+.glm-seg__btn:focus { outline: none; }
+.glm-seg__btn:focus-visible { outline: 2px solid #60a5fa; outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .glm-seg__btn { transition: none; } }
 .glm-mcp .glm-check--map { color: var(--glm-dark-ink); margin-bottom: 0; font-size: 12px; }
 /* panel filter fields — stacked, full-width, dark-themed; no horizontal overflow (§8) */
 .glm-pfilters { display: flex; flex-direction: column; gap: 8px; }
