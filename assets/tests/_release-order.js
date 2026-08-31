@@ -47,7 +47,8 @@ var MAP_TOKEN_SERIES = [
   'map-texture3-r5-20260831',
   'map-texture3-r6-20260831',
   'map-texture3-r8-20260831',
-  'map-labelmode-r9-20260831'
+  'map-labelmode-r9-20260831',
+  'map-labelcopy-r9a-20260831'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.

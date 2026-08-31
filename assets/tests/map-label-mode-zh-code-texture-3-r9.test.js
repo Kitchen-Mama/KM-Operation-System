@@ -1,4 +1,8 @@
-// MAP-VISUAL-REAL-EARTH-TEXTURE-3-R9 — GEOGRAPHIC LABEL MODE: 中文 / Code.
+// MAP-VISUAL-REAL-EARTH-TEXTURE-3-R9 / R9A — GEOGRAPHIC LABEL MODE: Labels = Names | Code.
+//
+// R9 built the switch; R9A shortened its visible copy from `Label Display` / `中文` / `Code` to `Labels` /
+// `Names` / `Code`. The INTERNAL values did not move and there is no migration: §R9A below is the section that
+// proves it, because a copy change that renamed a stored value would orphan every saved preference in silence.
 //
 // One switch in Map Controls, over the two GEOGRAPHIC label layers only. The interesting thing about it is how
 // little it had to invent: `code` mode paints the identity each feature already carries — ISO 3166-1 alpha-2 for
@@ -216,6 +220,13 @@ function harness(opts) {
     eq(JSON.parse(h.vocabulary()), ['zh-TW', 'code'], 'B1c and the accepted vocabulary is exactly the two values');
     ok(!/\ben\b|english|EN'/i.test(code(extractFn('renderLabelModeControl', PAGE)).replace(/Chinese|codes?/gi, '')),
         'B1d the control is not labelled English or EN');
+    // The banned vocabulary, over the whole rendered control rather than only its option text.
+    (function () {
+        var h = harness().html();
+        ['English', 'Language', 'Full Names', 'ISO Codes'].forEach(function (bad) {
+            ok(h.indexOf(bad) === -1, 'B1e the control says nothing about ' + bad);
+        });
+    })();
 })();
 // H2 — a stored mode restores.
 (function () {
@@ -455,9 +466,17 @@ section('§A — the control: semantics, state and keyboard');
     eq((html.match(/role="radio"/g) || []).length, 2, 'A2 with exactly two radio options');
     ok(/<button type="button"/.test(html), 'A2b as real buttons, not a checkbox');
     ok(html.indexOf('type="checkbox"') === -1, 'A2c no native checkbox, whose two states would not name themselves');
-    ok(html.indexOf('中文') !== -1 && html.indexOf('>Code<') !== -1, 'A3 the two options read 中文 and Code');
-    ok(!/>\s*(EN|English)\s*</.test(html), 'A3b and neither is labelled English');
-    ok(/Label Display/.test(html), 'A4 under a "Label Display" heading');
+    // TEXTURE-3-R9A — the visible copy is `Labels` / `Names` / `Code`. R9 shipped `Label Display` / `中文` /
+    // `Code`; live validation shortened it. The internal vocabulary did not move with it — see §R9A below, which
+    // is the assertion that matters, because a copy change that quietly renamed a stored value would be a
+    // migration pretending to be a polish.
+    eq((html.match(/>Names</g) || []).length, 1, 'A3 the first option reads exactly Names');
+    eq((html.match(/>Code</g) || []).length, 1, 'A3b and the second reads exactly Code');
+    ok(html.indexOf('中文') === -1, 'A3c the option labels no longer carry the 中文 wording R9 shipped');
+    ok(!/>\s*(EN|English|Language|Full Names|ISO Codes)\s*</.test(html),
+        'A3d and neither option is labelled English, Language, Full Names or ISO Codes');
+    ok(/<span class="glm-mcp__lbl">Labels<\/span>/.test(html), 'A4 under a heading reading exactly Labels');
+    ok(html.indexOf('Label Display') === -1, 'A4b with the older heading gone');
     // Roving tabindex: one tab stop for the group.
     eq((html.match(/tabindex="0"/g) || []).length, 1, 'A5 exactly one option is in the tab order');
     eq((html.match(/tabindex="-1"/g) || []).length, 1, 'A5b and the other is reachable by arrow, not by Tab');
@@ -621,19 +640,36 @@ section('§E/§F — scope, and what a switch must not touch');
 section('§G — the token manifest');
 // ==============================================================================================================
 (function () {
+    // TEXTURE-3-R9A — AND THIS BLOCK PINNED ITS OWN ROUND AS "NOW", one round after the commit message that
+    // named that exact habit as the recurring defect. R9 wrote `eq(RO.currentMapToken(), R9)` and compared every
+    // inventory file against R9's literal token; R9A appended a round and rotated one file, and eleven
+    // assertions failed while describing a correct state.
+    //
+    // Restated the way R9 itself said the durable form goes: R9's token is a FLOOR for the files R9 changed, and
+    // the derived "changed this round" rule reads the CURRENT round. The two were conflated in one variable,
+    // which is why `G4d km-globe.js did not change this round` failed for a file R9A correctly left alone.
     var R9 = 'map-labelmode-r9-20260831';
+    var CUR = RO.currentMapToken();
     var T = RO.parseIndexTokens(INDEX);
-    eq(RO.currentMapToken(), R9, 'G1 the shared release order says R9 is the current map round');
-    eq(RO.currentMapRoundMarker(), 'TEXTURE-3-R9', 'G1b with its marker DERIVED from the token across a FAMILY change');
+    ok(RO.isMapToken(R9), 'G1 R9\'s token is in the shared series');
+    eq(RO.mapRoundMarker(R9), 'TEXTURE-3-R9', 'G1b with its marker DERIVED from the token across a FAMILY change');
+    eq(RO.mapRoundMarker('map-labelcopy-r9a-20260831'), 'TEXTURE-3-R9A',
+        'G1b2 as is R9A\'s, whose round carries a letter suffix');
     ok(RO.currentMapRoundMarkerRe().source !== '', 'G1c and the guarded RegExp is never the everything-matching //');
     ok(!RO.currentMapRoundMarkerRe().test('a file that changed in no round'),
         'G1d so a broken derivation could not mark every file as changed');
-    // Exactly the three files whose bytes moved.
-    eq((INDEX.match(new RegExp(R9, 'g')) || []).length, 3, 'G2 exactly three browser references carry the R9 token');
+    // The three files R9 changed still say so, and none of them is served from a token older than R9.
+    eq([PAGE_REL, GLOBE_REL, CSS_REL].filter(function (rel) { return /TEXTURE-3-R9\b/.test(read(rel)); }).length, 3,
+        'G2 all three files R9 changed carry R9\'s marker in their own source');
     [PAGE_REL, GLOBE_REL, CSS_REL].forEach(function (rel) {
-        eq(T[rel], R9, 'G2b ' + rel.split('/').pop() + ' changed in R9, so it carries the R9 token');
-        ok(RO.currentMapRoundMarkerRe().test(read(rel)), 'G2c and carries the R9 marker in its own source');
+        ok(RO.mapTokenAtOrAfter(T[rel], R9),
+            'G2b ' + rel.split('/').pop() + ' is never served OLDER than R9 (' + T[rel] + ')');
     });
+    // R9A moved exactly one of them, and only its own reference.
+    eq(T[PAGE_REL], 'map-labelcopy-r9a-20260831', 'G2c the map page carries the R9A token — its copy changed');
+    eq(T[GLOBE_REL], R9, 'G2d the globe engine was NOT rotated — its bytes did not move');
+    eq(T[CSS_REL], R9, 'G2e nor was the stylesheet — the new copy needed no CSS change');
+    eq((INDEX.match(/map-labelcopy-r9a-20260831/g) || []).length, 1, 'G2f exactly one reference carries the R9A token');
     // The derived rule over the whole shared inventory.
     ok(RO.MAP_BROWSER_FILES.length >= 8, 'G3 the shared inventory now includes the stylesheet (' + RO.MAP_BROWSER_FILES.length + ')');
     ok(RO.MAP_BROWSER_FILES.indexOf(CSS_REL) !== -1, 'G3b explicitly');
@@ -641,8 +677,8 @@ section('§G — the token manifest');
         var t = T[rel], base = rel.split('/').pop();
         ok(!!t, 'G4 index.html cache-busts ' + base);
         ok(RO.isMapToken(t), 'G4b ' + base + ' carries a series token (' + t + ')');
-        if (RO.currentMapRoundMarkerRe().test(read(rel))) eq(t, R9, 'G4c ' + base + ' changed this round → R9 token');
-        else ok(t !== R9, 'G4d ' + base + ' did not change this round → not rotated (' + t + ')');
+        if (RO.currentMapRoundMarkerRe().test(read(rel))) eq(t, CUR, 'G4c ' + base + ' changed this round → current token');
+        else ok(t !== CUR, 'G4d ' + base + ' did not change this round → not rotated (' + t + ')');
     });
     // What R9 must NOT have moved.
     eq(T['assets/js/core/geo-name-resolver.js'], 'map-texture3-r6-20260831', 'G5 the resolver still serves at R6');
@@ -666,6 +702,69 @@ section('§G — the token manifest');
     ok(/grid-template-columns:\s*1fr 1fr/.test(CSS), 'G9b as two equal columns, so it cannot overflow horizontally');
     ok(/focus-visible/.test(CSS), 'G9c with a visible focus style');
     ok(/aria-checked="true"/.test(CSS), 'G9d and the active style is driven by the ARIA state, so the two cannot disagree');
+})();
+
+// ==============================================================================================================
+section('§R9A — the copy moved and nothing behind it did');
+// ==============================================================================================================
+// The whole risk in a copy polish is that a visible string and a STORED value are the same string somewhere. If
+// they were, renaming the label would silently orphan every saved preference. These assertions exist to prove
+// they are not, and that a value saved before this round still restores.
+(function () {
+    var h = harness();
+    // The internal vocabulary is untouched by the new copy.
+    eq(JSON.parse(h.vocabulary()), ['zh-TW', 'code'], 'R9A1 the accepted values are still exactly zh-TW and code');
+    eq(h.key(), 'km.map.labelMode.v1', 'R9A2 stored under the same versioned key — no migration');
+    eq(h.mode(), 'zh-TW', 'R9A3 and the default is still zh-TW');
+    // The data-* contract the handler and the painter both key on.
+    var html = h.html();
+    eq((html.match(/data-labelmode="zh-TW"/g) || []).length, 1, 'R9A4 the zh-TW option keeps its data-labelmode value');
+    eq((html.match(/data-labelmode="code"/g) || []).length, 1, 'R9A4b as does the code option');
+    // NO VISIBLE STRING IS A STORED VALUE. This is the assertion that makes the rename safe.
+    ['Labels', 'Names', 'Code'].forEach(function (visible) {
+        eq(h.set(visible), false, 'R9A5 the visible string "' + visible + '" is not an accepted mode value');
+        eq(h.mode(), 'zh-TW', 'R9A5b and setting it changes nothing');
+    });
+    // The accessible name, exactly as specified.
+    var g = /<div class="glm-seg"[^>]*aria-label="([^"]*)"/.exec(html);
+    ok(!!g, 'R9A6 the radiogroup carries an aria-label');
+    eq(g[1], 'Map labels: names or codes', 'R9A6b reading exactly "Map labels: names or codes"');
+})();
+// A PREFERENCE SAVED BEFORE THIS ROUND still restores, and lights the right option.
+(function () {
+    function activeOptionText(seed) {
+        var h = harness({ seed: seed });
+        var html = h.html();
+        var m = /<button[^>]*aria-checked="true"[^>]*data-labelmode="([^"]+)"[^>]*>([^<]*)<\/button>/.exec(html);
+        return m ? { value: m[1], text: m[2] } : null;
+    }
+    var zh = activeOptionText('zh-TW');
+    ok(!!zh, 'R9A7 a stored zh-TW preference selects an option');
+    eq(zh.value, 'zh-TW', 'R9A7b whose value is zh-TW');
+    eq(zh.text, 'Names', 'R9A7c and whose visible label is Names');
+    var cd = activeOptionText('code');
+    ok(!!cd, 'R9A8 a stored code preference selects an option');
+    eq(cd.value, 'code', 'R9A8b whose value is code');
+    eq(cd.text, 'Code', 'R9A8c and whose visible label is Code');
+    // Only one is ever lit, in both directions.
+    [['zh-TW', 'Names'], ['code', 'Code']].forEach(function (p) {
+        var html = harness({ seed: p[0] }).html();
+        eq((html.match(/aria-checked="true"/g) || []).length, 1, 'R9A9 stored ' + p[0] + ' lights exactly one option');
+        eq((html.match(/tabindex="0"/g) || []).length, 1, 'R9A9b leaving exactly one tab stop');
+    });
+})();
+// The copy change touched the STRINGS and not the mechanism: the handler, the painter, the setter and the
+// resolution path are all byte-identical in behaviour, which the sections above already exercise. What is
+// asserted here is that R9A introduced no CSS change and no engine change, because the copy needed neither.
+(function () {
+    ok(/TEXTURE-3-R9A/.test(PAGE), 'R9A10 the map page records the R9A change in its own source');
+    ok(!/TEXTURE-3-R9A/.test(GLOBE), 'R9A11 the globe engine carries no R9A marker — it did not change');
+    ok(!/TEXTURE-3-R9A/.test(read(CSS_REL)), 'R9A12 nor does the stylesheet — the new copy needed no CSS change');
+    // The longer option text cannot overflow the panel: the track is a fixed grid fraction and the button clips.
+    var CSS = read(CSS_REL);
+    ok(/grid-template-columns:\s*1fr 1fr/.test(CSS), 'R9A13 the two options share fixed grid fractions');
+    ok(/overflow:\s*hidden/.test(CSS) && /text-overflow:\s*ellipsis/.test(CSS),
+        'R9A13b and each clips rather than pushing the panel wider, whatever the copy says');
 })();
 
 // ==============================================================================================================
@@ -850,9 +949,38 @@ mutate('N12 the setter accepts a third mode',
         return vm.runInContext('setLabelMode("en")', ctx) === false && vm.runInContext('getLabelMode()', ctx) === 'zh-TW';
     });
 
+// N13 — a visible label used AS the stored value, which is how a copy polish silently orphans every saved
+// preference. The mutation renames the accepted vocabulary to the new copy.
+mutate('N13 a visible label used as the stored mode value',
+    function () {
+        var h = harness({ seed: 'code' });
+        return h.mode() === 'code' && h.set('Code') === false;
+    },
+    function () {
+        var st = makeStorage('ok', 'code');
+        var sb = { window: { localStorage: st.api }, String: String, Object: Object, Error: Error, console: console,
+                   esc: function (v) { return String(v); }, root: function () { return null; }, render: function () {} };
+        sb.globalThis = sb;
+        var ctx = vm.createContext(sb);
+        vm.runInContext('var state = { globe: null, labelMode: "zh-TW", labelModePersisted: true };', ctx);
+        vm.runInContext(AUTHORITY.replace(/var LABEL_MODES = \['zh-TW', 'code'\];/, "var LABEL_MODES = ['Names', 'Code'];"), ctx);
+        vm.runInContext('state.labelMode = readLabelMode();', ctx);
+        return vm.runInContext('getLabelMode()', ctx) === 'code' && vm.runInContext('setLabelMode("Code")', ctx) === false;
+    });
+// N14 — the second option relabelled as a language, which is the one thing § forbids by name.
+mutate('N14 the code option relabelled as a language',
+    function () {
+        var h = harness().html();
+        return h.indexOf('English') === -1 && h.indexOf('Language') === -1 && /(>Code<)/.test(h);
+    },
+    function () {
+        var mutated = extractFn('renderLabelModeControl', PAGE).replace(/seg\('code', 'Code'/, "seg('code', 'English'");
+        return mutated.indexOf('English') === -1;
+    });
+
 console.log('\n  negative tests: ' + neg.caught + ' caught, ' + neg.missed + ' missed');
 
 // ==============================================================================================================
 console.log('\n' + '-'.repeat(40));
-console.log('MAP LABEL MODE 中文/Code (TEXTURE-3-R9): ' + pass + ' passed, ' + fail + ' failed');
+console.log('MAP LABEL MODE Names/Code (TEXTURE-3-R9/R9A): ' + pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

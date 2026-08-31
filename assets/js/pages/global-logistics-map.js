@@ -579,6 +579,18 @@
   // arrows to move between options, Space/Enter to choose, aria-checked carrying the state and an aria-label
   // naming the group. Not a checkbox — a checkbox would have to mean "code: on/off", which says nothing about
   // what the other state is.
+  //
+  // TEXTURE-3-R9A — THE VISIBLE COPY, AND WHAT IT IS CAREFUL NOT TO SAY. R9 shipped `Label Display` / `中文` /
+  // `Code`; live validation asked for `Labels` / `Names` / `Code`, which is shorter and reads as a map control
+  // rather than a settings row. The internal vocabulary did NOT move with it: the values are still 'zh-TW' and
+  // 'code', the storage key is still km.map.labelMode.v1, and a preference saved before this round restores
+  // unchanged — the copy is a presentation of the mode, not the mode.
+  //
+  // The second option is NOT called English, EN or Language, and the first is not called Full Names. `CN`, `US`,
+  // `CA` and `BC` are geographic codes, and code mode falls back to the reviewed name for the 39% of divisions
+  // that carry no certified code — so a language label would promise `China` and `British Columbia` and a
+  // "full names" label would describe something the first mode does not always show either. `Names` and `Code`
+  // are the two things actually painted.
   function renderLabelModeControl() {
     var cur = getLabelMode();
     function seg(v, txt, hint) {
@@ -587,9 +599,9 @@
         ' aria-checked="' + (on ? 'true' : 'false') + '" tabindex="' + (on ? '0' : '-1') + '"' +
         ' data-labelmode="' + v + '" title="' + esc(hint) + '">' + esc(txt) + '</button>';
     }
-    return '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Label Display</span>' +
-      '<div class="glm-seg" role="radiogroup" aria-label="Geographic label display — Chinese names or geographic codes" data-glm="labelmode">' +
-        seg('zh-TW', '中文', 'Country and state / province labels in Traditional Chinese') +
+    return '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Labels</span>' +
+      '<div class="glm-seg" role="radiogroup" aria-label="Map labels: names or codes" data-glm="labelmode">' +
+        seg('zh-TW', 'Names', 'Country and state / province labels in Traditional Chinese') +
         seg('code', 'Code', 'Country and state / province labels as geographic codes (CN, US, BC, TX)') +
       '</div></div>';
   }
