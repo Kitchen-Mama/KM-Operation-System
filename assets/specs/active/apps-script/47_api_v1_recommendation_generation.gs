@@ -509,11 +509,31 @@ function recGenFlatReadback_(ss, scope3, sku, planningCycle) {
     if (one.length > 1) return { success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, conflictIds: one.map(function (d) { return d.draftId; }) } };
     return { success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: one[0] } };
   }
-  var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle,
-    businessScope: { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' } });
-  // Same envelope keys as the legacy scope readback so the frontend normalizer is coherent under cutover ON.
-  // submittedSkus = flat drafts whose header is submitted; conflicts left [] (readActiveFlatForScope returns one
-  // active row per natural scope; a duplicate is surfaced per-SKU via the one-SKU BLOCKED_CONFLICT path).
-  var submitted = all.filter(function (d) { return String(d.status) === 'submitted'; }).map(function (d) { return d.scope.sku; });
-  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all, conflicts: [], noDraftSkus: [], submittedSkus: submitted } };
+  var bScope = { company: scope3.company, country: scope3.country, marketplace: scope3.marketplace, draft_purpose: 'regular' };
+  var all = KMRDV2P.readActiveFlatForScope(built.set, { planningCycle: cycle, businessScope: bScope });
+  // F1-7N-FB-4E-R4B-R1 §2 - submittedSkus WAS DEAD BY CONSTRUCTION. It filtered `all` for status 'submitted',
+  // but readActiveFlatForScope excludes 'submitted' by definition (ACTIVE_FLAT_STATUSES), so the list was empty
+  // for every scope under the flat cutover. The frontend's §14/§18/§20 rule - a SKU with a terminal submitted
+  // allocation is excluded from a new Send, so a re-send cannot create a second Request Order - therefore never
+  // fired. It now reads the submitted rows from their own query.
+  var submittedDtos = (typeof KMRDV2P.readSubmittedFlatForScope === 'function')
+    ? KMRDV2P.readSubmittedFlatForScope(built.set, { planningCycle: cycle, businessScope: bScope })
+    : [];
+  var submitted = submittedDtos.map(function (d) { return d.scope.sku; });
+  // noDraftSkus WAS HARDCODED []. The legacy readback derived it from the READY order_planning_gap rows for the
+  // scope, which is what §12 means by "this SKU was explicitly reported NO_DRAFT" - and the frontend's honest
+  // "execution row unavailable" state was unreachable under the cutover because the list was always empty. It is
+  // now derived from the SAME eligibility source the legacy path used; no second notion of eligibility is
+  // introduced. A SKU is NO_DRAFT when it is eligible and carries neither an active nor a submitted flat row.
+  var haveDraft = {};
+  all.forEach(function (d) { haveDraft[String(d.scope.sku).trim().toUpperCase()] = 1; });
+  submittedDtos.forEach(function (d) { haveDraft[String(d.scope.sku).trim().toUpperCase()] = 1; });
+  var noDraftSkus = [];
+  try {
+    recGenEnumerateEligibleGapRows_(gapReadObjects_(ss, OP_GAP_TABLE_), scope3).forEach(function (e) {
+      var k = String(e.sku).trim().toUpperCase();
+      if (k && !haveDraft[k]) noDraftSkus.push(e.sku);
+    });
+  } catch (e) { noDraftSkus = []; }   // gap table absent -> report nothing rather than a wrong NO_DRAFT
+  return { success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: all.length, drafts: all, conflicts: [], noDraftSkus: noDraftSkus, submittedSkus: submitted } };
 }

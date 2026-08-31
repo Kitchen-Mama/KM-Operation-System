@@ -179,7 +179,7 @@
     var scope = currentScope();
     if (!isConcreteScope(scope)) return;               // never auto-confirm All/unselected
     var cb = _state.onConfirm;
-    close();
+    close('confirm');
     if (typeof cb === 'function') cb(scope);
   }
 
@@ -274,7 +274,7 @@
     });
   }
 
-  // open({ title, subtitle, confirmLabel, prefill:{country, marketplaceId}, onConfirm })
+  // open({ title, subtitle, confirmLabel, prefill:{country, marketplaceId}, onConfirm, onCancel? })
   function open(opts) {
     opts = opts || {};
     var d = ensureDom();
@@ -283,7 +283,7 @@
     // NO broad-cache seed and NO whole-table read. The shared registry is the only source; when it is already
     // resolved this paints synchronously from its cache with zero requests, and when it is not the modal shows
     // an honest LOADING state rather than an empty select.
-    _state = { list: [], onConfirm: opts.onConfirm, scope: null, prefill: prefill };
+    _state = { list: [], onConfirm: opts.onConfirm, onCancel: opts.onCancel, scope: null, prefill: prefill };
     d.title.textContent = str(opts.title) || 'AI Support';
     d.subtitle.textContent = str(opts.subtitle) || 'Select the scope';
     // F1-7N — distinct per-action confirm label so "AI Plan" and "Recalculate" read as different workflows.
@@ -295,11 +295,20 @@
     try { if (d.country.value) { (d.marketplace.value ? d.marketplace : d.country).focus(); } else { d.country.focus(); } } catch (e) { }
   }
 
-  function close() {
+  // F1-7N-FB-4E-R4B-R1 §3 - a DISMISSED modal is an outcome, and the caller had no way to learn about it:
+  // close() dropped the state and told nobody, so "the user cancelled" and "the click vanished" looked identical
+  // from outside. Every dismissal path (Cancel, overlay, Escape) now reports; a confirm does not (it has its own
+  // callback). onCancel is optional - a caller that does not pass one behaves exactly as before.
+  function close(reason) {
+    var st = _state;
     _state = null;
-    if (!_dom) return;
-    _dom.overlay.classList.remove('is-open');
-    _dom.modal.classList.remove('is-open');
+    if (_dom) {
+      _dom.overlay.classList.remove('is-open');
+      _dom.modal.classList.remove('is-open');
+    }
+    if (reason !== 'confirm' && st && typeof st.onCancel === 'function') {
+      try { st.onCancel(); } catch (e) {}
+    }
   }
 
   return {
@@ -315,6 +324,6 @@
     // DOM
     open: open,
     close: close,
-    _version: 'f1-7n-fb-4c-shared-registry-r1'
+    _version: 'f1-7n-fb-4e-r4b-r1-cancel-reported'
   };
 });

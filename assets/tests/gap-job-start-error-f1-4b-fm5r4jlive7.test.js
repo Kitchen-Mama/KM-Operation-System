@@ -91,7 +91,17 @@ jobs.push(runBCase(0));
 section('D1–D3 — failed START returns the UI to idle; Cancel hidden (page contract)');
 // The page's ui.failed handler always calls restore(), which resets the button label + hides Cancel.
 ok(/failed:\s*function\s*\(st\)\s*\{\s*alert\(_irGapJobFailMsg_\('Inventory',\s*st\)\);\s*restore\(\);\s*\}/.test(INV), 'D1 Inventory failed START → alert(truthful) → restore() (button back to idle)');
-ok(/failed:\s*function\s*\(st\)\s*\{\s*alert\(_roGapJobFailMsg_\('Order Planning',\s*st\)\);\s*restore\(\);\s*\}/.test(RO), 'D2 Order Planning failed START → alert(truthful) → restore()');
+// F1-7N-FB-4E-R4B-R1 - RESTATED FROM A CHARACTER SEQUENCE TO THE BEHAVIOUR. This pinned the exact body of the
+// failed handler, so R4B-R1 adding a VISIBLE notice beside the alert (the whole point of that round: the
+// in-panel button this flow reported to was display:none) broke a line whose property was never violated.
+// The rule is: a failed START alerts truthfully AND returns the UI to idle. Both are asserted, inside the
+// handler, in either order and with anything else it may also do.
+var _roFailedFn = /failed:\s*function\s*\(st\)\s*\{[\s\S]*?\}\s*\n/.exec(RO);
+ok(!!_roFailedFn, 'D2 Order Planning has a failed-START handler');
+var _roFailed = _roFailedFn ? _roFailedFn[0] : '';
+ok(/alert\(_roGapJobFailMsg_\('Order Planning',\s*st\)\)/.test(_roFailed), 'D2 Order Planning failed START → alert(truthful)');
+ok(/restore\(\)/.test(_roFailed), 'D2 ... and returns the UI to idle');
+ok(/_roAiSupportNotice_\('bad'/.test(_roFailed), 'D2b ... and states the failure on a surface OUTSIDE the AI Support panel (R4B-R1 §3)');
 ok(/function restore\(\)\s*\{[^}]*_irShowCancel_\(false\)[^}]*setBtn\(label[^}]*\}/.test(INV) && /function restore\(\)\s*\{[^}]*_roShowCancel_\(false\)[^}]*setBtn\(label[^}]*\}/.test(RO), 'D3 restore() hides Cancel and restores the idle label on both pages');
 
 section('E1/E2 — the START write is issued EXACTLY ONCE (no automatic retry on failure)');

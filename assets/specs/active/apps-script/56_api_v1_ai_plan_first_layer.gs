@@ -130,7 +130,30 @@ function aplBuild_(tables, payload) {
   var fcByKey = {}; for (var i = 0; i < fcRows.length; i++) { var fk = aplUpper_(fcRows[i].sku) + '|' + aplUpper_(fcRows[i].country) + '|' + aplLower_(fcRows[i].marketplace); (fcByKey[fk] = fcByKey[fk] || []).push(fcRows[i]); }
   var amzBySku = {}; for (var a = 0; a < amzRows.length; a++) { var ak = aplUpper_(amzRows[a].sku); (amzBySku[ak] = amzBySku[ak] || []).push(amzRows[a]); }
   var whById = {}; for (var wh = 0; wh < whRows.length; wh++) { var wid = aplStr_(whRows[wh].warehouse_id); if (wid !== '') whById[wid] = whRows[wh]; }
+  // F1-7N-FB-4E-R4B-R1 §1 - factoryBySku is the PHYSICAL total and is no longer what a site row displays. It is
+  // kept as the conservation reference (aplFactoryPhysicalTotal_) and to keep the fail-closed branch honest: if the
+  // canonical projection is unavailable the row reports null, never the whole pool.
   var factoryBySku = {}; for (var f = 0; f < factoryRows.length; f++) { var fak = aplUpper_(factoryRows[f].sku); factoryBySku[fak] = (factoryBySku[fak] || 0) + aplNum_(rivPick_(factoryRows[f], 'fac_current_stock', 'current_stock')); }
+  // THE canonical factory SITE allocation (KMFSA, 90_ bundle) - the same projection Site Inventory renders. One
+  // whole-SKU projection, memoized, then sliced per site row. The window anchor is the request's own planning
+  // cycle: this handler never reads a clock.
+  var aplFactoryProjBySku_ = {};
+  var aplFactoryCalcMonth_ = anchor.year + '-' + ('0' + (anchor.monthIdx + 1)).slice(-2);
+  function aplFactoryAllocFor_(skuIn, siteScope) {
+    if (typeof KMFSA === 'undefined' || !KMFSA || typeof KMFSA.project !== 'function') return null;   // fail closed
+    var k = aplUpper_(skuIn);
+    if (!Object.prototype.hasOwnProperty.call(aplFactoryProjBySku_, k)) {
+      try {
+        aplFactoryProjBySku_[k] = KMFSA.project({
+          sku: skuIn, factoryRows: factoryRows, warehouses: whRows, sites: mskus,
+          forecastRows: fcRows, calculationMonth: aplFactoryCalcMonth_
+        });
+      } catch (e) { aplFactoryProjBySku_[k] = null; }
+    }
+    var proj = aplFactoryProjBySku_[k];
+    if (!proj) return null;
+    return KMFSA.siteFactoryAvailability(proj, siteScope);
+  }
   var poById = {}; for (var p = 0; p < poRows.length; p++) { var pid = aplStr_(poRows[p].purchase_order_id); if (pid !== '') poById[pid] = poRows[p]; }
   var linesBySku = {}; for (var l = 0; l < poLineRows.length; l++) { var lk = aplUpper_(poLineRows[l].sku); if (lk === '') continue; (linesBySku[lk] = linesBySku[lk] || []).push(poLineRows[l]); }
   var splBySku = {}; for (var s = 0; s < splRows.length; s++) { var sk = aplUpper_(splRows[s].sku); (splBySku[sk] = splBySku[sk] || []).push(splRows[s]); }
@@ -199,7 +222,9 @@ function aplBuild_(tables, payload) {
       specialEventsFc: specialEventsFc,
       siteStock: siteStock,
       thirdPartyStock: thirdPartyStock,
-      factoryStock: factoryBySku[aplUpper_(sku)] || 0,
+      // F1-7N-FB-4E-R4B-R1 §1 - THIS SITE's allocated share of the physical factory pools, not the pools. null
+      // (rendered "--") when the projection is unavailable: an unallocatable number is not a site number.
+      factoryStock: (function () { var a = aplFactoryAllocFor_(sku, { marketplaceId: aplStr_(m.marketplace_id), company: company, country: country, marketplace: marketplace, sku: sku }); return a ? a.total : null; })(),
       totalOngoingOrders: aplOpenPoRemaining_(linesBySku, poById, sku),
       leadTime: ltoLeadTimeForSku_(splBySku, sku),   // reused from 55_ (null | number)
       risk: null, remaining: null, suggestedOrder: null,

@@ -337,6 +337,23 @@ SKU FC Share = Marketplace SKU FC ÷ Company Total FC
 ```
 
 - **Current business rule:** use a **rolling future 4-month FC window** for FC share.
+
+> **FACTORY SITE ALLOCATION denominator (AUTHORIZED F1-7N-FB-4E-R4B-R1, 2026-08-31).** The `Company Total FC`
+> denominator above is **within-company** and remains correct for every within-company FC-share use. It cannot by
+> itself apportion a factory pool that is **shared across companies**, and that gap is what let Site Inventory and
+> Order Planning show the **complete physical factory quantity under every marketplace scope**. For the factory
+> SITE availability projection the denominator is the FC of the **eligible receiver set of that source**, which may
+> span KM / ResUS / ResTW:
+>
+> ```
+> site share = site rolling-4-month FC / rolling-4-month FC of ALL eligible receiver site scopes of that source
+> ```
+>
+> The **window is unchanged** (rolling future 4 months, Regular FC only — Special Event FC is never folded in), and
+> the weighting is still **a division of ONE physical pool, never duplicated stock**. Which sites are eligible is
+> decided by the **factory-source policy in §13**, not here. Owner: `assets/js/core/supply-planning-factory-site-allocation.js`
+> (KMFSA) — the single projection read by Site Inventory, the Order Planning client builder and the live
+> `aiPlanFirstLayer.get` server path, so the three can no longer disagree.
 - **Purpose:** allocate shared factory stock based on expected near-term demand → produces an *Allocated Factory Stock* **source-side** figure. Per the v4.0 correction (§8/§28), this is **NOT added to the destination projected balance**; it is a source that limits Recommended Shipping Qty and reduces Residual Production Required (§31).
 
 **Example (one company, rolling 4-month FC):**
@@ -532,6 +549,31 @@ Net Order Need = max(0, 1,500 − 1,200) = 300
 - Factory stock can be used as a **shared source pool** in planning (source-side only — never a destination inventory term, §8/§31).
 - **Company restriction should NOT block shortage calculation** — the goal is to compute **real net shortage** accurately across the group.
 - **Deterministic allocation order is now FROZEN in §35** (grain `warehouse_id + Master SKU`; order = earliest Required-by date → higher `allocation_priority` → stable company/marketplace/destination key; remaining source quantity decremented after each allocation; never duplicated to multiple companies).
+### 13.1 Factory SOURCE POLICY — eligible receiver set (AUTHORIZED F1-7N-FB-4E-R4B-R1, 2026-08-31)
+
+| Factory source | Eligible receiver set | Denominator |
+|---|---|---|
+| **CN** | **all** eligible active marketplace site scopes — may span KM / ResUS / ResTW | **cross-company** Σ rolling-4-month FC of that whole set |
+| **TW** | **active ResUS marketplace site scopes ONLY** — KM and ResTW receive **zero** | Σ rolling-4-month FC of the eligible **ResUS** scopes |
+
+**Relationship to the former default.** The rule that factory warehouses are **shared operational sources across
+KM / ResUS / ResTW** (F1-7N-FA-4A frozen points 4 and 6) remains the default **wherever no explicit factory-source
+policy exists** — which today means CN, and any future factory country until one is authorized. This section
+establishes an explicit source policy and therefore **narrowly supersedes that default for TW only**.
+
+**How it is NOT modelled.** Eligibility is a property of the **SOURCE**, decided in this one place. It is **not** a
+company mismatch, **not** a warehouse-id rule and **not** a user-authorization rule; no warehouse-access mapping is
+invented, because none exists. `eligibleFactoryWarehouseIds()` is unchanged and still applies **no** company filter.
+
+**Allocation invariants (all enforced and tested in KMFSA).** Each physical pool (`warehouse_id` × Master SKU) is
+allocated **separately** and a site's figure is the **sum of its shares**, so no unit is allocated twice. The pool is
+the **canonical available quantity** `MAX(current_stock − reserved_stock, 0)` — the same figure Factory Inventory
+shows — never raw `current_stock`. Allocation is **deterministic integer largest-remainder**, ties broken by the
+**immutable canonical site identity** (`marketplace_id`), so repeated calculation is byte-identical. Σ allocations
+**never exceeds** available stock and any **unallocated remainder is reported**. A **zero denominator allocates
+zero** with an explicit reason — **never an arbitrary equal split and never a 100% fallback**. The projection
+**creates no allocation, reservation or movement row and performs no DB write**: it is safe inside a read.
+
 - **Factory ordering has TWO SEPARATE axes — never conflated (F1-7N-A2 reconciliation):** the **DEMAND axis** (§35 — *which requirement* is served first) is frozen; the **SOURCE axis** (*which physical factory* is drawn first for a requirement) depends on the product flow. For **MONTHLY cross-company shared-pool conservation** (§35/§40 `allocateFactoryDeterministic`) the source tie-break is **ascending `poolKey`** with **no hidden company/factory preference**. For the **WEEKLY_SHIPPING recommendation** the source axis is the explicit **`CN_YOUXIN` → `TW_SHENGYI`** priority frozen in **§35A** (CANONICAL — no longer a Future Extension). A *further* configured per-SKU/Series/route TW preference **beyond §35A** remains a Future Extension (§19). These two axes are independent: source priority never re-orders which demand is served first.
 
 ---

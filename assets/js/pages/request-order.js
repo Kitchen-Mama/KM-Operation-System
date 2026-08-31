@@ -298,10 +298,27 @@ function _buildRequestOrderRowsFromDb() {
   var whById = {};
   warehouses.forEach(function(w) { if (w.warehouseId) whById[w.warehouseId] = w; });
 
-  // Factory Stock: sum current_stock per SKU across factory warehouses (REAL — Part 4, unchanged).
+  // Factory Stock. F1-7N-FB-4E-R4B-R1 §1 - this used to be Σ current_stock across ALL factory warehouses per
+  // SKU, i.e. the COMPLETE physical pool, shown identically under every marketplace scope. It is now THIS SITE's
+  // allocated share, from the canonical KMFSA projection - the same one the live server path (56_) and Site
+  // Inventory read, so the three surfaces can no longer disagree. null ("--") when the module is absent: a
+  // missing projection must never fall back to the whole pool.
   var factory = (DB.getFactoryStock && DB.getFactoryStock()) || [];
-  var factoryBySku = {};
-  factory.forEach(function(f) { factoryBySku[_roUpper(f.sku)] = (factoryBySku[_roUpper(f.sku)] || 0) + (parseFloat(f.currentStock) || 0); });
+  var _roFactoryProjBySku = {};
+  var _roFactoryCalcMonth = (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); })();
+  function _roFactoryAllocFor_(sku, siteScope) {
+    var K = (window.KM && window.KM.factorySiteAllocation) || null;
+    if (!K) return null;
+    var k = _roUpper(sku);
+    if (!Object.prototype.hasOwnProperty.call(_roFactoryProjBySku, k)) {
+      try {
+        _roFactoryProjBySku[k] = K.project({ sku: sku, factoryRows: factory, warehouses: warehouses,
+          sites: mskus, forecastRows: fc, calculationMonth: _roFactoryCalcMonth });
+      } catch (e) { _roFactoryProjBySku[k] = null; }
+    }
+    var proj = _roFactoryProjBySku[k];
+    return proj ? K.siteFactoryAvailability(proj, siteScope) : null;
+  }
 
   // purchase_order_lines ⋈ purchase_orders (Ongoing Orders — open PO remaining qty).
   var poLines = (DB.getPurchaseOrderLines && DB.getPurchaseOrderLines()) || [];
@@ -406,7 +423,7 @@ function _buildRequestOrderRowsFromDb() {
       specialEventsFc: _roSpecialEventsTotal({ sku: m.sku, company: m.company || '', country: m.country || '', marketplace: m.marketplace || '' }), // fc_special_events prep-month Σ (N+1..N+3)
       siteStock: siteStock(m.sku, m.country, m.marketplace),        // amazon_inventory_snapshot
       thirdPartyStock: thirdParty(m.sku, m.country),                // overseas_inventory_snapshot
-      factoryStock: factoryBySku[_roUpper(m.sku)] || 0,             // factory_stock (REAL)
+      factoryStock: (function () { var a = _roFactoryAllocFor_(m.sku, { marketplaceId: m.marketplaceId, company: m.company, country: m.country, marketplace: m.marketplace, sku: m.sku }); return a ? a.total : null; })(),   // KMFSA site allocation
       totalOngoingOrders: ongoing(m.sku),                           // open-PO remaining qty
       leadTime: leadTime(m.sku),                                    // supplier_price_list.lead_time_days
       // --- Placeholders (no formula — guardrail) ---
@@ -1334,26 +1351,40 @@ function _roShowCancel_(show) { var c = _roCancelBtn_(); if (c) { c.style.displa
 function handleRecalcAllOrderPlanningGap(scopeSpec) {
   if (_roRecalcAllBusy) return;
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.startOrderPlanningGapJob === 'function')) {
+    _roAiSupportNotice_('bad', 'Recalculation unavailable', 'The Operation DB API is not configured, so no recalculation was started and nothing was changed.');
     alert('Recalculation service is unavailable (Operation DB API not configured).');
     return;
   }
   var _scopeMode = (scopeSpec && scopeSpec.mode) ? String(scopeSpec.mode) : 'ALL_SITES';
   var _scopeText = (_scopeMode === 'CURRENT_SCOPE' || _scopeMode === 'CURRENT_COUNTRY') ? 'the SELECTED company (shared-pool conservation expands the selection to the whole company)' : 'ALL sites';
-  if (typeof window.confirm === 'function' && !window.confirm('Start a recalculation of the materialized order-planning gap for ' + _scopeText + '?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest T1–T4 result per site/SKU is overwritten. Manual Order Qty is never changed.')) return;
+  if (typeof window.confirm === 'function' && !window.confirm('Start a recalculation of the materialized order-planning gap for ' + _scopeText + '?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest T1–T4 result per site/SKU is overwritten. Manual Order Qty is never changed.')) {
+    _roAiSupportNotice_('info', (_scopeMode === 'ALL_SITES') ? 'Recalculate All Sites' : 'Recalculate Current Scope', 'Cancelled at the confirmation prompt. Nothing was run and nothing was changed.');
+    return;
+  }
   var btn = _roRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
   _roRecalcAllBusy = true; _roActiveRunId = null; _roCancelRequested = false;
-  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  // R4B-R1 §3 - `btn` is ro-recalc-all-btn, which lives inside the AI Support panel that this very click
+  // closed, so setBtn alone is invisible. Mirror every state onto the always-visible trigger. For "Recalculate
+  // Current Scope" the in-panel element does not even exist (that menu item has no id) - the trigger is then the
+  // ONLY progress surface, which is exactly why it must not be optional.
+  function setBtn(txt, disabled) {
+    if (btn) { btn.disabled = !!disabled; btn.textContent = txt; }
+    if (disabled) _roAiSupportTriggerBusy_('recalc', txt); else _roAiSupportTriggerIdle_('recalc');
+  }
   // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle.
-  function restore() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); }
+  function restore() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); _roAiSupportTriggerIdle_('recalc'); }
+  var _recalcTitle = (_scopeMode === 'ALL_SITES') ? 'Recalculate All Sites' : 'Recalculate Current Scope';
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
   var startFn = function () { return window.KM.DB.startOrderPlanningGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); };   // the WRITE POST — exactly ONCE (optional bounded scope §13)
   var statusFn = function () { return window.KM.DB.getGapJobStatus('ORDER_PLANNING'); };
   var refreshFn = function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); };
   if (!gr || typeof gr.runJob !== 'function') {
     setBtn('Starting…', true);
-    return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
+    return Promise.resolve(startFn())
+      .then(function () { refreshFn(); _roAiSupportNotice_('ok', _recalcTitle, 'Recalculation started and the order-planning gap was refreshed.'); restore(); })
+      .catch(function (e) { _roAiSupportNotice_('bad', _recalcTitle, 'Could not start the recalculation: ' + String((e && e.message) || e) + '. Nothing was changed.'); restore(); });
   }
   return gr.runJob(startFn, statusFn, {
     product: 'ORDER_PLANNING',   // LIVE7 §3 — names the product in the [GapJob] START_ERROR DevTools diagnostic
@@ -1367,9 +1398,9 @@ function handleRecalcAllOrderPlanningGap(scopeSpec) {
       // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: MANUAL runJob done() — fires only on terminal DONE AFTER refresh(); one notice
       // per manual run (keyed to _roActiveRunId). The resume-on-mount done() below does NOT announce (scheduled/resumed
       // jobs stay silent).
-      done: function (finalState) { _roShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_roActiveRunId, gr.formatDoneMessage('Order Planning', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      failed: function (st) { alert(_roGapJobFailMsg_('Order Planning', st)); restore(); }
+      done: function (finalState) { _roShowCancel_(false); setBtn('Completed', true); _roAiSupportNotice_('ok', _recalcTitle, 'Recalculation completed. The materialized order-planning gap was refreshed; manual Order Qty was not changed.'); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_roActiveRunId, gr.formatDoneMessage('Order Planning', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); _roAiSupportNotice_('warn', _recalcTitle, 'Cancelled. The sites already completed keep their results; nothing was rolled back.'); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      failed: function (st) { _roAiSupportNotice_('bad', _recalcTitle, _roGapJobFailMsg_('Order Planning', st)); alert(_roGapJobFailMsg_('Order Planning', st)); restore(); }
     }
   });
 }
@@ -1396,6 +1427,83 @@ window.recalcOrderPlanningGapCurrentScope = recalcOrderPlanningGapCurrentScope;
 // no duplicate recommendation engine). Same accessible pattern as Inventory; shared .km-action-menu visual primitive.
 // ============================================================================
 var _roAiSupportBound = false;
+// =============================================================================================================
+// F1-7N-FB-4E-R4B-R1 §3 - THE ROOT CAUSE OF "NOTHING HAPPENS", AND IT IS NOT THAT NOTHING RAN.
+//
+// F1-UI-RUNTIME-CLOSURE-R1 moved AI Plan and Recalculate into a dropdown PANEL and preserved their element ids
+// "so existing loading/progress state renders". The ids survived; the visibility did not. runRoAiSupport() closes
+// the menu as its FIRST action, .km-action-menu__panel[hidden] is display:none, and every signal these two flows
+// produce is written to elements INSIDE that panel:
+//
+//   ro-ai-plan-btn      <- is-loading / is-success / is-error   (handleRequestOrderAiPlan)
+//   ro-recalc-all-btn   <- "Starting..." / "Calculating... n/m" / "Completed" / "Cancelled"
+//
+// So the work ran, the classes were set, the text was written - onto a display:none element. From the operator's
+// side the click did nothing at all. "Recalculate Current Scope" was worse still: its menu item carries no id, so
+// it had no feedback element of its own in the first place.
+//
+// The fix is not to keep the menu open (that would fight the dropdown's own semantics). It is that the OUTCOME
+// CHANNEL MUST LIVE OUTSIDE THE PANEL. Two surfaces already do, and both are reused rather than reinvented:
+//
+//   · roAiSupportTrigger  - the always-visible trigger, already used by the AI Plan job progress
+//   · a body-mounted notice element - position:fixed, independent of the table and of the menu
+//
+// The rule this enforces, and what the regression tests assert: EVERY click on an AI Support item produces at
+// least one visible artifact, in the same turn as the click, whatever happens afterwards.
+// =============================================================================================================
+var _roAiSupportTriggerOwner = null;         // 'aiplan' | 'recalc' | null - one owner at a time, no tug-of-war
+function _roAiSupportTriggerEl_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('roAiSupportTrigger') : null; }
+function _roAiSupportTriggerBusy_(owner, text) {
+    var t = _roAiSupportTriggerEl_(); if (!t) return false;
+    if (_roAiSupportTriggerOwner && _roAiSupportTriggerOwner !== owner) return false;   // the other flow owns it
+    _roAiSupportTriggerOwner = owner;
+    if (t.dataset && t.dataset.idleLabel == null) t.dataset.idleLabel = t.textContent;
+    t.textContent = '\u2726 ' + String(text == null ? '' : text);
+    t.setAttribute('aria-busy', 'true');
+    return true;
+}
+function _roAiSupportTriggerIdle_(owner) {
+    var t = _roAiSupportTriggerEl_();
+    if (_roAiSupportTriggerOwner && owner && _roAiSupportTriggerOwner !== owner) return;
+    _roAiSupportTriggerOwner = null;
+    if (!t) return;
+    var idle = (t.dataset && t.dataset.idleLabel) ? t.dataset.idleLabel : '\u2726 AI Support';
+    t.textContent = idle; t.removeAttribute('aria-busy');
+    if (t.dataset) delete t.dataset.idleLabel;
+}
+// A body-mounted notice with its OWN id, so it never races the AI Plan result panel for one element. Fixed
+// position -> no page reflow. role/aria-live follow the tone, so a failure is announced assertively.
+function _roAiSupportNoticeEl_() {
+    if (typeof document === 'undefined' || !document.getElementById) return null;
+    var el = document.getElementById('ro-ai-support-notice');
+    if (!el && document.body) {
+        el = document.createElement('div');
+        el.id = 'ro-ai-support-notice'; el.className = 'ro-ai-plan-result'; el.hidden = true;
+        el.setAttribute('aria-live', 'polite');
+        document.body.appendChild(el);
+    }
+    return el || null;
+}
+function _roClearAiSupportNotice_() { var el = _roAiSupportNoticeEl_(); if (el) { el.hidden = true; el.innerHTML = ''; } }
+// tone: 'ok' | 'info' | 'warn' | 'bad'. Returns TRUE when something visible was actually painted - the callers
+// use that return value, so a missing DOM degrades to alert()/console rather than to silence.
+function _roAiSupportNotice_(tone, title, message) {
+    var el = _roAiSupportNoticeEl_();
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); };
+    if (el) {
+        el.className = 'ro-ai-plan-result ro-ai-plan-result--' + (tone || 'info');
+        el.setAttribute('role', tone === 'bad' ? 'alert' : 'status');
+        el.setAttribute('aria-live', tone === 'bad' ? 'assertive' : 'polite');
+        el.innerHTML = '<div class="ro-ai-plan-result__head"><span>' + esc(title) + '</span>' +
+            '<button type="button" class="ro-ai-plan-result__x" onclick="_roClearAiSupportNotice_()" aria-label="Close">\u00d7</button></div>' +
+            '<div class="ro-ai-plan-result__msg">' + esc(message) + '</div>';
+        el.hidden = false;
+        return true;
+    }
+    try { if (typeof window.alert === 'function') { window.alert(title + ' - ' + message); return true; } } catch (e) {}
+    try { if (typeof console !== 'undefined' && console.error) console.error('[RO][AI_SUPPORT] ' + title + ' - ' + message); } catch (e) {}
+    return false;
+}
 function _roAiEls() {
     return { menu: document.getElementById('roAiSupportMenu'), trigger: document.getElementById('roAiSupportTrigger'), list: document.getElementById('roAiSupportList') };
 }
@@ -1428,9 +1536,17 @@ function toggleRoAiSupportMenu(ev) {
 // company server-side for shared-pool conservation — the modal still passes the concrete {company,country,marketplace}.)
 function runRoAiSupport(kind) {
     _roAiClose(false);
+    // The menu (and with it every in-panel feedback element) is now hidden. Anything this click has to say from
+    // here on must be said OUTSIDE the panel.
+    _roClearAiSupportNotice_();
     if (kind === 'aiplan') return _openRoScopeModal('aiplan');
     if (kind === 'recalcScope') return _openRoScopeModal('recalc');
-    if (kind === 'recalcAll' && typeof handleRecalcAllOrderPlanningGap === 'function') return handleRecalcAllOrderPlanningGap();
+    if (kind === 'recalcAll') {
+        if (typeof handleRecalcAllOrderPlanningGap === 'function') return handleRecalcAllOrderPlanningGap();
+        return _roAiSupportNotice_('bad', 'Recalculate All Sites', 'The recalculation handler is not available on this page. Nothing was run and nothing was changed.');
+    }
+    // An unrecognised item used to return undefined and leave the operator with a closed menu and no explanation.
+    return _roAiSupportNotice_('bad', 'AI Support', 'Unrecognised action "' + String(kind) + '". Nothing was run and nothing was changed.');
 }
 // Prefill from the current OP toolbar scope (requestOrderState.filters — multi-select arrays). Only prefill a
 // concrete value: a single selected country, and a marketplace ONLY when it resolves unambiguously to one active
@@ -1489,6 +1605,9 @@ function _openRoScopeModal(action) {
         subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
         confirmLabel: action === 'aiplan' ? 'Generate AI Plan' : 'Recalculate Scope',
         prefill: _roScopeModalPrefill_(),
+        onCancel: function () {
+            _roAiSupportNotice_('info', action === 'aiplan' ? 'AI Plan' : 'Recalculate Current Scope', 'Scope selection was cancelled. Nothing was run and nothing was changed.');
+        },
         onConfirm: function (scope) {
             if (action === 'aiplan') {
                 if (typeof handleRequestOrderAiPlan === 'function') handleRequestOrderAiPlan(scope);
@@ -1525,6 +1644,10 @@ function _roBindAiSupportGlobal() {
 }
 window.toggleRoAiSupportMenu = toggleRoAiSupportMenu;
 window.runRoAiSupport = runRoAiSupport;
+window._roAiSupportNotice_ = _roAiSupportNotice_;               // R4B-R1 §3 visible-outcome channel
+window._roClearAiSupportNotice_ = _roClearAiSupportNotice_;
+window._roAiSupportTriggerBusy_ = _roAiSupportTriggerBusy_;
+window._roAiSupportTriggerIdle_ = _roAiSupportTriggerIdle_;
 
 // LIVE4 §6 — manual Cancel (Order Planning): ONE backend cancel write for the active runId; stop the poller; the
 // shared runJob poller then refreshes the materialized READ and resets the button (never browser-only, no reload).
@@ -1558,8 +1681,12 @@ function _roResumeGapJobOnMount_() {
   var btn = _roRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
   if (btn && btn.dataset) btn.dataset.idleLabel = label;
-  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
-  function resReset() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label, false); }
+  function setBtn(txt, disabled) {
+    if (btn) { btn.disabled = !!disabled; btn.textContent = txt; }
+    // R4B-R1 §3 - same reason as the manual path: ro-recalc-all-btn is inside the AI Support panel.
+    if (disabled) _roAiSupportTriggerBusy_('recalc', txt); else _roAiSupportTriggerIdle_('recalc');
+  }
+  function resReset() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label, false); _roAiSupportTriggerIdle_('recalc'); }
   _roCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('ORDER_PLANNING'); }, {
     refresh: function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); },
@@ -3946,6 +4073,10 @@ function handleRequestOrderAiPlan(scope) {
   // path; this round does NOT invent a scope-filtered engine.
   if (scope && typeof scope === 'object') { window._roAiPlanScope = scope; }
   if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
+  // R4B-R1 §3 - the button above is inside the (now closed) AI Support panel, so these classes are invisible.
+  // They are kept (the menu may be reopened) but they are no longer the only signal.
+  _roAiSupportTriggerBusy_('aiplan', 'AI Plan\u2026');
+  var _aiPlanJobStarted = false;
   try {
     // Deterministic generation from the MATERIALIZED gap rows already loaded for the scope (no gap recalc, no API,
     // no allocation, no Order Qty write).
@@ -3970,10 +4101,19 @@ function handleRequestOrderAiPlan(scope) {
       var _cs = (scope && scope.company && scope.country && scope.marketplace)
         ? { company: scope.company, country: scope.country, marketplace: scope.marketplace }
         : (typeof _roCanonicalScope_ === 'function' ? _roCanonicalScope_() : null);
-      if (_cs && typeof _roRunAiPlanJob_ === 'function') { _roRunAiPlanJob_(_cs); }
+      if (_cs && typeof _roRunAiPlanJob_ === 'function') { _roRunAiPlanJob_(_cs); _aiPlanJobStarted = true; }
     } catch (e2) { /* job kickoff failure never breaks the local KMREC render */ }
+    // R4B-R1 §3 - when NO backend job started, the whole visible effect of the click was a re-render that may
+    // change nothing on screen. Name the honest outcome instead: the summary refreshed, no plan was generated.
+    if (!_aiPlanJobStarted) {
+      _roAiSupportTriggerIdle_('aiplan');
+      _roAiSupportNotice_('info', 'AI Plan',
+        'The on-screen recommendation summary was refreshed. No plan job was started, because AI Plan needs a concrete Company / Country / Marketplace scope. Nothing was written.');
+    }
   } catch (err) {
     if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+    _roAiSupportTriggerIdle_('aiplan');
+    _roAiSupportNotice_('bad', 'AI Plan failed', String((err && err.message) || err) + ' \u2014 no partial result was applied.');
     console.error('[AI Plan] recommendation generation failed:', err);
   } finally {
     if (btn) btn.disabled = false;

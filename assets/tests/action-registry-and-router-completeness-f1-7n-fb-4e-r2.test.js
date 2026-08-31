@@ -528,7 +528,12 @@ var GS_OWNED_SINCE_R1 = {
   '01_router.gs': 'FB-4E-R2 dispatch + FB-4E-R3 overseas action',
   '63_api_v1_system_health.gs': 'FB-4E-R2 registry entries + FB-4E-R3 contract 9',
   '68_api_v1_execution_plan_conflict_diagnostic.gs': 'FB-4E-R2 routed-path scope guard',
-  '70_api_v1_overseas_stock_workspace.gs': 'FB-4E-R3 overseas scoped workspace owner (new file)'
+  '70_api_v1_overseas_stock_workspace.gs': 'FB-4E-R3 overseas scoped workspace owner (new file)',
+  // F1-7N-FB-4E-R4B-R1 - the factory site allocation and the draft-readback coherence fix.
+  '47_api_v1_recommendation_generation.gs': 'FB-4E-R4B-R1 flat scope readback: real submittedSkus + derived noDraftSkus',
+  '56_api_v1_ai_plan_first_layer.gs': 'FB-4E-R4B-R1 Order Planning factory column = the KMFSA site allocation, not the whole pool',
+  '90_generated_supply_planning_bundle.gs': 'FB-4E-R4B-R1 regenerated (KMFSA added, KMRDV2P readback fix) - GENERATED, never hand-edited',
+  'TEMP_order_planning_draft_readback_diagnose.gs': 'FB-4E-R4B-R1 read-only live diagnostic (new file; NOT routed)'
 };
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');

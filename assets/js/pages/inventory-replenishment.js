@@ -764,9 +764,19 @@ window.IRMap = (function () {
     };
   }
 
-  // Factory CN / TW = Σ factory_stock.current_stock joined to warehouses by warehouse_id,
-  // filtered by warehouse country (CN / TW).
-  function factoryByCountry(factoryRows, warehouses, sku, countryCode) {
+  // ===== FACTORY: PHYSICAL TOTAL vs THIS SITE'S ALLOCATION (F1-7N-FB-4E-R4B-R1 §1) =========================
+  //
+  // These are two different numbers and the page used to show only the first one, under every scope. The
+  // physical total below is the whole pool; it is a WAREHOUSE fact and belongs to Factory Inventory. What a
+  // marketplace site may plan against is its ALLOCATION of that pool, which is what the CN / TW columns render.
+  //
+  // physicalFactoryByCountry is kept because the conservation proof needs the undivided figure to compare
+  // against, and because "what does the factory physically hold" is a real question. It must NEVER be rendered
+  // in a marketplace-scoped column again: that is the defect (one pool shown N times as if each site owned it).
+  //
+  // Σ factory_stock.current_stock joined to warehouses by warehouse_id, filtered by warehouse country (CN / TW).
+  // NOTE it sums current_stock, NOT the canonical available quantity - it is the PHYSICAL total by definition.
+  function physicalFactoryByCountry(factoryRows, warehouses, sku, countryCode) {
     if (!factoryRows || !factoryRows.length) return 0;
     var whById = {};
     (warehouses || []).forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
@@ -780,6 +790,41 @@ window.IRMap = (function () {
       if (eq(c, countryCode)) total += num(f.currentStock);
     });
     return total;
+  }
+
+  // THIS SITE's factory availability - the canonical projection (KMFSA), shared verbatim with Order Planning.
+  // ctx = { scope, factoryRows, warehouses, mpSkus, fcRows, calculationMonth }
+  // Returns { cn, tw, state, projection }. state names WHY a number is what it is, so a real zero (this site is
+  // not an eligible receiver of the TW source) can never be mistaken for a missing one:
+  //   OK                      - allocated from at least one pool
+  //   NO_FACTORY_STOCK        - no factory_stock row for this SKU at all
+  //   NOT_ELIGIBLE            - pools exist but this site is in no eligible receiver set
+  //   NO_FORECAST_DENOMINATOR - eligible, but the rolling 4-month FC of the whole receiver set is 0
+  //   UNAVAILABLE             - the projection module is not loaded (never a silent physical-total fallback)
+  function factorySiteAllocation(ctx) {
+    var K = (typeof window !== 'undefined' && window.KM && window.KM.factorySiteAllocation) || null;
+    if (!K) return { cn: null, tw: null, state: 'UNAVAILABLE', projection: null };
+    var proj;
+    try {
+      proj = K.project({
+        sku: ctx.scope.sku, factoryRows: ctx.factoryRows, warehouses: ctx.warehouses,
+        sites: ctx.mpSkus, forecastRows: ctx.fcRows, calculationMonth: ctx.calculationMonth
+      });
+    } catch (e) { return { cn: null, tw: null, state: 'UNAVAILABLE', projection: null }; }
+    var mine = K.siteFactoryAvailability(proj, ctx.scope);
+    var state = 'OK';
+    if (!proj.pools.length) state = 'NO_FACTORY_STOCK';
+    else if (mine.total === 0) {
+      var eligibleAnywhere = false, zeroDenom = false;
+      proj.pools.forEach(function (p) {
+        if (p.eligibleSiteKeys.indexOf(mine.siteKey) !== -1) {
+          eligibleAnywhere = true;
+          if (p.unallocatedReason === 'ZERO_FORECAST_DENOMINATOR') zeroDenom = true;
+        }
+      });
+      state = !eligibleAnywhere ? 'NOT_ELIGIBLE' : (zeroDenom ? 'NO_FORECAST_DENOMINATOR' : 'OK');
+    }
+    return { cn: mine.cn, tw: mine.tw, state: state, projection: proj };
   }
 
   function daysOfSupply(currentStock, avgPerDay) {
@@ -818,7 +863,8 @@ window.IRMap = (function () {
     num: num, latestSnapshot: latestSnapshot, stockCard: stockCard,
     longTermStorage: longTermStorage, salesTrend7d: salesTrend7d, avgSalesPerDay: avgSalesPerDay,
     targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty, upcomingEvents: upcomingEvents,
-    thirdPartyStock: thirdPartyStock, factoryByCountry: factoryByCountry,
+    thirdPartyStock: thirdPartyStock, physicalFactoryByCountry: physicalFactoryByCountry,
+    factorySiteAllocation: factorySiteAllocation,
     eligible3plWarehouses: eligible3plWarehouses, sharedPhysicalPool: sharedPhysicalPool,
     sitePlanningAllocation: sitePlanningAllocation,
     daysOfSupply: daysOfSupply, dosColorClass: dosColorClass,
@@ -1742,8 +1788,12 @@ function renderReplenishment() {
             <div class="scroll-cell replen-suggested-cell">
                 ${_irSuggestedCellHtml(item)}
             </div>
-            <div class="scroll-cell">${item.cnStock || 0}</div>
-            <div class="scroll-cell">${item.twStock || 0}</div>
+            <!-- F1-7N-FB-4E-R4B-R1 - THIS SITE's allocated share, and `|| 0` is no longer good enough: null now
+                 means "the projection could not run", which is a different statement from "this site is allocated
+                 nothing". A real zero prints 0; an unresolved figure prints the same em dash every other
+                 unavailable number on this page uses. -->
+            <div class="scroll-cell">${item.cnStock == null ? '--' : item.cnStock}</div>
+            <div class="scroll-cell">${item.twStock == null ? '--' : item.twStock}</div>
             <div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, '${_irSkuArg(item.sku)}')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">
                 <span class="ai-action-cell__text">View Recommendation</span>
             </div>
@@ -6225,6 +6275,27 @@ function _getCloudReplenishmentData() {
     var _irTodayMs = Date.UTC(_irNow.getFullYear(), _irNow.getMonth(), _irNow.getDate());
     var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs, lineReceiverById);
 
+    // F1-7N-FB-4E-R4B-R1 - the factory projection's window anchor is INJECTED (the module never reads a clock),
+    // and the whole-SKU projection is computed ONCE per SKU rather than once per marketplace row.
+    var _irFactoryCalcMonth = (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); })();
+    var _irFactoryAllocCache = {};
+    function _irFactoryAllocFor_(sku, siteScope, factoryRows, whRows, siteRows, fcRowsIn) {
+        var k = String(sku == null ? '' : sku).toUpperCase();
+        if (!Object.prototype.hasOwnProperty.call(_irFactoryAllocCache, k)) {
+            _irFactoryAllocCache[k] = IR.factorySiteAllocation({
+                scope: siteScope, factoryRows: factoryRows, warehouses: whRows, mpSkus: siteRows,
+                fcRows: fcRowsIn, calculationMonth: _irFactoryCalcMonth
+            });
+        }
+        var proj = _irFactoryAllocCache[k].projection;
+        if (!proj) return _irFactoryAllocCache[k];
+        // The projection is per-SKU; the SITE slice is per row, so it is read fresh for this scope.
+        var K = (typeof window !== 'undefined' && window.KM && window.KM.factorySiteAllocation) || null;
+        if (!K) return _irFactoryAllocCache[k];
+        var mine = K.siteFactoryAvailability(proj, siteScope);
+        return { cn: mine.cn, tw: mine.tw, state: _irFactoryAllocCache[k].state, projection: proj };
+    }
+
     var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
     var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     var cm = new Date().getMonth();
@@ -6282,8 +6353,13 @@ function _getCloudReplenishmentData() {
           : (thirdPartyPlan.state === 'MISSING_SNAPSHOT') ? 'No Data'
           : (thirdPartyPlan.state === 'OK' || _tpBreakdown.hasRows) ? String(Math.round(_tpBreakdown.total).toLocaleString())
           : '—';
-        var cnStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'CN');
-        var twStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'TW');
+        // F1-7N-FB-4E-R4B-R1 §1 - THIS SITE's share of each physical factory pool, from the ONE canonical
+        // projection Order Planning also reads. Previously both lines were the COMPLETE physical quantity, which
+        // is why every marketplace scope showed the same full factory number. Memoized per SKU: the projection
+        // is a whole-SKU calculation and the row map would otherwise repeat it once per marketplace.
+        var _fa = _irFactoryAllocFor_(mp.sku, scope, factory, warehouses, mpSkus, fcRows);
+        var cnStock = _fa.cn;
+        var twStock = _fa.tw;
         var need = IR.needBuckets();
 
         var currentStock = stock.available + stock.fcTransfer + stock.fcProcessing;

@@ -117,7 +117,13 @@ function withWindow(win, fn) {
   section('reference owner unchanged (BEFORE==AFTER universe) + cache token bumped');
   ok(/getMarketplaceReference = function\(\)/.test(DBAPI) && /getOperationDbTableFromSheet\('marketplaces'\)/.test(DBAPI), 'E1 getMarketplaceReference still the bounded getTable(marketplaces) owner (no new API/route)');
   ok(/scope-select-modal\.js\?v=fb4c-shared-registry-20260826/.test(INDEX), 'E2 index.html cache token bumped so the changed modal refetches');
-  ok(MOD._version === 'f1-7n-fb-4c-shared-registry-r1', 'E3 modal version tag bumped');
+  // F1-7N-FB-4E-R4B-R1 - a monotonic floor, not a pinned literal. R4B-R1 gave the modal an onCancel contract
+  // (a dismissed modal is an OUTCOME and the caller had no way to learn about it), which is a real source change
+  // and therefore a real version bump. Pinning the string made that bump read as a regression.
+  var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported'];
+  var _MODAL_FLOOR = _MODAL_VERSIONS.indexOf('f1-7n-fb-4c-shared-registry-r1');
+    ok(_MODAL_VERSIONS.indexOf(MOD._version) >= _MODAL_FLOOR,
+    'E3 modal version tag is at or after the shared-registry round, and is a KNOWN version (' + MOD._version + ')');
 
   console.log('\n----------------------------------------');
   console.log('AI PLAN / RECALC SCOPE WIRING (F1-7N): ' + pass + ' passed, ' + fail + ' failed');

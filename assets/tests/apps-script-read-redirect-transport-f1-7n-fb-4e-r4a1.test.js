@@ -1087,7 +1087,7 @@ checks.push(Promise.resolve().then(function () {
   eq(toks.length, 1, '9.14 the coupled read-path group shares ONE token, so it cannot deploy out of step');
   // F1-7N-FB-4E-R4B — not pinned to R4A1's literal. The property is LOCKSTEP on a KNOWN release token, not one
   // round's string; pinning the literal is what broke this on the very next round.
-  var KNOWN = ['fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831'];
+  var KNOWN = ['fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831', 'fb4er4br1-authority-20260831'];
   ok(KNOWN.indexOf(toks[0]) !== -1, '9.15 and it is a known release token (' + toks[0] + ')');
 }));
 

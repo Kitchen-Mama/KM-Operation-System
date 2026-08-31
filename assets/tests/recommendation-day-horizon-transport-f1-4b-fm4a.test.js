@@ -47,7 +47,13 @@ function mpTables() {
 // =============================================================================
 section('bundle registration');
 ok(H.hasKMHP, 'KMHP bundled + callable');
-ok(H.bundleInfo && H.bundleInfo.modules.length === 54 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO = 54 modules incl. horizon-projection (F1-7N weekly + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR + R6F2B KMRA added)');
+// F1-7N-FB-4E-R4B-R1 - the count was a PINNED LITERAL (54) and R4B-R1 legitimately added KMFSA, so a correct
+// change read as a regression. What this line defends is that horizon-projection is IN the manifest and that
+// the manifest matches the build tool's own declared module order - both derived, neither written down.
+var _HZ_BUILD_SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'tools', 'build-apps-script-bundle.js'), 'utf8');
+var _HZ_ORDER = /var MODULE_ORDER = \[([\s\S]*?)\n\];/.exec(_HZ_BUILD_SRC);
+var _HZ_DECLARED = _HZ_ORDER ? (_HZ_ORDER[1].match(/'[a-z0-9-]+'/g) || []).length : -1;
+ok(H.bundleInfo && H.bundleInfo.modules.length === _HZ_DECLARED && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO matches the declared module order (' + _HZ_DECLARED + ') and includes horizon-projection');
 
 section('calc-DATE authority (Script Property; fail-closed; no clock)');
 ok(H.calcDate(io('2026-08', '', null)).error.code === 'RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'missing → NOT_CONFIGURED');

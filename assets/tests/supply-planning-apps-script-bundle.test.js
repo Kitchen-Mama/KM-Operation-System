@@ -10,6 +10,11 @@ var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
 var BUILD = require('../tools/build-apps-script-bundle.js');
+// F1-7N-FB-4E-R4B-R1 - the build tool's OWN declared module order, parsed at file scope so every section
+// compares against the same derived list. Never written down twice.
+var _BUILD_SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'tools', 'build-apps-script-bundle.js'), 'utf8');
+var _ORDER_BLOCK = /var MODULE_ORDER = \[([\s\S]*?)\n\];/.exec(_BUILD_SRC);
+var _DECLARED = _ORDER_BLOCK ? (_ORDER_BLOCK[1].match(/'[a-z0-9-]+'/g) || []).map(function (s) { return s.slice(1, -1); }) : [];
 
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
@@ -31,7 +36,15 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 54, 'A: manifest lists all 54 canonical modules (incl. KMREC + KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR route-derivation + R6F2B KMRA route-authority)');
+  // F1-7N-FB-4E-R4B-R1 - DERIVED, NOT PINNED. This was `=== 54`, so R4B-R1 adding KMFSA (the canonical factory
+  // site allocation) made a correct change look like a regression - the recurring anti-pattern in this repo. The
+  // property is that the generated manifest matches the build tool's OWN declared module order, which catches a
+  // dropped or duplicated module without needing the number written down in two places.
+  ok(_DECLARED.length > 0, 'A: the build tool declares a MODULE_ORDER (parsed)');
+  eq(b1.manifest.length, _DECLARED.length, 'A: manifest lists exactly the modules the build tool declares (' + _DECLARED.length + ')');
+  var _MANIFEST_NAMES = b1.manifest.map(function (e) { return e.module; });
+  eq(_MANIFEST_NAMES.slice().sort(), _DECLARED.slice().sort(), 'A: ... and it is the SAME set, in no particular order');
+  ok(_MANIFEST_NAMES.indexOf('supply-planning-factory-site-allocation') !== -1, 'A: KMFSA factory site allocation is bundled (R4B-R1)');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -72,8 +85,16 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(ctx.KMOOR && typeof ctx.KMOOR.projectOngoingIncomingForSku === 'function' && ctx.KMOOR.VERSION === 'kmoor-fa3b3a-1', 'C: KMOOR single-authority ongoing runtime available in bundle (F1-7N-FA-3B3a)');
   ok(ctx.KMFSR && typeof ctx.KMFSR.reallocatePreallocatedFactorySupply === 'function' && typeof ctx.KMFSR.projectSurplusReallocation === 'function', 'C: KMFSR §41 factory surplus reallocation available in bundle (F1-7N-FA-3B3b live)');
   ok(ctx.KMRDV2 && ctx.KMRDV2.VERSION === 'kmrdv2-fa3c-r4c-1' && Array.isArray(ctx.KMRDV2.V2_HEADERS) && ctx.KMRDV2.V2_HEADERS.length === 53 && typeof ctx.KMRDV2.normalizePlanningCycleMonthly === 'function' && typeof ctx.KMRDV2.projectFlatDraftRow === 'function' && typeof ctx.KMRDV2.explodeSendRequestLines === 'function' && typeof ctx.KMRDV2.migrateLegacyToCanonical === 'function' && ctx.KMRDV2.MIGRATION_MARKETPLACE_MAP['KM Walmart'] === 'Walmart', 'C: KMRDV2 flat MONTHLY_ORDER draft core + R4C migration transform available in bundle (F1-7N-FA-3C-DRAFT-MODEL R4C)');
-  ok(ctx.KMRDV2P && ctx.KMRDV2P.VERSION === 'kmrdv2p-fa3c-r5a-1' && ctx.KMRDV2P.RECOMMENDATION_TYPE === 'MONTHLY_ORDER' && typeof ctx.KMRDV2P.generateMonthlyFlat === 'function' && typeof ctx.KMRDV2P.applyFlat === 'function' && typeof ctx.KMRDV2P.editMonthlyFlat === 'function' && typeof ctx.KMRDV2P.submitMonthlyFlat === 'function' && typeof ctx.KMRDV2P.flatReadbackDto === 'function' && typeof ctx.KMRDV2P.planMigration === 'function' && typeof ctx.KMRDV2P.validateStaging === 'function' && ctx.KMRDV2P.v2ExpectedHeaderCount() === 53, 'C: KMRDV2P MONTHLY_ORDER flat persistence + edit/submit + R4C migration planner/validator available in bundle (F1-7N-FA-3C-R4C; cutover-gated, default off)');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 54, 'C: KM_BUNDLE_INFO manifest present in runtime (54 modules incl. KMREX + KMAR + KMFC + F1-7N weekly KMWSA/KMWIA/KMWRD/KMWRT/KMWRB/KMWHA + FA-3B3a KMOOP/KMOTA/KMOOR + FA-3B3b KMFSR + FA-3C KMRDV2 + KMRDV2P + R6F2 KMWRR + R6F2B KMRA)');
+  // F1-7N-FB-4E-R4B-R1 - the VERSION was a pinned literal, and R4B-R1 changed this module for a real reason
+  // (the flat reader disagreed with its own DTO about what a blank status / draft_purpose means, so persisted
+  // rows were invisible to the readback). A monotonic floor over a known list keeps the guard without turning
+  // every legitimate bump into a regression.
+  var _P_VERSIONS = ['kmrdv2p-fa3c-r5a-1', 'kmrdv2p-fb4e-r4b-r1-1'];
+  ok(ctx.KMRDV2P && _P_VERSIONS.indexOf(ctx.KMRDV2P.VERSION) >= _P_VERSIONS.indexOf('kmrdv2p-fa3c-r5a-1') && ctx.KMRDV2P.RECOMMENDATION_TYPE === 'MONTHLY_ORDER' && typeof ctx.KMRDV2P.generateMonthlyFlat === 'function' && typeof ctx.KMRDV2P.applyFlat === 'function' && typeof ctx.KMRDV2P.editMonthlyFlat === 'function' && typeof ctx.KMRDV2P.submitMonthlyFlat === 'function' && typeof ctx.KMRDV2P.flatReadbackDto === 'function' && typeof ctx.KMRDV2P.planMigration === 'function' && typeof ctx.KMRDV2P.validateStaging === 'function' && ctx.KMRDV2P.v2ExpectedHeaderCount() === 53 && typeof ctx.KMRDV2P.readSubmittedFlatForScope === 'function' && typeof ctx.KMRDV2P.auditFlatForScope === 'function' && typeof ctx.KMRDV2P.withFlatDefaults === 'function', 'C: KMRDV2P MONTHLY_ORDER flat persistence + R4B-R1 submitted/audit/blank-default readers + edit/submit + R4C migration planner/validator available in bundle (F1-7N-FA-3C-R4C; cutover ON in production)');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, _DECLARED.length, 'C: KM_BUNDLE_INFO manifest present in runtime and matches the declared module order (' + _DECLARED.length + ')');
+  // KMFSA must be REACHABLE in the Apps Script runtime, not merely listed: 56_ calls it on the live read path.
+  ok(ctx.KMFSA && typeof ctx.KMFSA.project === 'function' && typeof ctx.KMFSA.siteFactoryAvailability === 'function',
+    'C: KMFSA factory site allocation is callable in the bundle runtime (the live 56_ read path depends on it)');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');
