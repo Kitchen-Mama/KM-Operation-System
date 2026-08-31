@@ -49,19 +49,26 @@ ok(hCur < h3rd && h3rd < hOtw, '1/8 header order: Current Stock < 3rd Party Stoc
 ok(hOtw < hSales, 'header: Inventory group precedes the Sales group (no leaf escaped the group)');
 
 // TBODY scroll-row: current-stock cell, then thirdPartyStock cell, then onTheWay cell, then avgDailySales.
-var bCur = idx(IR_JS, 'replen-cell--current-stock">${item.currentInventory}');
-var b3rd = idx(IR_JS, '${item.thirdPartyStock}');
-var bOtw = idx(IR_JS, '${item.onTheWay}');
-var bSales = idx(IR_JS, '${item.avgDailySales}');
+// F1-7N-FB-4E-R4B-R3 - read the ONE row builder instead of the whole file, and match the BINDING rather than
+// the interpolation syntax. R4B-R3 lifted this row out of a template literal into _irScrollRowHtml_ (an HTML
+// comment inside that literal contained a backtick, which ended the literal and truncated every row), so a
+// pattern written around `${...}` was describing the old spelling, not the column order it exists to defend.
+var ROWFN = (IR_JS.match(/function _irScrollRowHtml_[\s\S]*?\n}/) || [''])[0];
+var bCur = idx(ROWFN, 'replen-cell--current-stock');
+var b3rd = idx(ROWFN, 'item.thirdPartyStock');
+var bOtw = idx(ROWFN, 'item.onTheWay');
+var bSales = idx(ROWFN, 'item.avgDailySales');
 ok(bCur > 0 && b3rd > 0 && bOtw > 0, 'body: all three Inventory cells present');
 ok(bCur < b3rd && b3rd < bOtw, '2/6 body order: currentInventory < thirdPartyStock < onTheWay (matches header)');
 ok(bOtw < bSales, 'body: Inventory cells precede Sales cells (aligned with header)');
 
 // ---- 10-11-12 data bindings unchanged (only order moved, no value swap) -------------------------------------------
 section('10/11/12 data bindings unchanged — no accidental value swap');
-ok(/replen-cell--current-stock">\$\{item\.currentInventory\}/.test(IR_JS), '10 Current Stock still binds item.currentInventory');
-ok(/title="\$\{\(item\.thirdPartyTitle \|\| ''\)\.replace\(\/"\/g, '&quot;'\)\}">\$\{item\.thirdPartyStock\}/.test(IR_JS), '11 3rd Party Stock still binds item.thirdPartyStock (+ its warehouse-grain title)');
-ok(/<div class="scroll-cell">\$\{item\.onTheWay\}<\/div>/.test(IR_JS), '12 On the Way still binds item.onTheWay');
+// Each binding is asserted where it is EMITTED - the cell's own class/title next to its own value - so a
+// value swap is still caught, without pinning how the string happens to be assembled.
+ok(/replen-cell--current-stock[^]{0,40}item\.currentInventory/.test(ROWFN), '10 Current Stock still binds item.currentInventory');
+ok(/item\.thirdPartyTitle[^]{0,120}item\.thirdPartyStock/.test(ROWFN), '11 3rd Party Stock still binds item.thirdPartyStock (+ its warehouse-grain title)');
+ok(/scroll-cell[^]{0,20}item\.onTheWay/.test(ROWFN), '12 On the Way still binds item.onTheWay');
 
 // ---- 13-17 alignment + dynamic switch preserved (unchanged one-class architecture) --------------------------------
 section('13-17 structural alignment + dynamic switch preserved (no CSS offsets, no reload)');

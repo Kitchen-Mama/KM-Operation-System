@@ -216,8 +216,10 @@ var noModule = (function () {
 })();
 ok(/return a \? a\.total : null;/.test(RO_SRC), '1.30 an unavailable projection yields null ("--"), never the whole pool');
 ok(/return a \? a\.total : null;/.test(G56), '1.31 ... on the server path as well');
-ok(/item\.cnStock == null \? '--' : item\.cnStock/.test(IR), '1.32 Site Inventory prints "--" for an UNRESOLVED figure, not 0');
-ok(/item\.twStock == null \? '--' : item\.twStock/.test(IR), '1.33 ... on both factory columns — a real zero and an unknown are different statements');
+ok(/function _irFactoryCellHtml_\(v, item\)[\s\S]{0,400}?\(v == null \? '--' : v\)/.test(IR),
+  '1.32 Site Inventory prints "--" for an UNRESOLVED figure, not 0');
+ok(/_irFactoryCellHtml_\(item\.cnStock, item\)/.test(IR) && /_irFactoryCellHtml_\(item\.twStock, item\)/.test(IR),
+  '1.33 ... through ONE renderer for both factory columns — a real zero and an unknown are different statements, and the two columns cannot drift apart');
 ok(/state: 'UNAVAILABLE'/.test(IR), '1.34 and the unavailable state is named rather than silently coerced');
 
 // =============================================================================================================
@@ -627,13 +629,17 @@ eq(Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read('assets/j
   '16.6 and the client pin still agrees — a version is not manufactured for a behaviour fix');
 
 // The coupled release group moved TOGETHER onto one known token.
-var toks = (HTML.match(/\?v=([a-z0-9-]+)/g) || []).map(function (s) { return s.slice(3); });
-// R4B-R2 bumped the coupled group; this suite defends LOCKSTEP and a KNOWN token, not one round's literal.
-var KNOWN_GROUP_TOKENS = ['fb4er4br1-authority-20260831', 'fb4er4br2-hydrationjoin-20260831'];
-var groupTok = KNOWN_GROUP_TOKENS.filter(function (t) { return HTML.indexOf('?v=' + t) !== -1; })[0] || KNOWN_GROUP_TOKENS[0];
-ok(toks.indexOf(groupTok) !== -1, '16.7 the frontend deployment group carries this round\'s release token');
-eq((HTML.match(new RegExp('\\?v=' + groupTok, 'g')) || []).length, 17,
-  '16.8 ... on all 17 refs of the coupled group (16 from R4B + the new KMFSA module)');
+// The token is DERIVED from a coupled asset rather than listed here: a list of known literals has to be edited
+// every round to stay green, which makes it a chore instead of a contract. What this actually defends is
+// LOCKSTEP - every coupled asset on ONE token - and a monotonic floor on how many refs move together.
+var groupTok = (/pages\/inventory-replenishment\.js\?v=([a-z0-9.-]+)/.exec(HTML) || [])[1] || '';
+var COUPLED = ['pages/inventory-replenishment.js', 'pages/request-order.js', 'api/operation-system-db-api.js',
+  'core/supply-planning-factory-site-allocation.js', 'utils/scope-select-modal.js'];
+var offGroup = COUPLED.filter(function (f) { return HTML.indexOf(f + '?v=' + groupTok) === -1; });
+ok(!!groupTok, '16.7 the frontend deployment group carries a release token (' + groupTok + ')');
+eq(offGroup, [], '16.7b ... and every coupled asset carries the SAME one');
+ok((HTML.match(new RegExp('\\?v=' + groupTok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length >= 17,
+  '16.8 ... on at least the 17 refs that have always moved together (floor, not a pinned count)');
 
 console.log('\n' + (failed === 0 ? 'PASS' : 'FAIL') + '  ' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

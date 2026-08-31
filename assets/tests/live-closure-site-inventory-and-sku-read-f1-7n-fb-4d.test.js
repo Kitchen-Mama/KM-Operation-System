@@ -786,7 +786,8 @@ eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FA-4B2', '
 // that disagreement is exactly what a partial Apps Script sync looks like.
 var _rtrDeclared = (G01.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 var _rtrExpected = (G63.match(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
-ok(!!_rtrDeclared && /^F1-7N-[A-Z]+-\d+[A-Z](-R\d+[A-Z]?\d*)?$/.test(_rtrDeclared), 'E2 01_ declares a real build (' + _rtrDeclared + ')');
+// F1-7N-FB-4E-R4B-R3 - the shape now admits a revision of a revision; the pattern is shared.
+ok(!!_rtrDeclared && require('./_release-order.js').BUILD_STAMP_RE.test(_rtrDeclared), 'E2 01_ declares a real build (' + _rtrDeclared + ')');
 eq(_rtrDeclared, _rtrExpected, 'E2 and it is exactly what the manifest expects for it — a partial sync stays visible');
 eq((G59.match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4C-R1', 'E2 and 59_ — the SKU repair was client-side');
 // F1-7N-FB-4E-R2 — STATED AS THE RULE THIS WAS DEFENDING. FB-4D pinned 68_'s stamp and the action

@@ -87,6 +87,20 @@
     return (typeof window !== 'undefined' && window.KM && window.KM.scopeRegistry) ? window.KM.scopeRegistry : null;
   }
 
+  // F1-7N-FB-4E-R4B-R3 §4 - THE MODULE'S OWN STATE. THESE THREE DECLARATIONS WERE DELETED IN F1-7N-FB-4C
+  // (commit 1058156) WHILE THE BLOCK AROUND THEM WAS REWRITTEN, AND EVERY AI ACTION ON BOTH PAGES HAS BEEN
+  // DEAD SINCE.
+  //
+  // The factory body runs in strict mode, so `ensureDom()`'s very first line - `if (_dom && ...)` - threw
+  // `ReferenceError: _dom is not defined` on EVERY open(). An inline onclick that throws produces exactly
+  // what was reported live: no modal, no error surface, no progress, nothing. The callers could not see it
+  // either, because both of them guarded on the module being PRESENT (`typeof open === 'function'`) rather
+  // than on the call SUCCEEDING - and open() was present. It just never returned.
+  //
+  // Every unit test passed throughout, because they all exercised the pure helpers (activeMarketplaces,
+  // resolveScope, ...) which never touch this state. That is why R4B-R3 tests the SHIPPED DOM instead.
+  var _dom = null, _state = null, _openToken = 0;
+
   function ensureDom() {
     if (typeof document === 'undefined') return null;
     if (_dom && document.body.contains(_dom.modal)) return _dom;
@@ -324,6 +338,6 @@
     // DOM
     open: open,
     close: close,
-    _version: 'f1-7n-fb-4e-r4b-r1-cancel-reported'
+    _version: 'f1-7n-fb-4e-r4b-r3-state-restored'
   };
 });

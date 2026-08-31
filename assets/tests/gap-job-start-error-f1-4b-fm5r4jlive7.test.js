@@ -90,7 +90,15 @@ jobs.push(runBCase(0));
 
 section('D1–D3 — failed START returns the UI to idle; Cancel hidden (page contract)');
 // The page's ui.failed handler always calls restore(), which resets the button label + hides Cancel.
-ok(/failed:\s*function\s*\(st\)\s*\{\s*alert\(_irGapJobFailMsg_\('Inventory',\s*st\)\);\s*restore\(\);\s*\}/.test(INV), 'D1 Inventory failed START → alert(truthful) → restore() (button back to idle)');
+// F1-7N-FB-4E-R4B-R3 - RESTATED on the routing rather than on the exact character sequence of the handler.
+// The contract is unchanged: a failed START tells the truth and returns the UI to idle. R4B-R3 added a
+// third statement to the same handler - the failure is ALSO written to the AI Support notice, because the
+// menu item this used to speak through is inside a panel the click that started the job already hid.
+var _D1 = (INV.match(/failed:\s*function\s*\(st\)\s*\{[\s\S]*?\n\s*\}\s*\n?\s*\}/) || [''])[0];
+ok(/_irGapJobFailMsg_\('Inventory',\s*st\)/.test(_D1) && /alert\(/.test(_D1) && /restore\(\)/.test(_D1),
+  'D1 Inventory failed START → truthful message → restore() (button back to idle)');
+ok(/_irAiSupportNotice_\('bad'/.test(_D1),
+  'D1b ... and it is also reported OUTSIDE the menu panel the click hid');
 // F1-7N-FB-4E-R4B-R1 - RESTATED FROM A CHARACTER SEQUENCE TO THE BEHAVIOUR. This pinned the exact body of the
 // failed handler, so R4B-R1 adding a VISIBLE notice beside the alert (the whole point of that round: the
 // in-panel button this flow reported to was display:none) broke a line whose property was never violated.

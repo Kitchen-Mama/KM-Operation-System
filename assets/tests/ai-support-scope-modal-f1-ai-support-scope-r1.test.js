@@ -83,7 +83,11 @@ ok(/if\s*\(!isConcreteScope\(scope\)\)\s*return/.test(MODAL_SRC), 'I4 confirm ha
 section('D/F — Inventory: AI Plan + Recalculate Current Scope open the modal');
 ok(/runReplenAiSupport[\s\S]{0,220}kind === 'aiplan'[\s\S]{0,40}_openReplenScopeModal\('aiplan'\)/.test(INV_JS), 'F Inventory aiplan → _openReplenScopeModal(aiplan)');
 ok(/kind === 'recalcScope'[\s\S]{0,40}_openReplenScopeModal\('recalc'\)/.test(INV_JS), 'D Inventory recalcScope → _openReplenScopeModal(recalc)');
-ok(/_openReplenScopeModal[\s\S]{0,600}window\.KM\.scopeModal\.open\(/.test(INV_JS), 'D2 _openReplenScopeModal calls window.KM.scopeModal.open');
+// F1-7N-FB-4E-R4B-R3 - read the function's own body instead of a 600-character window from its name. R4B-R3
+// documented why the previous guard (open EXISTS) was not enough - it existed and threw - and the explanation
+// pushed the call past the window. The contract is that this function calls the shared modal, not where.
+var _D2 = (INV_JS.match(/function _openReplenScopeModal\(action\)[\s\S]*?\n}/) || [''])[0];
+ok(/window\.KM\.scopeModal\.open\(/.test(_D2), 'D2 _openReplenScopeModal calls window.KM.scopeModal.open');
 
 section('E/G — Order Planning: AI Plan + Recalculate Current Scope open the modal');
 // F1-7N-FB-4E-R4B-R1 - anchored on the FUNCTION, not on a character window. R4B-R1 added the visible-outcome
@@ -113,7 +117,11 @@ ok(/handleRecalcAllInventoryGap\(\{\s*mode:\s*'CURRENT_SCOPE'/.test(INV_JS), 'M 
 ok(/handleRecalcAllOrderPlanningGap\(\{\s*mode:\s*'CURRENT_SCOPE'/.test(RO_JS), 'N OP recalc → handleRecalcAllOrderPlanningGap({mode:CURRENT_SCOPE,...})');
 
 section('O — Recalculate All Sites still delegates to the existing all-sites owner, unchanged');
-ok(/kind === 'recalcAll'[\s\S]{0,70}handleRecalcAllInventoryGap\(\)/.test(INV_JS), 'O Inventory recalcAll → handleRecalcAllInventoryGap() (no scope = ALL_SITES)');
+// F1-7N-FB-4E-R4B-R3 - the branch now also states a refusal when the handler is absent (a click must never end
+// in silence), which is more than 70 characters of addition. Asserted on the branch, not on its length.
+var _O = (INV_JS.match(/if \(kind === 'recalcAll'\)[\s\S]*?\n    \}/) || [''])[0];
+ok(/handleRecalcAllInventoryGap\(\)/.test(_O), 'O Inventory recalcAll → handleRecalcAllInventoryGap() (no scope = ALL_SITES)');
+ok(/_irAiSupportNotice_\('bad'/.test(_O), 'O2 ... and a MISSING all-sites handler is a stated refusal, not a dropped click');
 ok(/kind === 'recalcAll'[\s\S]{0,220}handleRecalcAllOrderPlanningGap\(\)/.test(_roDispatch), 'O2 OP recalcAll → handleRecalcAllOrderPlanningGap()');
 // ... and the property R4B-R1 actually added: no branch of the dispatcher returns without saying something.
 ok(!/\n    return;\n/.test(_roDispatch), 'O3 no branch of runRoAiSupport ends in a bare silent return');
@@ -143,7 +151,8 @@ section('cache-version + wiring — new module is loaded and version bumped');
 ok(/scope-select-modal\.js\?v=[\w-]+/.test(INDEX), 'index.html loads scope-select-modal.js with a cache token (bumped per later rounds)');
 ok(!/\?v=fmr1-20260810/.test(INDEX), 'no stale ?v=fmr1-20260810 remains (all local assets refetch)');
 // F1-7N-FB-4E-R4B-R1 - monotonic floor over a known list (see the same restatement in the R1 wiring suite).
-var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported'];
+var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported',
+  'f1-7n-fb-4e-r4b-r3-state-restored'];   // R4B-R3 restored the module's own _dom/_state/_openToken
 var _MODAL_FLOOR = _MODAL_VERSIONS.indexOf('f1-7n-fb-4c-shared-registry-r1');
 ok(_MODAL_VERSIONS.indexOf(MOD._version) >= _MODAL_FLOOR,
   'scope modal version tag is at or after the shared-registry round and is a KNOWN version (' + MOD._version + ')');

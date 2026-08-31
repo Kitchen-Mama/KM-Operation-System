@@ -4000,7 +4000,15 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     // F1-7N-FB-4E-R3 §C — the Overseas workspace OWNER FILE. The action resolving is not enough: a deployment
     // carrying the R3 router but not 70_ would route to an undefined handler, and this page has no fan-out left
     // to fall back to. Probing the owner symbol is the only way the site can tell those two apart.
-    'OSW_BUILD_VERSION_'                    // 70_ — the Overseas Stock scoped read owner
+    'OSW_BUILD_VERSION_',                   // 70_ — the Overseas Stock scoped read owner
+    // F1-7N-FB-4E-R4B-R3 §1/§5 — THE OWNERS R4B ADDED, PROBED BY THE CALLER THAT DEPENDS ON THEM.
+    // 90_ is GENERATED and self-identifies by CONTENT (KM_BUNDLE_INFO.bundleHash), so pinning a hash in 63_
+    // would create a second source of truth that has to move on every rebuild. Probing the symbols instead is
+    // derived rather than pinned: a deployment whose bundle predates R4B-R1 has no KMFSA, and says so.
+    'KM_BUNDLE_INFO',                       // 90_ — the generated bundle's own content manifest
+    'KMFSA',                                // 90_ — the canonical factory site-allocation projection (R4B-R1)
+    'RECGEN_BUILD_VERSION_',                // 47_ — recommendation generation + bounded multi-scope readback
+    'APL_BUILD_VERSION_'                    // 56_ — AI Plan first layer (reads KMFSA)
 ];
 // A masked, read-only classification of the endpoint this build would actually use. It is part of the
 // deployment verdict because "the site behaves oddly" has an answer that needs no network at all when the

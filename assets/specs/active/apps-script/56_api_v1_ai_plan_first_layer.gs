@@ -40,6 +40,10 @@
  * `handleAiPlanFirstLayerGet_(body, io)` takes an injectable `io` so it runs against fixtures with ZERO SpreadsheetApp.
  */
 
+// F1-7N-FB-4E-R4B-R3 §1 - OWNER BUILD STAMP. Registered in SYS_MODULE_BUILD_STAMPS_ (63_). The value names
+// the round this file last changed behaviourally (R4B-R1 routed its factory figure through KMFSA); the constant
+// itself was introduced in R3, so a pre-R3 copy is reported ABSENT by the health manifest rather than stale.
+var APL_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R1';
 var APL_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
 var APL_TABLES_ = [

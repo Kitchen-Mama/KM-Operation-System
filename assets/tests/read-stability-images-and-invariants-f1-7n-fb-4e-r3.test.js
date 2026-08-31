@@ -303,12 +303,13 @@ eq(distinct.length, 1, 'G9 every asset R3 changed shares ONE token, so they cann
 // km-api-foundation.js, has to move the shared token, and would have failed a suite that was right about the
 // property and wrong about how to state it. What G9 actually defends is that these assets cannot deploy out of
 // step, and that they are not stranded on a superseded token.
-var ROUND_TOKENS = ['donenotice-20260811', 'fb4e-transport-20260826', 'fb4c-scope-registry-20260826',
-  'fb4er1-contract-probe-20260827', 'fb4er2-action-registry-20260827', 'fb4er3-lifecycle-20260827',
-  'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831',
-  'fb4er4br1-authority-20260831', 'fb4er4br2-hydrationjoin-20260831'];
-var FLOOR = ROUND_TOKENS.indexOf('fb4er3-lifecycle-20260827');
-var at = ROUND_TOKENS.indexOf(distinct[0]);
+// F1-7N-FB-4E-R4B-R3 - the order moved to assets/tests/_release-order.js. Four suites kept their own copy of
+// this list and every round had to append the same line to all four; three of them failed R4B-R3 for that
+// reason alone. One append-only list, read by everyone.
+var _RO = require('./_release-order.js');
+var ROUND_TOKENS = _RO.ROUND_TOKENS;
+var FLOOR = _RO.tokenIndex('fb4er3-lifecycle-20260827');
+var at = _RO.tokenIndex(distinct[0]);
 ok(at >= FLOOR, 'G9 the token is at or after R3 in the release order (' + distinct[0] + ') — a monotonic floor, not a pinned literal');
 // NOT asserted: that the whole page shares one token. index.html versions assets PER COUPLED GROUP, and a
 // check written on the assumption that one token covers everything is simply false about this file — it was

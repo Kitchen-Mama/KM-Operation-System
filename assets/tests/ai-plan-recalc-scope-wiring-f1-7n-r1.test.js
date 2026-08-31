@@ -100,7 +100,13 @@ function withWindow(win, fn) {
   ok(/confirmLabel: action === 'aiplan' \? 'Generate AI Plan' : 'Recalculate Scope'/.test(INV_JS), 'C1 Inventory: distinct confirm label per action');
   ok(/confirmLabel: action === 'aiplan' \? 'Generate AI Plan' : 'Recalculate Scope'/.test(RO_JS), 'C2 Order Planning: distinct confirm label per action');
   // terminal handlers remain distinct: aiplan → handleReplenAiPlan (KMREC display), recalc → CURRENT_SCOPE gap job.
-  ok(/if \(action === 'aiplan'\)[\s\S]{0,120}handleReplenAiPlan\(scope\)/.test(INV_JS), 'C3 Inventory aiplan → handleReplenAiPlan (distinct from recalc)');
+  // F1-7N-FB-4E-R4B-R3 - a 120-character window between the branch and its call is a spelling, not a contract.
+  // R4B-R3 added a stated refusal for a missing handler inside that branch (a click must never end in silence),
+  // which widened the gap. The property is that the aiplan branch reaches handleReplenAiPlan(scope) and the
+  // other branch reaches the CURRENT_SCOPE gap job - asserted on the branch body, not on a character count.
+  var _C3 = (INV_JS.match(/onConfirm: function \(scope\) \{[\s\S]*?\n            \}/) || [''])[0];
+  ok(/action === 'aiplan'/.test(_C3) && /handleReplenAiPlan\(scope\)/.test(_C3) && /mode: 'CURRENT_SCOPE'/.test(_C3),
+    'C3 Inventory aiplan → handleReplenAiPlan (distinct from recalc)');
   ok(/handleRecalcAllInventoryGap\(\{ mode: 'CURRENT_SCOPE'/.test(INV_JS), 'C4 Inventory recalc → CURRENT_SCOPE gap job (distinct terminal action)');
 
   // ===============================================================================================================
@@ -116,11 +122,18 @@ function withWindow(win, fn) {
   // ===============================================================================================================
   section('reference owner unchanged (BEFORE==AFTER universe) + cache token bumped');
   ok(/getMarketplaceReference = function\(\)/.test(DBAPI) && /getOperationDbTableFromSheet\('marketplaces'\)/.test(DBAPI), 'E1 getMarketplaceReference still the bounded getTable(marketplaces) owner (no new API/route)');
-  ok(/scope-select-modal\.js\?v=fb4c-shared-registry-20260826/.test(INDEX), 'E2 index.html cache token bumped so the changed modal refetches');
+  // F1-7N-FB-4E-R4B-R3 - RESTATED, and this pin was doing real harm: it froze the modal on the FB-4C token
+  // while the file itself changed twice (R4B-R1 gave it an onCancel contract, R4B-R3 restored its state
+  // declarations), so the live site kept serving a CACHED copy of a module that had been fixed. What the
+  // assertion needs to say is that the modal ships on the SAME token as the pages that depend on it.
+  var _pageTok = (/pages\/inventory-replenishment\.js\?v=([a-z0-9.-]+)/.exec(INDEX) || [])[1] || '';
+  ok(!!_pageTok && INDEX.indexOf('scope-select-modal.js?v=' + _pageTok) !== -1,
+    'E2 the scope modal ships on the SAME release token as its consuming pages (' + _pageTok + ')');
   // F1-7N-FB-4E-R4B-R1 - a monotonic floor, not a pinned literal. R4B-R1 gave the modal an onCancel contract
   // (a dismissed modal is an OUTCOME and the caller had no way to learn about it), which is a real source change
   // and therefore a real version bump. Pinning the string made that bump read as a regression.
-  var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported'];
+  var _MODAL_VERSIONS = ['f1-7n-fb-4c-shared-registry-r1', 'f1-7n-fb-4e-r4b-r1-cancel-reported',
+    'f1-7n-fb-4e-r4b-r3-state-restored'];   // R4B-R3 restored the module's own _dom/_state/_openToken
   var _MODAL_FLOOR = _MODAL_VERSIONS.indexOf('f1-7n-fb-4c-shared-registry-r1');
     ok(_MODAL_VERSIONS.indexOf(MOD._version) >= _MODAL_FLOOR,
     'E3 modal version tag is at or after the shared-registry round, and is a KNOWN version (' + MOD._version + ')');

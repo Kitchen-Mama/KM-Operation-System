@@ -1600,6 +1600,11 @@ function _openRoScopeModal(action) {
         if (concrete && action === 'recalc' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
         return _roScopeModalUnavailable_(action);
     }
+    // F1-7N-FB-4E-R4B-R3 §4 - the guard above asks whether open() EXISTS. It did, and it threw on its first
+    // statement for five days (scope-select-modal.js lost its own state declarations in F1-7N-FB-4C). A throw
+    // inside an inline onclick is swallowed by the browser, so "the module is loaded" was silently standing in
+    // for "the click did something". They are separate facts now, and a throw is a stated refusal.
+    try {
     window.KM.scopeModal.open({
         title: action === 'aiplan' ? 'AI Plan — Order Planning' : 'Recalculate Current Scope — Order Planning',
         subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
@@ -1619,6 +1624,13 @@ function _openRoScopeModal(action) {
             }
         }
     });
+    } catch (e) {
+        return _roAiSupportNotice_('bad', action === 'aiplan' ? 'AI Plan' : 'Recalculate Current Scope',
+            'The scope selector could not be opened, so nothing was started. Nothing was run and nothing was changed. ('
+            + String((e && e.message) || e) + ') Reload the page; if it repeats, assets/js/utils/scope-select-modal.js '
+            + 'is missing or failed to load.');
+    }
+    return true;
 }
 function _roBindAiSupportGlobal() {
     if (_roAiSupportBound) return;

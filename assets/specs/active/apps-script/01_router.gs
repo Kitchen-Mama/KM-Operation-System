@@ -22,7 +22,12 @@
 // F1-7N-FB-4E-R2 §3 — R2 CHANGED THIS FILE, so the stamp moves and the action contract moves with it.
 // system.executionPlanDuplicateLineDiagnostic had a handler in 68_ and a docstring declaring it an action, and
 // NO dispatch branch in any commit ever — so the handler was unreachable while the frontend required it.
-var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4A1';
+// F1-7N-FB-4E-R4B-R3 §1 - THE STAMP FOLLOWS THE BEHAVIOUR. R4B-R2 changed this file's GET read dispatch (it
+// double-wrapped a handler that already returned a TextOutput, so three read actions answered "{}"), and the
+// stamp stayed at R4A1. checkDeploymentContract() therefore reported a build that no longer described the code
+// it was running - the deployment was truthful about its ACTION CONTRACT and untruthful about its IDENTITY, and
+// only the identity tells an operator whether the fix they are looking for is actually deployed.
+var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.

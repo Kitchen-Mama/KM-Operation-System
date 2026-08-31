@@ -58,7 +58,12 @@ eq(/width:\s*240px/.test(factoryRule) && /min-width:\s*240px/.test(factoryRule),
 
 // Body-cell order in renderReplenishment must line up 1:1 with the 10 leaves (after Planning Model /
 // Company / Marketplace), i.e. the leaf fields appear in this exact sequence.
-var scrollTpl = (js.match(/scrollBody\.innerHTML = data\.map\(item =>[\s\S]*?\.join\(''\);/) || [''])[0];
+// F1-7N-FB-4E-R4B-R3 - the row is now built by a NAMED BUILDER rather than inline in renderReplenishment, so
+// that one row which cannot be built fails closed on its own instead of aborting the map. (It had to move: an
+// HTML comment inside the old template literal contained a backtick, which ended the literal early and left
+// every emitted row inside an unterminated comment - the live "only the first row has values" symptom.) The
+// leaf ORDER this section defends is unchanged; it is read from the builder.
+var scrollTpl = (js.match(/function _irScrollRowHtml_[\s\S]*?\n}/) || [''])[0];
 // F1-7N-UX-SITE-INVENTORY-INVENTORY-COLUMN-ORDER-R1 — Inventory reading order is now Current Stock → 3rd Party Stock
 // → On the Way (stock-flow: exists now → external/self warehouses → still inbound); body order tracks the header 1:1.
 var bodyLeafTokens = ['item.currentInventory', 'item.thirdPartyStock', 'item.onTheWay', 'item.avgDailySales',
@@ -70,11 +75,13 @@ eq(ordered, true, 'A1: first-layer body cells line up 1:1 with the leaves (inven
 // ============================================================================
 // A2 — SKU chevron, gear removal, whole-row toggle guard.
 // ============================================================================
-var fixedTpl = (js.match(/fixedBody\.innerHTML = data\.map\(item => \{[\s\S]*?\}\)\.join\(''\);/) || [''])[0];
+var fixedTpl = (js.match(/function _irFixedRowHtml_[\s\S]*?\n}/) || [''])[0];
 eq(/class="replen-row-chevron"/.test(fixedTpl), true, 'A2: chevron rendered in the fixed SKU column');
 eq(/<button type="button" class="replen-row-chevron"/.test(fixedTpl), true, 'A2: chevron is a native <button>');
 eq(/aria-expanded="false"/.test(fixedTpl), true, 'A2: chevron has aria-expanded');
-eq(/aria-controls="\$\{_irPanelId\(item\.sku\)\}"/.test(fixedTpl), true, 'A2: chevron aria-controls points at the detail panel id');
+// Anchored on the BINDING (the panel id comes from _irPanelId(item.sku)) rather than on the interpolation
+// spelling, which is what changed when the row moved out of a template literal.
+eq(/aria-controls="[^]{0,10}_irPanelId\(item\.sku\)/.test(fixedTpl), true, 'A2: chevron aria-controls points at the detail panel id');
 eq(/aria-label="Toggle replenishment details for /.test(fixedTpl), true, 'A2: chevron has a descriptive aria-label');
 eq(/onclick="_replenChevronClick\(event, /.test(fixedTpl), true, 'A2: chevron wired to _replenChevronClick');
 // The detail panel carries that id so aria-controls resolves.

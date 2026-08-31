@@ -740,10 +740,10 @@ checks.push(Promise.resolve().then(function () {
   // F1-7N-FB-4E-R4A1 - not pinned to R4A's literal: a later round that moves the token forward is correct, and
   // pinning the literal is what made three earlier assertions in this line fail on a correct change. The rule is
   // that the group is in lockstep on a KNOWN release token, at or after this round's position in the order.
-  var KNOWN_TOKENS = ['fb4er3-lifecycle-20260827', 'fb4er4a-correlation-20260827', 'fb4er4a1-readtransport-20260827',
-    'fb4er4b-readback-20260831', 'fb4er4br1-authority-20260831', 'fb4er4br2-hydrationjoin-20260831'];
-  ok(KNOWN_TOKENS.indexOf(toks[0]) !== -1, '8.5 and it is a known release token (' + toks[0] + ')');
-  ok(KNOWN_TOKENS.indexOf(toks[0]) >= KNOWN_TOKENS.indexOf('fb4er4a-correlation-20260827'),
+  // F1-7N-FB-4E-R4B-R3 - the release order is now shared (assets/tests/_release-order.js), append-only.
+  var _RO = require('./_release-order.js');
+  ok(_RO.tokenIndex(toks[0]) !== -1, '8.5 and it is a known release token (' + toks[0] + ')');
+  ok(_RO.tokenAtOrAfter(toks[0], 'fb4er4a-correlation-20260827'),
     '8.6 at or after R4A in the release order - a monotonic floor');
 }));
 

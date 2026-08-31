@@ -458,6 +458,11 @@ var REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ = 25;
 
 // Canonicalize + dedupe + sort an explicit scope list. Returns { ok, scopes } or { ok:false, error, message }.
 // A blank field anywhere is a malformed scope, never an "all" wildcard - see the matcher note in KMRDV2P.
+// F1-7N-FB-4E-R4B-R3 §1 - OWNER BUILD STAMP. Registered in SYS_MODULE_BUILD_STAMPS_ (63_). The value names the
+// round this file last changed behaviourally (R4B-R2 added the bounded multi-scope readback); the constant itself
+// was introduced in R3, so a pre-R3 copy is reported ABSENT by the health manifest.
+var RECGEN_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R2';
+
 function recGenNormalizeScopeList_(list) {
   if (!list || Object.prototype.toString.call(list) !== '[object Array]') {
     return { ok: false, error: 'INVALID_SCOPE', message: 'scopes must be an array of {company,country,marketplace}' };

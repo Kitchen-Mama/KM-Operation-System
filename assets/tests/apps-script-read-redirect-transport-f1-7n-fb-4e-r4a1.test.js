@@ -1045,12 +1045,21 @@ checks.push(Promise.resolve().then(function () {
   eq(num(health, 'SYS_TRANSPORT_CONTRACT_VERSION_'), 1,
     '9.4 the transport contract stays 1 — no response identity field was added or removed');
   eq(num(dbSrc, 'KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_'), 1, '9.5 ... and its pin stays 1');
-  ok(/var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4A1'/.test(health), '9.6 63_ carries this round\'s build stamp');
-  ok(/var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4A1'/.test(read('assets/specs/active/apps-script/01_router.gs')),
-    '9.7 01_ carries this round\'s build stamp');
+  // F1-7N-FB-4E-R4B-R3 - RESTATED. These pinned R4A1's OWN literal into 63_ and 01_, which meant that the
+  // moment a later round legitimately changed the router (R4B-R2 did - it fixed the GET dispatch) this suite
+  // demanded an UNTRUTHFUL stamp to stay green. It was, in effect, defending the staleness R4B-R3 had to fix.
+  // What R4A1 needs is not its own literal: it is that each owner DECLARES a real build and that the manifest
+  // EXPECTS exactly what the file declares, because that disagreement is what a partial sync looks like.
+  var _RO96 = require('./_release-order.js');
+  var _sysD = (health.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+  var _rtrD = (read('assets/specs/active/apps-script/01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+  ok(_RO96.BUILD_STAMP_RE.test(_sysD || ''), '9.6 63_ carries a real build stamp (' + _sysD + ')');
+  ok(_RO96.BUILD_STAMP_RE.test(_rtrD || ''), '9.7 01_ carries a real build stamp (' + _rtrD + ')');
   // The manifest must EXPECT what the files declare, or the uniformity verdict is meaningless.
-  ok(/symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4A1'/.test(health), '9.8 the manifest expects 63_ at R4A1');
-  ok(/symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4A1'/.test(health), '9.9 the manifest expects 01_ at R4A1');
+  eq((health.match(/symbol: 'SYS_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], _sysD,
+    '9.8 the manifest expects 63_ at exactly what 63_ declares');
+  eq((health.match(/symbol: 'RTR_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], _rtrD,
+    '9.9 the manifest expects 01_ at exactly what 01_ declares');
   ok(/symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3'/.test(health),
     '9.10 and still expects 70_ at R3 — an unchanged file is not restamped to look current');
 
@@ -1087,8 +1096,9 @@ checks.push(Promise.resolve().then(function () {
   eq(toks.length, 1, '9.14 the coupled read-path group shares ONE token, so it cannot deploy out of step');
   // F1-7N-FB-4E-R4B — not pinned to R4A1's literal. The property is LOCKSTEP on a KNOWN release token, not one
   // round's string; pinning the literal is what broke this on the very next round.
-  var KNOWN = ['fb4er4a1-readtransport-20260827', 'fb4er4b-readback-20260831', 'fb4er4br1-authority-20260831', 'fb4er4br2-hydrationjoin-20260831'];
-  ok(KNOWN.indexOf(toks[0]) !== -1, '9.15 and it is a known release token (' + toks[0] + ')');
+  // F1-7N-FB-4E-R4B-R3 - the release order is now shared (assets/tests/_release-order.js), append-only.
+  var _RO915 = require('./_release-order.js');
+  ok(_RO915.tokenIndex(toks[0]) !== -1, '9.15 and it is a known release token (' + toks[0] + ')');
 }));
 
 Promise.all(checks).then(function () {

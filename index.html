@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="assets/css/core/km-sticky-header.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/home.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=ffcols-20260820">
-    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=fb4er4br2-hydrationjoin-20260831">
+    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=fb4er4br3-liveclosure-20260831">
     <link rel="stylesheet" href="assets/css/pages/overseas-ops.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/overseas-stock.css?v=whmoreopts-20260820">
     <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=donenotice-20260811">
@@ -403,7 +403,7 @@
     <!-- Utils -->
     <script src="assets/js/utils/forecast-engine.js?v=donenotice-20260811"></script>
     <script src="assets/js/utils/i18n.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/sku-overrides.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/utils/sku-overrides.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/utils/data.js?v=donenotice-20260811"></script>
     <script src="assets/js/utils/scroll-sync.js?v=donenotice-20260811"></script>
     <script src="assets/js/utils/template-export.js?v=donenotice-20260811"></script>
@@ -411,19 +411,19 @@
     <script src="assets/js/utils/dual-layer-resize.js?v=donenotice-20260811"></script>
     <script src="assets/js/utils/tab-rail.js?v=donenotice-20260811"></script>
     <script src="assets/js/utils/multi-select-filter.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/inventory-compat.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/utils/inventory-compat.js?v=fb4er4br3-liveclosure-20260831"></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
     <script src="assets/js/utils/gap-recalc-transport.js?v=donenotice-20260811"></script>
     <!-- F1-7N-FB-4C - the ONE canonical Country/Marketplace scope registry. Must load BEFORE any consumer
          (the scope modal and the Site Inventory page both read window.KM.scopeRegistry). -->
-    <script src="assets/js/core/scope-registry.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/core/scope-registry.js?v=fb4er4br3-liveclosure-20260831"></script>
     <!-- F1-7N-FB-4C - the scoped shipping-method registry (Execution Plan Method picker owner). -->
     <script src="assets/js/core/method-registry.js?v=fb4c-method-registry-20260826"></script>
-    <script src="assets/js/utils/scope-select-modal.js?v=fb4c-shared-registry-20260826"></script>
+    <script src="assets/js/utils/scope-select-modal.js?v=fb4er4br3-liveclosure-20260831"></script>
     <!-- F1-7N-FB-4E-R4B-R1 §1: canonical FACTORY SITE ALLOCATION (KMFSA). ONE projection for Site Inventory and
          Order Planning — a physical factory pool divided across its eligible receiver sites by the frozen rolling
          4-month FC share, never the whole pool shown under every scope. Loaded before both consuming pages. -->
-    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=fb4er4br3-liveclosure-20260831"></script>
     <!-- F1-4B-FM5-R1: canonical cartonization owner (KMCALC) — KMREC delegates the actionable-total carton rounding here -->
     <script src="assets/js/core/supply-planning-calculations.js?v=donenotice-20260811"></script>
     <!-- F1-7N-FB-4B: READ-ONLY recommendation/order-qty authority + cartonization audit. Computes no quantity and changes no rule. -->
@@ -441,30 +441,30 @@
          DIAGNOSIS rather than function - but the order is what makes the diagnosis available at all.
          Same-origin, no CDN, no runtime fetch. km-data-access.js is the portable backend boundary (§G): it
          holds the resource->action map and the two adapters, and it depends on the transport above it. -->
-    <script src="assets/js/api/km-transport.js?v=fb4er4br2-hydrationjoin-20260831"></script>
-    <script src="assets/js/api/km-data-access.js?v=fb4er4br2-hydrationjoin-20260831"></script>
-    <script src="assets/js/api/operation-system-db-api.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/api/km-transport.js?v=fb4er4br3-liveclosure-20260831"></script>
+    <script src="assets/js/api/km-data-access.js?v=fb4er4br3-liveclosure-20260831"></script>
+    <script src="assets/js/api/operation-system-db-api.js?v=fb4er4br3-liveclosure-20260831"></script>
     <!-- Shared loading-state contract (F1-7B) — transport/UI only; no business data -->
     <script src="assets/js/api/km-loading-state.js?v=sku-read-path-20260826"></script>
     <!-- API Foundation (Phase API-1) — weeklyShipping READ now canonical; wraps the legacy transport otherwise -->
-    <script src="assets/js/api/km-api-foundation.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/api/km-api-foundation.js?v=fb4er4br3-liveclosure-20260831"></script>
 
     <!-- Pages -->
     <script src="assets/js/pages/home.js?v=r6c-navlifecycle-20260822"></script>
-    <script src="assets/js/pages/inventory-replenishment.js?v=fb4er4br2-hydrationjoin-20260831"></script>
-    <script src="assets/js/pages/factory-stock.js?v=fb4er4br2-hydrationjoin-20260831"></script>
-    <script src="assets/js/pages/overseas-stock.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/pages/inventory-replenishment.js?v=fb4er4br3-liveclosure-20260831"></script>
+    <script src="assets/js/pages/factory-stock.js?v=fb4er4br3-liveclosure-20260831"></script>
+    <script src="assets/js/pages/overseas-stock.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/pages/overseas-ops-preview.js?v=donenotice-20260811"></script>
     <script src="assets/js/pages/overseas-inbound.js?v=donenotice-20260811"></script>
     <script src="assets/js/pages/overseas-outbound.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/fc-summary.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/pages/fc-summary.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/pages/forecast.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/request-order.js?v=fb4er4br2-hydrationjoin-20260831"></script>
-    <script src="assets/js/pages/sku-details.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/pages/request-order.js?v=fb4er4br3-liveclosure-20260831"></script>
+    <script src="assets/js/pages/sku-details.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/pages/shipping-plan.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/shipping-history.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/pages/shipping-history.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/pages/supplychain.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/sku-handbook.js?v=fb4er4br2-hydrationjoin-20260831"></script>
+    <script src="assets/js/pages/sku-handbook.js?v=fb4er4br3-liveclosure-20260831"></script>
     <script src="assets/js/i18n/sku-handbook.js?v=donenotice-20260811"></script>
     <script src="assets/js/pages/campaign-risk.js?v=donenotice-20260811"></script>
     <!-- Procurement Layer (Phase 1) -->

@@ -37,7 +37,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4A1';
+var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -194,7 +194,7 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4A1', owns: 'deployment identity + health + transport contract' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'deployment identity + health + transport contract' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
@@ -212,7 +212,16 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // never detect a partial sync of them. Only the declared build can.
   { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan allocation draft header/line writer (pre-write duplicate-PK gate, route group keys)' },
   { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FA-4B2', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner' },
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4A1', owns: 'doGet/doPost action routing (incl. the GET read table) + typed handler/method response identity' },
+  // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
+  // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'doGet/doPost action routing (incl. the GET read table) + typed handler/method response identity' },
+  // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
+  // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
+  // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
+  // introduced in R4B-R3, so a copy older than R3 reports ABSENT rather than stale - a stronger signal, not a
+  // weaker one, and the reason the value is not bumped to R3 just to look current.
+  { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R2', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
+  { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
   { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'SKU Details / SKU Regional scoped read workspace' },
   { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would

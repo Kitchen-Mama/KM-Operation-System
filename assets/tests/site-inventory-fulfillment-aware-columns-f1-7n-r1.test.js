@@ -57,7 +57,9 @@ section('16/12 header+body use the SAME model (single container class); alignmen
 ok(/id="replen-detail-table"/.test(IR_HTML), 'detail table carries the stable id the model toggles');
 ok(/km-table__header-cell--current-stock">Current Stock/.test(IR_HTML), 'Current Stock level-2 header leaf is class-tagged for structural omission');
 // JS body cell tagged + apply wired into the render path
-ok(/scroll-cell replen-cell--current-stock">\$\{item\.currentInventory\}/.test(IR_JS), '5 body Current Stock cell is class-tagged (same column the header hides)');
+// F1-7N-FB-4E-R4B-R3 - the row moved out of a template literal into _irScrollRowHtml_; what matters is that
+// the body cell carries the SAME class the header leaf carries, next to the value it renders.
+ok(/scroll-cell replen-cell--current-stock[^]{0,40}item\.currentInventory/.test(IR_JS), '5 body Current Stock cell is class-tagged (same column the header hides)');
 ok(/_irApplyInventoryColumnModel\(_irScopeFulfillmentModel\(\)\)/.test(IR_JS), '19/22 render applies the resolved model (marketplace switch re-applies on each render, no reload)');
 ok(/_replenDarFulfillmentOf\(_replenDarReadMarketplaces\(\), scope\.marketplaceId\)/.test(IR_JS), '3 fulfillment authority = canonical getMarketplaces read-model (no name inference)');
 // CSS: one class removes the SAME 120px from header leaf + body cell, and shrinks the group 360→240 (alignment)

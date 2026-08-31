@@ -767,7 +767,8 @@ const rosBuild = (G66.match(/var ROS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // (59_ declares F1-7N-FB-4C-R1 and the manifest expects exactly that), so a rule that accepted only
 // F1-7N-FB-<n><A-Z> rejected a legitimate build the moment one was made. It still requires the canonical
 // shape; it no longer requires the round to have been a first cut.
-ok(/^F1-7N-FB-\d+[A-Z](-R\d+[A-Z]?\d*)?$/.test(buildNow || '') && buildNow !== 'F1-7N-FB-3A',
+// F1-7N-FB-4E-R4B-R3 - the shape now admits a revision of a revision; the pattern is shared.
+ok(require('./_release-order.js').BUILD_STAMP_RE.test(buildNow || '') && buildNow !== 'F1-7N-FB-3A',
   '16. SYS_BUILD_VERSION_ names a current build at or after FB-3B (' + buildNow + ')');
 // F1-7N-FB-4E — RESTATED AT THE INVARIANT IT NAMES. Requiring 66_ to declare the same build as 63_ makes a
 // partial sync visible only by accident, and it forces an unnecessary edit to 66_ in every round that touches
