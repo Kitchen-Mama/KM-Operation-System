@@ -453,18 +453,22 @@ future reconciliation must **UPDATE** rather than create, and must **not** touch
    anything is appended.
 3. **Backup instructions (USER)** — File › Make a copy of the spreadsheet, or download as `.xlsx`, before any
    append. The report must print this and stop if the user has not confirmed it.
-4. **Append-only operation** — `destination_marketplace` at the **end** of the drafts header;
-   `expected_arrival` at the **end** of the lines header. **No reorder, no rename, no delete.**
+4. **Append-only operation** — ~~`destination_marketplace` at the **end** of the drafts header~~
+   **SUPERSEDED BY B2 — see §B2.2.** "At the end" is measurably wrong: when the lifecycle tail has not yet
+   been materialized, the end of the drafts header is index **30**, which is exactly where the frozen canonical
+   order places `generation_run_id`. Appending there would refuse the queued lifecycle migration permanently.
+   The position is the **canonical index (34)**, not the live end. **No reorder, no rename, no delete.**
 5. **No row-data mutation.** Not one cell of any existing row. Appending a column leaves existing rows blank in
    it, which is the correct legacy default.
 6. **Post-append schema validator** — re-read both header rows; assert the previous names are unchanged and in
    the same order, and that exactly one column was appended to each.
 7. **New post-append schema checksum** + the FB-4F diagnostic re-run → a **new** data checksum. The old one is
    superseded, not reused.
-8. **Deployment order** — (a) schema append; (b) Apps Script sync of
-   `16_shipping_allocation_handlers.gs` + a deployment version; (c) frontend push. In that order: a runtime that
-   can write the new columns must not be live before the columns exist, and a schema with no runtime is inert
-   and harmless.
+8. **Deployment order** — ~~(a) schema append; (b) Apps Script sync; (c) frontend push~~
+   **REVERSED BY B2 — see §B2.1.** The reasoning above ("a schema with no runtime is inert and harmless") is
+   false for this table: the write gate is **positional and exact**, so an appended column the owner file does
+   not know about is not inert — it makes every allocation read and write fail closed. **Code first, then
+   schema.**
 9. **Rollback** — the appended columns are additive and inert until the runtime is deployed, so rollback is
    "do not deploy the runtime". If the runtime is already live, clearing the two columns restores prior
    behaviour without deleting them.
@@ -476,8 +480,205 @@ future reconciliation must **UPDATE** rather than create, and must **not** touch
 `deployed_action_contract_version` **10** · required action list **9** · `transport_contract_version` **1** — all
 **unchanged**, asserted by reading the constants (not the prose). B1 adds no action and changes no verb.
 
-`SAD_BUILD_VERSION_` moved `F1-7N-FB-4D` → **`F1-7N-FB-4F-B1`**, because a permanent Apps Script file changed.
-It is **not deployed in B1**.
+~~`SAD_BUILD_VERSION_` moved `F1-7N-FB-4D` → `F1-7N-FB-4F-B1`~~ — **this records a decision B1 reverted before
+committing, and it is corrected here because a wrong sync manifest sends the user to the wrong file.** The bump
+was attempted and put the whole project into `DEPLOYMENT_PARTIAL_SYNC` across four suites, because
+`63_api_v1_system_health.gs` pins each owner's expected stamp against the **deployed** build — so a bump asserts
+"the deployed copy is not this one", which is true only once a round has actually synced the file. B1 does not
+sync. The stamp and its manifest entry therefore move together, in the round that syncs.
 
-**APPS_SCRIPT_SYNC_REQUIRED (for B2, not now):** `16_shipping_allocation_handlers.gs`.
+**ACTUAL COMMITTED STATE:** `SAD_BUILD_VERSION_` = **`F1-7N-FB-4D`**, unmoved, and
+`16_shipping_allocation_handlers.gs` is **byte-identical**. The contract lives in
+`69_api_v1_route_identity_contract.gs` (`RIC_BUILD_VERSION_ = 'F1-7N-FB-4F-B1'`), unrouted and unmanifested.
+
+**APPS_SCRIPT_SYNC_REQUIRED (not now):** `69_api_v1_route_identity_contract.gs`, plus its manifest entry in
+`63_api_v1_system_health.gs`, in the same step — and, per §B2.1, the owner-file change must precede the append.
 **BUNDLE_REBUILD_REQUIRED:** NO — `assets/js/core/*` untouched, bundle hash unchanged.
+
+---
+
+# FB-4F-B2 — APPEND-ONLY SCHEMA DRY-RUN TOOLING (CLOSED)
+
+Round: **F1-7N-FB-4F-B2**.
+
+Read-only tooling only. **No column appended, no value backfilled, no row migrated, no writer wired, no Apps
+Script synced or deployed, no frontend change.** The round's substantive output is a correction to B1's plan.
+
+## B2.1 — THE FINDING: the ordering was backwards, and a blank column is not inert
+
+`16_shipping_allocation_handlers.gs` gates **every** allocation read and write on `sadExactSchemaReason_`, which
+is **positional and exact**:
+
+| table | authority | optional tail | accepted live shape |
+|---|---|---|---|
+| `shipping_allocation_drafts` | `SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_` (34) | `SAD_LIFECYCLE_TAIL_COLUMNS_` (4, indexes 30–33) | count 30–34 **and** positional equality at every index |
+| `shipping_allocation_draft_lines` | `SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_` (30) | **none** | count **exactly 30** |
+
+So appending either proposed column while the owner file is unchanged refuses in **every** reachable live state.
+Measured by handing the proposed header row to the shipped gate itself:
+
+```
+header live 30 → COL30_IS_destination_marketplace_EXPECTED_generation_run_id
+header live 34 → COL_COUNT_35_EXPECTED_30_TO_34
+line   live 30 → COL_COUNT_31_EXPECTED_30
+```
+
+The consequence is not cosmetic: **the Execution Plan would stop saving entirely**, with
+`SCHEMA_MISMATCH ... zero_write: true` on every request. B1's stated justification — "a schema with no runtime is
+inert and harmless" — holds for an additive contract, and this table's write gate is not additive.
+
+**CODE FIRST, THEN SCHEMA.** This is the same conclusion `16_`'s own lifecycle-tail comment reached, for the same
+reason: the canonical list must learn the column as an **optional tail entry** (so a pre-append sheet stays
+valid) *before* the column exists. Once it has, the append and the sync are order-independent in both directions.
+
+## B2.2 — The second migration already queued against the same table
+
+`TEMP_migrate_shipping_allocation_ai_lifecycle.gs` appends the four lifecycle columns at **frozen indexes
+30–33**, and its own safety check requires the live header to be an exact prefix of *its* canonical order with
+**no unknown extra column** (`!extra.length`). The two migrations are therefore **not independent**:
+
+* `destination_marketplace` can only ever occupy **canonical index 34**.
+* Which means the **lifecycle tail must be physically present first**.
+* Appending `destination_marketplace` at index 30 instead would refuse the lifecycle migration **permanently**.
+
+## B2.3 — The corrected order
+
+1. **Owner-file change (a WRITER change — not B2):** `destination_marketplace` joins the header canonical list as
+   an optional tail entry; `expected_arrival` joins the line contract (the line gate needs an optional-tail
+   mechanism it does not have today). Bump `SAD_BUILD_VERSION_` **in the same round that syncs**.
+2. **Apps Script sync + a new deployment version** — `16_`, `69_api_v1_route_identity_contract.gs`, and `69_`'s
+   manifest entry in `63_api_v1_system_health.gs`, together.
+3. **Lifecycle tail append** (indexes 30–33) if still outstanding.
+4. **The two append-only columns** — header index 34, line index 30.
+5. **Frontend** — `assets/js/pages/inventory-replenishment.js`.
+
+## B2.4 — The diagnostic
+
+`assets/tools/apps-script-diagnostics/TEMP_shipping_allocation_schema_b2_dry_run.gs`
+
+* Core: `TEMP_shippingAllocationSchemaB2DryRun_()` — the name the task specified.
+* **Runnable entry point: `TEMP_SHIPPING_ALLOCATION_SCHEMA_B2_DRY_RUN()`.** A trailing underscore is Apps
+  Script's *private* convention and such functions are **not offered in the editor's Run selector**, so the
+  suggested name is the core and a public wrapper exists beside it — the shape FB-4F-A already uses here.
+* **No execute or commit mode exists**, not even a disabled one: there is no `COMMIT` token in the code, no mode
+  argument, and no second function.
+* It **asks** the production gate rather than forming a second opinion: `sadExactSchemaReason_` reads its sheet
+  only through `getDataRange().getValues()`, so the proposed post-append header is validated by the real rule
+  through a read-only stub.
+* Zero-write is proven by **execution** as well as by source scan — the suite runs it against a spreadsheet stub
+  whose every method other than `getSheetByName` / `getDataRange` / `getValues` throws.
+
+### The five decisions, reported separately — all false today
+
+| decision | value | why |
+|---|---|---|
+| `schemaAppendSafe` | **false** | the positional gate refuses the append until the owner file learns the columns |
+| `destinationBackfillSafe` | **false** | see §B2.5 |
+| `expectedArrivalBackfillSafe` | **false** | see §B2.6 |
+| `k4MigrationSafe` | **false** | the identity columns do not exist, so no K4 id can be persisted |
+| `runtimeWiringReady` | **false** | `69_` is unrouted and unmanifested by design |
+
+`READY_FOR_REVIEWED_SCHEMA_APPEND` means **only** that blank append-only columns could be added later. It never
+means a backfill is safe, that K4 migration is safe, that the runtime is wired, or that any live migration is
+authorized.
+
+## B2.5 — Why no destination backfill candidate is produced
+
+A header whose destination warehouse is blank and whose **scope** marketplace is `Amazon` is, in the persisted
+data, **indistinguishable from a route the user simply never finished**. Both store the same thing: nothing. The
+scope column answers *which marketplace this plan is for*, not *where this route delivers*, so it cannot promote
+itself into a destination. Everything else on offer is either unpersisted or explicitly excluded: UI labels,
+display text, warehouse code snapshots, page filters, and attempted client payloads. The `must_remain_blocked`
+report lists the scope marketplace and the destination code snapshot as evidence **examined and rejected**, so
+the exclusion is auditable rather than assumed.
+
+## B2.6 — Why the attempted `2026-10-16` must not be backfilled
+
+Measured in `assets/js/pages/inventory-replenishment.js`:
+
+```js
+var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
+var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
+```
+
+The client's `expected_arrival` is **read out of the rendered DOM cell** — UI-calculated text produced from a
+carrier lead time, which the task names as a forbidden source twice. Worse: until B1 fixed `_irMethodToLeadKey`,
+that computation used the **regular-ocean** lead time for every express-ocean route. Backfilling `2026-10-16`
+would persist, as authoritative, a date derived from the **wrong service's** transit days. A blank ETA is a
+missing value; that would be a wrong one wearing a missing one's clothes.
+
+Nearby planning dates (`required_by_date`, `window_end_date`) are enumerated and reported as
+`NOT_AN_ARRIVAL_FACT` rather than ignored — a planning window bound is not a carrier arrival, and it is the most
+tempting wrong answer available.
+
+## B2.7 — The live target, and the two facts that must not be conflated
+
+The persisted row is a **`sea`** route with **no destination**. The attempted request was a **`sea_express`**
+route to **Amazon**. Service and destination are **both K4 dimensions**, so:
+
+* `same_identity = false` — these are **two different routes**. A reconciliation must **not** rewrite the `sea`
+  row into a `sea_express` one; the express route has simply never existed.
+* Quantity is a **separate** matter: it is not a K4 dimension at all, so `800` and `400` on the *same* route
+  would be one identity calling for an **UPDATE**, never a second route.
+
+The first fact says *do not rewrite this row*; the second says *do not duplicate it*. **`800` untouched; `400`
+not created.** Neither number is written by this round.
+
+## B2.8 — Checksum
+
+`fb4fb2-1:<fnv1a>` over the ordered header rows of both tables plus their row counts — **order-sensitive by
+construction**, because every positional reader in this stack depends on order and "the columns are all present
+somewhere" is not the same claim as "the schema is right". The run re-reads both header rows at the end and
+refuses with `LIVE_SCHEMA_CHANGED_DURING_DIAGNOSTIC` if either moved.
+
+It authorizes **at most one** later, separately reviewed operation: adding the **blank** columns. It is
+invalidated by any header change, and it is **not** authorization to backfill a value, to mint a K4 id, to
+reconcile a legacy row, or to wire the runtime.
+
+## B2.9 — RUNBOOK (USER-RUN, paste → run → remove)
+
+`69_api_v1_route_identity_contract.gs` is **unsynced by design** — B1 left it unrouted and unmanifested — so the
+dry run refuses with `AUTHORITY_NOT_LOADED` unless the contract is present. Both files are pasted temporarily.
+**Both are inert (unrouted, called by nothing), so a temporary paste changes no live behaviour, and NO deployment
+version is created.**
+
+1. Open the **correct** Apps Script project (the one bound to the production database).
+2. Add a new script file and paste **`assets/specs/active/apps-script/69_api_v1_route_identity_contract.gs`**.
+3. Add a second new script file and paste
+   **`assets/tools/apps-script-diagnostics/TEMP_shipping_allocation_schema_b2_dry_run.gs`**.
+4. **Save. Do NOT create a deployment version.** Do not run Deploy at all.
+5. Select **`TEMP_SHIPPING_ALLOCATION_SCHEMA_B2_DRY_RUN`** in the Run selector and run it.
+6. Read the execution log. It is read-only: `DB_WRITES=0 DRIVE_WRITES=0 LOCKS_ACQUIRED=0 COLUMNS_APPENDED=0
+   ROWS_CHANGED=0`, ending with `NO COLUMN WAS APPENDED, NO ROW WAS CHANGED ...`.
+7. Record the `DECISION`, the five separate decisions, and the `fb4fb2-1:` checksum.
+8. **Remove both pasted files** from the editor. Nothing else changes; because no deployment version was created,
+   no deployment version is required for their removal either.
+
+Expected verdict on today's schema: **`STOP_SCHEMA_COLLISION`**, with
+`WRITE_GATE_REJECTS_PROPOSED_HEADER` and `LIFECYCLE_TAIL_OUTSTANDING` among the blocking reasons — i.e. §B2.1 and
+§B2.2 confirmed against the live sheet rather than only against the constants.
+
+## B2.10 — Tests
+
+`assets/tests/allocation-schema-b2-dry-run-f1-7n-fb-4f-b2.test.js` — all 24 required cases, plus the gate proof
+for every reachable live header length (30–34) and the reachability of every typed verdict. 15 mutation tests,
+15 caught.
+
+Three of the mutations were **defeated by code layering** on their first run: they attacked the aggregated
+`decision`, where `STOP_SCHEMA_COLLISION` is already the answer for an unrelated and correct reason, so the guard
+under test could be deleted outright and the suite still went green. They were rewritten to attack the point of
+**detection**. One more asserted a regex against string-stripped source, where the literal it searched for had
+already been replaced — so its baseline could never hold; it is now behavioural.
+
+`STOP_UNPERSISTED_EXPECTED_ARRIVAL` was first written as a claim about the **schema** and was unreachable in both
+directions. It is a claim about a **backfill**: the schema is sound, the column exists, every row is blank, and a
+date was asked for — the one state in which a migration would have to invent the value.
+
+## B2.11 — Versions
+
+`deployed_action_contract_version` **10** · required action list **9** · `transport_contract_version` **1** — all
+**unchanged**, asserted by reading the constants. `SAD_BUILD_VERSION_` **unmoved at `F1-7N-FB-4D`**;
+`RIC_BUILD_VERSION_` unmoved at `F1-7N-FB-4F-B1`. **No build version bumped, no manifest activated, no action or
+verb registered.**
+
+**APPS_SCRIPT_SYNC_REQUIRED:** none for B2. **BUNDLE_REBUILD_REQUIRED:** NO.
