@@ -368,14 +368,12 @@ var TAGS = (function () {
     var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
     var CUR = RO.currentMapToken(), MARK = new RegExp(RO.currentMapRoundMarker());
     function tokOf(src) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === src) return TAGS[i].tok; } return null; }
-    var MAP_SOURCES = [
-        [RESOLVER_REL, RESOLVER],
-        ['assets/js/lib/km-globe.js', GLOBE],
-        ['assets/js/data/geo-display-aliases-zh-tw.js', read(ALIAS_REL)],
-        ['assets/js/lib/km-geo-topology.js', read('assets/js/lib/km-geo-topology.js')],
-        ['assets/js/data/geo-names-zh-hant.js', read('assets/js/data/geo-names-zh-hant.js')],
-        ['assets/js/data/geo-admin1-display-names-zh-tw.js', read('assets/js/data/geo-admin1-display-names-zh-tw.js')]
-    ];
+    // TEXTURE-3-R8 — THE FILE LIST WAS THE HALF OF THIS RULE R6 DID NOT DERIVE. It was six paths written out
+    // here, and R8 changed a seventh (global-logistics-map.js, which owns the lazy ADM1 loader), so the
+    // at-least-one assertion below failed while describing a true state — the inventory was short, not the
+    // token. Both halves now come from assets/tests/_release-order.js.
+    var MAP_SOURCES = RO.MAP_BROWSER_FILES.map(function (rel) { return [rel, read(rel)]; });
+    eq(MAP_SOURCES.length, 7, 'D5 the map browser inventory is the shared one, all seven files');
     MAP_SOURCES.forEach(function (p) {
         var tok = tokOf(p[0]);
         ok(RO.isMapToken(tok), 'D5 ' + path.basename(p[0]) + ' carries a series token (' + tok + ')');

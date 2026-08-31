@@ -518,7 +518,17 @@ var __globeTok = /km-globe\.js\?v=([^"']+)/.exec(INDEX);
 ok(!!__globeTok, 'L6 index.html cache-busts the engine');
 ok(!!__globeTok && __globeTok[1] !== 'map-lod-20260826',
   'L6 and it is off the pre-TEXTURE-2 map-lod token, so the changed engine really re-fetches');
-ok(/global-logistics-map\.js\?v=map-earth-texture-20260826/.test(INDEX), 'L6 and the changed page');
+// TEXTURE-3-R8 — THE SIXTH PRIVATE COPY OF "WHICH TOKEN IS CURRENT", and the only one whose corrected form was
+// already sitting two lines above it. The engine assertion at L6 says "it is OFF the retired token", which stays
+// true forever; this line said "it IS map-earth-texture-20260826", which stopped being true the moment a later
+// round changed the page again — R8 did, to carry the ADM1 content-pinned loader. Same intent, stated the way its
+// sibling states it, with the series coming from the shared release order.
+var __pageTok = /global-logistics-map\.js\?v=([^"']+)/.exec(INDEX);
+ok(!!__pageTok, 'L6 index.html cache-busts the map page');
+ok(!!__pageTok && __pageTok[1] !== 'map-lod-20260826' && __pageTok[1] !== 'map-earth-texture-20260826',
+  'L6 and the changed page is off every retired token, so it really re-fetches (' + (__pageTok ? __pageTok[1] : '') + ')');
+ok(!!__pageTok && require(path.join(ROOT, 'assets/tests/_release-order.js')).isMapToken(__pageTok[1]),
+  'L6 and its token belongs to the current map series');
 ok(INDEX.indexOf('earth-albedo') === -1,
   'L7 the assets are NOT preloaded in index.html — they are fetched by the globe only when the map is opened');
 ok(PROV.indexOf('Natural Earth') !== -1, 'L8 the pre-existing vector provenance file is untouched by this task');

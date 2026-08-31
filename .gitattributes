@@ -18,3 +18,29 @@
 # Scoped deliberately to the vendored inputs. A repository-wide `* -text` would restate the line endings of
 # every file in the tree, which is a much larger change than the defect justifies.
 tools/geo/data/** -text
+
+# TEXTURE-3-R8 §A — A CONTENT-DERIVED CACHE TOKEN CANNOT SURVIVE A CHECKOUT THAT REWRITES THE CONTENT.
+#
+# R8 pins the runtime URL of the lazily-injected ADM1 asset to its own SHA-256, so that a changed asset is a
+# changed URL and no browser can serve stale division boundaries. That only works if "the bytes" is one
+# answer. Measured on this checkout, it was two:
+#
+#   assets/js/data/world-admin1-10m.js   committed 594,783 B   checked out 594,791 B   (+8 CR, one per line)
+#
+#   committed / served by GitHub Pages   sha256 4d61535a9116c49939db112ed0ce9c8820fd22f898f1e430af60748bbca93bab
+#   checked out on this Windows clone    sha256 bd17f93866e057804a385d9c608bae85ed9ee37665848d21dc8088704739464f
+#
+# The token must name what the BROWSER fetches, which is the committed blob. Deriving it from the working copy
+# instead would make the identity a property of the developer's core.autocrlf setting rather than of the asset —
+# the same token would be "wrong" on Windows and "right" in CI, and whoever noticed would correct the token to
+# match their own disk and silently break the deployed URL.
+#
+# So the file is excluded from translation and its working copy restored to the committed bytes. Disk, blob and
+# deployed asset are now one digest, and `sha256sum assets/js/data/world-admin1-10m.js` reproduces the token on
+# any platform. The R8 suite additionally asserts the file carries NO CR byte, so a clone that loses this rule
+# fails loudly instead of minting a token for bytes nobody serves.
+#
+# Scoped to this one asset, for the reason the rule above is scoped: four other files in assets/js/data share the
+# same latent divergence, but none of them is pinned by content, so renormalizing them is a larger change than
+# R8's defect justifies. Whichever one is pinned next should be added to this line, not discovered again.
+assets/js/data/world-admin1-10m.js -text

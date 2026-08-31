@@ -861,19 +861,19 @@ ok(/jul2004/.test(GLOBE), 'G-R2 and it is still the July 2004 frame');
 // the files themselves: a map file that carries THIS round's marker in its source must carry THIS round's
 // token, and one that does not must not. Next round maintains itself.
 (function () {
-  var files = ['km-globe.js', 'geo-name-resolver.js', 'geo-names-zh-hant.js', 'geo-display-aliases-zh-tw.js',
-               'geo-admin1-display-names-zh-tw.js', 'km-geo-topology.js'];
-  var SRC_OF = {
-    'km-globe.js': 'assets/js/lib/km-globe.js',
-    'geo-name-resolver.js': 'assets/js/core/geo-name-resolver.js',
-    'geo-names-zh-hant.js': 'assets/js/data/geo-names-zh-hant.js',
-    'geo-display-aliases-zh-tw.js': 'assets/js/data/geo-display-aliases-zh-tw.js',
-    'geo-admin1-display-names-zh-tw.js': 'assets/js/data/geo-admin1-display-names-zh-tw.js',
-    'km-geo-topology.js': 'assets/js/lib/km-geo-topology.js'
-  };
   // TEXTURE-3-R6 — from the shared release order. This was the fourth private copy of the same list, and the
   // second time the same duplication broke a suite for a reason unrelated to what it tests.
+  //
+  // TEXTURE-3-R8 — and the THIRD time was the file list, which was still written out here. R8 changed
+  // global-logistics-map.js, which appeared in neither this list nor the R5 suite's, so both suites reported
+  // that no map file carried the current marker. True, and useless. The inventory is shared now too.
   var RO_ = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+  var SRC_OF = {};
+  var files = RO_.MAP_BROWSER_FILES.map(function (rel) {
+    var base = rel.split('/').pop();
+    SRC_OF[base] = rel;
+    return base;
+  });
   var MAP_TOKEN_SERIES = RO_.MAP_TOKEN_SERIES;
   var CURRENT = RO_.currentMapToken();
   var CURRENT_MARKER = new RegExp(RO_.currentMapRoundMarker());

@@ -45,11 +45,37 @@ var MAP_TOKEN_SERIES = [
   'map-texture3-r3-20260826',
   'map-texture3-r4-20260827',
   'map-texture3-r5-20260831',
-  'map-texture3-r6-20260831'
+  'map-texture3-r6-20260831',
+  'map-texture3-r8-20260831'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.
 function currentMapToken() { return MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1]; }
+
+// ---------------------------------------------------------------------------------------------------------
+// THE MAP BROWSER FILE INVENTORY — added in TEXTURE-3-R8, and the reason is the R6 lesson one level further in.
+//
+// R6 moved "which round is current" here because three suites each kept their own copy and all three broke the
+// moment a round rotated a file. That worked. What R6 left behind was the OTHER half of the same rule: the SET
+// of files the rule applies to was still a hand-maintained list inside each suite.
+//
+// R8 is the first round to change a map browser file that was in neither list — global-logistics-map.js, the
+// page that owns the lazy ADM1 loader. The derived rule then reported, correctly and uselessly, that no map
+// file carried this round's marker: 3 assertions across 2 suites failed while describing a true state, because
+// the inventory they measured was incomplete rather than because anything was wrong.
+//
+// So the inventory lives here as well. A round that touches a map browser file now appends nothing at all; a
+// round that introduces one appends ONE line here and no suite changes.
+// ---------------------------------------------------------------------------------------------------------
+var MAP_BROWSER_FILES = [
+  'assets/js/data/geo-names-zh-hant.js',
+  'assets/js/data/geo-display-aliases-zh-tw.js',
+  'assets/js/data/geo-admin1-display-names-zh-tw.js',
+  'assets/js/core/geo-name-resolver.js',
+  'assets/js/lib/km-geo-topology.js',
+  'assets/js/lib/km-globe.js',
+  'assets/js/pages/global-logistics-map.js'
+];
 
 // The in-source marker that identifies work done in a given round, derived FROM the token so the two cannot
 // disagree: 'map-texture3-r6-20260831' -> 'TEXTURE-3-R6'. The pre-texture3 token has no marker of this shape,
@@ -78,6 +104,7 @@ function tokenAtOrAfter(t, floorToken) {
 module.exports = {
   ROUND_TOKENS: ROUND_TOKENS,
   MAP_TOKEN_SERIES: MAP_TOKEN_SERIES,
+  MAP_BROWSER_FILES: MAP_BROWSER_FILES,
   currentMapToken: currentMapToken,
   currentMapRoundMarker: currentMapRoundMarker,
   mapRoundMarker: mapRoundMarker,

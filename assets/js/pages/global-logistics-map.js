@@ -548,22 +548,88 @@
   // §H.4/§H.5 — LAZY, DECOUPLED ASSET LOAD. The ADM1 file is ~0.5 MB and is fetched only when the zoom level
   // first calls for it, as a same-origin <script> — so it is nowhere near the initial shipment workspace read,
   // it touches no business API, and a failure degrades this one reference layer and nothing else.
+  // TEXTURE-3-R8 §A/§B — THE ADM1 URL IS THE ASSET'S OWN CONTENT DIGEST.
+  //
+  // This asset is the one browser file the page fetches that index.html never mentions, so it never received a
+  // cache-busting token when the rest of the map set was versioned. It then CHANGED on the Map Texture 3 line
+  // (18e46bb rebuilt the boundaries), which means a returning browser holding the old copy would keep drawing
+  // the old divisions for as long as its cache lived, against a globe and a resolver that had both moved. R7
+  // found this and could only recommend a hard refresh, which is advice, not a deployment policy.
+  //
+  // The token is the SHA-256 of the asset's committed bytes rather than a round label, because a round label
+  // would have to be remembered and this cannot be forgotten: change the asset and the digest changes, so the
+  // URL changes, so the browser refetches. Change nothing and the URL is stable, so nobody refetches 0.58 MB
+  // for a round that did not touch it. `sha256sum assets/js/data/world-admin1-10m.js` reproduces it, which is
+  // why .gitattributes now pins this file's line endings — see the R8 note there.
+  //
+  // The PATH stays a bare relative literal so the deployed GitHub Pages application resolves it same-origin
+  // from whatever directory it is served under, exactly as before.
+  var ADM1_ASSET_PATH = 'assets/js/data/world-admin1-10m.js';
+  var ADM1_ASSET_TOKEN = 'adm1-10m-4d61535a9116';
+  function adm1AssetUrl() { return ADM1_ASSET_PATH + '?v=' + encodeURIComponent(ADM1_ASSET_TOKEN); }
+
+  // WHICH identity's bytes are in memory. `window.KM_WORLD_ADMIN1` cannot answer that question: the asset is
+  // inert data that assigns one global, and EVERY version of it assigns the same global under the same name. A
+  // stale unversioned <script> left in the document by an older deployment would therefore satisfy a plain
+  // "is the global defined?" test with old boundaries and suppress the fetch of the new ones forever. So the
+  // loader records what IT loaded, and trusts nothing it did not load itself.
+  var adm1LoadedToken = '';
+
+  // An existing element satisfies this request only if its src is EXACTLY the versioned URL. A path-only match
+  // is the bug this guard exists to refuse: an unversioned tag, or one carrying a superseded digest, is a
+  // DIFFERENT asset that happens to share a filename.
+  //
+  // INVARIANT that makes reuse safe: every failure path below removes its own element, so an element found here
+  // is either still in flight or loaded successfully — and loaded successfully means adm1LoadedToken is already
+  // set and the in-memory branch returned before we got here. Finding one therefore means IN FLIGHT, and the
+  // right move is to wait on it rather than fetch half a megabyte twice.
+  function adm1ScriptEl(url) {
+    try {
+      var all = document.querySelectorAll('script[src*="world-admin1-10m.js"]');
+      for (var i = 0; i < all.length; i++) {
+        if ((all[i].getAttribute('src') || '') === url) return all[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function ensureAdmin1Asset() {
     if (state.admin1AssetState === 'LOADING' || state.admin1AssetState === 'READY') return;
-    if (typeof window !== 'undefined' && window.KM_WORLD_ADMIN1) { attachAdmin1(window.KM_WORLD_ADMIN1); return; }
+    // Reuse data already in memory ONLY when this loader put it there at the CURRENT identity.
+    if (typeof window !== 'undefined' && window.KM_WORLD_ADMIN1 && adm1LoadedToken === ADM1_ASSET_TOKEN) {
+      attachAdmin1(window.KM_WORLD_ADMIN1); return;
+    }
     if (typeof document === 'undefined') return;
+    var url = adm1AssetUrl();
+    function dropAdm1El() {
+      // Leaving a failed element behind would break the in-flight invariant above and let a corpse answer the
+      // next request. Removing it also means a retry injects exactly one script, never a second.
+      try { var e = adm1ScriptEl(url); if (e && e.parentNode) e.parentNode.removeChild(e); } catch (e2) {}
+    }
+    function onLoaded() {
+      if (window.KM_WORLD_ADMIN1) { adm1LoadedToken = ADM1_ASSET_TOKEN; attachAdmin1(window.KM_WORLD_ADMIN1); return; }
+      dropAdm1El(); state.admin1AssetState = 'FAILED';
+      state.admin1AssetError = 'asset loaded but defined no data'; renderAdmin1Note();
+    }
+    function onFailed() {
+      dropAdm1El(); state.admin1AssetState = 'FAILED';
+      state.admin1AssetError = 'asset could not be fetched'; renderAdmin1Note();
+    }
+    // A deliberate retry after a failure must not inherit the previous attempt's reason, or the note would
+    // report the old cause and attachAdmin1's `!state.admin1AssetError` guard would decline to set the new one.
+    state.admin1AssetError = '';
     state.admin1AssetState = 'LOADING'; renderAdmin1Note();
+    // SINGLE FLIGHT ACROSS THE DOM, not only across `state`. `state` already coalesces callers within one page
+    // instance (it is set to LOADING synchronously, before the append below, so a second synchronous caller
+    // returns at the first line). This covers the case `state` cannot see: a load still in flight from an
+    // earlier mount, where re-injecting would fetch the same half-megabyte twice.
+    var existing = adm1ScriptEl(url);
+    if (existing) { existing.onload = onLoaded; existing.onerror = onFailed; return; }
     var el = document.createElement('script');
-    el.src = 'assets/js/data/world-admin1-10m.js';
+    el.src = url;
     el.async = true;
-    el.onload = function () {
-      if (window.KM_WORLD_ADMIN1) attachAdmin1(window.KM_WORLD_ADMIN1);
-      else { state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'asset loaded but defined no data'; renderAdmin1Note(); }
-    };
-    el.onerror = function () {
-      state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'asset could not be fetched';
-      renderAdmin1Note();
-    };
+    el.onload = onLoaded;
+    el.onerror = onFailed;
     try { document.head.appendChild(el); } catch (e) { state.admin1AssetState = 'FAILED'; state.admin1AssetError = 'script injection blocked'; }
   }
   function attachAdmin1(data) {
