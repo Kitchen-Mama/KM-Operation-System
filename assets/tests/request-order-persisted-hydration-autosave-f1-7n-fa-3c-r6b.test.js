@@ -43,12 +43,24 @@ var db = {
 };
 window.KM = { DB: db };
 // eval ONE joined string at top level (eval inside a callback would scope the declarations to the callback)
-var _r6bFns = [ '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_', '_roIsCanonicalDraftSku_',
-  '_roHasCanonicalDraft_', '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_', '_roReadActiveDraftsForScope_',
+// F1-7N-FB-4E-R4B-R2 - the canonical draft join key became the SITE (company|country|marketplace|sku) after
+// All-level hydration was proven to let one company's draft overwrite another's under a SKU-only key. The
+// identity helpers are part of the same extracted unit now, so they are named here rather than left to a
+// ReferenceError at run time.
+var _r6bFns = ['_roDraftKey_', '_roDraftKeyFromSku_', '_roDraftSku_', '_roKeyPart_',  '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_', '_roIsCanonicalDraftSku_',
+  '_roHasCanonicalDraft_', '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_', '_roApplyScopeReadbackData_', '_roReadActiveDraftsForScope_',
   '_roLoadCanonicalDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roBuildTierEditCommand_', '_roBuildOrderQtyEditCommand_',
-  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
-  '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_' ].map(function (n) { return extract(RO, n); }).join('\n');
+  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roCreateCanonicalDraftFromEdit_', '_roFindRowForRef_', '_roFindRowBySku_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_', '_roAutosaveDebounce_', '_roAutosaveFlush_',
+  '_roAllocKey', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_' ].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_r6bFns);
+
+// F1-7N-FB-4E-R4B-R2 - the canonical draft map is keyed by the SITE now (company|country|marketplace|sku),
+// because a SKU alone is not an identity: at All level two companies selling the same master SKU on the
+// same country+marketplace shared one key and the second overwrote the first. Every fixture lookup below
+// goes through the REAL key owner, so this suite cannot drift from the page's own join rule.
+var _RO_KEY_AMBIGUOUS_ = (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO) || [])[1]
+  ? JSON.parse('"' + (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO))[1] + '"') : String.fromCharCode(0) + 'AMBIGUOUS';
+function _k(sku) { return _roDraftKey_({ sku: sku, company: 'ResUS', country: 'US', marketplace: 'Amazon' }); }
 
 function flatDto(over) {
   over = over || {};
@@ -60,7 +72,7 @@ function flatDto(over) {
       { tier: 'T3', month: '2026-10', orderQty: 7520, recommendedQty: 7520, cartonQty: 188, status: 'draft', note: '', userEdited: false }
     ] };
 }
-function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: value, title: '', dataset: { sku: sku, bucket: bucket, field: field, country: 'US', marketplace: 'Amazon', month: '2026-09' }, classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; }, _s: cls } }; }
+function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: value, title: '', dataset: { sku: sku, bucket: bucket, field: field, company: 'ResUS', country: 'US', marketplace: 'Amazon', month: '2026-09' }, classList: { add: function (c) { cls[c] = 1; }, remove: function (c) { delete cls[c]; }, contains: function (c) { return !!cls[c]; }, _s: cls } }; }
 
 (function run() {
   section('A. root cause + scope derivation');
@@ -76,7 +88,7 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
   getActiveResponse = { data: { drafts: [flatDto()], noDraftSkus: [], submittedSkus: [], conflicts: [] } };
   dbWrites.count = 0;
   _roHydratePersistedDraftsForLoadedScopes_().then(function () {
-    var d = _roCanonicalDraftBySku['CO1100-R'];
+    var d = _roCanonicalDraftBySku[_k('CO1100-R')];
     ok(d && d.draftId === TARGET && d.status === 'draft' && d.draftVersion === 3, '1. persisted Draft hydrated (id/status/version) on fresh mount/search');
     eq([_roRowOrderQtyDisplay_({ sku: 'CO1100-R' }, 1, 'T2', {}), _roRowOrderQtyDisplay_({ sku: 'CO1100-R' }, 2, 'T3', {})], [320, 7520], '3. T2/T3 order_qty come from DB');
     eq([_roRowNoteDisplay_({ sku: 'CO1100-R' }, 'T2'), _roRowNoteDisplay_({ sku: 'CO1100-R' }, 'T3')], ['keep', ''], '3. tier note comes from DB (incl. blank)');
@@ -88,12 +100,12 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     getActiveResponse = { data: { drafts: [], noDraftSkus: ['CO1100-R'], submittedSkus: [], conflicts: [] } };
     return _roHydratePersistedDraftsForLoadedScopes_();
   }).then(function () {
-    ok(!_roCanonicalDraftBySku['CO1100-R'] && _roNoDraftSkus['CO1100-R'] === true, '7. missing Draft leaves allocation empty (NO_DRAFT), never generates one');
+    ok(!_roCanonicalDraftBySku[_k('CO1100-R')] && _roNoDraftSkus[_k('CO1100-R')] === true, '7. missing Draft leaves allocation empty (NO_DRAFT), never generates one');
     eq(_roRowOrderQtyDisplay_({ sku: 'CO1100-R' }, 0, 'T1', {}), '', '7. no draft → Order Qty blank (never a Suggested fallback)');
     getActiveResponse = { data: { drafts: [], noDraftSkus: [], submittedSkus: [], conflicts: [{ sku: 'CO1100-R', conflictIds: [TARGET, TARGET + '::DUP'] }] } };
     return _roHydratePersistedDraftsForLoadedScopes_();
   }).then(function () {
-    ok(_roCanonicalDraftBySku['CO1100-R'] && _roCanonicalDraftBySku['CO1100-R'].conflict === true, '8. duplicate active match fails closed (conflict entry, not a silent pick)');
+    ok(_roCanonicalDraftBySku[_k('CO1100-R')] && _roCanonicalDraftBySku[_k('CO1100-R')].conflict === true, '8. duplicate active match fails closed (conflict entry, not a silent pick)');
     ok(_roIsCanonicalDraftSku_('CO1100-R') === false, '8. a conflict SKU is NOT an edit authority');
     // late-response guard: start a hydration, bump seq (a newer run), then let the old resolve → dropped
     getActiveResponse = { data: { drafts: [flatDto()], noDraftSkus: [], submittedSkus: [], conflicts: [] } };
@@ -101,7 +113,7 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     _roHydrateSeq++;   // simulate a newer hydration/edit starting mid-flight
     return stalePromise;
   }).then(function () {
-    ok(!_roCanonicalDraftBySku['CO1100-R'] || _roCanonicalDraftBySku['CO1100-R'].conflict === true, '9. a late hydration response is dropped by the seq guard (never overwrites newer state)');
+    ok(!_roCanonicalDraftBySku[_k('CO1100-R')] || _roCanonicalDraftBySku[_k('CO1100-R')].conflict === true, '9. a late hydration response is dropped by the seq guard (never overwrites newer state)');
 
     section('B. autosave command contract');
     eq(_roBuildTierEditCommand_(TARGET, '2026-09', 'T2', { order_qty: 320 }, { draft_version: 3 }).edits[0].fields, { order_qty: 320 }, 'order_qty-only command omits note');
@@ -136,19 +148,19 @@ function fakeInput(field, sku, bucket, value) { var cls = {}; return { value: va
     section('B. optimistic concurrency + states');
     dbWrites.count = 0; updateResponse = { success: true, data: { status: 'COMPLETED', draftVersion: 5 } };
     var okInp = fakeInput('note', 'CO1100-R', 'T2', 'final');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null;
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null;
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'final' }, okInp).then(function () {
       ok(okInp.classList.contains('is-saved') && !okInp.classList.contains('is-invalid'), '14. successful autosave → Saved state');
-      eq(_roCanonicalDraftBySku['CO1100-R'].lines.T2.note, 'final', '15. local DTO note updated from confirmed save (reload shows it)');
-      eq(_roCanonicalDraftBySku['CO1100-R'].draftVersion, 5, '14. version advanced from the confirmed server response');
-      ok(_roCanonicalDraftBySku['CO1100-R'].expectedToken === null, '14. token nulled → next edit re-fetches the advanced token (one edit ⇒ one token advance)');
+      eq(_roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, 'final', '15. local DTO note updated from confirmed save (reload shows it)');
+      eq(_roCanonicalDraftBySku[_k('CO1100-R')].draftVersion, 5, '14. version advanced from the confirmed server response');
+      ok(_roCanonicalDraftBySku[_k('CO1100-R')].expectedToken === null, '14. token nulled → next edit re-fetches the advanced token (one edit ⇒ one token advance)');
     });
   }).then(function () {
     // stale-token conflict → no silent overwrite; typed value preserved; is-conflict; reload attempted
     dbWrites.count = 0; updateResponse = { success: false, error: { code: 'CONCURRENCY_TOKEN_MISMATCH' }, data: {} };
     getActiveResponse = { data: { drafts: [flatDto()], noDraftSkus: [], submittedSkus: [], conflicts: [] } };
-    _roCanonicalDraftBySku['CO1100-R'].lines.T2.note = 'server';
-    var confInp = fakeInput('note', 'CO1100-R', 'T2', 'my typed value'); _roCanonicalDraftBySku['CO1100-R'].expectedToken = null;
+    _roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note = 'server';
+    var confInp = fakeInput('note', 'CO1100-R', 'T2', 'my typed value'); _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null;
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'my typed value' }, confInp).then(function () {
       ok(confInp.classList.contains('is-conflict') && !confInp.classList.contains('is-saved'), '16/17. conflict → Conflict state, NOT Saved (no silent overwrite)');
       eq(confInp.value, 'my typed value', '18. the user\'s typed value is preserved for an explicit retry');

@@ -115,13 +115,36 @@
   // compared ONLY when a non-blank cycle is supplied — a scope-level READBACK with no cycle returns all active rows
   // for the scope (parity with the legacy line-join readback, which filtered by cycle only when present). The WRITE
   // path (loadActiveFlat / generation) always supplies a normalized non-blank cycle, so its exact-match is unchanged.
+  // F1-7N-FB-4E-R4B-R2 §3 - A BLANK BUSINESS SCOPE IS NOT A WILDCARD, AND IT IS NOT AN EMPTY IDENTITY EITHER.
+  //
+  // Every field here was optional: a blank query value meant "do not filter on it". For `sku` and `draft_purpose`
+  // that is the intended and used semantic (a scope-level readback asks for all SKUs). For the three SITE fields
+  // it silently turned a scope-less query into a whole-table one - a blank {company,country,marketplace} matched
+  // all 46 rows of a two-company fixture. Nothing in this module prevented that; only the handler's own guard
+  // did, one layer up, which means the rule lived somewhere other than where the matching happens.
+  //
+  // The site is now REQUIRED. A blank company / country / marketplace matches NOTHING, so the failure mode of a
+  // scope-less read is an empty result a caller must handle, never a whole-table response it might not notice.
+  var REQUIRED_SITE_FIELDS = ['company', 'country', 'marketplace'];
   function scopeMatches_(row, scope, cycle) {
     var c = str(cycle);
     if (c !== '' && str(row.planning_cycle) !== c) return false;
+    for (var s = 0; s < REQUIRED_SITE_FIELDS.length; s++) {
+      var sf = REQUIRED_SITE_FIELDS[s], sq = str(scope[sf]);
+      if (sq === '') return false;                       // blank site field -> matches nothing (never everything)
+      if (str(row[sf]) !== sq) return false;
+    }
     for (var i = 0; i < SCOPE_FIELDS.length; i++) {
       var f = SCOPE_FIELDS[i], q = str(scope[f]);
-      if (q !== '' && str(row[f]) !== q) return false;
+      if (REQUIRED_SITE_FIELDS.indexOf(f) !== -1) continue;   // already decided, and decided strictly
+      if (q !== '' && str(row[f]) !== q) return false;        // sku / draft_purpose keep the optional semantic
     }
+    return true;
+  }
+  // Is this a usable business scope at all? Exported so a caller can refuse BEFORE reading rather than discover
+  // it from an empty result.
+  function isConcreteScope(scope) {
+    for (var i = 0; i < REQUIRED_SITE_FIELDS.length; i++) { if (str((scope || {})[REQUIRED_SITE_FIELDS[i]]) === '') return false; }
     return true;
   }
   function loadActiveFlat(sheetSet, query) {
@@ -654,6 +677,7 @@
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
     readSubmittedFlatForScope: readSubmittedFlatForScope, auditFlatForScope: auditFlatForScope,
+    isConcreteScope: isConcreteScope, MAX_READBACK_SCOPES: 25,
     withFlatDefaults: withFlatDefaults_,
     planMigration: planMigration, validateStaging: validateStaging,
     VERSION: 'kmrdv2p-fb4e-r4b-r1-1'

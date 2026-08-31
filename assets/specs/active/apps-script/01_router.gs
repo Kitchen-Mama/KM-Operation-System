@@ -96,6 +96,33 @@ function rtrGetReadActionList_() {
   return out.sort();
 }
 
+// F1-7N-FB-4E-R4B-R2 §1 - THE READ TABLE'S HANDLERS DO NOT ALL RETURN THE SAME THING, AND THE DISPATCH
+// ASSUMED THEY DID.
+//
+// R4A1 added the GET read table and dispatched it as `return jsonResponse_(handler(body))`. That is correct for
+// the eighteen handlers that return a PLAIN ENVELOPE OBJECT - and wrong for the three that already return a
+// ContentService TextOutput:
+//
+//     requestOrderDraft.getActive              (47_)  <- the Order Planning draft readback
+//     system.requestOrderSendReconcile         (65_)
+//     system.allocationDraftIdentityDiagnostic (67_)
+//
+// JSON.stringify(TextOutput) is "{}" - a TextOutput has no enumerable own properties - so those three answered
+// every GET with the literal two-byte body {}. On the POST path the same handlers are returned DIRECTLY and are
+// unaffected, which is exactly why this looked like a hydration defect rather than a transport one: every page
+// still loaded (its workspace handler returns an object), and only the draft read came back empty. Measured
+// end to end: 45 rows / 92 positive / 43 zero survive the readback filter and become 0 / 0 / 0 here.
+//
+// The dispatch now EMITS whatever the handler produced. A TextOutput is already a complete answer and is passed
+// through untouched; a plain object is serialized. Nothing is double-wrapped, and a handler is free to return
+// either - which is the property that was silently assumed and is now enforced at the one place it matters.
+function rtrIsTextOutput_(v) {
+  return !!(v && typeof v === 'object' && typeof v.getContent === 'function' && typeof v.setMimeType === 'function');
+}
+function rtrEmitHandlerResult_(v) {
+  return rtrIsTextOutput_(v) ? v : jsonResponse_(v);
+}
+
 // Reconstruct the request body from the query string. Every failure here is TYPED and answers with zero reads:
 // a malformed or oversized read must be a named refusal, never a partially-parsed request that runs anyway.
 function rtrParseGetBody_(e, action) {
@@ -214,7 +241,8 @@ function doGet(e) {
       // Stamp the entry point, as the other GET-routed reads already do, so an answer can state WHICH handler
       // served it as a fact rather than the caller inferring it from the verb.
       _parsed.body.__km_handler = 'doGet';
-      return jsonResponse_(_rtrRead[action](_parsed.body));
+      // R4B-R2 §1 - EMIT, never re-wrap. See rtrEmitHandlerResult_ above for what re-wrapping cost.
+      return rtrEmitHandlerResult_(_rtrRead[action](_parsed.body));
     }
 
     var attempted = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';

@@ -119,7 +119,11 @@ ok(!/_roManualDraftId_/.test(send), '§C the Send transition no longer creates a
 ok(typeof _roManualDraftId_ === 'function', '§5 the deterministic manual-id authority is retained (reversible), not deleted');
 // F1-7N-FB-3A §E — the exclusion is unchanged in EFFECT (still an immediate `return`); it is now also
 // COUNTED, so the confirmation summary can explain the gap between rows on screen and rows written.
-ok(/_roIsSubmittedSku_\(item\.sku\)\) \{ _roExcluded\.already_submitted_sku\+\+; return; \}/.test(send),
+// F1-7N-FB-4E-R4B-R2 - RESTATED FROM THE ARGUMENT TO THE ROUTING. These pinned the exact value passed at
+// the call site (a bare SKU). R4B-R2 proved a SKU is not a draft identity - at All level two companies
+// share one - so the call sites now pass the full site reference (input.dataset / item). The ROUTING is
+// what these lines defend, and it is unchanged; only the completeness of the reference improved.
+ok(/_roIsSubmittedSku_\(item(\.sku)?\)\) \{ _roExcluded\.already_submitted_sku\+\+; return; \}/.test(send),
   '§14/§18 already-executed (submitted) SKUs are excluded from a new Send — and the exclusion is counted');
 ok(/const eff = _roSendOrderQty_\(item, idx, b, e\)/.test(send), '§17 execution qty = canonical persisted order_qty (no recompute)');
 ok(!/getOrderPlanningGap|calculateGap|KMREC|calculateSuggestedOrderQty/.test(send), '§17/§18 no gap/KMREC/suggested recompute in Send');

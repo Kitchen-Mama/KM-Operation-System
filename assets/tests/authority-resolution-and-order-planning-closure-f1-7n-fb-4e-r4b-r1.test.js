@@ -306,9 +306,18 @@ var ctxRO = (function loadRequestOrder() {
   return ctx;
 })();
 
+// F1-7N-FB-4E-R4B-R2 - RESTATED FOR THE STRICTER JOIN KEY. These assertions were right about the property
+// ("the persisted quantity hydrates by EXACT identity") and were keying the fixture by SKU alone, which R4B-R2
+// proved is not an identity: two companies selling the same master SKU on the same country+marketplace shared a
+// key, and the second one overwrote the first. The fixture now carries the SITE, which is what "exact identity"
+// meant all along - so these tests get stricter here rather than weaker.
+var SITE = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
 function setDraft(dto) {
   var norm = ctxRO._roV2NormalizeFlatDraft_(dto);
-  var map = {}; map[String(norm.sku).toUpperCase()] = norm;
+  ctxRO.__ROWS = [{ sku: norm.sku, company: SITE.company, country: SITE.country, marketplace: SITE.marketplace, boxSize: 12 }];
+  vm.runInContext('requestOrderState.data = __ROWS;', ctxRO);
+  var map = {};
+  map[ctxRO._roDraftKey_({ sku: norm.sku, company: SITE.company, country: SITE.country, marketplace: SITE.marketplace })] = norm;
   vm.runInContext('_roCanonicalDraftBySku = __D;', Object.assign(ctxRO, { __D: map }));
   return norm;
 }
@@ -316,7 +325,7 @@ var dto = KMRDV2P.readActiveFlatForScope(sheetSet([flatRow()]), SCOPE_Q)[0];
 ok(ctxRO._roV2IsFlatDraft_(dto), '7.1 the flat DTO is recognised as flat by the client normalizer');
 var norm = setDraft(dto);
 eq(norm.sku, 'SP1', '7.2 identity comes from the DTO scope, never from a display string');
-var item = { sku: 'SP1', boxSize: 12 };
+var item = { sku: 'SP1', company: 'ResUS', country: 'US', marketplace: 'Amazon', boxSize: 12 };
 eq(ctxRO._roRowOrderQtyDisplay_(item, 0, 'T1', null), 360, '7.3 the persisted T1 quantity hydrates by exact identity');
 eq(ctxRO._roRowOrderQtyDisplay_(item, 0, 'T3', null), 100, '7.4 ... and T3');
 // A DIFFERENT SKU must not borrow this draft.
@@ -398,7 +407,16 @@ ok(!/'TEMP_ORDER_PLANNING_DRAFT_READBACK_DIAGNOSE'\s*:/.test(read('assets/specs/
   ok(DIAG.indexOf(k) !== -1, '2.21 the diagnostic reports "' + k + '"');
 });
 ok(/tempRodMask_/.test(DIAG), '2.22 canonical identities are MASKED in the output');
-ok(/rescuedByBlankFieldDefaults/.test(DIAG), '2.23 it counts exactly the rows this round\'s coherence fix rescues — confirm or eliminate, from live data');
+ok(/rescuedByBlankFieldDefaults/.test(DIAG), '2.23 it counts exactly the rows the coherence fix rescues');
+// F1-7N-FB-4E-R4B-R2 — THE ANSWER CAME BACK, AND IT WAS "NO". The user ran the diagnostic twice against live
+// data: rescuedByBlankFieldDefaults = 0. The blank-field defaults are therefore NOT the live cause of the
+// missing Order Qty. They stay, because they are independently correct — the reader disagreed with its own DTO
+// and its own writer — but R4B-R1's report was wrong to present them as the leading candidate. The real cause
+// (the router re-wrapping a TextOutput, so the answer was the literal body {}) is proved end to end in
+// order-planning-live-hydration-join-f1-7n-fb-4e-r4b-r2.test.js.
+ok(/PURPOSE COMPLETE/.test(DIAG) && /REMOVABLE FROM THE LIVE APPS SCRIPT PROJECT/.test(DIAG),
+  '2.23b the diagnostic records that its purpose is complete and that it may be removed from the live project');
+ok(/rescuedByBlankFieldDefaults = 0/.test(DIAG), '2.23c ... and records the live answer it returned');
 // The disproved lead, pinned so it is not chased again.
 ok(/var REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true;/.test(read('assets/specs/active/apps-script/00_config.gs')),
   '2.24 DISPROVED LEAD: the flat cutover flag is TRUE, so the retired child-line readback is NOT the live path');
@@ -610,7 +628,9 @@ eq(Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read('assets/j
 
 // The coupled release group moved TOGETHER onto one known token.
 var toks = (HTML.match(/\?v=([a-z0-9-]+)/g) || []).map(function (s) { return s.slice(3); });
-var groupTok = 'fb4er4br1-authority-20260831';
+// R4B-R2 bumped the coupled group; this suite defends LOCKSTEP and a KNOWN token, not one round's literal.
+var KNOWN_GROUP_TOKENS = ['fb4er4br1-authority-20260831', 'fb4er4br2-hydrationjoin-20260831'];
+var groupTok = KNOWN_GROUP_TOKENS.filter(function (t) { return HTML.indexOf('?v=' + t) !== -1; })[0] || KNOWN_GROUP_TOKENS[0];
 ok(toks.indexOf(groupTok) !== -1, '16.7 the frontend deployment group carries this round\'s release token');
 eq((HTML.match(new RegExp('\\?v=' + groupTok, 'g')) || []).length, 17,
   '16.8 ... on all 17 refs of the coupled group (16 from R4B + the new KMFSA module)');

@@ -43,12 +43,24 @@ var db = {
   getShippingAllocationDraftLines: function () { draftLineCalls.count++; return []; }
 };
 window.KM = { DB: db };
-var _fns = ['_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_',
+// F1-7N-FB-4E-R4B-R2 - the canonical draft join key became the SITE (company|country|marketplace|sku) after
+// All-level hydration was proven to let one company's draft overwrite another's under a SKU-only key. The
+// identity helpers are part of the same extracted unit now, so they are named here rather than left to a
+// ReferenceError at run time.
+var _fns = ['_roDraftKey_', '_roDraftKeyFromSku_', '_roDraftSku_', '_roKeyPart_', '_roScopeStr_', '_roScopesFromLoadedData_', '_roScopeKey3_', '_roCanonicalScope_', '_roCanonKey_', '_roCanonicalRowFor_',
   '_roIsCanonicalDraftSku_', '_roDraftUiState_', '_roRowOrderQtyDisplay_', '_roRowNoteDisplay_', '_roV2IsFlatDraft_', '_roV2NormalizeFlatDraft_',
-  '_roReadActiveDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roLoadCanonicalDraftsForScope_', '_roBuildTierEditCommand_',
-  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_',
-  '_roAutosaveDebounce_', '_roAutosaveFlush_', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_', '_roDebugSnapshot_'].map(function (n) { return extract(RO, n); }).join('\n');
+  '_roApplyScopeReadbackData_', '_roReadActiveDraftsForScope_', '_roHydratePersistedDraftsForLoadedScopes_', '_roLoadCanonicalDraftsForScope_', '_roBuildTierEditCommand_',
+  '_roSetFieldState_', '_roClassifyEditResult_', '_roSaveTierEditToCanonicalDraft_', '_roCreateCanonicalDraftFromEdit_', '_roFindRowForRef_', '_roFindRowBySku_', '_roSaveTierEditCore_', '_roEnsureDraftToken_', '_roAutosaveKey_',
+  '_roAutosaveDebounce_', '_roAutosaveFlush_', '_roAllocKey', '_roAllocEnsure', '_roAllocEditNote', '_roAllocNoteFlush', '_roNotify_', '_roDebugSnapshot_'].map(function (n) { return extract(RO, n); }).join('\n');
 eval(_fns);
+
+// F1-7N-FB-4E-R4B-R2 - the canonical draft map is keyed by the SITE now (company|country|marketplace|sku),
+// because a SKU alone is not an identity: at All level two companies selling the same master SKU on the
+// same country+marketplace shared one key and the second overwrote the first. Every fixture lookup below
+// goes through the REAL key owner, so this suite cannot drift from the page's own join rule.
+var _RO_KEY_AMBIGUOUS_ = (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO) || [])[1]
+  ? JSON.parse('"' + (/_RO_KEY_AMBIGUOUS_ = '([^']*)'/.exec(RO))[1] + '"') : String.fromCharCode(0) + 'AMBIGUOUS';
+function _k(sku) { return _roDraftKey_({ sku: sku, company: 'ResUS', country: 'US', marketplace: 'Amazon' }); }
 
 var TARGET = 'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1100-R';
 function flatDto(sku) {
@@ -90,50 +102,50 @@ function legacyOk() { return { success: true, data: { status: 'COMPLETED', reaso
   _roReadActiveDraftsForScope_({ company: 'ResUS', country: 'US', marketplace: 'Amazon' }, a, n, s).then(function () {
     _roCanonicalDraftBySku = a;
     // T1
-    _timers = []; dbWrites.count = 0; tokenVersion = 3; _roCanonicalDraftBySku['CO1100-R'].expectedToken = null;
+    _timers = []; dbWrites.count = 0; tokenVersion = 3; _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null;
     updateResponse = flatOk('T1');
     var i1 = noteInput('CO1100-R', 'T1', 'note-one'); _roAllocEditNote(i1); _roAllocNoteFlush(i1);
     return tick().then(function () {
       eq([lastCmd.edits[0].naturalKey.request_bucket, lastCmd.edits[0].naturalKey.request_month, lastCmd.edits[0].fields.note], ['T1', '2026-08', 'note-one'], '1. rendered T1 note → command for T1 (month 2026-08) with note-one');
       ok(i1.classList.contains('is-saved'), '1. T1 shows Saved on the FLAT confirmed response');
-      eq([_roCanonicalDraftBySku['CO1100-R'].lines.T1.note, _roCanonicalDraftBySku['CO1100-R'].lines.T2.note, _roCanonicalDraftBySku['CO1100-R'].lines.T3.note], ['note-one', '', ''], '1. ONLY T1 note persisted (T2/T3 untouched)');
+      eq([_roCanonicalDraftBySku[_k('CO1100-R')].lines.T1.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T3.note], ['note-one', '', ''], '1. ONLY T1 note persisted (T2/T3 untouched)');
     });
   }).then(function () {
     // T2
-    _timers = []; dbWrites.count = 0; _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; updateResponse = flatOk('T2');
+    _timers = []; dbWrites.count = 0; _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; updateResponse = flatOk('T2');
     var i2 = noteInput('CO1100-R', 'T2', 'note-two'); _roAllocEditNote(i2); _roAllocNoteFlush(i2);
     return tick().then(function () {
       eq([lastCmd.edits[0].naturalKey.request_bucket, lastCmd.edits[0].fields.note], ['T2', 'note-two'], '2. rendered T2 note → command for T2 with note-two');
-      eq([_roCanonicalDraftBySku['CO1100-R'].lines.T1.note, _roCanonicalDraftBySku['CO1100-R'].lines.T2.note, _roCanonicalDraftBySku['CO1100-R'].lines.T3.note], ['note-one', 'note-two', ''], '2. editing T2 wrote ONLY T2 (T1 kept, T3 untouched)');
+      eq([_roCanonicalDraftBySku[_k('CO1100-R')].lines.T1.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T3.note], ['note-one', 'note-two', ''], '2. editing T2 wrote ONLY T2 (T1 kept, T3 untouched)');
     });
   }).then(function () {
     // T3 — the exact "editing T3 must never write T2" contract
-    _timers = []; dbWrites.count = 0; _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; updateResponse = flatOk('T3');
+    _timers = []; dbWrites.count = 0; _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; updateResponse = flatOk('T3');
     var i3 = noteInput('CO1100-R', 'T3', 'note-three'); _roAllocEditNote(i3); _roAllocNoteFlush(i3);
     return tick().then(function () {
       eq([lastCmd.edits[0].naturalKey.request_bucket, lastCmd.edits[0].naturalKey.request_month, lastCmd.edits[0].fields.note], ['T3', '2026-10', 'note-three'], '3. rendered T3 note → command for T3 (month 2026-10)');
-      eq([_roCanonicalDraftBySku['CO1100-R'].lines.T2.note, _roCanonicalDraftBySku['CO1100-R'].lines.T3.note], ['note-two', 'note-three'], '3/8. editing T3 NEVER wrote T2 (tier indexes cannot collide)');
+      eq([_roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T3.note], ['note-two', 'note-three'], '3/8. editing T3 NEVER wrote T2 (tier indexes cannot collide)');
     });
   }).then(function () {
     section('Objective A — blank clears ONLY the selected tier');
-    _timers = []; _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; updateResponse = flatOk('T2');
+    _timers = []; _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; updateResponse = flatOk('T2');
     var ib = noteInput('CO1100-R', 'T2', ''); _roAllocEditNote(ib); _roAllocNoteFlush(ib);
     return tick().then(function () {
       eq(lastCmd.edits[0].fields.note, '', '7. blank T2 note → note:"" (deliberate clear, not omitted)');
-      eq([_roCanonicalDraftBySku['CO1100-R'].lines.T1.note, _roCanonicalDraftBySku['CO1100-R'].lines.T2.note, _roCanonicalDraftBySku['CO1100-R'].lines.T3.note], ['note-one', '', 'note-three'], '7. blank cleared ONLY T2 (T1/T3 preserved)');
+      eq([_roCanonicalDraftBySku[_k('CO1100-R')].lines.T1.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, _roCanonicalDraftBySku[_k('CO1100-R')].lines.T3.note], ['note-one', '', 'note-three'], '7. blank cleared ONLY T2 (T1/T3 preserved)');
     });
   }).then(function () {
     section('Objective A/B — the LIVE stale-token cascade (v3 stuck, notes empty) is CLOSED');
     // Reproduce: a qty edit commits on the backend (FLAT shape, no status). Pre-R6B2 this was misread as "Save failed"
     // so the token was NEVER nulled → the following note edit reused the stale token → backend CONFLICT → note never
     // committed (draft stuck at v3, notes empty). Now the qty edit is correctly Saved + token nulled → note re-fetches.
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = { draft_version: 2, userEditFingerprint: 'stale' };  // a stale cached token
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = { draft_version: 2, userEditFingerprint: 'stale' };  // a stale cached token
     tokenFetches.count = 0; dbWrites.count = 0; _roDraftEditQueue_ = {}; tokenVersion = 4;
     updateResponse = flatOk('T2');
     var qi = noteInput('CO1100-R', 'T2', ''); qi.dataset.field = 'qty';
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { order_qty: 360 }, qi).then(function () {
       ok(qi.classList.contains('is-saved'), 'cascade: the qty edit (FLAT success) is now correctly Saved (was a false "Save failed")');
-      eq(_roCanonicalDraftBySku['CO1100-R'].expectedToken, null, 'cascade: a confirmed edit NULLS the cached token (the exact fix that breaks the stale-token chain)');
+      eq(_roCanonicalDraftBySku[_k('CO1100-R')].expectedToken, null, 'cascade: a confirmed edit NULLS the cached token (the exact fix that breaks the stale-token chain)');
     });
   }).then(function () {
     dbWrites.count = 0; tokenFetches.count = 0; updateResponse = flatOk('T2');
@@ -141,11 +153,11 @@ function legacyOk() { return { success: true, data: { status: 'COMPLETED', reaso
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'after-qty' }, ni).then(function () {
       eq(tokenFetches.count, 1, 'cascade: the following note edit re-fetches a FRESH token (v4) — never reuses the stale v2');
       ok(ni.classList.contains('is-saved'), 'cascade: the note now COMMITS (no false CONFLICT) — the live "notes empty, v3 stuck" defect is closed');
-      eq(_roCanonicalDraftBySku['CO1100-R'].lines.T2.note, 'after-qty', 'cascade: T2 note persisted to the local DTO after the qty edit');
+      eq(_roCanonicalDraftBySku[_k('CO1100-R')].lines.T2.note, 'after-qty', 'cascade: T2 note persisted to the local DTO after the qty edit');
     });
   }).then(function () {
     section('Objective A — Saved requires a CONFIRMED response; committed-unverified is NOT a clean Saved');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; updateResponse = flatReadbackFailed('T2');
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; updateResponse = flatReadbackFailed('T2');
     getActiveResponse = { data: { drafts: [flatDto('CO1100-R')], noDraftSkus: [], submittedSkus: [], conflicts: [] } };
     var ru = noteInput('CO1100-R', 'T2', 'unver');
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'unver' }, ru).then(function () {
@@ -154,7 +166,7 @@ function legacyOk() { return { success: true, data: { status: 'COMPLETED', reaso
     });
   }).then(function () {
     section('Objective B — hydrated token reuse: no redundant pre-write token fetch when a token is already cached');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = { draft_version: 5, userEditFingerprint: 'cached' };  // adopted/hydrated token
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = { draft_version: 5, userEditFingerprint: 'cached' };  // adopted/hydrated token
     tokenFetches.count = 0; dbWrites.count = 0; updateResponse = flatOk('T2');
     var bi = noteInput('CO1100-R', 'T2', 'reuse');
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'reuse' }, bi).then(function () {
@@ -162,14 +174,14 @@ function legacyOk() { return { success: true, data: { status: 'COMPLETED', reaso
     });
   }).then(function () {
     // adopt-forward: a response carrying a next token is adopted (skips the next pre-write fetch when supported)
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; updateResponse = { success: true, data: { wrote: true, outcome: 'EDITED', expectedToken: { draft_version: 9, userEditFingerprint: 'next' }, result: { writeOutcome: 'WRITE_COMMITTED_VERIFIED' } } };
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; updateResponse = { success: true, data: { wrote: true, outcome: 'EDITED', expectedToken: { draft_version: 9, userEditFingerprint: 'next' }, result: { writeOutcome: 'WRITE_COMMITTED_VERIFIED' } } };
     var ai = noteInput('CO1100-R', 'T2', 'adopt');
     return _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { note: 'adopt' }, ai).then(function () {
-      eq(_roCanonicalDraftBySku['CO1100-R'].expectedToken, { draft_version: 9, userEditFingerprint: 'next' }, 'B. a returned next-token is ADOPTED (skips the next fetch) — "adopt the next valid token when supported"');
+      eq(_roCanonicalDraftBySku[_k('CO1100-R')].expectedToken, { draft_version: 9, userEditFingerprint: 'next' }, 'B. a returned next-token is ADOPTED (skips the next fetch) — "adopt the next valid token when supported"');
     });
   }).then(function () {
     section('Objective A12 — concurrent same-draft edits serialize with a refreshed token');
-    _roCanonicalDraftBySku['CO1100-R'].expectedToken = null; tokenFetches.count = 0; dbWrites.count = 0; _roDraftEditQueue_ = {}; updateResponse = flatOk('T2');
+    _roCanonicalDraftBySku[_k('CO1100-R')].expectedToken = null; tokenFetches.count = 0; dbWrites.count = 0; _roDraftEditQueue_ = {}; updateResponse = flatOk('T2');
     var p1 = _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T2', { order_qty: 360 }, noteInput('CO1100-R', 'T2', ''));
     var p2 = _roSaveTierEditToCanonicalDraft_('CO1100-R', 'T3', { note: 'z' }, noteInput('CO1100-R', 'T3', 'z'));
     return Promise.all([p1, p2, tick().then(tick)]).then(function () {

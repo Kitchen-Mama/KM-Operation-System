@@ -4705,6 +4705,10 @@ window.KM.DB.getRequestOrderDraftJobStatus = function(runId) { return _kmGapRead
 window.KM.DB.cancelRequestOrderDraftJob = function(runId) { return _kmWeeklyCommand_('requestOrderDraft.job.cancel', { payload: { runId: runId || null } }); };
 // scope read-back (SKU omitted → { drafts, conflicts, noDraftSkus }). READ ONLY. { success, data:{...} }.
 window.KM.DB.getActiveRequestOrderDrafts = function(scope) { return _kmGapRead_('requestOrderDraft.getActive', { payload: { scope: scope || {} } }); };
+// F1-7N-FB-4E-R4B-R2 §3 - ONE bounded multi-scope readback. The All-level Order Planning view knows exactly which
+// scopes are on screen; it used to turn that into one cold Apps Script execution per scope. The list is explicit,
+// deduplicated, sorted and capped server-side, and an oversized list is REFUSED rather than truncated.
+window.KM.DB.getActiveRequestOrderDraftsForScopes = function(scopes) { return _kmGapRead_('requestOrderDraft.getActive', { payload: { scopes: scopes || [] } }); };
 // canonical concurrency token for a draft (25_) → { success, data:{ expectedToken:{draft_version,userEditFingerprint} } }.
 window.KM.DB.getRecommendationDraftToken = function(recommendationType, draftId) { return _kmWeeklyCommand_('getRecommendationDraftToken', { recommendationType: recommendationType, draftId: draftId }); };
 // canonical LOCKED user-decision edit (25_). payload: { recommendationType, draftId, edits:[{naturalKey,fields}], expectedToken, actor? }.

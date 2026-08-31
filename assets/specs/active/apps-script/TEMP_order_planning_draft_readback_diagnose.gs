@@ -1,6 +1,29 @@
 /**
  * TEMP — F1-7N-FB-4E-R4B-R1 §2 · ORDER PLANNING DRAFT READBACK DIAGNOSE
  * =====================================================================================================
+ * PURPOSE COMPLETE — REMOVABLE FROM THE LIVE APPS SCRIPT PROJECT (F1-7N-FB-4E-R4B-R2 §7).
+ *
+ * It was run twice against live data and it answered the question it was built for:
+ *
+ *     rescuedByBlankFieldDefaults = 0
+ *
+ * So the R4B-R1 blank-status / blank-draft_purpose coherence fix is NOT the live cause of the missing Order
+ * Qty. It remains in place because it is independently correct (the reader disagreed with its own DTO and its
+ * own writer), but it is not the root cause and R4B-R1's report was wrong to present it as the leading
+ * candidate. The REAL cause was found by instrumenting the shipped path end to end: the router's GET read-table
+ * dispatch re-wrapped a handler that already returned a ContentService TextOutput, so requestOrderDraft.getActive
+ * answered every GET with the literal body {}. Fixed in 01_router.gs (rtrEmitHandlerResult_).
+ *
+ * The run also showed why one line of its own output must not be over-read: with NO scope it reported
+ * scopeRows = 0. That is a property of THIS FILE's matcher, which compares blank against blank exactly. It is
+ * NOT how the runtime behaves — KMRDV2P.scopeMatches_ treated a blank field as a wildcard (now fixed to match
+ * nothing), and the handler refuses a blank scope outright. Three matchers, three meanings for blank; only the
+ * shipped path is evidence about the shipped path.
+ *
+ * DISPOSITION: the USER may delete this file from the live Apps Script editor at any time. It is kept in the
+ * repository as tooling (the R4B-R1 suite asserts its read-only properties) and it must stay UN-ROUTED and
+ * READ-ONLY for as long as it exists. It is NOT a runtime dependency of anything and needs no re-sync.
+ * =====================================================================================================
  * STRICTLY READ-ONLY. It answers ONE question with live evidence: the live
  * request_order_allocation_drafts table has rows, and the Order Planning grid shows blank Order Qty —
  * where between the sheet and the input does the row stop?

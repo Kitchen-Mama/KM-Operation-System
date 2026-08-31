@@ -127,7 +127,11 @@ section('WIRING — adapter wrappers + edit routing + Send Request untouched + n
   // order_qty edit only — recommended_qty never in the edit command
   ok(!/fields:\s*\{[^}]*recommended_qty/.test(ro), 'W4 no recommended_qty in any edit command');
   // _roAllocEdit (onchange) routes persisted rows to the canonical save; oninput stays carton-only (no keystroke storm)
-  ok(/_roIsCanonicalDraftSku_\(input\.dataset\.sku\)[\s\S]{0,120}_roSaveOrderQtyToCanonicalDraft_/.test(ro), 'W5 _roAllocEdit routes persisted-draft rows to the canonical save');
+// F1-7N-FB-4E-R4B-R2 - RESTATED FROM THE ARGUMENT TO THE ROUTING. These pinned the exact value passed at
+// the call site (a bare SKU). R4B-R2 proved a SKU is not a draft identity - at All level two companies
+// share one - so the call sites now pass the full site reference (input.dataset / item). The ROUTING is
+// what these lines defend, and it is unchanged; only the completeness of the reference improved.
+  ok(/_roIsCanonicalDraftSku_\(input\.dataset(\.sku)?\)[\s\S]{0,160}_roSaveOrderQtyToCanonicalDraft_\(input\.dataset/.test(ro), 'W5 _roAllocEdit routes persisted-draft rows to the canonical save, with the FULL site reference');
   ok(/oninput="_roRecomputeAllocRow\(this\)"/.test(RO_JS) && /onchange="_roAllocEdit\(this\)"/.test(RO_JS), 'W6 canonical save rides onchange (commit), not oninput (no per-keystroke write)');
   // NO_DRAFT / conflict fail closed (no canonical write)
   ok(/if \(!ref\) return Promise\.resolve\(null\);/.test(ro), 'W7 the canonical tier save no-ops when the row has no persisted draft (never auto-creates)');

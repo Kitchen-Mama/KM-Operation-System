@@ -451,9 +451,60 @@ function handleGenerateRequestOrderDraftFromGap_(body) {
 // never creates a sheet. SKU PRESENT → the single active draft (R4E2 one-SKU DTO, unchanged, backward compatible).
 // SKU OMITTED → SCOPE-LEVEL: enumerate eligible READY-gap SKUs and classify each as PERSISTED / NO_DRAFT /
 // BLOCKED_CONFLICT — one request returns the whole Order Allocation grid for the future R4E3 UI. ACTIVE = draft|site_confirmed.
+// F1-7N-FB-4E-R4B-R2 §3 - the hard maximum for a bounded multi-scope readback. It is a REFUSAL bound, not a
+// truncation: an oversized request is rejected before any row is read, so a caller can never believe it received
+// a complete answer that was quietly cut short.
+var REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ = 25;
+
+// Canonicalize + dedupe + sort an explicit scope list. Returns { ok, scopes } or { ok:false, error, message }.
+// A blank field anywhere is a malformed scope, never an "all" wildcard - see the matcher note in KMRDV2P.
+function recGenNormalizeScopeList_(list) {
+  if (!list || Object.prototype.toString.call(list) !== '[object Array]') {
+    return { ok: false, error: 'INVALID_SCOPE', message: 'scopes must be an array of {company,country,marketplace}' };
+  }
+  if (list.length === 0) {
+    return { ok: false, error: 'INVALID_SCOPE', message: 'scopes must name at least one concrete scope' };
+  }
+  if (list.length > REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_) {
+    return { ok: false, error: 'TOO_MANY_SCOPES', message: 'at most ' + REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ + ' scopes per readback; got ' + list.length };
+  }
+  var seen = {}, out = [];
+  for (var i = 0; i < list.length; i++) {
+    var s = list[i] || {};
+    var c = r4e2Str_(s.company), co = r4e2Str_(s.country), m = r4e2Str_(s.marketplace);
+    if (!c || !co || !m) {
+      return { ok: false, error: 'INVALID_SCOPE', message: 'scopes[' + i + '] needs company + country + marketplace (a blank field is not "all")' };
+    }
+    var k = c.toUpperCase() + '|' + co.toUpperCase() + '|' + m.toUpperCase();
+    if (seen[k]) continue;
+    seen[k] = 1; out.push({ company: c, country: co, marketplace: m, __k: k });
+  }
+  out.sort(function (a, b) { return a.__k < b.__k ? -1 : (a.__k > b.__k ? 1 : 0); });
+  for (var j = 0; j < out.length; j++) delete out[j].__k;
+  return { ok: true, scopes: out };
+}
+
 function handleGetActiveRequestOrderDraftReadback_(body) {
   try {
     var b0 = (body && body.payload) || body || {};   // accept {payload:{scope}} (adapter convention) or flat {scope}
+    // R4B-R2 §3 - the BOUNDED MULTI-SCOPE form. The single-scope path below is untouched and byte-identical for
+    // every existing caller; `scopes` is an additive, explicitly-named alternative for the All-level view, which
+    // was otherwise issuing one cold Apps Script execution per visible scope.
+    if (b0.scopes !== undefined) {
+      var norm = recGenNormalizeScopeList_(b0.scopes);
+      if (!norm.ok) return jsonResponse_({ success: false, error: norm.error, message: norm.message });
+      var ssM = SpreadsheetApp.getActiveSpreadsheet();
+      var cycleM = r4e2Str_(b0.planningCycle);
+      var results = [];
+      for (var si = 0; si < norm.scopes.length; si++) {
+        var one = recGenFlatReadback_(ssM, norm.scopes[si], '', cycleM);
+        if (!one.success) return jsonResponse_(one);       // fail the WHOLE request; never a partial answer
+        results.push(one.data);
+      }
+      return jsonResponse_({ success: true, data: { status: 'MULTI_SCOPE_READBACK',
+        scopeCount: norm.scopes.length, maxScopes: REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_,
+        scopes: norm.scopes, results: results } });
+    }
     var scope = b0.scope || b0;
     var company = r4e2Str_(scope.company), country = r4e2Str_(scope.country),
         marketplace = r4e2Str_(scope.marketplace), sku = r4e2Str_(scope.sku),

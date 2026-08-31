@@ -2106,7 +2106,7 @@ function renderExpandPanel(item) {
   // F1-7N-FA-3C-R6B1 — per-SKU Order Allocation hydration state. Editable inputs appear ONLY when the Draft + token are
   // resolved (LOADED) or for an ordinary MANUAL SKU. LOADING → disabled skeleton (never a blank editable field);
   // NO_SAVED_DRAFT / DRAFT_CONFLICT / DRAFT_LOAD_ERROR → disabled + explicit state (never a Suggested→Order Qty fallback).
-  var _allocState = (typeof _roDraftUiState_ === 'function') ? _roDraftUiState_(sku) : 'MANUAL';
+  var _allocState = (typeof _roDraftUiState_ === 'function') ? _roDraftUiState_(item) : 'MANUAL';
   var _editable = (_allocState === 'DRAFT_LOADED' || _allocState === 'MANUAL');
   var _dis = _editable ? '' : ' disabled';
   var _stCls = (_allocState === 'DRAFT_LOADING') ? ' is-loading' : ((_allocState === 'DRAFT_CONFLICT' || _allocState === 'DRAFT_LOAD_ERROR') ? ' is-invalid' : '');
@@ -2135,11 +2135,11 @@ function renderExpandPanel(item) {
     return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
       sugCell +
       '<td><input type="number" min="0" step="1" class="ro-alloc-qty' + _stCls + '" value="' + qtyVal + '"' + _dis + ' ' +
-        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
+        'data-sku="' + _roAttr(sku) + '" data-company="' + _roAttr(item.company || '') + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
         'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-field="qty" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
       '<td class="ro-carton-cell" data-cell="carton">' + cartonHtml + '</td>' +
       '<td><input type="text" class="ro-alloc-note' + _stCls + '" value="' + noteVal + '"' + _dis + ' ' +
-        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" ' +
+        'data-sku="' + _roAttr(sku) + '" data-company="' + _roAttr(item.company || '') + '" data-country="' + _roAttr(country) + '" ' +
         'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" data-field="note" data-month="' + _roYm(mo) + '" ' +
         'oninput="_roAllocEditNote(this)" onblur="_roAllocNoteFlush(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"></td></tr>';
   }).join('');
@@ -2148,7 +2148,10 @@ function renderExpandPanel(item) {
   var _bannerTxt = (_allocState === 'DRAFT_LOADING') ? ['ro-alloc-state--loading', 'Loading saved allocation…']
     : (_allocState === 'NO_SAVED_DRAFT') ? ['ro-alloc-state--none', 'No saved allocation draft — run AI Plan to create one.']
     : (_allocState === 'DRAFT_CONFLICT') ? ['ro-alloc-state--conflict', 'Duplicate active draft — review required.']
-    : (_allocState === 'DRAFT_LOAD_ERROR') ? ['ro-alloc-state--error', 'Could not load saved allocation. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>']
+    : (_allocState === 'DRAFT_SCOPE_UNRESOLVED') ? ['ro-alloc-state--error', 'Saved allocation was not read: these rows carry no company, so no draft scope could be resolved. Nothing was changed. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>']
+    : (_allocState === 'DRAFT_LOAD_ERROR') ? ['ro-alloc-state--error', (_roMultiScopeRefusal_ && _roMultiScopeRefusal_.code === 'TOO_MANY_SCOPES')
+        ? ('Too many scopes on screen to read saved allocations in one request (' + _roMultiScopeRefusal_.scopeCount + ' of at most ' + _roMultiScopeRefusal_.max + '). Narrow the filter, then retry. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>')
+        : 'Could not load saved allocation. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>']
     : null;
   if (_bannerTxt) allocRows = '<tr class="ro-alloc-state-row ' + _bannerTxt[0] + '"><td colspan="5">' + _bannerTxt[1] + '</td></tr>' + allocRows;
   var firstShortBadge = (firstShort != null)
@@ -2162,7 +2165,7 @@ function renderExpandPanel(item) {
   // §12 — a SKU the scope read-back reported as NO_DRAFT gets a restrained marker (execution row unavailable). This
   // NEVER recreates a second editable quantity authority: Order Qty edits for a non-canonical SKU stay in-memory
   // planning scratch (never persisted as a canonical draft) — the ordinary planning view, not an AI Plan execution row.
-  var noDraftNote = (typeof _roIsNoDraftSku_ === 'function' && _roIsNoDraftSku_(item.sku))
+  var noDraftNote = (typeof _roIsNoDraftSku_ === 'function' && _roIsNoDraftSku_(item))
     ? '<div class="ro-rec-nodraft" title="This SKU has no active AI Plan draft; run AI Plan to generate one.">No active AI Plan draft</div>' : '';
 
   // Incoming-supply empty state (F.6): no scheduled/completed across the next 3 months.
@@ -2268,11 +2271,14 @@ function _roTargetPct(item, mo) {
 }
 
 // Order Allocation local-state helpers (persisted on Send Request; see Part 3).
-function _roAllocKey(item) { return (item.sku || '') + '|' + (item.country || '') + '|' + (item.marketplace || ''); }
+// R4B-R2 §4 - the local edit key was sku|country|marketplace and collided across companies for exactly the
+// same reason the canonical draft map did. It is now the SAME site identity, from the same owner, so an
+// in-memory edit and its persisted draft can never disagree about which row they belong to.
+function _roAllocKey(item) { return _roDraftKey_(item); }
 function _roAttr(v) { return String(v == null ? '' : v).replace(/"/g, '&quot;'); }
 function _roAllocEnsure(key) { if (!requestOrderState.allocEdits[key]) requestOrderState.allocEdits[key] = {}; return requestOrderState.allocEdits[key]; }
 function _roAllocEdit(input) {
-  var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
+  var key = _roAllocKey(input.dataset);
   var bucket = input.dataset.bucket;
   var rec = _roAllocEnsure(key);
   if (!rec[bucket]) rec[bucket] = {};
@@ -2296,8 +2302,8 @@ function _roAllocEdit(input) {
   // R4E3-PRE: for a row backed by a PERSISTED canonical draft, persist this committed order_qty incrementally to
   // request_order_allocation_draft_lines via the EXISTING locked decision writer (onchange → one write per committed
   // value; no keystroke storm). NO_DRAFT / conflict rows keep the in-memory planning behavior above (never auto-create).
-  if (rec[bucket].orderQty !== '' && rec[bucket].orderQty != null && _roIsCanonicalDraftSku_(input.dataset.sku)) {
-    _roSaveOrderQtyToCanonicalDraft_(input.dataset.sku, bucket, rec[bucket].orderQty, input);
+  if (rec[bucket].orderQty !== '' && rec[bucket].orderQty != null && _roIsCanonicalDraftSku_(input.dataset)) {
+    _roSaveOrderQtyToCanonicalDraft_(input.dataset, bucket, rec[bucket].orderQty, input);
   }
 }
 // Live in-place refresh of the carton breakdown + partial warning for one Order-Qty row (no full
@@ -2328,27 +2334,27 @@ function _roCartonCellHtml(cb, box) {
 // is a DELIBERATE empty-string replace (rec.note stays '' → the edit command sends note:''). oninput debounces; blur/
 // Enter flush. For a NO_DRAFT/conflict SKU the note stays in-memory only (never a canonical write, never a new Draft).
 function _roAllocEditNote(input) {
-  var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
+  var key = _roAllocKey(input.dataset);
   var bucket = input.dataset.bucket;
   var rec = _roAllocEnsure(key);
   if (!rec[bucket]) rec[bucket] = {};
   rec[bucket].note = String(input.value == null ? '' : input.value);   // '' is a real value, not "omitted"
-  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset.sku)) {
-    _roAutosaveDebounce_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset.sku, bucket, { note: rec[bucket].note }, input); });
+  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset)) {
+    _roAutosaveDebounce_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
   }
 }
 function _roAllocNoteFlush(input) {
-  var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
+  var key = _roAllocKey(input.dataset);
   var bucket = input.dataset.bucket;
   var rec = _roAllocEnsure(key); if (!rec[bucket]) rec[bucket] = {};
   rec[bucket].note = String(input.value == null ? '' : input.value);
-  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset.sku)) {
-    _roAutosaveFlush_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset.sku, bucket, { note: rec[bucket].note }, input); });
+  if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset)) {
+    _roAutosaveFlush_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
   }
 }
 // PERSISTED note projection for the Order Allocation Note field (reload authority): the canonical-draft tier note, else ''.
 function _roRowNoteDisplay_(item, bucket) {
-  var ref = _roCanonicalRowFor_(item && item.sku, bucket);
+  var ref = _roCanonicalRowFor_(item, bucket);
   return (ref && ref.line && ref.line.note != null) ? String(ref.line.note) : '';
 }
 
@@ -3768,7 +3774,7 @@ async function handleSendRequest() {
   rows.forEach(function(item) {
     // R4E5B §14/§18 — an already-executed (terminal submitted) SKU is never re-executed. The SERVER re-checks
     // this against the persisted status; this count exists so the dialog can explain the page-vs-server delta.
-    if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item.sku)) { _roExcluded.already_submitted_sku++; return; }
+    if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item)) { _roExcluded.already_submitted_sku++; return; }
     const edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
     const upc = parseFloat(item.boxSize) || 0;
     const lines = [];
@@ -3786,7 +3792,7 @@ async function handleSendRequest() {
       const moYm = mo ? (mo.year + '-' + String(mo.idx + 1).padStart(2, '0')) : '';
       lines.push({ bucket: b, month: e.month || moYm, orderQty: q });
     });
-    var isCanon = (typeof _roIsCanonicalDraftSku_ === 'function') && _roIsCanonicalDraftSku_(item.sku);
+    var isCanon = (typeof _roIsCanonicalDraftSku_ === 'function') && _roIsCanonicalDraftSku_(item);
     if (lines.length) drafts.push({ item: item, lines: lines, isCanonical: isCanon });
     else _roExcluded.no_positive_tier_qty++;
   });
@@ -4313,20 +4319,147 @@ function _roScopeKey3_(s) { return [String((s && s.company) || '').trim().toUppe
 // Per-SKU Order Allocation UI state. LOADED shows DB order_qty/carton/note (enabled); NO_SAVED_DRAFT / DRAFT_CONFLICT /
 // DRAFT_LOAD_ERROR disable the inputs (never a blank editable field, never a Suggested→Order Qty fallback); DRAFT_LOADING
 // is the in-flight skeleton. A SKU outside any AI read-back (not a draft, not NO_DRAFT) keeps the ordinary MANUAL flow.
-function _roDraftUiState_(sku) {
-  var k = _roCanonKey_(sku), d = _roCanonicalDraftBySku[k];
+function _roDraftUiState_(ref) {
+  var k = _roDraftKey_(ref), d = _roCanonicalDraftBySku[k];
   if (d && d.conflict) return 'DRAFT_CONFLICT';
   if (d && d.draftId) return 'DRAFT_LOADED';
   if (_roNoDraftSkus[k]) return 'NO_SAVED_DRAFT';
   if (_roHydrationStatus === 'LOADING') return 'DRAFT_LOADING';
+  if (_roHydrationStatus === 'NO_SCOPE') return 'DRAFT_SCOPE_UNRESOLVED';   // R4B-R2 §3
   if (_roHydrationStatus === 'ERROR') return 'DRAFT_LOAD_ERROR';
   return 'MANUAL';   // no AI read-back touched this SKU → the ordinary in-memory planning flow (unchanged)
 }
 function _roCanonKey_(sku) { return String(sku == null ? '' : sku).trim().toUpperCase(); }
+// F1-7N-FB-4E-R4B-R2 §4 - A SKU IS NOT AN IDENTITY, AND AT ALL LEVEL THAT IS NOT A THEORETICAL POINT.
+//
+// _roCanonicalDraftBySku was keyed by SKU alone. The All-level view loads every visible scope and hydrates each
+// one in turn into the SAME map, so when two companies sell the same master SKU on the same country+marketplace
+// - KM/US/Amazon and ResUS/US/Amazon, which is the ordinary shape of this business - the second scope's draft
+// SILENTLY OVERWROTE the first. Measured on a live-shaped fixture: 92 positive / 43 zero became 95 / 40, and a
+// ResUS row displayed Kitchen Mama's quantity. Fail-closed rules elsewhere in this file could not help, because
+// nothing looked wrong: there WAS a draft under that key.
+//
+// The canonical key is therefore the SITE plus the SKU. marketplace_id would be a shorter identity, but the
+// draft rows are keyed by company/country/marketplace text and the readback returns exactly that, so the key is
+// built from the fields BOTH sides actually carry - never from a display label alone.
+var _RO_KEY_AMBIGUOUS_ = '\u0000AMBIGUOUS';
+function _roKeyPart_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+// ref = a row/item, an input.dataset, a {company,country,marketplace,sku} scope, or a bare SKU string.
+// A BARE SKU is resolved against the loaded rows: unique -> its scope; seen under two scopes -> AMBIGUOUS, a
+// key that matches nothing, so a write or a read fails closed instead of picking one at random.
+function _roDraftKey_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return _roDraftKeyFromSku_(ref);
+  var sku = _roKeyPart_(ref.sku);
+  if (!sku) return '';
+  var c = _roKeyPart_(ref.company), co = _roKeyPart_(ref.country), m = _roKeyPart_(ref.marketplace);
+  if (!c || !co || !m) return _roDraftKeyFromSku_(sku);   // an incomplete ref still gets one honest attempt
+  return c + '|' + co + '|' + m + '|' + sku;
+}
+function _roDraftKeyFromSku_(sku) {
+  var s = _roKeyPart_(sku); if (!s) return '';
+  var seen = {}, only = '';
+  var rows = (typeof requestOrderState !== 'undefined' && requestOrderState.data) || [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]; if (_roKeyPart_(r && r.sku) !== s) continue;
+    var k = _roKeyPart_(r.company) + '|' + _roKeyPart_(r.country) + '|' + _roKeyPart_(r.marketplace) + '|' + s;
+    if (!seen[k]) { seen[k] = 1; only = only ? _RO_KEY_AMBIGUOUS_ : k; }
+  }
+  return only;
+}
+function _roDraftSku_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return String(ref);
+  return String(ref.sku == null ? '' : ref.sku);
+}
+// F1-7N-FB-4E-R4B-R2 §4 - A SKU IS NOT AN IDENTITY, AND AT ALL LEVEL THAT IS NOT A THEORETICAL POINT.
+//
+// _roCanonicalDraftBySku was keyed by SKU alone. The All-level view loads every visible scope and hydrates each
+// one in turn into the SAME map, so when two companies sell the same master SKU on the same country+marketplace
+// - KM/US/Amazon and ResUS/US/Amazon, which is the ordinary shape of this business - the second scope's draft
+// SILENTLY OVERWROTE the first. Measured on a live-shaped fixture: 92 positive / 43 zero became 95 / 40, and a
+// ResUS row displayed Kitchen Mama's quantity. Fail-closed rules elsewhere in this file could not help, because
+// nothing looked wrong: there WAS a draft under that key.
+//
+// The canonical key is therefore the SITE plus the SKU. marketplace_id would be a shorter identity, but the
+// draft rows are keyed by company/country/marketplace text and the readback returns exactly that, so the key is
+// built from the fields BOTH sides actually carry - never from a display label alone.
+var _RO_KEY_AMBIGUOUS_ = '\u0000AMBIGUOUS';
+function _roKeyPart_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+// ref = a row/item, an input.dataset, a {company,country,marketplace,sku} scope, or a bare SKU string.
+// A BARE SKU is resolved against the loaded rows: unique -> its scope; seen under two scopes -> AMBIGUOUS, a
+// key that matches nothing, so a write or a read fails closed instead of picking one at random.
+function _roDraftKey_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return _roDraftKeyFromSku_(ref);
+  var sku = _roKeyPart_(ref.sku);
+  if (!sku) return '';
+  var c = _roKeyPart_(ref.company), co = _roKeyPart_(ref.country), m = _roKeyPart_(ref.marketplace);
+  if (!c || !co || !m) return _roDraftKeyFromSku_(sku);   // an incomplete ref still gets one honest attempt
+  return c + '|' + co + '|' + m + '|' + sku;
+}
+function _roDraftKeyFromSku_(sku) {
+  var s = _roKeyPart_(sku); if (!s) return '';
+  var seen = {}, only = '';
+  var rows = (typeof requestOrderState !== 'undefined' && requestOrderState.data) || [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]; if (_roKeyPart_(r && r.sku) !== s) continue;
+    var k = _roKeyPart_(r.company) + '|' + _roKeyPart_(r.country) + '|' + _roKeyPart_(r.marketplace) + '|' + s;
+    if (!seen[k]) { seen[k] = 1; only = only ? _RO_KEY_AMBIGUOUS_ : k; }
+  }
+  return only;
+}
+function _roDraftSku_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return String(ref);
+  return String(ref.sku == null ? '' : ref.sku);
+}
+// F1-7N-FB-4E-R4B-R2 §4 - A SKU IS NOT AN IDENTITY, AND AT ALL LEVEL THAT IS NOT A THEORETICAL POINT.
+//
+// _roCanonicalDraftBySku was keyed by SKU alone. The All-level view loads every visible scope and hydrates each
+// one in turn into the SAME map, so when two companies sell the same master SKU on the same country+marketplace
+// - KM/US/Amazon and ResUS/US/Amazon, which is the ordinary shape of this business - the second scope's draft
+// SILENTLY OVERWROTE the first. Measured on a live-shaped fixture: 92 positive / 43 zero became 95 / 40, and a
+// ResUS row displayed Kitchen Mama's quantity. Fail-closed rules elsewhere in this file could not help, because
+// nothing looked wrong: there WAS a draft under that key.
+//
+// The canonical key is therefore the SITE plus the SKU. marketplace_id would be a shorter identity, but the
+// draft rows are keyed by company/country/marketplace text and the readback returns exactly that, so the key is
+// built from the fields BOTH sides actually carry - never from a display label alone.
+var _RO_KEY_AMBIGUOUS_ = '\u0000AMBIGUOUS';
+function _roKeyPart_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+// ref = a row/item, an input.dataset, a {company,country,marketplace,sku} scope, or a bare SKU string.
+// A BARE SKU is resolved against the loaded rows: unique -> its scope; seen under two scopes -> AMBIGUOUS, a
+// key that matches nothing, so a write or a read fails closed instead of picking one at random.
+function _roDraftKey_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return _roDraftKeyFromSku_(ref);
+  var sku = _roKeyPart_(ref.sku);
+  if (!sku) return '';
+  var c = _roKeyPart_(ref.company), co = _roKeyPart_(ref.country), m = _roKeyPart_(ref.marketplace);
+  if (!c || !co || !m) return _roDraftKeyFromSku_(sku);   // an incomplete ref still gets one honest attempt
+  return c + '|' + co + '|' + m + '|' + sku;
+}
+function _roDraftKeyFromSku_(sku) {
+  var s = _roKeyPart_(sku); if (!s) return '';
+  var seen = {}, only = '';
+  var rows = (typeof requestOrderState !== 'undefined' && requestOrderState.data) || [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]; if (_roKeyPart_(r && r.sku) !== s) continue;
+    var k = _roKeyPart_(r.company) + '|' + _roKeyPart_(r.country) + '|' + _roKeyPart_(r.marketplace) + '|' + s;
+    if (!seen[k]) { seen[k] = 1; only = only ? _RO_KEY_AMBIGUOUS_ : k; }
+  }
+  return only;
+}
+function _roDraftSku_(ref) {
+  if (ref == null) return '';
+  if (typeof ref === 'string' || typeof ref === 'number') return String(ref);
+  return String(ref.sku == null ? '' : ref.sku);
+}
 // §12 — this SKU was explicitly reported NO_DRAFT by the scope read-back (execution row unavailable; NEVER a silent
 // frontend recompute fallback). Only true AFTER a getActive read-back — a SKU with no canonical draft and no read-back
 // keeps the ordinary planning view (the whole page is not "no draft" before AI Plan is ever run).
-function _roIsNoDraftSku_(sku) { return !!_roNoDraftSkus[_roCanonKey_(sku)]; }
+function _roIsNoDraftSku_(ref) { return !!_roNoDraftSkus[_roDraftKey_(ref)]; }
 // F1-7N-FA-3C-R6B — a concrete scope for the scope-level getActive read. The prior version returned a scope ONLY from
 // window._roAiPlanScope (set only when AI Plan runs THIS session) → after a browser refresh it was null → the persisted
 // Draft was never read back → Order Allocation blanked (root cause). Now it ALSO derives the concrete scope from the
@@ -4348,12 +4481,12 @@ function _roCanonicalScope_() {
   return d.length === 1 ? d[0] : null;   // exactly one concrete scope on screen → hydrate it (ambiguous → the multi-scope hydrator)
 }
 // Is this SKU an ACTIVE persisted-draft execution authority (edits go to the canonical writer, not in-memory only)?
-function _roIsCanonicalDraftSku_(sku) {
-  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+function _roIsCanonicalDraftSku_(ref) {
+  var d = _roCanonicalDraftBySku[_roDraftKey_(ref)];
   return !!(d && d.draftId && !d.conflict);
 }
-function _roCanonicalRowFor_(sku, bucket) {
-  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+function _roCanonicalRowFor_(ref, bucket) {
+  var d = _roCanonicalDraftBySku[_roDraftKey_(ref)];
   if (!d || d.conflict || !d.lines) return null;
   var l = d.lines[String(bucket)];
   return l ? { draft: d, line: l } : null;
@@ -4378,13 +4511,13 @@ function _roCanonicalRowFor_(sku, bucket) {
 //
 // This is also what makes §E.4 true by construction: display and Send now read the SAME authority, so a freshly
 // rendered AI-Plan row cannot assert a quantity that differs from its own DB output.
-function _roHasCanonicalDraft_(sku) {
-  var d = _roCanonicalDraftBySku[String(sku == null ? '' : sku).toUpperCase()];
+function _roHasCanonicalDraft_(ref) {
+  var d = _roCanonicalDraftBySku[_roDraftKey_(ref)];
   return !!(d && d.draftId);
 }
 function _roRowOrderQtyDisplay_(item, idx, bucket, edit) {
   if (edit && edit.orderQty != null && edit.orderQty !== '') return Number(edit.orderQty);
-  var ref = _roCanonicalRowFor_(item && item.sku, bucket);
+  var ref = _roCanonicalRowFor_(item, bucket);
   if (ref) {
     var v = ref.line.order_qty;
     // A persisted ZERO is a real decision (§E.6): 0 !== '' and 0 != null, so it returns 0 rather than falling through.
@@ -4393,14 +4526,14 @@ function _roRowOrderQtyDisplay_(item, idx, bucket, edit) {
   }
   // FAIL CLOSED: a SKU that HAS a canonical draft never borrows an ephemeral number for a tier the draft does not
   // carry. null renders as an empty cell, which is honest; 400-when-the-DB-says-360 is not.
-  if (_roHasCanonicalDraft_(item && item.sku)) return null;
+  if (_roHasCanonicalDraft_(item)) return null;
   return _roEffectiveOrderQty(item, idx, edit);
 }
 // F1-4B-FM6-R4E4 §10 — Send Request execution quantity authority. For a SKU backed by a PERSISTED canonical draft
 // the confirmed quantity is the canonical persisted order_qty (NOT a live gap/KMREC/FC/suggested/display recompute);
 // only the manual / no-canonical-draft path falls back to the in-memory effective value (the ordinary manual flow).
 function _roSendOrderQty_(item, idx, bucket, edit) {
-  var ref = _roCanonicalRowFor_(item && item.sku, bucket);
+  var ref = _roCanonicalRowFor_(item, bucket);
   if (ref) {
     var v = ref.line.order_qty;
     if (v != null && v !== '') return Number(v);   // includes a persisted 0 (§E.6)
@@ -4409,7 +4542,7 @@ function _roSendOrderQty_(item, idx, bucket, edit) {
   // F1-7N-FB-4B §E — same fail-closed rule as the display. A SKU backed by a canonical draft may NEVER assert a
   // recomputed quantity: that is precisely how the page came to send 400 against a persisted 360. Returning null
   // contributes nothing to the Send intents, so the tier is simply not asserted rather than asserted wrongly.
-  if (_roHasCanonicalDraft_(item && item.sku)) return null;
+  if (_roHasCanonicalDraft_(item)) return null;
   return _roEffectiveOrderQty(item, idx, edit);
 }
 // F1-4B-FM6-R4E5B — DETERMINISTIC manual allocation-draft id (grain + planning cycle). A manual (no-AI) Send must
@@ -4431,7 +4564,7 @@ function _roManualDraftId_(company, country, marketplace, sku, cycle) {
 // §14/§18/§20 — SKUs already executed (terminal submitted allocation) per the last scope read-back. Excluded from a
 // new Send so a re-send never creates a second Request Order.
 var _roSubmittedSkus = {};
-function _roIsSubmittedSku_(sku) { return !!_roSubmittedSkus[_roCanonKey_(sku)]; }
+function _roIsSubmittedSku_(ref) { return !!_roSubmittedSkus[_roDraftKey_(ref)]; }
 // __RO_EDIT_PURE_START__
 // PURE — the locked decision-edit command for ONE order_qty change. order_qty ONLY (recommended_qty / gap snapshot /
 // UPC are system-owned and never included). naturalKey = the canonical MONTHLY line grain {request_month, request_bucket}.
@@ -4528,22 +4661,47 @@ function _roDebugSnapshot_() {
 // Read ONE scope's active drafts and ACCUMULATE into the passed maps (never a Draft write; never creates/regenerates a
 // Draft; never a Draft-Line read/write — getActive reads request_order_allocation_drafts ONLY). Projects the flat DTO
 // into the exact UI model (id/version/status/tier month/recommended/order/carton/status/note/user_edited/submitted).
-function _roReadActiveDraftsForScope_(scope, accDrafts, accNoDraft, accSubmitted) {
+// R4B-R2 §4 - ONE projection of a scope readback into the page's canonical maps, used by BOTH the single-scope
+// request and the bounded multi-scope request. Two normalizations would be two join rules, and the whole defect
+// this round fixes is a join rule that was not applied uniformly.
+function _roApplyScopeReadbackData_(scope, data, accDrafts, accNoDraft, accSubmitted, accDropped) {
+  data = data || {};
+    var reqKey = _roScopeKey3_(scope);
+    accDropped = accDropped || {};
+    function keyFromDtoScope(sc, sku) {
+      var k = _roDraftKey_({ company: sc && sc.company, country: sc && sc.country, marketplace: sc && sc.marketplace, sku: sku });
+      if (!k || k === _RO_KEY_AMBIGUOUS_) return '';
+      if (_roScopeKey3_(sc) !== reqKey) { accDropped.foreign_scope = (accDropped.foreign_scope || 0) + 1; return ''; }
+      return k;
+    }
+    (data.drafts || []).forEach(function (d) {
+      if (_roV2IsFlatDraft_(d)) {
+        var fv = _roV2NormalizeFlatDraft_(d);
+        var fk = keyFromDtoScope(d.scope, fv.sku);
+        if (fk) { fv.company = d.scope.company; fv.country = d.scope.country; fv.marketplace = d.scope.marketplace; accDrafts[fk] = fv; }
+        return;
+      }
+      var h = d.header || {};
+      // the legacy shape carries no scope of its own — it is scoped by the request that fetched it
+      var lk = _roDraftKey_({ company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: h.sku });
+      if (!lk || lk === _RO_KEY_AMBIGUOUS_) return;
+      var lines = {}; (d.lines || []).forEach(function (l) { lines[String(l.request_bucket)] = l; });
+      accDrafts[lk] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false,
+        company: scope.company, country: scope.country, marketplace: scope.marketplace, lines: lines };
+    });
+    // fail closed on duplicate active matches — the natural-scope conflict is surfaced, never silently coalesced.
+    function scopedKey(sku) { return _roDraftKey_({ company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }); }
+    (data.conflicts || []).forEach(function (c) { var k = scopedKey(c.sku); if (k && k !== _RO_KEY_AMBIGUOUS_) accDrafts[k] = { conflict: true, conflictIds: c.conflictIds || [] }; });
+    (data.noDraftSkus || []).forEach(function (s) { var k = scopedKey(s); if (k && k !== _RO_KEY_AMBIGUOUS_) accNoDraft[k] = true; });
+    (data.submittedSkus || []).forEach(function (s) { var k = scopedKey(s); if (k && k !== _RO_KEY_AMBIGUOUS_) accSubmitted[k] = true; });
+}
+function _roReadActiveDraftsForScope_(scope, accDrafts, accNoDraft, accSubmitted, accDropped) {
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.getActiveRequestOrderDrafts !== 'function' || !scope || !scope.company) return Promise.resolve(null);
   _roHydrateReqCount++;   // one getActive per unique scope (scope-based, NEVER per SKU)
   return Promise.resolve(db.getActiveRequestOrderDrafts(scope)).then(function (res) {
     var data = (res && res.data) || {};
-    (data.drafts || []).forEach(function (d) {
-      if (_roV2IsFlatDraft_(d)) { var fv = _roV2NormalizeFlatDraft_(d); var fsku = _roCanonKey_(fv.sku); if (fsku) accDrafts[fsku] = fv; return; }
-      var h = d.header || {}; var sku = _roCanonKey_(h.sku); if (!sku) return;
-      var lines = {}; (d.lines || []).forEach(function (l) { lines[String(l.request_bucket)] = l; });
-      accDrafts[sku] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false, lines: lines };
-    });
-    // fail closed on duplicate active matches — the natural-scope conflict is surfaced, never silently coalesced.
-    (data.conflicts || []).forEach(function (c) { var sku = _roCanonKey_(c.sku); if (sku) accDrafts[sku] = { conflict: true, conflictIds: c.conflictIds || [] }; });
-    (data.noDraftSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) accNoDraft[k] = true; });
-    (data.submittedSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) accSubmitted[k] = true; });
+    _roApplyScopeReadbackData_(scope, data, accDrafts, accNoDraft, accSubmitted, accDropped);
     return data;
   }).catch(function () { return null; });
 }
@@ -4572,7 +4730,18 @@ function _roHydratePersistedDraftsForLoadedScopes_() {
   if (!raw.length) { var s = _roCanonicalScope_(); if (s) raw = [s]; }
   var seenK = {}, scopes = [];
   raw.forEach(function (sc) { var k = _roScopeKey3_(sc); if (!seenK[k]) { seenK[k] = 1; scopes.push(sc); } });   // dedupe
-  if (!scopes.length) { _roHydrationStatus = 'IDLE'; return Promise.resolve(null); }
+  // R4B-R2 §3 - IDLE MEANT TWO DIFFERENT THINGS AND SAID NEITHER. "Nothing is loaded yet" and "rows ARE loaded
+  // but not one of them names a company, so no draft can be read for any of them" both landed here, and the
+  // second one printed blank Order Qty with no explanation anywhere on the page. They are now distinct, and the
+  // second is a NAMED state the row banner reports.
+  if (!scopes.length) {
+    var _hasRows = !!((requestOrderState.data || []).length);
+    _roHydrationStatus = _hasRows ? 'NO_SCOPE' : 'IDLE';
+    _roMultiScopeRefusal_ = _hasRows ? { code: 'SCOPE_UNRESOLVED', rows: requestOrderState.data.length } : null;
+    if (_hasRows && typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
+    return Promise.resolve(null);
+  }
+  _roMultiScopeRefusal_ = null;
   var mySeq = ++_roHydrateSeq, anyError = false;
   // INSTANT DISPLAY seed from the session cache (so a re-entry shows confirmed DTOs immediately). This seeds only the
   // rendered view — the FINAL applied state is rebuilt from the FRESH reads below, so a re-read that returns FEWER
@@ -4583,14 +4752,24 @@ function _roHydratePersistedDraftsForLoadedScopes_() {
   if (hadCache) { _roCanonicalDraftBySku = seedD; _roNoDraftSkus = seedN; _roSubmittedSkus = seedS; }
   _roHydrationStatus = hadCache ? 'LOADED' : 'LOADING';
   if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }   // show skeleton (fresh) or cached (instant)
-  return Promise.all(scopes.map(function (scope) {
-    var d = {}, n = {}, sub = {};
-    return Promise.resolve(_roReadActiveDraftsForScope_(scope, d, n, sub)).then(function (data) {
-      if (data == null) { anyError = true; return null; }
-      _roDraftDtoCache[_roScopeKey3_(scope)] = { drafts: d, noDraft: n, submitted: sub };   // replace this scope's confirmed DTOs
-      return { d: d, n: n, sub: sub };
-    });
-  })).then(function (results) {
+  // F1-7N-FB-4E-R4B-R2 §3 - ONE bounded request for the All-level view. Every scope here is already explicit,
+  // concrete and deduplicated (see _roScopesFromLoadedData_); what changed is that they now travel together
+  // instead of as N cold Apps Script executions. A single scope keeps the EXACT request it has always sent.
+  var _readAll = (scopes.length === 1)
+    ? Promise.all(scopes.map(function (scope) {
+        var d = {}, n = {}, sub = {}, dropped = {};
+        return Promise.resolve(_roReadActiveDraftsForScope_(scope, d, n, sub, dropped)).then(function (data) {
+          if (data == null) { anyError = true; return null; }
+          _roDraftDtoCache[_roScopeKey3_(scope)] = { drafts: d, noDraft: n, submitted: sub };
+          return { d: d, n: n, sub: sub };
+        });
+      }))
+    : _roReadActiveDraftsForScopes_(scopes).then(function (out) {
+        if (out == null) { anyError = true; return []; }
+        if (out.error) { anyError = true; _roMultiScopeRefusal_ = out.error; return []; }
+        return out.perScope;
+      });
+  return _readAll.then(function (results) {
     if (mySeq !== _roHydrateSeq) return null;   // a newer hydration/edit superseded this run → drop the late result
     var drafts = {}, noDraft = {}, submitted = {};   // FINAL = the fresh reads ONLY (authoritative; drops removed drafts)
     results.forEach(function (r) { if (!r) return; Object.keys(r.d).forEach(function (k) { drafts[k] = r.d[k]; }); Object.keys(r.n).forEach(function (k) { noDraft[k] = r.n[k]; }); Object.keys(r.sub).forEach(function (k) { submitted[k] = r.sub[k]; }); });
@@ -4600,10 +4779,43 @@ function _roHydratePersistedDraftsForLoadedScopes_() {
     return drafts;
   }).catch(function () { if (mySeq === _roHydrateSeq) { _roHydrationStatus = 'ERROR'; if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} } } return null; });
 }
+// R4B-R2 §3 - the multi-scope read, projected through the SAME per-scope accumulator the single-scope path
+// uses, so there is exactly one normalization and one join rule. A typed refusal (TOO_MANY_SCOPES /
+// INVALID_SCOPE) is reported rather than degraded into a silent empty hydration.
+var _roMultiScopeRefusal_ = null;
+var _RO_MAX_READBACK_SCOPES = 25;   // mirrors REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ (47_)
+function _roReadActiveDraftsForScopes_(scopes) {
+  var db = window.KM && window.KM.DB;
+  if (!db || typeof db.getActiveRequestOrderDraftsForScopes !== 'function') return Promise.resolve(null);
+  if (!scopes || !scopes.length) return Promise.resolve({ perScope: [] });
+  if (scopes.length > _RO_MAX_READBACK_SCOPES) {
+    // Refuse BEFORE dispatch: an oversized read is a real condition the operator has to see, not a request to
+    // silently narrow. No cross-scope fallback, and no partial hydration presented as complete.
+    return Promise.resolve({ error: { code: 'TOO_MANY_SCOPES', scopeCount: scopes.length, max: _RO_MAX_READBACK_SCOPES } });
+  }
+  _roHydrateReqCount++;   // ONE request for the whole All-level view
+  var payload = scopes.map(function (s) { return { company: s.company, country: s.country, marketplace: s.marketplace }; });
+  return Promise.resolve(db.getActiveRequestOrderDraftsForScopes(payload)).then(function (res) {
+    if (!res || res.success === false) {
+      var e = (res && (res.error || (res.errors && res.errors[0]))) || { code: 'READ_FAILED' };
+      return { error: { code: e.code || e || 'READ_FAILED' } };
+    }
+    var data = (res && res.data) || {};
+    var out = [];
+    (data.results || []).forEach(function (r) {
+      var scope = r.scope || {};
+      var d = {}, n = {}, sub = {}, dropped = {};
+      _roApplyScopeReadbackData_(scope, r, d, n, sub, dropped);
+      _roDraftDtoCache[_roScopeKey3_(scope)] = { drafts: d, noDraft: n, submitted: sub };
+      out.push({ d: d, n: n, sub: sub });
+    });
+    return { perScope: out };
+  }).catch(function () { return null; });
+}
 function _roLoadCanonicalDraftsOnMount_() { return _roHydratePersistedDraftsForLoadedScopes_(); }
 // Fetch + cache the optimistic-lock token for a draft (§3). Returns {draft_version, userEditFingerprint} or null.
-function _roEnsureDraftToken_(sku) {
-  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+function _roEnsureDraftToken_(ref) {
+  var d = _roCanonicalDraftBySku[_roDraftKey_(ref)];
   if (!d || !d.draftId) return Promise.resolve(null);
   if (d.expectedToken) return Promise.resolve(d.expectedToken);
   var db = window.KM && window.KM.DB;
@@ -4615,8 +4827,8 @@ function _roEnsureDraftToken_(sku) {
 // Persist ONE committed order_qty to the canonical draft via the LOCKED decision writer. Optimistic-lock:
 // CONCURRENCY/VERSION conflict → reload the latest draft + notify (never overwrite newer state); terminal/blocked →
 // mark the row blocked. Success → update the local execution value + force a token refresh (version bumped).
-function _roSaveOrderQtyToCanonicalDraft_(sku, bucket, orderQty, input) {
-  return _roSaveTierEditToCanonicalDraft_(sku, bucket, { order_qty: orderQty }, input);
+function _roSaveOrderQtyToCanonicalDraft_(ref, bucket, orderQty, input) {
+  return _roSaveTierEditToCanonicalDraft_(ref, bucket, { order_qty: orderQty }, input);
 }
 // F1-7N-FA-3C-R6B — subtle per-field autosave state without layout change (classes only; no modal, no reflow).
 function _roSetFieldState_(input, state, title) {
@@ -4678,17 +4890,21 @@ function _roClassifyEditResult_(res) {
 // NOT WIDENED: only an ORDER QUANTITY creates a draft. A note-only edit on a SKU with no draft still does
 // nothing, because a note is not an order decision and creating a draft from one would materialize rows
 // nobody asked for.
-function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
-  var ref0 = _roCanonicalRowFor_(sku, bucket);
+function _roSaveTierEditToCanonicalDraft_(ref, bucket, patch, input) {
+  // R4B-R2 §4 - an AMBIGUOUS reference (the same SKU visible under two companies, with no scope on the ref to
+  // tell them apart) resolves to a key that matches nothing. That yields no canonical row, so the edit takes the
+  // in-memory path rather than writing into whichever company's draft happened to be looked up first.
+  var ref0 = _roCanonicalRowFor_(ref, bucket);
+  var sku = _roDraftSku_(ref);
   if (!ref0) {
     var hasQty = patch && Object.prototype.hasOwnProperty.call(patch, 'order_qty')
       && patch.order_qty != null && patch.order_qty !== '';
     if (!hasQty) return Promise.resolve(null);   // note-only on a draft-less SKU → unchanged in-memory behavior
-    return _roCreateCanonicalDraftFromEdit_(sku, bucket, Number(patch.order_qty), patch, input);
+    return _roCreateCanonicalDraftFromEdit_(ref, bucket, Number(patch.order_qty), patch, input);
   }
   var qk = String(ref0.draft.draftId);
   var prior = _roDraftEditQueue_[qk] || Promise.resolve();
-  var run = prior.then(function () { return _roSaveTierEditCore_(sku, bucket, patch, input); }, function () { return _roSaveTierEditCore_(sku, bucket, patch, input); });
+  var run = prior.then(function () { return _roSaveTierEditCore_(ref, bucket, patch, input); }, function () { return _roSaveTierEditCore_(ref, bucket, patch, input); });
   _roDraftEditQueue_[qk] = run.catch(function () {});   // the NEXT edit for this draft chains after this one settles (success or failure)
   return run;
 }
@@ -4696,10 +4912,11 @@ function _roSaveTierEditToCanonicalDraft_(sku, bucket, patch, input) {
 // adopt the returned internal id into the page's canonical map so the row behaves like any other persisted
 // draft from this point on (including being visible to Send). Failure leaves the field visibly UNSAVED, which
 // is what blocks Send — never a silent local-only value.
-function _roCreateCanonicalDraftFromEdit_(sku, bucket, orderQty, patch, input) {
+function _roCreateCanonicalDraftFromEdit_(siteRef, bucket, orderQty, patch, input) {
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.ensureAndEditAllocationDraft !== 'function') return Promise.resolve(null);
-  var item = _roFindRowBySku_(sku);
+  var sku = _roDraftSku_(siteRef);
+  var item = _roFindRowForRef_(siteRef);
   if (!item) return Promise.resolve(null);
   var cycle = (typeof _roSendPlanningCycle_ === 'function') ? _roSendPlanningCycle_() : '';
   if (!cycle) { _roSetFieldState_(input, 'is-invalid', 'No planning cycle — press Search first'); _roLastAutosaveOutcome = 'FAILED'; return Promise.resolve(null); }
@@ -4729,7 +4946,7 @@ function _roCreateCanonicalDraftFromEdit_(sku, bucket, orderQty, patch, input) {
     }
     // Adopt the persisted draft into the page's canonical map so the very next edit takes the ordinary
     // update path, and so the row is immediately eligible for Send.
-    var k = _roCanonKey_(sku);
+    var k = _roDraftKey_(item);
     var entry = _roCanonicalDraftBySku[k] || { draftId: '', lines: {} };
     entry.draftId = String(d.request_allocation_draft_id);
     entry.draftVersion = d.draft_version;
@@ -4753,22 +4970,30 @@ function _roCreateCanonicalDraftFromEdit_(sku, bucket, orderQty, patch, input) {
     return { ok: false, reason: 'ERROR' };
   });
 }
-// Locate the loaded page row for a SKU (the scope fields for the canonical draft identity come from it, never
-// from the input element). Uses the UNFILTERED page data so a display filter cannot hide a row from its own save.
-function _roFindRowBySku_(sku) {
-  var want = _roCanonKey_(sku);
+// Locate the loaded page row for a draft reference (the scope fields for the canonical draft identity come from
+// it, never from the input element). Uses the UNFILTERED page data so a display filter cannot hide a row from
+// its own save.
+//
+// R4B-R2 §4 - this used to match on SKU ALONE and return the FIRST row, which at All level is a coin flip
+// between two companies selling the same master SKU. A create would then be minted against the wrong company's
+// canonical scope. It now matches the full site identity, and a reference that cannot name one row returns null
+// (the edit stays in memory) rather than picking one.
+function _roFindRowForRef_(ref) {
+  var want = _roDraftKey_(ref);
+  if (!want || want === _RO_KEY_AMBIGUOUS_) return null;
   var all = (requestOrderState && requestOrderState.data) || [];
-  for (var i = 0; i < all.length; i++) { if (_roCanonKey_(all[i] && all[i].sku) === want) return all[i]; }
+  for (var i = 0; i < all.length; i++) { if (_roDraftKey_(all[i]) === want) return all[i]; }
   return null;
 }
-function _roSaveTierEditCore_(sku, bucket, patch, input) {
-  var ref = _roCanonicalRowFor_(sku, bucket);
+function _roFindRowBySku_(sku) { return _roFindRowForRef_(sku); }   // kept for callers that only have a SKU
+function _roSaveTierEditCore_(siteRef, bucket, patch, input) {
+  var ref = _roCanonicalRowFor_(siteRef, bucket);
   if (!ref) return Promise.resolve(null);
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return Promise.resolve(null);
   var month = ref.line.request_month;
   _roSetFieldState_(input, 'is-saving', 'Saving…');
-  return _roEnsureDraftToken_(sku).then(function (tok) {
+  return _roEnsureDraftToken_(siteRef).then(function (tok) {
     if (!tok) { _roSetFieldState_(input, 'is-invalid', 'Save failed — retry'); return null; }
     var cmd = _roBuildTierEditCommand_(ref.draft.draftId, month, bucket, patch, tok);
     return Promise.resolve(db.updateRecommendationDecisionLocked(cmd)).then(function (res) {

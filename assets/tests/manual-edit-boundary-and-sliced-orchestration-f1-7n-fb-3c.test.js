@@ -277,7 +277,11 @@ section('2. a user 0 -> positive edit CREATES the canonical Flat-V2 draft on sav
 
 // the client no longer drops the edit when no draft exists
 const saveFn = extractFn(RO, '_roSaveTierEditToCanonicalDraft_');
-ok(/_roCreateCanonicalDraftFromEdit_\(sku, bucket, Number\(patch\.order_qty\), patch, input\)/.test(saveFn),
+// F1-7N-FB-4E-R4B-R2 - RESTATED FROM THE ARGUMENT TO THE ROUTING. These pinned the exact value passed at
+// the call site (a bare SKU). R4B-R2 proved a SKU is not a draft identity - at All level two companies
+// share one - so the call sites now pass the full site reference (input.dataset / item). The ROUTING is
+// what these lines defend, and it is unchanged; only the completeness of the reference improved.
+ok(/_roCreateCanonicalDraftFromEdit_\((ref|sku), bucket, Number\(patch\.order_qty\), patch, input\)/.test(saveFn),
   '2. an order_qty edit with NO existing draft routes to the canonical create path');
 ok(/if \(!hasQty\) return Promise\.resolve\(null\)/.test(saveFn),
   '2. but a NOTE-only edit on a draft-less SKU still creates nothing (the boundary is not widened)');
