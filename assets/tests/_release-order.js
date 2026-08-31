@@ -25,6 +25,42 @@ var ROUND_TOKENS = [
   'fb4er4br3-liveclosure-20260831'
 ];
 
+// ---------------------------------------------------------------------------------------------------------
+// THE MAP TOKEN SERIES — added in TEXTURE-3-R6, and the reason is the same failure one round later.
+//
+// R5 replaced "the co-deployed map set shares ONE token" with a DERIVED rule: a map file whose source carries
+// this round's marker must carry this round's token, and one that does not must not. That rule was right, and
+// it still rotted immediately — because "this round" was written into three suites as the literal strings
+// `TEXTURE-3-R5` and `map-texture3-r5-20260831`. The moment R6 rotated two files, all three suites failed while
+// describing the correct state.
+//
+// A rule that has to be edited in three places every round is the four-way duplication this file was created to
+// end, wearing a different hat. So the series lives here, APPEND-ONLY, and the current round is DERIVED from its
+// last entry — including the source marker, which is reconstructed from the token rather than restated. A round
+// now appends ONE line here and nothing else moves.
+// ---------------------------------------------------------------------------------------------------------
+var MAP_TOKEN_SERIES = [
+  'map-zh-hant-20260826',
+  'map-texture3-r2-20260826',
+  'map-texture3-r3-20260826',
+  'map-texture3-r4-20260827',
+  'map-texture3-r5-20260831',
+  'map-texture3-r6-20260831'
+];
+
+// The newest entry is the current round's token, by construction rather than by restatement.
+function currentMapToken() { return MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1]; }
+
+// The in-source marker that identifies work done in a given round, derived FROM the token so the two cannot
+// disagree: 'map-texture3-r6-20260831' -> 'TEXTURE-3-R6'. The pre-texture3 token has no marker of this shape,
+// which is correct — it predates the convention — and returns ''.
+function mapRoundMarker(token) {
+  var m = /^map-texture3-(r\d+[a-z]?\d*)-/.exec(String(token || ''));
+  return m ? ('TEXTURE-3-' + m[1].toUpperCase()) : '';
+}
+function currentMapRoundMarker() { return mapRoundMarker(currentMapToken()); }
+function isMapToken(t) { return MAP_TOKEN_SERIES.indexOf(String(t)) !== -1; }
+
 // The CANONICAL SHAPE of an Apps Script owner build stamp. The project stamps revisions of revisions
 // (F1-7N-FB-4E-R4B-R3 is the third revision of the second revision of round 4E), so the revision segment
 // repeats. A pattern that admitted only ONE revision segment rejected a legitimate stamp the moment a round
@@ -41,6 +77,11 @@ function tokenAtOrAfter(t, floorToken) {
 
 module.exports = {
   ROUND_TOKENS: ROUND_TOKENS,
+  MAP_TOKEN_SERIES: MAP_TOKEN_SERIES,
+  currentMapToken: currentMapToken,
+  currentMapRoundMarker: currentMapRoundMarker,
+  mapRoundMarker: mapRoundMarker,
+  isMapToken: isMapToken,
   BUILD_STAMP_RE: BUILD_STAMP_RE,
   tokenIndex: tokenIndex,
   tokenAtOrAfter: tokenAtOrAfter

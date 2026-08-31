@@ -175,8 +175,20 @@ eq(Object.keys(D.continents).sort(), ['Africa', 'Antarctica', 'Asia', 'Europe', 
   ok(Object.keys(D.continents).some(function (k) { return D.continents[k] === n; }), 'C3 the reviewed list contains ' + n);
 });
 ok(!D.continents['Seven seas (open ocean)'], 'C4 "Seven seas (open ocean)" is NOT named — it is not a continent');
-var seas = R.continent('Seven seas (open ocean)', { allowEnglish: false });
-eq([seas.name, seas.level], ['', R.LEVEL.HIDDEN], 'C5 and with no reliable name it is HIDDEN, not mislabelled');
+// TEXTURE-3-R6 §B — THIS ASSERTION WAS ALREADY DESCRIBING R6'S RULE, one option short of enforcing it.
+//
+// It passed `{ allowEnglish: false }` and checked for HIDDEN. That proved the resolver COULD hide the bucket if
+// asked — and the globe's continent layer never asked, which is how the label reached the default map. The
+// option is dropped: hiding a non-place is now unconditional, so the assertion is strictly stronger than it was.
+var seas = R.continent('Seven seas (open ocean)');
+eq(seas.name, '', 'C5 and with no reliable name it is HIDDEN by DEFAULT, with no option required');
+eq(seas.level, R.LEVEL.HIDDEN_NOT_A_PLACE, 'C5 ... and reports that it is not a place, not that a name is missing');
+eq(seas.hidden_reason, 'NOT_A_PLACE', 'C5 with an explicit reason');
+// Not even an explicit English request may resurrect it — it is not a language question.
+eq(R.continent('Seven seas (open ocean)', { lang: 'en' }).name, '', 'C5 and explicit English does not label it either');
+// The distinction that matters: a real continent with no name would be a DIFFERENT kind of hidden.
+eq(R.continent('Atlantis').level, R.LEVEL.HIDDEN_NAME_UNAVAILABLE,
+  'C5 while an unknown PLACE reports a missing name instead');
 // a country's continent is derivable, so continent grouping needs no new geometry
 eq(R.continentOfCountry('JP'), 'Asia', 'C6 country→continent grouping is available');
 eq(R.continent(R.continentOfCountry('JP')).name, '亞洲', 'C6 and composes to the Chinese continent name');
@@ -290,13 +302,13 @@ ok(!!tok && !!tok2, 'G3 both carry a cache-bust token');
 // changed in an asset the browser did not re-fetch. That is expressed directly below, and it is stronger than
 // string equality — equal tokens would also be satisfied by rotating both when only one changed, which §D
 // forbids because it re-fetches assets that did not change.
-var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
-                        'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
-ok(MAP_TOKEN_SERIES.indexOf(tok[1]) !== -1, 'G3 the asset token belongs to the map series (' + tok[1] + ')');
-ok(MAP_TOKEN_SERIES.indexOf(tok2[1]) !== -1, 'G3 as does the resolver token (' + tok2[1] + ')');
+// TEXTURE-3-R6 — series from the shared release order; this suite no longer keeps its own copy.
+var RO_ = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+ok(RO_.isMapToken(tok[1]), 'G3 the asset token belongs to the map series (' + tok[1] + ')');
+ok(RO_.isMapToken(tok2[1]), 'G3 as does the resolver token (' + tok2[1] + ')');
 // The resolver may be NEWER than the asset it reads (it changed this round and the asset did not), but never
 // OLDER — an older resolver against a newer asset is the out-of-step pairing that actually breaks.
-ok(MAP_TOKEN_SERIES.indexOf(tok2[1]) >= MAP_TOKEN_SERIES.indexOf(tok[1]),
+ok(RO_.MAP_TOKEN_SERIES.indexOf(tok2[1]) >= RO_.MAP_TOKEN_SERIES.indexOf(tok[1]),
   'G3 and the resolver is never deployed OLDER than the asset it reads');
 // eager, unlike the 538 KB ADM1 geometry which stays lazy
 ok(INDEX.indexOf('world-admin1-10m.js') === -1, 'G4 the ADM1 GEOMETRY stays lazy-loaded (absent from index.html)');
@@ -384,8 +396,23 @@ ok(/var out = String\(iso == null \? '' : iso\);/.test(GLOBE_C),
 ok((GLOBE_C.match(/catch \(e\) \{\}/g) || []).length >= 2, 'I11 both resolver calls are guarded - a missing asset degrades language only');
 ok(/function admin1LabelBudget/.test(GLOBE_C) && /function countryLabelTier/.test(GLOBE_C),
   'I12 the existing budget and tier machinery is unchanged - hierarchy is not this round');
+// TEXTURE-3-R6 — the FIFTH copy of "the map set shares one token", restated on the derived rule like the
+// other four. km-globe.js changed in R6 and the name asset did not, so requiring them to be EQUAL would forbid
+// exactly what §G asks for. What must hold is that each file re-fetches when its own bytes move.
 var tok3 = /km-globe\.js\?v=([^"']+)/.exec(INDEX);
-ok(!!tok3 && tok3[1] === tok[1], 'I13 km-globe.js shares the new token - it changed and must re-fetch');
+ok(!!tok3, 'I13 km-globe.js carries a cache-bust token');
+ok(RO_.isMapToken(tok3[1]), 'I13 ... from the map series (' + tok3[1] + ')');
+(function () {
+  var marker = new RegExp(RO_.currentMapRoundMarker());
+  var changed = marker.test(GLOBE);
+  if (changed) {
+    ok(tok3[1] === RO_.currentMapToken(),
+      'I13 km-globe.js changed this round, so it re-fetches on the current token');
+  } else {
+    ok(tok3[1] !== RO_.currentMapToken(),
+      'I13 km-globe.js did not change this round, so it is not needlessly rotated');
+  }
+})();
 
 console.log('\n----------------------------------------');
 if (fail === 0) console.log('GEO NAMES zh-Hant (MAP-VISUAL-REAL-EARTH-TEXTURE-3): ' + pass + ' passed, 0 failed');

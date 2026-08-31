@@ -14,6 +14,7 @@ Performance is **not** measured here — see "Why performance lives in a differe
 | `after-r3/` | R3: **8192×4096** July surface, canonical shared-edge topology, three-class border hierarchy, continent labels, zh-TW display aliases. **19 views.** |
 | `after-r4/` | R4: the approved TW/CN display decision, division-level zh-TW names, the bounded label pass, and a deterministic flicker probe per view. **21 views.** |
 | `after-r5/` | R5: the **main-integration** run. Canada re-verified after merging `main` into the branch, plus the four §E views no earlier round contained. **13 views.** |
+| `after-r6/` | R6: the **runtime-closure** run. The English open-ocean label is gone and route arcs are drawn for the first time in any round. **8 views.** |
 
 ## §H — the fourteen required views, and the per-view review
 
@@ -200,6 +201,93 @@ them with `node tools/geo/capture-views.js --tag after-r5 --only <id>`.
 | `arctic-greenland.png` | the two-sided proof: mainland vegetated AND Greenland/Ellesmere still ice |
 | `alaska-yukon.png` | the new §E view — the 141st meridian, and Alaska not inheriting a discontinuity |
 | `na-globe.png` | the overview the original report was written against |
+
+
+## R6 — the two runtime findings R5 could describe but not explain
+
+R5 reported both of these honestly as observations and said it had not investigated them. Both turned out to be
+caused by something other than the layer they appeared in, and one of them was in this directory's own tooling.
+
+### The English sea label was not a missing translation
+
+Natural Earth's `CONTINENT` field carries eight values: the seven continents, and one bucket for features that
+are on none of them, spelled `Seven seas (open ocean)`. Exactly ONE feature carries it — **TF, Fr. S. Antarctic
+Lands** — so the globe derived a one-member "continent" anchor in the southern Indian Ocean and painted the
+bucket's name there. There is no Traditional Chinese name for it because it does not name anywhere.
+
+The label reached the map through two independent leaks, and fixing either alone would have left the other:
+
+| where | what it did |
+| --- | --- |
+| `geo-name-resolver.js` · `continent()` | hid the bucket only if the caller passed `allowEnglish: false`. A default that leaks is not a default. |
+| `km-globe.js` · `continentList()` | seeded the label with the raw English key **before** consulting the resolver, then treated an empty name as "no answer" and kept the seed — so a hidden label would have been painted anyway. |
+
+Both are closed. The resolver now distinguishes `HIDDEN_NOT_A_PLACE` (permanent, and hidden in every language
+including explicit English — "not a place" is not a fact about Chinese) from `HIDDEN_NAME_UNAVAILABLE` (an
+outstanding naming decision, reportable through `hiddenGeographicKeys()` so hiding does not become forgetting).
+The map page carries no key list and no dictionary of its own.
+
+`ocean()` had the same defect and was a loaded gun rather than a visible one: the vendored asset defines **no
+`oceans` table at all**, so every ocean key fell through to English. Nothing calls it yet; the first caller would
+have been the second leak.
+
+### The missing route arc was in the capture harness, not the engine
+
+`tools/geo/capture-views.js` called `setArcs([{ from, to }])`. `km-globe.js` `rebuildLines()` reads `a.points`,
+and always has. `a.points` was `undefined` → `pts = []` → the leg loop never ran → **zero vertices**, silently.
+
+The shipped page has always passed `{ points: seq }`, so **production route arcs were never broken**. The real
+finding is worse than a broken arc: no acceptance round had ever exercised the arc contract, so route arcs had
+never once been visually verified. R5 saw markers and no line and reported it as runtime behaviour; it was this
+harness.
+
+The API was **not** widened to accept `from`/`to` — two payload shapes for one meaning is the defect class R5
+spent its conflict resolution removing from the name resolver. Instead the wrong shape is now loud: every arc
+that yields no geometry is counted and named through `getRouteInfo()`.
+
+### Route census, measured in the browser (`captures.json` → `diag.route_info`)
+
+| view | arcs in | drawn | skipped | segments | vertices | attached |
+| --- | --- | --- | --- | --- | --- | --- |
+| `route-na` (3 nodes) | 1 | 1 | 0 | 2 | 160 | true |
+| `route-pacific` (2 nodes) | 1 | 1 | 0 | 1 | 80 | true |
+| `route-atlantic` (2 nodes) | 1 | 1 | 0 | 1 | 80 | true |
+
+Before R6 every one of those rows was `0 / 0 / 1 / 0 / 0 / false`.
+
+The builder's refusals are now named rather than silent — `NO_POINTS`, `POINTS_NOT_ARRAY`, `NODE_UNRESOLVED`,
+`NODE_OUT_OF_RANGE`, `SINGLE_NODE`, `ALL_SEGMENTS_DEGENERATE` — and `rebuildLines()` now validates coordinates
+the way `rebuildPoints()` always did, so a NaN latitude no longer poisons a route into silence.
+
+### Label census, every captured view
+
+All eight views paint six continent labels — `非洲 亞洲 歐洲 北美洲 大洋洲 南美洲` — and **no English geographic
+label at all**. (Six, not seven: Antarctica's derived anchor is the pole, where an equirectangular label is
+meaningless, and it has been dropped since R3 for that positional reason.)
+
+### Committed from `after-r6/`, and why only four
+
+| | |
+| --- | --- |
+| `captures.json` | **all 8 views**, now including `route_info` and `continent_labels` per view |
+| `map-default.png` | the label closure — compare with `after-r5/map-default.png`, which carries the English string |
+| `route-na.png` | a three-node route drawing **two** connected segments for the first time |
+| `route-pacific.png` | the antimeridian case: the short way across the Pacific, no reverse wrap |
+| `route-atlantic.png` | Rotterdam → New York over Newfoundland |
+
+`na-globe`, `us-ca-border`, `arctic-greenland` and `tw-cn` were captured and inspected but are **not** committed,
+because each is **byte-identical** to the copy already in `after-r5/` (or `after-r4/` for `tw-cn`). That identity
+is the regression evidence — Canada, the 49th-parallel border, the Arctic ice and the TW/CN labels are provably
+untouched by R6 — and it is stronger than a second copy of the same 5.3 MB would be. Digests:
+
+| view | sha256 (first 16) | identical to |
+| --- | --- | --- |
+| `na-globe` | `9a3fbf3e0cc8b8c7` | `after-r5/` |
+| `us-ca-border` | `e87f680562025caf` | `after-r5/` |
+| `arctic-greenland` | `ff5eedec8086971f` | `after-r5/` |
+| `tw-cn` | `c5e82d267763d532` | `after-r4/` |
+
+Regenerate any of them with `node tools/geo/capture-views.js --tag after-r6 --only <id>`.
 
 ## What is committed here, and why not all of it
 

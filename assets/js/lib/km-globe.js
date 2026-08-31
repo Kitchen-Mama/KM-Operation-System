@@ -1939,11 +1939,33 @@
       var anchors = continentAnchors(countryData, function (iso) {
         try { return G.continentOfCountry(iso) || ''; } catch (e) { return ''; }
       });
+      // TEXTURE-3-R6 §B — THE CALLER'S HALF OF THE LEAK, WHICH WAS INDEPENDENT OF THE RESOLVER'S.
+      //
+      // This used to read:
+      //     var nm = a.key;
+      //     try { var r = G.continent(a.key); if (r && r.name) nm = r.name; } catch (e) {}
+      //
+      // Two separate failures in three lines, and fixing only the resolver would have left the second one:
+      //
+      //   1. `nm` was SEEDED with the raw English key before the authority was consulted at all, so the English
+      //      string was the starting point rather than a fallback anybody had chosen.
+      //   2. `if (r && r.name)` treated an EMPTY name as "the resolver had nothing to say" and kept the seed.
+      //      That is exactly backwards: an empty name is the resolver's most deliberate answer — HIDE THIS —
+      //      and this line converted it into "paint the English key".
+      //
+      // So a hidden label is now DROPPED, and the resolver's refusal is the only thing that decides it. The
+      // page carries no key list and no dictionary of its own (§B), and a resolver that throws is treated as
+      // absent rather than as permission to paint the source string.
       continentCache = anchors.map(function (a) {
-        var nm = a.key;
-        try { var r = G.continent(a.key); if (r && r.name) nm = r.name; } catch (e) {}
-        return { key: a.key, vec: a.vec, text: nm, members: a.members };
+        var r = null;
+        try { r = G.continent(a.key); } catch (e) { r = null; }
+        var nm = (r && r.name) ? r.name : '';
+        return { key: a.key, vec: a.vec, text: nm, members: a.members,
+                 hidden_reason: (r && !r.name) ? (r.hidden_reason || 'HIDDEN') : '' };
       }).filter(function (a) {
+        // No name, no label. This is the §B rule and it is deliberately unconditional: there is no branch here
+        // that can decide to paint something the authority declined to name.
+        if (!a.text) return false;
         // Antarctica's derived anchor is the pole, where an equirectangular label is meaningless and the
         // projection is degenerate. It is dropped rather than placed badly.
         return a.key !== 'Antarctica';
@@ -2344,23 +2366,80 @@
       });
       ptData = new Float32Array(arr); ptCount = arr.length / 9;
     }
+    // TEXTURE-3-R6 §C/§D — ROUTE ARC GEOMETRY, AND WHAT R5's CAPTURES WERE ACTUALLY SHOWING.
+    //
+    // R5 reported "markers render, no arc is drawn" from the acceptance captures and could not find a cause in
+    // the engine. The cause was not in the engine: tools/geo/capture-views.js called
+    // setArcs([{ from: [lat,lng], to: [lat,lng] }]), and this function reads `a.points`. `a.points` was
+    // undefined, `pts` became [], the leg loop never ran, and lineCount was 0 — silently, with no error.
+    //
+    // The shipped page has always passed `{ points: seq }` (global-logistics-map.js), so PRODUCTION ARCS WERE
+    // NEVER BROKEN. The real finding is worse than a broken arc: the acceptance harness had never once
+    // exercised the arc contract, so no round had visually verified route arcs at all.
+    //
+    // THE API IS NOT WIDENED TO ACCEPT `from`/`to`. That would leave two payload shapes for one meaning, which
+    // is the same defect class R5 spent its conflict resolution removing from the name resolver. One shape, and
+    // a caller using the wrong one now finds out immediately — see `skipped` below, surfaced through
+    // getRouteInfo() rather than swallowed. A silent [] is what let this survive five rounds.
+    var routeInfo = { arcs_in: 0, arcs_drawn: 0, arcs_skipped: 0, segments: 0, vertices: 0, skipped: [] };
     function rebuildLines() {
       var arr = [];
-      arcs.forEach(function (a) {
-        var pts = a.points || []; var c = a.color || [0, 0.5, 0.73];
-        var world = pts.map(function (p) { return latLngToVec3(p[0], p[1], 1.006); });
+      routeInfo = { arcs_in: arcs.length, arcs_drawn: 0, arcs_skipped: 0, segments: 0, vertices: 0, skipped: [] };
+      arcs.forEach(function (a, ai) {
+        var c = a.color || [0, 0.5, 0.73];
+        var raw = a.points;
+        function skip(reason, detail) {
+          routeInfo.arcs_skipped++;
+          routeInfo.skipped.push({ index: ai, id: (a.id == null ? '' : String(a.id)), reason: reason,
+                                   detail: (detail == null ? '' : String(detail)) });
+        }
+        // §D: an unresolved route fails CLOSED and says why. Each branch is a distinct, named refusal because
+        // "no arc appeared" is the one symptom all of them share and the least useful thing to be told.
+        if (!raw || !raw.length) { skip('NO_POINTS', 'arc carries no `points` array'); return; }
+        if (!Array.isArray(raw)) { skip('POINTS_NOT_ARRAY', typeof raw); return; }
+        var pts = [];
+        for (var k = 0; k < raw.length; k++) {
+          var p = raw[k];
+          // rebuildPoints() has always validated its coordinates with isFinite; this function never did, so a
+          // NaN latitude anywhere in a route produced NaN vertices and a route that vanished without a word.
+          // The asymmetry between the two builders was the second half of §D's "fails closed and reports why".
+          if (!p || !isFinite(p[0]) || !isFinite(p[1])) { skip('NODE_UNRESOLVED', 'index ' + k); return; }
+          if (p[0] < -90 || p[0] > 90 || p[1] < -180 || p[1] > 180) {
+            skip('NODE_OUT_OF_RANGE', 'index ' + k + ' (' + p[0] + ',' + p[1] + ')'); return;
+          }
+          pts.push(p);
+        }
+        // §D: a single-node route draws its marker and NO invented arc. Reported so "one node" is
+        // distinguishable from "something went wrong".
+        if (pts.length < 2) { skip('SINGLE_NODE', pts.length + ' node'); return; }
+        var world = pts.map(function (p) { return norm(latLngToVec3(p[0], p[1], 1.006)); });
+        var drew = 0;
         for (var i = 0; i + 1 < world.length; i++) {
-          // subdivide each leg along the great circle for a curved, on-surface arc
-          var A = norm(world[i]), B = norm(world[i + 1]);
-          var steps = 40;   // UI-GLOBE-01: smoother great-circle arc (more interpolated points; SAME endpoints/coordinates/routing)
-          for (var s = 0; s < steps; s++) {
-            var p1 = slerp(A, B, s / steps), p2 = slerp(A, B, (s + 1) / steps);
+          var A = world[i], B = world[i + 1];
+          // §D: DUPLICATE ADJACENT COORDINATES MUST NOT CREATE ZERO-LENGTH ARTEFACTS. Two identical nodes made
+          // slerp(A, A, t) return A for every t, so the old code emitted 40 degenerate segments — 80 vertices
+          // describing a point — per duplicated pair. A route through the same warehouse twice is ordinary data.
+          if (Math.abs(A[0] - B[0]) < 1e-12 && Math.abs(A[1] - B[1]) < 1e-12 && Math.abs(A[2] - B[2]) < 1e-12) {
+            continue;
+          }
+          // Great-circle subdivision. slerp interpolates ON the unit sphere and always takes the SHORTER of the
+          // two arcs between A and B, so an antimeridian crossing needs no special case and no line can pass
+          // through the globe: every emitted vertex is at radius 1.006 by construction, never a Cartesian
+          // midpoint that would sink beneath the surface.
+          var steps = 40;   // UI-GLOBE-01: smoother great-circle arc (SAME endpoints/coordinates/routing)
+          for (var st = 0; st < steps; st++) {
+            var p1 = slerp(A, B, st / steps), p2 = slerp(A, B, (st + 1) / steps);
             arr.push(p1[0] * 1.006, p1[1] * 1.006, p1[2] * 1.006, c[0], c[1], c[2], 1);
             arr.push(p2[0] * 1.006, p2[1] * 1.006, p2[2] * 1.006, c[0], c[1], c[2], 1);
           }
+          drew++;
         }
+        if (!drew) { skip('ALL_SEGMENTS_DEGENERATE', pts.length + ' identical nodes'); return; }
+        routeInfo.arcs_drawn++;
+        routeInfo.segments += drew;
       });
       lineData = new Float32Array(arr); lineCount = arr.length / 7;
+      routeInfo.vertices = lineCount;
     }
     function norm(v) { var l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
@@ -2456,6 +2535,18 @@
       reset: function () { this.overview(); },
       getStatus: function () { return { ok: status.ok, error: status.error, dist: cam.dist }; },
       // V3G6A - read-only render/texture facts, so the fidelity configuration is observable instead of assumed.
+      // TEXTURE-3-R6 §C — the route census, in the same shape as the other getXInfo() diagnostics. §C asks for
+      // resolved/rejected node counts, segment and vertex counts and the first boundary at which an arc
+      // disappears; none of that was observable from outside before, which is why R5 could report the symptom
+      // and not the cause. `attached` is the buffer-level fact: geometry exists AND the draw call will run.
+      getRouteInfo: function () {
+        return { arcs_in: routeInfo.arcs_in, arcs_drawn: routeInfo.arcs_drawn,
+                 arcs_skipped: routeInfo.arcs_skipped, segments: routeInfo.segments,
+                 vertices: routeInfo.vertices, line_count: lineCount,
+                 attached: !!(buf.line && lineCount > 0),
+                 markers: ptCount,
+                 skipped: routeInfo.skipped.slice() };
+      },
       getRenderInfo: function () { return { dpr: dpr, device_pixel_ratio: (window.devicePixelRatio || 1), dpr_cap: 2, css_width: W, css_height: H, buffer_width: canvas.width, buffer_height: canvas.height }; },
       // TEXTURE-3-R3 §I — STEADY ROTATE/ZOOM FRAME TIMING, measured here rather than in a harness page.
       //
@@ -2601,6 +2692,17 @@
       // canonical edge set is read from here rather than recomputed by the reporter: which set is active, how
       // many duplicate edges were removed, the per-class edge and vertex counts, the endpoint connectivity,
       // the anti-meridian census, and the separate timings §I asks to be measured separately.
+      // TEXTURE-3-R6 §B/§F — what the continent layer will actually PAINT, and what it declined to.
+      // §F asks for evidence that no unintended English open-ocean label reaches the default view. Reading it
+      // off a screenshot is not evidence; this reports the strings the layer holds, plus the keys it dropped and
+      // why, so the acceptance capture can assert on the label set rather than on pixels.
+      getContinentLabels: function () {
+        var out = [];
+        try {
+          continentList().forEach(function (c) { out.push({ key: c.key, text: c.text }); });
+        } catch (e) {}
+        return out;
+      },
       getTopologyInfo: function () {
         function setInfo(name, topo, layers, buildMs, uploadMs) {
           if (!topo || !layers) return { available: false, reason: name + '_NOT_BUILT' };

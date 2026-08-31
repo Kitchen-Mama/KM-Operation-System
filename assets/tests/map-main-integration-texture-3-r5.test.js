@@ -359,18 +359,34 @@ var TAGS = (function () {
     ok(/scope-select-modal\.js\?v=fb4er4br3-liveclosure-20260831/.test(INDEX),
         'D4 and so did the scope modal\'s');
 
-    // §D — a CHANGED map file gets this round's token; an UNCHANGED one keeps its own. Derived from the source,
-    // not from a list of filenames that would rot next round.
-    var R5 = 'map-texture3-r5-20260831';
+    // §D — a CHANGED map file gets the CURRENT round's token; an UNCHANGED one keeps its own.
+    //
+    // TEXTURE-3-R6 — THE RULE WAS RIGHT AND ITS SUBJECT WAS PINNED. This block used to hard-code
+    // `map-texture3-r5-20260831` and `/TEXTURE-3-R5/`, so it derived "did this file change" from the source but
+    // still hard-coded "which round is now" — and failed the moment R6 rotated a file, while describing the
+    // correct state. Both now come from assets/tests/_release-order.js, where a round appends one line.
+    var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+    var CUR = RO.currentMapToken(), MARK = new RegExp(RO.currentMapRoundMarker());
     function tokOf(src) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === src) return TAGS[i].tok; } return null; }
-    eq(tokOf(RESOLVER_REL), R5, 'D5 the resolver changed this round, so it carries this round\'s token');
-    ok(/TEXTURE-3-R5/.test(RESOLVER), 'D5 and it does carry this round\'s marker');
-    [['assets/js/lib/km-globe.js', GLOBE],
-     ['assets/js/data/geo-display-aliases-zh-tw.js', read(ALIAS_REL)],
-     ['assets/js/lib/km-geo-topology.js', read('assets/js/lib/km-geo-topology.js')]].forEach(function (p) {
-        ok(!/TEXTURE-3-R5/.test(p[1]), 'D5 ' + path.basename(p[0]) + ' did NOT change this round');
-        ok(tokOf(p[0]) !== R5, 'D5 so it was NOT rotated (' + tokOf(p[0]) + ')');
+    var MAP_SOURCES = [
+        [RESOLVER_REL, RESOLVER],
+        ['assets/js/lib/km-globe.js', GLOBE],
+        ['assets/js/data/geo-display-aliases-zh-tw.js', read(ALIAS_REL)],
+        ['assets/js/lib/km-geo-topology.js', read('assets/js/lib/km-geo-topology.js')],
+        ['assets/js/data/geo-names-zh-hant.js', read('assets/js/data/geo-names-zh-hant.js')],
+        ['assets/js/data/geo-admin1-display-names-zh-tw.js', read('assets/js/data/geo-admin1-display-names-zh-tw.js')]
+    ];
+    MAP_SOURCES.forEach(function (p) {
+        var tok = tokOf(p[0]);
+        ok(RO.isMapToken(tok), 'D5 ' + path.basename(p[0]) + ' carries a series token (' + tok + ')');
+        if (MARK.test(p[1])) {
+            eq(tok, CUR, 'D5 ' + path.basename(p[0]) + ' changed this round, so it carries this round\'s token');
+        } else {
+            ok(tok !== CUR, 'D5 ' + path.basename(p[0]) + ' did NOT change this round, so it was not rotated (' + tok + ')');
+        }
     });
+    ok(MAP_SOURCES.some(function (p) { return MARK.test(p[1]); }),
+        'D5 at least one map file genuinely carries the current round\'s marker');
 
     // The earth image carries a CONTENT token of its own, because index.html cannot cache-bust an image the
     // engine requests itself.

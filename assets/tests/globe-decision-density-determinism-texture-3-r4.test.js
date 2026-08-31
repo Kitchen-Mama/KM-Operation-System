@@ -871,11 +871,12 @@ ok(/jul2004/.test(GLOBE), 'G-R2 and it is still the July 2004 frame');
     'geo-admin1-display-names-zh-tw.js': 'assets/js/data/geo-admin1-display-names-zh-tw.js',
     'km-geo-topology.js': 'assets/js/lib/km-geo-topology.js'
   };
-  // Append-only, oldest to newest. A new round APPENDS; it never edits an existing entry.
-  var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
-                          'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
-  var CURRENT = MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1];
-  var CURRENT_MARKER = /TEXTURE-3-R5/;
+  // TEXTURE-3-R6 — from the shared release order. This was the fourth private copy of the same list, and the
+  // second time the same duplication broke a suite for a reason unrelated to what it tests.
+  var RO_ = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+  var MAP_TOKEN_SERIES = RO_.MAP_TOKEN_SERIES;
+  var CURRENT = RO_.currentMapToken();
+  var CURRENT_MARKER = new RegExp(RO_.currentMapRoundMarker());
   var toks = files.map(function (f) {
     var m = new RegExp(f.replace(/\./g, '\\.') + '\\?v=([^"\']+)').exec(INDEX);
     ok(!!m, 'G index.html cache-busts ' + f);

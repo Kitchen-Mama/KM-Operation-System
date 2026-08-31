@@ -250,8 +250,9 @@ ok(imgTok && imgTok[1] !== 'jul2004-4f424067', 'J17 and it MOVED — the R2 toke
 // cannot express that — it is equally satisfied by rotating everything. What R3 was really protecting against
 // was a STALE PAIRING: an old consumer served against a new asset. That is what is asserted now, over an
 // append-only ordered series.
-var MAP_TOKEN_SERIES = ['map-zh-hant-20260826', 'map-texture3-r2-20260826', 'map-texture3-r3-20260826',
-                        'map-texture3-r4-20260827', 'map-texture3-r5-20260831'];
+// TEXTURE-3-R6 — series and current round from the shared release order, not a fourth private copy.
+var RO_ = require(path.join(ROOT, 'assets/tests/_release-order.js'));
+var MAP_TOKEN_SERIES = RO_.MAP_TOKEN_SERIES;
 // Ordered by DEPENDENCY: the name asset, then the resolver that reads it, then the engine that reads the
 // resolver. The order is the assertion, so writing it wrongly would be visible rather than silent.
 var coDeployed = ['geo-names-zh-hant.js', 'geo-name-resolver.js', 'km-globe.js'];
@@ -276,14 +277,15 @@ toks.forEach(function (t, i) {
 // A cache token is not a compatibility number. It answers one question: will the browser re-fetch this file.
 // So that is what is asserted, and the interface question is left to the suites that actually exercise the
 // interface.
-var CURRENT_TOKEN = MAP_TOKEN_SERIES[MAP_TOKEN_SERIES.length - 1];
+var CURRENT_TOKEN = RO_.currentMapToken();
+var CURRENT_MARKER = new RegExp(RO_.currentMapRoundMarker());
 var SRC_OF = {
   'geo-names-zh-hant.js': 'assets/js/data/geo-names-zh-hant.js',
   'geo-name-resolver.js': 'assets/js/core/geo-name-resolver.js',
   'km-globe.js': 'assets/js/lib/km-globe.js'
 };
 coDeployed.forEach(function (f, i) {
-  var changedThisRound = /TEXTURE-3-R5/.test(read(SRC_OF[f]));
+  var changedThisRound = CURRENT_MARKER.test(read(SRC_OF[f]));
   if (changedThisRound) {
     eq(toks[i], CURRENT_TOKEN, 'J17 ' + f + ' changed this round, so it carries this round\'s token');
   } else {

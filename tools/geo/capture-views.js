@@ -189,12 +189,19 @@ function harnessHtml(view, forceTier) {
     '        g.setMarkers(stops.map(function (s, i) {',
     '          return { id: s.id, lat: s.lat, lng: s.lng, color: PAL[i % PAL.length], size: 13, ring: i === 1 };',
     '        }));',
-    '        var arcs = [];',
-    '        for (var ai2 = 0; ai2 < stops.length - 1; ai2++) {',
-    '          arcs.push({ from: [stops[ai2].lat, stops[ai2].lng], to: [stops[ai2 + 1].lat, stops[ai2 + 1].lng],',
-    '                      color: (PAL[ai2 % PAL.length]).concat([0.95]) });',
-    '        }',
-    '        g.setArcs(arcs);',
+    // TEXTURE-3-R6 §C — THE BUG THAT MADE EVERY ROUTE CAPTURE SILENTLY ARC-LESS.
+    //
+    // This built `{ from: [lat,lng], to: [lat,lng] }`. km-globe's rebuildLines() reads `a.points` and has never
+    // read `from`/`to`, so it produced ZERO vertices for every route view in every round — while the markers,
+    // which come from a different builder, drew perfectly. R5 looked at the captures, saw markers and no line,
+    // and reported it as a runtime finding. It was a harness finding: the shipped page passes `{ points: seq }`
+    // (global-logistics-map.js) and its arcs were never broken.
+    //
+    // ONE ARC OVER THE WHOLE ORDERED ROUTE, which is also what the page does — it pushes a single arc carrying
+    // the full node sequence rather than one arc per leg, so the harness now exercises the multi-node path that
+    // production actually uses instead of a two-point special case.
+    '        g.setArcs([{ id: "route", points: stops.map(function (s) { return [s.lat, s.lng]; }),',
+    '                     color: PAL[0].concat([0.95]) }]);',
     '      }',
     '      if (VIEW.admin1 && g.setAdmin1Data) {',
     '        var s = document.createElement("script");',
@@ -208,7 +215,7 @@ function harnessHtml(view, forceTier) {
     '        if (VIEW.overview) { g.overview(); } else { g.focus(VIEW.focus[0], VIEW.focus[1], { dist: VIEW.dist }); }',
     // Two frames of settle, then read the diagnostics the report must quote.
     '        setTimeout(function () {',
-    '          var mi = {}, ti = {}, ri = {}, li = {}, ai = {}, tp = {}, pf = {}, fl = {};',
+    '          var mi = {}, ti = {}, ri = {}, li = {}, ai = {}, tp = {}, pf = {}, fl = {}, rt = {};',
     '          // TEXTURE-3-R4 - FORCE ONE SYNCHRONOUS FRAME BEFORE READING ANYTHING. The label counters and the',
     '          // LOD level are written by draw(), which runs on requestAnimationFrame; the settle timeout is not',
     '          // a guarantee that one has run since the last focus(). Without this, canada-boreal reported LOD 0',
@@ -221,6 +228,10 @@ function harnessHtml(view, forceTier) {
     // the ENGINE because only the engine can drive a synchronous frame; from out here the best available is
     // a camera nudge plus requestAnimationFrame, which measures the browser's scheduler and not the renderer.
     '          try { tp = g.getTopologyInfo(); } catch (e) {}',
+    // TEXTURE-3-R6 §C — the route census, recorded per view. A capture that shows no arc must now also SAY
+    // whether geometry existed, and if not, which named refusal applied. That is the difference between "the
+    // screenshot has no line in it" and a diagnosis.
+    '          try { rt = g.getRouteInfo(); } catch (e) { rt = { error: String(e && e.message || e) }; }',
     '          try { fl = flickerProbe(g); } catch (e) { fl = { error: String(e && e.message || e) }; }',
     '          try { pf = g.measureFrames({ samples: 24 }); } catch (e) { pf = { error: String(e && e.message || e) }; }',
     '          try { mi = g.getMaterialInfo(); } catch (e) {}',
@@ -229,8 +240,12 @@ function harnessHtml(view, forceTier) {
     '          out.ok = true;',
     '          done({ material: mi, texture: ti, render: ri, lod: li, admin1: ai, topology: tp, perf: pf,',
     '                 flicker: fl,',
+    '                 route_info: rt,',
     '                 camera: { focus: VIEW.focus, dist: VIEW.dist, mode: VIEW.overview ? "overview" : "focus" },',
     '                 admin1_requested: !!VIEW.admin1, route: !!VIEW.route,',
+    '                 continent_labels: (function () {',
+    '                   try { return (g.getContinentLabels ? g.getContinentLabels() : []); } catch (e) { return []; }',
+    '                 })(),',
     '                 font_probe: fontProbe() });',
     '        }, 900);',
     '      }',

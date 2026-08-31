@@ -73,7 +73,13 @@
         // pinned Natural Earth field has no Traditional name at all.
         WIKIDATA_ZH_TW: 'WIKIDATA_ZH_TW',                 // admin1 2
         REVIEWED_ADMIN1_ALIAS: 'REVIEWED_ADMIN1_ALIAS',   // admin1 1 (above every source)
-        HIDDEN: 'HIDDEN'                                  // continents 3 · oceans 3 — no reliable name exists
+        HIDDEN: 'HIDDEN',                                 // continents 3 · oceans 3 — no reliable name exists
+        // TEXTURE-3-R6 §B — WHY something is hidden, because the two reasons need different handling and the
+        // old single HIDDEN could not tell them apart. NOT_A_PLACE is permanent and correct; NAME_UNAVAILABLE is
+        // an outstanding naming decision that must be REPORTABLE rather than quietly swallowed. Conflating them
+        // is how a genuine gap disappears from view instead of being fixed.
+        HIDDEN_NOT_A_PLACE: 'HIDDEN_NOT_A_PLACE',
+        HIDDEN_NAME_UNAVAILABLE: 'HIDDEN_NAME_UNAVAILABLE'
     };
 
     // TEXTURE-3-R5 §B — WHERE THE TWO NAMES WENT.
@@ -104,6 +110,26 @@
     // That is deliberate: it is loud, deterministic and correct-by-omission, which is what a missing decision
     // should look like.
     var REQUIRE_APPROVED_ALIAS_ = ['CN', 'TW'];
+
+    // TEXTURE-3-R6 §B — KEYS THAT ARE NOT PLACES.
+    //
+    // Natural Earth's CONTINENT field has eight values: the seven continents, and one bucket for features that
+    // are on none of them. That bucket's value is the literal string below. It reached the default zh-TW globe
+    // as a painted English label, which is what R6 §A was asked to trace.
+    //
+    // IT IS NOT A MISSING TRANSLATION. There is no Traditional Chinese name for "Seven seas (open ocean)"
+    // because it does not name anywhere — it is a null value spelled in English. Adding an alias for it would
+    // give a non-place a name, which is worse than the leak. So it is classified, not translated.
+    //
+    // WHY THIS IS A LIST OF KEYS AND NOT A DICTIONARY. Same reason as REQUIRE_APPROVED_ALIAS_ above: a key list
+    // holds no names and therefore cannot become a second naming authority. §B says the map page must not carry
+    // its own dictionary; this keeps the JUDGEMENT here too, so the page asks and obeys rather than filtering.
+    //
+    // AND WHY HIDING IT IS NOT A LANGUAGE DECISION. §B keeps English mode available where explicitly requested,
+    // but this entry is hidden in EVERY language, because "not a place" is not a fact about Chinese. English mode
+    // stays fully available for everything that is a place.
+    var NON_GEOGRAPHIC_KEYS_ = ['Seven seas (open ocean)'];
+    function isNonGeographicKey_(k) { return NON_GEOGRAPHIC_KEYS_.indexOf(str(k)) !== -1; }
 
     function dataset() {
         return (typeof window !== 'undefined' && window.KM_GEO_NAMES_ZH_HANT) ? window.KM_GEO_NAMES_ZH_HANT : null;
@@ -275,18 +301,38 @@
     }
 
     // ---- CONTINENTS --------------------------------------------------------------------------------------
-    // 1 vendored reviewed zh-Hant list · 2 canonical English · 3 HIDE. There is deliberately no code fallback:
-    // a continent has no code, and "Seven seas (open ocean)" is not a continent, so it is hidden rather than
-    // labelled with a value that would read as one.
+    // 1 vendored reviewed zh-Hant list · 2 canonical English (explicit request only) · 3 HIDE. There is
+    // deliberately no code fallback: a continent has no code.
+    //
+    // TEXTURE-3-R6 §A/§B — THE COMMENT THAT USED TO BE HERE WAS TRUE ABOUT THE INTENT AND FALSE ABOUT THE CODE.
+    // It said "Seven seas (open ocean) is not a continent, so it is hidden rather than labelled with a value that
+    // would read as one". The hiding was conditional on the CALLER passing `allowEnglish: false`, and the globe's
+    // continent layer did not pass it — so the string was returned at ENGLISH_CANONICAL and painted. A default
+    // that leaks is not a default; the caller was doing nothing wrong by not knowing to ask.
+    //
+    // So the rule now lives here, and there are three outcomes rather than two:
+    //   · a reviewed zh-Hant name        → painted
+    //   · a key that is not a place      → HIDDEN_NOT_A_PLACE, in every language
+    //   · a place with no reviewed name  → HIDDEN_NAME_UNAVAILABLE on the zh map; English only if ASKED for
     function continent(neContinent, opts) {
         opts = opts || {};
         var key = str(neContinent);
         var d = dataset();
         var lang = opts.lang || 'zh-TW';
         if (!key) return { name: '', level: LEVEL.HIDDEN, key: '' };
+        // Not a place: no language makes it one, so this outranks even an explicit English request.
+        if (isNonGeographicKey_(key)) {
+            return { name: '', level: LEVEL.HIDDEN_NOT_A_PLACE, key: key, hidden_reason: 'NOT_A_PLACE' };
+        }
         if (lang !== 'en') {
             var zh = d && d.continents ? str(d.continents[key]) : '';
             if (zh) return { name: zh, level: LEVEL.ZH_HANT_REVIEWED_LIST, key: key };
+            // §B: an unresolved name must NOT become visible English just because the source is English.
+            // `allowEnglish: true` remains the explicit opt-in for a caller that genuinely wants the fallback.
+            if (opts.allowEnglish !== true) {
+                return { name: '', level: LEVEL.HIDDEN_NAME_UNAVAILABLE, key: key,
+                         hidden_reason: 'NAME_UNAVAILABLE', english: key };
+            }
         }
         if (opts.allowEnglish === false) return { name: '', level: LEVEL.HIDDEN, key: key };
         return { name: key, level: LEVEL.ENGLISH_CANONICAL, key: key };
@@ -367,13 +413,28 @@
     // ---- OCEANS ------------------------------------------------------------------------------------------
     // Wired for completeness because the authority specifies an order "if implemented". No ocean label layer
     // exists yet and no ocean name list is vendored, so this hides rather than inventing a name.
+    // TEXTURE-3-R6 §B — THE SAME CONTRACT, AND THIS ONE WAS A LOADED GUN.
+    //
+    // The vendored asset defines NO `oceans` table at all (measured: window.KM_GEO_NAMES_ZH_HANT has no such
+    // key), so before R6 every ocean key fell straight through to ENGLISH_CANONICAL. Nothing in the shipped map
+    // calls this yet, which is the only reason it was not a second visible leak — the first caller would have
+    // been. A function whose default answer is "paint the English source string" is not fail-safe, so it now
+    // fails the way §B requires and says which of the two reasons applied.
     function ocean(key, opts) {
         opts = opts || {};
         var k = str(key);
         var d = dataset();
         if (!k) return { name: '', level: LEVEL.HIDDEN, key: '' };
+        if (isNonGeographicKey_(k)) {
+            return { name: '', level: LEVEL.HIDDEN_NOT_A_PLACE, key: k, hidden_reason: 'NOT_A_PLACE' };
+        }
+        var lang = opts.lang || 'zh-TW';
         var zh = d && d.oceans ? str(d.oceans[k]) : '';
-        if (zh && (opts.lang || 'zh-TW') !== 'en') return { name: zh, level: LEVEL.ZH_HANT_REVIEWED_LIST, key: k };
+        if (zh && lang !== 'en') return { name: zh, level: LEVEL.ZH_HANT_REVIEWED_LIST, key: k };
+        if (lang !== 'en' && opts.allowEnglish !== true) {
+            return { name: '', level: LEVEL.HIDDEN_NAME_UNAVAILABLE, key: k,
+                     hidden_reason: 'NAME_UNAVAILABLE', english: k };
+        }
         if (opts.allowEnglish === false) return { name: '', level: LEVEL.HIDDEN, key: k };
         return { name: k, level: LEVEL.ENGLISH_CANONICAL, key: k };
     }
@@ -441,8 +502,36 @@
         return out;
     }
 
+    // TEXTURE-3-R6 §B — HIDING MUST NOT BE THE SAME AS FORGETTING.
+    //
+    // §B requires that an unresolved name stop leaking English. Done naively that trades a visible defect for an
+    // invisible one: the label simply vanishes and nobody learns that a naming decision is outstanding. This is
+    // the same argument unresolvedNames() already makes for countries, applied to the geographic layers — the
+    // product can show that a decision is pending instead of appearing to have settled it.
+    //
+    // Reported per key with its reason, so NOT_A_PLACE (permanent, correct) and NAME_UNAVAILABLE (a gap someone
+    // should close) never read as the same thing.
+    function hiddenGeographicKeys(opts) {
+        var d = dataset(), out = [];
+        var keys = {};
+        if (d && d.countryContinent) {
+            Object.keys(d.countryContinent).forEach(function (iso) {
+                var k = str(d.countryContinent[iso]);
+                if (k) { keys[k] = (keys[k] || 0) + 1; }
+            });
+        }
+        Object.keys(keys).sort().forEach(function (k) {
+            var r = continent(k, opts || {});
+            if (r.name) return;
+            out.push({ key: k, kind: 'continent', level: r.level,
+                       reason: r.hidden_reason || 'HIDDEN', member_features: keys[k] });
+        });
+        return out;
+    }
+
     var api = {
         LEVEL: LEVEL,
+        hiddenGeographicKeys: hiddenGeographicKeys,
         country: country,
         countryFull: countryFull,
         countryDetail: countryDetail,
