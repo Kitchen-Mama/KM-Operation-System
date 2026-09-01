@@ -40,14 +40,37 @@
         });
     }
     
+    // F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - THE ROOT CAUSE, AND WHY THE HEADER IS NOW MEASURED.
+    //
+    // `.scroll-col` is `overflow-x: hidden`, so THIS synthetic bar is the only way to reach the right-hand
+    // columns: its content width IS the reachable width of the table. Measuring only `.scroll-col` made that
+    // width a function of whether any rows happened to exist at the instant of measurement - and an empty
+    // `.scroll-col` reports its own clientWidth, not the width of a row it does not have yet.
+    //
+    // The scoped workspace read is ASYNC. The first measurement ran ~100ms after mount, against an EMPTY body,
+    // and nothing re-measured once the rows arrived. So the bar stayed ~200px longer than the viewport for the
+    // rest of the page's life, and every column past that point EXISTED, was NOT hidden, and could not be
+    // scrolled to. Toggling Display appeared to "fix the columns" only because both handlers happen to call
+    // this function again, by which time the rows were there.
+    //
+    // `.scroll-header` carries every column and is `min-width: max-content`, so it reports the true full width
+    // whether the body has four rows, zero rows, or every row filtered out by a search. Measuring it removes the
+    // dependency on render timing entirely rather than papering over it with another delayed re-measure.
     function updateScrollWidth() {
         if (!unifiedScroll || scrollCols.length === 0) return;
+        const skuSection = document.getElementById('sku-section');
         let maxScrollWidth = 0;
         scrollCols.forEach(col => {
             if (col.scrollWidth > maxScrollWidth) maxScrollWidth = col.scrollWidth;
         });
+        if (skuSection) {
+            Array.prototype.forEach.call(skuSection.querySelectorAll('.scroll-header'), function (h) {
+                const w = Math.max(h.scrollWidth || 0, h.offsetWidth || 0);
+                if (w > maxScrollWidth) maxScrollWidth = w;
+            });
+        }
         const content = unifiedScroll.querySelector('.sku-unified-scroll-content');
-        content.style.width = (maxScrollWidth + 200) + 'px';
+        if (content) content.style.width = (maxScrollWidth + 200) + 'px';
     }
     
     window.addEventListener('DOMContentLoaded', function() { setTimeout(initSkuScroll, 100); });
@@ -280,6 +303,11 @@ function renderSkuDetailsTable() {
     // then re-apply the active Search/Series/Category filters so a re-render never resets them.
     populateSkuFilters();
     applySkuFilters();
+    // F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - the freshly rendered body cells carry no visibility of their own, so
+    // the ONE apply runs here, synchronously, the moment the rows exist. This is the same function both Display
+    // handlers call: the first stable frame and a later toggle cannot take different code paths any more. It
+    // also recomputes the reachable scroll width now that there is a body to measure.
+    applySkuColumnVisibility_();
     setTimeout(() => { syncSkuHeaderScroll(); }, 100);
 }
 
@@ -1860,47 +1888,167 @@ function toggleDisplayPanel() {
     panel.classList.toggle('show');
 }
 
-function toggleColumn(colIndex) {
-    var sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
-    sections.forEach(function(section) {
-        if (colIndex === 0) {
-            var fixedCol = section.querySelector('.fixed-col');
-            if (fixedCol) fixedCol.style.display = fixedCol.style.display !== 'none' ? 'none' : '';
-        } else {
-            var headerCells = section.querySelectorAll('.scroll-header .header-cell[data-col="' + colIndex + '"]');
-            var scrollCells = section.querySelectorAll('.scroll-col .scroll-cell[data-col="' + colIndex + '"]');
-            headerCells.forEach(function(cell) { cell.style.display = cell.style.display !== 'none' ? 'none' : ''; });
-            scrollCells.forEach(function(cell) { cell.style.display = cell.style.display !== 'none' ? 'none' : ''; });
+// ==============================================================================================================
+// F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - COLUMN VISIBILITY: ONE REGISTRY, ONE RESOLVED SET, ONE APPLY.
+// ==============================================================================================================
+// WHAT WAS WRONG. There was no column-visibility STATE at all. The checkboxes were the state, and the only thing
+// that ever wrote visibility into the DOM was a handler firing. `toggleColumn` flipped each cell's inline style
+// relative to ITS OWN current value, so the answer depended on what the DOM already looked like rather than on
+// what the user had chosen. Meanwhile `renderSkuLifecycleTable` rebuilds every body cell from scratch with no
+// inline style, so a re-render (search, filter, unit switch, Refresh DB) silently returned hidden BODY cells to
+// view while their HEADER stayed hidden - after which one click on that column inverted the two.
+//
+// The first stable frame was therefore produced by a render that applied nothing, and the Display control and
+// the table never shared a source of truth because there was no truth to share.
+//
+// WHAT IT IS NOW. A registry, a resolved visible set, and ONE apply function that both the first render and the
+// Display handlers call. Nothing else writes column visibility.
+//
+//   registry            the columns that CAN be shown, with stable keys
+//   resolved set        registry reconciled with the persisted preference   <- the single source of truth
+//   applySkuColumnVisibility_()   the only writer of cell display, checkbox state and scroll extent
+//
+// THE PREFERENCE STORES HIDDEN KEYS, NOT VISIBLE ONES, and that is the decision that makes this class of bug
+// structurally impossible rather than merely fixed. A column added after a preference was written is absent from
+// the stored list, so it defaults to VISIBLE. Storing the visible set instead would silently hide every new
+// column from every existing user and reproduce the exact symptom this round exists to remove: a control
+// claiming "All" over a table that is missing columns.
+//
+// Keys are STABLE STRINGS, never the data-col index. Inserting a column in the middle would shift every
+// index-based preference onto the wrong columns.
+var SKU_COLPREF_KEY_ = 'km.ui.skuDetails.hiddenColumns.v1';
+var SKU_COLPREF_VERSION_ = 1;
+
+// The in-memory resolved set for this page instance. Seeded from the preference, re-read on each mount, and
+// authoritative in between - so a localStorage that cannot be read or written degrades to a session-only
+// preference instead of breaking the page.
+var _skuVisibleColsState = null;
+
+// The registry is DERIVED from SKU_RESIZE_COLUMNS, which is already the canonical column schema (stable key +
+// data-col index + label) rather than a second list that could disagree with it. col 0 is the frozen SKU
+// identity column: it has no checkbox and is never hideable.
+function skuColumnRegistry_() {
+    var src = (typeof SKU_RESIZE_COLUMNS !== 'undefined' && SKU_RESIZE_COLUMNS) ? SKU_RESIZE_COLUMNS : [];
+    var out = [];
+    for (var i = 0; i < src.length; i++) {
+        if (src[i] && src[i].col >= 1) out.push({ key: src[i].key, col: src[i].col, label: src[i].label });
+    }
+    return out;
+}
+
+function _skuColPrefRead_() {
+    if (!_skuHasLocalStorage_()) return null;
+    var raw;
+    try { raw = localStorage.getItem(SKU_COLPREF_KEY_); } catch (e) { return null; }
+    if (!raw) return null;
+    var o;
+    try { o = JSON.parse(raw); } catch (e) { return null; }       // corrupt JSON -> no preference -> all visible
+    if (!o || typeof o !== 'object' || o.v !== SKU_COLPREF_VERSION_ || !Object.prototype.hasOwnProperty.call(o, 'hidden')) return null;
+    if (Object.prototype.toString.call(o.hidden) !== '[object Array]') return null;
+    return o.hidden;
+}
+
+function _skuColPrefWrite_(cols) {
+    if (!_skuHasLocalStorage_()) return false;
+    var hidden = [];
+    for (var i = 0; i < cols.length; i++) if (!cols[i].visible) hidden.push(cols[i].key);
+    try { localStorage.setItem(SKU_COLPREF_KEY_, JSON.stringify({ v: SKU_COLPREF_VERSION_, hidden: hidden })); return true; }
+    catch (e) { return false; }                                    // quota / private mode -> session-only, page still works
+}
+
+/**
+ * THE SINGLE SOURCE OF TRUTH. Registry first, preference second.
+ *
+ * Reconciliation policy, applied in this order:
+ *   - a stored key that is not in the registry is DROPPED (the column no longer exists)
+ *   - a duplicate key collapses (it is a set)
+ *   - a non-string entry is ignored
+ *   - a wrong version, a wrong shape or unreadable storage is treated as NO preference -> everything visible
+ *   - a registry column absent from the stored hidden list is VISIBLE (this is the new-column policy)
+ */
+function skuResolveVisibleColumns_(forceReload) {
+    if (_skuVisibleColsState && !forceReload) return _skuVisibleColsState;
+    var reg = skuColumnRegistry_();
+    var known = {};
+    for (var i = 0; i < reg.length; i++) known[reg[i].key] = true;
+    var hidden = {};
+    var stored = _skuColPrefRead_();
+    if (stored) {
+        for (var j = 0; j < stored.length; j++) {
+            var k = stored[j];
+            if (typeof k === 'string' && known[k]) hidden[k] = true;
         }
-    });
-    updateAllCheckbox();
-    if (window.updateSkuScrollWidth) setTimeout(function() { window.updateSkuScrollWidth(); }, 50);
+    }
+    var cols = [];
+    for (var m = 0; m < reg.length; m++) {
+        cols.push({ key: reg[m].key, col: reg[m].col, label: reg[m].label, visible: !hidden[reg[m].key] });
+    }
+    _skuVisibleColsState = cols;
+    return cols;
+}
+
+/**
+ * THE ONLY WRITER of column visibility. Called by the first render and by both Display handlers, so there is
+ * exactly one code path that can make the table disagree with the control - and it is this one.
+ *
+ * It writes cell display, mirrors the checkboxes, DERIVES the Select All state, and recomputes the scroll
+ * extent. It never re-renders, never touches rows, and never reads search / filter / expand state, so applying
+ * columns cannot reset any of them.
+ */
+function applySkuColumnVisibility_(cols) {
+    cols = cols || skuResolveVisibleColumns_();
+    var root = document.getElementById('sku-section');
+    if (!root) return cols;
+    var sections = root.querySelectorAll('.sku-lifecycle-section');
+    for (var i = 0; i < cols.length; i++) {
+        var c = cols[i];
+        var disp = c.visible ? '' : 'none';
+        // EVERY section shares the one resolved set - Upcoming, Running in the Market, Phasing Out and Closure.
+        for (var s = 0; s < sections.length; s++) {
+            var head = sections[s].querySelectorAll('.scroll-header .header-cell[data-col="' + c.col + '"]');
+            for (var h = 0; h < head.length; h++) head[h].style.display = disp;
+            var body = sections[s].querySelectorAll('.scroll-col .scroll-cell[data-col="' + c.col + '"]');
+            for (var b = 0; b < body.length; b++) body[b].style.display = disp;
+        }
+        var cb = root.querySelector('.col-checkbox[data-col="' + c.col + '"]');
+        if (cb) cb.checked = c.visible;
+    }
+    // Select All is DERIVED from the resolved set and never stored beside it - two stores would be two answers.
+    var checkAll = document.getElementById('checkAll');
+    if (checkAll) {
+        var vis = 0;
+        for (var v = 0; v < cols.length; v++) if (cols[v].visible) vis++;
+        checkAll.checked = cols.length > 0 && vis === cols.length;
+        checkAll.indeterminate = vis > 0 && vis < cols.length;
+    }
+    // A column that exists but cannot be scrolled to is not shown, so the reachable width is part of "applied".
+    if (window.updateSkuScrollWidth) window.updateSkuScrollWidth();
+    return cols;
+}
+
+function toggleColumn(colIndex) {
+    var cols = skuResolveVisibleColumns_();
+    var hit = null;
+    for (var i = 0; i < cols.length; i++) if (cols[i].col === colIndex) { hit = cols[i]; break; }
+    if (!hit) return;
+    hit.visible = !hit.visible;          // the SET is flipped, never the cell's current inline style
+    _skuColPrefWrite_(cols);
+    applySkuColumnVisibility_(cols);
 }
 
 function toggleAllColumns() {
     var checkAll = document.getElementById('checkAll');
-    var colCheckboxes = document.querySelectorAll('.col-checkbox');
-    var sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
-    colCheckboxes.forEach(function(checkbox) {
-        checkbox.checked = checkAll.checked;
-        var colIndex = parseInt(checkbox.dataset.col);
-        sections.forEach(function(section) {
-            if (colIndex === 0) {
-                var fixedCol = section.querySelector('.fixed-col');
-                if (fixedCol) fixedCol.style.display = checkAll.checked ? '' : 'none';
-            } else {
-                section.querySelectorAll('.scroll-header .header-cell[data-col="' + colIndex + '"]').forEach(function(c) { c.style.display = checkAll.checked ? '' : 'none'; });
-                section.querySelectorAll('.scroll-col .scroll-cell[data-col="' + colIndex + '"]').forEach(function(c) { c.style.display = checkAll.checked ? '' : 'none'; });
-            }
-        });
-    });
-    if (window.updateSkuScrollWidth) setTimeout(function() { window.updateSkuScrollWidth(); }, 50);
+    var on = !!(checkAll && checkAll.checked);
+    var cols = skuResolveVisibleColumns_();
+    for (var i = 0; i < cols.length; i++) cols[i].visible = on;
+    _skuColPrefWrite_(cols);
+    applySkuColumnVisibility_(cols);
 }
 
+// Kept because the markup and other callers reference it; it now DERIVES the control state through the one
+// apply rather than computing a second opinion from the checkboxes.
 function updateAllCheckbox() {
-    var checkAll = document.getElementById('checkAll');
-    var colCheckboxes = document.querySelectorAll('.col-checkbox');
-    checkAll.checked = Array.from(colCheckboxes).every(function(cb) { return cb.checked; });
+    applySkuColumnVisibility_();
 }
 
 // Display panel + More Options menu close on outside click / Escape.
@@ -1939,6 +2087,18 @@ window.closeMoreOptions = closeMoreOptions;
 window.toggleDisplayPanel = toggleDisplayPanel;
 window.toggleColumn = toggleColumn;
 window.toggleAllColumns = toggleAllColumns;
+window.updateAllCheckbox = updateAllCheckbox;
+// F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - the column-visibility contract, exposed as one object so the regression
+// suite executes the shipped functions rather than describing them.
+window.KMSkuColumns = {
+    prefKey: SKU_COLPREF_KEY_,
+    prefVersion: SKU_COLPREF_VERSION_,
+    registry: skuColumnRegistry_,
+    resolve: skuResolveVisibleColumns_,
+    apply: applySkuColumnVisibility_,
+    readPref: _skuColPrefRead_,
+    writePref: _skuColPrefWrite_
+};
 window.selectSkuRow = selectSkuRow;
 window.skuRowDblEdit = skuRowDblEdit;
 window.canEditSkuDetails = canEditSkuDetails;
@@ -2013,11 +2173,16 @@ if (window.KM && window.KM.lifecycle) {
             _ensureSkuDetailsMarkup().then(function() {
                 var sec = document.getElementById('sku-section');
                 if (sec) sec.classList.add('active');
+                // Re-read the persisted column preference for THIS mount, before anything renders, so the
+                // registry is known and the resolved set exists by the time the first frame is drawn.
+                skuResolveVisibleColumns_(true);
                 _skLoadAndRender();   // Workspace: scoped fetch → render (fail-closed); Legacy: render from broad cache
                 setTimeout(function() {
                     if (window.initSkuScroll) initSkuScroll();
                     if (window.initSkuResizableColumns) initSkuResizableColumns();   // resizable columns pilot
-                    if (window.updateSkuScrollWidth) updateSkuScrollWidth();
+                    // Whichever of the async render and this timer ran first, the surviving one applies. The
+                    // apply is idempotent and adds no listener, so a re-mount cannot accumulate anything.
+                    applySkuColumnVisibility_();
                 }, 100);
             });
         },

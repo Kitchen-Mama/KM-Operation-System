@@ -448,8 +448,15 @@ section('§C/§D.9–12 — the manifest, laziness, and what did NOT move');
     ok(INDEX.indexOf('map-earth-texture-20260826') === -1,
         'C6 the loader\'s pre-series token is retired — nothing is served from it any more');
     // The application token and the earth content token are not R8's to move.
-    eq((INDEX.match(/fb4er4br3-liveclosure-20260831/g) || []).length, 18,
-        'C7 the application token is untouched, all 18 references');
+    // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1): this said "the application token is
+    // fb4er4br3-liveclosure-20260831, 18 times". What it MEANT is that a MAP round must not move the
+    // application token - and as a literal it also forbade any APPLICATION round from moving it, which is
+    // the equality-with-now _release-order.js exists to end. The property is unchanged and strictly
+    // stronger: all 18 application references share ONE token, it is the current application token, and it
+    // is not a map-series token.
+    eq((INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length, 18,
+        'C7 all 18 application references share the current application token');
+    ok(!RO.isMapToken(RO.currentAppToken()), 'C7 and no map round moved it onto a map token');
     ok(/EARTH_ASSET_VERSION_ = 'jul2004-tiers-e7ca8837'/.test(read('assets/js/lib/km-globe.js')),
         'C7b and the earth content token is unchanged, because no texture byte moved');
     // No duplicate tags — a second copy of the map page would run the loader twice.
@@ -530,7 +537,9 @@ function indexOk(idx) {
     // and N7 here. What must hold: this round's token is in use, the application token is untouched, and no
     // script is loaded twice.
     var cur = (idx.match(new RegExp(RO.currentMapToken(), 'g')) || []).length;
-    var app = (idx.match(/fb4er4br3-liveclosure-20260831/g) || []).length;
+    // ...and the same trap one line down: the application token was still a LITERAL here, so an
+    // application round moving its own token dirtied both baselines exactly as R9's rotation did.
+    var app = (idx.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
     var re = /<script src="([^"?]+)/g, m, seen = {}, dup = 0;
     while ((m = re.exec(idx))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
     return cur >= 1 && app === 18 && dup === 0;
@@ -581,7 +590,7 @@ mutate('N6 loader script tag duplicated',
 // the next application round has no token of its own left to move.
 mutate('N7 global application token rotated',
     function () { return indexOk(INDEX); },
-    function () { return indexOk(INDEX.replace('fb4er4br3-liveclosure-20260831', 'map-texture3-r8-20260831')); });
+    function () { return indexOk(INDEX.replace(RO.currentAppToken(), RO.currentMapToken())); });
 
 // N8 — the in-memory reuse reverted to "is the global defined?", which is how a stale unversioned copy would
 // have kept the old boundaries alive for the life of the browser cache.

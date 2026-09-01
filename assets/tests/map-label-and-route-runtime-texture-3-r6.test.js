@@ -429,8 +429,15 @@ section('§G — cache tokens: only what changed, and nothing else');
             'G3 ' + path.basename(f) + ' is served at or after R6 (' + t + ')');
     });
     // The application token and the earth content token must NOT have moved.
-    eq((INDEX.match(/fb4er4br3-liveclosure-20260831/g) || []).length, 18,
-        'G4 main\'s application token is untouched, all 18 references');
+    // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1): this said "the application token is
+    // fb4er4br3-liveclosure-20260831, 18 times". What it MEANT is that a MAP round must not move the
+    // application token - and as a literal it also forbade any APPLICATION round from moving it, which is
+    // the equality-with-now _release-order.js exists to end. The property is unchanged and strictly
+    // stronger: all 18 application references share ONE token, it is the current application token, and it
+    // is not a map-series token.
+    eq((INDEX.match(new RegExp(RO_.currentAppToken(), 'g')) || []).length, 18,
+        'G4 all 18 application references share the current application token');
+    ok(!RO_.isMapToken(RO_.currentAppToken()), 'G4 and no map round moved it onto a map token');
     ok(/EARTH_ASSET_VERSION_ = 'jul2004-tiers-e7ca8837'/.test(GLOBE_SRC),
         'G4 and the earth content token is unchanged, because no asset byte moved');
     // No duplicate script tags.

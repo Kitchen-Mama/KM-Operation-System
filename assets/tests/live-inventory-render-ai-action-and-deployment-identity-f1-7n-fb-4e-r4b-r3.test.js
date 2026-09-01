@@ -971,7 +971,13 @@ section('§5 — ASSET RELEASE CONSISTENCY');
   coupled.forEach(function (f) { tokens[f] = tokenOf(f); });
   var distinct = Object.keys(tokens).map(function (k) { return tokens[k]; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
   eq(distinct.length, 1, '6.1 every coupled asset carries ONE release token: ' + JSON.stringify(tokens));
-  ok(distinct[0] && /r4b-?r3/i.test(distinct[0]), '6.2 ... and it names R4B-R3 (' + distinct[0] + ')');
+  // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1): this matched the round NAME, so it forbade every later
+  // application round from moving the shared token - while 6.1, the property that actually matters, was
+  // already proving the set moves TOGETHER. A FLOOR keeps the guard (the set may never fall back before
+  // R4B-R3) without freezing the release series, which is what assets/tests/_release-order.js is for.
+  var _RO62 = require(require('path').join(__dirname, '_release-order.js'));
+  ok(_RO62.tokenAtOrAfter(distinct[0], 'fb4er4br3-liveclosure-20260831'),
+    '6.2 ... and that token is at or after R4B-R3 (' + distinct[0] + ')');
   ok(tokenOf('supply-planning-request-draft-v2-persistence.js') === null,
     '6.3 the draft persistence module is NOT a browser asset — it ships inside the 90_ Apps Script bundle');
 

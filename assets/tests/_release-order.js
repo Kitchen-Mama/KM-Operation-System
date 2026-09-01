@@ -22,8 +22,19 @@ var ROUND_TOKENS = [
   'fb4er4b-readback-20260831',
   'fb4er4br1-authority-20260831',
   'fb4er4br2-hydrationjoin-20260831',
-  'fb4er4br3-liveclosure-20260831'
+  'fb4er4br3-liveclosure-20260831',
+  // F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - SKU Details Display column initialization. sku-details.js changed, and
+  // it sits in BOTH co-deployed sets the FB-4D and FB-4E suites police, so the whole application set rotates
+  // together. A token that moves for one member and not the others can still ship a half-updated page.
+  'skudisplayinit-20260901'
 ];
+
+// The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
+// treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
+// literal `fb4er4br3-liveclosure-20260831` with a count of 18; every one of them meant "a MAP round must not
+// move the application token", and every one of them would have failed the first time an APPLICATION round
+// legitimately moved it. That is the equality-with-now this file exists to end.
+function currentAppToken() { return ROUND_TOKENS[ROUND_TOKENS.length - 1]; }
 
 // ---------------------------------------------------------------------------------------------------------
 // THE MAP TOKEN SERIES — added in TEXTURE-3-R6, and the reason is the same failure one round later.
@@ -156,6 +167,7 @@ module.exports = {
   ROUND_TOKENS: ROUND_TOKENS,
   MAP_TOKEN_SERIES: MAP_TOKEN_SERIES,
   MAP_BROWSER_FILES: MAP_BROWSER_FILES,
+  currentAppToken: currentAppToken,
   currentMapToken: currentMapToken,
   currentMapRoundMarker: currentMapRoundMarker,
   currentMapRoundMarkerRe: currentMapRoundMarkerRe,

@@ -344,7 +344,9 @@ var TAGS = (function () {
     // application. The merge must not let either overwrite the other — replacing the application token with the
     // map token would make every browser re-fetch the whole app and, worse, would mean the next application
     // round had no token of its own to move.
-    var APP_TOKEN = 'fb4er4br3-liveclosure-20260831';
+    // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1): derived from the append-only application series rather
+    // than pinned, so an application round can move its own token while every rule below still holds.
+    var APP_TOKEN = require(path.join(ROOT, 'assets/tests/_release-order.js')).currentAppToken();
     var appTagged = TAGS.filter(function (t) { return t.tok === APP_TOKEN; });
     ok(appTagged.length >= 15, 'D3 main\'s application token is still carried by its assets (' + appTagged.length + ')');
     var mapFamily = TAGS.filter(function (t) { return /^map-/.test(t.tok || ''); });
@@ -360,9 +362,9 @@ var TAGS = (function () {
     });
     // KMFSA and the scope modal specifically — §D names them because they are the two main added last round
     // and the two a careless "take the branch's index.html" would have dropped.
-    ok(/supply-planning-factory-site-allocation\.js\?v=fb4er4br3-liveclosure-20260831/.test(INDEX),
+    ok(new RegExp('supply-planning-factory-site-allocation\\.js\\?v=' + APP_TOKEN).test(INDEX),
         'D4 the KMFSA script tag survived with main\'s token');
-    ok(/scope-select-modal\.js\?v=fb4er4br3-liveclosure-20260831/.test(INDEX),
+    ok(new RegExp('scope-select-modal\\.js\\?v=' + APP_TOKEN).test(INDEX),
         'D4 and so did the scope modal\'s');
 
     // §D — a CHANGED map file gets the CURRENT round's token; an UNCHANGED one keeps its own.
@@ -541,7 +543,10 @@ section('§G — the seven negative tests: each guard is made to BITE');
 (function () {
     // The exact tag, with the exact token. A revert to the branch's pre-merge index.html would remove the line
     // entirely, and a token-family mistake would leave it present but stale.
-    ok(/<script src="assets\/js\/core\/supply-planning-factory-site-allocation\.js\?v=fb4er4br3-liveclosure-20260831"><\/script>/.test(INDEX),
+    // The token is DERIVED (see _release-order.js currentAppToken); what N7 pins is that the TAG exists and
+    // carries the APPLICATION family's token rather than a map one - which is what a bad merge would break.
+    var _APP5 = require(path.join(ROOT, 'assets/tests/_release-order.js')).currentAppToken();
+    ok(INDEX.indexOf('<script src="assets/js/core/supply-planning-factory-site-allocation.js?v=' + _APP5 + '"></script>') !== -1,
         'N7 the KMFSA tag is present with main\'s token, exactly');
     // And it loads BEFORE its two consumers, which is the reason it is in index.html at all.
     function at(s) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === s) return i; } return -1; }

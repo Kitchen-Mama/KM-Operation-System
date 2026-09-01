@@ -686,7 +686,11 @@ section('§G — the token manifest');
      'assets/js/data/geo-admin1-display-names-zh-tw.js', 'assets/js/lib/km-geo-topology.js'].forEach(function (rel) {
         eq(T[rel], 'map-texture3-r4-20260827', 'G5b ' + rel.split('/').pop() + ' still serves at R4');
     });
-    eq((INDEX.match(/fb4er4br3-liveclosure-20260831/g) || []).length, 18, 'G6 the application token is untouched, all 18 refs');
+    // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1) - see _release-order.js currentAppToken(): the literal
+    // forbade an APPLICATION round from moving its own token. The derived form still forbids a MAP round.
+    eq((INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length, 18,
+        'G6 all 18 application references share the current application token');
+    ok(!RO.isMapToken(RO.currentAppToken()), 'G6 and no map round moved it onto a map token');
     ok(INDEX.indexOf('world-admin1-10m') === -1, 'G7 the ADM1 asset is still absent from index.html');
     // No duplicate tags, and the stylesheet appears once.
     (function () {
@@ -915,10 +919,10 @@ mutate('N9 中文 mode returns 中華民國（TW）',
     });
 // N10 — the application token rotated by a map round.
 mutate('N10 the application token rotated by a map round',
-    function () { return (INDEX.match(/fb4er4br3-liveclosure-20260831/g) || []).length === 18; },
+    function () { return (INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length === 18; },
     function () {
-        var m = INDEX.replace('fb4er4br3-liveclosure-20260831', 'map-labelmode-r9-20260831');
-        return (m.match(/fb4er4br3-liveclosure-20260831/g) || []).length === 18;
+        var m = INDEX.replace(RO.currentAppToken(), RO.currentMapToken());
+        return (m.match(new RegExp(RO.currentAppToken(), 'g')) || []).length === 18;
     });
 // N11 — the mode dropped from the cache key, so a switch serves the previous mode's text.
 mutate('N11 the mode dropped from the label cache key',
