@@ -1064,3 +1064,212 @@ No deployed file changed in this round, so nothing moved: `SAD_BUILD_VERSION_` s
 transport contract **1**. The helper is not a manifested deployment owner and adds no action, verb or route.
 
 **No Apps Script sync and no deployment are required by B4.**
+
+
+## B5.0 — The live state B5 starts from
+
+B4's append landed. Both new columns exist and are BLANK on every existing row, which is what makes this round
+possible: there is now somewhere to put a route destination, so "what IS each header, and what happens if
+someone saves the route the operator keeps trying to save?" is finally a question with an answer.
+
+```
+shipping_allocation_drafts        35 columns, 4 rows, sf:870364de
+shipping_allocation_draft_lines   31 columns, 6 rows, sf:122f48c3
+planned_qty 1020 · matched lines 6 · orphans 0
+```
+
+## B5.1 — The diagnostic
+
+`assets/tools/apps-script-diagnostics/TEMP_shipping_allocation_post_schema_identity_b5_dry_run.gs`
+Entry point: `TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN()` — argument-free, no COMMIT, no writer.
+
+**Read-only is enforced by construction, not by intention.** Every sheet is wrapped in a façade exposing exactly
+one capability, `getDataRange().getValues()`. `setValue`, `appendRow`, `insertColumnsAfter`, every ensure helper
+and `LockService` are not merely unused — they are UNREACHABLE from the objects this file holds. A promise not to
+write is worth less than an object that cannot, and the suite mounts a spreadsheet whose every mutator THROWS,
+so a diagnostic that tried would fail the suite rather than quietly succeed.
+
+Like B4, it carries no fallback copy of the K4 authority. Missing symbols → `AUTHORITY_NOT_LOADED`, and nothing
+is classified: a diagnostic that guesses an identity rule reaches a different verdict than the writer would.
+
+### Tables read — four, each with a stated reason
+
+| table | why |
+|---|---|
+| `shipping_allocation_drafts` | the subject |
+| `shipping_allocation_draft_lines` | the ONLY table storing a foreign key to an allocation header |
+| `shipping_plans` | to MEASURE a negative: that it stores no allocation FK |
+| `shipping_plan_lines` | the same negative, at line grain |
+
+The two plan tables are read to confirm rather than quote a load-bearing claim. `16_` states it outright:
+idempotent Submit retry *"would require a NEW allocation_draft lineage column on shipping_plans (prohibited)"*.
+Lineage is returned in the RESPONSE and never persisted, and submit idempotency binds on
+`shipping_plans.submit_batch_id === execution_key` — not on any allocation id.
+
+**So re-keying a header cannot orphan anything downstream. The risk is entirely upstream, in the lines.**
+
+## B5.2 — The four headers
+
+| header | destination | service | decision |
+|---|---|---|---|
+| the target (`ResUS/US/Amazon`) | **none stored** | `sea` | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
+| `ResUS/US/Walmart` | warehouse | `sea` | `SAFE_TO_RETAIN_AS_IS` |
+| `ResTW/JP/Amazon` | warehouse | `air` | `SAFE_TO_RETAIN_AS_IS` |
+| the submitted `K3` row | none stored | `sea_express` | terminal — reported, not active |
+
+The target row's plan SCOPE marketplace is `Amazon` and its route destination cell is blank. Those are different
+axes: scope is a PLAN axis, destination is a ROUTE axis, and `ricDestinationIdentity_` reads only the route axis.
+That is why the row is still `ROUTE_DESTINATION_MISSING` even though the page has always displayed "Amazon".
+
+## B5.3 — The target: persisted `sea`/800 against attempted `sea_express`/`Amazon`/400
+
+Held apart on purpose, because conflating them is the whole defect.
+
+```
+PERSISTED_LEGACY          service sea · planned_qty 800 · destination (blank) · expected_arrival (blank)
+USER_ATTEMPT_EVIDENCE_ONLY service sea_express · destination Amazon · qty 400 · eta 2026-10-16 — persisted nowhere
+```
+
+800 is reported, never changed. 400 is never created. `2026-10-16` is never backfilled, and the diagnostic proves
+that by reading the actual ETA cells rather than by asserting it.
+
+**The future-save simulation runs the SHIPPED resolver read-only, and its two answers differ — which is the
+safety property, not an inconsistency:**
+
+```
+save sea_express + Amazon        -> CREATE_DISTINCT_K4_HEADER
+save the SAME sea route + Amazon -> K4_IDENTITY_RECONCILIATION_REQUIRED
+```
+
+`sea_express` is a different service, so its K2 key differs from the stored `sea` row and it can be created
+beside it. Supplying `Amazon` on the SAME `sea` route reproduces the stored row's own K2 key, so it is refused
+for reconciliation instead of silently adopting or duplicating a legacy row. `sea` never becomes `sea_express`,
+in either direction, and the attempted route can never adopt or overwrite the persisted one.
+
+## B5.4 — The hydration trace, and the exact cause of the blank route row
+
+| boundary | headers | lines | qty | dropped | reason |
+|---|---|---|---|---|---|
+| 1 sheet rows | 4 | 6 | 1020 | 0 | — |
+| 2 active + station scope | 1 | 1 | 800 | 3 | `TERMINAL_STATUS:submitted`, `OUT_OF_STATION_SCOPE` ×2 |
+| 3 route identity | 1 | 1 | 800 | 0 | `ROUTE_DESTINATION_MISSING` — **RETURNED, not dropped** |
+| 4 client route model | 1 | 1 | 800 | 0 | — |
+
+**No quantity is lost at any boundary.** The API does return the existing allocation route, and the client does
+NOT drop it — measured by executing the shipped `_hydrateAllocationDraftFromDb`, which accepts the row and
+carries the persisted 800 into the route model.
+
+Two things then happen, and they are different problems in different layers.
+
+**First, the page manufactures a destination.** The shipped hydrate contains
+
+```js
+destination_marketplace: hTo ? '' : (ctx.marketplace || ''),
+destination_type:        hTo ? '' : 'MARKETPLACE_DESTINATION',
+```
+
+so when the header stores no destination warehouse it SYNTHESISES one from the plan scope. It never reads the
+new persisted `destination_marketplace` column at all. That value is `UI_DERIVED_NOT_AUTHORITATIVE`, and it is
+why `_isRouteComplete` returns TRUE for a route the database cannot identify — the panel looks like it holds an
+Amazon route while the database holds a route with no destination.
+
+**Second, the To cell renders blank anyway, because the round trip is asymmetric.**
+
+```
+_saveAllocationDraftFromDom  WRITES  destination_type / destination / the MARKETPLACE_DESTINATION: token
+_hydrateAllocationDraftFromDb EMITS  destination_type + a scope-derived marketplace, and NEITHER the token
+                                     nor a display name
+_renderExecutionRoute        SELECTS toSelId = destination_warehouse_id || resolveIdByName(cand, destination)
+_execToOptionsHtml           SELECTS the Amazon option ONLY when selectedId === the token
+```
+
+Executed: `toSelId` resolves to `''`, the Amazon option is offered but NOT selected, and the operator sees the
+`To…` placeholder. Supplying the token DOES select it, which proves the gap is the missing token and not the
+option list.
+
+### So: expected fail-closed behaviour, or a hydration bug?
+
+**Both, in different layers, and the database half is correct.**
+
+* The blank *destination* is CORRECT and must not be "fixed". The row genuinely has no route identity; that is
+  the FB-4F-A defect this whole workstream exists for.
+* The blank *To cell* is a real client round-trip defect, present since before this workstream.
+* The scope synthesis is the dangerous one: it makes an unidentifiable route look identified.
+
+**Fixing only the render would be the worst outcome available** — the UI would show a confident "Amazon"
+destination that the database does not hold, which is exactly the silent-drop class this workstream exists to
+end. The render fix belongs AFTER the destination is persisted, not before.
+
+**How to tell which branch you are looking at, in one glance:** `initializeShippingAllocation` has exactly two.
+If the Qty box shows **800**, the persisted route hydrated and only the To cell is blank. If it shows the
+Suggested Qty with From/Method also empty, nothing hydrated and you are looking at the default Add Route editor.
+The measured contracts say the first; the Qty box settles it without a debugger.
+
+## B5.5 — Verdict and readiness
+
+```
+VERDICT  READY_FOR_REVIEWED_USER-CONFIRMATION_PLAN
+
+schemaReady                 true    35/31, both runtime gates ACCEPT
+runtimeAuthorityReady       true    B3 authority loaded
+existingRouteHydrationReady false   the active header cannot name its own destination
+newDistinctRouteSaveReady   true    a sea_express/Amazon save creates a distinct K4 header safely
+legacyAdoptionReady         true    on an EXPLICIT user save, no collision, stored id retained
+submitReady                 false   while an active header has no route identity
+```
+
+Six independent booleans, never collapsed. Quantity 1020 before and proposed, 6 matched lines, 0 orphans, no
+duplicate line identities, no downstream references, and retaining the current ids is REQUIRED — the lines are
+the only stored FK consumer, so re-keying a header would orphan every line pointing at it.
+
+## B5.6 — RUNBOOK (USER-RUN, paste → run → remove)
+
+1. Paste the file into the Apps Script project as a new file. Save.
+2. Run `TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN()`.
+3. Read the four header classifications, the target analysis, the hydration boundaries and the six booleans.
+   Expect `DB_WRITES=0 · ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0`.
+4. **Delete the file from the project.** It is not part of any deployment.
+
+There is no COMMIT to run. This file has no writer.
+
+## B5.7 — Tests
+
+`assets/tests/allocation-post-schema-identity-f1-7n-fb-4f-b5.test.js` — **250 passed, 0 failed; 16 mutations, 16
+caught.** All 23 required cases. The suite executes BOTH sides: the real diagnostic against an in-memory
+spreadsheet, and the SHIPPED page functions (`_hydrateAllocationDraftFromDb`, `_isRouteComplete`,
+`_execToOptionsHtml`) extracted from `assets/js/pages/inventory-replenishment.js`, so the blank-route verdict is
+measured rather than reasoned about.
+
+Three mutation probes had to be rewritten, each for a reason worth recording:
+
+* **The rival-rule mutation needed a rival that only K2 can see.** Removing B3's "rivals are rows K4 cannot
+  classify" restriction is invisible unless some ACTIVE, CLASSIFIABLE row shares the attempted route's K2 key.
+  K2 has no destination-marketplace dimension, so a `Walmart`-destination `sea_express` row on the same
+  scope/source/group collides in K2 and not in K4 — exactly the case the restriction exists for.
+* **The canonical-service mutation was undetectable on the target strings**, because `sea` and `sea_express` are
+  already canonical, so bypassing the resolver changes nothing. It attacks stored data instead: `seafood` must
+  never resolve to `sea`.
+* **The read-only façade is deliberately NOT mutation-tested.** The tool never writes with or without it, so no
+  behavioural probe can distinguish the two. Its guarantee is structural and is asserted structurally; claiming
+  a mutation "caught" there would have been a green light for the wrong reason.
+
+Two assertions of my own were found scanning PROSE rather than CODE: the file's header deliberately NAMES the
+mutators it cannot reach, and `typeof ricK4GroupKey_ === 'function'` contains the substring `ricK4GroupKey_ =`.
+Both now strip comments and test for a DEFINITION rather than a mention — the same vacuous-assertion class as
+B3's `O2`.
+
+**Full sweep: 388 suites, 384 pass, 4 fail — the four long-standing failures and nothing else. 0 new.**
+Bundle `--check` parity PASS, hash `d782ea6d…c36ac` unchanged.
+
+## B5.8 — Versions
+
+No deployed file changed. `SAD_BUILD_VERSION_` and `RIC_BUILD_VERSION_` stay `F1-7N-FB-4F-B3`,
+`RTR_BUILD_VERSION_` stays `F1-7N-FB-4E-R4B-R3`, action contract **10**, required-action list version **9**,
+transport contract **1**. No Apps Script sync or deployment is required by B5.
+
+### What B6 has to decide (not decided here)
+
+The persisted route needs a destination, and only a human can supply it. The two candidate shapes are a
+controlled single-route UI save test, or a reviewed user-confirmation plan that adopts the stored id in place.
+Either way the client's scope synthesis should stop BEFORE the render fix, or the UI will keep asserting a
+destination the database does not have.
