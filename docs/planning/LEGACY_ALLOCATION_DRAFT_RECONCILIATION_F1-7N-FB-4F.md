@@ -548,8 +548,14 @@ valid) *before* the column exists. Once it has, the append and the sync are orde
    mechanism it does not have today). Bump `SAD_BUILD_VERSION_` **in the same round that syncs**.
 2. **Apps Script sync + a new deployment version** — `16_`, `69_api_v1_route_identity_contract.gs`, and `69_`'s
    manifest entry in `63_api_v1_system_health.gs`, together.
-3. **Lifecycle tail append** (indexes 30–33) if still outstanding.
-4. **The two append-only columns** — header index 34, line index 30.
+3. **Lifecycle tail append** (indexes 30–33) if still outstanding. **CORRECTED IN B4:** this step is
+   ORDER-INDEPENDENT of step 2 and did not have to wait for it. Measured against the shipped gate, a
+   34-column header is exact under BOTH the pre-B3 authority (`CANONICAL` 34, tail 4) and the B3
+   authority (`FULL` 35, tail 5); only a 35-column header refuses under the pre-B3 authority
+   (`COL_COUNT_35_EXPECTED_30_TO_34`). The caution here was right about step 4 and needlessly strict
+   about step 3.
+4. **The two append-only columns** — header index 34, line index 30. This one really does depend on
+   step 2.
 5. **Frontend** — `assets/js/pages/inventory-replenishment.js`.
 
 ## B2.4 — The diagnostic
@@ -880,3 +886,181 @@ and `code()` replaces every string literal with `''`, so the right-hand side was
 contained. It was green for the wrong reason. Replaced with the property that still matters.
 
 **Full sweep: 386 suites, 382 pass, 4 fail — the four long-standing failures and nothing else. 0 new.**
+
+
+## B4.0 — The live state B4 starts from, and the ordering fact that resolved
+
+The lifecycle tail landed between B3 and B4. `TEMP_AI_LIFECYCLE_MIGRATE_COMMIT` added its four columns and
+touched no row (all four live drafts are `user_created` → `MANUAL_SOURCE` → `NO_WRITE`), so the live state is now:
+
+```
+shipping_allocation_drafts        34 columns, 4 rows, sf:3e83e85c
+shipping_allocation_draft_lines   30 columns, 6 rows, sf:2226df13
+B2 checksum                       fb4fb2-1:42a1b1ed   decision STOP_UNPERSISTED_EXPECTED_ARRIVAL
+```
+
+All four values **reproduce offline** through the real B2 code path from this repository's own constants, so the
+live header is byte-for-byte the canonical 34 and the live line header the canonical 30. The B2 decision moving
+from `STOP_SCHEMA_COLLISION` to `STOP_UNPERSISTED_EXPECTED_ARRIVAL` is the lifecycle append showing up in the
+diagnostic exactly where it should.
+
+And the append this round prepares produces:
+
+```
+shipping_allocation_drafts        35 columns  sf:870364de
+shipping_allocation_draft_lines   31 columns  sf:122f48c3
+```
+
+Also reproduced offline, from the B3 authorities, before any tool was written.
+
+**A note on those fingerprints.** The `sf:` digest joins with the CONTROL characters `\x01` and `\x02`, not with
+an empty string — which is invisible in a terminal and cost this round two wrong reproductions before the bytes
+were dumped. The choice is right (joining with a printable delimiter lets `['a','b']` and `['a|b']` collide), but
+B2 embeds the raw bytes in its source. The B4 helper writes them as `'\x01'` escapes instead, so the file
+survives a copy-paste into the Apps Script editor with its fingerprints intact.
+
+## B4.1 — The helper
+
+`assets/tools/apps-script-migrations/TEMP_shipping_allocation_schema_b4_append.gs`
+
+Placement: the repository's older migration helpers (`TEMP_migrate_*`) sit in
+`assets/specs/active/apps-script/`, which **is** the active deployment directory — a helper there gets deployed,
+and this one is meant to be pasted, run and removed. B2 established `assets/tools/` for exactly this reason. No
+migration directory existed outside the deployment tree, so this round creates `apps-script-migrations/`
+alongside `apps-script-diagnostics/`.
+
+Two entry points, **both argument-free**, because the Apps Script Run selector cannot pass arguments — the
+established `COMMIT({mode, checksum})` shape is unreachable from the toolbar:
+
+```
+TEMP_SHIPPING_ALLOCATION_SCHEMA_B4_DRY_RUN()    READ-ONLY on every path, including every refusal path
+TEMP_SHIPPING_ALLOCATION_SCHEMA_B4_COMMIT()     the only writer
+```
+
+### The write plan, and nothing else
+
+```
+shipping_allocation_drafts!AI1      = destination_marketplace     (index 34, column 35)
+shipping_allocation_draft_lines!AE1 = expected_arrival            (index 30, column 31)
+```
+
+Both positions are **derived** from the runtime authority and then asserted against the frozen decision — index,
+column letter, and the authority's own name at that index. If a future edit ever moves a column, the tool
+refuses with `SPEC_DISAGREES_WITH_AUTHORITY` rather than appending a name where production no longer expects it.
+
+## B4.2 — Why this tool cannot run before the B3 sync
+
+Every rule comes from the shipped authority — `SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_`,
+`SAD_HEADER_OPTIONAL_TAIL_COLUMNS_`, `SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_`,
+`SAD_LINE_ETA_TAIL_COLUMNS_`, `sadExactSchemaReason_` — and there is **no local fallback copy of any of them**.
+
+That is not tidiness, it is the ordering guard, and it is the one design decision in this round that carries
+real weight. Those symbols exist only in a project synced to B3. Pasted into a project that is not, the tool
+cannot find its authority and STOPS with `AUTHORITY_NOT_LOADED`, naming the sync it is waiting for — instead of
+falling back to a hardcoded list and appending the very column that takes every allocation read and write down.
+A tool carrying its own copy of the schema is a tool that can disagree with production.
+
+## B4.3 — The checksum, which is the whole confirmation
+
+`TEMP_B4_REVIEWED_CHECKSUM_` is a constant the reviewer edits by hand. It starts blank, and a blank constant is
+a refusal. There is no argument, no default, no `||` fallback, and **no Script Property** — a persisted
+confirmation outlives the intent that recorded it, and this file is meant to be deleted.
+
+The checksum covers everything that would make a reviewed plan stale: both header rows **in order**, both row
+counts, the quantity/FK/service census, the exact write plan, and the operation name. It is recomputed live
+**twice** — once before the lock and once under it — and must match exactly both times.
+
+Its prefix is `fb4b4-1`, operation-specific by design. B2's `fb4fb2-1:42a1b1ed` authorises a *review*, not a
+write, and pasting it here is refused **by name** (`REVIEWED_CHECKSUM_FROM_ANOTHER_OPERATION`) rather than by
+happening to hash differently.
+
+## B4.4 — Journal, and why there is no rollback
+
+The established mechanism from `TEMP_migrate_shipping_allocation_ai_lifecycle.gs` is an **ordered in-result
+journal plus `Logger.log`**, recorded BEFORE anything is applied — not a journal table. It journals these two
+structural changes natively, so nothing incompatible had to be invented and there was nothing to STOP over.
+
+If the journal cannot be written, **nothing is applied**: an unjournalled structural change is precisely the
+thing there is no automatic rollback for. And there is no automatic rollback or delete, deliberately — an
+automatic reversal of a partially applied change is a second unreviewed write on top of a failure nobody has
+looked at yet. What is provided is the exact record to reverse deliberately.
+
+The two cells are applied **one at a time, each read back and verified before the next is attempted**. A second
+write on top of an unverified first turns one recoverable failure into two.
+
+## B4.5 — What the commit proves after writing
+
+* exact final header order against the 35- and 31-column authorities
+* both runtime gates ACCEPT the final schemas
+* every pre-existing data cell byte-identical (compared over the raw row extent, not a filtered row count — a
+  positional range built from a populated-row count compares the wrong rows the moment a blank row sits between
+  two populated ones)
+* every cell under both new columns BLANK
+* the quantity/FK/service census unchanged: **1020 planned_qty, 6 matched lines, 0 orphans**, identical id/FK
+  digest, and `sea` still `sea` beside `sea_express`
+
+## B4.6 — RUNBOOK (USER-RUN, paste → run → remove)
+
+**Prerequisite: `16_`, `69_` and `63_` must already be synced to `F1-7N-FB-4F-B3` and
+`checkDeploymentContract()` must pass.** The tool enforces this itself, but knowing why beats being refused.
+
+1. Back up the spreadsheet (**File › Make a copy**). There is no automatic rollback, by design.
+2. Paste `TEMP_shipping_allocation_schema_b4_append.gs` into the Apps Script project as a new file. Save.
+3. Run `TEMP_SHIPPING_ALLOCATION_SCHEMA_B4_DRY_RUN()`. Read **every** line. Expect:
+   * `decision: MECHANICALLY_SAFE_TO_APPEND`, `blocking_reasons: []`
+   * exactly two proposed writes: `shipping_allocation_drafts!AI1` and `shipping_allocation_draft_lines!AE1`
+   * `fingerprint_pre` → `sf:3e83e85c` / `sf:2226df13`
+   * `fingerprint_post_proposed` → `sf:870364de` / `sf:122f48c3`
+   * `runtime_gate_before` and `runtime_gate_after_proposed` both `ACCEPTED` on both tables
+   * `DB_WRITES=0 · COLUMNS_APPENDED=0 · ROWS_CHANGED=0`
+4. If and only if that is what you see, copy its `confirmation_checksum` (it starts `fb4b4-1:`) into
+   `TEMP_B4_REVIEWED_CHECKSUM_` at the top of the file. **Change nothing else.** Save.
+5. Run `TEMP_SHIPPING_ALLOCATION_SCHEMA_B4_COMMIT()`. Expect `state: COMMITTED`, `DB_WRITES: 2`,
+   `COLUMNS_APPENDED: 2`, `ROWS_CHANGED: 0`, empty `preexisting_cell_mismatches`, empty
+   `new_column_non_blank_cells`, `census_unchanged: true`, and both `fingerprint_after_matches_expected: true`.
+6. Re-run the DRY RUN. It must now say `NOTHING_TO_DO`.
+7. **Delete the file from the Apps Script project.** It is not part of any deployment.
+
+If anything in step 3 or 5 differs, **stop and report it** — do not edit the checksum to make it match. The
+checksum is the confirmation; forcing it past a mismatch is the one way to defeat every guard in the file.
+
+## B4.7 — Tests
+
+`assets/tests/allocation-two-column-append-migration-f1-7n-fb-4f-b4.test.js` — **285 passed, 0 failed; 17
+mutations, 17 caught.** All 30 required cases. The suite **executes the migration** against an in-memory
+spreadsheet and inspects the cells afterwards.
+
+The fixture rows are loaded with every backfill temptation on purpose — `marketplace = Amazon`, a destination
+warehouse code snapshot, warehouse ids, created/updated timestamps, a shipping method, and a note literally
+containing the attempted `2026-10-16` — so "no backfill source is consulted" is proven by both columns staying
+blank on all ten rows, not by reading the source for forbidden words.
+
+**Four mutations initially survived, and all four for the same reason:** they were caught by a *neighbouring*
+guard rather than by the check they targeted. A blank checksum is also rejected by the prefix guard; a pre-lock
+checksum mismatch is also rejected under the lock; drift that breaks the schema is also rejected as
+`REFUSED_UNDER_LOCK`; and tampering with a quantity also trips byte-equivalence. Each probe was rewritten to
+attack the point of detection — assert the specific typed reason, assert the lock was never taken, drift the
+data without breaking the schema, append a row past the snapshot range instead of editing one inside it. This is
+the same lesson B2 paid for with N1/N2/N3.
+
+Two real defects in the helper were found by these tests, not by reading it:
+
+* **A refusal still proposed a write.** The two tables are analysed independently, so a clean line table
+  produced a write while the header table was refusing. A plan that still lists a write is a plan someone can
+  approve. Refusal is now about the operation, not one of its halves.
+* **The write loop resolved its sheet by the write's POSITION.** Correct only while both writes are outstanding:
+  in a partial run — one column already appended — the single remaining write would have been applied **to the
+  wrong sheet, at the right column number**, putting `expected_arrival` at index 30 of the drafts table. It now
+  resolves the sheet by the write's own table name.
+
+**Full sweep: 387 suites, 383 pass, 4 fail — the four long-standing failures and nothing else. 0 new.**
+Bundle `--check` parity PASS, hash `d782ea6d…c36ac` unchanged: the helper is outside the deployment set, so it
+correctly does not enter the bundle.
+
+## B4.8 — Versions
+
+No deployed file changed in this round, so nothing moved: `SAD_BUILD_VERSION_` stays `F1-7N-FB-4F-B3`,
+`RTR_BUILD_VERSION_` stays `F1-7N-FB-4E-R4B-R3`, action contract **10**, required-action list version **9**,
+transport contract **1**. The helper is not a manifested deployment owner and adds no action, verb or route.
+
+**No Apps Script sync and no deployment are required by B4.**
