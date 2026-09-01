@@ -1588,3 +1588,168 @@ both are going out together.
 No destination backfill. No ETA backfill. No ID rewrite. No deletion, cancellation or expiry of H1/H2. No
 submit. No migration script. Every write in this round happens because a human chose a destination and
 confirmed it, one route at a time.
+
+
+## B6-R1 — EXPECTED ARRIVAL: A STRUCTURED VALUE WITH ONE OWNER, AND ONE DECISION THAT IS NOT OURS
+
+B6 recorded exactly one item as deliberately unimplemented — persisting an explicitly saved Expected Arrival.
+R1 was asked to close it. It closes everything the closure needs **except the one input the business has never
+defined**, and stops there rather than choosing it.
+
+### B6-R1.0 — Precondition divergence, reported read-only
+
+The task expected `origin/main` = `99996b3` and stated that B6 was not yet pushed. **It was.** The local
+reflog records `refs/remotes/origin/main@{0}: update by push → 60afa6e`, and `main` and `origin/main` are both
+`60afa6e`, 0 ahead / 0 behind. Nothing was fetched, merged, rebased or reset. This changes exactly one
+decision, §H, and it changes it decisively — see B6-R1.7.
+
+### B6-R1.1 — The ETA authority, traced by execution (§C)
+
+| question | answer, as measured from the shipped code |
+|---|---|
+| **1. departure base date** | `new Date()` → the **browser's local midnight**. R1 changes this to the **project calendar day (Asia/Taipei)**. |
+| **2. lead-time record** | `carrier_lead_times`, matched on `shippingMethod` = the mapped key AND (`destinationCountry` blank OR equal to the destination country); first row carrying a numeric `avg_days`; `Math.round`. |
+| **3. service canonicalisation** | `_irMethodToLeadKey` — two EXACT tables (canonical enum, then display labels). Unknown → `''`. |
+| **4. sea vs sea_express** | `sea` → `Sea`; `sea_express` → `Sea Express`; `快船` / `美森海卡` → `Sea Express`. Two keys, two rate cards. |
+| **5. family fallback** | **None.** No prefix ladder, no `startsWith('sea')`. B1 removed it and R1 re-proves it by execution: with ONLY a `Sea` row present, `sea_express` resolves to **nothing**. |
+| **6. where the value lived** | Nowhere structured. `_irComputeRouteEta` returned `{ text, available }`, and `text` was `'2026-11-02 (est. 15d)'`. |
+| **7. DOM-only?** | **Yes — and worse.** The collect read it back with `etaEl.textContent`, so `row.expected_arrival` held the whole sentence. |
+
+That last row is the finding. `(est. 15d)` is not part of any date. Nothing persisted the field, so it never
+reached the database — but it was the value the B6 confirmation dialog showed the operator, and it is what any
+future wiring would have written into a date column.
+
+### B6-R1.2 — One owner, one structured value (§C)
+
+* `_irComputeRouteEta` now returns `{ text, available, date, days, lead_key, source }`. The **date** is the
+  answer; the display sentence is derived FROM it. Still exactly one calculator — what changed is that its
+  answer is structured.
+* `_irRouteEtaFor` is the single owner of *which* ETA a route shows: a persisted snapshot, or a live figure.
+* The renderer publishes both: `data-eta` carries the date, the cell text carries the sentence.
+* The collect reads `data-eta` and **re-validates its shape** — a DOM attribute is still the DOM.
+* The confirmation dialog now shows `2026-11-02` rather than `2026-11-02 (est. 15d)`.
+
+### B6-R1.3 — Snapshot beats recomputation (§D.5/§D.6)
+
+A persisted `expected_arrival` is a **snapshot of what was true when it was saved**, and it must not move
+because someone later edited the carrier lead-time table — that would silently rewrite a commitment the
+operator already made. So:
+
+| state | shown |
+|---|---|
+| stored date, same service | **the stored date** (`source: PERSISTED`) |
+| stored date, service since changed | the live figure — a different service is a different route |
+| stored blank | the live figure, and the stored blank **stays blank** |
+| no exact lead time | blank + `Lead time unavailable`; **no date is guessed** |
+
+The basis is compared through the SAME canonicaliser on both sides, so `普船` and `sea` are one basis while
+`sea` and `sea_express` remain two. `_irUpdateRouteEtas` — which fires when the carrier reference finishes
+loading, and is **not** a user edit — carries the stored snapshot on the cell so an async recompute cannot
+replace a saved commitment, and it schedules no save.
+
+### B6-R1.4 — Date semantics (§E)
+
+* Base day read in **Asia/Taipei** — the project's canonical wall clock, the same zone `sadCanonDate_` uses
+  server-side and the same Shared rule F.1 the Request Order month windows follow.
+* Day arithmetic runs in **UTC** (`Date.UTC` + whole days), so no DST boundary can land the result on 23:00 the
+  previous day. `toISOString()` is never called on a local-midnight Date — the other classic off-by-one.
+* Stored shape `yyyy-MM-dd`, the project-wide date-only shape.
+* An invalid date is **refused, never repaired**: `2026-02-30` returns blank rather than rolling into March.
+* Proven across two REAL timezones. The shipped arithmetic is executed in child processes at `Pacific/Kiritimati`
+  (UTC+14) and `Pacific/Midway` (UTC-11) and must agree; the naive formula must disagree between them. A
+  timezone bug cannot be demonstrated from a single timezone, which is why the first draft of that probe was
+  worthless.
+
+### B6-R1.5 — THE BLOCKED DECISION (§E STOP)
+
+§E instructed: *if the existing specification does not define the ETA base date, STOP and report the missing
+business decision — do not choose today, created_at or updated_at.* **The specification names a base that does
+not exist in this flow.**
+
+`CARRIER_AND_ROUTE_SPEC.md` §5B Step B:
+
+```
+Expected Arrival = Planned Ship Date + max_days + Receiving Buffer
+When production is required:
+Expected Arrival = Planning Date + Production Lead Time + Handover Buffer + max_days + Receiving Buffer
+```
+
+and `INVENTORY_TABLE_MAPPING_SPEC.md` §326 lists **`planned ship date`** among this cell's recalculation
+inputs. Measured against the code:
+
+| the formula needs | does it exist? |
+|---|---|
+| **Planned Ship Date** | **No.** Not on the Execution Plan UI, not on the 35-column `shipping_allocation_drafts` header, not on the 31-column line, not on `shipping_plans`. (`expected_ship_date` exists only on PO/procurement tables — a factory's ship date for a different entity; `planned_departure_date` exists only on `shipment_routes`, a downstream entity that does not exist at planning time.) |
+| **Receiving Buffer** | **No.** The spec names it and says it is separate from Lead Time. No field, table or value defines it. |
+| **max_days** | Exists — but the shipped display uses **`avg_days`**, which the same paragraph calls the *normal/reference* ETA while reserving `max_days` for the ARRIVAL formula. |
+
+So the shipped figure is `today + avg_days`, with no buffer. That is a perfectly reasonable **reference
+display** and it is precisely the substitution a **persisted commitment** must not be built on — and `today`
+is one of the three values §E explicitly forbade choosing.
+
+> **THEREFORE: `expected_arrival` is NOT wired into `buildDraftLinePayload`, and that is the whole of what R1
+> does not do.** Three decisions are needed before it can be:
+> 1. What is the **Planned Ship Date** for an Inventory Replenishment Execution Plan route? (a new field the
+>    operator sets? the planning cycle's departure? the date of the Save?)
+> 2. **`max_days` or `avg_days`** — the spec's arrival formula says the former, the shipped display uses the latter.
+> 3. What is the **Receiving Buffer**, and where does it live?
+
+The blocked decision is written into `inventory-compat.js` at the exact line where the wiring would go, and a
+test asserts the field stays absent — so a future round has to delete that test deliberately rather than
+reintroduce a guess by accident.
+
+### B6-R1.6 — What this means for H4 and H1
+
+* **H4** (`sea`, 800, destination blank, ETA blank) — confirming Amazon adopts H4 under its own id and persists
+  the destination, exactly as B6 does. The ETA **stays blank**. It is displayed as the live `sea` figure so the
+  operator can see it, and it is not written. Under §D.8 it *would* be written in that same explicit save once
+  the base date is decided; the adoption itself does not depend on it.
+* **H1** (`sea_express`, 400 attempt) — same, and its displayed figure comes from the **`sea_express`** lead
+  time. Proven by execution: with only a `Sea` row configured, `sea_express` shows `Lead time unavailable`
+  rather than borrowing the `sea` number.
+* **`2026-10-16`** appears in no shipped source, and no code path can carry a computed date into the payload.
+
+### B6-R1.7 — The browser token (§H): a NEW token, and the reason is a fact
+
+§H asked whether B6-R1 could be treated as the same unpublished release and reuse B6's token, *provided a test
+proves that token was never deployed*. **That proof is not available, because it is false:** B6's commit is on
+`origin/main`. Its bytes have left the repository, and any build serving them has handed browsers
+`?v=fb4fb6-legacyroute-20260901`.
+
+Reusing that token would leave every one of those browsers on the **B6** copy of
+`inventory-replenishment.js` — the copy whose collect reads `etaEl.textContent` — with no cache-busting event
+to ever replace it. That is exactly the half-updated deployment the shared token exists to prevent.
+
+> **Rule, recorded: a cache token may be reused only while nothing carrying it has been published. Once its
+> commit reaches a remote, the next change mints a new one.**
+
+`skudisplayinit-20260901` → `fb4fb6-legacyroute-20260901` → **`fb4fb6r1-etasnapshot-20260901`**, all 18
+co-deployed references together. `60afa6e` was not amended. No map, earth or unrelated token moved.
+
+### B6-R1.8 — No server change (§F)
+
+**Zero Apps Script files changed this round**, and that was verified rather than assumed: B3's writer already
+accepts and persists `expected_arrival`, proven here by running the shipped `sadAtomicUpsertCore_` against an
+in-memory sheet and reading the stored cell back. `SAD_BUILD_VERSION_` stays `F1-7N-FB-4F-B6`,
+`RIC_BUILD_VERSION_` stays `F1-7N-FB-4F-B3`, contracts stay **10 / 9 / 1**, bundle hash unchanged.
+
+**So the Apps Script sync set for the release is still B6's, unchanged, and R1 adds nothing to it.**
+
+### B6-R1.9 — Suites restated, and the pattern that keeps recurring
+
+* **B2 I6/I7** recorded `etaEl.textContent` as the finding. R1 fixed it, so the assertion was restated to keep
+  the part that has NOT changed — the client's value is still UI-calculated from a carrier lead time and is
+  still not a persisted fact.
+* **B6 H9** pinned "the current app token IS my round's token". **Third round running** for this exact shape.
+  Restated as a floor.
+* **replen-execution-plan G7** captured the row builder with a 1600-character budget, and a comment spent it —
+  the match came back empty and every assertion below reported a missing button that is right there. Bounded by
+  its terminator now.
+* **B5 and B6** both lift `_hydrateAllocationDraftFromDb` out of the page; it gained one pure helper, so both
+  lifts had to carry it. Without it the hydrate's own `try/catch` swallowed the `ReferenceError` and returned
+  false, which reads exactly like "the live row was dropped".
+
+One probe of R1's own was worthless and had to be rebuilt: **M7** referenced a function eval'd inside another
+section's closure, threw a `ReferenceError`, and the lenient `mut` helper scored the exception as a detection.
+The helper now reports a throw as a **PROBE ERROR**, and M7 builds both the shipped and the mutant key function
+from source so it depends on nothing another section happens to have loaded.

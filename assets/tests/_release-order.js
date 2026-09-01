@@ -31,7 +31,14 @@ var ROUND_TOKENS = [
   // inventory-compat.js both changed, and they are co-deployed with the API/transport files in this same set:
   // a page that hydrates a persisted destination against an api layer from a different round is exactly the
   // half-updated deployment the shared token exists to make impossible.
-  'fb4fb6-legacyroute-20260901'
+  'fb4fb6-legacyroute-20260901',
+  // F1-7N-FB-4F-B6-R1 - Expected Arrival structured-value closure. A NEW token rather than a reuse of B6's,
+  // and the reason is a fact rather than a preference: B6 is already on origin/main (its commit 60afa6e was
+  // pushed), so its bytes have left the repository and any build serving them has handed browsers
+  // `?v=fb4fb6-legacyroute-20260901`. Reusing that token would leave every one of those browsers on the B6
+  // copy of inventory-replenishment.js forever, which is precisely the half-updated deployment the shared
+  // token exists to prevent. A token may only be reused while nothing carrying it has been published.
+  'fb4fb6r1-etasnapshot-20260901'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

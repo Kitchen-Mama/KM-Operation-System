@@ -410,6 +410,25 @@
       planned_qty: plannedQty,
       generation_type: isSystem ? 'system_generated' : (row.generation_type || 'user_created')
     };
+    // F1-7N-FB-4F-B6-R1 §E — expected_arrival IS DELIBERATELY NOT SENT, AND THIS IS A BLOCKED DECISION,
+    // NOT AN OVERSIGHT. Everything else the round asked for is in place: the ETA is a structured value with one
+    // owner, the render and the confirmation dialog both consume it, the collect no longer parses the rendered
+    // sentence, the date is the project's calendar day, and the server column has existed since B3. The ONE
+    // missing piece is what the date should be counted FROM.
+    //
+    // CARRIER_AND_ROUTE_SPEC.md §5B Step B defines it as
+    //     Expected Arrival = Planned Ship Date + max_days + Receiving Buffer
+    // and INVENTORY_TABLE_MAPPING_SPEC.md §326 lists `planned ship date` among this cell's inputs. There is no
+    // planned ship date anywhere in this flow: not on the Execution Plan, not on the 35-column allocation draft
+    // header, not on the 31-column line, not on shipping_plans. Nor is `Receiving Buffer` defined by any field,
+    // table or value — the spec only names it and says it is separate from Lead Time. The shipped display has
+    // been substituting TODAY and avg_days, which is a reasonable REFERENCE figure and is exactly the
+    // substitution a persisted commitment must not be built on.
+    //
+    // Persisting it would freeze that guess into shipping_allocation_draft_lines as a business fact. So the
+    // wiring stops one line short, on purpose, until the base date, the day column (max_days vs avg_days) and
+    // the Receiving Buffer are decided. A test asserts this field stays absent, so a future round has to remove
+    // that test deliberately rather than reintroduce a guess by accident.
     if (row.site_sku != null) p.site_sku = row.site_sku;
     if (row.route_no != null) p.route_no = row.route_no;
     if (row.units_per_carton != null) p.units_per_carton = row.units_per_carton;

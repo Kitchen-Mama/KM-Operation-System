@@ -238,6 +238,11 @@ function clientEnv() {
   var ctx = vm.createContext(sb);
   vm.runInContext([
     'var _replenHydrateToken = 0;',
+    // F1-7N-FB-4F-B6-R1 - the hydrate validates the persisted expected_arrival's SHAPE, so the lift has to
+    // carry that helper too. Without it the hydrate's own try/catch swallows the ReferenceError and returns
+    // false, which reads exactly like "the live row was dropped" - a defect the runtime does not have.
+    extractVar(PAGE, 'IR_ISO_DATE_RE_'),
+    extractFn(PAGE, '_irCanonicalDateOrBlank_'),
     extractFn(PAGE, '_hydrateAllocationDraftFromDb'),
     extractFn(PAGE, '_isRouteComplete'),
     extractFn(PAGE, '_execToOptionsHtml'),
@@ -856,7 +861,11 @@ section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
   // Cache tokens — the changed browser files carry the current application token.
   var tok = RO.parseIndexTokens(INDEX);
   var APP = RO.currentAppToken();
-  eq(APP, 'fb4fb6-legacyroute-20260901', 'H9 the current application token is this round\'s');
+  // F1-7N-FB-4F-B6-R1 - RESTATED, and this is the THIRD round this exact shape has broken. A round
+  // asserting that the current token IS its own token is true for exactly one round. The durable
+  // statement is a FLOOR: the files this round changed must never be served from an OLDER token.
+  ok(RO.tokenAtOrAfter(APP, 'fb4fb6-legacyroute-20260901'),
+    'H9 the application token is at or after the round that changed these files (' + APP + ')');
   eq(tok['assets/js/pages/inventory-replenishment.js'], APP, 'H10 [test 29] the page carries it');
   eq(tok['assets/js/utils/inventory-compat.js'], APP, 'H11 [test 29] and so does the shared draft module');
   eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18,

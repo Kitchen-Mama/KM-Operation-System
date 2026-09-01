@@ -18,7 +18,10 @@ var head = (js.match(/ir-exec-plan__grid--head[\s\S]{0,260}?<\/div>/) || [''])[0
 });
 
 // G7 — X button is the last grid child in NORMAL document flow (a grid cell), not absolute-positioned
-var rowBuilder = (js.match(/row\.innerHTML =[\s\S]{0,1600}?<\/button>';/) || [''])[0];
+// F1-7N-FB-4F-B6-R1 — the capture was bounded by a 1600-character budget, and a comment inside the innerHTML
+// expression spent it, so the match came back EMPTY and every assertion below reported a missing button that
+// is right there. The terminator is what delimits this builder; a character count never did.
+var rowBuilder = (js.match(/row\.innerHTML =[\s\S]*?<\/button>';/) || [''])[0];
 eq(/replen-card__remove-btn/.test(rowBuilder), true, 'G7: route row renders the remove (X) button');
 eq(/removeExecutionRoute/.test(rowBuilder), true, 'G7: X button wired to removeExecutionRoute');
 var removeBtnRule = (css.match(/\.exec-route-row \.replen-card__remove-btn\s*\{[\s\S]{0,200}?\}/) || [''])[0];

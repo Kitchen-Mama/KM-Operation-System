@@ -543,6 +543,13 @@ function clientEnv() {
     var ctx = vm.createContext(sb);
     vm.runInContext([
         'var _replenHydrateToken = 0;',
+        // F1-7N-FB-4F-B6-R1 - the hydrate now validates the persisted expected_arrival's SHAPE before carrying
+        // it. Apps Script and the browser both share one global scope; a suite that lifts a function out has to
+        // supply the globals the file itself would have had, or the lift reports a defect the runtime does not
+        // have. (Measured: without it the hydrate's own try/catch swallowed the ReferenceError and returned
+        // false, which read exactly like "the row was dropped".)
+        (PAGE.match(/var IR_ISO_DATE_RE_ = [^;]+;/) || [''])[0],
+        extractFn(PAGE, '_irCanonicalDateOrBlank_'),
         extractFn(PAGE, '_hydrateAllocationDraftFromDb'),
         extractFn(PAGE, '_isRouteComplete'),
         extractFn(PAGE, '_execToOptionsHtml'),

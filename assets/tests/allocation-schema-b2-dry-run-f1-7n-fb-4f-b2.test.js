@@ -577,10 +577,22 @@ eq(ec.must_remain_blank_count, 1, 'I3 [test 15] and the line is reported as must
 eq(RH.expectedArrivalBackfillSafe, false, 'I4 [test 15] expectedArrivalBackfillSafe = false');
 eq(ec.backfill_performed, false, 'I5 no ETA backfill was performed');
 // Test 16 — the client's value is DOM text derived from a carrier lead time. Measured in the frontend, not assumed.
+// F1-7N-FB-4F-B6-R1 — RESTATED, because B6-R1 fixed the thing I6/I7 recorded.
+//
+// B2 measured that the client's expected_arrival was `etaEl.textContent` — the RENDERED SENTENCE, which reads
+// '2026-11-02 (est. 15d)'. That was the finding, and it was correct. B6-R1 promoted the ETA to a structured
+// value: the renderer publishes the date in a data attribute and the collect reads THAT, re-validating its
+// shape. What B2 needs to keep asserting is the part that has not changed and is the reason the whole
+// expected_arrival question exists — the client's value is still UI-CALCULATED from a carrier lead time and
+// is still not a persisted fact, so it can never be treated as evidence about a stored row.
 ok(/querySelector\(\s*'\[data-field="expected_arrival"\]'\s*\)/.test(IR),
-    'I6 [test 16] the client reads expected_arrival out of the rendered DOM cell');
-ok(/var expectedArrival = etaEl \? String\(etaEl\.textContent/.test(IR),
-    'I7 [test 16] as textContent — so the payload is UI-CALCULATED text, not a persisted fact');
+    'I6 [test 16] the client still obtains expected_arrival from the Execution Plan cell');
+ok(!/var expectedArrival = etaEl \? String\(etaEl\.textContent/.test(IR),
+    'I7a [test 16] but no longer by parsing the rendered sentence (B2 measured textContent)');
+ok(/var expectedArrival = etaEl \? _irCanonicalDateOrBlank_\(etaEl\.getAttribute\('data-eta'\)\)/.test(IR),
+    'I7b [test 16] it is the structured, shape-validated value the renderer published');
+ok(/_irComputeRouteEta[\s\S]{0,4000}?_irCarrierGet\('getCarrierLeadTimes'\)/.test(IR),
+    'I7c [test 16] and it is STILL UI-calculated from a carrier lead time — never a persisted fact');
 var joined = ec.excluded_derivations.join(' | ');
 ['carrier lead time', 'shipping method', 'the current date', 'creation timestamp'].forEach(function (x) {
     ok(joined.indexOf(x) !== -1, 'I8 [test 16] excluded ETA derivation recorded: ' + x);

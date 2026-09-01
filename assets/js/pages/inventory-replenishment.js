@@ -3888,6 +3888,17 @@ function _hydrateAllocationDraftFromDb(ctx) {
                     site_sku: raw.site_sku || '',           // R6F: carry the natural-key fields so an edit reconciles the
                     window_code: raw.window_code || '',     //      exact generated line by natural key (16_ fallback).
                     route_no: raw.route_no || '',
+                    // F1-7N-FB-4F-B6-R1 §D.5/§D.7 — THE STORED SNAPSHOT, EXACTLY AS STORED.
+                    // A blank stays blank: the hydrate reads, validates the shape, and neither computes nor
+                    // repairs. `expected_arrival_basis` records which canonical service the stored date belongs
+                    // to, so a later Method change can tell "this snapshot no longer describes this route" from
+                    // "this snapshot is still the answer" without recomputing to find out.
+                    expected_arrival: _irCanonicalDateOrBlank_(raw.expected_arrival),
+                    // The basis is the header's own persisted method, stored RAW. Canonicalising it here would
+                    // give the hydrate a second dependency for no gain: _irRouteEtaFor canonicalises BOTH sides
+                    // when it compares them, so 'Sea Express' and 'sea_express' are one basis either way.
+                    expected_arrival_basis: _irCanonicalDateOrBlank_(raw.expected_arrival) ? hMethod : '',
+                    expected_arrival_source: _irCanonicalDateOrBlank_(raw.expected_arrival) ? 'PERSISTED' : '',
                     planned_qty: Number(raw.planned_qty) || 0,
                     qty: Number(raw.planned_qty) || 0,
                     recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
@@ -4200,8 +4211,16 @@ function _saveAllocationDraftFromDom(sku) {
             : { selected_destination_warehouse_id: (destRawValue && destRawValue.indexOf('MARKETPLACE_DESTINATION:') === 0) ? null : (destRawValue || null) };
         var isLogicalAmazon = (destType === 'MARKETPLACE_DESTINATION') || (typeof destRawValue === 'string' && destRawValue.indexOf('MARKETPLACE_DESTINATION:') === 0);
         var destWarehouseId = isLogicalAmazon ? '' : destRawValue;   // canonical To id ('' = none/logical)
+        // F1-7N-FB-4F-B6-R1 §C — THE STRUCTURED VALUE, NEVER THE RENDERED TEXT.
+        // This read `etaEl.textContent`, so `row.expected_arrival` held '2026-11-02 (est. 15d)' — a sentence,
+        // not a date. Nothing persisted it, so it never reached the database, but it was the value the B6
+        // confirmation dialog showed the operator and it is what any future wiring would have written into a
+        // date column. The date now comes from the attribute the renderer publishes, and is re-validated here
+        // rather than trusted: a DOM attribute is still the DOM.
         var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
-        var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
+        var expectedArrival = etaEl ? _irCanonicalDateOrBlank_(etaEl.getAttribute('data-eta')) : '';
+        var expectedArrivalBasis = etaEl ? String(etaEl.getAttribute('data-eta-basis') || '') : '';
+        var expectedArrivalSource = etaEl ? String(etaEl.getAttribute('data-eta-source') || '') : '';
         var lineId = rowEl.getAttribute('data-line-id') || '';   // persisted Draft line identity (§6)
         // F1-7N-FB-4F-B6 §F — what the DATABASE held for this route's destination when it was hydrated.
         var priorDestState = rowEl.getAttribute('data-dest-state') || '';
@@ -4224,6 +4243,8 @@ function _saveAllocationDraftFromDom(sku) {
             destination_marketplace: isLogicalAmazon ? 'Amazon' : '',
             destination_country: isLogicalAmazon ? (destPayload.country || (ctx && ctx.country) || '') : '',
             expected_arrival: expectedArrival,
+            expected_arrival_basis: expectedArrivalBasis,
+            expected_arrival_source: expectedArrivalSource,
             source_reason: 'pm_adjustment',
             allocation_draft_id: boundDraftId,
             route_group_key: boundGroupKey,
@@ -4536,11 +4557,73 @@ function _irMethodToLeadKey(method) {
 // runtime/formal shipment yet, so the estimate is the carrier_lead_times avg_days from today's ship
 // date. If lead-time data is incomplete → explicit unavailable state (never a fabricated ETA).
 // Route-template node offsets are NEVER used as a lead-time source.
+// F1-7N-FB-4F-B6-R1 §E — THE PROJECT'S CALENDAR DAY, NOT THE BROWSER'S.
+//
+// The ETA used to be built from `new Date()` with `setHours(0,0,0,0)` — the browser's LOCAL midnight. Two
+// operators looking at the same plan from two timezones could therefore read two different Expected Arrivals
+// for the same route, and a value computed that way is one day out from the project calendar for anyone west
+// of Taipei for part of every day. Asia/Taipei is the project's canonical wall clock (the same Shared rule F.1
+// the Request Order month windows follow, and the same zone `sadCanonDate_` uses server-side to turn a Sheets
+// Date into a calendar date), so the base day is read in that zone.
+//
+// The fallback is the browser's own date, used ONLY when Intl or the timezone database is unavailable. That is
+// a degraded reading rather than a wrong one, and it is the same fallback the existing shared helper takes.
+function _irProjectCalendarDay_() {
+    try {
+        var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
+        var y, m, d;
+        parts.forEach(function (p) {
+            if (p.type === 'year') y = parseInt(p.value, 10);
+            else if (p.type === 'month') m = parseInt(p.value, 10);
+            else if (p.type === 'day') d = parseInt(p.value, 10);
+        });
+        if (y && m && d) return { y: y, m: m, d: d };
+    } catch (e) { /* fall through */ }
+    var dd = new Date();
+    return { y: dd.getFullYear(), m: dd.getMonth() + 1, d: dd.getDate() };
+}
+// Add whole days to a calendar day and render `yyyy-MM-dd`. The arithmetic runs in UTC on purpose: a local-time
+// Date crossing a DST boundary can land on 23:00 the previous day, which is exactly the silent off-by-one §E
+// forbids. Nothing here ever calls toISOString() on a local-midnight Date, which is the other classic shift.
+function _irIsoPlusDays_(cal, days) {
+    var t = new Date(Date.UTC(cal.y, cal.m - 1, cal.d) + (Number(days) || 0) * 86400000);
+    function z(n) { return ('0' + n).slice(-2); }
+    return t.getUTCFullYear() + '-' + z(t.getUTCMonth() + 1) + '-' + z(t.getUTCDate());
+}
+// The project's canonical stored date shape. A value that is not exactly this is NOT a date, and is refused
+// rather than repaired — §E: an invalid date stays blank, it is never auto-corrected into a different day.
+var IR_ISO_DATE_RE_ = /^\d{4}-\d{2}-\d{2}$/;
+function _irCanonicalDateOrBlank_(v) {
+    var t = String(v == null ? '' : v).trim();
+    if (!IR_ISO_DATE_RE_.test(t)) return '';
+    var y = +t.slice(0, 4), m = +t.slice(5, 7), d = +t.slice(8, 10);
+    var probe = new Date(Date.UTC(y, m - 1, d));
+    // Rejects 2026-02-30 and friends instead of letting Date roll them forward into March.
+    if (probe.getUTCFullYear() !== y || probe.getUTCMonth() + 1 !== m || probe.getUTCDate() !== d) return '';
+    return t;
+}
+window._irProjectCalendarDay_ = _irProjectCalendarDay_;
+window._irIsoPlusDays_ = _irIsoPlusDays_;
+window._irCanonicalDateOrBlank_ = _irCanonicalDateOrBlank_;
+
+// F1-7N-FB-4F-B6-R1 §C — ONE ETA CALCULATOR, RETURNING A STRUCTURED VALUE.
+//
+// This used to return `{ text, available }` where text was `'2026-11-02 (est. 15d)'` — a DISPLAY STRING with
+// the date embedded in it. That was the only place the computed date existed, so the only way for anything
+// else to obtain it was to read the rendered cell back and parse it, which is precisely what the collect was
+// doing (see _saveAllocationDraftFromDom). A display string is not a value: `(est. 15d)` is not part of any
+// date, and anything that persisted that field would have written the whole sentence into a date column.
+//
+// So the calculation now yields the DATE, and the display string is derived FROM it. There is still exactly
+// one calculator; what changed is that its answer is structured.
 function _irComputeRouteEta(destCountry, route) {
     var method = route && route.shipping_method;
-    if (!method) return { text: '—', available: false };
+    var none = { text: '—', available: false, date: '', days: null, lead_key: '', source: 'NONE' };
+    if (!method) return none;
     var key = _irMethodToLeadKey(method);
-    if (!key) return { text: 'Lead time unavailable', available: false };
+    // §D.10 — an unmapped service resolves to NOTHING. It never borrows a neighbouring service's number, so
+    // `sea_express` can never be answered by `sea`, in either direction.
+    if (!key) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: '', source: 'NO_LEAD_KEY' };
     var rows = _irCarrierGet('getCarrierLeadTimes');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
     function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
     var matches = rows.filter(function (r) {
@@ -4549,12 +4632,41 @@ function _irComputeRouteEta(destCountry, route) {
     });
     // Prefer a row that actually carries avg_days.
     var withAvg = matches.filter(function (r) { return r.avgDays !== '' && r.avgDays != null && !isNaN(r.avgDays); })[0];
-    if (!withAvg) return { text: 'Lead time unavailable', available: false };
+    // §D.10 — no exact lead time = blank and an explicit unavailable state. No date is guessed.
+    if (!withAvg) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: key, source: 'NO_LEAD_TIME' };
     var days = Math.round(parseFloat(withAvg.avgDays));
-    var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days);
-    var iso = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-    return { text: iso + ' (est. ' + days + 'd)', available: true };
+    var iso = _irIsoPlusDays_(_irProjectCalendarDay_(), days);
+    return { text: iso + ' (est. ' + days + 'd)', available: true, date: iso, days: days, lead_key: key, source: 'COMPUTED' };
 }
+
+// F1-7N-FB-4F-B6-R1 §D.5/§D.6 — THE SINGLE OWNER OF "WHICH ETA DOES THIS ROUTE SHOW?".
+//
+// A PERSISTED expected_arrival is a SNAPSHOT of what was true when it was saved. It must not move because
+// someone later edited the carrier lead-time table — that would silently rewrite a commitment the operator
+// already made. So a stored date wins over a live computation, and the live computation is what an UNSAVED
+// route shows.
+//
+// The snapshot is pinned to the SERVICE it was computed under: change the Method and the row is a different
+// route (service is a K4 identity dimension), so the snapshot no longer describes it and the live figure
+// takes over. Changing the method does not edit the stored value — the stored row keeps its own date until a
+// save replaces it.
+function _irRouteEtaFor(destCountry, route) {
+    route = route || {};
+    var snapshot = _irCanonicalDateOrBlank_(route.expected_arrival);
+    if (snapshot) {
+        // Both sides go through the SAME canonicaliser, so a display spelling and its enum are one basis and
+        // `sea` still never equals `sea_express`. An empty basis means "no service recorded", which is treated
+        // as still-applicable rather than as a mismatch: a stored date with no recorded basis is still stored.
+        var nowKey = String(_irMethodToLeadKey(route.shipping_method) || '').trim().toLowerCase();
+        var rawBasis = String(route.expected_arrival_basis == null ? '' : route.expected_arrival_basis).trim();
+        var basis = rawBasis ? String(_irMethodToLeadKey(rawBasis) || rawBasis).trim().toLowerCase() : '';
+        if (!basis || basis === nowKey) {
+            return { text: snapshot, available: true, date: snapshot, days: null, lead_key: nowKey, source: 'PERSISTED' };
+        }
+    }
+    return _irComputeRouteEta(destCountry, route);
+}
+window._irRouteEtaFor = _irRouteEtaFor;
 
 // Recompute + write every route row's Expected Arrival cell for a SKU (called on any route edit).
 function _irUpdateRouteEtas(sku) {
@@ -4564,9 +4676,21 @@ function _irUpdateRouteEtas(sku) {
     try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
     list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
         var method = (rowEl.querySelector('[data-field="shipping_method"]') || {}).value || '';
-        var eta = _irComputeRouteEta(destCountry, { shipping_method: method });
         var cell = rowEl.querySelector('[data-field="expected_arrival"]');
-        if (cell) { cell.textContent = eta.text; cell.classList.toggle('replen-card__eta--na', !eta.available); }
+        if (!cell) return;
+        // F1-7N-FB-4F-B6-R1 §D.5 — THIS FUNCTION RUNS WHEN THE CARRIER REFERENCE FINISHES LOADING, which is
+        // not a user edit. It must therefore never replace a PERSISTED snapshot with a freshly computed figure:
+        // doing so would make a saved commitment drift every time the lead-time table changed. The row's own
+        // stored value is carried on the cell, so the shared owner can make the same decision it makes at render.
+        var eta = _irRouteEtaFor(destCountry, {
+            shipping_method: method,
+            expected_arrival: cell.getAttribute('data-eta-persisted') || '',
+            expected_arrival_basis: cell.getAttribute('data-eta-basis') || ''
+        });
+        cell.textContent = eta.text;
+        cell.setAttribute('data-eta', eta.date || '');
+        cell.setAttribute('data-eta-source', eta.source || '');
+        cell.classList.toggle('replen-card__eta--na', !eta.available);
     });
 }
 
@@ -4708,7 +4832,7 @@ function _renderExecutionRoute(sku, route) {
     var destCountry = '';
     try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
     if (!destCountry) destCountry = scope.country;   // Amazon dest country comes from Site/Marketplace context
-    var eta = _irComputeRouteEta(destCountry, route);
+    var eta = _irRouteEtaFor(destCountry, route);
     // Warehouse picker candidates for the current scope + the saved (or name-resolved) selections.
     var cand = _execWarehouseCandidates();
     var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
@@ -4757,7 +4881,13 @@ function _renderExecutionRoute(sku, route) {
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
         '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
-        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival">' + _execEsc(eta.text) + '</span>' +
+        // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
+        // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
+        // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
+        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival"' +
+        ' data-eta="' + _execEsc(eta.date || '') + '" data-eta-source="' + _execEsc(eta.source || '') + '"' +
+        ' data-eta-persisted="' + _execEsc(_irCanonicalDateOrBlank_(route.expected_arrival)) + '"' +
+        ' data-eta-basis="' + _execEsc(String(route.expected_arrival_basis || '')) + '">' + _execEsc(eta.text) + '</span>' +
         '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
     if (list) list.appendChild(row);
