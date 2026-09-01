@@ -579,14 +579,26 @@ function clientEnv() {
     var rows = C.run('replenAllocationDraft.bySku["CO1100-R"]');
     eq(rows.length, 1, 'G2 [test 16] exactly one route row is produced');
     eq(rows[0].planned_qty, 800, 'G3 [test 16, 19] carrying the persisted 800 — no quantity is lost at this boundary');
-    // THE SYNTHESIS, measured.
-    eq(rows[0].destination_marketplace, 'Amazon', 'G4 [test 6] the page SYNTHESISES Amazon…');
-    eq(rows[0].destination_type, 'MARKETPLACE_DESTINATION', 'G5 [test 6] …and a MARKETPLACE_DESTINATION type…');
-    eq(rows[0].destination_warehouse_id, '', 'G6 …while the persisted destination is blank');
+    // THE SYNTHESIS, measured — and, since F1-7N-FB-4F-B6, GONE.
+    //
+    // B5 recorded a DEFECT here as though it were a property of the page, which is the one kind of assertion
+    // that must break when the defect is fixed — and should. B6 removed the fallback that answered "where is
+    // this route going?" with the page's current FILTER. These three now measure the CORRECTED behaviour and
+    // state the old values so the record of what B5 found is not lost: the hydrate used to emit
+    // destination_marketplace 'Amazon' and destination_type 'MARKETPLACE_DESTINATION' for this row, both
+    // invented from ctx.marketplace, while the database held neither.
+    eq(rows[0].destination_marketplace, '', 'G4 [test 6] the page no longer SYNTHESISES Amazon (B5 measured \'Amazon\')');
+    eq(rows[0].destination_type, '', 'G5 [test 6] nor a MARKETPLACE_DESTINATION type (B5 measured that type)');
+    eq(rows[0].destination_warehouse_id, '', 'G6 …and the persisted destination is still blank');
+    eq(rows[0].destination_state, 'DESTINATION_CONFIRMATION_REQUIRED',
+        'G6b [test 6] the row carries the TYPED state instead of an invented destination');
     ok(!('destination' in rows[0]) || !rows[0].destination, 'G7 and it emits NO destination display name');
     // The completeness gate therefore passes on a synthesised value.
-    eq(C.run('_isRouteComplete(replenAllocationDraft.bySku["CO1100-R"][0])'), true,
-        'G8 [test 18] so the client completeness gate PASSES — on a value the database does not hold');
+    // B5's finding was that the gate passed ON A SYNTHESISED VALUE. With the synthesis gone the same gate
+    // correctly REFUSES the row: a route with no destination is not a complete route, so nothing is written
+    // for it and Submit cannot carry it. That is the fix, measured at the same boundary B5 measured the bug.
+    eq(C.run('_isRouteComplete(replenAllocationDraft.bySku["CO1100-R"][0])'), false,
+        'G8 [test 18] the client completeness gate now REFUSES it (B5 measured PASS, on a value the DB never held)');
     // Test 18 — the blank default editor is a DIFFERENT thing, and distinguishable.
     eq(C.run('_isRouteComplete({ ship_from: "", destination: "", shipping_method: "", qty: 0 })'), false,
         'G9 [test 18] the blank default Add Route editor is NOT complete');
@@ -609,8 +621,20 @@ function clientEnv() {
     // The save path emits the token; the hydrate path does not. That asymmetry is the defect.
     ok(PAGE.indexOf("destination_marketplace: isLogicalAmazon ? 'Amazon' : ''") !== -1,
         'G15 [test 18] _saveAllocationDomFromDom writes the logical destination…');
-    ok(PAGE.indexOf("destination_marketplace: hTo ? '' : (ctx.marketplace || '')") !== -1,
-        'G16 [test 18] …but the hydrate re-derives it from scope and emits no token — the round trip is asymmetric');
+    // F1-7N-FB-4F-B6 — RESTATED, AND THE OLD FORM WOULD NOW PASS ON A COMMENT.
+    // This scanned the file for the literal `destination_marketplace: hTo ? '' : (ctx.marketplace || '')`. B6
+    // deleted that line and QUOTED it in the comment explaining what was removed — so the old assertion would
+    // still find its string and report the defect as present in code that no longer contains it. That is the
+    // exact "scanned PROSE not CODE" failure B5's own A6/A8/C25 were rewritten for. Comments are stripped, and
+    // what is asserted is the CORRECTED round trip: the hydrate emits the token the save path emits.
+    var HYD = stripComments(PAGE);
+    // `ctx.marketplace` is still legitimately read elsewhere on the page (it IS the plan scope), so what
+    // is asserted is the exact EXPRESSION B5 measured - a DESTINATION field answered by the scope - rather
+    // than the mere appearance of the words.
+    ok(!/destination_marketplace:\s*hTo\s*\?/.test(HYD) && !/destination_marketplace:.*ctx\.marketplace/.test(HYD),
+        'G16 [test 18] the hydrate no longer re-derives the destination from page scope (B5 measured that it did)');
+    ok(/destination_token:\s*hDest\.token/.test(HYD),
+        'G17 [test 18] and it now emits the selector token, so the round trip is symmetric');
 })();
 
 // ==============================================================================================================
@@ -893,7 +917,13 @@ section('K — the neighbours this round must not have disturbed');
     eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'K1 action contract stays 10');
     eq((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'K2 required-action list version stays 9');
     eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'K3 transport contract stays 1');
-    eq((SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'K4 the allocation owner build is unmoved');
+    // F1-7N-FB-4F-B6 — RESTATED AS A FLOOR, for the same reason as B4's J4. B5 changed no deployed source and
+    // asserting that by pinning the value of the moment made a later round's legitimate change look like a
+    // regression in a read-only diagnostic suite.
+    var _k4 = (SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+    var _k4Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+    ok(_k4Order.indexOf(_k4) !== -1 && _k4Order.indexOf(_k4) >= _k4Order.indexOf('F1-7N-FB-4F-B3'),
+        'K4 the allocation owner build is at or after the B3 schema sync (' + _k4 + ')');
     eq((RIC.match(/var RIC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'K5 the identity contract build is unmoved');
     eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4E-R4B-R3', 'K6 the router build is unmoved');
     // The B4 migration helper is untouched and still the only thing that can write a column.

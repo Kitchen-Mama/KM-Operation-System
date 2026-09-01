@@ -767,7 +767,14 @@ section('J — [test 29] no routed action, no deployment contract, no owner buil
     eq((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'J2 [test 29] required-action list version stays 9');
     eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'J3 [test 29] transport contract stays 1');
     // B4 changes no deployed file, so every owner build stamp stays exactly where B3 left it.
-    eq((SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'J4 [test 29] the allocation owner build is unmoved');
+    // F1-7N-FB-4F-B6 — RESTATED. B4 shipped no deployed-source change, so "unmoved" was the right OBSERVATION
+    // and the wrong ASSERTION: it pinned the value B4 happened to see, and the next round that legitimately
+    // changed 16_ failed it. What B4 needed to prove is that B4 ITSELF did not move it, and the durable form of
+    // that is a FLOOR — the stamp is at or after the round B4 requires to be synced, never before it.
+    var _j4 = (SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+    var _j4Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+    ok(_j4Order.indexOf(_j4) !== -1 && _j4Order.indexOf(_j4) >= _j4Order.indexOf('F1-7N-FB-4F-B3'),
+        'J4 [test 29] the allocation owner build is at or after the B3 sync B4 depends on (' + _j4 + ')');
     eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4E-R4B-R3', 'J5 [test 29] the router build is unmoved');
     // The tool is not in the deployment manifest, because it is not deployed.
     ok(HEALTH.indexOf(TOOL_FILE) === -1, 'J6 [test 29] the helper is not a manifested deployment owner');

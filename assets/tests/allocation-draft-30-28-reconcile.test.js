@@ -88,7 +88,10 @@ section('Frontend flush derives the header route (§7) + docs agree (§11.15)');
 // still derived from the complete routes, but now EVERY canonical route group derives its OWN header, so the
 // requirement is strictly stronger — no route may be dropped on the floor because it was not first.
 ok(/preflightRouteGroups\(ctx, sku, complete\)/.test(PAGE), 'R16a flush derives route groups from the scope\'s complete routes');
-ok(/pf\.groups\.forEach/.test(PAGE) && /_irPersistOneRouteGroup_\(sku, ctx, g\)/.test(PAGE), 'R16b EVERY route group is persisted, not just the first');
+// F1-7N-FB-4F-B6 — the writer gained a fourth argument (the explicit legacy-adoption authority), and this
+// pinned its exact arity. What it means is that every GROUP is handed to the group writer, so the prefix is
+// matched and the argument list is left free to grow.
+ok(/pf\.groups\.forEach/.test(PAGE) && /_irPersistOneRouteGroup_\(sku, ctx, g[,)]/.test(PAGE), 'R16b EVERY route group is persisted, not just the first');
 ok(/source_warehouse_id: h\.recommended_source_warehouse_id/.test(PAGE), 'R16c each header route context comes from its OWN group');
 ok(!/var route0 = complete\[0\]/.test(PAGE), 'R16d the single-route "complete[0]" header derivation is GONE');
 ok(/recommended_shipping_method/.test(GS) && /planned_qty/.test(FREEZE) && /header-level/i.test(FREEZE), 'R17 freeze doc documents the header-level route + line qty mapping');

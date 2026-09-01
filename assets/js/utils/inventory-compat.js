@@ -195,7 +195,53 @@
   // (NOT a warehouse master row). Serialized as MARKETPLACE_DESTINATION:Amazon:<country>. On save it
   // becomes { marketplace:'Amazon', country, selected_destination_warehouse_id:null }; the real FBA
   // warehouse_id is resolved later at the Shipment-Draft execution stage.
-  function amazonLogicalToken(country) { return 'MARKETPLACE_DESTINATION:Amazon:' + up(country); }
+  // F1-7N-FB-4F-B6 §D — ONE TOKEN BUILDER, AND THE MARKETPLACE IS AN ARGUMENT.
+  // The selector's option value is the only thing that can SELECT a marketplace destination, so hydration has to
+  // be able to build the exact same string from a PERSISTED marketplace. Amazon's builder now delegates here
+  // rather than being a second spelling of the format — §D.8 forbids a second destination dictionary, and two
+  // functions that each know the token layout are exactly that.
+  function marketplaceDestinationToken(marketplace, country) {
+    var m = String(marketplace == null ? '' : marketplace).trim();
+    return m ? ('MARKETPLACE_DESTINATION:' + m + ':' + up(country)) : '';
+  }
+  function amazonLogicalToken(country) { return marketplaceDestinationToken('Amazon', country); }
+
+  // F1-7N-FB-4F-B6 §D — THE PERSISTED DESTINATION IS THE ONLY LOADED AUTHORITY.
+  //
+  // This is the client mirror of 69_ ricDestinationIdentity_: WAREHOUSE or MARKETPLACE, exclusively, read from
+  // the STORED row and from nothing else. It exists because the hydrate used to answer the question
+  // "where is this route going?" with `ctx.marketplace` — the page's current FILTER — whenever the stored
+  // destination was blank. That is not a fallback; it is the page inventing a business fact and then passing the
+  // completeness gate on it. A route the database says has NO destination must come back with no destination.
+  //
+  // The four states are exhaustive and each one is a different instruction to the UI:
+  //   PERSISTED_WAREHOUSE          — select the stored warehouse id (its existing token IS its id)
+  //   PERSISTED_MARKETPLACE        — select the marketplace token built above
+  //   DESTINATION_CONFIRMATION_REQUIRED — nothing is stored; the operator must choose, and until they do the
+  //                                  route is not complete and nothing is written
+  //   DESTINATION_AMBIGUOUS        — BOTH are stored, which is a contradiction the schema is supposed to make
+  //                                  impossible; it is refused rather than resolved by preferring one (§D.4)
+  var DESTINATION_CONFIRMATION_REQUIRED = 'DESTINATION_CONFIRMATION_REQUIRED';
+  var DESTINATION_AMBIGUOUS = 'DESTINATION_AMBIGUOUS';
+  function resolvePersistedDestination(persisted, scope) {
+    persisted = persisted || {};
+    var wid = String(persisted.destination_warehouse_id == null ? '' : persisted.destination_warehouse_id).trim();
+    var mkt = String(persisted.destination_marketplace == null ? '' : persisted.destination_marketplace).trim();
+    if (wid && mkt) {
+      return { state: DESTINATION_AMBIGUOUS, type: '', warehouse_id: '', marketplace: '', token: '',
+        confirmationRequired: true };
+    }
+    if (wid) {
+      return { state: 'PERSISTED_WAREHOUSE', type: '', warehouse_id: wid, marketplace: '', token: wid,
+        confirmationRequired: false };
+    }
+    if (mkt) {
+      return { state: 'PERSISTED_MARKETPLACE', type: 'MARKETPLACE_DESTINATION', warehouse_id: '', marketplace: mkt,
+        token: marketplaceDestinationToken(mkt, scope && scope.country), confirmationRequired: false };
+    }
+    return { state: DESTINATION_CONFIRMATION_REQUIRED, type: '', warehouse_id: '', marketplace: '', token: '',
+      confirmationRequired: true };
+  }
   function amazonLogicalDestination(scope) {
     return {
       logicalDestination: true, destinationType: 'MARKETPLACE_DESTINATION',
@@ -247,6 +293,10 @@
     whType: whType, isFactory: isFactory, isOverseas3PL: isOverseas3PL, isFBA: isFBA, isActive: isActive,
     warehouseCountryMembers: warehouseCountryMembers, warehouseCountryMatches: warehouseCountryMatches,
     amazonLogicalToken: amazonLogicalToken, amazonLogicalDestination: amazonLogicalDestination,
+    marketplaceDestinationToken: marketplaceDestinationToken,
+    resolvePersistedDestination: resolvePersistedDestination,
+    DESTINATION_CONFIRMATION_REQUIRED: DESTINATION_CONFIRMATION_REQUIRED,
+    DESTINATION_AMBIGUOUS: DESTINATION_AMBIGUOUS,
     resolveDestinationPayload: resolveDestinationPayload,
     buildPhysicalThirdPartyBreakdown: buildPhysicalThirdPartyBreakdown,
     buildCandidates: buildCandidates, dedup: dedup
@@ -279,7 +329,41 @@
     if (ctx.shipping_method != null) p.recommended_shipping_method = ctx.shipping_method || '';
     if (ctx.last_mile_delivery != null) p.recommended_last_mile_delivery = ctx.last_mile_delivery || '';
     if (ctx.destination_marketplace != null) p.destination_marketplace = ctx.destination_marketplace || '';
+    // F1-7N-FB-4F-B6 §G — THE USER'S EXPLICIT ADOPTION AUTHORITY, and nothing else may set it.
+    // `allow_legacy_reconcile` is the existing, USER-owned migration flag the atomic writer already accepts; B6
+    // gives it a second, narrower meaning (adopt the ONE unclassifiable legacy header this route collides with)
+    // and the server enforces every condition itself. It is emitted ONLY for a literal `true`, so a truthy
+    // accident — a string, a 1, an object — cannot authorise a migration.
+    if (ctx.allow_legacy_reconcile === true) p.allow_legacy_reconcile = true;
     return p;
+  }
+
+  // F1-7N-FB-4F-B6 §F.3 — WHAT THE OPERATOR IS ASKED TO CONFIRM, built as data rather than as a sentence.
+  // The dialog must state From, the To they chose, Method, Qty, an Expected Arrival ONLY when one is explicitly
+  // present, and that an EXISTING record will be updated. Built here, pure, so the regression suite can assert
+  // the content of the question rather than assert that a question was asked.
+  function buildLegacyAdoptionConfirmation(detail) {
+    detail = detail || {};
+    var NLC = String.fromCharCode(10);
+    function S(v) { return String(v == null ? '' : v).trim(); }
+    var fields = [
+      { label: 'From', value: S(detail.from) },
+      { label: 'To', value: S(detail.to) },
+      { label: 'Method', value: S(detail.method) },
+      { label: 'Qty', value: S(detail.qty) }
+    ];
+    // §H.1 — a blank ETA stays blank and is not shown as a value the user is confirming.
+    if (S(detail.expected_arrival)) fields.push({ label: 'Expected Arrival', value: S(detail.expected_arrival) });
+    var lines = fields.map(function (f) { return '  ' + f.label + ': ' + f.value; });
+    return {
+      fields: fields,
+      allocation_draft_id: S(detail.allocation_draft_id),
+      text: 'Confirm this destination for an EXISTING saved route.' + NLC + NLC +
+        lines.join(NLC) + NLC + NLC +
+        'The existing draft record ' + (S(detail.allocation_draft_id) || '(id not yet known)') +
+        ' will be UPDATED with this destination. Its identity is kept and no new route is created.' + NLC + NLC +
+        'Cancel writes nothing.'
+    };
   }
   // ---- Four-field completeness predicate (System Repair 2 §4 / §7) -----------------------------------
   // A working-draft route is a COMPLETE, persistable Execution Plan line ONLY when From + To + Qty(>0) +
@@ -409,8 +493,13 @@
       // recommendation_group_no is a K2 dimension the Execution Plan does not author (Phase-1 freeze D-C2-1). It is
       // carried explicitly as '' rather than omitted, so the key computed here is the FULL 10-dimension key.
       recommendation_group_no: String(route.recommendation_group_no == null ? '' : route.recommendation_group_no).trim(),
-      // Accepted payload field (NOT a stored column) that makes an Amazon logical destination a valid To.
-      destination_marketplace: isLogical ? (route.destination_marketplace || route.destination_country || scope.marketplace || '') : '',
+      // F1-7N-FB-4F-B6 §D.1/§D.2 — THE SECOND SYNTHESIS, AND THIS ONE REACHED THE DATABASE.
+      // This read `route.destination_marketplace || route.destination_country || scope.marketplace || ''`, so a
+      // route whose destination the operator had never chosen was WRITTEN as a route to the page's current
+      // filter — and `destination_country` is a COUNTRY, which could be persisted into a marketplace field
+      // outright. destination_marketplace is a stored column since B4; a value invented here is now a permanent
+      // business fact rather than a transient display accident. Only the route's own destination is used.
+      destination_marketplace: isLogical ? String(route.destination_marketplace == null ? '' : route.destination_marketplace).trim() : '',
       source_warehouse_code: route.ship_from || '',
       destination_warehouse_code: route.destination || ''
     };
@@ -496,6 +585,7 @@
 
   var IRDraft = {
     buildDraftHeaderPayload: buildDraftHeaderPayload,
+    buildLegacyAdoptionConfirmation: buildLegacyAdoptionConfirmation,
     buildDraftLinePayload: buildDraftLinePayload,
     buildCancelLinePayload: buildCancelLinePayload,
     isRouteComplete: isRouteComplete,

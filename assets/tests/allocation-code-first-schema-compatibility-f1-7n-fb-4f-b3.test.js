@@ -500,8 +500,20 @@ function manifestExpects(file) {
     return (HEALTH.match(new RegExp("\\{ file: '" + file.replace(/\./g, '\\.') + "',[^}]*expected: '([^']+)'")) || [])[1] || '';
 }
 function declares(src, sym) { return (src.match(new RegExp('var ' + sym + " = '([^']+)';")) || [])[1] || ''; }
-eq(declares(SAD, 'SAD_BUILD_VERSION_'), 'F1-7N-FB-4F-B3', 'I1 the allocation owner build is F1-7N-FB-4F-B3');
-eq(manifestExpects('16_shipping_allocation_handlers.gs'), 'F1-7N-FB-4F-B3', 'I2 [test 28] and the manifest expects exactly that');
+// F1-7N-FB-4F-B6 — the ORDER of 16_'s owner stamps, append-only, so "at or after round X" is answerable
+// without any suite pinning "now". A round that moves the stamp appends one line here.
+var RO_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+// F1-7N-FB-4F-B6 — RESTATED, and the restatement is what these two always MEANT.
+// Both pinned the literal 'F1-7N-FB-4F-B3' — B3's own moment — so the first later round that legitimately
+// changed 16_ failed them while describing a correct state. That is the equality-with-now this project has
+// now hit five rounds running. What B3 was actually protecting is TWO durable facts, and neither of them
+// mentions B3: the stamp must be at or after the round that taught 16_ the two append-only columns, and the
+// deployment manifest must agree with the SOURCE rather than with a number someone typed twice.
+var _i1Stamp = declares(SAD, 'SAD_BUILD_VERSION_');
+ok(RO_STAMPS.indexOf(_i1Stamp) !== -1 && RO_STAMPS.indexOf(_i1Stamp) >= RO_STAMPS.indexOf('F1-7N-FB-4F-B3'),
+  'I1 the allocation owner build is at or after the B3 schema-compatibility floor (' + _i1Stamp + ')');
+eq(manifestExpects('16_shipping_allocation_handlers.gs'), _i1Stamp,
+  'I2 [test 28] and the manifest expects exactly what the source declares — derived, never restated');
 eq(declares(RIC, 'RIC_BUILD_VERSION_'), manifestExpects('69_api_v1_route_identity_contract.gs'),
     'I3 [test 28] 69_ declares exactly what the manifest expects of it');
 ok(!!manifestExpects('69_api_v1_route_identity_contract.gs'), 'I4 [test 28] and it HAS a manifest entry — it is a synchronized owner now');

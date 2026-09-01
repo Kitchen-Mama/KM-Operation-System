@@ -26,7 +26,12 @@ var ROUND_TOKENS = [
   // F1-7N-SKU-DETAILS-DISPLAY-INIT-R1 - SKU Details Display column initialization. sku-details.js changed, and
   // it sits in BOTH co-deployed sets the FB-4D and FB-4E suites police, so the whole application set rotates
   // together. A token that moves for one member and not the others can still ship a half-updated page.
-  'skudisplayinit-20260901'
+  'skudisplayinit-20260901',
+  // F1-7N-FB-4F-B6 - Legacy route explicit confirmation + hydration repair. inventory-replenishment.js and
+  // inventory-compat.js both changed, and they are co-deployed with the API/transport files in this same set:
+  // a page that hydrates a persisted destination against an api layer from a different round is exactly the
+  // half-updated deployment the shared token exists to make impossible.
+  'fb4fb6-legacyroute-20260901'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

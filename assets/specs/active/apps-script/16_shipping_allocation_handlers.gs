@@ -438,7 +438,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4F-B3';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4F-B6';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -558,7 +558,15 @@ function sadK2PartitionLinesIntoGroups_(scope, lines) {
 // editable ⇒ REGENERATE (update + draft_version++ once + adopt new calc evidence).
 var SAD_K2_HEADER_FP_ = ['status', 'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
   'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
-  'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery'];
+  'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
+  // F1-7N-FB-4F-B6 - THE DESTINATION MUST MAKE A DIFFERENCE, for exactly the reason the ETA had to.
+  // Giving a destination-less legacy header its first destination changes NOTHING ELSE: same source, same
+  // service, same status, same quantity. With destination_marketplace outside the fingerprint the prior and
+  // incoming payloads compared EQUAL, the writer returned REUSE with zero_write, and the operator was told the
+  // save succeeded while the column stayed blank - a silent no-op on the one field the whole round is about.
+  // Adding a field both sides leave blank changes nothing for any other row: the fingerprint is computed per
+  // request from both sides, never stored, so no id and no existing row is affected.
+  'destination_marketplace'];
 var SAD_K2_LINE_FP_ = ['sku', 'site_sku', 'window_code', 'window_start_date', 'window_end_date', 'required_by_date',
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot', 'qualified_incoming_snapshot',
   'approved_supply_snapshot', 'calculated_gap_qty', 'source_initial_available_qty_snapshot',
@@ -1975,7 +1983,39 @@ function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
       // cannot tell it apart from the route being saved. That row is the legacy case, and it is left alone.
       var legacyRivals = activeRows.filter(function (r) { return !ricDestinationIdentity_(r).ok; });
       var rivalK2 = sadK2ResolveActiveDraft_(legacyRivals, header);
-      if (rivalK2.status === 'REUSE' || rivalK2.status === 'BLOCKED_CONFLICT') {
+      // F1-7N-FB-4F-B6 §G.3 - MORE THAN ONE ELIGIBLE CANDIDATE IS A DECISION, NOT A WRITE. Unchanged, and
+      // deliberately checked BEFORE the adoption branch: no amount of user authority makes "which of these two
+      // headers did you mean?" answerable by a resolver.
+      if (rivalK2.status === 'BLOCKED_CONFLICT') {
+        return { status: 'BLOCK', reason: 'K4_IDENTITY_RECONCILIATION_REQUIRED', id: (rivalK2.allocation_draft_id || ''),
+          conflictIds: rivalK2.conflictIds || [], k2: true, k4: true };
+      }
+      if (rivalK2.status === 'REUSE') {
+        // F1-7N-FB-4F-B6 §G.2 - SAFE LEGACY ADOPTION, AND EVERY CONDITION IS RE-CHECKED HERE.
+        //
+        // The row this resolves to is an ACTIVE header that K4 cannot classify (it stores no destination at all)
+        // and that matches the request on every one of K2's ten dimensions - same planning cycle, company,
+        // country, marketplace, source page, source warehouse, service, last-mile and group number. It differs
+        // from the route being saved in exactly one way: it has no destination. That is the legacy row.
+        //
+        // B3 left this case BLOCKED because both available moves were wrong WITHOUT A HUMAN: creating beside it
+        // duplicates the route, adopting it migrates a live row. What B6 adds is the human. `allowLegacyReconcile`
+        // is the existing, USER-owned migration authority the atomic endpoint already accepts, and the client
+        // only sends it after an explicit confirmation dialog naming From / To / Method / Qty and saying that an
+        // EXISTING record will be updated.
+        //
+        // Two conditions are enforced right here rather than trusted to the caller:
+        //   * the authority must be explicitly true - a missing or falsy flag still BLOCKS;
+        //   * the request must actually CARRY a destination. Adopting a legacy row and writing another blank
+        //     destination onto it would move the row's identity for no gain, which is worse than refusing.
+        //
+        // The stored id is returned UNCHANGED, so the header is updated in place: no re-key, no second header,
+        // and every shipping_allocation_draft_lines row that points at it stays pointing at it.
+        var wantDest = ricDestinationIdentity_(header);
+        if (opts.allowLegacyReconcile === true && wantDest.ok) {
+          return { status: 'REUSE', id: rivalK2.allocation_draft_id, conflictIds: [], k2: true, k4: true,
+            legacyAdoption: true, adoptedDestinationType: wantDest.type };
+        }
         return { status: 'BLOCK', reason: 'K4_IDENTITY_RECONCILIATION_REQUIRED', id: (rivalK2.allocation_draft_id || ''),
           conflictIds: rivalK2.conflictIds || [], k2: true, k4: true };
       }

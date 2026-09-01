@@ -1249,6 +1249,19 @@
     width: 100%;
 }
 #ops-section .ir-exec-plan__grid > * { min-width: 0; }
+/* F1-7N-FB-4F-B6 §E.3/§F.1 — the To cell of a PERSISTED route whose destination the database does not hold.
+   The select keeps the To track; the warning sits under it and is what makes a blank To readable as a REQUIREMENT
+   rather than as an empty field the operator may ignore. The wrapper is the grid child, so the six-track layout
+   is unchanged for every other row. */
+#ops-section .replen-card__to-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#ops-section .replen-card__to-cell > .replen-card__select { width: 100%; }
+#ops-section .replen-card__to-cell--needs-confirm > .replen-card__select { border-color: #D97706; }
+#ops-section .replen-card__to-warning {
+    font-size: 10px;
+    line-height: 1.2;
+    color: #B45309;
+    white-space: normal;
+}
 /* Expected Arrival read-only cell (right of Method). Unavailable/lead-time-missing state is muted. */
 #ops-section .replen-card__eta { font-size: 11px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ops-section .replen-card__eta--na { color: #94A3B8; font-style: italic; }

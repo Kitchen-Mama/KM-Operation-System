@@ -544,8 +544,21 @@ section('§D/§G — no unauthorised behaviour introduced');
 // ================================================================================================================
 ok(code(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')).indexOf('deleteRow') === -1,
   'G1 the shipping allocation handler still contains NO row deletion');
-ok(IRSRC.indexOf('allow_legacy_reconcile: true') === -1 && IRSRC.indexOf("allow_legacy_reconcile") === -1,
-  'G2 the page never asks the server to reconcile a legacy row (that stays a USER-owned migration)');
+// F1-7N-FB-4F-B6 — RESTATED, because B6 is the round that gives the page a way to ask, and the ONLY reason
+// the old form was safe is the reason the new form must be checked instead.
+//
+// FB-4B's rule was "a legacy reconciliation is a USER-owned migration, so the page must never request one".
+// The page had no way to ask a user, so "never mentions the flag" was a faithful proxy. B6 gives it one: an
+// explicit confirmation dialog naming From / To / Method / Qty and stating that an EXISTING record will be
+// updated. The rule did not change — the migration is still USER-owned. What must be proven now is that the
+// flag can only be reached THROUGH the human: it is never a literal in the payload, it is passed as a
+// parameter the confirmation gate produces, and a declined confirmation returns before any request.
+ok(IRSRC.indexOf('allow_legacy_reconcile: true,') === -1 && !/allow_legacy_reconcile:\s*true\s*[},]/.test(IRSRC),
+  'G2a the page never hard-codes the reconcile authority into a payload');
+ok(/allow_legacy_reconcile:\s*\(allowLegacyAdoption === true\)\s*\?\s*true\s*:\s*undefined/.test(IRSRC),
+  'G2b it is carried ONLY from the caller\'s explicit parameter, and only for a literal true');
+ok(/if\s*\(!_irConfirmLegacyAdoption_\(_adoptGroups\[_ai\]\)\)\s*\{[\s\S]{0,600}?return;/.test(IRSRC),
+  'G2c and a declined confirmation RETURNS out of the flush before any request is issued');
 ok(DBAPI.indexOf('ROUTE_IDENTITY_NOT_PERSISTABLE') !== -1 && DBAPI.indexOf('ROUTE_QUANTITY_CONFLICT') !== -1,
   'G3 the adapter preserves the new canonical reason codes instead of discarding them');
 ok(G16C.indexOf('ACTIVE_DRAFT_GROUP_FOUND') !== -1, 'G4 the multi-group readback status is a real server contract');

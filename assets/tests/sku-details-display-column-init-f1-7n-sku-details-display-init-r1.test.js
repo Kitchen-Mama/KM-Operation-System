@@ -628,7 +628,12 @@ section('G — cache token and page wiring');
     var js = (INDEX.match(/assets\/js\/pages\/sku-details\.js\?v=([^"']+)/) || [])[1];
     var css = (INDEX.match(/assets\/css\/pages\/sku-details\.css\?v=([^"']+)/) || [])[1];
     ok(js === APP, 'G1 sku-details.js carries the current application token (' + js + ')');
-    eq(APP, 'skudisplayinit-20260901', 'G1b which is this round token');
+    // F1-7N-FB-4F-B6 - RESTATED. This asserted that the CURRENT application token is the one THIS round
+    // minted, which stops being true the moment any later application round rotates the set - and rotating it
+    // together is the very contract the line above is defending. The durable statement is a FLOOR: sku-details.js
+    // must never be served from a token OLDER than the round that changed it.
+    ok(RO.tokenAtOrAfter(APP, 'skudisplayinit-20260901'),
+        'G1b and that token is at or after the round that changed this file (' + APP + ')');
     eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'G1c and all 18 application references share it');
     ok(!RO.isMapToken(APP), 'G1d it is not a map-series token');
     ok(css === 'donenotice-20260811', 'G2 sku-details.css token is UNCHANGED — the CSS was not modified');

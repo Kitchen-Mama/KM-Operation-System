@@ -2499,6 +2499,20 @@ async function submitReplenishmentPlans() {
             'written or deleted. Run the duplicate cleanup first, then Submit again.');
         return;   // fail CLOSED
     }
+    // F1-7N-FB-4F-B6 §I — A PLANNED QUANTITY WITH NO PERSISTED DESTINATION BLOCKS SUBMIT.
+    // The route is real and its quantity is real; what is missing is where it goes. Committing it would put a
+    // Weekly Shipping Plan line into the world with a destination nobody chose — which is the failure the whole
+    // FB-4F series exists to end. Fail CLOSED, before any request, and name every route so each can be fixed.
+    var _noDest = _irRoutesMissingDestination_();
+    if (_noDest.length) {
+        alert('Cannot Submit Plan — ' + _noDest.length + ' route(s) plan a quantity but have no destination saved.' + NL2 +
+            _noDest.slice(0, 8).map(function (d) {
+                return '  · ' + d.sku + ' — ' + d.qty + ' unit(s)' + (d.shipping_method ? (' by ' + d.shipping_method) : '') + ', To is empty';
+            }).join(String.fromCharCode(10)) + NL2 +
+            'Choose a destination for each one and confirm the save, then Submit again. Nothing was submitted and ' +
+            'nothing was written.');
+        return;   // fail CLOSED
+    }
     var _db = window.KM && window.KM.DB;
     var _hasSubmitApi = !!(_db && _db.submitAllocationDraftsToShippingPlans);
     var _writeEligible = !!(_db && _db.isProductionWriteEligible && _db.isProductionWriteEligible());
@@ -2907,8 +2921,19 @@ function _replenActiveAllocationDraftIds() {
             });
         });
     } catch (e0) {}
-    try { if (replenAllocationDraft && replenAllocationDraft.allocationDraftId) ids.push(String(replenAllocationDraft.allocationDraftId).trim()); } catch (e) {}
-    try { if (replenAllocationDraft && replenAllocationDraft.allocationDraftIds && replenAllocationDraft.allocationDraftIds.length) replenAllocationDraft.allocationDraftIds.forEach(function (x) { if (x) ids.push(String(x).trim()); }); } catch (e2) {}
+    // F1-7N-FB-4F-B6 §I — A HEADER WITH NO QUANTITY-BEARING ROUTE IS NEVER SENT TO SUBMIT.
+    //
+    // These two fallbacks used to add EVERY header the hydrate had seen for the station, including active ones
+    // holding zero lines. That is not a harmless extra id: sadSubmitToShippingPlansCore_ validates every
+    // requested draft and a header with no lines fails gate (3) NO_LINES — and one failure fails the WHOLE
+    // batch with SUBMIT_VALIDATION_FAILED and zero writes. Two empty legacy headers in a station therefore made
+    // Submit permanently impossible for every REAL route beside them, and §J forbids deleting those headers to
+    // get out of it. The loop above already collects the header of every complete route, which is exactly the
+    // set the server can accept, so the fallbacks are restricted to ids that set already contains rather than
+    // being removed (they still guard against a route that lost its binding mid-edit).
+    var fromRoutes = {}; ids.forEach(function (id) { fromRoutes[id] = 1; });
+    try { var pId = String((replenAllocationDraft && replenAllocationDraft.allocationDraftId) || '').trim(); if (pId && fromRoutes[pId]) ids.push(pId); } catch (e) {}
+    try { if (replenAllocationDraft && replenAllocationDraft.allocationDraftIds && replenAllocationDraft.allocationDraftIds.length) replenAllocationDraft.allocationDraftIds.forEach(function (x) { var t = String(x || '').trim(); if (t && fromRoutes[t]) ids.push(t); }); } catch (e2) {}
     var seen = {}, out = []; ids.forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } }); return out;
 }
 window._replenActiveAllocationDraftIds = _replenActiveAllocationDraftIds;
@@ -3248,6 +3273,10 @@ function _irStampRouteGroupIds_(sku, g, draftId) {
     (g.routes || []).forEach(function (r) {
         r.allocation_draft_id = draftId;
         r.route_group_key = g.groupKey;
+        // F1-7N-FB-4F-B6 §F — the adoption has happened; the stored row now HAS a destination. Clearing the
+        // state here is what stops the confirmation from being asked again on every later edit of the same
+        // route, and it is cleared only on the path that runs after a header was actually persisted.
+        r.destination_state = '';
     });
     // re-stamp the DOM rows that belong to this group so a later collect carries the header binding
     try {
@@ -3260,6 +3289,7 @@ function _irStampRouteGroupIds_(sku, g, draftId) {
                     if (g.routes[j] && String(g.routes[j].allocation_draft_line_id || '') === String(lid)) {
                         els[i].setAttribute('data-draft-id', draftId);
                         els[i].setAttribute('data-group-key', g.groupKey);
+                        els[i].removeAttribute('data-dest-state');
                     }
                 }
             }
@@ -3289,7 +3319,7 @@ function _irQueueStaleGroupCancels_(sku, groups) {
 
 // Persist ONE canonical route group: resolve/create its header, then upsert its line under that header.
 // Returns a per-route outcome and never throws, so one failing route cannot abort the routes after it.
-function _irPersistOneRouteGroup_(sku, ctx, g) {
+function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
     var h = g.header || {};
     // NOTE: no allocation_draft_id is sent. The server resolves a route-complete header by the canonical K2 group
     // key — same route REUSEs, different route CREATEs — which is idempotent by construction. Pinning the write to
@@ -3302,7 +3332,11 @@ function _irPersistOneRouteGroup_(sku, ctx, g) {
         destination_warehouse_code: h.destination_warehouse_code,
         shipping_method: h.recommended_shipping_method,
         last_mile_delivery: h.recommended_last_mile_delivery || undefined,
-        destination_marketplace: h.destination_marketplace || undefined
+        destination_marketplace: h.destination_marketplace || undefined,
+        // F1-7N-FB-4F-B6 §G — the operator's EXPLICIT adoption authority, and only when it was actually given.
+        // The server re-checks every condition (exactly one unclassifiable candidate, every K2 dimension equal, a
+        // destination actually supplied); this flag only says a human was asked and said yes.
+        allow_legacy_reconcile: (allowLegacyAdoption === true) ? true : undefined
     });
     var draftIdSeen = '', serverGroupKey = '';
     return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header)).then(function (hres) {
@@ -3418,6 +3452,82 @@ function _irMultiRouteOutcomeEnvelope_(sku, outcomes) {
     };
 }
 
+// F1-7N-FB-4F-B6 §F — WHICH GROUPS ARE ADOPTIONS OF AN EXISTING RECORD.
+//
+// A route the DATABASE returned with no destination, which the operator has now given one, is not an ordinary
+// edit: saving it takes over an existing stored header — keeping its id, its lines and its quantity — and gives
+// it the destination it never had. That is a migration of a live row, so it is the one save on this page that
+// must be confirmed explicitly before any request is issued. `destination_state` is carried from the hydrate
+// through the DOM (data-dest-state) and back out of the collect, so this asks about what was PERSISTED rather
+// than re-deriving it from the current selection.
+function _irAdoptionGroupsNeedingConfirmation_(groups) {
+    var out = [];
+    (groups || []).forEach(function (g) {
+        var needs = (g.routes || []).some(function (r) {
+            return r && (r.destination_state === 'DESTINATION_CONFIRMATION_REQUIRED' ||
+                         r.destination_state === 'DESTINATION_AMBIGUOUS');
+        });
+        if (needs) out.push(g);
+    });
+    return out;
+}
+// The exact facts §F.3 requires the operator to see. Quantity is the SUM of the group's routes, because the
+// group is one header and that is what the header will hold.
+function _irAdoptionConfirmationDetail_(g) {
+    var h = (g && g.header) || {};
+    var routes = (g && g.routes) || [];
+    var r0 = routes[0] || {};
+    var qty = 0;
+    routes.forEach(function (r) { qty += Number(r.planned_qty != null ? r.planned_qty : r.qty) || 0; });
+    var eta = '';
+    routes.forEach(function (r) { if (!eta && r && String(r.expected_arrival || '').trim()) eta = String(r.expected_arrival).trim(); });
+    return {
+        from: r0.ship_from || h.recommended_source_warehouse_id || '',
+        to: r0.destination || r0.destination_marketplace || h.recommended_destination_warehouse_id || '',
+        method: h.recommended_shipping_method || r0.shipping_method || '',
+        qty: qty,
+        expected_arrival: eta,
+        allocation_draft_id: String(r0.allocation_draft_id || '').trim()
+    };
+}
+// §F.4 — EXPLICIT means explicit. No confirm function reachable is NOT consent: it returns false, and the
+// caller writes nothing at all rather than proceeding on the assumption that the operator would have agreed.
+function _irConfirmLegacyAdoption_(g) {
+    if (!(window.IRDraft && typeof window.IRDraft.buildLegacyAdoptionConfirmation === 'function')) return false;
+    var built = window.IRDraft.buildLegacyAdoptionConfirmation(_irAdoptionConfirmationDetail_(g));
+    if (typeof window.confirm !== 'function') return false;
+    return window.confirm(built.text) === true;
+}
+window._irAdoptionGroupsNeedingConfirmation_ = _irAdoptionGroupsNeedingConfirmation_;
+window._irAdoptionConfirmationDetail_ = _irAdoptionConfirmationDetail_;
+window._irConfirmLegacyAdoption_ = _irConfirmLegacyAdoption_;
+
+// F1-7N-FB-4F-B6 §I — ROUTES THAT PLAN QUANTITY WITH NOWHERE TO SEND IT.
+// Before B6 this could not happen on screen, because the hydrate synthesised a destination for every route; now
+// a destination-less legacy row comes back honestly, so Submit needs its own named refusal. Reported per route,
+// with the SKU, so the operator can go and confirm each one rather than being told "something is wrong".
+function _irRoutesMissingDestination_() {
+    var out = [];
+    try {
+        var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(bySku).forEach(function (sku) {
+            (bySku[sku] || []).forEach(function (r) {
+                if (!r) return;
+                var qty = Number(r.planned_qty != null ? r.planned_qty : r.qty) || 0;
+                if (qty <= 0) return;
+                var wid = String(r.destination_warehouse_id == null ? '' : r.destination_warehouse_id).trim();
+                var mkt = String(r.destination_marketplace == null ? '' : r.destination_marketplace).trim();
+                if (wid || mkt) return;
+                out.push({ sku: sku, qty: qty, allocation_draft_id: String(r.allocation_draft_id || '').trim(),
+                    shipping_method: String(r.shipping_method || '').trim(),
+                    destination_state: String(r.destination_state || '') });
+            });
+        });
+    } catch (e) {}
+    return out;
+}
+window._irRoutesMissingDestination_ = _irRoutesMissingDestination_;
+
 // The actual DB sync for one SKU: soft-cancel any queued now-invalid lines, then upsert the header +
 // the COMPLETE line set (or cancel the header if nothing valid remains). Called by the debounced flush.
 function _flushDraftDbPersist(sku) {
@@ -3473,6 +3583,22 @@ function _flushDraftDbPersist(sku) {
             return;   // ZERO WRITE — no request was issued
         }
 
+        // F1-7N-FB-4F-B6 §F.3/§F.4 — CONFIRM BEFORE MUTATING AN EXISTING RECORD, and place the question HERE:
+        // ahead of the stale-group cancels and ahead of the line-cancel dispatch, both of which are themselves
+        // business writes. Asking after them would make "cancelling writes nothing" false.
+        var _adoptApproved = {};
+        var _adoptGroups = _irAdoptionGroupsNeedingConfirmation_(pf.groups);
+        for (var _ai = 0; _ai < _adoptGroups.length; _ai++) {
+            if (!_irConfirmLegacyAdoption_(_adoptGroups[_ai])) {
+                // §F.4 — ZERO REQUEST, ZERO WRITE. The queued cancels are put back exactly as the pre-flight
+                // refusal above puts them back, so nothing at all happened.
+                if (cancels.length) _pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels);
+                console.warn('[replen] legacy adoption NOT confirmed — zero rows written, zero requests issued');
+                return;
+            }
+            _adoptApproved[_adoptGroups[_ai].groupKey] = true;
+        }
+
         // A route whose From/To/Method changed now belongs to a DIFFERENT header. Its line under the OLD header
         // is not migrated (that would re-key an identity); it is soft-cancelled so the plan cannot be counted
         // twice — once under the header it left and once under the header it joined.
@@ -3488,7 +3614,7 @@ function _flushDraftDbPersist(sku) {
         var outcomes = [];
         var chain = Promise.resolve();
         pf.groups.forEach(function (g) {
-            chain = chain.then(function () { return _irPersistOneRouteGroup_(sku, ctx, g); })
+            chain = chain.then(function () { return _irPersistOneRouteGroup_(sku, ctx, g, _adoptApproved[g.groupKey] === true); })
                 .then(function (o) { outcomes.push(o); });
         });
         return chain.then(function () {
@@ -3719,6 +3845,18 @@ function _hydrateAllocationDraftFromDb(ctx) {
             function hstr(snake, camel) { var v = (dh[snake] != null && dh[snake] !== '') ? dh[snake] : (draft[camel] != null ? draft[camel] : ''); return String(v == null ? '' : v).trim(); }
             var hFrom = hstr('recommended_source_warehouse_id', 'recommendedSourceWarehouseId');
             var hTo = hstr('recommended_destination_warehouse_id', 'recommendedDestinationWarehouseId');
+            // F1-7N-FB-4F-B6 §D.3 — the OTHER persisted destination axis. B4 appended destination_marketplace to
+            // the header, so a marketplace route finally has somewhere to be stored; before that this hydrate had
+            // no persisted marketplace to read and invented one from the page filter instead.
+            var hMkt = hstr('destination_marketplace', 'destinationMarketplace');
+            // §D.1-§D.5 — ONE AUTHORITY, and it is the STORED ROW. IRWarehouse.resolvePersistedDestination is the
+            // client mirror of 69_ ricDestinationIdentity_ (warehouse XOR marketplace, else a typed state). The
+            // page scope is passed ONLY so the marketplace token can carry the country the option list is built
+            // with — it can no longer supply the destination itself.
+            var hDest = (window.IRWarehouse && window.IRWarehouse.resolvePersistedDestination)
+                ? window.IRWarehouse.resolvePersistedDestination({ destination_warehouse_id: hTo, destination_marketplace: hMkt }, ctx)
+                : { state: hTo ? 'PERSISTED_WAREHOUSE' : 'DESTINATION_CONFIRMATION_REQUIRED',
+                    type: '', warehouse_id: hTo, marketplace: '', token: hTo, confirmationRequired: !hTo };
             var hMethod = hstr('recommended_shipping_method', 'recommendedShippingMethod');
             var hLastMile = hstr('recommended_last_mile_delivery', 'recommendedLastMileDelivery');
             var hGenType = hstr('generation_type', 'generationType') || 'user_created';
@@ -3755,9 +3893,25 @@ function _hydrateAllocationDraftFromDb(ctx) {
                     recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
                     note: raw.note == null ? '' : String(raw.note),
                     source_warehouse_id: lineSrc || hFrom,  // line-level source wins; else the header From (route on header)
-                    destination_warehouse_id: hTo,          // To — header route (the shipment group's destination)
-                    destination_type: hTo ? '' : 'MARKETPLACE_DESTINATION',
-                    destination_marketplace: hTo ? '' : (ctx.marketplace || ''),
+                    // F1-7N-FB-4F-B6 §D — THE THREE DESTINATION FIELDS NOW COME FROM ONE RESOLVED ANSWER.
+                    // They used to read:
+                    //     destination_warehouse_id: hTo,
+                    //     destination_type: hTo ? '' : 'MARKETPLACE_DESTINATION',
+                    //     destination_marketplace: hTo ? '' : (ctx.marketplace || ''),
+                    // so EVERY header with a blank warehouse came back claiming a marketplace destination equal to
+                    // whatever the page was filtered to. That value then passed the completeness gate, was written
+                    // back on the next save, and made a destination-less legacy row indistinguishable from a real
+                    // Amazon route. A blank stored destination now stays blank.
+                    destination_warehouse_id: hDest.warehouse_id,
+                    destination_type: hDest.type,
+                    destination_marketplace: hDest.marketplace,
+                    // §D.6/§D.7 — the EXACT selector option value, so a persisted destination actually renders as
+                    // selected. This is the half of the round trip the save path always emitted and the hydrate
+                    // never did, which is why the To cell showed its placeholder for a route that HAD hydrated.
+                    destination_token: hDest.token,
+                    // §D.5 — the typed state a destination-less route carries, so the UI can say "confirm this"
+                    // instead of silently selecting something.
+                    destination_state: hDest.state,
                     shipping_method: hMethod,               // Method — header route
                     last_mile_delivery: hLastMile,          // Last-Mile — header route
                     generation_type: hGenType               // generation_type is a HEADER column, not a line column
@@ -3787,6 +3941,58 @@ function _hydrateAllocationDraftFromDb(ctx) {
     } catch (e) { console.warn('[replen] hydrate draft error:', e); return false; }
 }
 window._hydrateAllocationDraftFromDb = _hydrateAllocationDraftFromDb;
+
+// F1-7N-FB-4F-B6 §C.3 — THE HYDRATE HAD NO SCOPE TO RUN IN, WHICH IS WHY 800 RENDERED AS 0.
+//
+// _restoreAllocationDraftFromSession is called at MOUNT, and its first act is `var ctx = _replenCtx()`, which
+// reads the two <select> elements. At mount those selects have just been injected with the markup and are
+// EMPTY — populateReplenFiltersFromRegistry and _irBootstrapScope_/_irSetSelectors_ both run later, inside
+// _irMountAfterLoad. So `ctx.country` and `ctx.marketplace` are both '', the guard
+// `(ctx.country || ctx.marketplace)` is false, and _hydrateAllocationDraftFromDb IS NEVER CALLED AT ALL.
+//
+// The page then had no other hydrate on the normal path (the only other call site is the AI-Plan generation
+// readback, which is gated off), so replenAllocationDraft.bySku stayed empty, _allocationDraftRowsFor returned
+// null, and initializeShippingAllocation fell to its SECOND branch: the default Add Route editor seeded with
+// `parseInt(skuData.suggestedQty) || 0`. That editor showing 0 is the "Qty 0" the operator sees. The persisted
+// 800 was never lost — it was never read.
+//
+// So the hydrate happens where the scope is actually KNOWN and VALIDATED: a confirmed Search. That is a user
+// action, not page load, and it is already the one place _irSearch.applied is assigned. Single-flight and
+// scope-guarded, so a superseded Search cannot paint an older station's routes.
+var _irDraftHydrateInFlight = false;
+var _irDraftHydrateScopeKey = '';
+function _irHydrateDraftForAppliedScope_() {
+    var ctx = (typeof _replenCtx === 'function') ? _replenCtx() : null;
+    if (!ctx || !(ctx.country || ctx.marketplace)) return Promise.resolve(false);
+    var key = [ctx.company, ctx.country, ctx.marketplace].join('|');
+    if (_irDraftHydrateInFlight) { _irDraftHydrateScopeKey = key; return Promise.resolve(false); }
+    _irDraftHydrateInFlight = true;
+    _irDraftHydrateScopeKey = key;
+    function done(v) { _irDraftHydrateInFlight = false; return v; }
+    return Promise.resolve()
+        .then(function () {
+            if (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
+                typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) {
+                return window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
+            }
+            return null;
+        })
+        ['catch'](function () { return null; })
+        .then(function () {
+            if (_irDraftHydrateScopeKey !== key) return done(false);   // a newer Search superseded this one
+            var ok = false;
+            try { ok = _hydrateAllocationDraftFromDb(ctx); } catch (e) { ok = false; }
+            if (ok) {
+                // The DB is the SSOT for what is persisted, so any prior UNSAVED mark is void — the same rule
+                // _restoreAllocationDraftFromSession applies after its own successful hydrate.
+                _irUnsavedRoutes = {};
+                try { _irRenderUnsavedBanner_(); } catch (eB) {}
+                try { renderReplenishment(); } catch (eR) {}
+            }
+            return done(ok);
+        })['catch'](function () { return done(false); });
+}
+window._irHydrateDraftForAppliedScope_ = _irHydrateDraftForAppliedScope_;
 function _clearAllocationDraft() {
     replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
     window.KM.shippingAllocationDraft = replenAllocationDraft;
@@ -3997,6 +4203,8 @@ function _saveAllocationDraftFromDom(sku) {
         var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
         var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
         var lineId = rowEl.getAttribute('data-line-id') || '';   // persisted Draft line identity (§6)
+        // F1-7N-FB-4F-B6 §F — what the DATABASE held for this route's destination when it was hydrated.
+        var priorDestState = rowEl.getAttribute('data-dest-state') || '';
         var boundDraftId = rowEl.getAttribute('data-draft-id') || '';   // the header this route is persisted under
         var boundGroupKey = rowEl.getAttribute('data-group-key') || ''; // the route group it was persisted as
         // ALL rows are kept in the local render/recovery draft so an in-progress (still incomplete) route
@@ -4018,7 +4226,12 @@ function _saveAllocationDraftFromDom(sku) {
             expected_arrival: expectedArrival,
             source_reason: 'pm_adjustment',
             allocation_draft_id: boundDraftId,
-            route_group_key: boundGroupKey
+            route_group_key: boundGroupKey,
+            // §D.6 — the selector's own value, kept so a re-render selects exactly what the user selected. For a
+            // warehouse this equals destination_warehouse_id; for a marketplace it is the logical token.
+            destination_token: destRawValue,
+            // §F — carried forward, never re-derived: this row's PERSISTED destination state.
+            destination_state: priorDestState
         };
         if (_isRouteComplete(row)) {
             // A complete route is persistable. Assign a STABLE line id the first time so every later edit
@@ -4499,7 +4712,14 @@ function _renderExecutionRoute(sku, route) {
     // Warehouse picker candidates for the current scope + the saved (or name-resolved) selections.
     var cand = _execWarehouseCandidates();
     var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
-    var toSelId = route.destination_warehouse_id || _execResolveIdByName(cand.to, route.destination);
+    // F1-7N-FB-4F-B6 §D.6/§E.2 — the persisted TOKEN selects first. For a warehouse the token IS the id, so
+    // this is a no-op for that case; for a marketplace it is the only value the option list can match. The
+    // display-name fallback is kept last for a locally-collected row that carries no token.
+    var toSelId = route.destination_token || route.destination_warehouse_id || _execResolveIdByName(cand.to, route.destination);
+    // §E.3/§F.1 — a persisted route whose destination the database does not hold. It renders with its real
+    // From / Method / Qty and a BLANK To carrying a stated requirement — never a pre-selected marketplace.
+    var needsDest = (route.destination_state === 'DESTINATION_CONFIRMATION_REQUIRED' ||
+        route.destination_state === 'DESTINATION_AMBIGUOUS');
     var fromDisabled = cand.from.length ? '' : ' disabled';
     // System Repair 1: To is enabled only when there are REAL candidates (Amazon no longer force-enabled
     // via a synthetic option). Empty → disabled + explicit empty state, for every site type alike.
@@ -4524,9 +4744,17 @@ function _renderExecutionRoute(sku, route) {
     // save could soft-cancel or overwrite the wrong shipment group.
     if (route && route.allocation_draft_id) row.setAttribute('data-draft-id', String(route.allocation_draft_id));
     if (route && route.route_group_key) row.setAttribute('data-group-key', String(route.route_group_key));
+    // F1-7N-FB-4F-B6 §F — a collect rebuilds every row from the DOM, so the fact that THIS row came out of the
+    // database WITHOUT a destination has to survive on the row itself. Without it the next save could not tell an
+    // adoption of an existing legacy header apart from an ordinary edit, and adoption is the one that needs an
+    // explicit confirmation before anything is written.
+    if (route && route.destination_state) row.setAttribute('data-dest-state', String(route.destination_state));
     row.innerHTML =
         '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
+        '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
         '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
+        (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
+        '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
         '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
         '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival">' + _execEsc(eta.text) + '</span>' +
@@ -6010,6 +6238,12 @@ function _irApplySearch_(pending, mySeq) {
     // on every selector change — that was root cause 2/3 of the pre-Search auto-load. One request set per
     // confirmed Search; never per SKU; never both engines.
     if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
+    // F1-7N-FB-4F-B6 §C.3 — hydrate the persisted Execution Plan for the station that was just APPLIED. The
+    // mount cannot do this (see _irHydrateDraftForAppliedScope_): at mount there is no scope to hydrate for.
+    // NOT AWAITED — it re-renders itself when it has something, and it never blocks the first paint.
+    if (typeof _irHydrateDraftForAppliedScope_ === 'function') {
+        try { _irHydrateDraftForAppliedScope_(); } catch (eH) {}
+    }
     // The Execution-Plan Method catalog is only reachable after a Search (it needs an expanded row), so it is
     // preloaded HERE rather than on mount. Deduped and cached per APPLIED SCOPE inside the method registry —
     // never one fetch per expand, and never a fetch for a station the user has not applied.

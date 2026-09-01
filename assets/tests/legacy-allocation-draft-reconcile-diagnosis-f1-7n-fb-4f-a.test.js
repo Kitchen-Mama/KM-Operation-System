@@ -649,7 +649,7 @@ section('§L — NOTHING ELSE MOVED');
   // EARLIER. That still catches the defect this was written for (a diagnosis round quietly editing the writer,
   // which would have to move the stamp backwards or leave it behind) and it stays true afterwards.
   var _l7 = (SAD_SRC.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1] || '';
-  var _l7Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B3'];
+  var _l7Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
   ok(_l7Order.indexOf(_l7) >= _l7Order.indexOf('F1-7N-FB-4D'),
     'L7 16_ is at the FB-4D floor or later — FB-4F-A itself changed no writer (' + _l7 + ')');
   ok(/var EPC_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(EPC_SRC), 'L8 68_ did not change this round either');

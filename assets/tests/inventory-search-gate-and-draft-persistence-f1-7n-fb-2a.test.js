@@ -250,10 +250,12 @@ eq(_irSaveAcknowledged_({ success: true }), null, 'D7. a bare success flag is NO
 eq(_irSaveAcknowledged_({ success: false }), null, 'D7. a failure is never an ack');
 // F1-7N-FB-4B-ADDENDUM — STRENGTHENED. The ack requirement moved from the single-header flush into the
 // per-route-group writer, so it is now enforced for EVERY header a multi-route save touches rather than for one.
-var groupWriter = (INV.match(/function _irPersistOneRouteGroup_\(sku, ctx, g\)[\s\S]*?\n}/) || [''])[0];
+// F1-7N-FB-4F-B6 — arity-tolerant: the writer took a fourth parameter this round and the assertion is about
+// what the writer DOES, not about how many arguments it takes.
+var groupWriter = (INV.match(/function _irPersistOneRouteGroup_\(sku, ctx, g[^)]*\)[\s\S]*?\n}/) || [''])[0];
 ok(/_irSaveAcknowledged_\(hres\)/.test(groupWriter) && /PERSISTENCE_NOT_ACKNOWLEDGED/.test(groupWriter),
   'D7. EVERY route group requires the persistence ack and treats an unacknowledged response as a FAILED save');
-ok(/_irPersistOneRouteGroup_\(sku, ctx, g\)/.test(flush),
+ok(/_irPersistOneRouteGroup_\(sku, ctx, g[,)]/.test(flush),
   'D7. the save flow routes every group through that acknowledged writer');
 ok(/_irClearRouteUnsaved_\(sku\)/.test(flush), 'D7. and only a fully acknowledged save clears the UNSAVED mark');
 

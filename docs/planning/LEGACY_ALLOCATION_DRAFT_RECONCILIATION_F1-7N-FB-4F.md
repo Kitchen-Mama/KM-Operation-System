@@ -1352,3 +1352,239 @@ by seven mutations.
 
 No destination backfill. No ETA backfill. No ID rewrite. No K4 id creation. No submit. No reconciliation of any
 legacy row. The verdict is unknown until the R1 live run prints it, and an unknown verdict authorises nothing.
+
+
+## B6 — LEGACY ROUTE EXPLICIT CONFIRMATION + HYDRATION REPAIR
+
+The first round in this series that CHANGES what the operator sees and what the database holds. B1–B5 measured;
+B6 acts on the measurement, and only on the measurement.
+
+### B6.0 — The live baseline this round acts on
+
+The B5 SUMMARY run against production, taken as fact and never re-derived from a fixture (§B5.9's rule):
+
+| | |
+|---|---|
+| drafts | 35 cols · 4 rows · `sf:870364de` · gate ACCEPTED |
+| lines | 31 cols · 6 rows · `sf:122f48c3` · gate ACCEPTED |
+| totals | raw quantity 1020 · matched lines 6 · orphans 0 · downstream stored FK 0 |
+| checksum | `fb4b5-1:4e40c4f3` |
+
+| | scope | service | destination | lines | qty | decision |
+|---|---|---|---|---|---|---|
+| **H1** | ResUS / US / Amazon | `sea_express` | **blank** | 0 | 0 | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
+| **H2** | ResUS / US / Amazon | `air` | **blank** | 0 | 0 | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
+| **H3** | ResTW / JP / Amazon | `air` | **blank** | 5 | 220 | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
+| **H4** | ResUS / US / Amazon | `sea` | **blank** | 1 | 800 | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
+
+`sea_express` / Amazon / 400 / ETA `2026-10-16` is **ATTEMPT EVIDENCE ONLY**. It is persisted nowhere, it must
+never overwrite `sea` / 800, and the date must never be backfilled.
+
+### B6.1 — The seven diagnostic answers, each demonstrated before anything was changed
+
+**1. Why the hydrate synthesised `destination_marketplace = ctx.marketplace`.**
+The three destination fields were all derived from ONE input — `hTo`, the persisted destination WAREHOUSE:
+
+```js
+destination_warehouse_id: hTo,
+destination_type: hTo ? '' : 'MARKETPLACE_DESTINATION',
+destination_marketplace: hTo ? '' : (ctx.marketplace || ''),
+```
+
+A blank warehouse was read as "therefore a MARKETPLACE destination", and the only marketplace the page had in
+hand was its own filter. Before B4 there was no `destination_marketplace` column to read, so the fallback was
+the only way a marketplace route could round-trip at all — it was a workaround that outlived its reason and
+became a fabrication. The value then passed the completeness gate and was written back on the next save.
+
+**2. Why the To selector still rendered its placeholder.**
+`_renderExecutionRoute` computed `toSelId = route.destination_warehouse_id || _execResolveIdByName(...)`. The
+hydrate emitted `destination_type` and `destination_marketplace`; the `<select>` matches on an option **value**,
+which is the token `MARKETPLACE_DESTINATION:Amazon:US`, and neither field is that token. Measured: the Amazon
+option IS in the list, and supplying the token DOES select it. The gap was the token, never the option list.
+The save path emitted the token and the hydrate did not — an asymmetric round trip.
+
+**3. Why H4's persisted 800 showed as Qty 0.** *(the answer is not what the symptom suggests)*
+The quantity was never lost. Run the shipped hydrate against the live row and `planned_qty` is 800. **The
+hydrate never ran.** `_restoreAllocationDraftFromSession` is called at MOUNT and its first act is
+`var ctx = _replenCtx()`, which reads the two scope `<select>` elements — and at mount those are still empty,
+because `populateReplenFiltersFromRegistry` and `_irBootstrapScope_` / `_irSetSelectors_` run later, inside
+`_irMountAfterLoad`. With an empty scope the guard `(ctx.country || ctx.marketplace)` is false and the hydrate
+is skipped entirely. The only other call site is the AI-Plan generation readback, which is gated off. So
+`bySku` stayed empty, `_allocationDraftRowsFor` returned null, and `initializeShippingAllocation` fell to its
+SECOND branch — the default Add Route editor, seeded with `parseInt(skuData.suggestedQty) || 0`. **That editor
+showing 0 is the "Qty 0".** It was never H4's row at all.
+
+**4. Why both simulations return `K4_IDENTITY_RECONCILIATION_REQUIRED`.**
+Not one live header stores a resolvable destination, so K4 can classify none of them and finds no match — it
+would CREATE. But before creating, the resolver asks whether a row exists that K2 WOULD have claimed. K2 has no
+destination dimension, so a destination-less row and a marketplace route produce the same key. One does, so
+creating beside it would duplicate the route and adopting it would migrate a live row — both forbidden without
+a human, hence BLOCK.
+
+**5. The rival, per simulation.** Service is a K2 dimension and `sea` never answers for `sea_express`:
+
+* `sea_express` + Amazon → **H1** (the `sea_express` header, 0 lines)
+* `sea` + Amazon → **H4** (the `sea` header, the one holding the 800)
+
+**6. Do the zero-line H1/H2 participate in rendering, identity matching, or both?**
+**Identity matching: yes. Route rendering: no. And a third thing nobody asked about: they were being sent to
+Submit.** The hydrate puts all three US headers into `allocationDraftIds` but produces no `bySku` row for a
+header with no lines, so nothing renders. On the server they are ACTIVE rows and therefore candidates — H1 is
+the `sea_express` rival above. `_replenActiveAllocationDraftIds` then sent every hydrated header id to Submit,
+which is where the third fact bites (see §B6.4).
+
+**7. Can an existing action do this, or is a contract change required?**
+**An existing action.** `sadAtomicUpsertCore_` already accepts `allow_legacy_reconcile`, a USER-owned migration
+authority, and already passes it to the resolver — the K4 branch simply ignored it. B6 gives that flag a
+second, narrower meaning inside the K4 branch and enforces every condition server-side. **Action contract stays
+10, `SYS_REQUIRED_ACTION_LIST_VERSION_` stays 9, transport contract stays 1. No new action, no new route.**
+
+### B6.2 — One destination authority (§D)
+
+`IRWarehouse.resolvePersistedDestination(persisted, scope)` is the client mirror of 69_ `ricDestinationIdentity_`:
+warehouse XOR marketplace, read from the STORED row and nothing else. Four exhaustive states:
+
+| state | To renders | route complete? |
+|---|---|---|
+| `PERSISTED_WAREHOUSE` | the stored warehouse, selected by its id | yes |
+| `PERSISTED_MARKETPLACE` | the stored marketplace, selected by `MARKETPLACE_DESTINATION:<mkt>:<CC>` | yes |
+| `DESTINATION_CONFIRMATION_REQUIRED` | **blank, with a stated requirement** | **no** |
+| `DESTINATION_AMBIGUOUS` (both stored) | **blank, refused — not resolved by preferring one** | **no** |
+
+TWO fallbacks were removed, not one. The hydrate's was a display accident; the second lived in
+`routeHeaderFields` — `route.destination_marketplace || route.destination_country || scope.marketplace || ''`
+— and fed the WRITE payload. Since B4 made `destination_marketplace` a stored column, a value invented there
+is a permanent business fact. It could also have written a COUNTRY into a marketplace field.
+
+The token format is now constructed in exactly one place; `amazonLogicalToken` delegates to it. §D.8 forbids a
+second destination dictionary, and two functions that each know the layout are exactly that.
+
+### B6.3 — The adoption algorithm (§G), in resolution order
+
+Inside the K4 branch of `sadResolveActiveDraftK2OrK3_`, all of it server-enforced:
+
+1. **Exact persisted K4 match** → REUSE that row under its **own stored id**. Unchanged.
+2. **K4 contested** → `BLOCKED_CONFLICT`, zero write. Unchanged.
+3. **More than one unclassifiable legacy candidate** → BLOCK `K4_IDENTITY_RECONCILIATION_REQUIRED`, zero write.
+   Checked **before** the adoption branch: no amount of user authority makes "which of these two did you mean?"
+   answerable by a resolver.
+4. **Exactly one unclassifiable legacy candidate**, matching on all ten K2 dimensions and differing only by a
+   missing destination → **adoptable, and only when BOTH hold**:
+   * `opts.allowLegacyReconcile === true` — the explicit, user-given authority; and
+   * `ricDestinationIdentity_(header).ok` — the request actually CARRIES a destination. Adopting a legacy row
+     to write another blank destination onto it moves an identity for no gain, which is worse than refusing.
+
+   The **stored id is returned unchanged**: updated in place, never re-keyed, no second header, and every
+   `shipping_allocation_draft_lines` row that points at it keeps pointing at it.
+5. Otherwise → CREATE a distinct K4 route. A classifiable different destination is a different route.
+
+Terminal, out-of-scope and service-mismatched rows are excluded by mechanisms that already existed:
+`sadReadActiveHeaderRows_` drops terminal rows, and company / country / marketplace / planning cycle / source
+page / source warehouse / service / last-mile / group number are all K2 dimensions. A terminal header named
+EXPLICITLY by id is refused a second time by the writer's own `IMMUTABLE_TERMINAL_STATUS` guard.
+
+**`destination_marketplace` joined `SAD_K2_HEADER_FP_`, and without that the whole thing is a silent no-op.**
+Giving a destination-less header its first destination changes nothing else — same source, service, status,
+quantity. Outside the fingerprint, prior and incoming compared EQUAL, the writer returned `REUSE` with
+`zero_write`, and the operator would have been told the save succeeded while the column stayed blank. The
+fingerprint is computed per request from both sides and never stored, so adding a field both sides leave blank
+changes nothing for any other row and no id moves.
+
+### B6.4 — The zero-line submit decision (§I), determined rather than guessed
+
+`sadSubmitToShippingPlansCore_` validates EVERY requested draft id. Gate (3) refuses a header with no lines
+(`NO_LINES`), and **any** error fails the WHOLE batch with `SUBMIT_VALIDATION_FAILED` and zero writes.
+
+> **Decision: a zero-line active header sent to Submit blocks the entire submit.** It does not merely contribute
+> nothing — it makes Submit impossible for every real route beside it.
+
+§J forbids deleting H1/H2, so the fix cannot be on the server: **the CLIENT must stop sending them.**
+`_replenActiveAllocationDraftIds` now restricts its two fallbacks to ids that a complete on-screen route is
+actually bound to. The server gate is untouched — it is still the authority, and nothing about it was weakened.
+
+Beside it, a new client gate: a route that plans a quantity with **no persisted destination** blocks Submit
+before any request, naming each route. Before B6 this state could not appear on screen, because the hydrate
+synthesised a destination for every route; now that a destination-less row comes back honestly, Submit needs
+its own named refusal rather than silently dropping the route.
+
+### B6.5 — The confirmation (§F)
+
+An adoption is the one save on this page that mutates a live row's meaning, so it is the one save that is not
+silently debounced. `destination_state` travels hydrate → `data-dest-state` → collect, so the gate asks about
+what was **PERSISTED** rather than re-deriving it from the current selection. The dialog names From, the chosen
+To, Method, Qty, an Expected Arrival **only when one is explicitly present**, and states that the existing
+record — by id — will be updated.
+
+The question is asked **before** the stale-group cancels and **before** the line-cancel dispatch, both of which
+are themselves writes; asking after them would make "cancel writes nothing" false. A decline returns out of the
+flush and puts the queued cancels back. **No reachable confirm function is not consent** — it refuses.
+
+### B6.6 — Expected Arrival (§H)
+
+`sea` and `sea_express` remain two services with two rate cards (B1). There is no prefix ladder left in
+`_irMethodToLeadKey` and `ricCanonicalService_` returns `''` for an unknown spelling rather than a neighbour's
+number. `expected_arrival` is in `SAD_K2_LINE_FP_`, so an ETA-only edit forces a real write; it is in NEITHER
+group key, so it updates the SAME route. `2026-10-16` appears in no shipped source.
+
+**One item is deliberately NOT implemented.** §H.5 asks that an explicitly saved ETA be persisted. The shipped
+Execution Plan has **no ETA input** — the cell is a `<span>` holding a value COMPUTED from carrier lead times.
+Wiring that display value into the line payload would persist a derived date as though the operator had chosen
+it, which is precisely the backfill §H.7 forbids. So `buildDraftLinePayload` still carries no `expected_arrival`
+from the display, and the server-side path is proven instead by saving an ETA through the writer directly.
+**Giving the operator a real ETA field is a separate decision and is not taken here.**
+
+### B6.7 — §J: the two empty headers, recorded for a LATER decision
+
+H1 and H2 are plausible test remnants. **B6 deletes nothing.**
+
+| | |
+|---|---|
+| lines | 0 |
+| quantity | 0 |
+| downstream reference | none |
+| status | active `draft` |
+| destination | missing |
+
+They stay exactly as they are, active, and are simply no longer sent to Submit. No physical delete, no
+auto-cancel, no expiry. Their safe disposition can be reviewed **after** adoption behaviour has been live long
+enough to show whether either of them is actually reused — which is a thing only running the fixed page can
+tell us, and is the reason the decision is deferred rather than taken now.
+
+### B6.8 — Deployment (§K)
+
+| axis | value |
+|---|---|
+| action contract | **10, unchanged** |
+| required-action list version | **9, unchanged** (`SYS_REQUIRED_ACTION_LIST_VERSION_`) |
+| transport contract | **1, unchanged** |
+| `SAD_BUILD_VERSION_` | `F1-7N-FB-4F-B3` → **`F1-7N-FB-4F-B6`** (16_ changed) |
+| `RIC_BUILD_VERSION_` | `F1-7N-FB-4F-B3`, **unmoved** (69_ unchanged) |
+| bundle | **not rebuilt** — the bundle ports `assets/js/core/` only; hash `d782ea6d…c36ac` unchanged |
+
+`APPS_SCRIPT_SYNC_REQUIRED`, in order:
+
+1. `16_shipping_allocation_handlers.gs` — the adoption path + the fingerprint + the owner stamp
+2. `63_api_v1_system_health.gs` — the manifest expectation for that stamp
+
+63_ must not be published ahead of 16_: it would declare a stamp the deployment does not carry and every page
+would report `DEPLOYMENT_PARTIAL_SYNC`. **A deployment version must be created after both are saved** — the
+frontend's identity probe is what tells a page whether the writer it depends on is actually there.
+
+`FRONTEND_PUSH_REQUIRED`: `assets/js/pages/inventory-replenishment.js`,
+`assets/js/utils/inventory-compat.js`, `assets/css/pages/inventory-replenishment.css`, `index.html`.
+Application token `skudisplayinit-20260901` → **`fb4fb6-legacyroute-20260901`** across all 18 co-deployed
+references; the inventory stylesheet keeps its own token family and moves `ffcols-20260820` →
+`irexecplan-20260901`. No reference is duplicated and no map / earth token moved.
+
+**ORDER MATTERS AND IT IS NOT THE USUAL ONE.** The frontend can be pushed first and is harmless on its own: a
+destination-less route renders honestly, refuses to save, and blocks Submit with a named reason — which is
+strictly better than today. But **the adoption cannot succeed until 16_ is synced**, and until then an
+explicit confirmation will end in `K4_IDENTITY_RECONCILIATION_REQUIRED` with zero writes. That is fail-closed
+and correct, not a broken state — but it will look like the fix did not work, so sync Apps Script first if
+both are going out together.
+
+### B6.9 — What B6 does NOT authorise
+
+No destination backfill. No ETA backfill. No ID rewrite. No deletion, cancellation or expiry of H1/H2. No
+submit. No migration script. Every write in this round happens because a human chose a destination and
+confirmed it, one route at a time.
