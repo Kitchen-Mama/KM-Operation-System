@@ -759,10 +759,21 @@ function TEMP_shippingAllocationSchemaB2DryRun_() {
   var PL = tb2ReadTable_(ss, TEMP_FB4FB2_PLAN_LINES_);
 
   // ---- 1. SCHEMA CENSUS + APPEND PROPOSAL --------------------------------------------------------------------
-  var hCensus = tb2TableCensus_(H, TEMP_FB4FB2_PROPOSED_[0],
-    SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_, SAD_LIFECYCLE_TAIL_COLUMNS_);
-  var lCensus = tb2TableCensus_(L, TEMP_FB4FB2_PROPOSED_[1],
-    SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_, []);
+  // F1-7N-FB-4F-B3 - ASK THE AUTHORITIES THE WRITE GATE ACTUALLY USES. B2 read the pre-B3 constants, which was
+  // correct then and became a lie the moment B3 taught the runtime the two columns: the diagnostic would have
+  // gone on reporting the line append as refused while the gate had already been taught to accept it. The whole
+  // value of this tool is that it does not hold a second opinion, so it follows the gate rather than a snapshot
+  // of it. Where the file predates B3 (an unsynced deployment) the older constants are used, so it still runs.
+  var hAuthority = (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ !== 'undefined')
+    ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ : SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_;
+  var hTail = (typeof SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ !== 'undefined')
+    ? SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ : SAD_LIFECYCLE_TAIL_COLUMNS_;
+  var lAuthority = (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ !== 'undefined')
+    ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ : SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_;
+  var lTail = (typeof SAD_LINE_ETA_TAIL_COLUMNS_ !== 'undefined') ? SAD_LINE_ETA_TAIL_COLUMNS_ : [];
+
+  var hCensus = tb2TableCensus_(H, TEMP_FB4FB2_PROPOSED_[0], hAuthority, hTail);
+  var lCensus = tb2TableCensus_(L, TEMP_FB4FB2_PROPOSED_[1], lAuthority, lTail);
   out.sections['1_schema'] = { tables: [hCensus, lCensus] };
 
   // The lifecycle tail state, from 16_'s own authority. This is the ORDERING PRECONDITION: destination_marketplace

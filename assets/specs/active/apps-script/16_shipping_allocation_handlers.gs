@@ -73,6 +73,41 @@ var SAD_LIFECYCLE_TAIL_COLUMNS_ = ['generation_run_id', 'expired_at', 'expired_b
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ =
   SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_LIFECYCLE_TAIL_COLUMNS_);
 
+// ============================================================================================================
+// F1-7N-FB-4F-B3 - CODE-FIRST SCHEMA COMPATIBILITY. The runtime learns the two new columns BEFORE they exist.
+//
+// WHY THIS ORDER, AND WHY THE OPPOSITE ORDER BREAKS THE PAGE. B2 measured it against this file's own gate: the
+// header write gate is POSITIONAL AND EXACT, so a column the authority does not know about is not an inert
+// blank - it is a positional mismatch, and every allocation read and write fails closed the moment it appears.
+//     header live 30 + destination_marketplace -> COL30_IS_destination_marketplace_EXPECTED_generation_run_id
+//     header live 34 + destination_marketplace -> COL_COUNT_35_EXPECTED_30_TO_34
+//     line   live 30 + expected_arrival        -> COL_COUNT_31_EXPECTED_30
+// So the authority must learn them FIRST, as OPTIONAL tail entries, which makes a pre-append sheet and a
+// post-append sheet BOTH exact and leaves the two operations order-independent in either direction. That is the
+// same conclusion, for the same reason, that the lifecycle-tail note above reached for its four columns.
+//
+// AND THE EXISTING CANONICAL CONSTANT IS DELIBERATELY NOT WIDENED. TEMP_migrate_shipping_allocation_ai_lifecycle
+// reads SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ as ITS canonical target and appends everything past the
+// live length. Widening it there would make the LIFECYCLE migration append destination_marketplace too - one
+// tool quietly doing another's job, at an index the lifecycle order does not own. The gate gets a new, wider
+// authority; the migration keeps targeting exactly the 34 it was written for.
+//
+// THE ROUTE-IDENTITY TAIL, at index 34 and NEVER at 30. The lifecycle tail owns 30..33 by a frozen decision, and
+// TEMP_migrate_shipping_allocation_ai_lifecycle refuses any live header carrying an unknown extra column. Placing
+// destination_marketplace at 30 would therefore not merely be untidy - it would refuse that queued migration
+// permanently. The two appends are ordered, not interchangeable: lifecycle tail first, route identity second.
+var SAD_ROUTE_IDENTITY_TAIL_COLUMNS_ = ['destination_marketplace'];
+
+// The complete optional tail the write gate accepts, in canonical order: lifecycle 30..33, route identity 34.
+var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_.concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_);
+
+// The FULL header authority the write gate validates against: 30 required + 5 optional = 35. Accepted live
+// lengths are 30..35 and every present column must sit at its exact canonical index, so destination_marketplace
+// at 30, a lifecycle column out of order, an unknown name, a duplicate, a case variant, a blank intervening
+// header and a 36th column are each refused by the SAME positional rule rather than by five separate checks.
+var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =
+  SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
+
 var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // identity
   'allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku',
@@ -97,6 +132,19 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // status / audit
   'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
 ];
+
+// F1-7N-FB-4F-B3 - THE LINE ETA TAIL. `expected_arrival` is a LINE field in the canonical model
+// (DATABASE_RELATIONSHIP_MAP §360) and is spelled exactly as that model spells it - not `expected_arrival_date`,
+// and not on the header. Being line-owned is not a filing preference: route identity is a HEADER key, so a line
+// attribute CANNOT reach it, and "same route, changed ETA updates the same route" is guaranteed by the schema
+// shape rather than by a rule someone has to remember.
+//
+// The line gate had NO optional-tail mechanism at all before this round - it demanded exactly 30 - which is why
+// B2 measured COL_COUNT_31_EXPECTED_30 for the append. It gets one now, on the same append-only terms as the
+// header: required stays 30 so a pre-append sheet is still exact, and 31 is exact once the column exists.
+var SAD_LINE_ETA_TAIL_COLUMNS_ = ['expected_arrival'];
+var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ =
+  SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.concat(SAD_LINE_ETA_TAIL_COLUMNS_);
 
 // F1-7N-FB-4C §D — `expired` joins the enum. It is NOT a synonym for `cancelled`: cancelled is a human
 // decision to abandon a plan, expired is the system recording that a NEWER SUCCESSFUL AI Plan run replaced this
@@ -390,7 +438,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4D';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4F-B3';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -516,7 +564,9 @@ var SAD_K2_LINE_FP_ = ['sku', 'site_sku', 'window_code', 'window_start_date', 'w
   'approved_supply_snapshot', 'calculated_gap_qty', 'source_initial_available_qty_snapshot',
   'source_available_before_allocation_snapshot', 'allocation_sequence', 'recommendation_reason', 'recommendation_flags',
   'recommended_qty', 'source_warehouse_id', 'source_warehouse_code_snapshot', 'planned_qty', 'units_per_carton',
-  'route_no', 'line_status'];
+  'route_no', 'line_status',
+  // F1-7N-FB-4F-B3 - the ETA must make a difference, or an ETA-only edit is read as "no change" and dropped.
+  'expected_arrival'];
 function sadFpVal_(v) { return String(v == null ? '' : v).trim(); }
 function sadK2PayloadFingerprint_(headerObj, linesArr) {
   headerObj = headerObj || {};
@@ -641,6 +691,13 @@ function sadRegenerateLinePatch_(existing, incoming) {
     patch.planned_qty = newRec;                                    // follows the new recommendation
   } // else: preserve the user's planned_qty (omit → no write)
   // note is USER-owned → never overwritten by regeneration (omit)
+  // F1-7N-FB-4F-B3 - expected_arrival is USER-SUPPLIED, and adopted ONLY when the save actually supplies one.
+  // A blank incoming ETA is omitted rather than written, so regeneration can never blank a date the operator
+  // set, and the server never reconstructs one it was not given. Existing lines stay blank until an
+  // authoritative save carries a value.
+  if (incoming.expected_arrival != null && String(incoming.expected_arrival).trim() !== '') {
+    patch.expected_arrival = String(incoming.expected_arrival).trim();
+  }
   return patch;
 }
 
@@ -871,7 +928,7 @@ function sadUpsertLinesKeyedCore_(body) {
         next_action: 'Run the read-only duplicate diagnostic for this header, remove the surplus physical rows, then re-save. This refusal wrote nothing.' } });
   }
 
-  var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
+  var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note', 'expected_arrival'];
 
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];
@@ -943,7 +1000,9 @@ function sadUpsertLinesKeyedCore_(body) {
       var rowObj = { allocation_draft_line_id: lineId, allocation_draft_id: draftId, created_at: now, updated_at: now,
         planned_qty: planned, recommended_qty: recQty };
       // Copy all remaining provided canonical fields (skip forbidden display fields).
-      SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.forEach(function (h) {
+      // B3 - the FULL authority, so expected_arrival is carried when the column exists. Iterating the REQUIRED
+      // 30 would have skipped it forever, which is the silent drop this round exists to end.
+      SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_.forEach(function (h) {
         if (h in rowObj) return;
         if (l[h] != null) rowObj[h] = String(l[h]);
       });
@@ -1065,6 +1124,89 @@ function handleUpsertShippingAllocationDraftAtomic_(body) {
 // still exact: the live header must be a BYTE-EXACT PREFIX of the authority, so a reorder, a rename, a blank, a
 // duplicate or ANY unknown extra column still fails closed with the same deterministic reason string. This is a
 // CLOSED allowance over four named columns - not the order-agnostic tolerance rule 9 forbids.
+// F1-7N-FB-4F-B3 - the LIVE header names of a sheet, trimmed, trailing blanks dropped. Read-only; this is the
+// only thing the compatibility layer needs to know about a sheet's shape, and it never writes to discover it.
+function sadLiveHeaderNames_(sh) {
+  var data = sh.getDataRange().getValues();
+  var a = (data && data.length ? data[0] : []).map(function (h) { return String(h == null ? '' : h).trim(); });
+  while (a.length && a[a.length - 1] === '') a.pop();
+  return a;
+}
+function sadHasColumn_(names, col) { return (names || []).indexOf(col) !== -1; }
+
+// K4 IS ACTIVATED BY THE SCHEMA, NEVER BY A FLAG. A deterministic identity that cannot be persisted is not an
+// identity - it is a number that disappears on write - so K4 is used only when the column that carries its
+// destination dimension PHYSICALLY EXISTS, and only when the frozen contract that computes it is actually
+// loaded. Before that, the resolver behaves exactly as it did, byte for byte.
+function sadK4SchemaReady_(headerNames) {
+  return sadHasColumn_(headerNames, 'destination_marketplace') &&
+    typeof ricK4GroupKey_ === 'function' && typeof ricK4DeterministicHeaderId_ === 'function' &&
+    typeof ricDestinationIdentity_ === 'function';
+}
+
+// NOTHING SUPPLIED IS EVER SILENTLY DROPPED. This is the rule the live sheet was broken by: the request said
+// Amazon and sea_express, the write SUCCEEDED, and the truth did not survive it - because the writer copies by
+// header NAME and a name with no column is simply skipped. A value that cannot be persisted must make the
+// request FAIL, with the typed reason, and write nothing.
+//
+// The rules themselves live in 69_api_v1_route_identity_contract.gs and are called, not copied - a second
+// implementation of an identity rule is a second answer waiting to disagree. When a supplied value needs that
+// contract and the contract is not loaded, this refuses rather than guessing; when nothing new is supplied it
+// never consults it at all, so a deployment that has 16_ but not yet 69_ behaves exactly as it does today.
+function sadSchemaRefusal_(header, lines, headerNames, lineNames) {
+  header = header || {};
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var wantsMarketplace = s(header.destination_marketplace) !== '';
+  var etaLines = 0;
+  (lines || []).forEach(function (l) { if (l && s(l.expected_arrival) !== '') etaLines++; });
+  var wantsService = s(header.recommended_shipping_method) !== '' || s(header.shipping_method) !== '';
+  var bothDest = s(header.recommended_destination_warehouse_id) !== '' && wantsMarketplace;
+
+  // The ETA is LINE-owned, so it is checked against the LINE schema. 69_'s predicate covers the header side.
+  if (etaLines && !sadHasColumn_(lineNames, 'expected_arrival')) {
+    return { error: 'EXPECTED_ARRIVAL_NOT_PERSISTABLE', schema_code: 'ALLOCATION_DRAFT_SCHEMA_COLUMN_ABSENT',
+      column: 'expected_arrival', table: 'shipping_allocation_draft_lines', lines_supplying_it: etaLines };
+  }
+  if (!wantsMarketplace && !bothDest && !wantsService) return null;
+  if (typeof ricRoutePersistability_ !== 'function') {
+    // Only reachable when a request actually needs the contract and the contract is absent.
+    if (wantsMarketplace || bothDest) {
+      return { error: 'ROUTE_IDENTITY_NOT_PERSISTABLE', schema_code: 'ROUTE_IDENTITY_CONTRACT_NOT_LOADED',
+        column: 'destination_marketplace', table: 'shipping_allocation_drafts' };
+    }
+    return null;
+  }
+  var v = ricRoutePersistability_(header, headerNames, lineNames);
+  if (v && v.persistable === false && v.refusals && v.refusals.length) {
+    var first = v.refusals[0];
+    return { error: first.code, schema_code: first.schema_code, column: first.column, table: first.table,
+      supplied: first.supplied, refusals: v.refusals };
+  }
+  return null;
+}
+
+// CREATE / REUSE / CONFLICT over the K4 group key among ACTIVE headers. The shape mirrors
+// sadK2ResolveActiveDraft_ deliberately, with two differences that matter:
+//
+//   1. Only rows whose OWN destination resolves are candidates. A legacy row that stores neither a destination
+//      warehouse nor a marketplace has no K4 identity to compare, so it is not a match - and it is not quietly
+//      treated as one either.
+//   2. REUSE returns the row's STORED id, whatever generation minted it. An existing SADH-K2- row that happens
+//      to key to this K4 group is adopted UNDER ITS OWN ID - never re-keyed, never duplicated. Re-keying would
+//      orphan every line row pointing at it.
+function sadK4ResolveActiveDraft_(rows, wantHeader) {
+  var ACTIVE = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+  var want = ricK4GroupKey_(wantHeader), matches = [];
+  (rows || []).forEach(function (r) {
+    if (!ACTIVE[String(r && r.status == null ? '' : r.status).trim().toLowerCase()]) return;
+    if (!ricDestinationIdentity_(r).ok) return;         // no resolvable destination = no K4 identity to compare
+    if (ricK4GroupKey_(r) === want) matches.push(String(r.allocation_draft_id == null ? '' : r.allocation_draft_id).trim());
+  });
+  if (matches.length === 0) return { status: 'CREATE', k4Key: want, allocation_draft_id: ricK4DeterministicHeaderId_(wantHeader) };
+  if (matches.length === 1) return { status: 'REUSE', k4Key: want, allocation_draft_id: matches[0] };
+  return { status: 'BLOCKED_CONFLICT', k4Key: want, conflictIds: matches };
+}
+
 function sadExactSchemaReason_(sh, authority, optionalTail) {
   var data = sh.getDataRange().getValues();
   var actual = (data && data.length ? data[0] : []).map(function (h) { return String(h == null ? '' : h).trim(); });
@@ -1138,10 +1280,20 @@ function sadAtomicUpsertCore_(body) {
   // ensure both sheets, then validate BOTH schemas EXACT (rule 9 — no order-agnostic tolerance).
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
-  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_, SAD_LIFECYCLE_TAIL_COLUMNS_);
+  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_, SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
   if (hR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_drafts] ' + hR, stage: 'schema', zero_write: true });
-  var lR = sadExactSchemaReason_(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+  var lR = sadExactSchemaReason_(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_, SAD_LINE_ETA_TAIL_COLUMNS_);
   if (lR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_draft_lines] ' + lR, stage: 'schema', zero_write: true });
+
+  // F1-7N-FB-4F-B3 - the LIVE shape, read once, and the typed refusal for anything it cannot hold. This runs
+  // BEFORE any validation that could write, so a value with nowhere to go fails the request with zero mutation
+  // instead of being dropped on the way through the writer.
+  var hNames = sadLiveHeaderNames_(hSh), lNames = sadLiveHeaderNames_(lSh);
+  var schemaRefusal = sadSchemaRefusal_(header, body.lines || [], hNames, lNames);
+  if (schemaRefusal) {
+    return jsonResponse_({ success: false, error: schemaRefusal.error, stage: 'schema', zero_write: true, data: schemaRefusal });
+  }
+  var k4Ready = sadK4SchemaReady_(hNames);
 
   // pure batch validation (header completeness + line completeness + batch dedup + optional K2 guard).
   var vb = sadAtomicValidateBatch_(header, body.lines || [], body.enforce_k2_grouping === true);
@@ -1158,9 +1310,9 @@ function sadAtomicUpsertCore_(body) {
   // explicit-id edit — from the header's own group authority. Drives the K2-aware NEW-line id scheme below.
   var isK2Group = id ? sadIsK2Group_(undefined, id, header) : false;
   if (!id) {
-    var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile });
+    var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile, k4Ready: k4Ready });
     if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
-    if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + (res.reason === 'ROUTE_INCOMPLETE_NEW_DRAFT' ? 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route' : 'this scope has an existing route-incomplete/legacy Draft — reconcile it via an explicit USER migration') + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
+    if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + sadResolveBlockMessage_(res.reason) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
     isK2Group = sadIsK2Group_(res.k2, res.id, header);
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
     else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id → INSERT with it (found stays null)
@@ -1207,9 +1359,12 @@ function sadAtomicUpsertCore_(body) {
     (function () {
       function setCol(name, val) { var c = found.col(name); if (c !== -1) hSh.getRange(found.row, c + 1).setValue(val); }
       setCol('status', status);
+      // B3 - destination_marketplace joins the route fields an edit may change. setCol is a no-op when the
+      // column is absent, and that silence is exactly what sadSchemaRefusal_ has already made impossible to
+      // reach with a value in hand: a supplied marketplace with no column refused the request above.
       ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',
         'recommended_destination_warehouse_code_snapshot', 'recommendation_group_no', 'recommended_shipping_method',
-        'recommended_last_mile_delivery'].forEach(function (f) { if (header[f] != null) setCol(f, String(header[f])); });
+        'recommended_last_mile_delivery', 'destination_marketplace'].forEach(function (f) { if (header[f] != null) setCol(f, String(header[f])); });
       // REGENERATE: adopt new calculation evidence + bump draft_version EXACTLY once. note is USER-owned (not overwritten).
       ['calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of'].forEach(function (f) { if (header[f] != null && String(header[f]).trim() !== '') setCol(f, String(header[f])); });
       // ADDENDUM — a REGENERATE is this run's output, so the row's owning run becomes THIS run. Excluded from
@@ -1246,6 +1401,10 @@ function sadAtomicUpsertCore_(body) {
       // deployment ordering. The three expiration columns are deliberately left blank: a row is not expired.
       generation_run_id: String(header.generation_run_id || '').trim(),
       expired_at: '', expired_by_run_id: '', expiration_reason: '',
+      // B3 - written by header NAME, so it is inert before the column exists and correct after it does. That
+      // is the same property the lifecycle provenance above relies on, and it is why this needs no deployment
+      // ordering of its own: the ORDERING that matters is the authority learning the column, which is above.
+      destination_marketplace: String(header.destination_marketplace || '').trim(),
       created_by: actor, created_at: now, updated_by: actor, updated_at: now,
       submitted_by: '', submitted_at: '', cancelled_by: '', cancelled_at: '', cancel_reason: '',
       note: String(header.note || '').trim()
@@ -1257,7 +1416,7 @@ function sadAtomicUpsertCore_(body) {
   // mirroring sadUpsertLinesKeyedCore_. Wrapped so a write throw AFTER a new header triggers compensation.
   var created = 0, updated = 0, skipped = 0, writeErr = null;
   try {
-    var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
+    var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note', 'expected_arrival'];
     for (var i = 0; i < lines.length; i++) {
       var l = lines[i];
       var lineId = String(l.allocation_draft_line_id || '').trim();
@@ -1298,7 +1457,7 @@ function sadAtomicUpsertCore_(body) {
         var recQty = (l.recommended_qty != null && l.recommended_qty !== '') ? procurementNum_(l.recommended_qty) : '';
         var planned = (l.planned_qty != null && l.planned_qty !== '') ? procurementNum_(l.planned_qty) : (recQty !== '' ? recQty : '');
         var rowObj = { allocation_draft_line_id: lineId, allocation_draft_id: id, created_at: now, updated_at: now, planned_qty: planned, recommended_qty: recQty };
-        SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.forEach(function (h) { if (h in rowObj) return; if (l[h] != null) rowObj[h] = String(l[h]); });
+        SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_.forEach(function (h) { if (h in rowObj) return; if (l[h] != null) rowObj[h] = String(l[h]); });
         procurementAppendByHeader_(lSh, rowObj);
         created++;
       }
@@ -1786,7 +1945,44 @@ function sadReadActiveHeaderRows_(sh) {
 function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
   header = header || {}; opts = opts || {};
   if (sadHeaderRouteIsComplete_(header)) {
-    var r = sadK2ResolveActiveDraft_(sadReadActiveHeaderRows_(sh), header);
+    var activeRows = sadReadActiveHeaderRows_(sh);
+
+    // ---- F1-7N-FB-4F-B3: K4, and ONLY when the column that carries its destination physically exists --------
+    //
+    // K2's ten dimensions carry no destination marketplace, so a marketplace route and a destination-less route
+    // key IDENTICALLY - the identity half of the FB-4F refusal. K4 adds the derived destination type and a
+    // canonical destination identity, so `to Amazon` and `to nowhere` finally differ, and so do `sea` and
+    // `sea_express` after the service passes through the canonical resolver.
+    //
+    // THE ORDER OF THE THREE OUTCOMES IS THE WHOLE DESIGN:
+    //   K4 match      -> REUSE that row under its OWN id. A replay of the same route is an UPDATE, never a
+    //                    second header, and an adopted K2-generation row is never re-keyed.
+    //   K4 contested  -> CONFLICT. Two active headers for one shipment group is a business decision, not
+    //                    something a writer resolves by picking one.
+    //   K4 unmatched  -> before creating anything, ask whether a row exists that K2 WOULD have claimed. If one
+    //                    does, it is an existing row for a DIFFERENT K4 identity that K2 cannot tell apart -
+    //                    the legacy row this whole round exists because of. Creating beside it would duplicate
+    //                    the route; adopting it would migrate a legacy row in place. Both are forbidden, so it
+    //                    is BLOCKED and left exactly as it is for a separately authorized reconciliation.
+    if (opts.k4Ready === true) {
+      var r4 = sadK4ResolveActiveDraft_(activeRows, header);
+      if (r4.status === 'REUSE') return { status: 'REUSE', id: r4.allocation_draft_id, conflictIds: [], k2: true, k4: true };
+      if (r4.status === 'BLOCKED_CONFLICT') return { status: 'CONFLICT', id: '', conflictIds: r4.conflictIds || [], k2: true, k4: true };
+      // ONLY rows K4 CANNOT CLASSIFY are rivals here. A row that stores a resolvable destination has its own
+      // K4 identity and already failed to match above, which makes it a DIFFERENT ROUTE - two marketplaces, or
+      // sea against sea_express - and a different route is entitled to its own header. The row this guard is
+      // for is the one that stores NO destination: K2 claims it because K2 has no destination dimension, and K4
+      // cannot tell it apart from the route being saved. That row is the legacy case, and it is left alone.
+      var legacyRivals = activeRows.filter(function (r) { return !ricDestinationIdentity_(r).ok; });
+      var rivalK2 = sadK2ResolveActiveDraft_(legacyRivals, header);
+      if (rivalK2.status === 'REUSE' || rivalK2.status === 'BLOCKED_CONFLICT') {
+        return { status: 'BLOCK', reason: 'K4_IDENTITY_RECONCILIATION_REQUIRED', id: (rivalK2.allocation_draft_id || ''),
+          conflictIds: rivalK2.conflictIds || [], k2: true, k4: true };
+      }
+      return { status: 'CREATE', id: r4.allocation_draft_id, conflictIds: [], k2: true, k4: true };
+    }
+
+    var r = sadK2ResolveActiveDraft_(activeRows, header);
     if (r.status === 'CREATE') return { status: 'CREATE', id: r.allocation_draft_id, conflictIds: [], k2: true };
     if (r.status === 'REUSE') return { status: 'REUSE', id: r.allocation_draft_id, conflictIds: [], k2: true };
     return { status: 'CONFLICT', id: '', conflictIds: r.conflictIds || [], k2: true };
@@ -1884,6 +2080,21 @@ function sadLegacyReconcileReason_(sh, found, allowReconcile, wantHeader) {
 
 // R6F2G5 — reason-typed reconciliation message for the two BLOCK call sites (atomic + manual). Keeps the outcome
 // observable and distinct: a genuine legacy incomplete-route collision vs a K2 shipment-group identity mismatch.
+// F1-7N-FB-4F-B3 - the resolver's BLOCK reasons, each said in its own words. The atomic core used to choose
+// between exactly two sentences with an inline ternary, so a third reason would have been described as the
+// second one - a new failure wearing an old failure's explanation.
+function sadResolveBlockMessage_(reason) {
+  if (reason === 'ROUTE_INCOMPLETE_NEW_DRAFT') {
+    return 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route';
+  }
+  if (reason === 'K4_IDENTITY_RECONCILIATION_REQUIRED') {
+    return 'an existing active Draft claims this route under the OLDER K2 identity, which cannot tell this ' +
+      'destination apart from a blank one; creating beside it would duplicate the route and adopting it would ' +
+      'migrate a legacy row in place, so it is left exactly as it is for a separately authorized reconciliation';
+  }
+  return 'this scope has an existing route-incomplete/legacy Draft — reconcile it via an explicit USER migration';
+}
+
 function sadReconcileMessage_(reason) {
   if (reason === 'BLOCKED_CONFLICT') {
     return 'this route\'s shipment group is already owned by a DIFFERENT active Draft header, so adopting this row would create a second header for one group; resolve the duplicate before saving';

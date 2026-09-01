@@ -2,7 +2,21 @@
  * 69_api_v1_route_identity_contract.gs
  *
  * F1-7N-FB-4F-B1 — ROUTE IDENTITY + APPEND-ONLY SCHEMA CONTRACT.
- * FROZEN, DETERMINISTIC MACHINERY. NOT ROUTED. NOT LIVE-WIRED THIS ROUND.
+ * FROZEN, DETERMINISTIC MACHINERY. NOT ROUTED — and, since B3, LIVE-WIRED.
+ *
+ * F1-7N-FB-4F-B3 — THIS FILE IS NOW A SYNCHRONIZED OWNER. B1 landed it inert: unrouted, unmanifested, called
+ * by nothing, because a contract round must not deploy. B3 is the round that makes the runtime compatible with
+ * the columns these rules describe, so 16_shipping_allocation_handlers.gs now CALLS ricRoutePersistability_,
+ * ricDestinationIdentity_, ricK4GroupKey_ and ricK4DeterministicHeaderId_ rather than reimplementing them, and
+ * this file gains its entry in 63_api_v1_system_health.gs's build manifest. It is still NOT ROUTED: it exposes
+ * no action and no verb, and B3 adds neither. A pure identity helper does not need a route to be reachable -
+ * Apps Script shares one global scope - and creating one merely to expose it would add an action contract this
+ * round has no business changing.
+ *
+ * THE RULES THEMSELVES ARE UNCHANGED. Not one predicate, dimension, label or refusal code below moved in B3.
+ * The K4 key is the same eleven dimensions in the same order, sea and sea_express remain two services and two
+ * identities, and the destination stays an exclusive choice between a warehouse and a marketplace. Only the
+ * file's STATUS changed, which is why the build stamp moves and nothing else does.
  *
  * WHY THIS IS A SEPARATE FILE, WHICH IS THE FIRST DECISION OF THE ROUND.
  *
@@ -20,9 +34,14 @@
  *      half-finished sync a NAMED fact, and it was telling the truth — B1 does not deploy. A stamp and its
  *      manifest entry must move together, in the round that actually syncs the file. That round is B2.
  *
- * So the machinery lives here: a new file, not routed, with no entry in the deployment manifest, calling into
- * nothing and called by nothing. It changes no action contract, no verb and no live behaviour. B2 syncs it and
- * adds its manifest entry in the same step that appends the columns' runtime support.
+ * So the machinery lives here: a new file, not routed, calling into nothing. In B1 it was also called by
+ * nothing and carried no manifest entry; B3 is the round that wires it and manifests it, in the same step that
+ * teaches the writer the new columns. It still changes no action contract and no verb.
+ *
+ * B2 was expected to do that and did not, for a reason worth keeping: B2 measured that appending a column
+ * BEFORE the runtime knows it makes every allocation read and write fail closed, because the header write gate
+ * is positional and exact. So the order is code first, then schema - which puts the sync in B3, ahead of any
+ * append, rather than alongside one.
  *
  * DEPENDENCY: sadFnv1a_ from 16_shipping_allocation_handlers.gs. Apps Script shares one global scope across
  * files, so the hash authority is reused rather than copied — a second implementation of a hash is a second
@@ -31,7 +50,7 @@
  * NOT ROUTED, and that is asserted: no doGet/doPost entry, no action name, no registry symbol.
  */
 
-var RIC_BUILD_VERSION_ = 'F1-7N-FB-4F-B1';
+var RIC_BUILD_VERSION_ = 'F1-7N-FB-4F-B3';
 
 // ================================================================================================================
 // §B — THE CANONICAL SERVICE. sea != sea_express, and that is a price and a date, not a preference.

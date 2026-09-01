@@ -54,6 +54,12 @@ var G16C = code(G16), G61C = code(G61), G69C = code(G69), GMIGC = code(GMIG);
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
 eval(extractVar(G16, 'SAD_LIFECYCLE_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_'));
+// F1-7N-FB-4F-B3 - the write gate's own, wider authority. Loaded here so this suite can assert the thing that
+// protects it: that the LIFECYCLE canonical above did NOT grow to match it.
+eval(extractVar(G16, 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_'));
+var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_.concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_);
+var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =
+  SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
 eval(extractVar(G16, 'SAD_STATUSES_'));
 eval(extractVar(G16, 'SAD_LINE_STATUSES_'));
@@ -375,10 +381,30 @@ var lineSheet = new FakeSheet('lines', [SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_
 eq(sadExactSchemaReason_(lineSheet, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_), '', 'D3 the LINE gate is unchanged and exact');
 ok(sadExactSchemaReason_(new FakeSheet('lines', [SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.concat(['x'])]),
   SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_) !== '', 'D3 and it still rejects any extra line column');
-ok(/sadExactSchemaReason_\(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_, SAD_LIFECYCLE_TAIL_COLUMNS_\)/.test(G16C),
-  'D3 the shipped header call passes the canonical list plus the optional tail');
-ok(/sadExactSchemaReason_\(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_\)/.test(G16C),
-  'D3 and the shipped line call passes no tail');
+// F1-7N-FB-4F-B3 - the gate now validates against the FULL authorities (35 header / 31 line) with the optional
+// tails, because the runtime learned the two append-only columns before they exist. The arguments moved.
+ok(/sadExactSchemaReason_\(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_, SAD_HEADER_OPTIONAL_TAIL_COLUMNS_\)/.test(G16C),
+  'D3 the shipped header call passes the FULL authority plus the whole optional tail');
+ok(/sadExactSchemaReason_\(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_, SAD_LINE_ETA_TAIL_COLUMNS_\)/.test(G16C),
+  'D3 and the line call now passes its own optional tail, which it never had before B3');
+
+// AND THE LIFECYCLE MIGRATION'S TARGET IS UNTOUCHED, which is what THIS suite is really guarding. B3 needed a
+// wider authority for the write gate and could have got it by widening SHIPPING_ALLOCATION_DRAFTS_HEADERS_
+// CANONICAL_ in place - which this migration reads as ITS canonical target and appends everything past the live
+// length. That single edit would have made the LIFECYCLE tool append destination_marketplace as well: one
+// migration quietly doing another's job, at an index the lifecycle order does not own. So the old constant
+// stays at exactly 34 and the gate got a NEW one.
+(function () {
+  var canon = SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_;
+  eq(canon.length, 34, 'D3b the lifecycle migration\'s canonical target is still exactly 34 columns');
+  eq(canon.slice(30).join('|'), SAD_LIFECYCLE_TAIL_COLUMNS_.join('|'),
+    'D3b and still ends with the lifecycle tail at 30..33, so it appends those four and nothing else');
+  ok(canon.indexOf('destination_marketplace') === -1,
+    'D3b destination_marketplace is NOT in it — the lifecycle migration must never append the route-identity column');
+  ok(SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_.length === 35 &&
+     SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_[34] === 'destination_marketplace',
+    'D3b while the write gate\'s FULL authority carries it at index 34, after the lifecycle tail');
+})();
 // the REQUIRED list is what every ensure-sheet call still uses, which is what keeps writes working pre-migration
 ok(G16C.indexOf("procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_)") !== -1,
   'D4 procurementEnsureSheet_ still validates against the frozen REQUIRED 30 (extras are allowed by this table)');

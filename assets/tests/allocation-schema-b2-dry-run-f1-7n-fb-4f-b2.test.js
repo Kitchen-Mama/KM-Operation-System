@@ -997,13 +997,40 @@ mutate('N15 the diagnostic placed in the Apps Script deploy directory',
 // ==============================================================================================================
 section('O — the round changed nothing it was told not to change');
 // ==============================================================================================================
-ok(SAD.indexOf("var SAD_BUILD_VERSION_ = 'F1-7N-FB-4D'") !== -1,
-    'O1 the allocation writer\'s build stamp is UNMOVED — B2 syncs nothing, so it declares nothing');
-ok(SAD.indexOf('destination_marketplace') === -1 || code(SAD).indexOf("'destination_marketplace'") === -1,
-    'O2 and the writer has not learned the new column — that is a WRITER change, and not this round');
-ok(RIC.indexOf("var RIC_BUILD_VERSION_ = 'F1-7N-FB-4F-B1'") !== -1, 'O3 the B1 contract stamp is unchanged');
-ok(readGs('63_api_v1_system_health.gs').indexOf('69_api_v1_route_identity_contract.gs') === -1,
-    'O4 69_ still has NO deployment-manifest entry — B2 activates no manifest');
+// F1-7N-FB-4F-B3 - RESTATED. O1/O3/O4 asserted three literals about B2's own moment: the writer's stamp had
+// not moved, 69_ carried the B1 stamp, and 69_ was unmanifested. All three were true OF B2, and all three are
+// equalities with "now" - so B3, the round that acts on B2's own finding by teaching the runtime the columns
+// and syncing the contract, made them fail while describing exactly the state B2 asked for.
+//
+// The durable statement is the contract they stood in for: every owner declares exactly what the deployment
+// manifest expects of it. A stamp nobody expects and an expectation no file declares are the two halves of a
+// partial sync, and this catches both, in either direction, for good.
+(function () {
+    var HEALTH = readGs('63_api_v1_system_health.gs');
+    function manifestExpects(file) {
+        return (HEALTH.match(new RegExp("\\{ file: '" + file.replace(/\./g, '\\.') + "',[^}]*expected: '([^']+)'")) || [])[1] || '';
+    }
+    function declares(src, sym) { return (src.match(new RegExp('var ' + sym + " = '([^']+)';")) || [])[1] || ''; }
+    eq(declares(SAD, 'SAD_BUILD_VERSION_'), manifestExpects('16_shipping_allocation_handlers.gs'),
+        'O1 the allocation writer declares exactly what the deployment manifest expects');
+    eq(declares(RIC, 'RIC_BUILD_VERSION_'), manifestExpects('69_api_v1_route_identity_contract.gs'),
+        'O3 and so does the route-identity contract, now a synchronized owner');
+    ok(!!manifestExpects('69_api_v1_route_identity_contract.gs'),
+        'O4 69_ IS manifested — B2 refused to do it before the runtime was compatible; B3 did both together');
+})();
+
+// O2 WAS VACUOUS, AND THAT IS WORTH RECORDING RATHER THAN QUIETLY DELETING. It read
+//     SAD.indexOf('destination_marketplace') === -1 || code(SAD).indexOf("'destination_marketplace'") === -1
+// and code() replaces every string literal with '' - so the right-hand side was TRUE no matter what the writer
+// contained, and the whole assertion could never fail. It was green in B2 for the wrong reason.
+//
+// What it should have said is the property that still matters now that the writer HAS learned the column: the
+// diagnostic is not a deployed owner, and it is not routed. Those are the facts that keep it a paste-run-remove
+// tool rather than something the deployment depends on.
+ok(readGs('63_api_v1_system_health.gs').indexOf(B2_FILE) === -1,
+    'O2 the dry-run diagnostic has NO deployment-manifest entry — it is paste-run-remove, not an owner');
+ok(SAD.indexOf('destination_marketplace') !== -1,
+    'O2b while the WRITER has learned the column, which is exactly what B3 was for');
 ok(readGs('63_api_v1_system_health.gs').indexOf(B2_FILE) === -1,
     'O5 and the new diagnostic has none either: it is a paste-run-remove tool, not a deployed owner');
 var RTR = readGs('01_router.gs');

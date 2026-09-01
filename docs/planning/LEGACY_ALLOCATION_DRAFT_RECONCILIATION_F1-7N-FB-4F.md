@@ -682,3 +682,201 @@ date was asked for — the one state in which a migration would have to invent t
 verb registered.**
 
 **APPS_SCRIPT_SYNC_REQUIRED:** none for B2. **BUNDLE_REBUILD_REQUIRED:** NO.
+
+---
+
+# FB-4F-B3 — CODE-FIRST SCHEMA COMPATIBILITY (CLOSED)
+
+Round: **F1-7N-FB-4F-B3**. Code and deployment contracts only. **No live column appended, no lifecycle migration
+run, no backfill, no data migration, no ID rewrite, no frontend change, no Apps Script sync, no deployment, no
+push.**
+
+## B3.0 — The live state B2 recorded, reproduced exactly
+
+The B2 dry run was executed against the production database on 2026-08-31 and returned:
+
+```
+shipping_allocation_drafts        30 columns, 4 rows, sf:d910d16a
+shipping_allocation_draft_lines   30 columns, 6 rows, sf:2226df13
+checksum fb4fb2-1:846e7989        decision STOP_SCHEMA_COLLISION
+```
+
+B3 reproduced all four values offline from the repository's own schema constants, through the real diagnostic
+code path. They match. **So the live sheet is byte-for-byte the canonical base 30/30**, both write gates report
+`(exact)` today, and the Execution Plan is working — which is what "preserve current behaviour" has to mean.
+The reproduction is a permanent test (§J of the B3 suite), so a future edit that would have changed the live
+answer fails here first.
+
+## B3.1 — The canonical orders
+
+**Header — `SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_`, 35 columns. Accepted live lengths: 30, 31, 32, 33, 34, 35.**
+
+```
+0..29   the frozen base contract (SHIPPING_ALLOCATION_DRAFTS_HEADERS_)
+30      generation_run_id        ┐
+31      expired_at               │ SAD_LIFECYCLE_TAIL_COLUMNS_  (frozen indexes)
+32      expired_by_run_id        │
+33      expiration_reason        ┘
+34      destination_marketplace  ← SAD_ROUTE_IDENTITY_TAIL_COLUMNS_
+```
+
+**Line — `SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_`, 31 columns. Accepted live lengths: 30, 31.**
+
+```
+0..29   the frozen base contract
+30      expected_arrival         ← SAD_LINE_ETA_TAIL_COLUMNS_
+```
+
+Every present column must sit at its **exact canonical index**. That single positional rule is what refuses
+`destination_marketplace` at index 30, a lifecycle column out of order, an unknown name, a duplicate, a
+case variant, a blank intervening header and a 36th column — six rejections from one rule rather than six
+separate checks that could disagree.
+
+**The existing `SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_` is deliberately still 34.**
+`TEMP_migrate_shipping_allocation_ai_lifecycle.gs` reads it as *its* canonical target and appends everything
+past the live length; widening it in place would have made the **lifecycle** migration append
+`destination_marketplace` as well — one tool quietly doing another's job, at an index the lifecycle order does
+not own. The write gate got a new, wider authority instead. Asserted in both suites.
+
+## B3.2 — Behaviour at each stage
+
+| stage | header / line | writes | `destination_marketplace` | line `expected_arrival` | identity |
+|---|---|---|---|---|---|
+| now | 30 / 30 | unchanged | `ROUTE_IDENTITY_NOT_PERSISTABLE`, zero write | `EXPECTED_ARRIVAL_NOT_PERSISTABLE`, zero write | K2 / K3 |
+| lifecycle only | 34 / 30 | unchanged | still refused | still refused | K2 / K3 |
+| final | 35 / 31 | persists + hydrates both | persisted on the header | persisted on the **line** | **K4** for newly persistable routes |
+
+Every refusal is **typed, echoes the value that would have been lost, and writes nothing**. Nothing is silently
+dropped — which is precisely how the live sheet came to hold a blank destination and `sea` for a request that
+said Amazon and `sea_express`: the write succeeded and the truth did not survive it.
+
+Hydration needed no new mapping: `sadRowToObject_` and `sadReadLinesForDraft_` build objects from the **live
+header row**, so both fields appear on reload the moment their columns exist.
+
+## B3.3 — K4 activation, and what it must never do
+
+K4 is activated by the **schema**, never by a flag: `sadK4SchemaReady_` requires `destination_marketplace` to
+physically exist *and* the frozen contract to be loaded. A deterministic identity that cannot be persisted is
+not an identity — it is a number that disappears on write.
+
+When ready, resolution has three outcomes and the order is the design:
+
+* **K4 match** → REUSE that row **under its own stored id**. A replay is an UPDATE, and an adopted
+  `SADH-K2-` row is *never re-keyed* — re-keying would orphan every line pointing at it.
+* **K4 contested** (two active rows, one group) → `BLOCKED_CONFLICT`. A business decision, not something a
+  writer settles by picking one.
+* **K4 unmatched** → before creating anything, look for an active row that K2 would claim **and that K4 cannot
+  classify** (it stores no destination at all). That is the legacy row this whole round exists because of.
+  Creating beside it would duplicate the route; adopting it would migrate a legacy row in place. Both are
+  forbidden, so it is `K4_IDENTITY_RECONCILIATION_REQUIRED` and the row is left exactly as it is.
+
+**The rival check is restricted to K4-unclassifiable rows, and that restriction is load-bearing.** Without it,
+saving a Walmart route beside an existing Amazon route was blocked — K2 cannot tell them apart, but K4 can, and
+two rows K4 *can* classify with different keys are simply two different routes.
+
+`sadK2GroupKey_` is **byte-identical**: the same ten dimensions in the same frozen order, and it still does not
+read `destination_marketplace`. No existing `SADH-K2-` id regenerates. Proven by test and by mutation.
+
+## B3.4 — Two defects this round found in its own work
+
+**An ETA-only edit was invisible, so it was silently not saved.** The payload fingerprint decides REUSE
+(zero write) against REGENERATE, and `expected_arrival` was not in `SAD_K2_LINE_FP_`. Changing only the date
+produced an identical fingerprint, the writer took the true-zero-write REUSE branch, and the new value was
+never persisted — the same class of silent drop this round exists to end, arriving through the front door
+instead of through the schema. The field is now in the line fingerprint, and `sadRegenerateLinePatch_` adopts a
+supplied ETA while never writing a blank one, so the server can neither invent a date nor erase one.
+
+**The rival-K2 guard was too broad**, described above.
+
+## B3.5 — Deployment identity
+
+| file | symbol | expected | why |
+|---|---|---|---|
+| `16_shipping_allocation_handlers.gs` | `SAD_BUILD_VERSION_` | **`F1-7N-FB-4F-B3`** | the writer learned both columns |
+| `69_api_v1_route_identity_contract.gs` | `RIC_BUILD_VERSION_` | **`F1-7N-FB-4F-B3`** | now a synchronized owner, newly manifested |
+| `63_api_v1_system_health.gs` | `SYS_BUILD_VERSION_` | unchanged | see below |
+| `01_router.gs` | `RTR_BUILD_VERSION_` | unchanged | **no router behaviour changed** |
+
+**Action contract 10 · required-action list version 9 · transport contract 1 — all unchanged**, asserted by
+reading the constants. No action and no verb was added: a pure identity helper does not need a route to be
+reachable (Apps Script shares one global scope), and creating one merely to expose it would change a contract
+this round has no business changing.
+
+**`SYS_BUILD_VERSION_` and `RTR_BUILD_VERSION_` are deliberately NOT moved, and this is a judgement call worth
+stating so it can be overruled.** Two reasons:
+
+1. The shared `BUILD_STAMP_RE` in `assets/tests/_release-order.js` is applied to exactly two files — `63_` and
+   `01_` — and its shape (`F1-7N-<AREA>-<n><LETTER>(-R<n>...)`) does **not** admit this round's `-B3` sub-round
+   segment. Moving `SYS_BUILD_VERSION_` to `F1-7N-FB-4F-B3` would require widening that shared guard.
+2. It buys no detection. A partial sync of this set is already named from **both** directions by the pair that
+   did move: sync `16_` without `63_` and the stale manifest still expects `F1-7N-FB-4D`; sync `63_` without
+   `16_` and the new manifest expects B3 while the file declares 4D. Either way `mixed_deployment` is true.
+   That is by design — the manifest's own note says the evidence comes from the *other* files.
+
+If you would rather every changed file carry a moved stamp, the change is: widen `BUILD_STAMP_RE` to admit a
+`-[A-Z]\d*` segment, then move `SYS_BUILD_VERSION_` and its own manifest entry together. Say the word.
+
+## B3.6 — REQUIRED APPS SCRIPT SYNC ORDER (user-run, later — not performed in this round)
+
+These three files are **one atomic deployment set**. Syncing any subset leaves the project in
+`DEPLOYMENT_PARTIAL_SYNC`, which the health check will name.
+
+```
+APPS_SCRIPT_SYNC_REQUIRED (bytes changed this round):
+  1. 69_api_v1_route_identity_contract.gs     (now called by 16_; RIC_BUILD_VERSION_ -> F1-7N-FB-4F-B3)
+  2. 16_shipping_allocation_handlers.gs       (schema compatibility; SAD_BUILD_VERSION_ -> F1-7N-FB-4F-B3)
+  3. 63_api_v1_system_health.gs               (manifest: 16_ expectation moved, 69_ entry added)
+```
+
+1. Copy **all three** files into the Apps Script project. Paste `69_` **before or with** `16_`: a deployment
+   carrying the B3 writer without the contract would refuse a marketplace route it is meant to accept.
+2. Create **one new Apps Script deployment version**.
+3. Point the stable `/exec` deployment at that new version.
+4. Run **`checkDeploymentContract()`** and confirm `mixed_deployment: false` and both owners reporting
+   `F1-7N-FB-4F-B3`.
+5. **Only after step 4 passes** may the lifecycle-tail migration be considered.
+
+`BUNDLE_REBUILD_REQUIRED:` **NO** — `assets/js/core/*` untouched, bundle hash `d782ea6d…c36ac` unchanged.
+`FRONTEND_DEPLOY_REQUIRED:` **NO** for B3 (the `inventory-replenishment.js` lead-time fix from B1 is still
+pending its own push, unchanged by this round).
+
+### The order after that, unchanged from §B2.3
+
+```
+B3  (this round)  owner files learn both columns          <- code
+ ↓  sync + one deployment version + checkDeploymentContract()
+B4  lifecycle tail append (indexes 30..33) if outstanding <- schema
+B5  destination_marketplace (34) and expected_arrival (30)
+B6  legacy row reconciliation — separately authorized, never automatic
+```
+
+## B3.7 — Tests
+
+`assets/tests/allocation-code-first-schema-compatibility-f1-7n-fb-4f-b3.test.js` — **194 passed, 0 failed; 15
+mutations, 15 caught.** All 32 required cases. The suite **executes the shipped writer**
+(`sadAtomicUpsertCore_`) against an in-memory spreadsheet at each of the three stages and checks what ends up in
+the cells, rather than describing what the code says.
+
+Eight existing suites had guards that pinned the pre-B3 state. **None was deleted; each was restated to be at
+least as strong**, and the pattern in every case was the same one the map rounds paid for five times: a suite
+stating an equality with "now" instead of a floor or a derived contract.
+
+* `action-registry…-fb-4e-r2` — "16_ is UNCHANGED since R1" was the right guard from R1 to B2, and it is why
+  the B1 contract went into a new file. B3 is the round licensed to change the writer, so the property moves
+  from *it never changes* to **it never changes silently and its identity never moves**: the manifest expects
+  exactly what the file declares, and `sadK2GroupKey_` is byte-identical. Both asserted; the other three
+  business writers keep the original rule.
+* `route-identity…-b1` and `allocation-schema-b2…` — three literals about each round's own moment, replaced by
+  the derived contract *every owner declares exactly what the manifest expects of it*.
+* `live-closure…-fb-4d` — a literal `'F1-7N-FB-4D'`, now read from the manifest.
+* `legacy-allocation-draft-reconcile…-fb-4f-a` — restated as a **floor** (FB-4F-A itself changed no writer).
+* `ai-plan-lifecycle-migration…` — new gate arguments, **plus** a new assertion that the lifecycle canonical is
+  still exactly 34 and still appends only its own four columns.
+* `inventory-k2…-r6f2a` — a reason literal moved into `sadResolveBlockMessage_`; the assertion follows it.
+* `execution-plan-multi-route…` — harness now supplies the new global, as Apps Script's shared scope would.
+
+One of my own B2 assertions was found **vacuous**: `O2` tested `code(SAD).indexOf("'destination_marketplace'")`,
+and `code()` replaces every string literal with `''`, so the right-hand side was true no matter what the file
+contained. It was green for the wrong reason. Replaced with the property that still matters.
+
+**Full sweep: 386 suites, 382 pass, 4 fail — the four long-standing failures and nothing else. 0 new.**

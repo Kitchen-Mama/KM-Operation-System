@@ -94,6 +94,12 @@ eval(extractFn(G13, 'procurementAppendByHeader_'));
 eval(extractFn(G13, 'procurementFindRow_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
+// F1-7N-FB-4F-B3 - the line writer now copies through the FULL authority so expected_arrival is carried when
+// the column exists. Apps Script shares one global scope across files; a suite that lifts functions out has to
+// supply the globals the file itself would have had, or the lift reports a defect the runtime does not have.
+eval(extractVar(G16, 'SAD_LINE_ETA_TAIL_COLUMNS_'));
+var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ =
+  SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_.concat(SAD_LINE_ETA_TAIL_COLUMNS_);
 // F1-7N-FB-4C — the shipped guards now read the named terminal-status sets (which gained `expired`), so
 // the eval list has to carry them. No assertion below changes.
 eval(extractVar(G16, 'SAD_STATUSES_'));

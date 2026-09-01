@@ -48,7 +48,15 @@ eq(sadLegacyReconcileReason_(sheet([{ allocation_draft_id: 'X', status: 'draft',
 
 section('A. cores handle BLOCK + legacy guard; K3 callers classified');
 var atomicCore = extractFn(G16, 'sadAtomicUpsertCore_');
-ok(/res\.status === 'BLOCK'/.test(atomicCore) && /ROUTE_INCOMPLETE_NEW_DRAFT/.test(atomicCore), 'A6. atomic core fails closed on BLOCK (route-incomplete new draft)');
+// F1-7N-FB-4F-B3 - the atomic core used to choose between exactly two sentences with an inline ternary, so the
+// reason literal lived in the core itself. B3 adds a third BLOCK reason, and a third case in a two-way ternary
+// would have been described as the second one - a new failure wearing an old failure's explanation. The message
+// moved into sadResolveBlockMessage_, so the assertion follows it: the core still fails closed on BLOCK, and
+// the reason still has words of its own.
+ok(/res\.status === 'BLOCK'/.test(atomicCore), 'A6. atomic core fails closed on BLOCK');
+ok(/sadResolveBlockMessage_\(res\.reason\)/.test(atomicCore), 'A6. and reports the reason\'s own message');
+ok(/ROUTE_INCOMPLETE_NEW_DRAFT/.test(extractFn(G16, 'sadResolveBlockMessage_')),
+  'A6. route-incomplete new draft still has its own words');
 // F1-7N-FB-4A §D — STRICTLY STRONGER: both cores must hand the guard the REQUEST HEADER. Without it the guard can
 // only ask "does this row's id still hash to itself?", which the writer's own permitted route edit makes false and
 // which then bricks the row forever. The 3-argument form is exactly the defect, so it is now a FAILING shape.

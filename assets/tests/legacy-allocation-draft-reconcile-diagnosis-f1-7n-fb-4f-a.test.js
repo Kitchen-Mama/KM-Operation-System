@@ -640,7 +640,18 @@ section('§L — NOTHING ELSE MOVED');
 
   // FB-4D / FB-4E contracts that this round must not disturb.
   ok(/function sadScanDuplicateLinePks_/.test(SAD_SRC), 'L6 the FB-4D pre-write duplicate-PK gate is intact');
-  ok(/var SAD_BUILD_VERSION_ = 'F1-7N-FB-4D'/.test(SAD_SRC), 'L7 16_ did not change this round (its stamp is unmoved)');
+  // F1-7N-FB-4F-B3 - RESTATED AS A FLOOR, which is what it always meant. FB-4F-A was a read-only diagnosis
+  // round and changed no writer, so it pinned 16_'s stamp at FB-4D. But that is an equality with "now": B3 is
+  // the round that legitimately teaches the writer the new columns, and this line then failed while describing
+  // the correct state - the same failure the map suites hit five rounds running before mapTokenAtOrAfter.
+  //
+  // The durable statement is that FB-4F-A ITSELF changed no writer, so 16_ must be at FB-4D OR LATER, never
+  // EARLIER. That still catches the defect this was written for (a diagnosis round quietly editing the writer,
+  // which would have to move the stamp backwards or leave it behind) and it stays true afterwards.
+  var _l7 = (SAD_SRC.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1] || '';
+  var _l7Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B3'];
+  ok(_l7Order.indexOf(_l7) >= _l7Order.indexOf('F1-7N-FB-4D'),
+    'L7 16_ is at the FB-4D floor or later — FB-4F-A itself changed no writer (' + _l7 + ')');
   ok(/var EPC_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(EPC_SRC), 'L8 68_ did not change this round either');
   var ROUTER = readGs('01_router.gs');
   ok(/var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3'/.test(ROUTER), 'L9 the R4B-R3 router identity is preserved');

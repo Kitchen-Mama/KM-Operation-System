@@ -210,7 +210,17 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // F1-7N-FB-4D §E — the four owners the Site Inventory and SKU chains actually depend on. Each of these
   // files answers every one of its actions even when it is a round behind, so a resolvable action list can
   // never detect a partial sync of them. Only the declared build can.
-  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4D', owns: 'Execution Plan allocation draft header/line writer (pre-write duplicate-PK gate, route group keys)' },
+  // F1-7N-FB-4F-B3 — the allocation writer learned the two append-only columns BEFORE they exist, so its stamp
+  // moves and this expectation moves with it. The pair is the partial-sync detector for this deployment set:
+  // sync 16_ without 63_ and the stale manifest still expects F1-7N-FB-4D; sync 63_ without 16_ and the new
+  // manifest expects B3 while the file declares 4D. Either direction reports mixed_deployment.
+  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4F-B3', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
+  // F1-7N-FB-4F-B3 — REGISTERED HERE FOR THE REASON THIS MANIFEST EXISTS. B1 landed the route-identity contract
+  // deliberately unmanifested because it was inert. It is not inert any more: 16_ now calls into it for the
+  // typed schema refusals and for the K4 identity, so a deployment carrying the B3 writer WITHOUT this file
+  // would refuse a marketplace route it is supposed to accept, and would fall back to K2 for a route the
+  // writer believes is K4-resolved. That is exactly the half-finished sync this manifest is here to name.
+  { file: '69_api_v1_route_identity_contract.gs', symbol: 'RIC_BUILD_VERSION_', expected: 'F1-7N-FB-4F-B3', owns: 'frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)' },
   { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FA-4B2', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

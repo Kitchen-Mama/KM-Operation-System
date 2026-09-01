@@ -496,9 +496,22 @@ section('§8 — THE BUSINESS ACTIONS THIS ROUND TOUCHED ARE BEHAVIOURALLY UNCHA
 // question -- did this file change since the R1 commit -- and prints nothing when the answer is no.
 var cp = require('child_process');
 var R1_REF = 'c5048fd';
+// F1-7N-FB-4F-B3 - 16_ LEAVES THIS LIST, AND IS REPLACED BY A STRONGER PAIR OF GUARDS RATHER THAN BY NOTHING.
+//
+// "UNCHANGED since R1" was the right protection for every round from R1 to B2, and it did its job twice: it is
+// why the B1 route-identity contract went into a NEW file instead of into the writer. But B3 is the round whose
+// entire purpose is to change this writer - it teaches the runtime the two append-only columns BEFORE they
+// exist, because B2 measured that the opposite order breaks every allocation read and write. A guard that
+// forbids the one round licensed to act is not protecting anything; it is only postponing the edit.
+//
+// So the property moves from "it never changes" to "it never changes SILENTLY, and its identity never moves":
+//   (a) whatever 16_ declares, the deployment manifest expects exactly that - a change is always DECLARED, and
+//       a half-synced deployment is still a named fact from either direction;
+//   (b) sadK2GroupKey_ is BYTE-IDENTICAL - the ten dimensions in the frozen order - so no existing SADH-K2- id
+//       can regenerate differently and no persisted row is re-keyed by a refactor.
+// Both are asserted below. The other three business writers keep the original unchanged-since-R1 rule exactly.
 [['31_shipment_receipt_route_handlers.gs', 'shipment ETA + route-advance writers'],
  ['59_api_v1_sku_details_workspace.gs', 'SKU Details / SKU Regional workspace read'],
- ['16_shipping_allocation_handlers.gs', 'the allocation writer this diagnostic reports on'],
  ['11_shipping_plan_handlers.gs', 'the Submit-to-Shipping-Plan owner']].forEach(function (p) {
   var rel = 'assets/specs/active/apps-script/' + p[0];
   var changed = '?';
@@ -539,10 +552,40 @@ var GS_OWNED_SINCE_R1 = {
   // that guard is right: B1 is a contract round and must not touch the live writer. Not routed, no registry
   // symbol, no manifest entry, no live wiring. The owned-set entry is an OWNERSHIP RECORD, which is what this
   // map is for; the guard itself is untouched and an unexpected file still fails.
-  '69_api_v1_route_identity_contract.gs': 'FB-4F-B1 frozen route identity + schema contract (new file; NOT routed)'
+  '69_api_v1_route_identity_contract.gs': 'FB-4F-B1 frozen route identity + schema contract (new file; NOT routed)',
+  // F1-7N-FB-4F-B3 - the code-first schema compatibility round. 16_ learns the two append-only columns before
+  // they exist (30..35 header, 30..31 line) and calls 69_ for the typed refusals and the K4 identity; 69_
+  // becomes a synchronized owner and joins the build manifest; 63_ carries both expectations.
+  '16_shipping_allocation_handlers.gs': 'FB-4F-B3 code-first schema compatibility (the round licensed to change the writer)'
 };
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');
+
+// (a) A CHANGE TO THE ALLOCATION WRITER IS ALWAYS DECLARED. Read both halves from the files themselves, so the
+// expectation and the declaration can only ever be edited together.
+(function () {
+  var sad = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/16_shipping_allocation_handlers.gs'), 'utf8');
+  var health = fs.readFileSync(path.join(ROOT, 'assets/specs/active/apps-script/63_api_v1_system_health.gs'), 'utf8');
+  var declared = (sad.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1] || '';
+  var expected = (health.match(/\{ file: '16_shipping_allocation_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1] || '';
+  ok(!!declared, '8. the allocation writer declares a build stamp');
+  eq(declared, expected, '8. and the deployment manifest expects exactly what it declares (no silent writer change)');
+
+  // (b) THE K2 GROUP KEY IS BYTE-IDENTICAL. Appending a dimension would change the joined string for EVERY row,
+  // including the ones whose new field is blank, so every SADH-K2- id would regenerate and every existing
+  // header would be re-keyed - a silent bulk migration wearing the clothes of a refactor.
+  var dims = (sad.match(/var SAD_K2_GROUP_DIMENSIONS_ = \[([\s\S]*?)\];/) || [])[1] || '';
+  var names = (dims.match(/'[^']+'/g) || []).map(function (x) { return x.slice(1, -1); });
+  // This suite's eq() is a strict === , so two equal arrays are still two objects. Compare the joined order.
+  eq(names.join('|'), ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
+    'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+    'recommended_shipping_method', 'recommended_last_mile_delivery', 'recommendation_group_no'].join('|'),
+    '8. the K2 group dimensions are the frozen ten, in the frozen order');
+  ok(sad.indexOf('destination_marketplace') !== -1, '8. 16_ knows the new column (B3 taught it)');
+  var k2fn = sad.slice(sad.indexOf('function sadK2GroupKey_('), sad.indexOf('function sadK2DeterministicHeaderId_('));
+  ok(k2fn.indexOf('destination_marketplace') === -1,
+    '8. but sadK2GroupKey_ does NOT read it — K2 is frozen and no existing id regenerates');
+})();
 ok(gsList.indexOf('01_router.gs') !== -1 && gsList.indexOf('63_api_v1_system_health.gs') !== -1,
   '8. and the two files R2 itself had to change are still among them');
 // And within 68_, only the duplicate diagnostic's boundary changed: the conflict diagnostic's own logic is intact.

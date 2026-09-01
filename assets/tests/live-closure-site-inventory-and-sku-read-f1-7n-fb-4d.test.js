@@ -778,7 +778,14 @@ var stamps = extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_');
   ok(stamps.indexOf(pair[1]) !== -1, 'E1 via ' + pair[1]);
 });
 // each stamp must match what its file really declares
-eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4D', 'E2 16_ declares the FB-4D build (it changed)');
+// F1-7N-FB-4F-B3 - DERIVED, not pinned. This asserted the literal 'F1-7N-FB-4D', so it failed the moment a
+// later round legitimately moved the allocation writer forward - while describing the correct state. What this
+// line is actually for is that 16_ declares the build the DEPLOYMENT MANIFEST expects of it; a stamp nobody
+// expects and an expectation no file declares are the two halves of a partial sync, and either alone is the
+// bug. Read from 63_, so the pair can only ever be edited together.
+var _e2Expected = ((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], _e2Expected,
+  'E2 16_ declares exactly the build its deployment manifest expects (' + _e2Expected + ')');
 eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FA-4B2', 'E2 11_ declares its own last behavioural round (FB-4D did not change it)');
 // F1-7N-FB-4E — 01_router.gs changed this round (it now states which handler answered), so pinning the FB-4C-R1
 // literal would report a real, intended bump as a regression. The invariant that matters is the one the

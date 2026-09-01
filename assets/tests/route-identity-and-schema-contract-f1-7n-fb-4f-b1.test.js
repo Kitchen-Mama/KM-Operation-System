@@ -383,10 +383,25 @@ section('§K — the contract versions B1 must not raise, and the stamp it must 
     // 63_api_v1_system_health.gs pins each owner's expected stamp against the DEPLOYED build — a stamp asserts
     // "the deployed copy is not this one", true only once a round has synced the file. Four deployment-contract
     // suites said so. So stamp and manifest move together in B2, and B1 leaves 16_ alone entirely.
-    ok(/var SAD_BUILD_VERSION_ = 'F1-7N-FB-4D'/.test(SAD), 'K2 the allocation writer stamp is UNMOVED');
-    ok(/var RIC_BUILD_VERSION_ = 'F1-7N-FB-4F-B1'/.test(RIC), 'K2b while 69_ carries its own B1 stamp');
-    ok(HEALTH.indexOf('69_api_v1_route_identity_contract.gs') === -1,
-        'K2c and 69_ has NO deployment-manifest entry yet — B2 adds it in the step that syncs the file');
+    // F1-7N-FB-4F-B3 - RESTATED, AND THE RESTATEMENT IS STRONGER THAN WHAT IT REPLACES.
+    //
+    // B1 asserted three literals about its own moment: the writer's stamp had not moved, 69_ carried the B1
+    // stamp, and 69_ had no manifest entry. All three were true OF B1 and all three are equalities with "now",
+    // so B3 - the round that syncs 69_ and teaches the writer the columns - made them fail while describing the
+    // correct state. The durable statement is the CONTRACT they were standing in for: every owner declares
+    // exactly what the deployment manifest expects of it. A stamp nobody expects and an expectation no file
+    // declares are the two halves of a partial sync, and this catches both, in either direction, forever.
+    function manifestExpects(file) {
+        var re = new RegExp("\\{ file: '" + file.replace(/\./g, '\\.') + "',[^}]*expected: '([^']+)'");
+        return (HEALTH.match(re) || [])[1] || '';
+    }
+    function declares(src, sym) { return (src.match(new RegExp('var ' + sym + " = '([^']+)';")) || [])[1] || ''; }
+    eq(declares(SAD, 'SAD_BUILD_VERSION_'), manifestExpects('16_shipping_allocation_handlers.gs'),
+        'K2 the allocation writer declares exactly what the deployment manifest expects');
+    eq(declares(RIC, 'RIC_BUILD_VERSION_'), manifestExpects('69_api_v1_route_identity_contract.gs'),
+        'K2b and so does the route-identity contract, now that it is a synchronized owner');
+    ok(!!manifestExpects('69_api_v1_route_identity_contract.gs'),
+        'K2c 69_ IS manifested — B1 left it inert, B3 wires it and registers it in the same round');
     var ROUTER = readGs('01_router.gs');
     ['ricK4', 'ricRoutePersistability', 'ricCanonicalService', '69_api_v1_route_identity_contract']
         .forEach(function (sym) { ok(ROUTER.indexOf(sym) === -1, 'K3 ' + sym + ' is not routed — B1 adds no action'); });
@@ -537,13 +552,25 @@ mutate('N13 the owner guard broadly ignoring TEMP files',
 mutate('N14 the diagnostic moved back into the deploy directory',
     function () { return !fs.existsSync(path.join(GS, TEMP_FILE)); },
     function () { return !fs.existsSync(path.join(TOOLS_DIAG, TEMP_FILE)); });
-// N15 — the allocation writer touched at all. B1's placement decision, made testable.
-mutate('N15 the allocation writer modified by a contract round',
-    function () { return SAD.indexOf('ricK4GroupKey_') === -1 && SAD.indexOf('RIC_CANONICAL_SERVICES_') === -1; },
+// N15 — THE CONTRACT REIMPLEMENTED INSIDE THE WRITER.
+//
+// B1 asserted the writer did not so much as MENTION the contract, which was the right statement for a round
+// forbidden to touch it. B3 is the round that wires it: 16_ now CALLS ricK4GroupKey_ and ricRoutePersistability_,
+// so "never mentions" has become false while nothing it protected has changed.
+//
+// What it was really defending is that there is ONE implementation of each identity rule. A second copy of a
+// hash is a second answer waiting to disagree, and the copy would drift first - so the durable rule is that the
+// writer may CALL the contract and must never DEFINE it. That is what this now mutates against.
+mutate('N15 the route-identity contract reimplemented inside the allocation writer',
+    function () {
+        return !/function\s+ric[A-Za-z0-9_]*\s*\(/.test(SAD) && !/var\s+RIC_[A-Z0-9_]*\s*=/.test(SAD) &&
+            SAD.indexOf('ricK4GroupKey_') !== -1;           // and it really does call it, or the check is vacuous
+    },
     function () {
         var m = swap(SAD, 'function sadK2GroupKey_(h) {',
             'function ricK4GroupKey_(h) { return ""; }\nfunction sadK2GroupKey_(h) {');
-        return m.indexOf('ricK4GroupKey_') === -1;
+        return !/function\s+ric[A-Za-z0-9_]*\s*\(/.test(m) && !/var\s+RIC_[A-Z0-9_]*\s*=/.test(m) &&
+            m.indexOf('ricK4GroupKey_') !== -1;
     });
 
 console.log('\n  negative tests: ' + neg.caught + ' caught, ' + neg.missed + ' missed');
