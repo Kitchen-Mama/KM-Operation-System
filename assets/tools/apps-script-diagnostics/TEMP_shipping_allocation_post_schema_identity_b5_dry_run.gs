@@ -515,6 +515,12 @@ function tb5TargetAnalysis_(activeRows, lines, schema) {
       label: label, k4_status: r4.status, verdict: verdict, why: why,
       k4_key_hash: tb5Hash_(ricK4GroupKey_(hdr)),
       proposed_id: tb5Mask_(ricK4DeterministicHeaderId_(hdr)),
+      // Stated as facts rather than left to be inferred from `verdict`: a REUSE updates the row UNDER ITS OWN
+      // STORED ID (re-keying would orphan every line pointing at it), while a CREATE is a PROPOSAL only - this
+      // file mints nothing.
+      retains_existing_stored_id: r4.status === 'REUSE',
+      creates_distinct_k4_proposal: verdict === 'CREATE_DISTINCT_K4_HEADER',
+      rival_or_collision: rivalHit.length > 0 || r4.status === 'BLOCKED_CONFLICT',
       unclassifiable_rivals_matching_by_k2: rivalHit.map(function (r) { return tb5Mask_(r.allocation_draft_id); }),
       persistable: ricRoutePersistability_(hdr, schema.H.headers, schema.L.headers)
     };
@@ -618,9 +624,43 @@ function tb5HydrationTrace_(H, L, target) {
       'route is dropped here. Quantity is therefore conserved across all four boundaries.',
     rows: clientRows });
 
+  // ---- THE TARGET ROUTE, END TO END --------------------------------------------------------------------------
+  // What the API returns, what the client does with it, and the two things an operator can actually SEE. The
+  // client half is reported as INPUTS plus a derivation that is explicitly labelled as a derivation: this file
+  // cannot execute browser code, and the authority for the page's own behaviour is the frontend regression
+  // suite, which runs the shipped functions. Naming that boundary is more useful than pretending to cross it.
+  var tRow = clientRows.length ? clientRows[0] : null;
+  var tScoped = scoped.length ? scoped[0] : null;
+  var tQty = tRow ? tRow.planned_qty_total : 0;
+  var target_route = {
+    api_returned_target_route: scoped.length > 0,
+    api_returned_header_count: scoped.length,
+    client_dropped_target_route: false,
+    client_drop_reason: '(none - the shipped hydrate keeps every line it reads; completeness gates PERSISTENCE, not hydration)',
+    stored_destination_marketplace: tScoped ? (tb5Str_(tScoped.destination_marketplace) || '(blank)') : '(no header in scope)',
+    client_synthesised_destination_marketplace: tRow && tRow.client_would_synthesise_destination_marketplace
+      ? (T.marketplace + ' (from ctx.marketplace, PLAN SCOPE)') : '(none)',
+    client_synthesised_value_rank: tRow && tRow.client_would_synthesise_destination_marketplace
+      ? 'UI_DERIVED_NOT_AUTHORITATIVE' : null,
+    rendered_to_token: '(none - the hydrate emits no MARKETPLACE_DESTINATION: token and no display name)',
+    rendered_to_selected_value: '(empty - the "To..." placeholder is what the operator sees)',
+    default_editor_discriminator: 'Qty box shows the Suggested Qty with From/Method also blank = nothing hydrated',
+    hydrated_legacy_row_discriminator: 'Qty box shows ' + tQty + ' = the persisted route DID hydrate and only the To cell is blank',
+    client_accept_inputs: tRow ? {
+      source_warehouse_id_present: tRow.source_warehouse_id_present,
+      destination_warehouse_id_present: tRow.destination_warehouse_id_present,
+      shipping_method_present: tRow.shipping_method_present,
+      planned_qty_total: tRow.planned_qty_total
+    } : null,
+    client_accepts_target_route_DERIVED_NOT_EXECUTED: !!tRow && tRow.source_warehouse_id_present &&
+      (tRow.destination_warehouse_id_present || tRow.client_would_synthesise_destination_marketplace) &&
+      tRow.shipping_method_present && tRow.planned_qty_total > 0
+  };
+
   var quantities = b.map(function (x) { return x.quantity_total; });
   return {
     boundaries: b,
+    target_route: target_route,
     quantity_conserved_across_boundaries: quantities.slice(1).every(function (q, i) { return i === 0 ? true : q === quantities[i]; }),
     scoped_quantity_total: qtyOf(scopedLines),
     headers_returned_without_destination_identity: incomplete.length
@@ -675,9 +715,16 @@ function tb5QuantityAndFk_(H, L, downstream) {
 // ------------------------------------------------------------------------------------------------- entry point
 
 /**
- * THE ONLY PUBLIC FUNCTION. No arguments, no modes, no COMMIT. Read-only on every path including every refusal.
+ * THE CORE REPORT BUILDER - the ONE place any of this is decided.
+ *
+ * F1-7N-FB-4F-B5-R1: the builder and the logging used to be one function, so a second entry point could only be
+ * bought with a second copy of the classification. It is split here for exactly the opposite reason: BOTH public
+ * entry points call THIS, and neither owns a rule. A summary that classified rows its own way would be a second
+ * answer waiting to disagree with the full report, which is the failure this whole workstream exists to end.
+ *
+ * It reads the live snapshot ONCE per call and writes nothing on any path, including every refusal path.
  */
-function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
+function tb5BuildReport_() {
   var out = {
     mode: 'DRY_RUN (READ-ONLY)', read_only: true, has_commit_mode: false,
     build_version: TEMP_B5_BUILD_VERSION_, operation: TEMP_B5_OPERATION_,
@@ -697,7 +744,7 @@ function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
       'that guesses an identity rule reaches a different verdict than the writer would.');
     out.readiness = { schemaReady: false, runtimeAuthorityReady: false, existingRouteHydrationReady: false,
       newDistinctRouteSaveReady: false, legacyAdoptionReady: false, submitReady: false };
-    tb5Log_(out); return out;
+    return out;
   }
 
   var ss = null;
@@ -707,7 +754,7 @@ function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
     out.blocking_reasons.push('DB_NOT_REACHABLE — the configured production database could not be opened read-only.');
     out.readiness = { schemaReady: false, runtimeAuthorityReady: true, existingRouteHydrationReady: false,
       newDistinctRouteSaveReady: false, legacyAdoptionReady: false, submitReady: false };
-    tb5Log_(out); return out;
+    return out;
   }
 
   var schema = tb5SchemaState_(ss);
@@ -719,7 +766,7 @@ function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
     out.blocking_reasons.push('SHEET_MISSING — one of the two allocation tables is absent.');
     out.readiness = { schemaReady: false, runtimeAuthorityReady: true, existingRouteHydrationReady: false,
       newDistinctRouteSaveReady: false, legacyAdoptionReady: false, submitReady: false };
-    tb5Log_(out); return out;
+    return out;
   }
 
   var activeRows = (H.rows || []).filter(function (h) { return !SAD_TERMINAL_STATUSES_[tb5Lc_(h.status)]; });
@@ -779,6 +826,159 @@ function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
 
   out.footer = 'DB_WRITES=0 · ROWS_CHANGED=0 · COLUMNS_APPENDED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0 · ' +
     'ID_REWRITES=0 · QUANTITY_CHANGES=0 · FK_CHANGES=0 · STATUS_TRANSITIONS=0 · PROPERTY_WRITES=0 · DRIVE_WRITES=0 · EMAILS=0';
+  return out;
+}
+
+/**
+ * FULL REPORT. Everything, pretty-printed, for a caller that can take it.
+ *
+ * WHY THIS ONE GETS TRUNCATED, AND WHY IT IS KEPT ANYWAY. The full object carries every header's line ids and
+ * natural keys, four hydration boundaries with their row models, the read-table inventory and the refusal
+ * vocabulary, pretty-printed at two-space indent. Apps Script's execution transcript caps what it will show, and
+ * the verdict, readiness booleans and footer are at the END of the object - so the cap eats precisely the lines
+ * that matter most. The fix is not to shrink this function's answer, which is the complete evidence and should
+ * stay complete; it is to offer a SECOND VIEW of the SAME answer. See ..._SUMMARY() below.
+ */
+function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN() {
+  var out = tb5BuildReport_();
   tb5Log_(out);
+  return out;
+}
+
+// --------------------------------------------------------------------------------------------- compact view
+
+function tb5Line_(msg) { try { Logger.log('[FB4FB5S] ' + msg); } catch (e) {} }
+function tb5B_(v) { return v === true ? 'Y' : (v === false ? 'N' : '?'); }
+function tb5V_(v) { var s = tb5Str_(v); return s === '' ? '-' : s; }
+
+/**
+ * COMPACT VIEW of the report the builder already produced. One short Logger line per section, each prefixed
+ * [FB4FB5S], sized so an Apps Script transcript shows the verdict and the footer rather than cutting them off.
+ *
+ * It FORMATS. It does not classify, re-read, re-derive or decide anything: every value below is read straight
+ * off the report object, so this view and the full report cannot disagree. Nothing live is hardcoded here -
+ * there is not a single header id, service, destination, quantity or verdict literal in this function.
+ *
+ * What it deliberately omits: full header rows, line_ids, line_natural_keys and every large array. Those are
+ * evidence for the full report, and they are exactly what pushed the verdict off the end of the transcript.
+ */
+function tb5EmitCompact_(r) {
+  r = r || {};
+  var sc = r.schema || {}, d = sc.drafts || {}, l = sc.lines || {};
+
+  tb5Line_('BUILD ' + r.build_version + ' op=' + r.operation + ' mode=SUMMARY read_only=' + tb5B_(r.read_only) +
+    ' has_commit_mode=' + tb5B_(r.has_commit_mode));
+
+  if ((r.blocking_reasons || []).length && !(r.headers || []).length) {
+    (r.blocking_reasons || []).forEach(function (b) { tb5Line_('STOP ' + String(b).slice(0, 220)); });
+  }
+
+  // 1. SCHEMA
+  tb5Line_('SCHEMA drafts cols=' + tb5V_(d.header_count) + ' rows=' + tb5V_(d.row_count) +
+    ' fp=' + tb5V_(d.fingerprint) + ' gate=' + tb5V_(d.runtime_gate));
+  tb5Line_('SCHEMA lines  cols=' + tb5V_(l.header_count) + ' rows=' + tb5V_(l.row_count) +
+    ' fp=' + tb5V_(l.fingerprint) + ' gate=' + tb5V_(l.runtime_gate));
+  tb5Line_('SCHEMA schemaReady=' + tb5B_(sc.schema_ready));
+
+  // 2. EVERY header, one line each. A header with no lines is still a header - omitting it is how a census
+  //    starts disagreeing with the table it counted.
+  var hs = r.headers || [];
+  tb5Line_('HEADERS total=' + hs.length);
+  hs.forEach(function (h, i) {
+    var di = h.destination_identity || {};
+    tb5Line_('H' + (i + 1) + '/' + hs.length + ' id=' + tb5V_(h.allocation_draft_id) + ' fam=' + tb5V_(h.identity_family) +
+      ' st=' + tb5V_(h.status) + ' active=' + tb5B_(h.active) +
+      ' scope=' + tb5V_((h.scope || {}).company) + '/' + tb5V_((h.scope || {}).country) + '/' + tb5V_((h.scope || {}).marketplace) +
+      ' dest=' + tb5V_(di.type) + ':' + tb5V_(di.id) + (di.code ? ('/' + di.code) : '') +
+      ' svc=' + tb5V_(h.shipping_service_canonical) +
+      ' lines=' + tb5V_(h.line_count) + ' qty=' + tb5V_(h.planned_qty_total) +
+      ' dsref=' + tb5V_(h.downstream_references) +
+      ' k2match=' + tb5B_(h.k2_id_matches_stored) + ' k4able=' + tb5B_(h.k4_classifiable) +
+      ' contested=' + tb5B_(h.contested_identity) + ' needsUser=' + tb5B_(h.explicit_user_input_required) +
+      ' -> ' + tb5V_(h.decision));
+  });
+
+  // 3. TARGET - persisted and attempted, held apart.
+  var t = r.target || {}, p = t.persisted_route || {}, a = t.attempted_route || {}, pf = t.proofs || {};
+  tb5Line_('TARGET ' + tb5V_(t.target));
+  tb5Line_('TARGET persisted svc=' + tb5V_(p.service_canonical) + ' qty=' + tb5V_(p.planned_qty_total) +
+    ' dest=' + tb5V_((p.destination_identity || {}).type) + ':' + tb5V_(p.destination_marketplace_cell) +
+    ' eta=' + tb5V_((p.expected_arrival_cells || []).join(',')) + ' rank=' + tb5V_(p.evidence_rank) +
+    ' found=' + tb5B_(pf.persisted_route_found));
+  tb5Line_('TARGET attempted svc=' + tb5V_(a.service) + ' qty=' + tb5V_(a.planned_qty) +
+    ' dest=' + tb5V_(a.destination_marketplace) + ' eta=' + tb5V_(a.expected_arrival) +
+    ' rank=' + tb5V_(a.evidence_rank) + ' persisted_anywhere=' + tb5B_(a.persisted_anywhere));
+  tb5Line_('TARGET same_service=' + tb5B_(pf.sea_is_not_sea_express === false) +
+    ' same_identity=' + tb5B_(pf.not_the_same_route_identity === false) +
+    ' persisted_qty_changed=N attempted_qty_created=' + tb5B_(pf.attempted_qty_not_created === false) +
+    ' eta_backfilled=' + tb5B_(pf.attempted_eta_not_backfilled === false));
+
+  // 4. SIMULATION - read-only, through the shipped resolver.
+  var sim = t.future_save_simulation || {};
+  // The scenario NAME comes off the report too. Re-authoring it here would put a second description of the
+  // simulation in a file whose whole job is to not describe anything.
+  [['SIM1', sim.attempted_sea_express_amazon],
+   ['SIM2', sim.same_sea_route_with_amazon_supplied]].forEach(function (pair) {
+    var x = pair[1];
+    if (!x) { tb5Line_(pair[0] + ' (not evaluated)'); return; }
+    tb5Line_(pair[0] + ' [' + tb5V_(x.label) + '] k4=' + tb5V_(x.k4_status) + ' verdict=' + tb5V_(x.verdict) +
+      ' keepsStoredId=' + tb5B_(x.retains_existing_stored_id) +
+      ' distinctK4Proposal=' + tb5B_(x.creates_distinct_k4_proposal) +
+      ' rival=' + tb5B_(x.rival_or_collision) +
+      ' rivals=' + ((x.unclassifiable_rivals_matching_by_k2 || []).length) +
+      ' persistable=' + tb5B_((x.persistable || {}).persistable));
+  });
+
+  // 5. BOUNDARIES - raw, accepted, and every exclusion by typed reason.
+  var bs = (r.hydration || {}).boundaries || [];
+  var raw = bs[0] || {}, acc = bs[1] || {};
+  tb5Line_('BOUND raw headers=' + tb5V_(raw.header_count) + ' lines=' + tb5V_(raw.line_count) + ' qty=' + tb5V_(raw.quantity_total));
+  tb5Line_('BOUND accepted headers=' + tb5V_(acc.header_count) + ' lines=' + tb5V_(acc.line_count) +
+    ' qty=' + tb5V_(acc.quantity_total) + ' dropped=' + tb5V_(acc.dropped));
+  (acc.drop_reasons || []).forEach(function (x, i) {
+    tb5Line_('BOUND drop' + (i + 1) + ' id=' + tb5V_(x.id) + ' reason=' + tb5V_(x.reason));
+  });
+  var qf = r.quantity_and_fk || {}, ds = r.downstream || {};
+  tb5Line_('BOUND orphans=' + tb5V_(qf.orphans) + ' matched=' + tb5V_(qf.matched_lines) +
+    ' qty_before=' + tb5V_(qf.planned_qty_before) + ' qty_proposed=' + tb5V_(qf.planned_qty_proposed) +
+    ' conserved=' + tb5B_(qf.quantity_conserved) +
+    ' downstream_stored_fk=' + ((ds.references || []).length) +
+    ' any_stored_fk=' + tb5B_(ds.any_stored_allocation_fk));
+
+  // 6. HYDRATION - what the API returned, what the client does with it, what the operator sees.
+  var tr = (r.hydration || {}).target_route || {};
+  tb5Line_('HYD api_returned=' + tb5B_(tr.api_returned_target_route) + ' headers=' + tb5V_(tr.api_returned_header_count) +
+    ' client_dropped=' + tb5B_(tr.client_dropped_target_route));
+  tb5Line_('HYD stored_dest_mkt=' + tb5V_(tr.stored_destination_marketplace));
+  tb5Line_('HYD client_synth_dest_mkt=' + tb5V_(tr.client_synthesised_destination_marketplace) +
+    ' rank=' + tb5V_(tr.client_synthesised_value_rank));
+  tb5Line_('HYD rendered_to_token=' + tb5V_(tr.rendered_to_token));
+  tb5Line_('HYD rendered_to_selected=' + tb5V_(tr.rendered_to_selected_value));
+  tb5Line_('HYD discriminator_default_editor: ' + tb5V_(tr.default_editor_discriminator));
+  tb5Line_('HYD discriminator_hydrated_legacy: ' + tb5V_(tr.hydrated_legacy_row_discriminator));
+  tb5Line_('HYD client_accepts_DERIVED=' + tb5B_(tr.client_accepts_target_route_DERIVED_NOT_EXECUTED) +
+    ' (authority = the frontend suite, which executes the shipped page functions)');
+
+  // 7. READINESS - all six, never collapsed, plus the one verdict.
+  var rd = r.readiness || {};
+  tb5Line_('READY schemaReady=' + tb5B_(rd.schemaReady) +
+    ' runtimeAuthorityReady=' + tb5B_(rd.runtimeAuthorityReady) +
+    ' existingRouteHydrationReady=' + tb5B_(rd.existingRouteHydrationReady) +
+    ' newDistinctRouteSaveReady=' + tb5B_(rd.newDistinctRouteSaveReady) +
+    ' legacyAdoptionReady=' + tb5B_(rd.legacyAdoptionReady) +
+    ' submitReady=' + tb5B_(rd.submitReady));
+  tb5Line_('VERDICT ' + tb5V_(r.verdict) + ' checksum=' + tb5V_(r.checksum));
+
+  // 8. FOOTER - its own line, always last, never behind a large array.
+  tb5Line_('DB_WRITES=0 · ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0');
+}
+
+/**
+ * COMPACT ENTRY POINT. Argument-free, no COMMIT, read-only - the same guarantees as the full dry run, because it
+ * is the same builder. One live snapshot per call.
+ */
+function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY() {
+  var out = tb5BuildReport_();
+  tb5EmitCompact_(out);
   return out;
 }

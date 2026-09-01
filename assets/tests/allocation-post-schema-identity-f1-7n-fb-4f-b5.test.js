@@ -122,7 +122,14 @@ function makeEnv(toolSrc, opts) {
         ctx: ctx, sandbox: sandbox, SHEETS: SHEETS, events: events,
         get: function (n) { try { return vm.runInContext(n, ctx); } catch (e) { return null; } },
         mount: function (name, grid) { SHEETS[name] = new FakeSheet(name, grid); return SHEETS[name]; },
-        run: function () { return vm.runInContext('TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN()', ctx); }
+        run: function () { return vm.runInContext('TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN()', ctx); },
+        summary: function () { return vm.runInContext('TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY()', ctx); },
+        // Only the compact lines, in emission order - the full dry run's single pretty-printed blob never
+        // carries this prefix, so the two views cannot be confused for one another.
+        compact: function () {
+            return events.logs.filter(function (m) { return m.indexOf('[FB4FB5S] ') === 0; })
+                .map(function (m) { return m.slice('[FB4FB5S] '.length); });
+        }
     };
     env.HDR = env.get('SHIPPING_ALLOCATION_DRAFTS_HEADERS_');
     env.FULL = env.get('SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_');
@@ -159,6 +166,27 @@ var FX = {
     ]
 };
 // 800 + 60 + 40 + 50 + 30 + 40 = 1020
+
+// A fixture shaped after the PARTIAL live evidence of the first B5 production run (F1-7N-FB-4F-B5-R1). It is
+// STILL A FIXTURE - the live run was truncated before the fourth header, the target analysis and the verdict,
+// and nothing here may be reported as a live fact. What it buys is the shape the offline fixture above does not
+// have: headers with NO destination of any kind AND line_count = 0, which is precisely the row a census is most
+// likely to drop. The fourth live header is NOT represented, because it has not been observed.
+var FX_LIVE_SHAPED = [
+    { id: 'SADH-K2-AAAA1111', cycle: '2026-W36', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+        status: 'draft', src: 'WH-CN-01', dst: '', method: 'sea_express', lastMile: 'standard', group: '1' },
+    { id: 'SADH-K2-BBBB2222', cycle: '2026-W36', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+        status: 'draft', src: 'WH-CN-01', dst: '', method: 'air', lastMile: 'standard', group: '1' },
+    { id: 'SADH-K2-CCCC3333', cycle: '2026-W36', company: 'ResTW', country: 'JP', marketplace: 'Amazon',
+        status: 'draft', src: 'WH-TW-02', dst: '', method: 'air', lastMile: 'standard', group: '1' }
+];
+var FX_LIVE_SHAPED_LINES = [
+    { id: 'SADL-K2-L1', fk: 'SADH-K2-CCCC3333', sku: 'CO1100-R', qty: 60 },
+    { id: 'SADL-K2-L2', fk: 'SADH-K2-CCCC3333', sku: 'CO2200-B', qty: 50 },
+    { id: 'SADL-K2-L3', fk: 'SADH-K2-CCCC3333', sku: 'CO3300-G', qty: 40 },
+    { id: 'SADL-K2-L4', fk: 'SADH-K2-CCCC3333', sku: 'CO4400-Y', qty: 40 },
+    { id: 'SADL-K2-L5', fk: 'SADH-K2-CCCC3333', sku: 'CO5500-P', qty: 30 }
+];   // 60+50+40+40+30 = 220
 
 function headerGrid(cols, headers) {
     var g = [cols.slice()];
@@ -231,8 +259,12 @@ ok(fs.existsSync(path.join(TOOLS_DIAG, TOOL_FILE)), 'A1 the diagnostic exists in
 ok(!fs.existsSync(path.join(GS, TOOL_FILE)), 'A2 and NOT in the active deployment directory');
 // Test 21 — no COMMIT or execute path.
 ok(/function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN\(\)/.test(TOOL), 'A3 [test 21] the entry point takes no arguments');
-eq(TOOL.match(/^function TEMP_[A-Z0-9_]+\(/gm) || [], ['function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN('],
-    'A4 [test 21] exactly ONE public TEMP_ entry point, and it is the dry run');
+// R1 — a SECOND public entry point exists now, and it is the compact VIEW of the same report. What must stay
+// true is that every public entry point is read-only and none of them is a writer.
+eq(TOOL.match(/^function TEMP_[A-Z0-9_]+\(/gm) || [],
+    ['function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN(',
+     'function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY('],
+    'A4 [test 21] exactly TWO public entry points, both read-only views of one builder');
 ['COMMIT', 'mode:', 'execute'].forEach(function (t) {
     ok(TOOL.indexOf('function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_' + t) === -1, 'A5 [test 21] no ' + t + ' entry point');
 });
@@ -871,6 +903,286 @@ section('K — the neighbours this round must not have disturbed');
     ok(PAGE.indexOf('tb5') === -1, 'K8 the page carries no B5 symbol — no frontend change');
     // Production runtime never appends a column during a request.
     ok(SAD.indexOf('insertColumnsAfter') === -1, 'K9 the allocation handler never appends a column during a request');
+})();
+
+// ==============================================================================================================
+section('L — [R1] the COMPACT view: one builder, two renderings');
+// ==============================================================================================================
+(function () {
+    var env = fresh();
+    var full = env.run();
+    var env2 = fresh();
+    var sum = env2.summary();
+
+    // Test 1 — the SAME report. Not a similar one, not a subset: the identical object.
+    eq(JSON.stringify(sum), JSON.stringify(full), 'L1 [test 1] SUMMARY returns exactly the report the DRY RUN returns');
+    ok(/function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN\(\) \{\s*\n\s*var out = tb5BuildReport_\(\);/.test(TOOL),
+        'L2 [test 1] the full dry run calls the core builder');
+    ok(/function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY\(\) \{\s*\n\s*var out = tb5BuildReport_\(\);/.test(TOOL),
+        'L3 [test 1] and so does the summary');
+    eq((TOOL_CODE.match(/tb5BuildReport_\(\)/g) || []).length, 3, 'L4 [test 1] one definition, two call sites');
+
+    // Test 2 — the compact view FORMATS. It owns no rule.
+    var emit = TOOL.slice(TOOL.indexOf('function tb5EmitCompact_'), TOOL.indexOf('function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY'));
+    var emitCode = stripComments(emit);
+    ['ricK4GroupKey_', 'ricDestinationIdentity_', 'ricCanonicalService_', 'sadK2GroupKey_', 'sadK4ResolveActiveDraft_',
+        'tb5ClassifyHeader_', 'tb5TargetAnalysis_', 'tb5HydrationTrace_', 'tb5QuantityAndFk_', 'tb5ReadTable_',
+        'SpreadsheetApp'].forEach(function (f) {
+        ok(emitCode.indexOf(f) === -1, 'L5 [test 2] the compact view never calls ' + f);
+    });
+    // It also decides nothing: no decision or verdict token is authored here.
+    ['SAFE_TO_RETAIN_AS_IS', 'SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE', 'CONTESTED_IDENTITY_BLOCKED',
+        'READY_FOR_CONTROLLED_UI_SAVE_TEST', 'STOP_CONTESTED_IDENTITY', 'K4_IDENTITY_RECONCILIATION_REQUIRED']
+        .forEach(function (v) { ok(emit.indexOf(v) === -1, 'L6 [test 2] and never authors the token ' + v); });
+
+    // Test 4 — one HEADER line per header, numbered, and the count is the report's own.
+    var lines = env2.compact();
+    var hLines = lines.filter(function (m) { return /^H\d+\//.test(m); });
+    eq(hLines.length, sum.headers.length, 'L7 [test 4] one H-line per header (' + hLines.length + ')');
+    eq((lines.filter(function (m) { return m.indexOf('HEADERS total=') === 0; })[0] || ''),
+        'HEADERS total=' + sum.headers.length, 'L8 [test 4] and the declared total matches');
+    hLines.forEach(function (m, i) {
+        ok(m.indexOf('H' + (i + 1) + '/' + sum.headers.length + ' ') === 0, 'L9 [test 4] H' + (i + 1) + ' is ordinal ' + (i + 1) + ' of ' + sum.headers.length);
+    });
+
+    // Test 5 — all six readiness booleans, on one line, none omitted.
+    var rdy = lines.filter(function (m) { return m.indexOf('READY ') === 0; })[0] || '';
+    ['schemaReady', 'runtimeAuthorityReady', 'existingRouteHydrationReady', 'newDistinctRouteSaveReady',
+        'legacyAdoptionReady', 'submitReady'].forEach(function (k) {
+        ok(new RegExp('\\b' + k + '=[YN?]').test(rdy), 'L10 [test 5] READY carries ' + k);
+    });
+    eq(Object.keys(sum.readiness).length, 6, 'L11 [test 5] and the report has exactly six');
+
+    // Test 6 — the verdict and the footer are their own lines, and they are LAST.
+    var vIdx = lines.map(function (m, i) { return m.indexOf('VERDICT ') === 0 ? i : -1; }).filter(function (i) { return i >= 0; });
+    eq(vIdx.length, 1, 'L12 [test 6] exactly one VERDICT line');
+    ok(lines[vIdx[0]].indexOf('VERDICT ' + sum.verdict) === 0, 'L13 [test 6] carrying the report verdict');
+    eq(lines[lines.length - 1], 'DB_WRITES=0 · ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0',
+        'L14 [test 6] and the FOOTER is the very last line');
+    ok(vIdx[0] === lines.length - 2, 'L15 [test 6] with the verdict immediately before it');
+    // Sized so a transcript shows them: every line is short, and the whole emission is small.
+    var total = lines.join('\n').length;
+    ok(lines.every(function (m) { return m.length <= 400; }), 'L16 [test 6] every compact line is <= 400 chars');
+    ok(total < 8000, 'L17 [test 6] the whole compact emission is under 8KB (' + total + ')');
+    // The full report, by contrast, is what gets cut off — which is why this view exists.
+    ok(JSON.stringify(full, null, 2).length > total * 3,
+        'L18 [test 6] the full pretty-printed report is far larger (' + JSON.stringify(full, null, 2).length + ')');
+
+    // Test 7 — no large arrays, no line ids, no natural keys, no raw rows.
+    var blob = lines.join('\n');
+    (sum.headers[0].line_ids || []).forEach(function (id) {
+        ok(blob.indexOf(id) === -1, 'L19 [test 7] no line id leaks into the compact view');
+    });
+    ['line_natural_keys', 'current_headers_ordered', 'never_promoted', 'evidence_ranks', 'tables_read', 'note_ref']
+        .forEach(function (k) { ok(blob.indexOf(k) === -1, 'L20 [test 7] no ' + k + ' array in the compact view'); });
+    ok(blob.indexOf('site_sku') === -1, 'L21 [test 7] and no natural-key field names');
+
+    // Test 9 / 10 — the guarantees the full dry run already had are unchanged by the second entry point.
+    eq(env2.events.writeAttempts, [], 'L22 [test 9] the summary made no mutation call');
+    eq([sum.DB_WRITES, sum.ROWS_CHANGED, sum.BACKFILLS, sum.IDS_CREATED], [0, 0, 0, 0], 'L23 [test 10] every counter is zero');
+    eq(TOOL.match(/^function TEMP_[A-Z0-9_]+\(/gm) || [],
+        ['function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_DRY_RUN(',
+         'function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY('],
+        'L24 [test 10] exactly two public entry points, both read-only');
+    ok(/function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY\(\)/.test(TOOL), 'L25 [test 10] the summary takes no arguments');
+    ['LockService', 'PropertiesService', 'setValue', 'appendRow', 'COMMIT'].forEach(function (m) {
+        ok(TOOL_CODE.indexOf(m) === -1, 'L26 [test 10] still no ' + m + ' anywhere in the code');
+    });
+
+    // ONE snapshot per call: the drafts table is read the same number of times either way.
+    var e3 = fresh(); e3.run(); var readsFull = e3.events.reads;
+    var e4 = fresh(); e4.summary(); var readsSum = e4.events.reads;
+    eq(readsSum, readsFull, 'L27 the summary reads the live snapshot exactly as many times as the dry run');
+})();
+
+// ==============================================================================================================
+section('M — [R1, tests 3, 8] a header with NO lines is still a header, and nothing live is hardcoded');
+// ==============================================================================================================
+(function () {
+    // The shape the first live run actually showed: destinations blank, and two headers with line_count = 0.
+    var env = fresh({ headers: FX_LIVE_SHAPED, lines: FX_LIVE_SHAPED_LINES });
+    var r = env.summary();
+    var lines = env.compact();
+    var hLines = lines.filter(function (m) { return /^H\d+\//.test(m); });
+
+    eq(r.headers.length, 3, 'M1 three headers in this shape');
+    eq(hLines.length, 3, 'M2 [test 3] and three H-lines — none dropped');
+    eq(r.headers.map(function (h) { return h.line_count; }), [0, 0, 5], 'M3 two of them have NO lines');
+    // Test 3 — the zero-line headers are emitted, with their zero stated.
+    ok(hLines[0].indexOf('lines=0') !== -1, 'M4 [test 3] H1 reports lines=0 rather than being skipped');
+    ok(hLines[1].indexOf('lines=0') !== -1, 'M5 [test 3] H2 reports lines=0 rather than being skipped');
+    ok(hLines[2].indexOf('lines=5') !== -1 && hLines[2].indexOf('qty=220') !== -1, 'M6 H3 reports its 5 lines and 220 units');
+    // Every header line carries the full field set the compact contract requires.
+    ['id=', 'fam=', 'st=', 'active=', 'scope=', 'dest=', 'svc=', 'lines=', 'qty=', 'dsref=', 'k2match=',
+        'k4able=', 'contested=', 'needsUser=', ' -> '].forEach(function (f) {
+        ok(hLines.every(function (m) { return m.indexOf(f) !== -1; }), 'M7 every H-line carries ' + f);
+    });
+    // A blank destination is REPORTED as unclassifiable, from the authority, not guessed.
+    ok(hLines.every(function (m) { return m.indexOf('k4able=N') !== -1; }), 'M8 all three are K4-unclassifiable — no destination stored');
+    ok(hLines.every(function (m) { return m.indexOf('ROUTE_DESTINATION_MISSING') !== -1; }), 'M9 named by the contract code');
+
+    // Test 8 — nothing live is hardcoded. Change the data, the output changes with it.
+    var alt = JSON.parse(JSON.stringify(FX_LIVE_SHAPED));
+    alt[0].method = 'sea';
+    alt[0].destMkt = 'Amazon';
+    var env2 = fresh({ headers: alt, lines: FX_LIVE_SHAPED_LINES });
+    env2.summary();
+    var alt1 = env2.compact().filter(function (m) { return /^H1\//.test(m); })[0];
+    ok(alt1.indexOf('svc=sea ') !== -1, 'M10 [test 8] the service in the output follows the data');
+    ok(alt1.indexOf('k4able=Y') !== -1, 'M11 [test 8] and so does classifiability');
+    ok(alt1.indexOf('MARKETPLACE') !== -1, 'M12 [test 8] and the destination type');
+    // The formatter contains no live literal at all.
+    var emit = TOOL.slice(TOOL.indexOf('function tb5EmitCompact_'), TOOL.indexOf('function TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY'));
+    // Identities, scopes, SKUs and outcome RANKS must be read off the report, never authored here. (Numeric
+    // constants are deliberately NOT on this list - a truncation length is not a live measurement, and that the
+    // numbers follow the data is proven above by changing the data, which is the stronger test.)
+    // Look at the formatter's STRING LITERALS, not at its source text. `sim.attempted_sea_express_amazon`
+    // is a property of the report being read; a quoted 'sea_express' would be a value being authored.
+    // The first draft of this line could not tell those apart and failed on the property name.
+    var emitLiterals = (emit.match(/'[^']*'/g) || []).join(' | ');
+    ['SADH-', 'SADL-', 'ResUS', 'ResTW', 'Walmart', 'CO1100', 'sea_express', 'PERSISTED_CANONICAL',
+        'PERSISTED_LEGACY', 'USER_ATTEMPT_EVIDENCE_ONLY', 'ROUTE_DESTINATION_MISSING', 'MARKETPLACE_DESTINATION:']
+        .forEach(function (v) {
+            ok(emitLiterals.indexOf(v) === -1, 'M13 [test 8] the formatter authors no live value: ' + v);
+        });
+    // 'Amazon' appears only as the scope the CLIENT synthesises from, read off the report, never as a fact.
+    ok(emit.indexOf("'Amazon'") === -1, 'M14 [test 8] not even a marketplace literal');
+
+    // Quantity is carried through untouched.
+    eq(r.quantity_and_fk.planned_qty_before, 220, 'M15 the census follows the fixture, not a constant');
+    eq(r.quantity_and_fk.orphans, 0, 'M16 no orphans in this shape');
+})();
+
+// ==============================================================================================================
+section('N — [R1, test 11] the planning doc separates fixture from live evidence');
+// ==============================================================================================================
+(function () {
+    var DOC = lf(fs.readFileSync(path.join(ROOT, 'docs', 'planning',
+        'LEGACY_ALLOCATION_DRAFT_RECONCILIATION_F1-7N-FB-4F.md'), 'utf8'));
+    ok(/B5\.9/.test(DOC), 'N1 [test 11] the correction section exists');
+    ok(/CORRECTION/i.test(DOC), 'N2 [test 11] and is labelled a correction');
+    // The three evidence classes are named and kept apart.
+    ['offline fixture', 'user-reported', 'live runtime'].forEach(function (k) {
+        ok(new RegExp(k, 'i').test(DOC), 'N3 [test 11] the doc names the "' + k + '" evidence class');
+    });
+    // The retracted claims are named as retracted, not silently deleted.
+    ok(/Walmart/.test(DOC), 'N4 [test 11] the Walmart row is still discussed…');
+    var b59 = DOC.slice(DOC.indexOf('## B5.9'));
+    ok(/fixture/i.test(b59) && /Walmart/.test(b59), 'N5 [test 11] …and B5.9 says it was a FIXTURE row, not live');
+    ok(/not been observed|fourth|truncat/i.test(b59), 'N6 [test 11] the unobserved fourth header is declared, not guessed');
+    // No authorization creeps in.
+    ok(!/authoris(e|ed) (a )?(destination )?backfill|proceed with the backfill/i.test(b59),
+        'N7 [test 11] and nothing in the correction authorises a backfill');
+})();
+
+// ==============================================================================================================
+section('O — [R1, test 12] mutation tests for the compact view');
+// ==============================================================================================================
+(function () {
+    var MUT = [
+        {
+            name: 'O-M1 a header with no lines is skipped',
+            from: '  hs.forEach(function (h, i) {\n    var di = h.destination_identity || {};',
+            to: '  hs.forEach(function (h, i) {\n    if (!h.line_count) return;\n    var di = h.destination_identity || {};',
+            probe: function (tool) {
+                var e = makeEnv(tool); mountAll(e, { headers: FX_LIVE_SHAPED, lines: FX_LIVE_SHAPED_LINES });
+                var r = e.summary();
+                return e.compact().filter(function (m) { return /^H\d+\//.test(m); }).length === r.headers.length;
+            }
+        },
+        {
+            name: 'O-M2 the last header is dropped',
+            from: '  var hs = r.headers || [];',
+            to: '  var hs = (r.headers || []).slice(0, -1);',
+            probe: function (tool) {
+                var e = makeEnv(tool); mountAll(e);
+                var r = e.summary();
+                var h = e.compact().filter(function (m) { return /^H\d+\//.test(m); });
+                return h.length === r.headers.length && r.headers.length === 4;
+            }
+        },
+        {
+            name: 'O-M3 one readiness boolean is omitted',
+            from: "    ' legacyAdoptionReady=' + tb5B_(rd.legacyAdoptionReady) +\n",
+            to: '',
+            probe: function (tool) {
+                var e = makeEnv(tool); mountAll(e);
+                e.summary();
+                var rdy = e.compact().filter(function (m) { return m.indexOf('READY ') === 0; })[0] || '';
+                return ['schemaReady', 'runtimeAuthorityReady', 'existingRouteHydrationReady',
+                    'newDistinctRouteSaveReady', 'legacyAdoptionReady', 'submitReady']
+                    .every(function (k) { return new RegExp('\\b' + k + '=[YN?]').test(rdy); });
+            }
+        },
+        {
+            name: 'O-M4 the summary classifies rows its own way instead of reading the report',
+            from: "      ' svc=' + tb5V_(h.shipping_service_canonical) +",
+            to: "      ' svc=' + tb5V_(h.shipping_service_raw) +",
+            probe: function (tool) {
+                // A stored service the authority REFUSES must not be printed as if it were canonical.
+                var bogus = JSON.parse(JSON.stringify(FX_LIVE_SHAPED));
+                bogus[0].method = 'seafood';
+                var e = makeEnv(tool); mountAll(e, { headers: bogus, lines: FX_LIVE_SHAPED_LINES });
+                e.summary();
+                var h1 = e.compact().filter(function (m) { return /^H1\//.test(m); })[0] || '';
+                return h1.indexOf('svc=(NOT CANONICAL)') !== -1;
+            }
+        },
+        {
+            name: 'O-M5 a live value is hardcoded into the logger',
+            from: "  tb5Line_('VERDICT ' + tb5V_(r.verdict) + ' checksum=' + tb5V_(r.checksum));",
+            to: "  tb5Line_('VERDICT READY_FOR_REVIEWED_USER-CONFIRMATION_PLAN checksum=' + tb5V_(r.checksum));",
+            probe: function (tool) {
+                // Repair every header, and the verdict must MOVE with the data.
+                var repaired = JSON.parse(JSON.stringify(FX_LIVE_SHAPED));
+                repaired.forEach(function (h) { h.destMkt = 'Amazon'; });
+                var e = makeEnv(tool); mountAll(e, { headers: repaired, lines: FX_LIVE_SHAPED_LINES });
+                var r = e.summary();
+                var v = e.compact().filter(function (m) { return m.indexOf('VERDICT ') === 0; })[0] || '';
+                return v.indexOf('VERDICT ' + r.verdict) === 0 && r.verdict === 'READY_FOR_CONTROLLED_UI_SAVE_TEST';
+            }
+        },
+        {
+            name: 'O-M6 the footer loses DB_WRITES=0',
+            from: "  tb5Line_('DB_WRITES=0 · ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0');",
+            to: "  tb5Line_('ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0');",
+            probe: function (tool) {
+                var e = makeEnv(tool); mountAll(e);
+                e.summary();
+                var lines = e.compact();
+                return lines[lines.length - 1] === 'DB_WRITES=0 · ROWS_CHANGED=0 · BACKFILLS=0 · IDS_CREATED=0 · K4_IDS_CREATED=0';
+            }
+        },
+        {
+            name: 'O-M7 the attempted route is printed as a persisted fact',
+            from: "    ' rank=' + tb5V_(a.evidence_rank) + ' persisted_anywhere=' + tb5B_(a.persisted_anywhere));",
+            to: "    ' rank=PERSISTED_CANONICAL persisted_anywhere=Y');",
+            probe: function (tool) {
+                var e = makeEnv(tool); mountAll(e);
+                var r = e.summary();
+                var t = e.compact().filter(function (m) { return m.indexOf('TARGET attempted ') === 0; })[0] || '';
+                return t.indexOf('rank=USER_ATTEMPT_EVIDENCE_ONLY') !== -1 &&
+                    t.indexOf('persisted_anywhere=N') !== -1 &&
+                    r.target.attempted_route.persisted_anywhere === false;
+            }
+        }
+    ];
+
+    var caught = 0;
+    MUT.forEach(function (m) {
+        var held = false;
+        try { held = m.probe(TOOL) === true; } catch (e) { held = false; console.error('  baseline threw: ' + e.message); }
+        ok(held, 'O-baseline ' + m.name + ' — the probe holds on the shipped tool');
+        var mutated;
+        try { mutated = swap(TOOL, m.from, m.to); }
+        catch (e) { ok(false, 'O ' + m.name + ' — ' + e.message); return; }
+        ok(mutated !== TOOL, 'O ' + m.name + ' — the mutation really changed the source');
+        var survived;
+        try { survived = m.probe(mutated) === true; } catch (e) { survived = false; }
+        if (!survived) caught++;
+        ok(!survived, 'O ' + m.name + ' — CAUGHT');
+    });
+    eq(caught, MUT.length, 'O-total all ' + MUT.length + ' compact-view mutations caught');
 })();
 
 console.log('\n' + (fail === 0 ? 'PASS' : 'FAIL') + '  ' + pass + ' passed, ' + fail + ' failed');

@@ -1108,14 +1108,18 @@ Lineage is returned in the RESPONSE and never persisted, and submit idempotency 
 
 **So re-keying a header cannot orphan anything downstream. The risk is entirely upstream, in the lines.**
 
-## B5.2 — The four headers
+## B5.2 — The four headers — **RETRACTED, see §B5.9**
 
-| header | destination | service | decision |
+> **This table described the OFFLINE TEST FIXTURE, not the live database.** It was written before the diagnostic
+> had ever been run against production, and it is wrong about the live rows. It is kept, struck through, because
+> deleting a wrong claim hides that it was made. The live evidence is in §B5.9.
+
+| ~~header~~ | ~~destination~~ | ~~service~~ | ~~decision~~ |
 |---|---|---|---|
-| the target (`ResUS/US/Amazon`) | **none stored** | `sea` | `SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE` |
-| `ResUS/US/Walmart` | warehouse | `sea` | `SAFE_TO_RETAIN_AS_IS` |
-| `ResTW/JP/Amazon` | warehouse | `air` | `SAFE_TO_RETAIN_AS_IS` |
-| the submitted `K3` row | none stored | `sea_express` | terminal — reported, not active |
+| ~~the target (`ResUS/US/Amazon`)~~ | ~~**none stored**~~ | ~~`sea`~~ | ~~`SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE`~~ |
+| ~~`ResUS/US/Walmart`~~ | ~~warehouse~~ | ~~`sea`~~ | ~~`SAFE_TO_RETAIN_AS_IS`~~ |
+| ~~`ResTW/JP/Amazon`~~ | ~~warehouse~~ | ~~`air`~~ | ~~`SAFE_TO_RETAIN_AS_IS`~~ |
+| ~~the submitted `K3` row~~ | ~~none stored~~ | ~~`sea_express`~~ | ~~terminal~~ |
 
 The target row's plan SCOPE marketplace is `Amazon` and its route destination cell is blank. Those are different
 axes: scope is a PLAN axis, destination is a ROUTE axis, and `ricDestinationIdentity_` reads only the route axis.
@@ -1273,3 +1277,78 @@ The persisted route needs a destination, and only a human can supply it. The two
 controlled single-route UI save test, or a reviewed user-confirmation plan that adopts the stored id in place.
 Either way the client's scope synthesis should stop BEFORE the render fix, or the UI will keep asserting a
 destination the database does not have.
+
+
+## B5.9 — CORRECTION: what was measured, what was reported, and where the two parted company
+
+### The mistake, stated plainly
+
+The B5 completion report presented a four-row table as the live state of `shipping_allocation_drafts`. **It was
+the offline test fixture.** The diagnostic had not been run against production when that report was written; the
+suite's `FX.headers` array was read as though it were a census. Two of its claims are now known to be false of
+the live database:
+
+* a `ResUS / US / Walmart` header with a **warehouse** destination — no such row has been observed;
+* a `ResTW / JP / Amazon` header with a **warehouse** destination — the live row of that scope stores **no
+  destination at all**.
+
+This is the same failure the entire FB-4F workstream exists to end, committed by the report rather than by the
+code: **evidence of one rank presented as evidence of another.** The diagnostic itself was right — it classified
+whatever rows it was given, and against the fixture it classified them correctly. Nothing in the tool needed to
+change for this correction, and nothing in it did.
+
+### The three evidence classes, which must never again be merged
+
+| class | what it is | where it comes from | may it be reported as a live fact? |
+|---|---|---|---|
+| **offline fixture** | rows invented by the regression suite to exercise a code path | `assets/tests/…-b5.test.js` | **NO** |
+| **user-reported B4 census** | counts the operator read off the sheet (35/31, 4 rows, 6 lines, 1020, 6 matched, 0 orphans, digest `52d8989b`) | the B4 task statement | Yes, **as a user report**, and it is not independently reproducible here |
+| **B5 live runtime measurement** | what the diagnostic printed when run against production | the Apps Script execution log | Yes — this is the only class that settles what the live rows ARE |
+
+### The live runtime evidence actually obtained (first production run, truncated)
+
+Three headers were visible before the log was cut off. Reported exactly as seen, and no further:
+
+```
+1. ResUS / US / Amazon   service=sea_express  destination BLANK  line_count=0
+   decision = SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE
+2. ResUS / US / Amazon   service=air          destination BLANK  line_count=0
+   decision = SAFE_TO_ADOPT_ON_EXPLICIT_USER_SAVE
+3. ResTW / JP / Amazon   service=air          destination BLANK  line_count=5  qty=220
+   decision = (not reached before truncation)
+```
+
+Confirmed in the same run: read-only, schema 35 / 31, fingerprints correct, both runtime gates ACCEPTED.
+
+**NOT OBTAINED, AND NOT GUESSED HERE:** the fourth header, the target analysis, the boundary census, the six
+readiness booleans, the global verdict and the footer. The full summary awaits the R1 live run. This section will
+not speculate about any of them, and no decision may be taken as though they were known.
+
+### What the live evidence already changes
+
+* **No warehouse destination has been observed anywhere.** Every header seen so far stores neither a destination
+  warehouse nor a destination marketplace, so all three are K4-unclassifiable for the same reason.
+* **Two headers carry zero lines.** A header with no lines is still a header; a census that omits it is wrong in
+  exactly the direction that hides work. The compact view emits every header, and a mutation test now proves it.
+* **`line_count=0` on both `ResUS/US/Amazon` rows means the CO1100-R / 800 line is not under either of them.**
+  Where that line sits is a question for the R1 run, not an assumption for this document.
+* **The two `ResUS/US/Amazon` rows are not contested by K2**, because their services differ (`sea_express` and
+  `air`) and service is a K2 dimension — but that is a reading of the rule, and the run will say so or not.
+
+### Why the first log was truncated
+
+The full report is one pretty-printed object carrying every header's `line_ids` and `line_natural_keys`, four
+hydration boundaries with their row models, the read-table inventory and the refusal vocabulary. Apps Script caps
+what its execution transcript will show, and `verdict`, `readiness` and `footer` sit at the END of the object —
+so the cap ate precisely the lines that decide anything.
+
+The fix is **not** to shrink the full report, which is the complete evidence and should stay complete. R1 adds a
+second RENDERING of the same report: `TEMP_SHIPPING_ALLOCATION_POST_SCHEMA_IDENTITY_B5_SUMMARY()`, one short
+`[FB4FB5S]`-prefixed line per section, verdict and footer last and on their own lines. Both entry points call the
+same `tb5BuildReport_()`; the compact view formats and decides nothing, which is asserted by tests and defended
+by seven mutations.
+
+### What this correction does NOT authorise
+
+No destination backfill. No ETA backfill. No ID rewrite. No K4 id creation. No submit. No reconciliation of any
+legacy row. The verdict is unknown until the R1 live run prints it, and an unknown verdict authorises nothing.
