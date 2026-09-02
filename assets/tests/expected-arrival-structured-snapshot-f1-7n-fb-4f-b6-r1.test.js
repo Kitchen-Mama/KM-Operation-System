@@ -347,7 +347,7 @@ section('G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AN
     'sadK2LineNaturalKey_', 'sadK2DeterministicLineId_', 'sadIsK2Group_', 'sadNewLineId_', 'sadK2ResolveActiveDraft_',
     'sadK2LinesRouteCompatibleWithHeader_', 'sadCanonicalLineId_', 'sadSameLineIdentity_', 'sadPreflightLineBatch_',
     'sadScanDuplicateLinePks_', 'sadVerifyDraftLines_', 'sadLineIsComplete_', 'sadStoredHeaderRouteIsComplete_',
-    'sadHeaderRouteIsComplete_', 'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadCanonDate_', 'sadFpNorm_',
+    'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_', 'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadCanonDate_', 'sadFpNorm_',
     'sadK2SemFieldClass_', 'sadK2SemFieldVerdict_', 'sadK2SemFieldEqual_', 'sadK2SemanticPayloadEqual_',
     'sadRegenerateLinePatch_', 'sadK2LineIdentity_', 'sadLiveHeaderNames_', 'sadHasColumn_', 'sadK4SchemaReady_',
     'sadSchemaRefusal_', 'sadK4ResolveActiveDraft_', 'sadExactSchemaReason_', 'sadAtomicValidateBatch_',

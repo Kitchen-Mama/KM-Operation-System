@@ -138,7 +138,7 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2LineNaturalKey_', 'sadK2DeterministicLineId_',
   'sadIsK2Group_', 'sadNewLineId_', 'sadK2ResolveActiveDraft_', 'sadK2LinesRouteCompatibleWithHeader_',
   'sadCanonicalLineId_', 'sadSameLineIdentity_', 'sadPreflightLineBatch_', 'sadScanDuplicateLinePks_',
-  'sadVerifyDraftLines_', 'sadLineIsComplete_', 'sadStoredHeaderRouteIsComplete_', 'sadHeaderRouteIsComplete_',
+  'sadVerifyDraftLines_', 'sadLineIsComplete_', 'sadDestinationIdentity_', 'sadStoredHeaderRouteIsComplete_', 'sadHeaderRouteIsComplete_',
   'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadCanonDate_', 'sadFpNorm_', 'sadK2SemFieldClass_',
   'sadK2SemFieldVerdict_', 'sadK2SemFieldEqual_', 'sadK2SemanticPayloadEqual_', 'sadRegenerateLinePatch_',
   'sadK2LineIdentity_',
@@ -482,8 +482,14 @@ section('B — [§D, tests 2-6] ONE DESTINATION AUTHORITY');
   var hf = IRDraft.partitionRoutesIntoGroups(US_SCOPE, [{ source_warehouse_id: FROM_WH,
     destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: '', destination_country: 'US',
     shipping_method: 'sea', planned_qty: 800 }]);
-  eq(hf.length === 1 ? hf[0].header.destination_marketplace : 'NO_GROUP', '',
-    'B21 [§D.1] a route with no destination of its own is NEVER written as a route to the page scope');
+  // F1-7N-FB-4G-A0-R2 — RESTATED, and the outcome got STRONGER. B6 measured that such a route was written with
+  // a BLANK marketplace rather than the page's filter, which was the fix B6 shipped. A0-R2 made
+  // destination_type display metadata: a route whose marketplace COLUMN is blank has no canonical destination
+  // at all, so it is not merely written blank — it never becomes a persistable group in the first place. What
+  // §D.1 protects is unchanged and is asserted first: the page scope never becomes a destination.
+  eq(hf.length, 0, 'B21 [§D.1] a route with no destination of its own forms NO group — it is not persistable');
+  eq(hf.map(function (g) { return g.header.destination_marketplace; }), [],
+    'B21b [§D.1] so the page scope cannot be written as its destination by any path');
 })();
 
 // ================================================================================================================

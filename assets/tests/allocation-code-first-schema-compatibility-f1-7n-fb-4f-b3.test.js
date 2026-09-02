@@ -581,6 +581,7 @@ section('J — [test 30] the B2 dry run still reproduces the recorded LIVE resul
         (SAD.match(/var SAD_K2_GROUP_DIMENSIONS_ = \[[\s\S]*?\];/) || [])[0],
         extractFn(SAD, 'sadExactSchemaReason_'), extractFn(SAD, 'sadLifecycleTailState_'),
         extractFn(SAD, 'sadK2GroupKey_'), extractFn(SAD, 'sadK2DeterministicHeaderId_'),
+        extractFn(SAD, 'sadDestinationIdentity_'),
         extractFn(SAD, 'sadHeaderRouteIsComplete_'),
         extractFn(EPC, 'epcStr_'), extractFn(EPC, 'epcFnv1a_'), extractFn(EPC, 'epcMaskId_'),
         extractFn(EPC, 'epcIdRef_'), extractFn(EPC, 'epcIdentityFamily_'),

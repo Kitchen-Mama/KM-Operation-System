@@ -21,7 +21,7 @@ eval(G16.match(/var SAD_TERMINAL_LINE_STATUSES_ = \{[\s\S]*?\};/)[0]);
 eval(G16.match(/var SAD_RECOMMENDATION_FIELDS_ = \[[\s\S]*?\];/)[0]);
 eval(G16.match(/var SAD_K2_HEADER_FP_ = \[[\s\S]*?\];/)[0]);
 eval(G16.match(/var SAD_K2_LINE_FP_ = \[[\s\S]*?\];/)[0]);
-eval(['sadFnv1a_', 'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2ResolveActiveDraft_', 'sadHeaderRouteIsComplete_',
+eval(['sadFnv1a_', 'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2ResolveActiveDraft_', 'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_',
   'sadReadActiveHeaderRows_', 'sadResolveActiveDraft_', 'sadResolveActiveDraftK2OrK3_', 'sadRowToObject_', 'sadLegacyReconcileReason_',
   'sadFpVal_', 'sadK2PayloadFingerprint_', 'sadRegenerateLinePatch_']
   .map(function (n) { return extractFn(G16, n); }).join('\n'));

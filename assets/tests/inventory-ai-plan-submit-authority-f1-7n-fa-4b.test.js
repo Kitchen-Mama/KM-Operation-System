@@ -63,11 +63,18 @@ ok(/allocation_draft_ids/.test(extractFn(G16, 'handleSubmitAllocationDraftsToShi
 
 // ============================================================ 4/5 — route authority (K2 logical marketplace) vs incomplete
 section('4/5. route completeness (K2-aware) gates Submit');
-var routeOk = extractFn(G16, 'sadHeaderRouteIsComplete_');
+var routeOk = extractFn(G16, 'sadDestinationIdentity_') + '\n' + extractFn(G16, 'sadHeaderRouteIsComplete_');
 ok(/destination_marketplace/.test(routeOk), '4. K2 logical destination: a marketplace destination (blank warehouse) is route-complete');
 ok(/ROUTE_INCOMPLETE/.test(core) && /sadStoredHeaderRouteIsComplete_\(header\)/.test(core), '5. an incomplete route blocks Submit (ROUTE_INCOMPLETE, zero write)');
-ok(/function sadStoredHeaderRouteIsComplete_/.test(G16) && /if \(sadHeaderRouteIsComplete_\(h\)\) return true;/.test(G16),
-  '5b. FB-4D: the stored-row predicate DELEGATES to the request-shape one, never replaces it');
+// F1-7N-FB-4G-A0-R2 — RESTATED. FB-4D's rule was that the stored-row predicate must never REPLACE the
+// request-shape one with a looser test of its own; it delegated first and then added a snapshot fallback. A0-R2
+// removed that fallback (the snapshot is not a destination), so the delegation is now total: the stored-row
+// predicate IS the request-shape predicate. That is FB-4D's requirement in its strongest possible form — the
+// two gates cannot disagree because there is only one of them.
+ok(/function sadStoredHeaderRouteIsComplete_\(h\) \{ return sadHeaderRouteIsComplete_\(h\); \}/.test(G16),
+  '5b. FB-4D: the stored-row predicate IS the request-shape one — delegation with nothing added');
+ok(!/toSnapshot/.test(G16),
+  '5c. and the snapshot fallback it used to add is gone — a code snapshot is not a destination');
 ok(/destination_type: destWhId \? 'warehouse' : 'marketplace'/.test(core), '4. line destination_type resolves to marketplace when no destination warehouse (K2 logical destination)');
 
 // ============================================================ 8 — typed lock contention (never generic)

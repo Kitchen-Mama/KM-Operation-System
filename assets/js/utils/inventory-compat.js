@@ -223,11 +223,36 @@
   //                                  impossible; it is refused rather than resolved by preferring one (§D.4)
   var DESTINATION_CONFIRMATION_REQUIRED = 'DESTINATION_CONFIRMATION_REQUIRED';
   var DESTINATION_AMBIGUOUS = 'DESTINATION_AMBIGUOUS';
+
+  // ===========================================================================================================
+  // F1-7N-FB-4G-A0-R2 — THE CANONICAL DESTINATION IDENTITY, ONCE, ON THE CLIENT TOO.
+  // -----------------------------------------------------------------------------------------------------------
+  // The rule has been settled since B3 and lives in 69_ ricDestinationIdentity_: WAREHOUSE **xor** MARKETPLACE.
+  // BOTH is not a destination, it is a contradiction; NEITHER is not a destination either. Nothing else takes
+  // part — not the warehouse code snapshot, not the page filter, not ctx.marketplace, not a display label, not
+  // the header's marketplace scope, not a note, not evidence of an earlier attempt.
+  //
+  // The client had the same rule written out THREE times — in resolvePersistedDestination, in isRouteComplete
+  // and in routeHeaderFields — and two of them disagreed with it: both used `warehouse || marketplace`, so a row
+  // carrying BOTH was silently resolved to one of them instead of refused. This is that rule, once, in the same
+  // shape the server returns, so a client verdict and a server verdict cannot drift.
+  function destinationIdentity(route) {
+    route = route || {};
+    function s(v) { return String(v == null ? '' : v).trim(); }
+    var wid = s(route.destination_warehouse_id) || s(route.recommended_destination_warehouse_id);
+    var mkt = s(route.destination_marketplace);
+    if (wid && mkt) return { type: '', id: '', ok: false, code: 'ROUTE_DESTINATION_AMBIGUOUS', warehouse_id: wid, marketplace: mkt };
+    if (wid) return { type: 'WAREHOUSE', id: wid, ok: true, code: '', warehouse_id: wid, marketplace: '' };
+    if (mkt) return { type: 'MARKETPLACE', id: mkt.toLowerCase(), ok: true, code: '', warehouse_id: '', marketplace: mkt };
+    return { type: '', id: '', ok: false, code: 'ROUTE_DESTINATION_MISSING', warehouse_id: '', marketplace: '' };
+  }
+  // F1-7N-FB-4G-A0-R2 — built ON destinationIdentity now rather than beside it. The four states and their
+  // meanings are unchanged; what changed is that there is no second copy of the rule left to drift from.
   function resolvePersistedDestination(persisted, scope) {
     persisted = persisted || {};
-    var wid = String(persisted.destination_warehouse_id == null ? '' : persisted.destination_warehouse_id).trim();
-    var mkt = String(persisted.destination_marketplace == null ? '' : persisted.destination_marketplace).trim();
-    if (wid && mkt) {
+    var _d = destinationIdentity(persisted);
+    var wid = _d.warehouse_id, mkt = _d.marketplace;
+    if (_d.code === 'ROUTE_DESTINATION_AMBIGUOUS') {
       return { state: DESTINATION_AMBIGUOUS, type: '', warehouse_id: '', marketplace: '', token: '',
         confirmationRequired: true };
     }
@@ -347,6 +372,7 @@
     warehouseCountryMembers: warehouseCountryMembers, warehouseCountryMatches: warehouseCountryMatches,
     amazonLogicalToken: amazonLogicalToken, amazonLogicalDestination: amazonLogicalDestination,
     marketplaceDestinationToken: marketplaceDestinationToken,
+    destinationIdentity: destinationIdentity,
     resolvePersistedDestination: resolvePersistedDestination,
     DESTINATION_CONFIRMATION_REQUIRED: DESTINATION_CONFIRMATION_REQUIRED,
     DESTINATION_AMBIGUOUS: DESTINATION_AMBIGUOUS,
@@ -427,10 +453,11 @@
   function isRouteComplete(route) {
     route = route || {};
     var from = String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim();
-    var toReal = String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim();
-    var isLogicalAmazon = route.destination_type === 'MARKETPLACE_DESTINATION' ||
-      !!(route.destination_marketplace && String(route.destination_marketplace).trim());
-    var hasTo = !!toReal || isLogicalAmazon;
+    // F1-7N-FB-4G-A0-R2 — this read `toReal || isLogicalAmazon`, so a route carrying a warehouse AND a
+    // marketplace was COMPLETE on the client, was sent, and (before R2) was accepted by the server. EXACTLY ONE
+    // canonical destination, decided by the one owner. `destination_type` is display metadata and no longer
+    // participates: the marketplace COLUMN is what makes a route a marketplace route.
+    var hasTo = destinationIdentity(route).ok;
     var qtyRaw = (route.planned_qty != null ? route.planned_qty : route.qty);
     var qty = Number(qtyRaw); if (!isFinite(qty)) qty = 0;
     var method = String(route.shipping_method == null ? '' : route.shipping_method).trim();
@@ -552,14 +579,30 @@
   // grouping key and the payload that is actually written can never describe different routes.
   function routeHeaderFields(scope, route) {
     scope = scope || {}; route = route || {};
-    var isLogical = route.destination_type === 'MARKETPLACE_DESTINATION' ||
-      !!(route.destination_marketplace && String(route.destination_marketplace).trim());
+    // F1-7N-FB-4G-A0-R2 — A CONTRADICTION IS NOT RESOLVED HERE, IT IS CARRIED THROUGH AND REFUSED.
+    //
+    // This used `isLogical ? '' : warehouse`, which is a truthy collapse: handed a row with BOTH destinations it
+    // quietly picked one and blanked the other, producing a clean-looking payload out of a row nobody had
+    // decided. §C forbids exactly that for a canonical row. An explicit picker transition does not need it —
+    // the To selector is single-select, so the collect already emits ONE side and the other is already blank
+    // (that is what makes Warehouse→Amazon and Amazon→Warehouse produce one-sided payloads by construction).
+    // So the collapse only ever fired on a row that was already contradictory, and hid it.
+    //
+    // Now: when the identity resolves, exactly that one side is emitted. When it does NOT — AMBIGUOUS or
+    // MISSING — the raw values pass through unchanged, so isRouteComplete refuses the route, the client issues
+    // no request, and if one ever were issued the server refuses it too with the same verdict.
+    var _d = destinationIdentity(route);
+    var _wid = String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim();
+    var _mkt = String(route.destination_marketplace == null ? '' : route.destination_marketplace).trim();
+    var _code = String(route.destination_warehouse_code == null ? '' : route.destination_warehouse_code).trim();
+    var isWarehouse = _d.ok && _d.type === 'WAREHOUSE';
+    var isLogical = _d.ok && _d.type === 'MARKETPLACE';
     return {
       planning_cycle: scope.planning_cycle || '',
       company: scope.company || '', country: scope.country || '', marketplace: scope.marketplace || '',
       source_page: 'inventory_replenishment',
       recommended_source_warehouse_id: String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim(),
-      recommended_destination_warehouse_id: isLogical ? '' : String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim(),
+      recommended_destination_warehouse_id: _d.ok ? (isWarehouse ? _wid : '') : _wid,
       recommended_shipping_method: String(route.shipping_method == null ? '' : route.shipping_method).trim(),
       recommended_last_mile_delivery: String(route.last_mile_delivery == null ? '' : route.last_mile_delivery).trim(),
       // recommendation_group_no is a K2 dimension the Execution Plan does not author (Phase-1 freeze D-C2-1). It is
@@ -571,7 +614,7 @@
       // filter — and `destination_country` is a COUNTRY, which could be persisted into a marketplace field
       // outright. destination_marketplace is a stored column since B4; a value invented here is now a permanent
       // business fact rather than a transient display accident. Only the route's own destination is used.
-      destination_marketplace: isLogical ? String(route.destination_marketplace == null ? '' : route.destination_marketplace).trim() : '',
+      destination_marketplace: _d.ok ? (isLogical ? _mkt : '') : _mkt,
       // F1-7N-FB-4G-A0-R1 §D/§G — THE SNAPSHOT COLUMNS WERE BEING FED DISPLAY NAMES, AND FOR AMAZON THAT NAME
       // WAS 'Amazon'. These two lines read `route.ship_from` and `route.destination`, which the collect fills
       // from the selected option's data-wh-NAME. So a marketplace destination wrote the marketplace's NAME into
@@ -586,7 +629,7 @@
       // Neither of these is a K2 group dimension (IR_K2_GROUP_DIMENSIONS above), so correcting them re-keys
       // nothing and moves no existing id.
       source_warehouse_code: String(route.source_warehouse_code == null ? '' : route.source_warehouse_code).trim(),
-      destination_warehouse_code: isLogical ? '' : String(route.destination_warehouse_code == null ? '' : route.destination_warehouse_code).trim()
+      destination_warehouse_code: _d.ok ? (isWarehouse ? _code : '') : _code
     };
   }
 

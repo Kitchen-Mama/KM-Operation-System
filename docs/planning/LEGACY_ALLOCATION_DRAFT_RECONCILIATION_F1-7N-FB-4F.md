@@ -1995,7 +1995,7 @@ about whether a route is persistable.
 |---|---|---|---|
 | Marketplace | `''` | `''` | trimmed marketplace |
 | Warehouse | real `warehouse_id` | `warehouse_code` | `''` |
-| Both | `''` | `''` | marketplace — the exclusive identity wins |
+| Both | see §G correction below | | |
 | Neither | `''` | `''` | `''` — read keeps the route + confirmation required; SAVE refuses |
 
 The marketplace comes from the **token the user selected** (`MARKETPLACE_DESTINATION:<marketplace>:<COUNTRY>`),
@@ -2005,6 +2005,23 @@ and exactly the kind of constant that becomes a wrong answer the day a second ma
 
 **No `destination_type` column is added; the type stays derived from the XOR.** And neither corrected field is a
 K2 group dimension, so this **re-keys nothing and moves no id** — proven by computing the group key both ways.
+
+> **§G CORRECTION (F1-7N-FB-4G-A0-R2).** The Both row above originally read *"marketplace — the exclusive
+> identity wins"*. That was wrong as a rule and wrong as a description, and it was not merely wording: it
+> described a truthy collapse that was really there, on both sides, disagreeing with itself. The client's
+> `routeHeaderFields` resolved Both to the MARKETPLACE; the server's `sadHeaderRouteIsComplete_` used
+> `toReal || marketplace`, so it resolved Both to the WAREHOUSE and called the row complete. One contradiction,
+> two different answers depending on which side you asked, and neither of them a refusal. The corrected rule:
+>
+> * **A canonical row carrying BOTH is `ROUTE_DESTINATION_AMBIGUOUS` and is REFUSED with zero write** — by the
+>   client gate, by both writers and by Submit. Nothing "wins".
+> * **An explicit typed picker transition never produces a Both row in the first place.** The To selector is
+>   single-select, so the collect emits ONE side and the other is already blank — which is what makes
+>   Warehouse→Amazon and Amazon→Warehouse clean *without* any collapse. The collapse only ever fired on a row
+>   that was already contradictory, and hid it.
+> * **The writer accepts one-sided payloads only.**
+>
+> Closed in 4G-A0-R2 below.
 
 ### 4G-A0-R1.5 — The legacy snapshot policy (§G)
 
@@ -2068,3 +2085,161 @@ with it so a half-synced deployment is detectable. NO DB schema change. No live 
 Request. Contracts unmoved: action 10, required-action-list 9, transport 1. Bundle unchanged
 (`d782ea6d…c36ac`). Token → `fb4ga0r1-destxor-20260902`, all 18 refs. Sweep: 393 suites, 389 pass, 4 fail —
 the four long-standing failures and NOTHING else.
+
+
+## 4G-A0-R2 — SERVER CANONICAL DESTINATION COMPLETENESS: TWO GATES THAT DISAGREED WITH THE CONTRACT
+
+A0-R1's report left two items open. Both turned out to be **reachable behaviour**, not wording — measured on the
+shipped code before this round changed anything:
+
+| state | `ricDestinationIdentity_` | `sadHeaderRouteIsComplete_` | `sadStoredHeaderRouteIsComplete_` |
+|---|---|---|---|
+| WAREHOUSE only | OK WAREHOUSE | true | true |
+| MARKETPLACE only | OK MARKETPLACE | true | true |
+| **BOTH** | ROUTE_DESTINATION_AMBIGUOUS | **true** | **true** |
+| NEITHER | ROUTE_DESTINATION_MISSING | false | false |
+| **H4 LIVE (snapshot `Amazon`)** | ROUTE_DESTINATION_MISSING | false | **true** |
+
+### 4G-A0-R2.0 — Precondition divergence, reported read-only
+
+§A.3 expected `origin/main` = `60e5ef3` and §A.6 stated A0-R1 was not yet pushed. **It was.** The reflog records
+`refs/remotes/origin/main@{0}: update by push → 1f91d3b`; `main` and `origin/main` are both `1f91d3b`, 0 ahead /
+0 behind. Nothing was fetched, merged, rebased or reset. It decides the token question in §4G-A0-R2.7.
+
+### 4G-A0-R2.1 — Was Both wording or behaviour? BEHAVIOUR, and it disagreed with itself
+
+`sadHeaderRouteIsComplete_` asked `toReal || destination_marketplace`. `||` short-circuits, so a row carrying a
+warehouse AND a marketplace was **complete** — in effect *warehouse wins*. The client's `routeHeaderFields`
+collapsed the same contradiction the other way, *marketplace wins*. One row, two answers, no refusal anywhere.
+That reached the write gate on **both** writers, the K2/K4 resolver, and Submit.
+
+### 4G-A0-R2.2 — The snapshot root cause, exactly
+
+`sadStoredHeaderRouteIsComplete_` carried an FB-4D fallback: when the header predicate said no, it accepted the
+row anyway if `recommended_destination_warehouse_code_snapshot` was non-blank. FB-4D's reasoning was sound **for
+its moment** — `destination_marketplace` was then "an accepted PAYLOAD field and NOT a stored column", so the
+stored row's only retained evidence of a chosen destination was the snapshot. **B4 made the column stored;
+A0-R1 made the two-call writer actually persist it.** The premise was gone; the fallback was not. So the live H4
+header — warehouse id blank, marketplace blank, snapshot `Amazon` — was **Submit-complete on the strength of a
+marketplace name sitting in a warehouse-code column**.
+
+**The fallback is removed, and that is a deliberate behaviour change with a known consequence.** A row saved
+BEFORE A0-R1 has a blank `destination_marketplace` and a marketplace name in its snapshot; it is now correctly
+`ROUTE_DESTINATION_MISSING` and Submit refuses it. The remedy is the explicit, user-confirmed adoption A0-R1
+built — not a gate that reads a display snapshot as a business identity.
+
+### 4G-A0-R2.3 — The single authority
+
+**`ricDestinationIdentity_` (69_) is the rule, and every path now asks it.**
+
+* 16_ gained `sadDestinationIdentity_`: it **delegates** to the 69_ contract when that file is deployed and
+  applies the **identical rule inline** when it is not. The suite proves the two agree across all 48 generated
+  shapes rather than asserting it in a comment — and proves the completeness verdict is identical with 69_
+  absent.
+* `sadHeaderRouteIsComplete_` asks it. `sadStoredHeaderRouteIsComplete_` **is** that function now, so the write
+  gate and the Submit gate cannot drift apart again.
+* `sadUpsertDraftHeaderCore_`, `sadAtomicValidateBatch_` (the atomic path's gate) and
+  `sadResolveActiveDraftK2OrK3_` all reach it; Submit reaches it through the stored-row name; K4 was already on
+  the contract.
+* **And route INTENT knew the marketplace was not a destination.** Both writers carried the same
+  `hasRouteIntent` predicate and both omitted `destination_marketplace`, so a payload whose only route field was
+  a marketplace did not count as route intent and **skipped the completeness gate entirely** — an incomplete
+  route written in silence for Submit to refuse much later. Same omission class as A0-R1's insert/update, same
+  file, same sync set.
+
+On the client the same rule had been written out **three times** — `resolvePersistedDestination`,
+`isRouteComplete`, `routeHeaderFields` — and two of them used `warehouse || marketplace`.
+`IRWarehouse.destinationIdentity` is now the one owner and the other three are built on it, in the same shape
+the server returns, so a client verdict and a server verdict **cannot** drift. The page's own fallback copy of
+the rule and its pre-save destination report were on the same `||`, and now carry the typed code.
+
+**Never a canonical destination, asserted field by field:** the warehouse code snapshot, the header marketplace
+scope, a display label, a plan marketplace, a filter, `ctx.marketplace`, a note, or evidence of an earlier
+attempt.
+
+### 4G-A0-R2.4 — H4: before → adoption → after
+
+| | before | after explicit Amazon + confirm |
+|---|---|---|
+| identity | `ROUTE_DESTINATION_MISSING` | `MARKETPLACE` |
+| `recommended_destination_warehouse_id` | `''` | `''` |
+| `..._warehouse_code_snapshot` | `Amazon` (ignored) | **`''` — cleared** |
+| `destination_marketplace` | `''` | `Amazon` |
+| stored route complete | **false** | **true** |
+| direct server Submit | **ROUTE_INCOMPLETE, zero write** | continues into its other validations |
+| header / line id | `SADH-K2-E7AF9242` / `SADL-K2-16F4E4F9` | unchanged |
+| qty | 800 | 800 |
+
+Replay is idempotent. Reload selects Amazon through the persisted marketplace column. And the **K4 key proves
+the difference is the canonical column, not the snapshot**: H4's destination dimensions are `['', '']` while the
+adopted header's are `['marketplace', 'amazon']` — compared by POSITION, because this station's *scope*
+marketplace is also `Amazon` and a substring scan of the joined key would have reported a destination that is
+not there.
+
+The physical warehouse case: real id, matching code snapshot, blank marketplace, type `WAREHOUSE`,
+complete = true.
+
+### 4G-A0-R2.5 — The direct-server Submit line of defence
+
+`sadSubmitToShippingPlansCore_` gate (9) calls the stored-row predicate, which is now the canonical one. H4 and
+any BOTH row are refused there with `ROUTE_INCOMPLETE` and `zero_write: true` — **independently of any client
+gate**, which is the point of §E's "不可只依賴 client gate".
+
+### 4G-A0-R2.6 — What this round deliberately did NOT change
+
+§E lists "canonical service 合法" among the completeness conditions. The service rule is **unchanged**:
+non-blank and not the "no available" placeholder. Tightening it to `ricCanonicalService_` would make every
+stored route whose method spelling 69_'s table does not carry **un-submittable** — a live-impact decision this
+round was not asked to take and has no evidence to take. §H's twenty behavioural tests contain no service-
+validity case, which is consistent with that reading. Recorded here rather than skipped silently, and pinned by
+a test so a future round changes it deliberately.
+
+### 4G-A0-R2.7 — Deployment: still ONE Apps Script sync, ONE new version
+
+A0-R1 and A0-R2 touch **the same two files**, so the release still needs exactly one sync set and one new
+deployment version. The owner stamp moves once more, to `F1-7N-FB-4G-A0-R2`, and 63_'s manifest expectation
+moves with it — asserted against the SOURCE rather than against a number typed twice.
+
+The frontend token DOES rotate, and §I's condition is the reason: this round changes **client code**, not just
+reports and tests. `isRouteComplete`, `routeHeaderFields`, the page's fallback gate and its destination report
+all stopped accepting a route carrying two contradictory destinations, so a browser left on the A0-R1 copy would
+keep sending one. `fb4ga0r1-destxor-20260902` → **`fb4ga0r2-destauthority-20260902`**, all 18 refs.
+
+### 4G-A0-R2.8 — Suite corrections of this round's own making
+
+Two assertions of mine were wrong in ways worth recording:
+
+* the K4 check scanned the WHOLE joined key for `amazon`, which is present because the station's **scope**
+  marketplace is Amazon. It would have passed for the wrong reason and failed for the right one. It compares the
+  two destination positions now.
+* the "every writer routes through the shared predicate" check named `sadAtomicUpsertCore_`, but the atomic
+  path's gate lives one frame away in `sadAtomicValidateBatch_`. It named the wrong function and reported a
+  working chain as broken; it now names the validator AND asserts the core reaches it.
+
+
+### 4G-A0-R2.9 — Suites restated, and a class that has now recurred five times
+
+`sadHeaderRouteIsComplete_` gained ONE dependency, and **fifteen** suites lift it out of 16_. Apps Script has a
+single global scope, so the file itself always has that dependency; a suite that lifts a function must supply
+the globals the file would have had, or it reports a `ReferenceError` as though it were a production defect.
+This is the **fifth** round for that class, so the dependency was added to every lift site mechanically rather
+than to the ones that happened to fail. Two of those edits were mine and wrong — two of the lists were not
+lifts at all but assertions about which authorities a SOURCE FILE references, and adding a name there demanded
+that 63_ and the TEMP migration mention a function this round never asked them to. Reverted.
+
+Behavioural restatements, each because the behaviour it pinned improved:
+
+* **A0-R1 D7** asserted that a BOTH route resolved to the marketplace — "the exclusive identity wins". That was
+  A0-R1 describing its own collapse. It asserts the REFUSAL now, plus the fact that an explicit transition is
+  one-sided by construction so the snapshot clearing never depended on a collapse.
+* **A0-R1 X8/X9/X10** asserted the SHAPE of the two predicates (`toReal || marketplace`, and a stored gate that
+  "tries that first"). Both shapes are gone; the BEHAVIOUR they protected is asserted by execution instead and
+  is unchanged.
+* **A0-R1 M5/M6** mutated expressions that no longer exist — a mutation that does not apply is a broken probe.
+  Both introduce the same defect where the code now lives.
+* **FA-4B 5b** required the stored gate to DELEGATE rather than replace. It now delegates totally: it IS the
+  other predicate, which is that requirement in its strongest form.
+* **B6 B21** measured that a destination-less route was written with a BLANK marketplace. It now forms **no
+  group at all** — stronger, and §D.1's protection (the page scope is never a destination) is asserted first.
+* **A0-R1 H4/H5** pinned A0-R1's own stamp as an equality with the present — the **sixth** round for that
+  shape. A floor, plus the durable rule that the manifest agrees with the SOURCE.

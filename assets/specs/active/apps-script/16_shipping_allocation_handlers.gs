@@ -249,8 +249,11 @@ function sadUpsertDraftHeaderCore_(body) {
   // C2-D1R header-route completeness gate (§8): when the header carries route intent, From + To + Method must
   // all be present (unless this is a soft-cancel). A partial route rejects with PLAN_HEADER_INCOMPLETE and
   // writes nothing. Route context is HEADER-level in the approved 30-col schema.
+  // F1-7N-FB-4G-A0-R2 — destination_marketplace is one of the two canonical destination axes, so a payload
+  // carrying it IS route intent. Omitting it here meant a marketplace-only body skipped the gate below.
   var hasRouteIntent = !!(body && (String(body.recommended_source_warehouse_id || '').trim() ||
-    String(body.recommended_shipping_method || '').trim() || String(body.recommended_destination_warehouse_id || '').trim()));
+    String(body.recommended_shipping_method || '').trim() || String(body.recommended_destination_warehouse_id || '').trim() ||
+    String(body.destination_marketplace || '').trim()));
   if (hasRouteIntent && status !== 'cancelled' && !sadHeaderRouteIsComplete_(body)) {
     return jsonResponse_({ success: false, error: 'PLAN_HEADER_INCOMPLETE — a Draft route context requires From + To + Method (zero rows written)' });
   }
@@ -472,7 +475,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R1';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R2';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -1106,34 +1109,64 @@ function sadLineIsComplete_(l) {
   var qty = Number(l.planned_qty); if (isNaN(qty)) qty = 0;
   return !!sku && qty > 0;
 }
-// Header route completeness (§8, C2-D1R): From + To + Method on the Draft header (recommended_*). An Amazon
-// logical destination (destination_marketplace set) counts as a valid To.
-// F1-7N-FB-4D §B5 — ROUTE COMPLETENESS OF A **STORED** HEADER ROW.
+// ================================================================================================================
+// F1-7N-FB-4G-A0-R2 — ONE DESTINATION AUTHORITY FOR EVERY 16_ PATH.
+// ================================================================================================================
+// 69_ ricDestinationIdentity_ has been the canonical rule since B3: WAREHOUSE xor MARKETPLACE, BOTH is
+// ROUTE_DESTINATION_AMBIGUOUS, NEITHER is ROUTE_DESTINATION_MISSING, and no snapshot, label, scope or filter
+// participates. The K4 resolver used it. The three gates below did NOT, and each disagreed with it differently:
 //
-// sadHeaderRouteIsComplete_ accepts an Amazon logical destination via `destination_marketplace`, which is an
-// accepted PAYLOAD field and NOT a stored column. So the write gate (which sees the request body) calls such a
-// header complete and the Submit gate (which sees the stored row) called it INCOMPLETE — and refused the whole
-// station with ROUTE_INCOMPLETE after both routes had persisted and hydrated correctly.
+//   BOTH        ricDestinationIdentity_ AMBIGUOUS  ·  sadHeaderRouteIsComplete_ TRUE  — `toReal || marketplace`
+//               short-circuits, so a row carrying two contradictory destinations passed the write gate on BOTH
+//               writers and passed Submit. Measured, not inferred.
+//   snapshot    ricDestinationIdentity_ MISSING    ·  sadStoredHeaderRouteIsComplete_ TRUE — the FB-4D fallback
+//   only        below read recommended_destination_warehouse_code_snapshot as the destination, so the LIVE H4
+//               header (warehouse id blank, marketplace blank, snapshot 'Amazon') was Submit-complete on the
+//               strength of a marketplace name sitting in a warehouse-code column.
 //
-// What the row DOES keep is recommended_destination_warehouse_code_snapshot, written only when a destination was
-// actually chosen. That is the retained evidence of the same fact. From and Method are still required unchanged,
-// so a header with no destination at all has a blank snapshot and is still refused with the same reason.
-function sadStoredHeaderRouteIsComplete_(h) {
-  if (sadHeaderRouteIsComplete_(h)) return true;
+// This is that one function, and every gate now goes through it. It delegates to the 69_ contract when that
+// file is deployed and applies the IDENTICAL rule inline when it is not — a fallback that must never disagree,
+// which the regression suite proves across all four states rather than asserting in a comment.
+function sadDestinationIdentity_(h) {
+  if (typeof ricDestinationIdentity_ === 'function') return ricDestinationIdentity_(h);
   h = h || {};
-  var from = String(h.recommended_source_warehouse_id == null ? '' : h.recommended_source_warehouse_id).trim();
-  var toSnapshot = String(h.recommended_destination_warehouse_code_snapshot == null ? '' : h.recommended_destination_warehouse_code_snapshot).trim();
-  var method = String(h.recommended_shipping_method == null ? '' : h.recommended_shipping_method).trim();
-  var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
-  return !!from && !!toSnapshot && methodOk;
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var wid = s(h.recommended_destination_warehouse_id) || s(h.destination_warehouse_id);
+  var mkt = s(h.destination_marketplace);
+  if (wid && mkt) return { type: '', id: '', ok: false, code: 'ROUTE_DESTINATION_AMBIGUOUS' };
+  if (wid) return { type: 'WAREHOUSE', id: wid, ok: true, code: '' };
+  if (mkt) return { type: 'MARKETPLACE', id: mkt.toLowerCase(), ok: true, code: '' };
+  return { type: '', id: '', ok: false, code: 'ROUTE_DESTINATION_MISSING' };
 }
+
+// Header route completeness (§8, C2-D1R): From + exactly ONE canonical destination + Method on the Draft
+// header (recommended_*). A marketplace destination is a valid To; a marketplace AND a warehouse is not a
+// destination at all.
+//
+// F1-7N-FB-4D §B5 — ROUTE COMPLETENESS OF A **STORED** HEADER ROW, and why the two are ONE function now.
+//
+// FB-4D found that the write gate (which saw the request body) called an Amazon route complete while the Submit
+// gate (which saw the stored row) called it INCOMPLETE, and refused a whole station after both routes had
+// persisted correctly. Its diagnosis rested on a premise that was true then: destination_marketplace was "an
+// accepted PAYLOAD field and NOT a stored column", so the stored row's only retained evidence was the code
+// snapshot. B4 made the column stored; A0-R1 made the two-call writer actually persist it. The premise is gone,
+// and with it the reason for a second predicate: the STORED row now carries the destination itself.
+//
+// The snapshot fallback is REMOVED, and that is a deliberate behaviour change with a known consequence. A row
+// saved BEFORE A0-R1 has a blank destination_marketplace and a marketplace name in its code snapshot; such a row
+// is now correctly ROUTE_DESTINATION_MISSING and Submit refuses it. The remedy is the explicit, user-confirmed
+// adoption A0-R1 built — not a gate that reads a display snapshot as a business identity.
+function sadStoredHeaderRouteIsComplete_(h) { return sadHeaderRouteIsComplete_(h); }
 
 function sadHeaderRouteIsComplete_(b) {
   b = b || {};
   var from = String(b.recommended_source_warehouse_id == null ? '' : b.recommended_source_warehouse_id).trim();
-  var toReal = String(b.recommended_destination_warehouse_id == null ? '' : b.recommended_destination_warehouse_id).trim();
-  var hasTo = !!toReal || !!String(b.destination_marketplace == null ? '' : b.destination_marketplace).trim();
+  // EXACTLY ONE canonical destination. Never `a || b`: that is what let BOTH through.
+  var hasTo = sadDestinationIdentity_(b).ok;
   var method = String(b.recommended_shipping_method == null ? '' : b.recommended_shipping_method).trim();
+  // The service rule is UNCHANGED this round, deliberately. Tightening it to ricCanonicalService_ would make
+  // every stored route whose method spelling 69_'s table does not carry un-submittable, which is a live-impact
+  // decision this round was not asked to take and has no evidence to take. Recorded rather than skipped.
   var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
   return !!from && hasTo && methodOk;
 }
@@ -1290,8 +1323,11 @@ function sadLifecycleTailState_(sh) {
 function sadAtomicValidateBatch_(header, rawLines, enforceK2) {
   header = header || {};
   var status = String(header.status || 'draft').trim(); if (!SAD_STATUSES_[status]) status = 'draft';
+  // F1-7N-FB-4G-A0-R2 — the ATOMIC path carried the identical predicate with the identical omission. The two
+  // writers must recognise route intent the same way or one of them accepts what the other refuses.
   var hasRouteIntent = !!(String(header.recommended_source_warehouse_id || '').trim() ||
-    String(header.recommended_shipping_method || '').trim() || String(header.recommended_destination_warehouse_id || '').trim());
+    String(header.recommended_shipping_method || '').trim() || String(header.recommended_destination_warehouse_id || '').trim() ||
+    String(header.destination_marketplace || '').trim());
   if (hasRouteIntent && status !== 'cancelled' && !sadHeaderRouteIsComplete_(header)) {
     return { ok: false, stage: 'header', error: 'PLAN_HEADER_INCOMPLETE — route requires From + To + Method (zero rows written)' };
   }

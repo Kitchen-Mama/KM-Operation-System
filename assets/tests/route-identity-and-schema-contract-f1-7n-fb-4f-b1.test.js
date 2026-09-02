@@ -76,6 +76,7 @@ function sadContext(sadOverride, ricOverride) {
         decl(/var SAD_K2_GROUP_DIMENSIONS_ = \[[\s\S]*?\];/, src, 'K2 dims'),
         extractFn('sadK2GroupKey_', src),
         extractFn('sadK2DeterministicHeaderId_', src),
+        extractFn('sadDestinationIdentity_', src),
         extractFn('sadHeaderRouteIsComplete_', src),
         decl(/var RIC_CANONICAL_SERVICES_ = \[[^\]]*\];/, ric, 'services'),
         decl(/var RIC_SERVICE_LABELS_ = \{[\s\S]*?\n\};/, ric, 'labels'),

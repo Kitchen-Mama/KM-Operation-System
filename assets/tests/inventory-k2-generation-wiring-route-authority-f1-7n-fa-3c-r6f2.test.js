@@ -32,7 +32,7 @@ section('B. sadResolveActiveDraftK2OrK3_ — route-complete → K2 (CREATE/REUSE
 (function () {
   eval(G16.match(/var SAD_STATUSES_ = \{[\s\S]*?\};/)[0]);
   eval(['sadFnv1a_', 'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2ResolveActiveDraft_',
-    'sadHeaderRouteIsComplete_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraft_', 'sadResolveActiveDraftK2OrK3_']
+    'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraft_', 'sadResolveActiveDraftK2OrK3_']
     .map(function (n) { return extractFn(G16, n); }).join('\n'));
   var HDR = ['allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace', 'status',
     'recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',

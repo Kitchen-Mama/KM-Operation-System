@@ -214,7 +214,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // moves and this expectation moves with it. The pair is the partial-sync detector for this deployment set:
   // sync 16_ without 63_ and the stale manifest still expects F1-7N-FB-4D; sync 63_ without 16_ and the new
   // manifest expects B3 while the file declares 4D. Either direction reports mixed_deployment.
-  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A0-R1', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
+  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A0-R2', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
   // F1-7N-FB-4F-B3 — REGISTERED HERE FOR THE REASON THIS MANIFEST EXISTS. B1 landed the route-identity contract
   // deliberately unmanifested because it was inert. It is not inert any more: 16_ now calls into it for the
   // typed schema refusals and for the K4 identity, so a deployment carrying the B3 writer WITHOUT this file

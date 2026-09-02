@@ -181,6 +181,7 @@ function b2Context(opts) {
         extractFn('sadLifecycleTailState_', sadSrc),
         extractFn('sadK2GroupKey_', sadSrc),
         extractFn('sadK2DeterministicHeaderId_', sadSrc),
+        extractFn('sadDestinationIdentity_', sadSrc),
         extractFn('sadHeaderRouteIsComplete_', sadSrc),
         // --- 68_ : the hash and the masking ---------------------------------------------------------------
         extractFn('epcStr_', epcSrc),

@@ -48,7 +48,12 @@ var ROUND_TOKENS = [
   // pushed), so by the rule above its token has been published and cannot be reused. This round changes both
   // inventory-replenishment.js and inventory-compat.js, and a browser holding one file from each round would
   // have a page whose Method picker calls an identity helper the shared module does not yet export.
-  'fb4ga0r1-destxor-20260902'
+  'fb4ga0r1-destxor-20260902',
+  // F1-7N-FB-4G-A0-R2 - server canonical destination completeness. A0-R1 is on origin/main (1f91d3b was
+  // pushed), so by the rule above its token has been published. This round changes CLIENT code, not just
+  // tests: isRouteComplete, routeHeaderFields and the page gates all stopped accepting a route that carries
+  // two contradictory destinations, so a browser left on the old copy would keep sending one.
+  'fb4ga0r2-destauthority-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -182,7 +187,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

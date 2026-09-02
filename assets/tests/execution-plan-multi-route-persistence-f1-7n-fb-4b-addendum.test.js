@@ -131,7 +131,7 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   // function out has to supply the globals the file itself would have had, or it reports a ReferenceError as
   // though it were a production defect.
   'sadLiveHeaderNames_', 'sadHasColumn_',
-  'sadHeaderRouteIsComplete_',
+  'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_',
   'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
   'sadLegacyReconcileReason_', 'sadReconcileMessage_', 'sadRowToObject_', 'sadReadLinesForDraft_',
   'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_', 'handleGetShippingAllocationDraftWorkspace_'

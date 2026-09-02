@@ -257,6 +257,11 @@ ok(/'空運': 'Air', '普船': 'Sea', '快船': 'Sea Express', '美森海卡': '
 section('D · §D/§E — DESTINATION XOR, IN THE ONE PLACE A ROUTE BECOMES HEADER FIELDS');
 // ================================================================================================================
 function hdr(route) { return IRDraft.routeHeaderFields(US, route); }
+// The same contradictory row as a ROUTE (what the gates see), rather than as header fields.
+function BOTH_ROUTE() {
+  return { source_warehouse_id: YOUXIN, shipping_method: 'sea', qty: 800,
+    destination_warehouse_id: 'WH-US-3PL-01', destination_warehouse_code: 'US3PL01', destination_marketplace: 'Amazon' };
+}
 var MKT = hdr({ source_warehouse_id: YOUXIN, source_warehouse_code: 'YOUXIN',
   destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: 'Amazon',
   destination_warehouse_id: '', destination_warehouse_code: '', shipping_method: 'sea' });
@@ -268,12 +273,23 @@ var WH = hdr({ source_warehouse_id: YOUXIN, source_warehouse_code: 'YOUXIN',
 eq(WH.recommended_destination_warehouse_id, 'WH-US-3PL-01', 'D4  §D warehouse: the real warehouse_id');
 eq(WH.destination_warehouse_code, 'US3PL01', 'D5  §D warehouse: the warehouse CODE snapshot');
 eq(WH.destination_marketplace, '', 'D6  §D warehouse: destination_marketplace is BLANK');
-// The XOR is enforced even when a caller supplies both — the marketplace axis wins and the code goes blank,
-// which is what makes an explicit Amazon save CLEAR the legacy snapshot rather than leave it standing.
+// F1-7N-FB-4G-A0-R2 — RESTATED, and this is the §G correction. A0-R1 asserted that a BOTH route resolved to
+// the marketplace with the code blanked, and called that "the exclusive identity wins". It was describing its
+// own truthy collapse. A contradiction is not resolved, it is REFUSED: a row carrying two canonical
+// destinations is ROUTE_DESTINATION_AMBIGUOUS, both values survive so nothing is hidden, and the route is not
+// persistable by any path. What A0-R1 actually needed — that an explicit Amazon save CLEARS the legacy
+// snapshot — does not depend on any collapse: the To selector is single-select, so an explicit transition
+// produces a one-sided row and the warehouse side is already blank (asserted at D7b below).
 var BOTH = hdr({ destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: 'Amazon',
   destination_warehouse_id: 'WH-US-3PL-01', destination_warehouse_code: 'US3PL01' });
+eq(IRWarehouse.destinationIdentity(BOTH_ROUTE()).code, 'ROUTE_DESTINATION_AMBIGUOUS',
+  'D7  §D/§C a route claiming BOTH is AMBIGUOUS — nothing "wins"');
+eq(IRDraft.isRouteComplete(BOTH_ROUTE()), false, 'D7a §C so it is not complete and no request is issued');
 eq([BOTH.recommended_destination_warehouse_id, BOTH.destination_warehouse_code, BOTH.destination_marketplace],
-   ['', '', 'Amazon'], 'D7  §D a route claiming BOTH cannot produce both — the marketplace identity is exclusive');
+   ['WH-US-3PL-01', 'US3PL01', 'Amazon'],
+   'D7b §C and neither side is silently dropped — the contradiction survives to be refused, not hidden');
+eq([MKT.recommended_destination_warehouse_id, MKT.destination_warehouse_code, MKT.destination_marketplace],
+   ['', '', 'Amazon'], 'D7c §C an EXPLICIT Amazon transition is one-sided by construction — the clearing still works');
 // A display NAME can no longer reach a code column.
 eq(hdr({ destination: 'Amazon', destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: 'Amazon' }).destination_warehouse_code, '',
   'D8  §D/§G the display name "Amazon" can no longer reach the warehouse-code column');
@@ -480,14 +496,26 @@ ok(/ROUTE_IDENTITY_NOT_PERSISTABLE[\s\S]{0,200}?destination_marketplace/.test(co
 ok(/zero_write: true/.test(code(UPSERT).slice(code(UPSERT).indexOf('ROUTE_IDENTITY_NOT_PERSISTABLE') - 400,
                                               code(UPSERT).indexOf('ROUTE_IDENTITY_NOT_PERSISTABLE') + 400)),
   'X7  and that refusal declares a zero write');
-// The stored-header completeness gate: the marketplace column is the evidence now, not the snapshot.
-ok(/var hasTo = !!toReal \|\| !!String\(b\.destination_marketplace/.test(code(G16)),
-  'X8  sadHeaderRouteIsComplete_ accepts a marketplace destination directly…');
-ok(/function sadStoredHeaderRouteIsComplete_\(h\) \{\s*if \(sadHeaderRouteIsComplete_\(h\)\) return true;/.test(code(G16)),
-  'X9  …and the STORED gate tries that FIRST, so a correctly stored Amazon route no longer needs the snapshot');
-// A route with NO destination at all is still refused — the fix must not have widened the gate.
-ok(/return !!from && !!toSnapshot && methodOk;/.test(code(G16)),
-  'X10 a header with neither a marketplace nor a snapshot is still INCOMPLETE');
+// F1-7N-FB-4G-A0-R2 — RESTATED. A0-R1 asserted the SHAPE of two predicates: a `toReal || marketplace` test and
+// a stored gate that "tries that first" before its snapshot fallback. A0-R2 replaced both — the `||` is what
+// let a BOTH row through, and the snapshot fallback is what let the live H4 header pass Submit on a marketplace
+// name in a warehouse-code column. What A0-R1 was protecting is the BEHAVIOUR, so that is asserted now, by
+// execution, and it is unchanged: a stored marketplace destination is complete without any snapshot, and a
+// header with neither is not.
+var STORED_GATE = (function () {
+  var src = [extractFn(G69, 'ricDestinationIdentity_'), extractFn(G16, 'sadDestinationIdentity_'),
+    extractFn(G16, 'sadHeaderRouteIsComplete_'), extractFn(G16, 'sadStoredHeaderRouteIsComplete_'),
+    'OUT = sadStoredHeaderRouteIsComplete_;'].join(String.fromCharCode(10));
+  return (new Function('var OUT;' + src + 'return OUT;'))();
+})();
+var BASE_H = { recommended_source_warehouse_id: YOUXIN, recommended_shipping_method: 'sea' };
+function withDest(x) { var o = {}; for (var k in BASE_H) o[k] = BASE_H[k]; for (var k2 in x) o[k2] = x[k2]; return o; }
+eq(STORED_GATE(withDest({ destination_marketplace: 'Amazon' })), true,
+  'X8  a stored MARKETPLACE destination is route-complete — with no snapshot anywhere');
+eq(STORED_GATE(withDest({ recommended_destination_warehouse_id: 'WH-US-3PL-01' })), true,
+  'X9  and so is a stored WAREHOUSE destination');
+eq(STORED_GATE(withDest({ recommended_destination_warehouse_code_snapshot: 'Amazon' })), false,
+  'X10 a header whose ONLY "destination" is a code snapshot is INCOMPLETE — the gate never widened');
 
 // ================================================================================================================
 section('H · DEPLOYMENT IDENTITY');
@@ -498,10 +526,14 @@ eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H
 // THIS ROUND DOES CHANGE THE SERVER, and that is the finding rather than an accident: sadUpsertDraftHeaderCore_
 // — the writer the Execution Plan actually calls — never carried destination_marketplace, so the client could
 // not stop writing the misuse without leaving the route with no destination at all. The owner stamp MOVES.
-eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A0-R1',
-  'H4  the 16_ owner stamp MOVED — this round changes the server, deliberately');
-eq((G63.match(/'F1-7N-FB-4G-A0-R1'/) || []).length, 1,
-  'H5  and 63_\'s manifest expectation moved with it, so a half-synced deployment is detectable');
+// F1-7N-FB-4G-A0-R2 — RESTATED. A0-R1 pinned its own stamp as an equality with the present — the SIXTH round
+// for that shape. What it established is a FLOOR (16_ carries A0-R1's change or something later) plus the
+// durable rule that the manifest must agree with the SOURCE rather than with a number typed twice.
+ok(RO.stampAtOrAfter((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A0-R1'),
+  'H4  the 16_ owner stamp is at or after A0-R1 — this round changed the server, deliberately');
+eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
+   (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+  'H5  and 63_\'s manifest expects what the SOURCE declares, so a half-synced deployment is detectable');
 var CHANGED = cp.execSync('git diff --name-only HEAD', { cwd: ROOT }).toString().split(/\r?\n/).filter(Boolean);
 eq(CHANGED.filter(function (f) { return f.indexOf('apps-script') !== -1; }).sort(),
    ['assets/specs/active/apps-script/16_shipping_allocation_handlers.gs',
@@ -545,35 +577,50 @@ mut('M3  a sea → sea_express fallback is detected', function () {
 });
 // M4 — the legacy snapshot auto-promoted to a marketplace destination.
 mut('M4  auto-promoting the legacy Amazon snapshot is detected', function () {
-  var mutated = mutateFn(CMP, 'resolvePersistedDestination',
-    "var mkt = String(persisted.destination_marketplace == null ? '' : persisted.destination_marketplace).trim();",
-    "var mkt = String(persisted.destination_marketplace || persisted.destination_warehouse_code_snapshot || '').trim();");
+  // F1-7N-FB-4G-A0-R2 — resolvePersistedDestination is built ON destinationIdentity now, so the promotion has
+  // to be introduced where the rule actually lives. Mutating the old inline copy would not apply at all, which
+  // is a broken probe rather than a passing test.
+  var mutated = mutateFn(CMP, 'destinationIdentity',
+    'var mkt = s(route.destination_marketplace);',
+    'var mkt = s(route.destination_marketplace) || s(route.destination_warehouse_code_snapshot);');
   var f = new Function('persisted', 'scope', 'up',
     'var DESTINATION_CONFIRMATION_REQUIRED = "DESTINATION_CONFIRMATION_REQUIRED";' +
     'var DESTINATION_AMBIGUOUS = "DESTINATION_AMBIGUOUS";' +
     extractFn(CMP, 'marketplaceDestinationToken') +
+    extractFn(mutated, 'destinationIdentity') +
     extractFn(mutated, 'resolvePersistedDestination') +
     'return resolvePersistedDestination(persisted, scope);');
-  var honest = IRWarehouse.resolvePersistedDestination({ destination_warehouse_id: '', destination_marketplace: '', destination_warehouse_code_snapshot: 'Amazon' }, US);
-  var mut1 = f({ destination_warehouse_id: '', destination_marketplace: '', destination_warehouse_code_snapshot: 'Amazon' }, US,
-    function (v) { return String(v == null ? '' : v).trim().toUpperCase(); });
+  var snapOnly = { destination_warehouse_id: '', destination_marketplace: '', destination_warehouse_code_snapshot: 'Amazon' };
+  var honest = IRWarehouse.resolvePersistedDestination(snapOnly, US);
+  var mut1 = f(snapOnly, US, function (v) { return String(v == null ? '' : v).trim().toUpperCase(); });
   return honest.state === 'DESTINATION_CONFIRMATION_REQUIRED' && mut1.state === 'PERSISTED_MARKETPLACE';
 });
 // M5 — the marketplace written into the warehouse snapshot column.
 mut('M5  writing a marketplace into the warehouse-code column is detected', function () {
+  // F1-7N-FB-4G-A0-R2 - the expression this mutated was replaced by the identity-driven one, so the mutant
+  // no longer applied at all. Same defect, introduced where the code now lives.
   var mutated = mutateFn(CMP, 'routeHeaderFields',
-    "destination_warehouse_code: isLogical ? '' : String(route.destination_warehouse_code == null ? '' : route.destination_warehouse_code).trim()",
+    "destination_warehouse_code: _d.ok ? (isWarehouse ? _code : '') : _code",
     "destination_warehouse_code: String(route.destination == null ? '' : route.destination).trim()");
-  var f = new Function('scope', 'route', 'IR_K2_GROUP_DIMENSIONS',
+  var f = new Function('scope', 'route', 'destinationIdentity',
     extractFn(mutated, 'routeHeaderFields') + 'return routeHeaderFields(scope, route);');
-  var got = f(US, { destination: 'Amazon', destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: 'Amazon' }, []);
+  var got = f(US, { destination: 'Amazon', destination_type: 'MARKETPLACE_DESTINATION', destination_marketplace: 'Amazon' },
+    IRWarehouse.destinationIdentity);
   return got.destination_warehouse_code === 'Amazon' && MKT.destination_warehouse_code === '';
 });
 // M6 — BOTH identities allowed through.
 mut('M6  allowing BOTH destination identities is detected', function () {
+  // F1-7N-FB-4G-A0-R2 - A0-R1 detected BOTH by checking that routeHeaderFields had BLANKED one side, which was
+  // the collapse itself. The detection is the REFUSAL now: ambiguous identity, incomplete route, no request.
   var d = IRWarehouse.resolvePersistedDestination({ destination_warehouse_id: 'WH-1', destination_marketplace: 'Amazon' }, US);
+  var mutated = mutateFn(CMP, 'destinationIdentity',
+    "if (wid && mkt) return { type: '', id: '', ok: false, code: 'ROUTE_DESTINATION_AMBIGUOUS', warehouse_id: wid, marketplace: mkt };",
+    "if (wid && mkt) return { type: 'MARKETPLACE', id: mkt.toLowerCase(), ok: true, code: '', warehouse_id: '', marketplace: mkt };");
+  var mf = new Function('route', extractFn(mutated, 'destinationIdentity') + 'return destinationIdentity(route);');
   return d.state === 'DESTINATION_AMBIGUOUS' && d.warehouse_id === '' && d.marketplace === '' &&
-    BOTH.recommended_destination_warehouse_id === '' && BOTH.destination_warehouse_code === '';
+    IRWarehouse.destinationIdentity(BOTH_ROUTE()).ok === false &&
+    IRDraft.isRouteComplete(BOTH_ROUTE()) === false &&
+    mf(BOTH_ROUTE()).ok === true;
 });
 // M7 — adoption creating a NEW header instead of reusing the stored one.
 mut('M7  adoption creating a second header is detected', function () {

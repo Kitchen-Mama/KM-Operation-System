@@ -98,6 +98,7 @@ eval(extractVar(G16, 'SAD_K2_BASIS_CONTESTED_'));
 eval(extractFn(G16, 'sadFnv1a_'));
 eval(extractFn(G16, 'sadK2GroupKey_'));
 eval(extractFn(G16, 'sadK2DeterministicHeaderId_'));
+eval(extractFn(G16, 'sadDestinationIdentity_'));
 eval(extractFn(G16, 'sadHeaderRouteIsComplete_'));
 eval(extractFn(G16, 'sadK2ReconcileDecision_'));
 eval(extractFn(G16, 'sadReconcileMessage_'));

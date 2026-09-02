@@ -31,7 +31,7 @@ eval(G16.match(/var SAD_K2_GROUP_DIMENSIONS_ = \[[\s\S]*?\];/)[0]);
 eval(['sadFnv1a_', 'sadLineNaturalKey_', 'sadApplyLineAliases_', 'sadDeterministicLineId_',
   'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2LineNaturalKey_', 'sadK2DeterministicLineId_',
   'sadK2ResolveActiveDraft_', 'sadK2LinesRouteCompatibleWithHeader_', 'sadK2PartitionLinesIntoGroups_',
-  'sadLineIsComplete_', 'sadHeaderRouteIsComplete_', 'sadExactSchemaReason_', 'sadAtomicValidateBatch_']
+  'sadLineIsComplete_', 'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_', 'sadExactSchemaReason_', 'sadAtomicValidateBatch_']
   .map(function (n) { return extractFn(G16, n); }).join('\n'));
 
 // djb2('|') — the repository's exact live-schema fingerprint (as used by the live diagnostics).

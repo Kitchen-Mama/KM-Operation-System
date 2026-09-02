@@ -21,7 +21,7 @@ var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs
 
 // ---- the pure 16_ id helpers (shared by the sandbox + the direct unit tests) ------------------------------------
 var SAD_ID_HELPERS = ['sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterministicLineId_', 'sadK2LineNaturalKey_',
-  'sadK2DeterministicLineId_', 'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadHeaderRouteIsComplete_',
+  'sadK2DeterministicLineId_', 'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_',
   'sadIsK2Group_', 'sadNewLineId_'].map(function (n) { return extractFn(G16, n); }).join('\n');
 
 // ================================================================================================================

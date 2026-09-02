@@ -2837,12 +2837,19 @@ window._irSaveAcknowledged_ = _irSaveAcknowledged_;
 function _isRouteComplete(route) {
     if (window.IRDraft && typeof window.IRDraft.isRouteComplete === 'function') return window.IRDraft.isRouteComplete(route);
     route = route || {};
+    // F1-7N-FB-4G-A0-R2 — the fallback copy of the rule, and it had the same `toReal || logical` a route
+    // carrying BOTH destinations passed. It is only reached when IRWarehouse/IRDraft are unavailable, which is
+    // precisely when a divergence would go unnoticed, so it applies the identical XOR: exactly one canonical
+    // destination, and a snapshot/label/scope is never one of them.
     var from = String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim();
     var toReal = String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim();
-    var logical = route.destination_type === 'MARKETPLACE_DESTINATION' || !!(route.destination_marketplace && String(route.destination_marketplace).trim());
+    var mkt = String(route.destination_marketplace == null ? '' : route.destination_marketplace).trim();
+    var hasTo = (window.IRWarehouse && typeof window.IRWarehouse.destinationIdentity === 'function')
+        ? window.IRWarehouse.destinationIdentity(route).ok
+        : ((!!toReal) !== (!!mkt));
     var qty = Number(route.planned_qty != null ? route.planned_qty : route.qty); if (!isFinite(qty)) qty = 0;
     var method = String(route.shipping_method == null ? '' : route.shipping_method).trim();
-    return !!from && (!!toReal || logical) && qty > 0 && !!method && method.toLowerCase().indexOf('no available') === -1;
+    return !!from && hasTo && qty > 0 && !!method && method.toLowerCase().indexOf('no available') === -1;
 }
 window._isRouteComplete = _isRouteComplete;
 
@@ -3552,11 +3559,21 @@ function _irRoutesMissingDestination_() {
                 if (!r) return;
                 var qty = Number(r.planned_qty != null ? r.planned_qty : r.qty) || 0;
                 if (qty <= 0) return;
+                // F1-7N-FB-4G-A0-R2 — this asked "is EITHER field set" and returned, so a route carrying BOTH
+                // — the one shape that most needs saying out loud — was the one shape it never reported. The
+                // question is whether the route HAS a canonical destination, and BOTH does not.
+                var _d = (window.IRWarehouse && typeof window.IRWarehouse.destinationIdentity === 'function')
+                    ? window.IRWarehouse.destinationIdentity(r)
+                    : null;
                 var wid = String(r.destination_warehouse_id == null ? '' : r.destination_warehouse_id).trim();
                 var mkt = String(r.destination_marketplace == null ? '' : r.destination_marketplace).trim();
-                if (wid || mkt) return;
+                var okDest = _d ? _d.ok : ((!!wid) !== (!!mkt));
+                if (okDest) return;
                 out.push({ sku: sku, qty: qty, allocation_draft_id: String(r.allocation_draft_id || '').trim(),
                     shipping_method: String(r.shipping_method || '').trim(),
+                    // The typed reason, so "confirm a destination" and "these two contradict" are different
+                    // sentences rather than one vague one.
+                    destination_code: _d ? _d.code : (wid && mkt ? 'ROUTE_DESTINATION_AMBIGUOUS' : 'ROUTE_DESTINATION_MISSING'),
                     destination_state: String(r.destination_state || '') });
             });
         });
