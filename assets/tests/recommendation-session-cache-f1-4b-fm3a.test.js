@@ -23,7 +23,7 @@ function tick() { return Promise.resolve().then(function () {}).then(function ()
 // ---- extract the READ block + the (outside-block) Suggested-cell helper ----------------------------
 var IR = IRSRC.slice(IRSRC.indexOf('// __IRRECO_START__'), IRSRC.indexOf('// __IRRECO_END__'));
 ok(IR.length > 0, 'X0 __IRRECO__ block extracted');
-var IRSUG = IRSRC.slice(IRSRC.indexOf('function _irSuggestedCellHtml'), IRSRC.indexOf('// Recommendation Summary table body'));
+var IRSUG = IRSRC.slice(IRSRC.indexOf('function _irSuggestedQtyState_'), IRSRC.indexOf('// Recommendation Summary table body'));
 
 // ---- host-page stubs the block depends on ----------------------------------------------------------
 var CURRENT_SCOPE = { company: 'KM', country: 'US', marketplace: 'AMAZON_US' };

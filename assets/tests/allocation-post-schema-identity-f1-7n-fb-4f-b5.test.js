@@ -550,6 +550,12 @@ function clientEnv() {
         // false, which read exactly like "the row was dropped".)
         (PAGE.match(/var IR_ISO_DATE_RE_ = [^;]+;/) || [''])[0],
         extractFn(PAGE, '_irCanonicalDateOrBlank_'),
+        // F1-7N-FB-4G-A0 - and the hydrate now obtains its ROWS through the page's read-model-first accessor
+        // (_irWsGet) rather than the broad-cache getter directly, because the broad cache has no writer the server
+        // will honour. With no _irReadModel defined, _irWsGet falls through to exactly the window.KM.DB getter this
+        // lift already stubs, so what this suite measures is unchanged.
+        (PAGE.match(/var _irReadModel = null;/) || [''])[0],
+        extractFn(PAGE, '_irWsGet'),
         extractFn(PAGE, '_hydrateAllocationDraftFromDb'),
         extractFn(PAGE, '_isRouteComplete'),
         extractFn(PAGE, '_execToOptionsHtml'),

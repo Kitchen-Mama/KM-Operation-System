@@ -68,12 +68,20 @@ ok(/Legacy broad-cache path \(kill-switch only\)/.test(RO), 'request-order.js: t
 console.log('\n== §1/§2 IR allocation-draft hydrate (HALT E resolved): bounded pre-load, UNCHANGED sync hydrate ==');
 var restore = extractAssignedFn(IR, 'async function _restoreAllocationDraftFromSession') || extractFn(IR, '_restoreAllocationDraftFromSession');
 ok(/async function _restoreAllocationDraftFromSession/.test(IR), '_restoreAllocationDraftFromSession is async (awaits the bounded draft-table load)');
-ok(/refreshCacheTables\(\['shipping_allocation_drafts', 'shipping_allocation_draft_lines'\]\)/.test(restore), 'restore awaits a BOUNDED load of the 2 canonical draft tables (not the prime, not the whole DB)');
+ok(/refreshCacheTables\(\['shipping_allocation_drafts', 'shipping_allocation_draft_lines'\]\)/.test(restore), 'restore keeps the BOUNDED Legacy-mode load of the 2 canonical draft tables (not the prime, not the whole DB)');
 var idxLoad = restore.indexOf('refreshCacheTables'), idxHydrate = restore.indexOf('_hydrateAllocationDraftFromDb(ctx)');
 ok(idxLoad !== -1 && idxHydrate !== -1 && idxLoad < idxHydrate, 'the bounded load runs BEFORE the sync hydrate (so it reads fresh bounded slices, not the prime)');
-// The hydrate itself is UNCHANGED: same two broad getters, same selection; NO SSOT/getWorkspace introduced (would change the selection contract).
+// F1-7N-FB-4G-A0 — RESTATED. What F1-7L established, and what still holds, is that the hydrate does NOT prime
+// the whole DB and does NOT reach for the async SSOT: its selection contract and its bySku transform are
+// unchanged. What it can no longer say is "the same two broad getters", because that source has no writer the
+// deployed server honours (getOperationDb and getTable both refuse the two draft tables), so it returned [] in
+// production. The hydrate reads them through the page's read-model-first accessor now, which falls through to
+// those very getters in Legacy mode. HALT E resolved — see F1_7J_A_..._R1.md §6.
 var hydrate = extractFn(IR, '_hydrateAllocationDraftFromDb');
-ok(/getShippingAllocationDrafts\(\)/.test(hydrate) && /getShippingAllocationDraftLines\(\)/.test(hydrate), 'hydrate still reads the same two broad getters (byte-identical selection + bySku transform preserved)');
+ok(/_irWsGet\('getShippingAllocationDrafts'\)/.test(hydrate) && /_irWsGet\('getShippingAllocationDraftLines'\)/.test(hydrate),
+  'hydrate reads the two canonical draft tables through the read-model-first accessor (Legacy still resolves to the same broad getters)');
+ok(!/loadOperationDb|getWorkspace\(/.test(hydrate),
+  'hydrate still primes NO whole DB and introduces NO SSOT/getWorkspace call — the selection contract and bySku transform are unchanged');
 ok(hydrate.indexOf('getShippingAllocationDraftWorkspace') === -1 && hydrate.indexOf('getWorkspace') === -1, 'hydrate does NOT switch to the scoped SSOT (which would change the planning_cycle/company selection contract)');
 
 // ===================================================================================================================

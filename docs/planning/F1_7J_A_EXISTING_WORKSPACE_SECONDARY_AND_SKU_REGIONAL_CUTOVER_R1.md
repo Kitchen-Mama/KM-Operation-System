@@ -104,6 +104,37 @@ already uses the SSOT via `_allocDraftInitialLoad`; only the working-draft hydra
 a J-B/J-D decision — either accept the `_irWsGet` raw-table route (BEFORE==AFTER, waives §7's SSOT preference) or converge
 the hydrate onto the async SSOT (a deliberate behavior change).
 
+### RESOLVED in F1-7N-FB-4G-A0 — the `_irWsGet` raw-table route is ACCEPTED
+
+The halt weighed two options against a BEFORE==AFTER mandate and correctly refused to break it. One premise it
+rested on had never been tested, and it is false: **there was no working BEFORE.**
+`_hydrateAllocationDraftFromDb` read `window.KM.DB.getShippingAllocationDrafts()`, i.e.
+`_opDbCache.shippingAllocationDrafts` — and that slice has NO writer the deployed server will honour.
+`handleGetOperationDb_` does not list `shipping_allocation_drafts` / `shipping_allocation_draft_lines` in its
+validTabs, and neither does `handleGetTable_`, so the
+`refreshCacheTables(['shipping_allocation_drafts','shipping_allocation_draft_lines'])` the hydrate depends on is
+REFUSED on both names (`Invalid table name`), throws `BACKEND_BUSINESS_REJECTION`, and is swallowed. The hydrate
+has therefore been reading `[]` in production for the whole life of this halt. BEFORE == AFTER == zero rows on
+the broad path; the `_irWsGet` route cannot break an equivalence with a source that returns nothing.
+
+The other option remains unusable, and this round adds a fourth reason to the three the halt already recorded:
+the scoped SSOT hard-conflicts on more than one active draft, and the live ResUS/US/Amazon station holds
+**three** (H1 `SAD-C787D1B1-D`, H2 `SAD-27976058-2`, H4 `SADH-K2-E7AF9242`). It could not serve this station at
+all.
+
+So §7's SSOT *preference* is waived for this one surface, deliberately and on the record. The hydrate now reads
+`_irWsGet('getShippingAllocationDrafts' / '...Lines')` — the same read-model-first accessor every other read on
+this page already uses, fed by `inventoryReplenishment.workspace.get`, which has served both tables as raw
+passthrough since F1-7I (`SIR_WORKSPACE_TABLES_`, no include gate). In Legacy mode `_irWsGet` falls through to
+the identical broad getter, so the Legacy path is byte-identical. **Debt effect:** S7 (IR allocation-draft
+hydrate) leaves the app-prime-dependent list — the hydrate no longer depends on the broad cache in Workspace
+mode, and issues no `getTable` request of its own.
+
+**Not resolved by this, and deliberately not touched:** the `getTable` / `getOperationDb` whitelists still omit
+both draft tables. Nothing on this page needs them any more, so no server change was made; but any FUTURE
+surface that reaches for the broad getters for allocation drafts will get `[]` for the same reason, silently.
+That is a server-side gap, not a client one, and it is recorded here rather than fixed in a frontend-only round.
+
 ---
 
 ## §7 — Authority isolation (unchanged) & guards

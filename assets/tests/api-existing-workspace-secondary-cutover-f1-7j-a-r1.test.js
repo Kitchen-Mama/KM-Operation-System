@@ -233,7 +233,17 @@ ok(!/adaptRequestOrderWorkspace|_roReadModel/.test(RO_JS), 'C: request-order.js 
 console.log('\n== E · HALT proof: allocation-draft SSOT is not BEFORE==AFTER-equivalent to the sync hydrate ==');
 ok(/window\.KM\.DB\.getShippingAllocationDraftWorkspace\s*=\s*async function/.test(DBAPI), 'E: SSOT getShippingAllocationDraftWorkspace is ASYNC (network fetch) — not a sync cache read');
 ok(/_allocDraftScopeComplete[\s\S]*planning_cycle && scope\.company && scope\.country && scope\.marketplace/.test(IR_JS), 'E: SSOT requires COMPLETE scope incl. planning_cycle (hydrate matches country+marketplace only → different selection)');
-ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*getShippingAllocationDrafts\(\)[\s\S]*getShippingAllocationDraftLines\(\)/.test(IR_JS), 'E: sync hydrate still reads raw drafts/lines (unchanged — HALTED; §7 forbids _irWsGet raw-table path, SSOT not equivalent)');
+// F1-7N-FB-4G-A0 — RESTATED, because HALT E is RESOLVED and the resolution is the `_irWsGet` raw-table route.
+// The halt's reasoning about the SSOT stands unchanged and is still asserted above (E:234/E:235). What could
+// not stand was its premise about the OTHER side: there was no working BEFORE to preserve. The broad-cache
+// slice the hydrate read has no writer the deployed server honours — getOperationDb and getTable both refuse
+// shipping_allocation_drafts / shipping_allocation_draft_lines — so the hydrate had been reading [] in
+// production throughout. §7's SSOT preference is waived for this one surface, on the record, in
+// docs/planning/F1_7J_A_EXISTING_WORKSPACE_SECONDARY_AND_SKU_REGIONAL_CUTOVER_R1.md §6.
+ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*_irWsGet\('getShippingAllocationDrafts'\)[\s\S]*_irWsGet\('getShippingAllocationDraftLines'\)/.test(IR_JS),
+  'E: sync hydrate now reads the read-model-first accessor (HALT E RESOLVED — §7 SSOT preference waived, SSOT still not equivalent)');
+ok(/if \(_irReadModel\) return _irReadModel\[name\] \|\| \[\];[\s\S]{0,400}?window\.KM\.DB\[name\]\(\)/.test(IR_JS),
+  'E: and _irWsGet still falls through to the SAME broad getter in Legacy mode — the Legacy path is byte-identical');
 
 // ===================================================================================================================
 console.log('\n== I/J/K · no new API route / workspace / formula / authority drift ==');

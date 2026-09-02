@@ -427,8 +427,15 @@ section('H — [§F, §H] CONTRACTS AND THE BROWSER TOKEN');
   eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H5 [§F] and the frontend pins the same 10');
 
   // §H — a NEW token, and the reason is a fact about the repository rather than a preference.
+  // F1-7N-FB-4G-A0 - RESTATED, and this is the FOURTH round in which this exact shape has broken. B6's H9 was
+  // restated to a floor for the same reason and this one was left as an equality with "now", so it broke the
+  // moment a later round minted its own token - which is the behaviour B6-R1 was asserting is CORRECT. What
+  // B6-R1 actually established is a FLOOR plus a rule: B6-R1 minted its own token rather than reusing B6's, and
+  // every round after it must be at or after that point in the release order. A suite states a floor or a
+  // derived contract; it never states an equality with the present.
   var APP = RO.currentAppToken();
-  eq(APP, 'fb4fb6r1-etasnapshot-20260901', 'H6 [§H] this round minted its own application token');
+  ok(RO.tokenAtOrAfter(APP, 'fb4fb6r1-etasnapshot-20260901'),
+    'H6 [§H] B6-R1 minted its own application token, and the release order has not moved behind it');
   ok(RO.tokenAtOrAfter(APP, 'fb4fb6-legacyroute-20260901'), 'H7 [§H] strictly after B6 in the release order');
   var tok = RO.parseIndexTokens(INDEX);
   eq(tok['assets/js/pages/inventory-replenishment.js'], APP, 'H8 [§H] the changed page carries it');

@@ -1753,3 +1753,164 @@ One probe of R1's own was worthless and had to be rebuilt: **M7** referenced a f
 section's closure, threw a `ReferenceError`, and the lenient `mut` helper scored the exception as a detection.
 The helper now reports a throw as a **PROBE ERROR**, and M7 builds both the shipped and the mutant key function
 from source so it depends on nothing another section happens to have loaded.
+
+
+## 4G-A0 — CO1100-R LIVE HYDRATION CLOSURE: THE HYDRATE WAS NEVER WRONG, ITS SOURCE WAS EMPTY
+
+B6 made the hydrate RUN. B6-R1 made its ETA a value. The route still did not appear, and the reason turned
+out to be neither of those things.
+
+### 4G-A0.0 — Preconditions
+
+`main` = `origin/main` = `82da01c`; worktree clean; stash empty; `60afa6e` (B6) and `82da01c` (B6-R1) both
+ancestors of HEAD and both PUSHED, so §A.3 is satisfied and the frontend of B6-R1 is publishable. The
+operator confirmed the deployment contract separately: `ok=true`, `DEPLOYMENT_CONTRACT_OK`,
+`endpointClass=STABLE_EXEC`, action 10, transport 1 — which proves the **Apps Script endpoint**, not the
+browser's assets, and is not treated here as evidence of either.
+
+### 4G-A0.1 — The root cause, in one sentence
+
+`_hydrateAllocationDraftFromDb` read `window.KM.DB.getShippingAllocationDrafts()`, which returns
+`_opDbCache.shippingAllocationDrafts` — **a cache slice with no writer the deployed server will honour.**
+
+| the only two writers of that slice | what the deployed server does |
+|---|---|
+| `getOperationDb` → `normalizeOperationDb(db)` | `handleGetOperationDb_`'s `validTabs` does not list `shipping_allocation_drafts` or `shipping_allocation_draft_lines` |
+| `getTable` → `refreshCacheTables([...])` | `handleGetTable_`'s `validTabs` does not list them either → `success:false, error:'Invalid table name'` |
+
+So the `refreshCacheTables(['shipping_allocation_drafts','shipping_allocation_draft_lines'])` that ran
+IMMEDIATELY BEFORE every hydrate was refused on both names, raised `BACKEND_BUSINESS_REJECTION`, and was
+swallowed by its own `['catch']`. `activeDrafts.length` was 0 on every Search, the hydrate returned `false`,
+and `initializeShippingAllocation` fell to the default Add Route editor. `03_master_data_handlers.gs` has not
+been touched since long before this series — this was never a regression, it is the state the page has always
+been in.
+
+**And the rows were one accessor away.** `inventoryReplenishment.workspace.get` — the read the very Search
+that calls the hydrate had just completed — has served BOTH tables as raw passthrough since F1-7I
+(`SIR_WORKSPACE_TABLES_`, no include gate), and `adaptInventoryReplenishmentWorkspace` already normalises them
+into the read model under these exact getter names. Every other read on this page goes through `_irWsGet`.
+This one did not.
+
+### 4G-A0.2 — Every boundary, measured
+
+Driving the SHIPPED hydrate with the exact production shapes, twice, differing only in which source holds the
+rows:
+
+| boundary | broad cache (production today) | read model (after) |
+|---|---|---|
+| 1 sheet reader / 2 header filter / 3 line filter | server refuses the table names | 4 headers / 6 lines |
+| 4 API response | — | 4 headers / 6 lines, H4 verbatim, line carrying 800 |
+| 5 station/scope boundary | — | 3 US/Amazon headers; H3 excluded (ResTW/JP) |
+| 6 `_hydrateAllocationDraftFromDb` | **returns false**, `bySku` = {} | returns true, `bySku` = { CO1100-R } |
+| 7 `_restoreAllocationDraftFromSession` | never hydrates — no scope at mount (B6 §C.3) | unchanged |
+| 8 `_irApplySearch_` | calls the hydrate (B6) — it just had nothing to read | calls it, and it has rows |
+| 9 bySku lookup | — | keyed by CANONICAL sku; blank `site_sku` is irrelevant |
+| 10 route grouping | — | exactly ONE route for CO1100-R |
+| 11 `initializeShippingAllocation` | branch 2: default editor, `qty 0` | branch 1: the persisted route |
+| 12 rendered Execution Plan row | Add Route editor | H4 · From CN侯鑫’s warehouse id · To blank · 800 · sea |
+
+**H4 as rendered, after:** header `SADH-K2-E7AF9242`, line `SADL-K2-16F4E4F9`, sku `CO1100-R`, `site_sku` ''
+(not invented), source `WH-TW-CN-FACTORY-YOUXIN` (inherited from the header — the line's is blank), method
+`sea`, `planned_qty` 800, `destination_state` `DESTINATION_CONFIRMATION_REQUIRED`. The legacy destination
+snapshot `Amazon` appears NOWHERE in the hydrated route.
+
+### 4G-A0.3 — The twelve candidate causes (§E), each tested rather than argued
+
+Rejected by execution: (1) hydration not called — it is, and after the scope is assigned; (4) requiring
+`line.source_warehouse_id` — `lineSrc || hFrom`, proven with a blank line source; (5) blank `site_sku`
+blocking the match — the key is `raw.sku`; (6) blank `line_status` treated as inactive — only `cancelled` is
+excluded, and a genuinely cancelled line IS dropped, so the rule is not vacuous; (7) `planning_cycle` — the
+hydrate does not filter on it at all; (8) blank destination dropping the route — it survives with a typed
+state; (9) `bySku` keyed by `site_sku` — it is not; (10)/(11) default editor overwriting or a repeated Search
+duplicating — the shipped selector prefers the persisted rows and the trigger is single-flight and
+scope-guarded; (12) stale session state — the DB path returns before the cache is consulted, and the cache is
+scope-checked. (3) is a confirmed SHAPE, not a cause: the header has a source warehouse and the line does not,
+and the line inherits it. (2) is the one candidate a test cannot settle from inside the repository, which is
+what the §C browser readback is for.
+
+### 4G-A0.4 — HALT E, and why this round resolves it
+
+Routing the hydrate through `_irWsGet` was **explicitly forbidden** by F1-7J-A §7 and recorded as
+`IR_ALLOCATION_DRAFT_SSOT_NOT_BEFORE_EQUALS_AFTER`. That halt was right about the SSOT and wrong about one
+premise nobody had tested: **there was no working BEFORE to preserve.** BEFORE == AFTER == zero rows on the
+broad path, so the `_irWsGet` route cannot break an equivalence with a source that returns nothing. The
+alternative remains unusable, and this round adds a fourth reason to the halt's three: the scoped SSOT
+hard-conflicts on more than one active draft and this station holds THREE. §7's SSOT preference is waived for
+this one surface, deliberately and on the record, in
+`docs/planning/F1_7J_A_EXISTING_WORKSPACE_SECONDARY_AND_SKU_REGIONAL_CUTOVER_R1.md` §6.
+
+**Left unfixed, deliberately:** the `getTable` / `getOperationDb` whitelists still omit both draft tables.
+Nothing on this page needs them now, so no Apps Script file was touched; but a future surface that reaches for
+the broad getters will get `[]` for the same reason, silently. That is a server gap, recorded rather than
+fixed in a frontend-only round.
+
+### 4G-A0.5 — §I: CO1100-T, Suggested Qty 2120 and Execution Plan Qty 0
+
+Not an allocation question and not a hydration failure. **One quantity was being fetched from two places.**
+The top cell reads the MATERIALIZED gap (`_irMatState` → `d90_suggested_qty` → 2120). The default editor read
+the legacy per-row `item.suggestedQty`, which the materialized read never populates and which is therefore 0.
+
+The shipped design statement is unambiguous — the editor's own comment says it seeds "from the Recommendation
+Summary total (Suggested Qty)" — so per §I this is proved and fixed rather than recorded as expected. The
+value now has ONE owner, `_irSuggestedQtyState_`, returning a value AND a state; `_irSuggestedCellHtml` renders
+from it and the editor seeds from it. Nothing is auto-filled and nothing is saved: it is still a preview
+captured only when the PM edits it. And no state becomes a fabricated number — PENDING and BLOCKED both seed
+0 while the cell still prints "…" and "—", and a valid canonical 0 still prints 0.
+
+### 4G-A0.6 — §C: the production browser readback
+
+`checkDeploymentContract` proves the Apps Script endpoint, not the browser's assets. Paste this into the
+production tab's console. It prints only asset URLs — no allocation ids, masked or otherwise.
+
+```js
+['inventory-replenishment.js','inventory-compat.js','inventory-replenishment.css'].forEach(function (n) {
+  var el = [].concat(
+    [].slice.call(document.scripts),
+    [].slice.call(document.querySelectorAll('link[rel=stylesheet]'))
+  ).filter(function (e) { return String(e.src || e.href).indexOf(n) !== -1; })[0];
+  console.log(n, el ? String(el.src || el.href).split('?v=')[1] || '(no token)' : '(NOT LOADED)');
+});
+```
+
+Expected after this release: `inventory-replenishment.js` and `inventory-compat.js` →
+**`fb4ga0-livehydration-20260902`**; `inventory-replenishment.css` → **`irexecplan-20260901`** — the
+stylesheet is deliberately on its OWN token family and did not change this round, so a reviewer expecting one
+token across all three would report a false failure.
+
+If the two scripts do NOT carry `fb4ga0-livehydration-20260902`, the browser is on stale/unpublished frontend
+and no hydration code should be touched — publish and hard-reload first.
+
+### 4G-A0.7 — The cache token
+
+`fb4fb6r1-etasnapshot-20260901` is on `origin/main`, so by the rule recorded in B6-R1.7 it has been published
+and cannot be reused. `fb4fb6r1-etasnapshot-20260901` → **`fb4ga0-livehydration-20260902`**, all 18
+co-deployed references together. The stylesheet family is untouched. No map, earth or unrelated token moved.
+
+### 4G-A0.8 — Suites restated, and a probe that was proving nothing
+
+* **F1-7J-A E** and **F1-7L §1/§2** both pinned "the hydrate reads the two broad getters". Restated to what
+  survives — no whole-DB prime, no SSOT, unchanged selection contract and bySku transform — with HALT E's
+  resolution named.
+* **B5** and **B6** lift the hydrate out of the page; it gained `_irWsGet` and `_irReadModel`, so both lifts
+  carry them. Without them the hydrate's own `try/catch` swallows a `ReferenceError` and returns false, which
+  reads exactly like "the live row was dropped". Third round in a row for this class.
+* **FM2B**, **FM3a** and **FM5-R4UI-R5** lift `_irSuggestedCellHtml` by slicing from the renderer; the value
+  authority now sits above it, so the slices start at the authority. FM5-R4UI-R5's slice was ALSO a
+  1600-character budget — the third false failure this repository has had from a character budget a comment
+  spent. It is delimited by its terminator now.
+* **B6-R1 H6** pinned "this round minted its own token" as an equality with the present. **Fourth** round
+  running for this exact shape (B6 H9 was the third). It is a floor now.
+
+One mutation probe of this round's own was worthless: **M8** used a whole-file `PAGE.replace()` and its pattern
+matched a DIFFERENT function — one that spells the same scope filter with `scope` instead of `ctx` — so it
+mutated code the hydrate never runs and reported a survival that meant nothing. Every hydrate mutant is now
+anchored INSIDE `_hydrateAllocationDraftFromDb`, and a mutation that does not apply THROWS rather than
+returning false. Its first draft was also an equivalent mutant for a second reason: dropping only the
+country/marketplace test leaves the company test, which still excludes ResTW.
+
+### 4G-A0.9 — Boundaries held
+
+No Apps Script file changed (measured from the working tree, not claimed). No DB schema change. No live write,
+no AI Plan, no Save, no Submit, no Send Request. Contracts unmoved: action 10, required-action-list 9,
+transport 1. `SAD_BUILD_VERSION_` stays `F1-7N-FB-4F-B6`. Bundle unchanged
+(`d782ea6d…c36ac`). Sweep: 392 suites, 388 pass, 4 fail — the four long-standing failures and NOTHING else.

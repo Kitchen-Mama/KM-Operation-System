@@ -38,7 +38,12 @@ var ROUND_TOKENS = [
   // `?v=fb4fb6-legacyroute-20260901`. Reusing that token would leave every one of those browsers on the B6
   // copy of inventory-replenishment.js forever, which is precisely the half-updated deployment the shared
   // token exists to prevent. A token may only be reused while nothing carrying it has been published.
-  'fb4fb6r1-etasnapshot-20260901'
+  'fb4fb6r1-etasnapshot-20260901',
+  // F1-7N-FB-4G-A0 - CO1100-R live hydration closure. B6-R1 is on origin/main (82da01c was pushed), so by the
+  // rule recorded above its token has been published and cannot be reused. This round changes the SOURCE the
+  // Execution Plan hydrate reads, so a browser left on the previous copy would keep reading a cache the server
+  // never fills and would keep showing a default editor for a route that exists in the database.
+  'fb4ga0-livehydration-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

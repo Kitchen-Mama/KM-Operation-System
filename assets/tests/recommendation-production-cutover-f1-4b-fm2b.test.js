@@ -94,7 +94,7 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   eval(IR);
   // _irSuggestedCellHtml lives just OUTSIDE the __IRRECO__ block — extract + eval it too (it depends on the
   // block's _irRecommendationWorkspaceEnabled, now in scope).
-  var IRSUG = IRSRC.slice(IRSRC.indexOf('function _irSuggestedCellHtml'), IRSRC.indexOf('// Recommendation Summary table body'));
+  var IRSUG = IRSRC.slice(IRSRC.indexOf('function _irSuggestedQtyState_'), IRSRC.indexOf('// Recommendation Summary table body'));
   eval(IRSUG);
   function irApi(active, env) { return { workspaceApiActive: function (n) { return active && n === 'recommendation'; }, getWorkspace: function () { return Promise.resolve(env); } }; }
   // FM3a added a session cache; these FM2B assertions test per-response STATE transitions on one scope, so

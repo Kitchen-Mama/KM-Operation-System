@@ -1990,33 +1990,70 @@ function initReplenHeaderSync() {
 // Recommendation Summary explains why. Before the scope result is available it shows a compact "…" pending
 // marker. When the workspace is OFF (kill switch), the legacy suggestedQty number is preserved verbatim.
 // (Supersedes the FM2B "— breakdown" indicator, per the FM3 audit authorization.)
+// F1-7N-FB-4G-A0 §I — THE SUGGESTED QTY IS ONE VALUE WITH ONE AUTHORITY, AND IT NOW HAS ONE OWNER.
+//
+// The top-table cell and the default Execution Plan editor were reading two DIFFERENT sources for the same
+// number. The cell reads the MATERIALIZED gap (_irMatState → d90_suggested_qty); the editor read the legacy
+// per-row `item.suggestedQty`, which the materialized read never populates and which is therefore 0. That is
+// why the screenshot shows Suggested Qty 2120 in the row and Qty 0 in the editor two inches below it — not a
+// missing allocation and not a hydration failure, but one quantity fetched from two places.
+//
+// This resolver is the single authority. It returns the VALUE and the STATE, never a rendered string, so the
+// cell and the editor can present the same answer differently without recomputing it:
+//   READY   — a real number (a valid 0 IS a real number and must print as 0)
+//   PENDING — the read has not completed; nothing is known yet
+//   NONE    — BLOCKED / not calculated / no actionable line; there is no number and none may be invented
+//   LEGACY  — recommendation workspace off; the legacy per-row field verbatim, as before
+// A caller that needs a quantity uses READY/LEGACY only. PENDING and NONE are NOT zero — the cell prints
+// "…"/"—" for them, and the editor seeds 0 because a route with no proven recommendation starts empty.
+function _irSuggestedQtyState_(item) {
+  if (_irUseMaterializedGapRead()) {
+    var st = _irMatState.status;
+    if (st === 'IDLE' || st === 'LOADING' || st === 'CONTEXT_NOT_READY') return { state: 'PENDING', value: null };
+    var row = (item && _irMatState.bySku[String(item.sku)]) || null;
+    if (!row || String(row.calculation_status) !== 'READY') return { state: 'NONE', value: null };
+    var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
+    if (v === null) return { state: 'NONE', value: null, reason: 'NO_STORED_VALUE' };
+    return { state: 'READY', value: v };
+  }
+  if (!_irRecommendationWorkspaceEnabled()) {
+    return { state: 'LEGACY', value: (item && item.suggestedQty != null ? item.suggestedQty : 0) };
+  }
+  var lines = (typeof _irRecoLinesForSku === 'function') ? _irRecoLinesForSku(item) : null;
+  if (lines === null) return { state: 'PENDING', value: null };
+  var agg = _irAggregateActionableRecommendedQty(lines);
+  if (agg.actionableCount === 0) return { state: 'NONE', value: null };
+  return { state: 'READY', value: agg.total };
+}
+// A whole number for a caller that needs a quantity, and 0 for every state that has no proven number.
+// NEVER a fabricated figure: PENDING and NONE both seed 0, which is what "nothing has been allocated yet"
+// looks like, and the operator types the real number or runs AI Plan.
+function _irSuggestedQtyNumber_(item) {
+  var s = _irSuggestedQtyState_(item);
+  if (s.state !== 'READY' && s.state !== 'LEGACY') return 0;
+  var n = parseInt(s.value, 10);
+  return isFinite(n) ? n : 0;
+}
 function _irSuggestedCellHtml(item) {
   // F1-4B-FM5-R4UI-R5 §5 — the top-table Suggested Qty is the MATERIALIZED actionable total from
   // inventory_replenishment_gap. D18/D30/D45/D90 are CUMULATIVE checkpoints, so summing them double-counts need;
   // the ONE actionable replenishment recommendation is the FURTHEST configured horizon's stored suggested qty
   // (canonical max horizon = D90). READY → stored d90_suggested_qty (valid 0 → "0"); BLOCKED / not-calculated →
   // "—"; still loading → "…". No page-side gap math, no live per-SKU calculation.
-  if (_irUseMaterializedGapRead()) {
-    var st = _irMatState.status;
-    if (st === 'IDLE' || st === 'LOADING' || st === 'CONTEXT_NOT_READY') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Loading materialized replenishment gap…">…</span>';
-    var row = (item && _irMatState.bySku[String(item.sku)]) || null;
-    if (!row || String(row.calculation_status) !== 'READY') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable materialized recommendation — run Recalculate All Sites / see the expanded Recommendation Summary">—</span>';
-    var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
-    if (v === null) return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none">—</span>';
-    return '<span class="replen-suggested-cell__value">' + v + '</span>';
+  var sug = _irSuggestedQtyState_(item);
+  var materialized = _irUseMaterializedGapRead();
+  if (sug.state === 'PENDING') {
+    return materialized
+      ? '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Loading materialized replenishment gap…">…</span>'
+      : '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Calculating recommendation…">…</span>';
   }
-  if (!_irRecommendationWorkspaceEnabled()) {
-    return '<span class="replen-suggested-cell__value">' + (item && item.suggestedQty != null ? item.suggestedQty : 0) + '</span>';
+  if (sug.state === 'NONE') {
+    if (sug.reason === 'NO_STORED_VALUE') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none">—</span>';
+    return materialized
+      ? '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable materialized recommendation — run Recalculate All Sites / see the expanded Recommendation Summary">—</span>'
+      : '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable canonical recommendation — see the expanded Recommendation Summary">—</span>';
   }
-  var lines = (typeof _irRecoLinesForSku === 'function') ? _irRecoLinesForSku(item) : null;
-  if (lines === null) {
-    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Calculating recommendation…">…</span>';
-  }
-  var agg = _irAggregateActionableRecommendedQty(lines);
-  if (agg.actionableCount === 0) {
-    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable canonical recommendation — see the expanded Recommendation Summary">—</span>';
-  }
-  return '<span class="replen-suggested-cell__value">' + agg.total + '</span>';
+  return '<span class="replen-suggested-cell__value">' + sug.value + '</span>';
 }
 
 // Recommendation Summary table body (read-only system suggestion — NOT the submitted plan).
@@ -3817,9 +3854,27 @@ var _replenHydrateToken = 0;
 function _hydrateAllocationDraftFromDb(ctx) {
     var myToken = ++_replenHydrateToken;
     try {
-        if (!(window.KM && window.KM.DB && window.KM.DB.getShippingAllocationDrafts && window.KM.DB.getShippingAllocationDraftLines)) return false;
-        var drafts = window.KM.DB.getShippingAllocationDrafts() || [];
-        var lines = window.KM.DB.getShippingAllocationDraftLines() || [];
+        // F1-7N-FB-4G-A0 §D.4/§D.6 — THE ROWS WERE NEVER IN THE SOURCE THIS FUNCTION READ.
+        //
+        // window.KM.DB.getShippingAllocationDrafts() returns `_opDbCache.shippingAllocationDrafts`, and NOTHING
+        // fills that slice for this page. There are exactly two writers of it and BOTH are refused by the
+        // deployed server: `getOperationDb` does not list shipping_allocation_drafts /
+        // shipping_allocation_draft_lines in its validTabs, and neither does `getTable` — so the
+        // refreshCacheTables(['shipping_allocation_drafts','shipping_allocation_draft_lines']) that ran just
+        // before this call threw BACKEND_BUSINESS_REJECTION ("Invalid table name") on BOTH names, was swallowed
+        // by its own ['catch'], and left the slice at []. `activeDrafts.length` was therefore 0 on every Search,
+        // the hydrate returned false, and initializeShippingAllocation fell to the default Add Route editor.
+        //
+        // The rows were never far away. inventoryReplenishment.workspace.get — the read this very Search just
+        // completed — serves BOTH tables as raw passthrough (60_ SIR_WORKSPACE_TABLES_, no include gate), and
+        // adaptInventoryReplenishmentWorkspace already normalises them into the read model under these exact
+        // getter names. Every other read on this page goes through _irWsGet; this one did not.
+        //
+        // _irWsGet is read-model-first and falls back to the SAME broad getter in Legacy mode, so Legacy
+        // behaviour is byte-identical and Workspace mode now reads the rows the Search already fetched.
+        if (typeof _irWsGet !== 'function') return false;
+        var drafts = _irWsGet('getShippingAllocationDrafts') || [];
+        var lines = _irWsGet('getShippingAllocationDraftLines') || [];
         function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
         // F1-7N-FB-4B-ADDENDUM §F.9 — HYDRATE EVERY ACTIVE HEADER FOR THE STATION, NOT JUST THE NEWEST.
         // This used to sort by updated_at and take [0]. Under the frozen K2 contract one station legitimately holds
@@ -3982,6 +4037,13 @@ function _irHydrateDraftForAppliedScope_() {
     function done(v) { _irDraftHydrateInFlight = false; return v; }
     return Promise.resolve()
         .then(function () {
+            // F1-7N-FB-4G-A0 §D.4 — in WORKSPACE mode there is nothing to refresh and never was. The read
+            // model the hydrate reads is the product of the Search that is calling this function, so it is
+            // already as fresh as a read can be; and the getTable refresh below cannot reach these two tables
+            // at all (the deployed handler's validTabs lists neither), so it only ever contributed two refused
+            // requests per Search and the appearance that data was being loaded. Legacy mode keeps the broad
+            // cache as its source, so it keeps the call it has always made, failure-tolerant as before.
+            if (typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace()) return null;
             if (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
                 typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) {
                 return window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
@@ -4127,8 +4189,12 @@ async function _restoreAllocationDraftFromSession() {
             // transform are byte-identical — only the data transport moved off the global prime. (The scoped
             // getShippingAllocationDraftWorkspace SSOT is NOT used here: it requires planning_cycle + exact company
             // and hard-conflicts on >1 active — a different selection contract — so it is not BEFORE==AFTER.)
+            // F1-7N-FB-4G-A0 §D.4 — Workspace mode reads the scoped read model, which this mount does not own
+            // and must not trigger a read for (§B: only a confirmed Search loads inventory). Legacy mode keeps
+            // the bounded broad-cache load exactly as before.
             try {
-                if (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
+                if (!(typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace()) &&
+                    window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
                     typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) {
                     await window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
                 }
@@ -4958,7 +5024,12 @@ function initializeShippingAllocation(sku, skuData) {
     //    (Suggested Qty). ship_from / destination / shipping_method are left blank — FUTURE they are
     //    defaulted from replenishment_route_rules (CARRIER_AND_ROUTE_SPEC). This is a default preview:
     //    it is captured into the Working Draft only once the PM edits it.
-    var suggested = parseInt(skuData.suggestedQty) || 0;
+    // F1-7N-FB-4G-A0 §I — the SAME authority the Suggested Qty cell prints, not the legacy per-row field the
+    // materialized read never fills. This is still a DEFAULT PREVIEW and still writes nothing: it is captured
+    // into the Working Draft only when the PM edits it, and no Save is scheduled here.
+    var suggested = (typeof _irSuggestedQtyNumber_ === 'function')
+        ? _irSuggestedQtyNumber_(skuData)
+        : (parseInt(skuData.suggestedQty) || 0);
     _renderExecutionRoute(sku, { ship_from: '', destination: '', shipping_method: '', qty: suggested });
     updateShippingAllocationTotal(sku);
 }
@@ -6706,7 +6777,16 @@ function _irRunInventoryAiPlanGeneration_(btn) {
             // Atomic hydration from the DB readback (E) — mirror the mount's hydrate-then-render sequence.
             // The readback excludes `expired` rows server-side, so §G.3 (never show an expired row) holds by
             // construction rather than by a client-side filter that could drift.
-            return Promise.resolve(window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']))
+            // F1-7N-FB-4G-A0 §D.4 — refresh the source the hydrate ACTUALLY reads. In Workspace mode that is
+            // the scoped read model (_irAfterWrite re-reads the workspace, which carries both draft tables);
+            // in Legacy mode _irAfterWrite calls back immediately and the broad-cache refresh below still runs.
+            return new Promise(function (resolve) {
+                if (typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace()) {
+                    _irAfterWrite(function () { resolve(null); });
+                    return;
+                }
+                resolve(window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']));
+            })
                 .then(function () { try { _hydrateAllocationDraftFromDb(_replenCtx()); } catch (e) {} renderReplenishment(); })
                 .then(function () { _irShowAiPlanResult_(cls); if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); } });
         }

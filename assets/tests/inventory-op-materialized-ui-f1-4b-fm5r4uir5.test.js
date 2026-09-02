@@ -33,7 +33,12 @@ ok(/\.replen-recsum-ws\s*\{[^}]*border-left:\s*0/.test(CSS), 'G1 base .replen-re
 ok(/\.replen-recsum-ws--ready\s*\{[^}]*background:\s*#fff/.test(CSS) && /\.replen-recsum-ws--ready\s*\{[^}]*border-left-color:\s*transparent/.test(CSS), 'G2 the ready state is white (no green background, no green left border)');
 
 section('§5 Inventory top Suggested Qty = materialized d90_suggested_qty (not a cumulative sum)');
-var sc = JS.slice(JS.indexOf('function _irSuggestedCellHtml'), JS.indexOf('function _irSuggestedCellHtml') + 1600);
+// F1-7N-FB-4G-A0 - the Suggested Qty VALUE now has one owner (_irSuggestedQtyState_) and _irSuggestedCellHtml
+// renders from it, so a lift that starts at the renderer no longer carries the thing it calls. Start at the
+// authority: the slice then holds both, and the assertions below measure the same behaviour they always did.
+// (and the 1600-character budget is gone: a comment can spend a character budget, which has now cost this
+// repository three false failures. The renderer's own closing brace is what delimits this region.)
+var sc = JS.slice(JS.indexOf('function _irSuggestedQtyState_'), JS.indexOf('// Recommendation Summary table body'));
 ok(/_irUseMaterializedGapRead\(\)/.test(sc) && /_irMatState\.bySku\[String\(item\.sku\)\]/.test(sc), 'F1 the top cell reads the materialized gap state (not the live workspace)');
 ok(/d90_suggested_qty/.test(sc) && !/d18_suggested_qty\s*\+/.test(sc), 'F2 uses the D90 (furthest cumulative checkpoint) stored suggested — never a D18+D30+D45+D90 sum');
 ok(/'READY'/.test(sc) && /--pending[^>]*>…|>…</.test(sc) && />—</.test(sc), 'F3 READY→value, loading→…, BLOCKED/missing→— (truthful states, no fake 0)');
