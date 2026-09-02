@@ -53,7 +53,13 @@ var ROUND_TOKENS = [
   // pushed), so by the rule above its token has been published. This round changes CLIENT code, not just
   // tests: isRouteComplete, routeHeaderFields and the page gates all stopped accepting a route that carries
   // two contradictory destinations, so a browser left on the old copy would keep sending one.
-  'fb4ga0r2-destauthority-20260902'
+  'fb4ga0r2-destauthority-20260902',
+  // F1-7N-FB-4G-A1 - Recommendation Summary + Execution Plan atomic reveal. A0-R2 is on origin/main
+  // (6b49320 was pushed), so by the rule above its token has been published and cannot be reused. This
+  // round changes inventory-replenishment.js and inventory-compat.js together: the page now asks a reveal
+  // owner that only the shared module exports, so a browser holding one file from each round would expand a
+  // SKU into a decision area that never leaves its skeleton.
+  'fb4ga1-atomicreveal-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

@@ -1879,3 +1879,45 @@
 /* F1-SHIPMENT-INCOMING-R5 — Shipping Shipment overdue row (shown only when overdue remaining > 0). */
 #ops-section .replen-card__row--overdue .replen-card__label,
 #ops-section .replen-card__row--overdue .replen-card__value { color: #dc2626; font-weight: 600; }
+
+
+/* ================================================================================================
+   F1-7N-FB-4G-A1 - EXPANDED PLANNING REVEAL BARRIER (Recommendation Summary + Execution Plan).
+
+   The decision area is a SHELL in the frame the row expands, and both panels are replaced together in
+   ONE later frame. The skeletons therefore have to reserve the height the real panels take, or the
+   reveal would trade a content flicker for a layout jump - which is the same defect wearing a hat.
+
+   The bars do not animate on their own timer by default; the shimmer is a pure CSS animation (no JS,
+   no interval) and is disabled entirely under prefers-reduced-motion.
+   ================================================================================================ */
+.ir-decision-area.ir-reveal { min-height: 220px; }
+.ir-reveal[data-reveal-state="pending"] .replen-card--recommendation-summary { min-height: 108px; }
+.ir-reveal[data-reveal-state="pending"] .replen-card--execution-plan { min-height: 104px; }
+
+.ir-skel { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
+.ir-skel__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-items: center; }
+.ir-skel__row--route { grid-template-columns: 1.2fr 1.2fr 0.6fr 1.1fr 1.1fr 0.4fr; }
+.ir-skel__bar {
+  height: 10px; border-radius: 3px;
+  background: linear-gradient(90deg, #EEF2F7 0%, #E2E8F0 40%, #EEF2F7 80%);
+  background-size: 200% 100%;
+  animation: ir-skel-shimmer 1.4s ease-in-out infinite;
+}
+.ir-skel__bar--w { width: 60%; }
+.ir-skel__bar--wide { width: 100%; }
+.ir-skel__bar--n { width: 40%; justify-self: end; }
+@keyframes ir-skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ir-skel__bar { animation: none; background: #E2E8F0; } }
+
+/* A settled failure is NAMED next to the panel that failed, in the same frame as the panel that did not.
+   It is never allowed to read as an empty result. */
+.ir-reveal__error {
+  margin-top: 6px; padding: 5px 7px; border-radius: 4px;
+  background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C;
+  font-size: 11px; font-weight: 600; overflow-wrap: break-word; word-break: break-word;
+}
+.ir-reveal__error-msg { display: block; margin-top: 2px; font-weight: 400; color: #7F1D1D; }
+
+/* Controls that commit a plan are inert while any decision area on screen is still a shell. */
+.ir-reveal[data-reveal-state="pending"] .replen-card__add-route-btn[disabled] { opacity: 0.45; cursor: not-allowed; }

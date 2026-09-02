@@ -370,11 +370,16 @@ eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A0-R
 eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
    (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
   'H2  and the manifest expects what the SOURCE declares — never a number typed twice');
-var CHANGED = cp.execSync('git diff --name-only HEAD', { cwd: ROOT }).toString().split(/\r?\n/).filter(Boolean);
-eq(CHANGED.filter(function (f) { return f.indexOf('apps-script') !== -1; }).sort(),
-   ['assets/specs/active/apps-script/16_shipping_allocation_handlers.gs',
-    'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H3  EXACTLY the same two Apps Script files A0-R1 touches — still ONE sync set, ONE deployment');
+// F1-7N-FB-4G-A1 — RESTATED, for the reason recorded on A0-R1's H5b: `git diff --name-only HEAD` measures the
+// WORKING TREE, so once A0-R2 was committed this asserted something about the next editor rather than about
+// A0-R2. What it MEANT - one sync set, one deployment version - is a property of the source: exactly one file
+// declares the stamp, exactly one expects it, and the two agree.
+var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
+var GS_FILES = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); });
+var DECLARERS = GS_FILES.filter(function (f) { return /var SAD_BUILD_VERSION_ = /.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8')); });
+var EXPECTERS = GS_FILES.filter(function (f) { return /symbol: 'SAD_BUILD_VERSION_'/.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8')); });
+eq([DECLARERS, EXPECTERS], [['16_shipping_allocation_handlers.gs'], ['63_api_v1_system_health.gs']],
+  'H3  ONE file declares the allocation owner stamp and ONE expects it — still ONE sync set, ONE deployment');
 var TOKEN = RO.currentAppToken();
 ok(RO.tokenAtOrAfter(TOKEN, 'fb4ga0r1-destxor-20260902'), 'H4  the release order has not moved behind A0-R1');
 function refToken(f) {

@@ -1900,6 +1900,9 @@ function renderReplenishment() {
         : allData.filter(function (it) { return _replenCategoryOf(it) === replenCategoryTab; });
 
     currentExpandedRow = null;
+    // F1-7N-FB-4G-A1 §D.6 - the rows (and with them every expanded panel) are about to be replaced, so no
+    // reveal may still be pending for the old ones. A new Search reaches here too.
+    if (typeof _irRevealAbandon_ === 'function') _irRevealAbandon_();
     _irRowFailures = [];
     // Render fixed column (chevron + SKU). The chevron is a native <button> (Enter/Space operable) with
     // aria-expanded synced to the open state and aria-controls pointing at the detail panel it opens.
@@ -2155,6 +2158,211 @@ function _irRemoveStickyOverlay() {
     if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
 }
 
+// ================================================================================================================
+// F1-7N-FB-4G-A1 - EXPANDED PLANNING: ONE READINESS OWNER, ONE REVEAL.
+//
+// MEASURED ROOT CAUSE (deterministic scheduler, shipped functions, not code reading):
+//
+//     0:EXPAND
+//     0:ROUTE_ROW_PAINTED(method=placeholder, eta=unavailable)
+//     0:TOTAL_UPDATED
+//   120:CARRIER_RESOLVED
+//   120:METHOD_OPTIONS_REBUILT      <- the Method select changes from 'Loading methods...' to the real service
+//   120:ETA_RECOMPUTED              <- Expected Arrival changes from 'Lead time unavailable' to the real date
+//
+// initializeShippingAllocation painted its routes SYNCHRONOUSLY and only then attached the carrier
+// catalogue's .then(). The second paint is a CORRECTION of the first, and it happens even when the
+// catalogue is already cached - a resolved promise resumes on a microtask, so the synchronous render still
+// wins the frame. Beside it, the Recommendation Summary settles off a different async source entirely, so
+// the pair was visible in every combination of half-states.
+//
+// THE BARRIER STARTS NOTHING. Every request it waits on was already issued by Search: the materialized gap
+// read, the draft hydration and the ONE per-scope carrier catalogue. Expanding a row issues no request at
+// all, before or after this round. Reveal time is max(recommendationSettledAt, executionSettledAt) plus the
+// frame that paints - no timer, no poll, no sequential await, no cache defeated to satisfy a barrier.
+// ================================================================================================================
+var _irRevealGateSingleton = null;
+// rAF, or an immediate call where there is no rAF (headless). NEVER setTimeout: a timer here would be the
+// artificial wait this round exists to remove, and it would also paint AFTER a frame rather than inside one.
+function _irRevealFrame_(cb) {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') { window.requestAnimationFrame(cb); return; }
+    cb();
+}
+function _irRevealNow_() {
+    try { if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') return performance.now(); } catch (e) {}
+    return Date.now();
+}
+function _irRevealGate_() {
+    if (_irRevealGateSingleton) return _irRevealGateSingleton;
+    if (typeof window === 'undefined' || !window.IRPlanningReveal) return null;
+    _irRevealGateSingleton = window.IRPlanningReveal.createGate({
+        frame: _irRevealFrame_, now: _irRevealNow_, onReveal: _irRevealPaint_
+    });
+    return _irRevealGateSingleton;
+}
+// The APPLIED station. A report carrying a different one is refused, so a response that outlived a Search
+// cannot paint into the station now on screen.
+function _irRevealScopeKey_() {
+    var sc = (typeof _irMethodScope_ === 'function') ? _irMethodScope_() : {};
+    return [String(sc.company || ''), String(sc.country || ''), String(sc.marketplace || '')].join('|').toLowerCase();
+}
+function _irRevealSkuData_(sku) {
+    try {
+        var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+        for (var i = 0; i < data.length; i++) { if (data[i] && data[i].sku === sku) return data[i]; }
+    } catch (e) {}
+    return null;
+}
+// WHICH read authority answers for the Recommendation Summary. This mirrors _irRecoSummaryCardBody's own
+// selection exactly - the panel and its readiness must never be reading different sources.
+function _irRecoReadinessInput_() {
+    if (typeof _irUseMaterializedGapRead === 'function' && _irUseMaterializedGapRead()) {
+        return { mode: 'materialized', status: _irMatState.status, error: _irMatState.error };
+    }
+    if (typeof _irRecommendationWorkspaceEnabled === 'function' && _irRecommendationWorkspaceEnabled()) {
+        return { mode: 'workspace', status: _irRecoState.status, error: (_irRecoState.errors && _irRecoState.errors[0]) || null };
+    }
+    return { mode: 'legacy' };   // the synchronous local table - nothing to wait for
+}
+// EVERY input the first correct route paint needs. The read model supplies the warehouse candidates, the
+// hydration supplies the persisted route, and the ONE catalogue supplies both the method options (hence the
+// canonical match against the stored service) and the lead times (hence the ETA).
+function _irExecReadinessInput_(sku) {
+    var reg = (typeof window !== 'undefined' && window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    var cat = 'LOADING', err = null;
+    if (!reg) { cat = 'ERROR'; err = { code: 'METHOD_REGISTRY_MODULE_UNAVAILABLE', message: 'The shared method registry is not loaded on this page.' }; }
+    else {
+        var sc = (typeof _irMethodScope_ === 'function') ? _irMethodScope_() : {};
+        err = reg.getError(sc);
+        if (reg.isLoaded(sc)) cat = 'READY';
+        else if (err) cat = 'ERROR';
+    }
+    var readModelReady = (typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace())
+        ? !!_irReadModel : true;                                   // Legacy reads the broad cache, already present
+    var rows = (typeof _allocationDraftRowsFor === 'function') ? _allocationDraftRowsFor(sku) : null;
+    // A SKU with no persisted route is not empty - it gets the default preview editor, which is a route and
+    // needs the very same pickers and catalogue before it can be shown correctly (S.C).
+    var hasRoutes = !!(rows && rows.length) || !!_irRevealSkuData_(sku);
+    return { readModelReady: readModelReady, hydrationInFlight: !!_irDraftHydrateInFlight, catalogue: cat, error: err, hasRoutes: hasRoutes };
+}
+// Report BOTH sides at the current generation. Called from the points that already exist for each source's
+// settle - it adds no listener, no interval and no request of its own.
+function _irRevealPump_() {
+    var gate = _irRevealGate_(); if (!gate) return null;
+    var snap = gate.snapshot(); if (!snap) return null;
+    var R = window.IRPlanningReveal;
+    var ctx = { sku: snap.sku, scopeKey: snap.scopeKey };
+    gate.report(snap.gen, 'recommendation', R.recommendationReadiness(_irRecoReadinessInput_()), ctx);
+    gate.report(snap.gen, 'execution', R.executionReadiness(_irExecReadinessInput_(snap.sku)), ctx);
+    return gate.snapshot();
+}
+window._irRevealPump_ = _irRevealPump_;
+// Collapse, a re-render of the table, or a new Search. After this there is no current generation, so a late
+// response has nowhere to land and cannot re-open a row the user closed.
+function _irRevealAbandon_() { var g = _irRevealGate_(); if (g) g.abandon(); }
+window._irRevealAbandon_ = _irRevealAbandon_;
+// Open a generation for this SKU and pump once SYNCHRONOUSLY. When both sources are already settled - the
+// ordinary case for the second and every later expand in a station - the reveal is scheduled in the SAME
+// frame the panel was inserted in, so the skeleton never reaches the glass and nothing is delayed.
+function _irRevealBegin_(sku) {
+    var gate = _irRevealGate_();
+    if (!gate) {                                     // shared module absent: no barrier, previous behaviour
+        if (typeof initializeShippingAllocation === 'function') initializeShippingAllocation(sku, _irRevealSkuData_(sku));
+        return null;
+    }
+    gate.begin({ sku: sku, scopeKey: _irRevealScopeKey_() });
+    // The catalogue is deduped and cached per applied scope by the registry: already loaded costs ZERO
+    // requests, in flight shares the one already issued. This is the same call Search makes, not a second one.
+    if (typeof _irLoadCarrierPlanning_ === 'function') {
+        try { _irLoadCarrierPlanning_().then(function () { _irRevealPump_(); })['catch'](function () { _irRevealPump_(); }); } catch (e) {}
+    }
+    return _irRevealPump_();
+}
+// Skeletons. Fixed, content-shaped and inert: no fabricated 0, no empty route, no 'Loading methods...'
+// select - the three things S.F names, and the three things a user could otherwise mistake for an answer.
+function _irRevealRecoSkeletonHtml_() {
+    var rows = '';
+    for (var i = 0; i < 4; i++) rows += '<div class="ir-skel__row"><span class="ir-skel__bar ir-skel__bar--w"></span><span class="ir-skel__bar"></span><span class="ir-skel__bar"></span><span class="ir-skel__bar ir-skel__bar--wide"></span></div>';
+    return '<div class="ir-skel ir-skel--table" role="status" aria-live="polite" aria-label="Loading Recommendation Summary">' + rows + '</div>';
+}
+function _irRevealExecSkeletonHtml_() {
+    var rows = '';
+    for (var i = 0; i < 2; i++) rows += '<div class="ir-skel__row ir-skel__row--route"><span class="ir-skel__bar"></span><span class="ir-skel__bar"></span><span class="ir-skel__bar ir-skel__bar--n"></span><span class="ir-skel__bar"></span><span class="ir-skel__bar"></span><span class="ir-skel__bar ir-skel__bar--n"></span></div>';
+    return '<div class="ir-skel ir-skel--routes" role="status" aria-live="polite" aria-label="Loading Execution Plan">' + rows + '</div>';
+}
+// ONE builder for the Execution Plan card, used by the pending paint and the reveal paint alike, so the two
+// cannot drift into different markup.
+function _irExecPlanCardInnerHtml_(sku, ready) {
+    var addBtn = ready
+        ? '<button class="replen-card__add-route-btn" onclick="addExecutionRoute(event, \'' + sku + '\')" onmousedown="event.stopPropagation()">+ Add Route</button>'
+        : '<button class="replen-card__add-route-btn" disabled aria-disabled="true" title="Loading the Execution Plan">+ Add Route</button>';
+    var head = '<div class="replen-card__title-row"><h4 class="replen-card__title" style="margin: 0;">Execution Plan</h4>' + addBtn + '</div>'
+        + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Expected Arrival</span><span>Action</span></div>';
+    if (!ready) return head + _irRevealExecSkeletonHtml_();
+    return head
+        + '<div id="shipping-methods-' + sku + '" class="exec-routes-list"></div>'
+        + '<div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">'
+        + '<span class="replen-card__summary-label">Total</span><span class="replen-card__summary-value" id="allocation-total-' + sku + '">0</span></div>'
+        + '<div class="replen-card__hint" id="allocation-hint-' + sku + '" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>'
+        + '<div class="replen-card__carton-error" id="allocation-carton-error-' + sku + '" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>';
+}
+// The pending decision area: both panels, both skeletons, one container. Present in the markup of the very
+// first frame - which is what makes the reveal a REPLACEMENT of a shell rather than the arrival of a panel.
+function _irDecisionAreaHtml_(sku) {
+    return '<div class="ir-panel-column ir-panel-column--action ir-decision-area ir-reveal" id="ir-reveal-' + sku + '" data-ir-reveal="' + sku + '" data-reveal-state="pending">'
+        + '<article class="replen-card replen-card--recommendation-summary" id="recommendation-summary-' + sku + '">'
+        + '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRevealRecoSkeletonHtml_() + '</article>'
+        + '<article class="replen-card replen-card--execution-plan" id="execution-plan-' + sku + '">' + _irExecPlanCardInnerHtml_(sku, false) + '</article>'
+        + '</div>';
+}
+// A typed failure is stated, never degraded into an empty panel (S.C). It is rendered in the SAME frame as
+// the panel that succeeded - a settled error is an answer, so it reveals with its partner rather than
+// leaving the page in a skeleton forever.
+function _irRevealErrorHtml_(side) {
+    var code = (side && side.code) || 'READ_FAILED';
+    var detail = (side && side.error && side.error.code) ? String(side.error.code) : '';
+    var msg = (side && side.error && side.error.message) ? String(side.error.message) : '';
+    return '<div class="ir-reveal__error" role="alert">' + escapeReplenHtml(code)
+        + (detail ? ' \u00b7 ' + escapeReplenHtml(detail) : '')
+        + (msg ? '<span class="ir-reveal__error-msg">' + escapeReplenHtml(msg) + '</span>' : '') + '</div>';
+}
+// THE ONE RENDER TRANSACTION. Both panels are written inside a single rAF callback, so the browser paints
+// them in the same frame; there is no path here that writes one without the other.
+function _irRevealPaint_(snap) {
+    if (typeof document === 'undefined' || !snap || !snap.sku) return;
+    var host = document.getElementById('ir-reveal-' + snap.sku);
+    if (!host) return;                                    // collapsed or re-rendered between settle and paint
+    var sku = snap.sku, skuData = _irRevealSkuData_(sku);
+    var recoCard = document.getElementById('recommendation-summary-' + sku);
+    var execCard = document.getElementById('execution-plan-' + sku);
+    if (recoCard) {
+        recoCard.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>'
+            + (snap.recommendation.state === 'ERROR' ? _irRevealErrorHtml_(snap.recommendation) : _irRecoSummaryCardBody(skuData));
+    }
+    if (execCard) {
+        execCard.innerHTML = _irExecPlanCardInnerHtml_(sku, true)
+            + (snap.execution.state === 'ERROR' ? _irRevealErrorHtml_(snap.execution) : '');
+        // The catalogue is TERMINAL by construction here, so the routes are painted once, correctly: the
+        // persisted service selects against a complete option list and the ETA resolves against real lead
+        // times. Nothing is scheduled to come back and fix them.
+        if (typeof initializeShippingAllocation === 'function') initializeShippingAllocation(sku, skuData, { catalogueSettled: true });
+    }
+    host.setAttribute('data-reveal-state', 'ready');
+    host.setAttribute('data-reveal-frame', String(snap.frameId || ''));
+    if (typeof _irRevealSyncActionAvailability_ === 'function') _irRevealSyncActionAvailability_();
+    if (typeof _irUpdateHScrollGutter_ === 'function') { try { _irUpdateHScrollGutter_(); } catch (e) {} }
+}
+// S.F - Submit Plan commits the Working Draft for EVERY sku, so it must not be pressable while a decision
+// area on screen is still a shell. Add Route / Delete live inside the panel and are simply not rendered
+// until it is ready.
+function _irRevealSyncActionAvailability_() {
+    if (typeof document === 'undefined' || !document.querySelector) return;
+    var pending = !!document.querySelector('#ops-section [data-ir-reveal][data-reveal-state="pending"]');
+    var btns = document.querySelectorAll('#ops-section [onclick="submitReplenishmentPlans()"]');
+    Array.prototype.forEach.call(btns, function (b) { b.disabled = pending; if (pending) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+}
+window._irRevealSyncActionAvailability_ = _irRevealSyncActionAvailability_;
+
 function toggleReplenRow(sku) {
     const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
     const scrollRows = document.querySelectorAll('#ops-section .scroll-row');
@@ -2182,8 +2390,13 @@ function toggleReplenRow(sku) {
 
     // Single source of truth: currentExpandedRow. _irNextExpandedKey collapses on re-click, else opens.
     const nextKey = _irNextExpandedKey(currentExpandedRow, sku);
+    // Every expand pass has already removed both panels above, so ANY open generation is now orphaned -
+    // abandon it before a new one starts, and on the collapse path leave none open at all. This is what
+    // stops a late response from re-opening or repainting a row the user has closed (§D.7).
+    _irRevealAbandon_();
     if (nextKey === null) {
         currentExpandedRow = null;
+        if (typeof _irRevealSyncActionAvailability_ === 'function') _irRevealSyncActionAvailability_();
         return;
     }
 
@@ -2288,28 +2501,10 @@ function toggleReplenRow(sku) {
                 </div>
                 <!-- Decision area (action column): Recommendation Summary directly ABOVE Execution Plan,
                      stacked, same width, technically separate (§11.5). -->
-                <div class="ir-panel-column ir-panel-column--action ir-decision-area">
-                    <article class="replen-card replen-card--recommendation-summary" id="recommendation-summary-${sku}">
-                        <h4 class="replen-card__title">Recommendation Summary</h4>
-                        ${_irRecoSummaryCardBody(skuData)}
-                    </article>
-                    <article class="replen-card replen-card--execution-plan" id="execution-plan-${sku}">
-                        <div class="replen-card__title-row">
-                            <h4 class="replen-card__title" style="margin: 0;">Execution Plan</h4>
-                            <button class="replen-card__add-route-btn" onclick="addExecutionRoute(event, '${sku}')" onmousedown="event.stopPropagation()">+ Add Route</button>
-                        </div>
-                        <div class="ir-exec-plan__grid ir-exec-plan__grid--head">
-                            <span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Expected Arrival</span><span>Action</span>
-                        </div>
-                        <div id="shipping-methods-${sku}" class="exec-routes-list"></div>
-                        <div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">
-                            <span class="replen-card__summary-label">Total</span>
-                            <span class="replen-card__summary-value" id="allocation-total-${sku}">0</span>
-                        </div>
-                        <div class="replen-card__hint" id="allocation-hint-${sku}" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>
-                        <div class="replen-card__carton-error" id="allocation-carton-error-${sku}" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>
-                    </article>
-                </div>
+                <!-- F1-7N-FB-4G-A1 - the two DECISION panels are revealed together. Both are shells in this
+                     first frame; the barrier replaces both in ONE later frame, once BOTH are terminal. The
+                     Stock / Forecast / Sales Trend blocks above are NOT behind it and paint immediately. -->
+                ${_irDecisionAreaHtml_(sku)}
             </div>
         </div>
     `;
@@ -2336,10 +2531,15 @@ function toggleReplenRow(sku) {
     // full height in the FIRST paint, with NO JS height sync and NO inline height writes. This tick only seeds
     // routes + charts, then refreshes --km-hscroll-gutter (R5G §1): after async content the right column's
     // horizontal overflow (hence its scrollbar) is settled, so the LEFT panel can reserve the matching bottom gutter.
+    // F1-7N-FB-4G-A1 - the Execution Plan is seeded by the REVEAL, not here, and the barrier opens
+    // SYNCHRONOUSLY: a generation is started and both sources are polled in this same call, so a station
+    // whose data is already settled reveals inside the frame this panel was inserted in. Nothing about the
+    // decision area waits on a timer any more.
+    _irRevealBegin_(sku);
+    if (typeof _irRevealSyncActionAvailability_ === 'function') _irRevealSyncActionAvailability_();
+    // The Sales Trend chart is NOT behind the barrier (§D) - it keeps its own existing tick, which is a
+    // Chart.js mount requirement and not a readiness wait.
     setTimeout(() => {
-        // Seed / restore the Execution Plan routes (from Working Draft, or a default preview).
-        initializeShippingAllocation(sku, skuData);
-        // Initialize charts (Monthly Achievement Rate is now an honest table, not a chart — no init needed).
         initSalesTrendChart(sku, skuData);
         if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
     }, 0);
@@ -4088,8 +4288,12 @@ function _irHydrateDraftForAppliedScope_() {
                 try { _irRenderUnsavedBanner_(); } catch (eB) {}
                 try { renderReplenishment(); } catch (eR) {}
             }
+            // F1-7N-FB-4G-A1 - hydration is one of the Execution Plan's four readiness inputs, and this is
+            // where it settles. Reporting it here is what lets a row expanded DURING a hydrate reveal as soon
+            // as the hydrate lands, instead of showing a route the hydrate is about to replace.
+            if (typeof _irRevealPump_ === 'function') { try { _irRevealPump_(); } catch (eP) {} }
             return done(ok);
-        })['catch'](function () { return done(false); });
+        })['catch'](function () { if (typeof _irRevealPump_ === 'function') { try { _irRevealPump_(); } catch (eP2) {} } return done(false); });
 }
 window._irHydrateDraftForAppliedScope_ = _irHydrateDraftForAppliedScope_;
 function _clearAllocationDraft() {
@@ -5092,15 +5296,22 @@ function syncExpandPanelHeight(sku) {
 }
 
 // Render the Execution Plan routes for a SKU (from Working Draft, or a default preview).
-function initializeShippingAllocation(sku, skuData) {
+function initializeShippingAllocation(sku, skuData, opts) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList || !skuData) return;
 
     // F1-7J-A2: lazily load the scoped carrier reference (carrier_lead_times + carrier_rate_cards) ONCE via the IR
-    // workspace include.carrierPlanning, then refresh this SKU's method options + ETAs. The routes below render
-    // immediately (a brief "unavailable" state before the reference resolves); Legacy mode resolves instantly from the
-    // broad getter. No broad Operation DB in the canonical path.
-    if (typeof _irLoadCarrierPlanning_ === 'function') {
+    // workspace include.carrierPlanning, then refresh this SKU's method options + ETAs. Legacy mode resolves
+    // instantly from the broad getter. No broad Operation DB in the canonical path.
+    //
+    // F1-7N-FB-4G-A1 - THIS .then() WAS THE SECOND PAINT. It corrected the Method select and the Expected
+    // Arrival of routes that had already been shown, which is why the operator saw 'Loading methods...'
+    // become the stored service's label (A0 §G.9: those labels are operator DATA and are deliberately
+    // spelled in no shipped source) and 'Lead time unavailable' become a date. When the barrier has waited
+    // for the catalogue to reach a TERMINAL state there is nothing left to correct - re-running it would
+    // repaint identical HTML one frame later, which is the second render transaction §E forbids. Every other
+    // caller (a scope change, an explicit retry) still gets the refresh, because for them it is a refresh.
+    if (!(opts && opts.catalogueSettled) && typeof _irLoadCarrierPlanning_ === 'function') {
         _irLoadCarrierPlanning_().then(function () {
             if (typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
             if (typeof _irUpdateRouteEtas === 'function') _irUpdateRouteEtas(sku);
@@ -6361,6 +6572,9 @@ function _irRebuildAllMethodOptions_() {
             if (sku && typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
         }
     } catch (e) {}
+    // F1-7N-FB-4G-A1 - Search's own catalogue .then() lands here. A row expanded while the catalogue was in
+    // flight is still behind the barrier at this moment, so this is its settle signal too.
+    if (typeof _irRevealPump_ === 'function') _irRevealPump_();
 }
 window._irRebuildAllMethodOptions_ = _irRebuildAllMethodOptions_;
 
@@ -8841,12 +9055,20 @@ function loadInventoryGap_(force) {
 function refreshInventoryGapAfterRecalc_() { _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }
 window.loadInventoryGap_ = loadInventoryGap_;
 // Re-render any OPEN Recommendation Summary card(s) from the current read state (no full-page overlay).
-function _irRecoRerenderSummaries() {
+// F1-7N-FB-4G-A1 - the RENDER half, kept under its own name. _irRecoRerenderSummaries below is the name
+// every existing caller uses and now also reports the recommendation side's settle to the reveal barrier.
+// Two `function` declarations of ONE name in ONE scope do not compose - the second simply replaces the
+// first - so the base has its own name rather than being captured from a variable.
+function _irRecoRerenderSummariesRender_() {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   var cards = document.querySelectorAll('#ops-section .replen-card--recommendation-summary');
   if (!cards || !cards.length) return;
   var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
   Array.prototype.forEach.call(cards, function (card) {
+    // F1-7N-FB-4G-A1 §D.4 - a card still behind the reveal barrier is NOT filled early. Doing so is exactly
+    // the "Recommendation finished while the Execution Plan is still a half-built route" frame this round
+    // removes; the barrier's own paint builds this card and the Execution Plan in one transaction.
+    if (card.parentNode && card.parentNode.getAttribute && card.parentNode.getAttribute('data-reveal-state') === 'pending') return;
     var sku = String(card.id || '').replace('recommendation-summary-', '');
     var skuData = null; for (var i = 0; i < data.length; i++) { if (data[i].sku === sku) { skuData = data[i]; break; } }
     // F1-4B-FM5-R4UI-R4 §3 — once the fixed 4-row schema exists in this card, a subsequent materialized-READY read
@@ -8855,6 +9077,13 @@ function _irRecoRerenderSummaries() {
     if (_irRecoPatchSummaryCells(card, skuData)) return;
     card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
   });
+}
+// F1-7N-FB-4G-A1 - _irRecoRerenderSummaries is called on EVERY transition of both recommendation read
+// states (materialized gap and workspace alike), which makes it the single honest place to tell the barrier
+// the recommendation side may have settled. It adds no listener, no interval and no request.
+function _irRecoRerenderSummaries() {
+  _irRecoRerenderSummariesRender_();
+  if (typeof _irRevealPump_ === 'function') _irRevealPump_();
 }
 // Returns true when it patched an existing fixed-schema table in place (materialized READY row present); false when
 // a full (re)build is required. Only cell text/notes change — the 4-row structure + identities are untouched.

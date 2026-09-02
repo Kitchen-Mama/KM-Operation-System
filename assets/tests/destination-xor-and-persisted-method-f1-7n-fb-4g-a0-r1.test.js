@@ -534,11 +534,20 @@ ok(RO.stampAtOrAfter((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
 eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
    (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
   'H5  and 63_\'s manifest expects what the SOURCE declares, so a half-synced deployment is detectable');
-var CHANGED = cp.execSync('git diff --name-only HEAD', { cwd: ROOT }).toString().split(/\r?\n/).filter(Boolean);
-eq(CHANGED.filter(function (f) { return f.indexOf('apps-script') !== -1; }).sort(),
-   ['assets/specs/active/apps-script/16_shipping_allocation_handlers.gs',
-    'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H5b EXACTLY TWO Apps Script files changed — the sync set, measured rather than claimed');
+// F1-7N-FB-4G-A1 — RESTATED. This read `git diff --name-only HEAD`, which measures the WORKING TREE, and so
+// it asserted "exactly these two files are currently uncommitted". That was true only while A0-R1 itself was
+// unfinished; the moment it became a commit the assertion started describing whoever edits the repository
+// next. Same class as the equality-with-now stamps. The DURABLE statement is about the sync set itself: the
+// deployment identity is declared in 16_ and expected by 63_, and by NO other Apps Script file - so a reader
+// can derive the two-file sync set from the source at any time, with no working tree involved.
+var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
+var GS_FILES = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); });
+eq(GS_FILES.filter(function (f) { return /var SAD_BUILD_VERSION_ = /.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8')); }),
+   ['16_shipping_allocation_handlers.gs'],
+  'H5b the allocation owner stamp is DECLARED in exactly one Apps Script file');
+eq(GS_FILES.filter(function (f) { return /symbol: 'SAD_BUILD_VERSION_'/.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8')); }),
+   ['63_api_v1_system_health.gs'],
+  'H5c and EXPECTED in exactly one other — those two are the sync set, derived from the source, not from a diff');
 var TOKEN = RO.currentAppToken();
 ok(RO.tokenAtOrAfter(TOKEN, 'fb4ga0-livehydration-20260902'), 'H6  the release order has not moved behind A0');
 function refToken(file) {

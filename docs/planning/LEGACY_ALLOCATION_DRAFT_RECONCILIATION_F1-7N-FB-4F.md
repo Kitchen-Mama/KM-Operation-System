@@ -2243,3 +2243,153 @@ Behavioural restatements, each because the behaviour it pinned improved:
   group at all** — stronger, and §D.1's protection (the page scope is never a destination) is asserted first.
 * **A0-R1 H4/H5** pinned A0-R1's own stamp as an equality with the present — the **sixth** round for that
   shape. A floor, plus the durable rule that the manifest agrees with the SOURCE.
+
+
+## 4G-A1 — RECOMMENDATION + EXECUTION PLAN ATOMIC REVEAL
+
+Presentation and readiness only. **No DB change, no Apps Script change, no Save, no Submit, no AI Plan, no
+Send Request, and no allocation identity or calculation rule touched.** DB_WRITES = 0.
+
+### 4G-A1.0 — Preconditions
+
+`main`; `HEAD` = `origin/main` = `6b49320`; worktree clean; stash empty. A0-R2's release is published, so its
+token has left the repository and cannot be reused (§4G-A1.7).
+
+### 4G-A1.1 — The root cause, MEASURED
+
+Produced by running the shipped `initializeShippingAllocation` against a deterministic scheduler, not by
+reading it:
+
+```
+    0:EXPAND
+    0:ROUTE_ROW_PAINTED(method=placeholder, eta=unavailable)
+    0:TOTAL_UPDATED
+  120:CARRIER_RESOLVED
+  120:METHOD_OPTIONS_REBUILT      <- the Method select is corrected to the stored service
+  120:ETA_RECOMPUTED              <- Expected Arrival is corrected from 'unavailable' to a real date
+```
+
+The routes were painted **synchronously**, and the carrier catalogue's `.then()` then **corrected** them.
+The second paint is not a refresh; it is a fix applied in view. And it happened **even on a cache hit**: a
+resolved promise resumes on a microtask, so the synchronous render still won the frame. Measured in both
+cases. Beside it the Recommendation Summary settles off a different async source (the materialized gap read),
+so the pair was reachable in every combination of half-states.
+
+### 4G-A1.2 — Request dependency graph: unchanged, and that is the point
+
+Search (`_irApplySearch_`) already issues everything, none of it awaited by the other:
+
+| | before | after |
+|---|---|---|
+| main table render | synchronous, from the read model | unchanged |
+| materialized gap read | 1 request per scope, deduped | unchanged |
+| recommendation.workspace.get | 1 per scope, flag-gated, deduped | unchanged |
+| draft hydration | **0 requests** in Workspace mode (reads the read model) | unchanged |
+| carrier catalogue | 1 per applied scope, single-flight, cached | unchanged |
+| **expanding a SKU** | **0 requests** | **0 requests** |
+
+Measured on the shipped registry: 20 sequential expands → 1 request; 20 **concurrent** cold expands → 1
+request. Both numbers are identical before and after.
+
+**The barrier starts nothing.** It waits on promises and states that already existed. There is no new
+endpoint, no new round trip, no re-hydration, no second catalogue fetch, and no cache defeated to satisfy it.
+
+### 4G-A1.3 — The readiness contract
+
+One named owner, `IRPlanningReveal` (in `inventory-compat.js`), pure and DOM-free. Four states, and
+**LOADING is the only one that waits**:
+
+* **Recommendation READY** — the read authority actually in effect has settled: the materialized gap read,
+  or `recommendation.workspace.get`, or (legacy) the synchronous local table, which has nothing to wait for.
+  A scope whose rows are loaded is READY even when THIS sku has no row: *Not calculated* is a truthful
+  terminal cell. `EMPTY` (no stored rows for the scope) and `ERROR` are terminal and keep their typed code.
+  **A legitimate 0 is data, not absence** — the owner never receives a quantity at all, which is what stops
+  it deciding otherwise; proven by asserting the verdict is invariant across zero-bearing and value-bearing
+  payloads, and by the stored-0 path end to end (`_irMatNum(0) === 0`, suggested state `READY` with value 0).
+* **Execution READY** — all four inputs settled: the read model (warehouse candidates), the draft hydration
+  (the persisted route), and the ONE catalogue, which supplies **both** the method options (hence the
+  canonical match against the stored service) and the lead times (hence the ETA). A SKU with **no** persisted
+  draft is not exempt: its default preview editor is a route and needs the same pickers. A lead time nobody
+  configured is a **terminal** *unavailable* answer, not a pending one. A catalogue **ERROR** is terminal and
+  named; a **STALE_SCOPE** catalogue is terminal for this station.
+
+### 4G-A1.4 — The reveal, and the stale-generation defence
+
+`begin()` opens a generation per expand; `report()` refuses anything naming a past generation, a different
+sku, a different applied station, or an abandoned gate. `abandon()` runs on collapse, on a table re-render
+and therefore on every new Search. The frame callback re-checks the generation, so a reveal already scheduled
+is dropped if the row closes before it paints.
+
+Both panels are handed to the caller in **one** callback, inside **one** `requestAnimationFrame`. There is
+deliberately **no API to reveal a single side** — a second callback would be a second render transaction,
+which is the flicker being removed. `reveal time = max(recommendationReadyAt, executionReadyAt)` + one frame,
+asserted across an ordering matrix rather than once. On a warm scope both sides are already terminal when the
+panel is inserted, so the reveal is scheduled in that same frame and the skeleton never reaches the glass.
+
+No timer, no interval, no polling loop, no sequential await anywhere in the barrier — asserted on the source
+of every function in it. `requestAnimationFrame` degrades to an immediate call headless, never to
+`setTimeout`.
+
+### 4G-A1.5 — What the shell shows, and what it refuses
+
+Both panels reserve a fixed base height and show a content-shaped skeleton. The pending Execution Plan
+contains **no `<select>` and no `<input>` at all** — so no `Loading methods…` picker, no empty route, and no
+fabricated `0` total (the Total appears with the routes it totals). `+ Add Route` is disabled and unwired;
+Submit Plan is disabled while any decision area on screen is still a shell. The shimmer is pure CSS and is
+disabled under `prefers-reduced-motion`.
+
+The Stock / Forecast Breakdown / Upcoming Event / Sales Trend / Monthly Achievement blocks are **outside** the
+reveal container and are not delayed by it.
+
+### 4G-A1.6 — H4 at first visible paint
+
+From `CN侱鑫` · To blank + *Destination confirmation required* · Qty 800 · the stored service already
+selected · Expected Arrival resolved or formally unavailable — **in one paint, with the Recommendation Summary
+beside it in the same frame**. The route is painted exactly once (`ROUTE_PAINTED` count = 1) and
+`METHOD_OPTIONS_REBUILT` never runs on that path, because `initializeShippingAllocation` no longer registers
+the correcting `.then()` when the barrier has already waited for a terminal catalogue. Every other caller — a
+scope change, an explicit Method retry — still gets that refresh, because for them it *is* a refresh.
+
+### 4G-A1.7 — Deployment
+
+`APPS_SCRIPT_SYNC_REQUIRED: NO` · `APPS_SCRIPT_DEPLOYMENT_REQUIRED: NO` · `DATABASE_CHANGE_REQUIRED: NO` ·
+`BUNDLE_REBUILD_REQUIRED: NO` (the bundle ports only `assets/js/core/`; nothing there changed and
+`--check` reports the hash unmoved) · `FRONTEND_PUSH_REQUIRED: YES`.
+
+Two token families rotate, and they are **not** crossed:
+
+* application token `fb4ga0r2-destauthority-20260902` → **`fb4ga1-atomicreveal-20260902`**, all 18
+  co-deployed refs together, appended to the series in `_release-order.js` so it is derived rather than
+  restated. A0-R2 is published, so its token cannot be reused; and this round changes client code in both
+  `inventory-replenishment.js` and `inventory-compat.js` — a browser holding one file from each round would
+  expand a SKU into a decision area that never leaves its skeleton.
+* the inventory stylesheet's own family `irexecplan-20260901` → **`iratomicreveal-20260902`**, because this
+  round adds the skeleton and reveal rules to `inventory-replenishment.css`.
+
+### 4G-A1.8 — Suite corrections of this round's own making
+
+* **The deterministic scheduler sorted its queue once.** Every reveal frame is queued *during* the run, so it
+  was appended after the sorted tail and executed last — reporting its time as the time of the final event
+  rather than its own. Two mutation probes were reading that number and reported MUTANT SURVIVED against a
+  measurement artefact. The queue picks its minimum on every step now.
+* **A probe asserted the absence of a word.** `H4` claimed the recommendation readiness owner contains no
+  quantity vocabulary, but `gap` is legitimately there (`GAP_READ_ERROR`). It would have failed for the right
+  reason and passed for the wrong one. Restated as an **invariance** check, executed.
+* **A mutation probe threw and was scored as a failure, correctly.** Removing the frame's generation guard
+  left `cur` null and produced a `TypeError` — a broken probe, not a detection. The defence a late response
+  actually meets first is `accept()`'s ABANDONED branch, so that is what is mutated now.
+* **An operator label leaked into a shipped source.** A0 §G.9 requires the three service labels to be spelled
+  in **no** shipped file, so that no source-wide edit can rename an operator's data. One of my new comments
+  quoted one of them. Removed; the rule is cited in its place.
+
+### 4G-A1.9 — Two inherited assertions restated (the working-tree class, third appearance)
+
+A0-R1's `H5b` and A0-R2's `H3` both read `git diff --name-only HEAD` to assert "exactly two Apps Script files
+changed". That measures the **working tree**, so each was true only while its own round was uncommitted; the
+moment A0-R1 and A0-R2 became commits, both began asserting something about whoever edits the repository
+next — and this round is what they caught. It is the same shape as the equality-with-now stamps.
+
+Both are restated as durable claims about the **source**: exactly one Apps Script file *declares*
+`SAD_BUILD_VERSION_` and exactly one *expects* it, which derives the two-file sync set at any time with no
+working tree involved. This round's own suite states its "nothing joins the sync set" claim the same way — no
+`.gs` file mentions this round, its owner or its token — rather than reintroducing the trap.
