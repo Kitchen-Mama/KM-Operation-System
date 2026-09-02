@@ -144,7 +144,11 @@ ok(/ensureDb\(true, function \(ok\)/.test(GLM_JS.slice(GLM_JS.indexOf('function 
 
 // ===================================================================================================================
 console.log('\n== IR HALT + safety invariants ==');
-ok(/getWorkspace\('inventoryReplenishment', \{\}\)/.test(IR_JS), 'IR: post-write readback UNCHANGED (full workspace) — HALT (schema-change / not-equivalent)');
+// F1-7N-FB-4G-A1-R1 — RESTATED for the same reason as 7M-B's B3: the getWorkspace call site is parameterised
+// now, so the literal `{}` is gone from the source while the POST-WRITE path it describes is untouched.
+ok(/function _irAfterWrite\(cb\)[\s\S]{0,400}_irWorkspaceRefresh_\(\)/.test(IR_JS) &&
+   !/function _irAfterWrite\(cb\)[\s\S]{0,400}carrier:\s*true/.test(IR_JS),
+  'IR: post-write readback UNCHANGED (full workspace, no include) — HALT (schema-change / not-equivalent)');
 ok(GLM_JS.indexOf('loadOperationDb') !== -1 ? /Legacy/.test(GLM_JS) : true, 'map: no new whole-DB load introduced (bounded readback is a scoped getWorkspace)');
 ok(read('js/app.js').indexOf('loadOperationDb') === -1, 'app prime remains 0');
 eq((read('js/api/operation-system-db-api.js').split('await loadOperationDb({ force: true });').length - 1), 2, 'writer full-reload remains 0');

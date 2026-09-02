@@ -168,8 +168,23 @@ ok(/reg\.getRateCards\(sc\)/.test(IR_JS),
   'S6a2: and the accessor itself now reads the registry cache, so there is ONE catalogue for both consumers');
 ok(/getWorkspace\('inventoryReplenishment',\s*\{\s*include:\s*\{\s*carrierPlanning:\s*true\s*\}\s*\}\)/.test(MREG_SRC_),
   'S6: the lazy carrier fetch still uses include.carrierPlanning — now issued by the method registry that owns it');
-ok(!/getWorkspace\('inventoryReplenishment',\s*\{\s*include:\s*\{\s*carrierPlanning/.test(IR_JS),
-  'S6b: and the page no longer issues that read itself — there is exactly one owner');
+// F1-7N-FB-4G-A1-R1 — RESTATED, and the rule it protects is INTACT. FB-4C moved the catalogue's cache,
+// single-flight latch and error to KM.methodRegistry so a page could not hold a catalogue belonging to another
+// station. That is still exactly true. What changed is where the BYTES come from: the registry's own read was
+// getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } }) — the SAME action Search had
+// just issued, differing only by the flag — so obtaining two small reference tables re-read and re-transferred
+// the other nineteen. In production that duplicate reached the transport's 60 s read bound. The include now
+// rides on the primary read and the result is handed to the registry through adopt(), keyed by APPLIED SCOPE.
+//
+// So the durable claim is not "only the registry may type that string"; it is that the registry remains the
+// single OWNER — the only holder of the cache, the latch, the error and the resolution — and that the page
+// never keeps a catalogue of its own.
+ok(/adopt:\s*adopt/.test(MREG_SRC_) && /function adopt\(scope, adapted\)/.test(MREG_SRC_),
+  'S6b: the registry owns a scope-keyed adopt() seam — the page hands data IN, it never holds a catalogue');
+ok(/_irAdoptCarrierCatalogue_/.test(IR_JS) && /reg\.adopt\(_irMethodScope_\(\)/.test(IR_JS),
+  'S6b2: and the page seeds it for the APPLIED station only — a catalogue can still never answer for another');
+ok(!/_irCarrierModel\s*=\s*\{|var\s+_irCarrierCache/.test(IR_JS),
+  'S6b3: the page keeps no catalogue cache of its own — the single-owner rule FB-4C established still holds');
 ok(/getRateCards|getLeadTimes/.test(MREG_SRC_) && /scopeKey/.test(MREG_SRC_),
   'S6c: the catalogue is keyed by APPLIED SCOPE, so it can never answer for another station');
 ok(/function _execWarehouseCandidates\(\)[\s\S]*_irWsGet\('getWarehouses'\)/.test(IR_JS), 'S6: Execution-Plan warehouse candidates via _irWsGet (no broad getWarehouses)');

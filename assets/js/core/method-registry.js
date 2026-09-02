@@ -233,9 +233,37 @@
       };
     }
 
+    // F1-7N-FB-4G-A1-R1 - ADOPT A CATALOGUE THE PAGE ALREADY HAS. Zero requests.
+    //
+    // THE DUPLICATE THIS REMOVES. ensureLoaded's read is
+    // getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } }) - the SAME workspace
+    // action Search already issued, differing only by the include flag. The workspace is a FULL-SET raw
+    // passthrough of nineteen tables (marketplace_skus, sku_details, warehouses, four Amazon snapshots, three
+    // fc tables, factory_stock, shipments, shipment_lines, shipping_plans, shipping_plan_lines, both
+    // allocation-draft tables...), so asking for two small carrier reference tables re-read and re-transferred
+    // ALL NINETEEN a second time. That second copy is the most expensive read on the page, and it is what hit
+    // the transport's 60 000 ms read bound and surfaced as METHOD_CATALOGUE_ERROR - REQUEST_TIMEOUT.
+    //
+    // The page can ask for the include on the read it was already making. adopt() is how that result becomes
+    // this registry's cache, so ensureLoaded afterwards is a cache hit and issues nothing. requestCount() is
+    // deliberately NOT incremented: no request was made.
+    //
+    // The caller must only adopt a payload whose read ACTUALLY requested the include. Adopting one that did
+    // not would install two empty tables as a settled catalogue, and the picker would report a configuration
+    // problem that does not exist.
+    function adopt(scope, adapted) {
+      if (!adapted) return false;
+      var key = scopeKey(scope);
+      cache[key] = { cards: adapted.getCarrierRateCards || [], leadTimes: adapted.getCarrierLeadTimes || [] };
+      delete errors[key];
+      delete pending[key];
+      return true;
+    }
+
     return {
       STATUS: STATUS,
       ensureLoaded: ensureLoaded,
+      adopt: adopt,
       reload: function (scope) { return ensureLoaded(scope, { force: true, retry: true }); },
       retry: function (scope) { return ensureLoaded(scope, { retry: true }); },
       resolve: resolve,

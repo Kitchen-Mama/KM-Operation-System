@@ -20,6 +20,13 @@
 // issues no request before this round and none after it. Reveal time is exactly
 // max(recommendationSettledAt, executionSettledAt) plus the frame that paints.
 //
+// SUPERSEDED IN PART BY F1-7N-FB-4G-A1-R1. A1 revealed BOTH decision panels in one frame. Production then
+// produced the case that coupling cannot survive: the gap read settled in 40 ms, the carrier catalogue hit the
+// transport's 60 000 ms read bound, and a complete Recommendation Summary was held behind a skeleton for a
+// full minute waiting for a panel it does not depend on. A1's RULE - a panel appears once, complete, and is
+// never corrected in view - was right, and every assertion of it below still stands. The SCOPE it was applied
+// at was wrong, so each panel now owns its own gate. The assertions that pinned the coupling say so.
+//
 // Run: node assets/tests/expanded-planning-atomic-reveal-f1-7n-fb-4g-a1.test.js
 
 var fs = require('fs');
@@ -135,7 +142,9 @@ function makeInit(S, deps) {
   );
 }
 
-// One expand, driven through the SHIPPED gate. Returns the scheduler + the gate so a test can read timings.
+// One expand, driven through the SHIPPED gates. F1-7N-FB-4G-A1-R1 - there are TWO of them now, one per panel,
+// and the helper reflects that: the Execution Plan's routes are seeded by the EXECUTION gate's own reveal, and
+// the Recommendation Summary's paint is recorded independently. Returns both so a test can read either clock.
 function expand(opts) {
   opts = opts || {};
   var S = Sched();
@@ -143,29 +152,33 @@ function expand(opts) {
   var doc = new Doc();
   doc.add('shipping-methods-CO1100-R');
   var init = makeInit(S, { doc: doc, carrierAt: opts.carrierAt });
-  var gate = Rev.createGate({
-    frame: function (cb) { S.at(S.now(), function () { S.mark('FRAME'); cb(); }); },
-    now: S.now,
-    onReveal: function (snap) {
-      S.mark('REVEAL');
-      S.mark('RECO_PAINTED@' + snap.frameId);
-      S.mark('EXEC_PAINTED@' + snap.frameId);
-      S.mark('REVEAL_RECO=' + snap.recommendation.state);
-      S.mark('REVEAL_EXEC=' + snap.execution.state);
-      if (opts.onReveal) opts.onReveal(snap, S);
-      init('CO1100-R', { sku: 'CO1100-R' }, { catalogueSettled: true });
-    }
-  });
+  var ctx = { sku: opts.sku || 'CO1100-R', scopeKey: opts.scopeKey || 'resus|us|amazon' };
+  function panel(name, ev, after) {
+    return Rev.createPanelGate({
+      name: name,
+      frame: function (cb) { S.at(S.now(), function () { S.mark('FRAME'); cb(); }); },
+      now: S.now,
+      onReveal: function (snap) {
+        S.mark(ev);
+        S.mark(ev + '@' + snap.frameId);
+        S.mark('REVEAL_' + name.toUpperCase() + '=' + snap.readiness.state);
+        if (opts.onReveal) opts.onReveal(snap, S);
+        if (after) after(snap);
+      }
+    });
+  }
+  var rgate = panel('reco', 'RECO_PAINTED', null);
+  var egate = panel('exec', 'EXEC_PAINTED', function () { init('CO1100-R', { sku: 'CO1100-R' }, { catalogueSettled: true }); });
   S.mark('EXPAND');
   S.mark('SKELETON_IN_DOM');
-  var g = gate.begin({ sku: opts.sku || 'CO1100-R', scopeKey: opts.scopeKey || 'resus|us|amazon' });
-  gate.report(g, 'recommendation', Rev.recommendationReadiness({ mode: 'materialized', status: 'LOADING' }), null);
-  gate.report(g, 'execution', Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }), null);
-  if (opts.recoAt != null) S.at(opts.recoAt, function () { S.mark('RECO_SETTLED'); gate.report(g, 'recommendation', Rev.recommendationReadiness(opts.recoInput || { mode: 'materialized', status: 'READY' }), null); });
-  if (opts.carrierAt != null) S.at(opts.carrierAt, function () { S.mark('EXEC_SETTLED'); gate.report(g, 'execution', Rev.executionReadiness(opts.execInput || { readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }), null); });
-  if (opts.during) opts.during(S, gate, g, doc);
+  var g1 = rgate.begin(ctx), g2 = egate.begin(ctx);
+  rgate.report(g1, Rev.recommendationReadiness({ mode: 'materialized', status: 'LOADING' }), null);
+  egate.report(g2, Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }), null);
+  if (opts.recoAt != null) S.at(opts.recoAt, function () { S.mark('RECO_SETTLED'); rgate.report(g1, Rev.recommendationReadiness(opts.recoInput || { mode: 'materialized', status: 'READY' }), null); });
+  if (opts.carrierAt != null) S.at(opts.carrierAt, function () { S.mark('EXEC_SETTLED'); egate.report(g2, Rev.executionReadiness(opts.execInput || { readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }), null); });
+  if (opts.during) opts.during(S, rgate, egate, doc);
   S.run();
-  return { S: S, gate: gate, doc: doc, gen: g };
+  return { S: S, reco: rgate, exec: egate, doc: doc };
 }
 
 // ================================================================================================================
@@ -199,14 +212,23 @@ section('§B — THE PRE MEASUREMENT, ON THE COMMIT THIS ROUND STARTED FROM');
 // ================================================================================================================
 section('§C — THE READINESS CONTRACT (one owner, terminal means terminal)');
 // ================================================================================================================
-eq(Object.keys(R.STATES).sort(), ['EMPTY', 'ERROR', 'LOADING', 'READY'], 'C1  §C exactly four states — no fifth "probably done"');
+// F1-7N-FB-4G-A1-R1 - ABANDONED joined the vocabulary. It is the GATE's state, not a readiness one: what a
+// collapse, a scope change or a newer expand leaves behind, and why a late response has nowhere to land.
+eq(Object.keys(R.STATES).sort(), ['ABANDONED', 'EMPTY', 'ERROR', 'LOADING', 'READY'], 'C1  §C five named states — no sixth "probably done"');
+eq(R.isTerminal('ABANDONED'), false, 'C1a and ABANDONED is not a terminal readiness — nothing is revealed for it');
 eq([R.isTerminal('READY'), R.isTerminal('EMPTY'), R.isTerminal('ERROR'), R.isTerminal('LOADING')], [true, true, true, false],
   'C2  §C READY / EMPTY / ERROR are terminal; LOADING is the only state that waits');
 eq(R.recommendationReadiness({ mode: 'materialized', status: 'READY' }).state, 'READY', 'C3  a loaded gap scope is READY');
 eq(R.recommendationReadiness({ mode: 'materialized', status: 'EMPTY' }).state, 'EMPTY', 'C4  a scope with no stored rows is a TERMINAL empty, never a permanent skeleton');
+// F1-7N-FB-4G-A1-R1 - RESTATED. A1 gave every read failure the single code GAP_READ_ERROR. Production showed
+// why that is not enough: a timeout, a backend refusal and a genuinely unresolvable scope need different
+// sentences and different remedies, and collapsing them is how "Select a valid Country / Marketplace" ended up
+// on a screen whose selectors read US / Amazon. The failure is classified now, and the real code is carried.
 eq(R.recommendationReadiness({ mode: 'materialized', status: 'READ_ERROR', error: { code: 'READ_FAILED' } }),
-  { state: 'ERROR', code: 'GAP_READ_ERROR', error: { code: 'READ_FAILED' } },
+  { state: 'ERROR', code: 'READ_FAILED', error: { code: 'READ_FAILED' } },
   'C5  §C a read error is TERMINAL and keeps its typed error — not swallowed into an empty panel');
+eq(R.recommendationReadiness({ mode: 'materialized', status: 'READ_ERROR', error: { code: 'REQUEST_TIMEOUT' } }).code,
+  'REQUEST_TIMEOUT', 'C5a and a TIMEOUT is reported as a timeout, never as a scope problem');
 eq(R.recommendationReadiness({ mode: 'materialized', status: 'LOADING' }).state, 'LOADING', 'C6  in flight is LOADING');
 eq(R.recommendationReadiness({ mode: 'legacy' }).state, 'READY', 'C7  the legacy synchronous table has nothing to wait for');
 eq(R.recommendationReadiness({ mode: 'workspace', status: 'API_ERROR' }).state, 'ERROR', 'C8  the workspace cutover path reports its own error state');
@@ -219,32 +241,40 @@ eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalo
 eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }).state, 'READY',
   'C12 §C all four inputs settled -> READY');
 eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'ERROR', error: { code: 'METHOD_REGISTRY_READ_FAILED' }, hasRoutes: true }),
-  { state: 'ERROR', code: 'METHOD_CATALOGUE_ERROR', error: { code: 'METHOD_REGISTRY_READ_FAILED' } },
+  { state: 'ERROR', code: 'READ_FAILED', error: { code: 'METHOD_REGISTRY_READ_FAILED' } },
   'C13 §C a catalogue failure is TERMINAL and named — the picker can print the code and a Retry');
 eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'STALE_SCOPE', hasRoutes: true }),
-  { state: 'EMPTY', code: 'METHOD_CATALOGUE_STALE_SCOPE', error: null },
+  { state: 'EMPTY', code: 'STALE_SCOPE', error: null },
   'C14 §C a catalogue held for another station is terminal for THIS one — never an endless wait');
 
 // ================================================================================================================
 section('§H.1–§H.3 — THE BARRIER, IN BOTH ORDERS AND IN A TIE');
 // ================================================================================================================
+// F1-7N-FB-4G-A1-R1 - THESE THREE PINNED THE COUPLING, AND THE COUPLING IS THE DEFECT. A1 asserted that a
+// panel whose data is ready is NOT painted until its partner is - "H1a and the Recommendation Summary is NOT
+// painted the moment its own data lands" was the requirement. Production made the cost of that literal:
+// 59 960 ms of avoidable wait behind a carrier timeout. Each panel is now revealed on its own clock.
+//
+// What A1 was really protecting - a panel appears ONCE, complete, and is never corrected in view - is
+// unchanged and is asserted here per panel, which is the form it should always have had.
 (function () {
   var r = expand({ recoAt: 40, carrierAt: 120 });
-  eq(r.S.at_('REVEAL'), 120, 'H1  Recommendation fast (t=40), carrier slow (t=120): reveal waits for BOTH');
-  ok(r.S.at_('RECO_SETTLED') === 40 && r.S.at_('RECO_PAINTED@1') === 120,
-    'H1a and the Recommendation Summary is NOT painted the moment its own data lands');
+  eq(r.S.at_('RECO_PAINTED'), 40, 'H1  Recommendation ready at t=40 is PAINTED at t=40 — it waits for nothing else');
+  eq(r.S.at_('EXEC_PAINTED'), 120, 'H1a and the Execution Plan appears on its own clock at t=120');
   eq(r.S.count('ROUTE_PAINTED'), 1, 'H1b the route is painted exactly ONCE, from a settled catalogue');
   eq(r.S.count('METHOD_OPTIONS_REBUILT'), 0, 'H1c and never corrected afterwards — no second paint at all');
 })();
 (function () {
   var r = expand({ recoAt: 120, carrierAt: 40 });
-  eq(r.S.at_('REVEAL'), 120, 'H2  carrier fast (t=40), Recommendation slow (t=120): reveal still waits for BOTH');
-  eq(r.S.count('ROUTE_PAINTED'), 1, 'H2a and the Execution Plan does not appear alone while the summary loads');
+  eq([r.S.at_('EXEC_PAINTED'), r.S.at_('RECO_PAINTED')], [40, 120],
+    'H2  carrier fast, Recommendation slow: the Execution Plan does NOT wait for the summary either');
+  eq(r.S.count('ROUTE_PAINTED'), 1, 'H2a and it is still built exactly once, from a settled catalogue');
 })();
 (function () {
   var r = expand({ recoAt: 60, carrierAt: 60 });
-  eq([r.S.at_('RECO_PAINTED@1'), r.S.at_('EXEC_PAINTED@1')], [60, 60], 'H3  both settling together -> one reveal');
-  eq(r.gate.frameCount(), 1, 'H3a §H.20 exactly ONE render frame was used for the pair');
+  eq([r.S.at_('RECO_PAINTED@1'), r.S.at_('EXEC_PAINTED@1')], [60, 60],
+    'H3  when they DO settle together they still appear together — coincidence, no longer a constraint');
+  eq([r.reco.frameCount(), r.exec.frameCount()], [1, 1], 'H3a §H.20 exactly ONE render frame per panel');
 })();
 
 // ================================================================================================================
@@ -294,7 +324,7 @@ eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalo
   eq(r.S.at_('ROUTE_METHOD=sea') != null && r.S.at_('ROUTE_QTY=800') != null, true,
     'H6  the persisted H4 route reaches its FIRST paint already carrying sea (普船海卡) and 800');
   eq(r.S.at_('ROUTE_PAINTED'), 90, 'H6a in the reveal frame — never before the catalogue that resolves its label');
-  eq([seen.recommendation.state, seen.execution.state], ['READY', 'READY'], 'H6b with both sides terminal at that moment');
+  eq(seen.readiness.state, 'READY', 'H6b with the Execution Plan\'s own readiness terminal at that moment');
 })();
 eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }).state, 'READY',
   'H7  §C a lead time nobody configured is an UNAVAILABLE terminal answer — the catalogue answered, so execution is READY');
@@ -302,58 +332,58 @@ eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalo
 // ================================================================================================================
 section('§H.8–§H.9 — A SETTLED FAILURE IS AN ANSWER');
 // ================================================================================================================
+// F1-7N-FB-4G-A1-R1 - RESTATED for the same reason as H1-H3: a settled ERROR is an ANSWER, so it is shown at
+// the moment it settles rather than at the moment the other panel does. What A1 established - a failure is
+// stated and named, and the page never stays a skeleton - is unchanged.
 (function () {
   var r = expand({ recoAt: 20, carrierAt: 70, recoInput: { mode: 'materialized', status: 'READ_ERROR', error: { code: 'READ_FAILED', message: 'gap read failed' } } });
-  eq(r.S.at_('REVEAL'), 70, 'H8  a Recommendation ERROR still waits for its partner — one frame, not two');
+  eq(r.S.at_('RECO_PAINTED'), 20, 'H8  a Recommendation ERROR is shown when it SETTLES, not when its neighbour does');
   eq([r.S.at_('REVEAL_RECO=ERROR') != null, r.S.at_('REVEAL_EXEC=READY') != null], [true, true],
-    'H8a and the pair is revealed as { typed error, real plan } — the page never stays a skeleton');
+    'H8a and each panel shows its own outcome — a typed error beside a real plan, never a permanent skeleton');
 })();
 (function () {
   var r = expand({ recoAt: 20, carrierAt: 70, execInput: { readModelReady: true, hydrationInFlight: false, catalogue: 'ERROR', error: { code: 'METHOD_REGISTRY_READ_FAILED', message: 'x' }, hasRoutes: true } });
   eq([r.S.at_('REVEAL_RECO=READY') != null, r.S.at_('REVEAL_EXEC=ERROR') != null], [true, true],
-    'H9  an Execution ERROR reveals beside a successful summary, named rather than blank');
-  eq(r.gate.frameCount(), 1, 'H9a still ONE frame — an error is not a reason to split the transaction');
+    'H9  an Execution ERROR is named rather than blank, beside a successful summary');
+  eq([r.reco.frameCount(), r.exec.frameCount()], [1, 1], 'H9a one frame each — an error is not a reason to paint twice');
 })();
 
 // ================================================================================================================
 section('§H.10–§H.12 — STALE GENERATIONS CANNOT PAINT');
 // ================================================================================================================
 (function () {
-  var gate = R.createGate({ frame: function (cb) { cb(); }, onReveal: function (s) { revealed.push(s.sku); } });
+  var gate = R.createPanelGate({ name: 'reco', frame: function (cb) { cb(); }, onReveal: function (s) { revealed.push(s.sku); } });
   var revealed = [];
   var g1 = gate.begin({ sku: 'SKU-A', scopeKey: 's' });
   var g2 = gate.begin({ sku: 'SKU-B', scopeKey: 's' });      // the user switched SKU
-  var late = gate.report(g1, 'recommendation', { state: 'READY' }, { sku: 'SKU-A' });
+  var late = gate.report(g1, { state: 'READY' }, { sku: 'SKU-A' });
   eq(late, { accepted: false, reason: 'STALE_GENERATION' }, 'H10 a response for the PREVIOUS sku is refused by generation');
-  gate.report(g2, 'recommendation', { state: 'READY' }, null);
-  gate.report(g2, 'execution', { state: 'READY' }, null);
+  gate.report(g2, { state: 'READY' }, null);
   eq(revealed, ['SKU-B'], 'H10a and only the sku actually open is ever painted');
 })();
 (function () {
-  var gate = R.createGate({ frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
+  var gate = R.createPanelGate({ name: 'reco', frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
   var painted = 0;
   var g = gate.begin({ sku: 'CO1100-R', scopeKey: 'resus|us|amazon' });
-  var res = gate.report(g, 'recommendation', { state: 'READY' }, { sku: 'CO1100-R', scopeKey: 'restw|jp|amazon' });
+  var res = gate.report(g, { state: 'READY' }, { sku: 'CO1100-R', scopeKey: 'restw|jp|amazon' });
   eq(res, { accepted: false, reason: 'STALE_SCOPE' }, 'H11 a response from a station the user has left is refused by scope');
   eq(painted, 0, 'H11a so a re-Search cannot be painted over by the previous station');
 })();
 (function () {
-  var gate = R.createGate({ frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
+  var gate = R.createPanelGate({ name: 'exec', frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
   var painted = 0;
   var g = gate.begin({ sku: 'CO1100-R', scopeKey: 's' });
-  gate.report(g, 'recommendation', { state: 'READY' }, null);
   gate.abandon();                                            // the user collapsed the row
-  var res = gate.report(g, 'execution', { state: 'READY' }, null);
+  var res = gate.report(g, { state: 'READY' }, null);
   eq(res, { accepted: false, reason: 'ABANDONED' }, 'H12 after a collapse a late response has no generation to land in');
   eq([painted, gate.snapshot()], [0, null], 'H12a and nothing re-opens the row the user closed');
 })();
 (function () {
   // The same defence when the collapse happens BETWEEN settling and the frame that paints.
   var deferred = null, painted = 0;
-  var gate = R.createGate({ frame: function (cb) { deferred = cb; }, onReveal: function () { painted++; } });
+  var gate = R.createPanelGate({ name: 'exec', frame: function (cb) { deferred = cb; }, onReveal: function () { painted++; } });
   var g = gate.begin({ sku: 'CO1100-R', scopeKey: 's' });
-  gate.report(g, 'recommendation', { state: 'READY' }, null);
-  gate.report(g, 'execution', { state: 'READY' }, null);
+  gate.report(g, { state: 'READY' }, null);
   gate.abandon();
   deferred();
   eq(painted, 0, 'H12b a reveal already scheduled is dropped if the row is collapsed before its frame runs');
@@ -372,7 +402,7 @@ ASYNC.push((function () {
   for (var i = 0; i < 20; i++) chain = chain.then(function () { return reg.ensureLoaded(SC); });
   return chain.then(function () {
     eq([reads, reg.requestCount()], [1, 1], 'H13 twenty expands on a warm scope cost ZERO extra requests (cache hit)');
-    eq(R.createGate({}).snapshot(), null, 'H13a and the barrier itself holds no request of any kind');
+    eq(R.createPanelGate({}).snapshot(), null, 'H13a and a barrier itself holds no request of any kind');
   });
 })());
 ASYNC.push((function () {
@@ -387,14 +417,19 @@ ASYNC.push((function () {
 })());
 ok(/_irLoadCarrierPlanning_\(\)\.then/.test(code(extractFn(PAGE, '_irRevealBegin_'))),
   'H14 the barrier calls the SAME deduped per-scope loader Search calls — it introduces no new endpoint');
-ok(!/KM\.api|getWorkspace|fetch|XMLHttpRequest|getInventoryReplenishmentGap/.test(code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPump_')) + code(extractFn(PAGE, '_irRevealPaint_'))),
-  'H14a §E.3 nothing in the barrier issues a request of its own — not one new round trip');
-ok(!/refreshCacheTables|_irWorkspaceRefresh_|_hydrateAllocationDraftFromDb/.test(code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPump_'))),
+ok(!/KM\.api|getWorkspace|fetch|XMLHttpRequest|getInventoryReplenishmentGap/.test(
+    code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPumpReco_')) +
+    code(extractFn(PAGE, '_irRevealPumpExec_')) + code(extractFn(PAGE, '_irRecoRevealPaint_')) +
+    code(extractFn(PAGE, '_irExecRevealPaint_'))),
+  'H14a §E.3 nothing in either barrier issues a request of its own — not one new round trip');
+ok(!/refreshCacheTables|_irWorkspaceRefresh_|_hydrateAllocationDraftFromDb/.test(
+    code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPumpReco_')) + code(extractFn(PAGE, '_irRevealPumpExec_'))),
   'H16 §E.5 the barrier never re-runs the allocation hydrate — it only observes the one Search already ran');
 (function () {
-  var barrier = code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPump_')) +
-    code(extractFn(PAGE, '_irRevealPaint_')) + code(extractFn(PAGE, '_irRevealFrame_')) +
-    code(extractFn(CMPSRC, 'createRevealGate'));
+  var barrier = code(extractFn(PAGE, '_irRevealBegin_')) + code(extractFn(PAGE, '_irRevealPumpReco_')) +
+    code(extractFn(PAGE, '_irRevealPumpExec_')) + code(extractFn(PAGE, '_irRecoRevealPaint_')) +
+    code(extractFn(PAGE, '_irExecRevealPaint_')) + code(extractFn(PAGE, '_irRevealFrame_')) +
+    code(extractFn(CMPSRC, 'createPanelGate'));
   ok(!/setTimeout|setInterval|requestIdleCallback|while\s*\(/.test(barrier),
     'H17 §D.3 no timer, no interval, no polling loop anywhere in the barrier');
   ok(!/await\s/.test(barrier), 'H17a and no sequential await — the two sources are never chained');
@@ -403,15 +438,21 @@ ok(!/refreshCacheTables|_irWorkspaceRefresh_|_hydrateAllocationDraftFromDb/.test
 })();
 (function () {
   // §E.6 — reveal time IS max(recommendation, execution). Asserted across an ordering matrix, not once.
-  var cases = [[10, 200], [200, 10], [77, 77], [0, 0], [5, 6]];
-  var okAll = cases.every(function (c) { return expand({ recoAt: c[0], carrierAt: c[1] }).S.at_('REVEAL') === Math.max(c[0], c[1]); });
-  ok(okAll, 'E6  reveal time = max(recommendationReadyAt, executionReadyAt) in every ordering — no added wait');
+  // F1-7N-FB-4G-A1-R1 - RESTATED, and the guarantee got STRONGER. A1's max() was the best a joint barrier can
+  // do; per panel the bound is each panel's OWN ready time, which is never later and is usually earlier.
+  var cases = [[10, 200], [200, 10], [77, 77], [0, 0], [5, 6], [40, 60000]];
+  var okAll = cases.every(function (c) {
+    var r = expand({ recoAt: c[0], carrierAt: c[1] });
+    return r.S.at_('RECO_PAINTED') === c[0] && r.S.at_('EXEC_PAINTED') === c[1];
+  });
+  ok(okAll, 'E6  each panel is revealed at its OWN readyAt + one frame, in every ordering — never max() of the pair');
 })();
 (function () {
   var r = expand({ recoAt: 0, carrierAt: 0 });
-  eq(r.S.at_('REVEAL'), 0, 'E10 a fully warm scope reveals in the SAME frame the panel was inserted — the barrier never defeats a cache');
-  ok(r.S.at_('SKELETON_IN_DOM') === 0 && r.S.at_('REVEAL') === 0,
-    'E7  the skeleton is in the first frame\'s markup and is replaced inside that frame — present, never lingering');
+  eq([r.S.at_('RECO_PAINTED'), r.S.at_('EXEC_PAINTED')], [0, 0],
+    'E10 a fully warm scope reveals both in the SAME frame the panel was inserted — no barrier defeats a cache');
+  ok(r.S.at_('SKELETON_IN_DOM') === 0,
+    'E7  the skeletons are in the first frame\'s markup and are replaced inside that frame — present, never lingering');
 })();
 
 // ================================================================================================================
@@ -444,10 +485,12 @@ section('§H.18–§H.19 / §F — WHAT THE SHELL SHOWS AND WHAT IT REFUSES');
   ok(/recommendation-summary-CO1100-R/.test(html) && /execution-plan-CO1100-R/.test(html),
     'F6  and both keep their canonical ids, so every existing owner still finds them');
 })();
-ok(/\.ir-decision-area\.ir-reveal\s*\{[^}]*min-height/.test(CSS) &&
-   /pending"\]\s*\.replen-card--recommendation-summary\s*\{[^}]*min-height/.test(CSS) &&
-   /pending"\]\s*\.replen-card--execution-plan\s*\{[^}]*min-height/.test(CSS),
-  'F7  §F both panels reserve a fixed base height while loading — the reveal cannot become a layout jump');
+// F1-7N-FB-4G-A1-R1 - RESTATED for the shape, not the claim: the panels are SIBLING reveal containers now
+// (deliberately, so no rule can re-couple them), so each reserves its own height under its own selector.
+ok(/\[data-ir-reveal="recommendation"\]\[data-reveal-state="pending"\][^{]*\{[^}]*min-height/.test(CSS),
+  'F7  §F the pending Recommendation Summary reserves a base height — the reveal cannot become a layout jump');
+ok(/\[data-ir-reveal="execution"\]\[data-reveal-state="pending"\][^{]*\{[^}]*min-height/.test(CSS),
+  'F7a §F and so does the pending Execution Plan, under its own selector');
 ok(/prefers-reduced-motion/.test(CSS), 'F8  the shimmer is disabled under prefers-reduced-motion');
 ok(/ir-reveal__error/.test(CSS) && /role="alert"/.test(code(extractFn(PAGE, '_irRevealErrorHtml_'))),
   'H19 a settled failure is rendered as a named alert — EMPTY/ERROR never leave a permanent skeleton');
@@ -458,33 +501,35 @@ ok(/data-reveal-state="pending"/.test(code(extractFn(PAGE, '_irRevealSyncActionA
 // ================================================================================================================
 section('§H.20 / §D.4 — ONE RENDER TRANSACTION, AND NOTHING PAINTS AROUND IT');
 // ================================================================================================================
+// F1-7N-FB-4G-A1-R1 - RESTATED. A1's H20 asserted that ONE terminal side schedules NO frame, which is the
+// coupling stated as a guarantee. The durable half - a panel is revealed exactly once per generation, and a
+// later report cannot paint it again - is what remains, asserted per panel.
 (function () {
   var frames = [];
-  var gate = R.createGate({ frame: function (cb) { frames.push(cb); }, onReveal: function (s) { seen.push(s); } });
+  var gate = R.createPanelGate({ name: 'reco', frame: function (cb) { frames.push(cb); }, onReveal: function (s) { seen.push(s); } });
   var seen = [];
   var g = gate.begin({ sku: 'CO1100-R', scopeKey: 's' });
-  gate.report(g, 'recommendation', { state: 'READY' }, null);
-  eq(frames.length, 0, 'H20 one terminal side schedules NO frame — there is no way to reveal a single panel');
-  gate.report(g, 'execution', { state: 'EMPTY' }, null);
-  eq(frames.length, 1, 'H20a both terminal -> exactly one frame is scheduled');
+  eq(frames.length, 0, 'H20 a LOADING panel schedules no frame');
+  gate.report(g, { state: 'EMPTY' }, null);
+  eq(frames.length, 1, 'H20a its own terminal state schedules exactly one — it does not consult any other panel');
   frames[0]();
-  eq([seen.length, seen[0].frameId], [1, 1], 'H20b one callback carrying BOTH panels — same frame id by construction');
-  gate.report(g, 'recommendation', { state: 'READY' }, null);
+  eq([seen.length, seen[0].frameId], [1, 1], 'H20b one callback, one frame id');
+  gate.report(g, { state: 'READY' }, null);
   eq([frames.length, seen.length], [1, 1], 'H20c and a later report cannot schedule a second reveal of the same generation');
 })();
 ok(/data-reveal-state'\)\s*===\s*'pending'\)\s*return;/.test(code(PAGE)),
   'D4  §D.4 the recommendation re-render REFUSES a card still behind the barrier — no early half-reveal');
-ok(/onReveal\(snapshot\(\)\)/.test(code(extractFn(CMPSRC, 'createRevealGate'))) &&
-   (code(extractFn(CMPSRC, 'createRevealGate')).match(/onReveal\(/g) || []).length === 1,
-  'D4a the gate has exactly ONE reveal call site — a second would be a second transaction');
+ok(/onReveal\(snapshot\(\)\)/.test(code(extractFn(CMPSRC, 'createPanelGate'))) &&
+   (code(extractFn(CMPSRC, 'createPanelGate')).match(/onReveal\(/g) || []).length === 1,
+  'D4a a panel gate has exactly ONE reveal call site — a second would be a second transaction for that panel');
 
 // ================================================================================================================
 section('§D / §G — WHAT IS NOT BEHIND THE BARRIER, AND WHAT DID NOT MOVE');
 // ================================================================================================================
 (function () {
   var toggle = code(extractFn(PAGE, 'toggleReplenRow'));
-  ok(/initSalesTrendChart/.test(toggle) && !/initSalesTrendChart/.test(code(extractFn(PAGE, '_irRevealPaint_'))),
-    'D2  §D Sales Trend is NOT behind the barrier — it keeps its own path and is not delayed by it');
+  ok(/initSalesTrendChart/.test(toggle) && !/initSalesTrendChart/.test(code(extractFn(PAGE, '_irExecRevealPaint_')) + code(extractFn(PAGE, '_irRecoRevealPaint_'))),
+    'D2  §D Sales Trend is behind NEITHER barrier — it keeps its own path and is not delayed by either');
   ok(/replen-card--stock/.test(PAGE) && !/replen-card--stock/.test(code(extractFn(PAGE, '_irDecisionAreaHtml_'))),
     'D2a Stock / Forecast / Upcoming Event are outside the reveal container entirely');
   ok(!/initializeShippingAllocation\(sku, skuData\);/.test(toggle),
@@ -510,18 +555,23 @@ eq(CMP.IRService.canonical('美森海卡'), 'sea_express', 'G6  and sea / sea_ex
 // ================================================================================================================
 section('§I — DEPLOYMENT IDENTITY');
 // ================================================================================================================
-var APP_TOKEN = 'fb4ga1-atomicreveal-20260902';
-var CSS_TOKEN = 'iratomicreveal-20260902';
+// F1-7N-FB-4G-A1-R1 - the tokens are DERIVED from the append-only series, not restated. A1 pinned its own
+// literals, which stops being true the moment any later round legitimately rotates them - the
+// equality-with-now shape this repository has restated six times. The durable claims are: the whole
+// application set moves together, the stylesheet keeps its OWN family, and both are at or after A1.
+var APP_TOKEN = RO.currentAppToken();
+var CSS_TOKEN = (INDEX.match(/inventory-replenishment\.css\?v=([^"']+)/) || [])[1];
 (function () {
-  var refs = INDEX.match(/\?v=fb4ga[^"']*/g) || [];
-  ok(refs.length > 0 && refs.every(function (r) { return r === '?v=' + APP_TOKEN; }),
-    'I1  every co-deployed app-token ref moved together to ' + APP_TOKEN + ' (' + refs.length + ' refs)');
+  eq((INDEX.match(new RegExp(APP_TOKEN, 'g')) || []).length, 18,
+    'I1  all 18 co-deployed application refs share the current token (' + APP_TOKEN + ')');
+  ok(RO.tokenAtOrAfter(APP_TOKEN, 'fb4ga1-atomicreveal-20260902'),
+    'I1a and it is at or after the round that introduced the reveal owner');
   ok(!new RegExp('fb4ga0r2-destauthority').test(INDEX), 'I2  §I the already-published A0-R2 token is not reused for changed client code');
   ok(new RegExp('inventory-compat\\.js\\?v=' + APP_TOKEN).test(INDEX) &&
      new RegExp('inventory-replenishment\\.js\\?v=' + APP_TOKEN).test(INDEX),
     'I3  both changed page scripts carry it');
-  ok(new RegExp('inventory-replenishment\\.css\\?v=' + CSS_TOKEN).test(INDEX),
-    'I4  §I the stylesheet rotates in its OWN token family — never the JS app token');
+  ok(!!CSS_TOKEN && CSS_TOKEN !== APP_TOKEN && /^ir[a-z]+-\d{8}$/.test(CSS_TOKEN),
+    'I4  §I the stylesheet is in its OWN token family (' + CSS_TOKEN + ') — never the JS app token');
   ok(!new RegExp('inventory-replenishment\\.css\\?v=' + APP_TOKEN).test(INDEX), 'I4a and the two families are not crossed');
   ok(RO.stampAtOrAfter && typeof RO.stampAtOrAfter === 'function', 'I5  the release-order helper is present');
 })();
@@ -540,10 +590,11 @@ var CSS_TOKEN = 'iratomicreveal-20260902';
   var stamp = (fs.readFileSync(path.join(GS_DIR, '16_shipping_allocation_handlers.gs'), 'utf8')
     .match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1];
   ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A0-R2'),
-    'I6a the allocation owner stamp is at or after A0-R2 and this round did not move it (' + stamp + ')');
+    'I6a the allocation owner stamp is at or after A0-R2 and no presentation round has moved it (' + stamp + ')');
 })();
-ok(!/16_shipping_allocation_handlers|SAD_BUILD_VERSION_/.test(code(extractFn(PAGE, '_irRevealPaint_'))),
-  'I6b and the barrier touches no server surface — presentation only');
+ok(!/16_shipping_allocation_handlers|SAD_BUILD_VERSION_/.test(
+    code(extractFn(PAGE, '_irRecoRevealPaint_')) + code(extractFn(PAGE, '_irExecRevealPaint_'))),
+  'I6b and neither barrier touches a server surface — presentation only');
 
 // ================================================================================================================
 section('MUTATIONS — each applied for real, each caught');
@@ -553,62 +604,50 @@ function gateFrom(src) {
   return mod.IRPlanningReveal;
 }
 
-mut('M1  the barrier is removed (settle fires on the first report)', function () {
-  var m = mutateFn(CMPSRC, 'createRevealGate',
-    'if (!revealIsTerminal(cur.recommendation.state) || !revealIsTerminal(cur.execution.state)) return;',
-    '');
+mut('M1  the barrier is removed (a LOADING panel is revealed)', function () {
+  var m = mutateFn(CMPSRC, 'createPanelGate', 'if (!revealIsTerminal(cur.readiness.state)) return;', '');
   var MR2 = gateFrom(m);
-  var revealedAt = null;
-  var gate = MR2.createGate({ frame: function (cb) { cb(); }, now: function () { return 0; }, onReveal: function (s) { revealedAt = s; } });
-  var g = gate.begin({ sku: 'X', scopeKey: 's' });
-  gate.report(g, 'recommendation', { state: 'LOADING' }, null);
-  var honest = R.createGate({ frame: function (cb) { cb(); }, onReveal: function () { honestRevealed = true; } });
-  var honestRevealed = false;
-  var hg = honest.begin({ sku: 'X', scopeKey: 's' });
-  honest.report(hg, 'recommendation', { state: 'LOADING' }, null);
-  return revealedAt !== null && honestRevealed === false;
+  function run(Rev) {
+    var revealed = false;
+    var gate = Rev.createPanelGate({ name: 'p', frame: function (cb) { cb(); }, now: function () { return 0; }, onReveal: function () { revealed = true; } });
+    var g = gate.begin({ sku: 'X', scopeKey: 's' });
+    gate.report(g, { state: 'LOADING' }, null);
+    return revealed;
+  }
+  return run(R) === false && run(MR2) === true;
 });
 
-mut('M2  Promise-parallel becomes a SEQUENTIAL await (execution waits for recommendation)', function () {
-  // The mutant reports execution only after recommendation is terminal — the classic chained-await shape.
-  var reports = [];
-  function seqPump(gate, g, side, state) {
-    var snap = gate.snapshot();
-    if (side === 'execution' && snap && snap.recommendation.state === 'LOADING') return;   // MUTANT
-    gate.report(g, side, { state: state }, null);
-  }
-  function run(pump) {
+mut('M2  the two panels are re-coupled (one waits for the other)', function () {
+  // The mutant withholds the Execution Plan's report until the Recommendation is terminal — a chained await
+  // wearing a different hat, and precisely the shape A1 shipped.
+  function run(coupled) {
     var S = Sched();
-    var gate = R.createGate({ frame: function (cb) { S.at(S.now(), cb); }, now: S.now, onReveal: function () { S.mark('REVEAL'); } });
-    var g = gate.begin({ sku: 'X', scopeKey: 's' });
-    S.at(40, function () { pump(gate, g, 'execution', 'READY'); });
-    S.at(120, function () { pump(gate, g, 'recommendation', 'READY'); });
-    S.at(121, function () { pump(gate, g, 'execution', 'READY'); });   // the retry a sequential design needs
+    var reco = R.createPanelGate({ name: 'reco', frame: function (cb) { S.at(S.now(), cb); }, now: S.now, onReveal: function () { S.mark('RECO'); } });
+    var exec = R.createPanelGate({ name: 'exec', frame: function (cb) { S.at(S.now(), cb); }, now: S.now, onReveal: function () { S.mark('EXEC'); } });
+    var g1 = reco.begin({ sku: 'X', scopeKey: 's' }), g2 = exec.begin({ sku: 'X', scopeKey: 's' });
+    S.at(40, function () {
+      if (coupled && reco.state() === 'LOADING') return;                        // MUTANT
+      exec.report(g2, { state: 'READY' }, null);
+    });
+    S.at(120, function () { reco.report(g1, { state: 'READY' }, null); if (coupled) exec.report(g2, { state: 'READY' }, null); });
     S.run();
-    return S.at_('REVEAL');
+    return S.at_('EXEC');
   }
-  var honest = run(function (gate, g, side, state) { gate.report(g, side, { state: state }, null); });
-  var mutant = run(seqPump);
-  return honest === 120 && mutant === 121;
+  return run(false) === 40 && run(true) === 120;
 });
 
 mut('M3  the generation token is ignored (a stale response paints)', function () {
-  var m = mutateFn(CMPSRC, 'createRevealGate', "if (g !== cur.gen) return 'STALE_GENERATION';", '');
+  var m = mutateFn(CMPSRC, 'createPanelGate', "if (g !== cur.gen) return 'STALE_GENERATION';", '');
   var MR2 = gateFrom(m);
-  var painted = [];
-  var gate = MR2.createGate({ frame: function (cb) { cb(); }, onReveal: function (s) { painted.push(s.sku); } });
-  var g1 = gate.begin({ sku: 'SKU-A', scopeKey: 's' });
-  gate.begin({ sku: 'SKU-B', scopeKey: 's' });
-  gate.report(g1, 'recommendation', { state: 'READY' }, null);
-  gate.report(g1, 'execution', { state: 'READY' }, null);
-  var honest = R.createGate({ frame: function (cb) { cb(); }, onReveal: function (s) { hp.push(s.sku); } });
-  var hp = [];
-  var h1 = honest.begin({ sku: 'SKU-A', scopeKey: 's' });
-  honest.begin({ sku: 'SKU-B', scopeKey: 's' });
-  honest.report(h1, 'recommendation', { state: 'READY' }, null);
-  honest.report(h1, 'execution', { state: 'READY' }, null);
-  // The mutant paints SKU-A's response into the row now showing SKU-B; the honest gate paints nothing.
-  return painted.length === 1 && hp.length === 0;
+  function run(Rev) {
+    var painted = [];
+    var gate = Rev.createPanelGate({ name: 'p', frame: function (cb) { cb(); }, onReveal: function (s) { painted.push(s.sku); } });
+    var g1 = gate.begin({ sku: 'SKU-A', scopeKey: 's' });
+    gate.begin({ sku: 'SKU-B', scopeKey: 's' });
+    gate.report(g1, { state: 'READY' }, null);
+    return painted.length;
+  }
+  return run(R) === 0 && run(MR2) === 1;
 });
 
 mut('M4  a legitimate stored 0 is treated as EMPTY', function () {
@@ -627,28 +666,25 @@ mut('M4  a legitimate stored 0 is treated as EMPTY', function () {
   return state(honestNum).state === 'READY' && state(mutNum).state === 'NONE';
 });
 
-mut('M5  the route is rendered early (execution terminality dropped from the barrier)', function () {
-  var m = mutateFn(CMPSRC, 'createRevealGate',
-    'if (!revealIsTerminal(cur.recommendation.state) || !revealIsTerminal(cur.execution.state)) return;',
-    'if (!revealIsTerminal(cur.recommendation.state)) return;');
+mut('M5  the route is rendered early (a LOADING catalogue counts as ready)', function () {
+  var m = mutateFn(CMPSRC, 'executionReadiness', "if (cat !== 'READY') return mk(S.LOADING, '', null);", '');
   var MR2 = gateFrom(m);
   function run(Rev) {
     var S = Sched();
-    var gate = Rev.createGate({ frame: function (cb) { S.at(S.now(), cb); }, now: S.now, onReveal: function (s) { S.mark('REVEAL_EXEC=' + s.execution.state); } });
+    var gate = Rev.createPanelGate({ name: 'exec', frame: function (cb) { S.at(S.now(), cb); }, now: S.now,
+      onReveal: function (s) { S.mark('EXEC=' + s.readiness.state); } });
     var g = gate.begin({ sku: 'X', scopeKey: 's' });
-    gate.report(g, 'execution', Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }), null);
-    S.at(40, function () { gate.report(g, 'recommendation', { state: 'READY' }, null); });
-    S.at(120, function () { gate.report(g, 'execution', Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }), null); });
+    gate.report(g, Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }), null);
+    S.at(120, function () { gate.report(g, Rev.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'READY', hasRoutes: true }), null); });
     S.run();
-    return { early: S.at_('REVEAL_EXEC=LOADING'), late: S.at_('REVEAL_EXEC=READY') };
+    return { early: S.at_('EXEC=READY') };
   }
-  var h = run(R), x = run(MR2);
-  // The mutant paints the plan at t=40 with the catalogue still LOADING — the exact half-built route.
-  return h.early === null && h.late === 120 && x.early === 40;
+  // The mutant paints the plan at t=0 with the catalogue still in flight — the exact half-built route.
+  return run(R).early === 120 && run(MR2).early === 0;
 });
 
 mut('M6  execution is marked READY before the method catalogue settles', function () {
-  var m = mutateFn(CMPSRC, 'executionReadiness', "if (cat !== 'READY') return { state: S.LOADING, code: '', error: null };", '');
+  var m = mutateFn(CMPSRC, 'executionReadiness', "if (cat !== 'READY') return mk(S.LOADING, '', null);", '');
   var MR2 = gateFrom(m);
   var honest = R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }).state;
   var mutant = MR2.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }).state;
@@ -657,8 +693,8 @@ mut('M6  execution is marked READY before the method catalogue settles', functio
 
 mut('M7  a typed error is swallowed into EMPTY', function () {
   var m = mutateFn(CMPSRC, 'recommendationReadiness',
-    "case 'READ_ERROR': return { state: S.ERROR, code: 'GAP_READ_ERROR', error: input.error || { code: 'GAP_READ_ERROR' } };",
-    "case 'READ_ERROR': return { state: S.EMPTY, code: '', error: null };");
+    "case 'READ_ERROR': return mk(S.ERROR, classifyReadFailure(input.error), input.error || { code: C.READ_FAILED });",
+    "case 'READ_ERROR': return mk(S.EMPTY, '', null);");
   var MR2 = gateFrom(m);
   var h = R.recommendationReadiness({ mode: 'materialized', status: 'READ_ERROR', error: { code: 'READ_FAILED' } });
   var x = MR2.recommendationReadiness({ mode: 'materialized', status: 'READ_ERROR', error: { code: 'READ_FAILED' } });
@@ -670,16 +706,14 @@ mut('M8  a late response re-opens a collapsed row', function () {
   // that instead RE-CREATES a generation for it is precisely a gate that re-opens the row the user closed.
   // (Mutating the frame guard away was a broken probe: it left `cur` null and threw, which is not a
   // detection. That path is covered by H12b and M3 instead.)
-  var m = mutateFn(CMPSRC, 'createRevealGate', "if (!cur) return 'ABANDONED';", 'if (!cur) { gen = g; cur = blank(g, ctx || {}); }');
+  var m = mutateFn(CMPSRC, 'createPanelGate', "if (!cur) return S.ABANDONED;", 'if (!cur) { gen = g; cur = blank(g, ctx || {}); }');
   var MR2 = gateFrom(m);
   function run(Rev) {
     var painted = 0;
-    var gate = Rev.createGate({ frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
+    var gate = Rev.createPanelGate({ name: 'p', frame: function (cb) { cb(); }, onReveal: function () { painted++; } });
     var g = gate.begin({ sku: 'X', scopeKey: 's' });
-    gate.report(g, 'recommendation', { state: 'READY' }, null);
     gate.abandon();                                   // the user collapsed the row
-    gate.report(g, 'recommendation', { state: 'READY' }, { sku: 'X' });
-    gate.report(g, 'execution', { state: 'READY' }, { sku: 'X' });
+    gate.report(g, { state: 'READY' }, { sku: 'X' });
     return painted;
   }
   return run(R) === 0 && run(MR2) === 1;
@@ -700,17 +734,16 @@ mut('M9  the carrier catalogue is requested per expand instead of once per scope
   return burst(MR) === 1 && burst(mod) === 5;
 });
 
-mut('M10 the final reveal is split into two render transactions', function () {
-  var m = mutateFn(CMPSRC, 'createRevealGate',
+mut('M10 a panel\'s reveal is split into two render transactions', function () {
+  var m = mutateFn(CMPSRC, 'createPanelGate',
     'frame(function () {',
     'frame(function () { cur.frameId = ++frames; onReveal(snapshot()); });' + NLC + '      frame(function () {');
   var MR2 = gateFrom(m);
   function frames(Rev) {
     var n = 0;
-    var gate = Rev.createGate({ frame: function (cb) { n++; cb(); }, onReveal: function () {} });
+    var gate = Rev.createPanelGate({ name: 'p', frame: function (cb) { n++; cb(); }, onReveal: function () {} });
     var g = gate.begin({ sku: 'X', scopeKey: 's' });
-    gate.report(g, 'recommendation', { state: 'READY' }, null);
-    gate.report(g, 'execution', { state: 'READY' }, null);
+    gate.report(g, { state: 'READY' }, null);
     return n;
   }
   return frames(R) === 1 && frames(MR2) === 2;

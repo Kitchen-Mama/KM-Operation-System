@@ -2393,3 +2393,156 @@ Both are restated as durable claims about the **source**: exactly one Apps Scrip
 `SAD_BUILD_VERSION_` and exactly one *expects* it, which derives the two-file sync set at any time with no
 working tree involved. This round's own suite states its "nothing joins the sync set" claim the same way — no
 `.gs` file mentions this round, its owner or its token — rather than reintroducing the trap.
+
+
+## 4G-A1-R1 — PANEL-LOCAL LOADING + METHOD TIMEOUT RECOVERY
+
+Presentation, readiness and request-shape only. **No DB change, no Apps Script change, no Save, no Submit, no
+AI Plan, no Send Request.** DB_WRITES = 0. Preconditions: `main`; `HEAD` = `origin/main` = `c9517ec`; clean
+worktree; empty stash. A1 is published.
+
+### 4G-A1-R1.1 — Finding 1: the Recommendation Summary waited for a panel it does not depend on
+
+A1 revealed both decision panels in ONE frame. Run on the **shipped A1 gate** with production's own timings:
+
+```
+      0:EXPAND (both skeletons)
+     40:gap read settled
+  60000:carrier catalogue settled
+  60000:RECOMMENDATION_SUMMARY_VISIBLE      <- ready at 40 ms, shown at 60 000 ms
+  60000:EXECUTION_PLAN_VISIBLE (ERROR/REQUEST_TIMEOUT)
+```
+
+A1's **rule** — a panel appears once, complete, and is never corrected in view — was right. The **scope** it was
+applied at was not. Each panel now owns its own gate, generation and single reveal. **59 960 ms of avoidable
+wait removed**, and the two panels' data still loads in parallel: nothing about the request graph is serialised.
+
+### 4G-A1-R1.2 — Finding 2: "Select a valid Country / Marketplace" with US / Amazon selected
+
+Measured layer by layer on the shipped functions, in the shipped order:
+
+| step | `_replenSelectedScope()` | `_irRecoScopeRequest()` | `_irMatState.status` |
+|---|---|---|---|
+| MOUNT (`initReplenRecoContext`) | `{'', US, ''}` — the read model is empty, so the selected `marketplace_id` cannot be resolved | `null` | — |
+| workspace read lands | `{ResUS, US, Amazon}` | `null` — **nothing recomputed the cached model** | — |
+| SEARCH | `{ResUS, US, Amazon}` | `null` | `CONTEXT_NOT_READY` → **"Select a valid Country / Marketplace"** |
+| one explicit recompute | `{ResUS, US, Amazon}` | `{ResUS, US, Amazon}` | `LOADING` — the read is issued |
+
+**Exact cause:** `_irRecoScopeRequest` read `_irctxLastContext ||` — preferring a **cached context model that
+can predate the read model**. `updateReplenRecoContext` is a pure page-input recompute (its own contract:
+renders nothing, never calls the API, never writes), so it is now asked every time. The cached model remains
+for callers that legitimately want the last computed CONTEXT; it is no longer the source of the SCOPE.
+
+**And the taxonomy is now six, not two.** `INVALID_SCOPE` · `REQUEST_TIMEOUT` · `BACKEND_BUSINESS_REJECTION` ·
+`STALE_SCOPE` · `NO_DATA` · `NOT_CALCULATED`, each keeping the real transport code. **No transport or backend
+failure can be reported as a scope problem** — asserted over the failure codes, not described.
+
+### 4G-A1-R1.3 — Finding 3: `METHOD_CATALOGUE_ERROR · REQUEST_TIMEOUT`
+
+| | |
+|---|---|
+| action | `inventoryReplenishment.workspace.get` |
+| the registry's read | `getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } })` |
+| Search's read | `getWorkspace('inventoryReplenishment', {})` — **the same action, differing only by the flag** |
+| payload | a FULL-SET raw passthrough of **19 tables** (marketplace_skus, sku_details, warehouses, four Amazon snapshots, three fc tables, factory_stock, shipments, shipment_lines, shipping_plans, shipping_plan_lines, both allocation-draft tables …) |
+| timeout owner | `km-transport.js` `readTimeoutMs` default **60 000 ms** → `REQUEST_TIMEOUT` / "No answer arrived within 60s." |
+| single-flight | intact — 20 concurrent expands still cost ONE request |
+| duplicate | **yes**: obtaining two small carrier reference tables re-read and re-transferred all nineteen a second time |
+
+**7J-A2 gated those two tables so the PRIMARY render would not pay for a SECONDARY panel's reference data.
+That reasoning was sound while the carrier read was genuinely optional. It has not been optional since FB-4C**
+— `_irApplySearch_` preloads the catalogue on every confirmed Search — **so the gate stopped saving a read and
+started buying a full duplicate of the other nineteen tables in order to avoid two small ones.**
+
+The include now rides on the read Search was already making, and the result seeds the registry through a new
+scope-keyed `adopt()` seam. **~40 tables per Search become ~21; one request replaces two; the 60 s path leaves
+the normal route to an Execution Plan entirely.** The timeout was **not** made longer — the page raises no
+timeout anywhere.
+
+**Narrowed deliberately:** only the PRIMARY read carries the include. `_irAfterWrite`'s post-write readback
+keeps its exact previous payload, so the separate bounded-readback deferral recorded by 7M-B / 7M-B2 is
+untouched. A readback reconciles a write; the catalogue is reference data that cannot have changed.
+
+### 4G-A1-R1.4 — Request graph, before and after
+
+| | before | after |
+|---|---|---|
+| Search: workspace read | 1 (19 tables) | 1 (**21 tables**) |
+| Search: carrier catalogue | **1 more (19 + 2 tables)** | **0 — adopted** |
+| Search: materialized gap | 1 | 1 |
+| Search: recommendation.workspace.get | 1 (flag-gated) | 1 (flag-gated) |
+| draft hydration | 0 (reads the read model) | 0 |
+| **expanding a SKU** | **0** | **0** |
+| tables transferred per Search | **~40** | **~21** |
+
+### 4G-A1-R1.5 — PRE / POST timing
+
+| case | PRE Recommendation | PRE Execution | POST Recommendation | POST Execution |
+|---|---|---|---|---|
+| A — reco 40 ms, carrier timeout 60 000 ms | **60 000** | 60 000 (ERROR) | **40** | 60 000 (ERROR/REQUEST_TIMEOUT) |
+| B — reco 2 000 ms, exec 300 ms | 2 000 | 2 000 | 2 000 | **300** |
+| C — reco 400 ms, carrier 900 ms | 900 | 900 | **400** | 900 |
+| D — catalogue adopted (no carrier request) | n/a | n/a | 40 | **0** |
+
+Render count is **1 per panel** in every case; frame count is **1 per panel**. Reveal is each panel's own
+`readyAt` + one frame, verified across an ordering matrix including `[40, 60000]`.
+
+### 4G-A1-R1.6 — The operator's second route
+
+The reported state — one persisted route (CN侱鑫 → Amazon, 800, the stored service) plus one the operator added
+with **+ Add Route** (800), Total **1600** — is legitimate and is protected by construction:
+
+* **A panel that already holds routes is NEVER rebuilt.** `_irExecRevealPaint_` returns early when
+  `shipping-methods-<sku>` exists. A rebuild would re-render from the Working Draft, and that is the one
+  operation capable of removing the added route, resetting a visible Total, or discarding an uncaptured edit.
+* **Retry Methods rebuilds nothing.** It calls the registry's single retry and then repaints the Method options
+  and the ETAs **in place**. It does not re-read the workspace, does not re-read the Recommendation, schedules
+  nothing, and never re-enters itself — one request per click.
+* **A repaint keeps an edited method.** The persisted route keeps its stored service and the added route keeps
+  the one the operator chose, proven by executing the shipped `_execRebuildMethodOptions` over both rows.
+* **No per-sku de-duplication exists or was added.**
+
+### 4G-A1-R1.7 — Deployment
+
+`APPS_SCRIPT_SYNC_REQUIRED: NO` · `APPS_SCRIPT_DEPLOYMENT_REQUIRED: NO` · `DATABASE_CHANGE_REQUIRED: NO` ·
+`BUNDLE_REBUILD_REQUIRED: NO` (`method-registry.js` is not in the bundle's `MODULE_ORDER`; `--check` reports
+the hash unmoved) · `FRONTEND_PUSH_REQUIRED: YES`.
+
+**60_ already supports the include on any call, so no server change is required.** Three token families rotate,
+none crossed: application `fb4ga1-atomicreveal-20260902` → **`fb4ga1r1-panelready-20260902`** (18 refs,
+appended to the series); the inventory stylesheet `iratomicreveal-20260902` → **`irpanelready-20260902`**; and
+`method-registry.js`, which this round changes, `fb4c-method-registry-20260826` →
+**`fb4ga1r1-method-registry-20260902`**.
+
+### 4G-A1-R1.8 — Assertions restated, and why (the fourth appearance of a shape)
+
+**A1's own suite pinned the coupling.** `H1a` literally required that "the Recommendation Summary is NOT
+painted the moment its own data lands". Production priced that requirement at 59 960 ms. Those assertions are
+restated per panel; everything A1 established that survives — one paint per panel, no request added, the
+skeleton contract, the stale-generation defence, no timers — is kept.
+
+**Seven inherited probes measured an argument's spelling rather than its meaning.** `_irWorkspaceRefresh_`'s
+options object gained one opt-in flag and its single `getWorkspace` call site became parameterised, so probes
+matching the literal `getWorkspace('inventoryReplenishment', {})` or `_irWorkspaceRefresh_({ quiet: true })`
+stopped matching while the properties they were about were untouched. Each now asserts the property:
+7M-B / 7M-B2 assert that `_irAfterWrite` still asks for the full workspace **with no include**; FB-3's C2 that
+Search is still the only caller driving the table's load region; R4B's 14.3 that the revalidation is still
+QUIET.
+
+**One was a real contract change and is recorded as one.** 7M-C's `C5` pinned the IR primary read as `{}` and
+called it a **deferral** ("needs coordinated 60_ + refactor"). This round closes that deferral for the primary
+read, with the measurement above as the reason, and states the closure rather than absorbing it.
+
+**7J-A2's `S6b` — one owner — is intact and is now stated as what it means.** The registry remains the only
+holder of the catalogue cache, the single-flight latch, the error and the resolution, and the page keeps no
+catalogue of its own; what changed is that the bytes arrive through a scope-keyed `adopt()` instead of a second
+identical request.
+
+### 4G-A1-R1.9 — Suite corrections of this round's own making
+
+* A mutation probe searched a function for **its own name** and matched its declaration line — an assertion
+  that could never fail. It examines the body now.
+* `mutateFn` compared a multi-line LF pattern against a CRLF source; the "mutation target absent" it then threw
+  named a target that **was** present. Both sides are normalised, so a mutation now fails only for a readable
+  reason. (A shell heredoc also mangled the escapes in the first attempt at that repair; it was rewritten from
+  a file.)

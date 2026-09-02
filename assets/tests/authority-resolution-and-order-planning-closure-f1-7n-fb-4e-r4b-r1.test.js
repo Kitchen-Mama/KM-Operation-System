@@ -609,7 +609,11 @@ section('§4 preserved R4B behaviour');
 ok(/_irRestorableResult_/.test(IR), '14.1 the Site Inventory completed-result restoration is still in place');
 ok(/RESULT_EXPIRED/.test(IR) && /SCOPE_NOT_APPLIED/.test(IR) && /NO_COMPLETED_RESULT/.test(IR),
   '14.2 ... with its three named refusal reasons intact');
-ok(/_irWorkspaceRefresh_\(\{ quiet: true \}\)/.test(IR), '14.3 revalidation is still QUIET — it never repaints a loading state');
+// F1-7N-FB-4G-A1-R1 — RESTATED for the spelling, not the claim: the options object gained an opt-in
+// `carrier` flag, so an exact-literal match no longer finds the call. What R4B established — the revalidation
+// is QUIET and therefore cannot repaint a loading state over a valid result — is what is asserted.
+ok(/_irWorkspaceRefresh_\(\{[^}]*quiet:\s*true[^}]*\}\)/.test(IR),
+  '14.3 revalidation is still QUIET — it never repaints a loading state');
 ok((IR.match(/_irSearch\.applied = /g) || []).length === 1, '14.4 `applied` still has exactly ONE assignment site in the page');
 var GEO = read('assets/js/core/geo-name-resolver.js');
 // 15.1-15.3 — THE MAP DISPLAY DECISION SURVIVES. RESTATED IN R5 §B, AND THE RESTATEMENT IS THE POINT.

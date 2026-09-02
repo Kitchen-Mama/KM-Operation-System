@@ -196,7 +196,11 @@ ok(/Loading Inventory Replenishment…/.test(loadRegion), 'C2. and it belongs to
 var wsRefresh = extractFn(INV, '_irWorkspaceRefresh_');
 ok(/rg\.beginLoad/.test(wsRefresh), 'C2. which only _irWorkspaceRefresh_ drives — the inventory read');
 var searchFn = extractFn(INV, 'searchReplenishment');
-ok(/_irWorkspaceRefresh_\(\)\.then/.test(searchFn), 'C2. and Search is the only caller that loads it');
+// F1-7N-FB-4G-A1-R1 — RESTATED for the spelling, not the claim: the primary read now passes an opt-in
+// `carrier` flag. FB-3's rule — Search is the only caller that drives the inventory table's load region — is
+// unchanged and is what is asserted.
+ok(/_irWorkspaceRefresh_\(\{[^}]*\}\)\.then|_irWorkspaceRefresh_\(\)\.then/.test(searchFn),
+  'C2. and Search is the only caller that loads it');
 // two independent states, two independent error surfaces, two independent Retries
 ok(/var _irRegistry = \{ status: 'IDLE'/.test(INV), 'C3. the registry owns its own status');
 ok(/var _irSearch = \{/.test(INV), 'C3. and the table owns a separate one');

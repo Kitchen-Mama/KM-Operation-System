@@ -59,7 +59,14 @@ var ROUND_TOKENS = [
   // round changes inventory-replenishment.js and inventory-compat.js together: the page now asks a reveal
   // owner that only the shared module exports, so a browser holding one file from each round would expand a
   // SKU into a decision area that never leaves its skeleton.
-  'fb4ga1-atomicreveal-20260902'
+  'fb4ga1-atomicreveal-20260902',
+  // F1-7N-FB-4G-A1-R1 - panel-local planning readiness + the duplicate workspace read removed. A1 is on
+  // origin/main (c9517ec was pushed), so by the rule above its token has been published and cannot be
+  // reused. This round changes inventory-replenishment.js, inventory-compat.js AND core/method-registry.js
+  // together: the page seeds the registry through a method the previous registry copy does not have, and a
+  // browser holding any one of the three from the older round would either issue the duplicate workspace
+  // read again or fail to seed at all.
+  'fb4ga1r1-panelready-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

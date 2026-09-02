@@ -1882,18 +1882,20 @@
 
 
 /* ================================================================================================
-   F1-7N-FB-4G-A1 - EXPANDED PLANNING REVEAL BARRIER (Recommendation Summary + Execution Plan).
+   F1-7N-FB-4G-A1-R1 - PANEL-LOCAL PLANNING REVEAL (Recommendation Summary / Execution Plan).
 
-   The decision area is a SHELL in the frame the row expands, and both panels are replaced together in
-   ONE later frame. The skeletons therefore have to reserve the height the real panels take, or the
-   reveal would trade a content flicker for a layout jump - which is the same defect wearing a hat.
+   A1 wrapped BOTH panels in one reveal container. Production showed why that is wrong: a 60 s carrier
+   timeout held a Recommendation Summary that had been ready for 59.96 s. Each panel now has its OWN
+   container and its own state, and they are SIBLINGS rather than one wrapper - so no rule here, and no
+   query anywhere, can re-couple them by accident.
 
-   The bars do not animate on their own timer by default; the shimmer is a pure CSS animation (no JS,
-   no interval) and is disabled entirely under prefers-reduced-motion.
+   Each still reserves the height its real content takes, or the reveal would trade a content flicker
+   for a layout jump. The shimmer is a pure CSS animation (no JS, no interval) and is disabled entirely
+   under prefers-reduced-motion.
    ================================================================================================ */
-.ir-decision-area.ir-reveal { min-height: 220px; }
-.ir-reveal[data-reveal-state="pending"] .replen-card--recommendation-summary { min-height: 108px; }
-.ir-reveal[data-reveal-state="pending"] .replen-card--execution-plan { min-height: 104px; }
+#ops-section .ir-decision-area > .ir-reveal { min-width: 0; }
+#ops-section .ir-reveal[data-ir-reveal="recommendation"][data-reveal-state="pending"] .replen-card { min-height: 108px; }
+#ops-section .ir-reveal[data-ir-reveal="execution"][data-reveal-state="pending"] .replen-card { min-height: 104px; }
 
 .ir-skel { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
 .ir-skel__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; align-items: center; }
@@ -1910,14 +1912,22 @@
 @keyframes ir-skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .ir-skel__bar { animation: none; background: #E2E8F0; } }
 
-/* A settled failure is NAMED next to the panel that failed, in the same frame as the panel that did not.
-   It is never allowed to read as an empty result. */
+/* A settled failure is NAMED, carries its code, and offers the ONE action that can help. It is never
+   allowed to read as an empty result, and it never borrows another failure's sentence. */
 .ir-reveal__error {
-  margin-top: 6px; padding: 5px 7px; border-radius: 4px;
+  margin-top: 6px; padding: 6px 8px; border-radius: 4px;
   background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C;
-  font-size: 11px; font-weight: 600; overflow-wrap: break-word; word-break: break-word;
+  font-size: 11px; overflow-wrap: break-word; word-break: break-word;
 }
+.ir-reveal__error-code { display: block; font-weight: 700; }
 .ir-reveal__error-msg { display: block; margin-top: 2px; font-weight: 400; color: #7F1D1D; }
+.ir-reveal__retry {
+  margin-top: 5px; border: 1px solid #FCA5A5; background: #fff; color: #B91C1C;
+  border-radius: 4px; padding: 2px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.ir-reveal__retry:hover { background: #FEF2F2; }
+/* One request per click: the button is inert for the duration of the retry it started. */
+.ir-reveal[data-reveal-state="retrying"] .ir-reveal__retry { opacity: 0.5; pointer-events: none; }
 
-/* Controls that commit a plan are inert while any decision area on screen is still a shell. */
+/* Controls that commit a plan are inert while the Execution Plan on screen is a shell or a failure. */
 .ir-reveal[data-reveal-state="pending"] .replen-card__add-route-btn[disabled] { opacity: 0.45; cursor: not-allowed; }

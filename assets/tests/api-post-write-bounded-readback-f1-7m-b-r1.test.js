@@ -199,7 +199,15 @@ eval(extractFn(RO, '_roReloadAndRerender'));
   // ===================================================================================================================
   console.log('\n== B1 Shipment / B3 IR deferrals (NEW_BOUNDED_ENDPOINT_REQUIRED): readbacks UNCHANGED ==');
   // B3 IR: _irAfterWrite still does the FULL workspace readback (no sku/scope filter exists) — unchanged this round.
-  ok(/getWorkspace\('inventoryReplenishment', \{\}\)/.test(IR), 'B3 IR post-write readback still the full unfiltered workspace (deferred — needs a new bounded endpoint)');
+  // F1-7N-FB-4G-A1-R1 — RESTATED for the SHAPE, not the claim. The single getWorkspace call site is
+  // parameterised now (the PRIMARY read may carry include.carrierPlanning; see 7M-C's C5), so the literal
+  // `{}` no longer appears in the source. The deferral this line records is about the POST-WRITE readback, and
+  // that path is unchanged: _irAfterWrite still asks for the full unfiltered workspace with no include, and the
+  // bounded endpoint it is waiting for still does not exist.
+  ok(/function _irAfterWrite\(cb\)[\s\S]{0,400}_irWorkspaceRefresh_\(\)/.test(IR),
+    'B3 IR post-write readback still the full unfiltered workspace (deferred — needs a new bounded endpoint)');
+  ok(!/function _irAfterWrite\(cb\)[\s\S]{0,400}carrier:\s*true/.test(IR),
+    'B3a and it deliberately carries NO include — a readback reconciles a write, not reference data');
   ok(/function _irAfterWrite\(cb\)/.test(IR), 'B3 IR _irAfterWrite present and unchanged');
 
   // ===================================================================================================================

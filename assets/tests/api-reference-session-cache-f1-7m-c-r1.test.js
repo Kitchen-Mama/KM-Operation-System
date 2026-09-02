@@ -109,7 +109,18 @@ ok(RC && typeof RC.get === 'function' && typeof RC.invalidate === 'function' && 
   // ===================================================================================================================
   console.log('\n== C5 IR primary payload UNCHANGED (lazy-include deferred); C6 guards already exist ==');
   // C5: the IR primary read still passes NO include object (all base tables) — deferred (needs coordinated 60_ + refactor).
-  ok(/getWorkspace\('inventoryReplenishment', \{\}\)/.test(IR), 'C5 deferred: IR primary read still {} (base payload BEFORE==AFTER)');
+  // F1-7N-FB-4G-A1-R1 — RESTATED, and this one is a REAL behaviour change, recorded rather than absorbed.
+  // 7J-A2 gated the two carrier tables so the PRIMARY render would not pay for a SECONDARY panel's reference
+  // data, and C5 pinned that. The reasoning held while the carrier read was genuinely optional. It has not been
+  // optional since FB-4C: _irApplySearch_ preloads the catalogue on EVERY confirmed Search, so the gate stopped
+  // saving a read and started buying a full duplicate of the other nineteen tables in order to avoid two small
+  // ones — and in production that duplicate reached the 60 s transport read bound. The primary read carries the
+  // include now: ~40 tables per Search become ~21, and one request replaces two. That is the deferral C5 was
+  // holding open, closed — for the primary read only.
+  ok(/_irWorkspaceRefresh_\(\{ carrier: true \}\)/.test(IR) || /carrier: true/.test(IR),
+    'C5 closed: the IR PRIMARY read now carries include.carrierPlanning — one request per Search, not two');
+  ok(/var _wsPayload = \(opts && opts\.carrier\) \? \{ include: \{ carrierPlanning: true \} \} : \{\};/.test(IR),
+    'C5a and the payload is opt-in per call site, so a caller that does not ask still sends {}');
   // F1-7N-FB-4C — STRENGTHENED. The include-gated lazy read and the once-guard are both intact; both moved into
   // KM.methodRegistry, which owns the request, the per-scope cache and the single-flight latch. The once-guard is
   // now PROVED by execution (a second ensureLoaded issues no request) rather than by grepping for a variable.

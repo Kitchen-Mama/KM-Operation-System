@@ -904,99 +904,126 @@
   };
 
   // ================================================================================================
-  // F1-7N-FB-4G-A1 - EXPANDED-PLANNING READINESS + ATOMIC REVEAL (Recommendation Summary + Execution Plan)
+  // F1-7N-FB-4G-A1-R1 - PANEL-LOCAL PLANNING READINESS.
   //
-  // THE DEFECT. Expanding a SKU painted the Execution Plan TWICE, and the second paint was not a refresh
-  // but a correction. `initializeShippingAllocation` rendered its route rows SYNCHRONOUSLY and only then
-  // registered `_irLoadCarrierPlanning_().then(rebuild method options + recompute ETAs)`. So the first
-  // frame showed a route with the 'Loading methods...' placeholder in the Method select and 'Lead time
-  // unavailable' in Expected Arrival, and a later frame replaced both with the real service label and the
-  // real date. Measured by execution against a deterministic scheduler, and true even when the carrier
-  // catalogue is ALREADY CACHED - a resolved promise's .then is a microtask, so the synchronous render
-  // still wins the first paint. Meanwhile the Recommendation Summary beside it settles off a DIFFERENT
-  // async source (the materialized gap read), so the pair could be seen in any combination of half-states.
+  // WHAT A1 GOT WRONG, AND IT WAS REACHABLE THE DAY IT SHIPPED. A1 made the Recommendation Summary and the
+  // Execution Plan reveal in ONE frame. That removed a real flicker, and it also coupled two panels whose
+  // slowest input is not shared. Production then produced the case the coupling cannot survive: the gap read
+  // settled in 40 ms, the carrier catalogue hit the transport's 60 000 ms read bound, and the Recommendation
+  // Summary - complete, correct and sitting in memory - was held behind a skeleton for a full minute waiting
+  // for a panel it does not depend on. Measured on the shipped A1 gate:
   //
-  // WHAT THIS OWNER IS, AND IS NOT. It is a BARRIER, not a loader: it starts nothing, requests nothing and
-  // waits for nothing that was not already in flight. Reveal time is exactly
-  // max(recommendationSettledAt, executionSettledAt) plus the one frame that paints - never a timer, never
-  // a poll, never a sequential await. Both panels are handed to the caller in ONE callback so a single
-  // render transaction can paint them together; there is no API here for revealing one of them.
+  //       0:EXPAND (both skeletons)
+  //      40:gap read settled
+  //   60000:carrier catalogue settled
+  //   60000:RECOMMENDATION_SUMMARY_VISIBLE      <- 59 960 ms of avoidable wait
+  //   60000:EXECUTION_PLAN_VISIBLE (ERROR/METHOD_CATALOGUE_ERROR)
   //
-  // TERMINAL means terminal. EMPTY and ERROR are settled answers and reveal the pair; ERROR keeps its typed
-  // code so the panel can name it rather than degrade into an empty one. A legitimate ZERO is data, not
-  // absence - it is READY, and this owner never sees a quantity at all, which is what keeps it from
-  // deciding otherwise.
+  // A1's own rule - "a panel is revealed once, complete, never corrected in view" - was right. The mistake was
+  // the SCOPE it was applied at. So the barrier is now PER PANEL: each owns its own generation, its own
+  // readiness and its own single reveal, and neither can delay the other. Their data still loads in parallel;
+  // nothing about the request graph changes here.
+  //
+  // ABANDONED is a gate state, not a readiness state: it is what a collapse, a scope change or a newer expand
+  // leaves behind, and it is why a late response has nowhere to land.
   // ================================================================================================
 
-  var IR_REVEAL_STATES = { LOADING: 'LOADING', READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR' };
-  // A settled answer. LOADING is the only non-terminal state: there is no fifth "probably done".
+  var IR_REVEAL_STATES = { LOADING: 'LOADING', READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR', ABANDONED: 'ABANDONED' };
   function revealIsTerminal(state) {
     return state === IR_REVEAL_STATES.READY || state === IR_REVEAL_STATES.EMPTY || state === IR_REVEAL_STATES.ERROR;
   }
 
-  // The Recommendation Summary's readiness, derived from whichever read authority is in effect. This is a
-  // MAPPING, not a second engine: it never reads a gap, a quantity or a row, so it cannot mistake a stored
-  // 0 for an absence. `mode` is the page's own authority selection.
-  //   materialized : the stored inventory_replenishment_gap read (the normal path)
-  //   workspace    : recommendation.workspace.get (legacy cutover path)
-  //   legacy       : the synchronous local table - nothing to wait for
+  // THE TAXONOMY, KEPT DISTINCT. A read that timed out, a backend that refused, a catalogue belonging to
+  // another station and a scope the user really has not chosen are four different problems with four
+  // different remedies. Collapsing them is what put "Select a valid Country / Marketplace" on a screen whose
+  // selectors plainly read US / Amazon.
+  var IR_READINESS_CODES = {
+    INVALID_SCOPE: 'INVALID_SCOPE',                             // no company/country/marketplace to ask about
+    REQUEST_TIMEOUT: 'REQUEST_TIMEOUT',                         // the bound elapsed with no answer
+    BACKEND_BUSINESS_REJECTION: 'BACKEND_BUSINESS_REJECTION',   // the server answered, and refused
+    STALE_SCOPE: 'STALE_SCOPE',                                 // an answer about a station we are not on
+    NO_DATA: 'NO_DATA',                                         // the read succeeded and the scope has nothing
+    NOT_CALCULATED: 'NOT_CALCULATED',                           // the scope has rows; this sku has none
+    READ_FAILED: 'READ_FAILED'                                  // anything else, with the real code carried
+  };
+  function rcode(err) { return String((err && err.code) || '').trim(); }
+  // Classify a transport/backend failure WITHOUT discarding its code. The kind drives the sentence; the code
+  // stays on the result so the panel can print it and an operator can act on it.
+  function classifyReadFailure(err) {
+    var c = rcode(err).toUpperCase();
+    if (!c) return IR_READINESS_CODES.READ_FAILED;
+    if (c.indexOf('TIMEOUT') !== -1) return IR_READINESS_CODES.REQUEST_TIMEOUT;
+    if (c.indexOf('STALE') !== -1) return IR_READINESS_CODES.STALE_SCOPE;
+    if (c === 'BACKEND_BUSINESS_REJECTION' || c.indexOf('REJECT') !== -1) return IR_READINESS_CODES.BACKEND_BUSINESS_REJECTION;
+    return IR_READINESS_CODES.READ_FAILED;
+  }
+
+  function mk(state, code, error) { return { state: state, code: code || '', error: error || null }; }
+
+  // The Recommendation Summary's readiness. It depends on the recommendation read AND NOTHING ELSE - not the
+  // allocation hydration, not the warehouse options, not the carrier catalogue, not the lead times, not the
+  // Execution Plan. That independence is the point of this round.
+  //
+  // It reads no quantity, which is what stops it deciding a stored 0 is an absence.
   function recommendationReadiness(input) {
     input = input || {};
-    var S = IR_REVEAL_STATES;
-    if (input.mode === 'legacy') return { state: S.READY, code: '', error: null };
+    var S = IR_REVEAL_STATES, C = IR_READINESS_CODES;
+    if (input.mode === 'legacy') return mk(S.READY, '', null);
+    var status = String(input.status || '');
     if (input.mode === 'workspace') {
-      switch (String(input.status || '')) {
-        case 'READY': return { state: S.READY, code: '', error: null };
-        case 'EMPTY': return { state: S.EMPTY, code: 'RECOMMENDATION_EMPTY', error: null };
-        case 'API_ERROR': return { state: S.ERROR, code: 'RECOMMENDATION_API_ERROR', error: input.error || { code: 'RECOMMENDATION_API_ERROR' } };
-        case 'CONFIG_NOT_READY': return { state: S.EMPTY, code: 'RECOMMENDATION_CONFIG_NOT_READY', error: null };
-        case 'CONTEXT_NOT_READY': return { state: S.EMPTY, code: 'RECOMMENDATION_CONTEXT_NOT_READY', error: null };
-        case 'DISABLED': return { state: S.READY, code: '', error: null };
-        default: return { state: S.LOADING, code: '', error: null };
+      switch (status) {
+        case 'READY': return mk(S.READY, '', null);
+        case 'EMPTY': return mk(S.EMPTY, C.NO_DATA, null);
+        case 'API_ERROR': return mk(S.ERROR, classifyReadFailure(input.error), input.error || { code: C.READ_FAILED });
+        case 'CONFIG_NOT_READY': return mk(S.EMPTY, C.NOT_CALCULATED, null);
+        case 'CONTEXT_NOT_READY': return mk(S.EMPTY, C.INVALID_SCOPE, null);
+        case 'DISABLED': return mk(S.READY, '', null);
+        default: return mk(S.LOADING, '', null);
       }
     }
-    switch (String(input.status || '')) {
-      // A scope whose stored rows are loaded is READY even when THIS sku has no row of its own: "Not
-      // calculated" is a truthful terminal cell, and waiting for it to become something else would hang.
-      case 'READY': return { state: S.READY, code: '', error: null };
-      case 'EMPTY': return { state: S.EMPTY, code: 'GAP_NO_STORED_ROWS', error: null };
-      case 'READ_ERROR': return { state: S.ERROR, code: 'GAP_READ_ERROR', error: input.error || { code: 'GAP_READ_ERROR' } };
-      case 'CONTEXT_NOT_READY': return { state: S.EMPTY, code: 'GAP_CONTEXT_NOT_READY', error: null };
-      case 'IDLE': case 'LOADING': return { state: S.LOADING, code: '', error: null };
-      default: return { state: S.LOADING, code: '', error: null };
+    switch (status) {
+      // A scope whose stored rows are loaded is READY even when THIS sku has no row: "Not calculated" is a
+      // truthful terminal cell, and waiting for it to become something else would hang forever.
+      case 'READY': return mk(S.READY, '', null);
+      case 'EMPTY': return mk(S.EMPTY, C.NO_DATA, null);
+      case 'READ_ERROR': return mk(S.ERROR, classifyReadFailure(input.error), input.error || { code: C.READ_FAILED });
+      // INVALID_SCOPE means exactly what it says. A timeout, a refusal or a stale answer must never arrive
+      // here - each has its own branch above, and each keeps its own code.
+      case 'CONTEXT_NOT_READY': return mk(S.EMPTY, C.INVALID_SCOPE, null);
+      case 'IDLE': case 'LOADING': return mk(S.LOADING, '', null);
+      default: return mk(S.LOADING, '', null);
     }
   }
 
-  // The Execution Plan's readiness. EVERY input has to be settled, because each one can still change what
-  // the route row says: the read model supplies the warehouse candidates, the draft hydration supplies the
-  // persisted route, and the carrier catalogue supplies BOTH the method options (hence the canonical match
-  // against the persisted service) and the lead times (hence the ETA). A route rendered before all four is
-  // a route that will be corrected in view.
-  //   catalogue: 'READY' | 'ERROR' | 'LOADING' | 'IDLE' | 'STALE_SCOPE'
+  // The Execution Plan's readiness. Four inputs, every one of which can still change what the route row says:
+  // the read model (warehouse candidates), the draft hydration (the persisted route), and the ONE catalogue,
+  // which supplies both the method options - hence the canonical match against the stored service - and the
+  // lead times, hence the ETA. A route shown before all four is a route that will be corrected in view.
   function executionReadiness(input) {
     input = input || {};
-    var S = IR_REVEAL_STATES;
-    if (!input.readModelReady) return { state: S.LOADING, code: '', error: null };
-    if (input.hydrationInFlight) return { state: S.LOADING, code: '', error: null };
+    var S = IR_REVEAL_STATES, C = IR_READINESS_CODES;
+    if (!input.readModelReady) return mk(S.LOADING, '', null);
+    if (input.hydrationInFlight) return mk(S.LOADING, '', null);
     var cat = String(input.catalogue || '');
-    // A catalogue that could not be read is a settled, NAMED failure. The picker already renders the code
-    // plus a Retry; swallowing it into an empty plan would hide an actionable problem.
-    if (cat === 'ERROR') return { state: S.ERROR, code: 'METHOD_CATALOGUE_ERROR', error: input.error || { code: 'METHOD_REGISTRY_READ_FAILED' } };
-    // STALE_SCOPE is the registry declining to answer about a station the user has not applied. It is not a
-    // failure and it is not progress - it is terminal for THIS station and the picker says so.
-    if (cat === 'STALE_SCOPE') return { state: S.EMPTY, code: 'METHOD_CATALOGUE_STALE_SCOPE', error: null };
-    if (cat !== 'READY') return { state: S.LOADING, code: '', error: null };
-    // Settled. A lead time nobody configured is an 'unavailable' TERMINAL result, not a pending one - the
-    // catalogue answered, and 'no rate card covers this route' is that answer.
-    if (!input.hasRoutes) return { state: S.EMPTY, code: 'EXECUTION_NO_ROUTE', error: null };
-    return { state: S.READY, code: '', error: null };
+    // A catalogue that could not be read is a settled, NAMED failure with a Retry beside it - never an empty
+    // plan, which would read as "there is nothing to ship".
+    if (cat === 'ERROR') return mk(S.ERROR, classifyReadFailure(input.error), input.error || { code: 'METHOD_REGISTRY_READ_FAILED' });
+    // The registry declining to answer about a station the user has not applied. Terminal for THIS station.
+    if (cat === 'STALE_SCOPE') return mk(S.EMPTY, C.STALE_SCOPE, null);
+    if (cat !== 'READY') return mk(S.LOADING, '', null);
+    // Settled. A lead time nobody configured is an 'unavailable' TERMINAL result, not a pending one.
+    if (!input.hasRoutes) return mk(S.EMPTY, C.NOT_CALCULATED, null);
+    return mk(S.READY, '', null);
   }
 
-  // THE BARRIER. One gate per page; one generation per expand. A report that names a generation the gate
-  // has moved past is REFUSED - that is the whole stale-response defence, and it is the same discipline
-  // _irMatSeq and _irReadSeq already use, expressed once instead of per call site.
-  function createRevealGate(deps) {
+  // ONE PANEL, ONE GENERATION, ONE REVEAL. Each panel holds its own gate, so neither can hold the other back.
+  //
+  // A generation is bound to the sku, the APPLIED station, the search generation and the expanded-row
+  // generation. A report naming any past value of those is refused - that is the whole stale-response
+  // defence, expressed once instead of at each call site.
+  function createPanelGate(deps) {
     deps = deps || {};
+    var name = String(deps.name || 'panel');
     var frame = (typeof deps.frame === 'function') ? deps.frame : function (cb) { cb(); };
     var now = (typeof deps.now === 'function') ? deps.now : function () { return 0; };
     var onReveal = (typeof deps.onReveal === 'function') ? deps.onReveal : function () {};
@@ -1004,69 +1031,71 @@
     var gen = 0, cur = null, frames = 0;
 
     function blank(g, ctx) {
+      ctx = ctx || {};
       return {
-        gen: g, sku: (ctx && ctx.sku) || '', scopeKey: (ctx && ctx.scopeKey) || '',
-        recommendation: { state: S.LOADING, code: '', error: null },
-        execution: { state: S.LOADING, code: '', error: null },
+        panel: name, gen: g, sku: ctx.sku || '', scopeKey: ctx.scopeKey || '',
+        searchGen: (ctx.searchGen == null ? null : ctx.searchGen),
+        rowGen: (ctx.rowGen == null ? null : ctx.rowGen),
+        readiness: mk(S.LOADING, '', null),
         revealed: false, frameId: null, beganAt: now(), settledAt: null, revealedAt: null
       };
     }
-    // A new expand. The previous generation is abandoned by the bump alone, so a response already in
-    // flight for the old SKU cannot paint into the new one.
     function begin(ctx) { gen++; cur = blank(gen, ctx); return gen; }
-    // Collapse, a scope change, or a re-Search. There is no current generation afterwards, so a late
-    // response has nowhere to land - it cannot re-open what the user closed.
     function abandon() { gen++; cur = null; return gen; }
     function generation() { return gen; }
+    function state() { return cur ? cur.readiness.state : S.ABANDONED; }
     function snapshot() { return cur ? JSON.parse(JSON.stringify(cur)) : null; }
 
     function accept(g, ctx) {
-      if (!cur) return 'ABANDONED';
+      if (!cur) return S.ABANDONED;
       if (g !== cur.gen) return 'STALE_GENERATION';
-      if (ctx && ctx.sku && cur.sku && String(ctx.sku) !== String(cur.sku)) return 'STALE_SKU';
-      if (ctx && ctx.scopeKey && cur.scopeKey && String(ctx.scopeKey) !== String(cur.scopeKey)) return 'STALE_SCOPE';
+      if (!ctx) return '';
+      if (ctx.sku && cur.sku && String(ctx.sku) !== String(cur.sku)) return 'STALE_SKU';
+      if (ctx.scopeKey && cur.scopeKey && String(ctx.scopeKey) !== String(cur.scopeKey)) return 'STALE_SCOPE';
+      if (ctx.searchGen != null && cur.searchGen != null && ctx.searchGen !== cur.searchGen) return 'STALE_SEARCH';
+      if (ctx.rowGen != null && cur.rowGen != null && ctx.rowGen !== cur.rowGen) return 'STALE_ROW';
       return '';
     }
 
     function settle() {
       if (!cur || cur.revealed) return;
-      if (!revealIsTerminal(cur.recommendation.state) || !revealIsTerminal(cur.execution.state)) return;
+      if (!revealIsTerminal(cur.readiness.state)) return;
       cur.settledAt = now();
       cur.revealed = true;
       var mine = cur.gen;
-      // ONE frame, ONE callback, BOTH panels. There is deliberately no way to ask this gate to reveal a
-      // single side: two callbacks would be two render transactions, which is the flicker being removed.
+      // ONE frame for THIS panel. Its partner is not consulted, and cannot be: this gate has no reference to it.
       frame(function () {
-        if (!cur || cur.gen !== mine) return;         // collapsed / superseded between settle and paint
+        if (!cur || cur.gen !== mine) return;      // collapsed / superseded between settling and painting
         cur.frameId = ++frames;
         cur.revealedAt = now();
         onReveal(snapshot());
       });
     }
 
-    function report(g, side, readiness, ctx) {
+    function report(g, readiness, ctx) {
       var why = accept(g, ctx);
       if (why) return { accepted: false, reason: why };
-      if (side !== 'recommendation' && side !== 'execution') return { accepted: false, reason: 'UNKNOWN_SIDE' };
       readiness = readiness || {};
-      cur[side] = { state: readiness.state || S.LOADING, code: readiness.code || '', error: readiness.error || null };
+      cur.readiness = mk(readiness.state || S.LOADING, readiness.code, readiness.error);
       settle();
-      return { accepted: true, reason: '', revealed: !!cur.revealed };
+      return { accepted: true, reason: '', revealed: !!cur.revealed, state: cur.readiness.state };
     }
 
     return {
-      STATES: IR_REVEAL_STATES, begin: begin, abandon: abandon, report: report,
-      generation: generation, snapshot: snapshot, isTerminal: revealIsTerminal,
+      name: name, STATES: IR_REVEAL_STATES, begin: begin, abandon: abandon, report: report,
+      generation: generation, state: state, snapshot: snapshot, isTerminal: revealIsTerminal,
       frameCount: function () { return frames; }
     };
   }
 
   var IRPlanningReveal = {
     STATES: IR_REVEAL_STATES,
+    CODES: IR_READINESS_CODES,
     isTerminal: revealIsTerminal,
+    classifyReadFailure: classifyReadFailure,
     recommendationReadiness: recommendationReadiness,
     executionReadiness: executionReadiness,
-    createGate: createRevealGate
+    createPanelGate: createPanelGate
   };
 
   return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal };
