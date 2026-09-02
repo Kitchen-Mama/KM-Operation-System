@@ -96,7 +96,10 @@ eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
 // F1-7N-FB-4G-A0-R1 - the FULL header authority (30 required + the two optional tails = 35), which is the
 // shape production actually has.
 eval(extractVar(G16, 'SAD_LIFECYCLE_TAIL_COLUMNS_'));
+// F1-7N-FB-4G-A2-R3 - the header's optional tail gained a THIRD append (create_idempotency_key at 35),
+// so a lift that stops at two now hits a ReferenceError inside a shipped constant.
 eval(extractVar(G16, 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
@@ -138,6 +141,9 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_',
   'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
   'sadLegacyReconcileReason_', 'sadReconcileMessage_', 'sadRowToObject_', 'sadReadLinesForDraft_',
+  // F1-7N-FB-4G-A2-R3 - the CREATE path mints its identity through a named authority (an identical route is
+  // a legitimate second ticket, so a taken deterministic id is minted around rather than refused).
+  'sadMintNewHeaderId_', 'sadK4SchemaReady_',
   'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_', 'handleGetShippingAllocationDraftWorkspace_'
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 
@@ -372,8 +378,12 @@ eq(lineRows().length, 2, 'F8a a client temporary id does not create extra rows')
 ok(lineObjs().every(function (l) { return /^SADL-K2-/.test(l.allocation_draft_line_id); }),
   'F8b every persisted line carries the CANONICAL SADL-K2- id, never the client placeholder');
 // the caller then re-sends the SAME temporary ids (the exact live defect) — still no append
-var TMP_A2 = JSON.parse(JSON.stringify(ROUTE_A)); TMP_A2.allocation_draft_line_id = 'SADL-LOCAL-ABC123XYZ0';
-var TMP_B2 = JSON.parse(JSON.stringify(ROUTE_B)); TMP_B2.allocation_draft_line_id = 'SADL-LOCAL-ZZZ999QQQ1';
+// F1-7N-FB-4G-A2-R3 - cloned from the POST-SAVE routes, so the re-send NAMES the headers the first save
+// created and the only stale thing about it is the placeholder LINE id - which is the live defect this
+// asserts. Cloning the pristine fixtures instead would send two id-less headers, and §B.2 makes those two
+// new tickets by design, so the probe would be measuring the header contract rather than the line one.
+var TMP_A2 = JSON.parse(JSON.stringify(TMP_A)); TMP_A2.allocation_draft_line_id = 'SADL-LOCAL-ABC123XYZ0';
+var TMP_B2 = JSON.parse(JSON.stringify(TMP_B)); TMP_B2.allocation_draft_line_id = 'SADL-LOCAL-ZZZ999QQQ1';
 saveRoutes(SKU, [TMP_A2, TMP_B2]);
 eq(lineRows().length, 2, 'F8c re-sending the stale placeholder ids STILL does not append (the live defect stays closed)');
 ok(code(IR).indexOf("'SADL-LOCAL-'") !== -1, 'F8d the client id is named SADL-LOCAL- so it can never be mistaken for a durable identity');

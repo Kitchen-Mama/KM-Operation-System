@@ -403,10 +403,19 @@ ok(s3a.ok && s3a.outcomes[0].ok, 'B1 Route A saves');
 //
 // It also cannot be re-sent as a CREATE any more, which is asserted directly below: a CREATE whose shipment
 // group an active header already owns is refused, rather than quietly resolving onto that header.
-var s3reCreate = saveRoutes(SRV, [routeA(800)]);
-ok(!s3reCreate.outcomes[0].ok && s3reCreate.outcomes[0].res &&
-   s3reCreate.outcomes[0].res.code === 'ROUTE_IDENTITY_CONFLICT',
-  'B2pre re-sending an already-stored route as a CREATE is REFUSED, not silently resolved onto its header');
+// F1-7N-FB-4G-A2-R3 §B.2 - WITHDRAWN, and replaced by the fact that survived it.
+//
+// A2-R2 asserted here that re-sending an already-stored route as a CREATE was REFUSED
+// (ROUTE_IDENTITY_CONFLICT). §B.2 settles that an explicit + Add Route is ALWAYS a new ticket even when
+// its From / To / Method are identical, so that refusal was blocking a legitimate second click and is
+// gone. It is not replaced by a write here - a create would add a third ticket and change every count
+// below - but by the rule that took its place: what makes a save 'the same route' is that it NAMES the
+// stored identity, never that its natural key happens to match.
+ok(asPersisted(routeA(800)).allocation_draft_id === s3a.outcomes[0].res.data.allocation_draft_id,
+  'B2pre the same route is identified by its STORED id, not by its natural key');
+// Scoped to CODE: a probe that reads comments measures prose, not behaviour.
+ok(!/ROUTE_IDENTITY_CONFLICT/.test(code(extractFn(G16, 'sadUpsertDraftHeaderCore_'))),
+  'B2pre1 and no natural-key collision refusal survives in the header writer (§B.2)');
 var s3b = saveRoutes(SRV, [routeB(400)]);
 ok(s3b.ok, 'B2 the Add Route event pre-flight accepts the ONE route it carries');
 eq(s3b.groups.length, 1, 'B2 and it is ONE shipment group - the route that was added');

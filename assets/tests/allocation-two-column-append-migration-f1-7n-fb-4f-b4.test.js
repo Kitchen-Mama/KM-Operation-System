@@ -244,6 +244,13 @@ function fresh(opts, dh, lh) {
 
 var E0 = makeEnv();
 var HDR = E0.HDR, CANON = E0.CANON, FULL = E0.FULL, LHDR = E0.LHDR, LFULL = E0.LFULL;
+// F1-7N-FB-4G-A2-R3 - THE STATE THIS MIGRATION PRODUCES, named once.
+//
+// B4 appends destination_marketplace at 34 and stops there. Until A2-R3 that was also the last column of the
+// canonical authority, so `FULL` and "the finished header" were the same array and the suite used FULL for
+// both. A2-R3 appends create_idempotency_key at 35 (its own helper's job), so they are now different, and a
+// fixture built from FULL represents a sheet this migration never produces.
+var POST = FULL ? FULL.slice(0, 35) : FULL;
 
 // The recorded live fingerprints, and the fingerprints the append must produce. These are not decoration: they
 // are the values the F1-7N-FB-4F-B4 plan was reviewed against, and the commit must land on them exactly.
@@ -363,7 +370,11 @@ section('C — [tests 2, 19, 21, 22, 23, 24, 25] the COMMIT, and what it is forb
         ['shipping_allocation_drafts!AI1', 'shipping_allocation_draft_lines!AE1'], 'C7 the exact two cells');
 
     // Test 2 — the final state is 35/31, in the canonical order.
-    eq(env.headers('shipping_allocation_drafts'), FULL, 'C8 [test 2] the drafts header is exactly the 35-column authority');
+    // F1-7N-FB-4G-A2-R3 — compared against the PREFIX this migration produces, not the whole authority. B4
+    // appends destination_marketplace at 34 and stops; create_idempotency_key at 35 is the A2-R3 helper's job,
+    // so the authority is now longer than anything this tool creates.
+    eq(env.headers('shipping_allocation_drafts'), POST,
+      'C8 [test 2] the drafts header is exactly the 35-column state THIS migration produces');
     eq(env.headers('shipping_allocation_draft_lines'), LFULL, 'C9 [test 2] the lines header is exactly the 31-column authority');
     eq(env.headers('shipping_allocation_drafts')[34], 'destination_marketplace', 'C10 destination_marketplace at index 34');
     eq(env.headers('shipping_allocation_draft_lines')[30], 'expected_arrival', 'C11 expected_arrival at index 30');
@@ -426,7 +437,7 @@ section('D — [tests 3, 4, 5, 20] idempotency and the two partial states');
 // ==============================================================================================================
 (function () {
     // Test 3 / 20 — replay against a fully migrated database.
-    var env = fresh({}, FULL, LFULL);
+    var env = fresh({}, POST, LFULL);
     var d = env.dry();
     eq(d.decision, 'NOTHING_TO_DO', 'D1 [test 3] DRY RUN reports NOTHING_TO_DO');
     eq(d.proposed_writes, [], 'D2 [test 3] and proposes nothing');
@@ -446,7 +457,7 @@ section('D — [tests 3, 4, 5, 20] idempotency and the two partial states');
         'D10 [test 20] and both grids are byte-identical');
 
     // Test 4 — only the header target present.
-    var e2 = fresh({}, FULL, LHDR);
+    var e2 = fresh({}, POST, LHDR);
     var d2 = e2.dry();
     eq(d2.decision, 'MECHANICALLY_SAFE_TO_APPEND', 'D11 [test 4] header done, line outstanding: still safe');
     eq(d2.proposed_writes.map(function (w) { return w.cell; }), ['shipping_allocation_draft_lines!AE1'],
@@ -456,7 +467,7 @@ section('D — [tests 3, 4, 5, 20] idempotency and the two partial states');
     var c2 = e2.commit();
     eq([c2.state, c2.DB_WRITES], ['COMMITTED', 1], 'D14 [test 4] the partial commit writes exactly one cell');
     eq(e2.headers('shipping_allocation_draft_lines'), LFULL, 'D15 [test 4] and finishes the line table');
-    eq(e2.headers('shipping_allocation_drafts'), FULL, 'D16 [test 4] leaving the header table untouched');
+    eq(e2.headers('shipping_allocation_drafts'), POST, 'D16 [test 4] leaving the header table untouched');
 
     // Test 5 — only the line target present.
     var e3 = fresh({}, CANON, LFULL);
@@ -468,7 +479,7 @@ section('D — [tests 3, 4, 5, 20] idempotency and the two partial states');
     e3.setReviewed(d3.confirmation_checksum);
     var c3 = e3.commit();
     eq([c3.state, c3.DB_WRITES], ['COMMITTED', 1], 'D20 [test 5] the partial commit writes exactly one cell');
-    eq(e3.headers('shipping_allocation_drafts'), FULL, 'D21 [test 5] and finishes the header table');
+    eq(e3.headers('shipping_allocation_drafts'), POST, 'D21 [test 5] and finishes the header table');
 
     // A partial plan and a full plan must not share a checksum — the write plan is part of what is authorised.
     var full = fresh().dry().confirmation_checksum;
@@ -764,7 +775,9 @@ section('J — [test 29] no routed action, no deployment contract, no owner buil
 // ==============================================================================================================
 (function () {
     eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'J1 [test 29] action contract stays 10');
-    eq((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'J2 [test 29] required-action list version stays 9');
+    // F1-7N-FB-4G-A2-R3 - RESTATED to a floor (see the B3 suite for the reasoning).
+    ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+      'J2 [test 29] required-action list version is at or after 9');
     eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'J3 [test 29] transport contract stays 1');
     // B4 changes no deployed file, so every owner build stamp stays exactly where B3 left it.
     // F1-7N-FB-4F-B6 — RESTATED. B4 shipped no deployed-source change, so "unmoved" was the right OBSERVATION

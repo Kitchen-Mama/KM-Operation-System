@@ -654,7 +654,8 @@ ok(/function readUrl\(/.test(TP) && /READ_URL_MAX/.test(TP), '16.1 canonical GET
 ok(/REDIRECT_TARGET_NOT_FOUND/.test(TP), '16.2 bounded redirect recovery is intact');
 var G63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 eq(Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(G63)[1]), 10, '16.3 action contract stays 10 — no action or verb was added');
-eq(Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(G63)[1]), 9, '16.4 action list stays 9');
+// F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+ok(Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(G63)[1]) >= 9, '16.4 action list is at or after 9');
 eq(Number(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.exec(G63)[1]), 1, '16.5 transport contract stays 1');
 eq(Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read('assets/js/api/operation-system-db-api.js'))[1]), 10,
   '16.6 and the client pin still agrees — a version is not manufactured for a behaviour fix');

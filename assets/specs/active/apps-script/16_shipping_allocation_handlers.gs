@@ -98,13 +98,30 @@ var SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ =
 // permanently. The two appends are ordered, not interchangeable: lifecycle tail first, route identity second.
 var SAD_ROUTE_IDENTITY_TAIL_COLUMNS_ = ['destination_marketplace'];
 
-// The complete optional tail the write gate accepts, in canonical order: lifecycle 30..33, route identity 34.
-var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_.concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_);
+// F1-7N-FB-4G-A2-R3 §F — THE CREATE IDEMPOTENCY TAIL, APPENDED AT 35 AND NOWHERE ELSE.
+//
+// A2-R3 §B.2 settles the product rule: an explicit + Add Route is ALWAYS a new ticket, even when its
+// From / To / Method are identical to an existing one. So the K4 route key is grouping information, not the
+// entity key, and a K4 collision may no longer refuse a create. Removing that refusal removes the only thing
+// that was stopping a retried click from producing a second ticket — measured: with the refusal gone, the
+// same create key sent twice produced SADH-K2-CBB7E7F6 and then SAD-UUID100000, two headers.
+//
+// Nothing already stored can distinguish "one click, retried after a lost response" from "a second click":
+// the client's create key was accepted on the wire and then had nowhere to live. This column is that place.
+// It is APPENDED (never inserted), existing rows stay blank, and it is never back-filled — a blank key means
+// "created before this contract existed" and must never be read as a replay of anything.
+var SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_ = ['create_idempotency_key'];
 
-// The FULL header authority the write gate validates against: 30 required + 5 optional = 35. Accepted live
-// lengths are 30..35 and every present column must sit at its exact canonical index, so destination_marketplace
+// The complete optional tail the write gate accepts, in canonical order: lifecycle 30..33, route identity 34,
+// create idempotency 35. The three appends are ORDERED, not interchangeable.
+var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_
+  .concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_)
+  .concat(SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_);
+
+// The FULL header authority the write gate validates against: 30 required + 6 optional = 36. Accepted live
+// lengths are 30..36 and every present column must sit at its exact canonical index, so destination_marketplace
 // at 30, a lifecycle column out of order, an unknown name, a duplicate, a case variant, a blank intervening
-// header and a 36th column are each refused by the SAME positional rule rather than by five separate checks.
+// header and a 37th column are each refused by the SAME positional rule rather than by six separate checks.
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =
   SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
 
@@ -361,6 +378,16 @@ function sadUpsertDraftHeaderCore_(body) {
     // post-update key is already held by a DIFFERENT active header the update is refused outright. Nothing is
     // created, nothing is merged, no line is moved, and NEITHER票 is modified - and no authority flag may pick
     // a winner, because choosing which of two real shipments survives is not a decision a writer can make.
+    // F1-7N-FB-4G-A2-R3 §B.2 / §I.3 — THE UPDATE COLLISION REFUSAL IS REMOVED, DELIBERATELY.
+    //
+    // A2-R2 refused an UPDATE that moved a ticket onto a shipment group another active header already held.
+    // §B.2 freezes the opposite premise: two tickets with identical From / To / Method are LEGAL, because a
+    // ticket's identity is its immutable allocation_draft_id and the K4 key is grouping information only. A
+    // state that an explicit Add Route may create cannot be one an edit is forbidden to reach, and keeping the
+    // refusal here would also make this writer disagree with the atomic writer about what is persistable.
+    //
+    // The contender is still COMPUTED and REPORTED on the response, because "another ticket now shares this
+    // shape" is worth surfacing — it is just not a refusal, and it is not a merge either.
     var uNewKey = sadK2GroupKey_(uAfter);
     var uContender = '';
     sadReadActiveHeaderRows_(sh).forEach(function (row) {
@@ -369,12 +396,6 @@ function sadUpsertDraftHeaderCore_(body) {
       if (!rid || rid === id) return;
       if (sadK2GroupKey_(row) === uNewKey) uContender = rid;
     });
-    if (uContender) {
-      return { success: false, error: 'ROUTE_IDENTITY_CONFLICT', code: 'ROUTE_IDENTITY_CONFLICT', stage: 'conflict',
-        zero_write: true, data: { allocation_draft_id: id, conflicting_allocation_draft_id: uContender,
-          route_group_key: uNewKey,
-          message: 'another active shipment already carries this exact From / To / Method, so this route cannot be changed onto it; nothing was written to either. Cancel this change, or adjust the other shipment.' } };
-    }
     // §4 - the DETERMINISTIC-ID CHECK IS NOT APPLIED HERE, AND THAT IS THE POINT.
     //
     // sadLegacyReconcileReason_ treats an SADH-K2- id that no longer hashes to its own current field values as
@@ -397,6 +418,7 @@ function sadUpsertDraftHeaderCore_(body) {
     var uFinal = sadRowToObject_(sh, found.row);
     return jsonResponse_({ success: true, data: { allocation_draft_id: id, updated: true,
       intent: 'UPDATE_EXISTING_ROUTE',
+      shares_route_shape_with: uContender || '',
       draft_version: sadFpVal_(uFinal.draft_version),
       route_group_key: sadK2GroupKey_(uFinal),
       persisted_headers: [{ allocation_draft_id: id, route_group_key: sadK2GroupKey_(uFinal),
@@ -413,49 +435,42 @@ function sadUpsertDraftHeaderCore_(body) {
   // (unless an explicit USER migration sets allow_legacy_reconcile). draft_version stays version/lineage, not the key.
   // F1-7N-FB-4G-A2-R2 §4/§9 - AN EXPLICIT + Add Route NEVER ADOPTS AN EXISTING HEADER.
   //
-  // This is the live failure. The new CN侑鑫 → Amazon route's natural key was handed to the resolver below,
-  // which matched an existing ROUTE-INCOMPLETE header of the same station (the zero-line H1/H2 shape) and
-  // returned REUSE - after which sadLegacyReconcileReason_ refused it with LEGACY_ROUTE_RECONCILIATION_REQUIRED
-  // and no new header appeared. The operator asked for a new shipment; the writer went looking for an old one.
+  // This was the live failure. The new route's natural key was handed to the resolver below, which matched an
+  // existing ROUTE-INCOMPLETE header of the same station (the zero-line H1/H2 shape) and returned REUSE - after
+  // which sadLegacyReconcileReason_ refused it with LEGACY_ROUTE_RECONCILIATION_REQUIRED and no new header
+  // appeared. The operator asked for a new shipment; the writer went looking for an old one. So a declared
+  // CREATE skips the resolver entirely and mints its own identity.
+  // F1-7N-FB-4G-A2-R3 §B.2 — THE COLLISION REFUSAL THAT USED TO LIVE HERE IS GONE.
   //
-  // A declared CREATE therefore skips the resolver entirely and answers only one question: does an ACTIVE
-  // header already own this exact shipment group?
+  // A2-R2 refused a create whose shipment group an active header already owned. §B.2 settles that as WRONG: an
+  // explicit + Add Route is ALWAYS a new ticket, even with identical From / To / Method, so the K4 key is
+  // grouping information and never the entity key. Measured, that refusal blocked a legitimate second click
+  // outright — ROUTE_IDENTITY_CONFLICT, zero_write, one header where there should have been two. A declared
+  // CREATE therefore never consults the natural-key resolver: no REUSE, no legacy adoption, no refusal.
   //
-  //   NO  - insert a new header with a fresh identity.
-  //   YES - refuse ROUTE_IDENTITY_CONFLICT with zero writes. The frozen K2 contract is one active header per
-  //         shipment group, so two票 with identical From / To / Method cannot both exist. That is a genuine
-  //         product constraint and it is REPORTED rather than worked around: no adoption, no merge, no silent
-  //         second row. A retry of the same CREATE hits the same refusal and still writes nothing, which is
-  //         what keeps a lost response from minting a second票 - see the completion report on why true
-  //         create-idempotency needs a stored create_idempotency_key column and is therefore a migration.
+  // THIS IS NOT THE ROUTE-TICKET PATH, AND IT CANNOT BE. A header written by this call whose line is then
+  // refused by the separate upsertShippingAllocationDraftLines call leaves an ORPHAN ZERO-LINE HEADER —
+  // measured, 1 header and 0 lines after PLAN_LINE_INCOMPLETE. §D.4 forbids simulating atomicity across two
+  // calls, so the Execution Plan writes a route ticket through upsertShippingAllocationDraftAtomic and fails
+  // closed when that action is absent rather than falling back here. This path stays available for callers
+  // that write a header alone, and it carries NO replay protection: create_idempotency_key is persisted when
+  // the column exists, but nothing here can recognise a retry, because a retry of a two-call create may have
+  // committed a header this call cannot see the line for. A caller needing that guarantee uses the atomic
+  // action, which requires the key and refuses without the column.
   if (sadIntent === 'CREATE_NEW_ROUTE' && hasRouteIntent && status !== 'cancelled') {
-    var cKey = sadK2GroupKey_(body);
-    var cOwner = '';
-    sadReadActiveHeaderRows_(sh).forEach(function (row) {
-      if (cOwner) return;
-      if (sadK2GroupKey_(row) === cKey) cOwner = String(row.allocation_draft_id == null ? '' : row.allocation_draft_id).trim();
-    });
-    if (cOwner) {
-      return { success: false, error: 'ROUTE_IDENTITY_CONFLICT', code: 'ROUTE_IDENTITY_CONFLICT', stage: 'conflict',
-        zero_write: true, data: { conflicting_allocation_draft_id: cOwner, route_group_key: cKey,
-          create_idempotency_key: String((body && body.create_idempotency_key) || ''),
-          message: 'an active shipment already carries this exact From / To / Method (' + cOwner + '). Nothing was ' +
-            'written and nothing was adopted. If you meant to add to it, change that route\'s quantity instead; if ' +
-            'you just retried a save, press Search - this route may already be stored.' } };
-    }
     var cDest = sadDestinationIdentity_(body);
     if (!cDest.ok) {
-      return { success: false, error: 'ROUTE_DESTINATION_' + String(cDest.code || 'UNRESOLVED'), code: cDest.code || 'ROUTE_DESTINATION_UNRESOLVED',
-        stage: 'validation', zero_write: true, data: {} };
+      return { success: false, error: 'ROUTE_DESTINATION_' + String(cDest.code || 'UNRESOLVED'),
+        code: cDest.code || 'ROUTE_DESTINATION_UNRESOLVED', stage: 'validation', zero_write: true, data: {} };
     }
-    id = sadK2DeterministicHeaderId_(body);
-    found = procurementFindRow_(sh, 'allocation_draft_id', id);
-    if (found) {
-      // The deterministic id is already taken by a NON-active row (a cancelled/expired/submitted票 of the same
-      // shape). Minting over it would resurrect history, so a fresh non-deterministic identity is used instead.
-      id = 'SAD-' + Utilities.getUuid().substring(0, 10).toUpperCase();
-      found = null;
+    var _cK4Ready = false;
+    try { _cK4Ready = sadK4SchemaReady_(sadLiveHeaderNames_(sh)); } catch (eK4) { _cK4Ready = false; }
+    id = sadMintNewHeaderId_(sh, body, _cK4Ready);
+    if (!id) {
+      return { success: false, error: 'ROUTE_IDENTITY_MINT_FAILED', code: 'ROUTE_IDENTITY_MINT_FAILED',
+        stage: 'header', zero_write: true, data: {} };
     }
+    found = null;
   }
 
   if (!id) {
@@ -652,7 +667,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R2';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R3';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -1390,6 +1405,58 @@ function sadHasColumn_(names, col) { return (names || []).indexOf(col) !== -1; }
 // identity - it is a number that disappears on write - so K4 is used only when the column that carries its
 // destination dimension PHYSICALLY EXISTS, and only when the frozen contract that computes it is actually
 // loaded. Before that, the resolver behaves exactly as it did, byte for byte.
+// F1-7N-FB-4G-A2-R3 §F — CAN THIS DEPLOYMENT REMEMBER A CREATE KEY AT ALL?
+//
+// If the column is absent there is no safe CREATE: the request would be accepted and a retry would mint a
+// second ticket, which is precisely the failure this round closes. So a create REFUSES rather than degrading
+// to an unprotected one. A READ of an older row is unaffected — pre-migration rows simply have no key.
+function sadCreateIdempotencyReady_(headerNames) {
+  return sadHasColumn_(headerNames, 'create_idempotency_key');
+}
+
+// The header an earlier attempt of THIS SAME create key already wrote, or null. Scoped by key alone: the key
+// is minted per + Add Route click and is globally unique, so it names one attempt and not one route shape.
+// A BLANK stored key never matches anything — a pre-migration row is not a replay of a click that had no key.
+function sadFindHeaderByCreateKey_(sh, createKey) {
+  var want = String(createKey == null ? '' : createKey).trim();
+  if (!want) return null;
+  var data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return null;
+  var names = data[0].map(function (x) { return String(x).trim(); });
+  var cKey = names.indexOf('create_idempotency_key');
+  var cId = names.indexOf('allocation_draft_id');
+  if (cKey === -1 || cId === -1) return null;
+  for (var r = 1; r < data.length; r++) {
+    var got = String(data[r][cKey] == null ? '' : data[r][cKey]).trim();
+    if (!got) continue;                       // blank is never a match (never a replay)
+    if (got === want) return { row: r + 1, allocation_draft_id: String(data[r][cId] == null ? '' : data[r][cId]).trim() };
+  }
+  return null;
+}
+
+// §B.2 — THE IDENTITY FOR A NEW TICKET. The deterministic K2 id is used when it is free, because it keeps the
+// canonical shape readers already understand. When it is TAKEN — which is exactly the identical-route second
+// Add Route case §B.2 legitimises — a fresh non-deterministic id is minted instead. It is NEVER a refusal, and
+// it is never a reuse of the row that holds the deterministic id.
+function sadMintNewHeaderId_(sh, header, k4Ready) {
+  // The deterministic id comes from the SAME authority the resolver would have used: K4 when the schema can
+  // store a canonical destination, K2 otherwise. Minting a K2 id on a K4-ready sheet would give a brand-new
+  // route the older identity family and make every reader disagree about which key it belongs to.
+  var det = '';
+  if (k4Ready === true && typeof ricK4DeterministicHeaderId_ === 'function') {
+    try { det = ricK4DeterministicHeaderId_(header); } catch (e4) { det = ''; }
+  }
+  if (!det) {
+    try { det = sadK2DeterministicHeaderId_(header); } catch (e) { det = ''; }
+  }
+  if (det && !procurementFindRow_(sh, 'allocation_draft_id', det)) return det;
+  for (var attempt = 0; attempt < 8; attempt++) {
+    var cand = 'SAD-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+    if (!procurementFindRow_(sh, 'allocation_draft_id', cand)) return cand;
+  }
+  return '';
+}
+
 function sadK4SchemaReady_(headerNames) {
   return sadHasColumn_(headerNames, 'destination_marketplace') &&
     typeof ricK4GroupKey_ === 'function' && typeof ricK4DeterministicHeaderId_ === 'function' &&
@@ -1564,7 +1631,103 @@ function sadAtomicUpsertCore_(body) {
   // R6F2G (B): K2 group classification from the resolver's authoritative decision (CREATE/REUSE), else — for an
   // explicit-id edit — from the header's own group authority. Drives the K2-aware NEW-line id scheme below.
   var isK2Group = id ? sadIsK2Group_(undefined, id, header) : false;
-  if (!id) {
+
+  // ============================================================================================================
+  // F1-7N-FB-4G-A2-R3 §B/§D/§F — THE INTENT CONTRACT ON THE ATOMIC PATH.
+  //
+  // A2-R2 put this on the two-call header writer. That writer cannot be atomic by construction: measured, a
+  // successful header write followed by a refused line write (PLAN_LINE_INCOMPLETE) left 1 header and 0 lines
+  // — an orphan zero-line header, which is one of the shapes now polluting the live table. §D.4 forbids
+  // simulating atomicity with two calls, so + Add Route and every route edit come THROUGH HERE, where the
+  // header and its line are validated together before the first write and compensated together after it.
+  //
+  // Three rules this path enforces that the resolver cannot:
+  //   §B.2  an explicit CREATE is ALWAYS a new ticket. The resolver is not consulted, so a matching natural
+  //         key can neither REUSE a row nor adopt a legacy one, and a K4 collision NEVER refuses.
+  //   §F    a CREATE requires a persistable create_idempotency_key. Without the column there is no safe
+  //         create, so it refuses rather than degrading to an unprotected one.
+  //   §B.1  an UPDATE names its own row and updates it in place. It never falls back to CREATE, and the
+  //         deterministic-id guard is not applied to it (A2-R2 §4: an id names the entity, not its contents).
+  var sadIntent = String(body.intent || header.intent || '').trim();
+  var atomicRouteIntent = !!(String(header.recommended_source_warehouse_id || '').trim() ||
+    String(header.recommended_shipping_method || '').trim() ||
+    String(header.recommended_destination_warehouse_id || '').trim() ||
+    String(header.destination_marketplace || '').trim());
+  var atomicStatus = String(header.status || 'draft').trim();
+  // F1-7N-FB-4G-A2-R3 — AN EXPLICIT LEGACY ADOPTION IS A THIRD, ALREADY-DECLARED OPERATION.
+  //
+  // allow_legacy_reconcile === true is the USER's explicit migration authority (FB-4F-B6 §G): adopt the one
+  // legacy header this route collides with. That is neither "create a new ticket" nor "update the row I name
+  // by id" — it resolves by natural key on purpose — so requiring one of the two route intents of it would
+  // break the adoption path B6 established. It is exempt from the intent REQUIREMENT and nothing else: a
+  // CREATE_NEW_ROUTE carrying the flag is still refused as contradictory below, because an Add Route may never
+  // drift into adopting an existing header (§4).
+  var intentApplies = atomicRouteIntent && atomicStatus !== 'cancelled' && allowReconcile !== true;
+  var createKey = String(body.create_idempotency_key || header.create_idempotency_key || '').trim();
+
+  if (intentApplies) {
+    if (sadIntent !== 'UPDATE_EXISTING_ROUTE' && sadIntent !== 'CREATE_NEW_ROUTE') {
+      return jsonResponse_({ success: false, error: 'ROUTE_INTENT_REQUIRED', code: 'ROUTE_INTENT_REQUIRED',
+        stage: 'intent', zero_write: true, data: { received_intent: sadIntent,
+          message: 'a route write must declare intent = UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from whether a natural key matches (zero rows written)' } });
+    }
+    if (sadIntent === 'UPDATE_EXISTING_ROUTE' && !id) {
+      return jsonResponse_({ success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY',
+        stage: 'intent', zero_write: true, data: { intent: sadIntent, message: 'UPDATE_EXISTING_ROUTE requires the allocation_draft_id of the route being updated (zero rows written)' } });
+    }
+    if (sadIntent === 'CREATE_NEW_ROUTE' && id) {
+      return jsonResponse_({ success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY',
+        stage: 'intent', zero_write: true, data: { intent: sadIntent, allocation_draft_id: id, message: 'CREATE_NEW_ROUTE must not name an existing allocation_draft_id (zero rows written)' } });
+    }
+    if (sadIntent === 'CREATE_NEW_ROUTE' && allowReconcile) {
+      return jsonResponse_({ success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY',
+        stage: 'intent', zero_write: true, data: { intent: sadIntent, message: 'CREATE_NEW_ROUTE cannot carry allow_legacy_reconcile: an explicit Add Route never adopts an existing header (zero rows written)' } });
+    }
+    if (sadIntent === 'UPDATE_EXISTING_ROUTE' && !found) {
+      return jsonResponse_({ success: false, error: 'ALLOCATION_DRAFT_NOT_FOUND', code: 'ALLOCATION_DRAFT_NOT_FOUND',
+        stage: 'validation', zero_write: true, data: { allocation_draft_id: id } });
+    }
+    if (sadIntent === 'CREATE_NEW_ROUTE') {
+      if (!createKey) {
+        return jsonResponse_({ success: false, error: 'ROUTE_CREATE_IDEMPOTENCY_KEY_REQUIRED',
+          code: 'ROUTE_CREATE_IDEMPOTENCY_KEY_REQUIRED', stage: 'intent', zero_write: true,
+          data: { message: 'CREATE_NEW_ROUTE requires a stable create_idempotency_key so a retried click cannot mint a second ticket (zero rows written)' } });
+      }
+      if (!sadCreateIdempotencyReady_(hNames)) {
+        // §F.7 — NEVER degrade to a create with no idempotency protection.
+        return jsonResponse_({ success: false, error: 'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE',
+          code: 'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE', stage: 'schema', zero_write: true,
+          data: { column: 'create_idempotency_key', table: 'shipping_allocation_drafts',
+            message: 'this deployment cannot store a create idempotency key, so a retried Add Route could not be told from a second one. Run the create_idempotency_key migration first. Nothing was written.' } });
+      }
+      // §F.4 — THE REPLAY. An earlier attempt of this same click already committed: return ITS ids, write nothing.
+      var prior = sadFindHeaderByCreateKey_(hSh, createKey);
+      if (prior && prior.allocation_draft_id) {
+        var priorLines2 = sadReadLinesForDraft_(lSh, prior.allocation_draft_id);
+        return jsonResponse_({ success: true, reused: true, data: {
+          allocation_draft_id: prior.allocation_draft_id, outcome: 'CREATE_REPLAYED', zero_write: true,
+          intent: 'CREATE_NEW_ROUTE', create_idempotency_key: createKey,
+          line_count: priorLines2.length,
+          persisted_lines: priorLines2.map(function (pl) {
+            return { allocation_draft_line_id: String(pl.allocation_draft_line_id || ''),
+              allocation_draft_id: prior.allocation_draft_id, sku: String(pl.sku || ''),
+              site_sku: String(pl.site_sku || ''), window_code: String(pl.window_code || '') };
+          }),
+          reuse_basis: 'CREATE_IDEMPOTENCY_KEY' } });
+      }
+      // §B.2 — a NEW ticket. The resolver is deliberately NOT consulted, so no REUSE, no legacy adoption and
+      // no collision refusal is possible. An identical route becomes a second ticket with its own identity.
+      id = sadMintNewHeaderId_(hSh, header, k4Ready);
+      if (!id) {
+        return jsonResponse_({ success: false, error: 'ROUTE_IDENTITY_MINT_FAILED', code: 'ROUTE_IDENTITY_MINT_FAILED',
+          stage: 'header', zero_write: true, data: {} });
+      }
+      found = null;
+      isK2Group = sadIsK2Group_(true, id, header);
+    }
+  }
+
+  if (!id && !intentApplies) {
     var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile, k4Ready: k4Ready });
     if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
     if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + sadResolveBlockMessage_(res.reason) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
@@ -1575,18 +1738,43 @@ function sadAtomicUpsertCore_(body) {
   if (found) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
     if (SAD_TERMINAL_STATUSES_[st]) return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true });
+    // F1-7N-FB-4G-A2-R3 §B.1 — the applied station must be the one that OWNS the row. Scope identity comes from
+    // the stored header, never from the declaration: a payload cannot assert a station, only fail to match it.
+    var aScopeWant = String(body.applied_scope_key || header.applied_scope_key || '').trim().toLowerCase();
+    if (aScopeWant) {
+      var aStored = sadRowToObject_(hSh, found.row);
+      var aScopeHave = [String(aStored.company || ''), String(aStored.country || ''), String(aStored.marketplace || '')].join('|').toLowerCase();
+      if (aScopeWant !== aScopeHave) {
+        return jsonResponse_({ success: false, error: 'APPLIED_SCOPE_MISMATCH', code: 'APPLIED_SCOPE_MISMATCH',
+          stage: 'validation', zero_write: true, data: { allocation_draft_id: id, stored_scope: aScopeHave, applied_scope: aScopeWant } });
+      }
+    }
     // A: editing an existing route-INCOMPLETE (legacy) row is fail-closed unless an explicit USER migration is requested.
     // FB-4A §D — the REQUEST header goes to the guard here too. The AI-Plan generation path runs through THIS core,
     // and it is the path that mints a K2 id over the four route dimensions the generation engine leaves blank, so it
     // is the one most exposed to the id-drift trap the semantic comparison closes.
-    var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile, header || null);
-    if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
+    // F1-7N-FB-4G-A2-R3 §B.1 / A2-R2 §4 — A DECLARED UPDATE IS NOT SUBJECT TO THE DETERMINISTIC-ID GUARD.
+    //
+    // sadLegacyReconcileReason_ refuses an SADH-K2- row whose id no longer hashes to its own current field
+    // values. That is the NORMAL state of any header that has ever been legitimately edited, so applying it to
+    // an explicit UPDATE classified every legal edit as data corruption. An id names the ENTITY, not its
+    // contents. The guard still protects the paths that resolve a row by natural key, where "is this row my
+    // own shipment group?" is a real question.
+    if (sadIntent !== 'UPDATE_EXISTING_ROUTE') {
+      var legR = sadLegacyReconcileReason_(hSh, found, allowReconcile, header || null);
+      if (legR) return jsonResponse_({ success: false, error: legR + ' — ' + sadReconcileMessage_(legR) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: legR, existing_id: id } });
+    }
   }
 
   var now = procurementTimestamp_();
   var actor = String(header.created_by || 'inventory-replenishment').trim();
   var status = String(header.status || 'draft').trim(); if (!SAD_STATUSES_[status]) status = 'draft';
   var newHeaderCreated = false;
+  // F1-7N-FB-4G-A2-R3 §G.5 — every line this call persisted, by identity. The client binds these back to the
+  // DOM row that asked, so a created route becomes a persisted instance whose later edits are UPDATEs. Without
+  // it a created row would hold a draft id and NO line id, routeIsPersisted would stay false, and A2-R1's
+  // dirty guard would block Submit for a route that IS in fact saved.
+  var atomicPersistedLines = [];
 
   // ---- F1-7N-FA-3C-R6F2A (B): REUSE vs REGENERATE vs CONFLICT for an existing K2 group ----------------------
   var outcome = 'CREATE', priorVersion = '', nextVersion = '';
@@ -1643,6 +1831,11 @@ function sadAtomicUpsertCore_(body) {
       recommendation_group_no: String(header.recommendation_group_no || '').trim(),
       recommended_shipping_method: String(header.recommended_shipping_method || '').trim(),
       recommended_last_mile_delivery: String(header.recommended_last_mile_delivery || '').trim(),
+      // F1-7N-FB-4G-A2-R3 §F.3 — STORED ON THE INSERT. This is the whole point of the column: it is what
+      // lets a later retry of the same click be recognised as a replay instead of minting a second ticket.
+      // procurementAppendByHeader_ writes by column NAME, so it is inert on a pre-migration sheet - and
+      // unreachable with a value in hand, because a CREATE already refused above when the column is absent.
+      create_idempotency_key: createKey,
       generation_type: String(header.generation_type || 'user_created').trim(),
       calculation_run_id: String(header.calculation_run_id || '').trim(),
       formula_version: String(header.formula_version || '').trim(),
@@ -1692,6 +1885,21 @@ function sadAtomicUpsertCore_(body) {
           if (outcome === 'REGENERATE') {
             // C: system fields adopted; planned_qty per ownership; note + user override PRESERVED (never restore an old AI note).
             var patch = sadRegenerateLinePatch_(sadRowToObject_(lSh, found2.row), line);
+            // F1-7N-FB-4G-A2-R3 §8 — A USER EDIT'S QUANTITY IS THE AUTHORITY; A REGENERATION'S IS NOT.
+            //
+            // sadRegenerateLinePatch_ deliberately PRESERVES an operator-owned planned_qty: an AI-Plan regeneration
+            // must never overwrite a quantity the operator set. That rule is unchanged and still applies to every
+            // caller that carries no route intent.
+            //
+            // But this path now also carries the operator's OWN edit (intent = UPDATE_EXISTING_ROUTE / CREATE_NEW_
+            // ROUTE), and there the incoming planned_qty IS the operator speaking. Measured before this: editing a
+            // route's Qty through the atomic writer left the stored quantity untouched, because the preserve rule
+            // read the edit as a regeneration trying to overwrite the user. The intent is what tells the two apart,
+            // which is exactly why it is declared rather than inferred.
+            if ((sadIntent === 'UPDATE_EXISTING_ROUTE' || sadIntent === 'CREATE_NEW_ROUTE') &&
+                line.planned_qty != null && String(line.planned_qty).trim() !== '') {
+              patch.planned_qty = String(procurementNum_(line.planned_qty));
+            }
             for (var pk in patch) if (patch.hasOwnProperty(pk)) put(pk, patch[pk]);
           } else {
             // manual edit through the atomic endpoint: the user's Execution-Plan fields overwrite when provided.
@@ -1701,6 +1909,9 @@ function sadAtomicUpsertCore_(body) {
           var uc = found2.col('updated_at'); if (uc !== -1) lSh.getRange(found2.row, uc + 1).setValue(now);
         })(lf, l);
         updated++;
+      atomicPersistedLines.push({ allocation_draft_line_id: lineId, allocation_draft_id: id,
+        sku: String(l.sku || ''), site_sku: String(l.site_sku || ''), window_code: String(l.window_code || ''),
+        resolution: 'UPDATED' });
       } else {
         // R6F2G (B): a K2 group ALWAYS mints the canonical K2 line id from the natural key (a caller-supplied arbitrary
         // id is never trusted to name a new K2 line); a generic/legacy draft honors an explicit id, else mints SADL-.
@@ -1715,6 +1926,9 @@ function sadAtomicUpsertCore_(body) {
         SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_.forEach(function (h) { if (h in rowObj) return; if (l[h] != null) rowObj[h] = String(l[h]); });
         procurementAppendByHeader_(lSh, rowObj);
         created++;
+      atomicPersistedLines.push({ allocation_draft_line_id: lineId, allocation_draft_id: id,
+        sku: String(l.sku || ''), site_sku: String(l.site_sku || ''), window_code: String(l.window_code || ''),
+        resolution: 'CREATED' });
       }
     }
   } catch (e3) { writeErr = e3; }
@@ -1728,7 +1942,10 @@ function sadAtomicUpsertCore_(body) {
     }
     return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED — existing Draft; a line write failed and existing data was preserved (no delete). ' + (writeErr.message || writeErr), stage: 'lines', data: { allocation_draft_id: id, lines_committed: created + updated } });
   }
-  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped } });
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped,
+    intent: sadIntent || '', create_idempotency_key: createKey || '',
+    persisted_lines: atomicPersistedLines,
+    persisted_headers: [{ allocation_draft_id: id, resolution: (newHeaderCreated ? 'CREATED' : 'UPDATED') }] } });
 }
 
 // ---- submitShippingAllocationDrafts (DEPRECATED alias) ------------

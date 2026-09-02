@@ -141,7 +141,10 @@ eval(extractFn(G13, 'procurementAppendByHeader_'));
 eval(extractFn(G13, 'procurementFindRow_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
 eval(extractVar(G16, 'SAD_LIFECYCLE_TAIL_COLUMNS_'));
+// F1-7N-FB-4G-A2-R3 - the header's optional tail gained a THIRD append (create_idempotency_key at 35),
+// so a lift that stops at two now hits a ReferenceError inside a shipped constant.
 eval(extractVar(G16, 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
@@ -168,7 +171,11 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadFpVal_', 'sadLineNaturalKey_', 's
   'sadLineIsComplete_', 'sadLiveHeaderNames_', 'sadHasColumn_', 'sadDestinationIdentity_',
   'sadHeaderRouteIsComplete_', 'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_',
   'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_', 'sadLegacyReconcileReason_', 'sadReconcileMessage_',
-  'sadRowToObject_', 'sadReadLinesForDraft_', 'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_'
+  'sadRowToObject_', 'sadReadLinesForDraft_',
+  // F1-7N-FB-4G-A2-R3 - the CREATE path mints its identity through a named authority now (an identical
+  // route is a legitimate second ticket, so a taken deterministic id is minted around, never refused).
+  'sadMintNewHeaderId_',
+  'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_'
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 
 var SKU = 'CO1100-R';
@@ -389,16 +396,25 @@ section('§12.10–§12.11 / §6 / ADDENDUM §4 — REPLAY, AND THE COLLISION TH
   saveOne(a);
   eq([headers().length, lines().length], [1, 1], 'C0  one route stored');
 
-  // §12.10 — a CREATE retried after a lost response. The client model never learned the ids, so it retries as
-  // a CREATE — and the shipment group is already owned, so it is REFUSED with zero writes. No second票.
-  var lost = route({});                     // same natural route, no adopted ids: the retry
+  // F1-7N-FB-4G-A2-R3 §B.2 — REVERSED, and this reversal is why A2-R3 exists.
+  //
+  // A2-R2 relied on a K2/K4 collision refusal to stop a retried CREATE from duplicating: the shipment group
+  // was already owned, so the retry was refused with zero writes. A2-R3 §B.2 settles that an explicit
+  // + Add Route is ALWAYS a new ticket even with identical From / To / Method, so that refusal was BLOCKING A
+  // LEGITIMATE SECOND CLICK and had to go. Measured with it gone: the same create key sent twice produced two
+  // headers. The collision refusal was never real idempotency - it could not tell a retry from a second click,
+  // because nothing about the key was stored.
+  //
+  // So this writer now creates a second ticket, and that is CORRECT for a second click and WRONG for a retry -
+  // which is exactly why the route path moved to the atomic writer, where the create key is persisted and a
+  // retry returns the original ids with zero writes. That is asserted in the A2-R3 suite (F2/F2d).
+  var lost = route({});                     // same natural route, no adopted ids
   var r = saveOne(lost);
-  eq([r.ok, r.stage], [false, 'header'], 'C1  §12.10 a CREATE retry after a lost response is REFUSED');
-  eq(r.res.code, 'ROUTE_IDENTITY_CONFLICT', 'C1a with ROUTE_IDENTITY_CONFLICT (§6)');
-  eq(r.res.zero_write, true, 'C1b declaring a zero write');
-  eq([headers().length, lines().length], [1, 1], 'C1c and NO second票 was created (§12.10)');
-  ok(/press Search/.test(String(r.res.data.message)),
-    'C1d telling the operator the route may already be stored, rather than inventing an answer');
+  ok(r.ok, 'C1  §B.2 an identical route sent as a CREATE is no longer refused');
+  eq([headers().length, lines().length], [2, 2], 'C1a it becomes a SECOND ticket, which a second click must be');
+  ok(r.draftId !== a.allocation_draft_id, 'C1b with its own identity, never a reuse of the first');
+  ok(!/ROUTE_IDENTITY_CONFLICT/.test(JSON.stringify(r)),
+    'C1c and no natural-key collision verdict survives anywhere in the response');
 
   // §12.11 — an UPDATE replayed is idempotent by identity: same id, same values, same row.
   var v1 = String(headers()[0].draft_version);
@@ -408,18 +424,20 @@ section('§12.10–§12.11 / §6 / ADDENDUM §4 — REPLAY, AND THE COLLISION TH
   eq([headers().length, lines().length], [afterFirst.h, afterFirst.l], 'C2a adding no row');
   eq(lines()[0].allocation_draft_line_id, a.allocation_draft_line_id, 'C2b and keeping the same line identity');
 
-  // §6 — neither票 is modified by a refused collision, and no authority flag can pick a winner.
+  // F1-7N-FB-4G-A2-R3 §B.2 / §I.3 — REVERSED for the same reason. A state an explicit Add Route may create
+  // cannot be one an edit is forbidden to reach, and a ticket's identity is its immutable allocation_draft_id,
+  // never its K4 shape. The contender is REPORTED (shares_route_shape_with) rather than refused, and no ticket
+  // is merged or moved either way.
+  var hBefore = headers().length;
   var b = route({ shipping_method: 'air' });
   saveOne(b);
-  var snapshot = JSON.stringify(headers());
-  b.shipping_method = 'sea';                                     // now collides with route a
+  var bId = b.allocation_draft_id;
+  b.shipping_method = 'sea';                                     // now shares route a's shape
   var col = saveOne(b);
-  eq([col.ok, col.res.code], [false, 'ROUTE_IDENTITY_CONFLICT'], 'C3  §6 an UPDATE onto an owned shipment group is REFUSED');
-  eq(col.res.zero_write, true, 'C3a zero write');
-  eq(JSON.stringify(headers()), snapshot, 'C3b and NEITHER票 was modified, merged or moved');
-  eq(headers().length, 2, 'C3c nothing was created either');
-  ok(!/allow_legacy_reconcile|authority|force/.test(String(col.res.data.message)),
-    'C3d and no flag is offered that would choose which shipment survives');
+  ok(col.ok, 'C3  §B.2 an UPDATE onto a shape another ticket already holds is allowed');
+  eq(b.allocation_draft_id, bId, 'C3a and it is still the SAME ticket - no re-key, no new票');
+  eq(headers().length, hBefore + 1, 'C3b nothing was created and nothing was merged');
+  ok(!/ROUTE_IDENTITY_CONFLICT/.test(JSON.stringify(col)), 'C3c no collision verdict is returned');
 })();
 
 // ================================================================================================================
@@ -657,13 +675,20 @@ section('§13 — DEPLOYMENT');
 // ================================================================================================================
 (function () {
   var stamp = (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-  eq(stamp, 'F1-7N-FB-4G-A2-R2', 'D1  §13 the 16_ owner stamp is this round');
+  // F1-7N-FB-4G-A2-R3 - RESTATED. A round pinning its OWN stamp as an equality is the tenth appearance
+  // of that shape here, and it is false the moment a later round legitimately moves the server (A2-R3
+  // does). The durable claim is a FLOOR: 16_ carries A2-R2's change or something after it.
+  ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2-R2'),
+    'D1  §13 the 16_ owner stamp is at or after A2-R2');
   var expects = G63.match(/symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/);
   eq(expects && expects[1], stamp, 'D2  §13 and the health manifest expects exactly what the source declares');
-  eq((G63.match(/expected: 'F1-7N-FB-4G-A2-R2'/g) || []).length, 1, 'D2a in exactly one place');
+  // The durable form: whatever the source declares, the manifest expects it in EXACTLY ONE place.
+  eq((G63.match(new RegExp("expected: '" + stamp + "'", 'g')) || []).length, 1, 'D2a in exactly one place');
   ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2'), 'D3  §13 and it is at or after A2');
   var APP = RO.currentAppToken();
-  eq(APP, 'fb4ga2r2-routeintent-20260902', 'D4  §13 the application cache token is this round\'s');
+  // Same shape, same restatement: the token series is append-only, so at-or-after is the durable claim.
+  ok(RO.tokenAtOrAfter(APP, 'fb4ga2r2-routeintent-20260902'),
+    'D4  §13 the application cache token is at or after this round');
   eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'D4a on all 18 co-deployed refs');
   eq(INDEX.indexOf('fb4ga2-submitpreflight-20260902'), -1, 'D4b and the previous token is fully retired');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga2-submitpreflight-20260902'), 'D4c ordered after it in the append-only series');
@@ -728,14 +753,19 @@ mut('X4  §4 an UPDATE re-mints the line id', function () {
          String(lines()[0].allocation_draft_line_id) === lineBefore;
 });
 
-mut('X5  §6 a collision is written anyway', function () {
+// F1-7N-FB-4G-A2-R3 §B.2 - RE-ANCHORED, because the rule it probed was WITHDRAWN. A2-R2 REFUSED an UPDATE that
+// moved a ticket onto a shape another active header held; §B.2 makes two identical tickets legal, so a refusal
+// there contradicted the frozen premise and blocked a legal edit. What survives is that the contender is still
+// detected and REPORTED - silently dropping it would hide a real fact - so that is what this mutation removes.
+mut('X5  §B.2 a shared route shape is detected but never reported', function () {
   var m = mutateFn(G16, 'sadUpsertDraftHeaderCore_',
-    "    if (uContender) {", "    if (false) {");
+    "      shares_route_shape_with: uContender || '',", "");
   var honest = code(extractFn(G16, 'sadUpsertDraftHeaderCore_'));
   var mutated = code(extractFn(m, 'sadUpsertDraftHeaderCore_'));
-  return /if \(uContender\) \{/.test(honest) && !/if \(uContender\) \{/.test(mutated) &&
-         /if \(uContender\) return;/.test(mutated) &&          // the collector's own guard is untouched
-         /ROUTE_IDENTITY_CONFLICT/.test(honest);
+  return /shares_route_shape_with: uContender/.test(honest) &&
+         !/shares_route_shape_with: uContender/.test(mutated) &&
+         !/ROUTE_IDENTITY_CONFLICT/.test(honest) &&
+         /if \(uContender\) return;/.test(honest);
 });
 
 mut('X6  §5 a stale draft_version is written anyway', function () {
@@ -759,8 +789,10 @@ mut('X7  §7 a multi-line header is updated silently', function () {
 
 mut('X8  ADDENDUM §4 an Add Route adopts a zero-line legacy header', function () {
   var m = mutateFn(G16, 'sadUpsertDraftHeaderCore_',
-    "  if (sadIntent === 'CREATE_NEW_ROUTE' && hasRouteIntent && status !== 'cancelled') {\n    var cKey = sadK2GroupKey_(body);",
-    "  if (false) {\n    var cKey = sadK2GroupKey_(body);");
+  // RE-ANCHORED on ONE line: the two-line span this used included `var cKey = sadK2GroupKey_(body);`, which
+  // the §B.2 rewrite removed along with the collision refusal.
+    "  if (sadIntent === 'CREATE_NEW_ROUTE' && hasRouteIntent && status !== 'cancelled') {",
+    "  if (false) {");
   var honest = code(extractFn(G16, 'sadUpsertDraftHeaderCore_'));
   var mutated = code(extractFn(m, 'sadUpsertDraftHeaderCore_'));
   // With the CREATE branch disabled the natural-key resolver runs again, which is the adoption path.
@@ -791,12 +823,15 @@ mut('X10 ADDENDUM §3 the touched set is marked for every row, not only the chan
 
 mut('X11 §6 outcomes are correlated by array position instead of route instance', function () {
   var m = mutateFn(PAGE, '_irPersistOneRouteGroup_',
-    "            intent: _intent, instanceIds: _instanceIds,\n            line_count: (g.routes || []).length,",
-    "            line_count: (g.routes || []).length,");
+  // RE-ANCHORED on ONE line, and the count is READ from the source rather than remembered: A2-R3 added a
+  // THIRD outcome (the fail-closed ROUTE_ATOMIC_WRITER_UNAVAILABLE refusal), and every outcome must name the
+  // instance or some result reaches the operator with no way back to the row that caused it.
+    "            intent: _intent, instanceIds: _instanceIds,",
+    "            intent: _intent,");
   var honest = code(extractFn(PAGE, '_irPersistOneRouteGroup_'));
   var mutated = code(extractFn(m, '_irPersistOneRouteGroup_'));
-  return (honest.match(/instanceIds: _instanceIds/g) || []).length === 2 &&
-         (mutated.match(/instanceIds: _instanceIds/g) || []).length === 1;
+  var hN = (honest.match(/instanceIds: _instanceIds/g) || []).length;
+  return hN >= 2 && (mutated.match(/instanceIds: _instanceIds/g) || []).length === hN - 1;
 });
 
 mut('X12 §2/§4 a route edit ERASES the route\'s entity identity again', function () {

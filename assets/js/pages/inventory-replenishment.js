@@ -4054,8 +4054,44 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
         allow_legacy_reconcile: (allowLegacyAdoption === true) ? true : undefined
     });
     var draftIdSeen = '', serverGroupKey = '';
-    return Promise.resolve(window.KM.DB.upsertShippingAllocationDraft(header)).then(function (hres) {
-        if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'draft header upsert failed');
+
+    // F1-7N-FB-4G-A2-R3 §D — ONE REQUEST WRITES THE TICKET, OR NOTHING IS WRITTEN.
+    //
+    // This used to be TWO requests: upsertShippingAllocationDraft, then upsertShippingAllocationDraftLines. That
+    // cannot be atomic, and it was measured failing exactly as you would expect — the header committed, the line
+    // was refused PLAN_LINE_INCOMPLETE, and the table was left holding 1 header and 0 lines. An orphan zero-line
+    // header is not a cosmetic leftover: it is an ACTIVE draft of the station that later blocks Submit for every
+    // real route beside it, and §J forbids deleting it to get out of that.
+    //
+    // upsertShippingAllocationDraftAtomic validates the header AND every line before the first write, holds one
+    // lock, and compensates a new header by soft-cancelling it if the line write throws. §D.4 forbids
+    // simulating that with two calls, so there is no two-call path here any more — not even as a fallback.
+    var lines = (g.routes || []).map(function (r) {
+        return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
+    });
+
+    // §E.6 — FAIL CLOSED. A deployment without the atomic action cannot write a route ticket safely, and the
+    // one thing we must never do is quietly return to the path that produced the orphan headers. The deployment
+    // probe (KM_REQUIRED_DEPLOYED_ACTIONS_) names this as a deployment fact before a save is ever attempted;
+    // this is the second gate, at the call site.
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.upsertShippingAllocationDraftAtomic === 'function')) {
+        return Promise.resolve({ status: 'not_persisted', groupKey: g.groupKey, route: _irRouteLabel_(g),
+            intent: _intent, instanceIds: _instanceIds, code: 'ROUTE_ATOMIC_WRITER_UNAVAILABLE',
+            message: 'This build saves a route as one atomic header+line write, and the deployment does not ' +
+                'provide upsertShippingAllocationDraftAtomic. Nothing was written, and no partial two-call ' +
+                'save was attempted. Sync the Apps Script deployment, then save again.' });
+    }
+
+    var atomicBody = {
+        header: header,
+        lines: lines,
+        // The create idempotency key travels at the TOP of the body as well as on the header, because the server
+        // reads it from either: the header is where it is stored, the body is where a caller naturally puts it.
+        create_idempotency_key: header.create_idempotency_key || undefined,
+        expected_draft_version: header.expected_draft_version || undefined
+    };
+    return Promise.resolve(window.KM.DB.upsertShippingAllocationDraftAtomic(atomicBody)).then(function (hres) {
+        if (!hres || hres.success === false) throw _irMakeDraftSaveError_(hres && hres.error, 'shipping_allocation_drafts', 'atomic route ticket write failed');
         // F1-7N-FB-2A §D — a bare success flag is NOT proof of persistence. Require the persisted primary key AND
         // the created/updated classification; anything less is a failed save, never a Saved one.
         var ack = _irSaveAcknowledged_(hres);
@@ -4077,12 +4113,10 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
                 allocation_draft_id: draftIdSeen };
             throw gkErr;
         }
-        var lines = (g.routes || []).map(function (r) {
-            return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
-        });
-        return Promise.resolve(window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftIdSeen, lines: lines }));
+        // ONE response now carries both halves: there is no second request to issue.
+        return hres;
     }).then(function (lres) {
-        if (!lres || lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'draft line upsert failed');
+        if (!lres || lres.success === false) throw _irMakeDraftSaveError_(lres && lres.error, 'shipping_allocation_draft_lines', 'atomic route ticket write failed');
         // §D.9 — adopt only into THIS header's rows, then bind the rows to it.
         try { _irAdoptPersistedLineIds_(sku, draftIdSeen, (lres.data && lres.data.persisted_lines) || [], serverGroupKey || g.groupKey); } catch (eA) {}
         try { _irStampRouteGroupIds_(sku, g, draftIdSeen); } catch (eS) {}
@@ -4095,6 +4129,11 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
         if (replenAllocationDraft.allocationDraftIds.indexOf(draftIdSeen) === -1) replenAllocationDraft.allocationDraftIds.push(draftIdSeen);
         return { status: 'persisted', groupKey: g.groupKey, allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g),
             intent: _intent, instanceIds: _instanceIds,
+            // §F.4 — CREATE_REPLAYED means an earlier attempt of this same click had already committed and the
+            // server returned ITS ids with zero further writes. It is a SUCCESS, and it is not a second ticket.
+            outcome: String((lres.data && lres.data.outcome) || ''),
+            create_idempotency_key: String((lres.data && lres.data.create_idempotency_key) || header.create_idempotency_key || ''),
+            draft_version: String((lres.data && lres.data.draft_version) || ''),
             line_count: (g.routes || []).length,
             server_group_key: serverGroupKey,
             verification: (lres.data && lres.data.verification) || null,
@@ -4273,7 +4312,10 @@ window._irRoutesMissingDestination_ = _irRoutesMissingDestination_;
 function _flushDraftDbPersist(sku) {
     try {
         var cancels = _pendingDraftCancels[sku] || []; _pendingDraftCancels[sku] = [];
-        if (!(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft &&
+        // F1-7N-FB-4G-A2-R3 §D/§E.6 — the ATOMIC writer is what a route ticket is written with now, so it is
+        // what this guard requires. The two-call entry points are still needed for the LIFECYCLE operations
+        // beside it (soft-cancelling an empty header, soft-cancelling a line), which carry no route intent.
+        if (!(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftAtomic &&
               window.KM.DB.upsertShippingAllocationDraftLines && window.IRDraft)) return;
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return; // headless → cache only
         if (_draftDbInFlight[sku]) { _draftDbDirty[sku] = true; if (cancels.length) _pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels); return; }
@@ -5121,6 +5163,13 @@ function _saveAllocationDraftFromDom(sku) {
         var _cri = String(rowEl.getAttribute('data-route-instance') || '').trim();
         if (!_cri) { _cri = _newRouteInstanceId(); rowEl.setAttribute('data-route-instance', _cri); }
         row.client_route_instance_id = _cri;
+        // F1-7N-FB-4G-A2-R3 §G.1 — THE ROW SAYS WHICH OPERATION IT IS, and it says so from ITS OWN persisted
+        // state: a row the database already holds is an UPDATE of that row, a row it does not hold is the
+        // CREATE that + Add Route produced. Deliberately NOT derived from whether a field was edited (§G.2),
+        // from an array index, or from a natural key (§G.3) — each of those was a way of guessing which ticket
+        // this is, and guessing is what turned one edited route into three headers.
+        row.route_intent = String(row.allocation_draft_id || '').trim() ? 'UPDATE_EXISTING' : 'CREATE_NEW_ROUTE';
+        try { rowEl.setAttribute('data-route-intent', row.route_intent); } catch (_eRI) {}
         rows.push(row);
     });
     if (rows.length) replenAllocationDraft.bySku[sku] = rows;

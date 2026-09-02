@@ -485,7 +485,9 @@ ok(!/R4A1'/.test(ROUTER) && !/expected: 'F1-7N-FB-4E-R4A1'/.test(HEALTH),
 
 // The contract axes did NOT move: no action, verb or transport change this round.
 ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;/.test(HEALTH), '1.8 deployed action contract stays 10 (no action added or removed)');
-ok(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = 9;/.test(HEALTH), '1.9 required-action-list version stays 9');
+// F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+  '1.9 required-action-list version is at or after 9');
 ok(/var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;/.test(HEALTH), '1.10 transport contract stays 1');
 
 // The health identity payload reads BOTH stamps, so a truthful file produces a truthful answer.

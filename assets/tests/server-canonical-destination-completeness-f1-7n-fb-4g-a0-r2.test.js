@@ -360,7 +360,9 @@ ok(/if \(typeof window\.confirm !== 'function'\) return false;/.test(PAGEC),
 ok(!/fetch|_irPersistOneRouteGroup_|upsert/.test(code(extractFn(PAGE, '_irConfirmLegacyAdoption_'))),
   'G3  §H.17 the confirmation itself issues nothing');
 eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'G4  §H.20 action contract still 10');
-eq((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'G5  §H.20 required-action-list still 9');
+// F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+  'G5  §H.20 required-action-list is at or after 9');
 eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'G6  §H.20 transport contract still 1');
 
 // ================================================================================================================

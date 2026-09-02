@@ -241,6 +241,68 @@ function TEMP_ROUTE_IDENTITY_CENSUS_A2_R2() {
 
   // ============================================================================================================
   rule();
+  p('SECTION 3b - F1-7N-FB-4G-A2-R3 SS.J - CLASSIFICATION BY EVIDENCE, NEVER BY K2/K4 SHAPE');
+  // ============================================================================================================
+  p('Four buckets. A row goes in one only when the CELLS prove it; everything else is UNKNOWN, and an UNKNOWN');
+  p('row is not a candidate for anything. Two headers sharing a K4 shape is NOT evidence of a duplicate -');
+  p('A2-R3 SS.B.2 makes two identical tickets legal - so shape is deliberately not used to classify.');
+  var buckets = { ZERO_LINE_HEADER: [], EXPLICIT_ADD_ROUTE: [], EDIT_ARTEFACT_CANDIDATE: [], UNKNOWN: [] };
+  var hasCreateKey = H.headers.indexOf('create_idempotency_key') !== -1;
+  p('');
+  p('  header has create_idempotency_key column: ' + hasCreateKey +
+    (hasCreateKey ? '' : '   <- pre-migration: NO row can prove it was an explicit Add Route'));
+  // Every SKU that is LIVE (non-cancelled line) under some header, so a cancelled-only header can be checked
+  // for "its SKU is alive somewhere else" - the exact trace the old identity-erasing edit left behind.
+  var liveSkuHeaders = {};
+  L.rows.forEach(function (l) {
+    if (S(l.line_status).toLowerCase() === 'cancelled') return;
+    var k = S(l.sku).toLowerCase(); if (!k) return;
+    (liveSkuHeaders[k] = liveSkuHeaders[k] || {})[S(l.allocation_draft_id)] = 1;
+  });
+  H.rows.forEach(function (h) {
+    var id = S(h.allocation_draft_id); if (!id) return;
+    var st = S(h.status).toLowerCase();
+    if (st === 'submitted' || st === 'expired') return;             // history, not a repair candidate
+    var mineL = L.rows.filter(function (l) { return S(l.allocation_draft_id) === id; });
+    var activeL = mineL.filter(function (l) { return S(l.line_status).toLowerCase() !== 'cancelled'; });
+    var key = hasCreateKey ? S(h.create_idempotency_key) : '';
+    var why = '';
+    if (!mineL.length) {
+      why = 'no line row of ANY status references this header';
+      buckets.ZERO_LINE_HEADER.push(id + ' [' + st + '] - ' + why);
+    } else if (!activeL.length) {
+      // Only cancelled lines. If one of those SKUs is ALIVE under a different header, the line was released
+      // from here and re-created there - which is precisely what the pre-A2-R2 edit path did.
+      var moved = [];
+      mineL.forEach(function (l) {
+        var sk = S(l.sku).toLowerCase();
+        var hosts = Object.keys(liveSkuHeaders[sk] || {}).filter(function (x) { return x && x !== id; });
+        if (hosts.length) moved.push(S(l.sku) + ' -> ' + hosts.join(','));
+      });
+      if (moved.length) {
+        buckets.EDIT_ARTEFACT_CANDIDATE.push(id + ' [' + st + '] - every line here is CANCELLED and its SKU is live elsewhere: ' + moved.join('; '));
+      } else {
+        buckets.UNKNOWN.push(id + ' [' + st + '] - only cancelled lines, and no SKU of theirs is live elsewhere: cannot prove why');
+      }
+    } else if (key) {
+      buckets.EXPLICIT_ADD_ROUTE.push(id + ' [' + st + '] - carries create_idempotency_key ' + mask(key) + ', so a click created it');
+    } else {
+      buckets.UNKNOWN.push(id + ' [' + st + '] - ' + activeL.length + ' active line(s) and NO create key' +
+        (hasCreateKey ? ' (created before the key contract, or by another path)' : ' (column absent)'));
+    }
+  });
+  ['ZERO_LINE_HEADER', 'EXPLICIT_ADD_ROUTE', 'EDIT_ARTEFACT_CANDIDATE', 'UNKNOWN'].forEach(function (b) {
+    p('');
+    p('  ' + b + ' (' + buckets[b].length + ')');
+    if (!buckets[b].length) p('    (none)');
+    else buckets[b].forEach(function (x) { p('    . ' + x); });
+  });
+  p('');
+  p('  NOTE: EDIT_ARTEFACT_CANDIDATE is a CANDIDATE, not a verdict. The evidence is stated beside each row so a');
+  p('  human can agree or disagree with it. No row is repaired, and none may be repaired from this output alone.');
+
+  // ============================================================================================================
+  rule();
   p('SECTION 4 - DOWNSTREAM REFERENCES (is any of this already committed?)');
   // ============================================================================================================
   var SP = table('shipping_plan_lines') || table('shipping_plan_line');

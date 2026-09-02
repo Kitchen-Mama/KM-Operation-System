@@ -485,7 +485,9 @@ eq(renderedUS.length, 1, 'G15 §I and the CO1100-T question changed nothing abou
 section('H · DEPLOYMENT IDENTITY');
 // ================================================================================================================
 eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H1  action contract still 10');
-eq((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'H2  required-action-list still 9');
+// F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+  'H2  required-action-list is at or after 9');
 eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H3  transport contract still 1');
 // F1-7N-FB-4G-A0-R1 — RESTATED. These measured the WORKING TREE for a claim about A0's OWN COMMIT, so any
 // later round that legitimately touches Apps Script broke them — and A0-R1 does, because the writer the page

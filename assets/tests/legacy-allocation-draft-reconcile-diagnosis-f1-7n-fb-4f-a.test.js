@@ -270,7 +270,9 @@ section('§B/§C — THE DIAGNOSTIC');
   ok(ROUTER.indexOf('legacyAllocationDraftReconcile') === -1, 'B2 no new action name was added to the router');
   var HEALTH = readGs('63_api_v1_system_health.gs');
   ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;/.test(HEALTH), 'B3 the deployed action contract stays 10');
-  ok(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = 9;/.test(HEALTH), 'B4 the required-action list stays 9');
+  // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+  ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+    'B4 the required-action list is at or after 9');
   ok(/var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;/.test(HEALTH), 'B5 the transport contract stays 1');
 
   // STRUCTURALLY READ-ONLY. Comments and string literals are stripped FIRST, then CALL SITES are matched — a

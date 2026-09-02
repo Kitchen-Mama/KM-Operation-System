@@ -139,6 +139,13 @@ function makeEnv(toolSrc, opts) {
 
 var E0 = makeEnv();
 var FULL = E0.FULL, LFULL = E0.LFULL;
+// F1-7N-FB-4G-A2-R3 - THE RECORDED LIVE STATE, which is what this suite is about.
+//
+// B5 recorded production's header as 35 columns and pinned its fingerprint (sf:870364de). The fixture built
+// that state from the canonical authority, because at the time the two were the same array. A2-R3 appends
+// create_idempotency_key at 35, so the authority is now 36 and a fixture built from it is a sheet B5 never
+// measured - its fingerprint cannot match the recorded one, and it should not.
+var LIVE_HDR = FULL.slice(0, 35);
 
 // --------------------------------------------------------------------------------------------------- fixtures
 
@@ -240,7 +247,7 @@ var PLAN_LINE_COLS = ['shipping_plan_line_id', 'shipping_plan_id', 'sku', 'reque
 
 function mountAll(env, opts) {
     opts = opts || {};
-    env.mount('shipping_allocation_drafts', headerGrid(opts.hCols || FULL, opts.headers));
+    env.mount('shipping_allocation_drafts', headerGrid(opts.hCols || LIVE_HDR, opts.headers));
     env.mount('shipping_allocation_draft_lines', lineGrid(opts.lCols || LFULL, opts.lines));
     env.mount('shipping_plans', opts.planGrid || [PLAN_COLS.slice(), ['SP-1', 'ResUS', 'US', 'Amazon', 'submitted', 'EXEC-1']]);
     env.mount('shipping_plan_lines', opts.planLineGrid || [PLAN_LINE_COLS.slice(), ['SPL-1', 'SP-1', 'CO1100-R', 40, 'pm_adjustment']]);
@@ -934,7 +941,9 @@ section('K — the neighbours this round must not have disturbed');
 // ==============================================================================================================
 (function () {
     eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'K1 action contract stays 10');
-    eq((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'K2 required-action list version stays 9');
+    // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality here forbids every later round from adding an action.
+    ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+      'K2 required-action list version is at or after 9');
     eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'K3 transport contract stays 1');
     // F1-7N-FB-4F-B6 — RESTATED AS A FLOOR, for the same reason as B4's J4. B5 changed no deployed source and
     // asserting that by pinning the value of the moment made a later round's legitimate change look like a

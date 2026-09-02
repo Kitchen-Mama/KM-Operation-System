@@ -3957,7 +3957,11 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // F1-7N-FB-4D §E — the Site Inventory WRITE chain. Every step of Add Route -> save -> readback -> Submit
     // depends on these, and a deployment missing any one of them fails in a way that looks like a data problem.
     'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
-    'submitAllocationDraftsToShippingPlans', 'system.executionPlanDuplicateLineDiagnostic'
+    'submitAllocationDraftsToShippingPlans', 'system.executionPlanDuplicateLineDiagnostic',
+    // F1-7N-FB-4G-A2-R3 §E.6 — the atomic writer is now the ONLY path that creates or edits a route ticket, and
+    // the client fails closed rather than falling back to the two-call writer. A deployment without it cannot
+    // save a route at all, so that must be a named deployment fact rather than a save that mysteriously refuses.
+    'upsertShippingAllocationDraftAtomic'
 ];
 // F1-7N-FB-4C-R1 §D — the actions each PAGE needs, so a mismatch can name the page rather than only the action.
 // The probe is still one request; this is the mapping used to phrase the message.
@@ -3967,6 +3971,7 @@ var KM_PAGE_REQUIRED_ACTIONS_ = {
     // F1-7N-FB-4D §E — Site Inventory is the page whose failure this round is closing, so it gets the same
     // page-scoped verdict: the four actions its Execution Plan -> Submit chain cannot work without.
     'site-inventory': ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines',
+        'upsertShippingAllocationDraftAtomic',
         'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans']
 };
 // Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
@@ -4903,6 +4908,15 @@ window.KM.DB.upsertShippingAllocationDraft = function(payload) { return _kmWeekl
 window.KM.DB.getExecutionPlanConflictDiagnostic = function(payload) { return _kmWeeklyCommand_('system.executionPlanConflictDiagnostic', payload); };
 // UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
 window.KM.DB.upsertShippingAllocationDraftLines = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftLines', payload); };
+// F1-7N-FB-4G-A2-R3 §D/§E — THE ATOMIC route-ticket writer, and the reason it needed adding here at all.
+//
+// The action has been routed since F1-7N-FA-3C-R6F1 and there was NO adapter for it, so the frontend could not
+// call it even though it existed: the Execution Plan had only the two-call path, which cannot be atomic. A2-R3
+// measured that path leaving 1 header and 0 lines when the line write was refused — an orphan zero-line header.
+// Body: { header:{ ..., intent, allocation_draft_id?, expected_draft_version?, applied_scope_key? },
+//         lines:[ ... ], create_idempotency_key?, expected_draft_version? }.
+// One request commits the header and its line together, or writes nothing at all.
+window.KM.DB.upsertShippingAllocationDraftAtomic = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftAtomic', payload); };
 window.KM.DB.submitShippingAllocationDrafts = function(payload) { return _kmWeeklyCommand_('submitShippingAllocationDrafts', payload); };
 // F1-7N-FA-4B — THE canonical Inventory AI Plan Submit (allocation drafts → Weekly Shipping Plan). Server re-reads the
 // persisted drafts (NEVER trusts frontend-authored lines). Returns the FULL typed envelope (never throws on a business

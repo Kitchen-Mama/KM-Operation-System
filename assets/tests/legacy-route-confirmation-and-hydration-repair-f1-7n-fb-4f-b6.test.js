@@ -117,7 +117,10 @@ eval(extractFn(G13, 'procurementEnsureSheet_'));
 eval(extractFn(G13, 'procurementAppendByHeader_'));
 eval(extractFn(G13, 'procurementFindRow_'));
 eval([ 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_', 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_',
-  'SAD_LIFECYCLE_TAIL_COLUMNS_', 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
+  'SAD_LIFECYCLE_TAIL_COLUMNS_', 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_',
+    // F1-7N-FB-4G-A2-R3 - the optional tail gained a third append; a lift that stops at two
+    // ReferenceErrors inside a shipped constant.
+    'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
   'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
   'SAD_LINE_ETA_TAIL_COLUMNS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_',
   'SAD_STATUSES_', 'SAD_LINE_STATUSES_', 'SAD_TERMINAL_STATUSES_', 'SAD_TERMINAL_LINE_STATUSES_',
@@ -146,6 +149,10 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   'sadExactSchemaReason_', 'sadAtomicValidateBatch_', 'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_',
   'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_', 'sadLegacyReconcileReason_',
   'sadResolveBlockMessage_', 'sadReconcileMessage_', 'sadRowToObject_', 'sadReadLinesForDraft_',
+  // F1-7N-FB-4G-A2-R3 - the atomic core reaches three new authorities: whether this deployment can store
+  // a create key, the replay lookup, and the identity mint for a new ticket. A lift that omits any of them
+  // ReferenceErrors inside a shipped function, which reads exactly like a production defect.
+  'sadCreateIdempotencyReady_', 'sadFindHeaderByCreateKey_', 'sadMintNewHeaderId_',
   'sadAtomicUpsertCore_', 'sadSubmitToShippingPlansCore_'
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 
@@ -201,8 +208,14 @@ function seedLive(opts) {
   });
 }
 // One save through the REAL atomic core, shaped exactly as _irPersistOneRouteGroup_ shapes it.
+// F1-7N-FB-4G-A2-R3 - a distinct create key per CREATE, so no two of them look like one retried click.
+var __criSeq = 0;
+
 function saveRoute(scope, opts) {
   var header = IRDraft.buildDraftHeaderPayload({
+    // F1-7N-FB-4G-A2-R3 - an explicit id makes this an UPDATE of that exact row (§B.1). Without one the save
+    // is a CREATE and gets its own ticket; it can no longer resolve onto someone else's header by natural key.
+    allocation_draft_id: opts.id || undefined,
     company: scope.company, country: scope.country, marketplace: scope.marketplace,
     source_warehouse_id: opts.from == null ? FROM_WH : opts.from,
     destination_warehouse_id: opts.destination_warehouse_id || '',
@@ -210,7 +223,22 @@ function saveRoute(scope, opts) {
     destination_marketplace: opts.destination_marketplace || undefined,
     allow_legacy_reconcile: opts.allow === true ? true : undefined
   });
-  return sadAtomicUpsertCore_({ header: header, lines: opts.lines || [], allow_legacy_reconcile: opts.allow === true ? true : undefined });
+  // F1-7N-FB-4G-A2-R3 §B/§D - THE ATOMIC WRITER NOW REQUIRES A DECLARED INTENT.
+  //
+  // A route write says whether it is UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from
+  // whether a natural key happens to match, because that inference is what turned one edited route into
+  // three headers. A CREATE also carries a create_idempotency_key so a retried click cannot mint a second
+  // ticket. This helper derives both the way the shipped client derives them: from whether the row it is
+  // saving already holds an allocation_draft_id.
+  // An ADOPTION (opts.allow) is its own explicitly-authorised operation and declares no route intent - it
+  // resolves the legacy header by natural key on purpose. Everything else declares one, as the client does.
+  var _hasId = !!String(header.allocation_draft_id || '').trim();
+  var _adopting = opts.allow === true;
+  var _intent = _adopting ? undefined : (_hasId ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE');
+  return sadAtomicUpsertCore_({ header: header, lines: opts.lines || [],
+    intent: _intent,
+    create_idempotency_key: (_adopting || _hasId) ? undefined : ('CRI-B6-' + (++__criSeq)),
+    allow_legacy_reconcile: _adopting ? true : undefined });
 }
 function totalQty() { return lineObjs().reduce(function (n, l) { return n + (Number(l.planned_qty) || 0); }, 0); }
 function ids() { return headerObjs().map(function (h) { return h.allocation_draft_id; }); }
@@ -411,10 +439,16 @@ section('A — [§C] THE SEVEN DIAGNOSTIC ANSWERS, each demonstrated rather than
   eq((reg.match(/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1',
     'A27 [§C.7] and the transport contract stays at 1 — B6 adds no action and no route');
   // The deployment's own side of the same three axes: action 10 / required-action-list 9 / transport 1.
+  // F1-7N-FB-4G-A2-R3 — RESTATED. B6 moved no contract version, and asserting the triple as an equality said
+  // something stronger: that no LATER round may move one either. A2-R3 registers a new required action, which
+  // that constant's own rule says must bump the LIST version (9 -> 10); the ACTION contract and the TRANSPORT
+  // contract are untouched, because no router action and no envelope shape changed. Each axis is asserted for
+  // what it actually governs.
   eq([(G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '9', '1'],
-    'A28 [§C.7, §K] the deployment still declares 10 / 9 / 1 — no contract version moved');
+      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '1'],
+    'A28 [§C.7, §K] the deployed ACTION contract and the TRANSPORT contract are unmoved at 10 / 1');
+  ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+    'A28a and the required-action LIST version is at or after 9 (it is append-only)');
 })();
 
 // ================================================================================================================
@@ -573,12 +607,30 @@ section('D — [§G, tests 8-17, 22-25] SAFE LEGACY ADOPTION, against the four f
   eq([before.ids.length, before.lines, before.qty], [4, 6, 1020],
     'D1 the seeded state matches the frozen live census: 4 headers, 6 lines, 1020 units');
 
-  var blocked = saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon',
+  // F1-7N-FB-4G-A2-R3 §B.2 — RESTATED, and the outcome is now STRICTLY SAFER than the refusal it replaces.
+  //
+  // B6 measured that a save whose natural key collided with a legacy header was REFUSED
+  // (K4_IDENTITY_RECONCILIATION_REQUIRED) unless the operator explicitly authorised the adoption. What that
+  // refusal protected is that a save must never silently adopt someone else's header — and A2-R3 makes that
+  // structurally impossible instead of conditionally refused: a declared CREATE_NEW_ROUTE never consults the
+  // natural-key resolver at all, so there is nothing to adopt and nothing to refuse. The operator gets the
+  // new ticket they asked for, and the legacy header is not touched, not adopted and not refused-around.
+  //
+  // The ADOPTION path below is unchanged: it is still explicitly authorised, and still lands on H4's own id.
+  var unauth = saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon',
     lines: [{ sku: SKU_800, site_sku: SKU_800 + '-US', window_code: 'W36', planned_qty: 800 }] });
-  eq(blocked.success, false, 'D2 [§G] WITHOUT the explicit authority the save is still refused…');
-  ok(String(blocked.error).indexOf('K4_IDENTITY_RECONCILIATION_REQUIRED') === 0, 'D3 …with the same typed reason as B5 measured');
-  eq(blocked.zero_write, true, 'D4 and nothing is written');
-  eq([ids().length, totalQty()], [4, 1020], 'D5 the database is untouched by the refusal');
+  eq(unauth.success, true, 'D2 [§G] WITHOUT the authority the save neither adopts nor is refused…');
+  ok(String(unauth.data.allocation_draft_id) !== H4.id,
+    'D3 …it creates its OWN ticket, so H4 is never silently adopted');
+  ok(!/K4_IDENTITY_RECONCILIATION_REQUIRED|LEGACY_ROUTE_RECONCILIATION_REQUIRED/.test(JSON.stringify(unauth)),
+    'D3a and no reconciliation verdict is produced — there is nothing to reconcile');
+  var h4untouched = headerObjs().filter(function (h) { return h.allocation_draft_id === H4.id; })[0];
+  eq(String(h4untouched.destination_marketplace || ''), '',
+    'D4 H4 itself is UNTOUCHED — the unauthorised save wrote nothing to it');
+  eq(totalQty(), 1020 + 800, 'D5 and the station gained exactly the new ticket 800, nothing else');
+
+  // Re-seed so the ADOPTION assertions below run against the frozen live census, not the state above.
+  seedLive();
 
   var adopt = saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon', allow: true,
     lines: [{ sku: SKU_800, site_sku: SKU_800 + '-US', window_code: 'W36', planned_qty: 800 }] });
@@ -740,7 +792,9 @@ section('E — [§H, tests 18-21] EXPECTED ARRIVAL AND THE TWO OCEAN SERVICES');
   seedLive();
   saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon', allow: true,
     lines: [{ sku: SKU_800, site_sku: SKU_800 + '-US', window_code: 'W36', planned_qty: 800 }] });
-  var etaSave = saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon',
+  // F1-7N-FB-4G-A2-R3 - this is the SAME route being edited, so it NAMES H4 (§B.1). Before the intent
+  // contract it found H4 by natural key; a save that does not name a row is now a create of a new ticket.
+  var etaSave = saveRoute(US_SCOPE, { service: 'sea', destination_marketplace: 'Amazon', id: LIVE.headers[3].id,
     lines: [{ sku: SKU_800, site_sku: SKU_800 + '-US', window_code: 'W36', planned_qty: 800, expected_arrival: '2026-11-02' }] });
   eq(etaSave.success, true, 'E12 [test 20] an ETA-only save is accepted');
   eq(String(lineObjs().filter(function (l) { return l.sku === SKU_800; })[0].expected_arrival), '2026-11-02',
@@ -878,7 +932,11 @@ section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
   eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H5 action contract still 10');
   eq((DBAPI.match(/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H6 transport contract still 1');
   var reqList = /var KM_REQUIRED_DEPLOYED_ACTIONS_ = \[([\s\S]*?)\];/.exec(DBAPI)[1];
-  eq((reqList.match(/'[^']+'/g) || []).length, 16, 'H7 the probed action list is unchanged in size — no action was added');
+  // F1-7N-FB-4G-A2-R3 - RESTATED to a floor. B6's point was that IT added no action; an equality on the size
+  // also forbade every later round from adding one. A2-R3 adds upsertShippingAllocationDraftAtomic to the
+  // probe list, because the Execution Plan cannot write a route without it.
+  ok((reqList.match(/'[^']+'/g) || []).length >= 16,
+    'H7 the probed action list is at or above the B6 size (it is append-only)');
   ok(!/upsertShippingAllocationDraftAdopt|adoptLegacy|legacyAdopt/.test(read('assets/specs/active/apps-script/01_router.gs')),
     'H8 [§K] and the router registers no new action for adoption');
 

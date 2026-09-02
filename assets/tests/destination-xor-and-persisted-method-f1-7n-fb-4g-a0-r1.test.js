@@ -521,7 +521,9 @@ eq(STORED_GATE(withDest({ recommended_destination_warehouse_code_snapshot: 'Amaz
 section('H · DEPLOYMENT IDENTITY');
 // ================================================================================================================
 eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H1  action contract still 10');
-eq((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'H2  required-action-list still 9');
+// F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
+ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+  'H2  required-action-list is at or after 9');
 eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H3  transport contract still 1');
 // THIS ROUND DOES CHANGE THE SERVER, and that is the finding rather than an accident: sadUpsertDraftHeaderCore_
 // — the writer the Execution Plan actually calls — never carried destination_marketplace, so the client could

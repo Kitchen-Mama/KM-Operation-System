@@ -56,7 +56,10 @@ eval(extractVar(G16, 'SAD_LIFECYCLE_TAIL_COLUMNS_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_'));
 // F1-7N-FB-4F-B3 - the write gate's own, wider authority. Loaded here so this suite can assert the thing that
 // protects it: that the LIFECYCLE canonical above did NOT grow to match it.
+// F1-7N-FB-4G-A2-R3 - the header's optional tail gained a THIRD append (create_idempotency_key at 35),
+// so a lift that stops at two now hits a ReferenceError inside a shipped constant.
 eval(extractVar(G16, 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_'));
 var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_.concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_);
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =
   SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);

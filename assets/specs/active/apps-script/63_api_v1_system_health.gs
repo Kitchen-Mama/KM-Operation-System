@@ -71,7 +71,14 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;
 // current list. Not bumping it would make the R2 registry indistinguishable from the R1 registry that omitted
 // four actions — which is the exact failure this constant exists to prevent.
 // F1-7N-FB-4E-R3: 8 -> 9. SYS_REQUIRED_ACTIONS_ gained overseasStock.workspace.get.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 9;
+// F1-7N-FB-4G-A2-R3: 9 -> 10. SYS_REQUIRED_ACTIONS_ gained upsertShippingAllocationDraftAtomic.
+//
+// SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ deliberately does NOT move. Its rule is "bump whenever a router ACTION
+// is added or removed", and this round adds NO route: upsertShippingAllocationDraftAtomic has been in
+// 01_router.gs since F1-7N-FA-3C-R6F1. Any deployment already at action-contract v10 therefore routes it, and
+// the per-action handler probe is the second, independent gate for a partial file-by-file sync.
+// SYS_TRANSPORT_CONTRACT_VERSION_ does not move either: the envelope shape is unchanged.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 10;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -112,6 +119,13 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'system.executionPlanConflictDiagnostic', handler: 'handleExecutionPlanConflictDiagnostic_', used_by: 'F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic' },
   { action: 'system.requestOrderSendDiagnosticStatus', handler: 'handleRequestOrderSendDiagnosticStatus_', used_by: 'F1-7N-FB-4A addendum §G read-only Request Order Send diagnostic ownership + cycle resolution' },
   { action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
+  // F1-7N-FB-4G-A2-R3 §E — THE ATOMIC WRITER, WHICH THE EXECUTION PLAN NOW DEPENDS ON.
+  //
+  // It has been routed since F1-7N-FA-3C-R6F1 but was never in this registry, so a deployment missing it could
+  // only be discovered by a save failing. A2-R3 makes it the ONE path that creates or edits a route ticket
+  // (header + line together or not at all), and the client fails closed rather than falling back to the
+  // two-call writer — so its absence must be a named deployment fact before any save is attempted.
+  { action: 'upsertShippingAllocationDraftAtomic', handler: 'handleUpsertShippingAllocationDraftAtomic_', used_by: 'Execution Plan route CREATE/UPDATE (atomic header + line)' },
   { action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
   { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
   { action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
@@ -214,7 +228,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // moves and this expectation moves with it. The pair is the partial-sync detector for this deployment set:
   // sync 16_ without 63_ and the stale manifest still expects F1-7N-FB-4D; sync 63_ without 16_ and the new
   // manifest expects B3 while the file declares 4D. Either direction reports mixed_deployment.
-  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R2', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
+  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R3', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
   // F1-7N-FB-4F-B3 — REGISTERED HERE FOR THE REASON THIS MANIFEST EXISTS. B1 landed the route-identity contract
   // deliberately unmanifested because it was inert. It is not inert any more: 16_ now calls into it for the
   // typed schema refusals and for the K4 identity, so a deployment carrying the B3 writer WITHOUT this file
@@ -652,7 +666,9 @@ function handleShippingAllocationDraftDiagnostic_(body) {
 
   // 1. action + handler availability (probed by symbol, never invoked)
   var router = sysRouterReadiness_();
-  var wanted = ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'];
+  // F1-7N-FB-4G-A2-R3 §E.5 — the contract probe must be able to PROVE the atomic writer is reachable, because
+  // it is now the only path that creates or edits a route ticket and the client will not fall back.
+  var wanted = ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'upsertShippingAllocationDraftAtomic', 'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'];
   out.actions = router.actions.filter(function (a) { return wanted.indexOf(a.action) !== -1; });
   out.actions_all_available = out.actions.length === wanted.length && out.actions.every(function (a) { return a.available; });
   if (!out.actions_all_available) blockers.push({ reason: 'ROUTER_ACTION_OR_HANDLER_MISSING', detail: 'a required allocation-draft action is not present in the DEPLOYED code (partial Apps Script sync)' });

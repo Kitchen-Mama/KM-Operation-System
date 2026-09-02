@@ -223,8 +223,19 @@ function tb4SpecDisagreements_(spec) {
   var bad = [];
   spec.forEach(function (s) {
     var full = s.full_authority || [], pre = s.pre_authority || [];
-    if (full.length !== pre.length + 1) {
-      bad.push('SPEC_DISAGREES_WITH_AUTHORITY:' + s.table + ':FULL_' + full.length + '_IS_NOT_PRE_' + pre.length + '_PLUS_1');
+    // F1-7N-FB-4G-A2-R3 — RESTATED, because this equality made the authority UNEXTENDABLE.
+    //
+    // It asserted that the FULL authority is the pre-authority plus exactly ONE column, i.e. that this tool's
+    // target is the last canonical column there will ever be. A2-R3 appends create_idempotency_key at 35, so
+    // the header authority became 36 and this check refused the migration outright — permanently, and for a
+    // reason that has nothing to do with the sheet it was asked to migrate. 16_'s own schema comment warns
+    // about exactly this: a later append must not invalidate a queued migration.
+    //
+    // What the check is FOR is unchanged and is still asserted below: the target sits at its frozen index, the
+    // authority's prefix up to that index is byte-identical to the pre-authority, and the A1 cell matches. A
+    // column appended AFTER the target cannot affect any of those.
+    if (full.length < pre.length + 1) {
+      bad.push('SPEC_DISAGREES_WITH_AUTHORITY:' + s.table + ':FULL_' + full.length + '_IS_SHORTER_THAN_PRE_' + pre.length + '_PLUS_1');
     }
     if (s.frozen_index0 !== pre.length) {
       bad.push('SPEC_DISAGREES_WITH_AUTHORITY:' + s.table + ':FROZEN_INDEX_' + s.frozen_index0 + '_IS_NOT_PRE_LENGTH_' + pre.length);
@@ -326,7 +337,11 @@ function tb4AnalyzeTable_(ss, spec) {
     first_order_drift_index: -1,
     fingerprint_pre: tb4Fingerprint_(t.headers), fingerprint_post: null,
     gate_pre: null, gate_post: null,
-    expected_pre_count: spec.pre_authority.length, expected_post_count: spec.full_authority.length,
+    // F1-7N-FB-4G-A2-R3 — what THIS migration produces, not the authority's total length. This tool appends
+    // exactly ONE column (its own target), so its post count is pre + 1. Reading full_authority.length
+    // made the number grow every time a LATER column was appended to the authority, and reported a post
+    // state this tool never creates — create_idempotency_key at 35 is the A2-R3 helper's job, not this one's.
+    expected_pre_count: spec.pre_authority.length, expected_post_count: spec.pre_authority.length + 1,
     target_index: -1, state: null, proposed_write: null, blocking: [], __table: t
   };
 
@@ -372,9 +387,18 @@ function tb4AnalyzeTable_(ss, spec) {
 
   // Length must be exactly the reviewed PRE state or exactly the reviewed POST state. Anything between or
   // beyond is a schema this plan was not reviewed against.
-  if (t.headers.length !== spec.pre_authority.length && t.headers.length !== spec.full_authority.length) {
+  // F1-7N-FB-4G-A2-R3 — the POST state is this migration's own output (pre + its one column), not the whole
+  // authority's length. Those were the same number until A2-R3 appended create_idempotency_key at 35, after
+  // which this refused a correctly-migrated 35-column sheet for having the wrong count.
+  var postCount = spec.pre_authority.length + 1;
+  // Accepted live lengths: the PRE state (this migration is to-do), or AT LEAST the POST state (it is done).
+  // "At least" matters because a LATER canonical column may already have been appended after this target -
+  // create_idempotency_key at 35 is A2-R3's, not this migration's - and a sheet carrying it is finished from
+  // here, not malformed. The order check above already proves every column up to the target is byte-exact and
+  // that nothing unknown is present, which is what actually protects the append.
+  if (t.headers.length !== spec.pre_authority.length && t.headers.length < postCount) {
     out.blocking.push('COL_COUNT_' + t.headers.length + '_EXPECTED_' +
-      spec.pre_authority.length + '_OR_' + spec.full_authority.length);
+      spec.pre_authority.length + '_OR_AT_LEAST_' + postCount);
   }
 
   // The runtime gate must already accept the live schema. If it does not, this is not a table to append to.
@@ -840,7 +864,12 @@ function TEMP_SHIPPING_ALLOCATION_SCHEMA_B4_COMMIT() {
     var afterTables = spec.map(function (s) { return tb4ReadTable_(ss, s.table); });
     afterTables.forEach(function (t, i) {
       var s = spec[i], a = A[i];
-      var exact = t.headers.length === s.full_authority.length &&
+      // F1-7N-FB-4G-A2-R3 — "exact" means the header is exactly what THIS migration set out to produce: the
+      // pre-authority plus its one target column, and a byte-exact PREFIX of the canonical authority. It is not
+      // "equal to the authority's current length" — a column appended after this target (create_idempotency_key
+      // at 35) leaves this migration's output correct and unchanged.
+      var sPostCount = s.pre_authority.length + 1;
+      var exact = t.headers.length === sPostCount &&
         t.headers.every(function (h, ix) { return h === s.full_authority[ix]; });
       var gate = tb4GateReason_(t.headers, s);
       var fp = tb4Fingerprint_(t.headers);

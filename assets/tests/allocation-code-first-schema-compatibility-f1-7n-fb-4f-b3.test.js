@@ -72,6 +72,9 @@ function extractFn(src, name) {
 // ==============================================================================================================
 // THE IN-MEMORY SPREADSHEET — the ONLY thing simulated. Every rule under test runs from the shipped source.
 // ==============================================================================================================
+// F1-7N-FB-4G-A2-R3 - a distinct create key per CREATE, so no two of them look like one retried click.
+var __criSeq = 0;
+
 function makeEnv(sadSrc, ricSrc) {
     var SHEETS = {};
     var sandbox = {
@@ -155,7 +158,32 @@ function makeEnv(sadSrc, ricSrc) {
     env.stage30 = function () { env.mount(env.HDR, env.LHDR); };                       // today
     env.stage34 = function () { env.mount(env.FULL.slice(0, 34), env.LHDR); };         // lifecycle tail only
     env.stage35 = function () { env.mount(env.FULL, env.LFULL); };                     // both appends done
-    env.save = function (body) { sandbox.__body = body; return vm.runInContext('sadAtomicUpsertCore_(__body)', ctx); };
+    // F1-7N-FB-4G-A2-R3 §B/§D - THE ATOMIC WRITER NOW REQUIRES A DECLARED INTENT.
+    //
+    // A route write says whether it is UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from
+    // whether a natural key happens to match, because that inference is what turned one edited route into
+    // three headers. A CREATE also carries a create_idempotency_key so a retried click cannot mint a second
+    // ticket. This helper derives both the way the shipped client derives them: from whether the row it is
+    // saving already holds an allocation_draft_id.
+    env.save = function (body) {
+        body = body || {};
+        var h = body.header || {};
+        if (!body.intent && !h.intent) {
+            var hasId = !!String(h.allocation_draft_id || '').trim();
+            body.intent = hasId ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE';
+            if (!hasId && !body.create_idempotency_key) body.create_idempotency_key = 'CRI-B3-' + (++__criSeq);
+        }
+        sandbox.__body = body; return vm.runInContext('sadAtomicUpsertCore_(__body)', ctx);
+    };
+    // F1-7N-FB-4G-A2-R3 - seed a row that PREDATES a schema append, without going through the writer.
+    // A test about an id created before the append must not depend on the writer's CURRENT create rules.
+    env.pushRow = function (tab, obj) {
+        var sh = SHEETS[tab], names = sh.rows[0];
+        var row = names.map(function (n) { return (obj && obj[n] != null) ? String(obj[n]) : ''; });
+        sh.rows.push(row);
+    };
+    // F1-7N-FB-4G-A2-R3 - the mounted header NAMES, so a stage can be asserted for its own shape.
+    env.hdrNames = function (tab) { return SHEETS[tab || 'shipping_allocation_drafts'].rows[0].slice(); };
     env.headerObjs = function () {
         var sh = SHEETS['shipping_allocation_drafts'], h = sh.rows[0];
         return sh.rows.slice(1).map(function (r) { var o = {}; h.forEach(function (k, i) { if (k) o[k] = r[i]; }); return o; });
@@ -199,8 +227,12 @@ function oneLine(over) {
 section('A — [tests 1-8] the schema acceptance matrix, asked of the production gate');
 // ==============================================================================================================
 eq(HDR.length, 30, 'A0 the required header contract is still 30');
-eq(FULL.length, 35, 'A0 the full header authority is 35');
-eq(FULL.slice(30), TAIL.concat(['destination_marketplace']), 'A0 tail order: lifecycle 30..33, then destination_marketplace at 34');
+// F1-7N-FB-4G-A2-R3 — RESTATED. The authority is APPEND-ONLY, so its length is a floor, not a constant: it
+// grew to 36 when create_idempotency_key was appended at 35. What B3 actually froze is the ORDER of the tail
+// it introduced, and that is asserted as a PREFIX so a later append cannot invalidate it.
+ok(FULL.length >= 35, 'A0 the full header authority is at least 35 (now ' + FULL.length + ')');
+eq(FULL.slice(30, 35), TAIL.concat(['destination_marketplace']),
+  'A0 tail order: lifecycle 30..33, then destination_marketplace at 34 — unmoved by any later append');
 eq(LHDR.length, 30, 'A0 the required line contract is still 30');
 eq(LFULL.length, 31, 'A0 the full line authority is 31');
 eq(LFULL[30], 'expected_arrival', 'A0 with expected_arrival at index 30');
@@ -242,13 +274,25 @@ section('B — [tests 9-12] before the columns exist, today\'s behaviour is pres
 // ==============================================================================================================
 (function () {
     var e = makeEnv(); e.stage30();
-    // Test 9 — the current 30/30 schema keeps working exactly as it does now.
+    // F1-7N-FB-4G-A2-R3 §F.7 — RESTATED, AND THIS IS A DELIBERATE BEHAVIOUR CHANGE, NOT AN ACCIDENT.
+    //
+    // Test 9 used to assert that a warehouse route still SAVES on the pre-migration 30/30 schema. A2-R3
+    // freezes that an explicit + Add Route is always a new ticket (§B.2), which removed the K2/K4 collision
+    // refusal — and that refusal was the only thing stopping a retried click from creating a second ticket.
+    // Real protection needs the create key STORED, so a CREATE on a sheet that cannot store it is REFUSED
+    // rather than degraded to a create with no replay protection.
+    //
+    // The consequence, stated plainly: A ROUTE CANNOT BE CREATED UNTIL THE create_idempotency_key MIGRATION
+    // HAS RUN. That is why the release order runs the migration BEFORE the frontend is published. Everything
+    // else about the pre-migration schema is unchanged, and the refusals below still fire first and unaltered.
     var r = e.save({ header: whRoute(), lines: [oneLine()] });
-    eq(r.success, true, 'B1 [test 9] a warehouse route still saves on the live 30/30 schema');
-    eq(e.headerObjs().length, 1, 'B2 [test 9] one header row');
-    eq(e.lineObjs().length, 1, 'B3 [test 9] one line row');
-    var id30 = e.headerObjs()[0].allocation_draft_id;
-    ok(/^SADH-K2-/.test(id30), 'B4 [test 9] and it keys under K2, because K4 has nowhere to store its destination (' + id30 + ')');
+    eq(r.success, false, 'B1 [test 9] a route CREATE is REFUSED on the live 30/30 schema (§F.7)');
+    eq(r.code, 'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE', 'B1a with the typed reason naming why');
+    eq(r.data.column, 'create_idempotency_key', 'B1b and naming the column that cannot hold the key');
+    eq(r.zero_write, true, 'B2 [test 9] zero_write');
+    eq([e.headerObjs().length, e.lineObjs().length], [0, 0], 'B3 [test 9] no header and no line were written');
+    ok(/Run the create_idempotency_key migration first/.test(String(r.data.message)),
+      'B4 [test 9] and it tells the operator what to do rather than failing silently');
 
     // Test 10 — a marketplace route is REFUSED with a typed reason, and writes nothing.
     var before = e.headerObjs().length;
@@ -280,14 +324,19 @@ section('C — [test 13] the lifecycle-only state (34 header / 30 line) is fully
 // ==============================================================================================================
 (function () {
     var e = makeEnv(); e.stage34();
+    // F1-7N-FB-4G-A2-R3 §F.7 — RESTATED for the same reason as B1: a route CREATE needs a sheet that can store
+    // its create_idempotency_key, and a 34-column header cannot. It is refused with zero writes rather than
+    // degraded to a create with no replay protection. What this section is actually about — that the lifecycle
+    // tail is present while destination_marketplace and the line ETA are not — is unchanged and asserted below.
     var r = e.save({ header: whRoute(), lines: [oneLine()] });
-    eq(r.success, true, 'C1 [test 13] a warehouse route saves on a 34-column header');
-    eq(e.headerObjs().length, 1, 'C2 [test 13] one header row');
-    eq(e.lineObjs()[0].planned_qty, 800, 'C3 [test 13] with its line and quantity intact');
-    // The lifecycle columns exist and are written / left blank exactly as the lifecycle contract says.
-    var h = e.headerObjs()[0];
-    eq(h.expired_at, '', 'C4 [test 13] a new row is not expired');
-    ok('generation_run_id' in h, 'C5 [test 13] and the lifecycle provenance column is present');
+    eq(r.success, false, 'C1 [test 13] a route CREATE is refused on a 34-column header (§F.7)');
+    eq(r.code, 'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE', 'C2 [test 13] with the typed reason');
+    eq([e.headerObjs().length, e.lineObjs().length], [0, 0], 'C3 [test 13] and nothing at all was written');
+    // The lifecycle columns exist at this stage, which is what the stage is FOR.
+    var c34 = e.hdrNames();
+    eq(c34.slice(30, 34), TAIL, 'C4 [test 13] the lifecycle tail is present at 30..33');
+    eq(c34.indexOf('destination_marketplace'), -1,
+      'C5 [test 13] and destination_marketplace is not — which is what makes this stage 34');
     // Still no marketplace and no ETA.
     eq(e.save({ header: mktRoute({ recommendation_group_no: '9' }), lines: [oneLine()] }).error,
         'ROUTE_IDENTITY_NOT_PERSISTABLE', 'C6 [test 13] a marketplace route is still refused at 34 columns');
@@ -350,7 +399,24 @@ eq(K4DIMS, ['planning_cycle', 'company', 'country', 'marketplace', 'source_page'
 (function () {
     var e = makeEnv();
     e.stage30();
-    var first = e.save({ header: whRoute(), lines: [oneLine()] });
+    // F1-7N-FB-4G-A2-R3 - SEEDED, not created. This test is about a row that PREDATES the append, and a
+    // pre-migration sheet can no longer CREATE one (§F.7: a create needs somewhere to store its key).
+    // Seeding states the premise directly instead of depending on the writer's current create rules.
+    var _seedWh = whRoute();
+    var _seedId = D.get('sadK2DeterministicHeaderId_')(_seedWh);
+    e.pushRow('shipping_allocation_drafts', {
+        allocation_draft_id: _seedId, source_page: 'inventory_replenishment',
+        company: _seedWh.company, country: _seedWh.country, marketplace: _seedWh.marketplace,
+        status: 'draft', generation_type: 'user_created', draft_version: '1',
+        recommended_source_warehouse_id: _seedWh.recommended_source_warehouse_id,
+        recommended_destination_warehouse_id: _seedWh.recommended_destination_warehouse_id,
+        recommended_shipping_method: _seedWh.recommended_shipping_method
+    });
+    e.pushRow('shipping_allocation_draft_lines', {
+        allocation_draft_line_id: 'SADL-K2-SEEDED001', allocation_draft_id: _seedId,
+        sku: oneLine().sku, site_sku: oneLine().site_sku, window_code: oneLine().window_code,
+        planned_qty: '800', generation_type: 'user_created'
+    });
     var storedId = e.headerObjs()[0].allocation_draft_id;
     ok(/^SADH-K2-/.test(storedId), 'E15 [test 20] a row created before the append carries a K2 id');
     var storedLineId = e.lineObjs()[0].allocation_draft_line_id;
@@ -362,14 +428,21 @@ eq(K4DIMS, ['planning_cycle', 'company', 'country', 'marketplace', 'source_page'
     lSheet.rows[0] = LFULL.slice();
     lSheet.rows.forEach(function (r, i) { if (i) { while (r.length < 31) r.push(''); } });
 
-    // The SAME route replays. K4 is ready now, and the stored row's own destination resolves, so K4 adopts it.
-    var again = e.save({ header: whRoute(), lines: [oneLine()] });
+    // F1-7N-FB-4G-A2-R3 §B.1 - the SAME route replays, and it NAMES the row it is. Before the intent
+    // contract it re-found that row by natural key; a save that names nothing is now a create of a new
+    // ticket, which is the whole point. What this test is about - that the stored K2 id survives the
+    // schema growing underneath it and is never re-keyed - is unchanged and asserted below.
+    var again = e.save({ header: whRoute({ allocation_draft_id: storedId }), lines: [oneLine()] });
     eq(e.headerObjs().length, 1, 'E16 [test 21] the replay creates NO second header');
     eq(e.headerObjs()[0].allocation_draft_id, storedId, 'E17 [test 20] and the existing K2 id is UNCHANGED — never re-keyed');
     eq(e.lineObjs().length, 1, 'E18 [test 21] no second line either');
     eq(e.lineObjs()[0].allocation_draft_line_id, storedLineId, 'E19 [test 21] and the line keeps its own id');
-    eq(again.data && again.data.outcome, 'REUSED', 'E20 [test 22] the identical replay is a REUSE, not a write');
-    eq(again.reused, true, 'E21 [test 22] reported as reused');
+    // F1-7N-FB-4G-A2-R3 - the REUSE short-circuit compares fingerprints, and this row was SEEDED rather than
+    // written, so it cannot be byte-identical to what the writer would produce. Reuse-on-identical-payload is
+    // tested in F2-F4, where both saves go through the writer. What matters here is that the replay is an
+    // UPDATE of the named row and creates nothing - which E16-E19 above assert directly.
+    ok(again.success !== false, 'E20 [test 21] the replay of the named row succeeds');
+    ok(again.data && again.data.outcome !== 'CREATED', 'E21 [test 21] and is never classified as a create');
 })();
 
 // ==============================================================================================================
@@ -377,11 +450,18 @@ section('F — [tests 22-23] replay is idempotent; a genuinely different route i
 // ==============================================================================================================
 (function () {
     var e = makeEnv(); e.stage35();
-    var a = e.save({ header: mktRoute(), lines: [oneLine({ expected_arrival: '2026-10-16' })] });
+    // F1-7N-FB-4G-A2-R3 §F.4 - REPLAY IDEMPOTENCY IS NOW BY CREATE KEY, NOT BY NATURAL KEY.
+    //
+    // Two id-less saves of the same route used to collapse onto one header, because the writer resolved by
+    // natural key. §B.2 makes two explicit Add Route clicks TWO tickets even when identical, so 'the same
+    // request replayed' has to be expressed the way the client expresses it: the SAME create key. That is
+    // what distinguishes one click retried from two clicks, and it is the only thing that can.
+    var KEY22 = 'CRI-B3-REPLAY-22';
+    var a = e.save({ header: mktRoute(), create_idempotency_key: KEY22, lines: [oneLine({ expected_arrival: '2026-10-16' })] });
     eq(a.success, true, 'F1 the marketplace route saves');
     var id1 = e.headerObjs()[0].allocation_draft_id;
-    // Test 22 — the same K4 request replays with zero duplicates.
-    var b = e.save({ header: mktRoute(), lines: [oneLine({ expected_arrival: '2026-10-16' })] });
+    // Test 22 — the same request replays with zero duplicates.
+    var b = e.save({ header: mktRoute(), create_idempotency_key: KEY22, lines: [oneLine({ expected_arrival: '2026-10-16' })] });
     eq(e.headerObjs().length, 1, 'F2 [test 22] a replay of the same K4 route creates zero duplicate headers');
     eq(e.lineObjs().length, 1, 'F3 [test 22] and zero duplicate lines');
     eq(b.reused, true, 'F4 [test 22] it is a REUSE');
@@ -398,7 +478,9 @@ section('F — [tests 22-23] replay is idempotent; a genuinely different route i
 
     // An ETA change updates the SAME line under the SAME header — never a new route.
     var before = e.headerObjs().length;
-    var eRes = e.save({ header: mktRoute(), lines: [oneLine({ expected_arrival: '2026-12-25' })] });
+    // F1-7N-FB-4G-A2-R3 §B.1 - the SAME route being edited NAMES itself. An ETA is not an identity
+    // dimension, and it never was; what changed is that a save which names nothing is now a create.
+    var eRes = e.save({ header: mktRoute({ allocation_draft_id: id1 }), lines: [oneLine({ expected_arrival: '2026-12-25' })] });
     eq(e.headerObjs().length, before, 'F10 [test 16] changing the ETA creates no header');
     var mine = e.lineObjs().filter(function (l) { return l.allocation_draft_id === id1; });
     eq(mine.length, 1, 'F11 [test 16] and no second line');
@@ -441,13 +523,24 @@ section('G — [tests 24-26] the destination is exactly one thing, and a contest
     row[FULL.indexOf('status')] = 'draft';
     sh.rows.push(row);
 
+    // F1-7N-FB-4G-A2-R3 §B.2 - RESTATED, and the outcome is STRICTLY SAFER than the block it replaces.
+    //
+    // B3 measured that a route whose K2 dimensions matched a contested legacy row was BLOCKED
+    // (K4_IDENTITY_RECONCILIATION_REQUIRED) so the legacy row could never be migrated in place by accident.
+    // A declared CREATE_NEW_ROUTE never consults the natural-key resolver at all, so there is nothing to
+    // contest: the operator gets the ticket they asked for and the legacy row is not touched, not migrated
+    // and not blocked around. The protection is now structural rather than conditional.
     var r = e.save({ header: mktRoute({ recommended_shipping_method: 'sea' }), lines: [oneLine()] });
-    eq(r.success, false, 'G12 [test 26] a route the legacy row claims under K2 but differs from under K4 is BLOCKED');
-    eq(r.data.reason, 'K4_IDENTITY_RECONCILIATION_REQUIRED', 'G13 [test 26] with its own typed reason');
-    eq(e.headerObjs().length, 1, 'G14 [test 26] no second header is created beside it');
-    eq(e.headerObjs()[0].allocation_draft_id, 'SADH-K2-LEGACY01', 'G15 [test 26] and the legacy row is untouched');
-    eq(e.headerObjs()[0].destination_marketplace, '', 'G16 [test 26] never migrated in place');
-    ok(/its own words|migrate a legacy row in place/.test(r.error), 'G17 [test 26] and the message says why');
+    eq(r.success, true, 'G12 [test 26] a declared CREATE cannot be contested by a legacy row');
+    ok(!/K4_IDENTITY_RECONCILIATION_REQUIRED/.test(JSON.stringify(r)),
+      'G13 [test 26] so no reconciliation verdict is produced - there is nothing to reconcile');
+    eq(e.headerObjs().length, 2, 'G14 [test 26] it becomes its OWN header beside the legacy row');
+    var leg = e.headerObjs().filter(function (h) { return h.allocation_draft_id === 'SADH-K2-LEGACY01'; })[0];
+    ok(!!leg, 'G15 [test 26] and the legacy row is still there, untouched');
+    eq(leg.destination_marketplace, '', 'G16 [test 26] never migrated in place');
+    ok(e.headerObjs().filter(function (h) { return h.allocation_draft_id !== 'SADH-K2-LEGACY01'; })[0]
+        .destination_marketplace === 'Amazon',
+      'G17 [test 26] the new ticket carries its own destination, on its own row');
 })();
 
 // A genuine K4 contest: two active rows already keying to one K4 group.
@@ -460,10 +553,18 @@ section('G — [tests 24-26] the destination is exactly one thing, and a contest
         row[FULL.indexOf('status')] = 'draft';
         sh.rows.push(row);
     });
+    // F1-7N-FB-4G-A2-R3 §B.2 - RESTATED. The BLOCKED_CONFLICT verdict belongs to the natural-key resolver,
+    // and a declared CREATE never consults it: a pre-existing contest between two stored rows cannot block
+    // an operator from adding a route. The contest is still real and still visible to the resolver-based
+    // paths (and to the census); what it may no longer do is refuse an unrelated create.
+    var beforeIds = e.headerObjs().map(function (h) { return h.allocation_draft_id; }).sort();
     var r = e.save({ header: mktRoute(), lines: [oneLine()] });
-    eq(r.success, false, 'G18 [test 26] two active headers for one K4 group is a CONFLICT');
-    ok(/BLOCKED_CONFLICT/.test(r.error), 'G19 [test 26] reported as BLOCKED_CONFLICT');
-    eq(e.headerObjs().length, 2, 'G20 [test 26] and neither is touched');
+    eq(r.success, true, 'G18 [test 26] a pre-existing K4 contest does not block a declared CREATE');
+    ok(!/BLOCKED_CONFLICT/.test(JSON.stringify(r)), 'G19 [test 26] so no BLOCKED_CONFLICT is produced');
+    eq(e.headerObjs().length, 3, 'G20 [test 26] it becomes its own third ticket');
+    var stillThere = e.headerObjs().map(function (h) { return h.allocation_draft_id; })
+        .filter(function (id) { return beforeIds.indexOf(id) !== -1; }).sort();
+    eq(stillThere, beforeIds, 'G20a and NEITHER contested row was touched, merged or re-keyed');
 })();
 
 // ==============================================================================================================
@@ -540,7 +641,11 @@ eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]
 // used_by label), and counting the entries gave 40. Both are the right number for the wrong question - the
 // list may legitimately grow, and what must not move without a deliberate decision is
 // SYS_REQUIRED_ACTION_LIST_VERSION_, which is what every other suite in this repository actually pins.
-eq((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9',
+// F1-7N-FB-4G-A2-R3 - RESTATED to a FLOOR. This was an equality with the then-current number, which
+// asserts "no later round may ever add an action" rather than what the round meant. The registry is
+// append-only and monotonic, so at-or-after is the durable claim (and the idiom three other suites
+// here already use). A2-R3 registers upsertShippingAllocationDraftAtomic and bumps it to 10.
+ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
   'I9 [test 29] the required-action list VERSION stays 9');
 eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'I10 [test 29] transport contract stays 1');
 // No route was created merely to expose a pure helper.
@@ -573,6 +678,8 @@ section('J — [test 30] the B2 dry run still reproduces the recorded LIVE resul
         (SAD.match(/var SAD_LIFECYCLE_TAIL_COLUMNS_ = \[[^\]]*\];/) || [])[0],
         (SAD.match(/var SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ =[\s\S]*?;/) || [])[0],
         (SAD.match(/var SAD_ROUTE_IDENTITY_TAIL_COLUMNS_ = \[[^\]]*\];/) || [])[0],
+        // F1-7N-FB-4G-A2-R3 - the optional tail concatenates a THIRD append now, so the lift needs it too.
+        (SAD.match(/var SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_ = \[[^\]]*\];/) || [])[0],
         (SAD.match(/var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ =[\s\S]*?;/) || [])[0],
         (SAD.match(/var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =[\s\S]*?;/) || [])[0],
         (SAD.match(/var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = \[[\s\S]*?\n\];/) || [])[0],
@@ -699,15 +806,15 @@ mutate('L2 a supplied line ETA silently dropped when its column is absent',
         return o.res.error === 'EXPECTED_ARRIVAL_NOT_PERSISTABLE' && o.headers.length === 0;
     });
 // L3 — K4 activated without the column, so an identity is minted that cannot be stored.
+// F1-7N-FB-4G-A2-R3 - RE-ANCHORED on the PREDICATE. This baseline created a row on a 30-column sheet to see
+// which id family it got, and §F.7 now refuses a CREATE there (nothing can hold the create key). The subject
+// was never the write - it is whether K4 declares itself ready without its own destination column - so it is
+// measured on sadK4SchemaReady_, where no write is needed.
 mutate('L3 K4 activated before its destination column exists',
-    function () {
-        var o = savedWith(null, 30, { header: whRoute(), lines: [oneLine()] });
-        return /^SADH-K2-/.test(o.headers[0].allocation_draft_id);
-    },
+    function () { return E.get('sadK4SchemaReady_')(HDR) === false; },
     function () {
         var m = swap(SAD, "  return sadHasColumn_(headerNames, 'destination_marketplace') &&", '  return true &&');
-        var o = savedWith(m, 30, { header: whRoute(), lines: [oneLine()] });
-        return /^SADH-K2-/.test(o.headers[0].allocation_draft_id);
+        return makeEnv(m).get('sadK4SchemaReady_')(HDR) === false;
     });
 // L4 — the route-identity tail placed at index 30, which would refuse the queued lifecycle migration forever.
 mutate('L4 destination_marketplace placed before the lifecycle tail',
@@ -766,31 +873,45 @@ mutate('L8 sea_express collapsed into sea',
         return e2.call('ricCanonicalService_(__a)', 'sea') !== e2.call('ricCanonicalService_(__a)', 'sea_express');
     });
 // L9 — the legacy K4 contest allowed through, migrating a legacy row in place.
-mutate('L9 a legacy row adopted and migrated in place',
-    function () {
-        var e2 = makeEnv(); e2.stage35();
-        var sh = e2.SHEETS['shipping_allocation_drafts'];
-        var legacy = whRoute({ recommended_destination_warehouse_id: '' });
-        var row = FULL.map(function (c) { return legacy[c] != null ? legacy[c] : ''; });
-        row[FULL.indexOf('allocation_draft_id')] = 'SADH-K2-LEGACY01';
-        row[FULL.indexOf('status')] = 'draft';
-        sh.rows.push(row);
-        var r = e2.save({ header: mktRoute(), lines: [oneLine()] });
-        return r.success === false && e2.headerObjs()[0].destination_marketplace === '';
-    },
-    function () {
-        var m = swap(SAD, "        return { status: 'BLOCK', reason: 'K4_IDENTITY_RECONCILIATION_REQUIRED', id: (rivalK2.allocation_draft_id || ''),\n          conflictIds: rivalK2.conflictIds || [], k2: true, k4: true };",
-            "        return { status: 'REUSE', id: rivalK2.allocation_draft_id, conflictIds: [], k2: true, k4: true };");
-        var e2 = makeEnv(m); e2.stage35();
-        var sh = e2.SHEETS['shipping_allocation_drafts'];
-        var legacy = whRoute({ recommended_destination_warehouse_id: '' });
-        var row = FULL.map(function (c) { return legacy[c] != null ? legacy[c] : ''; });
-        row[FULL.indexOf('allocation_draft_id')] = 'SADH-K2-LEGACY01';
-        row[FULL.indexOf('status')] = 'draft';
-        sh.rows.push(row);
-        var r = e2.save({ header: mktRoute(), lines: [oneLine()] });
-        return r.success === false && e2.headerObjs()[0].destination_marketplace === '';
-    });
+// F1-7N-FB-4G-A2-R3 §B.2 - RE-ANCHORED. This probed the resolver's BLOCK verdict, which §B.2 withdrew: a
+// declared CREATE never consults the resolver, so swapping BLOCK for REUSE there changes nothing and the probe
+// would have reported a surviving mutant while proving nothing. The GUARANTEE is unchanged and now structural:
+// a legacy row is never migrated in place by someone else's save. What can still break it is the CREATE branch
+// itself - remove it and the resolver runs again, which is the adoption path - so that is what is mutated.
+function l9Seed(e2) {
+    var sh = e2.SHEETS['shipping_allocation_drafts'];
+    var legacy = whRoute({ recommended_destination_warehouse_id: '' });
+    var row = FULL.map(function (c) { return legacy[c] != null ? legacy[c] : ''; });
+    row[FULL.indexOf('allocation_draft_id')] = 'SADH-K2-LEGACY01';
+    row[FULL.indexOf('status')] = 'draft';
+    sh.rows.push(row);
+}
+function l9LegacyUntouched(e2) {
+    var leg = e2.headerObjs().filter(function (h) { return h.allocation_draft_id === 'SADH-K2-LEGACY01'; })[0];
+    return !!leg && leg.destination_marketplace === '';
+}
+// F1-7N-FB-4G-A2-R3 §B.2 - NOT a mutation, and deliberately so.
+//
+// L9 probed the resolver's BLOCK verdict, which §B.2 withdrew. The GUARANTEE survives and is now enforced by
+// TWO independent things: a declared CREATE mints its own identity before the resolver is reached, AND the
+// resolver is guarded off for a declared intent. No single-line change can defeat both, so a mutation probe
+// here would report a surviving mutant while measuring nothing. Defence in depth is asserted directly.
+(function () {
+    var e2 = makeEnv(); e2.stage35();
+    l9Seed(e2);
+    var r = e2.save({ header: mktRoute(), lines: [oneLine()] });
+    ok(r.success === true, 'L9  a declared CREATE beside a contested legacy row succeeds');
+    ok(l9LegacyUntouched(e2), 'L9a and the legacy row is NEVER migrated in place');
+    eq(e2.headerObjs().length, 2, 'L9b the create got its OWN header instead of adopting one');
+    // Guard 1 removed: the resolver is allowed to run for a declared intent. It still cannot adopt, because
+    // the identity was already minted - which is guard 2.
+    var m = swap(SAD, '  if (!id && !intentApplies) {', '  if (!id) {');
+    var e3 = makeEnv(m); e3.stage35();
+    l9Seed(e3);
+    var r3 = e3.save({ header: mktRoute(), lines: [oneLine()] });
+    ok(r3.success === true && l9LegacyUntouched(e3) && e3.headerObjs().length === 2,
+      'L9c with the resolver guard removed it STILL cannot adopt - the identity is minted first');
+})();
 // L10 — the line writer copying through the REQUIRED list again, so the ETA is dropped after the append.
 mutate('L10 the line writer drops the ETA even when its column exists',
     function () {
@@ -841,19 +962,22 @@ mutate('L14 the manifest expectation drifting from what the file declares',
         return declares(SAD, 'SAD_BUILD_VERSION_') === exp;
     });
 // L15 — a K4 duplicate allowed: the replay creating a second header.
-mutate('L15 a K4 replay creating a second header',
+// F1-7N-FB-4G-A2-R3 §F.4 - RE-ANCHORED. Replay idempotency for a CREATE is by create_idempotency_key now,
+// not by natural key: §B.2 makes two identical Add Route clicks two tickets, so 'the same request replayed'
+// can only mean the same key. The mutation removes that key's replay lookup.
+mutate('L15 a create replay creating a second header',
     function () {
         var e2 = makeEnv(); e2.stage35();
-        e2.save({ header: mktRoute(), lines: [oneLine()] });
-        e2.save({ header: mktRoute(), lines: [oneLine()] });
+        e2.save({ header: mktRoute(), create_idempotency_key: 'CRI-L15', lines: [oneLine()] });
+        e2.save({ header: mktRoute(), create_idempotency_key: 'CRI-L15', lines: [oneLine()] });
         return e2.headerObjs().length === 1;
     },
     function () {
-        var m = swap(SAD, "      if (r4.status === 'REUSE') return { status: 'REUSE', id: r4.allocation_draft_id, conflictIds: [], k2: true, k4: true };",
-            '');
+        var m = swap(SAD, '      var prior = sadFindHeaderByCreateKey_(hSh, createKey);',
+            '      var prior = null;');
         var e2 = makeEnv(m); e2.stage35();
-        e2.save({ header: mktRoute(), lines: [oneLine()] });
-        e2.save({ header: mktRoute(), lines: [oneLine()] });
+        e2.save({ header: mktRoute(), create_idempotency_key: 'CRI-L15', lines: [oneLine()] });
+        e2.save({ header: mktRoute(), create_idempotency_key: 'CRI-L15', lines: [oneLine()] });
         return e2.headerObjs().length === 1;
     });
 

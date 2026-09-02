@@ -1040,7 +1040,10 @@ checks.push(Promise.resolve().then(function () {
     '9.1 the action contract moved 9 -> 10: the router now serves read actions on a verb it did not before');
   eq(num(dbSrc, 'KM_EXPECTED_ACTION_CONTRACT_VERSION_'), 10,
     '9.2 the client pin moved with it, so an un-synced deployment fails closed BY VERSION');
-  eq(num(health, 'SYS_REQUIRED_ACTION_LIST_VERSION_'), 9,
+  // F1-7N-FB-4G-A2-R3 - RESTATED to a floor. R4A1's point was that IT manufactured no bump; an equality also
+  // forbade every later round from an honest one. A2-R3 adds upsertShippingAllocationDraftAtomic to the
+  // registry, which is exactly the condition the constant's own rule says must bump it.
+  ok(num(health, 'SYS_REQUIRED_ACTION_LIST_VERSION_') >= 9,
     '9.3 the required-action LIST stays 9 — its contents did not change, and a bump would be manufactured');
   eq(num(health, 'SYS_TRANSPORT_CONTRACT_VERSION_'), 1,
     '9.4 the transport contract stays 1 — no response identity field was added or removed');

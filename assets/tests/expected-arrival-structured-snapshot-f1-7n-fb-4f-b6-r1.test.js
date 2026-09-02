@@ -327,7 +327,10 @@ section('G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AN
   eval(extractFn(G13, 'procurementAppendByHeader_'));
   eval(extractFn(G13, 'procurementFindRow_'));
   eval([ 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_', 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_',
-    'SAD_LIFECYCLE_TAIL_COLUMNS_', 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
+    'SAD_LIFECYCLE_TAIL_COLUMNS_', 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_',
+    // F1-7N-FB-4G-A2-R3 - the optional tail gained a third append; a lift that stops at two
+    // ReferenceErrors inside a shipped constant.
+    'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
     'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
     'SAD_LINE_ETA_TAIL_COLUMNS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_',
     'SAD_STATUSES_', 'SAD_LINE_STATUSES_', 'SAD_TERMINAL_STATUSES_', 'SAD_TERMINAL_LINE_STATUSES_',
@@ -353,10 +356,17 @@ section('G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AN
     'sadSchemaRefusal_', 'sadK4ResolveActiveDraft_', 'sadExactSchemaReason_', 'sadAtomicValidateBatch_',
     'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
     'sadLegacyReconcileReason_', 'sadResolveBlockMessage_', 'sadReconcileMessage_', 'sadRowToObject_',
+    // F1-7N-FB-4G-A2-R3 - the atomic core reaches three new authorities: whether this deployment can store
+    // a create key, the replay lookup, and the identity mint for a new ticket. A lift that omits any of them
+    // ReferenceErrors inside a shipped function, which reads exactly like a production defect.
+    'sadCreateIdempotencyReady_', 'sadFindHeaderByCreateKey_', 'sadMintNewHeaderId_',
     'sadReadLinesForDraft_', 'sadAtomicUpsertCore_'
   ].map(function (fn) { return extractFn(G16, fn); }).join(String.fromCharCode(10)));
 
   function reset() {
+    // F1-7N-FB-4G-A2-R3 - an emptied table means a re-hydrated client, so the remembered id goes with
+    // it. Leaving it behind would make the next save declare UPDATE against a row that no longer exists.
+    __savedId = '';
     SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_);
     SHEETS['shipping_allocation_draft_lines'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_);
   }
@@ -368,13 +378,29 @@ section('G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AN
     var h = SHEETS['shipping_allocation_drafts'].rows[0], c = h.indexOf('allocation_draft_id');
     return SHEETS['shipping_allocation_drafts'].rows.slice(1).map(function (r) { return r[c]; });
   }
+  // F1-7N-FB-4G-A2-R3 §B - THE SAME ROUTE, SAVED REPEATEDLY, DECLARES ITS INTENT.
+  //
+  // These calls are one route being edited, and the writer used to re-find its row by natural key. It no
+  // longer guesses: the first save is a CREATE (with a create key, so a retry cannot duplicate it) and every
+  // later save NAMES the row it created. `reset()` clears the remembered id, because an emptied table means a
+  // re-hydrated client.
+  var __savedId = '';
+  function resetSavedId() { __savedId = ''; }
+  var __criSeq = 0;
   function save(service, eta, qty) {
-    return sadAtomicUpsertCore_({ header: {
+    var res = sadAtomicUpsertCore_({ header: {
+        allocation_draft_id: __savedId || undefined,
         company: 'ResUS', country: 'US', marketplace: 'Amazon', source_page: 'inventory_replenishment',
         recommended_source_warehouse_id: 'WH-CN-01', recommended_destination_warehouse_id: '',
         destination_marketplace: 'Amazon', recommended_shipping_method: service },
+      intent: __savedId ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE',
+      create_idempotency_key: __savedId ? undefined : ('CRI-B6R1-' + (++__criSeq)),
       lines: [{ sku: 'CO1100-R', site_sku: 'CO1100-R-US', window_code: 'W36', planned_qty: qty,
         expected_arrival: eta }] });
+    if (res && res.success !== false && res.data && res.data.allocation_draft_id) {
+      __savedId = String(res.data.allocation_draft_id);
+    }
+    return res;
   }
 
   reset();
@@ -429,10 +455,15 @@ section('H — [§F, §H] CONTRACTS AND THE BROWSER TOKEN');
   eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
     (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
     'H3 [§F] the manifest expects exactly what the SOURCE declares — never a number typed twice');
+  // F1-7N-FB-4G-A2-R3 - RESTATED per axis. B6-R1 moved no contract version, and pinning the triple as an
+  // equality said something stronger: that no LATER round may move one. A2-R3 registers a new required
+  // action, which that constant's own rule says must bump the LIST version; the ACTION contract and the
+  // TRANSPORT contract are untouched, because no router action and no envelope shape changed.
   eq([(G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '9', '1'],
-    'H4 [§F] contracts still 10 / 9 / 1');
+      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '1'],
+    'H4 [§F] the deployed ACTION contract and the TRANSPORT contract are unmoved at 10 / 1');
+  ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
+    'H4a and the required-action LIST version is at or after 9 (it is append-only)');
   eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H5 [§F] and the frontend pins the same 10');
 
   // §H — a NEW token, and the reason is a fact about the repository rather than a preference.

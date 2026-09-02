@@ -2877,3 +2877,113 @@ No repair is performed and none is authorised by this round. The census
    header through the normal UI path, which now performs an in-place UPDATE.
 5. Nothing in steps 2–4 runs without a separate authorisation naming the exact rows and a checksum of the
    census output they were derived from.
+
+---
+
+## §4G-A2-R3 — ATOMIC ADD ROUTE / PERSISTENT IDEMPOTENCY / TICKET BOUNDARY
+
+### A2-R3.1 The three A2-R2 blockers, each measured before it was fixed
+
+| blocker | executed result |
+|---|---|
+| **1. two-call CREATE can orphan a header** | header write committed `SADH-K2-CBB7E7F6`; the separate line write was refused `PLAN_LINE_INCOMPLETE`; tables left at **1 header / 0 lines** |
+| **2. no persisted create idempotency** | with the collision refusal removed (mandatory per §B.2) the same `create_idempotency_key` sent twice produced `SADH-K2-CBB7E7F6` then `SAD-UUID100000` — **2 headers for one click**; the stored key column read `COLUMN ABSENT` on both |
+| **3. collision refusal blocks a legitimate ticket** | a second explicit Add Route with identical From/To/Method returned `ROUTE_IDENTITY_CONFLICT`, `zero_write`, leaving **1 header where §B.2 requires 2** |
+
+An orphan zero-line header is not cosmetic: it is an ACTIVE draft of the station that later refuses Submit for
+every real route beside it (`NO_LINES`), and §J forbids deleting it to get out of that.
+
+### A2-R3.2 Frozen product rule (§B) and what it costs
+
+An explicit `+ Add Route` is **always a new ticket**, even when From/To/Method match an existing one. The K4
+route key is therefore **grouping information, never the entity key**, and a K2/K4 collision may no longer
+refuse a create. That refusal was the only thing preventing a retried click from duplicating, so a **persisted**
+create key becomes mandatory — the two facts are inseparable.
+
+For consistency the UPDATE collision refusal A2-R2 added is **also removed**: a state an explicit Add Route may
+create cannot be one an edit is forbidden to reach, and leaving it would make the two writers disagree about
+what is persistable. The contender is still computed and reported as `shares_route_shape_with`, as information.
+
+### A2-R3.3 Atomicity (§D) and the call chain (§E)
+
+A route CREATE or UPDATE is **one** request: `upsertShippingAllocationDraftAtomic` → `01_router.gs` →
+`handleUpsertShippingAllocationDraftAtomic_` → `sadAtomicUpsertCore_`, which validates the header **and** every
+line before the first write, holds one lock, and compensates a new header by soft-cancelling it if the line
+write throws. The two-call header writer now **refuses** a route create by name
+(`ROUTE_CREATE_REQUIRES_ATOMIC_WRITER`) rather than doing it less safely; it keeps UPDATE and the lifecycle
+operations (soft-cancelling an empty header, soft-cancelling a line) that carry no route intent.
+
+The action had been routed since F1-7N-FA-3C-R6F1 and had **no frontend adapter at all**, so the page could not
+call it even though it existed. `window.KM.DB.upsertShippingAllocationDraftAtomic` is that adapter. When the
+action is absent the client **fails closed** with `ROUTE_ATOMIC_WRITER_UNAVAILABLE` and never falls back.
+
+**Version decisions, from the governance rules rather than assumed:**
+
+| constant | before | after | why |
+|---|---|---|---|
+| `SYS_REQUIRED_ACTION_LIST_VERSION_` | 9 | **10** | its rule is "bump when `SYS_REQUIRED_ACTIONS_` changes"; it gained an entry |
+| `SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` | 10 | **10** | its rule is "bump when a router ACTION is added or removed"; **no route was added** |
+| `SYS_TRANSPORT_CONTRACT_VERSION_` | 1 | **1** | the envelope shape is unchanged |
+| `KM_EXPECTED_ACTION_CONTRACT_VERSION_` | 10 | **10** | follows the action-contract version, which did not move |
+
+### A2-R3.4 Persisted create idempotency (§F)
+
+`create_idempotency_key` is **appended** at canonical index 35 (30 required + 6 optional = 36). No existing
+column moves; existing rows stay blank and are **never** back-filled, and `sadFindHeaderByCreateKey_` skips
+blanks explicitly so a pre-contract row can never be read as a replay. No earlier equivalent authority exists:
+`execution_key` belongs to the *submit* flow and names a submit batch, not a draft creation.
+
+| situation | outcome |
+|---|---|
+| new click, key free | new ticket, key stored on the header |
+| same key retried (lost response) | `CREATE_REPLAYED`, `zero_write`, **the same** header and line ids returned |
+| different click, identical route | a **second** ticket with its own ids |
+| UPDATE | key untouched (§F.6) |
+| column absent | `ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE`, zero write — never a degraded create (§F.7) |
+| no key supplied | `ROUTE_CREATE_IDEMPOTENCY_KEY_REQUIRED`, zero write |
+
+### A2-R3.5 A2-R3 STOP — the Submit ticket boundary (§I)
+
+**Measured on the shipped authority.** `shippingPlanRouteGroupKey_` in `11_shipping_plan_handlers.gs` is:
+
+```
+[company, country, source_warehouse_id, ship_from, destination_warehouse_id,
+ destination, shipping_method, last_mile_delivery, planning_cycle]  → lowercased, '||'-joined
+```
+
+Two separate tickets with the same route produce the **identical** key
+(`resus||us||wh-cn-youxin||cnyouxin||||amazon||air||||`), the key carries **no** ticket-identity dimension, and
+`shippingPlanCommitFromLines_` emits one plan line per group line with **no per-SKU consolidation**. So:
+
+> **Two tickets → ONE shipping plan with TWO plan lines.** Quantities are conserved (2 × 120 = 240, neither
+> lost nor doubled) and the ticket lineage survives in each line's existing `source_reason`
+> (`allocation_draft:…|line:…`) — but the **plan** boundary merges, and the operator sees one shipment of 240
+> rather than two of 120.
+
+That conflicts with §I.2. Changing it is a Submit contract decision, so **this round changes nothing in `11_`**
+(`SP_BUILD_VERSION_` is still `F1-7N-FA-4B2`) and no lineage column was invented on `shipping_plan_lines`
+(§I.4). Minimal options, for the user to choose:
+
+- **Option A — accept the merge (no change).** The plan is the *physical* shipment; two tickets remain two
+  draft entities and two plan lines, and `source_reason` carries the lineage. Zero schema change, zero contract
+  change. Cost: the plan does not show the ticket boundary.
+- **Option B — add `allocation_draft_id` to the plan group key.** Two plans of 120. Cost: the key is
+  checksum-bound in the header fingerprint (spfp-1), so every existing plan's fingerprint basis changes; and it
+  would **fragment plans across the board**, because lines from different drafts that *should* consolidate (the
+  normal multi-SKU case) would no longer merge. High impact.
+- **Option C — one physical plan with per-ticket children,** using the existing `parent_shipping_plan_id`
+  column. Preserves both the physical consolidation and the boundary. Needs a real design for how children are
+  created, approved and quoted — a round of its own.
+
+### A2-R3.6 Deliberately not done
+
+- **`11_` untouched** — the boundary decision above is the user's (§I.5).
+- **No live migration run.** `TEMP_migrate_create_idempotency_key_a2_r3.gs` has a dry run and a commit; neither
+  was executed against live data.
+- **No repair of the existing accidental rows.** The census now classifies by evidence into
+  `ZERO_LINE_HEADER` / `EXPLICIT_ADD_ROUTE` / `EDIT_ARTEFACT_CANDIDATE` / `UNKNOWN`, and a shared K4 shape is
+  explicitly **not** used to classify, because §B.2 makes two identical tickets legal. Repair is a separate,
+  row-by-row, user-confirmed round.
+- **A pre-migration deployment cannot create routes at all.** That is intended (§F.7) — the alternative is a
+  create with no idempotency protection — but it means the migration must run *before* the frontend is
+  published, which the release order below enforces.
