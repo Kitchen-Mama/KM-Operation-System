@@ -66,7 +66,13 @@ var ROUND_TOKENS = [
   // together: the page seeds the registry through a method the previous registry copy does not have, and a
   // browser holding any one of the three from the older round would either issue the duplicate workspace
   // read again or fail to seed at all.
-  'fb4ga1r1-panelready-20260902'
+  'fb4ga1r1-panelready-20260902',
+  // F1-7N-FB-4G-A2 - Submit Plan preflight, one dirty owner and a confirmation. A1-R1 is on origin/main
+  // (418971a was pushed), so by the rule above its token has been published and cannot be reused. This round
+  // changes inventory-replenishment.js and inventory-compat.js together: the page asks a preflight owner that
+  // only the shared module exports, so a browser holding one file from each round would either lose the
+  // unsaved-change guard or lose the confirmation that precedes every submit request.
+  'fb4ga2-submitpreflight-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -200,7 +206,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

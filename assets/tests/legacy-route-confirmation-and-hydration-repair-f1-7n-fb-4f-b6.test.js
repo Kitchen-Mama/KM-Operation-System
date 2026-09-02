@@ -780,8 +780,13 @@ section('F — [§I, tests 26-28] THE SUBMIT GATE');
   var submitFn = code(extractFn(PAGE, 'submitReplenishmentPlans'));
   ok(submitFn.indexOf('_irRoutesMissingDestination_') < submitFn.indexOf('_replenCanonicalSubmit'),
     'F3 [test 26] and the gate is evaluated BEFORE the submit request is built');
-  ok(/if \(_noDest\.length\) \{[\s\S]{0,900}?return;/.test(submitFn),
+  // F1-7N-FB-4G-A2 — RESTATED for the SHAPE. A2 consolidated the three Submit gate blocks into ONE preflight,
+  // so `if (_noDest.length) { ... return; }` no longer exists as a block of its own. What §I requires — that a
+  // blocked submit RETURNS before any request is built — is unchanged and is asserted on the one gate.
+  ok(/if \(!_pf\.ok[\s\S]{0,400}?return;/.test(submitFn),
     'F4 [test 26] a blocked submit RETURNS — nothing is submitted and nothing is written');
+  ok(submitFn.indexOf('_irSubmitPreflight_') < submitFn.indexOf('_replenCanonicalSubmit'),
+    'F4a and that one gate is evaluated BEFORE the submit request is built');
 
   // test 27 — after adoption the route carries a destination and the gate passes.
   var CA = hydrated(US_SCOPE, function (H) { H[3].raw.destination_marketplace = 'Amazon'; });
@@ -822,8 +827,10 @@ section('F — [§I, tests 26-28] THE SUBMIT GATE');
    'NO_POSITIVE_PLANNED_QTY_LINES', 'OPERATOR_PROVENANCE_INCOMPLETE'].forEach(function (t, i) {
     ok(G16C.indexOf(t) !== -1, 'F13.' + i + ' [§I] submit validation ' + t + ' is intact');
   });
+  // F1-7N-FB-4G-A2 — RESTATED for the wording only: the duplicate gate's sentence now lives in the preflight's
+  // renderer. Both gates are still present and both still fail closed.
   ok(/Cannot Submit Plan — the saved quantities do not match/.test(PAGE) &&
-     /Cannot Submit Plan — duplicate rows exist/.test(PAGE),
+     /duplicate rows exist in the database/.test(PAGE),
     'F14 [§I] and the pre-existing drift and duplicate gates are untouched');
 })();
 

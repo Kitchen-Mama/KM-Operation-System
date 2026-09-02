@@ -217,11 +217,23 @@ ok(restoreFn.indexOf('_hydrateAllocationDraftFromDb(ctx)') < restoreFn.indexOf('
   'D2. and the DB hydrate is tried FIRST — after reload the row is built from DB data, not the previous object');
 
 var submitFn = extractFn(INV, 'submitReplenishmentPlans');
-ok(/_irHasUnsavedRoutes_\(\)/.test(submitFn), 'D3. Submit Plan checks for unsaved routes');
+// F1-7N-FB-4G-A2 - RESTATED for the OWNER, not the rule. FB-2A's requirement is that Submit never carries an
+// unpersisted Execution Plan row. A2 widened that from "a save FAILED" to every way the screen can differ from
+// the database (an edit not yet written, a write in flight, an edit during a write, an unpersisted delete, a
+// failed save) and gave it ONE code, UNSAVED_EXECUTION_PLAN_CHANGES. The check is stronger, not absent.
+ok(/_irSubmitPreflight_\(\)/.test(submitFn), 'D3. Submit Plan checks for unsaved Execution Plan changes');
+ok(/UNSAVED_EXECUTION_PLAN_CHANGES/.test(INV) && /saveFailed/.test(INV),
+  'D3a. under ONE named code, and a failed save is still one of its five sources');
 ok(/return;   \/\/ fail CLOSED/.test(submitFn), 'D3. and fails CLOSED');
-ok(submitFn.indexOf('_irHasUnsavedRoutes_()') < submitFn.indexOf('submitAllocationDraftsToShippingPlans'),
+// F1-7N-FB-4G-A2 - RESTATED. The first of these compared two indexOf results of which one was -1, so it
+// passed for a reason unrelated to its label. Both are about the same requirement, and both are asserted on
+// the ONE gate A2 consolidated them into: it is evaluated before any request, and it names every route.
+ok(submitFn.indexOf('_irSubmitPreflight_()') > -1 &&
+   submitFn.indexOf('_irSubmitPreflight_()') < submitFn.indexOf('_replenCanonicalSubmit('),
   'D3. before any request is made');
-ok(/Cannot Submit Plan/.test(submitFn) && /Unsaved: /.test(submitFn), 'D3. naming the routes that must be fixed first');
+var blockedFn = extractFn(INV, '_irAlertSubmitBlocked_');
+ok(/Cannot Submit Plan/.test(blockedFn) && /r\.sku \+ ' \\u2014 ' \+ r\.reason/.test(blockedFn),
+  'D3. naming the routes that must be fixed first, each with its own reason');
 ['isProductionWriteEligible', '_replenCanonicalSubmit'].forEach(function (s) {
   ok(submitFn.indexOf(s) !== -1, 'D4. the canonical Submit chain still runs through ' + s);
 });

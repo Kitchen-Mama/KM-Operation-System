@@ -590,8 +590,17 @@ eq(CMP.IRWarehouse.destinationIdentity({ destination_warehouse_id: 'WH-1', desti
   'ROUTE_DESTINATION_AMBIGUOUS', 'V1  §10 the destination XOR authority is untouched');
 eq(CMP.IRService.canonical('美森海卡'), 'sea_express', 'V2  §10 sea / sea_express are still distinct');
 ok(/data-eta-persisted/.test(PAGE) && /data-method-persisted/.test(PAGE), 'V3  §10 the ETA and method persistence carriers are untouched');
-ok(/var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R2'/.test(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')),
-  'V4  §12 the Apps Script owner stamp did NOT move — this round changes no server file');
+// F1-7N-FB-4G-A2 — RESTATED. A1-R1 asserted that the owner stamp equals A0-R2, meaning "no server change in
+// THIS round". That is a statement about a moment, and it becomes false the first time a later round changes
+// the server for a good reason (A2 does). The durable form of A1-R1's claim is that A1-R1 ITSELF joined no sync
+// set: no Apps Script file mentions it.
+(function () {
+  var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
+  var touched = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); }).filter(function (f) {
+    return /F1-7N-FB-4G-A1-R1|fb4ga1r1/.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8'));
+  });
+  eq(touched, [], 'V4  §12 no Apps Script file mentions A1-R1 — that round joined no sync set');
+})();
 (function () {
   var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
   var touched = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); }).filter(function (f) {
@@ -600,9 +609,12 @@ ok(/var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R2'/.test(read('assets/specs/active
   eq(touched, [], 'V5  §12 no Apps Script file mentions this round — nothing joins the sync set');
 })();
 (function () {
-  var APP = 'fb4ga1r1-panelready-20260902';
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'V6  all 18 application refs moved together to ' + APP);
-  eq(RO.currentAppToken(), APP, 'V6a and the series in _release-order.js derives it');
+  // F1-7N-FB-4G-A2 — RESTATED: the token is DERIVED from the append-only series, not restated as a literal
+  // that any later round invalidates. The durable claims are that the whole application set moves together and
+  // that it is at or after the round that introduced this file's changes.
+  var APP = RO.currentAppToken();
+  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'V6  all 18 application refs share the current token (' + APP + ')');
+  ok(RO.tokenAtOrAfter(APP, 'fb4ga1r1-panelready-20260902'), 'V6a and it is at or after the round that changed these files');
   ok(INDEX.indexOf('fb4ga1-atomicreveal-20260902') === -1, 'V6b §12 the published A1 token is fully retired');
   ok(/inventory-replenishment\.css\?v=irpanelready-20260902/.test(INDEX),
     'V7  §12 the stylesheet rotated in its OWN family');

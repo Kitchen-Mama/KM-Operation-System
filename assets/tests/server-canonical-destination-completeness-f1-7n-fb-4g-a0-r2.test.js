@@ -366,7 +366,11 @@ eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'G
 // ================================================================================================================
 section('H · DEPLOYMENT IDENTITY');
 // ================================================================================================================
-eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A0-R2', 'H1  the 16_ owner stamp moved to this round');
+// F1-7N-FB-4G-A2 — RESTATED. A0-R2 pinned its OWN stamp as an equality with the present, which stops being
+// true the first time a later round legitimately moves the server. What it established is a FLOOR: 16_ carries
+// A0-R2's change or something after it.
+ok(RO.stampAtOrAfter((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A0-R2'),
+  'H1  the 16_ owner stamp is at or after A0-R2 — this round changed the server, deliberately');
 eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
    (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
   'H2  and the manifest expects what the SOURCE declares — never a number typed twice');

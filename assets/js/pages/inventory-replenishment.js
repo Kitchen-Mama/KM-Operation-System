@@ -2804,50 +2804,33 @@ async function submitReplenishmentPlans() {
     // canonical writer) makes the unsaved-route gate below decide on a SETTLED state instead of a pending one.
     try { await _irFlushPendingRouteWritesForSubmit_(); } catch (_eFlush) {}
 
-    if (typeof _irHasUnsavedRoutes_ === 'function' && _irHasUnsavedRoutes_()) {
-        var _unsaved = _irUnsavedSkus_();
-        var _first = _irUnsavedRoutes[_unsaved[0]] || {};
-        alert('Cannot Submit Plan — ' + _unsaved.length + ' Execution Plan route(s) are NOT saved to the database.\n\n' +
-            'Unsaved: ' + _unsaved.join(', ') + '\n' +
-            'Reason: ' + (_first.code || 'SAVE_FAILED') + (_first.message ? ('\n' + _first.message) : '') + '\n\n' +
-            'Nothing was submitted and nothing was written. Correct and save every route first — Submit only ever ' +
-            'consumes persisted draft rows, so an unsaved route would be silently missing from the plan.');
-        return;   // fail CLOSED
+    // F1-7N-FB-4G-A2 §6 — ONE PREFLIGHT DECIDES, and it decides from named state rather than from a row count.
+    // It covers every condition the three separate gates below used to own (a failed save, a debounced write not
+    // yet sent, a write in flight, an edit that landed during a write, an unpersisted delete, an Execution panel
+    // that is a shell or a named failure, a missing destination, a duplicate line identity) plus the candidate
+    // set and the confirmation totals. The alert() bodies are its RENDERERS, not separate decisions.
+    var _pf = (typeof _irSubmitPreflight_ === 'function') ? _irSubmitPreflight_() : { ok: true, candidate: null, confirmation: null };
+    if (!_pf.ok && _pf.code !== 'NO_PERSISTED_CANDIDATE') {
+        if (typeof _irAlertSubmitBlocked_ === 'function') _irAlertSubmitBlocked_(_pf);
+        return;   // fail CLOSED — ZERO requests, ZERO writes, and the dirty routes are left exactly as they are
     }
-    // F1-7N-FB-4B-ADDENDUM §E — a plan whose stored identity is ambiguous must not become a durable shipping
-    // plan. This uses the state the hydrate already computed, so it blocks even before any readback is attempted.
-    if (typeof _irHasDuplicateCorruption_ === 'function' && _irHasDuplicateCorruption_()) {
-        var _dupSkus = _irDuplicateCorruptedSkus_();
-        var _dupList = _irDuplicateLineIdentities_().slice(0, 8).map(function (d) {
-            return '  · ' + d.sku + ' — ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows';
-        }).join(String.fromCharCode(10));
-        alert('Cannot Submit Plan — duplicate rows exist in the database for ' + _dupSkus.join(', ') + '.' + NL2 +
-            _dupList + NL2 +
-            'One Execution Plan line must name exactly one stored row. Nothing was submitted and nothing was ' +
-            'written or deleted. Run the duplicate cleanup first, then Submit again.');
-        return;   // fail CLOSED
-    }
-    // F1-7N-FB-4F-B6 §I — A PLANNED QUANTITY WITH NO PERSISTED DESTINATION BLOCKS SUBMIT.
-    // The route is real and its quantity is real; what is missing is where it goes. Committing it would put a
-    // Weekly Shipping Plan line into the world with a destination nobody chose — which is the failure the whole
-    // FB-4F series exists to end. Fail CLOSED, before any request, and name every route so each can be fixed.
-    var _noDest = _irRoutesMissingDestination_();
-    if (_noDest.length) {
-        alert('Cannot Submit Plan — ' + _noDest.length + ' route(s) plan a quantity but have no destination saved.' + NL2 +
-            _noDest.slice(0, 8).map(function (d) {
-                return '  · ' + d.sku + ' — ' + d.qty + ' unit(s)' + (d.shipping_method ? (' by ' + d.shipping_method) : '') + ', To is empty';
-            }).join(String.fromCharCode(10)) + NL2 +
-            'Choose a destination for each one and confirm the save, then Submit again. Nothing was submitted and ' +
-            'nothing was written.');
-        return;   // fail CLOSED
-    }
+    // F1-7N-FB-4B-ADDENDUM §E (duplicate stored identity) and F1-7N-FB-4F-B6 §I (a planned quantity with no
+    // persisted destination) are BOTH still fail-closed and both still name every offending route. They are
+    // decided by the ONE preflight above and rendered by _irAlertSubmitBlocked_, so there is no second place
+    // that can disagree with it about whether Submit may proceed.
     var _db = window.KM && window.KM.DB;
     var _hasSubmitApi = !!(_db && _db.submitAllocationDraftsToShippingPlans);
     var _writeEligible = !!(_db && _db.isProductionWriteEligible && _db.isProductionWriteEligible());
     if (_hasSubmitApi && _writeEligible) {
-        var submitExecutionKey = _replenSubmitExecutionKey();
+        // F1-7N-FB-4G-A2 §7 — NO IDENTITY IS MINTED BEFORE THE OPERATOR CONFIRMS. _replenSubmitExecutionKey()
+        // both creates the submit execution key AND persists it, so calling it here made a Cancel leave a
+        // durable identity behind for a submit that never happened. It is minted after the confirmation now.
         var _draftIds = _replenActiveAllocationDraftIds();
-        if (!_draftIds.length) { alert('No persisted allocation draft to submit yet — adjust the Execution Plan (which saves the draft) and try again.'); return; }
+        if (!_draftIds.length) {
+            if (typeof _irAlertSubmitBlocked_ === 'function') _irAlertSubmitBlocked_({ code: 'NO_PERSISTED_CANDIDATE', blocking: { skus: [], reasons: [] }, excluded: (_pf && _pf.excluded) || [] });
+            else alert('No persisted allocation draft to submit yet — adjust the Execution Plan (which saves the draft) and try again.');
+            return;
+        }
         // F1-7N-FB-3B §G steps 2-3 — READ THE PERSISTED ROUTES BACK AND VERIFY THE USER-EDITED QUANTITIES before
         // committing. A PROVEN drift between the screen and the database blocks the Submit: committing would ship
         // the older stored quantity while the operator is looking at the newer one. An inconclusive read never
@@ -2874,7 +2857,13 @@ async function submitReplenishmentPlans() {
                 'Nothing was submitted and nothing was written. Re-enter the quantity so it saves, then Submit again.');
             return;   // fail CLOSED — never commit the older stored quantity
         }
-        _replenCanonicalSubmit(_draftIds, submitExecutionKey, planLines.length);
+        // §7 — THE CONFIRMATION. Built from the PERSISTED candidate set (never the DOM), so what it promises is
+        // exactly what the server will re-read. Cancel issues ZERO requests and mints ZERO identities.
+        if (typeof _irConfirmSubmit_ === 'function' && _pf && _pf.confirmation) {
+            if (!_irConfirmSubmit_(_pf.confirmation)) return;   // Cancel → nothing sent, nothing minted, nothing lost
+        }
+        var submitExecutionKey = _replenSubmitExecutionKey();   // minted ONLY after an explicit confirmation
+        _replenCanonicalSubmit(_draftIds, submitExecutionKey, (_pf && _pf.candidate) ? _pf.candidate.lineCount : planLines.length);
         return;
     }
 
@@ -3416,6 +3405,171 @@ var _replenSubmitInFlight = {};   // execKey -> Promise (the single in-flight mu
 function _replenSetSubmitButtonDisabled(disabled) {
     try { var b = document.querySelector('[onclick*="submitReplenishmentPlans"]') || document.getElementById('replen-submit-plan-btn'); if (b) b.disabled = !!disabled; } catch (e) {}
 }
+// ================================================================================================================
+// F1-7N-FB-4G-A2 - SUBMIT PLAN PREFLIGHT. ONE STATE SNAPSHOT, ONE VERDICT, ONE CONFIRMATION.
+//
+// Submit already failed closed on several conditions, but each was decided by its own map and reported with its
+// own sentence: _irUnsavedRoutes (save FAILURES), _draftDbTimers (debounced writes not yet sent),
+// _draftDbInFlight (writes in the air), _draftDbDirty (an edit that landed during a write),
+// _pendingDraftCancels (deletes not yet persisted) and - since A1-R1 - the Execution panel's reveal state.
+// Six owners, five of them booleans, and nowhere that could answer the one question Submit depends on: is what
+// the operator is looking at the same as what the database holds?
+//
+// This gathers those six into ONE named snapshot and hands it to ONE pure predicate (IRSubmitPreflight). The
+// verdict is derived from NAMED STATE - deliberately NOT from "the DOM row count equals the stored row count",
+// because two routes can be equal in number and different in every value.
+//
+// AND IT NEVER SAVES FOR THE OPERATOR. Persisting a pending edit on their behalf would be a mutation they did
+// not ask for, on data they may be about to correct. It reports; they act.
+function _irSubmitStateSnapshot_() {
+    function truthyKeys(map) {
+        var out = [];
+        try { Object.keys(map || {}).forEach(function (k) { if (map[k]) out.push(k); }); } catch (e) {}
+        return out;
+    }
+    function nonEmptyKeys(map) {
+        var out = [];
+        try { Object.keys(map || {}).forEach(function (k) { var v = map[k]; if (v && v.length) out.push(k); }); } catch (e) {}
+        return out;
+    }
+    // The Execution panel's own readiness, per open row (A1-R1). A disabled button is not a guard: a direct
+    // call, a stale enabled button or a keyboard activation all bypass it, so the state is read HERE too.
+    var panels = [];
+    try {
+        if (typeof document !== 'undefined' && document.querySelectorAll) {
+            var hosts = document.querySelectorAll('#ops-section [data-ir-reveal="execution"]');
+            Array.prototype.forEach.call(hosts, function (h) {
+                panels.push({ sku: String(h.getAttribute('data-ir-sku') || ''),
+                    execState: String(h.getAttribute('data-reveal-state') || '').toUpperCase() });
+            });
+        }
+    } catch (e2) {}
+    // The persisted route model, exactly as the hydrate and the collect maintain it. `persisted` is decided by
+    // the presence of the STORED identities the server will re-read, never by a DOM row existing.
+    var routes = [];
+    try {
+        var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(bySku).forEach(function (sku) {
+            (bySku[sku] || []).forEach(function (r) {
+                var di = (window.IRWarehouse && typeof window.IRWarehouse.destinationIdentity === 'function')
+                    ? window.IRWarehouse.destinationIdentity(r) : { type: '', id: '', ok: false, code: '' };
+                routes.push({
+                    sku: sku,
+                    allocation_draft_id: String((r && r.allocation_draft_id) || ''),
+                    allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
+                    qty: r && r.qty,
+                    complete: (typeof _isRouteComplete === 'function') ? !!_isRouteComplete(r) : false,
+                    shipping_method: String((r && r.shipping_method) || ''),
+                    destination_type: di.type || '',
+                    destination_code: di.type === 'MARKETPLACE' ? (di.marketplace || di.id || '') : (di.warehouse_id || di.id || ''),
+                    lineCancelled: String((r && r.line_status) || '').trim().toLowerCase() === 'cancelled',
+                    terminal: ['submitted', 'cancelled', 'expired'].indexOf(String((r && r.status) || '').trim().toLowerCase()) !== -1
+                });
+            });
+        });
+    } catch (e3) {}
+    var scope = (typeof _irAppliedSubmitScope_ === 'function') ? (_irAppliedSubmitScope_() || {}) : {};
+    return {
+        scope: scope,
+        appliedScopeKey: [String(scope.company || ''), String(scope.country || ''), String(scope.marketplace || '')].join('|').toLowerCase(),
+        pendingWrites: truthyKeys(typeof _draftDbTimers !== 'undefined' ? _draftDbTimers : null),
+        inFlightWrites: truthyKeys(typeof _draftDbInFlight !== 'undefined' ? _draftDbInFlight : null),
+        dirtyAfterWrite: truthyKeys(typeof _draftDbDirty !== 'undefined' ? _draftDbDirty : null),
+        pendingCancels: nonEmptyKeys(typeof _pendingDraftCancels !== 'undefined' ? _pendingDraftCancels : null),
+        saveFailed: (typeof _irUnsavedSkus_ === 'function') ? _irUnsavedSkus_() : [],
+        panels: panels,
+        routesMissingDestination: (typeof _irRoutesMissingDestination_ === 'function') ? _irRoutesMissingDestination_() : [],
+        duplicateCorruption: (typeof _irDuplicateLineIdentities_ === 'function') ? _irDuplicateLineIdentities_() : [],
+        routes: routes,
+        // The page does not know how many ACTIVE headers the station holds with zero lines - the hydrate
+        // produces routes, not a header inventory. That count belongs to the read-only census
+        // (TEMP_SHIPPING_ALLOCATION_SUBMIT_PLAN_A2_SUMMARY), and is reported there rather than guessed here.
+        zeroLineHeaderCount: 0
+    };
+}
+window._irSubmitStateSnapshot_ = _irSubmitStateSnapshot_;
+function _irSubmitPreflight_() {
+    if (!(typeof window !== 'undefined' && window.IRSubmitPreflight)) {
+        return { ok: false, code: 'PREFLIGHT_UNAVAILABLE', blocking: { skus: [], reasons: [] },
+            candidate: { draftIds: [], routeCount: 0, lineCount: 0, totalQty: 0, skus: [], methods: [], destinations: [] },
+            excluded: [], confirmation: null };
+    }
+    return window.IRSubmitPreflight.evaluate(_irSubmitStateSnapshot_());
+}
+window._irSubmitPreflight_ = _irSubmitPreflight_;
+// The per-code message. These are RENDERERS of the one verdict, not separate decisions - which is what stops
+// the page growing a seventh owner the next time a condition is added.
+function _irAlertSubmitBlocked_(pf) {
+    var C = window.IRSubmitPreflight ? window.IRSubmitPreflight.CODES : {};
+    var by = {};
+    (pf.blocking.reasons || []).forEach(function (r) { (by[r.reason] = by[r.reason] || []).push(r.sku); });
+    function list(n) {
+        return (pf.blocking.reasons || []).slice(0, 8).map(function (r) { return '  \u00b7 ' + r.sku + ' \u2014 ' + r.reason; }).join(String.fromCharCode(10));
+    }
+    if (pf.code === C.UNSAVED_EXECUTION_PLAN_CHANGES) {
+        alert('Cannot Submit Plan \u2014 UNSAVED_EXECUTION_PLAN_CHANGES.' + NL2 +
+            pf.blocking.skus.length + ' Execution Plan route(s) differ from what the database holds:' + NL2 + list() + NL2 +
+            'Nothing was submitted and NOTHING was written. Submit only ever commits persisted rows, so an ' +
+            'unsaved change would be silently missing from the plan. Save every route (or undo the change) and ' +
+            'Submit again \u2014 this will not save on your behalf.');
+        return;
+    }
+    if (pf.code === C.EXECUTION_PLAN_NOT_READY) {
+        alert('Cannot Submit Plan \u2014 EXECUTION_PLAN_NOT_READY.' + NL2 + list() + NL2 +
+            'An Execution Plan on screen has not finished loading, or is showing a named failure. Nothing was ' +
+            'submitted and nothing was written. Wait for it to load, or use Retry Methods, then Submit again.');
+        return;
+    }
+    if (pf.code === C.ROUTE_DESTINATION_MISSING) {
+        var nd = _irRoutesMissingDestination_();
+        alert('Cannot Submit Plan \u2014 ' + nd.length + ' route(s) plan a quantity but have no destination saved.' + NL2 +
+            nd.slice(0, 8).map(function (d) {
+                return '  \u00b7 ' + d.sku + ' \u2014 ' + d.qty + ' unit(s)' + (d.shipping_method ? (' by ' + d.shipping_method) : '') + ', ' + (d.destination_code || 'To is empty');
+            }).join(String.fromCharCode(10)) + NL2 +
+            'Choose a destination for each one and confirm the save, then Submit again. Nothing was submitted and ' +
+            'nothing was written.');
+        return;
+    }
+    if (pf.code === C.DUPLICATE_LINE_IDENTITY) {
+        var dl = _irDuplicateLineIdentities_().slice(0, 8).map(function (d) {
+            return '  \u00b7 ' + d.sku + ' \u2014 ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows';
+        }).join(String.fromCharCode(10));
+        alert('Cannot Submit Plan \u2014 duplicate rows exist in the database.' + NL2 + dl + NL2 +
+            'One Execution Plan line must name exactly one stored row. Nothing was submitted and nothing was ' +
+            'written or deleted. Run the duplicate cleanup first, then Submit again.');
+        return;
+    }
+    if (pf.code === C.NO_PERSISTED_CANDIDATE) {
+        alert('No persisted allocation draft to submit yet \u2014 adjust the Execution Plan (which saves the draft) and try again.' +
+            ((pf.excluded && pf.excluded.length) ? (NL2 + 'Excluded: ' + pf.excluded.map(function (e) { return e.reason + ' \u00d7' + e.count; }).join(', ')) : ''));
+        return;
+    }
+    alert('Cannot Submit Plan (' + (pf.code || 'BLOCKED') + '). Nothing was submitted and nothing was written.');
+}
+// THE CONFIRMATION. Built from the PERSISTED candidate set and from nothing else - never from the DOM - so what
+// it promises is exactly what the server will re-read. Cancel issues no request and mints no identity.
+function _irConfirmSubmit_(conf) {
+    if (!conf) return false;
+    var lines = [];
+    lines.push('Submit Weekly Shipping Plan?');
+    lines.push('');
+    lines.push('Station: ' + [conf.scope.company, conf.scope.country, conf.scope.marketplace].filter(Boolean).join(' / '));
+    lines.push('Saved routes: ' + conf.routeCount);
+    lines.push('SKUs: ' + conf.skuCount + '   ·   Plan lines: ' + conf.lineCount);
+    lines.push('Total planned quantity: ' + conf.totalQty);
+    if (conf.destinations.length) lines.push('Destination: ' + conf.destinations.map(function (d) { return d.type + (d.code ? (' ' + d.code) : ''); }).join(', '));
+    if (conf.methods.length) lines.push('Shipping method: ' + conf.methods.join(', '));
+    if (conf.excluded.length) {
+        lines.push('');
+        lines.push('Not included: ' + conf.excluded.map(function (e) { return e.reason + ' \u00d7' + e.count; }).join(', '));
+    }
+    lines.push('');
+    lines.push('ONLY SAVED DATA IS SUBMITTED. Anything not yet saved to the database is not part of this plan.');
+    if (typeof confirm !== 'function') return true;   // headless: no dialog to answer
+    return confirm(lines.join(String.fromCharCode(10)));
+}
+window._irConfirmSubmit_ = _irConfirmSubmit_;
+
 function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
     if (_replenSubmitInFlight[execKey]) return _replenSubmitInFlight[execKey];   // share the in-flight Promise (no 2nd mutation)
     _replenSetSubmitButtonDisabled(true);

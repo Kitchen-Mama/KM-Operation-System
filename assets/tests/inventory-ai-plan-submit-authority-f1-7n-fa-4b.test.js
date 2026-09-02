@@ -75,7 +75,15 @@ ok(/function sadStoredHeaderRouteIsComplete_\(h\) \{ return sadHeaderRouteIsComp
   '5b. FB-4D: the stored-row predicate IS the request-shape one — delegation with nothing added');
 ok(!/toSnapshot/.test(G16),
   '5c. and the snapshot fallback it used to add is gone — a code snapshot is not a destination');
-ok(/destination_type: destWhId \? 'warehouse' : 'marketplace'/.test(core), '4. line destination_type resolves to marketplace when no destination warehouse (K2 logical destination)');
+// F1-7N-FB-4G-A2 - RESTATED, and the outcome got STRONGER. This pinned the truthy expression
+// `destWhId ? 'warehouse' : 'marketplace'`, which decided the plan's destination TYPE from whether one column
+// happened to be non-blank. A2 derives it from the canonical destination identity, so a K2 logical marketplace
+// destination still resolves to `marketplace` - but now because the row's destination IS a marketplace, not
+// because its warehouse column was empty.
+ok(/destination_type: \(sadDst\.type === 'WAREHOUSE'\) \? 'warehouse' : 'marketplace'/.test(core),
+  '4. line destination_type resolves to marketplace for a K2 logical destination - from the identity, not a blank column');
+ok(/var sadDst = sadDestinationIdentity_\(h\);/.test(core),
+  '4a. and the identity comes from the ONE destination owner');
 
 // ============================================================ 8 — typed lock contention (never generic)
 section('8. lock contention is typed');

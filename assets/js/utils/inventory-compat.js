@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -1088,6 +1088,165 @@
     };
   }
 
+  // ================================================================================================
+  // F1-7N-FB-4G-A2 - SUBMIT PLAN PREFLIGHT: ONE DIRTY OWNER, ONE CANDIDATE SET, ONE CONFIRMATION.
+  //
+  // WHAT THIS REPLACES. Submit Plan already failed closed on several conditions, but each was decided by its
+  // own map and reported with its own sentence: _irUnsavedRoutes (save FAILURES), _draftDbTimers (debounced
+  // writes not yet sent), _draftDbInFlight (writes in the air), _draftDbDirty (an edit that landed during a
+  // write), _pendingDraftCancels (deletes not yet persisted), and - since A1-R1 - the Execution panel's own
+  // reveal state. Six owners, five of them booleans, and no single place that could answer "is what the
+  // operator is looking at the same as what the database holds?".
+  //
+  // That question has ONE answer here, and it is derived from NAMED STATE. It is deliberately NOT derived from
+  // "the DOM row count equals the stored row count": two routes can be equal in number and different in every
+  // value, and a count comparison would call that clean.
+  //
+  // AND IT NEVER SAVES FOR THE OPERATOR. A preflight that silently persisted the pending edit would be a
+  // mutation the operator did not ask for, on data they may be about to correct. It reports; the operator acts.
+  // ================================================================================================
+
+  var IR_SUBMIT_CODES = {
+    OK: '',
+    UNSAVED_EXECUTION_PLAN_CHANGES: 'UNSAVED_EXECUTION_PLAN_CHANGES',
+    EXECUTION_PLAN_NOT_READY: 'EXECUTION_PLAN_NOT_READY',
+    ROUTE_DESTINATION_MISSING: 'ROUTE_DESTINATION_MISSING',
+    DUPLICATE_LINE_IDENTITY: 'DUPLICATE_LINE_IDENTITY',
+    NO_PERSISTED_CANDIDATE: 'NO_PERSISTED_CANDIDATE'
+  };
+
+  // The six unsaved/dirty conditions, each with its own reason so the operator is told WHICH route and WHY,
+  // under ONE blocking code. Order matters only for the reason text; any one of them blocks.
+  var IR_DIRTY_SOURCES = [
+    { key: 'pendingWrites', reason: 'EDIT_NOT_YET_SAVED' },
+    { key: 'inFlightWrites', reason: 'SAVE_IN_PROGRESS' },
+    { key: 'dirtyAfterWrite', reason: 'EDITED_DURING_SAVE' },
+    { key: 'pendingCancels', reason: 'DELETE_NOT_YET_PERSISTED' },
+    { key: 'saveFailed', reason: 'SAVE_FAILED' }
+  ];
+
+  function arr(v) { return Object.prototype.toString.call(v) === '[object Array]' ? v : []; }
+  function sstr(v) { return String(v == null ? '' : v).trim(); }
+  function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : 0; }
+
+  // A route counts toward the SUBMITTED set only when the database already holds it. `persisted` is the
+  // presence of the stored identities the server will re-read - never the presence of a DOM row.
+  function routeIsPersisted(r) {
+    return !!(r && sstr(r.allocation_draft_id) && sstr(r.allocation_draft_line_id));
+  }
+
+  function submitPreflight(input) {
+    input = input || {};
+    var C = IR_SUBMIT_CODES;
+    var out = {
+      ok: false, code: C.OK,
+      blocking: { skus: [], reasons: [] },
+      candidate: { draftIds: [], routeCount: 0, lineCount: 0, totalQty: 0, skus: [], methods: [], destinations: [] },
+      excluded: [],
+      confirmation: null
+    };
+
+    // ---- 1. THE DIRTY VERDICT, from named state only -------------------------------------------------
+    var seen = {};
+    IR_DIRTY_SOURCES.forEach(function (src) {
+      arr(input[src.key]).forEach(function (sku) {
+        var k = sstr(sku); if (!k) return;
+        out.blocking.reasons.push({ sku: k, reason: src.reason });
+        if (!seen[k]) { seen[k] = 1; out.blocking.skus.push(k); }
+      });
+    });
+    if (out.blocking.skus.length) { out.code = C.UNSAVED_EXECUTION_PLAN_CHANGES; return out; }
+
+    // ---- 2. A PANEL THAT IS NOT READY CANNOT BE SUBMITTED FROM -----------------------------------------
+    // A1-R1 disables the button while an Execution Plan is a shell or a named failure; a disabled button is
+    // not a guard - a direct call, a stale enabled button or a keyboard activation all bypass it. The state
+    // is checked here, where the request is actually issued.
+    var notReady = arr(input.panels).filter(function (p) {
+      var st = sstr(p && p.execState).toUpperCase();
+      return st && st !== 'READY';
+    });
+    if (notReady.length) {
+      out.code = C.EXECUTION_PLAN_NOT_READY;
+      notReady.forEach(function (p) {
+        var k = sstr(p.sku);
+        out.blocking.reasons.push({ sku: k, reason: 'EXECUTION_PANEL_' + sstr(p.execState).toUpperCase() });
+        if (k && !seen[k]) { seen[k] = 1; out.blocking.skus.push(k); }
+      });
+      return out;
+    }
+
+    // ---- 3. THE EXISTING FAIL-CLOSED FACTS, kept and reported under their own codes --------------------
+    var noDest = arr(input.routesMissingDestination);
+    if (noDest.length) {
+      out.code = C.ROUTE_DESTINATION_MISSING;
+      noDest.forEach(function (d) { out.blocking.reasons.push({ sku: sstr(d && d.sku), reason: sstr((d && d.destination_code) || 'ROUTE_DESTINATION_MISSING') }); });
+      return out;
+    }
+    var dup = arr(input.duplicateCorruption);
+    if (dup.length) {
+      out.code = C.DUPLICATE_LINE_IDENTITY;
+      dup.forEach(function (d) { out.blocking.reasons.push({ sku: sstr(d && d.sku), reason: 'DUPLICATE_LINE_IDENTITY' }); });
+      return out;
+    }
+
+    // ---- 4. THE CANDIDATE SET. Persisted, complete, in scope, quantity-bearing. ------------------------
+    var excl = {};
+    function exclude(reason) { excl[reason] = (excl[reason] || 0) + 1; }
+    var draftSeen = {}, skuSeen = {}, methodSeen = {}, destSeen = {};
+    arr(input.routes).forEach(function (r) {
+      if (!routeIsPersisted(r)) { exclude('UNSAVED_USER_ADDED_ROUTE'); return; }
+      if (r.complete !== true) { exclude('ROUTE_INCOMPLETE'); return; }
+      if (input.appliedScopeKey && sstr(r.scopeKey) && sstr(r.scopeKey) !== sstr(input.appliedScopeKey)) { exclude('OUT_OF_APPLIED_SCOPE'); return; }
+      if (r.terminal === true) { exclude('TERMINAL_LIFECYCLE'); return; }
+      if (r.lineCancelled === true) { exclude('LINE_CANCELLED'); return; }
+      var q = toInt(r.qty);
+      if (q <= 0) { exclude('NO_POSITIVE_PLANNED_QTY'); return; }
+      var id = sstr(r.allocation_draft_id);
+      if (!draftSeen[id]) { draftSeen[id] = 1; out.candidate.draftIds.push(id); }
+      out.candidate.routeCount++;
+      out.candidate.lineCount++;
+      out.candidate.totalQty += q;
+      var sk = sstr(r.sku); if (sk && !skuSeen[sk]) { skuSeen[sk] = 1; out.candidate.skus.push(sk); }
+      var m = sstr(r.shipping_method); if (m && !methodSeen[m]) { methodSeen[m] = 1; out.candidate.methods.push(m); }
+      var dt = sstr(r.destination_type).toUpperCase(), dc = sstr(r.destination_code);
+      var dk = dt + ':' + dc;
+      if (dt && !destSeen[dk]) { destSeen[dk] = 1; out.candidate.destinations.push({ type: dt, code: dc }); }
+    });
+    // Headers the station holds that carry no quantity-bearing route of their own (the live H1/H2 shape).
+    var zeroLine = toInt(input.zeroLineHeaderCount);
+    if (zeroLine > 0) excl['ZERO_LINE_HEADER'] = zeroLine;
+    out.excluded = Object.keys(excl).map(function (k) { return { reason: k, count: excl[k] }; })
+      .sort(function (a, b) { return a.reason < b.reason ? -1 : 1; });
+
+    if (!out.candidate.draftIds.length) { out.code = C.NO_PERSISTED_CANDIDATE; return out; }
+
+    // ---- 5. THE CONFIRMATION, built from the PERSISTED candidate set and from nothing else -------------
+    out.confirmation = {
+      scope: {
+        company: sstr(input.scope && input.scope.company),
+        country: sstr(input.scope && input.scope.country),
+        marketplace: sstr(input.scope && input.scope.marketplace)
+      },
+      routeCount: out.candidate.routeCount,
+      skuCount: out.candidate.skus.length,
+      lineCount: out.candidate.lineCount,
+      totalQty: out.candidate.totalQty,
+      methods: out.candidate.methods.slice(),
+      destinations: out.candidate.destinations.slice(),
+      excluded: out.excluded.slice(),
+      persistedOnly: true
+    };
+    out.ok = true;
+    return out;
+  }
+
+  var IRSubmitPreflight = {
+    CODES: IR_SUBMIT_CODES,
+    DIRTY_SOURCES: IR_DIRTY_SOURCES,
+    isPersisted: routeIsPersisted,
+    evaluate: submitPreflight
+  };
+
   var IRPlanningReveal = {
     STATES: IR_REVEAL_STATES,
     CODES: IR_READINESS_CODES,
@@ -1098,5 +1257,5 @@
     createPanelGate: createPanelGate
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal };
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight };
 });

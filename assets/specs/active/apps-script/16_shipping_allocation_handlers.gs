@@ -475,7 +475,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R2';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -1846,18 +1846,58 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   }
 
   // ---- DERIVE the normalized shipping-plan lines[] from ALL persisted drafts (server-owned; stable fingerprint) ---
+  // F1-7N-FB-4G-A2 §9 — THE WRITER THAT TURNS A DRAFT INTO A DURABLE WEEKLY SHIPPING PLAN DID NOT READ THE
+  // CANONICAL DESTINATION AT ALL. Measured by executing this derivation over the four live header shapes:
+  //
+  //   header dest_marketplace  dest_wh_id     code_snapshot   scope marketplace |  plan destination   type
+  //   'Amazon'                 ''             ''              'Amazon'          |  'Amazon'           marketplace
+  //   'Amazon'                 ''             ''              'Walmart'         |  'WALMART'  <-- (1) marketplace
+  //   ''                       ''             'Amazon'        'Amazon'          |  'Amazon'   <-- (2) marketplace
+  //   ''                       'WH-US-3PL-01' 'US3PL01'       'Amazon'          |  'US3PL01'          warehouse
+  //
+  // The old line was `snapshot || destWhId || h.marketplace` — a truthy chain over three columns that do not
+  // mean the same thing, and `destination_marketplace` (the column A0-R1 added and A0-R2 made the SOLE
+  // destination authority) was not among them.
+  //
+  // (1) The page-SCOPE marketplace became the ROUTE's destination. It is right only when the station's
+  //     marketplace happens to equal the destination the operator chose; H4 is that coincidence. At any
+  //     station where they differ it writes a durable plan to a destination nobody selected.
+  // (2) The warehouse-code SNAPSHOT was FIRST, so a legacy row holding a marketplace NAME in a warehouse-code
+  //     column supplied the identity. A0-R2 removed that snapshot from the completeness GATE; this is the same
+  //     misuse surviving in the MAPPING.
+  //
+  // `destination` is a shipping-plan GROUPING dimension (11_ groups on company+country+ship_from+
+  // source_warehouse_id+destination+destination_warehouse_id+shipping_method+last_mile_delivery+planning_cycle
+  // and checksum-binds it), so a wrong value does not merely mislabel a row — it decides which plan a line
+  // joins. For H4 the corrected value is byte-identical ('Amazon' either way), so H4's grouping, its
+  // fingerprint and its plan identity are unchanged; only the cases that were wrong move.
+  //
+  // The identity comes from the ONE owner, sadDestinationIdentity_ (which delegates to 69_
+  // ricDestinationIdentity_ when deployed). Gate (9) has already refused any header whose destination is
+  // missing or ambiguous, so this cannot be reached with an unresolved identity — and if it somehow were, it
+  // REFUSES rather than inventing one.
   var submitLines = [];
+  var destErrors = [];
   drafts.forEach(function (d) {
     var h = d.header;
     var shipFrom = String(h.recommended_source_warehouse_code_snapshot || h.recommended_source_warehouse_id || '').trim();
-    var destWhId = String(h.recommended_destination_warehouse_id || '').trim();
-    var destination = String(h.recommended_destination_warehouse_code_snapshot || destWhId || h.marketplace || '').trim();
+    var sadDst = sadDestinationIdentity_(h);
+    if (!sadDst.ok) { destErrors.push({ allocation_draft_id: d.id, reason: sadDst.code || 'ROUTE_DESTINATION_UNRESOLVED' }); return; }
+    var destWhId = (sadDst.type === 'WAREHOUSE') ? String(sadDst.id || '').trim() : '';
+    // A WAREHOUSE destination is displayed by its stored code when there is one (that is what the snapshot
+    // column is for) and by its id otherwise. A MARKETPLACE destination is the route's OWN marketplace column —
+    // never the station's, and never a snapshot.
+    var destination = (sadDst.type === 'WAREHOUSE')
+      ? String(h.recommended_destination_warehouse_code_snapshot || destWhId || '').trim()
+      : String(h.destination_marketplace || '').trim();
     var lineageBase = 'allocation_draft:' + d.id + '|run:' + String(h.calculation_run_id || '').trim() + '|fv:' + String(h.formula_version || '').trim() + '|cyc:' + String(h.planning_cycle || '').trim();
     d.lines.forEach(function (ln) {
       submitLines.push({
         company: h.company, country: h.country, marketplace: h.marketplace,
         ship_from: shipFrom, source_warehouse_id: String(ln.source_warehouse_id || h.recommended_source_warehouse_id || '').trim(), ship_from_type: 'warehouse',
-        destination: destination, destination_warehouse_id: destWhId, destination_type: destWhId ? 'warehouse' : 'marketplace',
+        // destination_type is DERIVED FROM THE IDENTITY, not from whether one column happened to be non-blank.
+        destination: destination, destination_warehouse_id: destWhId,
+        destination_type: (sadDst.type === 'WAREHOUSE') ? 'warehouse' : 'marketplace',
         shipping_method: h.recommended_shipping_method, last_mile_delivery: h.recommended_last_mile_delivery, carrier_id: '', customs_type: '',
         planning_cycle: String(h.planning_cycle || '').trim(),   // F1-7N-FA-4B2(A): a grouping dimension (also fingerprint-bound via source_reason cyc:)
         sku: ln.sku, site_sku: ln.site_sku, requested_qty: ln.planned_qty, units_per_carton: ln.units_per_carton,
@@ -1867,6 +1907,14 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
       });
     });
   });
+
+  // F1-7N-FB-4G-A2 §9 — a destination that cannot be resolved fails the WHOLE batch with zero writes. Gate (9)
+  // makes this unreachable through the normal path; it exists so that a future caller of this core cannot reach
+  // the plan writer with a fabricated destination.
+  if (destErrors.length) {
+    return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation',
+      zero_write: true, data: { execution_key: execKey, errors: destErrors.slice(0, 25) } };
+  }
 
   // G — capture the EXACT before-state of every draft this execution will transition (durable rollback evidence +
   // in-execution restore). Only the cells this execution writes are captured (status/audit/note + draft_version).

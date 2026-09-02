@@ -2546,3 +2546,179 @@ identical request.
   named a target that **was** present. Both sides are normalised, so a mutation now fails only for a readable
   reason. (A shell heredoc also mangled the escapes in the first attempt at that repair; it was rewritten from
   a file.)
+
+
+## 4G-A2 — SUBMIT PLAN E2E PREFLIGHT + UNSAVED-CHANGE SAFETY
+
+Diagnosis, tests and the corrections they proved necessary. **NO live Submit, no live DB write, no live status
+transition, no AI Plan, no Send Request, no deletion or repair of any live row, no deployment, no push.**
+`DB_WRITES = 0` · `STATUS_TRANSITIONS = 0` · `SHIPPING_PLANS_CREATED = 0` · `SHIPPING_PLAN_LINES_CREATED = 0`.
+
+Preconditions: `main`; `HEAD` = `origin/main` = `418971a`; clean worktree; empty stash. Contracts 10 / 9 / 1
+verified at source. `checkDeploymentContract()` is a LIVE endpoint call and is **USER-run** — A0 already
+recorded that it proves the Apps Script endpoint and not the browser assets, so it is requested in the report
+rather than claimed here.
+
+### 4G-A2.1 — The Submit call chain, as it actually runs
+
+`onclick="submitReplenishmentPlans()"` → client carton pre-gate (never transmitted) →
+`_irFlushPendingRouteWritesForSubmit_()` (drains the 400 ms debounce and waits out in-flight writes) →
+**ONE preflight** (new) → `_replenActiveAllocationDraftIds()` → `_irVerifyPersistedRouteQuantities_()`
+(read-after-write; `CORRUPTED` / `ROUTES_MISSING` / `DRIFTED` block, `UNVERIFIABLE` never does) →
+**confirmation** (new) → `_replenSubmitExecutionKey()` → `_replenCanonicalSubmit()` →
+`KM.DB.submitAllocationDraftsToShippingPlans` → action `submitAllocationDraftsToShippingPlans` → `01_router` →
+`handleSubmitAllocationDraftsToShippingPlans_` → `sadSubmitToShippingPlansCore_` (15 gates) →
+`shippingPlanCommitFromLines_` (11_, the single `shipping_plans` authority) → draft transition → readback →
+`sadVerifyShippingPlanOutput_`. The frontend sends **only draft ids + an execution key**; it authors no plan
+line. The disabled-state owner is A1-R1's panel readiness.
+
+### 4G-A2.2 — FINDING 1: the plan writer never read the canonical destination
+
+Its derivation was `snapshot || destWhId || h.marketplace` — a truthy chain over three columns that do not mean
+the same thing — and `destination_marketplace`, the column A0-R1 added and A0-R2 made the SOLE destination
+authority, was **not among them**. Executed over the four live shapes:
+
+| `destination_marketplace` | `dest_wh_id` | `code_snapshot` | scope mkt | PRE `destination` | POST `destination` |
+|---|---|---|---|---|---|
+| `Amazon` | `''` | `''` | `Amazon` | `Amazon` | **`Amazon`** (byte-identical) |
+| `Amazon` | `''` | `''` | `Walmart` | **`Walmart`** | **`Amazon`** |
+| `''` | `''` | `Amazon` | `Amazon` | **`Amazon`** (fabricated) | **REFUSED, zero write** |
+| `''` | `WH-US-3PL-01` | `US3PL01` | `Amazon` | `US3PL01` | `US3PL01` (unchanged) |
+
+Two of the three substitutions §9 forbids were live: **the station's scope marketplace became the route's
+destination**, and **the warehouse-code snapshot was first in the chain**. `destination_type` was decided by
+whether one column happened to be non-blank rather than by the identity.
+
+`destination` is a shipping-plan **GROUPING** dimension (11_ groups on
+company+country+ship_from+source_warehouse_id+destination+destination_warehouse_id+shipping_method+
+last_mile_delivery+planning_cycle and checksum-binds it), so a wrong value does not merely mislabel a row — it
+decides which plan a line joins. **H4's corrected value is byte-identical**, so its natural key
+(`ResUS|US|CNYOUXIN|WH-TW-CN-FACTORY-YOUXIN|Amazon||sea||`), its fingerprint and its plan identity do not move.
+
+Fixed in `sadSubmitToShippingPlansCore_`: the identity comes from `sadDestinationIdentity_`, a WAREHOUSE
+destination is displayed by its stored code and identified by its id, a MARKETPLACE destination is the route's
+own column, and an unresolvable one **fails the whole batch with zero writes** rather than being invented.
+Owner stamp → `F1-7N-FB-4G-A2`; 63_'s manifest moved with it.
+
+### 4G-A2.3 — FINDING 2: there was no confirmation, and the identity was minted before it
+
+`submitReplenishmentPlans` went from its gates straight into `_replenCanonicalSubmit`, which issues the
+request. And `_replenSubmitExecutionKey()` both **mints and persists** the submit execution key, so it was
+minted before anything could be cancelled — a Cancel would have left a durable identity behind for a submit
+that never happened.
+
+A confirmation is now required, built from the **persisted candidate set and nothing else** (never the DOM):
+station, saved-route count, SKU/line counts, total planned quantity, destination summary, method summary, the
+named exclusions, and the sentence *ONLY SAVED DATA IS SUBMITTED*. Cancel → **zero requests, nothing minted,
+nothing lost**. The execution key is minted only after it.
+
+### 4G-A2.4 — FINDING 3: the dirty verdict had six owners
+
+`_irUnsavedRoutes` (save failures) · `_draftDbTimers` (debounced writes not yet sent) · `_draftDbInFlight` ·
+`_draftDbDirty` (an edit that landed during a write) · `_pendingDraftCancels` (deletes not yet persisted) · and,
+since A1-R1, the Execution panel's reveal state. Five booleans and no single place that could answer *is what
+the operator is looking at what the database holds?*
+
+`_irSubmitStateSnapshot_` gathers all six into ONE named snapshot; `IRSubmitPreflight.evaluate` is the ONE pure
+predicate. Any of the five dirty sources yields **`UNSAVED_EXECUTION_PLAN_CHANGES`** with the route AND its
+reason named; a panel that is not READY yields `EXECUTION_PLAN_NOT_READY` (a disabled button is not a guard — a
+direct call, a stale enabled button or a keyboard activation all bypass it). The verdict is **deliberately not**
+a DOM-versus-DB count comparison: two routes can be equal in number and different in every value. **It never
+saves on the operator's behalf.**
+
+### 4G-A2.5 — H1 / H2 / H3 / H4 classification
+
+| | station | service | lines | qty | canonical destination | verdict |
+|---|---|---|---|---|---|---|
+| H1 `SAD-C787D1B1-D` | ResUS/US/Amazon | sea_express | **0** | — | (see census) | **BLOCK `NO_LINES`** — owns no route, never in the client payload; refused by the server if smuggled in |
+| H2 `SAD-27976058-2` | ResUS/US/Amazon | air | **0** | — | (see census) | **BLOCK `NO_LINES`** — same |
+| H3 `SADH-K2-7F15DD7D` | **ResTW/JP/Amazon** | air | 5 | 220 | — | **EXCLUDE `OUT_OF_APPLIED_SCOPE`**; if smuggled in the server refuses `MIXED_SITE_PAYLOAD`, zero write |
+| H4 `SADH-K2-E7AF9242` | ResUS/US/Amazon | sea | 1 | **800** | `MARKETPLACE:amazon` | **INCLUDE** — the only submittable persisted route |
+| route 2 (operator's) | — | — | unsaved | 800 | — | **EXCLUDE `UNSAVED_USER_ADDED_ROUTE`**, disclosed in the confirmation |
+
+Total planned quantity in the proposal: **800, not 1600.** The second route is excluded because it is not
+persisted, and it is **reported** rather than silently dropped. Neither H1/H2 nor H3/H4 is deleted, merged,
+de-duplicated or repaired by this round.
+
+### 4G-A2.6 — Server validation matrix (real core, in-memory sheets)
+
+| case | outcome | writes |
+|---|---|---|
+| H4 alone | `success`, 1 plan line, qty 800 | 1 proposed commit |
+| H4 + zero-line H1 | `SUBMIT_VALIDATION_FAILED` / `NO_LINES` | **0** — writer never reached |
+| H4 + out-of-station H3 | `MIXED_SITE_PAYLOAD` | **0** |
+| missing destination | `ROUTE_INCOMPLETE` | **0** |
+| BOTH destination | `ROUTE_INCOMPLETE` (ambiguous identity) | **0** |
+| `cancelled` / `expired` draft | refused | **0** |
+| cancelled line only | `NO_LINES` | **0** |
+| orphan line (FK elsewhere) | `NO_LINES` | **0** |
+| duplicate line id | `DUPLICATE_LINE_ID` | **0** |
+| stale selector | `APPLIED_SCOPE_MISMATCH` | **0** |
+| hand-crafted zero-line payload | refused | **0** |
+| downstream plan write fails | drafts stay UNSUBMITTED | 0 status transitions |
+
+**Any single header failing any gate fails the WHOLE batch. There is no partial submit.** No server gate was
+weakened to accommodate the client.
+
+### 4G-A2.7 — Quantity / identity / FK conservation
+
+`qty_before 800` → `qty_proposed 800` → `qty_difference 0`; matched lines 1; orphan 0; duplicate 0; no
+zero/unknown quantity cells in the candidate. Header id `SADH-K2-E7AF9242` and line id `SADL-K2-16F4E4F9` are
+carried, never re-minted, and both appear in the plan line's `source_reason`
+(`allocation_draft:…|line:SADL-K2-16F4E4F9`). `sea` is carried verbatim and is never widened to `sea_express`.
+
+### 4G-A2.8 — Idempotency / double click / replay
+
+One in-flight promise per execution key: a second click **shares** it. One generator for the key. A replay under
+the **same** key reuses the existing plan and writes **no** second plan and **no** second line. A **new** key
+over an already-submitted draft is a `CONFLICT`. A lost response is safe: the retry reuses. An
+`IN_PROGRESS_SAME_EXECUTION_KEY` response triggers a **read-back**, never a client-side guess of success.
+
+### 4G-A2.9 — Success lifecycle (proposal; nothing transitioned)
+
+Draft `status` → `submitted`, `submitted_by` / `submitted_at` stamped from the request and the server clock, an
+audit note naming the plan and the execution key appended — **all only after the durable plan commit**. A failed
+post-check restores the draft cells AND rolls back the inserted plan rows. The client then drops the Working
+Draft and its execution key and navigates to the plan; it never re-sends. Every value is an existing lifecycle
+value; none is invented here.
+
+### 4G-A2.10 — The read-only census
+
+`assets/tools/apps-script-diagnostics/TEMP_shipping_allocation_submit_plan_a2_dry_run.gs`, one entry point
+`TEMP_SHIPPING_ALLOCATION_SUBMIT_PLAN_A2_SUMMARY()`, no parameters. Every sheet is wrapped in a façade exposing
+only `getDataRange().getValues()`, so every mutator is **unreachable**, not merely unused. It takes no lock,
+writes no property, creates no file, sends no mail, calls no submit action, and mints no id. It requires
+`sadDestinationIdentity_` / `sadStoredHeaderRouteIsComplete_` and carries **no copy** of them — a missing symbol
+prints `AUTHORITY_NOT_LOADED` and classifies nothing. What it cannot safely judge prints `BLOCKED`.
+
+### 4G-A2.11 — Deployment
+
+`APPS_SCRIPT_SYNC_REQUIRED: YES` — `16_shipping_allocation_handlers.gs` **then**
+`63_api_v1_system_health.gs` (derived from the source: exactly one file declares `SAD_BUILD_VERSION_`, exactly
+one expects it) · `APPS_SCRIPT_DEPLOYMENT_REQUIRED: YES` (one new version) · `DATABASE_CHANGE_REQUIRED: NO` ·
+`BUNDLE_REBUILD_REQUIRED: NO` (`--check` hash unmoved) · `FRONTEND_PUSH_REQUIRED: YES`, application token
+`fb4ga1r1-panelready-20260902` → **`fb4ga2-submitpreflight-20260902`** (18 refs). The inventory stylesheet and
+`method-registry.js` are **untouched**, so their token families do **not** rotate.
+`LIVE_SUBMIT_AUTHORIZED: NO`.
+
+### 4G-A2.12 — Assertions restated, and why
+
+**Two were the equality-with-now shape again** — the seventh and eighth appearances. A0-R2's `H1` pinned its own
+stamp as an equality; A1-R1's `V4` asserted the stamp had NOT moved and its `V6` pinned its own token literal.
+Each is a statement about a moment. They are floors and derivations now.
+
+**Six pinned the wording of a Submit alert or the shape of one of the three gate blocks A2 consolidated.**
+FB-4B-ADDENDUM's `F11h`, FB-4F-B6's `F4` and `F14`, FB-2A's `D3` (twice) and FA-4B's `4`. Every intent survives
+and is asserted where it now lives — one gate, evaluated before any request, naming every route with its own
+reason. FA-4B's `4` got **stronger**: `destination_type` is derived from the canonical identity rather than from
+whether one column happened to be non-blank.
+
+**One was passing by accident.** FB-2A's "before any request is made" compared two `indexOf` results of which
+one was `-1`, so it was true for a reason unrelated to its label.
+
+### 4G-A2.13 — Suite corrections of this round's own making
+
+A mutation probe stubbed the submit transport with a hand-rolled object whose final `.then()` yielded
+`undefined`. The latch under test is `_replenSubmitInFlight[execKey] = p`, so the stub stored a falsy value and
+the **honest** function also issued a second request — the probe reported MUTANT SURVIVED while proving nothing.
+A latch cannot be observed through a stub that defeats it; it uses a real Promise now.

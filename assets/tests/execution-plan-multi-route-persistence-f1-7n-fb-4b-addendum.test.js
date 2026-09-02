@@ -476,8 +476,13 @@ eval(dupFns);
 replenAllocationDraft = { duplicateLineIdentities: wsD.data.duplicate_line_identities };
 ok(_irHasDuplicateCorruption_() === true, 'F11f the page reports duplicate corruption');
 eq(_irDuplicateCorruptedSkus_(), [SKU], 'F11g the affected SKU is named for the Submit block');
-ok(IRSRC.indexOf('Cannot Submit Plan — duplicate rows exist in the database') !== -1,
-  'F11h Submit fails CLOSED on a duplicate identity');
+// F1-7N-FB-4G-A2 — RESTATED for the WORDING, not the rule. A2 consolidated the three separate Submit gate
+// blocks into ONE preflight whose alert bodies are its renderers, so the sentence moved. The rule is unchanged
+// and is asserted where it now lives: a duplicate stored identity yields a blocking verdict, and Submit returns.
+ok(IRSRC.indexOf('duplicate rows exist in the database') !== -1,
+  'F11h Submit fails CLOSED on a duplicate identity — the operator is told so');
+ok(/DUPLICATE_LINE_IDENTITY/.test(IRSRC) && /_irDuplicateLineIdentities_/.test(IRSRC),
+  'F11i and the block carries a typed code naming the duplicate line identity');
 ok(/if\s*\(seenPk\[pk\]\)\s*\{[\s\S]{0,200}?return;/.test(IRSRC),
   'F11i hydrate renders ONE physical row per primary key — three 800-unit rows can never display as 2400');
 ok(IRSRC.indexOf('_irRenderDuplicateCorruptionBanner_') !== -1, 'F11j the corruption is DISCLOSED in the UI, not hidden');
