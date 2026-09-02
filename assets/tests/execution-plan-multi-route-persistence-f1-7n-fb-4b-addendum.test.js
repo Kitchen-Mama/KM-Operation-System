@@ -93,6 +93,12 @@ eval(extractFn(G13, 'procurementEnsureSheet_'));
 eval(extractFn(G13, 'procurementAppendByHeader_'));
 eval(extractFn(G13, 'procurementFindRow_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_'));
+// F1-7N-FB-4G-A0-R1 - the FULL header authority (30 required + the two optional tails = 35), which is the
+// shape production actually has.
+eval(extractVar(G16, 'SAD_LIFECYCLE_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_'));
+eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_'));
 eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_'));
 // F1-7N-FB-4F-B3 - the line writer now copies through the FULL authority so expected_arrival is carried when
 // the column exists. Apps Script shares one global scope across files; a suite that lifts functions out has to
@@ -120,6 +126,11 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   'sadK2GroupKey_', 'sadK2DeterministicHeaderId_', 'sadK2LineNaturalKey_', 'sadK2DeterministicLineId_',
   'sadIsK2Group_', 'sadNewLineId_', 'sadK2ResolveActiveDraft_', 'sadCanonicalLineId_', 'sadSameLineIdentity_',
   'sadPreflightLineBatch_', 'sadScanDuplicateLinePks_', 'sadVerifyDraftLines_', 'sadLineIsComplete_',
+  // F1-7N-FB-4G-A0-R1 - the header writer now refuses a supplied destination_marketplace when the column is
+  // absent, which needs the live-header reader. Apps Script has ONE global scope; a suite that lifts a
+  // function out has to supply the globals the file itself would have had, or it reports a ReferenceError as
+  // though it were a production defect.
+  'sadLiveHeaderNames_', 'sadHasColumn_',
   'sadHeaderRouteIsComplete_',
   'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
   'sadLegacyReconcileReason_', 'sadReconcileMessage_', 'sadRowToObject_', 'sadReadLinesForDraft_',
@@ -127,7 +138,14 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 
 function resetDb() {
-  SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  // F1-7N-FB-4G-A0-R1 — THE FULL 35-COLUMN HEADER, WHICH IS WHAT PRODUCTION HAS (B5 measured it).
+  //
+  // This fixture used the 30 REQUIRED columns — a PRE-MIGRATION sheet with no `destination_marketplace`. On
+  // such a sheet an Amazon route's destination could only survive as
+  // recommended_destination_warehouse_code_snapshot='Amazon', the misuse A0-R1 removes, so the suite was
+  // exercising a shape production no longer has. A genuinely pre-migration sheet is not silently broken:
+  // the writer now REFUSES a supplied marketplace when the column is absent, which is asserted below.
+  SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_);
   SHEETS['shipping_allocation_draft_lines'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
 }
 function headerRows() { return SHEETS['shipping_allocation_drafts'].rows.slice(1); }
@@ -276,6 +294,23 @@ var BROKEN_B = JSON.parse(JSON.stringify(ROUTE_B)); BROKEN_B.shipping_method = '
 var rBad = IRDraft.preflightRouteGroups(SCOPE, SKU, [ROUTE_A, BROKEN_B]);
 eq(rBad.groups.length, 1, 'F6a an INCOMPLETE route is not a persistable group at all (never silently merged into Route A)');
 // and a genuine server-side refusal on one group leaves the other untouched
+// F1-7N-FB-4G-A0-R1 — A PRE-MIGRATION SHEET REFUSES A MARKETPLACE DESTINATION RATHER THAN DROPPING IT.
+// setCol is a no-op on an absent column and procurementAppendByHeader_ ignores an unknown name, so without this
+// the writer would report success and store a row with NO destination — which Submit would refuse much later,
+// long after the operator was told the save worked. Executed against the 30-column header, not asserted from source.
+(function () {
+  var keep = SHEETS['shipping_allocation_drafts'];
+  SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+  var res = sadUpsertDraftHeaderCore_({ company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
+    recommended_source_warehouse_id: 'WH-CN-YX', recommended_destination_warehouse_id: '',
+    destination_marketplace: 'Amazon', recommended_shipping_method: 'sea' });
+  ok(res && res.success === false, 'A0R1-1 a supplied marketplace with no column is REFUSED');
+  eq(res && res.error, 'ROUTE_IDENTITY_NOT_PERSISTABLE', 'A0R1-2 with the named reason');
+  eq(res && res.zero_write, true, 'A0R1-3 declaring a zero write');
+  eq(SHEETS['shipping_allocation_drafts'].rows.length - 1, 0, 'A0R1-4 and the table is untouched');
+  SHEETS['shipping_allocation_drafts'] = keep;
+})();
+
 var hBad = sadUpsertDraftHeaderCore_({ company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
   source_page: 'inventory_replenishment', recommended_source_warehouse_id: 'WH-CN-YOUXIN',
   recommended_destination_warehouse_id: '', recommended_shipping_method: '' });

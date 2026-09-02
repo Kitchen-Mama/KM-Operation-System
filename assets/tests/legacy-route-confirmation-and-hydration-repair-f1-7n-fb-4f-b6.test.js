@@ -844,8 +844,13 @@ section('G — [§J] THE TWO EMPTY HEADERS ARE RECORDED, NOT REMOVED');
 section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
 // ================================================================================================================
 (function () {
+  // F1-7N-FB-4G-A0-R1 — RESTATED. "This round's owner build" is an equality with the present, so the first
+  // later round that legitimately moved the stamp failed it while describing a correct state. What B6
+  // established is a FLOOR: 16_ carries B6's changes or something later. The order is owned by
+  // _release-order.js OWNER_STAMPS.
   var stamp = (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-  eq(stamp, 'F1-7N-FB-4F-B6', 'H1 16_ declares this round\'s owner build');
+  ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4F-B6'),
+    'H1 16_ is at or after the B6 owner build (' + stamp + ')');
   eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
     stamp, 'H2 and the deployment manifest expects exactly what the source declares');
   eq((G69.match(/var RIC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3',

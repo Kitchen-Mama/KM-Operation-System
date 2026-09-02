@@ -632,8 +632,14 @@ function clientEnv() {
     var html2 = C.run('_execToOptionsHtml(__cand, "MARKETPLACE_DESTINATION:Amazon", true)');
     ok(html2.indexOf('selected>Amazon</option>') !== -1, 'G14 [test 18] supplying the token DOES select Amazon');
     // The save path emits the token; the hydrate path does not. That asymmetry is the defect.
-    ok(PAGE.indexOf("destination_marketplace: isLogicalAmazon ? 'Amazon' : ''") !== -1,
-        'G15 [test 18] _saveAllocationDomFromDom writes the logical destination…');
+    // F1-7N-FB-4G-A0-R1 — RESTATED. B5 pinned the exact literal, and A0-R1 replaced the hardcoded 'Amazon'
+    // with the marketplace the SELECTED TOKEN names (resolveDestinationPayload reads it from the token itself).
+    // What B5 established is unchanged and is what is asserted now: the SAVE path writes a marketplace for a
+    // logical destination — which was the asymmetry, because the hydrate did not.
+    ok(/destination_marketplace: isLogicalAmazon[\s\S]{0,200}?destPayload[\s\S]{0,40}?marketplace/.test(PAGE),
+        'G15 [test 18] _saveAllocationDraftFromDom writes the logical destination…');
+    ok(!/destination_marketplace: isLogicalAmazon \? 'Amazon' : ''/.test(PAGE),
+        'G15b [test 18] …and no longer as a hardcoded constant — it is the marketplace the token names');
     // F1-7N-FB-4F-B6 — RESTATED, AND THE OLD FORM WOULD NOW PASS ON A COMMENT.
     // This scanned the file for the literal `destination_marketplace: hTo ? '' : (ctx.marketplace || '')`. B6
     // deleted that line and QUOTED it in the comment explaining what was removed — so the old assertion would
@@ -934,7 +940,9 @@ section('K — the neighbours this round must not have disturbed');
     // asserting that by pinning the value of the moment made a later round's legitimate change look like a
     // regression in a read-only diagnostic suite.
     var _k4 = (SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-    var _k4Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+    // F1-7N-FB-4G-A0-R1 — the stamp order moved to _release-order.js: four suites held their own copy and one
+    // stamp move broke all four. Same floor, same meaning, one owner.
+    var _k4Order = require(require('path').join(__dirname, '_release-order.js')).OWNER_STAMPS;
     ok(_k4Order.indexOf(_k4) !== -1 && _k4Order.indexOf(_k4) >= _k4Order.indexOf('F1-7N-FB-4F-B3'),
         'K4 the allocation owner build is at or after the B3 schema sync (' + _k4 + ')');
     eq((RIC.match(/var RIC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'K5 the identity contract build is unmoved');

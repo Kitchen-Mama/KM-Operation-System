@@ -1914,3 +1914,157 @@ No Apps Script file changed (measured from the working tree, not claimed). No DB
 no AI Plan, no Save, no Submit, no Send Request. Contracts unmoved: action 10, required-action-list 9,
 transport 1. `SAD_BUILD_VERSION_` stays `F1-7N-FB-4F-B6`. Bundle unchanged
 (`d782ea6d…c36ac`). Sweep: 392 suites, 388 pass, 4 fail — the four long-standing failures and NOTHING else.
+
+
+## 4G-A0-R1 — DESTINATION XOR + PERSISTED METHOD: TWO ASYMMETRIES AND ONE MISSING FIELD
+
+A0 made the persisted route appear. R1 closes the last two read/save asymmetries on it — and finding the second
+one explained where the live H4 header's `Amazon`-in-a-warehouse-code-column actually came from.
+
+### 4G-A0-R1.0 — Preconditions
+
+`main` = `origin/main` = `60e5ef3`; worktree clean; stash empty; 18 refs on
+`fb4ga0-livehydration-20260902`. Deployment contract confirmed by the operator (`DEPLOYMENT_CONTRACT_OK`,
+`STABLE_EXEC`, action 10, transport 1).
+
+### 4G-A0-R1.1 — The Method, and there were TWO defects
+
+Each is sufficient on its own; the first needs no spelling mismatch at all.
+
+**(1) `_execRebuildMethodOptions` read the selection from the DOM instead of the route model.** The route's
+service lives in the hydrated model. On the FIRST paint of an expanded row the carrier catalogue is still in
+flight — `initializeShippingAllocation` kicks off `_irLoadCarrierPlanning_()` and renders immediately — so
+`_execMethodOptionsHtml` emits the single `Loading methods…` option and `methodEl.value` is `''`. The rebuild
+then ran on the `.then()` of that very load, read `current = ''`, found it invalid, and re-rendered the
+now-complete catalogue with `selected = ''`. **The label is present and nothing is chosen** — the reported
+symptom exactly, measured in the suite. And because the collect reads the DOM, the next save would have
+written a BLANK method over a stored `sea`.
+
+**(2) the selection was an EXACT-TEXT comparison,** between the header's `recommended_shipping_method` and the
+rate card's `shipping_method` column verbatim (`method-registry` `methodsForRoute`: `value = str(rc.shippingMethod)`).
+Nothing else in the system compares services that way — the server matches rate cards case-insensitively
+(`crcFindRateCards_` → `eqi`), computes route identity through `ricCanonicalService_`, and this page's own
+lead-time mapper lowercases first. So a header persisted as `sea` did not select an option valued `Sea`.
+
+Both are fixed: the row carries `data-method-persisted` (the same discipline `data-eta-persisted` uses) and the
+select's own value wins only when the user has actually touched it (`data-method-dirty`, set by
+`onExecutionMethodEdit`); and the match goes through `IRService.matches`.
+
+### 4G-A0-R1.2 — The canonical-to-label ownership (§C.5), stated honestly
+
+There are **two different questions with two different owners**, and pretending they were one is what produced
+an exact-text comparison in the first place.
+
+| question | owner |
+|---|---|
+| what SERVICE is this string? | `IRService.canonical` in `inventory-compat.js` — a **byte-identical mirror** of 69_ `RIC_SERVICE_LABELS_` / `RIC_CANONICAL_SERVICES_`, asserted as such by the suite |
+| what LABEL does this service show? | **the data** — `carrier_rate_cards.shipping_method_label`, operator-maintained |
+
+No shipped source spells `空派`, `普船海卡` or `美森海卡` as a picker label, and none may: the picker shows what
+the operator maintains. The mirror is a MIRROR — a spelling not in 69_ must never be added to it, because a
+client that recognises what the server refuses builds routes the server then rejects. `sea` never answers for
+`sea_express` in either direction, and an unrecognised spelling matches nothing but itself, so an unknown
+service can never quietly select the first option.
+
+### 4G-A0-R1.3 — The destination, and the field that was missing on the server
+
+`routeHeaderFields` fed the `*_warehouse_code_snapshot` columns from `route.ship_from` / `route.destination` —
+the collect's DISPLAY NAMES. For an Amazon destination that name is `Amazon`, so the save wrote a marketplace
+name into a warehouse-code column. **That is precisely the legacy value the live H4 header carries.**
+
+Then the reason it had to. `sadUpsertDraftHeaderCore_` — the writer the page ACTUALLY calls
+(`upsertShippingAllocationDraft` → `handleUpsertShippingAllocationDraft_` → here) — **never carried
+`destination_marketplace`**, on either its update field list or its insert. B4 made the column stored and B6 put
+it in the header fingerprint and in the ATOMIC writer's list, but this two-call writer never read it. So an
+explicit Amazon save arrived carrying `destination_marketplace='Amazon'`, the field was silently dropped, and
+the only surviving evidence of the chosen destination was the misused snapshot — which
+`sadStoredHeaderRouteIsComplete_` then read back as the destination so Submit would pass.
+
+> **THE CLIENT COULD NOT STOP WRITING THE MISUSE UNTIL THE SERVER CARRIED THE FIELD.** A correctly XOR'd payload
+> on today's deployment would leave the row with NO destination at all and Submit would refuse it with
+> `ROUTE_INCOMPLETE`. **This is why the round changes Apps Script**, and why the owner stamp moves.
+
+The server change is minimal and additive: `destination_marketplace` joins the update list and the insert, and
+a supplied marketplace with **no column** is now REFUSED (`ROUTE_IDENTITY_NOT_PERSISTABLE`, zero write) rather
+than silently dropped — the ATOMIC writer already refuses that exact case, and two writers must not disagree
+about whether a route is persistable.
+
+### 4G-A0-R1.4 — The canonical destination model (§D), enforced in ONE place
+
+| | `recommended_destination_warehouse_id` | `..._warehouse_code_snapshot` | `destination_marketplace` |
+|---|---|---|---|
+| Marketplace | `''` | `''` | trimmed marketplace |
+| Warehouse | real `warehouse_id` | `warehouse_code` | `''` |
+| Both | `''` | `''` | marketplace — the exclusive identity wins |
+| Neither | `''` | `''` | `''` — read keeps the route + confirmation required; SAVE refuses |
+
+The marketplace comes from the **token the user selected** (`MARKETPLACE_DESTINATION:<marketplace>:<COUNTRY>`),
+not from the page filter, not from the scope, and not from a display label. `resolveDestinationPayload` read
+`parts[1]` for it now rather than the hardcoded `'Amazon'` — byte-identical for every token that exists today,
+and exactly the kind of constant that becomes a wrong answer the day a second marketplace gets one.
+
+**No `destination_type` column is added; the type stays derived from the XOR.** And neither corrected field is a
+K2 group dimension, so this **re-keys nothing and moves no id** — proven by computing the group key both ways.
+
+### 4G-A0-R1.5 — The legacy snapshot policy (§G)
+
+1. **Hydration carries it verbatim and never promotes it.** `resolvePersistedDestination` looks at the id and
+   marketplace columns ONLY — it never sees a snapshot.
+2. **Page load never clears it**, guaranteed by the hydrate performing no write at all.
+3. **Explicit Amazon + confirm** → `destination_marketplace='Amazon'`, warehouse id `''`, **snapshot CLEARED**.
+   The writer's `if (header[f] != null) setCol(...)` makes an explicit blank a clear and an omitted field a
+   preserve, so the blank is the instruction. The clear is not a silent no-op because `destination_marketplace`
+   is in `SAD_K2_HEADER_FP_` (B6 put it there for this exact reason) and it genuinely changes.
+4. **Explicit warehouse** → snapshot becomes THAT warehouse's code, marketplace `''`.
+5. **Cancel** → zero request, zero write (B6's gate, re-asserted).
+
+### 4G-A0-R1.6 — Adoption, simulated against the shipped writer
+
+H4 chooses Amazon and the operator confirms: header id `SADH-K2-E7AF9242` unchanged, line
+`SADL-K2-16F4E4F9` unchanged, service still `sea`, `planned_qty` still 800, `destination_marketplace` = Amazon,
+warehouse id `''`, **legacy snapshot cleared**, no second header, no second line, no re-key, replay idempotent.
+A physical warehouse destination stores the real id + its code with a blank marketplace, and the To picker
+selects the same warehouse after reload.
+
+### 4G-A0-R1.7 — Two fixtures were passing ON the misuse
+
+`live-closure-...-fb-4d` and `execution-plan-multi-route-persistence-...-addendum` both built their in-memory
+sheet from `SHIPPING_ALLOCATION_DRAFTS_HEADERS_` — the 30 REQUIRED columns, i.e. a PRE-MIGRATION sheet with no
+`destination_marketplace`. On such a sheet the field is dropped and an Amazon route's destination survived only
+as the misused snapshot, which is how Submit passed. Both now use `SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_`,
+the 35 columns B5 measured in production — and the addendum suite gained an EXECUTED check that a genuinely
+pre-migration sheet now REFUSES rather than drops.
+
+### 4G-A0-R1.8 — Suites restated, and the constant that was living in four places
+
+* **The 16_ owner-stamp order was duplicated in FOUR suites** (B3, B4, B5, FB-4F-A). Moving the stamp broke all
+  four at once — the exact failure a duplicated constant exists to produce. It lives in
+  `_release-order.js` (`OWNER_STAMPS` + `stampAtOrAfter`) now; a round that moves the stamp appends one line.
+* **B6 H1** pinned "16_ declares THIS ROUND'S owner build" — an equality with the present. A floor now.
+* **B6-R1 H1/H3** and **A0 H4/H5** measured the WORKING TREE for facts about their OWN COMMITS. Anchored to
+  their own diffs (`60afa6e→82da01c`, `82da01c→60e5ef3`), where the fact is fixed forever; and B6-R1's
+  manifest check now asserts the manifest agrees with the SOURCE rather than with a number typed twice.
+* **A0 A1** — "this round mints its own app token" — the **FIFTH** round for this exact shape, written by A0
+  in the same commit that restated B6-R1's H6 for precisely that reason. A floor now.
+* **A0 E12/E13** guarded against renaming a label by asserting the diff mentioned none. A0-R1 legitimately ADDS
+  the server's own mapping table, which contains 普船 and 美森海卡; adding a mirror is not a rename, so the check
+  measures REMOVALS.
+* **B5 G15** pinned the exact literal `destination_marketplace: isLogicalAmazon ? 'Amazon' : ''`. Restated to
+  what B5 established — the save path writes a marketplace for a logical destination — plus the new fact that
+  it is no longer a hardcoded constant.
+* **The 4B-addendum lift** gained `sadLiveHeaderNames_` / `sadHasColumn_`, which the new refusal calls. Fourth
+  round in a row for the lift-dependency class: Apps Script has one global scope, and a suite that lifts a
+  function must supply the globals the file itself would have had.
+
+One assertion of this round's own was bounded by a **character budget** (`[\s\S]{0,600}` to reach a function
+call) and failed on a function longer than the budget. That is the **fourth** false failure this repository has
+had from a character budget; it extracts the function whole and asks what it calls.
+
+### 4G-A0-R1.9 — Boundaries
+
+TWO Apps Script files changed (measured, not claimed): `16_shipping_allocation_handlers.gs` and
+`63_api_v1_system_health.gs`. `SAD_BUILD_VERSION_` → `F1-7N-FB-4G-A0-R1`, and the manifest expectation moved
+with it so a half-synced deployment is detectable. NO DB schema change. No live Save, AI Plan, Submit or Send
+Request. Contracts unmoved: action 10, required-action-list 9, transport 1. Bundle unchanged
+(`d782ea6d…c36ac`). Token → `fb4ga0r1-destxor-20260902`, all 18 refs. Sweep: 393 suites, 389 pass, 4 fail —
+the four long-standing failures and NOTHING else.

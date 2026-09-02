@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -252,8 +252,15 @@
   // Parse a saved value back to a persistence payload fragment.
   function resolveDestinationPayload(value, scope) {
     if (typeof value === 'string' && value.indexOf('MARKETPLACE_DESTINATION:') === 0) {
+      // F1-7N-FB-4G-A0-R1 §D/§E — the marketplace comes from the TOKEN the user selected, which is where the
+      // option's own identity lives (MARKETPLACE_DESTINATION:<marketplace>:<COUNTRY>, built by
+      // marketplaceDestinationToken). It was hardcoded to 'Amazon' — byte-identical for every token that
+      // exists today, and exactly the kind of constant that becomes a wrong answer the day a second
+      // marketplace gets a logical destination. The scope is still only a country fallback, never the
+      // marketplace.
       var parts = value.split(':');
-      return { marketplace: 'Amazon', country: up(parts[2] || (scope && scope.country)), selected_destination_warehouse_id: null };
+      var mkt = String(parts[1] == null ? '' : parts[1]).trim();
+      return { marketplace: mkt || 'Amazon', country: up(parts[2] || (scope && scope.country)), selected_destination_warehouse_id: null };
     }
     return { selected_destination_warehouse_id: (value == null || value === '') ? null : String(value) };
   }
@@ -288,6 +295,52 @@
     if (isAmazon) toList.push(amazonLogicalDestination(scope));   // exactly one Amazon logical destination
     return { from: dedup(from), to: toList, isAmazon: isAmazon };
   }
+
+  // ===========================================================================================================
+  // F1-7N-FB-4G-A0-R1 §C.5 — CANONICAL SERVICE IDENTITY. One owner, and it mirrors the server's.
+  // -----------------------------------------------------------------------------------------------------------
+  // There was no client-side owner of "what service is this string". The page had two LEAD-TIME tables
+  // (IR_SERVICE_TO_LEAD_KEY_ / IR_LABEL_TO_LEAD_KEY_) that answer a DIFFERENT question — which carrier_lead_times
+  // key a service uses — and the Method picker answered the identity question with a raw `===` on whatever text
+  // the rate card happened to carry. So a header persisted as `sea` did not select an option valued `Sea`, while
+  // the SERVER matches rate cards case-insensitively (crcFindRateCards_ uses eqi) and computes route identity
+  // through ricCanonicalService_. Three consumers, three comparison rules, one of them exact-string.
+  //
+  // This is the byte-for-byte mirror of 69_ RIC_SERVICE_LABELS_ / RIC_CANONICAL_SERVICES_. It is a MIRROR, not a
+  // second dictionary: an entry that is not in 69_ must not be added here, because a client that recognises a
+  // spelling the server refuses would build a route the server then rejects — or worse, one it keys differently.
+  var IR_CANONICAL_SERVICES = ['air', 'sea', 'sea_express', 'rail', 'truck'];
+  var IR_SERVICE_LABELS = {
+    'air': 'air', 'sea': 'sea', 'sea express': 'sea_express', 'sea_express': 'sea_express',
+    'rail': 'rail', 'truck': 'truck',
+    '空運': 'air', '普船': 'sea', '快船': 'sea_express', '美森海卡': 'sea_express'
+  };
+  // Canonical service from any accepted spelling. '' for anything unrecognised — NEVER a neighbouring service,
+  // never a family, never a mode. A caller receiving '' must REFUSE, not substitute.
+  function canonicalService(v) {
+    var t = String(v == null ? '' : v).trim().toLowerCase();
+    if (!t) return '';
+    if (IR_CANONICAL_SERVICES.indexOf(t) !== -1) return t;
+    if (Object.prototype.hasOwnProperty.call(IR_SERVICE_LABELS, t)) return IR_SERVICE_LABELS[t];
+    return '';
+  }
+  // Does a persisted service and a picker option value name the SAME service? Exact text first (the common
+  // case, and free); canonical identity second. Two blanks never match, and an UNRECOGNISED spelling matches
+  // NOTHING — including another unrecognised spelling — so an unknown service can never quietly select the
+  // first option, and `sea` can never answer for `sea_express` in either direction.
+  function serviceMatches(a, b) {
+    var s = String(a == null ? '' : a).trim(), o = String(b == null ? '' : b).trim();
+    if (!s || !o) return false;
+    if (s === o) return true;
+    var cs = canonicalService(s), co = canonicalService(o);
+    return !!cs && !!co && cs === co;
+  }
+  var IRService = {
+    CANONICAL_SERVICES: IR_CANONICAL_SERVICES,
+    SERVICE_LABELS: IR_SERVICE_LABELS,
+    canonical: canonicalService,
+    matches: serviceMatches
+  };
 
   var IRWarehouse = {
     whType: whType, isFactory: isFactory, isOverseas3PL: isOverseas3PL, isFBA: isFBA, isActive: isActive,
@@ -519,8 +572,21 @@
       // outright. destination_marketplace is a stored column since B4; a value invented here is now a permanent
       // business fact rather than a transient display accident. Only the route's own destination is used.
       destination_marketplace: isLogical ? String(route.destination_marketplace == null ? '' : route.destination_marketplace).trim() : '',
-      source_warehouse_code: route.ship_from || '',
-      destination_warehouse_code: route.destination || ''
+      // F1-7N-FB-4G-A0-R1 §D/§G — THE SNAPSHOT COLUMNS WERE BEING FED DISPLAY NAMES, AND FOR AMAZON THAT NAME
+      // WAS 'Amazon'. These two lines read `route.ship_from` and `route.destination`, which the collect fills
+      // from the selected option's data-wh-NAME. So a marketplace destination wrote the marketplace's NAME into
+      // recommended_destination_warehouse_code_snapshot — a warehouse-code column — which is exactly the legacy
+      // misuse the live H4 row carries. The snapshot is a WAREHOUSE CODE or it is nothing.
+      //
+      // XOR, and it is the same XOR the id and marketplace fields above already obey: a marketplace destination
+      // has NO warehouse code, so the column is written BLANK (the writer's `if (header[f] != null)` makes a
+      // blank an explicit clear, which is how an explicit Amazon save removes the legacy value). A warehouse
+      // destination carries its code and no marketplace.
+      //
+      // Neither of these is a K2 group dimension (IR_K2_GROUP_DIMENSIONS above), so correcting them re-keys
+      // nothing and moves no existing id.
+      source_warehouse_code: String(route.source_warehouse_code == null ? '' : route.source_warehouse_code).trim(),
+      destination_warehouse_code: isLogical ? '' : String(route.destination_warehouse_code == null ? '' : route.destination_warehouse_code).trim()
     };
   }
 
@@ -611,6 +677,8 @@
     routeContextKey: routeContextKey,
     distinctRouteContexts: distinctRouteContexts,
     K2_GROUP_DIMENSIONS: IR_K2_GROUP_DIMENSIONS,
+    canonicalService: canonicalService,
+    serviceMatches: serviceMatches,
     routeHeaderFields: routeHeaderFields,
     canonicalRouteGroupKey: canonicalRouteGroupKey,
     partitionRoutesIntoGroups: partitionRoutesIntoGroups,
@@ -792,5 +860,5 @@
     resolveLocalDecision: resolveLocalDecision
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace };
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService };
 });

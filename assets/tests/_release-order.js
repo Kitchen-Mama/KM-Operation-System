@@ -43,7 +43,12 @@ var ROUND_TOKENS = [
   // rule recorded above its token has been published and cannot be reused. This round changes the SOURCE the
   // Execution Plan hydrate reads, so a browser left on the previous copy would keep reading a cache the server
   // never fills and would keep showing a default editor for a route that exists in the database.
-  'fb4ga0-livehydration-20260902'
+  'fb4ga0-livehydration-20260902',
+  // F1-7N-FB-4G-A0-R1 - destination XOR + persisted method selection. A0 is on origin/main (60e5ef3 was
+  // pushed), so by the rule above its token has been published and cannot be reused. This round changes both
+  // inventory-replenishment.js and inventory-compat.js, and a browser holding one file from each round would
+  // have a page whose Method picker calls an identity helper the shared module does not yet export.
+  'fb4ga0r1-destxor-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -172,6 +177,18 @@ function parseIndexTokens(indexHtml) {
 // needed a second one — which is exactly what happened in R4B-R3.
 var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 
+// F1-7N-FB-4G-A0-R1 — THE 16_ OWNER-STAMP ORDER, and it lives HERE because it was living in four places.
+// B3, B4, B5 and FB-4F-A each carried their own copy of this array to answer "is the allocation owner build at
+// or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
+// constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
+// nowhere else.
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1'];
+// True when `stamp` is a known owner stamp at or after `floor` in that order.
+function stampAtOrAfter(stamp, floor) {
+  var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
+  return i !== -1 && f !== -1 && i >= f;
+}
+
 // Index of a token in the release order; -1 when unknown (a typo, or a token that was never released).
 function tokenIndex(t) { return ROUND_TOKENS.indexOf(String(t)); }
 // True when `t` is a known token at or after `floorToken` in the release order.
@@ -195,5 +212,7 @@ module.exports = {
   parseIndexTokens: parseIndexTokens,
   BUILD_STAMP_RE: BUILD_STAMP_RE,
   tokenIndex: tokenIndex,
-  tokenAtOrAfter: tokenAtOrAfter
+  tokenAtOrAfter: tokenAtOrAfter,
+  OWNER_STAMPS: OWNER_STAMPS,
+  stampAtOrAfter: stampAtOrAfter
 };

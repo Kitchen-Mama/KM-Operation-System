@@ -255,6 +255,21 @@ function sadUpsertDraftHeaderCore_(body) {
     return jsonResponse_({ success: false, error: 'PLAN_HEADER_INCOMPLETE — a Draft route context requires From + To + Method (zero rows written)' });
   }
 
+  // F1-7N-FB-4G-A0-R1 — A SUPPLIED MARKETPLACE WITH NO COLUMN IS A REFUSAL, NOT A SILENT DROP.
+  //
+  // setCol is a no-op when the column is absent, and procurementAppendByHeader_ ignores an unknown name, so on a
+  // pre-migration sheet this writer would accept an Amazon route, report success, and store a row with no
+  // destination — which Submit would later refuse with ROUTE_INCOMPLETE, long after the operator was told the
+  // save worked. The ATOMIC writer already refuses this exact case (sadSchemaRefusal_); the two writers must
+  // not disagree about whether a route is persistable.
+  if (body && String(body.destination_marketplace == null ? '' : body.destination_marketplace).trim() !== '') {
+    var _hdrNames = sadLiveHeaderNames_(sh);
+    if (!sadHasColumn_(_hdrNames, 'destination_marketplace')) {
+      return { success: false, error: 'ROUTE_IDENTITY_NOT_PERSISTABLE', code: 'ALLOCATION_DRAFT_SCHEMA_COLUMN_ABSENT',
+        stage: 'schema', zero_write: true,
+        data: { column: 'destination_marketplace', table: 'shipping_allocation_drafts' } };
+    }
+  }
   var allowReconcile = (body && body.allow_legacy_reconcile === true);
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
@@ -286,9 +301,24 @@ function sadUpsertDraftHeaderCore_(body) {
     function setCol(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
     setCol('status', status);
     // header-level route context (recommended_*) — update only when explicitly provided (C2-D1R).
+    //
+    // F1-7N-FB-4G-A0-R1 — destination_marketplace WAS MISSING FROM THIS LIST, AND THAT IS WHY THE LIVE H4
+    // HEADER HOLDS 'Amazon' IN A WAREHOUSE-CODE COLUMN.
+    //
+    // This function is the writer the Execution Plan actually calls (action upsertShippingAllocationDraft →
+    // handleUpsertShippingAllocationDraft_ → here). B4 made destination_marketplace a stored column and B6 put
+    // it in the header fingerprint and in the ATOMIC writer's field list — but this two-call writer never read
+    // it. So an explicit Amazon save arrived carrying destination_marketplace='Amazon', the field was silently
+    // dropped, and the ONLY surviving evidence of the chosen destination was
+    // recommended_destination_warehouse_code_snapshot='Amazon' — a marketplace name in a warehouse-code column,
+    // which sadStoredHeaderRouteIsComplete_ then read back as the destination so Submit would pass.
+    //
+    // The client can therefore not stop writing that misuse until this line exists: without it, a correctly
+    // XOR'd payload would leave the row with NO destination at all and Submit would refuse it.
     ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
       'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
-      'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery'].forEach(function (f) {
+      'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
+      'destination_marketplace'].forEach(function (f) {
       if (body && body[f] != null) setCol(f, String(body[f]));
     });
     if (body && body.calculation_run_id != null) setCol('calculation_run_id', String(body.calculation_run_id));
@@ -325,6 +355,10 @@ function sadUpsertDraftHeaderCore_(body) {
     recommendation_group_no: String((body && body.recommendation_group_no) || '').trim(),
     recommended_shipping_method: String((body && body.recommended_shipping_method) || '').trim(),
     recommended_last_mile_delivery: String((body && body.recommended_last_mile_delivery) || '').trim(),
+    // F1-7N-FB-4G-A0-R1 — the same omission on the INSERT path. procurementAppendByHeader_ writes by column
+    // NAME, so this is inert on a pre-migration sheet and correct on a migrated one — it needs no deployment
+    // ordering of its own. The schema gate above is what makes a pre-migration sheet refuse rather than drop.
+    destination_marketplace: String((body && body.destination_marketplace) || '').trim(),
     generation_type: genType,
     calculation_run_id: String((body && body.calculation_run_id) || '').trim(),
     formula_version: String((body && body.formula_version) || '').trim(),
@@ -438,7 +472,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4F-B6';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A0-R1';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',

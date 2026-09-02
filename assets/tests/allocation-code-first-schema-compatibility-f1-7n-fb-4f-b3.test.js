@@ -502,7 +502,9 @@ function manifestExpects(file) {
 function declares(src, sym) { return (src.match(new RegExp('var ' + sym + " = '([^']+)';")) || [])[1] || ''; }
 // F1-7N-FB-4F-B6 — the ORDER of 16_'s owner stamps, append-only, so "at or after round X" is answerable
 // without any suite pinning "now". A round that moves the stamp appends one line here.
-var RO_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+// F1-7N-FB-4G-A0-R1 — the stamp order moved to _release-order.js: four suites held their own copy and one
+// stamp move broke all four. Same floor, same meaning, one owner.
+var RO_STAMPS = require(require('path').join(__dirname, '_release-order.js')).OWNER_STAMPS;
 // F1-7N-FB-4F-B6 — RESTATED, and the restatement is what these two always MEANT.
 // Both pinned the literal 'F1-7N-FB-4F-B3' — B3's own moment — so the first later round that legitimately
 // changed 16_ failed them while describing a correct state. That is the equality-with-now this project has

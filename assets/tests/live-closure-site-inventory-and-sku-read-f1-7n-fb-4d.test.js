@@ -297,7 +297,22 @@ function makeServer() {
   allFnNames(G16).forEach(function (fn) { try { vm.runInContext(extractFn(G16, fn), sb, { filename: '16_' + fn }); } catch (e) {} });
   // the tables this chain touches
   vm.runInContext([
-    "SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_);",
+    // F1-7N-FB-4G-A0-R1 — THE FULL 35-COLUMN HEADER, WHICH IS WHAT PRODUCTION ACTUALLY HAS.
+    //
+    // This fixture used SHIPPING_ALLOCATION_DRAFTS_HEADERS_ — the 30 REQUIRED columns, i.e. a PRE-MIGRATION
+    // sheet with no `destination_marketplace`. On such a sheet setCol('destination_marketplace') is a silent
+    // no-op, so an Amazon route's destination was retained ONLY as
+    // recommended_destination_warehouse_code_snapshot = 'Amazon' — a marketplace name in a warehouse-code
+    // column — and sadStoredHeaderRouteIsComplete_'s snapshot fallback then read it back as the evidence that
+    // a destination had been chosen. That is exactly the legacy misuse A0-R1 removes, so this suite was
+    // passing ON the misuse.
+    //
+    // B5 measured the production sheet at 35 columns, and the live H4 header carries destination_marketplace
+    // (blank). SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ is the shipped 30 + 5 authority. A genuinely
+    // pre-migration sheet is not silently broken by this: sadSchemaRefusal_ REFUSES a supplied marketplace
+    // when the column is absent, so an Amazon route can never persist there in the first place and can never
+    // reach Submit — which is asserted below.
+    "SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_);",
     "SHEETS['shipping_allocation_draft_lines'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);",
     "SHEETS['shipping_plans'] = new FakeSheet(SHIPPING_PLANS_HEADERS_);",
     "SHEETS['shipping_plan_lines'] = new FakeSheet(SHIPPING_PLAN_LINES_HEADERS_);"

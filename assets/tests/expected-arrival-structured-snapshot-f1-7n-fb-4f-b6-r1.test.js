@@ -414,12 +414,21 @@ section('G — [tests 13, 14, 15, 16, 20] THE SERVER SIDE IS ALREADY CAPABLE, AN
 section('H — [§F, §H] CONTRACTS AND THE BROWSER TOKEN');
 // ================================================================================================================
 (function () {
-  // §F — no server change at all this round.
-  eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B6',
-    'H1 [§F] 16_ still carries the B6 stamp — R1 changed no Apps Script source');
+  // §F — no server change at all this round. F1-7N-FB-4G-A0-R1 RESTATED these two: they measured the WORKING
+  // TREE for a claim about B6-R1's OWN COMMIT, so a later round that legitimately changes 16_ broke them while
+  // describing a correct state. B6-R1's fact is fixed and checkable in its own diff (60afa6e → 82da01c), and
+  // what still holds forever is that the source and the manifest AGREE — which is the real protection here,
+  // because a stamp typed twice is exactly how a half-synced deployment goes unnoticed.
+  var _r1Diff = (function () {
+    try { return require('child_process').execSync('git diff --name-only 60afa6e 82da01c', { cwd: ROOT }).toString(); }
+    catch (e) { return null; }
+  })();
+  ok(_r1Diff !== null && _r1Diff.indexOf('apps-script') === -1,
+    'H1 [§F] B6-R1 changed no Apps Script source — measured from ITS OWN diff, not the working tree');
   eq((G69.match(/var RIC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'H2 [§F] and 69_ is unmoved');
   eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
-    'F1-7N-FB-4F-B6', 'H3 [§F] the manifest still expects exactly that');
+    (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1],
+    'H3 [§F] the manifest expects exactly what the SOURCE declares — never a number typed twice');
   eq([(G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
       (G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1],
       (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '9', '1'],

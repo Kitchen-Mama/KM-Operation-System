@@ -3912,6 +3912,13 @@ function _hydrateAllocationDraftFromDb(ctx) {
                 ? window.IRWarehouse.resolvePersistedDestination({ destination_warehouse_id: hTo, destination_marketplace: hMkt }, ctx)
                 : { state: hTo ? 'PERSISTED_WAREHOUSE' : 'DESTINATION_CONFIRMATION_REQUIRED',
                     type: '', warehouse_id: hTo, marketplace: '', token: hTo, confirmationRequired: !hTo };
+            // F1-7N-FB-4G-A0-R1 §G.1/§G.2 — the stored code snapshots, carried VERBATIM and used for nothing but
+            // display continuity. The destination one is the legacy misuse itself (H4 holds 'Amazon' in a
+            // warehouse-code column); reading it must never promote it to a destination — that is
+            // resolvePersistedDestination's job and it looks at the id/marketplace columns only — and page load
+            // must never clear it, which is guaranteed here by the hydrate performing no write at all.
+            var hSrcCode = hstr('recommended_source_warehouse_code_snapshot', 'recommendedSourceWarehouseCodeSnapshot');
+            var hDestCode = hstr('recommended_destination_warehouse_code_snapshot', 'recommendedDestinationWarehouseCodeSnapshot');
             var hMethod = hstr('recommended_shipping_method', 'recommendedShippingMethod');
             var hLastMile = hstr('recommended_last_mile_delivery', 'recommendedLastMileDelivery');
             var hGenType = hstr('generation_type', 'generationType') || 'user_created';
@@ -3978,6 +3985,8 @@ function _hydrateAllocationDraftFromDb(ctx) {
                     // §D.5 — the typed state a destination-less route carries, so the UI can say "confirm this"
                     // instead of silently selecting something.
                     destination_state: hDest.state,
+                    source_warehouse_code: hSrcCode,        // stored snapshot, verbatim — never a display name
+                    destination_warehouse_code: hDestCode,  // §G: legacy value preserved, NOT promoted, NOT cleared
                     shipping_method: hMethod,               // Method — header route
                     last_mile_delivery: hLastMile,          // Last-Mile — header route
                     generation_type: hGenType               // generation_type is a HEADER column, not a line column
@@ -4269,6 +4278,13 @@ function _saveAllocationDraftFromDom(sku) {
         var shipFromType = selOptData('source_warehouse_id', 'data-wh-type');   // warehouse_type snapshot
         var destination = selOptData('destination_warehouse_id', 'data-wh-name');
         var destType = selOptData('destination_warehouse_id', 'data-wh-type');
+        // F1-7N-FB-4G-A0-R1 §D/§E — the warehouse CODE, which is what the *_warehouse_code_snapshot columns
+        // are for. The collect used to hand routeHeaderFields the display NAME, so a marketplace destination
+        // wrote 'Amazon' into a warehouse-code column. The Amazon logical option deliberately carries NO
+        // data-wh-code, so this comes out blank for it by construction rather than by a special case.
+        var shipFromCode = selOptData('source_warehouse_id', 'data-wh-code') ||
+            String(rowEl.getAttribute('data-src-code-persisted') || '');
+        var destinationCode = selOptData('destination_warehouse_id', 'data-wh-code');
         // Round 4 Decision B: an Amazon logical destination (MARKETPLACE_DESTINATION token) persists as
         // marketplace=Amazon + destination_warehouse_id=null (NEVER a fake warehouse_id). Real 3PL keeps
         // its warehouse_id. The actual FBA warehouse_id is resolved later at the Shipment Draft stage.
@@ -4302,11 +4318,20 @@ function _saveAllocationDraftFromDom(sku) {
             source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
             ship_from: shipFrom,                       // display name only
             ship_from_type: shipFromType,
+            // F1-7N-FB-4G-A0-R1 §D — the CODE that belongs in recommended_source_warehouse_code_snapshot. It sits
+            // beside the display name rather than replacing it: `ship_from` is still what the UI shows.
+            source_warehouse_code: shipFromCode,
             // Amazon logical destination → destination_warehouse_id null + marketplace=Amazon (Decision B).
             destination_warehouse_id: (destPayload.selected_destination_warehouse_id == null ? '' : destPayload.selected_destination_warehouse_id),
             destination: isLogicalAmazon ? 'Amazon' : destination,   // display name only
             destination_type: isLogicalAmazon ? 'MARKETPLACE_DESTINATION' : destType,
-            destination_marketplace: isLogicalAmazon ? 'Amazon' : '',
+            // §D XOR — a marketplace destination has NO warehouse code, and writing one blank is how an
+            // explicit Amazon save CLEARS the legacy `Amazon` value the live H4 header carries in this column.
+            destination_warehouse_code: isLogicalAmazon ? '' : destinationCode,
+            // §D — the marketplace comes from the SELECTED option's own identity, never from the page filter.
+            // resolveDestinationPayload derives it from the MARKETPLACE_DESTINATION token the user picked.
+            destination_marketplace: isLogicalAmazon
+                ? String((destPayload && destPayload.marketplace) || 'Amazon').trim() : '',
             destination_country: isLogicalAmazon ? (destPayload.country || (ctx && ctx.country) || '') : '',
             expected_arrival: expectedArrival,
             expected_arrival_basis: expectedArrivalBasis,
@@ -4525,9 +4550,23 @@ function _execMethodOptionsHtml(resolution, selected) {
         // CONFIGURATION answer, and it must never read like a failure.
         return '<option value="">No eligible method configured for this route</option>';
     }
+    // F1-7N-FB-4G-A0-R1 §C — THE SELECTION WAS AN EXACT-TEXT COMPARISON, AND NOTHING ELSE IN THE SYSTEM
+    // COMPARES SERVICES THAT WAY. The option VALUE is the rate card's `shipping_method` column verbatim (see
+    // method-registry methodsForRoute); the persisted value is the header's `recommended_shipping_method`. The
+    // server matches rate cards case-insensitively (crcFindRateCards_ uses eqi) and computes route identity
+    // through ricCanonicalService_, and this page's own lead-time mapper lowercases before it looks anything up.
+    // Only this line demanded byte equality — so a header persisted as `sea` did not select an option valued
+    // `Sea`, and the operator saw the right label sitting in the list, unselected.
+    //
+    // IRService.matches is the shared identity test: exact text first, then canonical identity through the
+    // mirror of 69_ ricCanonicalService_. An UNRECOGNISED spelling matches nothing but itself, so an unknown
+    // service can never quietly select the first option, and `sea` can never answer for `sea_express`.
+    var svc = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
+        ? window.IRService.matches
+        : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
     var html = '<option value="">Method…</option>';
     methods.forEach(function (m) {
-        var sel = (String(selected == null ? '' : selected) === m.value) ? ' selected' : '';
+        var sel = svc(selected, m.value) ? ' selected' : '';
         html += '<option value="' + _execEsc(m.value) + '"' + sel + '>' + _execEsc(m.label) + '</option>';
     });
     return html;
@@ -4561,10 +4600,30 @@ function _execRebuildMethodOptions(sku) {
         }
         var res = _execResolveMethods(_execMethodRouteCtx(originCountry, scope.country, scope.marketplace, sourceId, destCode));
         var methods = res.methods || [];
-        var current = methodEl.value;
-        var stillValid = methods.some(function (m) { return m.value === current; });
-        methodEl.innerHTML = _execMethodOptionsHtml(res, stillValid ? current : '');
-        if (!stillValid) methodEl.value = '';
+        // F1-7N-FB-4G-A0-R1 §C.4 — THIS IS WHERE THE PERSISTED METHOD WAS DESTROYED, and it needed no spelling
+        // mismatch to happen. The route's method lives in the ROUTE MODEL; this function read it from the
+        // <select>. On the FIRST paint of an expanded row the carrier catalogue is usually still in flight
+        // (initializeShippingAllocation kicks off _irLoadCarrierPlanning_ and renders immediately), so
+        // _execMethodOptionsHtml emits the single 'Loading methods…' option and methodEl.value is ''. This
+        // function then ran on the .then() of that same load, read `current` = '', found it invalid, and
+        // re-rendered the now-complete catalogue with selected = '' — leaving the correct label visible in the
+        // list and nothing chosen. Measured: option present, not selected, exactly the reported symptom. Worse,
+        // the collect reads the DOM, so the next save would have written a BLANK method over a stored `sea`.
+        //
+        // The row therefore carries its persisted method (data-method-persisted, the same discipline
+        // data-eta-persisted uses), and the select's own value wins ONLY when the user has actually touched it.
+        // An untouched, still-empty select falls back to what the database said.
+        var userTouched = rowEl.getAttribute('data-method-dirty') === '1';
+        var persistedMethod = rowEl.getAttribute('data-method-persisted') || '';
+        var current = methodEl.value || (userTouched ? '' : persistedMethod);
+        var svcEq = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
+            ? window.IRService.matches
+            : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
+        var match = '';
+        methods.forEach(function (m) { if (!match && svcEq(current, m.value)) match = m.value; });
+        var stillValid = !!match;
+        methodEl.innerHTML = _execMethodOptionsHtml(res, stillValid ? match : '');
+        methodEl.value = stillValid ? match : '';
         methodEl.disabled = !methods.length;
         // The reason lives next to the control, so an operator never has to guess which of the five states
         // produced the placeholder they are looking at.
@@ -4939,6 +4998,13 @@ function _renderExecutionRoute(sku, route) {
     // adoption of an existing legacy header apart from an ordinary edit, and adoption is the one that needs an
     // explicit confirmation before anything is written.
     if (route && route.destination_state) row.setAttribute('data-dest-state', String(route.destination_state));
+    // F1-7N-FB-4G-A0-R1 §C.4 — the STORED service, kept with the row. The Method <select> cannot hold it while
+    // the carrier catalogue is still loading, and the async rebuild that follows reads the DOM; without this the
+    // persisted service is simply gone by the time the options exist. Never a label — the stored value itself.
+    row.setAttribute('data-method-persisted', String((route && route.shipping_method) || ''));
+    // §D/§G — the STORED source warehouse code snapshot, kept with the row for the same reason: a collect
+    // rebuilds every row from the DOM, and a snapshot that is not on the row cannot survive one.
+    row.setAttribute('data-src-code-persisted', String((route && route.source_warehouse_code) || ''));
     row.innerHTML =
         '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
         '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
@@ -4946,7 +5012,7 @@ function _renderExecutionRoute(sku, route) {
         (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
-        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionMethodEdit(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
@@ -4958,6 +5024,19 @@ function _renderExecutionRoute(sku, route) {
     var list = document.getElementById('shipping-methods-' + sku);
     if (list) list.appendChild(row);
 }
+
+// F1-7N-FB-4G-A0-R1 §C.4 — a METHOD change is the one edit that has to be distinguishable from every other,
+// because the async catalogue rebuild has to know whether an empty <select> means "the user cleared it" or "the
+// options had not arrived yet". Marking the row is the only thing this adds; everything else is the existing
+// edit path, unchanged.
+function onExecutionMethodEdit(sku, el) {
+    try {
+        var row = el && el.closest ? el.closest('.exec-route-row') : null;
+        if (row) row.setAttribute('data-method-dirty', '1');
+    } catch (e) {}
+    if (typeof onExecutionRouteEdit === 'function') onExecutionRouteEdit(sku);
+}
+window.onExecutionMethodEdit = onExecutionMethodEdit;
 
 // + Add Route: append a blank Execution Plan route the PM fills in.
 function addExecutionRoute(event, sku) {

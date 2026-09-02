@@ -174,7 +174,11 @@ section('A · §C — THE PRODUCTION BROWSER TOKEN CHECK, AND IT IS NOT VACUOUS'
 // values are DERIVED from the shipped index.html here, and the check names the one file that is deliberately on a
 // DIFFERENT token family — a reviewer who assumed all three share one token would report a false failure.
 var TOKEN = RO.currentAppToken();
-eq(TOKEN, 'fb4ga0-livehydration-20260902', 'A1  this round mints its own app token');
+// F1-7N-FB-4G-A0-R1 - RESTATED, and this is the FIFTH round in which this exact shape has broken. A0 wrote
+// it as an equality with the present after restating B6-R1 H6 for precisely that reason, which is how a
+// pattern survives being named. What A0 established is a FLOOR: A0 minted its own token rather than reusing
+// B6-R1's, and no later round may sit behind that point in the release order.
+ok(RO.tokenAtOrAfter(TOKEN, 'fb4ga0-livehydration-20260902'), 'A1  A0 minted its own app token, and the release order has not moved behind it');
 var idxTokens = RO.parseIndexTokens ? RO.parseIndexTokens(INDEX) : null;
 function refToken(file) {
   var m = new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([A-Za-z0-9._-]+)').exec(INDEX);
@@ -392,11 +396,17 @@ ok(Object.keys(AFTER.draft.bySku).indexOf('JP-SKU-1') === -1, 'E10 §G.3 and nev
 // operator-maintained carrier DATA (carrier_rate_cards.shipping_method_label), which no shipped source spells.
 ok(/'空運': 'Air', '普船': 'Sea', '快船': 'Sea Express', '美森海卡': 'Sea Express'/.test(PAGEC),
   'E11 §G.9 the page display-label table is byte-identical, including 美森海卡 → Sea Express');
-ok(PAGE.indexOf('空派') === -1 && PAGE.indexOf('普船海卡') === -1,
+ok(PAGE.indexOf('空派') === -1 && PAGE.indexOf('普船海卡') === -1 &&
+   read('assets/js/utils/inventory-compat.js').indexOf('空派') === -1 &&
+   read('assets/js/utils/inventory-compat.js').indexOf('普船海卡') === -1,
   'E12 §G.9 空派 and 普船海卡 are operator DATA, spelled in no shipped source — so no source change can rename them');
+// F1-7N-FB-4G-A0-R1 — RESTATED. A0 asserted its diff mentioned no label AT ALL, which was true of A0 and is
+// the wrong test: A0-R1 legitimately ADDS the canonical service table — a byte-identical mirror of 69_
+// RIC_SERVICE_LABELS_, which contains 普船 and 美森海卡. Adding the server's own mapping is not a rename. What
+// §G.9 protects is that no existing label spelling is REMOVED or changed, so that is what is measured now.
 var DIFF = cp.execSync('git diff HEAD -- assets/js assets/css index.html', { cwd: ROOT }).toString();
-ok(!/^[+-].*(空運|普船|快船|美森海卡|空派|普船海卡)/m.test(DIFF),
-  'E13 §G.9 and this round\'s diff touches no method label at all');
+ok(!/^[-].*(空運|普船|快船|美森海卡|空派|普船海卡)/m.test(DIFF),
+  'E13 §G.9 and this round removes or renames no method label');
 ok(/'sea_express': 'Sea Express'/.test(PAGEC) && /'sea': 'Sea'/.test(PAGEC), 'E14 §G.8 canonical method mapping is unchanged');
 // §E.11 — a repeated Search must not duplicate routes or listeners.
 var twice = runHydrate({ sourceMode: 'WORKSPACE' });
@@ -477,9 +487,17 @@ section('H · DEPLOYMENT IDENTITY');
 eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H1  action contract still 10');
 eq((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '9', 'H2  required-action-list still 9');
 eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H3  transport contract still 1');
-eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4F-B6', 'H4  16_ owner stamp UNMOVED — no server change this round');
-var changed = cp.execSync('git diff --name-only HEAD', { cwd: ROOT }).toString();
-ok(changed.indexOf('apps-script') === -1, 'H5  ZERO Apps Script files changed — measured from the working tree, not claimed');
+// F1-7N-FB-4G-A0-R1 — RESTATED. These measured the WORKING TREE for a claim about A0's OWN COMMIT, so any
+// later round that legitimately touches Apps Script broke them — and A0-R1 does, because the writer the page
+// actually calls never carried destination_marketplace. The fact A0 established is fixed and checkable: A0's
+// commit changed no Apps Script file. It is anchored to A0's own diff now, where it stays true forever.
+var A0_DIFF = (function () {
+  try { return cp.execSync('git diff --name-only 82da01c 60e5ef3', { cwd: ROOT }).toString(); }
+  catch (e) { return null; }   // shallow clone / rewritten history — reported below rather than passed silently
+})();
+ok(A0_DIFF !== null, 'H4  A0\'s own commit range is resolvable (82da01c→60e5ef3)');
+ok(A0_DIFF !== null && A0_DIFF.indexOf('apps-script') === -1,
+  'H5  ZERO Apps Script files changed BY A0 — measured from A0\'s own diff, not from the working tree');
 ok(/'inventoryReplenishment'[\s\S]{0,400}?'shipping_allocation_drafts'/.test(read('assets/js/api/km-api-foundation.js')),
   'H6  the workspace registration that makes the read model the right source is already in place');
 

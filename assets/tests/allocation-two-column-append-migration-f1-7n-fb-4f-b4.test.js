@@ -772,7 +772,8 @@ section('J — [test 29] no routed action, no deployment contract, no owner buil
     // changed 16_ failed it. What B4 needed to prove is that B4 ITSELF did not move it, and the durable form of
     // that is a FLOOR — the stamp is at or after the round B4 requires to be synced, never before it.
     var _j4 = (SAD.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
-    var _j4Order = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6'];
+    // F1-7N-FB-4G-A0-R1 — the stamp order moved to _release-order.js (four suites held their own copy).
+    var _j4Order = require(require('path').join(__dirname, '_release-order.js')).OWNER_STAMPS;
     ok(_j4Order.indexOf(_j4) !== -1 && _j4Order.indexOf(_j4) >= _j4Order.indexOf('F1-7N-FB-4F-B3'),
         'J4 [test 29] the allocation owner build is at or after the B3 sync B4 depends on (' + _j4 + ')');
     eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4E-R4B-R3', 'J5 [test 29] the router build is unmoved');
