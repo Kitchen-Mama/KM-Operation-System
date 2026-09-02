@@ -2799,17 +2799,27 @@ async function submitReplenishmentPlans() {
     // only persisted allocation_draft_id(s) and the backend re-reads the persisted rows, so an unsaved route
     // would be SILENTLY DROPPED from the submitted plan — a partially-submitted plan that looks complete. Fail
     // CLOSED instead, naming the routes that must be fixed first. This runs before any request.
-    // F1-7N-FB-3B §G step 1 — SAVE DIRTY ROUTES AND WAIT. The Execution-Plan write is debounced by 400 ms, so a
-    // Submit pressed straight after typing raced the very write it depends on. Flushing here (through the same
-    // canonical writer) makes the unsaved-route gate below decide on a SETTLED state instead of a pending one.
-    try { await _irFlushPendingRouteWritesForSubmit_(); } catch (_eFlush) {}
-
-    // F1-7N-FB-4G-A2 §6 — ONE PREFLIGHT DECIDES, and it decides from named state rather than from a row count.
+    // F1-7N-FB-4G-A2-R1 §3 — SUBMIT DOES NOT SAVE. FB-3B §G used to flush the debounced Execution-Plan writes
+    // here and wait for them, so that the gate below would decide on a settled state. Measured, that call
+    // CLEARED each 400 ms debounce timer and invoked _flushDraftDbPersist IMMEDIATELY - two pending routes
+    // produced two write requests - then polled every 100 ms for up to 6 s and CARRIED ON BY ITSELF once the
+    // writes landed (and carried on anyway when the 6 s guard expired with a write still in the air).
+    //
+    // That made the button a SAVE button, and it made the guard below decide on state the button had just
+    // created rather than on the state the operator was looking at when they pressed it. One click could
+    // legitimately end at a confirmation for 800 units or for 1600 depending only on whether the write landed
+    // in time. Submit now REFUSES a dirty plan with a typed code and touches nothing: the auto-save the
+    // operator's own edit scheduled still completes on its own schedule, and the button never accelerates it,
+    // flushes it, waits for it or takes it over. FB-3B's intent - that Submit can never race the write it
+    // depends on - is served more strictly by refusing than it was by racing.
+    //
+    // §6 — ONE PREFLIGHT DECIDES, and it decides from named state rather than from a row count.
     // It covers every condition the three separate gates below used to own (a failed save, a debounced write not
     // yet sent, a write in flight, an edit that landed during a write, an unpersisted delete, an Execution panel
     // that is a shell or a named failure, a missing destination, a duplicate line identity) plus the candidate
     // set and the confirmation totals. The alert() bodies are its RENDERERS, not separate decisions.
-    var _pf = (typeof _irSubmitPreflight_ === 'function') ? _irSubmitPreflight_() : { ok: true, candidate: null, confirmation: null };
+    var _pf = (typeof _irSubmitPreflight_ === 'function') ? _irSubmitPreflight_()
+        : { ok: false, code: 'PREFLIGHT_UNAVAILABLE', blocking: { skus: [], reasons: [] }, candidate: null, excluded: [] };
     if (!_pf.ok && _pf.code !== 'NO_PERSISTED_CANDIDATE') {
         if (typeof _irAlertSubmitBlocked_ === 'function') _irAlertSubmitBlocked_(_pf);
         return;   // fail CLOSED — ZERO requests, ZERO writes, and the dirty routes are left exactly as they are
@@ -2825,11 +2835,33 @@ async function submitReplenishmentPlans() {
         // F1-7N-FB-4G-A2 §7 — NO IDENTITY IS MINTED BEFORE THE OPERATOR CONFIRMS. _replenSubmitExecutionKey()
         // both creates the submit execution key AND persists it, so calling it here made a Cancel leave a
         // durable identity behind for a submit that never happened. It is minted after the confirmation now.
-        var _draftIds = _replenActiveAllocationDraftIds();
+        // F1-7N-FB-4G-A2-R1 §6 — THE SUBMITTED SELECTION IS THE PREFLIGHT'S CANDIDATE SET, and only that.
+        //
+        // A2 took it from _replenActiveAllocationDraftIds() instead, which collects the header of every
+        // COMPLETE route and applies none of the candidate rules - no positive-quantity rule, no cancelled-line
+        // rule, no terminal-lifecycle rule, no station rule. So the two owners could disagree, and when they
+        // did the consequence was not a wrong count: NO_PERSISTED_CANDIDATE did not return, this list came back
+        // non-empty, _pf.confirmation was null, the `if (_pf.confirmation)` guard was skipped and the request
+        // WENT OUT WITH NO CONFIRMATION AT ALL over a candidate set the preflight had rejected.
+        //
+        // FB-4B-ADDENDUM §A.10 still holds - every header a submitted route belongs to is sent, because the
+        // candidate set collects the draft id of each candidate route - and that function is kept as a
+        // CROSS-CHECK: it is the wider set, so the candidate must be a subset of it. A disagreement means two
+        // owners no longer agree about the selection, and that fails closed rather than picking one.
+        var _draftIds = (_pf && _pf.candidate && _pf.candidate.draftIds) ? _pf.candidate.draftIds.slice() : [];
         if (!_draftIds.length) {
             if (typeof _irAlertSubmitBlocked_ === 'function') _irAlertSubmitBlocked_({ code: 'NO_PERSISTED_CANDIDATE', blocking: { skus: [], reasons: [] }, excluded: (_pf && _pf.excluded) || [] });
             else alert('No persisted allocation draft to submit yet — adjust the Execution Plan (which saves the draft) and try again.');
             return;
+        }
+        var _wider = {};
+        try { _replenActiveAllocationDraftIds().forEach(function (id) { _wider[String(id)] = 1; }); } catch (_eW) {}
+        var _notInWider = _draftIds.filter(function (id) { return !_wider[String(id)]; });
+        if (_notInWider.length) {
+            alert('Cannot Submit Plan \u2014 SELECTION_DISAGREEMENT.' + NL2 +
+                'The preflight proposes allocation draft(s) the route collector does not: ' + _notInWider.join(', ') + '.' + NL2 +
+                'Nothing was submitted and nothing was written. Reload the page and try again.');
+            return;   // fail CLOSED — two owners disagreeing about the selection is never resolved by choosing one
         }
         // F1-7N-FB-3B §G steps 2-3 — READ THE PERSISTED ROUTES BACK AND VERIFY THE USER-EDITED QUANTITIES before
         // committing. A PROVEN drift between the screen and the database blocks the Submit: committing would ship
@@ -2857,13 +2889,22 @@ async function submitReplenishmentPlans() {
                 'Nothing was submitted and nothing was written. Re-enter the quantity so it saves, then Submit again.');
             return;   // fail CLOSED — never commit the older stored quantity
         }
-        // §7 — THE CONFIRMATION. Built from the PERSISTED candidate set (never the DOM), so what it promises is
-        // exactly what the server will re-read. Cancel issues ZERO requests and mints ZERO identities.
-        if (typeof _irConfirmSubmit_ === 'function' && _pf && _pf.confirmation) {
-            if (!_irConfirmSubmit_(_pf.confirmation)) return;   // Cancel → nothing sent, nothing minted, nothing lost
+        // §5/§7 — THE CONFIRMATION IS BUILT HERE, after the persisted read-back and the quantity verification,
+        // from the PERSISTED candidate set and from nothing else (never the DOM). A2 built it inside the
+        // preflight, BEFORE the read-back had run, and skipped it entirely whenever it came back null - so the
+        // one step that cannot be skipped was guarded by `if (it exists)`. It is now REQUIRED: no confirmation
+        // object means no submit. It carries the read-back's own verdict verbatim, so an inconclusive read is
+        // shown as inconclusive rather than presented as a verification that happened.
+        var _conf = window.IRSubmitPreflight ? window.IRSubmitPreflight.buildConfirmation(_pf, _qv) : null;
+        if (!_conf) {
+            alert('Cannot Submit Plan \u2014 CONFIRMATION_NOT_AVAILABLE.' + NL2 +
+                'The persisted candidate set could not be confirmed, so nothing was submitted and nothing was ' +
+                'written. Reload the page and try again.');
+            return;   // fail CLOSED — an unconfirmable submit is never an unconfirmed submit
         }
+        if (!_irConfirmSubmit_(_conf)) return;   // Cancel → nothing sent, nothing minted, nothing lost
         var submitExecutionKey = _replenSubmitExecutionKey();   // minted ONLY after an explicit confirmation
-        _replenCanonicalSubmit(_draftIds, submitExecutionKey, (_pf && _pf.candidate) ? _pf.candidate.lineCount : planLines.length);
+        _replenCanonicalSubmit(_draftIds, submitExecutionKey, _conf.lineCount);
         return;
     }
 
@@ -3287,32 +3328,14 @@ function _irAppliedSubmitScope_() {
 }
 window._irAppliedSubmitScope_ = _irAppliedSubmitScope_;
 
-// §G — FLUSH the debounced Execution-Plan route writes and WAIT. The 400 ms debounce means a Submit pressed
-// straight after typing a Qty could otherwise race the write it depends on. Each flush goes through the SAME
-// canonical writer (_flushDraftDbPersist), so this is not a second write path. Fail-closed is handled by the
-// EXISTING unsaved-route gate: a failed flush marks the route UNSAVED, which blocks Submit.
-async function _irFlushPendingRouteWritesForSubmit_() {
-    var out = { flushed: 0 };
-    var keys = Object.keys(_draftDbTimers || {});
-    var work = [];
-    keys.forEach(function (sku) {
-        var t = _draftDbTimers[sku];
-        if (!t) return;
-        try { clearTimeout(t); } catch (e) {}
-        _draftDbTimers[sku] = null;
-        out.flushed++;
-        try { work.push(Promise.resolve(_flushDraftDbPersist(sku))); } catch (e2) {}
-    });
-    if (work.length) { try { await Promise.all(work.map(function (pr) { return pr.then(function () { return null; }, function () { return null; }); })); } catch (e3) {} }
-    // Also wait out any write already in flight, so the read-back below cannot observe a half-written route.
-    var guard = 0;
-    while (Object.keys(_draftDbInFlight || {}).some(function (k) { return _draftDbInFlight[k]; }) && guard < 60) {
-        guard++;
-        await new Promise(function (r) { setTimeout(r, 100); });
-    }
-    return out;
-}
-window._irFlushPendingRouteWritesForSubmit_ = _irFlushPendingRouteWritesForSubmit_;
+// F1-7N-FB-4G-A2-R1 §6 — _irFlushPendingRouteWritesForSubmit_ IS GONE, not merely unused.
+//
+// It cleared every pending 400 ms debounce timer, called _flushDraftDbPersist immediately, awaited the writes
+// and then polled _draftDbInFlight for up to 6 s before returning to the Submit chain, which continued on its
+// own. Submit had exactly ONE caller of it and no other flow used it. A helper named "flush pending route
+// writes FOR SUBMIT" that Submit must never call is a trap for the next reader, so it is removed rather than
+// left behind: the only thing Submit is allowed to do about a pending write now is REFUSE, and the state it
+// refuses on is reported by _irSubmitStateSnapshot_.
 
 // §G — PRE-SUBMIT READ-AFTER-WRITE VERIFICATION of the user-edited planned quantities.
 // Reads the persisted draft back through the EXISTING targeted read-back (getShippingAllocationDraftWorkspace —
@@ -3447,6 +3470,14 @@ function _irSubmitStateSnapshot_() {
     // The persisted route model, exactly as the hydrate and the collect maintain it. `persisted` is decided by
     // the presence of the STORED identities the server will re-read, never by a DOM row existing.
     var routes = [];
+    // F1-7N-FB-4G-A2-R1 — the scope key belongs to the DRAFT CONTAINER, which is what owns these routes: the
+    // hydrate loads one station's drafts into replenAllocationDraft.context. A2's preflight already filtered
+    // on r.scopeKey, but the snapshot never supplied the field, so `sstr(r.scopeKey)` was always '' and the
+    // filter could not fire on a real snapshot - it was live only under a hand-built one. Supplying it makes
+    // the filter (and the OUT_OF_APPLIED_SCOPE exclusion it reports) real: a stale selector now excludes the
+    // routes of the station that is no longer applied instead of proposing them.
+    var _dctx = (replenAllocationDraft && replenAllocationDraft.context) || {};
+    var _draftScopeKey = [String(_dctx.company || ''), String(_dctx.country || ''), String(_dctx.marketplace || '')].join('|').toLowerCase();
     try {
         var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
         Object.keys(bySku).forEach(function (sku) {
@@ -3455,6 +3486,7 @@ function _irSubmitStateSnapshot_() {
                     ? window.IRWarehouse.destinationIdentity(r) : { type: '', id: '', ok: false, code: '' };
                 routes.push({
                     sku: sku,
+                    scopeKey: _draftScopeKey,
                     allocation_draft_id: String((r && r.allocation_draft_id) || ''),
                     allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
                     qty: r && r.qty,
@@ -3492,7 +3524,7 @@ function _irSubmitPreflight_() {
     if (!(typeof window !== 'undefined' && window.IRSubmitPreflight)) {
         return { ok: false, code: 'PREFLIGHT_UNAVAILABLE', blocking: { skus: [], reasons: [] },
             candidate: { draftIds: [], routeCount: 0, lineCount: 0, totalQty: 0, skus: [], methods: [], destinations: [] },
-            excluded: [], confirmation: null };
+            excluded: [] };
     }
     return window.IRSubmitPreflight.evaluate(_irSubmitStateSnapshot_());
 }
@@ -3510,8 +3542,25 @@ function _irAlertSubmitBlocked_(pf) {
         alert('Cannot Submit Plan \u2014 UNSAVED_EXECUTION_PLAN_CHANGES.' + NL2 +
             pf.blocking.skus.length + ' Execution Plan route(s) differ from what the database holds:' + NL2 + list() + NL2 +
             'Nothing was submitted and NOTHING was written. Submit only ever commits persisted rows, so an ' +
-            'unsaved change would be silently missing from the plan. Save every route (or undo the change) and ' +
-            'Submit again \u2014 this will not save on your behalf.');
+            'unsaved change would be silently missing from the plan \u2014 and it never submits the routes beside ' +
+            'it on their own, because half a plan that looks whole is worse than no plan.' + NL2 +
+            'Each route saves by itself a moment after you stop typing. WAIT for that to finish, or remove the ' +
+            'change you do not want, then Submit again. Submit will not save on your behalf.');
+        return;
+    }
+    // F1-7N-FB-4G-A2-R1 §3 — a save IN FLIGHT and a save that FAILED need opposite things from the operator, so
+    // they are separate codes rather than one. Waiting fixes the first and can never fix the second.
+    if (pf.code === C.EXECUTION_PLAN_SAVE_IN_PROGRESS) {
+        alert('Cannot Submit Plan \u2014 EXECUTION_PLAN_SAVE_IN_PROGRESS.' + NL2 + list() + NL2 +
+            'A route is being saved right now. Nothing was submitted and nothing was written, and the save was ' +
+            'not interrupted \u2014 it finishes on its own. Wait for it, then Submit again.');
+        return;
+    }
+    if (pf.code === C.EXECUTION_PLAN_SAVE_FAILED) {
+        alert('Cannot Submit Plan \u2014 EXECUTION_PLAN_SAVE_FAILED.' + NL2 + list() + NL2 +
+            'A route could not be saved, so the database does not hold it. Nothing was submitted and nothing ' +
+            'was written. WAITING WILL NOT FIX THIS: re-enter the route so it saves, or remove it, then Submit ' +
+            'again. Submit will not retry the save for you.');
         return;
     }
     if (pf.code === C.EXECUTION_PLAN_NOT_READY) {
@@ -3563,6 +3612,14 @@ function _irConfirmSubmit_(conf) {
         lines.push('');
         lines.push('Not included: ' + conf.excluded.map(function (e) { return e.reason + ' \u00d7' + e.count; }).join(', '));
     }
+    // F1-7N-FB-4G-A2-R1 — report the read-back verdict VERBATIM. It is not a claim of correctness: MATCHED
+    // means the persisted quantities were read and compared, UNVERIFIABLE means the diagnostic read was
+    // unavailable and nothing was compared. FB-3B deliberately lets an inconclusive read through (the server
+    // re-reads the drafts anyway), and the one thing that is never allowed is presenting it as a verification.
+    var _v = conf.verification || {};
+    lines.push('Saved quantities: ' + (_v.verdict === 'MATCHED'
+        ? ('re-read from the database and matched (' + (_v.checked || 0) + ' line(s))')
+        : ('NOT RE-READ before this dialog (' + (_v.verdict || 'UNVERIFIABLE') + ') \u2014 the server re-reads them on submit')));
     lines.push('');
     lines.push('ONLY SAVED DATA IS SUBMITTED. Anything not yet saved to the database is not part of this plan.');
     if (typeof confirm !== 'function') return true;   // headless: no dialog to answer
@@ -3651,6 +3708,47 @@ var _draftDbTimers = {};        // sku -> setTimeout handle
 var _pendingDraftCancels = {};  // sku -> [ line_id, ... ] lines to soft-cancel on the next flush (§5)
 var _draftDbInFlight = {};      // sku -> bool
 var _draftDbDirty = {};         // sku -> bool (an edit landed while a write was in flight)
+// ================================================================================================================
+// F1-7N-FB-4G-A2-R2 - EVENT-SCOPED PERSISTENCE, AND WHY IT IS DERIVED RATHER THAN DECLARED.
+//
+// MEASURED: one edit, or one + Add Route, re-sent EVERY complete route the SKU held. _saveAllocationDraftFromDom
+// rebuilds all rows from the DOM and calls the debounced writer with the SKU, and the writer then partitions
+// ALL of them into canonical groups and writes each group's header and lines. That is where the operator's
+// "3 route(s) for CO1100-R: 2 saved, 1 not saved" came from: adding a third route re-saved the two that were
+// already there, so a refusal on any one of them became a partial state across routes the operator had not
+// touched. A single UI event must carry a single route intent.
+//
+// The touched set is DERIVED BY DIFFING the rebuilt rows against the model, not declared by the caller. An
+// event-plumbed instance id would be only as good as the caller's belief about which row changed; a diff makes
+// "an untouched route is never re-sent" true even when the caller is wrong, and it needs no new event wiring.
+//
+// A route instance id is minted once per DOM row and never changes - it is what a request, a response and an
+// error are correlated by. It is NOT an entity identity: allocation_draft_id / allocation_draft_line_id are
+// (§4), and this is the client-side handle that survives until they exist.
+var _draftDbTouched = {};       // sku -> { client_route_instance_id: 1 }  (accumulates across debounced edits)
+var _irRouteInstanceSeq = 0;
+function _newRouteInstanceId() {
+    _irRouteInstanceSeq++;
+    return 'CRI-' + Date.now().toString(36).toUpperCase() + '-' + _irRouteInstanceSeq;
+}
+window._newRouteInstanceId = _newRouteInstanceId;
+
+// The fields whose change makes a route worth writing. Display-only values are deliberately absent: a
+// re-rendered label is not an edit, and treating it as one would put us straight back to re-sending everything.
+var IR_ROUTE_PERSISTABLE_FIELDS = ['source_warehouse_id', 'destination_warehouse_id', 'destination_marketplace',
+    'shipping_method', 'last_mile_delivery', 'qty', 'units_per_carton', 'recommendation_group_no',
+    'override_reason', 'note', 'window_code', 'site_sku'];
+function _irRouteSignature_(r) {
+    return IR_ROUTE_PERSISTABLE_FIELDS.map(function (f) { return String((r && r[f]) == null ? '' : r[f]).trim(); }).join('\u0001');
+}
+function _irMarkRouteTouched_(sku, instanceId) {
+    var k = String(instanceId || '').trim(); if (!k) return;
+    (_draftDbTouched[sku] = _draftDbTouched[sku] || {})[k] = 1;
+}
+window._irMarkRouteTouched_ = _irMarkRouteTouched_;
+function _irTouchedInstances_(sku) { return Object.keys(_draftDbTouched[sku] || {}); }
+window._irTouchedInstances_ = _irTouchedInstances_;
+
 function _scheduleDraftDbPersist(sku) {
     if (_draftDbTimers[sku]) clearTimeout(_draftDbTimers[sku]);
     _draftDbTimers[sku] = setTimeout(function () { _draftDbTimers[sku] = null; _flushDraftDbPersist(sku); }, 400);
@@ -3797,23 +3895,151 @@ function _irQueueStaleGroupCancels_(sku, groups) {
             var prevLine = String(r.allocation_draft_line_id || '');
             if (!prevGroup || !prevDraft || !prevLine) return;
             if (prevGroup === g.groupKey) return;                       // unchanged route — nothing to release
-            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: prevLine, allocation_draft_id: prevDraft });
-            // the row is joining a new header; its identity there is resolved by the server, not carried over
-            r.allocation_draft_line_id = '';
-            r.allocation_draft_id = '';
-            r.route_group_key = '';
+            // F1-7N-FB-4G-A2-R2 §2/§4 - THIS IS WHERE A ROUTE'S IDENTITY WAS DESTROYED BY AN EDIT.
+            //
+            // MEASURED on the shipped functions: changing From, Shipping Method, Last Mile, or a marketplace
+            // destination to a warehouse one changes the 10-dimension K2 key, and this branch then ERASED
+            // allocation_draft_id and allocation_draft_line_id and soft-cancelled the stored line - after
+            // which the header write (which deliberately sent no id) resolved by natural key and CREATED a
+            // new header. One route edited across three dimensions is three headers, which is exactly the
+            // live SADH-K2-E7AF9242 / -179FBB0E / -C3E2031A shape.
+            //
+            // §4 freezes the opposite: allocation_draft_id and allocation_draft_line_id are IMMUTABLE ENTITY
+            // IDENTITIES and the K4 key is a uniqueness/collision signature only. An id is allowed to stop
+            // hashing to its own current field values, because it names the entity and not its contents. So
+            // the route KEEPS its identity and the header is UPDATED in place; only the group key is refreshed
+            // so the next diff compares against what is now stored.
+            r.route_group_key = g.groupKey;
         });
     });
 }
+
+// F1-7N-FB-4G-A2-R2 §5 - the draft_version the client believes this header is at, so the server can refuse a
+// stale write instead of silently overwriting a change made elsewhere. It is read from the hydrated model only:
+// a version the client never saw is sent as absent rather than guessed, and an absent expectation is not an
+// assertion that the row is unchanged.
+function _irStoredDraftVersion_(draftId) {
+    var id = String(draftId || '').trim(); if (!id) return '';
+    var found = '';
+    try {
+        var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(bySku).forEach(function (sk) {
+            (bySku[sk] || []).forEach(function (r) {
+                if (String((r && r.allocation_draft_id) || '').trim() !== id) return;
+                var v = String((r && r.draft_version) || '').trim();
+                if (v) found = v;
+            });
+        });
+    } catch (e) {}
+    return found;
+}
+window._irStoredDraftVersion_ = _irStoredDraftVersion_;
+
+// F1-7N-FB-4G-A2-R2 §7 - MULTI-LINE HEADER: DISCLOSE OR BLOCK, NEVER SILENTLY RE-ROUTE.
+//
+// From / To / Method / Last Mile are HEADER-level columns, so changing one of them on a header that several
+// lines share moves EVERY one of those lines - including lines for SKUs the operator cannot see, because the
+// Execution Plan shows one SKU at a time. H3 is exactly that shape: one header, five lines, 220 units.
+//
+// §7 requires the affected SKUs and lines to be disclosed BEFORE such an edit, and requires a BLOCK when the
+// UI cannot express it. It cannot: there is no place in a single-SKU route row to show "this also moves four
+// other SKUs", and a confirm() that asked would still be a confirm() about an operation the operator did not
+// intend. So it BLOCKS, names every affected line, and says what the intended operation would be. Letting a
+// single SKU leave its header is a MOVE_LINE / SPLIT_ROUTE operation, which is deliberately not improvised here.
+function _irMultiLineHeaderBlock_(sku, routes) {
+    var HEADER_DIMS = ['source_warehouse_id', 'destination_warehouse_id', 'destination_marketplace',
+        'shipping_method', 'last_mile_delivery'];
+    var offending = null;
+    (routes || []).forEach(function (r) {
+        if (offending) return;
+        var id = String((r && r.allocation_draft_id) || '').trim();
+        if (!id) return;                                   // a CREATE owns no existing header
+        var stored = String((r && r.route_group_key) || '').trim();
+        var now = '';
+        try { now = window.IRDraft.canonicalRouteGroupKey(_replenCtx(), r); } catch (e) { return; }
+        if (!stored || stored === now) return;             // no header-level dimension changed
+        // Every persisted line under that same header, across ALL SKUs - which is the whole point.
+        var siblings = [];
+        try {
+            var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+            Object.keys(bySku).forEach(function (sk) {
+                (bySku[sk] || []).forEach(function (o) {
+                    if (String((o && o.allocation_draft_id) || '').trim() !== id) return;
+                    var lid = String((o && o.allocation_draft_line_id) || '').trim();
+                    if (!lid) return;
+                    if (String((o && o.client_route_instance_id) || '') === String((r && r.client_route_instance_id) || '')) return;
+                    siblings.push({ sku: sk, allocation_draft_line_id: lid, qty: o.qty });
+                });
+            });
+        } catch (e2) {}
+        if (!siblings.length) return;                      // sole line - editing the header affects only it
+        offending = { route: r, allocation_draft_id: id, siblings: siblings,
+            changed: HEADER_DIMS.filter(function (f) { return true; }) };
+    });
+    if (!offending) return null;
+    var others = offending.siblings;
+    var skus = {}; others.forEach(function (o) { skus[o.sku] = 1; });
+    return {
+        structured: {
+            code: 'MULTI_LINE_HEADER_EDIT_BLOCKED', reasonCode: 'MULTI_LINE_HEADER_EDIT_BLOCKED',
+            table: 'shipping_allocation_drafts', retryable: false,
+            allocation_draft_id: offending.allocation_draft_id,
+            affected_skus: Object.keys(skus), affected_lines: others,
+            message: 'This route belongs to a shipment (' + offending.allocation_draft_id + ') that also carries ' +
+                others.length + ' other line(s) across ' + Object.keys(skus).length + ' other SKU(s): ' +
+                others.map(function (o) { return o.sku + ' (' + o.qty + ')'; }).join(', ') + '. From, To, Method and ' +
+                'Last Mile are properties of the SHIPMENT, so changing one here would move every one of those ' +
+                'lines too - including SKUs this screen is not showing you. Nothing was written.',
+            nextAction: 'Undo this change and edit the shipment from a view that shows all of its SKUs, or ' +
+                'reduce this SKU\'s quantity to zero here and enter it as its own route. Moving one SKU out of a ' +
+                'shared shipment is a separate operation and is not performed automatically.'
+        },
+        message: 'MULTI_LINE_HEADER_EDIT_BLOCKED - this shipment carries ' + others.length + ' other line(s); nothing was written.'
+    };
+}
+window._irMultiLineHeaderBlock_ = _irMultiLineHeaderBlock_;
 
 // Persist ONE canonical route group: resolve/create its header, then upsert its line under that header.
 // Returns a per-route outcome and never throws, so one failing route cannot abort the routes after it.
 function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
     var h = g.header || {};
-    // NOTE: no allocation_draft_id is sent. The server resolves a route-complete header by the canonical K2 group
-    // key — same route REUSEs, different route CREATEs — which is idempotent by construction. Pinning the write to
-    // a stored id would rewrite whichever header the row last touched when its route changed.
+    // F1-7N-FB-4G-A2-R2 §2 - THE INTENT IS DECLARED, NEVER INFERRED.
+    //
+    // This used to send NO allocation_draft_id on purpose, reasoning that "the server resolves a route-complete
+    // header by the canonical K2 group key - same route REUSEs, different route CREATEs - which is idempotent
+    // by construction". It is idempotent, and it is also the bug: it makes the natural key the entity identity,
+    // so editing a route dimension silently means "a different entity", and a key that matches nothing means
+    // "create one". Neither is ever what the operator asked for.
+    //
+    // A request now says which it is. UPDATE_EXISTING_ROUTE carries the route's own immutable
+    // allocation_draft_id and the draft_version it expects, so the server updates that row or refuses; it must
+    // NEVER fall back to CREATE. CREATE_NEW_ROUTE is only what + Add Route produced - a route instance with no
+    // persisted identity - and carries the instance id as its create idempotency key so a retry cannot mint a
+    // second票. allow_legacy_reconcile is never sent by either: adopting a legacy or zero-line header is a
+    // separate, explicitly-confirmed migration, not something an Add Route may drift into (§4).
+    var _persistedIds = {};
+    (g.routes || []).forEach(function (r) {
+        var id = String((r && r.allocation_draft_id) || '').trim();
+        if (id) _persistedIds[id] = 1;
+    });
+    var _idList = Object.keys(_persistedIds);
+    var _intent = _idList.length ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE';
+    // Two different stored headers inside one group means the client model disagrees with itself about which
+    // entity this route is. Refusing is the only safe answer - picking one would rewrite the other.
+    if (_idList.length > 1) {
+        return Promise.resolve({ status: 'not_persisted', groupKey: g.groupKey, route: _irRouteLabel_(g),
+            instanceIds: (g.routes || []).map(function (r) { return String((r && r.client_route_instance_id) || ''); }),
+            code: 'ROUTE_IDENTITY_AMBIGUOUS',
+            message: 'this route group carries more than one stored allocation_draft_id (' + _idList.join(', ') +
+                '), so which row it names is not determinable; nothing was written' });
+    }
+    var _instanceIds = (g.routes || []).map(function (r) { return String((r && r.client_route_instance_id) || ''); }).filter(Boolean);
     var header = window.IRDraft.buildDraftHeaderPayload({
+        intent: _intent,
+        allocation_draft_id: _idList[0] || undefined,
+        expected_draft_version: _idList.length ? (_irStoredDraftVersion_(_idList[0]) || undefined) : undefined,
+        create_idempotency_key: _idList.length ? undefined : (_instanceIds[0] || undefined),
+        applied_scope_key: [String(ctx.company || ''), String(ctx.country || ''), String(ctx.marketplace || '')].join('|').toLowerCase(),
         company: ctx.company, country: ctx.country, marketplace: ctx.marketplace,
         source_warehouse_id: h.recommended_source_warehouse_id,
         source_warehouse_code: h.source_warehouse_code,                 // display-name snapshot
@@ -3868,6 +4094,7 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
         if (!replenAllocationDraft.allocationDraftIds) replenAllocationDraft.allocationDraftIds = [];
         if (replenAllocationDraft.allocationDraftIds.indexOf(draftIdSeen) === -1) replenAllocationDraft.allocationDraftIds.push(draftIdSeen);
         return { status: 'persisted', groupKey: g.groupKey, allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g),
+            intent: _intent, instanceIds: _instanceIds,
             line_count: (g.routes || []).length,
             server_group_key: serverGroupKey,
             verification: (lres.data && lres.data.verification) || null,
@@ -3885,6 +4112,7 @@ function _irPersistOneRouteGroup_(sku, ctx, g, allowLegacyAdoption) {
         var INDETERMINATE = { REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, HTTP_TRANSPORT_ERROR: 1, LINE_OUTPUT_VERIFICATION_FAILED: 1, PERSISTENCE_NOT_ACKNOWLEDGED: 1, ROUTE_GROUP_KEY_MISMATCH: 1 };
         return { status: INDETERMINATE[code] ? 'indeterminate' : 'not_persisted', groupKey: g.groupKey,
             allocation_draft_id: draftIdSeen, route: _irRouteLabel_(g), code: code,
+            intent: _intent, instanceIds: _instanceIds,
             server_group_key: serverGroupKey,
             message: String(st.message || (err && err.message) || err) };
     });
@@ -3920,7 +4148,20 @@ function _irMultiRouteOutcomeEnvelope_(sku, outcomes) {
     var ok = outcomes.filter(function (o) { return o.status === 'persisted'; });
     var no = outcomes.filter(function (o) { return o.status === 'not_persisted'; });
     var un = outcomes.filter(function (o) { return o.status === 'indeterminate'; });
-    function list(a) { return a.map(function (o) { return '  · ' + o.route + (o.code ? (' — ' + o.code) : ''); }).join(String.fromCharCode(10)); }
+    // F1-7N-FB-4G-A2-R2 §6 - NAME THE ROUTE INSTANCE, NOT A POSITION.
+    //
+    // The operator was shown "NOT SAVED: CN侑鑫 → Amazon / sea" for a row they had entered as
+    // CN侑鑫 → Amazon / air / 120. This label is built from the FIRST route of a canonical GROUP, and a group
+    // is keyed by natural key - so which DOM row a failure belonged to was not recoverable from the message at
+    // all. Every outcome now carries the stable client_route_instance_id(s) it was built from, and the label
+    // carries the intent, so a refusal can be attached to the row that caused it.
+    function list(a) {
+        return a.map(function (o) {
+            return '  · ' + o.route + (o.intent ? (' [' + o.intent + ']') : '') +
+                ((o.instanceIds && o.instanceIds.length) ? (' {' + o.instanceIds.join(',') + '}') : '') +
+                (o.code ? (' \u2014 ' + o.code) : '');
+        }).join(String.fromCharCode(10));
+    }
     var parts = [];
     if (ok.length) parts.push('SAVED (' + ok.length + '):' + String.fromCharCode(10) + list(ok));
     if (no.length) parts.push('NOT SAVED (' + no.length + '):' + String.fromCharCode(10) + list(no));
@@ -4039,7 +4280,27 @@ function _flushDraftDbPersist(sku) {
 
         var ctx = _replenCtx();
         var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
-        var complete = rows.filter(_isRouteComplete);
+        // F1-7N-FB-4G-A2-R2 §3 - EVENT SCOPE. Only the routes this event actually changed are candidates for
+        // a write. Everything else on screen is left exactly as the database holds it, which is what makes a
+        // single-row operation incapable of producing a cross-route partial failure.
+        var _touched = _irTouchedInstances_(sku);
+        var _touchedSet = {}; _touched.forEach(function (k) { _touchedSet[k] = 1; });
+        var _scoped = _touched.length
+            ? rows.filter(function (r) { return _touchedSet[String(r.client_route_instance_id || '')]; })
+            : rows;
+        var complete = _scoped.filter(_isRouteComplete);
+        // F1-7N-FB-4G-A2-R2 §7 - A MULTI-LINE HEADER IS NOT SILENTLY RE-ROUTED. From/To/Method live on the
+        // HEADER, so changing one of them on a header several SKUs share would move every one of those lines.
+        // The Execution Plan shows one SKU at a time and cannot express that, so it BLOCKS and discloses
+        // rather than deciding for the operator. Splitting the票 is a future MOVE_LINE/SPLIT_ROUTE operation
+        // and is deliberately NOT improvised here.
+        var _mlBlock = (typeof _irMultiLineHeaderBlock_ === 'function') ? _irMultiLineHeaderBlock_(sku, complete) : null;
+        if (_mlBlock) {
+            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, _mlBlock);
+            if (typeof _irMarkRouteUnsaved_ === 'function') _irMarkRouteUnsaved_(sku, _mlBlock);
+            if (cancels.length) _pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels);
+            return;   // ZERO WRITE - no request issued
+        }
 
         // A queued cancel now carries the header it belongs to. Under multi-route there is no single "the"
         // draft id, so a cancel that did not name its own header could soft-cancel a line under the wrong one.
@@ -4120,6 +4381,15 @@ function _flushDraftDbPersist(sku) {
             _draftDbInFlight[sku] = false;
             // §D.7 — report PER ROUTE. A single bare SAVE_FAILED across a multi-header write is exactly the
             // ambiguity that leaves an operator unable to tell which route reached the database.
+            // F1-7N-FB-4G-A2-R2 §3 - a route leaves the touched set only when its OWN write is persisted. A
+            // route that failed or whose outcome is unknown stays touched, so it is retried on the next flush
+            // and never quietly dropped - and it is still the ONLY route that will be sent.
+            outcomes.forEach(function (o) {
+                if (o.status !== 'persisted') return;
+                (o.instanceIds || []).forEach(function (k) {
+                    if (_draftDbTouched[sku]) delete _draftDbTouched[sku][k];
+                });
+            });
             var bad = outcomes.filter(function (o) { return o.status !== 'persisted'; });
             if (!bad.length) {
                 _irClearRouteUnsaved_(sku);
@@ -4408,6 +4678,10 @@ function _hydrateAllocationDraftFromDb(ctx) {
                 (bySku[sku] = bySku[sku] || []).push({
                     allocation_draft_line_id: pk,
                     allocation_draft_id: draft.allocationDraftId,
+                    // F1-7N-FB-4G-A2-R2 §5 — the header version this route was READ at, carried so an UPDATE
+                    // can declare what it expects and the server can refuse a write that would silently
+                    // overwrite a change made elsewhere. Read-only: the client never computes or bumps it.
+                    draft_version: hstr('draft_version', 'draftVersion'),
                     sku: sku,
                     site_sku: raw.site_sku || '',           // R6F: carry the natural-key fields so an edit reconciles the
                     window_code: raw.window_code || '',     //      exact generated line by natural key (16_ fallback).
@@ -4721,6 +4995,20 @@ function _saveAllocationDraftFromDom(sku) {
     var ctx = _replenCtx();
     replenAllocationDraft.context = ctx;
     replenAllocationDraft.targetDays = (document.getElementById('replenTargetDays') || {}).value || REPLEN_TARGET_DAYS;   // FM5-R4UI-R3: control removed → internal default
+    // F1-7N-FB-4G-A2-R2 - the model as it stood BEFORE this rebuild, keyed by route instance. The diff below
+    // is what makes one UI event write one route.
+    var _priorByInstance = {}, _priorByLine = {};
+    try {
+        ((replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || []).forEach(function (pr) {
+            var pk = String((pr && pr.client_route_instance_id) || '').trim();
+            if (pk) _priorByInstance[pk] = pr;
+            // A row hydrated from the database has no instance id yet, so the FIRST collect after a Search
+            // would otherwise find no prior for any route, call them all new, and re-send the whole SKU. The
+            // stored line id is the durable fallback key, which makes the diff correct from the first edit.
+            var pl = String((pr && pr.allocation_draft_line_id) || '').trim();
+            if (pl) _priorByLine[pl] = pr;
+        });
+    } catch (_ep) {}
     var rows = [];
     routesList.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
         function fieldVal(f) {
@@ -4827,13 +5115,30 @@ function _saveAllocationDraftFromDom(sku) {
             row.allocation_draft_id = '';
             row.route_group_key = '';
         }
+        // F1-7N-FB-4G-A2-R2 - the row's own instance identity, minted once and carried in the DOM so it
+        // survives every re-render. Correlation of a request, a response and an error is by THIS, never by an
+        // array position (see §6: the operator was shown a failure labelled with another route's values).
+        var _cri = String(rowEl.getAttribute('data-route-instance') || '').trim();
+        if (!_cri) { _cri = _newRouteInstanceId(); rowEl.setAttribute('data-route-instance', _cri); }
+        row.client_route_instance_id = _cri;
         rows.push(row);
     });
     if (rows.length) replenAllocationDraft.bySku[sku] = rows;
     else delete replenAllocationDraft.bySku[sku];
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     _persistAllocationDraft();            // recovery cache (not SSOT)
-    _scheduleDraftDbPersist(sku);         // SSOT: shipping_allocation_drafts/_lines — debounced; only COMPLETE routes are written
+    // F1-7N-FB-4G-A2-R2 - MARK ONLY WHAT THIS EVENT ACTUALLY CHANGED. A route whose persistable signature is
+    // unchanged is not re-sent, so a refusal on one route can never touch another. A complete route that holds
+    // no persisted identity yet is always touched: it is the CREATE this event is for.
+    rows.forEach(function (r) {
+        var prior = _priorByInstance[String(r.client_route_instance_id || '')] ||
+                    _priorByLine[String(r.allocation_draft_line_id || '')];
+        var isNew = !(prior);
+        var changed = isNew || (_irRouteSignature_(prior) !== _irRouteSignature_(r));
+        var unpersisted = !String(r.allocation_draft_id || '').trim() || !String(r.allocation_draft_line_id || '').trim();
+        if (changed || (unpersisted && _isRouteComplete(r))) _irMarkRouteTouched_(sku, r.client_route_instance_id);
+    });
+    _scheduleDraftDbPersist(sku);         // SSOT: shipping_allocation_drafts/_lines — debounced; only COMPLETE **touched** routes are written
 }
 // Explicit user edit on an Execution Plan route: recompute totals AND capture the Working Draft.
 // (Pure render must NOT call this.)

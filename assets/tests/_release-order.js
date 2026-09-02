@@ -72,7 +72,14 @@ var ROUND_TOKENS = [
   // changes inventory-replenishment.js and inventory-compat.js together: the page asks a preflight owner that
   // only the shared module exports, so a browser holding one file from each round would either lose the
   // unsaved-change guard or lose the confirmation that precedes every submit request.
-  'fb4ga2-submitpreflight-20260902'
+  'fb4ga2-submitpreflight-20260902',
+  // F1-7N-FB-4G-A2-R1 + A2-R2 ship as ONE frontend release. A2-R1 rewrote the Submit chain so it never saves,
+  // and A2-R2 rewrote how a route write declares itself (intent, stable route instance identity, event-scoped
+  // persistence). inventory-replenishment.js and inventory-compat.js change together in both: the page sends an
+  // intent only the shared module's payload builder emits, and asks a preflight owner only that module exports.
+  // A browser holding one file from each round would either save a route with no declared intent - which the
+  // A2-R2 server refuses with zero writes - or lose the confirmation that precedes every submit request.
+  'fb4ga2r2-routeintent-20260902'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -206,7 +213,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

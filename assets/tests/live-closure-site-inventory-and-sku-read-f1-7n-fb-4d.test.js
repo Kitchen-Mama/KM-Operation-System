@@ -354,7 +354,15 @@ function saveRoutes(srv, routes) {
   var out = [];
   pf.groups.forEach(function (g) {
     var h = g.header || {};
+    // F1-7N-FB-4G-A2-R2 §2 - declared intent, derived exactly as the shipped client derives it (see the
+    // FB-4B-ADDENDUM harness for why the old no-intent form is gone).
+    var _ids = {};
+    (g.routes || []).forEach(function (r) { var i = String((r && r.allocation_draft_id) || '').trim(); if (i) _ids[i] = 1; });
+    var _idList = Object.keys(_ids);
     var headerPayload = IRDraft.buildDraftHeaderPayload({
+      intent: _idList.length ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE',
+      allocation_draft_id: _idList[0] || undefined,
+      applied_scope_key: [CTX.company, CTX.country, CTX.marketplace].join('|').toLowerCase(),
       planning_cycle: CTX.planning_cycle, company: CTX.company, country: CTX.country, marketplace: CTX.marketplace,
       source_warehouse_id: h.recommended_source_warehouse_id,
       source_warehouse_code: h.source_warehouse_code,
@@ -385,10 +393,24 @@ function rowsOf(srv, tab) {
 section('§B/§A2.3 — Route A 800 then Add Route B 400');
 var s3a = saveRoutes(SRV, [routeA(800)]);
 ok(s3a.ok && s3a.outcomes[0].ok, 'B1 Route A saves');
-var s3b = saveRoutes(SRV, [routeA(800), routeB(400)]);
-ok(s3b.ok, 'B2 the batch pre-flight accepts two DIFFERENT route groups');
-eq(s3b.groups.length, 2, 'B2 and partitions them into TWO shipment groups');
-ok(s3b.outcomes.every(function (o) { return o.ok; }), 'B2 both groups persist');
+// F1-7N-FB-4G-A2-R2 §3 - RESTATED TO EVENT SCOPE, and the end state is identical.
+//
+// This used to model + Add Route as "re-send Route A AND Route B", because that is what the page did: one
+// edit rebuilt every row and the writer partitioned all of them. Measured, that is where the operator's
+// "3 route(s) for CO1100-R: 2 saved, 1 not saved" came from - adding a third route re-saved the two already
+// stored, so a refusal on any one became a partial state across routes they had not touched. One UI event
+// now carries ONE route intent, so the Add Route event sends only the route that was added.
+//
+// It also cannot be re-sent as a CREATE any more, which is asserted directly below: a CREATE whose shipment
+// group an active header already owns is refused, rather than quietly resolving onto that header.
+var s3reCreate = saveRoutes(SRV, [routeA(800)]);
+ok(!s3reCreate.outcomes[0].ok && s3reCreate.outcomes[0].res &&
+   s3reCreate.outcomes[0].res.code === 'ROUTE_IDENTITY_CONFLICT',
+  'B2pre re-sending an already-stored route as a CREATE is REFUSED, not silently resolved onto its header');
+var s3b = saveRoutes(SRV, [routeB(400)]);
+ok(s3b.ok, 'B2 the Add Route event pre-flight accepts the ONE route it carries');
+eq(s3b.groups.length, 1, 'B2 and it is ONE shipment group - the route that was added');
+ok(s3b.outcomes.every(function (o) { return o.ok; }), 'B2 that group persists');
 var hdrs = rowsOf(SRV, 'shipping_allocation_drafts');
 var lns = rowsOf(SRV, 'shipping_allocation_draft_lines');
 eq(hdrs.length, 2, 'B3 exactly TWO shipping_allocation_drafts headers');
@@ -417,11 +439,37 @@ var hdrResp = s3b.outcomes[0].headerRes.data;
 ok(!!hdrResp.route_group_key && Array.isArray(hdrResp.persisted_headers),
   'B6 the header-write response reports its own group identity too');
 
+// F1-7N-FB-4G-A2-R2 §2/§3 - a route the database already holds arrives at the writer carrying its OWN entity
+// identities, exactly as the hydrate leaves it in the client model. These fixtures built fresh objects with no
+// ids, which under the intent contract is a CREATE - and a CREATE onto a shipment group an active header
+// already owns is refused. So the fixture now says what it means: this is the SAME route, being updated.
+function asPersisted(route, srv) {
+  srv = srv || SRV;
+  var key = IRDraft.canonicalRouteGroupKey(CTX, route);
+  var hdr = null;
+  rowsOf(srv, 'shipping_allocation_drafts').forEach(function (h) {
+    if (hdr) return;
+    if (String(h.status).trim().toLowerCase() !== 'draft') return;
+    if (srv.sadK2GroupKey_(h) === key) hdr = h;
+  });
+  if (!hdr) return route;
+  var hid = String(hdr.allocation_draft_id);
+  var ln = rowsOf(srv, 'shipping_allocation_draft_lines').filter(function (l) { return String(l.allocation_draft_id) === hid; })[0];
+  route.allocation_draft_id = hid;
+  route.allocation_draft_line_id = ln ? String(ln.allocation_draft_line_id) : '';
+  route.route_group_key = key;
+  route.draft_version = String(hdr.draft_version == null ? '' : hdr.draft_version);
+  return route;
+}
+
 // ---- FIXTURE 4 — repeat saves update only their own route ------------------------------------------------
 section('§A2.4/§A2.5 — re-saving Route A touches only Route A');
 var beforeIds = rowsOf(SRV, 'shipping_allocation_draft_lines').map(function (l) { return l.allocation_draft_line_id; }).sort();
-var s4 = saveRoutes(SRV, [routeA(850), routeB(400)]);
+// EVENT SCOPE: changing Route A's quantity sends Route A, and only Route A.
+var s4 = saveRoutes(SRV, [asPersisted(routeA(850))]);
 ok(s4.ok && s4.outcomes.every(function (o) { return o.ok; }), 'B7 the repeat save succeeds');
+eq(s4.outcomes[0].headerRes.data.intent, 'UPDATE_EXISTING_ROUTE',
+  'B7a and it is declared an UPDATE of that route, never a create');
 var lns4 = rowsOf(SRV, 'shipping_allocation_draft_lines');
 eq(lns4.length, 2, 'B7 and appends NOTHING — still two physical rows');
 eq(lns4.map(function (l) { return l.allocation_draft_line_id; }).sort(), beforeIds,
@@ -433,7 +481,7 @@ rowsOf(SRV, 'shipping_allocation_drafts').forEach(function (h) {
 });
 eq(qtyByMethod.Sea, 850, 'B8 Route A (Sea) took the new quantity');
 eq(qtyByMethod.Air, 400, 'B8 and Route B (Air) is untouched — only Route A changed');
-var s4b = saveRoutes(SRV, [routeA(850), routeB(450)]);
+var s4b = saveRoutes(SRV, [asPersisted(routeB(450))]);
 ok(s4b.ok, 'B9 now re-save Route B only');
 var lns4b = rowsOf(SRV, 'shipping_allocation_draft_lines');
 eq(lns4b.length, 2, 'B9 still two rows');
@@ -469,7 +517,7 @@ var scan = CORRUPT.sadScanDuplicateLinePks_(corruptLines, String(dupSrcRow[1]), 
 eq(scan.ok, false, 'B12 the pre-write scan sees the duplicate');
 eq(scan.duplicates[0].physical_rows, 3, 'B12 counting all three physical rows');
 eq(scan.duplicates[0].in_affected_scope, true, 'B12 and marks it in the affected scope');
-var blocked = saveRoutes(CORRUPT, [routeA(800)]);
+var blocked = saveRoutes(CORRUPT, [asPersisted(routeA(800), CORRUPT)]);
 var lineOutcome = blocked.outcomes[0];
 eq(lineOutcome.ok, false, 'B13 so the save is REFUSED');
 eq(lineOutcome.res.data.status, 'EXISTING_DUPLICATE_PRIMARY_KEY_IN_SCOPE', 'B13 with the named code');

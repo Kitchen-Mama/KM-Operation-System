@@ -2722,3 +2722,158 @@ A mutation probe stubbed the submit transport with a hand-rolled object whose fi
 `undefined`. The latch under test is `_replenSubmitInFlight[execKey] = p`, so the stub stored a falsy value and
 the **honest** function also issued a second request — the probe reported MUTANT SURVIVED while proving nothing.
 A latch cannot be observed through a stub that defeats it; it uses a real Promise now.
+
+---
+
+## §4G-A2-R1 — SUBMIT WRITE-SEPARATION + PREFLIGHT CONSISTENCY
+
+### A2-R1.1 The blocking contradiction, resolved by measurement
+
+A2's report claimed all three of: Submit calls `_irFlushPendingRouteWritesForSubmit_()`; a dirty route blocks
+with `DB_WRITES=0`; an unsaved route is excluded and named in the confirmation. Executed on the shipped
+function, the first is a **writer**:
+
+| question | measured answer |
+|---|---|
+| flush waits, or writes? | **WRITES.** `clearTimeout` cancels each 400 ms debounce and `_flushDraftDbPersist` is called immediately — 2 pending routes → 2 write requests |
+| pending timer + Submit → a request? | **YES**, one per pending SKU |
+| does Submit auto-continue after an in-flight save? | **YES.** It polls every 100 ms up to 60× and resumes on its own; the 6 s guard expiring also resumes it, with the write still in the air |
+| can a failed save still reach confirmation? | the rejection is **swallowed**; whether Submit blocks depends entirely on the writer having marked the route unsaved first |
+| when does an added route become a candidate? | when `_irPersistOneRouteGroup_` assigns its ids — and the flush performed that transition **itself** |
+| can the confirmation differ from the DB? | **YES.** One click yields `UNSAVED_EXECUTION_PLAN_CHANGES` (state at the click) or `totalQty 1600` (state after the flush wrote) |
+
+A2's "proposed total 800 with an `UNSAVED_USER_ADDED_ROUTE` exclusion" is a state the shipped chain **skips
+past**. Worse, it is unreachable in principle: an unpersisted route also trips a dirty map, which returns at
+step 1 before the candidate set is built.
+
+### A2-R1.2 What changed
+
+`_irFlushPendingRouteWritesForSubmit_` is **removed entirely** — Submit was its only caller. Three typed codes
+replace one (`UNSAVED_EXECUTION_PLAN_CHANGES` / `EXECUTION_PLAN_SAVE_IN_PROGRESS` / `EXECUTION_PLAN_SAVE_FAILED`)
+because waiting fixes the second and can never fix the third. The unpersisted route becomes the **sixth dirty
+source** rather than an exclusion, so "an unsaved route cannot reach the confirmation" is structural.
+`buildConfirmation` is a separate step after the read-back, is **required** (A2 guarded it with
+`if (_pf.confirmation)`, so a null confirmation skipped the dialog and submitted anyway), refuses a forbidden
+exclusion, and carries the read-back verdict verbatim. The submitted selection is the preflight candidate —
+A2 took it from `_replenActiveAllocationDraftIds()`, which applies none of the candidate rules, so a
+disagreement sent a request with **no confirmation at all** over a rejected set. `scopeKey` is now supplied on
+each snapshot route; A2's filter read a field the snapshot never set, so it was live only under a hand-built
+snapshot.
+
+---
+
+## §4G-A2-R2 — ROUTE INSTANCE UPDATE VS ADD-ROUTE CREATE CONTRACT
+
+### A2-R2.1 The root cause, in the code's own words
+
+`_irPersistOneRouteGroup_` carried this note: *"no allocation_draft_id is sent. The server resolves a
+route-complete header by the canonical K2 group key — same route REUSEs, different route CREATEs — which is
+idempotent by construction."* It is idempotent. It also makes the **natural key the entity identity**.
+
+Executed over the live route (`CNYOUXIN → Amazon / sea / 800`):
+
+| edit | K2 key changes | ids after | outcome |
+|---|---|---|---|
+| To: marketplace → warehouse | yes | **erased** | CREATE |
+| To: Amazon → Walmart | no | kept | UPDATE |
+| Method: sea → air | yes | **erased** | CREATE |
+| Method: sea → sea_express | yes | **erased** | CREATE |
+| From: changed | yes | **erased** | CREATE |
+| Last Mile: added | yes | **erased** | CREATE |
+| Qty: 800 → 500 | no | kept | UPDATE |
+
+`_irQueueStaleGroupCancels_` erased `allocation_draft_id` / `allocation_draft_line_id` and soft-cancelled the
+stored line whenever the recomputed key differed. **One UI route edited across three dimensions is three
+headers** — the live `SADH-K2-E7AF9242` / `-179FBB0E` / `-C3E2031A` shape.
+
+Three further findings, all measured:
+
+- **`sadLegacyReconcileReason_` treats a legal edit as corruption.** It refuses an `SADH-K2-` row whose id no
+  longer equals `sadK2DeterministicHeaderId_(row)` — the normal state of any header ever legitimately updated.
+- **A route-incomplete legacy id returns `LEGACY_ROUTE_RECONCILIATION_REQUIRED`** — exactly what the operator's
+  + Add Route reported. The new route's natural key resolved onto a zero-line legacy header (the H1/H2 shape)
+  instead of creating the shipment they asked for.
+- **One UI event saved every route on screen.** `_saveAllocationDraftFromDom` rebuilds all rows and hands the
+  whole SKU to the writer. That is the source of *"3 route(s) for CO1100-R: 2 saved, 1 not saved"* — adding a
+  third route re-saved the two already stored. And the failure was attached to a **group**, labelled from that
+  group's first route, so which DOM row failed was **not recoverable from the message**.
+
+### A2-R2.2 Frozen: stable entity identity (§4)
+
+`allocation_draft_id` and `allocation_draft_line_id` are **immutable entity identities**. The K4 route key is a
+**uniqueness / collision signature only**. After a legal edit an id is **expected** not to hash to its own
+current fields; a diagnostic may report that, and **no writer may refuse because of it**. The four wrong
+assumptions are retired: a deterministic id must always equal the current natural key; editing a dimension
+must CREATE; the id family decides mutability; a resolver that finds no key may CREATE.
+
+### A2-R2.3 The intent contract (§2, §5, §9)
+
+A route write **declares** `UPDATE_EXISTING_ROUTE` or `CREATE_NEW_ROUTE`; a missing or self-contradictory intent
+is refused with zero writes. UPDATE carries the entity id, `expected_draft_version` and `applied_scope_key`, and
+is validated for existence, non-terminal status, scope, version, destination XOR, route completeness and
+collision — then updated **in place** with `draft_version` bumped. It **never** falls back to CREATE. CREATE
+skips the natural-key resolver entirely, may never carry `allow_legacy_reconcile`, and refuses
+`ROUTE_IDENTITY_CONFLICT` when an active header already owns the shipment group.
+
+Exempt from the intent requirement: a soft-cancel (`status='cancelled'`) and any payload carrying no route
+intent — lifecycle operations, not route ones. Requiring an intent of them would break the empty-header cleanup.
+
+### A2-R2.4 Event-scoped persistence (Addendum §3, §7)
+
+One UI event carries **one** route intent. The touched set is **derived by diffing** the rebuilt rows against the
+model rather than declared by the caller, so "an untouched route is never re-sent" holds even when the caller is
+wrong about which row changed. Display-only fields are excluded from the signature: a re-render is not an edit.
+Every DOM row carries a `client_route_instance_id`, minted once, and every request, response and error is
+correlated by it — never by array position.
+
+### A2-R2.5 The open product constraint (§4) — REPORTED, NOT WORKED AROUND
+
+The frozen K2 contract is **one active header per shipment group**, so two shipments with identical
+From / To / Method cannot both exist. An explicit + Add Route onto an owned group is therefore refused
+`ROUTE_IDENTITY_CONFLICT` with zero writes — not adopted, not merged, not silently duplicated. Consequences,
+stated rather than resolved:
+
+- Allowing duplicate-K4 active headers would require a discriminator (a route instance or `route_no`) **inside**
+  the 10-dimension key — a contract and schema change, out of scope for this round.
+- True create-idempotency across a **lost response** needs a stored `create_idempotency_key` column. Without it
+  a retry is indistinguishable from a duplicate request, so the refusal is what keeps a second shipment from
+  being minted. This is recorded as a migration for a later, separately-authorised round.
+
+### A2-R2.6 Multi-line header: BLOCK, with disclosure (§7)
+
+From / To / Method / Last Mile are **header** columns, so changing one on a header several lines share moves
+every one of them — including SKUs the single-SKU Execution Plan is not showing. It **blocks** with
+`MULTI_LINE_HEADER_EDIT_BLOCKED`, naming the affected SKUs and lines, and says the intended operation is a
+separate `MOVE_LINE` / `SPLIT_ROUTE`. A sole-line header is unaffected.
+
+### A2-R2.7 Inherited assertions restated
+
+`L4`/`L5` (FB-4B-ADDENDUM) asserted that a dimension change **releases** the line and **erases** the ids — the
+exact rule §4 reverses. Two harnesses (FB-4B-ADDENDUM, FB-4D) sent no intent, because under the old contract
+there was none to send, and FB-4D modelled + Add Route as "re-send everything"; both now declare intent the way
+the client does, and FB-4D's Add Route sends the one route it carries. `resetDb()` had to clear the fixture route
+model too: it left adopted ids attached, so the next save declared UPDATE against an id the emptied table no
+longer held. A0-R1's `M13` mutation became **insufficient** — a second route-field list meant a non-global
+`.replace` dropped the field from only one writer; it is re-anchored on the durable invariant that **no**
+route-field list omits `destination_marketplace`. A2's `V6` pinned its own stamp as an equality — the **ninth**
+appearance of that shape — and is now a floor. FB-3B's item 12 (`the flush is awaited`) is a deliberate reversal
+of the mechanism, not the intent: refusing serves "Submit must never race the write" more strictly than racing
+did. Its first restatement asserted the **name** was absent from the file and failed on the comment explaining
+the removal — a probe matching prose; it now asserts the function is neither declared nor called.
+
+### A2-R2.8 Repair plan for the accidental headers — PROPOSED, NOT EXECUTED
+
+No repair is performed and none is authorised by this round. The census
+(`TEMP_route_identity_census_a2_r2.gs`) must run first; its output, not this document, is the evidence.
+
+1. Read the census. For each of `SADH-K2-E7AF9242` / `-179FBB0E` / `-C3E2031A` / `SAD-C787D1B1-D` /
+   `SAD-27976058-2`, record which holds the line the operator actually wants, and whether anything downstream
+   references it.
+2. Keep the header whose route matches the operator's intended shipment. It keeps its id: an id that no longer
+   hashes to its own fields is expected (§4) and is not a reason to replace it.
+3. For each header to retire: soft-cancel it (`status='cancelled'`) — never a hard delete — and only after its
+   lines are accounted for. A header with a live line is never cancelled.
+4. A line under the wrong header is **not** re-keyed. It is soft-cancelled and re-entered under the correct
+   header through the normal UI path, which now performs an in-place UPDATE.
+5. Nothing in steps 2–4 runs without a separate authorisation naming the exact rows and a checksum of the
+   census output they were derived from.

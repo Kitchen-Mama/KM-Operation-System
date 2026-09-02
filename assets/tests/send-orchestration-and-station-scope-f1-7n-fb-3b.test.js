@@ -654,7 +654,19 @@ ok(/_irSearch\.applied/.test(appliedFn),
 ok(code(appliedFn).indexOf('_replenSelectedScope') === -1,
   '12. and never from _replenSelectedScope (which reads the possibly-stale <select> values)');
 ok(/applied_scope: _appliedScope \|\| undefined/.test(IR), '12. Submit declares the applied station to the server');
-ok(/await _irFlushPendingRouteWritesForSubmit_\(\)/.test(IR), '12. dirty routes are flushed and AWAITED before Submit');
+// F1-7N-FB-4G-A2-R1 §3 - RESTATED, and it is a deliberate REVERSAL of the mechanism, not of the intent.
+// FB-3B §G wanted Submit never to race the debounced write it depends on, and flushed the write to get that.
+// Measured, the flush cleared each 400 ms timer, called the writer immediately, then polled for up to 6 s and
+// carried the Submit on by itself - so the button SAVED, and it decided on state it had just created. The
+// intent is served more strictly by REFUSING: a pending, in-flight, failed or unpersisted route now blocks
+// Submit with a typed code and nothing is written. So the race FB-3B guarded against cannot occur at all.
+// The first form of this restatement asserted the NAME was absent from the file and failed on the comment
+// that explains the removal - a probe matching prose instead of code, the same class as one matching its own
+// declaration line. What is durable: the function is neither DECLARED nor CALLED.
+ok(!/function _irFlushPendingRouteWritesForSubmit_/.test(IR) && !/_irFlushPendingRouteWritesForSubmit_\(/.test(IR),
+  '12. Submit never flushes or saves a dirty route - it refuses, so it cannot race the write');
+ok(/UNSAVED_EXECUTION_PLAN_CHANGES/.test(IR) && /EXECUTION_PLAN_SAVE_IN_PROGRESS/.test(IR),
+  '12a. and the refusal is typed, so the operator is told whether to wait or to act');
 ok(/_irHasUnsavedRoutes_\(\)/.test(IR), '12. unsaved routes still block Submit (fail closed)');
 ok(/_qv\.verdict === 'DRIFTED'/.test(IR), '12. a PROVEN quantity drift blocks Submit');
 const qvFn = extractFn(IR, '_irVerifyPersistedRouteQuantities_');

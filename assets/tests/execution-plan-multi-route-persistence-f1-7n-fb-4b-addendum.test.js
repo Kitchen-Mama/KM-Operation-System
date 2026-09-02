@@ -130,6 +130,10 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   // absent, which needs the live-header reader. Apps Script has ONE global scope; a suite that lifts a
   // function out has to supply the globals the file itself would have had, or it reports a ReferenceError as
   // though it were a production defect.
+  // F1-7N-FB-4G-A2-R2 - the UPDATE_EXISTING_ROUTE branch compares the expected draft_version against the
+  // stored one, so the lift needs the same fingerprint-value helper the file itself has. A missing global here
+  // surfaces as a ReferenceError inside the shipped function, which reads exactly like a production defect.
+  'sadFpVal_',
   'sadLiveHeaderNames_', 'sadHasColumn_',
   'sadDestinationIdentity_', 'sadHeaderRouteIsComplete_',
   'sadResolveActiveDraft_', 'sadReadActiveHeaderRows_', 'sadResolveActiveDraftK2OrK3_', 'sadK2ReconcileDecision_',
@@ -137,7 +141,24 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_', 'handleGetShippingAllocationDraftWorkspace_'
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 
+// F1-7N-FB-4G-A2-R2 - RESETTING THE TABLE MUST RESET THE CLIENT MODEL WITH IT.
+//
+// saveRoutes adopts the persisted ids back into these fixture route objects, exactly as the page adopts them
+// into replenAllocationDraft. resetDb replaced the sheets but LEFT those ids attached, so the next save
+// declared UPDATE_EXISTING_ROUTE against an allocation_draft_id the emptied table no longer held - and the
+// writer correctly refused it with ALLOCATION_DRAFT_NOT_FOUND and zero writes. Under the old contract the
+// stale id was simply ignored and the natural key created a row, which is the very inference A2-R2 removed.
+// A cleared database means a re-hydrated client, so the model is cleared too.
+function resetRouteModel() {
+  [typeof ROUTE_A !== 'undefined' ? ROUTE_A : null, typeof ROUTE_B !== 'undefined' ? ROUTE_B : null]
+    .forEach(function (r) {
+      if (!r) return;
+      r.allocation_draft_id = ''; r.allocation_draft_line_id = ''; r.route_group_key = ''; r.draft_version = '';
+    });
+}
+
 function resetDb() {
+  resetRouteModel();
   // F1-7N-FB-4G-A0-R1 — THE FULL 35-COLUMN HEADER, WHICH IS WHAT PRODUCTION HAS (B5 measured it).
   //
   // This fixture used the 30 REQUIRED columns — a PRE-MIGRATION sheet with no `destination_marketplace`. On
@@ -175,7 +196,19 @@ function saveRoutes(sku, routes) {
   var outcomes = [];
   pf.groups.forEach(function (g) {
     var h = g.header;
+    // F1-7N-FB-4G-A2-R2 §2 - THE INTENT IS NOW DECLARED, and this harness declares it the way the shipped
+    // client does: a group whose routes already hold a stored allocation_draft_id is an UPDATE of that row;
+    // one that holds none is the CREATE that + Add Route produced. Under the old contract there was nothing to
+    // declare - the server inferred the operation from whether the natural key matched an active header - and
+    // that inference is exactly what A2-R2 removed, because it made "the operator changed the Method" mean
+    // "this is a different shipment". A route write with no intent is refused with zero writes now.
+    var _ids = {};
+    (g.routes || []).forEach(function (r) { var i = String((r && r.allocation_draft_id) || '').trim(); if (i) _ids[i] = 1; });
+    var _idList = Object.keys(_ids);
     var hres = sadUpsertDraftHeaderCore_({
+      intent: _idList.length ? 'UPDATE_EXISTING_ROUTE' : 'CREATE_NEW_ROUTE',
+      allocation_draft_id: _idList[0] || undefined,
+      applied_scope_key: [SCOPE.company, SCOPE.country, SCOPE.marketplace].join('|').toLowerCase(),
       company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
       planning_cycle: SCOPE.planning_cycle, source_page: 'inventory_replenishment',
       recommended_source_warehouse_id: h.recommended_source_warehouse_id,
@@ -301,7 +334,7 @@ eq(rBad.groups.length, 1, 'F6a an INCOMPLETE route is not a persistable group at
 (function () {
   var keep = SHEETS['shipping_allocation_drafts'];
   SHEETS['shipping_allocation_drafts'] = new FakeSheet(SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
-  var res = sadUpsertDraftHeaderCore_({ company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
+  var res = sadUpsertDraftHeaderCore_({ intent: 'CREATE_NEW_ROUTE', company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
     recommended_source_warehouse_id: 'WH-CN-YX', recommended_destination_warehouse_id: '',
     destination_marketplace: 'Amazon', recommended_shipping_method: 'sea' });
   ok(res && res.success === false, 'A0R1-1 a supplied marketplace with no column is REFUSED');
@@ -311,7 +344,7 @@ eq(rBad.groups.length, 1, 'F6a an INCOMPLETE route is not a persistable group at
   SHEETS['shipping_allocation_drafts'] = keep;
 })();
 
-var hBad = sadUpsertDraftHeaderCore_({ company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
+var hBad = sadUpsertDraftHeaderCore_({ intent: 'CREATE_NEW_ROUTE', company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace,
   source_page: 'inventory_replenishment', recommended_source_warehouse_id: 'WH-CN-YOUXIN',
   recommended_destination_warehouse_id: '', recommended_shipping_method: '' });
 ok(hBad.success === false && /PLAN_HEADER_INCOMPLETE/.test(hBad.error), 'F6b a partial route is refused with PLAN_HEADER_INCOMPLETE');
@@ -441,11 +474,26 @@ eval(staleFns);
 var movedRoute = { source_warehouse_id: 'WH-CN-YOUXIN', destination_warehouse_id: 'WH-NEW',
   shipping_method: '美森海卡', planned_qty: 800,
   allocation_draft_line_id: 'SADL-K2-OLDLINE', allocation_draft_id: 'SADH-K2-OLDHEADER', route_group_key: 'OLD|KEY' };
+// F1-7N-FB-4G-A2-R2 §2/§4 - REVERSED, and this is the reversal the round exists for.
+//
+// L4/L5 asserted that changing a route dimension RELEASES the route's stored line and ERASES its
+// allocation_draft_id and allocation_draft_line_id, so the server would "resolve a fresh identity under the
+// new header". Measured on the shipped functions, that is what produced the live
+// SADH-K2-E7AF9242 / -179FBB0E / -C3E2031A shape: one UI route edited across three dimensions became three
+// headers, each edit soft-cancelling the line before it.
+//
+// §4 freezes the opposite. allocation_draft_id and allocation_draft_line_id are IMMUTABLE ENTITY IDENTITIES;
+// the K4 group key is a uniqueness/collision signature only. A route that changes From/To/Method is the SAME
+// route with different properties, so it keeps its identity and its header is UPDATED in place. An id is
+// therefore EXPECTED to stop hashing to its own current field values, and no writer may treat that as
+// corruption. Nothing is released and nothing is cancelled: there is no "header it left".
 _irQueueStaleGroupCancels_('CO1100-R', [{ groupKey: 'NEW|KEY', routes: [movedRoute] }]);
-eq(_pendingDraftCancels['CO1100-R'], [{ line_id: 'SADL-K2-OLDLINE', allocation_draft_id: 'SADH-K2-OLDHEADER' }],
-  'L4 a route that moved to another header queues a soft-cancel NAMING the header it left');
-eq([movedRoute.allocation_draft_line_id, movedRoute.allocation_draft_id, movedRoute.route_group_key], ['', '', ''],
-  'L5 and drops its old binding so the server resolves a fresh identity under the new header');
+eq(_pendingDraftCancels['CO1100-R'], undefined,
+  'L4 a route whose dimensions changed releases NOTHING - it is the same route, updated in place');
+eq([movedRoute.allocation_draft_line_id, movedRoute.allocation_draft_id], ['SADL-K2-OLDLINE', 'SADH-K2-OLDHEADER'],
+  'L5 and KEEPS its immutable entity identities (§4) instead of being re-keyed by an edit');
+eq(movedRoute.route_group_key, 'NEW|KEY',
+  'L5a only the collision signature is refreshed, so the next diff compares against what is now stored');
 // an UNCHANGED route must not be released
 _pendingDraftCancels = {};
 var sameRoute = { allocation_draft_line_id: 'SADL-K2-KEEP', allocation_draft_id: 'SADH-K2-KEEP', route_group_key: 'SAME|KEY' };

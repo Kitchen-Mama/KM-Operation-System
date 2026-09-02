@@ -236,9 +236,22 @@ section('§3 — THE SUBMIT CALL CHAIN, LOCATED IN THE SHIPPED SOURCES');
   ok(/onclick="submitReplenishmentPlans\(\)"/.test(read('assets/html/pages/inventory-replenishment.html')),
     'C1  the button calls submitReplenishmentPlans()');
   var sub = code(extractFn(PAGE, 'submitReplenishmentPlans'));
-  ok(/_irFlushPendingRouteWritesForSubmit_/.test(sub), 'C2  it FLUSHES the debounced route writes and waits first');
+  // F1-7N-FB-4G-A2-R1 §2/§3 - REVERSED, and it is the reversal this round exists for. Measured, that flush
+  // CLEARED each pending 400 ms debounce timer and called _flushDraftDbPersist immediately (two pending
+  // routes -> two write requests), then polled for up to 6 s and CONTINUED THE SUBMIT BY ITSELF. So Submit
+  // was a Save button, and the guard below decided on state the click had just created. Submit now REFUSES a
+  // dirty plan and writes nothing; the function is gone from the whole file.
+  ok(!/_irFlushPendingRouteWritesForSubmit_/.test(sub), 'C2  Submit does NOT flush, save or wait for a write');
+  ok(!/_irFlushPendingRouteWritesForSubmit_|_flushDraftDbPersist|_scheduleDraftDbPersist/.test(sub),
+    'C2a §3 and it reaches NO writer at all - the only thing it may do about a pending write is refuse');
   ok(/_irSubmitPreflight_\(\)/.test(sub), 'C3  then ONE preflight decides (§6)');
-  ok(/_replenActiveAllocationDraftIds\(\)/.test(sub), 'C4  the payload selection is the persisted draft-id owner');
+  // F1-7N-FB-4G-A2-R1 §6 - RESTATED for the OWNER. A2 took the submitted selection from
+  // _replenActiveAllocationDraftIds(), which applies NONE of the candidate rules, so when it disagreed with
+  // the preflight the request went out with NO confirmation over a rejected candidate set. The selection is
+  // the preflight's candidate now, and that function is kept as the wider CROSS-CHECK it can honestly be.
+  ok(/_pf\.candidate\.draftIds/.test(sub), 'C4  the payload selection IS the preflight candidate set');
+  ok(/SELECTION_DISAGREEMENT/.test(sub) && /_replenActiveAllocationDraftIds\(\)/.test(sub),
+    'C4a and the route collector remains as a subset cross-check that fails closed on disagreement');
   ok(/_irVerifyPersistedRouteQuantities_/.test(sub), 'C5  a read-after-write quantity verification runs before committing');
   ok(/_irConfirmSubmit_/.test(sub), 'C6  §7 a CONFIRMATION is required before the request');
   ok(/_replenCanonicalSubmit\(/.test(sub), 'C7  and only then the canonical submit issues the request');
@@ -264,26 +277,43 @@ section('§13.1–§13.4 / §5 — THE CANDIDATE SET (the live H1/H2/H3/H4 shape
 var CLEAN_SNAPSHOT = {
   scope: { company: 'ResUS', country: 'US', marketplace: 'Amazon' },
   appliedScopeKey: 'resus|us|amazon',
+  // F1-7N-FB-4G-A2-R1 §4 - this used to hold an UNSAVED second route and still be called CLEAN, which is
+  // exactly the contradiction: an unsaved route is now a DIRTY SOURCE that blocks the whole Submit, so a
+  // snapshot holding one is not clean and reaches no candidate set at all. The two shapes are separate now.
   routes: [
-    // H4: the persisted route the operator adopted.
     { sku: 'CO1100-R', allocation_draft_id: 'SADH-K2-E7AF9242', allocation_draft_line_id: 'SADL-K2-16F4E4F9',
       qty: 800, complete: true, shipping_method: 'sea', destination_type: 'MARKETPLACE', destination_code: 'Amazon',
-      scopeKey: 'resus|us|amazon' },
-    // The second route the operator added with + Add Route and has not saved.
-    { sku: 'CO1100-R', allocation_draft_id: '', allocation_draft_line_id: '', qty: 800, complete: true,
-      shipping_method: 'sea', destination_type: 'MARKETPLACE', destination_code: 'Amazon', scopeKey: 'resus|us|amazon' }
+      scopeKey: 'resus|us|amazon' }
   ]
 };
+// The operator's second route, added with + Add Route and not yet in the database.
+var DIRTY_SNAPSHOT = JSON.parse(JSON.stringify(CLEAN_SNAPSHOT));
+DIRTY_SNAPSHOT.routes.push({ sku: 'CO1100-R', allocation_draft_id: '', allocation_draft_line_id: '', qty: 800,
+  complete: true, shipping_method: 'sea', destination_type: 'MARKETPLACE', destination_code: 'Amazon',
+  scopeKey: 'resus|us|amazon' });
 (function () {
   var r = PF.evaluate(CLEAN_SNAPSHOT);
   eq([r.ok, r.code], [true, ''], 'D1  §13.1 a clean persisted H4 passes the preflight');
   eq(r.candidate.draftIds, ['SADH-K2-E7AF9242'], 'D2  §13.13 exactly ONE persisted draft id is selected');
   eq([r.candidate.routeCount, r.candidate.lineCount, r.candidate.totalQty], [1, 1, 800],
     'D3  §13.1/§13.12 proposed qty is 800 — the UNSAVED second route is NOT counted');
-  ok(r.excluded.some(function (e) { return e.reason === 'UNSAVED_USER_ADDED_ROUTE' && e.count === 1; }),
-    'D4  §6 and it is REPORTED as excluded, not silently ignored');
-  eq(r.confirmation.totalQty, 800, 'D5  §7 the confirmation totals come from the PERSISTED set');
-  eq(r.confirmation.persistedOnly, true, 'D5a and it declares that only saved data is submitted');
+  // F1-7N-FB-4G-A2-R1 §4/§5 - REVERSED. A2 excluded the unsaved route and offered a confirmation that
+  // NAMED the exclusion. That state is unreachable (an unsaved route trips a dirty map and returns before
+  // the candidate set is built), and §5 forbids it outright: with an unsaved route present the confirmation
+  // must not exist. The whole Submit is blocked, and the clean route beside it is NOT sent on its own.
+  var d = PF.evaluate(DIRTY_SNAPSHOT);
+  eq([d.ok, d.code], [false, 'UNSAVED_EXECUTION_PLAN_CHANGES'], 'D4  §4 an unsaved route BLOCKS THE WHOLE Submit');
+  eq(d.candidate.draftIds, [], 'D4a §4 and the clean 800 beside it is NOT proposed on its own');
+  eq(PF.buildConfirmation(d, {}), null, 'D4b §5 no confirmation can be built from a blocked verdict');
+  ok(!PF.evaluate(DIRTY_SNAPSHOT).excluded.some(function (e) { return e.reason === 'UNSAVED_USER_ADDED_ROUTE'; }),
+    'D4c §5 and "unsaved route excluded" is never reported as an exclusion, because it is a block');
+  // The confirmation is built AFTER the read-back, from the candidate set, by its own step.
+  var conf = PF.buildConfirmation(r, { verdict: 'MATCHED', checked: 1 });
+  eq(conf.totalQty, 800, 'D5  §7 the confirmation totals come from the PERSISTED set');
+  eq(conf.persistedOnly, true, 'D5a and it declares that only saved data is submitted');
+  eq(conf.verification, { verdict: 'MATCHED', checked: 1 }, 'D5b and it carries the read-back verdict verbatim');
+  eq(PF.buildConfirmation(r, {}).verification.verdict, 'UNVERIFIABLE',
+    'D5c an inconclusive read is reported as inconclusive, never as a verification that happened');
 })();
 (function () {
   // H3 belongs to ResTW / JP / Amazon and must not be pulled into a ResUS / US / Amazon submit.
@@ -301,8 +331,8 @@ var CLEAN_SNAPSHOT = {
   var r = PF.evaluate(CLEAN_SNAPSHOT);
   ok(r.candidate.draftIds.indexOf('SAD-C787D1B1-D') === -1 && r.candidate.draftIds.indexOf('SAD-27976058-2') === -1,
     'D7  §13.2 the zero-line H1/H2 headers are not in the client payload — they own no route to contribute');
-  var zl = PF.evaluate(Object.assign({}, CLEAN_SNAPSHOT, { zeroLineHeaderCount: 2 }));
-  ok(zl.confirmation.excluded.some(function (e) { return e.reason === 'ZERO_LINE_HEADER' && e.count === 2; }),
+  var zl = PF.buildConfirmation(PF.evaluate(Object.assign({}, CLEAN_SNAPSHOT, { zeroLineHeaderCount: 2 })), {});
+  ok(zl.excluded.some(function (e) { return e.reason === 'ZERO_LINE_HEADER' && e.count === 2; }),
     'D7a and when the count is known it is DISCLOSED in the confirmation (§7)');
 })();
 (function () {
@@ -322,20 +352,22 @@ var CLEAN_SNAPSHOT = {
 section('§6 / §13.6–§13.9 — THE UNSAVED / DIRTY GUARD');
 // ================================================================================================================
 (function () {
+  // F1-7N-FB-4G-A2-R1 §3 - RESTATED for the CODE, not the rule. Every one of these still blocks and still
+  // names the route and its reason. A2 gave them all ONE code; they need opposite things from the operator
+  // (waiting fixes an in-flight save and can never fix a failed one), so the code now says which.
   var cases = [
-    ['pendingWrites', 'EDIT_NOT_YET_SAVED', '§13.6 + Add Route / an edit not yet written'],
-    ['inFlightWrites', 'SAVE_IN_PROGRESS', '§13.8 a write still in the air'],
-    ['dirtyAfterWrite', 'EDITED_DURING_SAVE', '§6 an edit that landed during a write'],
-    ['pendingCancels', 'DELETE_NOT_YET_PERSISTED', '§6 a delete not yet persisted'],
-    ['saveFailed', 'SAVE_FAILED', '§13.8 a save that failed']
+    ['pendingWrites', 'EDIT_NOT_YET_SAVED', 'UNSAVED_EXECUTION_PLAN_CHANGES', '§13.6 an edit not yet written'],
+    ['inFlightWrites', 'SAVE_IN_PROGRESS', 'EXECUTION_PLAN_SAVE_IN_PROGRESS', '§13.8 a write still in the air'],
+    ['dirtyAfterWrite', 'EDITED_DURING_SAVE', 'EXECUTION_PLAN_SAVE_IN_PROGRESS', '§6 an edit that landed during a write'],
+    ['pendingCancels', 'DELETE_NOT_YET_PERSISTED', 'UNSAVED_EXECUTION_PLAN_CHANGES', '§6 a delete not yet persisted'],
+    ['saveFailed', 'SAVE_FAILED', 'EXECUTION_PLAN_SAVE_FAILED', '§13.8 a save that failed']
   ];
   cases.forEach(function (c, i) {
     var snap = Object.assign({}, CLEAN_SNAPSHOT); snap[c[0]] = ['CO1100-R'];
     var r = PF.evaluate(snap);
-    eq([r.ok, r.code], [false, 'UNSAVED_EXECUTION_PLAN_CHANGES'],
-      'U' + (i + 1) + '  ' + c[2] + ' → UNSAVED_EXECUTION_PLAN_CHANGES');
+    eq([r.ok, r.code], [false, c[2]], 'U' + (i + 1) + '  ' + c[3] + ' → ' + c[2]);
     eq(r.blocking.reasons[0], { sku: 'CO1100-R', reason: c[1] }, 'U' + (i + 1) + 'a and the route AND its reason are named');
-    eq(r.confirmation, null, 'U' + (i + 1) + 'b no confirmation is offered, so no request can follow');
+    eq(PF.buildConfirmation(r, {}), null, 'U' + (i + 1) + 'b no confirmation can be built, so no request can follow');
   });
 })();
 (function () {
@@ -358,9 +390,11 @@ section('§6 / §13.6–§13.9 — THE UNSAVED / DIRTY GUARD');
   var pfSrc = code(extractFn(CMPSRC, 'submitPreflight'));
   ok(!/\.length\s*===\s*\w*[Cc]ount|domCount|rowCount\s*===/.test(pfSrc),
     'U9  §6 the dirty verdict is not a DOM-versus-DB count comparison');
-  var sources = PF.DIRTY_SOURCES.map(function (s) { return s.key; });
-  eq(sources, ['pendingWrites', 'inFlightWrites', 'dirtyAfterWrite', 'pendingCancels', 'saveFailed'],
-    'U9a it is derived from five NAMED state sources, gathered in one owner');
+  // F1-7N-FB-4G-A2-R1 §3 - the sixth source: a route the screen holds and the database does not. A2 tried
+  // to express that as an EXCLUSION, which §5 forbids and which was unreachable anyway.
+  var sources = PF.DIRTY_SOURCES.map(function (s) { return s.key; }).sort();
+  eq(sources, ['dirtyAfterWrite', 'inFlightWrites', 'pendingCancels', 'pendingWrites', 'saveFailed', 'unpersistedRoutes'],
+    'U9a it is derived from six NAMED state sources, gathered in one owner');
   ok(!/upsertShippingAllocationDraft|_flushDraftDbPersist|_scheduleDraftDbPersist/.test(pfSrc),
     'U10 §6 and the preflight NEVER saves on the operator\'s behalf');
 })();
@@ -391,8 +425,15 @@ section('§7 / §13.10–§13.11 — THE CONFIRMATION');
   var iSend = sub.indexOf('_replenCanonicalSubmit(');
   ok(iConf > -1 && iKey > iConf, 'F4  §7 the submit_batch_id / execution key is minted ONLY AFTER the confirmation');
   ok(iSend > iConf, 'F4a and the request is issued only after it too');
-  ok(/if \(!_irConfirmSubmit_\(_pf\.confirmation\)\) return;/.test(sub),
+  // F1-7N-FB-4G-A2-R1 §5 - the confirmation is built by its own later step (after the read-back) and is
+  // REQUIRED rather than conditional: A2 wrote `if (_pf.confirmation) { ... }`, so a null confirmation
+  // SKIPPED the dialog and submitted anyway. Cancel still returns immediately.
+  ok(/if \(!_irConfirmSubmit_\(_conf\)\) return;/.test(sub),
     'F5  §13.10 Cancel returns immediately — zero requests, and nothing minted or persisted');
+  ok(/buildConfirmation\(_pf, _qv\)/.test(sub) && /if \(!_conf\) \{/.test(sub),
+    'F5a §5 and a confirmation that cannot be built BLOCKS the submit instead of being skipped');
+  ok(sub.indexOf('_irVerifyPersistedRouteQuantities_') < sub.indexOf('buildConfirmation'),
+    'F5b §5/§6 the confirmation is built only AFTER the persisted read-back has run');
 })();
 
 // ================================================================================================================
@@ -652,7 +693,12 @@ eq(CMP.IRWarehouse.destinationIdentity({ destination_warehouse_id: 'W', destinat
 eq(CMP.IRService.canonical('美森海卡'), 'sea_express', 'V5  §10 sea / sea_express are still distinct');
 (function () {
   var stamp = (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-  eq(stamp, 'F1-7N-FB-4G-A2', 'V6  §15 the 16_ owner stamp MOVED — this round changes the server, deliberately');
+  // F1-7N-FB-4G-A2-R2 - RESTATED. A2 pinned its OWN stamp as an equality with the present: the NINTH
+  // appearance of that shape, and false the first time a later round legitimately moves the server (A2-R2
+  // does, for the route intent contract). The durable claim is the FLOOR - 16_ carries A2's change or
+  // something after it.
+  ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2'),
+    'V6  §15 the 16_ owner stamp is at or after A2 — this round changed the server, deliberately');
   eq((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs', symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
      stamp, 'V6a and 63_\'s manifest expects what the SOURCE declares, so a half-synced deployment is detectable');
   var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
@@ -674,30 +720,47 @@ ok(!/DELETE FROM|deleteRow|removeSheet/.test(code(extractFn(PAGE, 'submitRepleni
 // ================================================================================================================
 section('MUTATIONS — each applied for real, each caught');
 // ================================================================================================================
-mut('X1  a zero-line header is put back into the client payload', function () {
+// F1-7N-FB-4G-A2-R1 - RE-ANCHORED. Both X1 and X3 mutated the step-4 line that recorded
+// UNSAVED_USER_ADDED_ROUTE as an exclusion. That line is gone: an unpersisted route is a DIRTY SOURCE now
+// and returns long before step 4, so mutating step 4 would change nothing and the probes would have reported
+// MUTANT SURVIVED against dead code. They are re-anchored on the source that actually decides.
+// An unsaved route now needs TWO independent guards defeated to reach the payload - the derived dirty
+// source (X3) and step 4's own refusal - so no single-line mutation can put one there. That is the point of
+// the pair, and it is asserted directly rather than probed for: with the dirty source disabled, step 4 still
+// keeps the route out of the candidate set.
+(function () {
   var m = mutateFn(CMPSRC, 'submitPreflight',
-    "if (!routeIsPersisted(r)) { exclude('UNSAVED_USER_ADDED_ROUTE'); return; }", '');
-  var M = moduleFrom(m).IRSubmitPreflight;
-  var h = PF.evaluate(CLEAN_SNAPSHOT), x = M.evaluate(CLEAN_SNAPSHOT);
-  return h.candidate.totalQty === 800 && x.candidate.totalQty === 1600;
+    "unpersisted.push({ sku: sstr(r && r.sku), reason: (r && r.complete === true) ? 'ROUTE_NOT_SAVED' : 'ROUTE_NOT_SAVED_INCOMPLETE' });",
+    'return;');
+  var x = moduleFrom(m).IRSubmitPreflight.evaluate(DIRTY_SNAPSHOT);
+  eq(x.candidate.totalQty, 800, 'X0  with the dirty source defeated, step 4 STILL refuses the unpersisted route');
+})();
+
+mut('X1  the submitted selection reverts to the route collector, which applies none of the candidate rules', function () {
+  var m = mutateFn(PAGE, 'submitReplenishmentPlans',
+    "var _draftIds = (_pf && _pf.candidate && _pf.candidate.draftIds) ? _pf.candidate.draftIds.slice() : [];",
+    'var _draftIds = _replenActiveAllocationDraftIds();');
+  var h = code(extractFn(PAGE, 'submitReplenishmentPlans'));
+  var x = code(extractFn(m, 'submitReplenishmentPlans'));
+  return /_pf\.candidate\.draftIds/.test(h) && !/_pf\.candidate\.draftIds/.test(x) &&
+         /_draftIds = _replenActiveAllocationDraftIds\(\)/.test(x);
 });
 
 mut('X2  the dirty guard is removed', function () {
   var m = mutateFn(CMPSRC, 'submitPreflight',
-    'if (out.blocking.skus.length) { out.code = C.UNSAVED_EXECUTION_PLAN_CHANGES; return out; }', '');
+    'if (out.blocking.skus.length) return out;', '');
   var M = moduleFrom(m).IRSubmitPreflight;
   var snap = Object.assign({}, CLEAN_SNAPSHOT, { saveFailed: ['CO1100-R'] });
   return PF.evaluate(snap).ok === false && M.evaluate(snap).ok === true;
 });
 
-mut('X3  an unsaved route is silently ignored instead of reported', function () {
+mut('X3  only the clean route is submitted and the dirty one beside it is silently dropped', function () {
   var m = mutateFn(CMPSRC, 'submitPreflight',
-    "if (!routeIsPersisted(r)) { exclude('UNSAVED_USER_ADDED_ROUTE'); return; }",
-    'if (!routeIsPersisted(r)) { return; }');
+    "unpersisted.push({ sku: sstr(r && r.sku), reason: (r && r.complete === true) ? 'ROUTE_NOT_SAVED' : 'ROUTE_NOT_SAVED_INCOMPLETE' });",
+    'return;');
   var M = moduleFrom(m).IRSubmitPreflight;
-  var h = PF.evaluate(CLEAN_SNAPSHOT), x = M.evaluate(CLEAN_SNAPSHOT);
-  return h.excluded.some(function (e) { return e.reason === 'UNSAVED_USER_ADDED_ROUTE'; }) &&
-         !x.excluded.some(function (e) { return e.reason === 'UNSAVED_USER_ADDED_ROUTE'; });
+  var h = PF.evaluate(DIRTY_SNAPSHOT), x = M.evaluate(DIRTY_SNAPSHOT);
+  return h.ok === false && x.ok === true && x.candidate.totalQty === 800;
 });
 
 mut('X4  the confirmation totals are read from the DOM instead of the persisted proposal', function () {

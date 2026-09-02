@@ -414,6 +414,28 @@
     // and the server enforces every condition itself. It is emitted ONLY for a literal `true`, so a truthy
     // accident — a string, a 1, an object — cannot authorise a migration.
     if (ctx.allow_legacy_reconcile === true) p.allow_legacy_reconcile = true;
+    // F1-7N-FB-4G-A2-R2 §2/§5 - THE INTENT CONTRACT. The writer used to infer what to do from whether a
+    // natural key matched, which made "the operator changed the Method" indistinguishable from "this is a
+    // different shipment". A request now states which operation it is, and the server refuses one that does
+    // not (§2: a missing or contradictory intent is a zero-write refusal).
+    //
+    //   UPDATE_EXISTING_ROUTE - carries the route's own immutable allocation_draft_id and the draft_version it
+    //     expects. The server updates that row in place or refuses; it must never fall back to CREATE.
+    //   CREATE_NEW_ROUTE      - only + Add Route produces this: a route instance with no persisted identity.
+    //     create_idempotency_key is the client's stable route instance id, so a retry after a lost response
+    //     cannot mint a second票.
+    //
+    // Both are emitted only for an exact string, so a truthy accident cannot select an operation.
+    if (ctx.intent === 'UPDATE_EXISTING_ROUTE' || ctx.intent === 'CREATE_NEW_ROUTE') p.intent = ctx.intent;
+    if (ctx.expected_draft_version != null && String(ctx.expected_draft_version).trim() !== '') {
+      p.expected_draft_version = String(ctx.expected_draft_version).trim();
+    }
+    if (ctx.create_idempotency_key != null && String(ctx.create_idempotency_key).trim() !== '') {
+      p.create_idempotency_key = String(ctx.create_idempotency_key).trim();
+    }
+    if (ctx.applied_scope_key != null && String(ctx.applied_scope_key).trim() !== '') {
+      p.applied_scope_key = String(ctx.applied_scope_key).trim();
+    }
     return p;
   }
 
@@ -1109,21 +1131,41 @@
   var IR_SUBMIT_CODES = {
     OK: '',
     UNSAVED_EXECUTION_PLAN_CHANGES: 'UNSAVED_EXECUTION_PLAN_CHANGES',
+    EXECUTION_PLAN_SAVE_IN_PROGRESS: 'EXECUTION_PLAN_SAVE_IN_PROGRESS',
+    EXECUTION_PLAN_SAVE_FAILED: 'EXECUTION_PLAN_SAVE_FAILED',
     EXECUTION_PLAN_NOT_READY: 'EXECUTION_PLAN_NOT_READY',
     ROUTE_DESTINATION_MISSING: 'ROUTE_DESTINATION_MISSING',
     DUPLICATE_LINE_IDENTITY: 'DUPLICATE_LINE_IDENTITY',
     NO_PERSISTED_CANDIDATE: 'NO_PERSISTED_CANDIDATE'
   };
 
-  // The six unsaved/dirty conditions, each with its own reason so the operator is told WHICH route and WHY,
-  // under ONE blocking code. Order matters only for the reason text; any one of them blocks.
+  // F1-7N-FB-4G-A2-R1 - THE DIRTY SOURCES, EACH WITH ITS OWN TYPED REFUSAL CODE.
+  //
+  // A2 put all five under one code. They are not one thing to the operator: a FAILED save will never resolve
+  // on its own and needs them to act, an IN-FLIGHT save resolves in a moment and needs them to wait, and a
+  // pending debounce resolves in 400 ms. So the reason stays per route and the CODE says what to do.
+  //
+  // `unpersistedRoutes` is the SIXTH source and it is DERIVED from input.routes rather than read from a map:
+  // a route the screen holds and the database does not is exactly the condition Submit must never carry, and
+  // A2 tried to express it as an EXCLUSION (UNSAVED_USER_ADDED_ROUTE) - a state that is unreachable, because
+  // any route in that condition also trips one of the five maps and returns before the candidate set is even
+  // built. It is a BLOCK here, which is what makes "an unsaved route cannot reach the confirmation" structural
+  // instead of accidental.
+  //
+  // `rank` picks the reported code when several fire at once: the one that needs the operator, first.
   var IR_DIRTY_SOURCES = [
-    { key: 'pendingWrites', reason: 'EDIT_NOT_YET_SAVED' },
-    { key: 'inFlightWrites', reason: 'SAVE_IN_PROGRESS' },
-    { key: 'dirtyAfterWrite', reason: 'EDITED_DURING_SAVE' },
-    { key: 'pendingCancels', reason: 'DELETE_NOT_YET_PERSISTED' },
-    { key: 'saveFailed', reason: 'SAVE_FAILED' }
+    { key: 'saveFailed', reason: 'SAVE_FAILED', code: 'EXECUTION_PLAN_SAVE_FAILED', rank: 1 },
+    { key: 'inFlightWrites', reason: 'SAVE_IN_PROGRESS', code: 'EXECUTION_PLAN_SAVE_IN_PROGRESS', rank: 2 },
+    { key: 'dirtyAfterWrite', reason: 'EDITED_DURING_SAVE', code: 'EXECUTION_PLAN_SAVE_IN_PROGRESS', rank: 2 },
+    { key: 'pendingWrites', reason: 'EDIT_NOT_YET_SAVED', code: 'UNSAVED_EXECUTION_PLAN_CHANGES', rank: 3 },
+    { key: 'pendingCancels', reason: 'DELETE_NOT_YET_PERSISTED', code: 'UNSAVED_EXECUTION_PLAN_CHANGES', rank: 3 },
+    { key: 'unpersistedRoutes', reason: 'ROUTE_NOT_SAVED', code: 'UNSAVED_EXECUTION_PLAN_CHANGES', rank: 3, derived: true }
   ];
+
+  // An exclusion the CONFIRMATION may never carry. A2's confirmation offered to tell the operator that an
+  // unsaved route had been left out; §5 forbids that, because the presence of an unsaved route means the
+  // confirmation is unreachable. buildConfirmation REFUSES rather than rendering one of these.
+  var IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS = ['UNSAVED_USER_ADDED_ROUTE'];
 
   function arr(v) { return Object.prototype.toString.call(v) === '[object Array]' ? v : []; }
   function sstr(v) { return String(v == null ? '' : v).trim(); }
@@ -1147,15 +1189,31 @@
     };
 
     // ---- 1. THE DIRTY VERDICT, from named state only -------------------------------------------------
+    // SUBMIT DOES NOT SAVE. It does not flush a debounced write, does not run a pending write early, does not
+    // wait for one and then carry on by itself. Any difference between the screen and the database is a
+    // TYPED REFUSAL here, and the route state is left exactly as the operator left it. The auto-save their
+    // own edit scheduled still completes on its own schedule; the button never accelerates or takes it over.
     var seen = {};
+    // The sixth source, derived: a route on screen that the database does not hold. `complete` splits the
+    // reason, because a half-filled row can never save until it is filled in or removed - the operator needs
+    // to be told which of those two it is.
+    var unpersisted = [];
+    arr(input.routes).forEach(function (r) {
+      if (routeIsPersisted(r)) return;
+      unpersisted.push({ sku: sstr(r && r.sku), reason: (r && r.complete === true) ? 'ROUTE_NOT_SAVED' : 'ROUTE_NOT_SAVED_INCOMPLETE' });
+    });
+    var state = { unpersistedRoutes: unpersisted };
+    var rank = 0;
     IR_DIRTY_SOURCES.forEach(function (src) {
-      arr(input[src.key]).forEach(function (sku) {
-        var k = sstr(sku); if (!k) return;
-        out.blocking.reasons.push({ sku: k, reason: src.reason });
+      var list = src.derived ? arr(state[src.key]) : arr(input[src.key]);
+      list.forEach(function (item) {
+        var k = sstr((item && item.sku != null) ? item.sku : item); if (!k) return;
+        out.blocking.reasons.push({ sku: k, reason: sstr((item && item.reason) || src.reason) });
         if (!seen[k]) { seen[k] = 1; out.blocking.skus.push(k); }
+        if (!rank || src.rank < rank) { rank = src.rank; out.code = C[src.code] || src.code; }
       });
     });
-    if (out.blocking.skus.length) { out.code = C.UNSAVED_EXECUTION_PLAN_CHANGES; return out; }
+    if (out.blocking.skus.length) return out;
 
     // ---- 2. A PANEL THAT IS NOT READY CANNOT BE SUBMITTED FROM -----------------------------------------
     // A1-R1 disables the button while an Execution Plan is a shell or a named failure; a disabled button is
@@ -1194,7 +1252,10 @@
     function exclude(reason) { excl[reason] = (excl[reason] || 0) + 1; }
     var draftSeen = {}, skuSeen = {}, methodSeen = {}, destSeen = {};
     arr(input.routes).forEach(function (r) {
-      if (!routeIsPersisted(r)) { exclude('UNSAVED_USER_ADDED_ROUTE'); return; }
+      // UNREACHABLE by construction: an unpersisted route is a DIRTY SOURCE above and returns before this
+      // loop runs. Kept as a guard so a future change cannot let one through silently, but deliberately NOT
+      // recorded as an exclusion - a confirmation must never be able to say "one route was left out".
+      if (!routeIsPersisted(r)) return;
       if (r.complete !== true) { exclude('ROUTE_INCOMPLETE'); return; }
       if (input.appliedScopeKey && sstr(r.scopeKey) && sstr(r.scopeKey) !== sstr(input.appliedScopeKey)) { exclude('OUT_OF_APPLIED_SCOPE'); return; }
       if (r.terminal === true) { exclude('TERMINAL_LIFECYCLE'); return; }
@@ -1220,31 +1281,57 @@
 
     if (!out.candidate.draftIds.length) { out.code = C.NO_PERSISTED_CANDIDATE; return out; }
 
-    // ---- 5. THE CONFIRMATION, built from the PERSISTED candidate set and from nothing else -------------
-    out.confirmation = {
-      scope: {
-        company: sstr(input.scope && input.scope.company),
-        country: sstr(input.scope && input.scope.country),
-        marketplace: sstr(input.scope && input.scope.marketplace)
-      },
-      routeCount: out.candidate.routeCount,
-      skuCount: out.candidate.skus.length,
-      lineCount: out.candidate.lineCount,
-      totalQty: out.candidate.totalQty,
-      methods: out.candidate.methods.slice(),
-      destinations: out.candidate.destinations.slice(),
-      excluded: out.excluded.slice(),
-      persistedOnly: true
+    // The confirmation is NOT built here. §5 requires it to exist only after the persisted read-back and the
+    // quantity verification have run, and those are async - so evaluate() ends at the candidate set and
+    // buildConfirmation() is a separate, later step that cannot be reached from a blocked verdict.
+    out.scope = {
+      company: sstr(input.scope && input.scope.company),
+      country: sstr(input.scope && input.scope.country),
+      marketplace: sstr(input.scope && input.scope.marketplace)
     };
     out.ok = true;
     return out;
   }
 
+  // ---- THE CONFIRMATION -----------------------------------------------------------------------------------
+  // Built from the PERSISTED candidate set and from nothing else - never the DOM - so what it promises is
+  // exactly what the server will re-read. It REFUSES (returns null, and Submit stops) unless the verdict it is
+  // given is clean, a candidate exists, and no forbidden exclusion is present. `verification` carries the
+  // read-back's own verdict verbatim; an inconclusive read is REPORTED as inconclusive and never dressed up as
+  // a verification that happened.
+  function buildConfirmation(pf, verification) {
+    if (!pf || pf.ok !== true) return null;
+    if (!pf.candidate || !arr(pf.candidate.draftIds).length) return null;
+    var bad = arr(pf.excluded).filter(function (e) {
+      return IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS.indexOf(sstr(e && e.reason)) !== -1;
+    });
+    if (bad.length) return null;
+    var v = verification || {};
+    return {
+      scope: {
+        company: sstr(pf.scope && pf.scope.company),
+        country: sstr(pf.scope && pf.scope.country),
+        marketplace: sstr(pf.scope && pf.scope.marketplace)
+      },
+      routeCount: pf.candidate.routeCount,
+      skuCount: arr(pf.candidate.skus).length,
+      lineCount: pf.candidate.lineCount,
+      totalQty: pf.candidate.totalQty,
+      methods: arr(pf.candidate.methods).slice(),
+      destinations: arr(pf.candidate.destinations).slice(),
+      excluded: arr(pf.excluded).slice(),
+      persistedOnly: true,
+      verification: { verdict: sstr(v.verdict) || 'UNVERIFIABLE', checked: toInt(v.checked) }
+    };
+  }
+
   var IRSubmitPreflight = {
     CODES: IR_SUBMIT_CODES,
     DIRTY_SOURCES: IR_DIRTY_SOURCES,
+    FORBIDDEN_CONFIRMATION_EXCLUSIONS: IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS,
     isPersisted: routeIsPersisted,
-    evaluate: submitPreflight
+    evaluate: submitPreflight,
+    buildConfirmation: buildConfirmation
   };
 
   var IRPlanningReveal = {

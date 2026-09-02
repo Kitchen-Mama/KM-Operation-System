@@ -277,10 +277,187 @@ function sadUpsertDraftHeaderCore_(body) {
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
 
+  // ============================================================================================================
+  // F1-7N-FB-4G-A2-R2 §2/§5 - THE EXPLICIT INTENT CONTRACT.
+  //
+  // Until now this writer INFERRED the operation from whether a natural key matched an active header: a match
+  // REUSED it, no match CREATED one. That made "the operator changed this route's Method" indistinguishable
+  // from "this is a different shipment", and it is why one UI route edited across three dimensions became
+  // three headers. A route write now DECLARES which operation it is, and an undeclared or self-contradictory
+  // one is refused with zero writes.
+  //
+  // EXEMPT: a soft-cancel of an empty header (status='cancelled') and any payload carrying no route intent at
+  // all. Those are not route operations, they are lifecycle ones, and requiring an intent of them would break
+  // the empty-header cleanup that System Repair 2 §5.3 depends on.
+  var sadIntent = String((body && body.intent) || '').trim();
+  if (hasRouteIntent && status !== 'cancelled') {
+    if (sadIntent !== 'UPDATE_EXISTING_ROUTE' && sadIntent !== 'CREATE_NEW_ROUTE') {
+      return { success: false, error: 'ROUTE_INTENT_REQUIRED', code: 'ROUTE_INTENT_REQUIRED', stage: 'intent',
+        zero_write: true, data: { received_intent: sadIntent,
+          message: 'a route write must declare intent = UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from whether a natural key matches (zero rows written)' } };
+    }
+    if (sadIntent === 'UPDATE_EXISTING_ROUTE' && !id) {
+      return { success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY', stage: 'intent',
+        zero_write: true, data: { intent: sadIntent, message: 'UPDATE_EXISTING_ROUTE requires the allocation_draft_id of the route being updated (zero rows written)' } };
+    }
+    if (sadIntent === 'CREATE_NEW_ROUTE' && id) {
+      return { success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY', stage: 'intent',
+        zero_write: true, data: { intent: sadIntent, allocation_draft_id: id, message: 'CREATE_NEW_ROUTE must not name an existing allocation_draft_id (zero rows written)' } };
+    }
+    // §4 - + Add Route is an explicit request for a NEW shipment. It may never drift into adopting a legacy or
+    // zero-line header, which is exactly what happened live: the new route's natural key resolved onto an
+    // existing route-incomplete header and came back LEGACY_ROUTE_RECONCILIATION_REQUIRED.
+    if (sadIntent === 'CREATE_NEW_ROUTE' && allowReconcile) {
+      return { success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY', stage: 'intent',
+        zero_write: true, data: { intent: sadIntent, message: 'CREATE_NEW_ROUTE cannot carry allow_legacy_reconcile: adopting an existing header is a separate, explicitly-confirmed migration (zero rows written)' } };
+    }
+  }
+
+  // ---- UPDATE_EXISTING_ROUTE: the row is named, so it is updated in place or refused. NEVER created. --------
+  if (sadIntent === 'UPDATE_EXISTING_ROUTE' && hasRouteIntent && status !== 'cancelled') {
+    if (!found) {
+      return { success: false, error: 'ALLOCATION_DRAFT_NOT_FOUND', code: 'ALLOCATION_DRAFT_NOT_FOUND', stage: 'validation',
+        zero_write: true, data: { allocation_draft_id: id } };
+    }
+    var uObj = sadRowToObject_(sh, found.row);
+    var uStatus = String(uObj.status == null ? '' : uObj.status).trim().toLowerCase();
+    if (SAD_TERMINAL_STATUSES_[uStatus]) {
+      return { success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + uStatus, code: 'IMMUTABLE_TERMINAL_STATUS',
+        stage: 'terminal', zero_write: true, data: { allocation_draft_id: id, status: uStatus } };
+    }
+    // The applied station must be the one that owns the row. Scope identity comes from the STORED header, never
+    // from the declaration - the payload cannot assert a station it does not own; it can only fail to match.
+    var uScopeKey = [String(uObj.company || ''), String(uObj.country || ''), String(uObj.marketplace || '')].join('|').toLowerCase();
+    var wantScopeKey = String((body && body.applied_scope_key) || '').trim().toLowerCase();
+    if (wantScopeKey && wantScopeKey !== uScopeKey) {
+      return { success: false, error: 'APPLIED_SCOPE_MISMATCH', code: 'APPLIED_SCOPE_MISMATCH', stage: 'validation',
+        zero_write: true, data: { allocation_draft_id: id, stored_scope: uScopeKey, applied_scope: wantScopeKey } };
+    }
+    var uPriorVersion = sadFpVal_(uObj.draft_version);
+    if (body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '' &&
+        sadFpVal_(body.expected_draft_version) !== uPriorVersion) {
+      return { success: false, error: 'STALE_OPTIMISTIC_TOKEN', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict',
+        zero_write: true, data: { allocation_draft_id: id, expected: sadFpVal_(body.expected_draft_version), current: uPriorVersion } };
+    }
+    // The destination is exactly one of the two axes, on the POST-UPDATE row. A payload supplying both or
+    // neither is refused rather than resolved by precedence - which is the whole lesson of A0-R2/A2.
+    var uAfter = sadRowToObject_(sh, found.row);
+    ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+      'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+      'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
+      'destination_marketplace'].forEach(function (f) {
+      if (body && body[f] != null) uAfter[f] = String(body[f]);
+    });
+    var uDest = sadDestinationIdentity_(uAfter);
+    if (!uDest.ok) {
+      return { success: false, error: 'ROUTE_DESTINATION_' + String(uDest.code || 'UNRESOLVED'), code: uDest.code || 'ROUTE_DESTINATION_UNRESOLVED',
+        stage: 'validation', zero_write: true, data: { allocation_draft_id: id } };
+    }
+    if (!sadHeaderRouteIsComplete_(uAfter)) {
+      return { success: false, error: 'PLAN_HEADER_INCOMPLETE', code: 'PLAN_HEADER_INCOMPLETE', stage: 'validation',
+        zero_write: true, data: { allocation_draft_id: id, message: 'the updated route would have no complete From + To + Method (zero rows written)' } };
+    }
+    // §6 - COLLISION. The frozen K2 contract is that one active header owns one shipment group, so if the
+    // post-update key is already held by a DIFFERENT active header the update is refused outright. Nothing is
+    // created, nothing is merged, no line is moved, and NEITHER票 is modified - and no authority flag may pick
+    // a winner, because choosing which of two real shipments survives is not a decision a writer can make.
+    var uNewKey = sadK2GroupKey_(uAfter);
+    var uContender = '';
+    sadReadActiveHeaderRows_(sh).forEach(function (row) {
+      if (uContender) return;
+      var rid = String(row.allocation_draft_id == null ? '' : row.allocation_draft_id).trim();
+      if (!rid || rid === id) return;
+      if (sadK2GroupKey_(row) === uNewKey) uContender = rid;
+    });
+    if (uContender) {
+      return { success: false, error: 'ROUTE_IDENTITY_CONFLICT', code: 'ROUTE_IDENTITY_CONFLICT', stage: 'conflict',
+        zero_write: true, data: { allocation_draft_id: id, conflicting_allocation_draft_id: uContender,
+          route_group_key: uNewKey,
+          message: 'another active shipment already carries this exact From / To / Method, so this route cannot be changed onto it; nothing was written to either. Cancel this change, or adjust the other shipment.' } };
+    }
+    // §4 - the DETERMINISTIC-ID CHECK IS NOT APPLIED HERE, AND THAT IS THE POINT.
+    //
+    // sadLegacyReconcileReason_ treats an SADH-K2- id that no longer hashes to its own current field values as
+    // a row needing reconciliation. That assumption is now frozen as WRONG (§4): allocation_draft_id names the
+    // ENTITY, not its contents, so a legitimately-updated route is EXPECTED to stop hashing to itself. Applying
+    // that guard to an explicit UPDATE would classify every legal edit as data corruption - which is exactly
+    // what it did. The mismatch is still REPORTED below so a diagnostic can see it; it is no longer a refusal.
+    function uSet(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
+    uSet('status', status);
+    ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+      'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+      'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
+      'destination_marketplace'].forEach(function (f) {
+      if (body && body[f] != null) uSet(f, String(body[f]));
+    });
+    if (body && body.note != null) uSet('note', String(body.note));
+    uSet('draft_version', String(sadFpVal_(uPriorVersion) + 1));
+    uSet('updated_by', actor);
+    uSet('updated_at', now);
+    var uFinal = sadRowToObject_(sh, found.row);
+    return jsonResponse_({ success: true, data: { allocation_draft_id: id, updated: true,
+      intent: 'UPDATE_EXISTING_ROUTE',
+      draft_version: sadFpVal_(uFinal.draft_version),
+      route_group_key: sadK2GroupKey_(uFinal),
+      persisted_headers: [{ allocation_draft_id: id, route_group_key: sadK2GroupKey_(uFinal),
+        resolution: 'UPDATED', status: String(uFinal.status || ''),
+        deterministic_group_id: sadK2DeterministicHeaderId_(uFinal),
+        // Reported, never enforced (§4): after a legal edit an entity id is EXPECTED not to hash to its own
+        // current fields. A diagnostic may surface this; no writer may refuse because of it.
+        group_id_matches_stored_id: sadK2DeterministicHeaderId_(uFinal) === String(id).trim() }] } });
+  }
+
   // F1-7N-FA-3C-R6F2A: UNIFIED active-draft resolution (the SAME identity generation uses). Route-complete → K2
   // (CREATE deterministic SADH-K2- id / REUSE / CONFLICT). Route-INCOMPLETE new Draft NEVER creates a K3 header:
   // BLOCK with ROUTE_INCOMPLETE_NEW_DRAFT, or LEGACY_ROUTE_RECONCILIATION_REQUIRED when an existing legacy row matches
   // (unless an explicit USER migration sets allow_legacy_reconcile). draft_version stays version/lineage, not the key.
+  // F1-7N-FB-4G-A2-R2 §4/§9 - AN EXPLICIT + Add Route NEVER ADOPTS AN EXISTING HEADER.
+  //
+  // This is the live failure. The new CN侑鑫 → Amazon route's natural key was handed to the resolver below,
+  // which matched an existing ROUTE-INCOMPLETE header of the same station (the zero-line H1/H2 shape) and
+  // returned REUSE - after which sadLegacyReconcileReason_ refused it with LEGACY_ROUTE_RECONCILIATION_REQUIRED
+  // and no new header appeared. The operator asked for a new shipment; the writer went looking for an old one.
+  //
+  // A declared CREATE therefore skips the resolver entirely and answers only one question: does an ACTIVE
+  // header already own this exact shipment group?
+  //
+  //   NO  - insert a new header with a fresh identity.
+  //   YES - refuse ROUTE_IDENTITY_CONFLICT with zero writes. The frozen K2 contract is one active header per
+  //         shipment group, so two票 with identical From / To / Method cannot both exist. That is a genuine
+  //         product constraint and it is REPORTED rather than worked around: no adoption, no merge, no silent
+  //         second row. A retry of the same CREATE hits the same refusal and still writes nothing, which is
+  //         what keeps a lost response from minting a second票 - see the completion report on why true
+  //         create-idempotency needs a stored create_idempotency_key column and is therefore a migration.
+  if (sadIntent === 'CREATE_NEW_ROUTE' && hasRouteIntent && status !== 'cancelled') {
+    var cKey = sadK2GroupKey_(body);
+    var cOwner = '';
+    sadReadActiveHeaderRows_(sh).forEach(function (row) {
+      if (cOwner) return;
+      if (sadK2GroupKey_(row) === cKey) cOwner = String(row.allocation_draft_id == null ? '' : row.allocation_draft_id).trim();
+    });
+    if (cOwner) {
+      return { success: false, error: 'ROUTE_IDENTITY_CONFLICT', code: 'ROUTE_IDENTITY_CONFLICT', stage: 'conflict',
+        zero_write: true, data: { conflicting_allocation_draft_id: cOwner, route_group_key: cKey,
+          create_idempotency_key: String((body && body.create_idempotency_key) || ''),
+          message: 'an active shipment already carries this exact From / To / Method (' + cOwner + '). Nothing was ' +
+            'written and nothing was adopted. If you meant to add to it, change that route\'s quantity instead; if ' +
+            'you just retried a save, press Search - this route may already be stored.' } };
+    }
+    var cDest = sadDestinationIdentity_(body);
+    if (!cDest.ok) {
+      return { success: false, error: 'ROUTE_DESTINATION_' + String(cDest.code || 'UNRESOLVED'), code: cDest.code || 'ROUTE_DESTINATION_UNRESOLVED',
+        stage: 'validation', zero_write: true, data: {} };
+    }
+    id = sadK2DeterministicHeaderId_(body);
+    found = procurementFindRow_(sh, 'allocation_draft_id', id);
+    if (found) {
+      // The deterministic id is already taken by a NON-active row (a cancelled/expired/submitted票 of the same
+      // shape). Minting over it would resurrect history, so a fresh non-deterministic identity is used instead.
+      id = 'SAD-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+      found = null;
+    }
+  }
+
   if (!id) {
     var res = sadResolveActiveDraftK2OrK3_(sh, body, { allowLegacyReconcile: allowReconcile });
     if (res.status === 'CONFLICT') {
@@ -475,7 +652,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R2';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',

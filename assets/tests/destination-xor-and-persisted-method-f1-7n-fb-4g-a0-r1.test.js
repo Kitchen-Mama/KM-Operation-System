@@ -681,15 +681,33 @@ mut('M12 an unknown service selecting the first option is detected', function ()
 });
 
 // M13 — the server writer going back to dropping the marketplace.
+// F1-7N-FB-4G-A2-R2 - RESTATED because the MUTATION became insufficient, not because the rule changed.
+// A2-R2 gave sadUpsertDraftHeaderCore_ a second route-field list (the UPDATE_EXISTING_ROUTE branch writes the
+// same recommended_* columns in place), and .replace() without /g rewrites only the FIRST one - so the mutant
+// still wrote destination_marketplace from the other list and the probe reported MUTANT SURVIVED while proving
+// nothing. A field that two writers must carry has to be removed from BOTH to be dropped.
 mut('M13 a header writer that drops destination_marketplace is detected', function () {
   var honest = extractFn(G16, 'sadUpsertDraftHeaderCore_');
-  var mutated = honest
-    .replace("'recommended_last_mile_delivery',\n      'destination_marketplace'].forEach", "'recommended_last_mile_delivery'].forEach")
-    .replace(/'recommended_last_mile_delivery',\s*'destination_marketplace'\]\.forEach/, "'recommended_last_mile_delivery'].forEach");
+  // The invariant is NOT a count - a count breaks the next time a branch is added, which is how this probe
+  // broke. It is that NO route-field list ends at recommended_last_mile_delivery, i.e. none of them omits the
+  // canonical destination axis.
+  var WITH = /'recommended_last_mile_delivery',\s*'destination_marketplace'\]/g;
+  var WITHOUT = /'recommended_last_mile_delivery'\]/g;
+  var withN = (honest.match(WITH) || []).length;
+  if (withN < 2) throw new Error('expected every route-field list to carry destination_marketplace, found ' + withN);
+  if ((honest.match(WITHOUT) || []).length !== 0) throw new Error('honest source already has a list omitting it');
+  var mutated = honest.replace(WITH, "'recommended_last_mile_delivery']");
   if (mutated === honest) throw new Error('mutation did not apply inside sadUpsertDraftHeaderCore_');
-  return /'destination_marketplace'\]\.forEach|'destination_marketplace'\]/.test(honest) &&
-         !/'destination_marketplace'\]\.forEach/.test(mutated);
+  return (mutated.match(WITH) || []).length === 0 && (mutated.match(WITHOUT) || []).length === withN;
 });
+// The same invariant asserted directly: every list that writes the header's route columns carries the
+// canonical destination axis, and none of them stops short of it.
+(function () {
+  var f = extractFn(G16, 'sadUpsertDraftHeaderCore_');
+  ok((f.match(/'recommended_last_mile_delivery',\s*'destination_marketplace'\]/g) || []).length >= 2 &&
+     (f.match(/'recommended_last_mile_delivery'\]/g) || []).length === 0,
+    'M13a no route-field list in the header writer omits destination_marketplace');
+})();
 
 console.log('\n' + (fail ? 'FAILED' : 'PASSED') + ' — ' + pass + ' passed, ' + fail + ' failed, mutations ' +
   neg.caught + ' caught / ' + neg.missed + ' missed');
