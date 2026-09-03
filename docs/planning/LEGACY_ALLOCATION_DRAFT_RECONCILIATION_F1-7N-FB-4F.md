@@ -3203,3 +3203,135 @@ unauthorised for production testing.
   to do with them is a separate, row-by-row, authorised round.
 - **No change to 16_.** The server contract was measured correct, and a file that did not change is not churned.
 - **Post-submit revision/supersede is out of scope**, as §0 states.
+
+
+---
+
+## §4G-A3 — SUBMIT PLAN READINESS · ACTIVE DRAFT CENSUS · CARRIER ELIGIBILITY (2026-09-03)
+
+PRE `561d780` (the accepted A2-R4 production baseline; `origin/main` was at the same commit, so there was no
+divergence to report). `11_` and `16_` are **unchanged**.
+
+### A3.1 The finding — A2-R4 moved a route from BLOCKING to SILENTLY EXCLUDED
+
+A2-R4 fixed a real defect: an edit that briefly leaves a route incomplete no longer erases the route's persisted
+identity, so finishing the edit UPDATES the same ticket instead of minting a replacement. What it also changed —
+and nothing asked, because nothing had a reason to — is which class such a route falls into at **Submit**.
+Executed against the shipped preflight over the two identical route sets:
+
+| route on screen | persisted? | Submit verdict | what happened to its 500 units |
+|---|---|---|---|
+| incomplete, identity **erased** (pre-A2-R4) | no | **BLOCK** `UNSAVED_EXECUTION_PLAN_CHANGES` | nothing was submitted at all |
+| incomplete, identity **kept** (post-A2-R4) | yes | `ok: true`, `excluded: [{ROUTE_INCOMPLETE, 1}]` | **silently absent from the committed plan** |
+
+So Submit proceeded, committed a Weekly Shipping Plan built from the routes beside it, and the incomplete
+route's quantity was simply not in it. That is a partially-submitted plan that looks complete — the exact
+failure this project already froze against — and it is precisely the live `TW勝一 → Amazon` route, whose Method
+the `carrier_rate_cards` catalogue does not cover.
+
+**A3 makes it a BLOCK**, named per route with the exact missing fields, and it separates the two causes:
+
+| cause | reason code | who fixes it |
+|---|---|---|
+| a Method the operator has not chosen | `ROUTE_INCOMPLETE_MISSING:Method` | the operator, in thirty seconds |
+| **no Method EXISTS for this lane** | `NO_ELIGIBLE_METHOD_CONFIGURED` | carrier master data — Submit can never resolve it by waiting |
+
+`ROUTE_INCOMPLETE` joins `IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS`, so a confirmation that carried one could only
+mean the block had been bypassed.
+
+### A3.2 §B — the carrier eligibility trace
+
+`TW勝一 → Amazon` shows **no eligible method** because the eligibility answer is a CONFIGURATION answer, and the
+registry has always known which of five it is:
+
+| reason | meaning |
+|---|---|
+| `NO_RATE_CARDS_AT_ALL` | the catalogue is empty |
+| `ALL_RATE_CARDS_INACTIVE_OR_OUT_OF_WINDOW` | every row is inactive or outside its effective window |
+| `NO_RATE_CARD_MATCHES_THIS_ROUTE` | a non-blank axis (origin country / destination country / marketplace / destination warehouse code) contradicts the route |
+| `MATCHING_RATE_CARDS_CARRY_NO_SHIPPING_METHOD` | a covering row exists and names no service |
+| `RESOLVED` | the picker has options |
+
+The page **computed that diagnosis and threw it away**, leaving one sentence that could equally mean any of the
+four failures. The empty state now names the reason token, and the full proposed configuration row stays on the
+resolution object for the diagnostic surfaces.
+
+**Two failures that are routinely conflated are separated and proven separate:** a route with **no eligible
+Method** (no rate card → the picker is empty) and a route with an eligible Method but **no lead time**
+(a rate card exists, `carrier_lead_times` has no row for its canonical service → the picker is full and Expected
+Arrival is blank, reported as `NO_LEAD_TIME`; an unmapped service is `NO_LEAD_KEY`).
+
+`TEMP_submit_readiness_census_a3.gs` runs the same predicate over the live tables and prints the exact
+`carrier_rate_cards` row an operator would have to add. It is a **PROPOSAL** — no master data is created or
+modified, and no fallback from another From, service or destination is ever offered.
+
+### A3.3 §C — the active draft census
+
+Same file, same entry point. Every header and line with its lifecycle facts, classified `ACTIVE_COMPLETE` /
+`ACTIVE_INCOMPLETE` / `LEGITIMATE_EXPLICIT_ADD_ROUTE` / `CANCELLED_HISTORICAL` / `EDIT_REPLACEMENT_CANDIDATE` /
+`ORPHAN_HEADER` / `UNKNOWN`, ending with the exact `allocation_draft_id`s eligible for a Submit simulation and
+the active rows that would block or be excluded. `DB_WRITES=0 · REPAIRS=0 · RESTORES=0 · MASTER_DATA_CHANGES=0`.
+Cancelled rows remain as historical evidence. A shared K2/K4 shape is **deliberately not** used as evidence.
+
+### A3.4 §D–§G — the whole server chain, executed
+
+This is the first suite here to execute **11_'s `shippingPlanCommitFromLines_` itself** — its grouping,
+fingerprint, idempotency, durable journal, readback and rollback — over 29_'s real production safety adapter and
+the real KMSAFE core, driven by 16_'s real submit core. Only the Apps Script services are stubbed.
+
+| §F frozen Option A | measured |
+|---|---|
+| two separate Add Route drafts, identical physical route | **1 plan, 2 lines**, 300 + 500 = **800 conserved** |
+| each line's lineage | `allocation_draft:…|line:…` preserved distinctly for both |
+| different method / destination / source warehouse / last mile | **2 plans** each time, still 800 |
+| `allocation_draft_id` in the group key | **absent**, and absent from both plan schemas |
+
+| §G atomicity | measured |
+|---|---|
+| any validation failure | `zero_write: true` and **no sheet mutated at all** |
+| one bad route among good ones | the **whole** batch writes nothing |
+| replay, same key | `REUSED` — still 1 plan, 1 line |
+| new key over a submitted draft | `CONFLICT`, zero writes |
+| same key, different payload | `SUBMIT_EXECUTION_DUPLICATE_CONFLICT` by fingerprint, zero writes |
+| transition write that does not land | `POSTCHECK_FAILED_ROLLED_BACK` — **0 plans, 0 lines** survive |
+| cancelled draft under a replay | never revived |
+
+The durable rollback journal is bound **before** the first business mutation and cleared on success; the draft
+transitions **only after** the plan writer returns a durable commit.
+
+### A3.5 §H — what Submit does to inventory
+
+**It creates plan records and transitions drafts. It moves no stock.** Measured per sheet on an executed submit:
+
+- **mutated:** `shipping_plans`, `shipping_plan_lines`, `shipping_allocation_drafts` — and nothing else, not
+  even `shipping_allocation_draft_lines`.
+- **read but never written:** `sku_details`, `marketplace_skus`, `marketplaces` (UPC / company / site-sku maps).
+- **no inventory, stock, movement, on-the-way or reservation table is read or written**, and neither the plan
+  writer nor the submit core names one anywhere in its code.
+- the committed plan is `status='draft'`, `batch_status='open'` — Shipping Plan → Shipment remains a later
+  approval boundary.
+
+### A3.6 §I — the confirmation says what it is creating
+
+It reported routes, SKUs, lines and quantity, and never **how many Weekly Shipping Plans**. Routes do not map
+one-to-one onto plans: physically compatible routes consolidate. `planGroupCount` mirrors `11_`'s own grouping
+key, and a parity test executes both over the same rows so the mirror cannot drift — then the real writer commits
+exactly the number the dialogue promised (five routes → four plans → five lines → 4000 units).
+
+### A3.7 Restated
+
+`shipping-error-method-latency-siteconfirm-f1-7n-fa-3c-r6e` D3c pinned the Method empty state as **one
+byte-exact sentence**. A3 appends the configuration reason to it. The rule the assertion was written for — that
+an empty configuration reads as a configuration answer and never as a transport failure — is unchanged and now
+checked directly, plus the new requirement that it names *which* answer it is.
+
+### A3.8 Deliberately not done
+
+- **No live save, Add Route, Submit, AI Plan, Send Request, DB write, migration or repair.**
+- **No change to `11_` or `16_`.** The submit contract was measured correct end to end; a file that did not
+  change is not churned. `SP_BUILD_VERSION_` stays `F1-7N-FA-4B2`; `SAD_BUILD_VERSION_` stays
+  `F1-7N-FB-4G-A2-R3-R1`.
+- **No `carrier_rate_cards` row was created, modified or proposed into existence.** §B produces the row an
+  operator would add; adding it is theirs.
+- **No cleanup of the existing cancelled/replacement rows**, and no repair of anything the census classifies.
+- **Production Submit is still unauthorised.**

@@ -1136,6 +1136,7 @@
     EXECUTION_PLAN_NOT_READY: 'EXECUTION_PLAN_NOT_READY',
     ROUTE_DESTINATION_MISSING: 'ROUTE_DESTINATION_MISSING',
     DUPLICATE_LINE_IDENTITY: 'DUPLICATE_LINE_IDENTITY',
+    EXECUTION_PLAN_ROUTE_INCOMPLETE: 'EXECUTION_PLAN_ROUTE_INCOMPLETE',
     NO_PERSISTED_CANDIDATE: 'NO_PERSISTED_CANDIDATE'
   };
 
@@ -1165,7 +1166,30 @@
   // An exclusion the CONFIRMATION may never carry. A2's confirmation offered to tell the operator that an
   // unsaved route had been left out; §5 forbids that, because the presence of an unsaved route means the
   // confirmation is unreachable. buildConfirmation REFUSES rather than rendering one of these.
-  var IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS = ['UNSAVED_USER_ADDED_ROUTE'];
+  // F1-7N-FB-4G-A3 §E - ROUTE_INCOMPLETE joins it, and for the same reason: an incomplete route is now a BLOCK,
+  // so a confirmation that carried it as an exclusion could only mean the block had been bypassed.
+  var IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS = ['UNSAVED_USER_ADDED_ROUTE', 'ROUTE_INCOMPLETE'];
+
+  // ============================================================================================================
+  // F1-7N-FB-4G-A3 §I.2 - THE PHYSICAL SHIPPING-PLAN GROUP KEY, MIRRORED FROM THE WRITER THAT OWNS IT.
+  //
+  // 11_ shippingPlanRouteGroupKey_ decides which lines may share ONE shipping_plans row:
+  //   company | country | source_warehouse_id | ship_from | destination_warehouse_id | destination |
+  //   shipping_method | last_mile_delivery | planning_cycle       (marketplace EXCLUDED; carrier DEFERRED)
+  //
+  // The confirmation has to tell the operator how many PLANS their submit will create, and the only honest way
+  // to do that is to group on the writer's own dimensions. This is a MIRROR, and a parity test executes both
+  // over the same rows so the two cannot drift: if 11_'s key changes and this does not, the test fails.
+  //
+  // It is deliberately NOT a second authority. Nothing routes, groups or writes on this value - it is counted
+  // and shown, and the server re-derives the real grouping from the persisted drafts when it commits.
+  // ============================================================================================================
+  function planGroupKey(r) {
+    function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    r = r || {};
+    return [r.company, r.country, r.source_warehouse_id, r.ship_from, r.destination_warehouse_id,
+      r.destination, r.shipping_method, r.last_mile_delivery, r.planning_cycle].map(lc).join('||');
+  }
 
   function arr(v) { return Object.prototype.toString.call(v) === '[object Array]' ? v : []; }
   function sstr(v) { return String(v == null ? '' : v).trim(); }
@@ -1183,7 +1207,8 @@
     var out = {
       ok: false, code: C.OK,
       blocking: { skus: [], reasons: [] },
-      candidate: { draftIds: [], routeCount: 0, lineCount: 0, totalQty: 0, skus: [], methods: [], destinations: [] },
+      candidate: { draftIds: [], routeCount: 0, lineCount: 0, totalQty: 0, skus: [], methods: [], destinations: [],
+        planGroups: [], planGroupCount: 0 },
       excluded: [],
       confirmation: null
     };
@@ -1247,16 +1272,52 @@
       return out;
     }
 
+    // ---- 3.5 A VISIBLE INCOMPLETE ROUTE STOPS SUBMIT. IT USED TO BE DROPPED IN SILENCE. ---------------
+    //
+    // A2-R4 fixed a real defect: an edit that briefly left a route incomplete no longer erases the route's
+    // persisted identity, so finishing the edit updates the SAME ticket instead of creating a replacement.
+    // What that also changed - and this is measured, not inferred - is which class such a route falls into
+    // HERE. Before A2-R4 an incomplete route had no allocation_draft_id and no line id, so routeIsPersisted
+    // was false, it landed in `unpersistedRoutes` and Submit BLOCKED with ROUTE_NOT_SAVED_INCOMPLETE. After
+    // A2-R4 it keeps both ids, so it is PERSISTED, it reached the candidate loop below and was recorded as
+    // `exclude('ROUTE_INCOMPLETE')` - a silent exclusion. Submit then proceeded, committed a plan built from
+    // the other routes, and the incomplete one's quantity was simply absent from it.
+    //
+    // That is the partially-submitted plan that looks complete: the exact failure this project froze against.
+    // It is the live `TW Sheng-Yi -> Amazon` route, whose Method the rate-card catalogue does not cover.
+    //
+    // So it BLOCKS, named per route, with the missing fields the operator has to fill in. `reason` carries
+    // them because "incomplete" alone does not tell anyone what to do; NO_ELIGIBLE_METHOD_CONFIGURED is
+    // reported separately from a Method the operator simply has not chosen, because one is a master-data
+    // configuration task and the other is thirty seconds of typing.
+    var incomplete = arr(input.routes).filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });
+    if (incomplete.length) {
+      out.code = C.EXECUTION_PLAN_ROUTE_INCOMPLETE;
+      incomplete.forEach(function (r) {
+        var k = sstr(r.sku);
+        var missing = arr(r.missingFields).map(sstr).filter(String);
+        var why = (r.methodConfigurationMissing === true && missing.length === 1 && missing[0] === 'Method')
+          ? 'NO_ELIGIBLE_METHOD_CONFIGURED'
+          : ('ROUTE_INCOMPLETE_MISSING:' + (missing.join('+') || 'ROUTE'));
+        out.blocking.reasons.push({ sku: k, reason: why, route: sstr(r.routeLabel), missing: missing });
+        if (k && !seen[k]) { seen[k] = 1; out.blocking.skus.push(k); }
+      });
+      return out;
+    }
+
     // ---- 4. THE CANDIDATE SET. Persisted, complete, in scope, quantity-bearing. ------------------------
     var excl = {};
     function exclude(reason) { excl[reason] = (excl[reason] || 0) + 1; }
-    var draftSeen = {}, skuSeen = {}, methodSeen = {}, destSeen = {};
+    var draftSeen = {}, skuSeen = {}, methodSeen = {}, destSeen = {}, groupSeen = {};
     arr(input.routes).forEach(function (r) {
       // UNREACHABLE by construction: an unpersisted route is a DIRTY SOURCE above and returns before this
       // loop runs. Kept as a guard so a future change cannot let one through silently, but deliberately NOT
       // recorded as an exclusion - a confirmation must never be able to say "one route was left out".
       if (!routeIsPersisted(r)) return;
-      if (r.complete !== true) { exclude('ROUTE_INCOMPLETE'); return; }
+      // UNREACHABLE by construction since A3 §E: a persisted incomplete route BLOCKS above and returns before
+      // this loop runs. Kept as a structural guard, and deliberately NOT recorded as an exclusion - a
+      // confirmation must never be able to say "one route was left out".
+      if (r.complete !== true) return;
       if (input.appliedScopeKey && sstr(r.scopeKey) && sstr(r.scopeKey) !== sstr(input.appliedScopeKey)) { exclude('OUT_OF_APPLIED_SCOPE'); return; }
       if (r.terminal === true) { exclude('TERMINAL_LIFECYCLE'); return; }
       if (r.lineCancelled === true) { exclude('LINE_CANCELLED'); return; }
@@ -1272,7 +1333,11 @@
       var dt = sstr(r.destination_type).toUpperCase(), dc = sstr(r.destination_code);
       var dk = dt + ':' + dc;
       if (dt && !destSeen[dk]) { destSeen[dk] = 1; out.candidate.destinations.push({ type: dt, code: dc }); }
+      // §I.2 - how many PHYSICAL shipping plans this submit will produce, on the writer's own dimensions.
+      var gk = planGroupKey(r);
+      if (!groupSeen[gk]) { groupSeen[gk] = 1; out.candidate.planGroups.push(gk); }
     });
+    out.candidate.planGroupCount = out.candidate.planGroups.length;
     // Headers the station holds that carry no quantity-bearing route of their own (the live H1/H2 shape).
     var zeroLine = toInt(input.zeroLineHeaderCount);
     if (zeroLine > 0) excl['ZERO_LINE_HEADER'] = zeroLine;
@@ -1317,6 +1382,10 @@
       skuCount: arr(pf.candidate.skus).length,
       lineCount: pf.candidate.lineCount,
       totalQty: pf.candidate.totalQty,
+      // §I.3 - the operator is told how many Weekly Shipping Plans the confirmation will produce, not only
+      // how many routes go in. Two routes can become one plan or two, and that is the thing they are about
+      // to create.
+      planGroupCount: toInt(pf.candidate.planGroupCount),
       methods: arr(pf.candidate.methods).slice(),
       destinations: arr(pf.candidate.destinations).slice(),
       excluded: arr(pf.excluded).slice(),
@@ -1330,6 +1399,7 @@
     DIRTY_SOURCES: IR_DIRTY_SOURCES,
     FORBIDDEN_CONFIRMATION_EXCLUSIONS: IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS,
     isPersisted: routeIsPersisted,
+    planGroupKey: planGroupKey,
     evaluate: submitPreflight,
     buildConfirmation: buildConfirmation
   };

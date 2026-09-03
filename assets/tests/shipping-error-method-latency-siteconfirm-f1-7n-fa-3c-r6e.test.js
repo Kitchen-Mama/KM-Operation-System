@@ -89,8 +89,23 @@ section('D. Method loading — in-flight dedupe + LOADING/READY/EMPTY_CONFIGURAT
     // an EMPTY CONFIGURATION is a different state from a failure, and says so
     var rEmpty = reg.resolve(SCOPE, { originCountry: 'CN', destinationCountry: 'JP', marketplace: 'Amazon' });
     eq(rEmpty.status, 'EMPTY_CONFIGURATION', 'D3b. a route nothing covers → EMPTY_CONFIGURATION (only AFTER the lookup completes)');
-    eq(_execMethodOptionsHtml(rEmpty, ''), '<option value="">No eligible method configured for this route</option>',
-      'D3c. and it reads as a CONFIGURATION answer, never as a transport failure');
+    // F1-7N-FB-4G-A3 SS.B.10 - RESTATED, and the rule it was written for is unchanged.
+    //
+    // This pinned the empty state as ONE byte-exact sentence. A3 appends the registry's own reason token to
+    // it, because "no eligible method" could equally mean an empty table, an expired effective window, a
+    // wrong destination axis, or matching cards that name no service - four different fixes with different
+    // owners, and the diagnosis that tells them apart was already computed and thrown away.
+    //
+    // So the assertion now checks WHAT THE RULE ACTUALLY IS: the sentence is a CONFIGURATION answer, it
+    // names the configuration reason, and it never borrows the vocabulary of a read failure. A byte-exact
+    // match would have forbidden the extra word without protecting anything more.
+    var emptyHtml = _execMethodOptionsHtml(rEmpty, '');
+    ok(emptyHtml.indexOf('No eligible method configured for this route') !== -1,
+      'D3c. an empty configuration still reads as a CONFIGURATION answer');
+    ok(emptyHtml.indexOf('NO_RATE_CARD_MATCHES_THIS_ROUTE') !== -1,
+      'D3c1. and now names WHICH configuration answer it is');
+    ok(!/unavailable|Unable to load|Retry|error/i.test(emptyHtml),
+      'D3c2. and never as a transport failure');
     eq(rEmpty.configuration.code, 'METHOD_REGISTRY_CONFIGURATION_REQUIRED', 'D3d. carrying an actionable code');
     // cached re-entry → no new fetch (survives SPA remount via the module-level registry)
     getWsCalls.n = 0;

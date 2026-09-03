@@ -3562,22 +3562,64 @@ function _irSubmitStateSnapshot_() {
     // routes of the station that is no longer applied instead of proposing them.
     var _dctx = (replenAllocationDraft && replenAllocationDraft.context) || {};
     var _draftScopeKey = [String(_dctx.company || ''), String(_dctx.country || ''), String(_dctx.marketplace || '')].join('|').toLowerCase();
+    var scope0 = (typeof _irMethodScope_ === 'function') ? (_irMethodScope_() || {}) : {};
+    var _whCountryById = {};
+    try {
+        (_irWsGet('getWarehouses') || []).forEach(function (w) {
+            var id = String((w && w.warehouseId) || '').trim();
+            if (id) _whCountryById[id] = String((w && w.country) || '').trim();
+        });
+    } catch (_eW) {}
     try {
         var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
         Object.keys(bySku).forEach(function (sku) {
             (bySku[sku] || []).forEach(function (r) {
                 var di = (window.IRWarehouse && typeof window.IRWarehouse.destinationIdentity === 'function')
                     ? window.IRWarehouse.destinationIdentity(r) : { type: '', id: '', ok: false, code: '' };
+                var _complete = (typeof _isRouteComplete === 'function') ? !!_isRouteComplete(r) : false;
+                // F1-7N-FB-4G-A3 §E — an incomplete route now BLOCKS Submit, so the block has to be able to
+                // say WHICH fields are missing. _irMissingRouteFields_ is the same owner the save-time
+                // UNSAVED_INCOMPLETE_ROUTE notice uses, so the two can never disagree about what is missing.
+                var _missing = (!_complete && typeof _irMissingRouteFields_ === 'function') ? _irMissingRouteFields_(r) : [];
+                // §B — "no Method chosen" and "no Method EXISTS for this route" are different problems with
+                // different owners: one is the operator, the other is carrier master data. The registry has
+                // always known which it is; nothing ever asked it. `EMPTY_CONFIGURATION` is the catalogue
+                // answering successfully that it covers nothing here — never a read failure.
+                var _methodCfgMissing = false;
+                try {
+                    if (_missing.length === 1 && _missing[0] === 'Method' && typeof _execResolveMethods === 'function') {
+                        var _srcId = String((r && r.source_warehouse_id) || '').trim();
+                        var _res = _execResolveMethods(_execMethodRouteCtx(
+                            _whCountryById[_srcId] || '', String(scope0.country || ''),
+                            String(scope0.marketplace || ''), _srcId,
+                            String((r && r.destination_warehouse_code) || '')));
+                        _methodCfgMissing = !!(_res && _res.status === 'EMPTY_CONFIGURATION');
+                    }
+                } catch (_eM) {}
                 routes.push({
                     sku: sku,
                     scopeKey: _draftScopeKey,
                     allocation_draft_id: String((r && r.allocation_draft_id) || ''),
                     allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
                     qty: r && r.qty,
-                    complete: (typeof _isRouteComplete === 'function') ? !!_isRouteComplete(r) : false,
+                    complete: _complete,
+                    missingFields: _missing,
+                    methodConfigurationMissing: _methodCfgMissing,
+                    routeLabel: (typeof _irRouteLabel_ === 'function') ? _irRouteLabel_({ routes: [r], header: {} }) : '',
                     shipping_method: String((r && r.shipping_method) || ''),
                     destination_type: di.type || '',
                     destination_code: di.type === 'MARKETPLACE' ? (di.marketplace || di.id || '') : (di.warehouse_id || di.id || ''),
+                    // §I.2 — the dimensions 11_ shippingPlanRouteGroupKey_ groups on, supplied from the SAME
+                    // persisted route model the server will re-read. Without them every route hashed to one
+                    // blank key and the plan-group count would have been 1 for any submit at all.
+                    company: String(_dctx.company || ''),
+                    country: String(_dctx.country || ''),
+                    ship_from: String((r && (r.source_warehouse_code || r.source_warehouse_id)) || ''),
+                    source_warehouse_id: String((r && r.source_warehouse_id) || ''),
+                    destination_warehouse_id: (di.type === 'WAREHOUSE') ? String(di.warehouse_id || di.id || '') : '',
+                    destination: di.type === 'MARKETPLACE' ? String(di.marketplace || di.id || '') : String((r && r.destination_warehouse_code) || di.warehouse_id || di.id || ''),
+                    last_mile_delivery: String((r && r.last_mile_delivery) || ''),
+                    planning_cycle: String(_dctx.planning_cycle || ''),
                     lineCancelled: String((r && r.line_status) || '').trim().toLowerCase() === 'cancelled',
                     terminal: ['submitted', 'cancelled', 'expired'].indexOf(String((r && r.status) || '').trim().toLowerCase()) !== -1
                 });
@@ -3663,6 +3705,34 @@ function _irAlertSubmitBlocked_(pf) {
             'nothing was written.');
         return;
     }
+    // F1-7N-FB-4G-A3 §E/§J.17 — AN INCOMPLETE ROUTE ON SCREEN STOPS THE WHOLE SUBMIT.
+    //
+    // Until A3 this route was PERSISTED (A2-R4 correctly stopped erasing its identity) and therefore silently
+    // EXCLUDED: Submit went ahead, committed a plan built from the routes beside it, and this one's quantity
+    // was simply not in it. Naming it is the point — and naming WHICH of the two causes it is, because a
+    // Method nobody has chosen is thirty seconds of the operator's time, while a Method that does not EXIST
+    // for this lane is a carrier master-data task that Submit can never resolve by waiting.
+    if (pf.code === C.EXECUTION_PLAN_ROUTE_INCOMPLETE) {
+        var _cfg = (pf.blocking.reasons || []).filter(function (r) { return r.reason === 'NO_ELIGIBLE_METHOD_CONFIGURED'; });
+        var _detail = (pf.blocking.reasons || []).slice(0, 8).map(function (r) {
+            return '  \u00b7 ' + r.sku + (r.route ? (' \u2014 ' + r.route) : '') +
+                (r.reason === 'NO_ELIGIBLE_METHOD_CONFIGURED'
+                    ? ' \u2014 NO ELIGIBLE METHOD IS CONFIGURED for this route'
+                    : ' \u2014 needs ' + ((r.missing || []).join(' + ') || 'a valid route'));
+        }).join(String.fromCharCode(10));
+        alert('Cannot Submit Plan \u2014 EXECUTION_PLAN_ROUTE_INCOMPLETE.' + NL2 +
+            pf.blocking.skus.length + ' route(s) on screen are not complete:' + NL2 + _detail + NL2 +
+            'Nothing was submitted and NOTHING was written. Submit commits complete routes only, so submitting ' +
+            'now would create a Weekly Shipping Plan that looks whole while these quantities were silently ' +
+            'left out of it.' + NL2 +
+            (_cfg.length
+                ? ('A route marked NO ELIGIBLE METHOD IS CONFIGURED cannot be finished on this screen: no active ' +
+                   'carrier_rate_cards row covers that origin / destination / marketplace, so the Method list is ' +
+                   'genuinely empty. Add or activate the rate card, reload, then Submit again \u2014 or remove the ' +
+                   'route if it is not meant to ship.')
+                : 'Finish each route (which saves it to the ticket it already has) or remove it, then Submit again.'));
+        return;
+    }
     if (pf.code === C.DUPLICATE_LINE_IDENTITY) {
         var dl = _irDuplicateLineIdentities_().slice(0, 8).map(function (d) {
             return '  \u00b7 ' + d.sku + ' \u2014 ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows';
@@ -3690,6 +3760,16 @@ function _irConfirmSubmit_(conf) {
     lines.push('Saved routes: ' + conf.routeCount);
     lines.push('SKUs: ' + conf.skuCount + '   ·   Plan lines: ' + conf.lineCount);
     lines.push('Total planned quantity: ' + conf.totalQty);
+    // F1-7N-FB-4G-A3 SS.I.2/SS.I.3 - the RESULT of the submit, not only its input. Routes do not map one-to-one
+    // onto Weekly Shipping Plans: physically compatible routes consolidate into ONE plan (same company,
+    // country, source warehouse, destination, method, last mile and planning cycle) and incompatible ones
+    // never do. An operator who submits four routes and is shown "4" has not been told what they are creating.
+    // The count mirrors 11_ shippingPlanRouteGroupKey_; the server still derives the real grouping when it
+    // commits, and a parity test executes both over the same rows so the mirror cannot drift.
+    lines.push('Weekly Shipping Plans to create: ' + conf.planGroupCount +
+        (conf.planGroupCount < conf.routeCount
+            ? ('   (' + conf.routeCount + ' route(s) consolidate \u2014 physically compatible)')
+            : ''));
     if (conf.destinations.length) lines.push('Destination: ' + conf.destinations.map(function (d) { return d.type + (d.code ? (' ' + d.code) : ''); }).join(', '));
     if (conf.methods.length) lines.push('Shipping method: ' + conf.methods.join(', '));
     if (conf.excluded.length) {
@@ -5717,7 +5797,17 @@ function _execMethodOptionsHtml(resolution, selected) {
         }
         // EMPTY_CONFIGURATION — the catalogue was read successfully and simply covers nothing here. This is a
         // CONFIGURATION answer, and it must never read like a failure.
-        return '<option value="">No eligible method configured for this route</option>';
+        //
+        // F1-7N-FB-4G-A3 SS.B.6/SS.B.10 — AND IT NAMES WHICH CONFIGURATION ANSWER IT IS. The registry has
+        // always computed a full diagnosis for this case (which axis eliminated the cards, how many were
+        // usable, and the exact row that would fix it) and the page threw all of it away, leaving the operator
+        // one sentence that could equally mean an empty table, an expired effective window, a wrong
+        // destination axis, or cards that match but name no method. Those have different fixes and different
+        // owners, so the reason token is shown. The full proposed row stays on the resolution object for the
+        // diagnostic surfaces; a <select> option is not the place for it.
+        var cfgReason = (res.configuration && res.configuration.reason) || '';
+        return '<option value="">No eligible method configured for this route' +
+            (cfgReason && cfgReason !== 'RESOLVED' ? (' (' + _execEsc(cfgReason) + ')') : '') + '</option>';
     }
     // F1-7N-FB-4G-A0-R1 §C — THE SELECTION WAS AN EXACT-TEXT COMPARISON, AND NOTHING ELSE IN THE SYSTEM
     // COMPARES SERVICES THAT WAY. The option VALUE is the rate card's `shipping_method` column verbatim (see
