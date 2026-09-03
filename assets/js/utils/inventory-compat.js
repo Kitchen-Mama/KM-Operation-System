@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; root.IRRouteProvenance = mod.IRRouteProvenance; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; root.IRRouteProvenance = mod.IRRouteProvenance; root.IRRouteComposer = mod.IRRouteComposer; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -1151,7 +1151,12 @@
     // this code means a row arrived from outside the model's own lifecycle: a stale DOM row left by a cached
     // build, or a hand-built snapshot. It is refused rather than advised on, because "fill in the Method" is
     // the wrong instruction for a row the operator never created.
-    ROUTE_PROVENANCE_UNKNOWN: 'ROUTE_PROVENANCE_UNKNOWN'
+    ROUTE_PROVENANCE_UNKNOWN: 'ROUTE_PROVENANCE_UNKNOWN',
+    // F1-7N-FC-1B-E2 §C.2/§F.2 — a composer the operator has STARTED and not finished. Distinct from
+    // EXECUTION_PLAN_ROUTE_INCOMPLETE, which is about a route the DATABASE already holds: that one needs
+    // finishing or removing, while this one has never existed anywhere but on screen and can simply be
+    // abandoned. Both name the missing fields; only one of them implies a stored row.
+    EXECUTION_PLAN_COMPOSER_INCOMPLETE: 'EXECUTION_PLAN_COMPOSER_INCOMPLETE'
   };
 
   // ===========================================================================================================
@@ -1181,7 +1186,13 @@
   var IR_ROUTE_PROVENANCE = {
     PERSISTED_ACTIVE_DRAFT: 'PERSISTED_ACTIVE_DRAFT',
     AI_PLAN_EXPLICITLY_REQUESTED: 'AI_PLAN_EXPLICITLY_REQUESTED',
-    USER_EXPLICIT_ADD_ROUTE: 'USER_EXPLICIT_ADD_ROUTE'
+    USER_EXPLICIT_ADD_ROUTE: 'USER_EXPLICIT_ADD_ROUTE',
+    // F1-7N-FC-1B-E2 — AN ALIAS, DELIBERATELY NOT A FOURTH SOURCE. A completed manual composer and a completed
+    // + Add Route row are the SAME act — the operator composed a route by hand — so they share one
+    // provenance value. E2's specification names that act USER_EXPLICIT_MANUAL_ROUTE; this makes the name
+    // resolve without minting a second identity for one thing, which is how a vocabulary of three becomes a
+    // vocabulary of five that nobody can enumerate.
+    USER_EXPLICIT_MANUAL_ROUTE: 'USER_EXPLICIT_ADD_ROUTE'
   };
   var IR_FORBIDDEN_ROUTE_PROVENANCE = ['SUGGESTED_QTY_PLACEHOLDER', 'AUTO_SEEDED_ROUTE', 'DEFAULT_ROUTE'];
   var IR_LEGAL_PROVENANCE_LIST = [IR_ROUTE_PROVENANCE.PERSISTED_ACTIVE_DRAFT,
@@ -1205,6 +1216,63 @@
     }
     return '';
   }
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E2 §B/§C — THE MANUAL ROUTE COMPOSER. A COMPOSER IS NOT A ROUTE.
+  // -----------------------------------------------------------------------------------------------------------
+  // E1 removed the Suggested-Qty phantom by removing the row, and that was right about the ROUTE and wrong about
+  // the INPUT: an operator with no active route was left with a message and nowhere to type. So the row comes
+  // back — as an input surface that is explicitly not an execution route, and the distinction is carried in
+  // the model rather than left to the reader.
+  //
+  // The phantom's harm was never "a row existed". It was that the row was INDISTINGUISHABLE from a decision:
+  // it carried a quantity nobody had chosen, the collector adopted it as CREATE_NEW_ROUTE, and Submit then
+  // blocked the whole batch over it. A composer fixes each of those separately — it starts with a BLANK Qty
+  // (there is no number to mistake for a decision), it is not collected while untouched, and it can never be a
+  // submit candidate until all four fields are legal.
+  //
+  // THREE STATES, and the transitions are one-way:
+  //   PRISTINE            — nothing typed. Not in the model, no identity, not in the Total, does not block
+  //                          Submit, writes nothing. It is furniture.
+  //   TOUCHED_INCOMPLETE  — at least one field changed and the four are not all legal yet. In the model so the
+  //                          edit is not lost and so Submit can NAME what is missing, but no allocation id is
+  //                          minted and nothing is written. A reload legitimately loses it: it was never saved.
+  //   COMPLETE            — From, To, Qty > 0 and an ELIGIBLE Method. Only now does it graduate into an
+  //                          execution route under USER_EXPLICIT_ADD_ROUTE, mint a stable instance id, and
+  //                          become the CREATE_NEW_ROUTE the atomic writer takes.
+  //
+  // Completeness is the EXISTING four-field gate (IRDraft.isRouteComplete), not a non-empty check: the Method
+  // must be a value that is still eligible for the chosen From/To, which is why a From change that invalidates
+  // the Method sends a row back to TOUCHED_INCOMPLETE instead of leaving a stale selection standing.
+  // ===========================================================================================================
+  var IR_COMPOSER_STATES = {
+    PRISTINE: 'PRISTINE_COMPOSER',
+    TOUCHED_INCOMPLETE: 'TOUCHED_INCOMPLETE_COMPOSER',
+    COMPLETE: 'COMPLETE_COMPOSER'
+  };
+  // The DOM contract. A pristine composer deliberately does NOT carry the persisted-route class, because the
+  // collector selects on that class and "it is only furniture" has to be true of the SELECTOR, not just of a
+  // later branch. The kind attribute is carried in every state so a collect can classify without guessing.
+  var IR_COMPOSER_DOM = { KIND_ATTR: 'data-route-kind', KIND: 'manual-composer',
+    CLASS: 'exec-route-composer', ROUTE_CLASS: 'exec-route-row' };
+  // Which state a composer-shaped row is in. `complete` is supplied by the caller so there is exactly ONE
+  // completeness authority on the page and this function cannot disagree with it.
+  function composerState(row, complete) {
+    if (complete === true) return IR_COMPOSER_STATES.COMPLETE;
+    return (row && row.composer_touched === true)
+      ? IR_COMPOSER_STATES.TOUCHED_INCOMPLETE
+      : IR_COMPOSER_STATES.PRISTINE;
+  }
+  function isComposerRow(row) {
+    return !!row && (row.route_kind === IR_COMPOSER_DOM.KIND ||
+      String(row.route_kind || '').toUpperCase() === 'MANUAL_COMPOSER');
+  }
+  var IRRouteComposer = {
+    STATES: IR_COMPOSER_STATES,
+    DOM: IR_COMPOSER_DOM,
+    stateOf: composerState,
+    isComposer: isComposerRow
+  };
+
   var IRRouteProvenance = {
     SOURCES: IR_ROUTE_PROVENANCE,
     LEGAL: IR_LEGAL_PROVENANCE_LIST,
@@ -1212,6 +1280,7 @@
     isLegal: routeProvenanceIsLegal,
     of: routeProvenanceOf
   };
+
 
   // F1-7N-FB-4G-A2-R1 - THE DIRTY SOURCES, EACH WITH ITS OWN TYPED REFUSAL CODE.
   //
@@ -1287,13 +1356,46 @@
       confirmation: null
     };
 
+    // ---- -1. A COMPOSER IS NOT A ROUTE, AND IS NOT JUDGED AS ONE -------------------------------------
+    //
+    // F1-7N-FC-1B-E2. A PRISTINE composer must never reach here at all — the collector does not put one in the
+    // model — so one appearing is a defect in the collector, not a state to advise on, and it is named as
+    // such rather than silently ignored. A TOUCHED but unfinished composer BLOCKS, with its missing fields,
+    // under its own code: it is not an unsaved route (there is no stored row behind it) and not a phantom
+    // (the operator made it on purpose), and telling them either of those things would be wrong.
+    //
+    // This runs FIRST because a composer is also unpersisted and also incomplete, so every later section would
+    // have claimed it and given advice that assumes a route.
+    // A PRISTINE composer is FURNITURE, and blocking on one would be the E1 phantom wearing a new label: a
+    // Submit refused because of a row nobody filled in. It is DROPPED from every judgement below — not
+    // blocking, not counted, never reported as a phantom or a stale route — which also means a screen
+    // holding only a pristine composer falls through to the honest NO_EXECUTION_ROUTES rather than to an
+    // invented complaint. The collector does not put one in the model anyway; this is the second gate.
+    var _judged = arr(input.routes).filter(function (r) {
+      return !(isComposerRow(r) && composerState(r, r.complete === true) === IR_COMPOSER_STATES.PRISTINE);
+    });
+    var started = _judged.filter(function (r) {
+      return isComposerRow(r) && composerState(r, r.complete === true) === IR_COMPOSER_STATES.TOUCHED_INCOMPLETE;
+    });
+    if (started.length) {
+      out.code = C.EXECUTION_PLAN_COMPOSER_INCOMPLETE;
+      started.forEach(function (r) {
+        var k = sstr(r && r.sku);
+        var miss = arr(r.missingFields).map(sstr).filter(String);
+        out.blocking.reasons.push({ sku: k, reason: 'COMPOSER_INCOMPLETE_MISSING:' + (miss.join('+') || 'ROUTE'),
+          route: sstr(r && r.routeLabel), missing: miss });
+        if (k && !seen0[k]) { seen0[k] = 1; out.blocking.skus.push(k); }
+      });
+      return out;
+    }
+
     // ---- 0. A ROUTE MUST BE ABLE TO SAY HOW IT CAME TO EXIST, AND THERE MUST BE ONE ------------------
     //
     // These run BEFORE the dirty verdict on purpose. A provenance-less row is ALSO unpersisted and ALSO
     // incomplete, so section 1 would have claimed it first and told the operator to save or finish a route
     // they never created — which is exactly the false alarm the seeded placeholder used to raise. What is
     // wrong with such a row is not its state; it is that it exists.
-    var noProv = arr(input.routes).filter(function (r) { return !routeProvenanceOf(r); });
+    var noProv = _judged.filter(function (r) { return !routeProvenanceOf(r); });
     if (noProv.length) {
       out.code = C.ROUTE_PROVENANCE_UNKNOWN;
       noProv.forEach(function (r) {
@@ -1307,7 +1409,11 @@
     // An empty Execution Plan is a legitimate, reachable state since E1, and Submit cannot build a Weekly
     // Shipping Plan out of nothing. Named separately from NO_PERSISTED_CANDIDATE because the instruction
     // differs: there is nothing to save here, there is something to CREATE.
-    if (!arr(input.routes).length) { out.code = C.NO_EXECUTION_ROUTES; return out; }
+    // Composers do not count as execution routes: a screen holding nothing but a pristine composer is an
+    // EMPTY execution plan, and saying "no execution routes" is the truthful answer to Submit.
+    if (!_judged.filter(function (r) { return !isComposerRow(r); }).length) {
+      out.code = C.NO_EXECUTION_ROUTES; return out;
+    }
 
     // ---- 1. THE DIRTY VERDICT, from named state only -------------------------------------------------
     // SUBMIT DOES NOT SAVE. It does not flush a debounced write, does not run a pending write early, does not
@@ -1319,7 +1425,7 @@
     // reason, because a half-filled row can never save until it is filled in or removed - the operator needs
     // to be told which of those two it is.
     var unpersisted = [];
-    arr(input.routes).forEach(function (r) {
+    _judged.forEach(function (r) {
       if (routeIsPersisted(r)) return;
       unpersisted.push({ sku: sstr(r && r.sku), reason: (r && r.complete === true) ? 'ROUTE_NOT_SAVED' : 'ROUTE_NOT_SAVED_INCOMPLETE' });
     });
@@ -1386,7 +1492,7 @@
     // them because "incomplete" alone does not tell anyone what to do; NO_ELIGIBLE_METHOD_CONFIGURED is
     // reported separately from a Method the operator simply has not chosen, because one is a master-data
     // configuration task and the other is thirty seconds of typing.
-    var incomplete = arr(input.routes).filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });
+    var incomplete = _judged.filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });
     if (incomplete.length) {
       out.code = C.EXECUTION_PLAN_ROUTE_INCOMPLETE;
       incomplete.forEach(function (r) {
@@ -1405,7 +1511,7 @@
     var excl = {};
     function exclude(reason) { excl[reason] = (excl[reason] || 0) + 1; }
     var draftSeen = {}, skuSeen = {}, methodSeen = {}, destSeen = {}, groupSeen = {};
-    arr(input.routes).forEach(function (r) {
+    _judged.forEach(function (r) {
       // UNREACHABLE by construction: an unpersisted route is a DIRTY SOURCE above and returns before this
       // loop runs. Kept as a guard so a future change cannot let one through silently, but deliberately NOT
       // recorded as an exclusion - a confirmation must never be able to say "one route was left out".
@@ -1511,5 +1617,5 @@
     createPanelGate: createPanelGate
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight, IRRouteProvenance: IRRouteProvenance };
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight, IRRouteProvenance: IRRouteProvenance, IRRouteComposer: IRRouteComposer };
 });

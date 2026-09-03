@@ -79,7 +79,20 @@ eq(op.forwardVisibility.t4GapQty, 500, 'P3 T4 excluded from the actionable total
 section('§7/§10 — AI Plan is DISPLAY-ONLY; manual + auto share the ONE KMREC owner; no execution/persistence write');
 var invPlan = INV.slice(INV.indexOf('function handleReplenAiPlan'), INV.indexOf('window.handleReplenAiPlan'));
 ok(/generateInventoryRecommendation/.test(invPlan) && /renderReplenishment\(\)/.test(invPlan), 'U1 Inventory AI Plan generates via KMREC then re-renders (display)');
-ok(!/appendRow|setValues|createPurchaseOrder|purchase_order|createShipment|shipping_plan|submitPlan|deduct|allocat/i.test(invPlan), 'U2 Inventory AI Plan does NOT allocate / persist / create PO / shipment / submit (§7)');
+// RESTATED (F1-7N-FC-1B-E2): this swept the whole function body, so it matched a MESSAGE STRING. E2 made the
+// AI Plan outcome honest — it now names why execution materialization did not happen, and that sentence
+// contains the word "allocator" — and the assertion failed because the operator was told MORE, not because
+// anything was allocated. A keyword sweep cannot tell a call from a sentence, so the sweep now runs over the
+// code with comments AND string literals stripped, which is the only place an actual operation could appear.
+// The invariant is untouched: AI Plan neither allocates nor persists nor creates a PO, shipment or submit.
+var invPlanOps = String(invPlan)
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')          // block comments
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')       // line comments
+  .replace(/'(?:\\.|[^'\\])*'/g, "''")          // single-quoted strings
+  .replace(/"(?:\\.|[^"\\])*"/g, '""');         // double-quoted strings
+ok(!/appendRow|setValues|createPurchaseOrder|purchase_order|createShipment|shipping_plan|submitPlan|deduct|allocat/i.test(invPlanOps), 'U2 Inventory AI Plan does NOT allocate / persist / create PO / shipment / submit (§7)');
+ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(invPlan),
+  'U2a and it says so to the operator by name, instead of leaving an unchanged screen');
 var roPlan = RO.slice(RO.indexOf('function handleRequestOrderAiPlan'), RO.indexOf('window.handleRequestOrderAiPlan'));
 ok(/generateOrderPlanningRecommendation/.test(roPlan) && !/order_qty|orderQty\s*=|createPurchaseOrder|createShipment/i.test(roPlan), 'U3 OP AI Plan generates via KMREC and never writes Order Qty / PO / shipment (§7/§9)');
 ok(/KMREC\.generateBatch\(p, rows/.test(F47) && /window\.KMREC\.generateInventoryRecommendation/.test(INV) && /window\.KMREC\.generateOrderPlanningRecommendation/.test(RO), 'M manual (both pages) + automatic (47.gs) call the SAME KMREC owner — no browser-only execution engine');

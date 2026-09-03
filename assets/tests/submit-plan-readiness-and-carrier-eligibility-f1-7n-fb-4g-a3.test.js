@@ -475,8 +475,13 @@ function pf(routes, extra) { return PF.evaluate(Object.assign({}, BASE, extra ||
   // The shipped preflight BEFORE this round, reconstructed from its own source, over the identical input.
   // The shipped preflight AS IT WAS, reconstructed from its own source: no block, and the silent exclusion
   // back in the candidate loop. Both halves, because the exclusion is the half that hid the loss.
+  // F1-7N-FC-1B-E2 RESTATED THE ANCHOR, not the property. The preflight now reads `_judged` —
+  // input.routes minus PRISTINE composers, which are furniture and must never be judged as routes — so
+  // the literal `arr(input.routes)` no longer appears on this line. The reconstruction below is unchanged
+  // in meaning and the invariant under test is unchanged: a PERSISTED INCOMPLETE route blocks the whole
+  // Submit instead of being silently excluded from the plan.
   var PRE_SRC = mutateFn(CMPSRC, 'submitPreflight',
-    "    var incomplete = arr(input.routes).filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });",
+    "    var incomplete = _judged.filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });",
     "    var incomplete = [];");
   PRE_SRC = mutateFn(PRE_SRC, 'submitPreflight',
     "      if (r.complete !== true) return;",
@@ -875,7 +880,9 @@ mut('K1  a cancelled draft included in the candidate set', function () {
 });
 mut('K2  an incomplete route allowed through instead of blocking', function () {
   var P = pfFrom(mutateFn(CMPSRC, 'submitPreflight',
-    "    var incomplete = arr(input.routes).filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });",
+    // F1-7N-FC-1B-E2 restated the anchor (see the PRE_SRC reconstruction above): the preflight reads
+    // `_judged`, which is input.routes minus PRISTINE composers. The invariant under mutation is unchanged.
+    "    var incomplete = _judged.filter(function (r) { return routeIsPersisted(r) && r.complete !== true; });",
     "    var incomplete = [];"));
   var v = P.evaluate(Object.assign({}, BASE, { routes: [R({}), R({ sku: 'B', complete: false })] }));
   return v.ok === true;   // the mutant let the submit proceed past a visibly incomplete route -> caught

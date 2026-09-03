@@ -3605,6 +3605,11 @@ function _irSubmitStateSnapshot_() {
                     // identities, and refusing to submit a route the database demonstrably holds would be a
                     // worse failure than the one this round removes.
                     route_provenance: _irRouteProvenanceOf_(r),
+                    // F1-7N-FC-1B-E2 §C/§F — a composer is judged as a composer, so the preflight has to
+                    // be able to tell one from a route. Reported verbatim from the model; the snapshot never
+                    // decides which state a row is in.
+                    route_kind: String((r && r.route_kind) || ''),
+                    composer_touched: (r && r.composer_touched) === true,
                     allocation_draft_id: String((r && r.allocation_draft_id) || ''),
                     allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
                     qty: r && r.qty,
@@ -5594,7 +5599,40 @@ function _saveAllocationDraftFromDom(sku) {
             // §F — carried forward, never re-derived: this row's PERSISTED destination state.
             destination_state: priorDestState
         };
-        row.route_provenance = _irRouteProvenanceOf_({
+        // F1-7N-FC-1B-E2 §C — A COMPOSER IS CLASSIFIED, NOT ADOPTED.
+        //
+        // A pristine composer never reaches here: it carries no `.exec-route-row` class and this loop selects
+        // on that class. A TOUCHED one does, and it must be kept (the operator's edit is not thrown away) and
+        // must still be denied everything a route has until it is finished: no provenance, no line id, no
+        // header id, no place in the write queue. It graduates on the SAME four-field gate as everything else.
+        if (_irIsComposerEl_(rowEl)) {
+            row.route_kind = _irComposerKind_();
+            row.composer_touched = String(rowEl.getAttribute('data-composer-touched') || '') === '1';
+            if (!_isRouteComplete(row)) {
+                // still a composer. Deliberately NOT given an identity, and deliberately not queued: an
+                // unfinished composer has nothing to update and nothing to create.
+                row.route_incomplete = true;
+                row.allocation_draft_line_id = '';
+                row.allocation_draft_id = '';
+                row.route_provenance = '';
+                row.route_intent = '';
+                var _cci = String(rowEl.getAttribute('data-route-instance') || '').trim();
+                if (_cci) row.client_route_instance_id = _cci;   // reuse only; never MINTED for a composer
+                rows.push(row);
+                return;
+            }
+            // COMPLETE — it graduates. From here it is an ordinary user-created route and falls through to
+            // exactly the same identity, intent and queueing code every + Add Route row uses.
+            row.route_provenance = (window.IRRouteProvenance && window.IRRouteProvenance.SOURCES.USER_EXPLICIT_ADD_ROUTE) ||
+                'USER_EXPLICIT_ADD_ROUTE';
+            try {
+                rowEl.setAttribute('data-route-provenance', row.route_provenance);
+                rowEl.removeAttribute && rowEl.removeAttribute('data-route-kind');
+            } catch (_eG) {}
+            delete row.route_kind;
+            delete row.composer_touched;
+        }
+        row.route_provenance = row.route_provenance || _irRouteProvenanceOf_({
             route_provenance: _rowProv,
             allocation_draft_id: boundDraftId,
             allocation_draft_line_id: lineId
@@ -5663,6 +5701,12 @@ function _saveAllocationDraftFromDom(sku) {
     // unchanged is not re-sent, so a refusal on one route can never touch another. A complete route that holds
     // no persisted identity yet is always touched: it is the CREATE this event is for.
     rows.forEach(function (r) {
+        // F1-7N-FC-1B-E2 §C.2 — A COMPOSER IS NEVER QUEUED. It is kept in the model so the operator's
+        // edit survives a re-render, and that is ALL it is kept for: it has nothing to update (no stored row)
+        // and nothing to create (it is not a legal route yet). Skipped HERE rather than relying on the flush's
+        // completeness filter, because a guarantee that lives one layer downstream is exactly the "default
+        // preview that writes nothing" claim E1 had to remove.
+        if (r && String(r.route_kind || '') === _irComposerKind_()) return;
         var prior = _priorByInstance[String(r.client_route_instance_id || '')] ||
                     _priorByLine[String(r.allocation_draft_line_id || '')];
         var isNew = !(prior);
@@ -5680,7 +5724,12 @@ function onExecutionRouteEdit(sku) {
     // F1-7N-FC-1B-E1 §G — REMOVING THE LAST ROUTE LEAVES AN EMPTY PLAN, NOT AN EMPTY-LOOKING ONE. The
     // cancel path removes the row and calls this; before E1 the next pure re-render would then re-seed the
     // Suggested Qty placeholder into the slot the operator had just deliberately emptied, so a cancelled route
-    // appeared to come back as a 520-unit blank. Nothing refills it now, and the plan states that it is empty.
+    // appeared to come back as a 520-unit blank.
+    //
+    // F1-7N-FC-1B-E2 §E.5 — what refills it now is a PRISTINE COMPOSER with a BLANK Qty. That is the whole
+    // difference between "here is somewhere to type" and "your cancelled route came back": the slot is empty
+    // of any quantity, holds no identity, and is not a submit candidate. Re-seeding the 520 here would be the
+    // E1 defect restored under a new name, so a test asserts the Qty is blank rather than trusting the comment.
     _execSyncEmptyState_(sku);
     updateShippingAllocationTotal(sku);
     _irUpdateRouteEtas(sku);        // recompute Expected Arrival on From/To/Method change (§11.3)
@@ -6307,13 +6356,67 @@ function _irRouteProvenanceOf_(route) {
     if (hasIdentity) return 'PERSISTED_ACTIVE_DRAFT';
     return '';
 }
-// §D — THE EMPTY STATE. It is markup with no <input>, so updateShippingAllocationTotal (which sums
+// =============================================================================================================
+// F1-7N-FC-1B-E2 §B/§C — THE MANUAL ROUTE COMPOSER.
+// -------------------------------------------------------------------------------------------------------------
+// E1 was right about the ROUTE and wrong about the INPUT. Removing the Suggested-Qty phantom removed a row that
+// pretended to be a decision, and it also removed the only place an operator with no active route could type
+// one. So the row returns as a COMPOSER, and everything that made the phantom dangerous is addressed by name:
+//
+//   the phantom carried Qty 520      -> a composer's Qty is BLANK. There is no number to mistake for a choice.
+//   the collector adopted it         -> a PRISTINE composer does not carry `.exec-route-row`, and the collector
+//                                       selects on that class, so "it is only furniture" is true of the
+//                                       SELECTOR rather than of a branch further down.
+//   it blocked Submit for the batch  -> a pristine composer is dropped from every preflight judgement.
+//   it claimed CREATE_NEW_ROUTE      -> a composer holds no identity until all four fields are legal.
+//
+// It becomes an execution route at exactly one moment: when From, To, Qty > 0 and an ELIGIBLE Method are all
+// present, judged by the SAME four-field gate every other route is judged by. Then it graduates to
+// USER_EXPLICIT_ADD_ROUTE, mints its instance id, and is the CREATE the atomic writer takes.
+// =============================================================================================================
+function _irComposerKind_() {
+    return (window.IRRouteComposer && window.IRRouteComposer.DOM.KIND) || 'manual-composer';
+}
+function _irIsComposerEl_(rowEl) {
+    try { return String(rowEl.getAttribute('data-route-kind') || '') === _irComposerKind_(); } catch (e) { return false; }
+}
+// A composer becomes VISIBLE to the persisted-route collector the moment the operator touches it, and not
+// before. Promotion is one-way and idempotent: the row keeps its composer KIND for its whole life, so a
+// collect can always tell what it is, but it stops being invisible once there is an edit to preserve.
+function _irPromoteComposerToTouched_(rowEl) {
+    if (!rowEl || !_irIsComposerEl_(rowEl)) return false;
+    if (String(rowEl.getAttribute('data-composer-touched') || '') === '1') return false;
+    try {
+        rowEl.setAttribute('data-composer-touched', '1');
+        var cls = String(rowEl.className || '');
+        if (cls.indexOf('exec-route-row') === -1) rowEl.className = (cls + ' exec-route-row').trim();
+    } catch (e) { return false; }
+    return true;
+}
+// The composer edit entry point. It promotes first, so the very edit that made the row real is the edit the
+// collector sees, and then runs the ORDINARY edit path — there is no second edit pipeline to drift.
+function onExecutionComposerEdit(sku, el) {
+    try {
+        var rowEl = (el && el.closest) ? el.closest('.ir-exec-plan__grid') : null;
+        if (rowEl) _irPromoteComposerToTouched_(rowEl);
+    } catch (e) {}
+    if (typeof onExecutionRouteEdit === 'function') onExecutionRouteEdit(sku);
+}
+window.onExecutionComposerEdit = onExecutionComposerEdit;
+window._irPromoteComposerToTouched_ = _irPromoteComposerToTouched_;
+
+// §D — THE EMPTY-PLAN MESSAGE. It is markup with no <input>, so updateShippingAllocationTotal (which sums
 // input[data-field="qty"] inside this same container) reports 0 by construction rather than by a special case.
 // It is deliberately NOT a hidden route row: a hidden row is still a row to every querySelectorAll on this
 // page, including the collect's, which is the whole mechanism that made the phantom dangerous.
 function _irExecutionEmptyStateHtml_() {
+    // F1-7N-FC-1B-E2 — reworded for the row it now sits above. E1's message said only what was MISSING,
+    // which was the whole truth when there was nothing to type into; with a composer below it, the operator
+    // also needs to know that the row is an empty form and what makes it a route.
     return '<div class="exec-routes-empty" data-ir-exec-empty="1" role="status">' +
-        'No execution routes yet. Use <strong>AI Plan</strong> or <strong>+ Add Route</strong> to create one.' +
+        'No execution route yet. Fill in <strong>From</strong>, <strong>To</strong>, <strong>Qty</strong> and ' +
+        '<strong>Method</strong> below to create one — or use <strong>AI Plan</strong> / ' +
+        '<strong>+ Add Route</strong>. Nothing is saved until all four are set.' +
         '</div>';
 }
 function _execRenderEmptyState_(sku) {
@@ -6322,8 +6425,24 @@ function _execRenderEmptyState_(sku) {
     if (!list) return false;
     if (list.querySelector && list.querySelector('.exec-route-row')) return false;   // never over a real route
     list.innerHTML = _irExecutionEmptyStateHtml_();
+    // F1-7N-FC-1B-E2 §E.1 — and EXACTLY ONE pristine composer, so an operator with no active route has
+    // somewhere to type. Rendered here rather than by the caller so that every path which empties the plan
+    // (initial render, the last route cancelled, a stale row dropped) produces the same one row.
+    _renderManualComposer_(sku);
     return true;
 }
+// §B — the pristine composer. Blank From, blank To, BLANK Qty, Method disabled, no identity of any kind.
+// It goes through the one row builder every other route goes through, so its pickers cannot behave differently
+// from a real route's; what differs is declared in the route object, not forked in the renderer.
+function _renderManualComposer_(sku) {
+    return _renderExecutionRoute(sku, {
+        route_kind: _irComposerKind_(),
+        ship_from: '', destination: '', shipping_method: '',
+        qty: '',                       // BLANK, never the Suggested Qty — that substitution was the E1 defect
+        expected_arrival: ''
+    });
+}
+window._renderManualComposer_ = _renderManualComposer_;
 function _execClearEmptyState_(sku) {
     if (typeof document === 'undefined') return false;
     var list = document.getElementById('shipping-methods-' + sku);
@@ -6338,8 +6457,23 @@ function _execSyncEmptyState_(sku) {
     if (typeof document === 'undefined') return;
     var list = document.getElementById('shipping-methods-' + sku);
     if (!list || !list.querySelectorAll) return;
-    var n = list.querySelectorAll('.exec-route-row').length;
-    if (n === 0) _execRenderEmptyState_(sku); else _execClearEmptyState_(sku);
+    // F1-7N-FC-1B-E2 — THREE STATES, because a composer is neither a route nor nothing.
+    //
+    // A touched composer carries `.exec-route-row` (that promotion is what makes it collectable) and is still
+    // NOT a route, so counting that class alone answers wrongly in both directions: it would delete an edit in
+    // progress by re-rendering over it, and it would clear the empty-plan message for a plan that holds no
+    // route at all. Real routes are the rows that are not composers.
+    var all = list.querySelectorAll('.exec-route-row');
+    var composerCount = list.querySelectorAll('.exec-route-composer').length;
+    var routeCount = 0;
+    for (var _i = 0; _i < all.length; _i++) { if (!_irIsComposerEl_(all[_i])) routeCount++; }
+    if (routeCount === 0 && composerCount === 0) {
+        _execRenderEmptyState_(sku);            // nothing at all: message + one fresh composer
+    } else if (routeCount > 0) {
+        _execClearEmptyState_(sku);             // a real route exists: the plan is no longer empty
+    }
+    // routeCount === 0 && composerCount > 0 — the operator is composing. The message stays where it is and
+    // the composer is left exactly as they left it.
 }
 window._irExecutionEmptyStateHtml_ = _irExecutionEmptyStateHtml_;
 window._execSyncEmptyState_ = _execSyncEmptyState_;
@@ -6350,15 +6484,21 @@ function _renderExecutionRoute(sku, route) {
     // from the code, it is unrepresentable: the only creator of an .exec-route-row refuses to make one that
     // cannot say which of the three explicit acts produced it. A future reintroduction of the seeded
     // placeholder therefore has to defeat this gate in the open rather than by adding a call.
-    var _prov = _irRouteProvenanceOf_(route);
-    if (!_prov) {
+    // F1-7N-FC-1B-E2 — a COMPOSER is exempt from the provenance gate because it is not claiming to be an
+    // execution route. It gets no provenance, no identity and no `.exec-route-row` class until it is complete;
+    // what it gets is the same pickers, so the operator is typing into the real thing.
+    var _isComposer = String(route.route_kind || '') === _irComposerKind_();
+    var _prov = _isComposer ? '' : _irRouteProvenanceOf_(route);
+    if (!_isComposer && !_prov) {
         try {
             console.warn('[replen] ROUTE_PROVENANCE_REQUIRED - refused to render an execution route for ' + sku +
                 ' with no declared provenance. Nothing was rendered and nothing was written.');
         } catch (e) {}
         return false;
     }
-    var qty = parseInt(route.qty) || 0;
+    // A composer's Qty is BLANK, not 0: `0` is a quantity someone could read as a decision, and the E1 defect
+    // was exactly a number nobody had chosen being presented as one. An execution route keeps its stored value.
+    var qty = _isComposer ? '' : (parseInt(route.qty) || 0);
     var scope = _replenSelectedScope();
     var destCountry = '';
     try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
@@ -6388,12 +6528,29 @@ function _renderExecutionRoute(sku, route) {
         fromSelId || '', toWh ? (toWh.warehouseCode || '') : ''));
     var methods = _mres.methods || [];
     var methodOpts = _execMethodOptionsHtml(_mres, route.shipping_method);
-    var methodDisabled = methods.length ? '' : ' disabled';
+    // F1-7N-FC-1B-E2 §D.1-§D.3 — A METHOD CANNOT BE OFFERED FOR A ROUTE THAT DOES NOT EXIST YET.
+    //
+    // Until BOTH From and To are chosen there is no lane to look a carrier up for, so the Method select stays
+    // disabled rather than showing options resolved from a half-known route. This is a real distinction, not
+    // cosmetics: the existing resolver keys on origin country + destination country + marketplace, and with a
+    // blank From it would answer for a lane the operator has not described. §D.7 is preserved downstream —
+    // NO_LEAD_TIME (a method exists, its transit time does not) and NO_ELIGIBLE_METHOD_CONFIGURED (the rate
+    // cards cover nothing here) stay separate answers from KMWRR/_execResolveMethods, never merged into one.
+    var _routeResolvable = !!String(fromSelId || '').trim() && !!String(toSelId || '').trim();
+    var methodDisabled = (methods.length && _routeResolvable) ? '' : ' disabled';
+    // The edit entry point differs for a composer: its first edit has to PROMOTE the row before the ordinary
+    // collect runs, or the collector would still be selecting past it.
+    var _editFn = _isComposer ? 'onExecutionComposerEdit' : 'onExecutionRouteEdit';
+    var _editArg = _isComposer ? ', this' : '';
     var row = document.createElement('div');
-    row.className = 'exec-route-row ir-exec-plan__grid';
+    // §B — a PRISTINE composer deliberately does NOT carry `.exec-route-row`. The collector selects on that
+    // class, so this is what makes "not collected while untouched" a property of the SELECTOR rather than a
+    // branch the next round could forget. It is added by _irPromoteComposerToTouched_ on the first edit.
+    row.className = _isComposer ? 'exec-route-composer ir-exec-plan__grid' : 'exec-route-row ir-exec-plan__grid';
+    if (_isComposer) row.setAttribute('data-route-kind', _irComposerKind_());
     // §C — carried on the row because a collect rebuilds the model FROM the DOM: a provenance that does
     // not survive a re-render is a provenance the next collect has to guess at.
-    row.setAttribute('data-route-provenance', _prov);
+    if (!_isComposer) row.setAttribute('data-route-provenance', _prov);
     // Persisted Draft line identity (Round 4 Decision E) — enables incremental update + soft-cancel of
     // the SAME shipping_allocation_draft_lines row (empty for a new/unsaved route).
     if (route && route.allocation_draft_line_id) row.setAttribute('data-line-id', String(route.allocation_draft_line_id));
@@ -6415,13 +6572,13 @@ function _renderExecutionRoute(sku, route) {
     // rebuilds every row from the DOM, and a snapshot that is not on the row cannot survive one.
     row.setAttribute('data-src-code-persisted', String((route && route.source_warehouse_code) || ''));
     row.innerHTML =
-        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
         '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
-        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
         (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
         '</span>' +
-        '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
-        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionMethodEdit(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
+        '<select class="replen-card__select" data-field="shipping_method" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
@@ -6431,7 +6588,11 @@ function _renderExecutionRoute(sku, route) {
         ' data-eta-basis="' + _execEsc(String(route.expected_arrival_basis || '')) + '">' + _execEsc(eta.text) + '</span>' +
         '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
-    if (list) { _execClearEmptyState_(sku); list.appendChild(row); }
+    // F1-7N-FC-1B-E2 — clearing the empty-plan message is right for a ROUTE (a plan that holds one must not
+    // still say it holds none) and wrong for a COMPOSER: the message is exactly what distinguishes an empty
+    // form from a plan, and without it the operator sees a blank From/To/Qty row and no way to know whether
+    // it is a route. So a composer is appended BESIDE the message; only a real route replaces it.
+    if (list) { if (!_isComposer) _execClearEmptyState_(sku); list.appendChild(row); }
     return true;
 }
 
@@ -8297,8 +8458,32 @@ function handleReplenAiPlan(scope) {
     // The success styling above lands on a menu item inside a panel the click already hid. The visible outcome is
     // this notice, and it states the COUNT so that "it ran" and "it produced nothing" are not the same message.
     _irAiSupportTriggerIdle_('aiplan');
-    _irAiSupportNotice_('ok', 'AI Plan',
-        'Recommendations regenerated for ' + Object.keys(_irRecoByKey || {}).length + ' SKU(s) from the materialized gap already loaded. Nothing was written to the database.');
+    // ============================================================================================================
+    // F1-7N-FC-1B-E2 §I — SAY WHICH HALF RAN, AND WHY THE OTHER HALF DID NOT.
+    //
+    // THE REPORTED DEFECT: the operator opens AI Support, picks Amazon US, presses Generate AI Plan, and the
+    // Execution Plan does not change and no allocation draft appears. Traced end to end, nothing is broken and
+    // nothing is missing — the router action, the adapter, the 61_ writer and the KMWRR route allocator are
+    // ALL present and complete. What stops it is a FEATURE FLAG:
+    // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is false in 00_config.gs, mirrored to the client through
+    // KM.api.inventoryAiPlanDbGenerationEnabled(), and its flip is USER-owned by that file's own record.
+    //
+    // So this round does not flip it (that is a production behaviour change and a live-verification gate); it
+    // stops the message from IMPLYING that a plan was produced. The old text said recommendations were
+    // regenerated and nothing was written — both true, and together they read to an operator who pressed
+    // "Generate AI Plan" as "the plan ran and produced nothing". The two halves are now named separately, and
+    // the reason execution materialization did not happen is stated instead of left as an empty screen.
+    // ============================================================================================================
+    var _nReco = Object.keys(_irRecoByKey || {}).length;
+    var _matReason = !_irAiPlanDbGenEligible_()
+        ? 'EXECUTION_MATERIALIZATION_UNAVAILABLE'
+        : 'EXECUTION_MATERIALIZATION_NOT_ENABLED';
+    _irAiSupportNotice_('info', 'AI Plan',
+        'RECOMMENDATIONS regenerated for ' + _nReco + ' SKU(s) from the materialized gap already loaded.' +
+        ' The EXECUTION PLAN was not changed and NOTHING was written to the database — ' + _matReason + '.' +
+        ' Execution materialization (writing allocation drafts from the AI route allocator) is staged behind a' +
+        ' backend feature flag that is currently off, so this run could only refresh the recommendation.' +
+        ' To plan a shipment now, use + Add Route on the SKU and choose From / To / Qty / Method.');
 }
 window.handleReplenAiPlan = handleReplenAiPlan;
 // R6D1 — the DB-generation feature flag (mirrors the backend owner-of-record via KM.api). Default OFF (fail-safe: if the

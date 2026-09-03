@@ -126,19 +126,30 @@ function makeRowEl(fields, attrs) {
   return el;
 }
 
+// RESTATED (F1-7N-FC-1B-E2): this returned EVERY row for `.exec-route-row`, which was harmless while the only
+// row that existed was an execution route. E2 adds the MANUAL COMPOSER, whose entire guarantee is that a
+// `.exec-route-row` selector passes it by, so a harness that ignores the class can no longer measure E1's
+// claim — it would count an input surface as a decision, which is precisely the conflation E1 removed.
 function makeList() {
   var self = {
     _html: '', _rows: [],
+    _byClass: function (c) {
+      return self._rows.filter(function (r) { return String(r.className || '').split(/\s+/).indexOf(c) !== -1; });
+    },
     set innerHTML(v) { self._html = String(v); self._rows = []; },
     get innerHTML() { return self._html; },
-    appendChild: function (el) { el.parentNode = self; self._rows.push(el); self._html = ''; },
+    // RESTATED (F1-7N-FC-1B-E2): appending used to CLEAR _html, which was harmless while nothing was ever
+    // appended after the empty-plan message. E2 appends a composer BESIDE that message, and a real
+    // container keeps both, so wiping it here would have modelled a DOM that does not exist.
+    appendChild: function (el) { el.parentNode = self; self._rows.push(el); },
     removeChild: function (el) {
       var i = self._rows.indexOf(el);
       if (i >= 0) { self._rows.splice(i, 1); el._removed = true; }
       return el;
     },
     querySelector: function (sel) {
-      if (sel === '.exec-route-row') return self._rows[0] || null;
+      if (sel === '.exec-route-row') return self._byClass('exec-route-row')[0] || null;
+      if (sel === '.exec-route-composer') return self._byClass('exec-route-composer')[0] || null;
       if (sel === '[data-ir-exec-empty]') {
         return /data-ir-exec-empty/.test(self._html)
           ? { parentNode: { removeChild: function () { self._html = ''; } } } : null;
@@ -146,7 +157,8 @@ function makeList() {
       return null;
     },
     querySelectorAll: function (sel) {
-      if (sel === '.exec-route-row') return self._rows.slice();
+      if (sel === '.exec-route-row') return self._byClass('exec-route-row');
+      if (sel === '.exec-route-composer') return self._byClass('exec-route-composer');
       if (sel === 'input[data-field="qty"]') {
         return self._rows.map(function (r) { return { value: String(r._fields.qty || 0) }; });
       }
@@ -184,8 +196,11 @@ function makeWorld(opts) {
       createElement: function () {
         var el = makeRowEl({ source_warehouse_id: '', destination_warehouse_id: '', qty: '0',
           shipping_method: '', expected_arrival: '' }, {});
+        el.className = '';   // the renderer assigns it, and which class it assigns is the property under test
         Object.defineProperty(el, 'innerHTML', {
-          set: function (v) { var m = /data-field="qty" value="(\d+)"/.exec(String(v)); el._fields.qty = m ? m[1] : '0'; },
+          // RESTATED (F1-7N-FC-1B-E2): `(\d+)` could not match a composer's BLANK Qty and fell back to '0',
+          // reporting a 0 where the shipped renderer had written nothing. Any value, including empty.
+          set: function (v) { var m = /data-field="qty" value="([^"]*)"/.exec(String(v)); el._fields.qty = m ? m[1] : ''; },
           get: function () { return ''; }
         });
         return el;
@@ -229,8 +244,17 @@ function makeWorld(opts) {
   var names = Object.keys(deps);
   var src = [
     extractFn(PAGE, '_irRouteProvenanceOf_'),
+    // F1-7N-FC-1B-E2 — the collect now classifies a manual composer rather than adopting it as a route, so
+    // these two are lifted into the executed scope. E1's own assertions are unaffected: with no composer in
+    // the fixture every one of them answers exactly as before.
+    extractFn(PAGE, '_irComposerKind_'),
+    extractFn(PAGE, '_irIsComposerEl_'),
     extractFn(PAGE, '_irExecutionEmptyStateHtml_'),
     extractFn(PAGE, '_execRenderEmptyState_'),
+    // F1-7N-FC-1B-E2 — the empty state now also paints ONE pristine composer, so its builder is lifted too.
+    // E1's claims are about EXECUTION ROUTES and are unaffected: a composer is not one, carries no
+    //  class while pristine, and enters no count E1 makes.
+    extractFn(PAGE, '_renderManualComposer_'),
     extractFn(PAGE, '_execClearEmptyState_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
     extractFn(PAGE, '_renderExecutionRoute'),
@@ -259,7 +283,12 @@ function makeWorld(opts) {
 }
 
 function isEmptyState(w) { return /data-ir-exec-empty/.test(w.list._html); }
-function routeCount(w) { return w.list._rows.length; }
+// EXECUTION ROUTES only. A manual composer (F1-7N-FC-1B-E2) is an input surface, not a route, and every claim
+// in this suite is about routes: "the Suggested Qty creates no route", "no identity is minted", "nothing is
+// written". Those hold unchanged — what changed is that the plan is no longer visually empty, because an
+// operator with no active route now has somewhere to type.
+function routeCount(w) { return w.list._byClass('exec-route-row').length; }
+function composerCount(w) { return w.list._byClass('exec-route-composer').length; }
 function lastTotal(w) { var t = w.counts.totals; return t.length ? t[t.length - 1] : null; }
 function modelRows(w) { return (w.model.bySku && w.model.bySku[SKU]) || []; }
 
@@ -293,7 +322,21 @@ var PRE_BRANCH =
 // The seeding branch, put BACK into the shipped source, with the provenance gate neutralised — which is
 // exactly the state this code was in before this round: there was no gate.
 function reseed(src) {
-  return swap(swap(src, '    _execRenderEmptyState_(sku);', PRE_BRANCH), '    if (!_prov) {', '    if (false) {');
+  // F1-7N-FC-1B-E2 restated BOTH anchors, and each for its own reason.
+  //
+  // The provenance gate now reads `if (!_isComposer && !_prov)`, because E2 exempts a COMPOSER from it: a
+  // composer does not claim to be an execution route. The mutation is unchanged in meaning — neutralise the
+  // gate so the reseeded phantom can paint.
+  //
+  // And `_execRenderEmptyState_(sku);` is no longer unique in the extracted source: it appears inside
+  // _execSyncEmptyState_ as well, and swap() takes the FIRST match. An anchor that silently relocates to
+  // another function yields a mutant that applies somewhere harmless and then "survives" for a reason that
+  // has nothing to do with the property under test — which is worse than a probe error, because it is quiet.
+  // Anchored on the line that FOLLOWS it, which only the initializeShippingAllocation call site has.
+  return swap(swap(src,
+    '    _execRenderEmptyState_(sku);\n    updateShippingAllocationTotal(sku);',
+    PRE_BRANCH + '\n    updateShippingAllocationTotal(sku);'),
+    '    if (!_isComposer && !_prov) {', '    if (false) {');
 }
 function makePreWorld() {
   var w = makeWorld({});
@@ -315,7 +358,13 @@ var post = makeWorld({});
 post.api.init(SKU, SKUDATA, { catalogueSettled: true });
 eq(routeCount(post), 0, 'A6  POST: zero Execution Routes');
 eq(lastTotal(post), 0, 'A7  POST: Total = 0');
-ok(isEmptyState(post), 'A8  POST: the empty state is shown instead');
+// RESTATED (F1-7N-FC-1B-E2): the empty-plan MESSAGE is now painted together with one pristine manual
+// composer, so the container is not literally empty. The property E1 established is untouched and is what is
+// measured above and below: zero execution ROUTES, Total 0, an empty model, zero writes. E2's composer is
+// asserted in its own suite; here it is only confirmed that it is not a route.
+eq(composerCount(post), 1, 'A8  POST: one pristine COMPOSER is offered instead of a seeded route');
+eq(post.list._byClass('exec-route-composer')[0].getAttribute('data-route-provenance'), null,
+  'A8a which claims no provenance, because it is not an execution route');
 eq(modelRows(post).length, 0, 'A9  POST: and the canonical model holds nothing for this SKU');
 eq([post.counts.persistScheduled, post.counts.touched], [0, 0],
   'A10 POST: no persistence scheduled and no route marked dirty by a render');
@@ -334,6 +383,8 @@ eq(sugFn(SKUDATA), 520, 'B1  the Suggested Qty authority still answers 520 — t
 var b2 = makeWorld({});
 b2.api.init(SKU, SKUDATA, { catalogueSettled: true });
 eq(routeCount(b2), 0, 'B2a Suggested Qty pushes no route object');
+eq(b2.list._byClass('exec-route-composer')[0]._fields.qty, '',
+  'B2a1 and the composer offered in its place has a BLANK Qty — the number is not substituted into it');
 eq(Object.keys(b2.model.bySku).length, 0, 'B2b it does not initialise a routes array in the model');
 eq(b2.list._rows.filter(function (r) { return r.getAttribute('data-route-instance'); }).length, 0,
   'B2c it fabricates no client_route_instance_id');
@@ -346,14 +397,19 @@ eq(b2.counts.sessionWrites, 0, 'B2g and it writes no recovery cache either');
 // §B.3 — the render is idempotent across every repaint the page performs.
 var b3 = makeWorld({});
 for (var i = 0; i < 5; i++) b3.api.init(SKU, SKUDATA, { catalogueSettled: true });
-eq(routeCount(b3), 0, 'B3  five re-renders (Search, expand, recommendation render, retry, filter change) create nothing');
-ok(isEmptyState(b3), 'B3a and the plan is still empty after all five');
+eq(routeCount(b3), 0, 'B3  five re-renders (Search, expand, recommendation render, retry, filter change) create no ROUTE');
+eq(composerCount(b3), 1, 'B3a and still exactly ONE composer, never a stack of them');
 eq(b3.counts.persistScheduled, 0, 'B3b with zero writes across all five');
 
 // §B.4 — THE COMPLETE INVENTORY OF ROUTE CREATORS. `.exec-route-row` is created in exactly one function, so
 // the list of ways a route can come into being is the list of that function's call sites — three, all explicit.
 var renderCalls = (code(PAGE).match(/_renderExecutionRoute\(/g) || []).length;
-eq(renderCalls, 3, 'B4  _renderExecutionRoute is named 3 times: its definition + exactly TWO call sites');
+// RESTATED (F1-7N-FC-1B-E2): E2 adds a THIRD call site, _renderManualComposer_, and it is the reason the
+// count is a poor way to state this. What matters is that the row creator is still ONE function and that
+// every one of its callers is an explicit act or an input surface — never a seeded decision.
+eq(renderCalls, 4, 'B4  _renderExecutionRoute is named 4 times: its definition + exactly THREE call sites');
+eq((code(extractFn(PAGE, '_renderManualComposer_')).match(/_renderExecutionRoute\(/g) || []).length, 1,
+  'B4a1 call site 3 of 3: the manual composer, which is an INPUT SURFACE and not a route');
 // Three legal SOURCES, two call sites: the hydrate render serves both PERSISTED_ACTIVE_DRAFT and
 // AI_PLAN_EXPLICITLY_REQUESTED, because the AI half appears by being read back from the database like any
 // other persisted route. That is why adding AI provenance needed no third painter - and why the removed
@@ -423,10 +479,20 @@ ok(/opts && opts\.provenance/.test(hyd) && /'PERSISTED_ACTIVE_DRAFT'/.test(hyd),
 // ================================================================================================================
 section('§D — THE EMPTY STATE');
 // ================================================================================================================
-ok(/No execution routes yet/.test(emptyHtml), 'D1  the empty state names both ways to create a route');
+// RESTATED (F1-7N-FC-1B-E2): the message was reworded because it now sits ABOVE a composer, so it has to
+// say what the row below is as well as what is missing. Both halves of D1 are still asserted.
+ok(/No execution route yet/.test(emptyHtml), 'D1  the empty-plan message states that nothing is planned...');
+ok(/Fill in/.test(emptyHtml) && /Nothing is saved until all four are set/.test(emptyHtml),
+  'D1b ...names the row below it as an empty form, and says nothing is saved until it is complete');
 ok(/AI Plan/.test(emptyHtml) && /Add Route/.test(emptyHtml), 'D1a AI Plan and + Add Route');
 eq(lastTotal(post), 0, 'D2  Total = 0');
-eq(post.list._rows.length, 0, 'D3  no From/To/Qty/Method input row is shown');
+// RESTATED (F1-7N-FC-1B-E2): E1 asserted that NO input row is shown, and E2 reverses exactly that half —
+// an operator with no active route needs somewhere to type. What must remain true, and is asserted here, is
+// that the row shown is not a ROUTE: no provenance, no identity, blank Qty, and invisible to the collector.
+eq(routeCount(post), 0, 'D3  no execution ROUTE row is shown...');
+eq(composerCount(post), 1, 'D3a ...and the one row that is shown is a composer');
+eq(post.list._byClass('exec-route-composer')[0].getAttribute('data-line-id'), null,
+  'D3b holding no line identity');
 var pfEmpty = PF.evaluate({ scope: CTX, appliedScopeKey: 'resus|us|amazon',
   panels: [{ sku: SKU, execState: 'READY' }], routes: [], pendingWrites: [], inFlightWrites: [],
   dirtyAfterWrite: [], pendingCancels: [], saveFailed: [], routesMissingDestination: [],
@@ -446,7 +512,11 @@ section('§E — EXPLICIT AI PLAN');
 var aiFn = code(extractFn(PAGE, 'handleReplenAiPlan'));
 ok(/_irRecoByKey/.test(aiFn), 'E1  the default AI Plan path regenerates the RECOMMENDATION');
 ok(!/_renderExecutionRoute/.test(aiFn), 'E1a and creates no execution route itself');
-ok(/Nothing was written to the database/.test(aiFn), 'E1b saying so to the operator');
+// RESTATED (F1-7N-FC-1B-E2): the notice was rewritten because it read as "the plan ran and produced
+// nothing". The property E1 wanted — the operator is TOLD that nothing was written — is stronger now: the
+// message separates the recommendation half from the execution half and names why the second did not run.
+ok(/NOTHING was written to the database/.test(aiFn), 'E1b saying so to the operator...');
+ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(aiFn), 'E1b1 ...and naming why execution did not materialize');
 var aiGen = code(extractFn(PAGE, '_irRunInventoryAiPlanGeneration_'));
 ok(/if \(cls\.ok\)/.test(aiGen), 'E2  only a SUCCESSFUL generation re-hydrates the Execution Plan');
 ok(/AI_PLAN_EXPLICITLY_REQUESTED/.test(aiGen),
@@ -457,7 +527,8 @@ ok(/_hydrateAllocationDraftFromDb\(_replenCtx\(\), \{/.test(aiGen),
 var aiZero = makeWorld({ bySku: {} });
 aiZero.api.init(SKU, SKUDATA, { catalogueSettled: true });
 eq(routeCount(aiZero), 0, 'E3  a zero-result AI Plan leaves the Execution Plan empty');
-ok(isEmptyState(aiZero), 'E3a showing the empty state, not a Qty-only placeholder');
+ok(isEmptyState(aiZero), 'E3a showing the empty-plan message...');
+eq(composerCount(aiZero), 1, 'E3a1 ...beside one blank composer, and never a Qty-only placeholder');
 ok(/zeroResult/.test(code(PAGE)) && /no recommendation for this scope this cycle/.test(PAGE),
   'E3b and the result popup states the zero outcome as its own typed reason');
 // §E.4 — a failure keeps what is on screen and adds nothing.
@@ -483,12 +554,15 @@ addW.api.init(SKU, SKUDATA, { catalogueSettled: true });
 ok(isEmptyState(addW), 'F3  the plan starts empty');
 var added = addW.api.render(SKU, { route_provenance: RP.SOURCES.USER_EXPLICIT_ADD_ROUTE });
 eq(added, true, 'F3a the explicit add is accepted');
-eq(routeCount(addW), 1, 'F3b one row exists');
-ok(!isEmptyState(addW), 'F3c and the empty state is gone');
-eq(addW.list._rows[0].getAttribute('data-route-provenance'), 'USER_EXPLICIT_ADD_ROUTE',
+eq(routeCount(addW), 1, 'F3b one ROUTE row exists');
+ok(!isEmptyState(addW), 'F3c and the empty-plan message is gone, because the plan now holds a route');
+// RESTATED (F1-7N-FC-1B-E2): index 0 is now the pristine COMPOSER the empty plan offers, so these must
+// address the route explicitly. The claim is unchanged: the row + Add Route created carries its provenance.
+var addRowEl = addW.list._byClass('exec-route-row')[0];
+eq(addRowEl.getAttribute('data-route-provenance'), 'USER_EXPLICIT_ADD_ROUTE',
   'F4  the row carries its provenance in the DOM, so a collect never has to guess');
 // An INCOMPLETE explicit route: kept in the model, written nowhere.
-addW.list._rows[0]._fields = { source_warehouse_id: '', destination_warehouse_id: '', qty: '0', shipping_method: '', expected_arrival: '' };
+addRowEl._fields = { source_warehouse_id: '', destination_warehouse_id: '', qty: '0', shipping_method: '', expected_arrival: '' };
 addW.api.collect(SKU);
 eq(modelRows(addW).length, 1, 'F5  an incomplete explicit route stays in the model (the edit is not lost)');
 eq(modelRows(addW)[0].route_provenance, 'USER_EXPLICIT_ADD_ROUTE', 'F5a with its provenance carried into the model');
@@ -503,7 +577,7 @@ ok(/var complete = _scoped\.filter\(_isRouteComplete\);/.test(code(PAGE)),
 ok(/_incomplete\.forEach/.test(code(PAGE)) && /NOT_SAVED/.test(code(PAGE)),
   'F6b while still being NAMED as not saved rather than dropped in silence (A2-R4 §G.8)');
 // Completed: now it is a CREATE.
-addW.list._rows[0]._fields = {
+addRowEl._fields = {
   source_warehouse_id: 'WH-CN-KMF-01', source_warehouse_id__name: 'KM Factory CN', source_warehouse_id__type: 'FACTORY', source_warehouse_id__code: 'KMFCN',
   destination_warehouse_id: 'MARKETPLACE_DESTINATION:Amazon', destination_warehouse_id__name: 'Amazon', destination_warehouse_id__type: 'MARKETPLACE_DESTINATION',
   qty: '520', shipping_method: 'Sea Express', expected_arrival: ''
@@ -537,14 +611,17 @@ delete g.model.bySku[SKU];
 g.api.edit(SKU);
 eq(routeCount(g), 0, 'G2  after an explicit remove, zero routes');
 eq(modelRows(g).length, 0, 'G3  and the model holds none');
-ok(isEmptyState(g), 'G4  the plan shows the empty state');
+ok(isEmptyState(g), 'G4  the plan shows the empty-plan message...');
+eq([composerCount(g), g.list._byClass('exec-route-composer')[0]._fields.qty], [1, ''],
+  'G4a ...and one BLANK composer takes the slot — never the cancelled route\'s quantity, never the suggestion');
 eq(lastTotal(g), 0, 'G5  Total = 0');
 // the Suggested Qty is STILL 520 for this station — and nothing acts on it
 eq(sugFn(SKUDATA), 520, 'G6  the Suggested Qty is still 520');
 var gWrites = g.counts.persistScheduled;
 for (var gi = 0; gi < 4; gi++) g.api.init(SKU, SKUDATA, { catalogueSettled: true });
 eq(routeCount(g), 0, 'G7  four repaints (render / re-render / Search / reload) leave it empty');
-ok(isEmptyState(g), 'G7a still the empty state');
+ok(isEmptyState(g), 'G7a still the empty-plan message');
+eq(composerCount(g), 1, 'G7a1 and still exactly ONE composer after four repaints');
 eq(lastTotal(g), 0, 'G7b Total still 0 — no 520 placeholder returned');
 eq(g.counts.persistScheduled, gWrites, 'G8  and no second write was sent by any of them');
 eq(g.counts.aiPlanCalls, 0, 'G9  nothing called AI Plan on the page\'s behalf');
@@ -660,16 +737,23 @@ eq(stale.counts.touched, 0, 'I6  nothing was marked for writing');
 // ================================================================================================================
 section('§K — RELEASE IDENTITY');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1b-executionintent-20260903', 'K1  this round mints its own cache token');
+// RESTATED (F1-7N-FC-1B-E2): `currentAppToken() === 'fc1b-executionintent-20260903'` is the equality-with-now
+// AGAIN — written into the very round that had just restated eleven other suites for exactly it. E2
+// legitimately mints its own token, so all of §K failed while describing a correct tree. E1's token is a
+// FLOOR: it was MINTED, the series has not moved behind it, and nothing may ever be served from HF1's
+// published token again. None of those can be falsified by a later round doing the right thing.
+ok(RO.tokenIndex('fc1b-executionintent-20260903') !== -1, 'K1  E1 minted its own cache token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-executionintent-20260903'),
+  'K1a and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 ok(RO.tokenIndex('fc1b-executionintent-20260903') > RO.tokenIndex('fc1ar1-cancelrelease-20260903'),
-  'K1a strictly after HF1\'s, which was published');
+  'K1b strictly after HF1\'s, which was published');
 eq((INDEX.match(/\?v=fc1ar1-cancelrelease-20260903/g) || []).length, 0,
-  'K2  zero production references remain on the previous token');
-ok(RO.appTokenRefCount(INDEX) >= 19, 'K3  and the application set carries this one (' + RO.appTokenRefCount(INDEX) + ' refs)');
+  'K2  zero production references remain on HF1\'s published token');
+ok(RO.appTokenRefCount(INDEX) >= 19, 'K3  and the application set carries ONE current token (' + RO.appTokenRefCount(INDEX) + ' refs)');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K4  nothing is left behind on a superseded application token');
 var idxT = RO.parseIndexTokens(INDEX);
 eq(idxT['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
-  'K5  the page this round changed carries the new token');
+  'K5  the page this round changed carries the CURRENT token');
 eq(idxT['assets/js/utils/inventory-compat.js'], RO.currentAppToken(),
   'K5a and so does the shared module it changed with it — they cannot be served from different rounds');
 
@@ -690,8 +774,9 @@ mut('N1  the suggestedQty fallback reintroduced into initializeShippingAllocatio
 });
 
 mut('N2  a default empty route pushed instead of the empty state', function () {
-  var m = worldFrom(swap(makeWorld({}).src, '    _execRenderEmptyState_(sku);',
-    "    _renderExecutionRoute(sku, { qty: 0, route_provenance: 'USER_EXPLICIT_ADD_ROUTE' });"));
+  var m = worldFrom(swap(makeWorld({}).src,
+    '    _execRenderEmptyState_(sku);\n    updateShippingAllocationTotal(sku);',
+    "    _renderExecutionRoute(sku, { qty: 0, route_provenance: 'USER_EXPLICIT_ADD_ROUTE' });\n    updateShippingAllocationTotal(sku);"));
   m.api.init(SKU, SKUDATA, { catalogueSettled: true });
   return routeCount(m) !== 0;
 });
@@ -716,8 +801,10 @@ mut('N5  an orphan / zero-active-line header hydrated as a route', function () {
 });
 
 mut('N6  a zero-provenance route allowed into the submit candidate set', function () {
+  // F1-7N-FC-1B-E2 restated the anchor: the gate reads `_judged`, which is input.routes minus PRISTINE
+  // composers. The mutant and the property are unchanged.
   var evalSrc = CMPSRC.replace(
-    'var noProv = arr(input.routes).filter(function (r) { return !routeProvenanceOf(r); });',
+    'var noProv = _judged.filter(function (r) { return !routeProvenanceOf(r); });',
     'var noProv = [];');
   if (evalSrc === CMPSRC) throw new Error('mutation did not apply to submitPreflight');
   var mod = { exports: {} };
@@ -740,21 +827,23 @@ mut('N7  the plan reseeded after the final cancel', function () {
 });
 
 mut('N8  the empty state marked dirty', function () {
-  var m = worldFrom(swap(makeWorld({}).src, '    _execRenderEmptyState_(sku);',
-    '    _execRenderEmptyState_(sku); _irMarkRouteTouched_(sku, "EMPTY");'));
+  var m = worldFrom(swap(makeWorld({}).src,
+    '    _execRenderEmptyState_(sku);\n    updateShippingAllocationTotal(sku);',
+    '    _execRenderEmptyState_(sku); _irMarkRouteTouched_(sku, "EMPTY");\n    updateShippingAllocationTotal(sku);'));
   m.api.init(SKU, SKUDATA, { catalogueSettled: true });
   return m.counts.touched !== 0;
 });
 
 mut('N9  persistence called from the recommendation render', function () {
-  var m = worldFrom(swap(makeWorld({}).src, '    _execRenderEmptyState_(sku);',
-    '    _execRenderEmptyState_(sku); _scheduleDraftDbPersist(sku);'));
+  var m = worldFrom(swap(makeWorld({}).src,
+    '    _execRenderEmptyState_(sku);\n    updateShippingAllocationTotal(sku);',
+    '    _execRenderEmptyState_(sku); _scheduleDraftDbPersist(sku);\n    updateShippingAllocationTotal(sku);'));
   m.api.init(SKU, SKUDATA, { catalogueSettled: true });
   return m.counts.persistScheduled !== 0;
 });
 
 mut('N10 the provenance gate removed from the only row creator', function () {
-  var m = worldFrom(swap(makeWorld({}).src, '    if (!_prov) {', '    if (false) {'));
+  var m = worldFrom(swap(makeWorld({}).src, '    if (!_isComposer && !_prov) {', '    if (false) {'));
   m.api.init(SKU, SKUDATA, { catalogueSettled: true });
   var painted = m.api.render(SKU, { qty: 520 });
   return painted !== false || routeCount(m) !== 0;
@@ -772,7 +861,9 @@ mut('N11 a forbidden provenance name accepted as legal', function () {
 });
 
 mut('N12 the zero-route Submit refusal removed', function () {
-  var s = CMPSRC.replace("if (!arr(input.routes).length) { out.code = C.NO_EXECUTION_ROUTES; return out; }", '');
+  // F1-7N-FC-1B-E2 restated the anchor: the zero-route check now reads the JUDGED set, so a screen holding
+  // only a pristine composer still answers NO_EXECUTION_ROUTES. The mutant is unchanged.
+  var s = CMPSRC.replace("      out.code = C.NO_EXECUTION_ROUTES; return out;", '');
   if (s === CMPSRC) throw new Error('mutation did not apply');
   var mod = { exports: {} };
   new Function('module', 'exports', s)(mod, mod.exports);

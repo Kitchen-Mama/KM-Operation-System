@@ -299,7 +299,10 @@ var COLLECT_FNS = ['_saveAllocationDraftFromDom', '_isRouteComplete', '_irRouteS
   '_irAnySaveInFlight_',
   // F1-7N-FC-1B-E1 - the collect now asks each row which explicit act produced it. Lifted into the executed
   // scope rather than stubbed, so this suite exercises the REAL rule.
-  '_irRouteProvenanceOf_'];
+  '_irRouteProvenanceOf_',
+  // F1-7N-FC-1B-E2 - the collect now classifies a manual composer instead of adopting it as a route.
+  // Lifted into the executed scope rather than stubbed, so this suite exercises the REAL classification.
+  '_irComposerKind_', '_irIsComposerEl_'];
 
 function buildCollector(cfg) {
   cfg = cfg || {};
@@ -753,9 +756,14 @@ mut('O1  a persisted route saved as a CREATE', function () {
 
 // O2 — a field change cancels the old header.
 mut('O2  a field change that cancels the stored line', function () {
+  // F1-7N-FC-1B-E2 — `row.route_incomplete = true;` is no longer unique in this function: E2's composer
+  // branch sets it too, and mutateFn replaces the FIRST match, so this mutation had begun landing in the
+  // composer branch and doing nothing here. Anchored on the PERSISTED-route branch by including the line
+  // that follows it, which only that branch has. The mutant and the invariant are unchanged: a field change
+  // must not queue a soft-cancel of the stored line.
   var m = mutateFn(PAGE, '_saveAllocationDraftFromDom',
-    '            row.route_incomplete = true;',
-    "            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: lineId, allocation_draft_id: boundDraftId });\n            row.route_incomplete = true;");
+    "            row.route_incomplete = true;\n            row.allocation_draft_line_id = lineId;",
+    "            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: lineId, allocation_draft_id: boundDraftId });\n            row.route_incomplete = true;\n            row.allocation_draft_line_id = lineId;");
   var c = buildCollector({ pageSrc: m });
   var el = c.addRow({ instanceId: 'CRI-M2', lineId: 'SADL-K2-M2', draftId: 'SADH-K4-M2', groupKey: 'g',
     toMarketplace: 'Amazon', method: 'sea', qty: 120 });

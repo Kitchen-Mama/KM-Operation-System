@@ -144,7 +144,14 @@ var ROUND_TOKENS = [
   // old module would find window.IRRouteProvenance undefined; holding the old page with the new module would
   // keep seeding a blank Suggested-Qty route that the new Submit preflight then refuses as
   // ROUTE_PROVENANCE_UNKNOWN — a plan the operator cannot submit and cannot see the cause of.
-  'fc1b-executionintent-20260903'
+  'fc1b-executionintent-20260903',
+  // F1-7N-FC-1B-E2 — Manual Route Composer + AI Plan outcome visibility. E1 is on origin/main (ad39806 was
+  // pushed), so by the rule recorded above its token has been published and cannot be reused. This round
+  // changes inventory-replenishment.js and inventory-compat.js TOGETHER and a mixed pair is broken in both
+  // directions: the page renders a composer whose three states only the shared module can name, and the
+  // module's Submit preflight refuses a route shape the old page still produces. A browser holding one file
+  // from each round would either paint a row nothing can classify or be unable to submit a finished route.
+  'fc1b-e2-aiplancomposer-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

@@ -539,8 +539,16 @@ section('C — [§E, §F, tests 7] THE PERSISTED ROW RENDERS, AND THE CONFIRMATI
     'C2 [§F.1] and states it beside the To cell in words the operator can act on');
   ok(/data-dest-state/.test(renderFn) && /data-dest-state/.test(code(extractFn(PAGE, '_saveAllocationDraftFromDom'))),
     'C3 [§F] the persisted state survives the DOM round trip, so a later save knows this was an adoption');
-  ok(/var qty = parseInt\(route\.qty\) \|\| 0;/.test(renderFn),
-    'C4 [§E.4] Qty is read from the persisted route row, never re-derived from a suggestion');
+  // RESTATED (F1-7N-FC-1B-E2): the line now reads `_isComposer ? '' : (parseInt(route.qty) || 0)`. The
+  // invariant C4 protects — Qty comes from the PERSISTED ROUTE ROW and is never re-derived from a
+  // suggestion — is unchanged, and the composer branch makes it stronger: a row that is not a route gets
+  // no quantity at all rather than a suggested one, which is the E1 defect made unrepresentable.
+  ok(/parseInt\(route\.qty\) \|\| 0/.test(renderFn),
+    'C4 [§E.4] Qty is read from the persisted route row...');
+  ok(!/_irSuggestedQtyNumber_|suggestedQty/.test(renderFn),
+    'C4a [§E.4] ...and the renderer consults no suggestion authority at all');
+  ok(/_isComposer \? '' :/.test(renderFn),
+    'C4b [§E.4] while a non-route row gets a BLANK Qty rather than a re-derived one');
   // RESTATED (F1-7N-FC-1B-E1): this pinned the exact seeded-route literal, and E1 DELETED that branch —
   // it was the phantom. The INVARIANT C5 protects is that an editor row the operator has not saved never
   // inherits a persisted header's identity, and it now holds more strongly than a literal could express:
