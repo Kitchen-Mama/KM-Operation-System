@@ -3092,3 +3092,114 @@ through the back door. The re-flush now runs only when something is still actual
 - **The exact `HTTP_TRANSPORT_ERROR` cause is not named.** Four candidate mechanisms were measured false; the
   evidence needed to name the real one was never recorded by the client. The instrumentation now records it, and
   the reconciliation makes the outcome correct either way.
+
+## §4G-A2-R4 — STABLE DRAFT ENTITY: AN EDIT UPDATES ITS OWN TICKET
+
+The product decision is frozen: while a route holds a persisted `allocation_draft_id` and
+`allocation_draft_line_id`, **every** edit UPDATES that same ticket — whatever it does to K2, K4, the
+destination type or the route's momentary completeness. Only an explicit `+ Add Route` may create.
+
+### A2-R4.1 The cancel + replacement, measured on the shipped collector
+
+`_saveAllocationDraftFromDom` had an `else if (lineId)` branch for a route that had become **incomplete**. It
+queued a soft-cancel of the stored line and erased `allocation_draft_id` / `allocation_draft_line_id` /
+`route_group_key` from **both** the model and the DOM. Executed:
+
+| step | model | queued |
+|---|---|---|
+| 1 · hydrated, complete | `SADH-K4-AAA` / `SADL-K2-AAA`, intent `UPDATE_EXISTING` | — |
+| 2 · From changed → Method options rebuilt → old Method invalid → select cleared | `""` / `""`, intent **`CREATE_NEW_ROUTE`** | soft-cancel of `SADL-K2-AAA` under `SADH-K4-AAA` |
+| 3 · a valid Method chosen again | a **fresh** line id, still `CREATE_NEW_ROUTE` | (still queued) |
+
+So an ordinary edit cancelled the operator's ticket and created a replacement. **Nobody decided that — an
+editor state did.** And when the SKU's only route went briefly incomplete, `_irCancelUnusedDraftHeaders_`
+soft-cancelled the stored **header** too (measured: `SADH-K4-BBB`), because its `stillUsed` set required
+`_isRouteComplete`.
+
+The erasure was defended as *"never overwrite the stored line with a null/invalid payload"*. That guarantee
+never depended on it: the flush writes only **complete** routes. The identity is now kept, the route is marked
+`route_incomplete`, and nothing is queued.
+
+**This also answers "To-only edits worked but From/Method replaced".** A To change that leaves the Method valid
+never makes the route incomplete, so the branch never ran and the edit was a clean UPDATE. Only the
+combinations that blank the Method reached it.
+
+**And the "silent Qty/Method no-write":** an incomplete route is correctly not written, and was then dropped in
+silence — no request, no error, no state. It is now named (`UNSAVED_INCOMPLETE_ROUTE`) with the exact missing
+fields, while keeping its identity and its place in the queue.
+
+### A2-R4.2 The model owns the identity
+
+`allocation_draft_id`, `allocation_draft_line_id` and `route_group_key` were read from DOM attributes and from
+nothing else, so any path that dropped an attribute turned a persisted route into a new one. The attribute is
+still read first, but the last-known model row for that `client_route_instance_id` now supplies it, and the DOM
+is re-stamped from the model so the two cannot disagree.
+
+### A2-R4.3 The server contract needed no change — measured, not assumed
+
+Across Qty, Method, From, marketplace→warehouse, warehouse→marketplace and Last Mile, a declared
+`UPDATE_EXISTING_ROUTE` stayed on the **same header and the same line**, `draft_version` 1→7, **zero** cancelled
+rows. And a route edited until its K4 equals another draft's still updates its own row: two active headers, no
+merge, no adoption, no cancel. A2-R3's intent gate was already correct; the damage was all client-side.
+
+### A2-R4.4 Cancel authority (§I audit)
+
+Exactly **three** call sites can reach a cancel, and no edit path is among them:
+
+| site | authority |
+|---|---|
+| `removeExecutionRoute` | the operator's explicit delete — **now confirmed** before any write (it asked nothing before) |
+| `_irDispatchLineCancels_` | dispatches only what was queued; the collector queues nothing any more |
+| `_irCancelUnusedDraftHeaders_` | releases a header **no row references at all** — completeness is no longer the test |
+
+### A2-R4.5 §J — a required action owned by a TEMP file
+
+`system.requestOrderSendDiagnosticStatus` is in the router, in `SYS_REQUIRED_ACTIONS_` and in the browser's
+deployed-action contract — and its handler lived in `TEMP_request_order_send_diagnostics.gs`. Doing what that
+name invites (*paste, run, remove*) deleted a required action, and the consequence was not a missing diagnostic:
+**the deployment contract failed, taking Search, the Execution Plan hydrate and every save with it.**
+
+The handler, its configuration and its resolver now live in `66_api_v1_request_order_send.gs` as
+`ROSEND_DIAG_*` / `rosendResolve_` / `rosendStatusReport_` / `handleRequestOrderSendDiagnosticStatus_` — each
+defined exactly once. The TEMP file keeps only its three editor-run wrappers.
+
+A second file had the same shape: the manifest listed `TEMP_migrate_shipping_allocation_ai_lifecycle.gs` as a
+required owner, so removing it after its migration would report a mixed deployment. Manifest entries can now be
+`optional: true`, and an absent optional owner is a reported fact rather than a fault.
+
+**TEMP dependency census (§J.6)**
+
+| file | class |
+|---|---|
+| `TEMP_request_order_send_diagnostics.gs` | **MOVE_TO_PERMANENT_OWNER** — done; what remains is `SAFE_TO_DELETE_NOW` |
+| `TEMP_migrate_shipping_allocation_ai_lifecycle.gs` | **MUST_KEEP_UNTIL_MIGRATION** — now `optional` in the manifest |
+| `TEMP_migrate_request_order_draft_v2.gs` | MUST_KEEP_UNTIL_MIGRATION |
+| `TEMP_demo_shipping_shipment_map_seed_v2.gs` | MUST_KEEP_UNTIL_MIGRATION (Demo data owner; checksum-bound) |
+| `TEMP_document_diagnostics.gs` · `TEMP_draft_migration_diagnostic.gs` · `TEMP_order_planning_draft_readback_diagnose.gs` | **SAFE_TO_DELETE_NOW** — read-only, not routed, no required action |
+| `assets/tools/apps-script-diagnostics/*` · `apps-script-migrations/*` | **DELETE_AFTER_RUN** — never pasted permanently |
+
+No required action depends on a TEMP source any more.
+
+### A2-R4.6 §K — the read path
+
+Restoring the missing action restored the three tickets, so **no separate hydration bug is assumed**. The Search
+timeout is recorded as **NOT REPRODUCED AFTER CONTRACT RECOVERY**, and no timeout was raised to mask it
+(`KM_WRITE_TIMEOUT_MS_` stays 90 000, `KM_READ_TIMEOUT_MS_` stays 45 000). What was added is the guard that was
+missing: `+ Add Route` now refuses when the deployment cannot save a route, instead of letting the operator type
+one that provably cannot be persisted.
+
+### A2-R4.7 §N — the Submit grouping decision, recorded
+
+Allocation draft tickets stay independent entities with their own lineage. At Submit they may still merge into
+one shipping plan by physical shipment compatibility, each source draft keeping its own plan line and
+`source_reason`. **`allocation_draft_id` is deliberately NOT added to `shippingPlanRouteGroupKey_`**, `11_` is
+untouched (`SP_BUILD_VERSION_` still `F1-7N-FA-4B2`), and no shipping-plan schema changed. Submit remains
+unauthorised for production testing.
+
+### A2-R4.8 Deliberately not done
+
+- **No live save, Add Route, Submit, AI Plan, Send Request, DB write, migration run or repair.**
+- **No cleanup of the existing cancelled/replacement rows.** The census classifies them read-only; deciding what
+  to do with them is a separate, row-by-row, authorised round.
+- **No change to 16_.** The server contract was measured correct, and a file that did not change is not churned.
+- **Post-submit revision/supersede is out of scope**, as §0 states.

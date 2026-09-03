@@ -825,9 +825,12 @@ mut('X13 §L.13 a pre-migration sheet silently accepts an unsafe CREATE', functi
 });
 
 mut('X14 §L.14 cancelling an unsaved row still issues a request', function () {
+  // F1-7N-FB-4G-A2-R4 §I.1 — RE-ANCHORED. Cancelling a PERSISTED route is now an explicitly confirmed act, so
+  // the bare call became a guarded block and this mutation's find string named a line that no longer exists.
+  // The mutation itself is unchanged: drop the `lineId &&` guard so an UNSAVED row issues a cancel request too.
   var m = mutateFn(PAGE, 'removeExecutionRoute',
-    "        if (lineId && typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId, lineDraftId);",
-    "        if (typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId, lineDraftId);");
+    "        if (lineId && typeof _cancelAllocationDraftLine === 'function') {",
+    "        if (typeof _cancelAllocationDraftLine === 'function') {");
   var h = code(extractFn(PAGE, 'removeExecutionRoute'));
   var x = code(extractFn(m, 'removeExecutionRoute'));
   return /if \(lineId && typeof _cancelAllocationDraftLine/.test(h) &&

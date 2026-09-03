@@ -247,14 +247,22 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R2', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
   { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
   { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'SKU Details / SKU Regional scoped read workspace' },
-  { file: 'TEMP_request_order_send_diagnostics.gs', symbol: 'TEMP_ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send TEMP diagnostics (single owner)' },
+  // F1-7N-FB-4G-A2-R4 SS.J - the Request Order Send diagnostic STATUS ACTION is required in production, so its
+  // owner may not be a file whose whole contract is that it gets deleted. It moved into 66_, and the manifest
+  // follows it: a deployment is now complete WITHOUT the TEMP diagnostics file, which is what makes
+  // 'paste, run, remove' safe again. 66_ appears twice on purpose - two symbols, two independent lifecycles.
+  { file: '66_api_v1_request_order_send.gs', symbol: 'ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R4', owns: 'Request Order Send diagnostic status action + its configuration (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
   // still write its own rows and simply expire nothing, leaving last week's plan active and looking like advice.
   { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FB-4C', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' },
   // F1-7N-FB-4C-ADDENDUM-MIGRATION — the USER-run lifecycle schema migration. Registered because its absence is
   // ACTIONABLE: the AI Plan will refuse to run until the columns exist, and the only supported way to add them is
   // this tool. Without the entry, "the run is blocked" and "the tool that unblocks it was never synced" look the same.
-  { file: 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', symbol: 'TEMP_AIMIG_BUILD_VERSION_', expected: 'F1-7N-FB-4C-ADDENDUM-MIGRATION', owns: 'AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)' }
+  // F1-7N-FB-4G-A2-R4 §J.6 — OPTIONAL: a one-shot MIGRATION owner. It is MUST_KEEP_UNTIL_MIGRATION,
+  // and once the migration has run the operator is told to remove it. Treating its absence as a MIXED
+  // deployment made "remove the TEMP file" break the deployment contract — the same shape that took the
+  // Execution Plan down through the diagnostics file. Absent is fine; PRESENT-BUT-STALE is still a fault.
+  { file: 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', symbol: 'TEMP_AIMIG_BUILD_VERSION_', expected: 'F1-7N-FB-4C-ADDENDUM-MIGRATION', owns: 'AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)', optional: true },
 ];
 
 function sysGlobalValue_(name) {
@@ -267,19 +275,23 @@ function sysModuleBuildStamps_() {
     var v = sysGlobalValue_(m.symbol);
     var present = (v !== undefined && v !== null && String(v) !== '');
     return {
-      file: m.file, symbol: m.symbol, owns: m.owns,
+      file: m.file, symbol: m.symbol, owns: m.owns, optional: m.optional === true,
       expected_build: m.expected,
       present: present,
       declared_build: present ? String(v) : null,
       matches_expected: present ? (String(v) === m.expected) : false
     };
   });
-  var absent = rows.filter(function (r) { return !r.present; });
+  // §J.6 — an OPTIONAL owner (a one-shot migration file the operator is told to remove) may be absent
+  // without that being a partial sync. A stale one is still a fault: a wrong version is never expected.
+  var absent = rows.filter(function (r) { return !r.present && !r.optional; });
+  var absent_optional = rows.filter(function (r) { return !r.present && r.optional; });
   var stale = rows.filter(function (r) { return r.present && !r.matches_expected; });
   return {
     deployment_build: SYS_BUILD_VERSION_,
     modules: rows,
     absent_modules: absent.map(function (r) { return r.file; }),
+    absent_optional_modules: absent_optional.map(function (r) { return r.file; }),
     stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
     mixed_deployment: (absent.length + stale.length) > 0,
     verdict: (absent.length + stale.length) === 0
@@ -386,7 +398,7 @@ function handleSystemHealth_(body) {
     // entry point served it instead of inferring it from a message.
     handler: (body && body.__km_handler) ? String(body.__km_handler) : 'doPost',
     received_method: (body && body.__km_handler === 'doGet') ? 'GET' : 'POST',
-    request_order_send_diagnostic_owner: (typeof TEMP_ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? TEMP_ROSEND_DIAG_OWNER_FILE_ : null,
+    request_order_send_diagnostic_owner: (typeof ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? ROSEND_DIAG_OWNER_FILE_ : null,
     deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
     inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
     required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,

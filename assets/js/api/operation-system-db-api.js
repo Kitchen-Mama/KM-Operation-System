@@ -3981,7 +3981,10 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     'shipEtaDateOnly_',                     // 31_ — the FB-4A ETA date-only round-trip normalizer
     'shipWsDateOnly_',                      // 57_ — the FB-4A scoped-read date projection
     'rosResolveCurrentPlanningCycle_',      // 66_ — the addendum planning-cycle authority
-    'TEMP_ROSEND_DIAG_OWNER_FILE_',         // TEMP_request_order_send_diagnostics.gs — the single diagnostic owner
+    // F1-7N-FB-4G-A2-R4 §J — the diagnostic status action moved to its PERMANENT owner. Pinning the old
+    // TEMP-file symbol made the browser's contract check fail the moment an operator did what a file named
+    // TEMP invites: delete it. The page then refused to work at all — Search, hydrate and every save.
+    'ROSEND_DIAG_OWNER_FILE_',              // 66_api_v1_request_order_send.gs — the permanent diagnostic owner
     // F1-7N-FB-4C-R1 §D — the OWNER SYMBOLS behind the two SKU read paths. An action can resolve while its
     // owning file is a round behind, which is the case a resolvable action list cannot see: these prove the
     // files themselves were copied.

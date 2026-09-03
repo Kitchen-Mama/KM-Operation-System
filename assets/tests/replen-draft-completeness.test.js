@@ -56,7 +56,20 @@ ok(/_newDraftLineId\(\)/.test(saveFn) && /setAttribute\('data-line-id'/.test(sav
 // F1-7N-FB-4B-ADDENDUM — STRENGTHENED: the queued cancel must now also name the HEADER the line belongs to.
 // Under multi-route there is no single "current" draft, so a cancel that did not carry its own header could
 // soft-cancel a line under the wrong shipment group.
-ok(/_pendingDraftCancels\[sku\][\s\S]{0,80}push\(\{ line_id: lineId, allocation_draft_id: boundDraftId \}\)/.test(saveFn) && /removeAttribute\('data-line-id'\)/.test(saveFn), 'P22: a route edited to incomplete queues a soft-cancel that NAMES ITS HEADER + drops its persisted identity (§5)');
+// F1-7N-FB-4G-A2-R4 §0/§F — REVERSED, because this was the defect. It asserted that a route edited into a
+// TEMPORARILY incomplete state queues a soft-cancel of its stored line and DROPS its persisted identity. In
+// production that is what turned an ordinary edit into a cancelled ticket plus a replacement: changing From
+// rebuilds the Method options, the old Method is no longer valid so the select is cleared, the route is briefly
+// incomplete — and its identity was destroyed right there, its intent flipping UPDATE_EXISTING -> CREATE_NEW.
+// The guarantee the old assertion was reaching for (never write a null/invalid payload over a stored line) does
+// not depend on any of that: the flush writes only COMPLETE routes. So the route now KEEPS its identity, and
+// the operator's next valid Method updates the same header and the same line.
+ok(!/push\(\{ line_id: lineId, allocation_draft_id: boundDraftId \}\)/.test(saveFn),
+  'P22: a route edited to incomplete does NOT queue a soft-cancel of its stored line (§0 update-in-place)');
+ok(!/removeAttribute\('data-line-id'\)/.test(saveFn) && !/removeAttribute\('data-draft-id'\)/.test(saveFn),
+  'P22a: and does NOT drop its persisted identity');
+ok(/row\.route_incomplete = true;/.test(saveFn) && /row\.allocation_draft_line_id = lineId;/.test(saveFn),
+  'P22b: it is marked incomplete and keeps the line it is stored as');
 ok(/_scheduleDraftDbPersist\(sku\)/.test(saveFn), 'P23: the DB write is debounced (§5.4 — no per-keystroke upsert)');
 ok(/function _flushDraftDbPersist\(sku\)/.test(js) && /_draftDbInFlight\[sku\]/.test(js), 'P24: flush has an in-flight guard (no duplicate concurrent writes, §7)');
 // F1-7N-FB-4B-ADDENDUM — STRENGTHENED: one SKU losing its last route must not cancel a header ANOTHER SKU or

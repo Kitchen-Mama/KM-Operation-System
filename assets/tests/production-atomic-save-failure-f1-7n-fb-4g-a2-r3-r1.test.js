@@ -773,7 +773,11 @@ section('§F2 — THE TIMEOUT HAS ONE OWNER, AND IT IS NOT 60 SECONDS');
   ok(locks.every(function (v) { return v < 90000; }),
     'F2.5 every lock wait is shorter than the client write budget, so lock starvation answers rather than times out');
   // §F2.2 — the fix is not "make the number bigger".
-  eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], 'F1-7N-FB-4G-A2-R3-R1', 'F2.6 this round owns the current stamp');
+  // F1-7N-FB-4G-A2-R4 - RESTATED to a floor. I wrote this as an equality with my own round while restating
+  // eleven others of exactly this shape, and it broke on the very next round. The stamp series is
+  // append-only and ordered, so at-or-after is the claim that survives.
+  ok(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], 'F1-7N-FB-4G-A2-R3-R1'),
+    'F2.6 the current owner stamp is at or after this round');
 })();
 
 section('§F2.4 — A CREATE RETRY REUSES ITS KEY; AN UPDATE RETRY KEEPS ITS ID');

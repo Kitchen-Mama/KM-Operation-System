@@ -707,8 +707,14 @@ eq(CMP.IRService.canonical('美森海卡'), 'sea_express', 'V5  §10 sea / sea_e
   var touched = fs.readdirSync(GS_DIR).filter(function (f) { return /\.gs$/.test(f); }).filter(function (f) {
     return /F1-7N-FB-4G-A2/.test(fs.readFileSync(path.join(GS_DIR, f), 'utf8'));
   }).sort();
-  eq(touched, ['16_shipping_allocation_handlers.gs', '63_api_v1_system_health.gs'],
-    'V7  §15 the Apps Script sync set is exactly those two files, derived from the source');
+  // F1-7N-FB-4G-A2-R4 §J — RESTATED to a SUPERSET. This equality said "the sync set is exactly the two files
+  // MY round touched", so every later round with a legitimate Apps Script change breaks it. What A2 needs is
+  // that ITS two owners are in the derived set; A2-R4 adds 66_ and the diagnostics file because a REQUIRED
+  // action moved out of a TEMP owner, which is a correct addition, not a regression.
+  ['16_shipping_allocation_handlers.gs', '63_api_v1_system_health.gs'].forEach(function (f) {
+    ok(touched.indexOf(f) !== -1, 'V7  §15 the derived Apps Script sync set includes ' + f);
+  });
+  ok(touched.length >= 2, 'V7a and it is derived from the source rather than hand-listed (' + touched.length + ' files)');
 })();
 (function () {
   var APP = RO.currentAppToken();

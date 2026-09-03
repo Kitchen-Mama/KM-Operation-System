@@ -1459,3 +1459,96 @@ function handleRequestOrderSendStatus_(body, io) {
 // exact planning_cycle and neither consults the resolver — a diagnostic convenience must never become a
 // production default.
 // ============================================================================================================
+
+// =============================================================================================================
+// F1-7N-FB-4G-A2-R4 §J — THE REQUEST ORDER SEND DIAGNOSTIC STATUS ACTION, IN ITS PERMANENT OWNER.
+//
+// `system.requestOrderSendDiagnosticStatus` is a REQUIRED production action: it is in the router, in
+// SYS_REQUIRED_ACTIONS_, and in the browser's deployed-action contract. Its handler lived in a file named
+// TEMP_request_order_send_diagnostics.gs, so removing that TEMP file from the Apps Script project — exactly
+// what "paste, run, remove" tells an operator to do — deleted a required action. The measured consequence was
+// not a missing diagnostic: the DEPLOYMENT CONTRACT failed, and with it Search, the Execution Plan hydrate and
+// every save on the page. Restoring the TEMP file restored all of it.
+//
+// A required action may not depend on a file whose whole contract is that it gets deleted. The handler, the
+// configuration it reads and the resolver it delegates to therefore live HERE, beside the production Send they
+// describe. The diagnostics file keeps only its editor-run wrappers, which are conveniences and may be removed
+// at any time without touching the action.
+//
+// Apps Script shares ONE global scope, so each of these symbols is defined in exactly one file — that was the
+// FB-4A addendum's rule and it still holds; what changed is which file, and that it is no longer a temporary one.
+// =============================================================================================================
+var ROSEND_DIAG_OWNER_FILE_ = '66_api_v1_request_order_send.gs';
+var ROSEND_DIAG_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R4';
+
+// ---- CONFIGURATION (both optional; neither needs editing for a normal run) -----------------------------------
+// The ONLY business scope control the Send accepts. ALL | T1 | T2 | T3.
+var ROSEND_TIER_SCOPE_ = 'ALL';
+// OPTIONAL controlled-testing override. LEAVE BLANK for normal use — blank means "resolve the current cycle
+// automatically from the persisted allocation drafts", which is what the website does. Set it to an exact
+// YYYY-MM only to probe a cycle other than the resolved one, or to break a reported ambiguity. It is a SOURCE
+// constant: no function here reads PropertiesService, so a Script Property of any name is read by NOTHING and
+// changes NOTHING.
+var ROSEND_PLANNING_CYCLE_OVERRIDE_ = '';
+
+// Shared read-only resolution. Every probe and the router action call this, so they can never disagree about
+// which cycle they are looking at.
+function rosendResolve_() {
+  return rosReadResolvedPlanningCycle_(ROSEND_PLANNING_CYCLE_OVERRIDE_);
+}
+
+// §G — READ-ONLY OWNERSHIP + RESOLUTION STATUS. Which file owns the diagnostics, which cycle resolves and from
+// where, what the candidates are, which build each deployed module reports, and proof that it wrote nothing.
+function rosendStatusReport_() {
+  var res = rosendResolve_();
+  var modules = (typeof sysModuleBuildStamps_ === 'function') ? sysModuleBuildStamps_() : null;
+  return {
+    read_only: true,
+    DB_WRITES: 0, DRIVE_WRITES: 0, PROPERTY_WRITES: 0, STATUS_TRANSITIONS: 0, LOCKS_TAKEN: 0, EMAILS: 0, DEMO_MUTATIONS: 0,
+
+    owner_file: ROSEND_DIAG_OWNER_FILE_,
+    owner_build_version: ROSEND_DIAG_BUILD_VERSION_,
+    send_owner_file: '66_api_v1_request_order_send.gs',
+    send_owner_build_version: (typeof ROS_BUILD_VERSION_ !== 'undefined') ? ROS_BUILD_VERSION_ : null,
+    build_id: (typeof SYS_BUILD_VERSION_ !== 'undefined') ? SYS_BUILD_VERSION_ : null,
+    deployed_action_contract_version: (typeof SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ !== 'undefined') ? SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ : null,
+    required_action_list_version: (typeof SYS_REQUIRED_ACTION_LIST_VERSION_ !== 'undefined') ? SYS_REQUIRED_ACTION_LIST_VERSION_ : null,
+    module_build_stamps: modules ? modules.modules : null,
+    mixed_deployment: modules ? modules.mixed_deployment : null,
+
+    resolved_planning_cycle: res.resolved_planning_cycle,
+    resolution_source: res.resolution_source,
+    resolution_status: res.status,
+    resolution_blocked: res.blocked,
+    resolution_reason: res.reason,
+    candidate_count: res.candidate_count,
+    candidate_cycles: res.candidates,
+    all_cycles_in_table: res.all_cycles,
+    override: res.override,
+    tier_scope: ROSEND_TIER_SCOPE_,
+
+    configuration_authority: 'The ONLY configuration authority is the pair of SOURCE constants in '
+      + ROSEND_DIAG_OWNER_FILE_ + ' (ROSEND_PLANNING_CYCLE_OVERRIDE_, ROSEND_TIER_SCOPE_). No function reads '
+      + 'PropertiesService, so a Script Property of any name is read by NOTHING and changes NOTHING. If one was '
+      + 'created by mistake it is inert; deleting it is optional and changes no behaviour.',
+    entrypoint_owner_note: 'This action and its configuration are owned by a PERMANENT file. The editor-run '
+      + 'wrappers remain in the diagnostics file and may be removed at any time; removing them does not remove '
+      + 'this action, which is what previously broke the deployment contract.',
+    next_action: res.blocked
+      ? ('BLOCKED (' + res.status + '). ' + res.reason)
+      : ('Ready. The workset probe and preview will run against planning_cycle=' + res.resolved_planning_cycle + '.')
+  };
+}
+
+// Router-reachable form of the §G report, so the WEBSITE can prove diagnostic ownership and the resolved cycle
+// without anyone opening the Apps Script editor. Strictly read-only.
+function handleRequestOrderSendDiagnosticStatus_(body) {
+  return {
+    success: true,
+    data: rosendStatusReport_(),
+    errors: [],
+    meta: { apiVersion: '1', action: 'system.requestOrderSendDiagnosticStatus',
+      build: ROSEND_DIAG_BUILD_VERSION_, read_only: true,
+      db_writes: 0, drive_writes: 0, property_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0 }
+  };
+}

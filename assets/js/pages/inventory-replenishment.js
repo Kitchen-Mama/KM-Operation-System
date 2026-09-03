@@ -3848,11 +3848,17 @@ window._scheduleDraftDbPersist = _scheduleDraftDbPersist;
 // route and cancels only the ones nothing points at any more.
 function _irCancelUnusedDraftHeaders_(sku) {
     try {
+        // F1-7N-FB-4G-A2-R4 §I — A HEADER IS STILL IN USE WHILE ANY ROW ON SCREEN NAMES IT.
+        //
+        // This required _isRouteComplete(r), so a route whose Method had just been cleared by a From change
+        // stopped counting as a user of its own header — and when it was the SKU's only route the sweep
+        // CANCELLED the stored header. Measured: SADH-K4-BBB soft-cancelled by nothing but an editor state.
+        // §I lists exactly what may cancel a draft, and "a field is momentarily blank" is not on it. The sweep
+        // keeps its real purpose: releasing a header no row references any more.
         var stillUsed = {};
         var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
         Object.keys(bySku).forEach(function (k) {
             (bySku[k] || []).forEach(function (r) {
-                if (!_isRouteComplete(r)) return;
                 var id = String(r.allocation_draft_id || '').trim();
                 if (id) stillUsed[id] = 1;
             });
@@ -4095,6 +4101,43 @@ window._irMultiLineHeaderBlock_ = _irMultiLineHeaderBlock_;
 
 // Persist ONE canonical route group: resolve/create its header, then upsert its line under that header.
 // Returns a per-route outcome and never throws, so one failing route cannot abort the routes after it.
+// F1-7N-FB-4G-A2-R4 §G.8/§F.2 — what an edit that left the route incomplete says for itself.
+//
+// It is NOT a failure: nothing was attempted and nothing was written, and the database still holds this
+// route's last complete version. It is a state the operator has to be able to see, because the alternative —
+// what shipped — was a change that produced no request and no message at all.
+function _irMissingRouteFields_(r) {
+    var miss = [];
+    if (!String((r && r.source_warehouse_id) || '').trim()) miss.push('From');
+    var toReal = String((r && r.destination_warehouse_id) || '').trim();
+    var mkt = String((r && r.destination_marketplace) || '').trim();
+    if (!((!!toReal) !== (!!mkt))) miss.push('To');
+    var q = Number((r && (r.planned_qty != null ? r.planned_qty : r.qty)));
+    if (!isFinite(q) || q <= 0) miss.push('Qty');
+    var m = String((r && r.shipping_method) || '').trim();
+    if (!m || m.toLowerCase().indexOf('no available') !== -1) miss.push('Method');
+    return miss;
+}
+function _irIncompleteRouteNotice_(sku, routes) {
+    var lines = (routes || []).map(function (r) {
+        return '  · ' + _irRouteLabel_({ routes: [r], header: {} }) + ' — needs ' + (_irMissingRouteFields_(r).join(' + ') || 'a valid route');
+    });
+    var e = new Error('UNSAVED_INCOMPLETE_ROUTE');
+    e.structured = {
+        code: 'UNSAVED_INCOMPLETE_ROUTE',
+        reasonCode: 'UNSAVED_INCOMPLETE_ROUTE',
+        table: '',
+        zeroWrite: 'true',
+        retryable: 'true',
+        nextAction: 'Finish the route, and it saves to the same ticket it already has.',
+        incompleteInstanceIds: (routes || []).map(function (r) { return String(r.client_route_instance_id || ''); }),
+        message: (routes || []).length + ' route(s) for ' + sku + ' are edited but not yet complete, so nothing was sent. ' +
+            'The database still holds each one’s last complete version, and each keeps its saved ticket — ' +
+            'finishing the route UPDATES that same ticket rather than creating another.\n' + lines.join('\n')
+    };
+    return e;
+}
+
 // F1-7N-FB-4G-A2-R3-R1 §F2.3 — READ-AFTER-TIMEOUT RECONCILIATION.
 //
 // A write whose response never arrived is not "not saved". The server may have committed after the browser
@@ -4552,6 +4595,22 @@ function _flushDraftDbPersist(sku) {
             ? rows.filter(function (r) { return _touchedSet[String(r.client_route_instance_id || '')]; })
             : rows;
         var complete = _scoped.filter(_isRouteComplete);
+        // F1-7N-FB-4G-A2-R4 §G.8 — A DIRTY BUT INCOMPLETE ROUTE IS NAMED, NEVER SILENTLY SKIPPED.
+        //
+        // An edit that leaves the route incomplete — the Method cleared by a From change is the everyday case —
+        // is correctly NOT written (§F.4: an incomplete UPDATE must never be sent). But it was then dropped in
+        // silence, so the operator saw a change they had made produce no request, no error and no state: the
+        // "silent no-write" in the report. The route keeps its identity, its edit and its place in the queue;
+        // what changes is that it says so.
+        var _incomplete = _scoped.filter(function (r) { return !_isRouteComplete(r); });
+        if (_incomplete.length) {
+            _incomplete.forEach(function (r) {
+                _irSetRouteSaveState_(sku, [String(r.client_route_instance_id || '')], 'NOT_SAVED');
+            });
+            if (typeof _irShowDraftSaveError === 'function') {
+                _irShowDraftSaveError(sku, _irIncompleteRouteNotice_(sku, _incomplete));
+            }
+        }
         // F1-7N-FB-4G-A2-R2 §7 - A MULTI-LINE HEADER IS NOT SILENTLY RE-ROUTED. From/To/Method live on the
         // HEADER, so changing one of them on a header several SKUs share would move every one of those lines.
         // The Execution Plan shows one SKU at a time and cannot express that, so it BLOCKS and discloses
@@ -5360,11 +5419,30 @@ function _saveAllocationDraftFromDom(sku) {
         var expectedArrival = etaEl ? _irCanonicalDateOrBlank_(etaEl.getAttribute('data-eta')) : '';
         var expectedArrivalBasis = etaEl ? String(etaEl.getAttribute('data-eta-basis') || '') : '';
         var expectedArrivalSource = etaEl ? String(etaEl.getAttribute('data-eta-source') || '') : '';
-        var lineId = rowEl.getAttribute('data-line-id') || '';   // persisted Draft line identity (§6)
+        // F1-7N-FB-4G-A2-R4 §D — THE MODEL OWNS THE IDENTITY; THE DOM MIRRORS IT.
+        //
+        // These three were read from DOM attributes and from nothing else, so any path that dropped an
+        // attribute — a re-render, a rebuilt row, the incompleteness branch below — silently turned a
+        // persisted route into a brand-new one. The attribute is still read FIRST (it is the freshest thing a
+        // render just wrote), but when it is absent the last known model row for THIS route instance supplies
+        // it. §D.1: once a route has hydrated with an identity, it keeps that identity until the row is
+        // explicitly removed or reaches a terminal status — a render can never re-derive it away.
+        var _instAttr = String(rowEl.getAttribute('data-route-instance') || '').trim();
+        var _priorRow = _instAttr ? _priorByInstance[_instAttr] : null;
+        var lineId = rowEl.getAttribute('data-line-id') ||
+            String((_priorRow && _priorRow.allocation_draft_line_id) || '');   // persisted Draft line identity (§6)
         // F1-7N-FB-4F-B6 §F — what the DATABASE held for this route's destination when it was hydrated.
         var priorDestState = rowEl.getAttribute('data-dest-state') || '';
-        var boundDraftId = rowEl.getAttribute('data-draft-id') || '';   // the header this route is persisted under
-        var boundGroupKey = rowEl.getAttribute('data-group-key') || ''; // the route group it was persisted as
+        var boundDraftId = rowEl.getAttribute('data-draft-id') ||
+            String((_priorRow && _priorRow.allocation_draft_id) || '');   // the header this route is persisted under
+        var boundGroupKey = rowEl.getAttribute('data-group-key') ||
+            String((_priorRow && _priorRow.route_group_key) || '');       // the route group it was persisted as
+        // Re-publish what the model owns, so the DOM and the model can never disagree about identity.
+        try {
+            if (lineId) rowEl.setAttribute('data-line-id', lineId);
+            if (boundDraftId) rowEl.setAttribute('data-draft-id', boundDraftId);
+            if (boundGroupKey) rowEl.setAttribute('data-group-key', boundGroupKey);
+        } catch (_eId) {}
         // ALL rows are kept in the local render/recovery draft so an in-progress (still incomplete) route
         // survives collapse/expand. Whether a row is PERSISTED to the DB is decided ONLY by the shared
         // four-field completeness gate below — a truthy "any intent" check is NOT enough (§4).
@@ -5407,17 +5485,27 @@ function _saveAllocationDraftFromDom(sku) {
             // UPDATES the same shipping_allocation_draft_lines row (idempotent — no duplicate lines, §6/§13).
             if (!lineId) { lineId = _newDraftLineId(); rowEl.setAttribute('data-line-id', lineId); }
             row.allocation_draft_line_id = lineId;
-        } else if (lineId) {
-            // Was persisted, now incomplete → queue a soft-cancel and drop the persisted identity so we
-            // never overwrite the stored line with a null/invalid payload (§5). It stays in the local
-            // draft as editable temporary state, but is no longer a DB line.
-            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push({ line_id: lineId, allocation_draft_id: boundDraftId });
-            rowEl.removeAttribute('data-line-id');
-            rowEl.removeAttribute('data-draft-id');
-            rowEl.removeAttribute('data-group-key');
-            row.allocation_draft_line_id = '';
-            row.allocation_draft_id = '';
-            row.route_group_key = '';
+            row.route_incomplete = false;
+        } else {
+            // F1-7N-FB-4G-A2-R4 §0/§F — A TEMPORARILY INCOMPLETE ROUTE KEEPS ITS IDENTITY.
+            //
+            // THIS WAS THE CANCEL + REPLACEMENT. When the route went incomplete this branch queued a
+            // soft-cancel of the stored line AND erased allocation_draft_id / allocation_draft_line_id from
+            // both the model and the DOM. Measured on the shipped collector: changing From rebuilds the Method
+            // options, the previous Method is no longer valid so the select is cleared, the route is briefly
+            // incomplete — and the route's identity was destroyed right there, its intent flipping
+            // UPDATE_EXISTING -> CREATE_NEW_ROUTE. When the operator then picked a valid Method the row minted
+            // a FRESH line id and the save cancelled the old ticket and created a replacement. That is the
+            // live "cancelled headers + new headers" shape, and it was caused by an editor state, not by any
+            // decision the operator made.
+            //
+            // The erasure was defended as "never overwrite the stored line with a null/invalid payload", and
+            // that guarantee does not depend on it: the flush writes only `complete` routes, so an incomplete
+            // route is never sent whether it holds an id or not. §F.5/§F.6 freeze the opposite — the DB keeps
+            // its last complete snapshot, the row keeps its identity and its UPDATE intent, and the operator's
+            // next valid Method updates THE SAME header and line.
+            row.route_incomplete = true;
+            row.allocation_draft_line_id = lineId;      // '' only if it was never persisted
         }
         // F1-7N-FB-4G-A2-R2 - the row's own instance identity, minted once and carried in the DOM so it
         // survives every re-render. Correlation of a request, a response and an error is by THIS, never by an
@@ -6130,6 +6218,17 @@ function addExecutionRoute(event, sku) {
         try { alert('A save is still in progress.\n\nAdd Route is available again as soon as the current routes finish saving — this prevents a new route from being written before the running save has recorded what it saved.'); } catch (e) {}
         return false;
     }
+    // F1-7N-FB-4G-A2-R4 §K.2 — A DEPLOYMENT THAT CANNOT SAVE MUST NOT LET A ROUTE BE ADDED.
+    //
+    // A route ticket is written by exactly one action. When the deployment does not provide it the save fails
+    // closed with ROUTE_ATOMIC_WRITER_UNAVAILABLE — correct, but only AFTER the operator has typed a whole
+    // route. This is the same fact, checked before the work: adding a route that provably cannot be saved is
+    // not an editable state, it is a trap. (The live incident reached this through a REQUIRED action that
+    // lived in a TEMP file; §J moved it, and this is the second, independent guard.)
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.upsertShippingAllocationDraftAtomic === 'function')) {
+        try { alert('Cannot add a route — ROUTE_ATOMIC_WRITER_UNAVAILABLE.\n\nThis deployment does not provide the action a route ticket is saved with, so a new route could not be saved. Nothing was added and nothing was written. Sync the Apps Script deployment and publish a new version, then reload.'); } catch (e) {}
+        return false;
+    }
     _renderExecutionRoute(sku, {});
     onExecutionRouteEdit(sku);
     syncExpandPanelHeight(sku);
@@ -6145,7 +6244,23 @@ function removeExecutionRoute(event, sku) {
     if (row) {
         var lineId = row.getAttribute('data-line-id');
         var lineDraftId = row.getAttribute('data-draft-id') || '';
-        if (lineId && typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId, lineDraftId);
+        // F1-7N-FB-4G-A2-R4 §I.1 — CANCELLING A PERSISTED ROUTE IS AN EXPLICIT, CONFIRMED ACT.
+        //
+        // §I freezes the list of things allowed to soft-cancel a draft, and the first entry requires the
+        // operator to confirm. This removed a stored ticket from the database on a single click with no
+        // question asked — the only remaining unconfirmed cancel once the edit-driven ones were removed.
+        // An UNSAVED row has nothing to cancel and is dropped without a prompt, as before.
+        if (lineId && typeof _cancelAllocationDraftLine === 'function') {
+            var _goCancel = false;
+            try {
+                _goCancel = window.confirm('Remove this saved route from the Execution Plan?\n\n' +
+                    'Route ticket: ' + lineDraftId + '\nLine: ' + lineId + '\n\n' +
+                    'The stored draft line is cancelled (kept for audit, never hard-deleted). ' +
+                    'This is not how you change a route — editing From / To / Method / Qty updates this same ticket in place.');
+            } catch (e) { _goCancel = false; }
+            if (!_goCancel) return false;      // ZERO WRITE, and the row stays exactly as it is
+            _cancelAllocationDraftLine(lineId, lineDraftId);
+        }
         row.remove();
         onExecutionRouteEdit(sku);
         syncExpandPanelHeight(sku);

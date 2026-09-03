@@ -666,15 +666,33 @@ function definitionsAcrossProject(pattern) {
   });
   return { total: total, files: files };
 }
-[['TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE', /function\s+TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE\s*\(/g],
- ['TEMP_REQUEST_ORDER_SEND_PREVIEW', /function\s+TEMP_REQUEST_ORDER_SEND_PREVIEW\s*\(/g],
- ['TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS', /function\s+TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS\s*\(/g],
- ['TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_', /var\s+TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_\s*=/g],
- ['TEMP_ROSEND_TIER_SCOPE_', /var\s+TEMP_ROSEND_TIER_SCOPE_\s*=/g],
- ['TEMP_ROSEND_DIAG_OWNER_FILE_', /var\s+TEMP_ROSEND_DIAG_OWNER_FILE_\s*=/g]].forEach(function (pair) {
+// F1-7N-FB-4G-A2-R4 §J — RESTATED, AND THE OWNER MOVED. The single-definition rule is unchanged; what this
+// block used to also assert is that a REQUIRED production action lives in a file named TEMP, whose entire
+// contract is "paste, run, remove". An operator did exactly that, and the deployment contract failed — taking
+// Search, the Execution Plan hydrate and every save with it. The handler, its configuration and its resolver
+// now live in the permanent Send owner; only the editor-run wrappers stay behind, and deleting them removes
+// nothing but themselves.
+[['TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE', /function\s+TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE\s*\(/g, 'TEMP_request_order_send_diagnostics.gs:1'],
+ ['TEMP_REQUEST_ORDER_SEND_PREVIEW', /function\s+TEMP_REQUEST_ORDER_SEND_PREVIEW\s*\(/g, 'TEMP_request_order_send_diagnostics.gs:1'],
+ ['TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS', /function\s+TEMP_REQUEST_ORDER_SEND_DIAGNOSTIC_STATUS\s*\(/g, 'TEMP_request_order_send_diagnostics.gs:1'],
+ ['ROSEND_PLANNING_CYCLE_OVERRIDE_', /var\s+ROSEND_PLANNING_CYCLE_OVERRIDE_\s*=/g, '66_api_v1_request_order_send.gs:1'],
+ ['ROSEND_TIER_SCOPE_', /var\s+ROSEND_TIER_SCOPE_\s*=/g, '66_api_v1_request_order_send.gs:1'],
+ ['ROSEND_DIAG_OWNER_FILE_', /var\s+ROSEND_DIAG_OWNER_FILE_\s*=/g, '66_api_v1_request_order_send.gs:1'],
+ ['rosendStatusReport_', /function\s+rosendStatusReport_\s*\(/g, '66_api_v1_request_order_send.gs:1'],
+ ['rosendResolve_', /function\s+rosendResolve_\s*\(/g, '66_api_v1_request_order_send.gs:1'],
+ ['handleRequestOrderSendDiagnosticStatus_', /function\s+handleRequestOrderSendDiagnosticStatus_\s*\(/g, '66_api_v1_request_order_send.gs:1']].forEach(function (pair) {
   var d = definitionsAcrossProject(pair[1]);
   eq(d.total, 1, '20. exactly ONE definition of ' + pair[0] + ' across the whole project');
-  eq(d.files, ['TEMP_request_order_send_diagnostics.gs:1'], '20. and it is in the single owner file (' + pair[0] + ')');
+  eq(d.files, [pair[2]], '20. and it is in the single owner file (' + pair[0] + ')');
+});
+// §J.7 — the REQUIRED action, its configuration and its resolver are NOT provided by any TEMP file.
+var TEMP_GS = ALL_GS.filter(function (f) { return /^TEMP_/.test(f); });
+['handleRequestOrderSendDiagnosticStatus_', 'rosendStatusReport_', 'rosendResolve_',
+ 'ROSEND_PLANNING_CYCLE_OVERRIDE_', 'ROSEND_TIER_SCOPE_', 'ROSEND_DIAG_OWNER_FILE_'].forEach(function (sy) {
+  var owners = TEMP_GS.filter(function (f) {
+    return new RegExp('(function|var)\\s+' + sy + '\\s*[(=]').test(read('specs/active/apps-script/' + f));
+  });
+  eq(owners, [], '20. §J.7 no TEMP file defines ' + sy);
 });
 // the retired constant name is gone entirely — so the Script Property the operator created matches nothing
 eq(definitionsAcrossProject(/var\s+TEMP_ROSEND_PLANNING_CYCLE_\s*=/g).total, 0,
@@ -689,14 +707,14 @@ var GTDcode = noStrings(GTD);
 ok(/read by NOTHING and changes NOTHING/.test(GTD), '20. and the status report SAYS a Script Property is inert, so the mistake is not made twice');
 
 // §I.4 — automatic resolution uses the PRODUCTION cycle authority, not a private copy.
-ok(/rosReadResolvedPlanningCycle_\(TEMP_ROSEND_PLANNING_CYCLE_OVERRIDE_\)/.test(GTD),
+ok(/rosReadResolvedPlanningCycle_\(ROSEND_PLANNING_CYCLE_OVERRIDE_\)/.test(G66),
   '20. the diagnostics delegate resolution to the production authority in 66_');
 ok(GTDcode.indexOf('request_order_allocation_drafts') === -1,
   '20. and never re-implement the table read themselves');
 var probeFn = extractFn(GTD, 'TEMP_REQUEST_ORDER_SEND_WORKSET_PROBE');
 var prevFn = extractFn(GTD, 'TEMP_REQUEST_ORDER_SEND_PREVIEW');
 [probeFn, prevFn].forEach(function (fn, i) {
-  ok(/tempRosendResolve_\(\)/.test(fn), '20. wrapper ' + i + ' resolves through the shared resolver');
+  ok(/rosendResolve_\(\)/.test(fn), '20. wrapper ' + i + ' resolves through the shared resolver');
   ok(/if \(res\.blocked\)[\s\S]{0,80}return;/.test(fn), '20. wrapper ' + i + ' RETURNS on a blocked resolution — it never reads a workset');
 });
 
@@ -709,7 +727,7 @@ eq((GTD.match(/mode: 'preview'/g) || []).length, 1, '20. the preview wrapper is 
 ok(GTDcode.indexOf("mode: 'execute'") === -1, '20. and no editor wrapper can execute a Send');
 ok(/DB_WRITES=0 DRIVE_WRITES=0 PROPERTY_WRITES=0 STATUS_TRANSITIONS=0/.test(GTD),
   '20. every blocked path prints the zero-write counters (§G)');
-var statusRep = extractFn(GTD, 'tempRosendStatusReport_');
+var statusRep = extractFn(G66, 'rosendStatusReport_');
 ['resolved_planning_cycle', 'resolution_source', 'candidate_cycles', 'build_id',
  'deployed_action_contract_version', 'owner_file', 'owner_build_version',
  'DB_WRITES', 'DRIVE_WRITES', 'STATUS_TRANSITIONS'].forEach(function (k) {
@@ -758,10 +776,29 @@ ok(/66_api_v1_request_order_send\.gs declares F1-7N-FB-3C/.test(mixed.stale_modu
 ok(/MIXED_OR_PARTIAL_SYNC/.test(mixed.verdict), '20. with a verdict the operator can act on');
 // a file absent from the deployment entirely
 declaredBy['ROS_BUILD_VERSION_'] = 'F1-7N-FB-4A';
-delete declaredBy['TEMP_ROSEND_DIAG_BUILD_VERSION_'];
+// §J — the manifest no longer names a TEMP file at all, so "a file that was never copied" is demonstrated on
+// a permanent owner. This is the property that matters: the deployment is COMPLETE without any TEMP file.
+delete declaredBy['SAD_BUILD_VERSION_'];
 var absent = sysModuleBuildStamps_();
 eq(absent.mixed_deployment, true, '20. a file that was never copied is detected too');
-eq(absent.absent_modules, ['TEMP_request_order_send_diagnostics.gs'], '20. and named');
+eq(absent.absent_modules.length, 1, '20. and exactly one module is named');
+// §J.4/§J.6 — no TEMP file is a REQUIRED owner any more. A one-shot migration owner may still be listed, but
+// only as OPTIONAL: the operator is told to remove it once it has run, and doing so must not report a partial
+// sync. That is the exact shape that took the Execution Plan down through the diagnostics file.
+eq(SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return /^TEMP_/.test(m.file) && m.optional !== true; }), [],
+  '20. §J.4 no TEMP file is a REQUIRED deployment owner');
+SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return /^TEMP_/.test(m.file); }).forEach(function (m) {
+  ok(m.optional === true, '20. §J.6 the remaining TEMP owner ' + m.file + ' is declared optional');
+});
+// and removing every optional owner leaves the deployment UNIFORM
+// restore the module the absent-owner scenario above removed, so this check measures the OPTIONAL rule alone
+declaredBy['SAD_BUILD_VERSION_'] = SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return m.symbol === 'SAD_BUILD_VERSION_'; })[0].expected;
+var optSyms = SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return m.optional === true; }).map(function (m) { return m.symbol; });
+ok(optSyms.length >= 1, '20. §J.6 at least one owner is declared optional');
+optSyms.forEach(function (sy) { delete declaredBy[sy]; });
+var withoutTemp = sysModuleBuildStamps_();
+eq(withoutTemp.mixed_deployment, false, '20. §J.4 with every optional TEMP owner REMOVED the deployment is still UNIFORM');
+eq(withoutTemp.absent_optional_modules.length, optSyms.length, '20. and their absence is reported as a fact, not a fault');
 
 // the CALLER-driven probe is what breaks the self-reference
 var probeSrc = extractFn(G63, 'sysProbeRequested_');
@@ -775,7 +812,7 @@ ok(/KM_REQUIRED_DEPLOYED_ACTIONS_/.test(DBAPI) && /KM_REQUIRED_DEPLOYED_SYMBOLS_
 ['system.requestOrderSendDiagnosticStatus', 'system.executionPlanConflictDiagnostic', 'shipment.eta.update'].forEach(function (a) {
   ok(new RegExp("'" + a.replace(/\./g, '\\.') + "'").test(DBAPI), '20. including ' + a);
 });
-['sadK2ReconcileDecision_', 'shipEtaDateOnly_', 'shipWsDateOnly_', 'rosResolveCurrentPlanningCycle_', 'TEMP_ROSEND_DIAG_OWNER_FILE_'].forEach(function (sy) {
+['sadK2ReconcileDecision_', 'shipEtaDateOnly_', 'shipWsDateOnly_', 'rosResolveCurrentPlanningCycle_', 'ROSEND_DIAG_OWNER_FILE_'].forEach(function (sy) {
   ok(DBAPI.indexOf("'" + sy + "'") !== -1, '20. and the symbol ' + sy + ', which proves its owner file was copied');
 });
 var chk = DBAPI.slice(DBAPI.indexOf('checkDeploymentContract = async function'), DBAPI.indexOf('getExpectedContract'));

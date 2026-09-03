@@ -556,7 +556,13 @@ var GS_OWNED_SINCE_R1 = {
   // F1-7N-FB-4F-B3 - the code-first schema compatibility round. 16_ learns the two append-only columns before
   // they exist (30..35 header, 30..31 line) and calls 69_ for the typed refusals and the K4 identity; 69_
   // becomes a synchronized owner and joins the build manifest; 63_ carries both expectations.
-  '16_shipping_allocation_handlers.gs': 'FB-4F-B3 code-first schema compatibility (the round licensed to change the writer)'
+  '16_shipping_allocation_handlers.gs': 'FB-4F-B3 code-first schema compatibility (the round licensed to change the writer)',
+  // F1-7N-FB-4G-A2-R4 §J - a REQUIRED production action was owned by a file named TEMP, so doing what that name
+  // invites (paste, run, remove) deleted the action and failed the deployment contract - taking Search, the
+  // Execution Plan hydrate and every save with it. The handler, its configuration and its resolver moved into
+  // the permanent Send owner; the TEMP file keeps only its editor-run wrappers.
+  '66_api_v1_request_order_send.gs': 'FB-4G-A2-R4 permanent owner of system.requestOrderSendDiagnosticStatus + its configuration',
+  'TEMP_request_order_send_diagnostics.gs': 'FB-4G-A2-R4 reduced to editor-run wrappers; owns no required action'
 };
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');
