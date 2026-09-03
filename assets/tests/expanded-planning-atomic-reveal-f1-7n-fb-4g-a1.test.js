@@ -126,9 +126,14 @@ Doc.prototype.querySelectorAll = function () { return []; };
 function makeInit(S, deps) {
   deps = deps || {};
   var doc = deps.doc || (function () { var d = new Doc(); d.add('shipping-methods-CO1100-R'); return d; })();
+  // F1-7N-FC-1B-E1 — initializeShippingAllocation now shows an EMPTY STATE where it used to seed a
+  // blank Suggested-Qty route. Its two new collaborators are stubbed exactly as _renderExecutionRoute and
+  // updateShippingAllocationTotal already are in this harness: both only WRITE to the DOM, this suite
+  // measures the paint SEQUENCE, and the empty state's own behaviour is asserted where it belongs (execution-plan-explicit-intent-f1-7n-fc-1b-e1).
   return new Function(
     'document', '_irLoadCarrierPlanning_', '_execRebuildMethodOptions', '_irUpdateRouteEtas',
     '_allocationDraftRowsFor', '_renderExecutionRoute', 'updateShippingAllocationTotal', '_irSuggestedQtyNumber_',
+    '_execRenderEmptyState_', '_execSyncEmptyState_',
     extractFn(PAGE, 'initializeShippingAllocation') + ' return initializeShippingAllocation;'
   )(
     doc,
@@ -138,7 +143,9 @@ function makeInit(S, deps) {
     deps.draftRows || function () { return [{ sku: 'CO1100-R', shipping_method: 'sea', qty: 800 }]; },
     function (sku, route) { S.mark('ROUTE_PAINTED'); S.mark('ROUTE_METHOD=' + String((route && route.shipping_method) || '')); S.mark('ROUTE_QTY=' + String((route && route.qty) || 0)); },
     function () { S.mark('TOTAL_UPDATED'); },
-    deps.suggested || function () { return 800; }
+    deps.suggested || function () { return 800; },
+    function () { S.mark('EXEC_EMPTY_STATE_SHOWN'); },
+    function () { S.mark('EXEC_EMPTY_STATE_SYNCED'); }
   );
 }
 
@@ -308,15 +315,22 @@ section('§H.4 — A LEGITIMATE ZERO IS DATA');
 section('§H.5–§H.7 — WHAT "READY" HAS TO COVER');
 // ================================================================================================================
 eq(R.executionReadiness({ readModelReady: true, hydrationInFlight: false, catalogue: 'LOADING', hasRoutes: true }).state, 'LOADING',
-  'H5  a SKU with NO persisted draft still waits for its pickers and catalogue — the default editor is a route');
+  'H5  a SKU whose panel holds routes still waits for its pickers and catalogue');
 (function () {
-  // No draft rows: the shipped seeder builds the default preview from the SAME suggested-qty authority.
+  // RESTATED (F1-7N-FC-1B-E1): this executed the SEEDER and asserted that a SKU with no persisted draft still
+  // PAINTS one route — "the default editor is a route". E1 removes that route, because a recommendation
+  // of 0 was never a route and neither was a recommendation of 520.
+  //
+  // The invariant this pair protects is that a canonical ZERO is not mistaken for "no data" and not turned
+  // into a refusal to render. It holds and is measured here in its new form: no route is painted, the EMPTY
+  // STATE is shown exactly once, and the panel neither hangs nor errors. (The 0-prints-as-0 half lives with
+  // the Suggested Qty cell, in the FB-4G-A0 suite's G12/G13.)
   var S = Sched();
   var init = makeInit(S, { draftRows: function () { return null; }, suggested: function () { return 0; }, carrierAt: 0 });
   init('CO1100-R', { sku: 'CO1100-R' }, { catalogueSettled: true });
   S.run();
-  eq([S.count('ROUTE_PAINTED'), S.at_('ROUTE_QTY=0') != null], [1, true],
-    'H5a and it is painted once, with a legitimate 0 rather than a refusal to render');
+  eq([S.count('ROUTE_PAINTED'), S.count('EXEC_EMPTY_STATE_SHOWN'), S.count('TOTAL_UPDATED') > 0], [0, 1, true],
+    'H5a a zero recommendation paints NO route, shows the empty state once, and still updates the total');
 })();
 (function () {
   var seen = null;

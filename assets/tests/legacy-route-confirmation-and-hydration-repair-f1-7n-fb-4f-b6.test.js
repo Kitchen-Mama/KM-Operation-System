@@ -541,8 +541,18 @@ section('C — [§E, §F, tests 7] THE PERSISTED ROW RENDERS, AND THE CONFIRMATI
     'C3 [§F] the persisted state survives the DOM round trip, so a later save knows this was an adoption');
   ok(/var qty = parseInt\(route\.qty\) \|\| 0;/.test(renderFn),
     'C4 [§E.4] Qty is read from the persisted route row, never re-derived from a suggestion');
-  ok(/_renderExecutionRoute\(sku, \{ ship_from: '', destination: '', shipping_method: '', qty: suggested \}\)/.test(PAGEC),
-    'C5 [§E.5] the default Add Route editor is a SEPARATE, id-less row and still carries no header identity');
+  // RESTATED (F1-7N-FC-1B-E1): this pinned the exact seeded-route literal, and E1 DELETED that branch —
+  // it was the phantom. The INVARIANT C5 protects is that an editor row the operator has not saved never
+  // inherits a persisted header's identity, and it now holds more strongly than a literal could express:
+  // there is no such row at all unless the operator presses + Add Route, and the row that press produces
+  // carries no header id, no line id and its own explicit provenance. Asserted on the surviving creator.
+  var _addFn = code(extractFn(PAGE, 'addExecutionRoute'));
+  ok(/USER_EXPLICIT_ADD_ROUTE/.test(_addFn),
+    'C5 [§E.5] the Add Route editor exists only by explicit user intent...');
+  ok(!/allocation_draft_id|allocation_draft_line_id|data-draft-id|data-line-id/.test(_addFn),
+    'C5a [§E.5] ...and the row it creates carries NO header or line identity, so it can adopt nothing');
+  ok(!/qty:\s*suggested/.test(PAGEC) && /_execRenderEmptyState_/.test(PAGEC),
+    'C5b [§E.5] and the id-less row is no longer conjured from a suggestion at all — the plan shows empty');
 
   // §F.3 — the question names every fact the operator needs, and says what will happen.
   var det = { from: 'CN Youxin', to: 'Amazon', method: 'sea', qty: 800, expected_arrival: '', allocation_draft_id: 'SADH-K2-ABC' };

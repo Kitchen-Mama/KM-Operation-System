@@ -135,7 +135,16 @@ var ROUND_TOKENS = [
   // identity for that feature at all, and no assertion covered it because the round measured the token it had
   // moved rather than the files it had changed. HF1 moves the ENTIRE application set onto one new token, so no
   // member of it can be served from an older round than any other.
-  'fc1ar1-cancelrelease-20260903'
+  'fc1ar1-cancelrelease-20260903',
+  // F1-7N-FC-1B-E1 — Execution Plan explicit intent. HF1 is on origin/main (b39bfc5 was pushed), so by the
+  // rule recorded above its token has been published and cannot be reused. This round changes
+  // inventory-replenishment.js and inventory-compat.js TOGETHER and they do not work as a mixed pair: the page
+  // now refuses to render an execution route that cannot name which explicit act produced it, and the owner of
+  // that vocabulary — IRRouteProvenance — lives in the shared module. A browser holding the new page with the
+  // old module would find window.IRRouteProvenance undefined; holding the old page with the new module would
+  // keep seeding a blank Suggested-Qty route that the new Submit preflight then refuses as
+  // ROUTE_PROVENANCE_UNKNOWN — a plan the operator cannot submit and cannot see the cause of.
+  'fc1b-executionintent-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

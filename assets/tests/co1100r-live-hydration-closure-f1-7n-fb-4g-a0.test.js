@@ -362,21 +362,27 @@ section('E · §G — RENDERING, WITH THE SHIPPED initializeShippingAllocation')
 function runInit(opts) {
   opts = opts || {};
   var rendered = [];
+  var emptyState = { shown: 0, synced: 0 };
   var src = [
     extractFn(PAGE, '_allocationDraftRowsFor'),
     extractFn(PAGE, '_replenCtxEq'),
     extractFn(PAGE, 'initializeShippingAllocation'),
     'OUT = (function () { initializeShippingAllocation(SKU, SKUDATA); return rendered; })();'
   ].join(String.fromCharCode(10));
+  // F1-7N-FC-1B-E1 — initializeShippingAllocation now shows an EMPTY STATE where it used to seed a
+  // blank Suggested-Qty route. Its two new collaborators are stubbed exactly as _renderExecutionRoute and
+  // updateShippingAllocationTotal already are in this harness: both only WRITE to the DOM, this suite
+  // measures the paint SEQUENCE, and the empty state's own behaviour is asserted where it belongs (execution-plan-explicit-intent-f1-7n-fc-1b-e1).
   var f = new Function('SKU', 'SKUDATA', 'replenAllocationDraft', '_replenCtx', 'document', 'rendered',
     '_renderExecutionRoute', 'updateShippingAllocationTotal', '_irLoadCarrierPlanning_',
-    '_irSuggestedQtyNumber_',
+    '_irSuggestedQtyNumber_', '_execRenderEmptyState_', '_execSyncEmptyState_',
     'var OUT;' + src + 'return OUT;');
   return f(opts.sku || 'CO1100-R', opts.skuData || { sku: 'CO1100-R', suggestedQty: 0 },
     opts.draft || AFTER.draft, function () { return opts.ctx || US; },
     { getElementById: function () { return {}; } }, rendered,
     function (sku, route) { rendered.push({ sku: sku, route: route }); },
-    function () {}, undefined, opts.suggested);
+    function () {}, undefined, opts.suggested,
+    function () { emptyState.shown++; }, function () { emptyState.synced++; });
 }
 var renderedUS = runInit({});
 eq(renderedUS.length, 1, 'E1  §G.1 H4 renders exactly ONCE');
@@ -469,7 +475,15 @@ eq(g.state.value, 2120, 'G2  and its value for CO1100-T is 2120');
 ok(g.html.indexOf('2120') !== -1, 'G3  which is what the Suggested Qty cell prints');
 eq(CO_T.suggestedQty, 0, 'G4  THE CAUSE — the legacy per-row field the editor read is 0; the materialized read never fills it');
 eq(g.num, 2120, 'G5  THE FIX — the editor now seeds from the SAME authority the cell prints');
-ok(/_irSuggestedQtyNumber_\(skuData\)/.test(PAGEC), 'G6  and it is wired into the default-editor branch');
+// RESTATED (F1-7N-FC-1B-E1): this asserted the authority is wired into the DEFAULT-EDITOR branch. That
+// branch is gone — it was the phantom route: a blank Execution Route carrying the Suggested Qty that no
+// operator had asked for. The authority itself is unchanged and still executed above (G5 = 2120); what is
+// asserted now is that it feeds the CELL and feeds NO route-creating branch, which is the E1 rule.
+ok(/_irSuggestedQtyNumber_/.test(PAGEC), 'G6  the materialized authority is still a live owner on the page...');
+ok(/function _irSuggestedCellHtml\(item\)[\s\S]{0,600}?_irSuggestedQtyState_\(item\)/.test(PAGEC),
+  'G6a ...feeding the Suggested Qty CELL...');
+ok(!/_renderExecutionRoute\([^)]*qty:\s*suggested/.test(PAGEC) && !/qty:\s*suggested/.test(PAGEC),
+  'G6b ...and feeding NO route-creating branch: a recommendation is not an execution route');
 ok(!/var suggested = parseInt\(skuData\.suggestedQty\) \|\| 0;/.test(PAGEC), 'G7  the two-source split is gone');
 // AND THE HONESTY RULES — no state may become a fabricated number.
 eq(suggestedFor({ item: CO_T, mat: { status: 'LOADING', bySku: {} } }).num, 0, 'G8  PENDING seeds 0 — never a guess');
@@ -481,8 +495,16 @@ var zero = { status: 'READY', bySku: { 'CO1100-T': { calculation_status: 'READY'
 eq(suggestedFor({ item: CO_T, mat: zero }).state.state, 'READY', 'G12 a valid canonical 0 is READY, not NONE');
 ok(suggestedFor({ item: CO_T, mat: zero }).html.indexOf('>0<') !== -1, 'G13 and prints as 0 — the FM3a rule is intact');
 // §I — it must not save, and it must not touch H4.
-ok(/This is a default preview[\s\S]{0,400}?captured into the Working Draft only once the PM edits it/.test(PAGE),
-  'G14 §I the seeded editor is still a PREVIEW that writes nothing');
+// RESTATED (F1-7N-FC-1B-E1): the "default preview ... captured into the Working Draft only once the PM edits
+// it" comment is gone with the branch it described. Its claim was half true and that was the defect: the
+// branch wrote nothing ITSELF, but the row it painted was swept into the canonical model by the very next
+// collect. The guarantee is now structural rather than promised — there is no seeded row to capture.
+ok(/_execRenderEmptyState_\(sku\);/.test(PAGEC),
+  'G14 §I the no-draft branch shows an EMPTY STATE instead of seeding an editor...');
+ok(!/This is a default preview/.test(PAGE),
+  'G14a ...so the "preview that writes nothing" promise is retired with the row it was about');
+ok(/_execRenderEmptyState_[\s\S]{0,200}?updateShippingAllocationTotal\(sku\);\s*\}/.test(PAGEC),
+  'G14b and that branch recomputes the total (0) and schedules NO persistence');
 eq(renderedUS.length, 1, 'G15 §I and the CO1100-T question changed nothing about H4');
 
 // ================================================================================================================

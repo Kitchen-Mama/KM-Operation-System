@@ -240,7 +240,10 @@ ok(/_allocDraftScopeComplete[\s\S]*planning_cycle && scope\.company && scope\.co
 // shipping_allocation_drafts / shipping_allocation_draft_lines — so the hydrate had been reading [] in
 // production throughout. §7's SSOT preference is waived for this one surface, on the record, in
 // docs/planning/F1_7J_A_EXISTING_WORKSPACE_SECONDARY_AND_SKU_REGIONAL_CUTOVER_R1.md §6.
-ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*_irWsGet\('getShippingAllocationDrafts'\)[\s\S]*_irWsGet\('getShippingAllocationDraftLines'\)/.test(IR_JS),
+// RESTATED (F1-7N-FC-1B-E1): `(ctx)` was pinned as an exact parameter list; E1 adds an `opts` argument for the
+// caller's provenance declaration. The property asserted here — that the hydrate reads through the
+// read-model-first accessor for BOTH tables — is untouched.
+ok(/function _hydrateAllocationDraftFromDb\(ctx[^)]*\)[\s\S]*_irWsGet\('getShippingAllocationDrafts'\)[\s\S]*_irWsGet\('getShippingAllocationDraftLines'\)/.test(IR_JS),
   'E: sync hydrate now reads the read-model-first accessor (HALT E RESOLVED — §7 SSOT preference waived, SSOT still not equivalent)');
 ok(/if \(_irReadModel\) return _irReadModel\[name\] \|\| \[\];[\s\S]{0,400}?window\.KM\.DB\[name\]\(\)/.test(IR_JS),
   'E: and _irWsGet still falls through to the SAME broad getter in Legacy mode — the Legacy path is byte-identical');

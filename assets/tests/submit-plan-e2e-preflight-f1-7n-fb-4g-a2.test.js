@@ -288,9 +288,13 @@ var CLEAN_SNAPSHOT = {
 };
 // The operator's second route, added with + Add Route and not yet in the database.
 var DIRTY_SNAPSHOT = JSON.parse(JSON.stringify(CLEAN_SNAPSHOT));
+// F1-7N-FC-1B-E1 - the route now declares HOW IT CAME TO EXIST, because the live snapshot does: this is the
+// operator's own + Add Route row. The protected invariant is untouched (an unsaved route blocks the whole
+// Submit, asserted at D4); declaring the provenance is what makes the refusal the USEFUL one - "finish it or
+// wait for the save" rather than "this row should not exist", which is reserved for a row nobody created.
 DIRTY_SNAPSHOT.routes.push({ sku: 'CO1100-R', allocation_draft_id: '', allocation_draft_line_id: '', qty: 800,
   complete: true, shipping_method: 'sea', destination_type: 'MARKETPLACE', destination_code: 'Amazon',
-  scopeKey: 'resus|us|amazon' });
+  scopeKey: 'resus|us|amazon', route_provenance: 'USER_EXPLICIT_ADD_ROUTE' });
 (function () {
   var r = PF.evaluate(CLEAN_SNAPSHOT);
   eq([r.ok, r.code], [true, ''], 'D1  §13.1 a clean persisted H4 passes the preflight');

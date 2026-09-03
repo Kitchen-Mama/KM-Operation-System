@@ -626,8 +626,13 @@ section('§11 — THE A2 / A2-R1 SUBMIT PREFLIGHT RESTS ON THE CORRECTED RULES')
   var clean = PF.evaluate(base);
   eq([clean.ok, clean.candidate.totalQty], [true, 800], 'S6  §11 a persisted, updated route IS a candidate');
   var withUnsaved = JSON.parse(JSON.stringify(base));
+  // F1-7N-FC-1B-E1 — the operator's own + Add Route row, declared as such because the live snapshot
+  // declares it. The invariant is unchanged (it blocks the WHOLE Submit); what the declaration buys is the
+  // USEFUL refusal — "finish it or wait for the save" rather than "this row should not exist", which is
+  // reserved for a row nobody created.
   withUnsaved.routes.push({ sku: SKU, scopeKey: SCOPE_KEY, allocation_draft_id: '', allocation_draft_line_id: '',
-    qty: 120, complete: true, shipping_method: 'air', destination_type: 'MARKETPLACE', destination_code: 'Amazon' });
+    qty: 120, complete: true, shipping_method: 'air', destination_type: 'MARKETPLACE', destination_code: 'Amazon',
+    route_provenance: 'USER_EXPLICIT_ADD_ROUTE' });
   var dirty = PF.evaluate(withUnsaved);
   eq([dirty.ok, dirty.code], [false, 'UNSAVED_EXECUTION_PLAN_CHANGES'], 'S7  §11 an unsaved route blocks the WHOLE Submit');
   eq(dirty.candidate.draftIds, [], 'S7a and the clean 800 beside it is not submitted alone');

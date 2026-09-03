@@ -272,6 +272,12 @@ function routeRow(spec) {
   if (spec.draftId) row.setAttribute('data-draft-id', spec.draftId);
   if (spec.groupKey) row.setAttribute('data-group-key', spec.groupKey);
   if (spec.instanceId) row.setAttribute('data-route-instance', spec.instanceId);
+  // F1-7N-FC-1B-E1 - the real _renderExecutionRoute stamps every row it paints with the explicit act that
+  // produced it, and this suite STUBS that renderer, so its row builder has to stamp the same thing or it
+  // would be modelling a row the page cannot produce. A row with stored ids needs no stamp (the collect
+  // derives PERSISTED_ACTIVE_DRAFT from the identity pair); an unpersisted row is one the operator added.
+  row.setAttribute('data-route-provenance',
+    spec.provenance || ((spec.lineId && spec.draftId) ? 'PERSISTED_ACTIVE_DRAFT' : 'USER_EXPLICIT_ADD_ROUTE'));
   var from = Select(spec.from || 'WH-CN-YOUXIN', { 'data-wh-name': spec.fromName || 'CN Youxin', 'data-wh-type': '3PL', 'data-wh-code': spec.fromCode || 'CNYOUXIN' });
   from.setAttribute('data-field', 'source_warehouse_id');
   var to = spec.toMarketplace
@@ -290,7 +296,10 @@ function routeRow(spec) {
 var COLLECT_VARS = ['IR_ROUTE_PERSISTABLE_FIELDS', 'IR_ISO_DATE_RE_'];
 var COLLECT_FNS = ['_saveAllocationDraftFromDom', '_isRouteComplete', '_irRouteSignature_', '_irMarkRouteTouched_',
   '_irTouchedInstances_', '_irCanonicalDateOrBlank_', '_irCancelUnusedDraftHeaders_', 'addExecutionRoute',
-  '_irAnySaveInFlight_'];
+  '_irAnySaveInFlight_',
+  // F1-7N-FC-1B-E1 - the collect now asks each row which explicit act produced it. Lifted into the executed
+  // scope rather than stubbed, so this suite exercises the REAL rule.
+  '_irRouteProvenanceOf_'];
 
 function buildCollector(cfg) {
   cfg = cfg || {};
@@ -876,7 +885,7 @@ mut('O11 not adopting the version the UPDATE returned', function () {
 // O12 — Add Route stops creating.
 mut('O12 + Add Route that no longer creates', function () {
   var m = mutateFn(PAGE, 'addExecutionRoute',
-    '    _renderExecutionRoute(sku, {});',
+    '    var _added = _renderExecutionRoute(sku, {',
     '    return false;');
   var c = buildCollector({ pageSrc: m });
   var before = c.env.rendered;

@@ -423,7 +423,11 @@ section('§D — THE SUBMIT CALL CHAIN, LOCATED AND THEN EXECUTED');
 section('§E — ELIGIBILITY AND EXCLUSION, ON THE REAL PREFLIGHT');
 // ================================================================================================================
 function R(o) {
-  var b = { sku: 'CO1100-R', scopeKey: 'resus|us|amazon',
+  // F1-7N-FC-1B-E1 DASHDASH these routes are HYDRATED PERSISTED ROUTES in this fixture's story, and a variant
+  // that strips an id models a save that did not complete DASHDASH not a row that appeared from nowhere. The
+  // live snapshot supplies the provenance for exactly that reason, so the base carries it and E2/E2a keep
+  // testing PERSISTENCE (do the stored ids exist?) instead of accidentally testing attributability.
+  var b = { sku: 'CO1100-R', scopeKey: 'resus|us|amazon', route_provenance: 'PERSISTED_ACTIVE_DRAFT',
     allocation_draft_id: 'SADH-A', allocation_draft_line_id: 'SADL-A',
     qty: 800, complete: true, shipping_method: 'sea', destination_type: 'MARKETPLACE', destination_code: 'Amazon',
     company: 'ResUS', country: 'US', ship_from: 'CNYOUXIN', source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',

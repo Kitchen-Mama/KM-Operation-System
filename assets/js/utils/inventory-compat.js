@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; root.IRRouteProvenance = mod.IRRouteProvenance; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -1137,7 +1137,80 @@
     ROUTE_DESTINATION_MISSING: 'ROUTE_DESTINATION_MISSING',
     DUPLICATE_LINE_IDENTITY: 'DUPLICATE_LINE_IDENTITY',
     EXECUTION_PLAN_ROUTE_INCOMPLETE: 'EXECUTION_PLAN_ROUTE_INCOMPLETE',
-    NO_PERSISTED_CANDIDATE: 'NO_PERSISTED_CANDIDATE'
+    NO_PERSISTED_CANDIDATE: 'NO_PERSISTED_CANDIDATE',
+    // F1-7N-FC-1B-E1 §D.4 — THE EMPTY EXECUTION PLAN, WHICH USED TO BE UNREACHABLE.
+    //
+    // Before E1 an Execution Plan could not be empty: when the station held no active draft the page seeded a
+    // blank route carrying the Suggested Qty, so "nothing has been planned" and "one route has been planned
+    // and not filled in" looked identical to every reader — including this preflight. Now that the empty
+    // state exists it needs its own answer, because NO_PERSISTED_CANDIDATE tells the operator to save routes
+    // they have not created yet. This one tells them to create one.
+    NO_EXECUTION_ROUTES: 'NO_EXECUTION_ROUTES',
+    // §H.3 — a route that cannot say how it came to exist. Nothing the page renders can be in this
+    // state (every render path stamps a provenance and the collect drops a row that has none), so reaching
+    // this code means a row arrived from outside the model's own lifecycle: a stale DOM row left by a cached
+    // build, or a hand-built snapshot. It is refused rather than advised on, because "fill in the Method" is
+    // the wrong instruction for a row the operator never created.
+    ROUTE_PROVENANCE_UNKNOWN: 'ROUTE_PROVENANCE_UNKNOWN'
+  };
+
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E1 §C — ROUTE PROVENANCE. RECOMMENDATION IS NOT EXECUTION.
+  // -----------------------------------------------------------------------------------------------------------
+  // A Suggested Qty is a NUMBER SOMEONE MIGHT ACT ON. An Execution Route is a THING SOMEONE HAS DECIDED. The
+  // page used to turn the first into the second by itself, and the consequence was not cosmetic: the blank row
+  // it produced was swept into the canonical model by the next collect, minted a client_route_instance_id,
+  // declared itself CREATE_NEW_ROUTE, and then blocked Submit for the WHOLE batch as an unsaved incomplete
+  // route — for a route no operator had ever asked for.
+  //
+  // There are exactly THREE ways a route may enter the client execution model, and each one is an explicit act:
+  //   PERSISTED_ACTIVE_DRAFT       — read from an ACTIVE header with at least one ACTIVE line
+  //   AI_PLAN_EXPLICITLY_REQUESTED — the readback of a generation the operator asked for, which succeeded
+  //   USER_EXPLICIT_ADD_ROUTE      — the operator pressed + Add Route
+  //
+  // There is deliberately no fourth. The forbidden names below are recorded so a later round cannot add one
+  // under a reasonable-sounding label — each of them is a description of the defect this round removed.
+  //
+  // PROVENANCE IS DECLARED BY THE CALL SITE THAT KNOWS, NEVER INFERRED. It is not derived from a route's shape,
+  // its Qty, its group key or the Suggested Qty, because every one of those was a way of guessing whether a row
+  // was real, and guessing is what produced the phantom. It is also NOT an identity: it does not replace, encode
+  // or stand in for allocation_draft_id / allocation_draft_line_id, which remain the only things that say which
+  // stored ticket a route IS. Client-only by design — no column, no migration: it records how a row got
+  // onto this screen in this session, which is not a fact the database has any reason to hold.
+  // ===========================================================================================================
+  var IR_ROUTE_PROVENANCE = {
+    PERSISTED_ACTIVE_DRAFT: 'PERSISTED_ACTIVE_DRAFT',
+    AI_PLAN_EXPLICITLY_REQUESTED: 'AI_PLAN_EXPLICITLY_REQUESTED',
+    USER_EXPLICIT_ADD_ROUTE: 'USER_EXPLICIT_ADD_ROUTE'
+  };
+  var IR_FORBIDDEN_ROUTE_PROVENANCE = ['SUGGESTED_QTY_PLACEHOLDER', 'AUTO_SEEDED_ROUTE', 'DEFAULT_ROUTE'];
+  var IR_LEGAL_PROVENANCE_LIST = [IR_ROUTE_PROVENANCE.PERSISTED_ACTIVE_DRAFT,
+    IR_ROUTE_PROVENANCE.AI_PLAN_EXPLICITLY_REQUESTED, IR_ROUTE_PROVENANCE.USER_EXPLICIT_ADD_ROUTE];
+  function routeProvenanceIsLegal(p) {
+    return IR_LEGAL_PROVENANCE_LIST.indexOf(sstr(p)) !== -1;
+  }
+  // A route's EFFECTIVE provenance: what it declares, or - failing that - the one fact that can stand in for a
+  // declaration. A row carrying BOTH stored identities is a route the database holds, which is precisely
+  // PERSISTED_ACTIVE_DRAFT; every other axis (Qty, group key, completeness, the Suggested Qty) is deliberately
+  // not consulted, because each of those was a way of deciding whether a phantom looked real enough.
+  //
+  // This is also what makes the round SAFE TO DEPLOY to a browser holding a pre-E1 recovery cache: those model
+  // rows carry no provenance field, and without this they would have blocked Submit for routes that are
+  // perfectly persisted.
+  function routeProvenanceOf(r) {
+    var declared = sstr(r && r.route_provenance);
+    if (routeProvenanceIsLegal(declared)) return declared;
+    if (sstr(r && r.allocation_draft_id) && sstr(r && r.allocation_draft_line_id)) {
+      return IR_ROUTE_PROVENANCE.PERSISTED_ACTIVE_DRAFT;
+    }
+    return '';
+  }
+  var IRRouteProvenance = {
+    SOURCES: IR_ROUTE_PROVENANCE,
+    LEGAL: IR_LEGAL_PROVENANCE_LIST,
+    FORBIDDEN: IR_FORBIDDEN_ROUTE_PROVENANCE,
+    isLegal: routeProvenanceIsLegal,
+    of: routeProvenanceOf
   };
 
   // F1-7N-FB-4G-A2-R1 - THE DIRTY SOURCES, EACH WITH ITS OWN TYPED REFUSAL CODE.
@@ -1204,6 +1277,7 @@
   function submitPreflight(input) {
     input = input || {};
     var C = IR_SUBMIT_CODES;
+    var seen0 = {};
     var out = {
       ok: false, code: C.OK,
       blocking: { skus: [], reasons: [] },
@@ -1212,6 +1286,28 @@
       excluded: [],
       confirmation: null
     };
+
+    // ---- 0. A ROUTE MUST BE ABLE TO SAY HOW IT CAME TO EXIST, AND THERE MUST BE ONE ------------------
+    //
+    // These run BEFORE the dirty verdict on purpose. A provenance-less row is ALSO unpersisted and ALSO
+    // incomplete, so section 1 would have claimed it first and told the operator to save or finish a route
+    // they never created — which is exactly the false alarm the seeded placeholder used to raise. What is
+    // wrong with such a row is not its state; it is that it exists.
+    var noProv = arr(input.routes).filter(function (r) { return !routeProvenanceOf(r); });
+    if (noProv.length) {
+      out.code = C.ROUTE_PROVENANCE_UNKNOWN;
+      noProv.forEach(function (r) {
+        var k = sstr(r && r.sku);
+        out.blocking.reasons.push({ sku: k, reason: 'ROUTE_PROVENANCE_UNKNOWN',
+          route: sstr(r && r.routeLabel), provenance: sstr(r && r.route_provenance) });
+        if (k && !seen0[k]) { seen0[k] = 1; out.blocking.skus.push(k); }
+      });
+      return out;
+    }
+    // An empty Execution Plan is a legitimate, reachable state since E1, and Submit cannot build a Weekly
+    // Shipping Plan out of nothing. Named separately from NO_PERSISTED_CANDIDATE because the instruction
+    // differs: there is nothing to save here, there is something to CREATE.
+    if (!arr(input.routes).length) { out.code = C.NO_EXECUTION_ROUTES; return out; }
 
     // ---- 1. THE DIRTY VERDICT, from named state only -------------------------------------------------
     // SUBMIT DOES NOT SAVE. It does not flush a debounced write, does not run a pending write early, does not
@@ -1396,6 +1492,7 @@
 
   var IRSubmitPreflight = {
     CODES: IR_SUBMIT_CODES,
+    PROVENANCE: IR_ROUTE_PROVENANCE,
     DIRTY_SOURCES: IR_DIRTY_SOURCES,
     FORBIDDEN_CONFIRMATION_EXCLUSIONS: IR_FORBIDDEN_CONFIRMATION_EXCLUSIONS,
     isPersisted: routeIsPersisted,
@@ -1414,5 +1511,5 @@
     createPanelGate: createPanelGate
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight };
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight, IRRouteProvenance: IRRouteProvenance };
 });

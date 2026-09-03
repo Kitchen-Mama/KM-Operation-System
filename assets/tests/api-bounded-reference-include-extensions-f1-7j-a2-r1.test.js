@@ -192,7 +192,10 @@ ok((IR_JS.match(/window\.KM\.DB\.getCarrierLeadTimes\(\)|window\.KM\.DB\.getCarr
 
 // ===================================================================================================================
 console.log('\n== GENERAL · no new authority / allocation-draft untouched (writer reloads later retired by F1-7K Batch F) ==');
-ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*getShippingAllocationDrafts\(\)/.test(IR_JS), 'HALT E respected: _hydrateAllocationDraftFromDb UNCHANGED (still reads raw drafts/lines sync)');
+// RESTATED (F1-7N-FC-1B-E1): the parameter list was pinned as `(ctx)`. E1 adds an `opts` argument so the
+// CALL SITE can declare which explicit act produced the rows it is about to hydrate. What this assertion is
+// FOR is the READ - that the sync hydrate still resolves drafts/lines itself - and that is unchanged.
+ok(/function _hydrateAllocationDraftFromDb\(ctx[^)]*\)[\s\S]*getShippingAllocationDrafts\(\)/.test(IR_JS), 'HALT E respected: _hydrateAllocationDraftFromDb still reads raw drafts/lines sync');
 // F1-7K (Batch F) has since retired the whole-DB writer reload: direct writers now route their post-write through
 // the _kmWriterPostWrite_ seam (posture-gated), so the A2-era `loadOperationDb({force:true})` count is intentionally 0.
 ok(DBAPI.indexOf('_kmWriterPostWrite_') !== -1, 'writer post-write reload retired by F1-7K: direct writers route through the _kmWriterPostWrite_ seam');

@@ -3599,6 +3599,12 @@ function _irSubmitStateSnapshot_() {
                 routes.push({
                     sku: sku,
                     scopeKey: _draftScopeKey,
+                    // F1-7N-FC-1B-E1 §H.4 — carried so the preflight can refuse a candidate that cannot
+                    // say how it came to exist. The EFFECTIVE provenance, not the raw field: a model row
+                    // restored from a pre-E1 recovery cache carries no field but does carry its stored
+                    // identities, and refusing to submit a route the database demonstrably holds would be a
+                    // worse failure than the one this round removes.
+                    route_provenance: _irRouteProvenanceOf_(r),
                     allocation_draft_id: String((r && r.allocation_draft_id) || ''),
                     allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
                     qty: r && r.qty,
@@ -5026,7 +5032,13 @@ var _replenHydrateToken = 0;
 // Hydrate the working draft from the DB (SSOT) for the current scope. DB state wins over the
 // sessionStorage cache when present; cancelled lines are excluded. Reads the already-loaded adapter
 // cache (getShippingAllocationDrafts/_Lines). BROWSER/LIVE-DB-UNVERIFIED.
-function _hydrateAllocationDraftFromDb(ctx) {
+function _hydrateAllocationDraftFromDb(ctx, opts) {
+    // F1-7N-FC-1B-E1 §C.1/§E.2 — WHICH EXPLICIT ACT PUT THESE ROWS ON SCREEN, declared by the caller
+    // that knows. An ordinary Search reads what the database already held: PERSISTED_ACTIVE_DRAFT. The readback
+    // that follows a SUCCESSFUL AI Plan the operator asked for is the AI half appearing for the first time, and
+    // it says so. Never inferred from generation_type or any other stored column - a row's provenance is how it
+    // reached THIS screen in THIS session, which is a fact only the call site has.
+    var _prov = String((opts && opts.provenance) || '').trim() || 'PERSISTED_ACTIVE_DRAFT';
     var myToken = ++_replenHydrateToken;
     try {
         // F1-7N-FB-4G-A0 §D.4/§D.6 — THE ROWS WERE NEVER IN THE SOURCE THIS FUNCTION READ.
@@ -5119,6 +5131,12 @@ function _hydrateAllocationDraftFromDb(ctx) {
                 }
                 var lineSrc = String(raw.source_warehouse_id == null ? '' : raw.source_warehouse_id).trim();
                 (bySku[sku] = bySku[sku] || []).push({
+                    // §C.1 - this row exists because an ACTIVE header and an ACTIVE line were read for it.
+                    // A cancelled or submitted header never reaches here (the activeDrafts filter), and a
+                    // cancelled line never reaches here (the `mine` filter), so a header whose lines are all
+                    // cancelled - the orphan / zero-active-line shape - contributes NO route at all and the
+                    // SKU falls to the empty state rather than to a seeded one.
+                    route_provenance: _prov,
                     allocation_draft_line_id: pk,
                     allocation_draft_id: draft.allocationDraftId,
                     // F1-7N-FB-4G-A2-R2 §5 — the header version this route was READ at, carried so an UPDATE
@@ -5453,6 +5471,17 @@ function _saveAllocationDraftFromDom(sku) {
         });
     } catch (_ep) {}
     var rows = [];
+    // F1-7N-FC-1B-E1 §H.3 — THE SECOND GATE, AND IT GUARDS THE MODEL RATHER THAN THE SCREEN.
+    //
+    // This function rebuilds the canonical model from EVERY .exec-route-row in the DOM, which is precisely how
+    // the seeded placeholder got in: it was painted by a pure render, swept up here, given a
+    // client_route_instance_id and a CREATE_NEW_ROUTE intent, and became a Submit candidate that then blocked
+    // the whole batch. _renderExecutionRoute can no longer paint an unattributable row, so on a current build
+    // there is nothing here to drop. A STALE row can still exist - a browser holding an older cached page, a
+    // row left by a build from before this round - and the model must not adopt one just because the DOM has
+    // it. Counted rather than silently skipped: a row that vanishes without explanation is the failure mode
+    // this whole round is about.
+    var _stalePlaceholders = 0;
     routesList.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
         function fieldVal(f) {
             var el = rowEl.querySelector('[data-field="' + f + '"]');
@@ -5509,6 +5538,11 @@ function _saveAllocationDraftFromDom(sku) {
         // explicitly removed or reaches a terminal status — a render can never re-derive it away.
         var _instAttr = String(rowEl.getAttribute('data-route-instance') || '').trim();
         var _priorRow = _instAttr ? _priorByInstance[_instAttr] : null;
+        // §C — the row's declared provenance, read from the DOM first (a render just wrote it), then from the
+        // model row this instance already had. A row with neither, and with no persisted identity to make it a
+        // PERSISTED_ACTIVE_DRAFT, is a stale placeholder: it is NOT given an identity and NOT put in the model.
+        var _rowProv = String(rowEl.getAttribute('data-route-provenance') || '').trim() ||
+            String((_priorRow && _priorRow.route_provenance) || '').trim();
         var lineId = rowEl.getAttribute('data-line-id') ||
             String((_priorRow && _priorRow.allocation_draft_line_id) || '');   // persisted Draft line identity (§6)
         // F1-7N-FB-4F-B6 §F — what the DATABASE held for this route's destination when it was hydrated.
@@ -5560,6 +5594,21 @@ function _saveAllocationDraftFromDom(sku) {
             // §F — carried forward, never re-derived: this row's PERSISTED destination state.
             destination_state: priorDestState
         };
+        row.route_provenance = _irRouteProvenanceOf_({
+            route_provenance: _rowProv,
+            allocation_draft_id: boundDraftId,
+            allocation_draft_line_id: lineId
+        });
+        if (!row.route_provenance) {
+            _stalePlaceholders++;
+            try {
+                console.warn('[replen] STALE_EXECUTION_ROUTE_DROPPED - a route row for ' + sku + ' carries no ' +
+                    'provenance and no persisted identity, so it was not adopted into the Execution Plan model. ' +
+                    'Nothing was written. Reload to get the current page.');
+            } catch (_eSP) {}
+            try { if (rowEl.parentNode) rowEl.parentNode.removeChild(rowEl); } catch (_eRm) {}
+            return;
+        }
         if (_isRouteComplete(row)) {
             // A complete route is persistable. Assign a STABLE line id the first time so every later edit
             // UPDATES the same shipping_allocation_draft_lines row (idempotent — no duplicate lines, §6/§13).
@@ -5604,6 +5653,10 @@ function _saveAllocationDraftFromDom(sku) {
     });
     if (rows.length) replenAllocationDraft.bySku[sku] = rows;
     else delete replenAllocationDraft.bySku[sku];
+    if (_stalePlaceholders) {
+        try { _execSyncEmptyState_(sku); } catch (_eES) {}
+        try { if (typeof updateShippingAllocationTotal === 'function') updateShippingAllocationTotal(sku); } catch (_eT) {}
+    }
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     _persistAllocationDraft();            // recovery cache (not SSOT)
     // F1-7N-FB-4G-A2-R2 - MARK ONLY WHAT THIS EVENT ACTUALLY CHANGED. A route whose persistable signature is
@@ -5624,6 +5677,11 @@ function _saveAllocationDraftFromDom(sku) {
 function onExecutionRouteEdit(sku) {
     _execEnforceDistinctWarehouses(sku);   // From and To can never be the same warehouse_id (verify #19)
     _execRebuildMethodOptions(sku);        // re-filter Method from carrier_rate_cards on From/scope change (§3.5)
+    // F1-7N-FC-1B-E1 §G — REMOVING THE LAST ROUTE LEAVES AN EMPTY PLAN, NOT AN EMPTY-LOOKING ONE. The
+    // cancel path removes the row and calls this; before E1 the next pure re-render would then re-seed the
+    // Suggested Qty placeholder into the slot the operator had just deliberately emptied, so a cancelled route
+    // appeared to come back as a 520-unit blank. Nothing refills it now, and the plan states that it is empty.
+    _execSyncEmptyState_(sku);
     updateShippingAllocationTotal(sku);
     _irUpdateRouteEtas(sku);        // recompute Expected Arrival on From/To/Method change (§11.3)
     _saveAllocationDraftFromDom(sku);
@@ -6209,8 +6267,97 @@ function _execEnforceDistinctWarehouses(sku) {
 }
 
 // Render one Execution Plan route row: From / To / Qty / Method / Expected Arrival / Action (§11.3).
+// =============================================================================================================
+// F1-7N-FC-1B-E1 §B/§C — RECOMMENDATION IS NOT EXECUTION.
+// -------------------------------------------------------------------------------------------------------------
+// THE DEFECT, MEASURED BEFORE IT WAS REMOVED. initializeShippingAllocation had two branches: rebuild from the
+// working draft, or — failing that — seed ONE blank route carrying the Suggested Qty. On the live
+// CO1100-R / ResUS / US / Amazon station, with zero active allocation drafts, cancelled historical drafts, AI
+// Plan never clicked and + Add Route never pressed, the shipped function rendered:
+//
+//     routes.length = 1 | From '' | To '' | Method '' | Qty 520 | no allocation_draft_id | no line id
+//     Execution Plan Total = 520
+//
+// It was called a "default preview" and defended as writing nothing, and the second half was true — but
+// only until the next collect. _saveAllocationDraftFromDom rebuilds the model from EVERY .exec-route-row in the
+// DOM, so the first edit anywhere in that SKU's panel — pressing + Add Route to enter a real route is the
+// everyday one — swept the phantom in, minted it a client_route_instance_id, stamped it
+// route_intent CREATE_NEW_ROUTE, and put it in the model Submit reads. It could not be SAVED (the flush writes
+// only complete routes), so it did the other thing: it BLOCKED Submit for the whole batch as an unsaved
+// incomplete route. A quantity nobody had committed to stopped plans that were ready.
+//
+// And it was never really "seeded from the Suggested Qty" at all: with the recommendation at 0 the same blank
+// row appeared carrying Qty 0. It was an unconditional default row that happened to borrow the suggestion.
+//
+// A Suggested Qty is a number someone might act on. An Execution Route is a thing someone has decided. There
+// are exactly three ways a route may enter this model, all of them explicit acts, and IRRouteProvenance owns
+// the list. There is deliberately no fourth.
+// =============================================================================================================
+function _irRouteProvenanceOf_(route) {
+    var RP = (typeof window !== 'undefined' && window.IRRouteProvenance) ? window.IRRouteProvenance : null;
+    var declared = String((route && route.route_provenance) || '').trim();
+    if (RP && RP.isLegal(declared)) return declared;
+    if (!RP && declared) return declared;    // module unavailable: trust the declaration rather than blank the screen
+    // THE ONE PERMITTED DERIVATION, and it is not a guess about shape. A row that carries the stored identities
+    // the server will re-read IS a persisted active draft - that is what those columns MEAN. Everything the
+    // provenance rule forbids inferring from (a route's Qty, its group key, its completeness, the Suggested
+    // Qty) is deliberately not consulted: each of those was a way of deciding a phantom looked real enough.
+    var hasIdentity = !!String((route && route.allocation_draft_id) || '').trim() &&
+        !!String((route && route.allocation_draft_line_id) || '').trim();
+    if (hasIdentity) return 'PERSISTED_ACTIVE_DRAFT';
+    return '';
+}
+// §D — THE EMPTY STATE. It is markup with no <input>, so updateShippingAllocationTotal (which sums
+// input[data-field="qty"] inside this same container) reports 0 by construction rather than by a special case.
+// It is deliberately NOT a hidden route row: a hidden row is still a row to every querySelectorAll on this
+// page, including the collect's, which is the whole mechanism that made the phantom dangerous.
+function _irExecutionEmptyStateHtml_() {
+    return '<div class="exec-routes-empty" data-ir-exec-empty="1" role="status">' +
+        'No execution routes yet. Use <strong>AI Plan</strong> or <strong>+ Add Route</strong> to create one.' +
+        '</div>';
+}
+function _execRenderEmptyState_(sku) {
+    if (typeof document === 'undefined') return false;
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list) return false;
+    if (list.querySelector && list.querySelector('.exec-route-row')) return false;   // never over a real route
+    list.innerHTML = _irExecutionEmptyStateHtml_();
+    return true;
+}
+function _execClearEmptyState_(sku) {
+    if (typeof document === 'undefined') return false;
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list || !list.querySelector) return false;
+    var el = list.querySelector('[data-ir-exec-empty]');
+    if (el && el.parentNode) { el.parentNode.removeChild(el); return true; }
+    return false;
+}
+// Show the empty state exactly when there is nothing to show, called after any path that can remove the last
+// route. §G: this is what stops a cancelled route's slot being refilled by anything at all.
+function _execSyncEmptyState_(sku) {
+    if (typeof document === 'undefined') return;
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list || !list.querySelectorAll) return;
+    var n = list.querySelectorAll('.exec-route-row').length;
+    if (n === 0) _execRenderEmptyState_(sku); else _execClearEmptyState_(sku);
+}
+window._irExecutionEmptyStateHtml_ = _irExecutionEmptyStateHtml_;
+window._execSyncEmptyState_ = _execSyncEmptyState_;
+
 function _renderExecutionRoute(sku, route) {
     route = route || {};
+    // §C — A ROW THIS FUNCTION CANNOT ATTRIBUTE IS NOT PAINTED. The fourth source is not merely absent
+    // from the code, it is unrepresentable: the only creator of an .exec-route-row refuses to make one that
+    // cannot say which of the three explicit acts produced it. A future reintroduction of the seeded
+    // placeholder therefore has to defeat this gate in the open rather than by adding a call.
+    var _prov = _irRouteProvenanceOf_(route);
+    if (!_prov) {
+        try {
+            console.warn('[replen] ROUTE_PROVENANCE_REQUIRED - refused to render an execution route for ' + sku +
+                ' with no declared provenance. Nothing was rendered and nothing was written.');
+        } catch (e) {}
+        return false;
+    }
     var qty = parseInt(route.qty) || 0;
     var scope = _replenSelectedScope();
     var destCountry = '';
@@ -6244,6 +6391,9 @@ function _renderExecutionRoute(sku, route) {
     var methodDisabled = methods.length ? '' : ' disabled';
     var row = document.createElement('div');
     row.className = 'exec-route-row ir-exec-plan__grid';
+    // §C — carried on the row because a collect rebuilds the model FROM the DOM: a provenance that does
+    // not survive a re-render is a provenance the next collect has to guess at.
+    row.setAttribute('data-route-provenance', _prov);
     // Persisted Draft line identity (Round 4 Decision E) — enables incremental update + soft-cancel of
     // the SAME shipping_allocation_draft_lines row (empty for a new/unsaved route).
     if (route && route.allocation_draft_line_id) row.setAttribute('data-line-id', String(route.allocation_draft_line_id));
@@ -6281,7 +6431,8 @@ function _renderExecutionRoute(sku, route) {
         ' data-eta-basis="' + _execEsc(String(route.expected_arrival_basis || '')) + '">' + _execEsc(eta.text) + '</span>' +
         '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
-    if (list) list.appendChild(row);
+    if (list) { _execClearEmptyState_(sku); list.appendChild(row); }
+    return true;
 }
 
 // F1-7N-FB-4G-A0-R1 §C.4 — a METHOD change is the one edit that has to be distinguishable from every other,
@@ -6319,7 +6470,14 @@ function addExecutionRoute(event, sku) {
         try { alert('Cannot add a route — ROUTE_ATOMIC_WRITER_UNAVAILABLE.\n\nThis deployment does not provide the action a route ticket is saved with, so a new route could not be saved. Nothing was added and nothing was written. Sync the Apps Script deployment and publish a new version, then reload.'); } catch (e) {}
         return false;
     }
-    _renderExecutionRoute(sku, {});
+    // F1-7N-FC-1B-E1 §F — the provenance is the BUTTON, and this is the only call site that may claim
+    // it. The row starts blank on purpose (§F.3: the operator's own intent is the row's justification, not a
+    // prefilled quantity) and, being incomplete, is written nowhere until it is finished.
+    var _added = _renderExecutionRoute(sku, {
+        route_provenance: (window.IRRouteProvenance && window.IRRouteProvenance.SOURCES.USER_EXPLICIT_ADD_ROUTE) ||
+            'USER_EXPLICIT_ADD_ROUTE'
+    });
+    if (!_added) return false;
     onExecutionRouteEdit(sku);
     syncExpandPanelHeight(sku);
 }
@@ -6394,23 +6552,26 @@ function initializeShippingAllocation(sku, skuData, opts) {
     // 1) If a Working Draft exists for this SKU (same context), rebuild the Execution Plan from it
     //    so PM edits survive collapse / expand. This is a pure render — it must NOT re-capture.
     var draftRows = _allocationDraftRowsFor(sku);
-    if (draftRows) {
+    if (draftRows && draftRows.length) {
         draftRows.forEach(function (r) { _renderExecutionRoute(sku, r); });
         updateShippingAllocationTotal(sku);
+        _execSyncEmptyState_(sku);      // every row refused for want of provenance leaves the plan empty, not blank
         return;
     }
 
-    // 2) Otherwise seed a single default Execution Plan route from the Recommendation Summary total
-    //    (Suggested Qty). ship_from / destination / shipping_method are left blank — FUTURE they are
-    //    defaulted from replenishment_route_rules (CARRIER_AND_ROUTE_SPEC). This is a default preview:
-    //    it is captured into the Working Draft only once the PM edits it.
-    // F1-7N-FB-4G-A0 §I — the SAME authority the Suggested Qty cell prints, not the legacy per-row field the
-    // materialized read never fills. This is still a DEFAULT PREVIEW and still writes nothing: it is captured
-    // into the Working Draft only when the PM edits it, and no Save is scheduled here.
-    var suggested = (typeof _irSuggestedQtyNumber_ === 'function')
-        ? _irSuggestedQtyNumber_(skuData)
-        : (parseInt(skuData.suggestedQty) || 0);
-    _renderExecutionRoute(sku, { ship_from: '', destination: '', shipping_method: '', qty: suggested });
+    // 2) NOTHING HAS BEEN PLANNED YET, and that is now what the screen says.
+    //
+    // F1-7N-FC-1B-E1 §B/§D — THIS BRANCH USED TO SEED A ROUTE. It rendered one blank row carrying the
+    // Suggested Qty, and the Suggested Qty is a RECOMMENDATION: a number the operator may act on, not a
+    // decision they have made. Presenting it as an Execution Route made the two indistinguishable on screen,
+    // gave the phantom a Total of 520 to display, and handed the next collect a row to adopt into the
+    // canonical model. See the block above _renderExecutionRoute for the measured consequence.
+    //
+    // The Recommendation Summary, the Suggested Qty cell and the Gap are UNCHANGED and still shown: removing
+    // the phantom removes an execution artefact, not the advice. What is gone is the pretence that the advice
+    // had already been acted on. No route object, no instance id, no dirty mark, no scheduled write —
+    // this branch now paints text and recomputes a total that is 0 because there is nothing to add up.
+    _execRenderEmptyState_(sku);
     updateShippingAllocationTotal(sku);
 }
 
@@ -8213,7 +8374,19 @@ function _irRunInventoryAiPlanGeneration_(btn) {
                 }
                 resolve(window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']));
             })
-                .then(function () { try { _hydrateAllocationDraftFromDb(_replenCtx()); } catch (e) {} renderReplenishment(); })
+                .then(function () {
+                    // F1-7N-FC-1B-E1 §E.2 - the routes appearing here are the readback of a generation the
+                    // operator explicitly requested and which SUCCEEDED (cls.ok). A failed or blocked run never
+                    // reaches this branch, which is what §E.4 requires: no fallback route, and the routes
+                    // already on screen are left exactly as they were.
+                    try {
+                        _hydrateAllocationDraftFromDb(_replenCtx(), {
+                            provenance: (window.IRRouteProvenance && window.IRRouteProvenance.SOURCES.AI_PLAN_EXPLICITLY_REQUESTED) ||
+                                'AI_PLAN_EXPLICITLY_REQUESTED'
+                        });
+                    } catch (e) {}
+                    renderReplenishment();
+                })
                 .then(function () { _irShowAiPlanResult_(cls); if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); } });
         }
         _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds

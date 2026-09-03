@@ -76,21 +76,36 @@ section('§A — THE CACHE IDENTITY: a token that was published cannot be reused
 
 // A.1 — the floor is STRICT, not "at or after". FC-1A's token reached browsers, so this round's frontend must
 // not be served under it. `tokenAtOrAfter` would have been satisfied by the reuse that caused the problem.
-eq(RO.currentAppToken(), HF1_TOKEN, 'A1  the current application token is this round\'s');
+//
+// RESTATED (F1-7N-FC-1B-E1): this asserted `currentAppToken() === HF1_TOKEN`. That is the equality-with-now
+// this very commit spent a paragraph removing from eleven other suites — written into the round that removed
+// it, one assertion later. E1 legitimately mints its own token, so all of §A failed while describing a
+// perfectly correct tree. HF1's token is a FLOOR: it had to be MINTED (it is in the series, strictly after
+// FC-1A's published one) and nothing may ever be served from FC-1A's again. Neither statement can be falsified
+// by a later round doing the right thing.
+ok(RO.tokenIndex(HF1_TOKEN) !== -1, 'A1  HF1 minted its own application token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex(HF1_TOKEN),
+  'A1a and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 ok(RO.tokenIndex(HF1_TOKEN) > RO.tokenIndex(FC1A_TOKEN),
-  'A1a and it sits STRICTLY AFTER FC-1A\'s in the append-only series');
+  'A1b HF1\'s token sits STRICTLY AFTER FC-1A\'s in the append-only series');
 ok(RO.tokenIndex(FC1A_TOKEN) !== -1,
-  'A1b while FC-1A\'s token REMAINS in the series — history is never rewritten, or "at or after round X" changes meaning');
-ok(!RO.isMapToken(HF1_TOKEN), 'A1c and it is an application token, not a map-series one');
+  'A1c while FC-1A\'s token REMAINS in the series — history is never rewritten, or "at or after round X" changes meaning');
+ok(!RO.isMapToken(HF1_TOKEN) && !RO.isMapToken(RO.currentAppToken()),
+  'A1d and both are application tokens, not map-series ones');
 
 // A.2 — PRODUCTION references. The only thing a browser ever sees is a `?v=` query string, so that is what
 // "remaining references = 0" has to be measured on. Counted separately from prose below.
 eq((INDEX.match(new RegExp('\\?v=' + FC1A_TOKEN, 'g')) || []).length, 0,
   'A2  index.html carries ZERO production references to the published FC-1A token');
-var hf1Refs = (INDEX.match(new RegExp('\\?v=' + HF1_TOKEN, 'g')) || []).length;
-eq(hf1Refs, 19, 'A2a and 19 versioned entries now carry this round\'s token');
-eq(RO.appTokenRefCount(INDEX), hf1Refs,
-  'A2b every one of them parses as a real versioned asset entry, not a substring in prose');
+// RESTATED (F1-7N-FC-1B-E1): the literal 19, for the third time in three rounds. The count is not the
+// property; the property is that the application set moves TOGETHER and that a PUBLISHED token never serves
+// a file again. Both are derived below and neither can be broken by a round covering a different number of
+// assets.
+var appRefs = RO.appTokenRefCount(INDEX);
+ok(appRefs >= 15, 'A2a the application set is carried on ONE current token (' + appRefs + ' refs on ' +
+  RO.currentAppToken() + ')');
+eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+  'A2b and nothing is left behind on a superseded application token DASH the set rotated together'.replace('DASH', '\u2014'));
 
 // A.3 — THE DERIVED RULE, and the reason it is derived. FC-1A rotated the token it had chosen and missed the
 // file that mattered most, because the round checked its own token rather than its own changes. So the question
@@ -120,8 +135,8 @@ eq(lagging.join(' | '), '',
 
 // A.4 — the rescued file, named because its failure was a different one: not a reuse, an omission. FC-1A
 // rewrote it and rotated nothing, so it kept a token from 2026-08-11 while carrying the whole recovery feature.
-eq(idxTokens['assets/js/pages/shipping-plan.js'], HF1_TOKEN,
-  'A4  shipping-plan.js — the file FC-1A rewrote and never rotated — is on this round\'s token');
+eq(idxTokens['assets/js/pages/shipping-plan.js'], RO.currentAppToken(),
+  'A4  shipping-plan.js — the file FC-1A rewrote and never rotated — is on the current token');
 ok(idxTokens['assets/js/pages/shipping-plan.js'] !== STALE_TOKEN,
   'A4a and no longer on ' + STALE_TOKEN + ', which predates the feature by three weeks');
 // Its STYLESHEET is deliberately left where it is: the release changed no CSS byte, and rotating a token for a
@@ -337,13 +352,16 @@ section('§N — MUTATIONS: each defect this round repaired, reintroduced');
 // ================================================================================================================
 function idxTok(src) { return RO.parseIndexTokens(src); }
 
-mut('N1  the published FC-1A token restored in index.html', function () {
-  var m = INDEX.replace(new RegExp('\\?v=' + HF1_TOKEN, 'g'), '?v=' + FC1A_TOKEN);
+// RESTATED (F1-7N-FC-1B-E1): every mutation below addressed HF1_TOKEN, so all five silently stopped applying
+// the moment E1 rotated the set — a mutation that cannot find its target proves nothing. Against
+// currentAppToken() they keep testing the same defects for every round that follows.
+mut('N1  a published token restored in index.html', function () {
+  var m = INDEX.replace(new RegExp('\\?v=' + RO.currentAppToken(), 'g'), '?v=' + FC1A_TOKEN);
   return (m.match(new RegExp('\\?v=' + FC1A_TOKEN, 'g')) || []).length !== 0;
 });
 
 mut('N2  shipping-plan.js returned to the 2026-08-11 token', function () {
-  var m = INDEX.replace('assets/js/pages/shipping-plan.js?v=' + HF1_TOKEN,
+  var m = INDEX.replace('assets/js/pages/shipping-plan.js?v=' + RO.currentAppToken(),
     'assets/js/pages/shipping-plan.js?v=' + STALE_TOKEN);
   return idxTok(m)['assets/js/pages/shipping-plan.js'] !== RO.currentAppToken();
 });
@@ -351,7 +369,7 @@ mut('N2  shipping-plan.js returned to the 2026-08-11 token', function () {
 // N3 — THE PARTIAL ROTATION, which is the failure mode a per-file token invites: most of the set moves and one
 // member does not. Caught by the DERIVED feature rule, not by a count.
 mut('N3  only some entry points rotated — shipping-history.js left behind', function () {
-  var m = INDEX.replace('assets/js/pages/shipping-history.js?v=' + HF1_TOKEN,
+  var m = INDEX.replace('assets/js/pages/shipping-history.js?v=' + RO.currentAppToken(),
     'assets/js/pages/shipping-history.js?v=' + FC1A_TOKEN);
   var t = idxTok(m), bad = [];
   Object.keys(t).forEach(function (rel) {
@@ -363,7 +381,7 @@ mut('N3  only some entry points rotated — shipping-history.js left behind', fu
 });
 
 mut('N4  the adapter left behind while the pages rotate', function () {
-  var m = INDEX.replace('assets/js/api/operation-system-db-api.js?v=' + HF1_TOKEN,
+  var m = INDEX.replace('assets/js/api/operation-system-db-api.js?v=' + RO.currentAppToken(),
     'assets/js/api/operation-system-db-api.js?v=' + FC1A_TOKEN);
   return idxTok(m)['assets/js/api/operation-system-db-api.js'] !== RO.currentAppToken();
 });
@@ -374,7 +392,7 @@ mut('N5  the map token placed on an application asset', function () {
 
 mut('N6  the new token appended to the ledger but index.html never rotated', function () {
   // The ledger says the round happened; the file set says it did not. Derived from the FILES, so it is caught.
-  var m = INDEX.replace(new RegExp('\\?v=' + HF1_TOKEN, 'g'), '?v=' + FC1A_TOKEN);
+  var m = INDEX.replace(new RegExp('\\?v=' + RO.currentAppToken(), 'g'), '?v=' + FC1A_TOKEN);
   var t = idxTok(m);
   return t['assets/js/pages/shipping-plan.js'] !== RO.currentAppToken();
 });
