@@ -454,8 +454,16 @@ section('§C/§D.9–12 — the manifest, laziness, and what did NOT move');
     // the equality-with-now _release-order.js exists to end. The property is unchanged and strictly
     // stronger: all 18 application references share ONE token, it is the current application token, and it
     // is not a map-series token.
-    eq((INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length, 18,
-        'C7 all 18 application references share the current application token');
+    // RESTATED AGAIN (F1-7N-FC-1A-R1-HF1): the previous restatement derived the TOKEN and left the COUNT as
+    // the literal 18, which forbids any application round from changing how many assets the set covers. HF1 is
+    // that round — it moves 19 — so this failed while describing a correct tree, for the same
+    // reason and one field to the left. The count is now REPORTED and the property is derived from the file
+    // inventory _release-order.js already keeps: a map browser file carries a map-series token and an
+    // application asset does not. Adding an asset cannot break it; putting the map token on an application
+    // asset — the mutation below — cannot satisfy it.
+    eq(RO.misplacedIndexTokens(INDEX).join(' | '), '',
+        'C7 every application asset carries an application token and every map asset a map token (' +
+        RO.appTokenRefCount(INDEX) + ' refs on ' + RO.currentAppToken() + ')');
     ok(!RO.isMapToken(RO.currentAppToken()), 'C7 and no map round moved it onto a map token');
     ok(/EARTH_ASSET_VERSION_ = 'jul2004-tiers-e7ca8837'/.test(read('assets/js/lib/km-globe.js')),
         'C7b and the earth content token is unchanged, because no texture byte moved');
@@ -542,7 +550,7 @@ function indexOk(idx) {
     var app = (idx.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
     var re = /<script src="([^"?]+)/g, m, seen = {}, dup = 0;
     while ((m = re.exec(idx))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
-    return cur >= 1 && app === 18 && dup === 0;
+    return cur >= 1 && RO.misplacedIndexTokens(idx).length === 0 && app >= 1 && dup === 0;
 }
 
 // N1 — the query token removed altogether.

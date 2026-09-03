@@ -368,12 +368,20 @@ section('§B — PRECONDITIONS AND RELEASE IDENTITY');
   ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1A-R1') !== -1, 'B2  and R1 is registered after it');
   eq(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], 'F1-7N-FC-1A-R1'), true,
     'B3  R1 is at or after the newest stamp');
-  // §0 — R1 shares FC-1A's cache token BY DESIGN. Minting a second one would let the two halves be cached,
-  // shipped and reasoned about separately, which is exactly what the atomic-release decision forbids.
-  eq(RO.tokenAtOrAfter(RO.currentAppToken(), 'fc1a-shipmentrecovery-20260903'), true,
-    'B4  §0 the cache token is at or after FC-1A\'s — the two rounds ship as ONE release');
-  ok(/R1 deliberately does NOT add a token/.test(read('assets/tests/_release-order.js')),
-    'B4a and the release order RECORDS why R1 mints no token of its own');
+  // RESTATED (F1-7N-FC-1A-R1-HF1) — these two assertions defended a decision that was WRONG, and they
+  // defended it correctly, which is why they kept passing. R1 reused FC-1A's token on the grounds that the two
+  // rounds are ONE atomic release. They are, and it still does not follow: atomicity is enforced by the
+  // ACTION-CONTRACT version, and a cache token decides only whether a browser refetches a file. FC-1A had
+  // already been PUBLISHED (d94d5bd was pushed), so reusing its token left every browser holding the FC-1A
+  // copy of shipping-history.js — a Shipment Draft card with no Cancel button — against a server
+  // that routes cancelShipmentDraft. The floor is therefore STRICT: this round's frontend must not be served
+  // under a token FC-1A's browsers already hold.
+  ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1a-shipmentrecovery-20260903'),
+    'B4  §0 the cache token is STRICTLY AFTER FC-1A\'s, because FC-1A\'s was already published');
+  ok(/A token may only be reused while nothing carrying it has been published/.test(read('assets/tests/_release-order.js')),
+    'B4a and the release order still states the rule R1 broke');
+  ok(/F1-7N-FC-1A-R1-HF1/.test(read('assets/tests/_release-order.js')),
+    'B4b and RECORDS the correction rather than quietly rotating the token');
   var INDEX = read('index.html');
   var tok = (INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
   ok(tok >= 15, 'B5  index.html carries the current token on every versioned asset (' + tok + ' refs)');

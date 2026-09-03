@@ -688,8 +688,16 @@ section('§G — the token manifest');
     });
     // RESTATED (F1-7N-SKU-DETAILS-DISPLAY-INIT-R1) - see _release-order.js currentAppToken(): the literal
     // forbade an APPLICATION round from moving its own token. The derived form still forbids a MAP round.
-    eq((INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length, 18,
-        'G6 all 18 application references share the current application token');
+    // RESTATED AGAIN (F1-7N-FC-1A-R1-HF1): the previous restatement derived the TOKEN and left the COUNT as
+    // the literal 18, which forbids any application round from changing how many assets the set covers. HF1 is
+    // that round — it moves 19 — so this failed while describing a correct tree, for the same
+    // reason and one field to the left. The count is now REPORTED and the property is derived from the file
+    // inventory _release-order.js already keeps: a map browser file carries a map-series token and an
+    // application asset does not. Adding an asset cannot break it; putting the map token on an application
+    // asset — the mutation below — cannot satisfy it.
+    eq(RO.misplacedIndexTokens(INDEX).join(' | '), '',
+        'G6 every application asset carries an application token and every map asset a map token (' +
+        RO.appTokenRefCount(INDEX) + ' refs on ' + RO.currentAppToken() + ')');
     ok(!RO.isMapToken(RO.currentAppToken()), 'G6 and no map round moved it onto a map token');
     ok(INDEX.indexOf('world-admin1-10m') === -1, 'G7 the ADM1 asset is still absent from index.html');
     // No duplicate tags, and the stylesheet appears once.
@@ -919,10 +927,9 @@ mutate('N9 中文 mode returns 中華民國（TW）',
     });
 // N10 — the application token rotated by a map round.
 mutate('N10 the application token rotated by a map round',
-    function () { return (INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length === 18; },
+    function () { return RO.misplacedIndexTokens(INDEX).length === 0; },
     function () {
-        var m = INDEX.replace(RO.currentAppToken(), RO.currentMapToken());
-        return (m.match(new RegExp(RO.currentAppToken(), 'g')) || []).length === 18;
+        return RO.misplacedIndexTokens(INDEX.replace(RO.currentAppToken(), RO.currentMapToken())).length === 0;
     });
 // N11 — the mode dropped from the cache key, so a switch serves the previous mode's text.
 mutate('N11 the mode dropped from the label cache key',

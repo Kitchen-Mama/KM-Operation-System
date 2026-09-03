@@ -43,7 +43,18 @@
 // would drift permanently downward, and the only visible symptom would be shipments refused for insufficient
 // stock that is physically present. Nothing except a declared build can distinguish that from a healthy
 // deployment, which is why this stamp exists and is registered in 63_'s module manifest.
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A';
+//
+// F1-7N-FC-1A-R1-HF1 §D.3 — AND R1 CHANGED THIS FILE WITHOUT MOVING THE STAMP, which defeats the exact
+// mechanism the paragraph above describes. R1 added the cancelled-shipment dispatch refusal here (§J, 18 lines)
+// and left this constant reading F1-7N-FC-1A, so the module manifest could not tell an R1 22_ from an FC-1A
+// one. An operator who synced 21_, 12_, 13_, 01_ and 63_ and missed THIS file would have been shown a fully
+// GREEN health report by a deployment that still deducts factory stock for a cancelled shipment — the
+// measured 1000 -> 200 — because every stamp the manifest checked was the stamp it expected.
+//
+// A build stamp is only worth declaring if it moves whenever behaviour does. Two rounds now change this file
+// and only one of them said so; the stamp names the later round, because the later round is what a deployment
+// has to be at for the guard to exist.
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
 var CSD_MOV_TYPE_ = 'shipment_out';                 // factory_stock_movements.movement_type for dispatch
 // F1-7N-FB-1 — the confirmation lifecycle event. Distinct from `departed_origin` (physical departure) so the
 // two facts can never be conflated. Registered in the canonical vocabulary alongside the existing types.

@@ -280,7 +280,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // succeeded and is never told the other 400 were discarded. Only a declared build separates that from a
   // deployment that refuses properly.
   { file: '13_procurement_handlers.gs', symbol: 'PROC_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp)' },
-  { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority' },
+  { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
   { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity' },

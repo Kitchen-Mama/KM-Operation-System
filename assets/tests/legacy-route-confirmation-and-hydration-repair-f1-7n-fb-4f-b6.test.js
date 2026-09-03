@@ -954,8 +954,12 @@ section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
     'H9 the application token is at or after the round that changed these files (' + APP + ')');
   eq(tok['assets/js/pages/inventory-replenishment.js'], APP, 'H10 [test 29] the page carries it');
   eq(tok['assets/js/utils/inventory-compat.js'], APP, 'H11 [test 29] and so does the shared draft module');
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18,
-    'H12 the whole co-deployed application set rotated together — never a half-updated deployment');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated
+  // TOGETHER" is — and the literal made a round covering one more asset look like a half-updated
+  // deployment. Derived now: nothing is left behind on a superseded application token.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'H12 the whole co-deployed application set rotated together — never a half-updated deployment (' +
+    RO.appTokenRefCount(INDEX) + ' refs on ' + APP + ')');
   ok(!RO.isMapToken(APP), 'H13 and no map round moved it onto a map token');
   ok(RO.tokenAtOrAfter(APP, 'skudisplayinit-20260901'), 'H14 the release order only ever moves forward');
   ok(tok['assets/css/pages/inventory-replenishment.css'] !== 'ffcols-20260820',

@@ -104,12 +104,38 @@ var ROUND_TOKENS = [
   // served from cache after this round: an older page shows an approved plan with no Shipment Draft as a
   // perfectly healthy card and offers no way to recover it, and an older adapter turns
   // INSUFFICIENT_FACTORY_STOCK into HTTP_TRANSPORT_ERROR by throwing a business rejection.
+  // SUPERSEDED BY F1-7N-FC-1A-R1-HF1 — the five lines that follow are WRONG, and they are kept
+  // because the reason they were wrong is the whole point of this series. The correction is recorded below.
   // F1-7N-FC-1A-R1 deliberately does NOT add a token. FC-1A and R1 are ONE atomic release (R1 §0): FC-1A
   // acquires factory stock reservations and R1 provides the only routed way to release one, so a deployment
   // carrying FC-1A alone can strand units. Minting a second token would let the two halves be cached, shipped
   // and reasoned about separately, which is exactly what the release decision forbids. The FC-1A token covers
   // both, and the ACTION-CONTRACT version (10 -> 11) is what actually refuses a half-synced deployment.
-  'fc1a-shipmentrecovery-20260903'
+  'fc1a-shipmentrecovery-20260903',
+  // F1-7N-FC-1A-R1-HF1 — THE CORRECTION, and it is a correction of REASONING, not of a typo.
+  //
+  // R1 argued: FC-1A and R1 are ONE atomic release, so minting a second token would let the two halves be
+  // cached and shipped separately. The premise is true and the conclusion does not follow, because ATOMICITY
+  // and CACHE IDENTITY are different axes enforced by different mechanisms. What holds the release together is
+  // the ACTION-CONTRACT version (10 -> 11), which refuses a half-synced deployment outright. A cache token does
+  // not hold a release together; it decides one thing only — whether a browser refetches a file. Reusing
+  // FC-1A's therefore bought no atomicity at all, and cost the single thing a token exists to buy.
+  //
+  // It also broke the rule this file already states in its own words, ten entries up: "A token may only be
+  // reused while nothing carrying it has been published." FC-1A WAS published — d94d5bd was pushed —
+  // so browsers had already been handed `?v=fc1a-shipmentrecovery-20260903`. Reusing it meant every one of them
+  // would keep the FC-1A copy of shipping-history.js, which R1 CHANGED, for the life of that cache entry: a
+  // Shipment Draft card with no Cancel button, against a server that has cancelShipmentDraft routed and
+  // waiting. The reservation would stay held with no reachable way to release it — which is the exact
+  // hazard R1 §0 was written to close, reintroduced by the decision meant to honour it.
+  //
+  // shipping-plan.js was worse, and reuse is not even what happened to it. FC-1A rewrote that file — the
+  // recovery banner, the Retry action, the contract gate — and never moved its token off
+  // `donenotice-20260811`, dated 2026-08-11. The one file carrying the whole recovery feature had no cache
+  // identity for that feature at all, and no assertion covered it because the round measured the token it had
+  // moved rather than the files it had changed. HF1 moves the ENTIRE application set onto one new token, so no
+  // member of it can be served from an older round than any other.
+  'fc1ar1-cancelrelease-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -232,6 +258,63 @@ function parseIndexTokens(indexHtml) {
   return out;
 }
 
+// F1-7N-FC-1A-R1-HF1 — THE PINNED COUNT OF 18, which is the equality-with-now this file exists to end,
+// surviving one field to the left of where it was fixed. Three suites asserted that index.html carries the
+// current application token exactly 18 times. The comment above one of them says, in as many words, that the
+// literal TOKEN was replaced by currentAppToken() because a literal "also forbade any APPLICATION round from
+// moving it" — and then left the literal COUNT standing, which forbids any application round from changing
+// how many assets it covers. HF1 is that round: it moves 19 assets, so all three failed while describing a
+// correct tree, and a fourth used `app === 18` as a MUTATION BASELINE, where a dirty baseline silently converts
+// every CAUGHT result into a meaningless one.
+//
+// What those assertions are FOR is that a MAP round must not rotate the application set, and an application
+// round must not rotate the map set. That is answerable from the inventory this file already keeps, without a
+// number: a map browser file must carry a map-series token, and everything else must not. Adding an asset, or
+// moving the whole application set forward, cannot make it false; putting the map token on an application asset
+// — the thing N7 mutates — cannot make it true.
+function misplacedIndexTokens(indexHtml) {
+  var toks = parseIndexTokens(indexHtml), out = [], p;
+  for (p in toks) {
+    if (!Object.prototype.hasOwnProperty.call(toks, p)) continue;
+    if (toks[p] === null) continue;                       // unversioned: a different rule's business
+    var isMapFile = MAP_BROWSER_FILES.indexOf(p) !== -1;
+    if (isMapFile && !isMapToken(toks[p])) out.push(p + ' is a map browser file but carries ' + toks[p]);
+    if (!isMapFile && isMapToken(toks[p])) out.push(p + ' is an application asset but carries the map token ' + toks[p]);
+  }
+  return out;
+}
+// THE CO-DEPLOYED SET ROTATED TOGETHER, said without a number. Eleven suites asserted this as "the current
+// application token appears in index.html exactly 18 times", and all eleven failed the moment a round
+// legitimately covered a nineteenth asset — the same equality-with-now, in the one field the previous
+// restatement did not reach.
+//
+// What "rotated together" MEANS is that no member of the set was left behind on the round it is moving off.
+// That is answerable from this series: an entry whose token is a KNOWN APPLICATION token which is neither the
+// current one nor the ORIGINAL BASELINE is a half-updated deployment, whoever left it there. The baseline is
+// exempt because a file sitting on it is a file no application round has ever needed to rotate, which is a
+// legitimate state for 46 of them; a file that DID change and was not rotated is a different defect, and it is
+// caught where it is answerable — against the feature's own symbols, not against a token count.
+//
+// Adding an asset cannot break this. Leaving one behind cannot satisfy it.
+function staleAppTokenRefs(indexHtml) {
+  var toks = parseIndexTokens(indexHtml), cur = currentAppToken(), base = ROUND_TOKENS[0], out = [], p;
+  for (p in toks) {
+    if (!Object.prototype.hasOwnProperty.call(toks, p)) continue;
+    var t = toks[p];
+    if (t === null || t === cur || t === base) continue;
+    if (tokenIndex(t) !== -1) out.push(p + ' is left behind on ' + t);
+  }
+  return out;
+}
+// How many index.html entries carry the current application token. Reported, never pinned: a round that adds an
+// asset moves this number, and that is not a defect.
+function appTokenRefCount(indexHtml) {
+  var toks = parseIndexTokens(indexHtml), n = 0, cur = currentAppToken(), p;
+  for (p in toks) {
+    if (Object.prototype.hasOwnProperty.call(toks, p) && toks[p] === cur) n++;
+  }
+  return n;
+}
 // The CANONICAL SHAPE of an Apps Script owner build stamp. The project stamps revisions of revisions
 // (F1-7N-FB-4E-R4B-R3 is the third revision of the second revision of round 4E), so the revision segment
 // repeats. A pattern that admitted only ONE revision segment rejected a legitimate stamp the moment a round
@@ -271,6 +354,9 @@ module.exports = {
   mapTokenIndex: mapTokenIndex,
   mapTokenAtOrAfter: mapTokenAtOrAfter,
   parseIndexTokens: parseIndexTokens,
+  misplacedIndexTokens: misplacedIndexTokens,
+  appTokenRefCount: appTokenRefCount,
+  staleAppTokenRefs: staleAppTokenRefs,
   BUILD_STAMP_RE: BUILD_STAMP_RE,
   tokenIndex: tokenIndex,
   tokenAtOrAfter: tokenAtOrAfter,

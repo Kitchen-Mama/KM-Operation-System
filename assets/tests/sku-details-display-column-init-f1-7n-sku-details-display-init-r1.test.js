@@ -634,7 +634,11 @@ section('G — cache token and page wiring');
     // must never be served from a token OLDER than the round that changed it.
     ok(RO.tokenAtOrAfter(APP, 'skudisplayinit-20260901'),
         'G1b and that token is at or after the round that changed this file (' + APP + ')');
-    eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'G1c and all 18 application references share it');
+    // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated
+    // TOGETHER" is — and the literal made a round covering one more asset look like a half-updated
+    // deployment. Derived now: nothing is left behind on a superseded application token.
+    eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+        'G1c and the application references share it, none left behind (' + RO.appTokenRefCount(INDEX) + ')');
     ok(!RO.isMapToken(APP), 'G1d it is not a map-series token');
     ok(css === 'donenotice-20260811', 'G2 sku-details.css token is UNCHANGED — the CSS was not modified');
     // The map family is untouched by an application round.

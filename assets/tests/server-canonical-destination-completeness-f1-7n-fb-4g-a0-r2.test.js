@@ -396,7 +396,11 @@ function refToken(f) {
 }
 eq(refToken('assets/js/utils/inventory-compat.js'), TOKEN, 'H5  inventory-compat.js carries it — its gate changed');
 eq(refToken('assets/js/pages/inventory-replenishment.js'), TOKEN, 'H6  and so does the page — its gate changed too');
-eq(INDEX.split(TOKEN).length - 1, 18, 'H7  all 18 co-deployed references moved together');
+// RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+// is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+// derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+  'H7  the co-deployed references moved together (' + RO.appTokenRefCount(INDEX) + ' refs on ' + TOKEN + ')');
 ok(RO.stampAtOrAfter('F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A0-R1'), 'H8  the owner-stamp order carries this round');
 
 // ================================================================================================================

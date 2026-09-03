@@ -241,9 +241,21 @@ its first anchor and wrote nothing (verified against `git status`), but every pa
 `21_` first (it owns the primitives everything else calls); `63_` last (it is the manifest that judges the rest).
 
 **Frontend:** `index.html`, `operation-system-db-api.js`, `shipping-plan.js`, `shipping-history.js`.
-Cache token stays `fc1a-shipmentrecovery-20260903` — **deliberately**. R1 mints no token of its own: a second
+~~Cache token stays `fc1a-shipmentrecovery-20260903` — **deliberately**. R1 mints no token of its own: a second
 one would let the two halves be cached, shipped and reasoned about separately, which is what the atomic-release
-decision forbids. The **action-contract version** is what refuses a half-synced deployment.
+decision forbids.~~ The **action-contract version** is what refuses a half-synced deployment.
+
+> **CORRECTED BY F1-7N-FC-1A-R1-HF1.** The struck-through paragraph is wrong. Its premise holds — FC-1A and
+> R1 are one release — but atomicity and cache identity are different axes with different enforcement, and
+> the sentence that follows it here says so: the action-contract version (10 -> 11) is what refuses a half-synced
+> deployment. A token buys exactly one thing, a refetch, and reusing a **published** token buys none of it.
+> FC-1A was pushed as `d94d5bd`, so browsers already held `?v=fc1a-shipmentrecovery-20260903`; reusing it would
+> have served them the FC-1A `shipping-history.js` — the Shipment Draft card **without** a Cancel button
+> — against a server that routes `cancelShipmentDraft`, leaving the reservation held with no reachable way
+> to release it. Worse, `shipping-plan.js` carries the entire recovery feature and FC-1A never rotated it at all:
+> it was still served at `donenotice-20260811`, dated 2026-08-11. The application set now moves together onto
+> **`fc1ar1-cancelrelease-20260903`** (19 references), and `22_`'s build stamp — which R1 changed and did
+> not move — now reads `F1-7N-FC-1A-R1` so the module manifest can detect a 22_ left behind.
 
 `DATABASE_MIGRATION: NO` · `BUNDLE_REBUILD: NO`.
 

@@ -690,7 +690,11 @@ section('DEPLOYMENT');
   var APP = RO.currentAppToken();
   ok(RO.tokenAtOrAfter(APP, 'fb4ga2r3r1-savefix-20260903'), 'P3  the cache token is at or after the previous round');
   var INDEX = read('index.html');
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'P4  applied to all 18 co-deployed refs');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'P4  applied to the whole co-deployed set (' + RO.appTokenRefCount(INDEX) + ' refs on ' + APP + ')');
   eq(INDEX.indexOf('fb4ga2r3r1-savefix-20260903'), -1, 'P5  and the previous token is retired');
   eq((G63.match(/symbol: 'ROSEND_DIAG_BUILD_VERSION_', expected: '([^']+)'/) || [])[1],
      (G66.match(/var ROSEND_DIAG_BUILD_VERSION_ = '([^']+)'/) || [])[1],

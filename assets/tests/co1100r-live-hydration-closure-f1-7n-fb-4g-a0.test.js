@@ -189,7 +189,11 @@ eq(refToken('assets/js/utils/inventory-compat.js'), TOKEN, 'A3  inventory-compat
 var cssTok = refToken('assets/css/pages/inventory-replenishment.css');
 ok(cssTok && cssTok !== TOKEN, 'A4  the stylesheet is on its OWN token family — the readback must expect ' + cssTok + ', not the app token');
 ok(INDEX.indexOf('fb4fb6r1-etasnapshot-20260901') === -1, 'A5  no reference is left on the previous round\'s token');
-eq(INDEX.split(TOKEN).length - 1, 18, 'A6  all 18 co-deployed references moved together');
+// RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+// is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+// derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+  'A6  the co-deployed references moved together (' + RO.appTokenRefCount(INDEX) + ' refs on ' + TOKEN + ')');
 ok(RO.tokenAtOrAfter(TOKEN, 'fb4fb6r1-etasnapshot-20260901'), 'A7  the release order places this round AFTER B6-R1');
 // The check must be capable of FAILING. If the shipped page were still on the previous token, A2 must break.
 mut('A8  [mutation] a stale inventory-replenishment.js token is detected', function () {

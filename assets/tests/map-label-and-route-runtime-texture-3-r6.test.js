@@ -435,8 +435,16 @@ section('§G — cache tokens: only what changed, and nothing else');
     // the equality-with-now _release-order.js exists to end. The property is unchanged and strictly
     // stronger: all 18 application references share ONE token, it is the current application token, and it
     // is not a map-series token.
-    eq((INDEX.match(new RegExp(RO_.currentAppToken(), 'g')) || []).length, 18,
-        'G4 all 18 application references share the current application token');
+    // RESTATED AGAIN (F1-7N-FC-1A-R1-HF1): the previous restatement derived the TOKEN and left the COUNT as
+    // the literal 18, which forbids any application round from changing how many assets the set covers. HF1 is
+    // that round — it moves 19 — so this failed while describing a correct tree, for the same
+    // reason and one field to the left. The count is now REPORTED and the property is derived from the file
+    // inventory _release-order.js already keeps: a map browser file carries a map-series token and an
+    // application asset does not. Adding an asset cannot break it; putting the map token on an application
+    // asset — the mutation below — cannot satisfy it.
+    eq(RO_.misplacedIndexTokens(INDEX).join(' | '), '',
+        'G4 every application asset carries an application token and every map asset a map token (' +
+        RO_.appTokenRefCount(INDEX) + ' refs on ' + RO_.currentAppToken() + ')');
     ok(!RO_.isMapToken(RO_.currentAppToken()), 'G4 and no map round moved it onto a map token');
     ok(/EARTH_ASSET_VERSION_ = 'jul2004-tiers-e7ca8837'/.test(GLOBE_SRC),
         'G4 and the earth content token is unchanged, because no asset byte moved');

@@ -486,7 +486,11 @@ eq([String(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);
   var tok = RO.parseIndexTokens(INDEX);
   eq(tok['assets/js/pages/inventory-replenishment.js'], APP, 'H8 [§H] the changed page carries it');
   eq(tok['assets/js/utils/inventory-compat.js'], APP, 'H9 [§H] and so does the shared draft module');
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'H10 [§H] the whole co-deployed set rotated together');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'H10 [§H] the whole co-deployed set rotated together (' + RO.appTokenRefCount(INDEX) + ' on ' + APP + ')');
   eq((INDEX.match(/fb4fb6-legacyroute-20260901/g) || []).length, 0,
     'H11 [§H] and B6\'s token is GONE from index.html — it was already published on origin/main, so reusing it ' +
     'would have left every browser that fetched it on the B6 copy of this page');

@@ -720,7 +720,11 @@ eq(CMP.IRService.canonical('美森海卡'), 'sea_express', 'V5  §10 sea / sea_e
 })();
 (function () {
   var APP = RO.currentAppToken();
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'V8  all 18 application refs share the current token (' + APP + ')');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'V8  the application refs rotated together (' + RO.appTokenRefCount(INDEX) + ' on ' + APP + ')');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga1r1-panelready-20260902'), 'V8a and it is after the published A1-R1 token');
   ok(INDEX.indexOf('fb4ga1r1-panelready-20260902') === -1, 'V8b which is fully retired');
 })();

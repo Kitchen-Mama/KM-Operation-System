@@ -613,7 +613,11 @@ ok(/data-eta-persisted/.test(PAGE) && /data-method-persisted/.test(PAGE), 'V3  �
   // that any later round invalidates. The durable claims are that the whole application set moves together and
   // that it is at or after the round that introduced this file's changes.
   var APP = RO.currentAppToken();
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'V6  all 18 application refs share the current token (' + APP + ')');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'V6  the application refs rotated together (' + RO.appTokenRefCount(INDEX) + ' on ' + APP + ')');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga1r1-panelready-20260902'), 'V6a and it is at or after the round that changed these files');
   ok(INDEX.indexOf('fb4ga1-atomicreveal-20260902') === -1, 'V6b §12 the published A1 token is fully retired');
   ok(/inventory-replenishment\.css\?v=irpanelready-20260902/.test(INDEX),

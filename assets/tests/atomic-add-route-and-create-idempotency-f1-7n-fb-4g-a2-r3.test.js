@@ -647,7 +647,11 @@ section('DEPLOYMENT');
   // What this round needs is that the token is not OLDER than the one it introduced, and that whatever token
   // is current is applied consistently to every co-deployed reference.
   ok(RO.tokenAtOrAfter(APP, 'fb4ga2r3-atomicroute-20260902'), 'D4  the application cache token is at or after this round');
-  eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'D4a on all 18 co-deployed refs');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'D4a and the co-deployed set rotated TOGETHER (' + RO.appTokenRefCount(INDEX) + ' refs on ' + APP + ')');
   eq(INDEX.indexOf('fb4ga2r2-routeintent-20260902'), -1, 'D4b and the previous token is fully retired');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga2r2-routeintent-20260902'), 'D4c ordered after it in the append-only series');
   ok(!/inventory-compat|inventory-replenishment|operation-system-db-api/.test(read('assets/tools/build-apps-script-bundle.js')),

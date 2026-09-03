@@ -1207,16 +1207,23 @@ section('§L — THE INVARIANTS THIS AUDIT PINNED, RE-CHECKED AFTER FC-1A');
 // facts FC-0A pinned still hold, and that the owners which changed DECLARE it. A stamp that had not moved
 // while the behaviour did is the failure mode this manifest exists to catch.
 (function () {
-  eq((code(G11).match(/SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
-    'L1  11_ DECLARES the FC-1A build — its Approve answer changed shape, and the frontend binds to it');
+  var _l1Exp = ((G63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+  eq((code(G11).match(/SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _l1Exp,
+    'L1  11_ declares exactly the build its manifest expects (' + _l1Exp + ') — its Approve answer changed ' +
+    'shape, and the frontend binds to it');
   eq((code(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
     'F1-7N-FB-4G-A2-R3-R1', 'L2  16_ unchanged');
   ok(/CSD_MOV_TYPE_ = 'shipment_out'/.test(G22),
     'L3  22_ still names shipment_out — FC-1A moved WHERE the movement is written, never WHAT it is called');
   ok(/movement_type='po_receipt'/.test(G13), 'L4  13_ unchanged — the PO receipt path was not touched');
-  eq((code(G22).match(/CSD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
-    'L5  and 22_ DECLARES the FC-1A build — a 22_ a round behind returns SUCCESS while never releasing a ' +
-    'reservation, so only a declared build can tell the two apart');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): pinned to 'F1-7N-FC-1A'. R1 then added the cancelled-shipment dispatch
+  // refusal to this very file and left the constant alone, and HF1 moves it — so the literal failed while
+  // describing a correct tree. The manifest PAIR is the durable form, and it is the form the two assertions
+  // below already use.
+  var _l5Exp = ((G63.match(/\{ file: '22_shipment_dispatch_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+  eq((code(G22).match(/CSD_BUILD_VERSION_ = '([^']+)'/) || [])[1], _l5Exp,
+    'L5  and 22_ declares exactly the build its manifest expects (' + _l5Exp + ') — a 22_ a round behind ' +
+    'returns SUCCESS while never releasing a reservation, so only a declared build can tell the two apart');
   // F1-7N-FC-1A-R1 — DERIVED. These pinned FC-1A's own stamp values, which held for exactly one round:
   // R1 moves both (12_ gains cancellation, 21_ gains the vocabulary owner and the reconciliation). What the
   // audit needs to keep asserting is the PAIR — each owner declares exactly what the manifest expects

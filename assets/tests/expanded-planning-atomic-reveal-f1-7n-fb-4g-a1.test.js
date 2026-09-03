@@ -562,8 +562,12 @@ section('§I — DEPLOYMENT IDENTITY');
 var APP_TOKEN = RO.currentAppToken();
 var CSS_TOKEN = (INDEX.match(/inventory-replenishment\.css\?v=([^"']+)/) || [])[1];
 (function () {
-  eq((INDEX.match(new RegExp(APP_TOKEN, 'g')) || []).length, 18,
-    'I1  all 18 co-deployed application refs share the current token (' + APP_TOKEN + ')');
+  // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"
+  // is — and the literal made a round that covers one more asset look like a half-updated deployment. Now
+  // derived: no entry is left behind on a superseded application token. See _release-order.js staleAppTokenRefs.
+  eq(RO.staleAppTokenRefs(INDEX).join(' | '), '',
+    'I1  the co-deployed application refs rotated together (' + RO.appTokenRefCount(INDEX) +
+    ' on ' + APP_TOKEN + ')');
   ok(RO.tokenAtOrAfter(APP_TOKEN, 'fb4ga1-atomicreveal-20260902'),
     'I1a and it is at or after the round that introduced the reveal owner');
   ok(!new RegExp('fb4ga0r2-destauthority').test(INDEX), 'I2  §I the already-published A0-R2 token is not reused for changed client code');
