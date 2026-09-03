@@ -433,8 +433,14 @@ var R3 = 'F1-7N-FB-4E-R4B-R3';
 var _r3Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
 ok(new RegExp("var RTR_BUILD_VERSION_ = '" + _r3Expect + "';").test(ROUTER),
   '1.1 01_router.gs declares the R4B-R3 build (its GET dispatch changed in R4B-R2)');
-ok(new RegExp("var SYS_BUILD_VERSION_ = '" + R3 + "';").test(HEALTH),
-  '1.2 63_ declares R4B-R3 — it changed this round (it carries the manifest)');
+// RESTATED (F1-7N-FC-1B-E3): DERIVED from 63_'s own manifest entry, exactly as 1.1 already was. Pinning the
+// literal R4B-R3 stamp meant the assertion could only hold until the next round legitimately moved it - and
+// E3 does move it (63_ now reports the effective inventory_ai_plan_db_generation_enabled value). The property
+// that matters is the self-consistency: the file that CARRIES the manifest must satisfy it.
+var _sysExpect = ((HEALTH.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+ok(new RegExp("var SYS_BUILD_VERSION_ = '" + _sysExpect + "';").test(HEALTH),
+  '1.2 63_ declares exactly what its own manifest entry expects of it (' + _sysExpect + ')');
+ok(_sysExpect !== '(none)', '1.2a and 63_ has a manifest entry for itself at all');
 ok(!/R4A1'/.test(ROUTER) && !/expected: 'F1-7N-FB-4E-R4A1'/.test(HEALTH),
   '1.3 no owner file or manifest entry still advertises R4A1');
 

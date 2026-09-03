@@ -1156,7 +1156,17 @@
     // EXECUTION_PLAN_ROUTE_INCOMPLETE, which is about a route the DATABASE already holds: that one needs
     // finishing or removing, while this one has never existed anywhere but on screen and can simply be
     // abandoned. Both name the missing fields; only one of them implies a stored row.
-    EXECUTION_PLAN_COMPOSER_INCOMPLETE: 'EXECUTION_PLAN_COMPOSER_INCOMPLETE'
+    EXECUTION_PLAN_COMPOSER_INCOMPLETE: 'EXECUTION_PLAN_COMPOSER_INCOMPLETE',
+    // F1-7N-FC-1B-E3 §G.14 — AN AI PLAN RAN AND THE SERVER DID NOT ACKNOWLEDGE ITS ROWS.
+    //
+    // Distinct from every other code here, because it is not a statement about any route on screen: the
+    // routes may be perfectly well formed and the plan may be perfectly submittable. What is unknown is
+    // whether the STORED plan is the plan on screen — the generation reported a line count its own
+    // created/updated tallies, readback verification or supersede lifecycle did not confirm, or it timed out
+    // after the request had already been sent. Submitting on top of that would build a shipping plan from a
+    // draft nobody has established the shape of, so it is refused until a run reconciles. It clears itself:
+    // the next generation that does reconcile drops it.
+    EXECUTION_PLAN_AI_UNRECONCILED: 'EXECUTION_PLAN_AI_UNRECONCILED'
   };
 
   // ===========================================================================================================
@@ -1386,6 +1396,18 @@
           route: sstr(r && r.routeLabel), missing: miss });
         if (k && !seen0[k]) { seen0[k] = 1; out.blocking.skus.push(k); }
       });
+      return out;
+    }
+
+    // ---- -0.5. AN UNRECONCILED AI PLAN RUN ----------------------------------------------------------
+    //
+    // F1-7N-FC-1B-E3 §G.14. This runs before every route-shaped judgement because it is not about the
+    // routes: it says the station's stored plan is not known to match what is being submitted. Advising on
+    // the rows in that state would be advice about the wrong thing.
+    var _aiUnrec = sstr(input.aiPlanUnreconciled);
+    if (_aiUnrec) {
+      out.code = C.EXECUTION_PLAN_AI_UNRECONCILED;
+      out.blocking.reasons.push({ sku: '', reason: 'AI_PLAN_UNRECONCILED:' + _aiUnrec });
       return out;
     }
 

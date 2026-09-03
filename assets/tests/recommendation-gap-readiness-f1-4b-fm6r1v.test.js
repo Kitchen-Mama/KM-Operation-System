@@ -77,7 +77,14 @@ eq(op.totalRecommendedQty, 40, 'P2 actionable total = cartonize(10+10+0)=40 — 
 eq(op.forwardVisibility.t4GapQty, 500, 'P3 T4 excluded from the actionable total (forward visibility only)');
 
 section('§7/§10 — AI Plan is DISPLAY-ONLY; manual + auto share the ONE KMREC owner; no execution/persistence write');
-var invPlan = INV.slice(INV.indexOf('function handleReplenAiPlan'), INV.indexOf('window.handleReplenAiPlan'));
+// RESTATED (F1-7N-FC-1B-E3): the AI Plan click is now TWO functions - handleReplenAiPlan (the click's own
+// turn: guard + the visible busy state) and _irAiPlanRun_ (the next turn: the work). Slicing to the first
+// `window.` assignment used to cover the whole click and now stops before the regeneration, so the slice is
+// taken over the PAIR. The properties asserted below are unchanged, and hold across both halves, which is
+// strictly stronger than holding over one of them.
+var invPlan = INV.slice(INV.indexOf('function handleReplenAiPlan'), INV.indexOf('window._irAiPlanRun_'));
+ok(/function handleReplenAiPlan/.test(invPlan) && /function _irAiPlanRun_/.test(invPlan),
+  'U0 the slice covers BOTH halves of the AI Plan click (the guard/paint half and the work half)');
 ok(/generateInventoryRecommendation/.test(invPlan) && /renderReplenishment\(\)/.test(invPlan), 'U1 Inventory AI Plan generates via KMREC then re-renders (display)');
 // RESTATED (F1-7N-FC-1B-E2): this swept the whole function body, so it matched a MESSAGE STRING. E2 made the
 // AI Plan outcome honest — it now names why execution materialization did not happen, and that sentence

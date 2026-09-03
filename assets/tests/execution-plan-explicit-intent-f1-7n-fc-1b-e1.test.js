@@ -150,10 +150,9 @@ function makeList() {
     querySelector: function (sel) {
       if (sel === '.exec-route-row') return self._byClass('exec-route-row')[0] || null;
       if (sel === '.exec-route-composer') return self._byClass('exec-route-composer')[0] || null;
-      if (sel === '[data-ir-exec-empty]') {
-        return /data-ir-exec-empty/.test(self._html)
-          ? { parentNode: { removeChild: function () { self._html = ''; } } } : null;
-      }
+      // F1-7N-FC-1B-E3 §A - `[data-ir-exec-empty]` was the empty-plan MESSAGE, and the message is gone
+      // (the empty plan is one blank composer row now, which the column header above it names). Modelling a
+      // selector production no longer uses would be a harness pretending to describe the page.
       return null;
     },
     querySelectorAll: function (sel) {
@@ -200,7 +199,10 @@ function makeWorld(opts) {
         Object.defineProperty(el, 'innerHTML', {
           // RESTATED (F1-7N-FC-1B-E2): `(\d+)` could not match a composer's BLANK Qty and fell back to '0',
           // reporting a 0 where the shipped renderer had written nothing. Any value, including empty.
-          set: function (v) { var m = /data-field="qty" value="([^"]*)"/.exec(String(v)); el._fields.qty = m ? m[1] : ''; },
+          set: function (v) { // F1-7N-FC-1B-E3 §A.5 - the Qty input carries its own accessible label now, so `data-field="qty"`
+          // and `value=` are no longer adjacent. Matching the ATTRIBUTES of the qty input rather than one
+          // exact byte sequence is what the harness meant all along.
+          var m = /data-field="qty"[^>]*?\svalue="([^"]*)"/.exec(String(v)); el._fields.qty = m ? m[1] : ''; },
           get: function () { return ''; }
         });
         return el;
@@ -249,13 +251,15 @@ function makeWorld(opts) {
     // the fixture every one of them answers exactly as before.
     extractFn(PAGE, '_irComposerKind_'),
     extractFn(PAGE, '_irIsComposerEl_'),
-    extractFn(PAGE, '_irExecutionEmptyStateHtml_'),
     extractFn(PAGE, '_execRenderEmptyState_'),
     // F1-7N-FC-1B-E2 — the empty state now also paints ONE pristine composer, so its builder is lifted too.
     // E1's claims are about EXECUTION ROUTES and are unaffected: a composer is not one, carries no
     //  class while pristine, and enters no count E1 makes.
     extractFn(PAGE, '_renderManualComposer_'),
-    extractFn(PAGE, '_execClearEmptyState_'),
+    // F1-7N-FC-1B-E3 - `_execClearEmptyState_` became `_execDropPristineComposers_`: at the same call site,
+    // for the same reason (a plan holding a real route must not still show the empty plan's furniture), on the
+    // composer instead of the deleted message.
+    extractFn(PAGE, '_execDropPristineComposers_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
     extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
@@ -271,7 +275,7 @@ function makeWorld(opts) {
     extractFn(PAGE, 'initializeShippingAllocation'),
     'return { init: initializeShippingAllocation, render: _renderExecutionRoute, collect: _saveAllocationDraftFromDom,' +
       ' edit: onExecutionRouteEdit, sync: _execSyncEmptyState_, provOf: _irRouteProvenanceOf_,' +
-      ' emptyHtml: _irExecutionEmptyStateHtml_ };'
+      ' dropPristine: _execDropPristineComposers_ };'
   ].join('\n');
 
   w.api = new Function(names.concat(['replenAllocationDraft', '__totals']), src)
@@ -282,7 +286,14 @@ function makeWorld(opts) {
   return w;
 }
 
-function isEmptyState(w) { return /data-ir-exec-empty/.test(w.list._html); }
+// RESTATED (F1-7N-FC-1B-E3): "the plan is empty" used to be observable as a SENTENCE in the container. §A
+// removes that sentence, so the same fact is observed as the shape the empty plan actually has now: ZERO
+// execution routes and EXACTLY ONE pristine composer. Every call site below meant "nothing has been planned",
+// and that is what this still answers - more strictly than before, because a missing composer, a second one,
+// or a route now all falsify it, where the old predicate only looked for a string.
+function isEmptyState(w) {
+  return routeCount(w) === 0 && composerCount(w) === 1;
+}
 // EXECUTION ROUTES only. A manual composer (F1-7N-FC-1B-E2) is an input surface, not a route, and every claim
 // in this suite is about routes: "the Suggested Qty creates no route", "no identity is minted", "nothing is
 // written". Those hold unchanged — what changed is that the plan is no longer visually empty, because an
@@ -423,12 +434,22 @@ ok(!/qty:\s*suggested/.test(code(PAGE)), 'B4d no call site seeds a route from th
 ok(!/_renderExecutionRoute\(sku,\s*\{\s*ship_from:\s*''/.test(code(PAGE)),
   'B4e and the blank-route literal the seeding branch used is gone');
 
-// §B.5 — the empty state is TEXT, not a hidden row. A hidden row is still a row to every querySelectorAll on
-// this page, including the collect's, which is the mechanism that made the phantom dangerous.
-var emptyHtml = post.api.emptyHtml();
-ok(!/exec-route-row/.test(emptyHtml), 'B5  the empty state is not a route row');
-ok(!/<input/i.test(emptyHtml), 'B5a it contains no input, so the Total finds nothing to add');
-ok(!/display\s*:\s*none|hidden/i.test(emptyHtml), 'B5b and it is not a hidden row pretending to be an empty state');
+// §B.5 — the empty state is NOT A ROUTE. That was the whole of B5, and it is unchanged.
+//
+// RESTATED (F1-7N-FC-1B-E3): B5 read the empty state out of an HTML STRING, because the empty state WAS a
+// string. It is a rendered row now, so the same three properties are asserted on the rendered thing - which
+// is what the collect and the Total actually see. B5a is the one that changed shape and NOT meaning: there is
+// an input now (that is the point of a composer), and what mattered was that the Total finds nothing to add,
+// so the Total is asserted directly instead of the absence of the element. A hidden row is still refused: a
+// hidden row is a row to every querySelectorAll on this page, including the collect's, which is exactly the
+// mechanism that made the phantom dangerous.
+var _emptyRow = post.list._byClass('exec-route-composer')[0] || null;
+ok(!!_emptyRow, 'B5  the empty plan renders exactly one row, and it is a COMPOSER');
+ok(!/exec-route-row/.test(String(_emptyRow && _emptyRow.className || '')),
+  'B5a  ...which is not an .exec-route-row, so the collector\'s selector passes it by');
+eq(lastTotal(post), 0, 'B5b and the Total is 0, because its Qty is BLANK - not because there is no input');
+ok(!/display\s*:\s*none/i.test(JSON.stringify(_emptyRow && _emptyRow.style || {})) && _emptyRow.hidden !== true,
+  'B5c and it is not a hidden row pretending to be an empty state');
 
 // ================================================================================================================
 section('§C — CANONICAL ROUTE PROVENANCE');
@@ -479,12 +500,25 @@ ok(/opts && opts\.provenance/.test(hyd) && /'PERSISTED_ACTIVE_DRAFT'/.test(hyd),
 // ================================================================================================================
 section('§D — THE EMPTY STATE');
 // ================================================================================================================
-// RESTATED (F1-7N-FC-1B-E2): the message was reworded because it now sits ABOVE a composer, so it has to
-// say what the row below is as well as what is missing. Both halves of D1 are still asserted.
-ok(/No execution route yet/.test(emptyHtml), 'D1  the empty-plan message states that nothing is planned...');
-ok(/Fill in/.test(emptyHtml) && /Nothing is saved until all four are set/.test(emptyHtml),
-  'D1b ...names the row below it as an empty form, and says nothing is saved until it is complete');
-ok(/AI Plan/.test(emptyHtml) && /Add Route/.test(emptyHtml), 'D1a AI Plan and + Add Route');
+// RESTATED (F1-7N-FC-1B-E3 §A): D1 asserted the WORDING of an empty-plan message, and E3 REMOVES that
+// message on purpose. It is the one restatement here that reverses an assertion rather than re-observing it,
+// so the reason is stated plainly: E1 needed the sentence because the empty plan held nothing else, and E2
+// then put a row under it - a row nobody could read as a form, because every control style in the stylesheet
+// was scoped to `.exec-route-row`, which a pristine composer deliberately does not carry. The fix for "the
+// operator cannot tell this row is a form" was the LAYOUT, not more prose.
+//
+// What D1 protected - that an empty plan is HONEST about being empty and says what to do - is protected by
+// three things now, all asserted: no route is shown, exactly one blank row IS shown, and the column header
+// above it plus each control's own accessible label name the four fields. Nothing the sentence said is unsaid.
+ok(!/No execution route yet/.test(PAGE) && !/Nothing is saved until all four are set/.test(PAGE),
+  'D1  the empty-plan helper copy is GONE from production, not shortened (§A.1)');
+ok(!/exec-routes-empty|data-ir-exec-empty/.test(PAGE),
+  'D1a and so is the element that carried it - no empty container, no reserved blank height (§A.2)');
+ok(/<span>From<\/span><span>To<\/span>/.test(PAGE) && /<span>Method<\/span>/.test(PAGE),
+  'D1b the column header still names every field directly above the row (§A.3)');
+ok(/aria-label="From"/.test(PAGE) && /aria-label="To"/.test(PAGE) && /aria-label="Qty"/.test(PAGE) &&
+  /aria-label="Method"/.test(PAGE),
+  'D1c and each control carries its own accessible label, on the control (§A.5)');
 eq(lastTotal(post), 0, 'D2  Total = 0');
 // RESTATED (F1-7N-FC-1B-E2): E1 asserted that NO input row is shown, and E2 reverses exactly that half —
 // an operator with no active route needs somewhere to type. What must remain true, and is asserted here, is
@@ -509,7 +543,13 @@ section('§E — EXPLICIT AI PLAN');
 // itself, because the DEFAULT AI Plan path on this page produces no execution route at all — it regenerates
 // the RECOMMENDATION and re-renders. That is exactly why the phantom was so misleading: the blank 520 row
 // looked like the output of a plan that had never produced a route.
-var aiFn = code(extractFn(PAGE, 'handleReplenAiPlan'));
+// RESTATED (F1-7N-FC-1B-E3): the AI Plan click is now a PAIR of functions - handleReplenAiPlan (the click's
+// own event-loop turn: the re-entry guard and the visible busy state) and _irAiPlanRun_ (the work, one task
+// later). That split is not cosmetic: everything the flag-off path does is synchronous, so setting a busy
+// state and clearing it around it gave the browser no frame in which to paint either, which is one of the
+// five reasons the button looked dead. Every property below is asserted over BOTH halves, which is stricter
+// than over one: a later round that moves an operation into either half is still caught.
+var aiFn = [code(extractFn(PAGE, 'handleReplenAiPlan')), code(extractFn(PAGE, '_irAiPlanRun_'))].join(' ; ');
 ok(/_irRecoByKey/.test(aiFn), 'E1  the default AI Plan path regenerates the RECOMMENDATION');
 ok(!/_renderExecutionRoute/.test(aiFn), 'E1a and creates no execution route itself');
 // RESTATED (F1-7N-FC-1B-E2): the notice was rewritten because it read as "the plan ran and produced

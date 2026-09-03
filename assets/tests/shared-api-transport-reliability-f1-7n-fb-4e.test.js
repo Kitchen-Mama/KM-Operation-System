@@ -687,7 +687,11 @@ ok(/handler: 'doPost'/.test(RTR), 'H6 including on the doPost side, so its answe
 // it; R1 adds a dispatch and moves the stamp out of that family entirely. What FB-4E actually needs to stay
 // true is the PAIRING below: whatever the router declares, the manifest expects exactly that.
 var RTR_STAMP = /RTR_BUILD_VERSION_ = '([^']+)'/.exec(RTR);
-var SYS_STAMP = /SYS_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(HLTH);
+// RESTATED (F1-7N-FC-1B-E3): the note directly above converted the ROUTER stamp from an FB-4E family pin to
+// a value read, for exactly this reason, and left the HEALTH stamp pinned to the family. E3 moves 63_ out of
+// it (63_ now reports the effective inventory_ai_plan_db_generation_enabled value). The PAIRING is what this
+// section defends: whatever 63_ declares, its own manifest expects exactly that.
+var SYS_STAMP = /SYS_BUILD_VERSION_ = '([^']+)'/.exec(HLTH);
 ok(!!RTR_STAMP, 'H7 the router declares a build stamp (' + (RTR_STAMP ? RTR_STAMP[1] : 'NONE') + ')');
 ok(!!SYS_STAMP, 'H7 as is the health owner’s');
 ok(RTR_STAMP && new RegExp("'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + RTR_STAMP[1] + "'").test(HLTH),

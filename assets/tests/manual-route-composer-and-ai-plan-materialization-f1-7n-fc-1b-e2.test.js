@@ -134,10 +134,8 @@ function makeList() {
     querySelector: function (sel) {
       if (sel === '.exec-route-row') return self._byClass('exec-route-row')[0] || null;
       if (sel === '.exec-route-composer') return self._byClass('exec-route-composer')[0] || null;
-      if (sel === '[data-ir-exec-empty]') {
-        return /data-ir-exec-empty/.test(self._html)
-          ? { parentNode: { removeChild: function () { self._html = ''; } } } : null;
-      }
+      // F1-7N-FC-1B-E3 §A - the empty-plan MESSAGE is gone (the empty plan is one blank composer row now,
+      // named by the column header above it), so this selector no longer exists in production.
       return null;
     },
     querySelectorAll: function (sel) {
@@ -183,7 +181,10 @@ function makeWorld(opts) {
           shipping_method: '', expected_arrival: '' }, {}, '');
         Object.defineProperty(el, 'innerHTML', {
           set: function (v) {
-            var m = /data-field="qty" value="([^"]*)"/.exec(String(v));
+            // F1-7N-FC-1B-E3 §A.5 - the Qty input carries its own accessible label now, so `data-field="qty"`
+          // and `value=` are no longer adjacent. Matching the ATTRIBUTES of the qty input rather than one
+          // exact byte sequence is what the harness meant all along.
+          var m = /data-field="qty"[^>]*?\svalue="([^"]*)"/.exec(String(v));
             el._fields.qty = m ? m[1] : '';
             el._methodDisabled = /data-field="shipping_method"[^>]*\sdisabled/.test(String(v));
             el._html = String(v);
@@ -235,10 +236,12 @@ function makeWorld(opts) {
     extractFn(PAGE, '_irIsComposerEl_'),
     extractFn(PAGE, '_irPromoteComposerToTouched_'),
     extractFn(PAGE, 'onExecutionComposerEdit'),
-    extractFn(PAGE, '_irExecutionEmptyStateHtml_'),
     extractFn(PAGE, '_execRenderEmptyState_'),
     extractFn(PAGE, '_renderManualComposer_'),
-    extractFn(PAGE, '_execClearEmptyState_'),
+    // F1-7N-FC-1B-E3 - `_execClearEmptyState_` is now `_execDropPristineComposers_`: same call site, same
+    // reason (a plan holding a real route must not still show the empty plan's furniture), acting on the
+    // composer instead of the deleted message.
+    extractFn(PAGE, '_execDropPristineComposers_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
     extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
@@ -253,7 +256,7 @@ function makeWorld(opts) {
     'return { init: initializeShippingAllocation, render: _renderExecutionRoute, composer: _renderManualComposer_,' +
       ' collect: _saveAllocationDraftFromDom, edit: onExecutionRouteEdit, composerEdit: onExecutionComposerEdit,' +
       ' sync: _execSyncEmptyState_, promote: _irPromoteComposerToTouched_, isComposerEl: _irIsComposerEl_,' +
-      ' emptyHtml: _irExecutionEmptyStateHtml_ };'
+      ' dropPristine: _execDropPristineComposers_ };'
   ].join('\n');
 
   w.api = new Function(names.concat(['replenAllocationDraft', '__totals']), src)
@@ -273,7 +276,13 @@ function composers(w) { return w.list._byClass('exec-route-composer'); }
 function routeRows(w) { return w.list._byClass('exec-route-row'); }
 function modelRows(w) { return (w.model.bySku && w.model.bySku[SKU]) || []; }
 function lastTotal(w) { var t = w.counts.totals; return t.length ? t[t.length - 1] : null; }
-function isEmptyMsg(w) { return /data-ir-exec-empty/.test(w.list._html); }
+// RESTATED (F1-7N-FC-1B-E3 §A): the empty-plan message is removed, so "the plan is empty" is observed as
+// the shape the empty plan has: no execution route and exactly one pristine composer. Stricter than looking
+// for a string - a missing composer, a second one, or a route all falsify it.
+function isEmptyPlan(w) {
+  return routeRows(w).length === 0 && composers(w).length === 1 &&
+    String(composers(w)[0].getAttribute('data-composer-touched') || '') !== '1';
+}
 
 var SKUDATA = { sku: SKU, country: 'US', marketplace: 'Amazon', suggestedQty: SUGGESTED, plannedQty: 0 };
 
@@ -320,7 +329,10 @@ var w1 = makeWorld({});
 w1.api.init(SKU, SKUDATA, { catalogueSettled: true });
 eq(composers(w1).length, 1, 'A1  with no active draft, EXACTLY ONE pristine composer is rendered');
 eq(routeRows(w1).length, 0, 'A2  and ZERO execution routes — a composer is not a route');
-ok(isEmptyMsg(w1) === false || true, 'A2a (the empty-plan message and the composer share the container)');
+// RESTATED (F1-7N-FC-1B-E3): this was a tautology (`x === false || true`), written when the message and the
+// composer shared the container and neither was the point of A2. With the message removed there IS a real
+// claim to make here, so it is made: an empty plan renders exactly ONE blank row and it is a composer.
+ok(isEmptyPlan(w1), 'A2a an empty plan renders exactly one PRISTINE composer and no execution route');
 var c1 = composers(w1)[0];
 eq(c1._fields.qty, '', 'B1  its Qty is BLANK — never the Suggested Qty, and never 0');
 eq(c1._fields.source_warehouse_id, '', 'B2  From is blank');
@@ -543,16 +555,31 @@ var modalFn = code(extractFn(PAGE, '_openReplenScopeModal'));
 ok(/confirmLabel: action === 'aiplan' \? 'Generate AI Plan'/.test(modalFn),
   'G3  whose confirm button is "Generate AI Plan"');
 ok(/return handleReplenAiPlan\(scope\)/.test(modalFn), 'G4  and whose onConfirm hands the SELECTED SCOPE to handleReplenAiPlan');
-var aiFn = code(extractFn(PAGE, 'handleReplenAiPlan'));
+// RESTATED (F1-7N-FC-1B-E3): the click is now a PAIR - handleReplenAiPlan sets the visible state in the
+// click's own event-loop turn and _irAiPlanRun_ does the work one task later, because everything the run does
+// is synchronous and a state set and cleared inside one task is never painted. Both halves are measured.
+var aiFn = [code(extractFn(PAGE, 'handleReplenAiPlan')), code(extractFn(PAGE, '_irAiPlanRun_'))].join(' ; ');
 ok(/window\._irAiPlanScope = scope/.test(aiFn), 'G5  the selected scope (Amazon US) is retained on the page');
 ok(/_irRecoByKey\[String\(r\.sku\)\] = dto/.test(aiFn), 'G6  the RECOMMENDATION half runs: KMREC regenerates per SKU');
 ok(/_irInventoryAiPlanDbGenerationEnabled_\(\) && _irAiPlanDbGenEligible_\(\)/.test(aiFn),
   'G7  and the EXECUTION half is gated on two conditions');
 // THE BREAK POINT, named precisely.
-eq(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/.exec(CFG)[1], 'false',
-  'G8  THE BREAK POINT: the backend feature flag is FALSE');
-ok(/set ONLY for the USER-owned controlled/.test(CFG) && /Stage-3 verification/.test(CFG),
-  'G8a and 00_config.gs records its flip as USER-owned, gated behind a Stage-3 verification');
+//
+// RESTATED (F1-7N-FC-1B-E3): E2's finding was that AI Plan's silence came from a FEATURE FLAG and not from a
+// missing contract, and it recorded that finding by asserting the flag's then-current value, `false`. E3 acts
+// on the finding: §E.4 sets the flag TRUE, USER-authorized. An assertion that a released feature is still
+// unreleased cannot survive its own release, and it should not - a flag that may never be flipped is not a
+// flag. What E2 actually established, and what stays asserted, is the SHAPE of the break point: ONE boolean
+// of record in 00_config.gs, read through ONE accessor, which is simultaneously the release switch and the
+// entire rollback. The value it currently holds is reported by system.health rather than pinned here, because
+// the deployment's value and the repository's can legitimately differ (the deployment is published by hand).
+var _flagLit = /var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/.exec(CFG);
+ok(!!_flagLit && (_flagLit[1] === 'true' || _flagLit[1] === 'false'),
+  'G8  THE BREAK POINT is ONE boolean of record in 00_config.gs (currently ' + (_flagLit && _flagLit[1]) + ')');
+ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CFG),
+  'G8a1 read through exactly ONE accessor, so every gate agrees on the value');
+ok(/inventory_ai_plan_db_generation_enabled/.test(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')),
+  'G8a and the EFFECTIVE value is reportable from system.health, so the deployed posture is a fact');
 ok(/failSafeDefaults: \{[^}]*inventoryAiPlanDbGenerationEnabled: false/.test(read('assets/js/api/km-api-foundation.js')),
   'G8b with the client mirroring it fail-safe OFF');
 // EVERYTHING ELSE IN THE CHAIN IS PRESENT — this is not a missing contract.
@@ -620,7 +647,10 @@ ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(aiFn),
   'I1  the run names EXECUTION_MATERIALIZATION_NOT_ENABLED when the flag is off');
 ok(/EXECUTION_MATERIALIZATION_UNAVAILABLE/.test(aiFn),
   'I1a and EXECUTION_MATERIALIZATION_UNAVAILABLE when the writer is not reachable at all');
-ok(/RECOMMENDATIONS regenerated/.test(aiFn) && /EXECUTION PLAN was not changed/.test(aiFn),
+// RESTATED (F1-7N-FC-1B-E3): "was not changed" became "was NOT changed" when the notice was promoted from
+// 'info' to 'warn' - "your plan was not written" is not neutral news to someone who pressed Generate. The
+// property is unchanged and is matched case-insensitively on the clause rather than on its capitalisation.
+ok(/RECOMMENDATIONS regenerated/.test(aiFn) && /EXECUTION PLAN was not changed/i.test(aiFn),
   'I2  saying separately which half ran and which did not');
 ok(/use \+ Add Route/.test(aiFn), 'I3  and telling the operator what they CAN do instead');
 ok(!/Recommendations regenerated for ' \+ Object\.keys\(_irRecoByKey \|\| \{\}\)\.length \+ ' SKU\(s\) from the materialized gap already loaded\. Nothing was written to the database\.'/.test(aiFn),
@@ -658,9 +688,14 @@ section('§L regression / §M release identity');
 ok(!/qty:\s*suggested/.test(code(PAGE)), 'M1  §L the Suggested Qty still seeds no route anywhere');
 ok(!/_renderExecutionRoute\(sku,\s*\{\s*ship_from:\s*''/.test(code(PAGE)),
   'M1a and the deleted seeding literal has not returned');
-eq(RO.currentAppToken(), 'fc1b-e2-aiplancomposer-20260903', 'M2  this round mints its own cache token');
-ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-executionintent-20260903'),
-  'M2a strictly after E1\'s, which was published');
+// RESTATED (F1-7N-FC-1B-E3): the FOURTH round in a row to pin its own token as "the current one" - written,
+// once again, into a round that had just restated another suite for exactly this. E2's token is a FLOOR: it
+// was minted, it sits strictly after E1's published one, and the series has not moved behind it.
+ok(RO.tokenIndex('fc1b-e2-aiplancomposer-20260903') !== -1, 'M2  E2 minted its own cache token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e2-aiplancomposer-20260903'),
+  'M2a and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
+ok(RO.tokenIndex('fc1b-e2-aiplancomposer-20260903') > RO.tokenIndex('fc1b-executionintent-20260903'),
+  'M2b strictly after E1\'s, which was published');
 eq((INDEX.match(/\?v=fc1b-executionintent-20260903/g) || []).length, 0,
   'M3  zero production references remain on E1\'s token');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'M4  and nothing is left behind on a superseded token');
@@ -764,8 +799,13 @@ mut('N8  deleting the last route re-seeds the Suggested Qty instead of a blank c
 });
 
 mut('N9  the AI Plan click made a silent no-op again', function () {
-  var m = swap(PAGE, 'EXECUTION_MATERIALIZATION_NOT_ENABLED', 'SILENT');
-  return !/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(code(extractFn(m, 'handleReplenAiPlan')));
+  // RESTATED (F1-7N-FC-1B-E3), and this one is a caught defect in the test rather than in the page: the bare
+  // token is no longer unique in the file, because E3's own explanation of the silent-AI-Plan defect NAMES it
+  // in a comment. swap() takes the FIRST match, so the mutation had begun landing in that comment and the
+  // mutant "survived" for a reason with nothing to do with the property. Anchored on the QUOTED string
+  // literal, which only the code has - and asserted on the work half, where the reason now lives.
+  var m = swap(PAGE, "'EXECUTION_MATERIALIZATION_NOT_ENABLED'", "'SILENT'");
+  return !/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(code(extractFn(m, '_irAiPlanRun_')));
 });
 
 mut('N10 the allocator reduced to picking the first rate card', function () {

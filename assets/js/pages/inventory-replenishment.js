@@ -3650,6 +3650,10 @@ function _irSubmitStateSnapshot_() {
         routesMissingDestination: (typeof _irRoutesMissingDestination_ === 'function') ? _irRoutesMissingDestination_() : [],
         duplicateCorruption: (typeof _irDuplicateLineIdentities_ === 'function') ? _irDuplicateLineIdentities_() : [],
         routes: routes,
+        // F1-7N-FC-1B-E3 §G.14 — an AI Plan run whose rows the server did not acknowledge. Submit is
+        // refused while this stands, because the station's stored plan is not known to be the plan on screen.
+        aiPlanUnreconciled: (window._irAiPlanUnreconciled && window._irAiPlanUnreconciled.reason)
+            ? String(window._irAiPlanUnreconciled.reason) : '',
         // The page does not know how many ACTIVE headers the station holds with zero lines - the hydrate
         // produces routes, not a header inventory. That count belongs to the read-only census
         // (TEMP_SHIPPING_ALLOCATION_SUBMIT_PLAN_A2_SUMMARY), and is reported there rather than guessed here.
@@ -6405,29 +6409,28 @@ function onExecutionComposerEdit(sku, el) {
 window.onExecutionComposerEdit = onExecutionComposerEdit;
 window._irPromoteComposerToTouched_ = _irPromoteComposerToTouched_;
 
-// §D — THE EMPTY-PLAN MESSAGE. It is markup with no <input>, so updateShippingAllocationTotal (which sums
-// input[data-field="qty"] inside this same container) reports 0 by construction rather than by a special case.
-// It is deliberately NOT a hidden route row: a hidden row is still a row to every querySelectorAll on this
-// page, including the collect's, which is the whole mechanism that made the phantom dangerous.
-function _irExecutionEmptyStateHtml_() {
-    // F1-7N-FC-1B-E2 — reworded for the row it now sits above. E1's message said only what was MISSING,
-    // which was the whole truth when there was nothing to type into; with a composer below it, the operator
-    // also needs to know that the row is an empty form and what makes it a route.
-    return '<div class="exec-routes-empty" data-ir-exec-empty="1" role="status">' +
-        'No execution route yet. Fill in <strong>From</strong>, <strong>To</strong>, <strong>Qty</strong> and ' +
-        '<strong>Method</strong> below to create one — or use <strong>AI Plan</strong> / ' +
-        '<strong>+ Add Route</strong>. Nothing is saved until all four are set.' +
-        '</div>';
-}
+// F1-7N-FC-1B-E3 §A — THE EMPTY PLAN IS ONE BLANK ROW, AND NOTHING ELSE.
+//
+// E1 gave the empty plan a sentence because there was nothing else in it. E2 put a composer under that
+// sentence, and the sentence became an instruction for a row that was sitting right there - and a row nobody
+// could read as a form, because every control style in the stylesheet was scoped to `.exec-route-row`, a
+// class a pristine composer deliberately does not carry (see the layout contract in
+// inventory-replenishment.css). The fix for "the operator cannot tell this row is a form" was the LAYOUT, not
+// more prose, so the prose is gone: `_irExecutionEmptyStateHtml_` is deleted rather than shortened, and so is
+// the element it painted, because an empty <div> left behind is the blank height §A.2 forbids.
+//
+// The column header (From / To / Qty / Method / Expected Arrival / Action) sits directly above this row and
+// names every field (§A.3), and each control carries its own accessible label (§A.5), so nothing that
+// the sentence used to say is now unsaid.
 function _execRenderEmptyState_(sku) {
     if (typeof document === 'undefined') return false;
     var list = document.getElementById('shipping-methods-' + sku);
     if (!list) return false;
     if (list.querySelector && list.querySelector('.exec-route-row')) return false;   // never over a real route
-    list.innerHTML = _irExecutionEmptyStateHtml_();
-    // F1-7N-FC-1B-E2 §E.1 — and EXACTLY ONE pristine composer, so an operator with no active route has
-    // somewhere to type. Rendered here rather than by the caller so that every path which empties the plan
-    // (initial render, the last route cancelled, a stale row dropped) produces the same one row.
+    list.innerHTML = '';
+    // §E.1 — EXACTLY ONE pristine composer, so an operator with no active route has somewhere to
+    // type. Rendered here rather than by the caller so that every path which empties the plan (initial
+    // render, the last route cancelled, a stale row dropped) produces the same one row.
     _renderManualComposer_(sku);
     return true;
 }
@@ -6443,13 +6446,22 @@ function _renderManualComposer_(sku) {
     });
 }
 window._renderManualComposer_ = _renderManualComposer_;
-function _execClearEmptyState_(sku) {
+// F1-7N-FC-1B-E3 §A/§H.2 — what used to remove the empty-plan MESSAGE now removes the empty
+// plan's COMPOSER, at the same call site and for the same reason: a plan that holds a real route must not
+// still be showing the furniture that stood in for one. It is a PRISTINE composer only. A TOUCHED one holds
+// the operator's own typing and is never removed by a render - the AI Plan path refuses to run over one
+// (§H.3) rather than deleting it here, because a render is the wrong place to discard an edit.
+function _execDropPristineComposers_(sku) {
     if (typeof document === 'undefined') return false;
     var list = document.getElementById('shipping-methods-' + sku);
-    if (!list || !list.querySelector) return false;
-    var el = list.querySelector('[data-ir-exec-empty]');
-    if (el && el.parentNode) { el.parentNode.removeChild(el); return true; }
-    return false;
+    if (!list || !list.querySelectorAll) return false;
+    var rows = list.querySelectorAll('.exec-route-composer'), dropped = 0;
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var touched = String((r.getAttribute && r.getAttribute('data-composer-touched')) || '') === '1';
+        if (!touched && r.parentNode) { r.parentNode.removeChild(r); dropped++; }
+    }
+    return dropped > 0;
 }
 // Show the empty state exactly when there is nothing to show, called after any path that can remove the last
 // route. §G: this is what stops a cancelled route's slot being refilled by anything at all.
@@ -6468,15 +6480,14 @@ function _execSyncEmptyState_(sku) {
     var routeCount = 0;
     for (var _i = 0; _i < all.length; _i++) { if (!_irIsComposerEl_(all[_i])) routeCount++; }
     if (routeCount === 0 && composerCount === 0) {
-        _execRenderEmptyState_(sku);            // nothing at all: message + one fresh composer
+        _execRenderEmptyState_(sku);            // nothing at all: ONE fresh blank composer
     } else if (routeCount > 0) {
-        _execClearEmptyState_(sku);             // a real route exists: the plan is no longer empty
+        _execDropPristineComposers_(sku);       // a real route exists: the empty plan's furniture goes
     }
-    // routeCount === 0 && composerCount > 0 — the operator is composing. The message stays where it is and
-    // the composer is left exactly as they left it.
+    // routeCount === 0 && composerCount > 0 — the operator is composing. Left exactly as they left it.
 }
-window._irExecutionEmptyStateHtml_ = _irExecutionEmptyStateHtml_;
 window._execSyncEmptyState_ = _execSyncEmptyState_;
+window._execDropPristineComposers_ = _execDropPristineComposers_;
 
 function _renderExecutionRoute(sku, route) {
     route = route || {};
@@ -6572,27 +6583,26 @@ function _renderExecutionRoute(sku, route) {
     // rebuilds every row from the DOM, and a snapshot that is not on the row cannot survive one.
     row.setAttribute('data-src-code-persisted', String((route && route.source_warehouse_code) || ''));
     row.innerHTML =
-        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" aria-label="From" title="From" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
         '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
-        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" aria-label="To" title="To" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
         (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
         '</span>' +
-        '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
-        '<select class="replen-card__select" data-field="shipping_method" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        '<input class="replen-card__input" type="number" data-field="qty" aria-label="Qty" title="Qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
+        '<select class="replen-card__select" data-field="shipping_method" aria-label="Method" title="' + (methodDisabled ? 'Choose From and To first' : 'Method') + '" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
-        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival"' +
+        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival" aria-label="Expected Arrival"' +
         ' data-eta="' + _execEsc(eta.date || '') + '" data-eta-source="' + _execEsc(eta.source || '') + '"' +
         ' data-eta-persisted="' + _execEsc(_irCanonicalDateOrBlank_(route.expected_arrival)) + '"' +
         ' data-eta-basis="' + _execEsc(String(route.expected_arrival_basis || '')) + '">' + _execEsc(eta.text) + '</span>' +
-        '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
+        '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" aria-label="' + (_isComposer ? 'Clear this row' : 'Delete this route') + '" title="' + (_isComposer ? 'Clear' : 'Delete') + '">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
-    // F1-7N-FC-1B-E2 — clearing the empty-plan message is right for a ROUTE (a plan that holds one must not
-    // still say it holds none) and wrong for a COMPOSER: the message is exactly what distinguishes an empty
-    // form from a plan, and without it the operator sees a blank From/To/Qty row and no way to know whether
-    // it is a route. So a composer is appended BESIDE the message; only a real route replaces it.
-    if (list) { if (!_isComposer) _execClearEmptyState_(sku); list.appendChild(row); }
+    // F1-7N-FC-1B-E3 — a REAL route arriving retires the empty plan's composer (§H.2: after an AI
+    // Plan the operator must see the AI routes, not the AI routes plus a leftover blank row). A composer
+    // appending itself obviously does not, or the first one would delete the second.
+    if (list) { if (!_isComposer) _execDropPristineComposers_(sku); list.appendChild(row); }
     return true;
 }
 
@@ -6649,6 +6659,17 @@ function addExecutionRoute(event, sku) {
 // drop from the DOM. (No-op headless — API not configured.)
 function removeExecutionRoute(event, sku) {
     if (event) event.stopPropagation();
+    // F1-7N-FC-1B-E3 — the composer's Action cell was DEAD: this selected `.exec-route-row`, and a
+    // pristine composer does not carry that class, so its X did nothing whatsoever. Clearing a composer is a
+    // zero-write act by construction (it holds no line id and no draft id to cancel), and _execSyncEmptyState_
+    // puts one fresh blank row back when it was the only thing on screen.
+    var _crow = event.target.closest ? event.target.closest('.exec-route-composer') : null;
+    if (_crow && !_crow.classList.contains('exec-route-row')) {
+        if (_crow.parentNode) _crow.parentNode.removeChild(_crow);
+        _execSyncEmptyState_(sku);
+        updateShippingAllocationTotal(sku);
+        return false;
+    }
     var row = event.target.closest('.exec-route-row');
     if (row) {
         var lineId = row.getAttribute('data-line-id');
@@ -8417,19 +8438,276 @@ function _irRecoActionHtml(skuData) {
         + '<div class="replen-reco-action__reason">' + escapeReplenHtml(dto.reason) + '</div>'
         + '</div>';
 }
-function handleReplenAiPlan(scope) {
-    var btn = document.getElementById('replen-ai-plan-btn');
-    if (btn && btn.disabled) {
-        _irAiSupportNotice_('info', 'AI Plan', 'An AI Plan run is already in progress. The click was ignored; nothing was started twice.');
-        return;
+// ============================================================================================================
+// F1-7N-FC-1B-E3 §C/§D — WHY "Generate AI Plan" BEHAVED LIKE A DEAD BUTTON.
+//
+// MEASURED by driving the shipped chain (the menu item —> runReplenAiSupport('aiplan') —>
+// _openReplenScopeModal —> the modal's Confirm —> handleReplenAiPlan), not by reading it. FIVE
+// separate findings, and the feature flag is not among them:
+//
+//  1. the click DOES fire and the handler IS entered. Nothing in the chain is unwired, and no promise
+//     rejection is swallowed on the flag-off path — there is no promise on it at all.
+//  2. the scope modal calls close('confirm') BEFORE it calls back, so the button actually labelled
+//     "Generate AI Plan" is already dismissed by the time any handler could put a spinner on it.
+//  3. `#replen-ai-plan-btn` is NOT that button. It is the MENU ITEM "AI Plan", and runReplenAiSupport hides
+//     the whole menu panel on its first line, so `btn.disabled = true` and `classList.add('is-loading')`
+//     were being applied to an element inside `[hidden] { display: none }`. Reading `btn.disabled` as the
+//     re-entry guard therefore guarded nothing either.
+//  4. the trigger label IS visible and IS written (`_irAiSupportTriggerBusy_`), but every step of the
+//     flag-off path is SYNCHRONOUS: busy was set and cleared inside one task, so the browser was never given
+//     a frame in which to paint it. That is not a race to be tightened — there was no paint opportunity
+//     at all.
+//  5. and the one surface carrying the actual sentence — `#replen-ai-support-notice`, class
+//     `replen-ai-plan-result` — HAD NO CSS RULE ANYWHERE IN THE REPOSITORY. The class was copied from
+//     Order Planning's `.ro-ai-plan-result` (position:fixed; right:16px; bottom:16px; z-index:1200) and the
+//     stylesheet was not copied with it. So it was appended as the last child of <body>, in normal flow,
+//     below a full-viewport app shell, under `body { overflow: hidden }`: present in the DOM, not `hidden`,
+//     and unreachable even by scrolling. `_irAiSupportNotice_` then RETURNED TRUE — it asserted a
+//     visibility it never observed, which is why every caller believed it had spoken.
+//
+// So E2's EXECUTION_MATERIALIZATION_NOT_ENABLED sentence WAS written, correctly, into a box painted nowhere.
+// The flag was never the reason nothing appeared: with the flag ON and the write failing, the failure would
+// have been exactly as invisible. Finding 5 is fixed in the stylesheet; 1-4 are fixed below.
+// ============================================================================================================
+var IR_AI_PLAN_PHASES = {
+    PREPARING: 'Preparing…',
+    CALCULATING: 'Calculating routes…',
+    SAVING: 'Saving execution plan…',
+    RECONCILING: 'Reconciling — outcome unknown…'
+};
+// §D.6 — THE run guard. A module-level boolean, because the thing it used to be (a hidden menu
+// item's `disabled` attribute, re-enabled synchronously in the same task) could not guard a second click and
+// could not survive the menu being re-opened.
+var _irAiPlanRunning = false;
+function _irAiPlanIsRunning_() { return _irAiPlanRunning === true; }
+// The seam that lets the busy state PAINT. Deferring is not a delay for its own sake: everything the run does
+// is synchronous, so without a task boundary the states set at click time are cleared before any frame.
+function _irAiPlanDefer_(fn) {
+    if (typeof setTimeout === 'function') return setTimeout(fn, 0);
+    return fn();
+}
+function _irEscNotice_(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch];
+    });
+}
+// §D.1/§D.2 — the trigger is the on-page proxy for the dismissed Generate button: it is the
+// control the operator used to reach Generate, it never leaves the screen, and it is the only one that can
+// still be disabled when the request is in flight. The spinner is a CSS pseudo-element keyed on aria-busy,
+// because setting textContent would destroy any child element every time the phase changes.
+function _irAiPlanTriggerBusy_(text) {
+    var painted = _irAiSupportTriggerBusy_('aiplan', text);
+    var t = _irAiSupportTriggerEl_();
+    if (t) {
+        t.disabled = true;
+        t.setAttribute('aria-busy', 'true');   // the CSS spinner is keyed on THIS, so there is no second flag
     }
+    return painted;
+}
+function _irAiPlanTriggerIdle_() {
+    var t = _irAiSupportTriggerEl_();
+    if (t) {
+        t.disabled = false;
+    }
+    _irAiSupportTriggerIdle_('aiplan');
+}
+// §D.4 — the Execution Plan area is what the run is about to change, so it is what is marked busy.
+function _irExecPlanAriaBusy_(on) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return 0;
+    var lists = document.querySelectorAll('.exec-routes-list'), n = 0;
+    for (var i = 0; i < lists.length; i++) {
+        if (on) lists[i].setAttribute('aria-busy', 'true');
+        else if (lists[i].removeAttribute) lists[i].removeAttribute('aria-busy');
+        n++;
+    }
+    return n;
+}
+function _irExecListSku_(list) {
+    var id = String((list && list.id) || '');
+    var pre = 'shipping-methods-';
+    return id.indexOf(pre) === 0 ? id.substring(pre.length) : '';
+}
+// §D.3/§D.7 — the status the operator keeps. The toast is transient and lives at the edge of the
+// screen; this line sits inside the Execution Plan card, directly above the routes, so the outcome is still
+// there after the modal has closed and after the toast is dismissed. It is created ONLY when it has something
+// to say and REMOVED when cleared, so §A.2 holds: no empty container, no reserved blank height.
+function _irExecPlanStatusSet_(text, tone) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return 0;
+    var lists = document.querySelectorAll('.exec-routes-list'), n = 0;
+    for (var i = 0; i < lists.length; i++) {
+        var list = lists[i];
+        var host = document.getElementById('exec-plan-status-' + _irExecListSku_(list));
+        if (!text) {
+            if (host && host.parentNode) host.parentNode.removeChild(host);
+            continue;
+        }
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'exec-plan-status-' + _irExecListSku_(list);
+            host.setAttribute('role', 'status');
+            host.setAttribute('aria-live', 'polite');
+            if (list.parentNode && list.parentNode.insertBefore) list.parentNode.insertBefore(host, list);
+            else continue;
+        }
+        host.className = 'ir-exec-plan__status ir-exec-plan__status--' + (tone || 'info');
+        host.textContent = String(text);
+        n++;
+    }
+    return n;
+}
+// §D.5 — one phase writer, three surfaces, no large overlay and no layout jump (the toast is
+// position:fixed and the status line is a single text row inside a card that already has one).
+function _irAiPlanPhase_(text) {
+    var el = _irAiSupportNoticeEl_();
+    if (el) {
+        el.className = 'replen-ai-plan-result replen-ai-plan-result--info replen-ai-plan-result--busy';
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        el.setAttribute('aria-busy', 'true');
+        el.innerHTML = '<div class="replen-ai-plan-result__head"><span>AI Plan</span></div>' +
+            '<div class="replen-ai-plan-result__msg">' +
+            '<span class="replen-ai-plan-result__spinner" aria-hidden="true"></span>' + _irEscNotice_(text) +
+            '</div>';
+        el.hidden = false;
+    }
+    _irAiPlanTriggerBusy_(text);
+    // re-applied on every phase because renderReplenishment() rebuilds these containers mid-run
+    _irExecPlanAriaBusy_(true);
+    _irExecPlanStatusSet_(text, 'busy');
+    return !!el;
+}
+// §D.5/§D.17 — THE ONLY WAY OUT. Success, typed refusal, transport error, timeout and unknown
+// all leave through here, so "every terminal path clears the spinner" is a property of there being one exit
+// rather than of five call sites remembering to. §D.9: the tone is the caller's, and only the branch that
+// actually saw acknowledged rows passes 'ok'.
+function _irAiPlanTerminal_(tone, message, execText) {
+    _irAiPlanRunning = false;
+    var el = _irAiSupportNoticeEl_();
+    if (el && el.removeAttribute) el.removeAttribute('aria-busy');
+    _irAiPlanTriggerIdle_();
+    _irExecPlanAriaBusy_(false);
+    var btn = (typeof document !== 'undefined' && document.getElementById)
+        ? document.getElementById('replen-ai-plan-btn') : null;
+    if (btn) {
+        if (btn.classList) {
+            btn.classList.remove('is-loading');
+            btn.classList.add(tone === 'ok' ? 'is-success' : (tone === 'bad' ? 'is-error' : 'is-success'));
+        }
+        btn.disabled = false;
+    }
+    _irAiSupportNotice_(tone, 'AI Plan', message);
+    // §D.7/§D.10 — the outcome STAYS in the Execution Plan area, and an unknown outcome is a
+    // sentence, never a cleared surface.
+    _irExecPlanStatusSet_(execText || message, tone === 'bad' ? 'bad' : (tone === 'ok' ? 'ok' : 'warn'));
+    return true;
+}
+// §H.3 — which SKUs hold a composer the operator has STARTED. Read from the DOM's own touched flag,
+// which is the same fact the collector and the Submit preflight read.
+function _irTouchedComposerSkus_() {
+    var out = [];
+    if (typeof document === 'undefined' || !document.querySelectorAll) return out;
+    var lists = document.querySelectorAll('.exec-routes-list');
+    for (var i = 0; i < lists.length; i++) {
+        var rows = lists[i].querySelectorAll ? lists[i].querySelectorAll('.exec-route-composer') : [];
+        for (var j = 0; j < rows.length; j++) {
+            var t = rows[j].getAttribute ? rows[j].getAttribute('data-composer-touched') : '';
+            if (String(t || '') === '1') { out.push(_irExecListSku_(lists[i]) || String(lists[i].id || '')); break; }
+        }
+    }
+    return out;
+}
+// §H.4 — which SKUs hold a PERSISTED route the operator created themselves. Provenance is read from
+// the row, where the render stamped it; a hydrated AI route carries AI_PLAN_EXPLICITLY_REQUESTED and is not a
+// user edit, so regenerating over it needs no confirmation.
+function _irPersistedManualRouteSkus_() {
+    var out = [], seen = {};
+    if (typeof document === 'undefined' || !document.querySelectorAll) return out;
+    var lists = document.querySelectorAll('.exec-routes-list');
+    var MANUAL = (window.IRRouteProvenance && window.IRRouteProvenance.SOURCES &&
+        window.IRRouteProvenance.SOURCES.USER_EXPLICIT_ADD_ROUTE) || 'USER_EXPLICIT_ADD_ROUTE';
+    for (var i = 0; i < lists.length; i++) {
+        var sku = _irExecListSku_(lists[i]);
+        var rows = lists[i].querySelectorAll ? lists[i].querySelectorAll('.exec-route-row') : [];
+        for (var j = 0; j < rows.length; j++) {
+            var r = rows[j];
+            if (!r.getAttribute) continue;
+            if (!String(r.getAttribute('data-line-id') || '')) continue;         // not persisted: nothing to lose
+            if (String(r.getAttribute('data-route-provenance') || '') !== MANUAL) continue;
+            if (!seen[sku]) { seen[sku] = 1; out.push(sku); }
+            break;
+        }
+    }
+    return out;
+}
+// §D.15 — a request that never answers is its own outcome. Note what this does NOT claim: a timeout
+// after the POST left the browser is UNKNOWN, not failed, so it terminates as RECONCILING and the readback is
+// what decides (§G.14).
+function _irAiPlanWithTimeout_(p, ms) {
+    if (typeof Promise === 'undefined') return p;
+    return new Promise(function (resolve, reject) {
+        var done = false;
+        var timer = (typeof setTimeout === 'function') ? setTimeout(function () {
+            if (done) return; done = true;
+            reject({ __irAiPlanTimeout: true, ms: ms });
+        }, ms) : null;
+        Promise.resolve(p).then(function (v) {
+            if (done) return; done = true;
+            if (timer && typeof clearTimeout === 'function') clearTimeout(timer);
+            resolve(v);
+        }, function (e) {
+            if (done) return; done = true;
+            if (timer && typeof clearTimeout === 'function') clearTimeout(timer);
+            reject(e);
+        });
+    });
+}
+window._irAiPlanPhase_ = _irAiPlanPhase_;
+window._irAiPlanTerminal_ = _irAiPlanTerminal_;
+window._irExecPlanStatusSet_ = _irExecPlanStatusSet_;
+window._irAiPlanIsRunning_ = _irAiPlanIsRunning_;
+
+function handleReplenAiPlan(scope) {
+    // §D.6 — ONE guard, and not a hidden element's attribute (finding 3 above).
+    if (_irAiPlanIsRunning_()) {
+        _irAiSupportNotice_('info', 'AI Plan', 'An AI Plan run is already in progress. The click was ignored; nothing was started twice.');
+        return false;
+    }
+    _irAiPlanRunning = true;
+    var btn = document.getElementById('replen-ai-plan-btn');
     // F1-AI-SUPPORT-SCOPE-R1: capture the user-chosen { company, country, marketplace, marketplaceId } DTO when the
     // scope modal supplied one. HONEST BOUNDARY: the canonical page-level AI Plan generator (window.KMREC) is not
     // yet FM6-R4 scope-parameterized — it deterministically derives from the MATERIALIZED gap rows already loaded
     // for the on-screen scope. The DTO is threaded + retained (window._irAiPlanScope) so FM6-R4 can later route it
     // to the canonical persister → DB draft → Execution Plan; this round does NOT invent a scope-filtered engine.
     if (scope && typeof scope === 'object') { window._irAiPlanScope = scope; }
+    // ---- §D.1-§D.5: EVERYTHING VISIBLE HAPPENS NOW, in the click's own event-loop turn -----------
     if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
+    _irAiPlanPhase_(IR_AI_PLAN_PHASES.PREPARING);
+    // ---- and the WORK happens in the NEXT one. This is finding 4: the recommendation regeneration and
+    // renderReplenishment() are synchronous, so setting a busy state and clearing it around them left the
+    // browser no frame in which to paint either one. The deferral is what makes the state above reachable.
+    _irAiPlanDefer_(function () { _irAiPlanRun_(scope, btn); });
+    return true;
+}
+window.handleReplenAiPlan = handleReplenAiPlan;
+
+// The run itself, one task after the click. Every exit goes through _irAiPlanTerminal_.
+function _irAiPlanRun_(scope, btn) {
+    // ---- §H.3: A TOUCHED COMPOSER IS THE OPERATOR'S OWN TYPING ---------------------------------------
+    // An AI Plan REPLACES the Execution Plan, so running it over a half-typed route would discard work the
+    // operator can still see on screen. It is refused BY NAME before anything is calculated, rather than
+    // resolved by silently clearing the row or by hoping the render happens to preserve it.
+    var _touched = _irTouchedComposerSkus_();
+    if (_touched.length) {
+        return _irAiPlanTerminal_('warn',
+            'AI Plan was NOT run. ' + _touched.length + ' SKU(s) have a route you have started and not finished (' +
+            _touched.slice(0, 4).join(', ') + (_touched.length > 4 ? ', —' : '') + '). Nothing was calculated' +
+            ' and NOTHING was written. Finish those rows or clear them with the X in the Action column, then run' +
+            ' AI Plan again — an AI Plan replaces the Execution Plan, and it will not discard an edit you' +
+            ' are in the middle of.',
+            'AI Plan not run — an unfinished route is open here. Nothing was changed.');
+    }
+    _irAiPlanPhase_(IR_AI_PLAN_PHASES.CALCULATING);
     try {
         // Deterministic generation from the MATERIALIZED gap rows already loaded for the scope (no gap recalc, no API).
         if (window.KMREC && _irMatState && Array.isArray(_irMatState.rows)) {
@@ -8439,25 +8717,44 @@ function handleReplenAiPlan(scope) {
         }
         renderReplenishment();   // re-render surfaces the Recommended Action block (does NOT run Submit Plan)
     } catch (err) {
-        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); if (btn) btn.disabled = false; }
         console.error('[AI Plan] recommendation generation failed:', err);
-        _irAiSupportTriggerIdle_('aiplan');
-        _irAiSupportNotice_('bad', 'AI Plan', 'Recommendation generation failed: ' + String((err && err.message) || err) + '. Nothing was written.');
-        return;
+        return _irAiPlanTerminal_('bad',
+            'Recommendation generation failed: ' + String((err && err.message) || err) +
+            '. NOTHING was written and your Execution Plan is unchanged.',
+            'AI Plan failed — the recommendation could not be recalculated. Nothing was changed.');
     }
     // F1-7N-FA-3C-R6D1 — DB-BACKED GENERATION (staged behind a backend-owned flag; DEFAULT OFF). handleReplenAiPlan is the
     // MANUAL-CLICK path only (no background/resume caller), so a result popup here is inherently manual-only. When the flag
     // is ON and cloud write is eligible, this routes the manual click to the canonical 61_ weeklyAiPlan.generate writer,
     // then hydrates from the DB readback and reveals atomically. When OFF (this round's default) it keeps the page-state-
     // only behavior above (zero DB write) — deploying R6D1 changes NO live behavior until the USER enables the flag.
+    var _nReco = Object.keys(_irRecoByKey || {}).length;
     if (_irInventoryAiPlanDbGenerationEnabled_() && _irAiPlanDbGenEligible_()) {
-        _irRunInventoryAiPlanGeneration_(btn);   // async — owns btn state + result popup + hydration
-        return;
+        // ---- §H.4: REGENERATING OVER THE OPERATOR'S OWN SAVED ROUTES IS CONFIRMED ------------------
+        // The payload has always carried confirmRegenerateOverUserEdits and the page has never set it, so a
+        // station holding a manual route would have been refused server-side with BLOCKED_CONFLICT that the
+        // operator never saw (finding 5). The existing policy is used as it stands: ask, and pass the answer.
+        var _edits = _irPersistedManualRouteSkus_();
+        var _confirmOver = false;
+        if (_edits.length) {
+            try {
+                _confirmOver = window.confirm('Regenerate the Execution Plan over your own saved routes?\n\n' +
+                    _edits.length + ' SKU(s) hold a route you created and saved yourself (' +
+                    _edits.slice(0, 6).join(', ') + (_edits.length > 6 ? ', —' : '') + ').\n\n' +
+                    'AI Plan will supersede those routes with its own. The superseded drafts are expired and kept' +
+                    ' for audit, never hard-deleted. Cancel to leave everything exactly as it is — cancelling' +
+                    ' writes nothing at all.');
+            } catch (e) { _confirmOver = false; }
+            if (!_confirmOver) {
+                return _irAiPlanTerminal_('info',
+                    'AI Plan was cancelled at the confirmation. NOTHING was calculated on the server and NOTHING' +
+                    ' was written — your saved routes are untouched.',
+                    'AI Plan cancelled — your saved routes are untouched.');
+            }
+        }
+        _irAiPlanPhase_(IR_AI_PLAN_PHASES.SAVING);
+        return _irRunInventoryAiPlanGeneration_(btn, { confirmRegenerateOverUserEdits: _confirmOver === true });
     }
-    if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); btn.disabled = false; }
-    // The success styling above lands on a menu item inside a panel the click already hid. The visible outcome is
-    // this notice, and it states the COUNT so that "it ran" and "it produced nothing" are not the same message.
-    _irAiSupportTriggerIdle_('aiplan');
     // ============================================================================================================
     // F1-7N-FC-1B-E2 §I — SAY WHICH HALF RAN, AND WHY THE OTHER HALF DID NOT.
     //
@@ -8474,18 +8771,23 @@ function handleReplenAiPlan(scope) {
     // "Generate AI Plan" as "the plan ran and produced nothing". The two halves are now named separately, and
     // the reason execution materialization did not happen is stated instead of left as an empty screen.
     // ============================================================================================================
-    var _nReco = Object.keys(_irRecoByKey || {}).length;
+    // §E.2 — the flag is OFF (or the writer is unreachable). The recommendation half DID run; the
+    // execution half did not, and the reason is named rather than left as an unchanged screen. This is now a
+    // 'warn', not an 'info': "your plan was not written" is not neutral news to someone who pressed Generate.
     var _matReason = !_irAiPlanDbGenEligible_()
         ? 'EXECUTION_MATERIALIZATION_UNAVAILABLE'
         : 'EXECUTION_MATERIALIZATION_NOT_ENABLED';
-    _irAiSupportNotice_('info', 'AI Plan',
+    return _irAiPlanTerminal_('warn',
         'RECOMMENDATIONS regenerated for ' + _nReco + ' SKU(s) from the materialized gap already loaded.' +
-        ' The EXECUTION PLAN was not changed and NOTHING was written to the database — ' + _matReason + '.' +
-        ' Execution materialization (writing allocation drafts from the AI route allocator) is staged behind a' +
-        ' backend feature flag that is currently off, so this run could only refresh the recommendation.' +
-        ' To plan a shipment now, use + Add Route on the SKU and choose From / To / Qty / Method.');
+        ' The EXECUTION PLAN was NOT changed and NOTHING was written to the database — ' + _matReason + '.' +
+        (_matReason === 'EXECUTION_MATERIALIZATION_UNAVAILABLE'
+            ? ' This deployment does not expose the AI Plan generation action, so no plan could be written.'
+            : ' Execution materialization is staged behind a backend feature flag that this deployment reports as' +
+              ' OFF, so this run could only refresh the recommendation.') +
+        ' To plan a shipment now, use + Add Route on the SKU and choose From / To / Qty / Method.',
+        'Recommendation refreshed — ' + _matReason + '. No route was written.');
 }
-window.handleReplenAiPlan = handleReplenAiPlan;
+window._irAiPlanRun_ = _irAiPlanRun_;
 // R6D1 — the DB-generation feature flag (mirrors the backend owner-of-record via KM.api). Default OFF (fail-safe: if the
 // capability is unavailable → OFF, page-state-only).
 function _irInventoryAiPlanDbGenerationEnabled_() {
@@ -8537,10 +8839,15 @@ function _irClassifyGenerationResult_(res) {
 // a manual (dismissible) result popup. Fail-closed: a reported failure never conceals committed rows (the popup lists the
 // per-marketplace draftIds/lineCounts the backend returned). NOTE: this path is gated OFF by default this round; the
 // generated-line hydration field-mapping + line-id reconciliation are Stage-3 controlled-run prerequisites (see docs §40).
-function _irRunInventoryAiPlanGeneration_(btn) {
+function _irRunInventoryAiPlanGeneration_(btn, opts) {
     var ctx = _replenCtx();
-    var payload = { company: ctx.company, country: ctx.country, mode: 'MANUAL_REGENERATE', currentMarketplace: ctx.marketplace, actor: 'inventory-replenishment' };
-    return Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)).then(function (res) {
+    // §G.1/§G.13 — the scope is the modal's, threaded through _replenCtx (which the applied
+    // filters own), so a REPEATED Generate for the same scope resolves to the same server execution key and
+    // therefore UPDATES the same route ticket instead of minting a second one. The identity is the server's;
+    // the client's contribution is not to vary the scope between runs.
+    var payload = { company: ctx.company, country: ctx.country, mode: 'MANUAL_REGENERATE', currentMarketplace: ctx.marketplace, actor: 'inventory-replenishment',
+        confirmRegenerateOverUserEdits: !!(opts && opts.confirmRegenerateOverUserEdits === true) };
+    return _irAiPlanWithTimeout_(Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)), 60000).then(function (res) {
         var cls = _irClassifyGenerationResult_(res);
         // §G.8 — an AI Plan FAILURE must never clear the current Execution Plan. The only path that re-hydrates
         // is a SUCCESSFUL run (including a zero-result one, which legitimately empties the AI half); a failure
@@ -8572,15 +8879,101 @@ function _irRunInventoryAiPlanGeneration_(btn) {
                     } catch (e) {}
                     renderReplenishment();
                 })
-                .then(function () { _irShowAiPlanResult_(cls); if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); } });
+                .then(function () {
+                    _irShowAiPlanResult_(cls);
+                    // ---- §G.14 / §D.10: ACKNOWLEDGED, OR RECONCILING. NEVER "PROBABLY SAVED" -----
+                    //
+                    // Acknowledgement is decided from what the SERVER said, not from what is on screen: only
+                    // EXPANDED SKUs render routes, so counting DOM rows would report an unacknowledged plan
+                    // for a perfectly good one whose row happens to be collapsed. Three server facts have to
+                    // agree — the line total equals created+updated, the readback verification did not
+                    // fail, and the supersede lifecycle completed. If any disagrees the run does NOT report
+                    // full success: it reports an UNKNOWN outcome, and Submit is blocked until a run does
+                    // reconcile (§G.14 / the AI_PLAN_UNRECONCILED preflight code).
+                    var rec = _irAiPlanReconcile_(cls);
+                    if (!rec.ok) {
+                        window._irAiPlanUnreconciled = { at: new Date().toISOString(), reason: rec.reason,
+                            expected: rec.expected, acknowledged: rec.acknowledged };
+                        _irAiPlanPhase_(IR_AI_PLAN_PHASES.RECONCILING);
+                        return _irAiPlanTerminal_('warn',
+                            'AI Plan ran and the OUTCOME IS UNKNOWN — ' + rec.reason + ' (server reported ' +
+                            rec.expected + ' line(s), acknowledged ' + rec.acknowledged + ').' +
+                            ' Rows may have been written. Nothing has been discarded and nothing is being guessed:' +
+                            ' Submit Plan is BLOCKED until a run reconciles, so a half-written plan cannot be' +
+                            ' submitted. Reload to re-read the stored plan, then run AI Plan again.',
+                            'AI Plan outcome UNKNOWN — ' + rec.reason + '. Submit is blocked until this reconciles.');
+                    }
+                    window._irAiPlanUnreconciled = null;
+                    if (cls.zeroResult || !cls.lineTotal) {
+                        // §D.12 — a zero-result run is a real, successful answer and says so as one.
+                        return _irAiPlanTerminal_('warn',
+                            'AI Plan found NO ELIGIBLE ROUTE for this scope this cycle — 0 route(s) written.' +
+                            (cls.expiredHeaders ? ' ' + cls.expiredHeaders + ' superseded route(s) were expired (kept for audit).' : '') +
+                            ' This is an answer, not a failure: nothing in the current data supports a shipment here.' +
+                            ' Use + Add Route if you intend to ship anyway.',
+                            'AI Plan: no eligible route found. 0 route(s) written.');
+                    }
+                    return _irAiPlanTerminal_('ok',
+                        'AI Plan saved ' + cls.lineTotal + ' route(s) — ' + rec.units + ' unit(s) across ' +
+                        (cls.marketplaceCount || 0) + ' marketplace(s). ' + cls.createdHeaders + ' ticket(s) created, ' +
+                        cls.updatedHeaders + ' updated' +
+                        (cls.expiredHeaders ? ', ' + cls.expiredHeaders + ' superseded and expired (kept for audit)' : '') +
+                        '. The Execution Plan below is the readback of what was stored.',
+                        'AI Plan saved ' + cls.lineTotal + ' route(s) — ' + rec.units + ' unit(s).');
+                });
         }
         _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds
-        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+        // §H.4/§H.5 — a BLOCKED_CONFLICT is reported by name and the routes on screen are left
+        // exactly as they are. §H.6: a refused run leaves no half-built route, because it never rendered one.
+        return _irAiPlanTerminal_('bad',
+            'AI Plan could not complete — ' + (cls.status || 'FAILED') + (cls.reason ? ' (' + cls.reason + ')' : '') +
+            (cls.blockedCount ? '. ' + cls.blockedCount + ' marketplace(s) were BLOCKED_CONFLICT: a saved route' +
+                ' there was not superseded, so nothing was overwritten' : '') +
+            '. Your current Execution Plan is UNCHANGED' +
+            (cls.draftIds && cls.draftIds.length ? ' apart from ticket(s) the server did report writing: ' +
+                cls.draftIds.join(', ') + ' — open Technical details' : '') + '.',
+            'AI Plan could not complete — ' + (cls.status || 'FAILED') + '. Nothing on screen was changed.');
     }).catch(function (err) {
+        // §D.13 — a rejection is NOT swallowed. §D.15: a timeout is UNKNOWN, not failed, because
+        // the request had already left the browser; it terminates as RECONCILING and blocks Submit.
+        if (err && err.__irAiPlanTimeout) {
+            window._irAiPlanUnreconciled = { at: new Date().toISOString(), reason: 'REQUEST_TIMED_OUT', expected: '?', acknowledged: 0 };
+            _irShowAiPlanResult_({ ok: false, status: 'TIMEOUT', marketplaceResults: [], draftIds: [], lineTotal: 0,
+                errors: [{ message: 'no response within ' + Math.round((err.ms || 0) / 1000) + 's' }], reason: 'request timed out' });
+            return _irAiPlanTerminal_('warn',
+                'AI Plan TIMED OUT after ' + Math.round((err.ms || 0) / 1000) + 's with no answer. The request had' +
+                ' already been sent, so whether anything was written is UNKNOWN — this is not being reported as' +
+                ' a failure. Submit Plan is BLOCKED until a run reconciles. Reload to re-read the stored plan.',
+                'AI Plan timed out — outcome unknown. Submit is blocked until this reconciles.');
+        }
         _irShowAiPlanResult_({ ok: false, status: 'FAILED', marketplaceResults: [], draftIds: [], lineTotal: 0, errors: [{ message: String(err && err.message || err) }], reason: 'request failed' });
-        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
-    }).then(function () { if (btn) btn.disabled = false; });
+        return _irAiPlanTerminal_('bad',
+            'AI Plan request FAILED before any answer: ' + String((err && err.message) || err) +
+            '. Your current Execution Plan is unchanged.',
+            'AI Plan request failed. Nothing on screen was changed.');
+    });
 }
+// §G.14 — acknowledgement, from server facts only. `units` is reported alongside so the success
+// message can state a quantity the server actually confirmed rather than one read back off the screen.
+function _irAiPlanReconcile_(cls) {
+    var expected = Number(cls && cls.lineTotal) || 0;
+    var ack = (Number(cls && cls.createdLines) || 0) + (Number(cls && cls.updatedLines) || 0);
+    var units = 0;
+    try {
+        (cls.marketplaceResults || []).forEach(function (m) { units += Number(m && (m.totalQty || m.total_qty)) || 0; });
+    } catch (e) {}
+    if (cls && cls.lifecycle && cls.lifecycle.ok === false) {
+        return { ok: false, reason: 'SUPERSEDED_DRAFTS_NOT_EXPIRED', expected: expected, acknowledged: ack, units: units };
+    }
+    if (cls && cls.verification && cls.verification.ok === false) {
+        return { ok: false, reason: 'READBACK_VERIFICATION_FAILED', expected: expected, acknowledged: ack, units: units };
+    }
+    if (expected !== ack) {
+        return { ok: false, reason: 'LINE_COUNT_NOT_ACKNOWLEDGED', expected: expected, acknowledged: ack, units: units };
+    }
+    return { ok: true, reason: '', expected: expected, acknowledged: ack, units: units };
+}
+window._irAiPlanReconcile_ = _irAiPlanReconcile_;
 // R6D1 — MANUAL-ONLY dismissible result popup (business-readable + a collapsed Technical-details disclosure; no raw tokens
 // in the headline). Reuses the R6E structured-disclosure template. Background/resume never call this (manual-click only).
 function _irShowAiPlanResult_(cls) {

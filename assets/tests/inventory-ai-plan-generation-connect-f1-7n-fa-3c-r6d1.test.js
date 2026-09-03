@@ -36,11 +36,17 @@ function mkEl(id) {
     setAttribute: function (k, v) { attrs[k] = String(v); }, getAttribute: function (k) { return attrs[k] === undefined ? null : attrs[k]; },
     removeAttribute: function (k) { delete attrs[k]; }, appendChild: function () {} };
 }
+// F1-7N-FC-1B-E3 - the click now marks the Execution Plan area busy and writes a status line into it, both
+// of which are querySelectorAll sweeps. There is no Execution Plan open in this harness, so the honest stub is
+// an EMPTY list: the assertions below are about the generation transport, and a no-op sweep is exactly what a
+// collapsed page produces. clearTimeout is added because the request is now raced against a timeout.
 var document = {
   getElementById: function (id) { return _els[id] || null; },
   createElement: function () { return mkEl(''); },
+  querySelectorAll: function () { return []; },
   body: { appendChild: function (el) { _els[el.id || '__anonymous__'] = el; } }
 };
+function clearTimeout(h) { if (h) _timers[h - 1] = null; }
 function escapeReplenHtml(v) { return String(v == null ? '' : v); }
 function renderReplenishment() { renderCalls.n++; }
 function _replenSelectedScope() { return { company: 'ResUS', country: 'US', marketplace: 'Amazon', marketplaceId: 'MP1' }; }
@@ -63,9 +69,17 @@ var genResponse = { success: true, data: { status: 'COMPLETED', marketplaceCount
 // to look exactly like a click that did nothing), so the AI Support notice/trigger helpers it calls have to be
 // extracted with it. The two module-scope vars cannot be pulled by extract(), which only understands function
 // declarations, so they are mirrored here - and mirrored deliberately, not defaulted, so a rename fails loudly.
-var _r6d1Vars = 'var _irAiSupportTriggerOwner = null;';   // _irRecoByKey is already declared by this harness
-var _r6d1Fns = [ '_replenCtx', '_irRecoNow_', '_irInventoryAiPlanDbGenerationEnabled_', '_irAiPlanDbGenEligible_', '_irClassifyGenerationResult_', '_irRunInventoryAiPlanGeneration_', '_irShowAiPlanResult_', '_irAiSupportTriggerEl_', '_irAiSupportTriggerBusy_', '_irAiSupportTriggerIdle_', '_irAiSupportNoticeEl_', '_irClearAiSupportNotice_', '_irAiSupportNotice_', 'handleReplenAiPlan' ].map(function (n) { return extract(IR, n); }).join('\n');
-eval(_r6d1Vars + '\n' + _r6d1Fns);
+// F1-7N-FC-1B-E3 - `_irAiPlanRunning` joins the mirrored module vars, and for the same stated reason: it is
+// the re-entry guard, and it replaced reading a hidden menu item's `disabled` attribute (which was re-enabled
+// synchronously in the same task and therefore guarded nothing). Mirrored deliberately so a rename fails loud.
+var _r6d1Vars = 'var _irAiSupportTriggerOwner = null; var _irAiPlanRunning = false;';   // _irRecoByKey is already declared by this harness
+// The AI Plan click is now a PAIR: handleReplenAiPlan (guard + the visible busy state, in the click's own
+// event-loop turn) and _irAiPlanRun_ (the work, one task later). Both halves and the surfaces they write to
+// are extracted, because the shipped functions are what this suite drives.
+var _r6d1Fns = [ '_replenCtx', '_irRecoNow_', '_irInventoryAiPlanDbGenerationEnabled_', '_irAiPlanDbGenEligible_', '_irClassifyGenerationResult_', '_irRunInventoryAiPlanGeneration_', '_irAiPlanReconcile_', '_irAiPlanWithTimeout_', '_irShowAiPlanResult_', '_irAiSupportTriggerEl_', '_irAiSupportTriggerBusy_', '_irAiSupportTriggerIdle_', '_irAiSupportNoticeEl_', '_irClearAiSupportNotice_', '_irAiSupportNotice_', '_irEscNotice_', '_irAiPlanDefer_', '_irAiPlanIsRunning_', '_irAiPlanTriggerBusy_', '_irAiPlanTriggerIdle_', '_irExecPlanAriaBusy_', '_irExecListSku_', '_irExecPlanStatusSet_', '_irAiPlanPhase_', '_irAiPlanTerminal_', '_irTouchedComposerSkus_', '_irPersistedManualRouteSkus_', 'handleReplenAiPlan', '_irAiPlanRun_' ].map(function (n) { return extract(IR, n); }).join('\n');
+var _r6d1Phases = (IR.match(/var IR_AI_PLAN_PHASES = \{[\s\S]*?\};/) || [])[0] || '';
+if (!_r6d1Phases) { console.error('IR_AI_PLAN_PHASES not found in the page'); process.exit(1); }
+eval(_r6d1Vars + '\n' + _r6d1Phases + '\n' + _r6d1Fns);
 
 (function run() {
   section('B. flag OFF (default) → page-state only, NO DB generation');
@@ -118,7 +132,17 @@ eval(_r6d1Vars + '\n' + _r6d1Fns);
     eq(inst.inventoryAiPlanDbGenerationEnabled(), false, 'flag mirror default OFF (staged; deploy changes no live behavior)');
     eq(inst.setInventoryAiPlanDbGenerationEnabled(true), true, 'setter enables it (reversible; for the controlled Stage-3 run)');
     eq(KMAPI.createApiFoundation({ inventoryAiPlanDbGenerationEnabled: true }).inventoryAiPlanDbGenerationEnabled(), true, 'deps override honored (single authority)');
-    ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG) && /function inventoryAiPlanDbGenerationEnabled_\(\)/.test(CFG), 'backend owner-of-record flag in 00_config.gs (default false, convention-following)');
+    // RESTATED (F1-7N-FC-1B-E3): this pinned the flag's VALUE at the moment it was written, so it asserted
+    // "the feature is still staged off" while claiming to assert "the flag exists and follows the
+    // convention". §E.4 of E3 activates it, USER-authorized, which is the whole point of a flag. What is
+    // durable, and what a rollback actually depends on, is that the flag REMAINS: one boolean of record in
+    // 00_config.gs, read through one accessor, so setting it back to false is the entire rollback.
+    ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (true|false);/.test(CFG),
+      'backend owner-of-record flag in 00_config.gs is a single boolean literal (either value: it is the rollback switch)');
+    ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CFG),
+      'and exactly one accessor reads it, so every gate reads the same value');
+    ok(/inventory_ai_plan_db_generation_enabled/.test(fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '63_api_v1_system_health.gs'), 'utf8')),
+      '§E.6 the EFFECTIVE value is reportable from system.health, so the deployed posture is a fact and not an inference');
 
     section('I. corrected run authority + validator (source)');
     ok(/GAP_JOB_INVENTORY/.test(GS) && /\/\^GAP-INV-\/\.test/.test(GS), 'run-finder reads the GAP_JOB_INVENTORY script property + requires a GAP-INV-* run id');

@@ -47,12 +47,36 @@ function requestOrderDraftV2FlatCutoverEnabled_() { return REQUEST_ORDER_DRAFT_V
 var REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false;
 function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ === true; }
 
-// F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation feature flag (backend owner-of-record). DEFAULT OFF. When false
-// (the R6D1 staged state), the Inventory "Generate AI Plan" button keeps its existing page-state-only behavior and
-// performs NO DB write — deploying R6D1 changes NO live behavior. When true (set ONLY for the USER-owned controlled
-// Stage-3 verification, after the generation→hydration reconciliation gaps are closed), the manual button routes to the
-// canonical 61_ weeklyAiPlan.generate writer (shipping_allocation_drafts / _lines). The frontend mirrors this via
-// KM.api.inventoryAiPlanDbGenerationEnabled() (km-api-foundation.js) — ONE logical flag, same value across layers.
-// Reversible: set back to false to restore the page-state-only behavior exactly. Affects Inventory only.
-var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;
+// F1-7N-FA-3C-R6D1 — Inventory AI Plan DB-generation feature flag (backend owner-of-record). It gates ONE
+// thing: whether the manual "Generate AI Plan" click may route to the canonical 61_ weeklyAiPlan.generate writer
+// (shipping_allocation_drafts / _lines). It does NOT gate the route allocator — KMWRR computes the same
+// recommendation either way — so with the flag OFF the recommendation half still runs and the execution half
+// answers INVENTORY_AI_PLAN_DB_GENERATION_DISABLED with zero rows written.
+//
+// F1-7N-FC-1B-E3 §E.4 — SET TO **TRUE**, USER-AUTHORIZED. The user asked for AI Plan to produce real
+// Execution Routes in shipping_allocation_drafts / _lines, which is precisely what this flag has always
+// released. Everything downstream of it was already complete and Node-verified (route derivation and K2
+// partition via KMWRR, the atomic Header+Lines write through the SAME endpoint and identity that a manual save
+// uses, the readback hydrate, and the supersede/expire lifecycle) — the flag was the only thing between the
+// button and the write.
+//
+// §E.5 — THE FLAG IS NOT REMOVED, because it is the rollback switch. ROLLBACK IS TWO STEPS AND BOTH ARE
+// THE USER'S: set this back to false, then publish a NEW Apps Script deployment version (an edited file that is
+// not deployed changes nothing). No frontend change is needed to roll back — the page mirrors this value
+// through KM.api.inventoryAiPlanDbGenerationEnabled() and states EXECUTION_MATERIALIZATION_NOT_ENABLED, visibly,
+// when it reads false. The effective value is reportable at any time from system.health as
+// `inventory_ai_plan_db_generation_enabled` (63_), so "is it on in the deployment that is actually answering"
+// is a question with an answer instead of an inference from behaviour.
+//
+// The frontend MIRROR default stays fail-safe FALSE on purpose (km-api-foundation.js): if the capability
+// transport cannot be read, the page must not offer a write it cannot confirm the server accepts. That is a
+// deliberate asymmetry, not a drifted copy of this value.
+var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;
 function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; }
+
+// F1-7N-FC-1B-E3 §E.9 — 00_config.gs had no build stamp, so it was the ONE owner file whose sync state
+// the deployment manifest could not report: a project still running the previous copy of this file would answer
+// with the flag OFF while the repository said ON, and nothing would have named the difference. It is stamped and
+// registered in 63_'s module manifest now, which makes a partial sync of the CONFIG a mixed_deployment fault
+// like any other.
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3';

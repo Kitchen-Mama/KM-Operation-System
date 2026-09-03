@@ -620,8 +620,16 @@ ok(/data-eta-persisted/.test(PAGE) && /data-method-persisted/.test(PAGE), 'V3  �
     'V6  the application refs rotated together (' + RO.appTokenRefCount(INDEX) + ' on ' + APP + ')');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga1r1-panelready-20260902'), 'V6a and it is at or after the round that changed these files');
   ok(INDEX.indexOf('fb4ga1-atomicreveal-20260902') === -1, 'V6b §12 the published A1 token is fully retired');
-  ok(/inventory-replenishment\.css\?v=irpanelready-20260902/.test(INDEX),
-    'V7  §12 the stylesheet rotated in its OWN family');
+  // RESTATED (F1-7N-FC-1B-E3): this pinned `irpanelready-20260902`, the literal token A1-R1 minted - so it
+  // asserted "the stylesheet has not changed since A1-R1" while reading as "the stylesheet rotated in its own
+  // family". E3 rewrites that stylesheet (the Execution Plan control box, and the first rules
+  // `.replen-ai-plan-result` has ever had), so it legitimately moves. The family now has a ledger, like the
+  // map series, and the durable claims are the two below: A1-R1's token is a FLOOR in that series, and the
+  // stylesheet's token is a member of it rather than of the application series.
+  ok(RO.irCssTokenAtOrAfter(RO.currentIrCssToken(), 'irpanelready-20260902'),
+    'V7  §12 the stylesheet is at or after the A1-R1 token in its OWN family (' + RO.currentIrCssToken() + ')');
+  ok(new RegExp('inventory-replenishment\\.css\\?v=' + RO.currentIrCssToken()).test(INDEX),
+    'V7a1 and index.html serves exactly that token');
   ok(!new RegExp('inventory-replenishment\\.css\\?v=' + APP).test(INDEX), 'V7a and the families are not crossed');
   ok(/method-registry\.js\?v=fb4ga1r1-method-registry-20260902/.test(INDEX),
     'V8  §12 method-registry.js changed this round, so ITS own token family rotated too');

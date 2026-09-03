@@ -124,7 +124,14 @@ ok(/R6A1_ZERO_WRITE_CONFIRMED/.test(TEMP) && /READY_FOR_CONTROLLED_REQUEST_SEND/
 section('K. flags frozen + unified release token');
 ok(/var\s+REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true\s*;/.test(CONFIG), 'K. flat V2 cutover = true');
 ok(/var\s+REQUEST_ORDER_SITE_CONFIRM_REQUIRED_\s*=\s*false\s*;/.test(CONFIG), 'K. site confirm = false');
-ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false\s*;/.test(CONFIG), 'K. inventory generation = false');
+// RESTATED (F1-7N-FC-1B-E3 §E.4): this pinned the flag's VALUE, so it asserted "the feature is still
+// staged off" while reading as "the flag is in place". E3 activates it, USER-authorized. The durable
+// properties - one boolean of record, one accessor, and a client mirror that stays fail-safe OFF - are what
+// this round's rollback depends on, and they are what is asserted now.
+ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*(?:true|false)\s*;/.test(CONFIG),
+  'K. inventory generation flag is the single staged switch (ONE boolean of record: the release switch and the whole rollback)');
+ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CONFIG),
+  'K. inventory generation flag is the single staged switch2 read through exactly ONE accessor, so every gate agrees');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'K. KM.RELEASE = r6a1-request-send-20260822');

@@ -202,7 +202,14 @@ var _r2RtrExpect = ((G63.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)
 ok(new RegExp("var RTR_BUILD_VERSION_ = '" + _r2RtrExpect + "'").test(RTR),
   '1. the ROUTER declares exactly the build its manifest expects (' + _r2RtrExpect + ')');
 eq(/var EPC_BUILD_VERSION_ = '([^']+)'/.exec(G68)[1], 'F1-7N-FB-4E-R2', '1. 68_ moved in R2 and NOT since — R3 did not touch it');
-ok(/var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R[2-9]/.test(G63), '1. the 63_ owner stamp is at R2 or later');
+// RESTATED (F1-7N-FC-1B-E3): the same family pin the four lines above already converted for the ROUTER,
+// left literal for 63_. `F1-7N-FB-4E-R[2-9]` encoded "an FB-4E revision at R2 or later", which held only
+// while FB-4E was the family that last touched 63_; E3 moves it out of that family (63_ now reports the
+// effective inventory_ai_plan_db_generation_enabled value). Paired with its own manifest entry instead,
+// which is the property that cannot drift in either direction.
+var _r2SysExpect = ((G63.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+ok(_r2SysExpect !== '(none)' && new RegExp("var SYS_BUILD_VERSION_ = '" + _r2SysExpect + "'").test(G63),
+  '1. 63_ declares exactly the build its own manifest expects (' + _r2SysExpect + ')');
 // 31_ and 59_ were NOT changed, so their stamps must NOT move — a stamp that moves without a change is noise.
 ok(/SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1'/.test(G63), '1. 59_ is unchanged this round and keeps its FB-4C-R1 stamp');
 ok(!/SKD_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(GS_ALL), '1. and nothing bumped it just to look current');
@@ -595,6 +602,11 @@ GS_OWNED_SINCE_R1['22_shipment_dispatch_handlers.gs'] = 'FC-1A dispatch DELEGATE
 // PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal, which is a behavioural change to this file and therefore an
 // ownership record here. An unexpected file still fails.
 GS_OWNED_SINCE_R1['13_procurement_handlers.gs'] = 'FC-1A-R1 typed PO over-receipt refusal (no silent clamp)';
+// F1-7N-FC-1B-E3 — the CONFIG owner. E3 releases the Inventory AI Plan DB generation by setting
+// INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ to true (the flag's whole purpose) and gives the file a build stamp
+// so a half-synced config is a named mixed_deployment fault rather than a mystery. 63_ registers it in the
+// module manifest. An unexpected file still fails.
+GS_OWNED_SINCE_R1['00_config.gs'] = 'FC-1B-E3 the feature flags of record: Inventory AI Plan DB generation activated + CONFIG_BUILD_VERSION_ added';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 // The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
 var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');

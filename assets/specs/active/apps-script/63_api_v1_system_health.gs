@@ -37,7 +37,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -237,7 +237,11 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'deployment identity + health + transport contract' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3', owns: 'deployment identity + health + transport contract + the effective feature-flag report' },
+  // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
+  // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
+  // allocation drafts while the repository says it should; without an entry here that difference had no name.
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
@@ -446,6 +450,14 @@ function handleSystemHealth_(body) {
     request_order_send_diagnostic_owner: (typeof ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? ROSEND_DIAG_OWNER_FILE_ : null,
     deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
     inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
+    // F1-7N-FC-1B-E3 §E.6/§E.7 — THE EFFECTIVE FEATURE-FLAG VALUE, read from the function that
+    // every gate reads, in the deployment that is actually answering. Not the repository's copy of the file and
+    // not the frontend's mirror: those can disagree with this, and when they do, THIS is the one that decides
+    // whether a Generate AI Plan click writes anything. `null` means the config file is not present in the
+    // deployment at all, which is a different fault from the flag being off.
+    inventory_ai_plan_db_generation_enabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function')
+      ? (inventoryAiPlanDbGenerationEnabled_() === true) : null,
+    config_build: (typeof CONFIG_BUILD_VERSION_ !== 'undefined') ? CONFIG_BUILD_VERSION_ : null,
     required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
     required_action_count: SYS_REQUIRED_ACTIONS_.length,
     // An EMPTY missing_actions list proves nothing on its own — see the note at the constants above. This flag

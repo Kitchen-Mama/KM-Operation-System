@@ -151,7 +151,22 @@ var ROUND_TOKENS = [
   // directions: the page renders a composer whose three states only the shared module can name, and the
   // module's Submit preflight refuses a route shape the old page still produces. A browser holding one file
   // from each round would either paint a row nothing can classify or be unable to submit a finished route.
-  'fc1b-e2-aiplancomposer-20260903'
+  'fc1b-e2-aiplancomposer-20260903',
+  // F1-7N-FC-1B-E3 — AI Plan controlled activation + visible runtime feedback + Execution row layout.
+  // E2 is on origin/main (200a6fa was pushed), so by the rule recorded above its token has been published and
+  // cannot be reused. THREE reasons a browser must refetch, and the first is the one that matters most:
+  //   1. THE STYLESHEET. `.replen-ai-plan-result` had no rule anywhere in the repository, which is why every
+  //      sentence Site Inventory's AI Support has ever tried to say was laid out at the bottom of an
+  //      `overflow: hidden` body and was literally unreachable. A browser holding the cached CSS would keep
+  //      showing nothing while the new page believes it has spoken — the exact defect this round fixes.
+  //   2. THE LAYOUT CONTRACT. The Execution Plan control box moved from `.exec-route-row`-scoped rules to the
+  //      shared `.ir-exec-plan__grid`. Old CSS + new page = a composer with no control styling at all (the
+  //      reported misalignment); new CSS + old page = header labels inset for a grid whose padding the old
+  //      page's cached rules still shrink.
+  //   3. THE PAGE AND THE SHARED MODULE, together as always: the page can now report an unreconciled AI Plan
+  //      run and only the new inventory-compat.js knows EXECUTION_PLAN_AI_UNRECONCILED, so an old module would
+  //      let a plan be submitted whose stored shape nobody has established.
+  'fc1b-e3-aiplanactive-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -248,6 +263,37 @@ function currentMapRoundMarkerRe() {
   return m ? new RegExp(m) : /(?!)/;
 }
 function isMapToken(t) { return MAP_TOKEN_SERIES.indexOf(String(t)) !== -1; }
+
+// ---------------------------------------------------------------------------------------------------------
+// F1-7N-FC-1B-E3 — THE SITE INVENTORY STYLESHEET SERIES.
+//
+// `assets/css/pages/inventory-replenishment.css` is deliberately NOT in the application series: three suites
+// assert that the two families are never crossed, one of them by checking the token's SHAPE. What the family
+// did not have was a ledger, so "which round is current" lived as a literal inside one suite — the same
+// thing the map series was given a ledger for, and with the same result: the first round to legitimately
+// rotate the stylesheet broke that suite while describing a correct tree.
+//
+// Append-only. A round that changes the stylesheet adds one line here.
+var IR_CSS_TOKEN_SERIES = [
+  // F1-7N-FB-4G-A1-R1 — panel-local readiness; the round that established the separate family.
+  'irpanelready-20260902',
+  // F1-7N-FC-1B-E3 — the Execution Plan layout contract (one control box for the header row, a persisted
+  // route, an AI route and both composers) plus the FIRST stylesheet rules `.replen-ai-plan-result` has ever
+  // had. That second half is the round's own defect: the class was copied from Order Planning's
+  // `.ro-ai-plan-result` without its stylesheet, so every sentence Site Inventory's AI Support tried to say
+  // was laid out at the bottom of an `overflow: hidden` body and could not be reached even by scrolling. A
+  // browser serving the cached stylesheet would keep showing nothing while the new page believed it had
+  // spoken, which is why this rotation is not cosmetic.
+  'irexecrow-20260903'
+];
+var IR_CSS_FILE = 'assets/css/pages/inventory-replenishment.css';
+function currentIrCssToken() { return IR_CSS_TOKEN_SERIES[IR_CSS_TOKEN_SERIES.length - 1]; }
+function isIrCssToken(t) { return IR_CSS_TOKEN_SERIES.indexOf(String(t)) !== -1; }
+function irCssTokenIndex(t) { return IR_CSS_TOKEN_SERIES.indexOf(String(t)); }
+function irCssTokenAtOrAfter(t, floorToken) {
+  var i = irCssTokenIndex(t), f = irCssTokenIndex(floorToken);
+  return i !== -1 && f !== -1 && i >= f;
+}
 function mapTokenIndex(t) { return MAP_TOKEN_SERIES.indexOf(String(t)); }
 // THE FLOOR COMPARISON, and the reason a round's suite needs it. Four rounds running, a round's own suite has
 // asserted "this file carries MY token" as an equality — and then the next round legitimately moved the file
@@ -296,6 +342,10 @@ function misplacedIndexTokens(indexHtml) {
     var isMapFile = MAP_BROWSER_FILES.indexOf(p) !== -1;
     if (isMapFile && !isMapToken(toks[p])) out.push(p + ' is a map browser file but carries ' + toks[p]);
     if (!isMapFile && isMapToken(toks[p])) out.push(p + ' is an application asset but carries the map token ' + toks[p]);
+    // F1-7N-FC-1B-E3 — the third family, checked in both directions like the other two. The Site
+    // Inventory stylesheet must carry an IR-CSS token, and nothing else may.
+    if (p === IR_CSS_FILE && !isIrCssToken(toks[p])) out.push(p + ' is the Site Inventory stylesheet but carries ' + toks[p]);
+    if (p !== IR_CSS_FILE && isIrCssToken(toks[p])) out.push(p + ' is not the Site Inventory stylesheet but carries the IR-CSS token ' + toks[p]);
   }
   return out;
 }
@@ -335,14 +385,18 @@ function appTokenRefCount(indexHtml) {
 // (F1-7N-FB-4E-R4B-R3 is the third revision of the second revision of round 4E), so the revision segment
 // repeats. A pattern that admitted only ONE revision segment rejected a legitimate stamp the moment a round
 // needed a second one — which is exactly what happened in R4B-R3.
-var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
+// F1-7N-FC-1B-E3 — the revision segment is -R<n> OR -E<n>. The FC-1B rounds revise as E1/E2/E3 (already
+// the shape of three entries in ROUND_TOKENS above), and this regex admitted only the -R form, so the first
+// backend owner file to declare an E-series stamp was reported as carrying no real build stamp at all by every
+// suite that validates through here. The vocabulary is fixed in the one place that owns it.
+var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+))*$/;
 
 // F1-7N-FB-4G-A0-R1 — THE 16_ OWNER-STAMP ORDER, and it lives HERE because it was living in four places.
 // B3, B4, B5 and FB-4F-A each carried their own copy of this array to answer "is the allocation owner build at
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
@@ -369,6 +423,12 @@ module.exports = {
   isMapToken: isMapToken,
   mapTokenIndex: mapTokenIndex,
   mapTokenAtOrAfter: mapTokenAtOrAfter,
+  IR_CSS_TOKEN_SERIES: IR_CSS_TOKEN_SERIES,
+  IR_CSS_FILE: IR_CSS_FILE,
+  currentIrCssToken: currentIrCssToken,
+  isIrCssToken: isIrCssToken,
+  irCssTokenIndex: irCssTokenIndex,
+  irCssTokenAtOrAfter: irCssTokenAtOrAfter,
   parseIndexTokens: parseIndexTokens,
   misplacedIndexTokens: misplacedIndexTokens,
   appTokenRefCount: appTokenRefCount,

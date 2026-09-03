@@ -115,7 +115,14 @@ ok(/line_id_completeness/.test(TEMP) && /active_group_duplicate_count/.test(TEMP
 section('G. flags frozen + no Shipment/Submit; blank orphan never reused');
 ok(/var\s+REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true\s*;/.test(CONFIG), 'G. flat V2 cutover = true');
 ok(/var\s+REQUEST_ORDER_SITE_CONFIRM_REQUIRED_\s*=\s*false\s*;/.test(CONFIG), 'G. site confirm = false');
-ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false\s*;/.test(CONFIG), 'G. inventory generation = false (staged; no live gen)');
+// RESTATED (F1-7N-FC-1B-E3 §E.4): this pinned the flag's VALUE, so it asserted "the feature is still
+// staged off" while reading as "the flag is in place". E3 activates it, USER-authorized. The durable
+// properties - one boolean of record, one accessor, and a client mirror that stays fail-safe OFF - are what
+// this round's rollback depends on, and they are what is asserted now.
+ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*(?:true|false)\s*;/.test(CONFIG),
+  'G. inventory generation flag is the single staged switch (ONE boolean of record: the release switch and the whole rollback)');
+ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CONFIG),
+  'G. inventory generation flag is the single staged switch2 read through exactly ONE accessor, so every gate agrees');
 ok(/EMPTY_ORPHAN_SAFE_TO_CANCEL/.test(TEMP), 'G. blank-cycle orphan classified EMPTY_ORPHAN_SAFE_TO_CANCEL (never reused — literal nonblank-cycle scope)');
 
 section('H. unified release token (R6F)');

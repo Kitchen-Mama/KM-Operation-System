@@ -1235,6 +1235,18 @@
    minmax(100/130px, 1fr) so From/To/Method stay readable; Qty is 60px; the Delete button sits in a
    fixed 36px track with an 8px column-gap so the Method select and the red X never overlap. The
    header's last cell (Delete column) has no text (Part 4). */
+/* F1-7N-FC-1B-E3 §B — THE ONE SCOPED LAYOUT CONTRACT for the Execution Plan.
+       Declared on the shared grid class, which the HEADER row, a persisted route, an AI route and a manual
+       composer all carry — so the four row kinds cannot be styled differently, because there is only one
+       place that styles them. The control box itself is declared by exactly ONE rule below
+       (`.ir-exec-plan__grid .replen-card__input, .ir-exec-plan__grid .replen-card__select`), which is what
+       makes "From = To = Qty = Method" true by construction rather than by four separate declarations that
+       happen to agree today. */
+/* §B.1 — NO horizontal padding on the grid box, and the template is declared ONCE. The header row
+   carried `padding: 0 2px`, and a horizontal padding on a grid container shrinks its content box, which
+   RE-RESOLVES every 1fr track: the header's columns were genuinely 4px narrower than the body's and offset by
+   2px. That misalignment was in the stylesheet, not in the markup. The label inset moved to the header CELLS,
+   where it cannot move a track. */
 #ops-section .ir-exec-plan__grid {
     display: grid;
     /* SIX columns: From · To · Qty · Method · Expected Arrival · Action (§11.3/§11.5). The last (Action)
@@ -1247,6 +1259,7 @@
     align-items: center;
     box-sizing: border-box;
     width: 100%;
+    padding: 0;
 }
 #ops-section .ir-exec-plan__grid > * { min-width: 0; }
 /* F1-7N-FB-4F-B6 §E.3/§F.1 — the To cell of a PERSISTED route whose destination the database does not hold.
@@ -1272,15 +1285,112 @@
     color: #64748B;
     font-weight: 600;
     margin-top: 8px;
-    padding: 0 2px;
+    /* §B.1 — horizontal padding REMOVED (see the grid rule): it is the header CELLS, not the header
+       box, that carry the label inset now, so the header resolves the same six track widths as every row. */
 }
 #ops-section .ir-exec-plan__grid--head > span {
     min-width: 0;
+    /* the control's own text inset + its 1px border, so a label sits directly over the value it names */
+    padding-left: 7px;   /* = the control's 6px text inset + its 1px border */
     white-space: nowrap;       /* labels are short (From / To / Qty / Method) — show in full; last cell empty */
 }
 /* Part 4: From / To / Qty / Method all left-aligned so headers and inputs read consistently. */
 #ops-section .ir-exec-plan__grid--head .ir-exec-plan__qty { text-align: left; }
 #ops-section .ir-exec-plan__grid--head > span:last-child { text-align: center; }
+
+/* ============================================================================================================
+   F1-7N-FC-1B-E3 §C/§D — THE AI SUPPORT NOTICE HAD NO STYLESHEET, AND THAT IS WHY THE PAGE WAS
+   SILENT.
+   -----------------------------------------------------------------------------------------------------------
+   `_irAiSupportNotice_` creates `#replen-ai-support-notice` with class `replen-ai-plan-result`, appends it to
+   document.body and clears `hidden`. Every sentence Site Inventory's AI Support has ever tried to say —
+   the scope-cancelled notice, the scope-modal refusal, the recalculation outcomes, and E2's
+   EXECUTION_MATERIALIZATION_NOT_ENABLED — went through it. There was NO RULE FOR THAT CLASS ANYWHERE in
+   the repository: the class name was copied from Order Planning's `.ro-ai-plan-result` and the stylesheet was
+   not copied with it. So the element was laid out in normal flow as the last child of <body>, after a
+   full-viewport app shell, under `body { overflow: hidden }` — in the DOM, not `hidden`, and unreachable
+   even by scrolling. Meanwhile `_irShowAiPlanResult_` (the flag-ON popup, in the same file) styles ITSELF with
+   an inline cssText and was always visible, which is exactly why the two paths behaved differently.
+   Deliberately NOT scoped to #ops-section: the element is a child of <body>, so an #ops-section selector
+   would have matched nothing and reproduced the bug.
+   ============================================================================================================ */
+.replen-ai-plan-result {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1200;                 /* above the scope modal, which closes on confirm and must not cover this */
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    background: #fff;
+    color: #0f172a;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.14);
+}
+.replen-ai-plan-result[hidden] { display: none; }
+.replen-ai-plan-result--ok   { border-left-color: #10b981; background: #ecfdf5; }
+.replen-ai-plan-result--info { border-left-color: #3b82f6; background: #eff6ff; }
+.replen-ai-plan-result--warn { border-left-color: #f59e0b; background: #fffbeb; }
+.replen-ai-plan-result--bad  { border-left-color: #ef4444; background: #fef2f2; }
+.replen-ai-plan-result__head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; font-weight: 700; margin-bottom: 6px;
+}
+.replen-ai-plan-result__close {
+    border: 0; background: transparent; cursor: pointer; font-size: 18px; line-height: 1;
+    color: #6b7280; padding: 0 4px; border-radius: 6px; min-width: 0;
+}
+.replen-ai-plan-result__close:hover { background: rgba(15, 23, 42, 0.06); }
+.replen-ai-plan-result__msg { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .replen-ai-plan-result { right: 12px; left: 12px; width: auto; } }
+
+/* §D.2 — the in-progress spinner. Small, inline with the phase text, and it spins only while the
+   phase writer owns the surface; a terminal state re-renders the message without it. */
+.replen-ai-plan-result__spinner {
+    display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
+    border: 2px solid rgba(59, 130, 246, 0.28); border-top-color: #3b82f6; border-radius: 50%;
+    animation: ir-ai-spin 0.7s linear infinite;
+}
+@keyframes ir-ai-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .replen-ai-plan-result__spinner { animation-duration: 2.4s; }
+    #ops-section .km-action-menu__trigger[aria-busy="true"]::after { animation-duration: 2.4s; }
+}
+
+/* §D.1/§D.2 — the AI Support trigger is the on-page stand-in for the modal's Generate button
+   (the modal closes on confirm, so its own button is gone before any handler runs). It carries the phase text
+   and a spinner, and it is genuinely disabled while a run is in flight, which is what stops a second run. */
+#ops-section .km-action-menu__trigger[aria-busy="true"]::after {
+    content: "";
+    display: inline-block; width: 10px; height: 10px; margin-left: 7px; vertical-align: -1px;
+    border: 2px solid rgba(100, 116, 139, 0.3); border-top-color: currentColor; border-radius: 50%;
+    animation: ir-ai-spin 0.7s linear infinite;
+}
+#ops-section .km-action-menu__trigger:disabled { cursor: progress; opacity: 0.85; }
+
+/* §D.3/§D.7 — the outcome the operator KEEPS, inside the Execution Plan card and directly above
+   the routes it describes. It exists only while it has text (the page creates and removes the node), so this
+   rule can never contribute a blank height to an empty plan (§A.2). */
+#ops-section .ir-exec-plan__status {
+    margin: 4px 0 0;
+    padding: 4px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.35;
+    white-space: normal;
+    border-left: 3px solid #3b82f6;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+#ops-section .ir-exec-plan__status--busy { border-left-color: #3b82f6; background: #eff6ff; color: #1e3a8a; }
+#ops-section .ir-exec-plan__status--ok   { border-left-color: #10b981; background: #ecfdf5; color: #065f46; }
+#ops-section .ir-exec-plan__status--warn { border-left-color: #f59e0b; background: #fffbeb; color: #92400e; }
+#ops-section .ir-exec-plan__status--bad  { border-left-color: #ef4444; background: #fef2f2; color: #991b1b; }
 
 #ops-section .exec-routes-list {
     display: flex;
@@ -1288,38 +1398,80 @@
     gap: 6px;
     margin-top: 4px;
 }
-#ops-section .exec-route-row { margin-bottom: 0; }
+#ops-section .exec-route-row,
+#ops-section .exec-route-composer { margin-bottom: 0; }
 
-/* Route inputs/selects shrink inside their grid tracks (no overflow); Delete button fixed in-track. */
-#ops-section .exec-route-row .replen-card__input {
+/* §B.2 — THE control box. From, To, Qty and Method resolve height, box-sizing, border radius,
+   vertical padding, vertical alignment and margin from this ONE rule, so those properties are not merely
+   equal between the four fields, they are the SAME declarations. A fifth field gets a box only by being added
+   to this selector list. Scoped to `.ir-exec-plan__grid`, so the header row, a persisted route, an AI route,
+   a default composer and an + Add Route composer are the same rows to the stylesheet (§B.7/§B.8). */
+#ops-section .ir-exec-plan__grid .replen-card__input,
+#ops-section .ir-exec-plan__grid .replen-card__select {
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
-    text-align: left;
-    padding: 2px 4px;
-    box-sizing: border-box;
+    height: 26px;
+    min-height: 26px;
+    max-height: 26px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin: 0;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: left;          /* Part 4 kept: Qty reads WITH From / To / Method, not against them */
+    vertical-align: middle;
+    align-self: center;
+    background-color: #fff;
+    /* the UA's own widget metrics are what made a select and a number input different heights at identical
+       padding, so the metrics have to be ours too */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
 }
-#ops-section .exec-route-row .replen-card__input[data-field="qty"] {
-    text-align: left;      /* Part 4: match From / To / Method left alignment */
+/* §B.5 — the number input's spin buttons are the specific reason Qty was taller than the rest. */
+#ops-section .ir-exec-plan__grid .replen-card__input[type="number"] { -moz-appearance: textfield; }
+#ops-section .ir-exec-plan__grid .replen-card__input[type="number"]::-webkit-outer-spin-button,
+#ops-section .ir-exec-plan__grid .replen-card__input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
-#ops-section .exec-route-row .replen-card__select {
-    width: 100%;
-    min-width: 0;
-    margin-bottom: 0;
-    padding: 2px 4px;
-    box-sizing: border-box;
+/* `appearance: none` removes the native caret, so it is drawn as a background IMAGE — an image, never a
+   background shorthand, so the disabled rule below repaints the colour without erasing the caret. Only the
+   RIGHT inset grows to make room; the VERTICAL padding stays the shared value (§B.2). */
+#ops-section .ir-exec-plan__grid .replen-card__select {
+    padding-right: 18px;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath fill='%2364748B' d='M0 0h8L4 5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 5px center;
+    background-size: 8px 5px;
 }
-/* Warehouse pickers (From / To) — canonical value is warehouse_id; label is warehouse_name. Disabled =
-   no candidates for the current scope (empty state). Error flash = From/To collided on the same id. */
-#ops-section .exec-route-row .replen-card__select--wh:disabled {
-    background: #f1f5f9;
+/* §B.4 — DISABLED CHANGES COLOUR, NEVER SIZE. Only background-color, text colour and cursor appear
+   here: no height, no padding, no border-width, no font-size. A disabled Method is exactly as tall as an
+   enabled one, so the row cannot shift as From and To are filled in. */
+#ops-section .ir-exec-plan__grid .replen-card__input:disabled,
+#ops-section .ir-exec-plan__grid .replen-card__select:disabled {
+    background-color: #f1f5f9;
     color: #94a3b8;
     cursor: not-allowed;
 }
-#ops-section .exec-route-row .replen-card__select--error {
+/* §B.6 — the two non-control cells sit on the controls' centre line, not the row's top. */
+#ops-section .ir-exec-plan__grid .replen-card__to-cell,
+#ops-section .ir-exec-plan__grid .replen-card__eta { align-self: center; }
+/* Warehouse pickers (From / To) — canonical value is warehouse_id; label is warehouse_name. Disabled =
+   no candidates for the current scope (empty state). Error flash = From/To collided on the same id.
+   F1-7N-FC-1B-E3: the `--wh:disabled` rule is GONE, not moved — it said exactly what the shared
+   `:disabled` rule above now says, and it said it for one row kind only, which is how a disabled picker on a
+   composer came to look different from a disabled picker on a route. */
+#ops-section .ir-exec-plan__grid .replen-card__select--error {
     border-color: #ef4444;
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
 }
-#ops-section .exec-route-row .replen-card__remove-btn {
+#ops-section .ir-exec-plan__grid .replen-card__remove-btn {
     width: 24px;
     height: 24px;
     /* Override the global button min-width: 60px so the X stays a small square and never
@@ -1329,6 +1481,7 @@
     padding: 0;
     margin: 0;
     justify-self: center;   /* sits centered in its 36px track — not flush to the card edge */
+    align-self: center;     /* §B.6 — and on the controls' centre line */
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1362,6 +1515,9 @@
         min-width: 0;
     }
     /* Execution Plan grid keeps all six columns readable when full-width. */
+    /* §B.9 — the SAME six tracks in the same order with the same gap; only Method's flex weight
+       changes. The header and every row kind read it from the one shared class, so they stay in step here
+       too, and nothing wraps: a narrower viewport reflows the CARD, never the row. */
     #ops-section .ir-exec-plan__grid { grid-template-columns: minmax(84px,1fr) minmax(84px,1fr) 52px minmax(112px,1.2fr) minmax(100px,auto) 40px; }
 }
 

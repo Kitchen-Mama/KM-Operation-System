@@ -80,7 +80,14 @@ section('B. Backend config = owner-of-record; three flags at the exact required 
 var CONFIG = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '00_config.gs'), 'utf8');
 ok(/var\s+REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true\s*;/.test(CONFIG), 'B1. REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_ = true (permanent cutover)');
 ok(/var\s+REQUEST_ORDER_SITE_CONFIRM_REQUIRED_\s*=\s*false\s*;/.test(CONFIG), 'B1. REQUEST_ORDER_SITE_CONFIRM_REQUIRED_ = false (temporary, USER-authorized)');
-ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false\s*;/.test(CONFIG), 'B1. INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false (staged)');
+// RESTATED (F1-7N-FC-1B-E3 §E.4): this pinned the flag's VALUE, so it asserted "the feature is still
+// staged off" while reading as "the flag is in place". E3 activates it, USER-authorized. The durable
+// properties - one boolean of record, one accessor, and a client mirror that stays fail-safe OFF - are what
+// this round's rollback depends on, and they are what is asserted now.
+ok(/var\s+INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*(?:true|false)\s*;/.test(CONFIG),
+  'B1. INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is the single staged switch (ONE boolean of record: the release switch and the whole rollback)');
+ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CONFIG),
+  'B1. INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ is the single staged switch2 read through exactly ONE accessor, so every gate agrees');
 ok(!/DEFAULT OFF[\s\S]{0,80}flat V2/i.test(CONFIG) && /PERMANENTLY TRUE/.test(CONFIG), 'B2. stale "flat V2 DEFAULT OFF" comment removed; documents completed cutover');
 
 section('B. capability transport wired (single wire channel; read-only)');
@@ -170,7 +177,13 @@ ok(api.inventoryAiPlanDbGenerationEnabled() === false || true, 'G1. inventory mi
 var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
 ok(/function TEMP_R6D1_VALIDATE_INVENTORY_AI_PLAN_READY\(\)/.test(TEMP), 'G2. R6D1 validator still present');
 ok(/GAP_JOB_INVENTORY/.test(TEMP) && /EMPTY_ORPHAN_SAFE_TO_CANCEL/.test(TEMP), 'G2. R6D1 GAP-INV run authority + blank-orphan classification preserved');
-ok(/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false/.test(CONFIG), 'G3. inventory generation flag remains false (staged; not enabled)');
+// RESTATED (F1-7N-FC-1B-E3): see B1. What §G needed here is that enabling Inventory generation cannot
+// change the OTHER two flags' authority, and that is asserted directly instead of by freezing this one.
+ok(/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (?:true|false)/.test(CONFIG),
+  'G3. inventory generation flag is present and single-valued');
+ok(/failSafeDefaults: \{[^}]*inventoryAiPlanDbGenerationEnabled: false/.test(fs.readFileSync(path.join(ROOT, 'js', 'api', 'km-api-foundation.js'), 'utf8')),
+  'G3a and the CLIENT MIRROR stays fail-safe OFF, so a browser that cannot read the capability transport ' +
+  'never offers a write it cannot confirm the server accepts');
 
 // ==================================================================================================================
 section('H. Unified release authority (R6E1A cumulative changed assets on one token)');
