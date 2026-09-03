@@ -534,7 +534,16 @@ section('§F/§G — INCOMPLETE IS NAMED, NEVER SILENT; AND DIRTY IS DIRTY');
 (function () {
   var flush = code(extractFn(PAGE, '_flushDraftDbPersist'));
   ok(/_incomplete\s*=\s*_scoped\.filter/.test(flush), 'G1  the flush separates the dirty-but-incomplete routes');
-  ok(/_irIncompleteRouteNotice_\(sku, _incomplete\)/.test(flush), 'G2  and reports them by name (§G.8)');
+// RESTATED (F1-7N-FC-1B-E3-R2): §G.8's property is that a dirty-but-incomplete route is REPORTED BY NAME
+// rather than dropped in silence, and that still holds. What this pinned was the ARGUMENT the notice was built
+// from - the variable `_incomplete` - and R2 widens that set on purpose. A TOUCHED COMPOSER was in it when it
+// was the only edit on screen (via the empty-touched-set fallback) and NOT in it when another row was touched,
+// so the same row got a red database-failure panel or complete silence depending on an unrelated row. The set
+// is now `_hintRows`: every unfinished row that is not furniture, computed from the whole model.
+ok(/_irIncompleteRouteNotice_\(sku, _hintRows\)/.test(flush),
+  'G2  and reports them by name (§G.8), from the set of ALL unfinished rows rather than the write scope');
+ok(/_incomplete\s*=\s*_scoped\.filter/.test(flush) && /\.concat\(_incomplete\)/.test(flush),
+  'G2a the dirty-but-incomplete routes are still what that set is built on');
   var notice = extractFn(PAGE, '_irIncompleteRouteNotice_');
   ok(/UNSAVED_INCOMPLETE_ROUTE/.test(notice), 'G3  under its own typed code');
   ok(/zeroWrite: 'true'/.test(notice), 'G4  stating that nothing was written');
@@ -871,13 +880,14 @@ mut('O9  writing a route that is not complete', function () {
 });
 
 // O10 — an incomplete route is skipped in silence.
+// RESTATED (F1-7N-FC-1B-E3-R2): the mutation targeted `if (_incomplete.length)`, the gate R2 replaced. The
+// SILENCE this catches is the same one §G.8 removed; only the gate's name changed.
 mut('O10 skipping a dirty-but-incomplete route without saying so', function () {
   var m = mutateFn(PAGE, '_flushDraftDbPersist',
-    '        if (_incomplete.length) {',
+    '        if (_hintRows.length) {',
     '        if (false) {');
   var x = code(extractFn(m, '_flushDraftDbPersist'));
-  return !/_irIncompleteRouteNotice_\(sku, _incomplete\)/.test(x) ||
-         !/if \(_incomplete\.length\)/.test(x);
+  return !/_irIncompleteRouteNotice_\(sku, _hintRows\)/.test(x) || !/if \(_hintRows\.length\)/.test(x);
 });
 
 // O11 — the version the server returned is not adopted.

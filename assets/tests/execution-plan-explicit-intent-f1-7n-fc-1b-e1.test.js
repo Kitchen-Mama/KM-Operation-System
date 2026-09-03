@@ -614,8 +614,23 @@ eq(CMP.IRDraft.isRouteComplete(modelRows(addW)[0]), false,
   'F6  the incomplete explicit route is not persistable...');
 ok(/var complete = _scoped\.filter\(_isRouteComplete\);/.test(code(PAGE)),
   'F6a ...and the flush writes ONLY complete routes, so an incomplete one is zero DB write');
-ok(/_incomplete\.forEach/.test(code(PAGE)) && /NOT_SAVED/.test(code(PAGE)),
-  'F6b while still being NAMED as not saved rather than dropped in silence (A2-R4 §G.8)');
+// RESTATED (F1-7N-FC-1B-E3-R2 §A/§B): the property A2-R4 §G.8 established is that an incomplete
+// route is NAMED rather than dropped in silence, and that still holds. What this asserted was the two
+// IDENTIFIERS that happened to name it — the variable `_incomplete` and the label `NOT_SAVED` — and
+// R2 changes both, deliberately. `NOT_SAVED` is the outcome of an ATTEMPT, and nothing was attempted here; a
+// row the operator has not finished typing is now badged `INCOMPLETE` and gets the neutral row-local surface
+// instead of the red one, because "database update failed" was false about the only thing it claimed.
+//
+// So the claim is restated as the claim: EVERY row in the incomplete set gets a per-route state AND a
+// row-local sentence, and the surface it gets is NOT the failure renderer. All three fail if the silence
+// A2-R4 removed ever comes back.
+var _f6Flush = code(extractFn(PAGE, '_flushDraftDbPersist'));
+ok(/_hintRows\.forEach/.test(_f6Flush) && /_irSetRouteSaveState_\(sku, \[String\(r\.client_route_instance_id/.test(_f6Flush),
+  'F6b every incomplete route still gets its OWN per-route state (A2-R4 §G.8: never dropped in silence)');
+ok(/'INCOMPLETE'/.test(_f6Flush) && /_irShowRouteStateHint_/.test(_f6Flush),
+  'F6c and a row-local sentence, in the INCOMPLETE state rather than a save outcome');
+ok(!/_irShowDraftSaveError\(sku, _irIncompleteRouteNotice_/.test(_f6Flush),
+  'F6d and it is NOT the red failure surface: zero requests were issued, so nothing failed');
 // Completed: now it is a CREATE.
 addRowEl._fields = {
   source_warehouse_id: 'WH-CN-KMF-01', source_warehouse_id__name: 'KM Factory CN', source_warehouse_id__type: 'FACTORY', source_warehouse_id__code: 'KMFCN',

@@ -2320,7 +2320,16 @@ function _irExecPlanCardInnerHtml_(sku, ready) {
         + '<div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">'
         + '<span class="replen-card__summary-label">Total</span><span class="replen-card__summary-value" id="allocation-total-' + sku + '">0</span></div>'
         + '<div class="replen-card__hint" id="allocation-hint-' + sku + '" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>'
-        + '<div class="replen-card__carton-error" id="allocation-carton-error-' + sku + '" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>';
+        + '<div class="replen-card__carton-error" id="allocation-carton-error-' + sku + '" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>'
+        // F1-7N-FC-1B-E3-R2 §D.1/§D.2 — THE NEUTRAL SURFACE, AND IT IS ITS OWN ELEMENT.
+        //
+        // "You have not finished typing" and "the database refused your write" are different facts with
+        // different owners and different colours, and they can be true at the same time (one route refused, a
+        // second route half-edited). Sharing one <div> forced the last writer to erase the other's sentence,
+        // which is a large part of why the incomplete notice was rendered through the failure renderer at all.
+        // The hint carries no `color` of its own: §D.2 wants amber, and the stylesheet owns it so a future
+        // round cannot quietly turn it red with an inline style the way the error surface does.
+        + '<div class="ir-route-hint" id="allocation-route-hint-' + sku + '" style="display: none;" role="status"></div>';
 }
 // TWO independent reveal containers. They are siblings, not one wrapper, precisely so that no CSS rule and no
 // query can accidentally re-couple them.
@@ -2484,8 +2493,11 @@ function _irSaveBusySync_() {
 }
 window._irSaveBusySync_ = _irSaveBusySync_;
 // §G.2 — the per-route state the operator reads. One route's outcome never describes another's.
+// F1-7N-FC-1B-E3-R2 §B — `INCOMPLETE` joins them. It was missing, so a row the operator had not
+// finished typing was badged `Not saved` — true of the database and useless to the operator, who had not
+// asked for anything to be saved. "Not saved" is the outcome of an ATTEMPT; this state is the absence of one.
 var IR_ROUTE_SAVE_STATES_ = { SAVING: 'Saving', SAVED: 'Saved', NOT_SAVED: 'Not saved',
-    RECONCILING: 'Reconciling', OUTCOME_UNKNOWN: 'Outcome unknown' };
+    RECONCILING: 'Reconciling', OUTCOME_UNKNOWN: 'Outcome unknown', INCOMPLETE: 'Not yet complete' };
 function _irSetRouteSaveState_(sku, instanceIds, state) {
     if (!IR_ROUTE_SAVE_STATES_[state]) return 0;
     var want = {}; (instanceIds || []).forEach(function (k) { if (k) want[String(k)] = 1; });
@@ -2508,6 +2520,29 @@ function _irSetRouteSaveState_(sku, instanceIds, state) {
     return n;
 }
 window._irSetRouteSaveState_ = _irSetRouteSaveState_;
+
+// F1-7N-FC-1B-E3-R2 §B — the row's UI state, from IRRouteUiState (pure, shared with the tests) with a
+// tiny inline fallback for a failed module load. The fallback is deliberately CONSERVATIVE: if it cannot tell,
+// it answers with a non-failure state, because rendering a red database-failure over an editor state is the
+// defect this round removes and a module load is the wrong thing to have it depend on.
+function _irIsComposerRow_(r) {
+    if (window.IRRouteComposer && typeof window.IRRouteComposer.isComposer === 'function') return window.IRRouteComposer.isComposer(r);
+    return !!r && String((r && r.route_kind) || '').toUpperCase() === 'MANUAL_COMPOSER';
+}
+window._irIsComposerRow_ = _irIsComposerRow_;
+function _irRouteUiState_(r, ctx) {
+    if (window.IRRouteUiState && typeof window.IRRouteUiState.of === 'function') return window.IRRouteUiState.of(r, ctx);
+    var complete = (typeof _isRouteComplete === 'function') ? !!_isRouteComplete(r) : false;
+    if (_irIsComposerRow_(r) && !complete) return (r && r.composer_touched === true) ? 'TOUCHED_INCOMPLETE_COMPOSER' : 'PRISTINE_COMPOSER';
+    if (!complete) return String((r && r.allocation_draft_id) || '').trim() ? 'PERSISTED_ROUTE_EDIT_INCOMPLETE' : 'TOUCHED_INCOMPLETE_COMPOSER';
+    return 'SAVE_PENDING';
+}
+window._irRouteUiState_ = _irRouteUiState_;
+function _irRouteUiStateIsFailure_(s) {
+    if (window.IRRouteUiState && typeof window.IRRouteUiState.isFailure === 'function') return window.IRRouteUiState.isFailure(s);
+    return String(s) === 'SAVE_FAILED' || String(s) === 'SAVE_OUTCOME_UNKNOWN';
+}
+window._irRouteUiStateIsFailure_ = _irRouteUiStateIsFailure_;
 
 function toggleReplenRow(sku) {
     const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
@@ -4218,9 +4253,18 @@ function _irIncompleteRouteNotice_(sku, routes) {
         return '  · ' + _irRouteLabel_({ routes: [r], header: {} }) + ' — needs ' + (_irMissingRouteFields_(r).join(' + ') || 'a valid route');
     });
     var e = new Error('UNSAVED_INCOMPLETE_ROUTE');
+    // F1-7N-FC-1B-E3-R2 §A/§B — THE ENVELOPE DECLARES ITS SEVERITY AND ITS STATE.
+    //
+    // This notice was correct and was rendered by the wrong surface. `zeroWrite: 'true'` already said no
+    // request had been made, and the single renderer ignored it and opened with "database update failed".
+    // `severity` is what the renderers now branch on, and `uiStates` names the §B state of every row the
+    // notice covers, so the neutral line can be worded from the state rather than from a colour.
+    var _states = (routes || []).map(function (r) { return _irRouteUiState_(r); });
     e.structured = {
         code: 'UNSAVED_INCOMPLETE_ROUTE',
         reasonCode: 'UNSAVED_INCOMPLETE_ROUTE',
+        severity: 'NEUTRAL',
+        uiStates: _states,
         table: '',
         zeroWrite: 'true',
         retryable: 'true',
@@ -4686,9 +4730,23 @@ function _flushDraftDbPersist(sku) {
         // single-row operation incapable of producing a cross-route partial failure.
         var _touched = _irTouchedInstances_(sku);
         var _touchedSet = {}; _touched.forEach(function (k) { _touchedSet[k] = 1; });
-        var _scoped = _touched.length
+        // F1-7N-FC-1B-E3-R2 §A/§B.1 — A COMPOSER IS NOT IN THE WRITE SCOPE, IN EITHER BRANCH.
+        //
+        // MEASURED on the shipped flush, and this is the whole mechanism of the false red error. The collector
+        // deliberately does NOT mark a composer touched (it has nothing to update and nothing to create), so
+        // when the operator's only edit is IN the composer the touched set is EMPTY — and the empty-set
+        // fallback below widens the scope to every row on screen, which is how the row that was excluded
+        // upstream came back downstream and landed in `_incomplete`. Zero writes, and a full red
+        // "database update failed" panel with Technical details and "Retryable: yes".
+        //
+        // The fallback itself STAYS: `_persistAllocationDraftToDb` (the AI Plan and older callers) schedules a
+        // flush without marking anything, and those routes are written only because of it. What changes is
+        // that a row which is not a write candidate in ANY branch is filtered out of the scope, so the two
+        // statements "a composer is never queued" and "a composer is never in the write scope" are the same
+        // statement instead of two that can drift apart.
+        var _scoped = (_touched.length
             ? rows.filter(function (r) { return _touchedSet[String(r.client_route_instance_id || '')]; })
-            : rows;
+            : rows).filter(function (r) { return !(_irIsComposerRow_(r) && !_isRouteComplete(r)); });
         var complete = _scoped.filter(_isRouteComplete);
         // F1-7N-FB-4G-A2-R4 §G.8 — A DIRTY BUT INCOMPLETE ROUTE IS NAMED, NEVER SILENTLY SKIPPED.
         //
@@ -4698,13 +4756,26 @@ function _flushDraftDbPersist(sku) {
         // "silent no-write" in the report. The route keeps its identity, its edit and its place in the queue;
         // what changes is that it says so.
         var _incomplete = _scoped.filter(function (r) { return !_isRouteComplete(r); });
-        if (_incomplete.length) {
-            _incomplete.forEach(function (r) {
-                _irSetRouteSaveState_(sku, [String(r.client_route_instance_id || '')], 'NOT_SAVED');
+        // F1-7N-FC-1B-E3-R2 §B.2 — A TOUCHED COMPOSER STILL SAYS SOMETHING, and it is computed from the
+        // WHOLE row set rather than from the write scope: a composer's state does not depend on which OTHER row
+        // an event happened to touch. Before R2 a touched composer beside a route the operator had edited was
+        // filtered out and then said NOTHING AT ALL (measured: no state, no message), while the same composer
+        // alone produced the red panel. One row, two opposite answers, decided by an unrelated row.
+        // A PRISTINE composer is excluded here and stays silent (§B.1): it is furniture.
+        var _hintRows = rows.filter(function (r) {
+            return _irIsComposerRow_(r) && !_isRouteComplete(r) && r.composer_touched === true;
+        }).concat(_incomplete);
+        if (_hintRows.length) {
+            _hintRows.forEach(function (r) {
+                // §B — `INCOMPLETE`, not `NOT_SAVED`. Nothing was attempted, so there is no outcome to
+                // report; a badge claiming one is the red panel's sentence in miniature.
+                _irSetRouteSaveState_(sku, [String(r.client_route_instance_id || '')], 'INCOMPLETE');
             });
-            if (typeof _irShowDraftSaveError === 'function') {
-                _irShowDraftSaveError(sku, _irIncompleteRouteNotice_(sku, _incomplete));
+            if (typeof _irShowRouteStateHint_ === 'function') {
+                _irShowRouteStateHint_(sku, _irIncompleteRouteNotice_(sku, _hintRows));
             }
+        } else if (typeof _irHideRouteStateHint_ === 'function') {
+            _irHideRouteStateHint_(sku);
         }
         // F1-7N-FB-4G-A2-R2 §7 - A MULTI-LINE HEADER IS NOT SILENTLY RE-ROUTED. From/To/Method live on the
         // HEADER, so changing one of them on a header several SKUs share would move every one of those lines.
@@ -4963,13 +5034,114 @@ function _irReasonNextAction_(code, message) {
         return 'The request never reached a working deployment. Verify the Apps Script deployment (system.health), then retry.';
     return 'Correct the route and retry. Nothing has been saved for this row.';
 }
+// F1-7N-FC-1B-E3-R2 §D.2 — THE NEUTRAL ROW-LOCAL LINE. ONE LINE, and everything the failure surface
+// offers is deliberately absent: no reason code, no transport code, no affected table, no request id, no
+// zero-write/retryable rows, no <details> disclosure. An operator who has not finished typing has nothing to
+// diagnose, and offering a diagnosis is what made the state read as a fault.
+//
+// The sentence is composed from the §B state, not from a colour or a code:
+//   TOUCHED_INCOMPLETE_COMPOSER      "Complete Qty and Method to save."   (a new route being typed)
+//   PERSISTED_ROUTE_EDIT_INCOMPLETE  "... The saved version is unchanged." (a stored route mid-edit — the
+//                                    reassurance is the point: the database still holds the last complete one)
+// The missing FIELDS come from _irMissingRouteFields_, the same owner the Submit block and the save-time
+// notice use, so the three can never disagree about what is missing.
+function _irRouteHintSentence_(sku, err) {
+    var s = (err && err.structured) || {};
+    var states = (s.uiStates && s.uiStates.join) ? s.uiStates : [];
+    var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
+    var miss = {}, n = 0;
+    rows.forEach(function (r) {
+        if (typeof _isRouteComplete === 'function' && _isRouteComplete(r)) return;
+        if (typeof _irMissingRouteFields_ !== 'function') return;
+        var st = _irRouteUiState_(r);
+        if (st === 'PRISTINE_COMPOSER') return;                 // furniture says nothing (§B.1)
+        if (typeof _irRouteUiStateIsFailure_ === 'function' && _irRouteUiStateIsFailure_(st)) return;
+        _irMissingRouteFields_(r).forEach(function (f) { miss[f] = 1; });
+        n++;
+    });
+    if (!n) return '';
+    var fields = Object.keys(miss);
+    var persisted = states.indexOf('PERSISTED_ROUTE_EDIT_INCOMPLETE') !== -1;
+    // Read aloud: "From, To and Qty", not "From and To and Qty". Four missing fields is the everyday case
+    // for a composer the operator has only just started typing in, so this is not a rare shape.
+    var list = fields.length <= 1 ? (fields[0] || '')
+      : fields.slice(0, -1).join(', ') + ' and ' + fields[fields.length - 1];
+    var what = fields.length ? ('Complete ' + list + ' to save.') : 'Complete this route to save.';
+    return persisted ? (what + ' The saved version is unchanged.') : what;
+}
+function _irShowRouteStateHint_(sku, err) {
+    var el = document.getElementById('allocation-route-hint-' + sku);
+    if (!el) return false;
+    var line = _irRouteHintSentence_(sku, err);
+    if (!line) { _irHideRouteStateHint_(sku); return false; }
+    var esc = (typeof _execEsc === 'function') ? _execEsc : function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
+    el.innerHTML = esc(line);
+    el.style.display = 'block';
+    return true;
+}
+window._irShowRouteStateHint_ = _irShowRouteStateHint_;
+function _irHideRouteStateHint_(sku) {
+    var el = document.getElementById('allocation-route-hint-' + sku);
+    if (!el) return false;
+    el.innerHTML = ''; el.style.display = 'none';
+    return true;
+}
+window._irHideRouteStateHint_ = _irHideRouteStateHint_;
+
+// F1-7N-FC-1B-E3-R2 §E — READ-TIMEOUT DIAGNOSIS, ON DEMAND, OVER RECORDS THAT ALREADY EXIST.
+//
+// The live report is one 60s timeout on the first inventory read and a successful second Search. Four readings
+// fit that and they have four different owners, so the reading is CLASSIFIED rather than assumed. This is the
+// caller: it hands the transport's own bounded sample list to the pure classifier and returns the verdict.
+//
+// It changes nothing about the request path — no bound, no retry count, and it never presents a cached
+// answer as a fresh one. It reads `KM.transport.metrics().samples`, which the transport keeps whether anyone
+// asks or not (400 entries max; action, kind, code, phase, ms — no URL, no payload, no row).
+//
+// Called from the console after a slow load: `_irReadTimeoutDiagnosis_()`, or with an action to narrow it.
+function _irReadTimeoutDiagnosis_(action) {
+    var out = { available: false, classification: 'NO_SAMPLES', reads: 0, timeouts: 0 };
+    try {
+        if (!(window.KM && window.KM.transport && typeof window.KM.transport.metrics === 'function')) {
+            out.classification = 'TRANSPORT_METRICS_UNAVAILABLE';
+            return out;
+        }
+        if (!(window.IRReadTimeoutDiagnostic && typeof window.IRReadTimeoutDiagnostic.classify === 'function')) {
+            out.classification = 'CLASSIFIER_UNAVAILABLE';
+            return out;
+        }
+        var samples = (window.KM.transport.metrics() || {}).samples || [];
+        var r = window.IRReadTimeoutDiagnostic.classify(samples, action);
+        r.available = true;
+        return r;
+    } catch (e) {
+        out.classification = 'DIAGNOSIS_THREW';
+        out.error = (e && e.message) ? String(e.message) : String(e);
+        return out;
+    }
+}
+window._irReadTimeoutDiagnosis_ = _irReadTimeoutDiagnosis_;
+
 // F1-7N-FA-3C-R6E-P0 — SAFE STRUCTURED save-error surface. Never fakes success (no "Saved"), never renders
 // "[object Object]", never exposes a stack/token. Concise user line + a COLLAPSED technical disclosure (code /
 // affected table / missing header / request id — all HTML-escaped). Keeps the sessionStorage recovery cache.
+//
+// F1-7N-FC-1B-E3-R2 §D.1/§D.5 — IT REFUSES A NON-FAILURE, AT THE DOOR.
+//
+// Removing the one call site that passed an editor state in here would have fixed the live report and left the
+// door open, and the door is the actual defect: this function opens with "Unsaved — database update
+// failed. This route was NOT saved to the database." for WHATEVER it is handed, so any future caller reaching
+// for the only row-local surface there was would reintroduce the same false sentence. A NEUTRAL envelope is
+// now redirected to the surface that owns it and this one renders nothing. Everything else is untouched:
+// §D.5 — a real failure keeps the red panel, the reason code, the disclosure and the retry advice.
 function _irShowDraftSaveError(sku, err) {
     var el = document.getElementById('allocation-carton-error-' + sku);
     if (!el) return;
     var s = (err && err.structured) || {};
+    if (String(s.severity || '') === 'NEUTRAL') {
+        if (typeof _irShowRouteStateHint_ === 'function') _irShowRouteStateHint_(sku, err);
+        return;                          // NOT a failure: this surface says nothing about it
+    }
     var esc = (typeof _execEsc === 'function') ? _execEsc : function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
     // F1-7N-FB-2A §E — the concise line states the TRUTH (nothing was saved) and never claims a local save.
     // Everything diagnosable is in the collapsed Technical Details: the typed inner reason, the affected
@@ -5005,9 +5177,13 @@ function _irShowDraftSaveError(sku, err) {
     el.style.display = 'block'; el.style.color = '#dc2626';
 }
 // Clear the inline save error once the same route is genuinely persisted.
+// F1-7N-FC-1B-E3-R2 — the COLOUR is part of the message and is cleared with it. _irShowDraftSaveError sets
+// `style.color = '#dc2626'` inline; emptying only the innerHTML left the element red, so whatever was rendered
+// there next inherited the failure's colour without any of its words.
 function _irHideDraftSaveError(sku) {
     var el = document.getElementById('allocation-carton-error-' + sku);
     if (!el) return;
+    try { el.style.color = ''; } catch (_eC) {}
     if (el.querySelector && el.querySelector('.ir-save-error-user')) { el.innerHTML = ''; el.style.display = 'none'; }
 }
 window._irHideDraftSaveError = _irHideDraftSaveError;

@@ -2087,3 +2087,32 @@
 
 /* Controls that commit a plan are inert while the Execution Plan on screen is a shell or a failure. */
 .ir-reveal[data-reveal-state="pending"] .replen-card__add-route-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ============================================================================================================
+   F1-7N-FC-1B-E3-R2 §D.2 — THE NEUTRAL ROW-LOCAL LINE FOR AN UNFINISHED EDIT.
+   ------------------------------------------------------------------------------------------------------------
+   This exists because the alternative shipped: an edit the operator had not finished was rendered by the ONLY
+   row-local surface there was, and that surface opens with "Unsaved — database update failed" in #dc2626.
+   Measured on the shipped flush: zero requests, zero writes, full red panel, Technical details, "Retryable:
+   yes". So the state gets its own surface, and the surface gets its own colour.
+
+   AMBER, NOT RED, and the distinction is load-bearing rather than decorative — red on this page means "the
+   database refused or lost your write", and that is exactly what has NOT happened here. One line: no
+   disclosure, no code, and `overflow: hidden` + `white-space: nowrap` so a future longer sentence cannot grow
+   the row and re-open the alignment work §B of E3 closed. It sits BELOW the Total, outside .ir-exec-plan__grid,
+   so it cannot participate in the six-column layout at all.
+   ============================================================================================================ */
+.ir-route-hint {
+  margin-top: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #92400E;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

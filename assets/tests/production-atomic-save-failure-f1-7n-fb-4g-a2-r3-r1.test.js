@@ -274,7 +274,14 @@ var PAGE_FNS = ['_flushDraftDbPersist', '_irPersistOneRouteGroup_', '_irDispatch
   '_irAdoptionGroupsNeedingConfirmation_', '_irRouteGroupConflictEnvelope_', '_irMarkRouteTouched_',
   '_irRouteSignature_', '_irTypedReasonCode_', '_irReasonIsPreWrite_', '_irReasonNextAction_',
   '_irReasonRetryable_', '_irReconcileIndeterminate_', '_irRouteInstanceDraftId_', '_irAdoptReconciledRoute_',
-  '_allocWorkspaceScope', '_irAnySaveInFlight_', '_irSetRouteSaveState_'];
+  '_allocWorkspaceScope', '_irAnySaveInFlight_', '_irSetRouteSaveState_',
+  // F1-7N-FC-1B-E3-R2 — the save path gained three: the composer predicate that keeps a composer out of the
+  // WRITE SCOPE, and the two renderers of the neutral row-local surface. This list is the harness's whole
+  // claim ("everything it calls on the save path is lifted and EXECUTED"), and leaving it short did not fail
+  // loudly: `_flushDraftDbPersist` wraps its body in a try/catch, so a missing dependency became a SILENT
+  // ZERO-WRITE and nineteen assertions about what the database holds failed instead of one about the harness.
+  '_irIsComposerRow_', '_irRouteUiState_', '_irRouteUiStateIsFailure_', '_irRouteHintSentence_',
+  '_irShowRouteStateHint_', '_irHideRouteStateHint_'];
 
 function buildPage(server, cfg) {
   cfg = cfg || {};

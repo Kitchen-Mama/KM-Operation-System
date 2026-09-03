@@ -734,13 +734,22 @@ ok(GENFN.length > 2000, 'H0  the generation handler was extracted (' + GENFN.len
 // ================================================================================================================
 section('§J — RELEASE IDENTITY');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1b-e3r1-readiness-20260903', 'J1  this round mints its own cache token');
-ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-e3-aiplanactive-20260903'),
+// RESTATED (F1-7N-FC-1B-E3-R2): the SIXTH consecutive round to pin its own token as "the current one", and it
+// breaks for the same reason every time — the next round rotates the series and an assertion about the
+// PRESENT becomes an assertion about the past. R1's token is a FLOOR: it was minted, and the series has never
+// moved behind it. Both halves still fail if R1's rotation is ever undone.
+ok(RO.tokenIndex('fc1b-e3r1-readiness-20260903') !== -1, 'J1  this round minted its own cache token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r1-readiness-20260903'),
+  'J1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
+ok(RO.tokenIndex('fc1b-e3r1-readiness-20260903') > RO.tokenIndex('fc1b-e3-aiplanactive-20260903'),
   'J1a strictly after E3\'s, which was PUBLISHED (origin/main carries it)');
 eq((INDEX.match(/\?v=fc1b-e3-aiplanactive-20260903/g) || []).length, 0, 'J2  zero production refs remain on it');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'J2a and nothing is left behind on any superseded token');
+// RESTATED (F1-7N-FC-1B-E3-R2): asserted that the page carried R1'S token, which was really two claims wearing
+// one hat — "the page is on the CURRENT token" (a permanent property of a correct tree) and "the current
+// token is R1's" (true only until the next round). Only the first is worth defending, and it is derived.
 eq(RO.parseIndexTokens(INDEX)['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
-  'J3  the page carries it — it is the ONE browser asset this round changes');
+  'J3  the page carries the CURRENT application token — it is one of the assets R1 changed');
 eq(RO.parseIndexTokens(INDEX)[RO.IR_CSS_FILE], RO.currentIrCssToken(),
   'J4  and the stylesheet stays on its own family\'s token: it did NOT change this round');
 ok(RO.stampAtOrAfter('F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3'), 'J5  the owner stamp is recorded, after E3\'s');

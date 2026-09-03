@@ -175,7 +175,23 @@ var ROUND_TOKENS = [
   // holding the cached page will keep reporting "AI Plan could not complete — FAILED" with an empty
   // Technical details panel no matter how completely the server names its refusal. The stylesheet did NOT change
   // this round and stays on its own family's current token.
-  'fc1b-e3r1-readiness-20260903'
+  'fc1b-e3r1-readiness-20260903',
+  // F1-7N-FC-1B-E3-R2 — manual-composer expected-state UX. E3-R1 is on origin/main (951d58c was pushed),
+  // so its token is published and cannot be reused. THREE browser assets change and each one is independently
+  // necessary, which is what makes this rotation load-bearing rather than routine:
+  //   1. inventory-compat.js gains IRRouteUiState, the SEVEN-state lifecycle vocabulary. It is the authority
+  //      the page asks "is this row a failure or an unfinished edit", and an old cached module answers
+  //      `undefined` — which the page's conservative fallback reads as a non-failure, so a REAL refusal
+  //      could be rendered as a neutral hint. That is the new defect this rotation prevents, and it is worse
+  //      than the one being fixed.
+  //   2. inventory-replenishment.js routes the incomplete-route notice to the neutral surface and refuses a
+  //      NEUTRAL envelope at the door of the failure renderer. A browser on the cached page keeps showing
+  //      "Unsaved — database update failed" with Technical details and "Retryable: yes" for a composer
+  //      that issued no request at all.
+  //   3. inventory-replenishment.css declares `.ir-route-hint` for the FIRST time, so a cached stylesheet
+  //      leaves the new sentence unstyled — the exact failure class E3 found in `.replen-ai-plan-result`.
+  //      The stylesheet therefore ALSO rotates in its own family below; both are required.
+  'fc1b-e3r2-composerstate-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -293,7 +309,12 @@ var IR_CSS_TOKEN_SERIES = [
   // was laid out at the bottom of an `overflow: hidden` body and could not be reached even by scrolling. A
   // browser serving the cached stylesheet would keep showing nothing while the new page believed it had
   // spoken, which is why this rotation is not cosmetic.
-  'irexecrow-20260903'
+  'irexecrow-20260903',
+  // F1-7N-FC-1B-E3-R2 — `.ir-route-hint`, the amber one-line surface for an edit in progress. The rule is
+  // NEW, so a browser serving the cached stylesheet renders the sentence with no rule at all: no background, no
+  // border, and inheriting whatever the card gives it. That is precisely how `.replen-ai-plan-result` came to
+  // be invisible for two rounds, so the family rotates rather than trusting the page's rotation to cover it.
+  'irroutehint-20260903'
 ];
 var IR_CSS_FILE = 'assets/css/pages/inventory-replenishment.css';
 function currentIrCssToken() { return IR_CSS_TOKEN_SERIES[IR_CSS_TOKEN_SERIES.length - 1]; }
@@ -405,7 +426,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+))*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

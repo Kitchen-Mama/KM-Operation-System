@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; root.IRRouteProvenance = mod.IRRouteProvenance; root.IRRouteComposer = mod.IRRouteComposer; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; root.IRService = mod.IRService; root.IRPlanningReveal = mod.IRPlanningReveal; root.IRSubmitPreflight = mod.IRSubmitPreflight; root.IRRouteProvenance = mod.IRRouteProvenance; root.IRRouteComposer = mod.IRRouteComposer; root.IRRouteUiState = mod.IRRouteUiState; root.IRReadTimeoutDiagnostic = mod.IRReadTimeoutDiagnostic; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -1283,6 +1283,153 @@
     isComposer: isComposerRow
   };
 
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E3-R2 §B — ONE UI STATE PER ROW, DERIVED FROM THE SAVE LIFECYCLE.
+  // -----------------------------------------------------------------------------------------------------------
+  // THE DEFECT THIS EXISTS TO REMOVE. The row-local surface had exactly ONE renderer, and that renderer opened
+  // with "Unsaved — database update failed. This route was NOT saved to the database." for every envelope
+  // handed to it. A2-R4 §G.8 was right that an edit which leaves the route incomplete must not be dropped in
+  // silence, and it delivered that correct notice through the FAILURE surface. Measured on the shipped flush: a
+  // composer with only From and To filled in produces ZERO requests and ZERO writes and a full red panel with
+  // Technical details and "Retryable: yes". Every word of it is false except "not saved", and "not saved" is
+  // not what the operator needed to know — nothing had been attempted.
+  //
+  // The information needed to render it correctly was already in the envelope (`zeroWrite: 'true'`, a
+  // "finish the route" nextAction). What was missing was a NAME for the state, so this module supplies one.
+  // The seven states are the whole vocabulary of the row-local surface, and only the last two are failures:
+  //
+  //   PRISTINE_COMPOSER              furniture. Not collected, not queued, not a submit candidate, SILENT.
+  //   TOUCHED_INCOMPLETE_COMPOSER    the operator is typing. Kept, never queued, one neutral row-local line.
+  //   PERSISTED_ROUTE_EDIT_INCOMPLETE  a STORED route momentarily incomplete (the Method cleared by a From
+  //                                  change is the everyday case). Keeps its identity; the database keeps its
+  //                                  last complete version; nothing is cancelled and nothing is replaced.
+  //   SAVE_PENDING                   a request is in flight for this row.
+  //   SAVED                          the server acknowledged a persisted row.
+  //   SAVE_FAILED                    a request was made and REFUSED. Red, technical details, retry advice.
+  //   SAVE_OUTCOME_UNKNOWN           a request was made and the answer never arrived. Red, and the honest
+  //                                  state — the database may hold it.
+  //
+  // Deliberately NOT derived from any message text: the classification is what decides which sentence is shown,
+  // so deriving it from a sentence would be circular and would break the moment a word changed.
+  // ===========================================================================================================
+  var IR_ROUTE_UI_STATES = {
+    PRISTINE_COMPOSER: 'PRISTINE_COMPOSER',
+    TOUCHED_INCOMPLETE_COMPOSER: 'TOUCHED_INCOMPLETE_COMPOSER',
+    PERSISTED_ROUTE_EDIT_INCOMPLETE: 'PERSISTED_ROUTE_EDIT_INCOMPLETE',
+    SAVE_PENDING: 'SAVE_PENDING',
+    SAVED: 'SAVED',
+    SAVE_FAILED: 'SAVE_FAILED',
+    SAVE_OUTCOME_UNKNOWN: 'SAVE_OUTCOME_UNKNOWN'
+  };
+  // The two states that may use the red failure surface. Anything else rendering there is the defect returning,
+  // which is why this list is exported and asserted rather than re-spelled at each call site.
+  var IR_ROUTE_UI_FAILURE_STATES = [IR_ROUTE_UI_STATES.SAVE_FAILED, IR_ROUTE_UI_STATES.SAVE_OUTCOME_UNKNOWN];
+  // The states in which the row is NOT a candidate for a write. A composer in either composer state and a
+  // stored route that is momentarily incomplete all share this: there is nothing legal to send.
+  var IR_ROUTE_UI_NO_WRITE_STATES = [IR_ROUTE_UI_STATES.PRISTINE_COMPOSER,
+    IR_ROUTE_UI_STATES.TOUCHED_INCOMPLETE_COMPOSER, IR_ROUTE_UI_STATES.PERSISTED_ROUTE_EDIT_INCOMPLETE];
+
+  function routeUiStateOf(row, ctx) {
+    row = row || {}; ctx = ctx || {};
+    var complete = (typeof ctx.complete === 'boolean') ? ctx.complete : isRouteComplete(row);
+    // 1. A COMPOSER IS CLASSIFIED AS A COMPOSER FIRST, in both of its incomplete states. A complete one has
+    //    already graduated in the collector and is judged below as the ordinary route it now is.
+    if (isComposerRow(row) && !complete) {
+      return (row.composer_touched === true)
+        ? IR_ROUTE_UI_STATES.TOUCHED_INCOMPLETE_COMPOSER
+        : IR_ROUTE_UI_STATES.PRISTINE_COMPOSER;
+    }
+    // 2. AN OUTCOME THE SAVE PATH ALREADY ESTABLISHED WINS over any re-derivation, because it is the only
+    //    thing that knows what the SERVER said. A row cannot be re-classified as "incomplete" by an editor
+    //    state once a write for it has been refused or lost — that would hide a real failure.
+    var st = String(row.route_save_state || '').trim().toUpperCase();
+    if (st === 'SAVING' || st === 'RECONCILING') return IR_ROUTE_UI_STATES.SAVE_PENDING;
+    if (st === 'OUTCOME_UNKNOWN') return IR_ROUTE_UI_STATES.SAVE_OUTCOME_UNKNOWN;
+    if (st === 'SAVE_FAILED') return IR_ROUTE_UI_STATES.SAVE_FAILED;
+    // 3. INCOMPLETE, AND NOT A COMPOSER. It is a route the operator is part-way through. Whether the database
+    //    holds a previous version of it is the ONLY thing that distinguishes the two remaining states, and it
+    //    is read from the STORED identity — never from whether a field was edited.
+    if (!complete) {
+      return sstr(row.allocation_draft_id) || sstr(row.allocation_draft_line_id)
+        ? IR_ROUTE_UI_STATES.PERSISTED_ROUTE_EDIT_INCOMPLETE
+        : IR_ROUTE_UI_STATES.TOUCHED_INCOMPLETE_COMPOSER;
+    }
+    // 4. COMPLETE. `NOT_SAVED` on a complete route is the legacy label for a REFUSED write, so it is a failure;
+    //    a complete route with no state yet and no stored identity is simply waiting for its first flush.
+    if (st === 'SAVED') return IR_ROUTE_UI_STATES.SAVED;
+    if (st === 'NOT_SAVED') return IR_ROUTE_UI_STATES.SAVE_FAILED;
+    if (ctx.inFlight === true || ctx.pending === true) return IR_ROUTE_UI_STATES.SAVE_PENDING;
+    return sstr(row.allocation_draft_id) && sstr(row.allocation_draft_line_id)
+      ? IR_ROUTE_UI_STATES.SAVED
+      : IR_ROUTE_UI_STATES.SAVE_PENDING;
+  }
+  function routeUiStateIsFailure(state) { return IR_ROUTE_UI_FAILURE_STATES.indexOf(String(state)) !== -1; }
+  function routeUiStateWrites(state) { return IR_ROUTE_UI_NO_WRITE_STATES.indexOf(String(state)) === -1; }
+
+  var IRRouteUiState = {
+    STATES: IR_ROUTE_UI_STATES,
+    FAILURE_STATES: IR_ROUTE_UI_FAILURE_STATES,
+    NO_WRITE_STATES: IR_ROUTE_UI_NO_WRITE_STATES,
+    of: routeUiStateOf,
+    isFailure: routeUiStateIsFailure,
+    isWriteCandidate: routeUiStateWrites
+  };
+
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E3-R2 §E — READ-TIMEOUT CLASSIFICATION, OVER SAMPLES THAT ARE ALREADY RECORDED.
+  // -----------------------------------------------------------------------------------------------------------
+  // The live report: the FIRST inventory read hit the 60s client bound; a second Search succeeded. That is a
+  // shape with four possible readings and they call for four different responses, so the reading must not be
+  // guessed. It is classified from `KM.transport.metrics().samples`, which the transport ALREADY keeps
+  // (bounded at 400, `{action, kind, code, phase, ms}` — no URL, no payload, no row).
+  //
+  // This changes NOTHING about the request path: not the bound, not the retry count, and it never presents a
+  // cached answer as a fresh one. It is an observation of records that exist either way, which is the only
+  // honest thing to add before knowing which of the four shapes is actually happening.
+  // ===========================================================================================================
+  var IR_READ_TIMEOUT_CLASSES = {
+    COLD_START_OR_TRANSIENT_TIMEOUT: 'COLD_START_OR_TRANSIENT_TIMEOUT',
+    REPEATED_READ_TIMEOUT: 'REPEATED_READ_TIMEOUT',
+    SUCCESS_AFTER_RETRY: 'SUCCESS_AFTER_RETRY',
+    SERVER_TYPED_FAILURE: 'SERVER_TYPED_FAILURE',
+    NO_TIMEOUT_OBSERVED: 'NO_TIMEOUT_OBSERVED'
+  };
+  var IR_TIMEOUT_CODES = ['REQUEST_TIMEOUT', 'REQUEST_TIMEOUT_WRITE_INDETERMINATE'];
+  function classifyReadTimeouts(samples, action) {
+    var want = sstr(action);
+    var reads = (samples || []).filter(function (s) {
+      if (!s || sstr(s.kind) !== 'read') return false;
+      return want ? sstr(s.action) === want : true;
+    });
+    var timeouts = reads.filter(function (s) { return IR_TIMEOUT_CODES.indexOf(sstr(s.code)) !== -1; });
+    // A TYPED SERVER FAILURE IS NOT A TIMEOUT and is reported first: the server answered, and answered with a
+    // refusal. Reading that as slowness is how a real fault gets waited out instead of fixed.
+    var typed = reads.filter(function (s) {
+      var c = sstr(s.code);
+      return c && IR_TIMEOUT_CODES.indexOf(c) === -1 && c !== 'HTTP_TRANSPORT_ERROR';
+    });
+    var out = { reads: reads.length, timeouts: timeouts.length, typedFailures: typed.length,
+      codes: reads.map(function (s) { return sstr(s.code) || 'SUCCESS'; }),
+      maxMs: reads.reduce(function (a, s) { return Math.max(a, Number(s.ms) || 0); }, 0) };
+    if (typed.length) { out.classification = IR_READ_TIMEOUT_CLASSES.SERVER_TYPED_FAILURE; out.typedCode = sstr(typed[0].code); return out; }
+    if (!timeouts.length) { out.classification = IR_READ_TIMEOUT_CLASSES.NO_TIMEOUT_OBSERVED; return out; }
+    // A success anywhere AFTER the last timeout is the retry recovering. Order is the sample order, which is
+    // the order the requests were recorded in.
+    var lastTimeout = -1;
+    for (var i = 0; i < reads.length; i++) { if (IR_TIMEOUT_CODES.indexOf(sstr(reads[i].code)) !== -1) lastTimeout = i; }
+    var recovered = false;
+    for (var j = lastTimeout + 1; j < reads.length; j++) { if (!sstr(reads[j].code)) { recovered = true; break; } }
+    if (recovered) out.classification = IR_READ_TIMEOUT_CLASSES.SUCCESS_AFTER_RETRY;
+    else if (timeouts.length > 1) out.classification = IR_READ_TIMEOUT_CLASSES.REPEATED_READ_TIMEOUT;
+    else out.classification = IR_READ_TIMEOUT_CLASSES.COLD_START_OR_TRANSIENT_TIMEOUT;
+    return out;
+  }
+  var IRReadTimeoutDiagnostic = {
+    CLASSES: IR_READ_TIMEOUT_CLASSES,
+    TIMEOUT_CODES: IR_TIMEOUT_CODES,
+    classify: classifyReadTimeouts
+  };
+
   var IRRouteProvenance = {
     SOURCES: IR_ROUTE_PROVENANCE,
     LEGAL: IR_LEGAL_PROVENANCE_LIST,
@@ -1639,5 +1786,5 @@
     createPanelGate: createPanelGate
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight, IRRouteProvenance: IRRouteProvenance, IRRouteComposer: IRRouteComposer };
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace, IRService: IRService, IRPlanningReveal: IRPlanningReveal, IRSubmitPreflight: IRSubmitPreflight, IRRouteProvenance: IRRouteProvenance, IRRouteComposer: IRRouteComposer, IRRouteUiState: IRRouteUiState, IRReadTimeoutDiagnostic: IRReadTimeoutDiagnostic };
 });
