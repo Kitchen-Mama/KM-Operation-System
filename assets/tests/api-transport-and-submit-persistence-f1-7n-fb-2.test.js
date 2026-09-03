@@ -267,7 +267,13 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // registered handler as undefined. That is exactly the case the list's own note warns about.
   read('specs/active/apps-script/31_shipment_receipt_route_handlers.gs'),
   // F1-7N-FB-4E-R3: the Overseas Stock scoped read owner, registered in the same round that routes it.
-  read('specs/active/apps-script/70_api_v1_overseas_stock_workspace.gs')].join(String.fromCharCode(10));
+  read('specs/active/apps-script/70_api_v1_overseas_stock_workspace.gs'),
+  // F1-7N-FC-1A: the Shipment Draft owner. createShipmentFromPlan was routed, handled and adapter-wrapped for
+  // rounds with NO caller anywhere in the frontend (the FC-0A audit measured it), so it was never in
+  // SYS_REQUIRED_ACTIONS_ and this list never needed 12_. FC-1A connects it as the recovery path for a
+  // committed approval whose Execution Commit failed, which registers it — and the list's own note
+  // above warns that a new owner file must be added or the probe reads a registered handler as undefined.
+  read('specs/active/apps-script/12_shipment_handlers.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;

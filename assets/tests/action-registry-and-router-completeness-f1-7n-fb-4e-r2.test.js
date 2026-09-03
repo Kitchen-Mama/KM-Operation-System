@@ -510,9 +510,24 @@ var R1_REF = 'c5048fd';
 //   (b) sadK2GroupKey_ is BYTE-IDENTICAL - the ten dimensions in the frozen order - so no existing SADH-K2- id
 //       can regenerate differently and no persisted row is re-keyed by a refactor.
 // Both are asserted below. The other three business writers keep the original unchanged-since-R1 rule exactly.
+// F1-7N-FC-1A — 11_ LEAVES THIS LIST, AND IS REPLACED BY THE SAME STRONGER PAIR THAT REPLACED 16_.
+//
+// "UNCHANGED since R1" was the right protection for 11_ through every round up to FC-0A, and it did its job:
+// A2-R3, A2-R4 and A3 all recorded that they had NOT touched the Submit owner. FC-1A is the round whose
+// purpose requires touching it. The FC-0A audit measured that Approve writes status='approved' and then
+// creates the Shipment Draft inside a try/catch that does not undo it, reporting a bare success when the
+// second half fails — so an approved plan with no shipment looked exactly like a healthy one. Fixing
+// that means changing 11_'s answer. A guard that forbids the one round licensed to act is not protecting
+// anything; it is only postponing the edit.
+//
+// So the property moves from "it never changes" to "it never changes SILENTLY, and its grouping never moves":
+//   (a) whatever 11_ declares, the deployment manifest expects exactly that — a change is always
+//       DECLARED, and a half-synced deployment is a named fact from either direction;
+//   (b) shippingPlanRouteGroupKey_ carries no allocation_draft_id, so the frozen Option A grouping stands and
+//       no persisted shipping plan can regroup.
+// Both are asserted below. The other two business files keep the original unchanged-since-R1 rule exactly.
 [['31_shipment_receipt_route_handlers.gs', 'shipment ETA + route-advance writers'],
- ['59_api_v1_sku_details_workspace.gs', 'SKU Details / SKU Regional workspace read'],
- ['11_shipping_plan_handlers.gs', 'the Submit-to-Shipping-Plan owner']].forEach(function (p) {
+ ['59_api_v1_sku_details_workspace.gs', 'SKU Details / SKU Regional workspace read']].forEach(function (p) {
   var rel = 'assets/specs/active/apps-script/' + p[0];
   var changed = '?';
   try { changed = cp.execSync('git diff --name-only ' + R1_REF + ' -- "' + rel + '"', { cwd: ROOT, encoding: 'utf8' }).trim(); }
@@ -564,7 +579,21 @@ var GS_OWNED_SINCE_R1 = {
   '66_api_v1_request_order_send.gs': 'FB-4G-A2-R4 permanent owner of system.requestOrderSendDiagnosticStatus + its configuration',
   'TEMP_request_order_send_diagnostics.gs': 'FB-4G-A2-R4 reduced to editor-run wrappers; owns no required action'
 };
+// F1-7N-FC-1A — the four owners of the Shipment Draft recovery + factory stock reservation. Each is an
+// OWNERSHIP RECORD, which is what this map is for; an unexpected file still fails.
+GS_OWNED_SINCE_R1['11_shipping_plan_handlers.gs'] = 'FC-1A the typed approval-recovery answer (the round licensed to change the Submit owner)';
+GS_OWNED_SINCE_R1['12_shipment_handlers.gs'] = 'FC-1A Shipment Draft creation acquires the factory stock reservation, all-or-nothing, under one lock';
+GS_OWNED_SINCE_R1['21_factory_inventory_handlers.gs'] = 'FC-1A THE single stock authority gains reservation acquire/release on the existing schema';
+GS_OWNED_SINCE_R1['22_shipment_dispatch_handlers.gs'] = 'FC-1A dispatch DELEGATES to that authority and releases the reservation in the same movement row';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
+// The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
+var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');
+var _r2Expected = ((G63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+eq((_r2g11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _r2Expected,
+  '8. 11_ declares exactly the build its deployment manifest expects (' + _r2Expected + ')');
+ok(_r2g11.indexOf('allocation_draft_id') === -1 ||
+   (_r2g11.slice(_r2g11.indexOf('function shippingPlanRouteGroupKey_')).slice(0, 900).indexOf('allocation_draft_id') === -1),
+  '8. and shippingPlanRouteGroupKey_ still carries no allocation_draft_id (frozen Option A grouping)');
 eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');
 
 // (a) A CHANGE TO THE ALLOCATION WRITER IS ALWAYS DECLARED. Read both halves from the files themselves, so the

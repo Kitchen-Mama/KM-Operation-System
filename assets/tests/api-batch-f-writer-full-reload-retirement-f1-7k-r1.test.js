@@ -37,7 +37,7 @@ var DIRECT_WRITERS = [
   'updateSkuLifecycle', 'upsertMarketplace', 'upsertMarketplaceSku', 'updateMarketplaceSkuModel', 'upsertSkuDetail',
   'upsertSkuRegionalDetail', 'upsertTaxReferralRate', 'upsertTaxRateComponent', 'confirmShipmentAndDispatch',
   'generateShipmentLineAllocations', 'updateShipmentReceipt', 'advanceShipmentRoutePoint', 'updateShipmentEta',
-  'syncMarketplaceSkusToSkuRegionalDetails', 'createShippingPlansBatch', 'createShipmentFromPlan', 'updateShipment',
+  'syncMarketplaceSkusToSkuRegionalDetails', 'createShippingPlansBatch', 'updateShipment',
   'createRequestOrderDraft', 'upsertRequestOrderAllocationDraft', 'upsertRequestOrderAllocationDraftLines',
   'submitRequestOrderAllocationDrafts', 'importCarrierRateTemplate', 'updateRequestOrderStatus',
   'updateRequestOrderLineQty', 'cancelRequestOrderTier', 'createPurchaseOrderFromRequest', 'updatePurchaseOrderStatus',
@@ -51,7 +51,30 @@ var bodies = {};
 DIRECT_WRITERS.concat([SITE_CONF]).forEach(function (name) {
   bodies[name] = extractAssignedFn(DBAPI, 'window.KM.DB.' + name + ' = async function');
 });
-ok(Object.keys(bodies).length === 43, 'extracted 43 direct writer bodies (42 seam + 1 bounded) — got ' + Object.keys(bodies).length);
+ok(Object.keys(bodies).length === 42, 'extracted 42 direct writer bodies (41 seam + 1 bounded) — got ' + Object.keys(bodies).length);
+
+// F1-7N-FC-1A — A FIFTH CATEGORY, AND IT IS THE STRICTEST ONE.
+//
+// createShipmentFromPlan left the `= async function` direct-writer shape for _kmWeeklyCommand_, the canonical
+// text-first command runner Approve / Submit / Done already use. The move was forced by a correctness problem,
+// not a preference: the old adapter threw on a business rejection, and the Weekly page's runner classifies a
+// thrown error as HTTP_TRANSPORT_ERROR — so INSUFFICIENT_FACTORY_STOCK, a precise and actionable
+// answer, would have reached the operator as "the network failed".
+//
+// For THIS suite's question the new home is strictly better: the command runner performs no whole-DB reload at
+// all, not even the posture-gated seam. The page does its own scoped readback. So the writer is off the
+// whole-DB reload by construction rather than by a check, and the 47-method accounting is unchanged.
+var WEEKLY_COMMAND_WRITERS = ['createShipmentFromPlan'];
+WEEKLY_COMMAND_WRITERS.forEach(function (name) {
+  var line = extractAssignedFn(DBAPI, 'window.KM.DB.' + name + ' =');
+  ok(/_kmWeeklyCommand_\('/.test(line), name + ' routes through the canonical command runner');
+  ok(line.indexOf(FORCE) === -1, name + ' does not force a whole-DB reload');
+  ok(line.indexOf('throw new Error') === -1,
+    name + ' never throws a business rejection — the typed code must survive to the page');
+});
+var weeklyCmd = extractFn(DBAPI, '_kmWeeklyCommand_');
+ok(weeklyCmd.indexOf(FORCE) === -1, '_kmWeeklyCommand_ performs NO whole-DB reload (stricter than the seam)');
+ok(weeklyCmd.indexOf('_kmWriterPostWrite_') === -1, 'and does not call the seam either — the page reads back its own scope');
 
 // (a) NO direct writer body contains the whole-DB force reload anymore.
 DIRECT_WRITERS.concat([SITE_CONF]).forEach(function (name) {
@@ -75,7 +98,8 @@ var shippingPost = extractFn(DBAPI, '_kmShippingPost_');
 ok(shippingPost.indexOf(FORCE) === -1, '_kmShippingPost_ no longer force-reloads directly');
 ok(shippingPost.indexOf('if (reloadAfter) await _kmWriterPostWrite_();') !== -1, '_kmShippingPost_ routes reloadAfter through the seam');
 // TOTAL writer methods off the whole-DB reload = 42 seam + 1 bounded + 4 shipping-post = 47.
-ok(DIRECT_WRITERS.length + 1 + SHIPPING_POST_WRITERS.length === 47, 'writer methods accounted for == 47 (42 seam + 1 bounded + 4 shipping-post)');
+ok(DIRECT_WRITERS.length + 1 + SHIPPING_POST_WRITERS.length + WEEKLY_COMMAND_WRITERS.length === 47,
+  'writer methods accounted for == 47 (41 seam + 1 bounded + 4 shipping-post + 1 command-runner)');
 
 // Only TWO literal whole-DB force reload CALLS survive in the db-api: the seam's own fallback + the manual/debug
 // util (counting `await loadOperationDb({ force: true });` — the 2 doc-comment mentions are not calls).

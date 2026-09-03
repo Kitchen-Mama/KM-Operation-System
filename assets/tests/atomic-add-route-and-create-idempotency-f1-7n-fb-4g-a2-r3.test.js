@@ -486,8 +486,12 @@ section('§E — THE DEPLOYMENT CONTRACT');
     'E1c §E.1 and the frontend adapter can now CALL it — it could not before');
   ok(/action: 'upsertShippingAllocationDraftAtomic', handler: 'handleUpsertShippingAllocationDraftAtomic_'/.test(G63),
     'E2  §E.2 it is in the required-action manifest');
-  eq((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1], '10',
-    'E3  §E.3 SYS_REQUIRED_ACTION_LIST_VERSION_ bumped to 10 (the registry changed)');
+  // F1-7N-FC-1A — AT-OR-AFTER, not equal. The claim is "A2-R3 bumped this because it changed the
+  // registry", and pinning the literal 10 turned that into "no later round may ever change the registry
+  // again". FC-1A registers createShipmentFromPlan and bumps it to 11, which is the rule working, not a
+  // regression. A value BELOW 10 would still mean A2-R3's own bump was lost, which is the real property.
+  ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 10,
+    'E3  §E.3 SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 10 (A2-R3\'s registry bump is intact)');
   eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10',
     'E3a §E.3/§E.4 the ACTION contract version does NOT move — no router action was added');
   eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1',
@@ -564,8 +568,20 @@ section('§I — THE SUBMIT TICKET BOUNDARY AUDIT (executable, and a STOP)');
     'I5  §I.5 the conflict is reported as a STOP with the exact grouping function named');
   ok(/Option A/.test(DOC) && /Option B/.test(DOC) && /Option C/.test(DOC),
     'I5a with minimal options, and no implementation guessed at');
-  eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FA-4B2',
-    'I6  §I.6 11_ is NOT changed by this round — its owner stamp has not moved');
+  // F1-7N-FC-1A — DERIVED, NOT PINNED. This asserted the literal 'F1-7N-FA-4B2' to mean "A2-R3 did not
+  // change 11_", and it was true. It cannot remain an equality: FC-1A changes 11_ so that a failed Execution
+  // Commit is reported instead of swallowed. The durable property is that the file and the deployment manifest
+  // AGREE — a stamp nobody expects and an expectation no file declares are the two halves of a partial
+  // sync, and either alone is the bug. Read from 63_, so the pair can only be edited together.
+  var _i6Expected = ((G63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+  eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _i6Expected,
+    'I6  §I.6 11_ declares exactly the build its deployment manifest expects (' + _i6Expected + ')');
+  // And A2-R3's actual claim, stated directly instead of through a stamp: the physical grouping key is
+  // untouched, so no persisted shipping plan can regroup and no stored id regenerates differently.
+  var _i6Key = G11.slice(G11.indexOf('function shippingPlanRouteGroupKey_'));
+  _i6Key = _i6Key.slice(0, _i6Key.indexOf('}') + 1);
+  ok(_i6Key.length > 0 && _i6Key.indexOf('allocation_draft_id') === -1,
+    'I6a §I.6 and allocation_draft_id is still absent from shippingPlanRouteGroupKey_ (frozen Option A)');
   ok(!/F1-7N-FB-4G-A2-R3/.test(G11), 'I6a no A2-R3 edit exists in 11_ — the boundary decision is the user\'s');
 })();
 

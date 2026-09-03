@@ -858,7 +858,13 @@ var stamps = extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_');
 var _e2Expected = ((G63.match(/\{ file: '16_shipping_allocation_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
 eq((G16.match(/var SAD_BUILD_VERSION_ = '([^']+)';/) || [])[1], _e2Expected,
   'E2 16_ declares exactly the build its deployment manifest expects (' + _e2Expected + ')');
-eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FA-4B2', 'E2 11_ declares its own last behavioural round (FB-4D did not change it)');
+// F1-7N-FC-1A — the SAME restatement this file already applied to 16_ two lines above, for the same
+// reason and now for 11_: FC-1A is the round that changes 11_ (its Approve answer gains the typed recovery
+// state the Weekly page binds to), so the literal stamp had to stop being the assertion. What matters is that
+// the file and the manifest agree; either half alone is a partial sync.
+var _e2Sp = ((G63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)';/) || [])[1], _e2Sp,
+  'E2 11_ declares exactly the build its deployment manifest expects (' + _e2Sp + ')');
 // F1-7N-FB-4E — 01_router.gs changed this round (it now states which handler answered), so pinning the FB-4C-R1
 // literal would report a real, intended bump as a regression. The invariant that matters is the one the
 // manifest enforces: a file's declared build must equal what SYS_MODULE_BUILD_STAMPS_ expects for it, because

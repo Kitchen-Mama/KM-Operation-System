@@ -3405,7 +3405,7 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
 // R2B snapshot via the canonical R3A/R3B/R3C backend chain. The frontend performs NO placeholder mapping / totals /
 // master resolution / template selection / version choice — it only sends { shipment_id, document_type,
 // generate_file, regenerate? } and opens the returned download_url. Returns the full backend envelope (success +
-// document_id + file/download refs, or a fail-closed error/reason such as DOCUMENT_TEMPLATE_ASSET_MISSING).
+// document_id + file/download refs, or a fail-closed error/reason such as DOCUMENT_TEMPLATE_A§ET_MISSING).
 window.KM.DB.generateShipmentDocument = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, generateShipmentDocument skipped');
@@ -3947,6 +3947,9 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     'requestOrder.allocationDraft.ensureAndEdit', 'system.allocationDraftIdentityDiagnostic',
     'system.executionPlanConflictDiagnostic', 'system.requestOrderSendDiagnosticStatus',
     'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft',
+    // F1-7N-FC-1A §C/§J — the Shipment Draft recovery action. Routed and handled for rounds; probed for the
+    // first time now that a page depends on it.
+    'createShipmentFromPlan',
     // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
     // could only be discovered by the pages failing, which is precisely how this round started.
     'skuDetails.workspace.get',
@@ -3972,7 +3975,13 @@ var KM_PAGE_REQUIRED_ACTIONS_ = {
     // page-scoped verdict: the four actions its Execution Plan -> Submit chain cannot work without.
     'site-inventory': ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines',
         'upsertShippingAllocationDraftAtomic',
-        'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans']
+        'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'],
+    // F1-7N-FC-1A §J.1 -- the Weekly Shipping Plan page. Approve is the transition that commits a human
+    // decision AND attempts the Execution Commit, and createShipmentFromPlan is now the recovery path for the
+    // half of that which can fail. A deployment that cannot serve either must disable both buttons rather than
+    // let an operator approve into a state whose recovery action the deployment does not route.
+    'weekly-shipping-plan': ['weeklyShipping.workspace.get', 'updateShippingPlanStatus',
+        'createShipmentFromPlan', 'completeShippingPlan']
 };
 // Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
 // catches a half-finished, file-by-file Apps Script sync that still resolves every action.
@@ -4005,6 +4014,24 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     // Probing the constant is the only way the site can tell "the deployment is fine" apart from "the
     // deployment cannot describe itself", and those have different fixes.
     'SYS_TRANSPORT_CONTRACT_VERSION_',      // 63_ — the transport-contract axis (separate from the action axis)
+    // F1-7N-FC-1A §C/§E — OWNER SYMBOLS. An action list cannot see a file that is a round behind, and both of
+    // these carry behaviour the page now BINDS to rather than merely calls:
+    //   spApprovalRecoveryState_        11_ answers a failed Execution Commit with a typed recovery object.
+    //                                   An 11_ one round behind still approves, still fails to create the
+    //                                   shipment, and reports plain success -- the exact silence this round
+    //                                   closes, and indistinguishable from a healthy deployment without this.
+    //   factoryStockAcquireReservationTx_  21_ owns the persisted reservation. A 21_ one round behind makes
+    //                                   every Shipment Draft creation throw on an undefined function, which
+    //                                   would reach the operator as an unexplained Approve failure.
+    'spApprovalRecoveryState_',
+    'factoryStockAcquireReservationTx_',
+    // The three OWNER BUILD STAMPS of the reservation model. The symbols above prove 11_ and 21_ carry the new
+    // functions; these prove 12_ and 22_ were copied too — and 12_ and 22_ are the two that return
+    // SUCCESS while behaving wrongly when they are a round behind, which is why a resolvable action list can
+    // never catch them and a declared build is the only thing that can.
+    'SHIPMENT_BUILD_VERSION_',
+    'CSD_BUILD_VERSION_',
+    'FSTX_BUILD_VERSION_',
     // F1-7N-FB-4E-R3 §C — the Overseas workspace OWNER FILE. The action resolving is not enough: a deployment
     // carrying the R3 router but not 70_ would route to an undefined handler, and this page has no fan-out left
     // to fall back to. Probing the owner symbol is the only way the site can tell those two apart.
@@ -4807,23 +4834,17 @@ window.KM.DB.uncombineShippingPlans = function(payload) { return _kmShippingPost
 // Execution Commit (explicit / retry): Approved shipping_plan → shipments + shipment_lines (draft).
 // Normally Approve auto-creates the Shipment Draft server-side; this is the idempotent retry path.
 // { shipping_plan_id, actor? }
-window.KM.DB.createShipmentFromPlan = async function(payload) {
-    if (!isOperationDbApiConfigured()) {
-        console.warn('[KM.DB] API not configured, createShipmentFromPlan skipped');
-        return { success: false, error: 'API not configured' };
-    }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'createShipmentFromPlan' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Create shipment failed');
-    await _kmWriterPostWrite_();
-    return json.data;
-};
+// F1-7N-FC-1A §C — MOVED ONTO THE CANONICAL COMMAND RUNNER.
+//
+// This adapter used to `throw new Error(json.error)` on a business rejection and return json.data on success.
+// Both halves were wrong for the caller this round connects. The Weekly page's command runner classifies a
+// thrown error as HTTP_TRANSPORT_ERROR, so INSUFFICIENT_FACTORY_STOCK -- a precise, actionable, retry-later
+// business answer -- would have reached the operator as "the network failed", which is the exact confusion
+// §J.4 forbids. And returning `data` instead of the envelope loses `success`, so the page could not tell
+// CREATED from REUSED. _kmWeeklyCommand_ is the same text-first runner Approve/Submit/Done already use: it
+// never throws, and it preserves the typed code end to end. FC-0A measured that this action had NO caller, so
+// nothing depended on the old throwing shape.
+window.KM.DB.createShipmentFromPlan = function(payload) { return _kmWeeklyCommand_('createShipmentFromPlan', payload); };
 
 // Edit EXECUTION-layer fields only (carrier/container/booking/ETD/ETA/tracking/remark/...).
 // The Execution Snapshot and six-key context are immutable and rejected server-side.

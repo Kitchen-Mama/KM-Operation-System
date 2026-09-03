@@ -599,6 +599,67 @@ function _spTransferred(p) {
               (p.transferredToShipmentAt && String(p.transferredToShipmentAt).trim()) ||
               (p.shippingPlanId && _spPlanHasShipment[p.shippingPlanId]));
 }
+// __SP_RECOVERY_PURE_START__ (test extraction marker - do not remove)
+// F1-7N-FC-1A §D/§C — THE RECOVERABLE CONDITION, DERIVED - NEVER STORED.
+//
+// A plan sits in exactly one of three execution-commit states, and all three are computed from rows that
+// already exist. There is deliberately no fourth stored status column: a status word would be a third copy of
+// a fact `shipping_plans.status` and the `shipments` reference already carry between them, and the one thing
+// this codebase has proved repeatedly is that a duplicated fact eventually disagrees with its sources.
+//
+//   NOT_APPROVED                          the plan has not been approved, so no Execution Commit is due
+//   SHIPMENT_PRESENT                      approved AND a Shipment Draft exists (transferred_* or shipmentMap)
+//   APPROVED_SHIPMENT_CREATION_PENDING    approved AND no Shipment Draft - the recoverable condition
+//
+// Because it is derived, a reload shows the same answer with no migration and no reconciliation step (§D.5),
+// and a lost transport answer cannot leave the UI claiming something the rows do not say.
+//
+// canRetry is separately AND-ed with the two gates §J requires, so the button is absent (not merely
+// unhelpful) when the deployment cannot serve the action or a retry is already in flight.
+function spShipmentRecoveryState_(statusType, hasShipment, contractOk, retryInFlight) {
+    var state = (String(statusType || '') !== 'approved')
+        ? 'NOT_APPROVED'
+        : (hasShipment ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING');
+    var blocked = '';
+    if (state === 'APPROVED_SHIPMENT_CREATION_PENDING') {
+        if (contractOk === false) blocked = 'DEPLOYMENT_CONTRACT_MISMATCH';
+        else if (retryInFlight === true) blocked = 'RETRY_IN_FLIGHT';
+    }
+    return {
+        state: state,
+        isRecoverable: state === 'APPROVED_SHIPMENT_CREATION_PENDING',
+        canRetry: state === 'APPROVED_SHIPMENT_CREATION_PENDING' && contractOk !== false && retryInFlight !== true,
+        blockedBy: blocked
+    };
+}
+// __SP_RECOVERY_PURE_END__
+
+// F1-7N-FC-1A §J.2 — THE DEPLOYMENT GATE. Read ONCE per page read, cached, and never auto-retried: a stale
+// deployment is a publish step and retrying a read cannot publish anything. `null` means "not yet answered",
+// which is deliberately NOT the same as false - an unanswered probe must not disable the page's buttons.
+var _spContract = null;
+function _spContractOk_() { return _spContract === null ? null : !!_spContract.ok; }
+function _spContractMsg_() {
+    if (!_spContract || _spContract.ok) return '';
+    return String(_spContract.message || 'The deployed Apps Script cannot serve this page.') +
+        (_spContract.missing && _spContract.missing.length ? (' Missing: ' + _spContract.missing.join(', ') + '.') : '');
+}
+// Refresh the page-scoped verdict. Never throws and never blocks the render: a probe that itself fails leaves
+// the verdict unanswered rather than fabricating either answer.
+function _spRefreshContract_() {
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.checkPageDeploymentContract === 'function')) return Promise.resolve(null);
+    return Promise.resolve()
+        .then(function () { return window.KM.DB.checkPageDeploymentContract('weekly-shipping-plan'); })
+        .then(function (v) { _spContract = v || null; return _spContract; })
+        .catch(function () { return null; });
+}
+// A disabled-button attribute pair that always states WHY. A button that is merely inert teaches the operator
+// that the page is broken; one that says the deployment is behind teaches them to publish it.
+function _spGateAttrs_() {
+    if (_spContractOk_() !== false) return '';
+    return ' disabled title="' + _spEsc(_spContractMsg_()) + '"';
+}
+
 // Has the Decision Layer been marked Completed (Done pressed)? → leaves the Active view.
 function _spCompleted(p) {
     return !!(p.completedAt && String(p.completedAt).trim());
@@ -763,6 +824,10 @@ function renderShippingPlanFromDb() {
     var mySeq = ++_spReadSeq;
     var region = _spEnsureLoadRegion_();
     if (region) region.beginLoad(_spRegionHasContent_());   // INITIAL_LOADING or REFRESHING
+    // F1-7N-FC-1A §J.2 — the deployment verdict is refreshed alongside the read, not instead of it. It is
+    // deliberately NOT awaited before rendering: a slow probe must never delay the plans, and an unanswered
+    // probe leaves the buttons enabled rather than disabling a working page on no evidence.
+    _spRefreshContract_().then(function (v) { if (v && mySeq === _spReadSeq) renderShippingPlan(); });
     Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
         if (mySeq !== _spReadSeq) return;   // a newer load superseded this one → ignore stale response
         _spRenderReadModel_(model);
@@ -885,19 +950,48 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
         var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
 
+        // F1-7N-FC-1A §J.2/§J.3 — the gate on the two transitions that commit a decision. Submit and
+        // Approve are disabled by a deployment mismatch, and Retry additionally by an in-flight retry, so a
+        // double click cannot become a second create attempt.
+        var gate = _spGateAttrs_();
+        var recovery = spShipmentRecoveryState_(statusType, _spTransferred(plan), _spContractOk_(), !!_spInFlight[pid + ':retryshipment']);
+
         var actions = '<button class="sp-btn sp-btn-expand" onclick="toggleSpDbCard(\'' + pid + '\')">Expand</button>';
         if (statusType === 'draft') {
             actions += '<button class="sp-btn sp-btn-submit" onclick="spDbSaveQty(\'' + pid + '\')">Save</button>'
-                    + '<button class="sp-btn sp-btn-submit" onclick="spDbSubmit(\'' + pid + '\')">Submit</button>'
+                    + '<button class="sp-btn sp-btn-submit"' + gate + ' onclick="spDbSubmit(\'' + pid + '\')">Submit</button>'
                     + '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\')">Cancel</button>';
         } else if (statusType === 'pending_approval') {
-            actions += '<button class="sp-btn sp-btn-submit" onclick="spDbApprove(\'' + pid + '\')">Approve</button>'
+            actions += '<button class="sp-btn sp-btn-submit"' + gate + ' onclick="spDbApprove(\'' + pid + '\')">Approve</button>'
                     + '<button class="sp-btn sp-btn-cancel" onclick="spDbReject(\'' + pid + '\')">Reject</button>'
                     + '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\')">Cancel</button>';
-        } else if (statusType === 'approved' && _spTransferred(plan)) {
+        } else if (statusType === 'approved' && recovery.state === 'SHIPMENT_PRESENT') {
             // Execution Commit done → Decision Layer can be marked Completed (Done).
             actions += '<button class="sp-btn sp-btn-submit" onclick="spDbDone(\'' + pid + '\')">Done</button>';
+        } else if (recovery.isRecoverable) {
+            // §C.1 — THE RETRY THAT DID NOT EXIST. The approval is committed and kept; only the Execution
+            // Commit is outstanding. Done is deliberately NOT offered here - marking the planning task
+            // complete while its shipment is missing is precisely how this state used to disappear from view.
+            actions += '<button class="sp-btn sp-btn-submit"' + (recovery.canRetry ? '' : (' disabled title="' +
+                        _spEsc(recovery.blockedBy === 'RETRY_IN_FLIGHT'
+                            ? 'A retry is already running for this plan.'
+                            : _spContractMsg_()) + '"')) +
+                       ' onclick="spDbRetryShipment(\'' + pid + '\')">Retry Shipment Draft</button>';
         }
+
+        // F1-7N-FC-1A §D — the recoverable condition, stated on the card. Silence here is what let an
+        // approved plan with no shipment sit unnoticed: the card looked exactly like a healthy approved plan,
+        // and the only hint had been a one-off alert pointing at a page that cannot show this state.
+        var recoveryBanner = recovery.isRecoverable
+            ? ('<div class="sp-recovery-banner" style="margin:6px 0; padding:8px 10px; border-left:3px solid #b45309; background:#fffbeb; color:#78350f; font-size:12px; line-height:1.5;">'
+               + '<strong>Approved — Shipment Draft not created.</strong> The approval is committed and kept. '
+               + 'The Shipment Draft has NOT been created, so nothing has been reserved and nothing will ship yet. '
+               + 'Use <em>Retry Shipment Draft</em>; retrying is safe and can never create two shipments.'
+               + (recovery.canRetry ? '' : ('<br><span style="color:#991b1b;">Retry is unavailable: '
+                   + _spEsc(recovery.blockedBy === 'RETRY_IN_FLIGHT' ? 'a retry is already running.' : _spContractMsg_())
+                   + '</span>'))
+               + '</div>')
+            : '';
 
         var rows = planLines.map(function(l) {
             var qtyCell = editable
@@ -966,6 +1060,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                     _spSummary('Total Cost', totalCostDisp) +
                     _spSummary('Unit Cost', '<span id="sp-unit-cost-' + _spEsc(pid) + '">' + unitCostDisp + '</span>') +
                 '</div>' +
+                recoveryBanner +
                 '<div class="sp-card-actions">' + actions + '</div>' +
             '</div>' +
             '<div class="sp-card-details">' +
@@ -1189,10 +1284,83 @@ function spDbApprove(planId) {
     }, {
         failPrefix: 'Approve failed',
         onSuccess: function (res) {
-            var sh = res.data && res.data.shipment; var msg = 'Plan approved.';
-            if (sh && sh.created) msg += '\nShipment Draft created: ' + (sh.shipment_no || sh.shipment_id) + ' (' + (sh.line_count || 0) + ' lines).';
-            else if (sh && sh.reason === 'already_exists') msg += '\nShipment Draft already exists (' + (sh.shipment_id || '') + ').';
-            else if (sh && (sh.error || (sh.created === false && sh.reason))) msg += '\nNote: Shipment Draft not created (' + (sh.error || sh.reason) + '). You can retry from Shipment Overview.';
+            // F1-7N-FC-1A §D — APPROVE NO LONGER REPORTS A HALF-DONE OPERATION AS DONE.
+            //
+            // The old last branch said "You can retry from Shipment Overview" - an instruction nothing in the
+            // frontend could carry out, on a page that renders `shipped` onward and therefore could never
+            // display an approved plan with no shipment. The message now names the state, the cause, and the
+            // action that actually exists on this card; the card itself carries the same banner, so the
+            // recovery survives dismissing this notice and reloading the page.
+            var d = (res && res.data) || {};
+            var sh = d.shipment; var msg = 'Plan approved.';
+            if (sh && sh.created) {
+                msg += '\nShipment Draft created: ' + (sh.shipment_no || sh.shipment_id) + ' (' + (sh.line_count || 0) + ' lines).';
+                var rv = sh.factory_reservations || [];
+                if (rv.length) {
+                    msg += '\nFactory stock reserved at ' + (sh.source_warehouse_id || '') + ': ' +
+                           rv.map(function (r) { return r.sku + ' x' + r.reserved_qty; }).join(', ') + '.';
+                }
+            } else if (sh && sh.reason === 'already_exists') {
+                msg += '\nShipment Draft already exists (' + (sh.shipment_id || '') + ').';
+            } else if (d.execution_commit === 'APPROVED_SHIPMENT_CREATION_PENDING' || (sh && (sh.error || sh.reason))) {
+                var rec = d.recovery || {};
+                msg = 'Plan approved — BUT THE SHIPMENT DRAFT WAS NOT CREATED.'
+                    + '\nThe approval is committed and kept. Nothing was reserved and nothing will ship yet.'
+                    + '\nCause: ' + ((rec.cause || (sh && (sh.error || sh.reason)) || 'UNKNOWN'));
+                if (rec.shortfalls && rec.shortfalls.length) {
+                    msg += '\nShort of stock: ' + rec.shortfalls.map(function (x) {
+                        return x.sku + ' (need ' + x.need + ', available ' + x.available + ')'; }).join('; ');
+                }
+                msg += '\nUse "Retry Shipment Draft" on this plan card. Retrying is safe and can never create two shipments.';
+            }
+            return msg;
+        }
+    });
+}
+
+// F1-7N-FC-1A §C — THE RETRY, CONNECTED.
+//
+// Ten requirements, and the ones that are easy to get wrong are the last four:
+//   1 it names the exact shipping_plan_id (never "the selected plan")
+//   2 it calls the EXISTING routed action - no new server surface was added for this
+//   3 a stable correlation key derived from the plan id, so a resend of the same intent is the same intent
+//   4/5 the server answers CREATED or REUSED and creates at most one shipment per plan, so a double click, a
+//     lost answer and a genuine retry all converge on ONE shipment
+//   6 ONE authoritative readback follows (the shared command runner does it), so the card stops guessing
+//   7 typed failures survive to the operator, because the adapter now uses the command runner (§J.4)
+//   8 a transport failure stays RETRYABLE - the outcome is unknown, not failed, and the readback settles it
+//   9 it does not change approval status: this path never writes status/approved_by/approved_at
+//  10 it creates no documents and deducts no current stock; it reserves, which is a different fact
+function spDbRetryShipment(planId) {
+    // §J.2 — fail CLOSED on a known-bad deployment. Retrying cannot publish a deployment, so attempting the
+    // call would only produce a second, less specific error than the one already known.
+    if (_spContractOk_() === false) { _spNotify_('Retry unavailable: ' + _spContractMsg_()); return; }
+    if (!(window.KM && window.KM.DB && typeof window.KM.DB.createShipmentFromPlan === 'function')) {
+        _spNotify_('Retry unavailable: this build cannot reach createShipmentFromPlan.'); return;
+    }
+    _spRunCommand_(planId + ':retryshipment', function () {
+        return window.KM.DB.createShipmentFromPlan({
+            shipping_plan_id: planId,
+            actor: 'operation-system',
+            // Idempotency is enforced SERVER-side by one-shipment-per-approved-plan; this key is the
+            // correlation id that makes a retried request recognisable in the logs as the same intent.
+            idempotency_key: 'RETRY-SHIPMENT:' + planId
+        });
+    }, {
+        failPrefix: 'Retry Shipment Draft failed',
+        onSuccess: function (res) {
+            var d = (res && res.data) || {};
+            if (d.outcome === 'REUSED') {
+                return 'A Shipment Draft already existed for this plan (' + (d.shipment_id || '') +
+                       '). Nothing was created and no stock was reserved twice.';
+            }
+            var msg = 'Shipment Draft created: ' + (d.shipment_no || d.shipment_id || '') +
+                      ' (' + (d.line_count || 0) + ' lines).';
+            var rv = d.factory_reservations || [];
+            if (rv.length) {
+                msg += '\nFactory stock reserved at ' + (d.source_warehouse_id || '') + ': ' +
+                       rv.map(function (r) { return r.sku + ' x' + r.reserved_qty; }).join(', ') + '.';
+            }
             return msg;
         }
     });
@@ -1255,6 +1423,7 @@ window.spDbOnQtyInput = spDbOnQtyInput;
 window.spDbSaveQty = spDbSaveQty;
 window.spDbSubmit = spDbSubmit;
 window.spDbApprove = spDbApprove;
+window.spDbRetryShipment = spDbRetryShipment;
 window.spDbReject = spDbReject;
 window.spDbCancel = spDbCancel;
 window.spDbDone = spDbDone;

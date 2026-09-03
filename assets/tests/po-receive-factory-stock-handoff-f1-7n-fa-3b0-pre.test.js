@@ -186,7 +186,17 @@ section('G. SOURCE — atomic lock + journal rollback + lineage + isolation (Pha
   ok(!/createShipmentFromPlan|handleConfirmShipment|shipment_line_allocations/.test(rcv), 'ISO receive creates no shipment');
   ok(!/createRequestOrder|request_order_allocation_draft/.test(rcv), 'ISO receive creates no request order / draft allocation');
   var coreSrc = extractFn(GS21, 'factoryStockApplyDeltaTx_');
-  ok(/resCol/.test(coreSrc) && !/resCol \+ 1/.test(coreSrc), 'core reads reserved but never writes the reserved column (reserved untouched)');
+  // F1-7N-FC-1A — SCOPED TO THE RECEIPT. This asserted that the shared core NEVER writes the reserved
+  // column, which was true of the entire system before FC-1A (the FC-0A audit measured that nothing had ever
+  // written a non-zero fac_reserved_stock, which is precisely why two sites could plan the same units). The
+  // core can now move reserved — but ONLY when a caller asks it to with a non-zero reservedDelta, and
+  // the PO receipt does not. That is the property this suite is about, and it is now asserted against the
+  // receipt itself rather than against a core that legitimately gained a second capability.
+  ok(/resCol/.test(coreSrc), 'core reads the reserved column (available stays derived)');
+  ok(/if \(resDelta !== 0\) \{/.test(coreSrc),
+    'core writes reserved ONLY on an explicit non-zero reservedDelta — never as a side effect');
+  ok(!/reservedDelta/.test(rcv),
+    'and the PO receipt passes NO reservedDelta, so a receipt leaves every reservation untouched (reserved untouched)');
 })();
 
 // ==========================================================================

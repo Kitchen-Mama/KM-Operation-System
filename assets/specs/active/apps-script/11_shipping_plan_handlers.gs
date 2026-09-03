@@ -22,7 +22,11 @@
 // shipment-compatibility group key) so the manifest never claims a change this file did not receive. It is
 // registered because Submit is the last write in the Site Inventory chain: if this owner is a round behind
 // while the allocation owner is current, the plan commit and the draft it consumes disagree silently.
-var SP_BUILD_VERSION_ = 'F1-7N-FA-4B2';
+// F1-7N-FC-1A: the Approve result is no longer a bare success. It now carries execution_commit and a typed
+// recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
+// to create the shipment, but reports plain success — the exact silence this round closes, and
+// indistinguishable from a healthy deployment without this stamp moving.
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1A';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -1003,6 +1007,27 @@ function handleUpdateShippingPlanStatus_(body) {
     setCell('submitted_by', submittedBy);
     setCell('submitted_at', now);
   } else if (transition === 'approve') {
+    // F1-7N-FC-1A §D.6 A SECOND APPROVE CLICK IS AN IDEMPOTENT READBACK, NOT A FAILURE.
+    //
+    // An already-approved plan previously answered "Only a Pending Approval plan can be approved (current:
+    // approved)", which reads to the operator as though the approval did not happen. The dangerous version of
+    // that confusion is the one this round exists to fix: approval committed, shipment creation failed, and the
+    // operator clicks Approve again looking for the missing shipment. The truthful answer is the CURRENT state
+    // computed from the authoritative rows, so a re-click can never duplicate the approval and can never
+    // duplicate the shipment either. Nothing is written on this path.
+    if (curStatus === 'approved') {
+      var existingShipmentId = (typeof shipmentFindForPlan_ === 'function') ? shipmentFindForPlan_(ss, planId) : '';
+      return jsonResponse_({
+        success: true,
+        data: {
+          shipping_plan_id: planId, transition: 'approve', already_approved: true, approval_committed: true,
+          shipment: existingShipmentId ? { created: false, reason: 'already_exists', shipment_id: existingShipmentId } : null,
+          execution_commit: existingShipmentId ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING',
+          recovery: existingShipmentId ? null : spApprovalRecoveryState_(planId, null),
+          note: 'This plan was already approved. Nothing was written; the state above is the current truth.'
+        }
+      });
+    }
     if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be approved (current: ' + curStatus + ')' });
     setCell('status', 'approved');
     setCell('approved_by', approvedBy);
@@ -1046,7 +1071,60 @@ function handleUpdateShippingPlanStatus_(body) {
     }
   }
 
-  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, transition: transition, shipment: shipmentResult } });
+  // ---- F1-7N-FC-1A §D — THE APPROVE RESULT NO LONGER READS AS "FULLY COMPLETE". --------------------
+  // The human Approval is committed and STAYS committed (that decision is frozen in SS0), but a failed
+  // automatic Shipment Draft creation is a DIFFERENT outcome from a successful one and must be reported as
+  // one. `execution_commit` is the single field a caller binds to, and `recovery` carries the typed cause and
+  // where to fix it. Both are derived from the authoritative rows, never from a new stored status column
+  // (§D.3/§D.4) -- so a reload shows exactly the same thing without any migration.
+  var commitState = 'SHIPMENT_PRESENT';
+  var recovery = null;
+  if (transition === 'approve') {
+    var made = !!(shipmentResult && shipmentResult.created === true);
+    var reused = !!(shipmentResult && shipmentResult.created === false && shipmentResult.reason === 'already_exists');
+    if (!made && !reused) {
+      commitState = 'APPROVED_SHIPMENT_CREATION_PENDING';
+      recovery = spApprovalRecoveryState_(planId, shipmentResult);
+    }
+  } else {
+    commitState = 'NOT_APPLICABLE';
+  }
+
+  return jsonResponse_({ success: true, data: {
+    shipping_plan_id: planId, transition: transition, shipment: shipmentResult,
+    approval_committed: (transition === 'approve'),
+    execution_commit: commitState,
+    recovery: recovery
+  } });
+}
+
+/**
+ * F1-7N-FC-1A §D — THE RECOVERABLE CONDITION, AS ONE TYPED OBJECT.
+ *
+ * Built from the two authoritative facts and nothing else: the plan is `approved`, and no shipment row
+ * references it. There is deliberately NO new stored status. A status column would be a third copy of a fact
+ * two tables already carry, and the one thing every previous round has proved about duplicated state is that
+ * it eventually disagrees. Derivation cannot disagree with itself.
+ */
+function spApprovalRecoveryState_(planId, shipmentResult) {
+  var cause = 'UNKNOWN';
+  if (shipmentResult) {
+    if (shipmentResult.error) cause = String(shipmentResult.error);
+    else if (shipmentResult.reason) cause = String(shipmentResult.reason).toUpperCase();
+  }
+  return {
+    state: 'APPROVED_SHIPMENT_CREATION_PENDING',
+    approval_committed: true,
+    shipment_created: false,
+    cause: cause,
+    shortfalls: (shipmentResult && shipmentResult.shortfalls) || null,
+    shipping_plan_id: String(planId || ''),
+    retry_action: 'createShipmentFromPlan',
+    retry_location: 'Weekly Shipping Plan -- the Approved plan card carries a "Retry Shipment Draft" action',
+    retry_idempotent: true,
+    message: 'The approval was committed and is kept. The Shipment Draft was NOT created. Use Retry Shipment ' +
+      'Draft on the approved plan card; retrying is safe and can never create two shipments.'
+  };
 }
 
 // ---- updateShippingPlanLineQty ------------------------------------

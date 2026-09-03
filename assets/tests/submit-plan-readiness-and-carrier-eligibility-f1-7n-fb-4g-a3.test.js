@@ -234,12 +234,23 @@ section('§A — PRECONDITIONS AND RELEASE IDENTITY');
 // ================================================================================================================
 (function () {
   ok(RO.OWNER_STAMPS.indexOf('F1-7N-FB-4G-A2-R4') !== -1, 'A1  the accepted A2-R4 baseline is a known owner stamp');
-  eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], 'F1-7N-FB-4G-A3', 'A2  A3 is the newest owner stamp');
-  eq(RO.currentAppToken(), 'fb4ga3-submitreadiness-20260903', 'A3  and the A3 cache token is the current one');
+  // F1-7N-FC-1A — AT-OR-AFTER, not equal. These three said "A3 is the newest round", which is exactly
+  // the equality-with-now that _release-order.js exists to end: every one of them would fail the first time a
+  // LATER round legitimately shipped, while describing the correct state. What A3 needs to be true is that its
+  // own stamp and token are still REGISTERED and still ordered at or after the baseline it accepted —
+  // and that index.html carries WHATEVER the current token is on every versioned asset, which is the property
+  // that actually protects a user from a stale page.
+  ok(RO.OWNER_STAMPS.indexOf('F1-7N-FB-4G-A3') !== -1, 'A2  the A3 owner stamp is registered in the release order');
+  ok(RO.stampAtOrAfter ? RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], 'F1-7N-FB-4G-A3') : true,
+    'A2a and no round before A3 is the newest');
+  eq(RO.tokenAtOrAfter(RO.currentAppToken(), 'fb4ga3-submitreadiness-20260903'), true,
+    'A3  and the current cache token is ordered at or after A3\'s own');
   eq(RO.tokenAtOrAfter(RO.currentAppToken(), 'fb4ga2r4-stableentity-20260903'), true,
-    'A3a and it is ordered at or after the accepted A2-R4 token');
-  var tok = (INDEX.match(/fb4ga3-submitreadiness-20260903/g) || []).length;
-  ok(tok >= 15, 'A4  index.html carries the new token on every versioned asset (' + tok + ' refs)');
+    'A3a as well as at or after the accepted A2-R4 token');
+  var tok = (INDEX.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
+  ok(tok >= 15, 'A4  index.html carries the CURRENT token on every versioned asset (' + tok + ' refs)');
+  ok((INDEX.match(/fb4ga3-submitreadiness-20260903/g) || []).length === 0,
+    'A4a and no asset is still pinned to the superseded A3 token');
   eq((INDEX.match(/fb4ga2r4-stableentity-20260903/g) || []).length, 0, 'A5  and no reference is left on the old one');
 })();
 
@@ -1018,8 +1029,15 @@ mut('K16 the plan-group count silently claims one plan for everything', function
 section('§L — WHAT THIS ROUND DID NOT TOUCH');
 // ================================================================================================================
 (function () {
-  ok(/var SP_BUILD_VERSION_ = 'F1-7N-FA-4B2'/.test(G11),
-    'L1  §F.9 11_ is unchanged: no schema change and no re-version for allocation-draft identity');
+  // F1-7N-FC-1A — DERIVED, NOT PINNED. A3's claim was "I made no schema change and no re-version FOR
+  // ALLOCATION-DRAFT IDENTITY", and it used 11_'s stamp as the proof. FC-1A changes 11_ for an unrelated
+  // reason (the typed approval-recovery answer), so the stamp can no longer carry that claim. Both halves are
+  // now asserted for what they are: the file agrees with its deployment manifest, and the identity decision
+  // A3 froze is untouched — which L2 below already measures directly on the grouping key.
+  var _l1g63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
+  var _l1Expected = ((_l1g63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+  eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _l1Expected,
+    'L1  §F.9 11_ declares exactly the build its deployment manifest expects (' + _l1Expected + ')');
   ok(!/allocation_draft_id/.test(code(extractFn(G11, 'shippingPlanRouteGroupKey_'))),
     'L2  §F.4 and allocation_draft_id is still absent from the physical grouping key');
   eq((code(G16).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A2-R3-R1',

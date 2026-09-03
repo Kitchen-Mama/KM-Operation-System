@@ -121,7 +121,19 @@ function byStatus(res, st) { return res.previewRows.filter(function (p) { return
   ok(/related_entity_id: batchId/.test(CG), 'E5 movement carries the import batch id (idempotency reference)');
   ok(/factoryImportCommittedKeys_/.test(CG), 'E6 per-row idempotency lookup by batch id (resume-safe retry)');
   ok(/setValue\(afterCurrent\)/.test(CG), 'E7 SETs fac_current_stock to the imported quantity (never appends/adds)');
-  ok(/fac_reserved_stock/.test(GS) && !/setValue\(.*reserved/i.test(CG), 'E8 reserved is never written by import (available stays derived)');
+  // F1-7N-FC-1A — SCOPED TO THE IMPORT, which is what this suite is about. Before FC-1A nothing in the
+  // system wrote fac_reserved_stock at all, so scanning the whole file was equivalent to scanning the import.
+  // FC-1A gives the shared authority real reservation primitives, so the two questions have come apart: the
+  // IMPORT still never writes reserved (available stays derived), and that is asserted here against the
+  // import commit path itself rather than against the file that now also owns the reservation model.
+  // The import commit + its movement builder, taken from the file's own extraction markers rather than by
+  // function name, so this stays anchored to the block the suite already treats as the import's boundary.
+  var IMPORT_COMMIT = slice(GS, 'function factoryImportCommittedKeys_', '// __FIIMPORT_PURE_END__');
+  if (IMPORT_COMMIT.length < 200) IMPORT_COMMIT = GS.slice(GS.indexOf('function factoryImportCommittedKeys_'));
+  var CIMP = IMPORT_COMMIT.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(/fac_reserved_stock/.test(GS), 'E8 the reserved column is read (available stays derived: current - reserved)');
+  ok(!/setValue\(.*reserved/i.test(CIMP) && !/reservedDelta/.test(CIMP),
+    'E8a and the IMPORT never writes it — not directly, and not via the shared authority\'s reservedDelta');
   ok(/'FS-' \+ p\.warehouse_id \+ '-' \+ p\.sku/.test(CG), 'E9 missing row created with the canonical baseline id');
   ok(/IMPORT_AUDIT_WRITE_FAILED/.test(CG), 'E10 committed-with-audit-failure classification (compensation)');
   ok(!/supplier/i.test(CG), 'E11 no supplier dependency in the import handler');

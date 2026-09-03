@@ -189,23 +189,43 @@ function handleAdjustFactoryInventory_(body) {
 // F1-7N-FA-3B0-PRE — SHARED factory_stock mutation core (single source; runs UNDER the caller's lock).
 // The ONE canonical "adjust fac_current_stock by an integer delta + append exactly one movement + journal
 // every write for rollback" primitive, reused by BOTH Factory Inventory Adjustment (SET → signed delta) and
-// Purchase Order Receive (+delta handoff). No second stock-mutation implementation lives in any other file.
+// Purchase Order Receive (+delta handoff).
+//
+// F1-7N-FC-1A §F — CORRECTION OF AN UNTRUE COMMENT. This note previously claimed "no second stock-mutation
+// implementation lives in any other file" while 22_shipment_dispatch_handlers.gs carried its own inline
+// setValue(afterCurrent) + fcWriteAppendByHeader_ deduction with its own compensating rollback. The FC-0A audit
+// measured it. A comment that describes the ownership one WISHES for is worse than no comment at all: it is the
+// reason a second implementation could exist unnoticed for rounds. 22_ now DELEGATES to this core (dispatch
+// deduction + reservation release in ONE movement row), 13_ already delegates (PO receipt), and this file owns
+// Factory Inventory Adjustment and the Initial Stock Import. Those four callers are the COMPLETE set, and the
+// claim is now enforced by a test that fails if any other file writes a factory_stock balance cell.
 //   • Locates the (warehouse_id + sku) factory_stock row; if ABSENT, creates ONE canonical baseline row
 //     mirroring ensureFactoryStockBaseline_ (fac_reserved_stock=0, factory_stock_id='FS-'+wh+'-'+sku).
-//   • fac_current_stock += deltaQty (reserved NEVER modified); never lets fac_current_stock go negative.
+//   • fac_current_stock += deltaQty; never lets fac_current_stock go negative.
+//   * fac_reserved_stock += reservedDelta (F1-7N-FC-1A; DEFAULT 0, so every pre-existing caller is unchanged
+//     and reserved stays untouched exactly as before). Never lets fac_reserved_stock go negative, and never
+//     lets available (= current - reserved) go negative: the two invariants that make a reservation mean
+//     something. Both are checked BEFORE any cell is written, so a refusal leaves the sheet byte-identical.
 //   • Appends one factory_stock_movements row with the caller's movement_type + structured lineage.
 //   • Pushes every write ({kind:'cell'|'row'}) onto the caller-supplied `journal` for LIFO rollback.
 // It performs NO business policy (warehouse/factory identity, receive ceilings, no-op guards) — the CALLER
-// validates BEFORE calling (fail-closed). Returns { beforeCurrent, afterCurrent, beforeReserved, movementId, created }.
+// validates BEFORE calling (fail-closed). Returns { beforeCurrent, afterCurrent, beforeReserved, afterReserved,
+// movementId, created }. ONE movement row carries BOTH before/after pairs, so a dispatch that deducts current
+// and releases the reservation is a single indivisible ledger fact, never two rows that can disagree.
 function factoryStockApplyDeltaTx_(p) {
   var stockSheet = p.stockSheet, movSheet = p.movSheet;
   var warehouseId = String(p.warehouseId || '').trim();
   var sku = String(p.sku || '').trim();
   var delta = Math.round(Number(p.deltaQty));
+  // F1-7N-FC-1A §F. Absent => 0, which is what every caller predating the reservation model passes, so
+  // their behaviour is byte-identical to before this change.
+  var resDelta = (p.reservedDelta === undefined || p.reservedDelta === null || p.reservedDelta === '')
+    ? 0 : Math.round(Number(p.reservedDelta));
   var journal = p.journal || [];
   var now = p.now;
   if (!warehouseId || !sku) throw new Error('factoryStockApplyDeltaTx_: warehouseId + sku required');
   if (!isFinite(delta)) throw new Error('factoryStockApplyDeltaTx_: deltaQty must be finite');
+  if (!isFinite(resDelta)) throw new Error('factoryStockApplyDeltaTx_: reservedDelta must be finite');
 
   var data = stockSheet.getDataRange().getValues();
   var H = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
@@ -239,26 +259,189 @@ function factoryStockApplyDeltaTx_(p) {
     prevUp = upCol !== -1 ? data[targetRow - 1][upCol] : '';
   }
   var afterCurrent = beforeCurrent + delta;
+  var afterReserved = beforeReserved + resDelta;
   if (afterCurrent < 0) throw new Error('factoryStockApplyDeltaTx_: resulting fac_current_stock would be negative (' + beforeCurrent + ' + ' + delta + ')');
+  if (afterReserved < 0) throw new Error('factoryStockApplyDeltaTx_: resulting fac_reserved_stock would be negative (' + beforeReserved + ' + ' + resDelta + ')');
+  if (afterCurrent - afterReserved < 0) {
+    throw new Error('factoryStockApplyDeltaTx_: resulting available_factory_stock would be negative (current ' +
+      afterCurrent + ' - reserved ' + afterReserved + ')');
+  }
 
   var prevCur = created ? 0 : beforeCurrent;
   stockSheet.getRange(targetRow, curCol + 1).setValue(afterCurrent);
   if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: curCol, prev: prevCur });
+  // The reserved cell is written ONLY when it actually changes. A zero reservedDelta must not dirty the cell,
+  // must not add a journal entry, and must not make a replay look like a write.
+  if (resDelta !== 0) {
+    stockSheet.getRange(targetRow, resCol + 1).setValue(afterReserved);
+    journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: resCol, prev: (created ? 0 : beforeReserved) });
+  }
   if (ltCol !== -1) { stockSheet.getRange(targetRow, ltCol + 1).setValue(now); if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: ltCol, prev: prevLt }); }
   if (upCol !== -1) { stockSheet.getRange(targetRow, upCol + 1).setValue(now); if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: upCol, prev: prevUp }); }
   SpreadsheetApp.flush();
 
   var movementId = 'FSMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+  // `qty` IS THE MOVEMENT'S PRIMARY QUANTITY, and for a reservation that is the RESERVED delta.
+  //
+  // This is not cosmetic. A reservation moves no physical units, so its current-stock delta is 0; writing
+  // that into `qty` would put a zero on every reservation_acquire row — and factoryStockOwnerReservedTx_
+  // sums precisely this column. The per-owner ledger would then read 0 for every owner, which silently breaks
+  // three separate things at once: acquire idempotency (a replay sees nothing held and reserves again), the
+  // dispatch release (it gives back min(held, take) = 0, so reserved is never returned), and the census
+  // reconciliation (balance and ledger would disagree on every row). A current-stock move keeps its own delta,
+  // which is what every pre-existing caller writes, so nothing about their rows changes.
+  var movementQty = (delta !== 0) ? delta : resDelta;
   fcWriteAppendByHeader_(movSheet, {
     factory_stock_movement_id: movementId, movement_date: (p.movementDate || now), sku: sku, warehouse_id: warehouseId,
-    movement_type: p.movementType, qty: delta, related_entity_type: p.relatedEntityType, related_entity_id: p.relatedEntityId,
-    before_current_stock: beforeCurrent, after_current_stock: afterCurrent, before_reserved_stock: beforeReserved, after_reserved_stock: beforeReserved,
+    movement_type: p.movementType, qty: movementQty, related_entity_type: p.relatedEntityType, related_entity_id: p.relatedEntityId,
+    before_current_stock: beforeCurrent, after_current_stock: afterCurrent, before_reserved_stock: beforeReserved, after_reserved_stock: afterReserved,
     note: p.note || '', created_by: p.createdBy || 'operation-system', created_at: now
   });
   journal.push({ kind: 'row', sheet: movSheet, row: movSheet.getLastRow() });
   SpreadsheetApp.flush();
 
-  return { beforeCurrent: beforeCurrent, afterCurrent: afterCurrent, beforeReserved: beforeReserved, movementId: movementId, created: created };
+  return { beforeCurrent: beforeCurrent, afterCurrent: afterCurrent, beforeReserved: beforeReserved,
+    afterReserved: afterReserved, movementId: movementId, created: created };
+}
+
+// ============================================================
+// F1-7N-FC-1A §E/§F — PERSISTED FACTORY STOCK RESERVATION, ON THE EXISTING SCHEMA.
+// ------------------------------------------------------------
+// THE SOURCE OF TRUTH, and why it is not a new table.
+//
+// §E required the existing model to be used if it can express owner, SKU, warehouse_id, reserved_qty,
+// lifecycle status, idempotency and release. It can, exactly:
+//
+//   BALANCE   factory_stock.fac_reserved_stock         the column has existed since 2026-07-21 and, as the
+//                                                      FC-0A audit measured, NOTHING had ever written a
+//                                                      non-zero value into it. It is the reserved balance in
+//                                                      precisely the way fac_current_stock is the current one.
+//   LINEAGE   factory_stock_movements                  one row per reservation event, carrying
+//               warehouse_id + sku                     (which physical units)
+//               qty                                    (+acquire / -release)
+//               related_entity_type/related_entity_id  (WHO owns it, and the idempotency key: the same
+//                                                      mechanism factoryImportCommittedKeys_ and 13_'s
+//                                                      receiptAlreadyApplied_ already use)
+//               before/after_reserved_stock            (columns that already exist in the frozen header)
+//   LIFECYCLE derived, never stored twice: an owner's held reservation is SUM(acquire) - SUM(release) for its
+//             (warehouse_id, sku). "released" is not a status word to keep in sync; it is arithmetic that
+//             cannot drift from the ledger it is computed from.
+//
+// So this adds NO table, NO column and NO migration. It DOES add two values to the movement_type vocabulary
+// that FC-0A measured as closed at five (inventory_import, manual_adjustment, po_receipt, shipment_out,
+// shipment_receipt). That extension is reported as a DECISION in the completion report; it is additive to an
+// existing column's value set, no reader validates movement_type against an allowlist (verified across every
+// non-generated .gs and the browser adapter), and it is exactly how inventory_import was introduced.
+// F1-7N-FC-1A §J DEPLOYMENT STAMP. A 21_ one round behind has no reservation primitives at all, so 12_ and
+// 22_ throw on an undefined function and the operator sees an unexplained Approve or Confirm failure. Named
+// here rather than discovered there.
+var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A';
+var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';
+var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';
+var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';   // the only reservation owner in the frozen model (§0)
+
+// Read the (warehouse_id + sku) balance. Returns { found, current, reserved, available }. A missing row reads
+// as all-zero rather than throwing: "no row" and "zero stock" are the same availability fact, and the caller's
+// job is to refuse on availability, not on row presence.
+function factoryStockReadBalanceTx_(stockSheet, warehouseId, sku) {
+  warehouseId = String(warehouseId == null ? '' : warehouseId).trim();
+  sku = String(sku == null ? '' : sku).trim();
+  var data = stockSheet.getDataRange().getValues();
+  var H = (data[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+  var whCol = H.indexOf('warehouse_id'), skuCol = H.indexOf('sku');
+  var curCol = H.indexOf('fac_current_stock'); if (curCol === -1) curCol = H.indexOf('current_stock');
+  var resCol = H.indexOf('fac_reserved_stock'); if (resCol === -1) resCol = H.indexOf('reserved_stock');
+  if (whCol === -1 || skuCol === -1 || curCol === -1 || resCol === -1) {
+    throw new Error('factoryStockReadBalanceTx_: factory_stock missing required columns');
+  }
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][whCol] || '').trim() !== warehouseId) continue;
+    if (String(data[r][skuCol] || '').trim() !== sku) continue;
+    var cur = Math.round(parseFloat(data[r][curCol]) || 0);
+    var res = Math.round(parseFloat(data[r][resCol]) || 0);
+    return { found: true, current: cur, reserved: res, available: cur - res };
+  }
+  return { found: false, current: 0, reserved: 0, available: 0 };
+}
+
+// The per-owner reservation ledger: { 'warehouse_id||sku': netHeldQty } for ONE owner, computed from the
+// movement rows. This is SIMULTANEOUSLY the lifecycle status and the idempotency check, which is the point of
+// deriving it: a replayed acquire sees its own earlier row and applies nothing, and a release can never exceed
+// what the owner actually holds. Only acquire/release rows participate. shipment_out / po_receipt / manual
+// adjustments are current-stock facts and are deliberately ignored here even when they carry a reserved delta,
+// because a dispatch's reserved delta is a RELEASE of an already-counted acquire, not a new one.
+function factoryStockOwnerReservedTx_(movSheet, ownerType, ownerId) {
+  var out = {};
+  ownerType = String(ownerType == null ? '' : ownerType).trim();
+  ownerId = String(ownerId == null ? '' : ownerId).trim();
+  if (!ownerId) return out;
+  var data = movSheet.getDataRange().getValues();
+  var H = (data[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+  var tC = H.indexOf('movement_type'), qC = H.indexOf('qty'), wC = H.indexOf('warehouse_id'), sC = H.indexOf('sku');
+  var rtC = H.indexOf('related_entity_type'), riC = H.indexOf('related_entity_id');
+  if (tC === -1 || qC === -1 || wC === -1 || sC === -1 || riC === -1) return out;
+  for (var r = 1; r < data.length; r++) {
+    var t = String(data[r][tC] || '').trim();
+    if (t !== FSTX_MOV_RESERVE_ACQUIRE_ && t !== FSTX_MOV_RESERVE_RELEASE_) continue;
+    if (String(data[r][riC] || '').trim() !== ownerId) continue;
+    if (ownerType && rtC !== -1 && String(data[r][rtC] || '').trim() !== ownerType) continue;
+    var k = String(data[r][wC] || '').trim() + '||' + String(data[r][sC] || '').trim();
+    out[k] = (out[k] || 0) + Math.round(parseFloat(data[r][qC]) || 0);
+  }
+  return out;
+}
+
+// ACQUIRE. Reserves `qty` of (warehouse_id, sku) for `ownerId`, idempotently.
+//   * Already holds >= qty: applies NOTHING and returns { applied:false, reason:'ALREADY_RESERVED' }. This is
+//     what makes a retried Shipment Draft creation return REUSED with a ZERO stock delta.
+//   * Otherwise reserves only the SHORTFALL (qty - alreadyHeld), so a partially-applied prior attempt tops up
+//     rather than double-reserving.
+//   * Availability is enforced by factoryStockApplyDeltaTx_'s available>=0 invariant, the same gate every
+//     other operation passes through, NOT a second parallel sufficiency rule that could disagree with it.
+// Runs under the caller's lock. Journals every write. Returns { applied, reserved, alreadyHeld, movementId }.
+function factoryStockAcquireReservationTx_(p) {
+  var qty = Math.round(Number(p.qty));
+  if (!isFinite(qty) || qty <= 0) throw new Error('factoryStockAcquireReservationTx_: qty must be a positive integer');
+  var ownerType = String(p.ownerType || FSTX_RESERVATION_OWNER_TYPE_).trim();
+  var ownerId = String(p.ownerId || '').trim();
+  if (!ownerId) throw new Error('factoryStockAcquireReservationTx_: ownerId required (a reservation with no owner has no lineage)');
+  var key = String(p.warehouseId || '').trim() + '||' + String(p.sku || '').trim();
+  var held = (factoryStockOwnerReservedTx_(p.movSheet, ownerType, ownerId)[key] || 0);
+  if (held >= qty) return { applied: false, reason: 'ALREADY_RESERVED', reserved: 0, alreadyHeld: held, movementId: '' };
+  var need = qty - held;
+  var res = factoryStockApplyDeltaTx_({
+    stockSheet: p.stockSheet, movSheet: p.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    deltaQty: 0, reservedDelta: need, journal: p.journal, now: p.now, movementDate: p.movementDate,
+    movementType: FSTX_MOV_RESERVE_ACQUIRE_, relatedEntityType: ownerType, relatedEntityId: ownerId,
+    note: p.note || ('Factory stock reserved for ' + ownerType + ' ' + ownerId), createdBy: p.createdBy
+  });
+  return { applied: true, reason: 'RESERVED', reserved: need, alreadyHeld: held, movementId: res.movementId,
+    beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
+}
+
+// RELEASE. Gives back at most what THIS owner actually holds, so it can never release another owner's
+// reservation and can never drive the balance negative. Holding nothing is a no-op, not an error, which is
+// what makes cancellation and dispatch-release safely replayable.
+function factoryStockReleaseReservationTx_(p) {
+  var ownerType = String(p.ownerType || FSTX_RESERVATION_OWNER_TYPE_).trim();
+  var ownerId = String(p.ownerId || '').trim();
+  if (!ownerId) throw new Error('factoryStockReleaseReservationTx_: ownerId required');
+  var key = String(p.warehouseId || '').trim() + '||' + String(p.sku || '').trim();
+  var held = (factoryStockOwnerReservedTx_(p.movSheet, ownerType, ownerId)[key] || 0);
+  if (held <= 0) return { applied: false, reason: 'NO_RESERVATION', released: 0, alreadyHeld: 0, movementId: '' };
+  var want = (p.qty === undefined || p.qty === null || p.qty === '') ? held : Math.round(Number(p.qty));
+  if (!isFinite(want) || want <= 0) return { applied: false, reason: 'NOTHING_TO_RELEASE', released: 0, alreadyHeld: held, movementId: '' };
+  var give = Math.min(want, held);
+  var res = factoryStockApplyDeltaTx_({
+    stockSheet: p.stockSheet, movSheet: p.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    deltaQty: 0, reservedDelta: -give, journal: p.journal, now: p.now, movementDate: p.movementDate,
+    movementType: FSTX_MOV_RESERVE_RELEASE_, relatedEntityType: ownerType, relatedEntityId: ownerId,
+    note: p.note || ('Factory stock reservation released for ' + ownerType + ' ' + ownerId +
+      (p.releaseReason ? (' | reason=' + p.releaseReason) : '')),
+    createdBy: p.createdBy
+  });
+  return { applied: true, reason: 'RELEASED', released: give, alreadyHeld: held, movementId: res.movementId,
+    beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
 }
 
 // LIFO rollback of a journal produced by factoryStockApplyDeltaTx_ (and caller-pushed PO-line cells). Cells

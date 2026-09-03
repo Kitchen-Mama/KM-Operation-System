@@ -303,6 +303,15 @@ function shipmentExactRateAndCost_(ss, ctx) {
   } catch (e) { out.rateReview = true; return out; }
 }
 
+// F1-7N-FC-1A §J DEPLOYMENT STAMP, INTRODUCED HERE BECAUSE THIS FILE'S ABSENCE IS SILENT.
+//
+// A 12_ one round behind answers every action it owns, so no action list and no handler probe can see it. What
+// it does differently is create a Shipment Draft that reserves NOTHING: the units stay fully available, a
+// second site plans the same physical stock, and the collision reappears at Confirm exactly as it did before
+// this round — while the site believes reservation is live. That is the partial-sync failure a declared
+// build is the only way to name. Registered in 63_'s module manifest.
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1A';
+
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 
 /**
@@ -359,6 +368,21 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end', 'shipment_carton_qty', 'shipment_qty', 'shipment_carton_cbm', 'shipping_plan_line_id']);
   sheetEnsureColumns_(planSheet, ['transferred_to_shipment_at', 'transferred_shipment_id']);
 
+  // ---- F1-7N-FC-1A §E — THE LOCK. -------------------------------------------------------------------
+  // Everything from the idempotency scan to the last write now runs under ONE ScriptLock. Two things need it:
+  // the duplicate-shipment check (an unlocked scan lets two concurrent Approves both find "none" and both
+  // create one), and the factory-stock reservation, which by definition cannot be evaluated against a balance
+  // another writer is moving. Neither caller holds a lock (11_'s status transition and the explicit
+  // createShipmentFromPlan retry), so it is taken here, and released on EVERY exit path below.
+  var fcLock = null;
+  try { fcLock = LockService.getScriptLock(); if (!fcLock.tryLock(30000)) return { created: false, reason: 'LOCK_UNAVAILABLE' }; }
+  catch (eLock) { return { created: false, reason: 'LOCK_ERROR', error: String(eLock && eLock.message ? eLock.message : eLock) }; }
+  function fcUnlock_() { try { if (fcLock) fcLock.releaseLock(); } catch (e) {} }
+  // Every write from here on is journaled in the SAME {kind:'cell'|'row'} shape 21_ uses, so the shipment
+  // rows, the plan handoff cells and the reservation all unwind through ONE compensation path.
+  var fcJournal = [];
+  function fcJournalRow_(sheet) { fcJournal.push({ kind: 'row', sheet: sheet, row: sheet.getLastRow() }); }
+
   // Idempotency: one Shipment Draft per approved plan (Phase 1). Skip if one already exists.
   var s = shipmentReadSheet_(shipmentSheet);
   var sPlanCol = s.col('shipping_plan_id');
@@ -366,6 +390,7 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   if (sPlanCol !== -1) {
     for (var r = 1; r < s.rows.length; r++) {
       if (String(s.rows[r][sPlanCol]).trim() === planId) {
+        fcUnlock_();
         return { created: false, reason: 'already_exists', shipment_id: (sIdCol !== -1 ? String(s.rows[r][sIdCol]).trim() : '') };
       }
     }
@@ -389,6 +414,50 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     if (v === '' || v == null) v = plv(rowVals, 'carton_qty');
     return v;
   };
+
+  // ---- F1-7N-FC-1A §E — FACTORY STOCK SUFFICIENCY, VALIDATED BEFORE ANY WRITE. -----------------------
+  // The frozen model (§0) reserves at Shipment Draft creation and nowhere earlier, so THIS is the first
+  // moment the system commits to physical units and therefore the first moment a two-site collision can be
+  // refused. Refusing here writes nothing at all: no shipment, no lines, no reservation, and the approved plan
+  // stays recoverable so the operator can retry after the competing shipment releases or dispatches.
+  var srcWarehouseId = String(pv('source_warehouse_id') || '').trim();
+  var needBySku = {}, needSkus = [];
+  for (var nq = 0; nq < planLines.length; nq++) {
+    var nSku = String(plv(planLines[nq], 'sku') || '').trim();
+    var nQty = Math.round(shipmentNum_(plv(planLines[nq], 'approved_qty')));
+    if (!nSku || nQty <= 0) continue;
+    if (needBySku[nSku] === undefined) { needBySku[nSku] = 0; needSkus.push(nSku); }
+    needBySku[nSku] += nQty;
+  }
+  var fcStockSheet = ss.getSheetByName('factory_stock');
+  var FC_MOV_HEADERS_ = ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id', 'movement_type', 'qty',
+    'related_entity_type', 'related_entity_id', 'before_current_stock', 'after_current_stock',
+    'before_reserved_stock', 'after_reserved_stock', 'note', 'created_by', 'created_at'];
+  var fcMovSheet = null;
+  if (needSkus.length) {
+    // A plan with units to ship and no source warehouse cannot reserve anything, and reserving against a
+    // guessed warehouse would be worse than refusing. Fail closed and name the missing field.
+    if (!srcWarehouseId) { fcUnlock_(); return { created: false, reason: 'SOURCE_WAREHOUSE_REQUIRED_FOR_RESERVATION', shipping_plan_id: planId }; }
+    if (!fcStockSheet) { fcUnlock_(); return { created: false, reason: 'factory_stock_not_found' }; }
+    fcMovSheet = fcWriteEnsureSheet_(ss, 'factory_stock_movements', FC_MOV_HEADERS_);
+    fcWriteEnsureColumns_(fcMovSheet, FC_MOV_HEADERS_);
+    var shortfalls = [];
+    for (var ns = 0; ns < needSkus.length; ns++) {
+      var bal = factoryStockReadBalanceTx_(fcStockSheet, srcWarehouseId, needSkus[ns]);
+      if (bal.available < needBySku[needSkus[ns]]) {
+        shortfalls.push({ sku: needSkus[ns], warehouse_id: srcWarehouseId, need: needBySku[needSkus[ns]],
+          available: bal.available, current: bal.current, reserved: bal.reserved });
+      }
+    }
+    if (shortfalls.length) {
+      fcUnlock_();
+      return { created: false, reason: 'INSUFFICIENT_FACTORY_STOCK', shipping_plan_id: planId,
+        source_warehouse_id: srcWarehouseId, shortfalls: shortfalls,
+        message: 'Insufficient available factory stock at ' + srcWarehouseId + ' for: ' + shortfalls.map(function (x) {
+          return x.sku + ' (need ' + x.need + ', available ' + x.available + ')'; }).join('; ') +
+          '. No Shipment Draft was created and nothing was reserved.' };
+    }
+  }
 
   var now = shipmentTimestamp_();
   var today = shipmentToday_();
@@ -527,6 +596,7 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     updated_by: actor,
     updated_at: now
   });
+  fcJournalRow_(shipmentSheet);
 
   // Lines: qty = approved_qty; copy carton/units; COPY the Decision Snapshot → Execution Snapshot.
   var lineCount = 0;
@@ -561,38 +631,97 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
       snapshot_avg_sales_source: plv(lr, 'snapshot_avg_sales_source'),
       snapshot_avg_sales_warning: plv(lr, 'snapshot_avg_sales_warning')
     });
+    fcJournalRow_(shipmentLineSheet);
     lineCount++;
+  }
+
+  // ---- F1-7N-FC-1A §E — ACQUIRE THE RESERVATION, OR UNDO THE SHIPMENT. -------------------------------
+  // The shipment row exists at this point, which is what gives the reservation a resolvable owner
+  // (related_entity_type='shipment', related_entity_id=shipment_id) rather than a counter with no lineage.
+  // If the acquire fails for ANY reason the whole draft is rolled back through the shared journal, so the
+  // outcome is exactly the two states §E allows: a shipment WITH its reservation, or neither.
+  var reservationSummary = [];
+  if (needSkus.length) {
+    try {
+      for (var ra = 0; ra < needSkus.length; ra++) {
+        var acq = factoryStockAcquireReservationTx_({
+          stockSheet: fcStockSheet, movSheet: fcMovSheet, warehouseId: srcWarehouseId, sku: needSkus[ra],
+          qty: needBySku[needSkus[ra]], ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+          journal: fcJournal, now: now, movementDate: today, createdBy: actor,
+          note: 'Reserved for Shipment Draft ' + shipmentId + ' (shipping plan ' + planId + ')'
+        });
+        reservationSummary.push({ sku: needSkus[ra], warehouse_id: srcWarehouseId,
+          reserved_qty: needBySku[needSkus[ra]], applied: acq.applied, reason: acq.reason });
+      }
+    } catch (eRes) {
+      factoryStockRollbackJournal_(fcJournal);
+      fcUnlock_();
+      return { created: false, reason: 'RESERVATION_FAILED', shipping_plan_id: planId,
+        source_warehouse_id: srcWarehouseId,
+        error: String(eRes && eRes.message ? eRes.message : eRes),
+        message: 'The Shipment Draft could not reserve factory stock and was rolled back. Nothing was created ' +
+          'and no stock was reserved. The approved plan remains recoverable.' };
+    }
   }
 
   // Decision-Layer HANDOFF metadata (NOT a Decision Snapshot change — Immutable Flow preserved):
   // mark the plan as transferred so the Weekly Shipping Plan UI hides it by default. The plan row and
   // its lines (and their Decision Snapshot) are NOT deleted or mutated. setValue skips columns absent
   // from the live sheet, so this is non-blocking until the two new headers are added.
-  function setPlanCell_(name, value) { var c = p.col(name); if (c !== -1 && planRowIndex !== -1) planSheet.getRange(planRowIndex, c + 1).setValue(value); }
+  function setPlanCell_(name, value) {
+    var c = p.col(name);
+    if (c === -1 || planRowIndex === -1) return;
+    fcJournal.push({ kind: 'cell', sheet: planSheet, row: planRowIndex, col: c, prev: planRow[c] });
+    planSheet.getRange(planRowIndex, c + 1).setValue(value);
+  }
   setPlanCell_('transferred_to_shipment_at', now);
   setPlanCell_('transferred_shipment_id', shipmentId);
   setPlanCell_('updated_at', now);
 
-  return { created: true, shipment_id: shipmentId, shipment_no: shipmentNo, line_count: lineCount };
+  fcUnlock_();
+  return { created: true, shipment_id: shipmentId, shipment_no: shipmentNo, line_count: lineCount,
+    source_warehouse_id: srcWarehouseId, factory_reservations: reservationSummary };
 }
 
-/** Explicit action wrapper (idempotent retry of the Execution Commit). */
+/**
+ * Explicit action wrapper — the IDEMPOTENT RETRY of the Execution Commit.
+ *
+ * F1-7N-FC-1A §C. This action has been routed, handled and adapter-wrapped since the Shipment Center work, and
+ * the Approve failure message has been telling operators "You can retry from Shipment Overview" the whole time
+ * — but nothing in the frontend could reach it, and Shipment Overview renders `shipped` onward, so the very
+ * state needing recovery could never appear there. It is now called by the approved plan card on the Weekly
+ * Shipping Plan page, which is where the recoverable plan actually is.
+ *
+ * The answer is deliberately a two-value outcome the caller can bind to without parsing prose:
+ *   outcome = 'CREATED'  a Shipment Draft was created by this call
+ *   outcome = 'REUSED'   one already existed; this call changed nothing (the safe result of a double click,
+ *                        a retried transport failure, or a retry after an answer was lost in flight)
+ * Anything else is a typed failure carrying its reason. A retry NEVER changes the plan's approval status: this
+ * path does not touch `status`, `approved_by` or `approved_at` at all.
+ */
 function handleCreateShipmentFromPlan_(body) {
   var planId = String((body && body.shipping_plan_id) || '').trim();
   var actor = String((body && (body.created_by || body.actor)) || 'system_user').trim();
-  if (!planId) return jsonResponse_({ success: false, error: 'Missing shipping_plan_id' });
+  if (!planId) return jsonResponse_({ success: false, error: 'Missing shipping_plan_id', code: 'MISSING_SHIPPING_PLAN_ID' });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result;
   try {
     result = createShipmentFromApprovedPlan_(ss, planId, actor);
   } catch (e) {
-    return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
+    return jsonResponse_({ success: false, code: 'SHIPMENT_CREATION_FAILED', shipping_plan_id: planId,
+      error: String(e && e.message ? e.message : e) });
   }
   if (result && result.created === false && result.reason && result.reason !== 'already_exists') {
-    return jsonResponse_({ success: false, error: 'Could not create shipment: ' + result.reason, data: result });
+    return jsonResponse_({ success: false, code: String(result.reason).toUpperCase(), shipping_plan_id: planId,
+      error: (result.message || ('Could not create shipment: ' + result.reason)), data: result });
   }
-  return jsonResponse_({ success: true, data: result });
+  var reused = !!(result && result.created === false && result.reason === 'already_exists');
+  return jsonResponse_({ success: true, data: Object.assign({}, result, {
+    outcome: reused ? 'REUSED' : 'CREATED',
+    shipping_plan_id: planId,
+    approval_status_changed: false
+  }) });
 }
 
 // ---- Central Shipment totals recalculation (snapshot) ----
@@ -706,6 +835,91 @@ function handleUpdateShipment_(body) {
   var curStatus = (function () { var c = s.col('status'); return c === -1 ? '' : String(rowVals[c] || '').trim(); })();
 
   var now = shipmentTimestamp_();
+
+  // ---- F1-7N-FC-1A §E — A SOURCE-WAREHOUSE CHANGE MOVES THE RESERVATION, OR IS REFUSED. ------------
+  //
+  // §E said to adjust the reservation by the exact delta when a Shipment Draft's quantity or source changes
+  // before dispatch. Those two are NOT symmetric in this system, and the measurement matters:
+  //
+  //   QUANTITY  shipment_lines.shipment_qty is the immutable Execution Snapshot. It is absent from
+  //             SHIPMENT_EDITABLE_FIELDS_ and no action writes it after creation, so the quantity branch is
+  //             VACUOUS BY DESIGN rather than unimplemented. A test pins that immutability, because the day it
+  //             becomes editable the reservation silently stops matching the shipment.
+  //   SOURCE    source_warehouse_id IS editable, and that is a real hole: moving the source while the
+  //             reservation sits on the OLD warehouse leaves units reserved where nothing will ship from and
+  //             unreserved where something will. So the edit now MOVES the reservation, under one lock:
+  //             validate availability at the NEW warehouse first (refusing writes nothing at all), then
+  //             release at the old and acquire at the new. Release is scoped to THIS shipment's own ledger, so
+  //             it can never release another shipment's hold.
+  var srcCol_ = s.col('source_warehouse_id');
+  var curSrc_ = srcCol_ === -1 ? '' : String(rowVals[srcCol_] == null ? '' : rowVals[srcCol_]).trim();
+  var wantSrc_ = body.hasOwnProperty('source_warehouse_id') ? String(body.source_warehouse_id == null ? '' : body.source_warehouse_id).trim() : null;
+  var reservationMoved_ = null;
+  if (wantSrc_ !== null && wantSrc_ !== curSrc_) {
+    var stkSheet_ = ss.getSheetByName('factory_stock');
+    var movSheet_ = ss.getSheetByName('factory_stock_movements');
+    var held_ = (stkSheet_ && movSheet_) ? factoryStockOwnerReservedTx_(movSheet_, FSTX_RESERVATION_OWNER_TYPE_, shipmentId) : {};
+    var moveList_ = [];
+    for (var hk_ in held_) {
+      if (!Object.prototype.hasOwnProperty.call(held_, hk_)) continue;
+      var parts_ = hk_.split('||');
+      if (parts_[0] !== curSrc_) continue;
+      var q_ = Math.round(held_[hk_] || 0);
+      if (q_ > 0) moveList_.push({ sku: parts_[1], qty: q_ });
+    }
+    if (moveList_.length) {
+      if (!wantSrc_) {
+        return jsonResponse_({ success: false, code: 'SOURCE_WAREHOUSE_REQUIRED_FOR_RESERVATION', shipment_id: shipmentId,
+          error: 'This Shipment Draft holds a factory stock reservation at ' + curSrc_ + ', so its source warehouse ' +
+            'cannot be cleared. Nothing was changed.' });
+      }
+      var lockU_ = null;
+      try { lockU_ = LockService.getScriptLock(); if (!lockU_.tryLock(30000)) return jsonResponse_({ success: false, code: 'LOCK_UNAVAILABLE', error: 'Could not acquire lock; please retry.' }); }
+      catch (eLU_) { return jsonResponse_({ success: false, code: 'LOCK_ERROR', error: String(eLU_ && eLU_.message ? eLU_.message : eLU_) }); }
+      // Availability at the NEW warehouse is validated for EVERY sku before the first write, so a refusal
+      // leaves both warehouses byte-identical instead of half-moved.
+      var shortNew_ = [];
+      for (var mv_ = 0; mv_ < moveList_.length; mv_++) {
+        var balNew_ = factoryStockReadBalanceTx_(stkSheet_, wantSrc_, moveList_[mv_].sku);
+        if (balNew_.available < moveList_[mv_].qty) {
+          shortNew_.push({ sku: moveList_[mv_].sku, warehouse_id: wantSrc_, need: moveList_[mv_].qty,
+            available: balNew_.available, current: balNew_.current, reserved: balNew_.reserved });
+        }
+      }
+      if (shortNew_.length) {
+        try { lockU_.releaseLock(); } catch (e) {}
+        return jsonResponse_({ success: false, code: 'INSUFFICIENT_FACTORY_STOCK_AT_NEW_SOURCE', shipment_id: shipmentId,
+          data: { from_warehouse_id: curSrc_, to_warehouse_id: wantSrc_, shortfalls: shortNew_ },
+          error: 'Cannot move this Shipment Draft to ' + wantSrc_ + ': insufficient available factory stock for ' +
+            shortNew_.map(function (x) { return x.sku + ' (need ' + x.need + ', available ' + x.available + ')'; }).join('; ') +
+            '. The source warehouse was NOT changed and the existing reservation at ' + curSrc_ + ' is untouched.' });
+      }
+      var jU_ = [];
+      try {
+        for (var mw_ = 0; mw_ < moveList_.length; mw_++) {
+          factoryStockReleaseReservationTx_({
+            stockSheet: stkSheet_, movSheet: movSheet_, warehouseId: curSrc_, sku: moveList_[mw_].sku,
+            qty: moveList_[mw_].qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+            journal: jU_, now: now, createdBy: actor, releaseReason: 'source_warehouse_changed_to_' + wantSrc_
+          });
+          factoryStockAcquireReservationTx_({
+            stockSheet: stkSheet_, movSheet: movSheet_, warehouseId: wantSrc_, sku: moveList_[mw_].sku,
+            qty: moveList_[mw_].qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+            journal: jU_, now: now, createdBy: actor,
+            note: 'Reservation moved from ' + curSrc_ + ' for shipment ' + shipmentId
+          });
+        }
+      } catch (eMv_) {
+        factoryStockRollbackJournal_(jU_);
+        try { lockU_.releaseLock(); } catch (e) {}
+        return jsonResponse_({ success: false, code: 'RESERVATION_MOVE_FAILED', shipment_id: shipmentId,
+          error: 'The source warehouse change was rolled back: ' + String(eMv_ && eMv_.message ? eMv_.message : eMv_) +
+            '. Nothing was changed.' });
+      }
+      try { lockU_.releaseLock(); } catch (e) {}
+      reservationMoved_ = { from_warehouse_id: curSrc_, to_warehouse_id: wantSrc_, moved: moveList_ };
+    }
+  }
 
   // Write editable fields FIRST so the Ship gate below validates the just-saved carton numbers.
   var changed = 0;

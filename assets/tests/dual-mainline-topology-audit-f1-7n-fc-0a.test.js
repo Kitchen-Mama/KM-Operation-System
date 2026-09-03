@@ -355,12 +355,17 @@ TOPO.forEach(function (t, i) {
 
 // ---- THE MEASURED GAPS ------------------------------------------------------------------------------------
 (function () {
-  // THE MEASURED GAP SET. Pinned as an equality so a later round cannot quietly add a fifth unreachable
-  // stage, and cannot quietly claim one of these four was always fine.
+  // THE MEASURED GAP SET. Pinned as an equality so a later round cannot quietly add a new unreachable stage,
+  // and cannot quietly claim one of these was always fine.
+  //
+  // F1-7N-FC-1A CLOSED S6b, AND THIS IS WHERE THAT SHOWS UP. FC-0A measured FOUR stages deployed and startable
+  // by nobody; the highest-severity one — createShipmentFromPlan, the recovery route the Approve failure
+  // message had been promising for rounds — now has a caller on the Approved plan card. The equality is
+  // updated rather than relaxed: three remain, and the list still refuses a silent fourth.
   var serverOnly = TOPO.filter(function (t) { return t.cls === 'SERVER_ONLY'; }).map(function (t) { return t.stage.id; });
-  eq(serverOnly, ['S6b', 'S7b', 'S8b', 'P10b'],
-    'B90 §K FOUR stages are deployed and startable by nobody: the Shipment Draft retry, the shipment method ' +
-    'candidate list, the shipment final-output snapshot, and the standalone document list');
+  eq(serverOnly, ['S7b', 'S8b', 'P10b'],
+    'B90 §K THREE stages remain deployed and startable by nobody: the shipment method candidate list, the ' +
+    'shipment final-output snapshot, and the standalone document list (S6b was CLOSED by FC-1A)');
   var specOnly = TOPO.filter(function (t) { return t.cls === 'SPEC_ONLY' || t.cls === 'UI_ONLY'; }).map(function (t) { return t.stage.id; });
   eq(specOnly, [], 'B91 §K and no stage is SPEC_ONLY or UI_ONLY — every mainline stage has a real server owner');
 
@@ -377,17 +382,21 @@ TOPO.forEach(function (t, i) {
   eq(stockGaps, [], 'B93 §G every stage with an inventory effect is fully connected');
 })();
 
-// S6b is the retry the Approve path's own failure message points the operator at. Measured, that message
-// names a recovery route the UI does not offer.
+// S6b WAS the retry the Approve path's own failure message pointed the operator at while nothing could reach
+// it. F1-7N-FC-1A connected it, and these checks are INVERTED to hold the closure in place: the same evidence,
+// now asserting the fix rather than the gap. If a later round breaks any of them, the operator is back to
+// being told to retry somewhere they cannot.
 (function () {
   var sp = PAGE_SRC['shipping-plan.js'];
-  ok(/You can retry from Shipment Overview/.test(sp),
-    'B94 §K the Approve failure message tells the operator to retry the Shipment Draft elsewhere');
-  eq(frontendReach('createShipmentFromPlan', adaptersFor('createShipmentFromPlan')), [],
-    'B94a and NOTHING in the frontend reaches the retry action it points at — the recovery route it names ' +
-    'does not exist');
-  ok(!MANIFEST_ACTIONS['createShipmentFromPlan'],
-    'B94b nor is it a REQUIRED action, so a deployment missing it reports nothing either');
+  var live = code(sp);   // comments stripped: the old promise survives ONLY as a quotation explaining itself
+  ok(!/You can retry from Shipment Overview/.test(live),
+    'B94 §K the message naming an unreachable recovery route is GONE from the live code');
+  ok(frontendReach('createShipmentFromPlan', adaptersFor('createShipmentFromPlan')).length > 0,
+    'B94a and the frontend now REACHES the retry action — the recovery route it names exists');
+  ok(!!MANIFEST_ACTIONS['createShipmentFromPlan'],
+    'B94b and it is a REQUIRED action, so a deployment missing it is a NAMED deployment fact');
+  ok(/spDbRetryShipment/.test(live) && /Retry Shipment Draft/.test(sp),
+    'B94c and the caller is the Approved plan card — the page where the recoverable plan actually is');
 })();
 
 // ================================================================================================================
@@ -517,10 +526,25 @@ function confirmWorld(opts) {
 //   SUPPLIED — sheet ensure/append/read helpers, the document readiness gate (a Drive probe), the PO
 //              allocation planner (32_), and carton validation. None of them touches factory stock, which is
 //              what this section measures.
-function runConfirm(world, body, mutatedSrc) {
+// F1-7N-FC-1A: `mutated21` was added because the mutation targets M2/M4/M5/M6 aim at MOVED. The movement
+// append, its sign, its before/after pair and its lineage now live in 21_'s shared primitive, so mutating 22_
+// can no longer reach them. Aiming the same four mutations at the shared core is strictly stronger: one
+// surviving mutant there would break the dispatch, the PO receipt, the adjustment and the import at once.
+function runConfirm(world, body, mutatedSrc, mutated21) {
   var svc = gasServices();
   LAST_RESPONSE = null;
-  var src = (mutatedSrc || G22);
+  // F1-7N-FC-1A §F: 22_ no longer implements a stock mutation. It calls 21_'s shared authority, so 21_'s
+  // real core is loaded here and the deduction this section measures is executed by the ONE canonical
+  // primitive. Nothing about the assertions below is relaxed; the code under them is simply the shared one.
+  var g21 = mutated21 || G21;
+  var src = (mutatedSrc || G22) + NL + [
+    extractFn(g21, 'factoryStockApplyDeltaTx_'),
+    extractFn(g21, 'factoryStockOwnerReservedTx_'),
+    extractFn(g21, 'factoryStockRollbackJournal_'),
+    "var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';",
+    "var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';",
+    "var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';"
+  ].join(NL);
   function appendByHeader(sh, obj) {
     var h = (sh.g[0] || []).map(function (x) { return String(x).trim(); });
     sh.appendRow(h.map(function (k) { return Object.prototype.hasOwnProperty.call(obj, k) ? obj[k] : ''; }));
@@ -599,7 +623,14 @@ function runConfirm(world, body, mutatedSrc) {
     'sheetEnsureColumns_', 'shipmentReadSheet_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
     'fcWriteAppendByHeader_', 'shipmentTimestamp_', 'shipmentToday_', 'shipmentValidateCartons_',
     'dgsShipmentReadiness_', 'dgsGenerateShipmentDocuments_', 'slaPrepareExecution_', 'slaApplyExecution_',
-    'var OUT;' + G22 + NL + 'OUT = handleConfirmShipmentAndDispatch_; return OUT;')(
+    'var OUT;' + G22 + NL + [
+      extractFn(G21, 'factoryStockApplyDeltaTx_'),
+      extractFn(G21, 'factoryStockOwnerReservedTx_'),
+      extractFn(G21, 'factoryStockRollbackJournal_'),
+      "var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';",
+      "var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';",
+      "var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';"
+    ].join(NL) + NL + 'OUT = handleConfirmShipmentAndDispatch_; return OUT;')(
     svc.Utilities, svc.Session,
     { flush: function () {}, getActiveSpreadsheet: function () { return w.ss; } },
     svc.LockService, svc.Logger, jsonResponseStub,
@@ -719,23 +750,47 @@ section('§G — WHO MAY MOVE FACTORY STOCK AT ALL');
     (c.match(/movement_type:\s*'([a-z_]+)'/g) || []).forEach(function (m) { types[m.match(/'([a-z_]+)'/)[1]] = 1; });
     (c.match(/movementType:\s*'([a-z_]+)'/g) || []).forEach(function (m) { types[m.match(/'([a-z_]+)'/)[1]] = 1; });
   });
+  // A FOURTH declaration shape, added by FC-1A: a hoisted FSTX_MOV_* constant. Reading only the three earlier
+  // shapes would have reported the vocabulary as unchanged at five while two new values were live — exactly
+  // the quiet drift this probe exists to prevent, and the same class of bug as the po_receipt miss it already
+  // carries a comment about.
   types[String(G22.match(/var CSD_MOV_TYPE_ = '([a-z_]+)'/)[1])] = 1;
-  eq(Object.keys(types).sort(), ['inventory_import', 'manual_adjustment', 'po_receipt', 'shipment_out', 'shipment_receipt'],
-    'G30 §G the closed movement vocabulary: import, manual adjustment, PO receipt, shipment out, shipment receipt');
+  GS_FILES.forEach(function (f) {
+    (code(GS_SRC[f]).match(/var FSTX_MOV_[A-Z_]+ = '([a-z_]+)'/g) || []).forEach(function (m) {
+      types[m.match(/'([a-z_]+)'/)[1]] = 1;
+    });
+  });
+  eq(Object.keys(types).sort(), ['inventory_import', 'manual_adjustment', 'po_receipt', 'reservation_acquire',
+    'reservation_release', 'shipment_out', 'shipment_receipt'],
+    'G30 §G the movement vocabulary is SEVEN: import, manual adjustment, PO receipt, reservation acquire, ' +
+    'reservation release, shipment out, shipment receipt (FC-1A added the two reservation values)');
 
   // Every file that writes the movements table.
   var movWriters = GS_FILES.filter(function (f) {
     return /fcWriteEnsureSheet_\(ss, 'factory_stock_movements'/.test(code(GS_SRC[f]));
   }).sort();
-  eq(movWriters, ['13_procurement_handlers.gs', '21_factory_inventory_handlers.gs', '22_shipment_dispatch_handlers.gs'],
-    'G31 §G exactly THREE files may append a factory stock movement');
+  eq(movWriters, ['12_shipment_handlers.gs', '13_procurement_handlers.gs', '21_factory_inventory_handlers.gs',
+    '22_shipment_dispatch_handlers.gs'],
+    'G31 §G exactly FOUR files may reach the factory stock movements table (FC-1A added 12_, which acquires ' +
+    'the Shipment Draft reservation)');
 
-  // 21_ owns the shared transaction. 13_ reuses it. 22_ does NOT — it has its own inline deduction.
+  // THE FINDING FC-1A CLOSED. 21_ owns the ONE shared transaction and every caller delegates to it. Before
+  // FC-1A, 22_ carried its own inline setValue + movement append while 13_'s comment claimed no second
+  // implementation existed — the exact contradiction this audit measured.
   ok(/function factoryStockApplyDeltaTx_/.test(code(G21)), 'G32 21_ owns the shared stock transaction');
   ok(/factoryStockApplyDeltaTx_\(/.test(code(G13)), 'G32a 13_ (PO receipt) reuses it');
-  ok(!/factoryStockApplyDeltaTx_\(/.test(code(G22)),
-    'G32b §G MEASURED: 22_ (Confirm Shipment) does NOT — the dispatch deduction is a SECOND stock-mutation ' +
-    'implementation, and 13_\'s own comment claims there is no second one');
+  ok(/factoryStockApplyDeltaTx_\(/.test(code(G22)),
+    'G32b §G FC-1A CLOSED IT: 22_ (Confirm Shipment) now DELEGATES to the shared transaction instead of ' +
+    'carrying a second stock-mutation implementation');
+  ok(/factoryStockAcquireReservationTx_\(/.test(code(G12)),
+    'G32c and 12_ reaches stock ONLY through the shared reservation primitives, never a balance cell of its own');
+  // The ENFORCEABLE form of the ownership claim, and what makes 21_'s corrected comment true rather than
+  // aspirational: no file outside 21_ may write a factory_stock balance cell.
+  var balanceWriters = GS_FILES.filter(function (f) {
+    if (f.indexOf('21_') === 0) return false;
+    return /getRange\([^)]*(curCol|resCol)[^)]*\)\s*\.setValue/.test(code(GS_SRC[f]));
+  }).sort();
+  eq(balanceWriters, [], 'G32d §G and NO file outside 21_ writes a factory_stock balance cell');
   ok(/resulting fac_current_stock would be negative/.test(code(G21)),
     'G33 §G.11 the shared transaction refuses to go negative');
   ok(/Insufficient factory stock/.test(code(G22)),
@@ -990,12 +1045,12 @@ mut('M1  the deduction happens twice for one shipment', function () {
   runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
   return w.movements().length > 1 && Number(w.stock()[0].fac_current_stock) < afterFirst;
 });
-mut('M2  stock is deducted without writing a movement row', function () {
-  var src = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
-    "      fcWriteAppendByHeader_(movSheet, {\n        factory_stock_movement_id: csdId_('FSMV-', 8), movement_date: today, sku: d.sku, warehouse_id: d.warehouseId,",
-    "      if (false) fcWriteAppendByHeader_(movSheet, {\n        factory_stock_movement_id: csdId_('FSMV-', 8), movement_date: today, sku: d.sku, warehouse_id: d.warehouseId,");
+mut('M2  stock is deducted without writing a movement row (mutating the SHARED authority)', function () {
+  var g21 = mutateFn(G21, 'factoryStockApplyDeltaTx_',
+    "  fcWriteAppendByHeader_(movSheet, {\n    factory_stock_movement_id: movementId,",
+    "  if (false) fcWriteAppendByHeader_(movSheet, {\n    factory_stock_movement_id: movementId,");
   var w = confirmWorld();
-  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
+  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, null, g21);
   return Number(w.stock()[0].fac_current_stock) === 200 && w.movements().length === 0;
 });
 mut('M3  the sufficiency gate is removed and stock goes negative', function () {
@@ -1011,26 +1066,26 @@ mut('M3  the sufficiency gate is removed and stock goes negative', function () {
 });
 mut('M4  the movement records a positive quantity for an OUTBOUND move', function () {
   var src = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
-    "movement_type: CSD_MOV_TYPE_, qty: -d.take, related_entity_type: 'shipment', related_entity_id: shipmentId,",
-    "movement_type: CSD_MOV_TYPE_, qty: d.take, related_entity_type: 'shipment', related_entity_id: shipmentId,");
+    "        deltaQty: -d.take, reservedDelta: -give,", "        deltaQty: d.take, reservedDelta: -give,");
   var w = confirmWorld();
   runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
-  return Number(w.movements()[0].qty) > 0;
+  var mv = w.movements();
+  return mv.length > 0 && Number(mv[0].qty) > 0;
 });
-mut('M5  the before/after balance is dropped from the movement row', function () {
-  var src = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
-    "before_current_stock: d.beforeCurrent, after_current_stock: afterCurrent,",
+mut('M5  the before/after balance is dropped from the movement row (SHARED authority)', function () {
+  var g21 = mutateFn(G21, 'factoryStockApplyDeltaTx_',
+    "before_current_stock: beforeCurrent, after_current_stock: afterCurrent,",
     "before_current_stock: '', after_current_stock: '',");
   var w = confirmWorld();
-  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
+  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, null, g21);
   return String(w.movements()[0].before_current_stock) === '';
 });
-mut('M6  the shipment lineage is dropped from the movement row', function () {
-  var src = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
-    "related_entity_type: 'shipment', related_entity_id: shipmentId,",
+mut('M6  the shipment lineage is dropped from the movement row (SHARED authority)', function () {
+  var g21 = mutateFn(G21, 'factoryStockApplyDeltaTx_',
+    "related_entity_type: p.relatedEntityType, related_entity_id: p.relatedEntityId,",
     "related_entity_type: '', related_entity_id: '',");
   var w = confirmWorld();
-  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
+  runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, null, g21);
   return String(w.movements()[0].related_entity_id) === '';
 });
 mut('M7  Confirm ends at in_transit instead of the formal hand-over', function () {
@@ -1138,21 +1193,34 @@ section('§K — THE CLASSIFICATION, AND WHAT IT FORBIDS');
   eq({ connected_not_atomic: ['S6'], server_only: (byClass.SERVER_ONLY || []),
        stock_stages_all_connected: true,
        overall: 'NOT_READY_FOR_UNCONDITIONAL_LIVE_ACCEPTANCE' },
-     { connected_not_atomic: ['S6'], server_only: ['S6b', 'S7b', 'S8b', 'P10b'],
+     { connected_not_atomic: ['S6'], server_only: ['S7b', 'S8b', 'P10b'],
        stock_stages_all_connected: true,
        overall: 'NOT_READY_FOR_UNCONDITIONAL_LIVE_ACCEPTANCE' },
     'C2  §K the overall verdict, stated as data rather than prose');
 })();
 
 // ================================================================================================================
-section('§L — WHAT THIS ROUND DID NOT TOUCH');
+section('§L — THE INVARIANTS THIS AUDIT PINNED, RE-CHECKED AFTER FC-1A');
 // ================================================================================================================
+// FC-0A itself changed no source file, and this section said so. FC-1A DID change 11_, 12_, 21_ and 22_ to
+// close the findings above, so the section is renamed to what these four checks actually verify: that the
+// facts FC-0A pinned still hold, and that the owners which changed DECLARE it. A stamp that had not moved
+// while the behaviour did is the failure mode this manifest exists to catch.
 (function () {
-  eq((code(G11).match(/SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FA-4B2', 'L1  11_ unchanged');
+  eq((code(G11).match(/SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
+    'L1  11_ DECLARES the FC-1A build — its Approve answer changed shape, and the frontend binds to it');
   eq((code(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
     'F1-7N-FB-4G-A2-R3-R1', 'L2  16_ unchanged');
-  ok(/CSD_MOV_TYPE_ = 'shipment_out'/.test(G22), 'L3  22_ unchanged — this round audits it, it does not edit it');
-  ok(/movement_type='po_receipt'/.test(G13), 'L4  13_ unchanged');
+  ok(/CSD_MOV_TYPE_ = 'shipment_out'/.test(G22),
+    'L3  22_ still names shipment_out — FC-1A moved WHERE the movement is written, never WHAT it is called');
+  ok(/movement_type='po_receipt'/.test(G13), 'L4  13_ unchanged — the PO receipt path was not touched');
+  eq((code(G22).match(/CSD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
+    'L5  and 22_ DECLARES the FC-1A build — a 22_ a round behind returns SUCCESS while never releasing a ' +
+    'reservation, so only a declared build can tell the two apart');
+  eq((code(read('assets/specs/active/apps-script/12_shipment_handlers.gs')).match(/SHIPMENT_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+    'F1-7N-FC-1A', 'L6  as does 12_ — a 12_ a round behind creates Shipment Drafts that reserve NOTHING');
+  eq((code(G21).match(/FSTX_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
+    'L7  as does 21_ — the file that now owns every factory stock mutation');
 })();
 
 // ================================================================================================================

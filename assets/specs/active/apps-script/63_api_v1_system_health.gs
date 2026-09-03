@@ -78,7 +78,13 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;
 // 01_router.gs since F1-7N-FA-3C-R6F1. Any deployment already at action-contract v10 therefore routes it, and
 // the per-action handler probe is the second, independent gate for a partial file-by-file sync.
 // SYS_TRANSPORT_CONTRACT_VERSION_ does not move either: the envelope shape is unchanged.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 10;
+// F1-7N-FC-1A: 10 -> 11. SYS_REQUIRED_ACTIONS_ gained createShipmentFromPlan. The action itself has been
+// routed since the Shipment Center work, so SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ deliberately does NOT move
+// (its rule is "bump when a router ACTION is added or removed"). What changed is that a PAGE now depends on
+// it: the Weekly Shipping Plan card's Retry Shipment Draft is the recovery path for a committed approval whose
+// Execution Commit failed, and a deployment missing it must be a named deployment fact rather than a Retry
+// button that does nothing.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 11;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -131,6 +137,14 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
   { action: 'submitAllocationDraftsToShippingPlans', handler: 'handleSubmitAllocationDraftsToShippingPlans_', used_by: 'Site Inventory Submit Plan' },
   { action: 'confirmShipmentAndDispatch', handler: 'handleConfirmShipmentAndDispatch_', used_by: 'Confirm Shipment' },
+  // F1-7N-FC-1A §C/§J — THE SHIPMENT DRAFT RECOVERY ACTION.
+  //
+  // The FC-0A audit measured this as router + handler + adapter with NO caller anywhere in the frontend, while
+  // the Approve failure message had been promising "You can retry from Shipment Overview" for rounds -- a
+  // promise nothing could keep, on a page that renders `shipped` onward and so could never show the state
+  // needing recovery. It is now called by the Approved plan card, which makes its absence from a deployment a
+  // user-visible break and therefore something this registry must name.
+  { action: 'createShipmentFromPlan', handler: 'handleCreateShipmentFromPlan_', used_by: 'Weekly Shipping Plan -- Retry Shipment Draft (approval recovery)' },
   { action: 'updatePurchaseOrderStatus', handler: 'handleUpdatePurchaseOrderStatus_', used_by: 'Send PO' },
   { action: 'document.list', handler: 'handleEntityDocumentList_', used_by: 'Document Panels' },
   { action: 'document.retry', handler: 'handleDocumentRetry_', used_by: 'Document retry' },
@@ -235,7 +249,18 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // would refuse a marketplace route it is supposed to accept, and would fall back to K2 for a route the
   // writer believes is K4-resolved. That is exactly the half-finished sync this manifest is here to name.
   { file: '69_api_v1_route_identity_contract.gs', symbol: 'RIC_BUILD_VERSION_', expected: 'F1-7N-FB-4F-B3', owns: 'frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)' },
-  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FA-4B2', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner' },
+  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer' },
+  // F1-7N-FC-1A §J — THE FOUR OWNERS OF THE RESERVATION MODEL. Each answers every one of its actions
+  // when a round behind, so no resolvable action list and no handler probe can see a partial sync of them.
+  // What each one does differently is the point:
+  //   21_  no reservation primitives at all: 12_ and 22_ throw on an undefined function.
+  //   12_  creates Shipment Drafts that reserve NOTHING, while the site believes reservation is live.
+  //   22_  deducts through its OLD inline implementation and never RELEASES the reservation, so available
+  //        stock drifts permanently downward and shipments are refused for stock that is physically present.
+  // The 12_ and 22_ cases are the dangerous ones precisely because they return success.
+  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'THE single factory_stock mutation authority: balance delta, reservation acquire/release, typed movement, rollback journal' },
+  { file: '12_shipment_handlers.gs', symbol: 'SHIPMENT_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'Shipment Draft creation + the factory stock reservation acquired with it (all-or-nothing)' },
+  { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
   { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'doGet/doPost action routing (incl. the GET read table) + typed handler/method response identity' },

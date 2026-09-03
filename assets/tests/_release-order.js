@@ -99,7 +99,12 @@ var ROUND_TOKENS = [
   // F1-7N-FB-4G-A3. The Submit preflight and its one pure predicate move together: an older page still
   // lets a visibly incomplete route be dropped from the plan in silence, and an older predicate cannot
   // count the Weekly Shipping Plans the confirmation now promises.
-  'fb4ga3-submitreadiness-20260903'
+  'fb4ga3-submitreadiness-20260903',
+  // F1-7N-FC-1A. The page and the adapter move together, and this token is the reason the page must not be
+  // served from cache after this round: an older page shows an approved plan with no Shipment Draft as a
+  // perfectly healthy card and offers no way to recover it, and an older adapter turns
+  // INSUFFICIENT_FACTORY_STOCK into HTTP_TRANSPORT_ERROR by throwing a business rejection.
+  'fc1a-shipmentrecovery-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -233,7 +238,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

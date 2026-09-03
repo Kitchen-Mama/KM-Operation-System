@@ -665,7 +665,15 @@ section('§N — THE SUBMIT GROUPING DECISION IS RECORDED, AND 11_ IS UNTOUCHED'
 // ================================================================================================================
 (function () {
   var G11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');
-  eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FA-4B2', 'N1  11_ still declares its pre-A2 build');
+  // F1-7N-FC-1A — DERIVED, NOT PINNED. "11_ still declares its pre-A2 build" was A2-R4's way of saying
+  // "I did not touch the Submit owner", and it was true. It cannot stay an equality: FC-1A changes 11_ so a
+  // failed Execution Commit is reported instead of swallowed. The durable property is that the file and the
+  // deployment manifest agree — a stamp nobody expects and an expectation no file declares are the two
+  // halves of a partial sync. The grouping decision A2-R4 actually froze is asserted separately below.
+  var _n1g63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
+  var _n1Expected = ((_n1g63.match(/\{ file: '11_shipping_plan_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(no manifest entry)';
+  eq((G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _n1Expected,
+    'N1  11_ declares exactly the build its deployment manifest expects (' + _n1Expected + ')');
   var groupKey = extractFn(G11, 'shippingPlanRouteGroupKey_');
   ok(!/allocation_draft_id/.test(groupKey), 'N2  allocation_draft_id was NOT added to the plan group key (§N)');
   ok(/§N|A2-R4/.test(DOC.slice(DOC.indexOf('A2-R4'))), 'N3  and the decision is recorded');

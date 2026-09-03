@@ -25,6 +25,25 @@
 // shipment_routes is one-row-per-node (no route header, no shipment_route_node_id) per the schema audit.
 // ============================================================
 
+// F1-7N-FC-1A §F — STOCK MUTATION IS NO LONGER IMPLEMENTED HERE.
+//
+// Step 4 below used to be this file's OWN factory_stock writer: an inline setValue(afterCurrent) plus its own
+// fcWriteAppendByHeader_ movement append, with its own compensating rollback. That made TWO stock-mutation
+// implementations in the repository while 21_'s comment claimed there was one, which is exactly the condition
+// the FC-0A audit measured and this round closes. Dispatch now calls factoryStockApplyDeltaTx_ (21_), the same
+// primitive PO receipt and Factory Inventory Adjustment call, and it passes BOTH deltas in ONE call so the
+// current-stock deduction and the reservation release land in a SINGLE movement row that cannot half-apply.
+// 21_'s journal entries are the same {kind:'cell'|'row'} shape as this file's `rollback` stack, so the shared
+// core's writes unwind through the SAME compensation path as everything else here.
+// F1-7N-FC-1A §J DEPLOYMENT STAMP, AND THE WORST PARTIAL SYNC IN THIS ROUND.
+//
+// A 22_ one round behind still works. It answers the action, it deducts the stock, it writes its movement, it
+// returns success — using its own OLD inline implementation, which knows nothing about reservations and
+// therefore never RELEASES one. Every dispatch would then leave its reservation held forever: available stock
+// would drift permanently downward, and the only visible symptom would be shipments refused for insufficient
+// stock that is physically present. Nothing except a declared build can distinguish that from a healthy
+// deployment, which is why this stamp exists and is registered in 63_'s module manifest.
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A';
 var CSD_MOV_TYPE_ = 'shipment_out';                 // factory_stock_movements.movement_type for dispatch
 // F1-7N-FB-1 — the confirmation lifecycle event. Distinct from `departed_origin` (physical departure) so the
 // two facts can never be conflated. Registered in the canonical vocabulary alongside the existing types.
@@ -186,7 +205,7 @@ function handleConfirmShipmentAndDispatch_(body) {
     var slaPlan = slaPrepareExecution_(ss, shipmentId);
     if (!slaPlan.ok) { lock.releaseLock(); return jsonResponse_({ success: false, error: slaPlan.error, stage: 'po_allocation', detail: slaPlan.detail || null, shipment_id: shipmentId }); }
 
-    // ============ ALL VALIDATION PASSED — begin staged writes ============
+    // ============ ALL VALIDATION PA§ED — begin staged writes ============
     var now = shipmentTimestamp_();
     var today = shipmentToday_();
 
@@ -195,20 +214,26 @@ function handleConfirmShipmentAndDispatch_(body) {
     var movSheet = fcWriteEnsureSheet_(ss, 'factory_stock_movements', MOV_HEADERS);
     fcWriteEnsureColumns_(movSheet, MOV_HEADERS);
     var movementsCreated = 0;
+    var reservationReleased = 0;
+    // THIS SHIPMENT's own reservation ledger, read ONCE inside the lock. A dispatch releases only what it
+    // itself reserved at Shipment Draft creation, per (warehouse_id, sku), so it can never release another
+    // shipment's hold and can never drive fac_reserved_stock negative.
+    var heldByKey = factoryStockOwnerReservedTx_(movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
     deductPlan.forEach(function (d) {
-      var afterCurrent = d.beforeCurrent - d.take;
-      // update the factory_stock current cell (reserved untouched)
-      var prev = stk.sheet.getRange(d.rowIdx, stk.curCol + 1).getValue();
-      stk.sheet.getRange(d.rowIdx, stk.curCol + 1).setValue(afterCurrent);
-      rollback.push({ kind: 'cell', sheet: stk.sheet, row: d.rowIdx, col: stk.curCol, prev: prev });
-      SpreadsheetApp.flush();
-      fcWriteAppendByHeader_(movSheet, {
-        factory_stock_movement_id: csdId_('FSMV-', 8), movement_date: today, sku: d.sku, warehouse_id: d.warehouseId,
-        movement_type: CSD_MOV_TYPE_, qty: -d.take, related_entity_type: 'shipment', related_entity_id: shipmentId,
-        before_current_stock: d.beforeCurrent, after_current_stock: afterCurrent, before_reserved_stock: d.beforeReserved, after_reserved_stock: d.beforeReserved,
-        note: 'Shipment dispatch deduction', created_by: actor, created_at: now
+      var key = d.warehouseId + '||' + d.sku;
+      var held = Math.max(0, Math.round(heldByKey[key] || 0));
+      var give = Math.min(held, d.take);       // release at most what is actually held here
+      heldByKey[key] = held - give;            // so two rows for the same key cannot release it twice
+      // ONE call, ONE movement row: current -= take AND reserved -= give together. Writing them as two
+      // separate facts is what would allow a dispatch to deduct the units while keeping them reserved.
+      factoryStockApplyDeltaTx_({
+        stockSheet: stk.sheet, movSheet: movSheet, warehouseId: d.warehouseId, sku: d.sku,
+        deltaQty: -d.take, reservedDelta: -give, journal: rollback, now: now, movementDate: today,
+        movementType: CSD_MOV_TYPE_, relatedEntityType: 'shipment', relatedEntityId: shipmentId,
+        note: 'Shipment dispatch deduction' + (give > 0 ? (' | reservation released ' + give) : ''),
+        createdBy: actor
       });
-      rollback.push({ kind: 'row', sheet: movSheet, row: movSheet.getLastRow() });
+      reservationReleased += give;
       movementsCreated++;
     });
 
@@ -299,6 +324,7 @@ function handleConfirmShipmentAndDispatch_(body) {
       data: {
         shipment_id: shipmentId, status: CSD_CONFIRMED_STATUS_, route_template_id: templateId,
         route_nodes_created: routeNodesCreated, events_created: 1, stock_movements_created: movementsCreated,
+        factory_reservation_released: reservationReleased,
         po_allocations_executed: slaExec.executed_allocations, po_lines_reconciled: slaExec.reconciled_po_lines,
         shipped_at: shippedAtFinal,
         // F1-7N-FB-1B (D2) — the shipment transaction is COMMITTED at this point. Document generation is a
@@ -344,13 +370,32 @@ function csdEventExists_(ss, shipmentId) {
   }
   return false;
 }
+// F1-7N-FC-1A §E THE MOVEMENT TYPE IS PART OF THIS QUESTION, AND LEAVING IT OUT BROKE EVERYTHING.
+//
+// This guard asks "has this shipment already been dispatched?" and used to answer yes for ANY
+// factory_stock_movements row referencing the shipment. That was harmless while the only shipment-owned
+// movement type was shipment_out. It stopped being harmless the moment reservations became real: from
+// FC-1A onward EVERY reserved shipment carries a reservation_acquire row referencing itself from the
+// instant its Shipment Draft is created. So every reserved shipment reported already_confirmed and could
+// NEVER be confirmed — nothing would ship at all.
+//
+// The fix is to ask the question that was always meant: is there a DEDUCTION for this shipment? A
+// reservation is a claim on units; only shipment_out is evidence they left.
 function csdMovementExists_(ss, shipmentId) {
   var sh = ss.getSheetByName('factory_stock_movements'); if (!sh) return false;
   var d = sh.getDataRange().getValues(); if (d.length < 2) return false;
   var h = d[0].map(function (x) { return String(x).trim().toLowerCase(); });
-  var tc = h.indexOf('related_entity_type'), ic = h.indexOf('related_entity_id');
+  var tc = h.indexOf('related_entity_type'), ic = h.indexOf('related_entity_id'), mc = h.indexOf('movement_type');
   if (tc === -1 || ic === -1) return false;
-  for (var i = 1; i < d.length; i++) { if (String(d[i][tc]).trim() === 'shipment' && String(d[i][ic]).trim() === shipmentId) return true; }
+  for (var i = 1; i < d.length; i++) {
+    if (String(d[i][tc]).trim() !== 'shipment') continue;
+    if (String(d[i][ic]).trim() !== shipmentId) continue;
+    // A deployment whose movements tab predates the movement_type column cannot distinguish the two, and
+    // there the OLD behaviour is still the safe one: treat any shipment-owned movement as a dispatch rather
+    // than risk a double deduction.
+    if (mc === -1) return true;
+    if (String(d[i][mc]).trim() === CSD_MOV_TYPE_) return true;
+  }
   return false;
 }
 // Resolve the route template: explicit id (validated) OR unique active match by destination_country +
