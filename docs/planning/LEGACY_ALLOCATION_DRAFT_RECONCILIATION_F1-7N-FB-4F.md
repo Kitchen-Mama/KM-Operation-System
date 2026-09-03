@@ -2987,3 +2987,108 @@ That conflicts with §I.2. Changing it is a Submit contract decision, so **this 
 - **A pre-migration deployment cannot create routes at all.** That is intended (§F.7) — the alternative is a
   create with no idempotency protection — but it means the migration must run *before* the frontend is
   published, which the release order below enforces.
+
+## §4G-A2-R3-R1 — PRODUCTION ATOMIC SAVE FAILURE: WHY NOTHING SAVED
+
+A2-R3 was deployed and **production acceptance failed**. Editing a route failed; `+ Add Route` failed; the
+screen could say no more than `BUSINESS_COMMAND_ERROR`, then `HTTP_TRANSPORT_ERROR` with `OUTCOME UNKNOWN`.
+Three defects were measured by execution, and one more was found by the tests written to prove them.
+
+### A2-R3-R1.1 The client could not acknowledge a successful atomic write
+
+`_irSaveAcknowledged_` required `created === true || updated === true`. That is the **two-call header writer's**
+contract, where both really are booleans. The **atomic** writer — which A2-R3 made the only path a route ticket
+is written by — reuses those two names for the **line counts** it wrote (`var created = 0, updated = 0` …
+`updated++`), so a normal single-line UPDATE answers `created: 0, updated: 1` and neither is `=== true`.
+
+**Every atomic write was therefore unacknowledgeable.** The row was written, the client raised
+`PERSISTENCE_NOT_ACKNOWLEDGED`, and the operator was shown `OUTCOME UNKNOWN` over a save that had landed.
+A2-R3 wired the product to a response shape it could not read.
+
+Fixed on both sides: the client reads the envelope's own classification (`header_created` / `header_updated`,
+then `outcome`, then `persisted_headers[0].resolution`) and never consults the ambiguous pair on that path;
+16_ publishes `header_created` / `header_updated` as booleans and republishes the counts as `lines_created` /
+`lines_updated` / `lines_skipped`. The two-call boolean contract is untouched.
+
+### A2-R3-R1.2 The version the server moved to was never adopted
+
+`_irStampRouteGroupIds_` stamped the draft id and the group key and nothing else. `draft_version` was set once,
+at hydrate, and never again — so after one successful UPDATE the stored row was at 2 while the page still
+declared it expected 1, and **every later edit of that route was refused `STALE_OPTIMISTIC_TOKEN` with zero
+writes**. Retrying could not help: the retry re-sent the same stale number. Only a Search reload cleared it.
+
+Defect .1 guaranteed defect .2, because only the acknowledged path stamps anything at all.
+
+The row now adopts the version the server returns. The optimistic token keeps its meaning: a version that moved
+*somewhere else* still refuses the write, and that is reported as a named conflict with a reload instruction —
+never as a silent overwrite and never as a new ticket.
+
+### A2-R3-R1.3 The server's own typed code was discarded — 38 of 41
+
+The transport adapter classified by prefix-matching the error **prose** against a hand-maintained list and never
+read the handler's top-level `code` field. Executed against the codes 16_ actually emits: **38 of 41 were
+flattened to `BUSINESS_COMMAND_ERROR`**, including every refusal A2-R3 introduced. The page held a **second**
+stale list (`IR_DRAFT_TYPED_REASONS_`) with the same gap. This is the F1-7N-FB-2A defect reintroduced by adding
+server codes without extending either list.
+
+`_kmTopLevelCode_` now reads the handler's own code first (accepting only the canonical `SCREAMING_SNAKE` shape,
+so prose in a `code` field is not mistaken for a classification); both lists were completed as the fallback for
+handlers that still answer with a bare string; and `STALE_OPTIMISTIC_TOKEN`, which named itself only inside its
+prose, now carries `code` and publishes the current version.
+
+### A2-R3-R1.4 Found by the tests: a created route never bound its line id
+
+`_irAdoptPersistedLineIds_` keeps only rows whose `allocation_draft_id` already equals this header — and it ran
+**before** `_irStampRouteGroupIds_` put an id there. For a CREATE the adoption was therefore a no-op: the new
+route ended up holding a draft id and **no line id**, so `routeIsPersisted` stayed false, A2-R1's dirty guard
+blocked Submit over a route that *was* saved, and the next save would send an UPDATE with no line identity —
+writing a **second line** under the same header. Stamping first makes the cross-header guard do exactly what it
+was written for.
+
+### A2-R3-R1.5 The §E hypotheses, measured FALSE
+
+The brief asked whether the save fans out and starves its own ScriptLock. It does not, and saying so without
+measuring would have been the easy mistake:
+
+| hypothesis | measured |
+|---|---|
+| `Promise.all` over route groups | **FALSE** — the groups are chained (`chain = chain.then(...)`) |
+| several requests contend for the global lock | **FALSE** — max **1** write in flight at 1, 2, 3 and 5 dirty routes |
+| a 60 s transport timeout | **FALSE** — `KM_WRITE_TIMEOUT_MS_` is **90 000 ms**; 60 000 is the *read* default |
+| lock starvation causes the transport error | **FALSE** — every `tryLock` is 30 000 ms, i.e. shorter than the client budget, so a starved request is *answered* |
+
+Measured elapsed: 5 routes × 3 s = 15 s; 5 × 12 s = 60 s — each **request** is what the 90 s budget bounds, and
+the whole batch still fits inside one. So the reported `HTTP_TRANSPORT_ERROR` was **not** self-inflicted
+concurrency. What it actually was cannot be named from what the browser kept, because the browser kept nothing:
+no status, no elapsed time, no raw body, no server code. **That is itself the defect**, and it is now fixed —
+every failing answer records `http_status`, `elapsed_ms`, `raw_present`, `response_is_json` and `server_code`.
+
+### A2-R3-R1.6 An indeterminate outcome is now settled against the database
+
+A write whose response never arrived is not "not saved". One scoped, **read-only** workspace readback settles
+every indeterminate route in the batch by the identity it already owns: a CREATE by its stored
+`create_idempotency_key`, an UPDATE by its `allocation_draft_id` and the version it expected. A version that
+**moved** is proof the write landed; a version that did not is proof it did not. A readback that itself fails
+changes nothing — the route stays `OUTCOME UNKNOWN`, which is truthful and keeps Submit blocked.
+
+### A2-R3-R1.7 The operator can no longer stack saves
+
+While a batch is in flight, Submit and `+ Add Route` are held (state derived from `_draftDbInFlight`, so it can
+never disagree with reality) and `addExecutionRoute` refuses at the call site for a keyboard or programmatic
+caller. Inputs stay visible and editable. Each route carries its own state — `Saving` / `Saved` / `Not saved` /
+`Reconciling` / `Outcome unknown` — and one route's outcome never describes another's.
+
+A second finding while wiring this: three rapid Save clicks left the dirty flag set with **nothing touched**,
+and the coalesced re-flush then fell back to "every route on screen" — the A2-R2 whole-SKU re-send reached
+through the back door. The re-flush now runs only when something is still actually touched.
+
+### A2-R3-R1.8 Deliberately not done, and the STOP that still stands
+
+- **No live save, no Add Route retry, no Submit, no DB write, no migration run, no repair of any live row.**
+- **The §I ticket-boundary STOP from A2-R3 is unchanged** — `11_` untouched, `SP_BUILD_VERSION_` still
+  `F1-7N-FA-4B2`, Options A/B/C still open and still the user's decision.
+- **A pre-migration deployment still cannot create routes** (§F.7), so the migration must run before the
+  frontend is published.
+- **The exact `HTTP_TRANSPORT_ERROR` cause is not named.** Four candidate mechanisms were measured false; the
+  evidence needed to name the real one was never recorded by the client. The instrumentation now records it, and
+  the reconciliation makes the outcome correct either way.

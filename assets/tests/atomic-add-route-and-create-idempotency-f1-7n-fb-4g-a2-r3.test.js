@@ -615,12 +615,19 @@ section('DEPLOYMENT');
 // ================================================================================================================
 (function () {
   var stamp = (G16.match(/var SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-  eq(stamp, 'F1-7N-FB-4G-A2-R3', 'D1  the 16_ owner stamp is this round');
+  // F1-7N-FB-4G-A2-R3-R1 - RESTATED. This was an equality with A2-R3's own stamp, which asserts "no later
+  // round may ever own 16_" rather than what the round meant. The stamp series is append-only and ordered, so
+  // at-or-after is the durable claim - and D2/D3 below already carry the parts that matter (the manifest
+  // agrees with the source, and the stamp is not older than the previous owner).
+  ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2-R3'), 'D1  the 16_ owner stamp is at or after this round');
   eq((G63.match(/symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], stamp,
     'D2  and the health manifest expects exactly what the source declares');
   ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2-R2'), 'D3  at or after A2-R2');
   var APP = RO.currentAppToken();
-  eq(APP, 'fb4ga2r3-atomicroute-20260902', 'D4  the application cache token is this round\'s');
+  // RESTATED for the same reason: an equality here forbids every later round from publishing the frontend.
+  // What this round needs is that the token is not OLDER than the one it introduced, and that whatever token
+  // is current is applied consistently to every co-deployed reference.
+  ok(RO.tokenAtOrAfter(APP, 'fb4ga2r3-atomicroute-20260902'), 'D4  the application cache token is at or after this round');
   eq((INDEX.match(new RegExp(APP, 'g')) || []).length, 18, 'D4a on all 18 co-deployed refs');
   eq(INDEX.indexOf('fb4ga2r2-routeintent-20260902'), -1, 'D4b and the previous token is fully retired');
   ok(RO.tokenAtOrAfter(APP, 'fb4ga2r2-routeintent-20260902'), 'D4c ordered after it in the append-only series');

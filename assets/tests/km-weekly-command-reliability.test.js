@@ -44,7 +44,10 @@ eval(DBSRC.match(/var KM_UNKNOWN_ACTION_PATTERNS_ = \[[\s\S]*?\];/)[0]);
 // list. This ADDS to what the suite executes; every assertion below is unchanged, and A3/A4/A7 still pin the
 // SAME legacy codes, which is exactly the point: the alias survives while the typed classification rides beside it.
 var KM_TRANSPORT_EVIDENCE_BUILD_ = 'F1-7N-FB-4E';
-eval(['_kmClassifyBusinessError_', '_kmExtractCanonicalCode_', '_kmZeroWriteProven_', '_kmTimeoutMs_',
+// F1-7N-FB-4G-A2-R3-R1 - the runner now reads the handler's OWN top-level `code` before falling back to
+// prefix-matching the prose, so _kmTopLevelCode_ is a dependency of the function under test. Without it the
+// lift throws a ReferenceError inside shipped code - a harness gap, not a product defect.
+eval(['_kmClassifyBusinessError_', '_kmExtractCanonicalCode_', '_kmTopLevelCode_', '_kmZeroWriteProven_', '_kmTimeoutMs_',
   '_kmTimeoutError_', '_kmIsUnknownActionResponse_', '_kmDeploymentMismatchError_', '_kmCmdOk_', '_kmCmdErr_',
   '_kmTransportFactory_', '_kmWireEvidence_', '_kmClassifyAnswer_', '_kmTypedTransportMessage_'].map(function (n) { return extractFn(DBSRC, n); }).join('\n')
   + '\nasync ' + extractFn(DBSRC, '_kmFetchBounded_')

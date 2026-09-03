@@ -667,7 +667,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R3';
+var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R3-R1';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -1783,7 +1783,10 @@ function sadAtomicUpsertCore_(body) {
     priorVersion = sadFpVal_(priorHeaderObj.draft_version);
     // optimistic token (stale → CONFLICT, zero write)
     if (header.expected_draft_version != null && sadFpVal_(header.expected_draft_version) !== priorVersion) {
-      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN — expected draft_version ' + sadFpVal_(header.expected_draft_version) + ' but current is ' + priorVersion + ' (zero rows written)', stage: 'conflict', zero_write: true, data: { expected: sadFpVal_(header.expected_draft_version), current: priorVersion } });
+      // F1-7N-FB-4G-A2-R3-R1 §F3 — this refusal named itself only inside the prose. It now carries the typed
+      // code as a field like every other refusal, and it publishes the CURRENT version so the client can adopt
+      // it and re-offer the edit instead of retrying the same stale number for ever.
+      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN — expected draft_version ' + sadFpVal_(header.expected_draft_version) + ' but current is ' + priorVersion + ' (zero rows written)', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict', zero_write: true, data: { expected: sadFpVal_(header.expected_draft_version), current: priorVersion, allocation_draft_id: id, current_draft_version: priorVersion } });
     }
     var priorLines = sadReadLinesForDraft_(lSh, id);
     var priorFp = sadK2PayloadFingerprint_(priorHeaderObj, priorLines);
@@ -1942,7 +1945,15 @@ function sadAtomicUpsertCore_(body) {
     }
     return jsonResponse_({ success: false, error: 'RECONCILIATION_REQUIRED — existing Draft; a line write failed and existing data was preserved (no delete). ' + (writeErr.message || writeErr), stage: 'lines', data: { allocation_draft_id: id, lines_committed: created + updated } });
   }
+  // F1-7N-FB-4G-A2-R3-R1 §F3 — `created` / `updated` here are LINE COUNTS (see `var created = 0, updated = 0`
+  // above), NOT the booleans the two-call header writer returns under the same two names. A client that reads
+  // them as a header classification sees `1` where it expects `true` and cannot acknowledge a write that in
+  // fact committed — which is exactly what made every route save report OUTCOME UNKNOWN in production. The
+  // counts keep their names for the callers that already read them; the HEADER classification is stated
+  // separately and unambiguously, and the line counts are also republished under names that cannot be misread.
   return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped,
+    header_created: newHeaderCreated === true, header_updated: newHeaderCreated !== true,
+    lines_created: created, lines_updated: updated, lines_skipped: skipped,
     intent: sadIntent || '', create_idempotency_key: createKey || '',
     persisted_lines: atomicPersistedLines,
     persisted_headers: [{ allocation_draft_id: id, resolution: (newHeaderCreated ? 'CREATED' : 'UPDATED') }] } });

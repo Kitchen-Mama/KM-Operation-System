@@ -4306,7 +4306,23 @@ var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORT
     'DUPLICATE_LINE_IDENTITY_IN_BATCH', 'LINE_IDENTITY_CONFLICT', 'LINE_PRIMARY_KEY_ALREADY_EXISTS',
     'LINE_OUTPUT_VERIFICATION_FAILED',
     // F1-7N-FB-4B-ADDENDUM — multi-route group pre-flight refusals (client-side, zero-write by construction).
-    'ROUTE_IDENTITY_NOT_PERSISTABLE', 'ROUTE_QUANTITY_CONFLICT', 'ROUTE_GROUP_PARTIAL_FAILURE'];
+    'ROUTE_IDENTITY_NOT_PERSISTABLE', 'ROUTE_QUANTITY_CONFLICT', 'ROUTE_GROUP_PARTIAL_FAILURE',
+    // F1-7N-FB-4G-A2-R3-R1 §D — the route-ticket refusals. These are the fallback for a handler answering with
+    // a bare string; _kmTopLevelCode_ reads the handler's own `code` field first and needs no list at all.
+    // Each of these is a PROVEN zero-write named by the server before it touched a cell.
+    'ROUTE_INTENT_REQUIRED', 'ROUTE_INTENT_CONTRADICTORY', 'ROUTE_CREATE_IDEMPOTENCY_KEY_REQUIRED',
+    'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE', 'ROUTE_IDENTITY_MINT_FAILED', 'ROUTE_IDENTITY_CONTRACT_NOT_LOADED',
+    'ALLOCATION_DRAFT_NOT_FOUND', 'ALLOCATION_DRAFT_SCHEMA_COLUMN_ABSENT', 'APPLIED_SCOPE_MISMATCH',
+    'STALE_OPTIMISTIC_TOKEN', 'MIXED_SITE_PAYLOAD', 'LOCK_ERROR',
+    'ROUTE_DESTINATION_MISSING', 'ROUTE_DESTINATION_AMBIGUOUS', 'ROUTE_DESTINATION_UNRESOLVED'];
+// F1-7N-FB-4G-A2-R3-R1 §D — the handler's OWN typed code, when it published one. Accepted only in the
+// canonical SCREAMING_SNAKE shape (optionally PREFIX:TOKEN) so a handler that happens to put a sentence or an
+// id in `code` cannot be mistaken for a classification.
+function _kmTopLevelCode_(json) {
+    var c = String((json && json.code) == null ? '' : json.code).trim();
+    if (!c) return '';
+    return /^[A-Z][A-Z0-9_]*(:[A-Z][A-Z0-9_]*)?$/.test(c) ? c : '';
+}
 function _kmExtractCanonicalCode_(msg) {
     var s = String(msg == null ? '' : msg).trim();
     // A production-safety schema refusal carries its own token; return it WITH the token so the UI can tell
@@ -4342,7 +4358,11 @@ async function _kmWeeklyCommand_(command, payload) {
             return _kmCmdErr_(command, te.code, te.message, te.details);
         }
         // Network/redirect failure with NO acknowledged response → transport error (not an ack of a commit).
-        return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr));
+        // §D — how long the browser waited, and that nothing came back at all, are the two facts that separate
+        // "the network dropped" from "the server was still working". Both were previously discarded.
+        return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr),
+            { command: command, elapsed_ms: Date.now() - _tw0, http_status: null, raw_present: false,
+              response_is_json: false, timeout_ms: _kmTimeoutMs_('write') });
     }
     var text = '';
     try { text = await resp.text(); } catch (e) { text = ''; }
@@ -4372,13 +4392,32 @@ async function _kmWeeklyCommand_(command, payload) {
         }
         var _structured = (json.errors && json.errors[0]) ? json.errors[0] : null;
         var _emsg = _structured ? (_structured.message || _structured.code) : json.error;
-        var _ecode = (_structured && _structured.code) || _kmExtractCanonicalCode_(json.error) || _kmClassifyBusinessError_(json.error);
+        // F1-7N-FB-4G-A2-R3-R1 §D/§F3 — READ THE HANDLER'S OWN CODE FIRST.
+        //
+        // This classified by prefix-matching the error PROSE against a hand-maintained list, and every handler
+        // reason absent from that list became the generic `BUSINESS_COMMAND_ERROR`. Measured against the codes
+        // 16_ actually emits: 38 of 41 were flattened — including every refusal A2-R3 introduced
+        // (ROUTE_INTENT_REQUIRED, ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE, APPLIED_SCOPE_MISMATCH,
+        // STALE_OPTIMISTIC_TOKEN …). That is why the production Execution Plan failure said nothing more than
+        // "BUSINESS_COMMAND_ERROR" while the server had named its reason precisely. The handlers already put
+        // that reason in a top-level `code` field; nothing read it. The list stays as the fallback for the
+        // older handlers that still answer with a bare string.
+        var _ecode = (_structured && _structured.code) || _kmTopLevelCode_(json) ||
+            _kmExtractCanonicalCode_(json.error) || _kmClassifyBusinessError_(json.error);
         // Preserve the handler's structured data (e.g. conflictIds / stage detail) into error.details for the UI.
         // F1-7N-FB-2A §E — also carry the handler's own `stage` and the PROVEN zero-write fact, so the page can
         // state "nothing was written" only when the server's own reason establishes it.
         var _det = (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null) || {};
         if (json.stage != null && _det.stage == null) _det.stage = String(json.stage);
         if (_det.zero_write == null && _kmZeroWriteProven_(_emsg)) _det.zero_write = true;
+        // F1-7N-FB-4G-A2-R3-R1 §D — the evidence a failure has to be diagnosable from. None of this was kept,
+        // so a production failure could be reported only as its generic label with no way to tell a business
+        // refusal from a slow lock from a dead transport. It is recorded on every failing answer.
+        if (_det.http_status == null) _det.http_status = resp.status;
+        if (_det.elapsed_ms == null) _det.elapsed_ms = Date.now() - _tw0;
+        if (_det.raw_present == null) _det.raw_present = String(text || '').length > 0;
+        if (_det.response_is_json == null) _det.response_is_json = true;
+        if (_det.server_code == null && _kmTopLevelCode_(json)) _det.server_code = _kmTopLevelCode_(json);
         return _kmCmdErr_(command, _ecode, _emsg || (command + ' failed'), _det);
     }
     return _kmCmdOk_(command, json.data);   // COMMITTED — the page performs the single readback via the active path
