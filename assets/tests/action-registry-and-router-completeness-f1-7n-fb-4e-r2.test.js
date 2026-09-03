@@ -194,7 +194,13 @@ THE_FOUR.forEach(function (t) {
 // 63_ again (a new routed action and a new registry entry) and left 68_ alone. Pinning the literal made R3's
 // correct change look like a regression, which is the trap this repo already documents for release tokens. What
 // must hold: each is at R2 or later, and 68_ — unchanged in R3 — is still exactly R2.
-ok(/var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R[2-9]/.test(RTR), '1. the ROUTER build stamp is at R2 or later');
+// F1-7N-FC-1A-R1 — DERIVED. The R[2-9] pattern encoded "an FB-4E revision at R2 or later", which held
+// only while FB-4E was the family that last touched the router. R1 adds a dispatch and leaves that family.
+// The rule this line is FOR — a change is never silent — is kept by pairing the declaration
+// with the manifest expectation, which cannot drift apart in either direction.
+var _r2RtrExpect = ((G63.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+ok(new RegExp("var RTR_BUILD_VERSION_ = '" + _r2RtrExpect + "'").test(RTR),
+  '1. the ROUTER declares exactly the build its manifest expects (' + _r2RtrExpect + ')');
 eq(/var EPC_BUILD_VERSION_ = '([^']+)'/.exec(G68)[1], 'F1-7N-FB-4E-R2', '1. 68_ moved in R2 and NOT since — R3 did not touch it');
 ok(/var SYS_BUILD_VERSION_ = 'F1-7N-FB-4E-R[2-9]/.test(G63), '1. the 63_ owner stamp is at R2 or later');
 // 31_ and 59_ were NOT changed, so their stamps must NOT move — a stamp that moves without a change is noise.
@@ -585,6 +591,10 @@ GS_OWNED_SINCE_R1['11_shipping_plan_handlers.gs'] = 'FC-1A the typed approval-re
 GS_OWNED_SINCE_R1['12_shipment_handlers.gs'] = 'FC-1A Shipment Draft creation acquires the factory stock reservation, all-or-nothing, under one lock';
 GS_OWNED_SINCE_R1['21_factory_inventory_handlers.gs'] = 'FC-1A THE single stock authority gains reservation acquire/release on the existing schema';
 GS_OWNED_SINCE_R1['22_shipment_dispatch_handlers.gs'] = 'FC-1A dispatch DELEGATES to that authority and releases the reservation in the same movement row';
+// F1-7N-FC-1A-R1 — the PO receipt owner. R1 replaces the silent over-receipt CLAMP with a typed
+// PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal, which is a behavioural change to this file and therefore an
+// ownership record here. An unexpected file still fails.
+GS_OWNED_SINCE_R1['13_procurement_handlers.gs'] = 'FC-1A-R1 typed PO over-receipt refusal (no silent clamp)';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 // The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
 var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');

@@ -77,7 +77,14 @@ function clickOn(el) { return { currentTarget: el, target: el }; }
 // ===================================================================================================
 section('V3G6A-A. the root cause is reproduced, and the fix resolves the card from the CLICKED node');
 eq(DOC.getElementById('sh-card-' + SID) === overview.card, true, 'A. the duplicate id resolves to the OVERVIEW card — the exact live defect');
-ok(SH.indexOf("SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped']") !== -1, 'A. SH_DRAFT_STATUSES contains `shipped`');
+// F1-7N-FC-1A-R1 — the SET, not the exact literal. This round adds `cancelled` to the Shipment Draft
+// workspace so a cancelled card stays VISIBLE (Overview shows `shipped` onward, so without it the row would
+// vanish the instant it was cancelled and the operator could not tell a successful cancellation from a failed
+// request). What THIS suite needs is that `shipped` is still in the set, which is the fidelity property it
+// was written to protect DASHAND pinning the whole array made an addition look like a removal.
+var _draftSet = (SH.match(/SH_DRAFT_STATUSES = \[([^\]]*)\]/) || [])[1] || '';
+ok(/'shipped'/.test(_draftSet), 'A. SH_DRAFT_STATUSES contains `shipped`');
+ok(/'draft'/.test(_draftSet) && /'ready_to_ship'/.test(_draftSet), 'A. alongside draft and ready_to_ship');
 ok(/SH_OVERVIEW_STATUSES = \{ shipped: 1/.test(SH), 'A. SH_OVERVIEW_STATUSES also contains `shipped` → a shipped card is rendered by BOTH pages');
 ok(INDEX.indexOf('shippinghistory-mount') < INDEX.indexOf('shipment-draft-mount'), 'A. and the Overview mount precedes the Draft mount in index.html — so the FIRST match was never the Draft card');
 ok(/id="sh-card-' \+ _shEsc\(sid\)/.test(SH), 'A. both pages stamp the SAME sh-card-<shipment_id> DOM id (one card builder, two mounts)');

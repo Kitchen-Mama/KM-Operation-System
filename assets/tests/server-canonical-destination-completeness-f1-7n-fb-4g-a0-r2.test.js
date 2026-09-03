@@ -359,7 +359,9 @@ ok(/if \(typeof window\.confirm !== 'function'\) return false;/.test(PAGEC),
   'G2  §H.17 and no confirm available means NO, never an assumed yes');
 ok(!/fetch|_irPersistOneRouteGroup_|upsert/.test(code(extractFn(PAGE, '_irConfirmLegacyAdoption_'))),
   'G3  §H.17 the confirmation itself issues nothing');
-eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'G4  §H.20 action contract still 10');
+// F1-7N-FC-1A-R1 — at-or-after: A0-R2 added no router action, but R1 does.
+ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'G4  §H.20 action contract is at or after 10 (A0-R2 added no router action)');
 // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
 ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
   'G5  §H.20 required-action-list is at or after 9');

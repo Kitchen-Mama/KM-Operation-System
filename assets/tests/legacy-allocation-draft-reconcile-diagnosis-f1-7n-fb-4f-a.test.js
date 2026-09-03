@@ -269,7 +269,9 @@ section('§B/§C — THE DIAGNOSTIC');
   ok(ROUTER.indexOf('TEMP_LEGACY_ALLOCATION_DRAFT_RECONCILE_DIAGNOSE') === -1, 'B1 the diagnostic is not routed');
   ok(ROUTER.indexOf('legacyAllocationDraftReconcile') === -1, 'B2 no new action name was added to the router');
   var HEALTH = readGs('63_api_v1_system_health.gs');
-  ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;/.test(HEALTH), 'B3 the deployed action contract stays 10');
+  // F1-7N-FC-1A-R1 — at-or-after: FB-4F-A was a diagnosis round and added no action; R1 adds one.
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'B3 the deployed action contract is at or after 10');
   // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
   ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
     'B4 the required-action list is at or after 9');
@@ -637,7 +639,9 @@ section('§L — NOTHING ELSE MOVED');
   ok(/function readUrl\(/.test(TP) && /READ_URL_MAX/.test(TP), 'L2 the canonical GET read and its URL bound are intact');
   ok(/REDIRECT_TARGET_NOT_FOUND/.test(TP), 'L3 bounded redirect recovery is intact');
   var DB = readRepo('assets/js/api/operation-system-db-api.js');
-  ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 10;/.test(DB), 'L4 the client action-contract pin stays 10');
+  eq((DB.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  (readGs('63_api_v1_system_health.gs').match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  'L4 the client action-contract pin AGREES with the deployment');
   ok(/'LEGACY_ROUTE_RECONCILIATION_REQUIRED'/.test(DB), 'L5 the client still recognises the legacy refusal as typed');
 
   // FB-4D / FB-4E contracts that this round must not disturb.
@@ -657,7 +661,13 @@ section('§L — NOTHING ELSE MOVED');
     'L7 16_ is at the FB-4D floor or later — FB-4F-A itself changed no writer (' + _l7 + ')');
   ok(/var EPC_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(EPC_SRC), 'L8 68_ did not change this round either');
   var ROUTER = readGs('01_router.gs');
-  ok(/var RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3'/.test(ROUTER), 'L9 the R4B-R3 router identity is preserved');
+  // F1-7N-FC-1A-R1 — DERIVED. FB-4F-A was a diagnosis round that changed no router, which is what this
+  // asserted; R1 adds a dispatch and moves the stamp. The durable property is the PAIR: whatever the router
+  // declares, the deployment manifest expects exactly that. A declaration and an expectation that drift apart
+  // are the two halves of a partial sync, and either alone is the bug.
+  var _l9Expect = ((readGs('63_api_v1_system_health.gs').match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+  ok(new RegExp("var RTR_BUILD_VERSION_ = '" + _l9Expect + "'").test(ROUTER),
+    'L9 the router declares exactly the build its manifest expects (' + _l9Expect + ')');
   ok(/rtrEmitHandlerResult_\(_rtrRead\[action\]\(_parsed\.body\)\)/.test(ROUTER),
     'L10 the R4B-R2 GET dispatch fix is preserved');
   var IR = readRepo('assets/js/pages/inventory-replenishment.js');

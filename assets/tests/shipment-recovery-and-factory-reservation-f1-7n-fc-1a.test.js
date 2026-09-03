@@ -818,11 +818,18 @@ var runPrimitives = (function () {
   var routerActions = {};
   (code(G01).match(/action === '([^']+)'/g) || []).forEach(function (m) { routerActions[m.match(/'([^']+)'/)[1]] = 1; });
   var cancels = Object.keys(routerActions).filter(function (a) { return /shipment/i.test(a) && /cancel/i.test(a); });
-  eq(cancels, [],
-    'E49 §E FINDING: there is NO shipment-cancellation action in the router, so the release-at-cancellation ' +
-    'contract has a complete authority and NO trigger — reported, not invented');
+  // F1-7N-FC-1A-R1 CLOSED THIS FINDING, and the check is INVERTED to keep it closed. FC-1A measured that
+  // NO shipment-cancellation action existed anywhere in the router, so the release-at-cancellation contract
+  // had a complete authority and no trigger — meaning a reservation acquired at Shipment Draft
+  // creation could become operationally unreleasable. R1 adds cancelShipmentDraft. If a later round removes
+  // it, the reservation model silently becomes one-way again, and this line is what would say so.
+  eq(cancels, ['cancelShipmentDraft'],
+    'E49 §E FC-1A-R1 CLOSED IT: cancelShipmentDraft is routed, so the release-at-cancellation ' +
+    'contract now has a TRIGGER as well as an authority');
   ok(/function factoryStockReleaseReservationTx_/.test(code(G21)),
-    'E49a the primitive it will need exists and is proved above (E28-E34)');
+    'E49a the primitive it uses exists and is proved above (E28-E34)');
+  ok(/factoryStockReleaseReservationTx_\(/.test(code(read('assets/specs/active/apps-script/12_shipment_handlers.gs'))),
+    'E49b and the cancellation handler reaches it through the SHARED authority, never a balance cell of its own');
 })();
 
 // ================================================================================================================
@@ -1069,28 +1076,24 @@ function runReceipt(world, body, g13, g21) {
 })();
 
 (function () {
-  // §H.4 — OVER-RECEIPT. Measured, the frozen behaviour is a CLAMP, not a refusal:
-  //   poReceiptEvaluateLine_:  if (recv > maxRecv) recv = maxRecv;   // maxRecv = ordered - completed
-  // Receiving 900 against an order of 500 therefore receives 500 and stops. §H.4 asked for a refusal, and
-  // reporting the clamp as one would be false; the property that actually matters — completed_qty can NEVER
-  // exceed ordered_qty, and no phantom stock is created — is what is pinned here. The difference is recorded
-  // in the completion report rather than changed, because this round does not alter receipt policy (§H:
-  // "no behavioral regression to PO receipt").
+  // F1-7N-FC-1A-R1 CLOSED THIS FINDING. FC-1A measured that the frozen behaviour was a silent CLAMP and
+  // REPORTED it rather than changing receipt policy mid-round; the user then froze the correction. Receiving
+  // 900 against a remaining 500 is now REFUSED with all three quantities, and this check is inverted so the
+  // clamp cannot come back. The old assertion is worth remembering for what it was: the clamp never created
+  // phantom stock, which is exactly why it survived review — the harm was that the operator was
+  // told the receipt SUCCEEDED and was never told that 400 units they believe they received were discarded.
   var w = receiptWorld();
+  var before = w.counts();
   var r = runReceipt(w, { purchase_order_id: 'PO-1', actor: 'op', idempotency_key: 'K4',
     lines: [{ purchase_order_line_id: 'POL-1', receive_qty: 900 }] });
-  var l = w.lines()[0];
-  eq(Number(l.completed_qty), 500,
-    'H8  §H.4 MEASURED: over-receipt is CLAMPED to the unreceived remainder (900 asked, 500 applied), not refused');
-  ok(Number(l.completed_qty) <= Number(l.ordered_qty),
-    'H8a and completed_qty can NEVER exceed ordered_qty — the property the refusal was asked for');
-  eq(Number(w.stock()[0].fac_current_stock), 1500, 'H8b factory stock rose by the CLAMPED 500, never by 900');
-  var po = w.movements().filter(function (m) { return String(m.movement_type) === 'po_receipt'; });
-  eq([po.length, Number(po[0].qty)], [1, 500], 'H8c with ONE movement carrying the clamped quantity');
-  var before = w.counts();
-  runReceipt(w, { purchase_order_id: 'PO-1', actor: 'op', idempotency_key: 'K4b',
-    lines: [{ purchase_order_line_id: 'POL-1', receive_qty: 100 }] });
-  eq(w.counts(), before, 'H8d and a further receipt on a FULLY received line writes nothing at all');
+  eq(r.success, false, 'H8  §H.4 FC-1A-R1 CLOSED IT: over-receipt is REFUSED, not silently clamped');
+  eq(String(r.code), 'PO_RECEIPT_EXCEEDS_REMAINING_QTY', 'H8a with a typed code');
+  eq([r.data.attempted_qty, r.data.remaining_qty, r.data.excess_qty], [900, 500, 400],
+    'H8b reporting attempted 900, remaining 500, excess 400');
+  eq(Number(w.lines()[0].completed_qty), 0, 'H8c and completed_qty did NOT move');
+  eq(Number(w.stock()[0].fac_current_stock), 1000, 'H8d factory stock is unchanged');
+  eq(w.movements().length, 0, 'H8e with no movement row');
+  eq(w.counts(), before, 'H8f and nothing anywhere was written');
 })();
 
 (function () {
@@ -1194,19 +1197,39 @@ section('§J — THE DEPLOYMENT CONTRACT AND THE UI GATES');
   ok(/{ action: 'createShipmentFromPlan', handler: 'handleCreateShipmentFromPlan_'/.test(G63),
     'J2  §J.1 and in the server-side required-action registry');
   var listVer = Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]);
-  eq(listVer, 11, 'J3  §J.1 SYS_REQUIRED_ACTION_LIST_VERSION_ was bumped, so a "nothing missing" answer from ' +
-    'the OLD list is distinguishable from one computed from the current list');
-  // The action-contract version must NOT move: its rule is "bump when a router ACTION is added or removed",
-  // and this round adds no route. Bumping it would reject healthy deployments for no reason.
-  eq(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]), 10,
-    'J4  §J and the ACTION-contract version deliberately does NOT move — no router action was added');
-  ok(/action === 'createShipmentFromPlan'/.test(G01), 'J4a because the action has been routed all along');
+  // F1-7N-FC-1A-R1 — AT-OR-AFTER. FC-1A bumped this to 11 and pinned 11, which held for exactly
+  // one round: R1 registers cancelShipmentDraft and bumps it to 12. The durable property is that FC-1A's
+  // own bump is still present, not that nobody may ever bump it again.
+  ok(listVer >= 11, 'J3  §J.1 SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 11, so a "nothing ' +
+    'missing" answer from a list older than FC-1A is still distinguishable from a current one');
+  // F1-7N-FC-1A-R1 — AND NOW IT DOES MOVE, WHICH IS THE RULE WORKING. FC-1A added no router
+  // action, so this correctly asserted the contract stayed at 10. R1 adds cancelShipmentDraft — the
+  // exact condition the constant exists to signal — and it goes to 11. What must stay true is
+  // that FC-1A's floor holds and the frontend AGREES with whatever the deployment declares, because a
+  // deployment and a frontend that disagree is the fault the pair was invented to name.
+  var _j4Dep = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+  var _j4Pin = Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
+  ok(_j4Dep >= 10, 'J4  §J the ACTION-contract version is at or after 10 (FC-1A added no route; R1 adds one)');
+  eq(_j4Pin, _j4Dep, 'J4a and the frontend pins exactly what the deployment declares');
+  ok(/action === 'createShipmentFromPlan'/.test(G01), 'J4b because that action has been routed all along');
 
   // §J.2 — the owner stamps. Two of the four owners return SUCCESS while behaving wrongly when a round behind.
-  ['FSTX_BUILD_VERSION_', 'SHIPMENT_BUILD_VERSION_', 'CSD_BUILD_VERSION_'].forEach(function (sym, i) {
-    ok(new RegExp("symbol: '" + sym + "', expected: 'F1-7N-FC-1A'").test(G63),
-      'J5.' + (i + 1) + ' §J.2 ' + sym + ' is registered in the module manifest at this round');
-    ok(DBAPI.indexOf("'" + sym + "'") !== -1, 'J5.' + (i + 1) + 'a and pinned by the frontend probe');
+  // F1-7N-FC-1A-R1 — DERIVED, not pinned to a round name. FC-1A registered these three at its
+  // own stamp; R1 moves two of them (12_ gains cancellation, 21_ gains the vocabulary owner and the
+  // reconciliation) and leaves 22_ where it was. Pinning the round name made a correct move look like a
+  // regression. What must hold forever is the PAIR: each owner DECLARES exactly what the manifest EXPECTS.
+  // A stamp nobody expects and an expectation no file declares are the two halves of a partial sync, and
+  // 12_ and 22_ are precisely the owners that return SUCCESS while behaving wrongly when a round behind.
+  [['12_shipment_handlers.gs', 'SHIPMENT_BUILD_VERSION_'],
+   ['21_factory_inventory_handlers.gs', 'FSTX_BUILD_VERSION_'],
+   ['22_shipment_dispatch_handlers.gs', 'CSD_BUILD_VERSION_']].forEach(function (p, i) {
+    var expected = ((G63.match(new RegExp("\\{ file: '" + p[0].replace(".", "\\.") +
+      "',[^}]*expected: '([^']+)'")) || [])[1]) || '(no manifest entry)';
+    var declared = ((code(GS_SRC[p[0]]).match(new RegExp("var " + p[1] + " = '([^']+)'")) || [])[1]) || '(none)';
+    eq(declared, expected,
+      'J5.' + (i + 1) + ' §J.2 ' + p[0] + ' declares exactly the build its manifest expects (' + expected + ')');
+    ok(DBAPI.indexOf("'" + p[1] + "'") !== -1,
+      'J5.' + (i + 1) + 'a and the frontend probes §J.2 ' + p[1] + ' as an owner symbol');
   });
   ok(/symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1A'/.test(G63),
     'J6  §J.2 and 11_\'s stamp MOVED, because the shape of its Approve answer moved');

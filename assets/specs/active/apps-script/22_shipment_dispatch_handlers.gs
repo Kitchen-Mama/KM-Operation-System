@@ -126,6 +126,24 @@ function handleConfirmShipmentAndDispatch_(body) {
     function sc(name) { var c = s.col(name); return c === -1 ? '' : String(rv[c] == null ? '' : rv[c]).trim(); }
     var curStatus = sc('status').toLowerCase();
 
+    // ---------- F1-7N-FC-1A-R1 §J — A CANCELLED SHIPMENT IS NOT DISPATCHABLE. ----------
+    //
+    // The already-confirmed guard below lists the POST-DISPATCH statuses, and `cancelled` is correctly absent
+    // from it: a cancellation is not a confirmation. But that meant a cancelled draft fell through every guard
+    // and DEDUCTED FACTORY STOCK — for a shipment whose reservation had already been released and whose
+    // units another site may already have reserved. Measured before this guard existed: current 1000 -> 200 on
+    // a cancelled shipment, with a shipment_out movement to match.
+    //
+    // This is a REFUSAL rather than an idempotent success, and the distinction matters: answering
+    // `already_confirmed` for a cancelled shipment would tell the operator it shipped.
+    if (curStatus === 'cancelled') {
+      lock.releaseLock();
+      return jsonResponse_({ success: false, code: 'SHIPMENT_CANCELLED', stage: 'load', shipment_id: shipmentId,
+        error: 'Cannot Confirm: this Shipment Draft was cancelled. Its factory stock reservation has already ' +
+          'been released and the units may now be committed elsewhere. Nothing was written. Create a new ' +
+          'Shipment Draft from the approved plan instead.' });
+    }
+
     // ---------- IDEMPOTENCY: already dispatched? ----------
     var existingRoutes = csdCountRowsFor_(ss, 'shipment_routes', 'shipment_id', shipmentId);
     var existingEvents = csdEventExists_(ss, shipmentId);

@@ -774,7 +774,9 @@ section('I — the ordering guard: this tool cannot run before the B3 sync');
 section('J — [test 29] no routed action, no deployment contract, no owner build moved');
 // ==============================================================================================================
 (function () {
-    eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'J1 [test 29] action contract stays 10');
+    // F1-7N-FC-1A-R1 — at-or-after (B4 added no router action; R1 adds one).
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'J1 [test 29] action contract is at or after 10 (B4 added no router action)');
     // F1-7N-FB-4G-A2-R3 - RESTATED to a floor (see the B3 suite for the reasoning).
     ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
       'J2 [test 29] required-action list version is at or after 9');
@@ -789,7 +791,10 @@ section('J — [test 29] no routed action, no deployment contract, no owner buil
     var _j4Order = require(require('path').join(__dirname, '_release-order.js')).OWNER_STAMPS;
     ok(_j4Order.indexOf(_j4) !== -1 && _j4Order.indexOf(_j4) >= _j4Order.indexOf('F1-7N-FB-4F-B3'),
         'J4 [test 29] the allocation owner build is at or after the B3 sync B4 depends on (' + _j4 + ')');
-    eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4E-R4B-R3', 'J5 [test 29] the router build is unmoved');
+// F1-7N-FC-1A-R1 — derived from the manifest.
+var _j5Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], _j5Expect,
+  'J5 [test 29] the router declares exactly the build its manifest expects (' + _j5Expect + ')');
     // The tool is not in the deployment manifest, because it is not deployed.
     ok(HEALTH.indexOf(TOOL_FILE) === -1, 'J6 [test 29] the helper is not a manifested deployment owner');
     // And it adds no action or route.

@@ -375,7 +375,9 @@ section('§K — the contract versions B1 must not raise, and the stamp it must 
 // ================================================================================================================
 (function () {
     var HEALTH = readGs('63_api_v1_system_health.gs');
-    eq((/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(HEALTH) || [])[1], '10', 'K1 action contract still 10');
+    // F1-7N-FC-1A-R1 — at-or-after: B1 was a contract round and added no action; R1 adds one.
+    ok(Number((/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(HEALTH) || [])[1]) >= 10,
+      'K1 action contract is at or after 10 (B1 added no router action)');
     eq((/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/.exec(HEALTH) || [])[1], '1', 'K1b transport contract still 1');
     eq((/var SYS_API_CONTRACT_VERSION_ = '(\d+)';/.exec(HEALTH) || [])[1], '1', 'K1c API contract still 1');
     // THE ALLOCATION WRITER'S STAMP IS DELIBERATELY UNMOVED. §K says to bump the stamps of permanent Apps Script

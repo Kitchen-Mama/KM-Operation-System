@@ -1217,10 +1217,17 @@ section('§L — THE INVARIANTS THIS AUDIT PINNED, RE-CHECKED AFTER FC-1A');
   eq((code(G22).match(/CSD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
     'L5  and 22_ DECLARES the FC-1A build — a 22_ a round behind returns SUCCESS while never releasing a ' +
     'reservation, so only a declared build can tell the two apart');
+  // F1-7N-FC-1A-R1 — DERIVED. These pinned FC-1A's own stamp values, which held for exactly one round:
+  // R1 moves both (12_ gains cancellation, 21_ gains the vocabulary owner and the reconciliation). What the
+  // audit needs to keep asserting is the PAIR — each owner declares exactly what the manifest expects
+  // — because a stamp nobody expects and an expectation no file declares are the two halves of a
+  // partial sync, and 12_ and 22_ are the owners that return SUCCESS while behaving wrongly when behind.
+  var _l6Exp = ((G63.match(/\{ file: '12_shipment_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
   eq((code(read('assets/specs/active/apps-script/12_shipment_handlers.gs')).match(/SHIPMENT_BUILD_VERSION_ = '([^']+)'/) || [])[1],
-    'F1-7N-FC-1A', 'L6  as does 12_ — a 12_ a round behind creates Shipment Drafts that reserve NOTHING');
-  eq((code(G21).match(/FSTX_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FC-1A',
-    'L7  as does 21_ — the file that now owns every factory stock mutation');
+    _l6Exp, 'L6  12_ declares exactly the build its manifest expects (' + _l6Exp + ')');
+  var _l7Exp = ((G63.match(/\{ file: '21_factory_inventory_handlers\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+  eq((code(G21).match(/FSTX_BUILD_VERSION_ = '([^']+)'/) || [])[1], _l7Exp,
+    'L7  as does 21_ (' + _l7Exp + ') — the file that owns every factory stock mutation');
 })();
 
 // ================================================================================================================

@@ -940,7 +940,9 @@ var MUTATIONS = [
 section('K — the neighbours this round must not have disturbed');
 // ==============================================================================================================
 (function () {
-    eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'K1 action contract stays 10');
+    // F1-7N-FC-1A-R1 — at-or-after (B5 added no router action; R1 adds one).
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'K1 action contract is at or after 10 (B5 added no router action)');
     // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality here forbids every later round from adding an action.
     ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
       'K2 required-action list version is at or after 9');
@@ -955,7 +957,10 @@ section('K — the neighbours this round must not have disturbed');
     ok(_k4Order.indexOf(_k4) !== -1 && _k4Order.indexOf(_k4) >= _k4Order.indexOf('F1-7N-FB-4F-B3'),
         'K4 the allocation owner build is at or after the B3 schema sync (' + _k4 + ')');
     eq((RIC.match(/var RIC_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4F-B3', 'K5 the identity contract build is unmoved');
-    eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4E-R4B-R3', 'K6 the router build is unmoved');
+// F1-7N-FC-1A-R1 — derived from the manifest, so a declaration and an expectation cannot drift apart.
+var _k6Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+eq((ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], _k6Expect,
+  'K6 the router declares exactly the build its manifest expects (' + _k6Expect + ')');
     // The B4 migration helper is untouched and still the only thing that can write a column.
     var B4 = lf(fs.readFileSync(path.join(TOOLS_MIG, 'TEMP_shipping_allocation_schema_b4_append.gs'), 'utf8'));
     ok(/var TEMP_B4_REVIEWED_CHECKSUM_ = '';/.test(B4), 'K7 the B4 helper still ships with a blank reviewed checksum');

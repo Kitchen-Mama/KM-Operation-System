@@ -682,9 +682,13 @@ ok(/handler: 'doPost'/.test(RTR), 'H6 including on the doPost side, so its answe
 // this file already documents for release tokens twenty lines below, so it gets the same treatment. What must
 // hold is that the stamps are FB-4E or later, that the manifest expects what the files declare, and that the
 // two contract axes stay independent.
-var RTR_STAMP = /RTR_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(RTR);
+// F1-7N-FC-1A-R1 — the stamp is read as a VALUE, not as a member of the FB-4E family. FB-4E's own
+// claim was that the router declares an FB-4E revision, which held while FB-4E was the last round to touch
+// it; R1 adds a dispatch and moves the stamp out of that family entirely. What FB-4E actually needs to stay
+// true is the PAIRING below: whatever the router declares, the manifest expects exactly that.
+var RTR_STAMP = /RTR_BUILD_VERSION_ = '([^']+)'/.exec(RTR);
 var SYS_STAMP = /SYS_BUILD_VERSION_ = '(F1-7N-FB-4E[^']*)'/.exec(HLTH);
-ok(!!RTR_STAMP, 'H7 the router build stamp is FB-4E or a later revision of it');
+ok(!!RTR_STAMP, 'H7 the router declares a build stamp (' + (RTR_STAMP ? RTR_STAMP[1] : 'NONE') + ')');
 ok(!!SYS_STAMP, 'H7 as is the health owner’s');
 ok(RTR_STAMP && new RegExp("'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '" + RTR_STAMP[1] + "'").test(HLTH),
   'H7 and the manifest expects exactly the router build the router declares');

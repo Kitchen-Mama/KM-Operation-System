@@ -310,7 +310,11 @@ function shipmentExactRateAndCost_(ss, ctx) {
 // second site plans the same physical stock, and the collision reappears at Confirm exactly as it did before
 // this round — while the site believes reservation is live. That is the partial-sync failure a declared
 // build is the only way to name. Registered in 63_'s module manifest.
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1A';
+// F1-7N-FC-1A-R1: moved. This file gained pre-dispatch cancellation (the only routed way to release a
+// reservation), the updateShipment status allowlist, and the cancelled-skip in the retry idempotency scan. A
+// 12_ one round behind cannot cancel at all, and would let `status:'cancelled'` through updateShipment with no
+// release — stranding units while returning success.
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
 
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 
@@ -387,12 +391,21 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   var s = shipmentReadSheet_(shipmentSheet);
   var sPlanCol = s.col('shipping_plan_id');
   var sIdCol = s.col('shipment_id');
+  var sStatusCol = s.col('status');
   if (sPlanCol !== -1) {
     for (var r = 1; r < s.rows.length; r++) {
-      if (String(s.rows[r][sPlanCol]).trim() === planId) {
-        fcUnlock_();
-        return { created: false, reason: 'already_exists', shipment_id: (sIdCol !== -1 ? String(s.rows[r][sIdCol]).trim() : '') };
-      }
+      if (String(s.rows[r][sPlanCol]).trim() !== planId) continue;
+      // F1-7N-FC-1A-R1 §D.10 — A CANCELLED DRAFT IS NOT AN EXISTING ONE.
+      //
+      // This matched ANY shipment row for the plan. The moment pre-dispatch cancellation exists, that is
+      // wrong in the most damaging possible way: a cancelled draft would keep answering `already_exists`, so
+      // Retry would return REUSED bound to a cancelled shipment and the approved plan could NEVER get a live
+      // draft again — its units released, its recovery action permanently answering "already done".
+      // A cancelled row is preserved as audit evidence (nothing is deleted) and skipped here.
+      var rowStatus = sStatusCol === -1 ? '' : String(s.rows[r][sStatusCol] || '').trim().toLowerCase();
+      if (rowStatus === SHIPMENT_CANCELLED_STATUS_) continue;
+      fcUnlock_();
+      return { created: false, reason: 'already_exists', shipment_id: (sIdCol !== -1 ? String(s.rows[r][sIdCol]).trim() : '') };
     }
   }
 
@@ -724,6 +737,225 @@ function handleCreateShipmentFromPlan_(body) {
   }) });
 }
 
+// ============================================================
+// F1-7N-FC-1A-R1 §C/§D — PRE-DISPATCH SHIPMENT DRAFT CANCELLATION — THE MISSING TRIGGER.
+// ------------------------------------------------------------
+// WHY A NEW ACTION, having audited the alternatives first (§C). Four cancellation-shaped authorities exist and
+// none of them can do this job:
+//   updateShippingPlanStatus transition='cancel'   PLAN lifecycle, and only from draft|pending_approval —
+//                                                  an APPROVED plan (the only kind that has a draft) cannot
+//                                                  reach it at all.
+//   cancelShippingAllocationDraft (16_)            the Execution Plan allocation draft. A different entity.
+//   cancelRequestOrderTier (13_)                   the purchase mainline. Unrelated.
+//   updateShipment { status }                      NOT a cancellation authority, and the reason is important:
+//                                                  it had NO status allowlist, so `status:'cancelled'` would
+//                                                  have been written straight through with ZERO reservation
+//                                                  release. That is not a missing feature, it is a REACHABLE
+//                                                  path that strands units, and it is closed below.
+// So this is one new routed action, following the repository's existing verb-noun naming
+// (cancelShippingAllocationDraft, cancelRequestOrderTier, confirmShipmentAndDispatch).
+//
+// WHAT MAKES IT SAFE. Cancelling a draft returns a CLAIM, not physical units: current_stock is never touched,
+// which is the one thing that separates a cancellation from a dispatch. And it must be all-or-nothing with the
+// release, because the two half-states are both worse than the current situation: a cancelled shipment whose
+// reservation is still held permanently reduces availability for stock that is physically present, and a
+// released reservation under a still-active shipment lets a second site take units this one will ship.
+//
+// NOTHING IS DELETED. The shipment, its lines, its reservation movements and its documents all remain; the row
+// transitions to `cancelled` with who/when/why. The ledger keeps the acquire AND the release, so the history of
+// a cancelled claim is still readable afterwards.
+// ============================================================
+
+// The shipment statuses that mean "physically committed". Cancellation is refused at every one of them, and the
+// refusal is on the STATUS as well as on the physical evidence (routes / events / a shipment_out movement),
+// because either alone can be the first thing to appear if a dispatch is interrupted.
+var SHIPMENT_CANCELLED_STATUS_ = 'cancelled';
+var SHIPMENT_DISPATCHED_STATUSES_ = ['shipped', 'in_transit', 'arrived', 'received', 'closed', 'completed', 'delivered', 'partial_received'];
+// The statuses a pre-dispatch draft can legitimately be in.
+var SHIPMENT_PRE_DISPATCH_STATUSES_ = ['draft', 'ready_to_ship'];
+
+/**
+ * action `cancelShipmentDraft` — cancel a PRE-DISPATCH Shipment Draft and release its factory stock
+ * reservation, atomically.
+ *
+ * Body: { shipment_id, actor?, reason?, expected_status?, idempotency_key? }
+ *
+ * Answers `outcome: 'CANCELLED' | 'REUSED'`, the same two-value shape createShipmentFromPlan uses, so a double
+ * click, a retried transport failure and a genuine replay all converge on one cancellation and the caller can
+ * bind to the outcome without parsing prose.
+ */
+function handleCancelShipmentDraft_(body) {
+  body = body || {};
+  var shipmentId = String(body.shipment_id || body.draft_id || '').trim();
+  var actor = String(body.actor || body.cancelled_by || body.updated_by || 'system_user').trim();
+  var reason = String(body.reason || body.cancel_reason || '').trim();
+  var expectedStatus = String(body.expected_status || '').trim().toLowerCase();
+  if (!shipmentId) return jsonResponse_({ success: false, code: 'MISSING_SHIPMENT_ID', error: 'Missing shipment_id' });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shipSheet = ss.getSheetByName('shipments');
+  if (!shipSheet) return jsonResponse_({ success: false, code: 'SHIPMENTS_SHEET_NOT_FOUND', error: 'shipments sheet not found' });
+
+  // ---- LOCK. The reservation release cannot be evaluated against a balance another writer is moving, and the
+  // dispatch guard cannot be trusted if a Confirm can land between the check and the write.
+  var lock = null;
+  try { lock = LockService.getScriptLock(); if (!lock.tryLock(30000)) return jsonResponse_({ success: false, code: 'LOCK_UNAVAILABLE', error: 'Could not acquire lock; please retry.' }); }
+  catch (eL) { return jsonResponse_({ success: false, code: 'LOCK_ERROR', error: String(eL && eL.message ? eL.message : eL) }); }
+  function unlock_() { try { if (lock) lock.releaseLock(); } catch (e) {} }
+
+  sheetEnsureColumns_(shipSheet, ['status', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'updated_at', 'updated_by']);
+  var sh = shipmentReadSheet_(shipSheet);
+  var idCol = sh.col('shipment_id');
+  if (idCol === -1) { unlock_(); return jsonResponse_({ success: false, code: 'SHIPMENT_ID_COLUMN_MISSING', error: 'shipment_id column not found' }); }
+  var row = -1;
+  for (var i = 1; i < sh.rows.length; i++) { if (String(sh.rows[i][idCol]).trim() === shipmentId) { row = i + 1; break; } }
+  if (row === -1) { unlock_(); return jsonResponse_({ success: false, code: 'SHIPMENT_NOT_FOUND', error: 'Shipment not found: ' + shipmentId }); }
+  var rv = sh.rows[row - 1];
+  function sc(name) { var c = sh.col(name); return c === -1 ? '' : String(rv[c] == null ? '' : rv[c]).trim(); }
+  var curStatus = sc('status').toLowerCase();
+  var planId = sc('shipping_plan_id');
+  var srcWarehouseId = sc('source_warehouse_id');
+
+  // ---- IDEMPOTENCY, before every guard. A replay must be a cheap truthful answer, not a refusal that reads
+  // like a failure — and not a second release.
+  if (curStatus === SHIPMENT_CANCELLED_STATUS_) {
+    unlock_();
+    return jsonResponse_({ success: true, data: {
+      outcome: 'REUSED', shipment_id: shipmentId, shipping_plan_id: planId, status: SHIPMENT_CANCELLED_STATUS_,
+      already_cancelled: true, reservation_released: 0, movements_written: 0,
+      cancelled_by: sc('cancelled_by'), cancelled_at: sc('cancelled_at'), cancel_reason: sc('cancel_reason'),
+      note: 'This Shipment Draft was already cancelled. Nothing was written and no reservation was released twice.'
+    } });
+  }
+
+  // ---- OPTIMISTIC CONCURRENCY. When the caller states the status it saw, a change since then means the UI is
+  // acting on a stale card and must be told rather than allowed to cancel something else.
+  if (expectedStatus && expectedStatus !== curStatus) {
+    unlock_();
+    return jsonResponse_({ success: false, code: 'SHIPMENT_STATUS_CHANGED', shipment_id: shipmentId,
+      data: { expected_status: expectedStatus, actual_status: curStatus },
+      error: 'This shipment is now "' + curStatus + '", not "' + expectedStatus + '". Reload and try again. Nothing was changed.' });
+  }
+
+  // ---- THE DISPATCH GUARD, on status AND on physical evidence. Both, because an interrupted Confirm can leave
+  // either one first, and a cancellation after a real deduction would release a hold the units already left.
+  if (SHIPMENT_DISPATCHED_STATUSES_.indexOf(curStatus) !== -1) {
+    unlock_();
+    return jsonResponse_({ success: false, code: 'SHIPMENT_ALREADY_DISPATCHED', shipment_id: shipmentId,
+      data: { status: curStatus },
+      error: 'Cannot cancel: this shipment is "' + curStatus + '". A dispatched shipment is cancelled by a ' +
+        'reversal, never by a draft cancellation. Nothing was changed.' });
+  }
+  var hasStockMovement = (typeof csdMovementExists_ === 'function') ? csdMovementExists_(ss, shipmentId) : false;
+  var hasRoutes = (typeof csdCountRowsFor_ === 'function') ? csdCountRowsFor_(ss, 'shipment_routes', 'shipment_id', shipmentId) > 0 : false;
+  var hasEvents = (typeof csdEventExists_ === 'function') ? csdEventExists_(ss, shipmentId) : false;
+  if (hasStockMovement || hasRoutes || hasEvents) {
+    unlock_();
+    return jsonResponse_({ success: false, code: 'SHIPMENT_ALREADY_DISPATCHED', shipment_id: shipmentId,
+      data: { status: curStatus, stock_movement: hasStockMovement, route_rows: hasRoutes, events: hasEvents },
+      error: 'Cannot cancel: this shipment already has dispatch evidence (stock movement / route / event), so ' +
+        'it has physically shipped even though its status reads "' + curStatus + '". Nothing was changed.' });
+  }
+  if (SHIPMENT_PRE_DISPATCH_STATUSES_.indexOf(curStatus) === -1) {
+    // Fail CLOSED on a status this action does not understand rather than guessing that it is cancellable.
+    unlock_();
+    return jsonResponse_({ success: false, code: 'SHIPMENT_STATUS_NOT_CANCELLABLE', shipment_id: shipmentId,
+      data: { status: curStatus, cancellable_from: SHIPMENT_PRE_DISPATCH_STATUSES_ },
+      error: 'Cannot cancel a shipment in status "' + curStatus + '". Cancellable only from: ' +
+        SHIPMENT_PRE_DISPATCH_STATUSES_.join(', ') + '. Nothing was changed.' });
+  }
+
+  // ---- RELEASE + CANCEL, in ONE journaled transaction.
+  var journal = [];
+  var released = 0, movementsWritten = 0, releases = [];
+  try {
+    var stockSheet = ss.getSheetByName('factory_stock');
+    var movSheet = ss.getSheetByName('factory_stock_movements');
+    if (stockSheet && movSheet) {
+      // Outstanding holds are read from THIS shipment's own ledger, so a release can never touch another
+      // shipment's reservation and can never exceed what this one actually holds.
+      var held = factoryStockOwnerReservedTx_(movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
+      var now0 = shipmentTimestamp_();
+      Object.keys(held).sort().forEach(function (key) {
+        var qty = Math.round(held[key] || 0);
+        if (qty <= 0) return;
+        var parts = key.split('||');
+        var rel = factoryStockReleaseReservationTx_({
+          stockSheet: stockSheet, movSheet: movSheet, warehouseId: parts[0], sku: parts[1], qty: qty,
+          ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId, journal: journal, now: now0,
+          createdBy: actor, releaseReason: 'shipment_draft_cancelled' + (reason ? (':' + reason) : '')
+        });
+        if (rel.applied) { released += rel.released; movementsWritten++; }
+        releases.push({ warehouse_id: parts[0], sku: parts[1], released_qty: rel.released, reason: rel.reason });
+      });
+    }
+
+    var now = shipmentTimestamp_();
+    function setShip_(name, value) {
+      var c = sh.col(name);
+      if (c === -1) return;
+      journal.push({ kind: 'cell', sheet: shipSheet, row: row, col: c, prev: rv[c] });
+      shipSheet.getRange(row, c + 1).setValue(value);
+    }
+    setShip_('status', SHIPMENT_CANCELLED_STATUS_);
+    setShip_('cancelled_by', actor);
+    setShip_('cancelled_at', now);
+    setShip_('cancel_reason', reason);
+    setShip_('updated_by', actor);
+    setShip_('updated_at', now);
+
+    // ---- §D.9 — THE PARENT PLAN MUST DERIVE `APPROVED_SHIPMENT_CREATION_PENDING` AGAIN.
+    // The plan keeps its approval (frozen §0), but its handoff marker must be cleared: while
+    // transferred_shipment_id still points at the cancelled draft, both the server's recovery derivation and
+    // the plan card read SHIPMENT_PRESENT, so the operator is shown a healthy plan with no shipment and no
+    // Retry — the exact silence FC-1A was written to end, reintroduced by the cancellation.
+    var planSheet = ss.getSheetByName('shipping_plans');
+    var planCleared = false;
+    if (planSheet && planId) {
+      var p = shipmentReadSheet_(planSheet);
+      var pIdCol = p.col('shipping_plan_id');
+      if (pIdCol !== -1) {
+        for (var q = 1; q < p.rows.length; q++) {
+          if (String(p.rows[q][pIdCol]).trim() !== planId) continue;
+          ['transferred_shipment_id', 'transferred_to_shipment_at'].forEach(function (nm) {
+            var pc = p.col(nm);
+            if (pc === -1) return;
+            journal.push({ kind: 'cell', sheet: planSheet, row: q + 1, col: pc, prev: p.rows[q][pc] });
+            planSheet.getRange(q + 1, pc + 1).setValue('');
+          });
+          var puc = p.col('updated_at');
+          if (puc !== -1) {
+            journal.push({ kind: 'cell', sheet: planSheet, row: q + 1, col: puc, prev: p.rows[q][puc] });
+            planSheet.getRange(q + 1, puc + 1).setValue(now);
+          }
+          planCleared = true;
+          break;
+        }
+      }
+    }
+    SpreadsheetApp.flush();
+
+    unlock_();
+    return jsonResponse_({ success: true, data: {
+      outcome: 'CANCELLED', shipment_id: shipmentId, shipping_plan_id: planId,
+      status: SHIPMENT_CANCELLED_STATUS_, source_warehouse_id: srcWarehouseId,
+      reservation_released: released, movements_written: movementsWritten, releases: releases,
+      current_stock_changed: false,
+      plan_handoff_cleared: planCleared,
+      plan_execution_commit: planId ? 'APPROVED_SHIPMENT_CREATION_PENDING' : '',
+      cancelled_by: actor, cancelled_at: now, cancel_reason: reason,
+      note: 'The reservation was released and current stock was NOT deducted. The approved plan keeps its ' +
+        'approval and can create a new Shipment Draft with Retry.'
+    } });
+  } catch (e) {
+    factoryStockRollbackJournal_(journal);
+    unlock_();
+    return jsonResponse_({ success: false, code: 'CANCEL_ROLLED_BACK', shipment_id: shipmentId, stage: 'write_rolled_back',
+      error: 'Cancellation failed and was rolled back: ' + String(e && e.message ? e.message : e) +
+        '. The shipment status, the reserved balance and the movement rows are all unchanged.' });
+  }
+}
+
 // ---- Central Shipment totals recalculation (snapshot) ----
 
 /**
@@ -1004,6 +1236,30 @@ function handleUpdateShipment_(body) {
     var appended = '[RETURN TO DRAFT @' + now + ' by ' + actor + '] ' + reasonText;
     setCell('note', existingNote ? (existingNote + '\n' + appended) : appended);
     changed++;
+  }
+
+  // F1-7N-FC-1A-R1 §C — A STATUS ALLOWLIST, BECAUSE THERE WAS NONE.
+  //
+  // This wrote whatever string arrived. Harmless-looking, and it became a real hazard the moment reservations
+  // existed: `status:'cancelled'` would have been persisted straight through with ZERO reservation release,
+  // leaving units held by a shipment nobody can dispatch — permanently reducing availability for stock
+  // that is physically present, with no error and no evidence except a ledger nobody was reading.
+  //
+  // Cancellation is refused HERE and named, rather than silently ignored, because an operator or a script that
+  // sends it deserves to be told where the real action is. A typo'd status is refused for the same reason: a
+  // shipment sitting in an unknown status is invisible to every page that filters by the known set.
+  if (newStatus) {
+    var _uKnown = SHIPMENT_PRE_DISPATCH_STATUSES_.concat(SHIPMENT_DISPATCHED_STATUSES_).concat(['stuck']);
+    if (String(newStatus).trim().toLowerCase() === SHIPMENT_CANCELLED_STATUS_) {
+      return jsonResponse_({ success: false, code: 'USE_CANCEL_SHIPMENT_DRAFT', shipment_id: shipmentId,
+        error: 'updateShipment cannot cancel a shipment: cancelling must also release the factory stock ' +
+          'reservation, atomically. Use the cancelShipmentDraft action. Nothing was changed.' });
+    }
+    if (_uKnown.indexOf(String(newStatus).trim().toLowerCase()) === -1) {
+      return jsonResponse_({ success: false, code: 'UNKNOWN_SHIPMENT_STATUS', shipment_id: shipmentId,
+        data: { requested: newStatus, known: _uKnown },
+        error: 'Unknown shipment status "' + newStatus + '". Nothing was changed.' });
+    }
   }
 
   // Status advance. Snapshot stays frozen. Marking `shipped` stamps shipped_at / shipped_by once.

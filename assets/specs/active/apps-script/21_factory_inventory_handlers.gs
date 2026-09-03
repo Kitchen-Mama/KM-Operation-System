@@ -335,9 +335,73 @@ function factoryStockApplyDeltaTx_(p) {
 // F1-7N-FC-1A §J DEPLOYMENT STAMP. A 21_ one round behind has no reservation primitives at all, so 12_ and
 // 22_ throw on an undefined function and the operator sees an unexplained Approve or Confirm failure. Named
 // here rather than discovered there.
-var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A';
+// F1-7N-FC-1A-R1: moved. This file gained the canonical seven-type vocabulary, the axis predicates and the
+// reserved-balance reconciliation. A 21_ one round behind has none of them, so the cancellation handler throws
+// on an undefined function and the reconciliation diagnostic refuses to run rather than guessing.
+var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+// ============================================================
+// F1-7N-FC-1A-R1 §G — THE ONE CANONICAL factory_stock_movements VOCABULARY, AND WHAT EACH TYPE MOVES.
+// ------------------------------------------------------------
+// Before R1 the seven type strings were scattered: five as inline literals across 13_/21_/22_/31_, one as
+// 22_'s CSD_MOV_TYPE_, and the two reservation types as bare constants here. Nothing could answer "is this
+// row a current-stock delta or a reserved-stock delta" except by knowing the list by heart — which is
+// exactly how a reader comes to treat a reservation row as a stock movement and report a balance that never
+// happened. That question is now answered in ONE place by the two predicates below, and every consumer
+// (the shared transaction, dispatch, PO receipt, the reconciliation, the diagnostics, the tests and the
+// readback adapters) asks it here.
+//
+// THE AXIS EACH TYPE MOVES. This is the whole point of the table, and it is what makes a reserved row
+// impossible to double-count as a current-stock movement:
+//   inventory_import      current   (SET to an imported quantity)
+//   manual_adjustment     current   (signed delta from an operator-set available)
+//   po_receipt            current   (+received)
+//   shipment_out          current   AND reserved  (-shipped, and releases this shipment's own hold)
+//   shipment_receipt      neither   (overseas_inventory_movements; listed so the set is complete and a
+//                                    reader cannot conclude a type is unknown just because factory stock
+//                                    is not the table it moves)
+//   reservation_acquire   reserved  (+claimed)
+//   reservation_release   reserved  (-released; current NEVER changes)
+//
+// R1 DECISION (§A): the vocabulary is SEVEN. It was measured closed at five by the FC-0A audit; FC-1A added
+// the two reservation types additively and R1 makes that canonical. movement_type is stored as a value and no
+// deployed reader rejects an unknown one (verified across every non-generated .gs and the browser adapter), so
+// there is no migration. Anything that still claims five is stale and is corrected in the same commit.
+var FSTX_MOV_INVENTORY_IMPORT_ = 'inventory_import';
+var FSTX_MOV_MANUAL_ADJUSTMENT_ = 'manual_adjustment';
+var FSTX_MOV_PO_RECEIPT_ = 'po_receipt';
+var FSTX_MOV_SHIPMENT_OUT_ = 'shipment_out';
+var FSTX_MOV_SHIPMENT_RECEIPT_ = 'shipment_receipt';
 var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';
 var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';
+
+// The canonical seven, in a stable order so a test can pin the SET without pinning an accident of iteration.
+var FSTX_MOVEMENT_TYPES_ = [
+  FSTX_MOV_INVENTORY_IMPORT_, FSTX_MOV_MANUAL_ADJUSTMENT_, FSTX_MOV_PO_RECEIPT_,
+  FSTX_MOV_RESERVE_ACQUIRE_, FSTX_MOV_RESERVE_RELEASE_,
+  FSTX_MOV_SHIPMENT_OUT_, FSTX_MOV_SHIPMENT_RECEIPT_
+];
+// The types whose `qty` is a RESERVED-stock delta. A reader that sums `qty` for a current-stock report must
+// exclude these, or a 800-unit reservation is reported as 800 units of physical movement that never occurred.
+var FSTX_RESERVED_AXIS_TYPES_ = [FSTX_MOV_RESERVE_ACQUIRE_, FSTX_MOV_RESERVE_RELEASE_];
+// The types whose `qty` is a CURRENT-stock delta. shipment_out is here and NOT in the reserved list, because
+// its qty is the physical deduction; its reservation release is carried by the before/after_reserved pair on
+// the same row, never by a second row. That asymmetry is the single most double-countable fact in the ledger,
+// which is why it is stated as data rather than left to a comment.
+var FSTX_CURRENT_AXIS_TYPES_ = [FSTX_MOV_INVENTORY_IMPORT_, FSTX_MOV_MANUAL_ADJUSTMENT_,
+  FSTX_MOV_PO_RECEIPT_, FSTX_MOV_SHIPMENT_OUT_];
+
+function factoryStockIsKnownMovementType_(t) {
+  return FSTX_MOVEMENT_TYPES_.indexOf(String(t == null ? '' : t).trim()) !== -1;
+}
+// TRUE when this row's `qty` is a reserved-stock delta.
+function factoryStockIsReservationMovement_(t) {
+  return FSTX_RESERVED_AXIS_TYPES_.indexOf(String(t == null ? '' : t).trim()) !== -1;
+}
+// TRUE when this row's `qty` is a current-stock delta.
+function factoryStockIsCurrentMovement_(t) {
+  return FSTX_CURRENT_AXIS_TYPES_.indexOf(String(t == null ? '' : t).trim()) !== -1;
+}
+
 var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';   // the only reservation owner in the frozen model (§0)
 
 // Read the (warehouse_id + sku) balance. Returns { found, current, reserved, available }. A missing row reads
@@ -442,6 +506,124 @@ function factoryStockReleaseReservationTx_(p) {
   });
   return { applied: true, reason: 'RELEASED', released: give, alreadyHeld: held, movementId: res.movementId,
     beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
+}
+
+// ============================================================
+// F1-7N-FC-1A-R1 §H — RESERVED-BALANCE RECONCILIATION. PURE, READ-ONLY, NO Sheet HANDLE.
+// ------------------------------------------------------------
+// Answers one question per (warehouse_id, sku): does the STORED fac_reserved_stock equal what the LEDGER
+// says it should be? The derived balance is
+//
+//     derived = SUM(reservation_acquire.qty)                 [positive]
+//             + SUM(reservation_release.qty)                 [negative]
+//             - SUM(shipment_out reserved drop)              [before_reserved - after_reserved]
+//
+// THE THIRD TERM IS THE ONE THAT MATTERS, and getting it backwards is a mistake I made and the fixtures
+// caught. A dispatch releases its own hold by carrying a reserved before/after pair on its OWN shipment_out
+// row — it writes NO separate reservation_release. So that drop is the ONLY record of the release. An
+// earlier version of this function excluded it, reasoning that including it would double-count; measured on a
+// healthy world (acquire 800, dispatch 800, a second shipment holding 300) that produced stored 300 against
+// derived 1100 and reported a MISMATCH on a perfectly correct ledger. Every dispatched shipment in production
+// would have raised one, which is exactly the noise that teaches an operator to stop reading the report.
+//
+// §H.1's rule is "never count a shipment_out TWICE as both a release row and an implicit release". What
+// satisfies that rule is not exclusion; it is that a dispatch never writes a separate release row for the same
+// units. The drop is therefore subtracted exactly ONCE, and it is ALSO reported on its own
+// (consumed_by_shipment_out) so the number stays visible.
+//
+// It NEVER auto-repairs. A mismatch is returned as FACTORY_RESERVATION_LEDGER_MISMATCH with both numbers and
+// the difference, because a reserved balance that disagrees with its own ledger is a fact somebody has to look
+// at, and rounding it into agreement destroys the only evidence of how it happened.
+//
+// Inputs are plain objects (rows already read by the caller), so this is Node-testable and cannot write.
+//   stockRows: [{ warehouse_id, sku, fac_current_stock|current_stock, fac_reserved_stock|reserved_stock }]
+//   movRows:   [{ movement_type, qty, warehouse_id, sku, related_entity_type, related_entity_id,
+//                 before_reserved_stock, after_reserved_stock }]
+// Returns { ok, code, rows: [...], mismatches: [...] }.
+function factoryStockReconcileReservations_(stockRows, movRows) {
+  function str(v) { return String(v == null ? '' : v).trim(); }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
+  function pick(o, a, b) { return (o[a] !== undefined && o[a] !== '') ? o[a] : o[b]; }
+
+  var byKey = {};
+  function slot(k) {
+    if (!byKey[k]) {
+      byKey[k] = { key: k, warehouse_id: k.split('||')[0], sku: k.split('||')[1],
+        stored_reserved: 0, has_stock_row: false, current: 0,
+        acquire_total: 0, release_total: 0, consumed_by_shipment_out: 0, dispatch_released: 0, owners: {} };
+    }
+    return byKey[k];
+  }
+
+  (stockRows || []).forEach(function (r) {
+    var sl = slot(str(r.warehouse_id) + '||' + str(r.sku));
+    sl.has_stock_row = true;
+    sl.current = num(pick(r, 'fac_current_stock', 'current_stock'));
+    sl.stored_reserved = num(pick(r, 'fac_reserved_stock', 'reserved_stock'));
+  });
+
+  (movRows || []).forEach(function (m) {
+    var t = str(m.movement_type);
+    // An UNKNOWN type is neither counted nor dropped: it is reported, because silently ignoring a row is how
+    // a ledger and a balance drift apart without anybody being told.
+    var known = factoryStockIsKnownMovementType_(t);
+    var sl = slot(str(m.warehouse_id) + '||' + str(m.sku));
+    if (!known) { sl.unknown_types = (sl.unknown_types || 0) + 1; return; }
+    if (t === FSTX_MOV_RESERVE_ACQUIRE_) {
+      sl.acquire_total += num(m.qty);
+      var oa = str(m.related_entity_type) + ':' + str(m.related_entity_id);
+      sl.owners[oa] = (sl.owners[oa] || 0) + num(m.qty);
+      return;
+    }
+    if (t === FSTX_MOV_RESERVE_RELEASE_) {
+      sl.release_total += num(m.qty);           // already negative by convention
+      var orl = str(m.related_entity_type) + ':' + str(m.related_entity_id);
+      sl.owners[orl] = (sl.owners[orl] || 0) + num(m.qty);
+      return;
+    }
+    if (t === FSTX_MOV_SHIPMENT_OUT_) {
+      // The reserved DROP this dispatch performed, read from its own before/after pair. `before - after` is
+      // positive when a hold was released. Counted ONCE (see the note above) and reported separately.
+      var drop = num(m.before_reserved_stock) - num(m.after_reserved_stock);
+      if (drop > 0) {
+        sl.consumed_by_shipment_out += drop;
+        sl.dispatch_released += drop;
+        var od = str(m.related_entity_type) + ':' + str(m.related_entity_id);
+        sl.owners[od] = (sl.owners[od] || 0) - drop;   // the owner no longer holds what it shipped
+      }
+      return;
+    }
+    // inventory_import / manual_adjustment / po_receipt / shipment_receipt move no reserved quantity.
+  });
+
+  var rows = [], mismatches = [];
+  Object.keys(byKey).sort().forEach(function (k) {
+    var sl = byKey[k];
+    var derived = sl.acquire_total + sl.release_total - sl.dispatch_released;
+    var outstanding = {};
+    Object.keys(sl.owners).forEach(function (o) { if (sl.owners[o] !== 0) outstanding[o] = sl.owners[o]; });
+    var row = {
+      warehouse_id: sl.warehouse_id, sku: sl.sku, has_stock_row: sl.has_stock_row,
+      current: sl.current, stored_reserved: sl.stored_reserved,
+      acquire_total: sl.acquire_total, release_total: sl.release_total,
+      consumed_by_shipment_out: sl.consumed_by_shipment_out, dispatch_released: sl.dispatch_released,
+      derived_reserved: derived, difference: sl.stored_reserved - derived,
+      outstanding_by_owner: outstanding,
+      derived_available: sl.current - derived,
+      unknown_type_rows: sl.unknown_types || 0
+    };
+    rows.push(row);
+    if (row.difference !== 0 || !row.has_stock_row && derived !== 0) mismatches.push(row);
+  });
+
+  return {
+    ok: mismatches.length === 0,
+    code: mismatches.length ? 'FACTORY_RESERVATION_LEDGER_MISMATCH' : 'RECONCILED',
+    keys_examined: rows.length, rows: rows, mismatches: mismatches,
+    note: 'derived = acquire + release - dispatch_released. A dispatch releases its own hold on its OWN ' +
+      'shipment_out row and writes no separate reservation_release, so that drop is counted exactly once here ' +
+      'and also reported on its own as consumed_by_shipment_out.'
+  };
 }
 
 // LIFO rollback of a journal produced by factoryStockApplyDeltaTx_ (and caller-pushed PO-line cells). Cells

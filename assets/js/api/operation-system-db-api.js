@@ -3888,7 +3888,14 @@ function _kmWriterError_(json, fallbackMessage) {
 // has no fan-out left to fall back to, so a deployment below action contract 9 cannot render that page at all.
 // The version gate must say so first, with the message that names the fix, rather than letting the page
 // discover it as a failed read.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 10;      // the minimum deployed_action_contract_version this build needs
+// F1-7N-FC-1A-R1 §L: 10 -> 11, RAISED, and this is the one raise in the series that protects stock rather
+// than a read. FC-1A made Shipment Draft creation ACQUIRE a factory stock reservation. A deployment at
+// contract 10 routes everything else normally but cannot route cancelShipmentDraft, so there is NO way to
+// release a reservation before dispatch — units stay held by a draft nobody can cancel, availability
+// drops permanently, and the only symptom is shipments refused for stock that is physically on the floor. The
+// version gate must say so first, with the message that names the fix, rather than letting an operator find
+// out by pressing Cancel.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 11;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -3947,9 +3954,11 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     'requestOrder.allocationDraft.ensureAndEdit', 'system.allocationDraftIdentityDiagnostic',
     'system.executionPlanConflictDiagnostic', 'system.requestOrderSendDiagnosticStatus',
     'shipment.eta.update', 'shipment.route.advance', 'upsertShippingAllocationDraft',
-    // F1-7N-FC-1A §C/§J — the Shipment Draft recovery action. Routed and handled for rounds; probed for the
+    // F1-7N-FC-1A SSXC/SSXJ — the Shipment Draft recovery action. Routed and handled for rounds; probed for the
     // first time now that a page depends on it.
     'createShipmentFromPlan',
+    // F1-7N-FC-1A-R1 — the only routed way to release a reservation before dispatch.
+    'cancelShipmentDraft',
     // F1-7N-FB-4C-R1 §D — the READ both SKU pages depend on. It was never probed, so a deployment missing it
     // could only be discovered by the pages failing, which is precisely how this round started.
     'skuDetails.workspace.get',
@@ -3981,7 +3990,13 @@ var KM_PAGE_REQUIRED_ACTIONS_ = {
     // half of that which can fail. A deployment that cannot serve either must disable both buttons rather than
     // let an operator approve into a state whose recovery action the deployment does not route.
     'weekly-shipping-plan': ['weeklyShipping.workspace.get', 'updateShippingPlanStatus',
-        'createShipmentFromPlan', 'completeShippingPlan']
+        'createShipmentFromPlan', 'completeShippingPlan'],
+    // F1-7N-FC-1A-R1 §L — the Shipment Draft page. It is the page that can cancel, and a cancellation
+    // it cannot route would leave the reservation held while the operator believes it was released, so the
+    // action is named here and the button is disabled on a mismatch rather than allowed to fail.
+    'shipment-draft': ['shipment.workspace.get', 'cancelShipmentDraft', 'updateShipment',
+        'confirmShipmentAndDispatch'],
+    'shipment-overview': ['shipment.workspace.get', 'cancelShipmentDraft']
 };
 // Globals whose PRESENCE proves the file that owns them was actually copied into the deployment. This is what
 // catches a half-finished, file-by-file Apps Script sync that still resolves every action.
@@ -4032,6 +4047,12 @@ var KM_REQUIRED_DEPLOYED_SYMBOLS_ = [
     'SHIPMENT_BUILD_VERSION_',
     'CSD_BUILD_VERSION_',
     'FSTX_BUILD_VERSION_',
+    // F1-7N-FC-1A-R1 — the cancellation handler itself and the canonical movement vocabulary. The
+    // action probe proves the ROUTER knows `cancelShipmentDraft`; these prove 12_ and 21_ actually carry the
+    // handler and the seven-type set behind it, which an action list cannot see.
+    'handleCancelShipmentDraft_',
+    'FSTX_MOVEMENT_TYPES_',
+    'PROC_BUILD_VERSION_',
     // F1-7N-FB-4E-R3 §C — the Overseas workspace OWNER FILE. The action resolving is not enough: a deployment
     // carrying the R3 router but not 70_ would route to an undefined handler, and this page has no fan-out left
     // to fall back to. Probing the owner symbol is the only way the site can tell those two apart.
@@ -4845,6 +4866,14 @@ window.KM.DB.uncombineShippingPlans = function(payload) { return _kmShippingPost
 // never throws, and it preserves the typed code end to end. FC-0A measured that this action had NO caller, so
 // nothing depended on the old throwing shape.
 window.KM.DB.createShipmentFromPlan = function(payload) { return _kmWeeklyCommand_('createShipmentFromPlan', payload); };
+
+// F1-7N-FC-1A-R1 §D/§F — cancel a PRE-DISPATCH Shipment Draft and release its factory stock
+// reservation, atomically. { shipment_id, actor?, reason?, expected_status?, idempotency_key? }
+// Answers { outcome: 'CANCELLED' | 'REUSED' } or a typed refusal (SHIPMENT_ALREADY_DISPATCHED,
+// SHIPMENT_STATUS_CHANGED, SHIPMENT_STATUS_NOT_CANCELLABLE, LOCK_UNAVAILABLE, CANCEL_ROLLED_BACK).
+// On the command runner, not a throwing fetch: "this shipment already dispatched" is a precise business answer
+// and must not reach the operator as a network error.
+window.KM.DB.cancelShipmentDraft = function(payload) { return _kmWeeklyCommand_('cancelShipmentDraft', payload); };
 
 // Edit EXECUTION-layer fields only (carrier/container/booking/ETD/ETA/tracking/remark/...).
 // The Execution Snapshot and six-key context are immutable and rejected server-side.

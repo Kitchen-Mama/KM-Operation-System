@@ -104,6 +104,11 @@ var ROUND_TOKENS = [
   // served from cache after this round: an older page shows an approved plan with no Shipment Draft as a
   // perfectly healthy card and offers no way to recover it, and an older adapter turns
   // INSUFFICIENT_FACTORY_STOCK into HTTP_TRANSPORT_ERROR by throwing a business rejection.
+  // F1-7N-FC-1A-R1 deliberately does NOT add a token. FC-1A and R1 are ONE atomic release (R1 §0): FC-1A
+  // acquires factory stock reservations and R1 provides the only routed way to release one, so a deployment
+  // carrying FC-1A alone can strand units. Minting a second token would let the two halves be cached, shipped
+  // and reasoned about separately, which is exactly what the release decision forbids. The FC-1A token covers
+  // both, and the ACTION-CONTRACT version (10 -> 11) is what actually refuses a half-synced deployment.
   'fc1a-shipmentrecovery-20260903'
 ];
 
@@ -238,7 +243,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-R\d+[A-Z]?\d*)*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

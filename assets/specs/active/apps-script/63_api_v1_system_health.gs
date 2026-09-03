@@ -63,7 +63,14 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // this constant's rule names. The frontend raises its pinned minimum to 9 in the same change: an Overseas page
 // that has been cut over to the workspace read CANNOT work against a deployment that does not route it, so the
 // version gate must reject that deployment by version rather than let the page discover it as a failed read.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;
+// F1-7N-FC-1A-R1: 10 -> 11. THE RULE FIRES HERE. This constant's rule is "bump whenever a router ACTION is
+// added or removed", and R1 adds `cancelShipmentDraft`. It is not a formality in this round: FC-1A made
+// Shipment Draft creation ACQUIRE a factory stock reservation, and until this action exists there is no routed
+// way to release one before dispatch. A deployment carrying FC-1A without R1 can therefore strand units
+// permanently, so it must be rejected BY VERSION at the browser's first contract check rather than discovered
+// when an operator finds the Cancel button does nothing. The frontend raises its pinned minimum to 11 in the
+// same commit.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 11;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -84,7 +91,8 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;
 // it: the Weekly Shipping Plan card's Retry Shipment Draft is the recovery path for a committed approval whose
 // Execution Commit failed, and a deployment missing it must be a named deployment fact rather than a Retry
 // button that does nothing.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 11;
+// F1-7N-FC-1A-R1: 11 -> 12. SYS_REQUIRED_ACTIONS_ gained cancelShipmentDraft.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 12;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -145,6 +153,13 @@ var SYS_REQUIRED_ACTIONS_ = [
   // needing recovery. It is now called by the Approved plan card, which makes its absence from a deployment a
   // user-visible break and therefore something this registry must name.
   { action: 'createShipmentFromPlan', handler: 'handleCreateShipmentFromPlan_', used_by: 'Weekly Shipping Plan -- Retry Shipment Draft (approval recovery)' },
+  // F1-7N-FC-1A-R1 §D — THE ONLY ROUTED WAY TO RELEASE A RESERVATION BEFORE DISPATCH.
+  //
+  // FC-1A made Shipment Draft creation acquire a reservation and shipped with no cancellation trigger, so a
+  // reservation could become operationally unreleasable. A deployment missing this action does not merely lose
+  // a button: it loses the ability to give units back, and the symptom is shipments refused for stock that is
+  // physically present. That has to be a named deployment fact.
+  { action: 'cancelShipmentDraft', handler: 'handleCancelShipmentDraft_', used_by: 'Shipment Draft -- Cancel Shipment Draft (releases the factory stock reservation)' },
   { action: 'updatePurchaseOrderStatus', handler: 'handleUpdatePurchaseOrderStatus_', used_by: 'Send PO' },
   { action: 'document.list', handler: 'handleEntityDocumentList_', used_by: 'Document Panels' },
   { action: 'document.retry', handler: 'handleDocumentRetry_', used_by: 'Document retry' },
@@ -258,12 +273,17 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   //   22_  deducts through its OLD inline implementation and never RELEASES the reservation, so available
   //        stock drifts permanently downward and shipments are refused for stock that is physically present.
   // The 12_ and 22_ cases are the dangerous ones precisely because they return success.
-  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'THE single factory_stock mutation authority: balance delta, reservation acquire/release, typed movement, rollback journal' },
-  { file: '12_shipment_handlers.gs', symbol: 'SHIPMENT_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'Shipment Draft creation + the factory stock reservation acquired with it (all-or-nothing)' },
+  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation' },
+  { file: '12_shipment_handlers.gs', symbol: 'SHIPMENT_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist' },
+  // F1-7N-FC-1A-R1 §K — the PO receipt owner gains a stamp, because an old 13_ ALSO returns success.
+  // It silently CLAMPS an over-receipt: an operator entering 900 against a remaining 500 is told the receipt
+  // succeeded and is never told the other 400 were discarded. Only a declared build separates that from a
+  // deployment that refuses properly.
+  { file: '13_procurement_handlers.gs', symbol: 'PROC_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp)' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'doGet/doPost action routing (incl. the GET read table) + typed handler/method response identity' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

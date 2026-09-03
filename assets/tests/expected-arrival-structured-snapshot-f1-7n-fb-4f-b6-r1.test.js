@@ -459,12 +459,18 @@ section('H — [§F, §H] CONTRACTS AND THE BROWSER TOKEN');
   // equality said something stronger: that no LATER round may move one. A2-R3 registers a new required
   // action, which that constant's own rule says must bump the LIST version; the ACTION contract and the
   // TRANSPORT contract are untouched, because no router action and no envelope shape changed.
-  eq([(G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '1'],
-    'H4 [§F] the deployed ACTION contract and the TRANSPORT contract are unmoved at 10 / 1');
+  // F1-7N-FC-1A-R1 — the ACTION contract moves when a router action is added (R1 adds one); the
+// TRANSPORT contract does not, because the envelope shape is unchanged. Those are two different axes and
+// pinning them together made a legitimate move on one look like a break in both.
+eq([String(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10),
+      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['true', '1'],
+    'H4 [§F] the deployed ACTION contract is at or after 10 and the TRANSPORT contract is still 1 — ' +
+    'two independent axes, and only the action axis moves when a route is added');
   ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
     'H4a and the required-action LIST version is at or after 9 (it is append-only)');
-  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H5 [§F] and the frontend pins the same 10');
+  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  (G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  'H5 [§F] and the frontend pins exactly what the deployment declares');
 
   // §H — a NEW token, and the reason is a fact about the repository rather than a preference.
   // F1-7N-FB-4G-A0 - RESTATED, and this is the FOURTH round in which this exact shape has broken. B6's H9 was

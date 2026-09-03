@@ -2330,6 +2330,10 @@ function handleUpdatePurchaseOrderLine_(body) {
 // ONLY from supplier_warehouse_id → warehouses (is_active AND is_factory_warehouse); never inferred from name/
 // company/sku. Fail-closed on an unresolved factory warehouse: completed_qty must NOT rise without the physical
 // Factory Stock handoff. Preserves the existing receive ceiling (recv ≤ ordered − completed).
+// F1-7N-FC-1A-R1 DEPLOYMENT STAMP. An old 13_ returns SUCCESS while silently clamping an over-receipt, so no
+// action list and no handler probe can see it. Registered in 63_'s module manifest.
+var PROC_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+
 function poReceiptEvaluateLine_(inp) {
   inp = inp || {};
   var ordered = Math.round(Number(inp.ordered) || 0);
@@ -2346,7 +2350,23 @@ function poReceiptEvaluateLine_(inp) {
   if (isNaN(recv) || recv <= 0) return { status: 'skip', reason: 'INVALID_OR_ZERO_RECEIVE_QTY' };
   var maxRecv = ordered - completed;
   if (maxRecv <= 0) return { status: 'skip', reason: 'FULLY_RECEIVED' };
-  if (recv > maxRecv) recv = maxRecv;                     // clamp: never exceed unreceived (over-receipt guard)
+  // F1-7N-FC-1A-R1 §K — THE SILENT CLAMP IS GONE.
+  //
+  // This used to do `if (recv > maxRecv) recv = maxRecv;` and carry on. It never created phantom stock, which
+  // is why it survived review — but silence is the problem. An operator typing 900 against a remaining
+  // 500 got a SUCCESS reporting a receipt, and nothing anywhere said that 400 units they believe they received
+  // were not recorded. The physical count then disagrees with the system and the only clue is a quantity
+  // nobody was asked to confirm. A miscount and a typo are also indistinguishable under a clamp, and they need
+  // different people.
+  //
+  // It is now a typed refusal carrying all three quantities, so the message can state exactly what was
+  // attempted, what was receivable, and by how much it was over. Tolerance and override are deliberately NOT
+  // implemented: they are a product decision, and inventing one silently is how the clamp happened.
+  if (recv > maxRecv) {
+    return { status: 'error', issue: 'PO_RECEIPT_EXCEEDS_REMAINING_QTY',
+      attempted: recv, remaining: maxRecv, excess: recv - maxRecv, ordered: ordered, completed: completed,
+      detail: 'attempted ' + recv + ', remaining receivable ' + maxRecv + ', excess ' + (recv - maxRecv) };
+  }
   if (inp.alreadyApplied === true) return { status: 'skip_idempotent', recvQty: recv };
   var newCompleted = completed + recv;
   return {
@@ -2470,7 +2490,27 @@ function handleReceivePurchaseOrderLines_(body) {
         recvQtyRaw: rq.receive_qty,
         alreadyApplied: receiptAlreadyApplied_(lineId)
       });
-      if (ev.status === 'error') { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Receive blocked: ' + ev.issue + (ev.detail ? ' (' + ev.detail + ')' : ''), issue: ev.issue, purchase_order_line_id: lineId }); }
+      if (ev.status === 'error') {
+        // FAIL CLOSED for the WHOLE request, and it matters that this runs in the collect pass: `journal` is
+        // still empty, so a refusal here writes nothing at all — no stock, no movement, no PO line.
+        // F1-7N-FC-1A-R1 §K — the over-receipt quantities are surfaced as structured data, not just prose, so
+        // the UI can show attempted / remaining / excess without parsing a sentence.
+        lock.releaseLock();
+        return jsonResponse_({
+          success: false, code: ev.issue, issue: ev.issue, purchase_order_line_id: lineId,
+          data: {
+            purchase_order_line_id: lineId, issue: ev.issue,
+            attempted_qty: (ev.attempted === undefined ? null : ev.attempted),
+            remaining_qty: (ev.remaining === undefined ? null : ev.remaining),
+            excess_qty: (ev.excess === undefined ? null : ev.excess),
+            ordered_qty: (ev.ordered === undefined ? null : ev.ordered),
+            completed_qty: (ev.completed === undefined ? null : ev.completed),
+            zero_write: true
+          },
+          error: 'Receive blocked: ' + ev.issue + (ev.detail ? ' (' + ev.detail + ')' : '') +
+            '. Nothing was received: factory stock, the movement ledger and the PO line are all unchanged.'
+        });
+      }
       ev.lineId = lineId; ev.row = ent.row; ev.sku = String(ent.vals[skuCol] || '').trim(); ev.warehouseId = whId;
       plans.push(ev);
     }

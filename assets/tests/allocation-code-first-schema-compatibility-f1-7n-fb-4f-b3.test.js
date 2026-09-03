@@ -635,7 +635,10 @@ ok(HEALTH.indexOf("symbol: 'RIC_BUILD_VERSION_'") !== -1, 'I5 [test 28] probed t
     ok(checked >= 10, 'I7 [test 28] and enough entries were actually checked (' + checked + ')');
 })();
 // Test 29 — the contract counts are untouched. Read the constants, never the prose.
-eq((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'I8 [test 29] action contract stays 10');
+// F1-7N-FC-1A-R1 — at-or-after, not equal. B3 added no router action, which is what this asserted;
+// R1 adds one, so the literal would make a correct bump look like a regression.
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'I8 [test 29] action contract is at or after 10 (B3 added no router action)');
 // "REQUIRED LIST 9" IS A VERSION, NOT A COUNT, and the first two drafts of this line got that wrong in two
 // different ways: counting quoted strings inside an array of OBJECTS gave 120 (every action, handler and
 // used_by label), and counting the entries gave 40. Both are the right number for the wrong question - the
@@ -651,7 +654,12 @@ eq((HEALTH.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1',
 // No route was created merely to expose a pure helper.
 ['ricK4', 'ricRoutePersistability', 'ricCanonicalService', 'sadK4ResolveActiveDraft', 'sadSchemaRefusal']
     .forEach(function (sym) { ok(ROUTER.indexOf(sym) === -1, 'I11 ' + sym + ' is NOT routed — B3 adds no action'); });
-eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), 'F1-7N-FB-4E-R4B-R3', 'I12 and the router build is untouched, because its behaviour is');
+// F1-7N-FC-1A-R1 — DERIVED, not pinned: the router declares exactly what the deployment manifest
+// expects of it. B3's claim was "I did not change the router"; R1 does (a new dispatch), and what must hold
+// forever is that the declaration and the expectation cannot drift apart.
+var _i12Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), _i12Expect,
+  'I12 the router declares exactly the build its manifest expects (' + _i12Expect + ')');
 
 // ==============================================================================================================
 section('J — [test 30] the B2 dry run still reproduces the recorded LIVE result');

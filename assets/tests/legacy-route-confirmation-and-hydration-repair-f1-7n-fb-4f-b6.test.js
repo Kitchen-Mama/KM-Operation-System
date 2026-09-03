@@ -434,7 +434,8 @@ section('A — [§C] THE SEVEN DIAGNOSTIC ANSWERS, each demonstrated rather than
   ok(/allow_legacy_reconcile/.test(G16C),
     'A25 [§C.7] the atomic writer ALREADY accepts a user-owned reconcile authority — no new action is needed');
   var reg = (INDEX, read('assets/js/api/operation-system-db-api.js'));
-  eq((reg.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10',
+  // F1-7N-FC-1A-R1 — at-or-after.
+ok(Number((reg.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
     'A26 [§C.7] the action contract stays at 10');
   eq((reg.match(/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1',
     'A27 [§C.7] and the transport contract stays at 1 — B6 adds no action and no route');
@@ -444,9 +445,10 @@ section('A — [§C] THE SEVEN DIAGNOSTIC ANSWERS, each demonstrated rather than
   // that constant's own rule says must bump the LIST version (9 -> 10); the ACTION contract and the TRANSPORT
   // contract are untouched, because no router action and no envelope shape changed. Each axis is asserted for
   // what it actually governs.
-  eq([(G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
-      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['10', '1'],
-    'A28 [§C.7, §K] the deployed ACTION contract and the TRANSPORT contract are unmoved at 10 / 1');
+  eq([String(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10),
+      (G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]], ['true', '1'],
+    'A28 [§C.7, §K] the deployed ACTION contract is at or after 10 and the TRANSPORT contract is still 1 ' +
+    '— two independent axes, and only the action axis moves when a route is added');
   ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
     'A28a and the required-action LIST version is at or after 9 (it is append-only)');
 })();
@@ -929,7 +931,9 @@ section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
 
   // Contracts unchanged — B6 adds no action and no route.
   var DBAPI = read('assets/js/api/operation-system-db-api.js');
-  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H5 action contract still 10');
+  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  (G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+  'H5 the frontend pin AGREES with the deployed action contract');
   eq((DBAPI.match(/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1', 'H6 transport contract still 1');
   var reqList = /var KM_REQUIRED_DEPLOYED_ACTIONS_ = \[([\s\S]*?)\];/.exec(DBAPI)[1];
   // F1-7N-FB-4G-A2-R3 - RESTATED to a floor. B6's point was that IT added no action; an equality on the size

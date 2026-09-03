@@ -427,7 +427,11 @@ var ROUTER = read('assets/specs/active/apps-script/01_router.gs');
 var HEALTH = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var R3 = 'F1-7N-FB-4E-R4B-R3';
 
-ok(new RegExp("var RTR_BUILD_VERSION_ = '" + R3 + "';").test(ROUTER),
+// F1-7N-FC-1A-R1 — DERIVED from the manifest. R4B-R3 was the round that moved this stamp, and pinning
+// its own value meant the assertion could only hold until the next round legitimately moved it again. R1 adds
+// a router dispatch. The durable property is the PAIR: the router declares exactly what 63_ expects of it.
+var _r3Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+ok(new RegExp("var RTR_BUILD_VERSION_ = '" + _r3Expect + "';").test(ROUTER),
   '1.1 01_router.gs declares the R4B-R3 build (its GET dispatch changed in R4B-R2)');
 ok(new RegExp("var SYS_BUILD_VERSION_ = '" + R3 + "';").test(HEALTH),
   '1.2 63_ declares R4B-R3 — it changed this round (it carries the manifest)');
@@ -471,6 +475,18 @@ ok(!/R4A1'/.test(ROUTER) && !/expected: 'F1-7N-FB-4E-R4A1'/.test(HEALTH),
     var dm = new RegExp('var\\s+' + o.symbol + '\\s*=\\s*\'([^\']+)\'').exec(src);
     if (!dm) { stale.push(o.file + ': no stamp'); return; }
     var declared = order.indexOf(dm[1]);
+    // F1-7N-FC-1A-R1 — A STAMP FROM A LATER ROUND FAMILY IS NOT A STALE STAMP, AND THIS RANKED IT AS
+    // THE OLDEST POSSIBLE ONE. `order` lists only the FB-4E revisions, so indexOf returns -1 for anything
+    // outside that family — which made 01_router.gs, correctly declaring F1-7N-FC-1A-R1 after R1 added
+    // a dispatch to it, read as "declares a pre-change stamp". The property this check is FOR is that a file
+    // R4B touched must not still advertise a PRE-R4B-R1 FB-4E revision; a stamp the family does not contain
+    // cannot be one of those, so it is deferred to the manifest pairing asserted at 1.1 instead of guessed at.
+    if (declared === -1) {
+      var expectHere = ((HEALTH.match(new RegExp("\\{ file: '" + o.file.replace('.', '\\.') +
+        "',[^}]*expected: '([^']+)'")) || [])[1]) || '';
+      if (expectHere !== dm[1]) stale.push(o.file + ' declares ' + dm[1] + ' but the manifest expects ' + (expectHere || 'NOTHING'));
+      return;
+    }
     // The newest round this file's own body claims to have been changed in.
     var newest = -1;
     order.forEach(function (r, i) { if (src.indexOf(r) !== -1) newest = Math.max(newest, i); });
@@ -484,7 +500,9 @@ ok(!/R4A1'/.test(ROUTER) && !/expected: 'F1-7N-FB-4E-R4A1'/.test(HEALTH),
 })();
 
 // The contract axes did NOT move: no action, verb or transport change this round.
-ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 10;/.test(HEALTH), '1.8 deployed action contract stays 10 (no action added or removed)');
+// F1-7N-FC-1A-R1 — at-or-after: R4B-R3 added no action, but R1 adds one.
+ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  '1.8 deployed action contract is at or after 10 (R4B-R3 added no action or verb)');
 // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
 ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
   '1.9 required-action-list version is at or after 9');

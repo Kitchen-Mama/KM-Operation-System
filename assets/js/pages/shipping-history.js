@@ -684,7 +684,14 @@ function _shNextStatus(status) {
 }
 
 // Shipment Draft workspace = draft / ready_to_ship / shipped (until Done hides it).
-var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped'];
+// F1-7N-FC-1A-R1 §F — `cancelled` JOINS THIS SET, and it has to.
+//
+// Cancellation moves a draft to `cancelled`, and the Overview page shows `shipped` onward. Without this the
+// card would simply VANISH from both pages the instant it was cancelled: the operator would see the row
+// disappear and have no way to confirm whether the cancellation and its reservation release actually happened,
+// or whether the request failed and the row is still live somewhere. A cancelled shipment is preserved in the
+// database as audit evidence, and it stays on screen for the same reason.
+var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped', 'cancelled'];
 // Shipment Overview = official records only (shipped onward).
 var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 };
 // F1-6B Part B — statuses at which the frozen R2B final-output snapshot exists (post confirm-and-dispatch), so
@@ -810,6 +817,7 @@ function _shdEnsureFilter() {
                 '<option value="">All</option>' +
                 '<option value="draft">Draft</option>' +
                 '<option value="ready_to_ship">Ready to Ship</option>' +
+                '<option value="cancelled">Cancelled</option>' +
                 '<option value="shipped">Shipped</option>' +
             '</select></label>';
     header.appendChild(wrap);
@@ -869,7 +877,8 @@ function renderShipmentDraft() {
         return;
     }
     emptyStateEl.hidden = true; listEl.hidden = false;
-    var groups = [['draft', 'Draft'], ['ready_to_ship', 'Ready to Ship'], ['shipped', 'Shipped']];
+    var groups = [['draft', 'Draft'], ['ready_to_ship', 'Ready to Ship'], ['shipped', 'Shipped'],
+        ['cancelled', 'Cancelled']];
     listEl.innerHTML = groups.filter(function(g) { return !fStatus || g[0] === fStatus; }).map(function(g) {
         var items = pool.filter(function(s) { return s.status === g[0]; });
         var body = items.length
@@ -1154,13 +1163,29 @@ function _shRenderDbCard(s, planLines, mode) {
     // Expand/Collapse and the document actions remain. Once shipped, Shipment Draft is a read-only
     // shipment-and-document view: no further shipment-progress button is offered.
     if (mode === 'draft') {
+        // F1-7N-FC-1A-R1 §F — Cancel is offered ONLY pre-dispatch. It is deliberately absent for
+        // shipped / in_transit / arrived / received / closed / cancelled: once units have physically left,
+        // releasing a reservation would be a lie about stock that is gone, and the server refuses it anyway
+        // (SHIPMENT_ALREADY_DISPATCHED). Offering a button the server must refuse teaches the operator that
+        // refusals are noise.
+        var cancelBtn = '<button id="sh-cancel-' + sid + '" onclick="shCancelShipmentDraft(\'' + sid + '\', \'' + status + '\')"' +
+            ' style="margin-top:8px;margin-right:8px;background:#DC2626;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;">' +
+            'Cancel Shipment Draft</button>';
         if (status === 'draft') {
             actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
-                          btn("shReadyToShip('" + sid + "')", 'Ready to Ship →', '#3B82F6');
+                          btn("shReadyToShip('" + sid + "')", 'Ready to Ship →', '#3B82F6') +
+                          cancelBtn;
         } else if (status === 'ready_to_ship') {
             actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
                           btn("shConfirmShipment('" + sid + "')", 'Confirm Shipment 🚢', '#0EA5E9') +
-                          btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8');
+                          btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8') +
+                          cancelBtn;
+        } else if (status === 'cancelled') {
+            // A cancelled draft is a read-only record. It keeps its card so the operator can SEE that the
+            // cancellation landed, and it offers no action at all.
+            actionsHtml = '<p style="margin:8px 0 0;color:#991B1B;font-size:12px;">Cancelled' +
+                (s.cancelReason ? (' — ' + _shEsc(s.cancelReason)) : '') +
+                '. The factory stock reservation was released; current stock was not deducted.</p>';
         }
         // status === 'shipped' (and later): NO lifecycle button — progress is event-derived.
     } else {
@@ -1848,6 +1873,95 @@ function _shRunConfirm(shipmentId, execPayload) {
     });
 }
 
+// F1-7N-FC-1A-R1 §F — CANCEL SHIPMENT DRAFT. The trigger FC-1A shipped without.
+//
+// FC-1A made Shipment Draft creation acquire a factory stock reservation and there was no routed way to
+// release one before dispatch, so a reservation could become operationally unreleasable. This is the button
+// that gives units back.
+//
+// The confirmation states the two facts an operator needs and cannot infer, because getting either one
+// backwards is expensive: current stock is NOT deducted (a cancellation returns a claim, not physical units),
+// and the reserved availability IS released (so another site can plan them immediately). It also names the
+// exact quantity and source warehouse, since "release the reservation" means nothing without them.
+var _shCancelInFlight = {};
+function shCancelShipmentDraft(shipmentId, expectedStatus) {
+    if (_shCancelInFlight[shipmentId]) return;                 // §M.20 — one click, one cancellation
+    var s = _shFindShipment_(shipmentId);
+    var qty = s ? _shNum(s.totalQty || s.shipmentTotalQty) : 0;
+    var src = s ? String(s.sourceWarehouseId || s.shipFrom || '') : '';
+    var lines = [
+        'Cancel this Shipment Draft?',
+        '',
+        'Shipment: ' + shipmentId + (s && s.externalShipmentId ? (' (' + s.externalShipmentId + ')') : ''),
+        'Quantity: ' + qty + (src ? ('   Source warehouse: ' + src) : ''),
+        '',
+        'Current factory stock will NOT be deducted.',
+        'The reserved quantity WILL be released, so it becomes available to other plans immediately.',
+        '',
+        'The shipment is kept as a cancelled record (nothing is deleted), and the approved plan can create a',
+        'new Shipment Draft with Retry.'
+    ];
+    if (!confirm(lines.join('\n'))) return;
+    var reason = prompt('Reason for cancelling this Shipment Draft (required):', '');
+    if (reason == null) return;                                 // cancelled the prompt
+    reason = String(reason).trim();
+    if (!reason) { alert('A reason is required to cancel a Shipment Draft.'); return; }
+
+    _shCancelInFlight[shipmentId] = true;
+    _shSetCancelBusy_(shipmentId, true);
+    Promise.resolve(window.KM.DB.cancelShipmentDraft({
+        shipment_id: shipmentId,
+        expected_status: expectedStatus || (s ? s.status : ''),
+        actor: 'operation-system',
+        reason: reason,
+        // Idempotency is enforced SERVER-side (an already-cancelled shipment answers REUSED); this key is the
+        // correlation id that makes a retried request recognisable as the same intent.
+        idempotency_key: 'CANCEL-SHIPMENT:' + shipmentId
+    })).then(function (res) {
+        _shCancelInFlight[shipmentId] = false;
+        _shSetCancelBusy_(shipmentId, false);
+        if (res && res.success) {
+            var d = res.data || {};
+            if (d.outcome === 'REUSED') alert('This Shipment Draft was already cancelled. Nothing was changed.');
+            else {
+                alert('Shipment Draft cancelled.\n\nReservation released: ' + (d.reservation_released || 0) +
+                      (d.source_warehouse_id ? (' at ' + d.source_warehouse_id) : '') +
+                      '\nCurrent factory stock: unchanged.' +
+                      '\n\nThe approved plan can now create a new Shipment Draft with Retry.');
+            }
+            _shLoadAndRender();                                 // authoritative readback
+            return;
+        }
+        // TYPED failure, and the state on screen is RETAINED: no optimistic cancellation.
+        var err = (res && res.error) || { code: 'UNKNOWN', message: 'Cancellation failed' };
+        alert('Cancel failed: ' + err.message + ' [' + err.code + ']\n\nNothing was changed.');
+        _shLoadAndRender();
+    }, function (e) {
+        _shCancelInFlight[shipmentId] = false;
+        _shSetCancelBusy_(shipmentId, false);
+        // Outcome UNKNOWN, not failed. The readback settles it, and a retry is safe because the server
+        // answers REUSED for an already-cancelled shipment.
+        alert('Cancel could not be confirmed: ' + (e && e.message ? e.message : e) +
+              '\n\nThe list will refresh; if the shipment is still active you can retry.');
+        _shLoadAndRender();
+    });
+}
+// Locate one shipment in the current read model, whichever source it came from.
+function _shFindShipment_(shipmentId) {
+    var pool = (_shReadModel && _shReadModel.shipments) || [];
+    for (var i = 0; i < pool.length; i++) {
+        if (String(pool[i].shipmentId || pool[i].shipment_id) === String(shipmentId)) return pool[i];
+    }
+    return null;
+}
+// §F — disable while in flight, so a double click cannot become a second cancellation attempt.
+function _shSetCancelBusy_(shipmentId, busy) {
+    var b = document.getElementById('sh-cancel-' + shipmentId);
+    if (!b) return;
+    b.disabled = !!busy;
+    b.textContent = busy ? 'Cancelling…' : 'Cancel Shipment Draft';
+}
+
 // Return to Draft (Phase-2 placeholder, no permissions): send a Ready to Ship shipment back to
 // Draft with a required revision reason (appended to the note history server-side).
 function shReturnToDraft(shipmentId) {
@@ -1911,6 +2025,7 @@ window.shSaveExecution = shSaveExecution;
 window.shReadyToShip = shReadyToShip;
 window.shShip = shShip;
 window.shConfirmShipment = shConfirmShipment;
+window.shCancelShipmentDraft = shCancelShipmentDraft;
 window.shReturnToDraft = shReturnToDraft;
 window.shShipmentDone = shShipmentDone;
 window.shWarehousePick = shWarehousePick;

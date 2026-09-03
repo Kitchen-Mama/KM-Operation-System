@@ -520,7 +520,9 @@ eq(STORED_GATE(withDest({ recommended_destination_warehouse_code_snapshot: 'Amaz
 // ================================================================================================================
 section('H · DEPLOYMENT IDENTITY');
 // ================================================================================================================
-eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10', 'H1  action contract still 10');
+// F1-7N-FC-1A-R1 — at-or-after: this round added no router action, but R1 does.
+ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+  'H1  action contract is at or after 10 (this round added no router action)');
 // F1-7N-FB-4G-A2-R3 - RESTATED to a floor: an equality forbids every later round from adding an action.
 ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 9,
   'H2  required-action-list is at or after 9');

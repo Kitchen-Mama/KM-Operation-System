@@ -93,7 +93,17 @@ section('A. PURE evaluator — count-once arithmetic + conservation (Phase 12 #1
   eq(b.newCompleted, 700, 'B completed 700'); eq(b.notYetReceivedCommittedQty, 300, 'B ongoing 300'); eq(b.completedNotShippedQty, 400, 'B completedNotShipped 400'); eq(b.shippedQty, 300, 'B shipped 300');
   ok(b.notYetReceivedCommittedQty + b.completedNotShippedQty + b.shippedQty === 1000, 'B conservation = ordered');
   var full = ev(1000, 600, 0, 400); eq(full.newCompleted, 1000, 'full completed 1000'); eq(full.notYetReceivedCommittedQty, 0, 'full ongoing 0'); eq(full.completedNotShippedQty, 1000, 'full completedNotShipped 1000');
-  var over = ev(1000, 700, 0, 500); eq(over.recvQty, 300, 'over-receive clamped to 300'); eq(over.newCompleted, 1000, 'over clamp → completed 1000');
+  // F1-7N-FC-1A-R1 — THE CLAMP IS GONE, AND THAT IS THE POINT. This asserted that receiving 500
+  // against a remaining 300 silently became 300. It never created phantom stock, which is why it survived
+  // review — but the operator was told the receipt SUCCEEDED and never told that 200 units they
+  // believe they received were not recorded. The physical count then disagrees with the system and the only
+  // clue is a quantity nobody was asked to confirm. It is now a typed refusal carrying all three numbers.
+  var over = ev(1000, 700, 0, 500);
+  eq(over.status, 'error', 'over-receive is REFUSED, not clamped');
+  eq(over.issue, 'PO_RECEIPT_EXCEEDS_REMAINING_QTY', 'with the typed issue code');
+  eq([over.attempted, over.remaining, over.excess], [500, 300, 200],
+    'and it reports attempted 500, remaining 300, excess 200 — the three numbers a clamp never showed');
+  ok(over.newCompleted === undefined, 'and proposes NO new completed quantity');
   eq(ev(1000, 1000, 0, 10).status, 'skip', 'fully received → skip');
 })();
 

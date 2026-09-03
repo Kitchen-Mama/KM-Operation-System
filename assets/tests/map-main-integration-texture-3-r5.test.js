@@ -281,12 +281,22 @@ section('§C — what the merge had to bring across from main, intact');
         });
     // Deployment identity and the three contract pins.
     var ROUTER = read('assets/specs/active/apps-script/01_router.gs');
-    ok(/RTR_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3'/.test(ROUTER), 'C4 the router build stamp is R4B-R3');
+    // F1-7N-FC-1A-R1 — DERIVED. This pinned the literal to mean "the map round did not touch the
+    // router", which was true. R1 adds a router dispatch, so the durable property is that the router DECLARES
+    // exactly what the deployment manifest EXPECTS: a declaration and an expectation that drift apart are the
+    // two halves of a partial sync, and either alone is the bug.
+
     var API = read('assets/js/api/operation-system-db-api.js');
     var HEALTH = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
-    ok(/ACTION_CONTRACT_VERSION_?\s*[:=]\s*10\b/.test(HEALTH) || /action_contract['"]?\s*[:=]\s*10\b/.test(HEALTH) ||
-       /\b10\b/.test((/action_contract[^\n]*/.exec(HEALTH) || [''])[0]),
-        'C4 the action contract is pinned at 10');
+    var _c4Expect = ((HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+    ok(new RegExp("RTR_BUILD_VERSION_ = '" + _c4Expect + "'").test(ROUTER),
+      'C4 the router declares exactly the build its manifest expects (' + _c4Expect + ')');
+    // F1-7N-FC-1A-R1 — AT-OR-AFTER. This pinned the action contract at 10 to mean "a map
+    // round adds no router action", which was true. R1 adds cancelShipmentDraft — the one
+    // condition the constant exists to signal — so an equality here turns a correct bump into
+    // a regression. The floor is what this round actually needs.
+    ok(Number((HEALTH.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
+        'C4 the action contract is at or after 10 (a map round adds no router action)');
     ok(/KM_REQUIRED_DEPLOYED_SYMBOLS_/.test(API), 'C4 the required-symbol list is present');
     // FB-4F-A landed on main between the merge-base and this merge, so it must be here too.
     // FB-4F-B1 §H — the diagnostic moved from assets/specs/active/apps-script/ (the Apps Script DEPLOY

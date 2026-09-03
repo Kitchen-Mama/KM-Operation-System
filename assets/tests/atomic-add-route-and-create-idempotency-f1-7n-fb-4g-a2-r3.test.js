@@ -492,11 +492,14 @@ section('§E — THE DEPLOYMENT CONTRACT');
   // regression. A value BELOW 10 would still mean A2-R3's own bump was lost, which is the real property.
   ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 10,
     'E3  §E.3 SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 10 (A2-R3\'s registry bump is intact)');
-  eq((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10',
+  // F1-7N-FC-1A-R1 — at-or-after. A2-R3 added no router action, which is exactly what this said; R1
+  // adds cancelShipmentDraft, the one condition the constant exists to signal.
+  ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 10,
     'E3a §E.3/§E.4 the ACTION contract version does NOT move — no router action was added');
   eq((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1], '1',
     'E3b nor the transport contract version — the envelope is unchanged');
-  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1], '10',
+  eq((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
+    (G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1],
     'E3c so the frontend minimum stays 10');
   ok(/upsertShippingAllocationDraftAtomic/.test(
       DBAPI.slice(DBAPI.indexOf('KM_REQUIRED_DEPLOYED_ACTIONS_'), DBAPI.indexOf('KM_PAGE_REQUIRED_ACTIONS_'))),

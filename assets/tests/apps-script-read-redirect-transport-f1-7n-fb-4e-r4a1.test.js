@@ -1036,9 +1036,12 @@ checks.push(Promise.resolve().then(function () {
   var health = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
   var dbSrc = read('assets/js/api/operation-system-db-api.js');
   function num(src, sym) { var m = new RegExp('var ' + sym + ' = (\\d+)').exec(src); return m ? Number(m[1]) : null; }
-  eq(num(health, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'), 10,
+  // F1-7N-FC-1A-R1 — at-or-after. R4A1's claim was that the contract MOVED to 10 in its own round; a
+  // later round moving it further is that same rule working, not a regression.
+  ok(num(health, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_') >= 10,
     '9.1 the action contract moved 9 -> 10: the router now serves read actions on a verb it did not before');
-  eq(num(dbSrc, 'KM_EXPECTED_ACTION_CONTRACT_VERSION_'), 10,
+  // and the client pin must AGREE with the deployment, which is the half that actually protects a user.
+  eq(num(dbSrc, 'KM_EXPECTED_ACTION_CONTRACT_VERSION_'), num(health, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'),
     '9.2 the client pin moved with it, so an un-synced deployment fails closed BY VERSION');
   // F1-7N-FB-4G-A2-R3 - RESTATED to a floor. R4A1's point was that IT manufactured no bump; an equality also
   // forbade every later round from an honest one. A2-R3 adds upsertShippingAllocationDraftAtomic to the
