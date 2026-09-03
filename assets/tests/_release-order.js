@@ -166,7 +166,16 @@ var ROUND_TOKENS = [
   //   3. THE PAGE AND THE SHARED MODULE, together as always: the page can now report an unreconciled AI Plan
   //      run and only the new inventory-compat.js knows EXECUTION_PLAN_AI_UNRECONCILED, so an old module would
   //      let a plan be submitted whose stored shape nobody has established.
-  'fc1b-e3-aiplanactive-20260903'
+  'fc1b-e3-aiplanactive-20260903',
+  // F1-7N-FC-1B-E3-R1 — canonical harvest readiness diagnosis + typed refusal. E3 is on origin/main
+  // (e6749b5 was pushed), so by the rule recorded above its token has been published and cannot be reused.
+  // ONE browser asset changed and it is the page: inventory-replenishment.js learns to READ the typed readiness
+  // answer the server has always been able to give. The reason it must refetch is precise — the classifier
+  // was looking for `res.errors` (plural) on a command result that carries `res.error` (singular), so a browser
+  // holding the cached page will keep reporting "AI Plan could not complete — FAILED" with an empty
+  // Technical details panel no matter how completely the server names its refusal. The stylesheet did NOT change
+  // this round and stays on its own family's current token.
+  'fc1b-e3r1-readiness-20260903'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -396,7 +405,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+))*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

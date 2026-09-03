@@ -8800,8 +8800,65 @@ function _irAiPlanDbGenEligible_() {
 }
 // R6D1 — classify the 61_ generation envelope truthfully (never conceal committed rows). status ∈ COMPLETED | PARTIAL |
 // NO_DEMAND | BLOCKED_INPUT | FAILED; per-marketplace results carry draftId/draftVersion/lineCount/status/reason.
+// ============================================================================================================
+// F1-7N-FC-1B-E3-R1 §D — THE TYPED READINESS ANSWER, AND WHERE IT USED TO DIE.
+//
+// The server named its refusal and the browser transport carried it faithfully: _kmWeeklyCommand_ reads
+// `json.errors[0].code` VERBATIM (that is what F1-7N-FB-4G-A2-R3-R1 fixed) and returns
+// `{ success:false, data:null, error:{ code, message, details } }`.
+//
+// This classifier then read `res.errors` — PLURAL. The command result has no such field; it has `error`,
+// singular. So `cls.errors` was always `[]`, `cls.status` fell through to the literal 'FAILED', and the
+// operator was shown "AI Plan could not complete — FAILED." with an EMPTY Technical details panel, while
+// the server had answered HARVEST_NOT_READY with a reason. Nothing was flattening the code; the page was
+// reading a field that does not exist.
+// ============================================================================================================
+var IR_READINESS_SENTENCES = {
+  SOURCE_DATA_AS_OF_MISSING: 'Source data timestamp is missing, so no ship date can be derived for the lane.',
+  PLANNING_CYCLE_MISSING: 'Planning cycle could not be resolved.',
+  REQUESTED_SCOPE_EMPTY: 'This scope produced no planning rows at all.',
+  SKU_FACTS_MISSING: 'SKU facts are incomplete — no SKU in this scope has a complete set of canonical planning facts.',
+  SUGGESTED_QTY_UNRESOLVED: 'The recommended quantity has no canonical basis — the forecast months it is derived from are incomplete.',
+  FACTORY_SOURCE_UNRESOLVED: 'No eligible source pool could be resolved for this lane.',
+  DESTINATION_UNRESOLVED: 'The destination could not be resolved to a canonical warehouse or marketplace.',
+  CANONICAL_MAPPING_INCOMPLETE: 'The canonical facts could not be assembled from the harvest.'
+};
+// One issue → one sentence the operator can act on, plus the identity it applies to. The typed code is
+// kept alongside the sentence rather than replaced by it: the sentence is for the operator and the code is what
+// a report or a bug is filed against.
+function _irReadinessSentence_(issue) {
+    if (!issue) return '';
+    var code = String(issue.code || '');
+    var s = IR_READINESS_SENTENCES[code] || ('Canonical readiness refused: ' + (code || 'UNKNOWN') + '.');
+    var sc = issue.affected_scope || {};
+    var who = [sc.marketplace, sc.sku].filter(function (x) { return !!x; }).join(' / ');
+    var where = [];
+    if (issue.source_table) where.push(String(issue.source_table));
+    if (issue.source_header) where.push(String(issue.source_header));
+    return s +
+        (who ? ' Affected: ' + who + '.' : '') +
+        (issue.field ? ' Field: ' + issue.field + '.' : '') +
+        (where.length ? ' Source: ' + where.join(' → ') + '.' : '') +
+        ' [' + (code || '?') + (issue.engine_code && issue.engine_code !== code ? '/' + issue.engine_code : '') + ']';
+}
+window._irReadinessSentence_ = _irReadinessSentence_;
+
 function _irClassifyGenerationResult_(res) {
     var d = (res && res.data) || {};
+    // §D.2 — read the SINGULAR `error` the command result actually carries, as well as the plural
+  // `errors` a raw server envelope carries. Reading only one of the two is what silently discarded the code.
+    // `errors` a raw server envelope carries. Reading only one of the two is what silently discarded the code.
+    var _e1 = (res && res.error) ? res.error : null;
+    var _errList = (res && Array.isArray(res.errors) && res.errors.length) ? res.errors : (_e1 ? [_e1] : []);
+    var _det = (_e1 && _e1.details) || {};
+    var _rd = (String(_det.stage || '') === 'READINESS') ? {
+        reason: String(_det.readiness_reason || ''),
+        issues: Array.isArray(_det.issues) ? _det.issues : [],
+        warnings: Array.isArray(_det.warnings) ? _det.warnings : [],
+        predicates: Array.isArray(_det.predicates) ? _det.predicates : [],
+        harvest: _det.harvest || null, scope: _det.scope || null,
+        planning_cycle: String(_det.planning_cycle || '')
+    } : null;
     var status = String(d.status || (res && res.success ? 'COMPLETED' : 'FAILED'));
     var mkts = Array.isArray(d.marketplaceResults) ? d.marketplaceResults : [];
     var lineTotal = mkts.reduce(function (s, m) { return s + (Number(m && m.lineCount) || 0); }, 0);
@@ -8829,7 +8886,10 @@ function _irClassifyGenerationResult_(res) {
         zeroResult: zeroResult,
         verification: d.verification || null,
         lifecycle: d.lifecycle || null,
-        errors: (res && res.errors) || [],
+        errors: _errList,
+        // the server's own top-level code, so a refusal is reported by name and never as the literal 'FAILED'
+        code: String((_e1 && _e1.code) || ''),
+        readiness: _rd,
         reason: zeroResult ? 'no allocation needed this cycle'
             : status === 'BLOCKED_INPUT' ? 'blocked (input)'
             : (blocked.length ? 'blocked/conflict on ' + blocked.length + ' marketplace(s)' : '')
@@ -8923,16 +8983,38 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                 });
         }
         _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds
+        // F1-7N-FC-1B-E3-R1 §D.3 — A READINESS REFUSAL IS NOT A GENERIC FAILURE.
+        //
+        // "AI Plan could not complete — FAILED" tells an operator nothing they can act on. When the server
+        // refused on canonical readiness it now says WHICH field, in WHICH table, for WHICH scope, and the page
+        // says it in a sentence. Zero writes either way, and the spinner leaves through the same one exit.
+        if (cls.readiness) {
+            var _rdB = cls.readiness.issues.filter(function (i) { return i && i.blocking !== false; });
+            var _rdShow = (_rdB.length ? _rdB : cls.readiness.issues).slice(0, 3);
+            var _rdWarn = cls.readiness.warnings.map(function (i) { return _irReadinessSentence_(i); });
+            var _hv = cls.readiness.harvest || {};
+            return _irAiPlanTerminal_('bad',
+                'AI Plan did NOT run: the canonical facts for this scope are not ready, so NOTHING was' +
+                ' calculated and NOTHING was written. ' +
+                _rdShow.map(function (i) { return _irReadinessSentence_(i); }).join(' ') +
+                (_rdB.length > 3 ? ' (+' + (_rdB.length - 3) + ' more)' : '') +
+                (_hv.site_count != null ? ' Harvest saw ' + _hv.site_count + ' site(s) and produced ' +
+                    (_hv.receiver_count == null ? '?' : _hv.receiver_count) + ' receiver(s).' : '') +
+                (_rdWarn.length ? ' Also noted (not blocking): ' + _rdWarn.join(' ') : '') +
+                ' Your current Execution Plan is UNCHANGED.',
+                'AI Plan not run — ' + (_rdShow.length ? _irReadinessSentence_(_rdShow[0]) : 'canonical facts not ready') +
+                ' Nothing was written.');
+        }
         // §H.4/§H.5 — a BLOCKED_CONFLICT is reported by name and the routes on screen are left
         // exactly as they are. §H.6: a refused run leaves no half-built route, because it never rendered one.
         return _irAiPlanTerminal_('bad',
-            'AI Plan could not complete — ' + (cls.status || 'FAILED') + (cls.reason ? ' (' + cls.reason + ')' : '') +
+            'AI Plan could not complete — ' + (cls.code || cls.status || 'FAILED') + (cls.reason ? ' (' + cls.reason + ')' : '') +
             (cls.blockedCount ? '. ' + cls.blockedCount + ' marketplace(s) were BLOCKED_CONFLICT: a saved route' +
                 ' there was not superseded, so nothing was overwritten' : '') +
             '. Your current Execution Plan is UNCHANGED' +
             (cls.draftIds && cls.draftIds.length ? ' apart from ticket(s) the server did report writing: ' +
                 cls.draftIds.join(', ') + ' — open Technical details' : '') + '.',
-            'AI Plan could not complete — ' + (cls.status || 'FAILED') + '. Nothing on screen was changed.');
+            'AI Plan could not complete — ' + (cls.code || cls.status || 'FAILED') + '. Nothing on screen was changed.');
     }).catch(function (err) {
         // §D.13 — a rejection is NOT swallowed. §D.15: a timeout is UNKNOWN, not failed, because
         // the request had already left the browser; it terminates as RECONCILING and blocks Submit.
@@ -9002,7 +9084,21 @@ function _irShowAiPlanResult_(cls) {
     (cls.marketplaceResults || []).forEach(function (m) {
         rows += '<div><strong>' + esc(m && m.marketplace) + ':</strong> ' + esc(m && m.status) + ' — ' + (Number(m && m.lineCount) || 0) + ' line(s)' + ((m && m.draftId) ? ' · draft ' + esc(m.draftId) : '') + ((m && m.reason) ? ' · ' + esc(m.reason) : '') + '</div>';
     });
-    (cls.errors || []).forEach(function (e) { rows += '<div><strong>Error:</strong> ' + esc(e && (e.message || e.code || e)) + '</div>'; });
+    (cls.errors || []).forEach(function (e) { rows += '<div><strong>Error:</strong> ' + esc(e && (e.code ? (e.code + ' — ' + (e.message || '')) : (e.message || e))) + '</div>'; });
+  // F1-7N-FC-1B-E3-R1 — the typed readiness detail, verbatim: code, engine code, field, and the table and
+  // header it points at. This is the audit surface; the operator's sentence is in the notice.
+  if (cls.readiness) {
+    if (cls.readiness.reason) rows += '<div><strong>Readiness:</strong> ' + esc(cls.readiness.reason) + '</div>';
+    (cls.readiness.issues || []).concat(cls.readiness.warnings || []).forEach(function (i) {
+      rows += '<div><strong>' + esc(i && i.code) + '</strong>' + (i && i.blocking === false ? ' (not blocking)' : '') +
+        ': ' + esc((i && i.field) || '') + ' — ' + esc((i && i.actual) || '') +
+        ((i && i.source_table) ? ' &middot; ' + esc(i.source_table) : '') +
+        ((i && i.source_header) ? ' [' + esc(i.source_header) + ']' : '') + '</div>';
+    });
+    (cls.readiness.predicates || []).filter(function (p) { return p && p.required && !p.passed; }).forEach(function (p) {
+      rows += '<div><strong>Predicate FAILED:</strong> ' + esc(p.name) + ' — ' + esc(p.detail) + '</div>';
+    });
+  }
     var host = document.getElementById('replen-ai-plan-result');
     if (!host) {
         host = document.createElement('div'); host.id = 'replen-ai-plan-result'; host.className = 'replen-ai-plan-result';

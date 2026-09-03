@@ -63,7 +63,125 @@
     return { destinationRef: '', destinationType: '', isPhysicalWarehouse: false };
   }
 
-  // mapWeeklyHarvestToBatchRequest(harvest) → { ready, issues, request }
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E3-R1 §C — THE CANONICAL READINESS RESULT.
+  // -----------------------------------------------------------------------------------------------------------
+  // WHAT WAS WRONG, MEASURED. A live census returned `mapped.ready = false` with `mapped.issues = []`, and the
+  // only thing production could then say was a bare HARVEST_NOT_READY. Executing the predicates showed why,
+  // and it was structural rather than situational:
+  //
+  //   * KMAF decides readiness as `issues.length === 0 && receiverFacts.length > 0`. So `ready:false` with an
+  //     EMPTY issues array means exactly one thing — ZERO RECEIVERS — because any staged receiver
+  //     either yields a fact or yields at least one issue.
+  //   * KMAF already NAMES that case: `reason: 'PLANNING_FACTS_NOT_READY'`.
+  //   * and this function returned `{ ready, issues, request }`, copying `kmaf.issues.slice()` and DROPPING
+  //     `kmaf.reason`. The one field that explained the refusal was discarded at the boundary.
+  //
+  // So the answer was never "no reason was known"; it was "the reason was known and thrown away".
+  //
+  // THE DECISION IS UNCHANGED. Every shape that was ready before is ready now and vice versa: no predicate was
+  // added to the gate, none was relaxed, and no missing value is defaulted. `SOURCE_DATA_AS_OF_PRESENT` and
+  // `SKU_LANES_NON_EMPTY` are reported as NON-BLOCKING precisely because they never gated readiness here and
+  // making them gate it would be a behaviour change with no spec behind it. (Executed: a blank, a null and a
+  // real sourceDataAsOf all produce ready:true, all else equal — it is not a readiness predicate, and its
+  // blankness in the live census is a CO-SYMPTOM of the same zero-receiver drop, since 61_ populates it only
+  // from a site that survived.)
+  //
+  // TWO KINDS, NEVER CONFLATED (§C.4). Every issue carries a mandatory `kind`: 'DATA' for a readiness fact
+  // about the operator's data, 'TRANSPORT' for an exception, an unavailable module or an unreachable read. They
+  // share one array so that "ready:false with nothing said" is unrepresentable (§C.1), and they are told
+  // apart by a field rather than by a caller guessing from the code.
+  // ===========================================================================================================
+  var READINESS_CODES = {
+    SOURCE_DATA_AS_OF_MISSING: 'SOURCE_DATA_AS_OF_MISSING',
+    PLANNING_CYCLE_MISSING: 'PLANNING_CYCLE_MISSING',
+    REQUESTED_SCOPE_EMPTY: 'REQUESTED_SCOPE_EMPTY',
+    SKU_FACTS_MISSING: 'SKU_FACTS_MISSING',
+    SUGGESTED_QTY_UNRESOLVED: 'SUGGESTED_QTY_UNRESOLVED',
+    FACTORY_SOURCE_UNRESOLVED: 'FACTORY_SOURCE_UNRESOLVED',
+    DESTINATION_UNRESOLVED: 'DESTINATION_UNRESOLVED',
+    CANONICAL_MAPPING_INCOMPLETE: 'CANONICAL_MAPPING_INCOMPLETE'
+  };
+  // §C.6 — the engine's own code is PRESERVED VERBATIM on every issue as `engine_code`, so this table
+  // is a translation at one boundary and never a rename: no existing code is retired, nothing downstream loses
+  // the code KMAF or 61_ actually emitted, and no synonym is invented inside either of them.
+  var ENGINE_TO_READINESS = {
+    // KMAF receiver-level codes
+    MISSING_DESTINATION_WAREHOUSE: READINESS_CODES.DESTINATION_UNRESOLVED,
+    RECEIVER_IDENTITY_INCOMPLETE: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    MISSING_WINDOW_CODE: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    POOL_ELIGIBILITY_UNRESOLVED: READINESS_CODES.FACTORY_SOURCE_UNRESOLVED,
+    DEMAND_WEIGHT_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    DAILY_DEMAND_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    WEIGHT_BASIS_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    MISSING_FORECAST_WEIGHT_SOURCE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    // KMAF whole-result reasons
+    PLANNING_FACTS_NOT_READY: READINESS_CODES.SKU_FACTS_MISSING,
+    KMAF_NOT_READY: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    // 61_ harvest-level codes (carried in `harvest.errors`)
+    FORECAST_SHARE_INCOMPLETE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    RECEIVER_WITHOUT_PLANNING_FACT: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE
+  };
+  // TRANSPORT, not data. An exception, an unavailable module or an unreachable read says nothing about whether
+  // the operator's data is complete, and reporting it as a data issue would send someone to fix a spreadsheet.
+  var ENGINE_TRANSPORT = {
+    WORKSPACE_THREW: 1, KMAF_THREW: 1, SUPPLY_POOL_FACTS_UNAVAILABLE: 1,
+    FORECAST_MONTHS_UNRESOLVED: 1, WORKSPACE_NOT_OK: 1, WEEKLY_AI_PLAN_NOT_BUNDLED: 1
+  };
+  // §C.3 — an issue names a field, never carries a table. `actual` is a short scalar summary; arrays
+  // and objects are reduced to a shape description, so no row content can ride out through a diagnostic.
+  function sanitize(v) {
+    if (v === undefined) return '';
+    if (v === null) return 'null';
+    if (Array.isArray(v)) return 'array(' + v.length + ')';
+    if (typeof v === 'object') return 'object(' + Object.keys(v).length + ' keys)';
+    var s = String(v);
+    return s.length > 120 ? s.slice(0, 117) + '...' : s;
+  }
+  function readinessIssue(o) {
+    o = isObj(o) ? o : {};
+    var engine = str(o.engine_code);
+    var kind = o.kind || (ENGINE_TRANSPORT[engine] ? 'TRANSPORT' : 'DATA');
+    var code = str(o.code) || (kind === 'TRANSPORT' ? engine : (ENGINE_TO_READINESS[engine] || READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE));
+    var sc = isObj(o.affected_scope) ? o.affected_scope : {};
+    return {
+      code: code,
+      engine_code: engine,
+      kind: kind,
+      blocking: o.blocking === false ? false : true,
+      field: str(o.field),
+      stage: str(o.stage) || 'MAPPER',
+      expected: sanitize(o.expected),
+      actual: sanitize(o.actual),
+      source_table: str(o.source_table),
+      source_header: str(o.source_header),
+      // identity only, never row data
+      affected_scope: {
+        company: str(sc.company), country: str(sc.country), marketplace: str(sc.marketplace),
+        sku: str(sc.sku), demandRef: str(sc.demandRef)
+      }
+    };
+  }
+  // An engine issue (KMAF's { code, ref, message } or 61_'s { code, message, ...extra }) → a typed readiness
+  // issue. The engine code survives; the scope identity is taken from whatever the engine attached.
+  function fromEngineIssue(e, stage, scope) {
+    e = isObj(e) ? e : {};
+    var engine = str(e.code) || str(e.reason) || str(e.kind);
+    var ref = str(e.ref) || str(e.demandRef);
+    var sc = { company: str(scope && scope.company), country: str(scope && scope.country), demandRef: ref };
+    // demandRef is company|country|marketplace|sku|destination in 61_ — split it back for a readable scope,
+    // WITHOUT inventing values when the shape does not match.
+    var parts = ref.split('|');
+    if (parts.length === 5) { sc.marketplace = parts[2]; sc.sku = parts[3]; }
+    return readinessIssue({
+      engine_code: engine, stage: stage, field: str(e.field), affected_scope: sc,
+      expected: e.expected === undefined ? 'a canonical value' : e.expected,
+      actual: e.actual === undefined ? (str(e.message) || 'unresolved') : e.actual,
+      source_table: str(e.source_table), source_header: str(e.source_header)
+    });
+  }
+
+  // mapWeeklyHarvestToBatchRequest(harvest) → { ready, reason, issues, warnings, predicates, request }
   //   harvest = {
   //     planningCycle, businessScope:{company,country,source_page}, mode?, confirmRegenerateOverUserEdits?, actor?, now?,
   //     sourceDataAsOf?, formulaVersion?, factoryIdentityConfig, warehousesById,
@@ -81,10 +199,89 @@
     var sourceDataAsOf = harvest.sourceDataAsOf === undefined ? null : harvest.sourceDataAsOf;
 
     var kmaf = harvest.kmaf;
+    // ---- THE PREDICATES, evaluated and RECORDED (§A.2/§G). The gate below is the same boolean it has
+    // always been; what changes is that each half of it is now a named fact with a true/false answer instead of
+    // a condition that collapses into one bare `false`. -----------------------------------------------------
+    var predicates = [];
+    function pred(name, required, passed, detail) {
+      predicates.push({ name: name, required: required === true, passed: passed === true, detail: str(detail) });
+      return passed === true;
+    }
+    var warnings = [];
+    var scopeIdent = { company: str(scope.company), country: str(scope.country) };
+
+    var pKmafPresent = pred('KMAF_PRESENT', true, isObj(kmaf), isObj(kmaf) ? 'kmaf is an object' : 'kmaf is ' + (kmaf === undefined ? 'undefined' : typeof kmaf));
+    var pKmafReady = pred('KMAF_READY', true, isObj(kmaf) && kmaf.ready !== false, (isObj(kmaf) ? 'kmaf.ready=' + kmaf.ready : 'no kmaf'));
+    var pFactsArray = pred('KMAF_RECEIVER_FACTS_ARRAY', true, isObj(kmaf) && Array.isArray(kmaf.receiverFacts),
+      isObj(kmaf) ? 'receiverFacts is ' + (Array.isArray(kmaf.receiverFacts) ? 'an array(' + kmaf.receiverFacts.length + ')' : typeof kmaf.receiverFacts) : 'no kmaf');
+    // NON-BLOCKING, and deliberately so: an EMPTY receiverFacts array has always passed this gate, and 61_
+    // refuses the empty universe downstream with its own REQUESTED_SCOPE_EMPTY. Recorded, never re-gated.
+    pred('KMAF_RECEIVER_FACTS_NON_EMPTY', false, isObj(kmaf) && Array.isArray(kmaf.receiverFacts) && kmaf.receiverFacts.length > 0,
+      isObj(kmaf) && Array.isArray(kmaf.receiverFacts) ? kmaf.receiverFacts.length + ' receiver fact(s)' : 'not an array');
+    pred('PLANNING_CYCLE_PRESENT', false, nonEmpty(harvest.planningCycle), 'planningCycle=' + (str(harvest.planningCycle) || 'BLANK'));
+    pred('SCOPE_COMPANY_PRESENT', false, nonEmpty(scope.company), 'company=' + (str(scope.company) || 'BLANK'));
+    pred('SCOPE_COUNTRY_PRESENT', false, nonEmpty(scope.country), 'country=' + (str(scope.country) || 'BLANK'));
+    // SOURCE_DATA_AS_OF is NOT a readiness predicate here and never has been (executed both ways: blank, null
+    // and a real date all yield ready:true, all else equal). It is reported because it is consumed downstream —
+    // weeklyAiPlanShipDate_ derives the ship date from it, so a blank one yields a blank ship date and a lane
+    // with no resolvable ETA. A WARNING, not a gate: inventing a gate for it would be a behaviour change with
+    // no spec behind it, and inventing a value for it is forbidden outright.
+    if (!nonEmpty(sourceDataAsOf)) {
+      warnings.push(readinessIssue({
+        code: READINESS_CODES.SOURCE_DATA_AS_OF_MISSING, blocking: false, kind: 'DATA',
+        field: 'sourceDataAsOf', stage: 'HARVEST',
+        expected: 'the source-data cutoff carried by a surviving recommendation-workspace line (YYYY-MM-DD)',
+        actual: sourceDataAsOf === null ? 'null' : (sourceDataAsOf === '' ? 'blank' : sourceDataAsOf),
+        source_table: 'recommendation workspace (derived; see gap run lineage for the STORED value)',
+        source_header: 'sourceDataAsOf',
+        affected_scope: scopeIdent
+      }));
+    }
+    pred('SOURCE_DATA_AS_OF_PRESENT', false, nonEmpty(sourceDataAsOf), nonEmpty(sourceDataAsOf) ? 'present' : 'blank/null (NON-BLOCKING here)');
+
+    // ---- 61_'s own non-fatal harvest errors, if the caller passed them through. Before R1 the harvest
+    // collected FORECAST_SHARE_INCOMPLETE / WORKSPACE_NOT_OK per site and then dropped the array on its
+    // SUCCESS return, so the one fact identifying WHICH site and WHY never left the server. ---------------
+    var harvestErrs = Array.isArray(harvest.errors) ? harvest.errors : [];
+    var carried = harvestErrs.map(function (e) { return fromEngineIssue(e, 'HARVEST', scopeIdent); });
+
     // Fail-closed: the single (company,country) §7 call is all-or-nothing (any receiver issue → ready:false). A
     // partial universe would corrupt the §7 denominator, so the whole batch is refused.
-    if (!isObj(kmaf) || kmaf.ready === false || !Array.isArray(kmaf.receiverFacts)) {
-      return { ready: false, issues: (isObj(kmaf) && Array.isArray(kmaf.issues) ? kmaf.issues.slice() : [{ kind: 'KMAF', reason: 'KMAF_NOT_READY' }]), request: null };
+    // THE SAME BOOLEAN. Only the answer's SHAPE changed.
+    if (!pKmafPresent || !pKmafReady || !pFactsArray) {
+      var eng = (isObj(kmaf) && Array.isArray(kmaf.issues) ? kmaf.issues : []).map(function (e) { return fromEngineIssue(e, 'KMAF', scopeIdent); });
+      var out = carried.concat(eng);
+      // §C.1/§C.2 — ready:false with an empty issues list is UNREPRESENTABLE. When KMAF refused with no
+      // per-receiver issues it still told us why in `reason` (PLANNING_FACTS_NOT_READY = zero receivers), and
+      // that is what used to be discarded here. If even the reason is absent, the gate's own failing predicate
+      // is named, so there is always at least one issue.
+      // The KMAF REASON is additional information exactly when KMAF produced no per-receiver issues of its
+      // own — it sets `reason = issues[0].code` otherwise, so adding it then would duplicate. Note the
+      // condition is on `eng`, NOT on `out`: a harvest that already reported a per-site drop STILL needs the
+      // universe-level effect stated, or the answer names the cause without the consequence. Both, always.
+      if (!eng.length) {
+        var reason = (isObj(kmaf) && nonEmpty(kmaf.reason)) ? str(kmaf.reason)
+          : (!pKmafPresent ? 'KMAF_NOT_READY' : (!pFactsArray ? 'KMAF_NOT_READY' : 'PLANNING_FACTS_NOT_READY'));
+        out = out.concat([readinessIssue({
+          engine_code: reason, stage: 'KMAF',
+          field: !pFactsArray ? 'kmaf.receiverFacts' : 'kmaf.receiverFacts[]',
+          expected: 'at least one receiver fact for the requested (company, country) universe',
+          actual: reason === 'PLANNING_FACTS_NOT_READY'
+            ? 'zero receiver facts and zero receiver issues — every site was dropped before KMAF was called'
+            : 'KMAF produced no usable result',
+          source_table: 'fc_regular_forecast',
+          source_header: 'company, country, marketplace, sku, year + the month column for each of M+1..M+4',
+          affected_scope: scopeIdent
+        })]);
+      }
+      // The HEADLINE is the first blocking issue, which is the harvest's site-level cause when there is one
+      // and the KMAF universe-level reason otherwise. A refusal that leads with the effect sends the reader
+      // looking in the wrong place.
+      var reasonCode = out.filter(function (i) { return i.blocking; })[0];
+      return {
+        ready: false, reason: reasonCode ? reasonCode.code : READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+        issues: out, warnings: warnings, predicates: predicates, request: null
+      };
     }
 
     // planningFacts index (recovers sku / siteSku / unitsPerCarton — absent on receiverFact) by demandRef.
@@ -99,7 +296,17 @@
       var rf = kmaf.receiverFacts[i];
       var ref = str(rf.demandRef);
       var pf = pfByRef[ref];
-      if (!pf) { issues.push({ kind: 'JOIN', reason: 'RECEIVER_WITHOUT_PLANNING_FACT:' + ref }); continue; }
+      if (!pf) {
+        // R1: the legacy `{ kind, reason }` shape is REPLACED by the typed one rather than duplicated - a
+        // caller reading two shapes for one fact is how a UI ends up showing a raw token.
+        issues.push(readinessIssue({
+          engine_code: 'RECEIVER_WITHOUT_PLANNING_FACT', stage: 'MAPPER', field: 'planningFacts[demandRef]',
+          expected: 'a planning fact for every receiver fact, joined on demandRef',
+          actual: 'no planning fact for this demandRef',
+          affected_scope: { company: str(scope.company), country: str(scope.country), demandRef: ref }
+        }));
+        continue;
+      }
       var sku = nonEmpty(pf.masterSku) ? str(pf.masterSku) : str(pf.sku);
       var dest = str(rf.destinationWarehouseId);
       var mkt = str(rf.marketplace);
@@ -146,14 +353,35 @@
       skus: skus
     };
 
-    issues.sort(function (a, b) { return (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0); });
-    return { ready: true, issues: issues, request: request };
+    // NON-BLOCKING, recorded: a universe that joined to zero SKUs. It has always passed this gate and 61_
+    // refuses it downstream by name; re-gating it here would change the decision.
+    pred('SKU_LANES_NON_EMPTY', false, skus.length > 0, skus.length + ' sku group(s) after the join');
+    var allIssues = carried.concat(issues);
+    allIssues.sort(function (a, b) {
+      return (a.code < b.code ? -1 : a.code > b.code ? 1 : 0) ||
+        (a.engine_code < b.engine_code ? -1 : a.engine_code > b.engine_code ? 1 : 0);
+    });
+    // THE DECISION IS UNCHANGED: reaching here has always meant ready:true, join issues and all. `carried`
+    // holds the harvest's own per-site drops, which are REPORTED at this level too — a run can legitimately be
+    // ready while some sites were dropped, and before R1 nobody downstream could see that had happened.
+    var blockingNow = allIssues.filter(function (i) { return i.blocking; });
+    return {
+      ready: true, reason: null, issues: allIssues, warnings: warnings, predicates: predicates,
+      partial: blockingNow.length > 0, request: request
+    };
   }
 
   return {
     mapWeeklyHarvestToBatchRequest: mapWeeklyHarvestToBatchRequest,
     resolveWorkspaceLineDestination: resolveWorkspaceLineDestination,
     SURVIVAL_HORIZON_DAYS: SURVIVAL_HORIZON_DAYS,
-    _version: 'f1-7n-d-2c-r1'
+    // F1-7N-FC-1B-E3-R1 - the readiness vocabulary, exported so the server and the page name the same codes
+    // rather than each keeping a copy.
+    READINESS_CODES: READINESS_CODES,
+    ENGINE_TO_READINESS: ENGINE_TO_READINESS,
+    ENGINE_TRANSPORT: ENGINE_TRANSPORT,
+    readinessIssue: readinessIssue,
+    fromEngineIssue: fromEngineIssue,
+    _version: 'f1-7n-fc-1b-e3-r1-readiness'
   };
 });

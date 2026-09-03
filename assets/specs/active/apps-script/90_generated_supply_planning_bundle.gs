@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = d782ea6d8d4f97f7031fd9718b16020628e4a3a92b5984f8895a2198a61c36ac
+// bundle_sha256 = 5477c1b6059ce1c539c07aa6d99c4172ec48d6c35c92ef5b9b7b85b2e0930df7
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -31,7 +31,7 @@
 //   supply-planning-weekly-recommendation-draft  ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32
 //   supply-planning-weekly-recommendation-runtime  0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3
 //   supply-planning-weekly-recommendation-batch  8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b
-//   supply-planning-weekly-harvest-adapter  5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42
+//   supply-planning-weekly-harvest-adapter  3b4b1b5362b584ca7206753469ce649a7aff724f11bb4a508f47377327d7477b
 //   supply-planning-route-authority  2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2
 //   supply-planning-weekly-route-derivation  a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
@@ -7305,7 +7305,125 @@ function __kmRequire(p) {
     return { destinationRef: '', destinationType: '', isPhysicalWarehouse: false };
   }
 
-  // mapWeeklyHarvestToBatchRequest(harvest) → { ready, issues, request }
+  // ===========================================================================================================
+  // F1-7N-FC-1B-E3-R1 §C — THE CANONICAL READINESS RESULT.
+  // -----------------------------------------------------------------------------------------------------------
+  // WHAT WAS WRONG, MEASURED. A live census returned `mapped.ready = false` with `mapped.issues = []`, and the
+  // only thing production could then say was a bare HARVEST_NOT_READY. Executing the predicates showed why,
+  // and it was structural rather than situational:
+  //
+  //   * KMAF decides readiness as `issues.length === 0 && receiverFacts.length > 0`. So `ready:false` with an
+  //     EMPTY issues array means exactly one thing — ZERO RECEIVERS — because any staged receiver
+  //     either yields a fact or yields at least one issue.
+  //   * KMAF already NAMES that case: `reason: 'PLANNING_FACTS_NOT_READY'`.
+  //   * and this function returned `{ ready, issues, request }`, copying `kmaf.issues.slice()` and DROPPING
+  //     `kmaf.reason`. The one field that explained the refusal was discarded at the boundary.
+  //
+  // So the answer was never "no reason was known"; it was "the reason was known and thrown away".
+  //
+  // THE DECISION IS UNCHANGED. Every shape that was ready before is ready now and vice versa: no predicate was
+  // added to the gate, none was relaxed, and no missing value is defaulted. `SOURCE_DATA_AS_OF_PRESENT` and
+  // `SKU_LANES_NON_EMPTY` are reported as NON-BLOCKING precisely because they never gated readiness here and
+  // making them gate it would be a behaviour change with no spec behind it. (Executed: a blank, a null and a
+  // real sourceDataAsOf all produce ready:true, all else equal — it is not a readiness predicate, and its
+  // blankness in the live census is a CO-SYMPTOM of the same zero-receiver drop, since 61_ populates it only
+  // from a site that survived.)
+  //
+  // TWO KINDS, NEVER CONFLATED (§C.4). Every issue carries a mandatory `kind`: 'DATA' for a readiness fact
+  // about the operator's data, 'TRANSPORT' for an exception, an unavailable module or an unreachable read. They
+  // share one array so that "ready:false with nothing said" is unrepresentable (§C.1), and they are told
+  // apart by a field rather than by a caller guessing from the code.
+  // ===========================================================================================================
+  var READINESS_CODES = {
+    SOURCE_DATA_AS_OF_MISSING: 'SOURCE_DATA_AS_OF_MISSING',
+    PLANNING_CYCLE_MISSING: 'PLANNING_CYCLE_MISSING',
+    REQUESTED_SCOPE_EMPTY: 'REQUESTED_SCOPE_EMPTY',
+    SKU_FACTS_MISSING: 'SKU_FACTS_MISSING',
+    SUGGESTED_QTY_UNRESOLVED: 'SUGGESTED_QTY_UNRESOLVED',
+    FACTORY_SOURCE_UNRESOLVED: 'FACTORY_SOURCE_UNRESOLVED',
+    DESTINATION_UNRESOLVED: 'DESTINATION_UNRESOLVED',
+    CANONICAL_MAPPING_INCOMPLETE: 'CANONICAL_MAPPING_INCOMPLETE'
+  };
+  // §C.6 — the engine's own code is PRESERVED VERBATIM on every issue as `engine_code`, so this table
+  // is a translation at one boundary and never a rename: no existing code is retired, nothing downstream loses
+  // the code KMAF or 61_ actually emitted, and no synonym is invented inside either of them.
+  var ENGINE_TO_READINESS = {
+    // KMAF receiver-level codes
+    MISSING_DESTINATION_WAREHOUSE: READINESS_CODES.DESTINATION_UNRESOLVED,
+    RECEIVER_IDENTITY_INCOMPLETE: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    MISSING_WINDOW_CODE: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    POOL_ELIGIBILITY_UNRESOLVED: READINESS_CODES.FACTORY_SOURCE_UNRESOLVED,
+    DEMAND_WEIGHT_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    DAILY_DEMAND_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    WEIGHT_BASIS_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    MISSING_FORECAST_WEIGHT_SOURCE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    // KMAF whole-result reasons
+    PLANNING_FACTS_NOT_READY: READINESS_CODES.SKU_FACTS_MISSING,
+    KMAF_NOT_READY: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    // 61_ harvest-level codes (carried in `harvest.errors`)
+    FORECAST_SHARE_INCOMPLETE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    RECEIVER_WITHOUT_PLANNING_FACT: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE
+  };
+  // TRANSPORT, not data. An exception, an unavailable module or an unreachable read says nothing about whether
+  // the operator's data is complete, and reporting it as a data issue would send someone to fix a spreadsheet.
+  var ENGINE_TRANSPORT = {
+    WORKSPACE_THREW: 1, KMAF_THREW: 1, SUPPLY_POOL_FACTS_UNAVAILABLE: 1,
+    FORECAST_MONTHS_UNRESOLVED: 1, WORKSPACE_NOT_OK: 1, WEEKLY_AI_PLAN_NOT_BUNDLED: 1
+  };
+  // §C.3 — an issue names a field, never carries a table. `actual` is a short scalar summary; arrays
+  // and objects are reduced to a shape description, so no row content can ride out through a diagnostic.
+  function sanitize(v) {
+    if (v === undefined) return '';
+    if (v === null) return 'null';
+    if (Array.isArray(v)) return 'array(' + v.length + ')';
+    if (typeof v === 'object') return 'object(' + Object.keys(v).length + ' keys)';
+    var s = String(v);
+    return s.length > 120 ? s.slice(0, 117) + '...' : s;
+  }
+  function readinessIssue(o) {
+    o = isObj(o) ? o : {};
+    var engine = str(o.engine_code);
+    var kind = o.kind || (ENGINE_TRANSPORT[engine] ? 'TRANSPORT' : 'DATA');
+    var code = str(o.code) || (kind === 'TRANSPORT' ? engine : (ENGINE_TO_READINESS[engine] || READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE));
+    var sc = isObj(o.affected_scope) ? o.affected_scope : {};
+    return {
+      code: code,
+      engine_code: engine,
+      kind: kind,
+      blocking: o.blocking === false ? false : true,
+      field: str(o.field),
+      stage: str(o.stage) || 'MAPPER',
+      expected: sanitize(o.expected),
+      actual: sanitize(o.actual),
+      source_table: str(o.source_table),
+      source_header: str(o.source_header),
+      // identity only, never row data
+      affected_scope: {
+        company: str(sc.company), country: str(sc.country), marketplace: str(sc.marketplace),
+        sku: str(sc.sku), demandRef: str(sc.demandRef)
+      }
+    };
+  }
+  // An engine issue (KMAF's { code, ref, message } or 61_'s { code, message, ...extra }) → a typed readiness
+  // issue. The engine code survives; the scope identity is taken from whatever the engine attached.
+  function fromEngineIssue(e, stage, scope) {
+    e = isObj(e) ? e : {};
+    var engine = str(e.code) || str(e.reason) || str(e.kind);
+    var ref = str(e.ref) || str(e.demandRef);
+    var sc = { company: str(scope && scope.company), country: str(scope && scope.country), demandRef: ref };
+    // demandRef is company|country|marketplace|sku|destination in 61_ — split it back for a readable scope,
+    // WITHOUT inventing values when the shape does not match.
+    var parts = ref.split('|');
+    if (parts.length === 5) { sc.marketplace = parts[2]; sc.sku = parts[3]; }
+    return readinessIssue({
+      engine_code: engine, stage: stage, field: str(e.field), affected_scope: sc,
+      expected: e.expected === undefined ? 'a canonical value' : e.expected,
+      actual: e.actual === undefined ? (str(e.message) || 'unresolved') : e.actual,
+      source_table: str(e.source_table), source_header: str(e.source_header)
+    });
+  }
+
+  // mapWeeklyHarvestToBatchRequest(harvest) → { ready, reason, issues, warnings, predicates, request }
   //   harvest = {
   //     planningCycle, businessScope:{company,country,source_page}, mode?, confirmRegenerateOverUserEdits?, actor?, now?,
   //     sourceDataAsOf?, formulaVersion?, factoryIdentityConfig, warehousesById,
@@ -7323,10 +7441,89 @@ function __kmRequire(p) {
     var sourceDataAsOf = harvest.sourceDataAsOf === undefined ? null : harvest.sourceDataAsOf;
 
     var kmaf = harvest.kmaf;
+    // ---- THE PREDICATES, evaluated and RECORDED (§A.2/§G). The gate below is the same boolean it has
+    // always been; what changes is that each half of it is now a named fact with a true/false answer instead of
+    // a condition that collapses into one bare `false`. -----------------------------------------------------
+    var predicates = [];
+    function pred(name, required, passed, detail) {
+      predicates.push({ name: name, required: required === true, passed: passed === true, detail: str(detail) });
+      return passed === true;
+    }
+    var warnings = [];
+    var scopeIdent = { company: str(scope.company), country: str(scope.country) };
+
+    var pKmafPresent = pred('KMAF_PRESENT', true, isObj(kmaf), isObj(kmaf) ? 'kmaf is an object' : 'kmaf is ' + (kmaf === undefined ? 'undefined' : typeof kmaf));
+    var pKmafReady = pred('KMAF_READY', true, isObj(kmaf) && kmaf.ready !== false, (isObj(kmaf) ? 'kmaf.ready=' + kmaf.ready : 'no kmaf'));
+    var pFactsArray = pred('KMAF_RECEIVER_FACTS_ARRAY', true, isObj(kmaf) && Array.isArray(kmaf.receiverFacts),
+      isObj(kmaf) ? 'receiverFacts is ' + (Array.isArray(kmaf.receiverFacts) ? 'an array(' + kmaf.receiverFacts.length + ')' : typeof kmaf.receiverFacts) : 'no kmaf');
+    // NON-BLOCKING, and deliberately so: an EMPTY receiverFacts array has always passed this gate, and 61_
+    // refuses the empty universe downstream with its own REQUESTED_SCOPE_EMPTY. Recorded, never re-gated.
+    pred('KMAF_RECEIVER_FACTS_NON_EMPTY', false, isObj(kmaf) && Array.isArray(kmaf.receiverFacts) && kmaf.receiverFacts.length > 0,
+      isObj(kmaf) && Array.isArray(kmaf.receiverFacts) ? kmaf.receiverFacts.length + ' receiver fact(s)' : 'not an array');
+    pred('PLANNING_CYCLE_PRESENT', false, nonEmpty(harvest.planningCycle), 'planningCycle=' + (str(harvest.planningCycle) || 'BLANK'));
+    pred('SCOPE_COMPANY_PRESENT', false, nonEmpty(scope.company), 'company=' + (str(scope.company) || 'BLANK'));
+    pred('SCOPE_COUNTRY_PRESENT', false, nonEmpty(scope.country), 'country=' + (str(scope.country) || 'BLANK'));
+    // SOURCE_DATA_AS_OF is NOT a readiness predicate here and never has been (executed both ways: blank, null
+    // and a real date all yield ready:true, all else equal). It is reported because it is consumed downstream —
+    // weeklyAiPlanShipDate_ derives the ship date from it, so a blank one yields a blank ship date and a lane
+    // with no resolvable ETA. A WARNING, not a gate: inventing a gate for it would be a behaviour change with
+    // no spec behind it, and inventing a value for it is forbidden outright.
+    if (!nonEmpty(sourceDataAsOf)) {
+      warnings.push(readinessIssue({
+        code: READINESS_CODES.SOURCE_DATA_AS_OF_MISSING, blocking: false, kind: 'DATA',
+        field: 'sourceDataAsOf', stage: 'HARVEST',
+        expected: 'the source-data cutoff carried by a surviving recommendation-workspace line (YYYY-MM-DD)',
+        actual: sourceDataAsOf === null ? 'null' : (sourceDataAsOf === '' ? 'blank' : sourceDataAsOf),
+        source_table: 'recommendation workspace (derived; see gap run lineage for the STORED value)',
+        source_header: 'sourceDataAsOf',
+        affected_scope: scopeIdent
+      }));
+    }
+    pred('SOURCE_DATA_AS_OF_PRESENT', false, nonEmpty(sourceDataAsOf), nonEmpty(sourceDataAsOf) ? 'present' : 'blank/null (NON-BLOCKING here)');
+
+    // ---- 61_'s own non-fatal harvest errors, if the caller passed them through. Before R1 the harvest
+    // collected FORECAST_SHARE_INCOMPLETE / WORKSPACE_NOT_OK per site and then dropped the array on its
+    // SUCCESS return, so the one fact identifying WHICH site and WHY never left the server. ---------------
+    var harvestErrs = Array.isArray(harvest.errors) ? harvest.errors : [];
+    var carried = harvestErrs.map(function (e) { return fromEngineIssue(e, 'HARVEST', scopeIdent); });
+
     // Fail-closed: the single (company,country) §7 call is all-or-nothing (any receiver issue → ready:false). A
     // partial universe would corrupt the §7 denominator, so the whole batch is refused.
-    if (!isObj(kmaf) || kmaf.ready === false || !Array.isArray(kmaf.receiverFacts)) {
-      return { ready: false, issues: (isObj(kmaf) && Array.isArray(kmaf.issues) ? kmaf.issues.slice() : [{ kind: 'KMAF', reason: 'KMAF_NOT_READY' }]), request: null };
+    // THE SAME BOOLEAN. Only the answer's SHAPE changed.
+    if (!pKmafPresent || !pKmafReady || !pFactsArray) {
+      var eng = (isObj(kmaf) && Array.isArray(kmaf.issues) ? kmaf.issues : []).map(function (e) { return fromEngineIssue(e, 'KMAF', scopeIdent); });
+      var out = carried.concat(eng);
+      // §C.1/§C.2 — ready:false with an empty issues list is UNREPRESENTABLE. When KMAF refused with no
+      // per-receiver issues it still told us why in `reason` (PLANNING_FACTS_NOT_READY = zero receivers), and
+      // that is what used to be discarded here. If even the reason is absent, the gate's own failing predicate
+      // is named, so there is always at least one issue.
+      // The KMAF REASON is additional information exactly when KMAF produced no per-receiver issues of its
+      // own — it sets `reason = issues[0].code` otherwise, so adding it then would duplicate. Note the
+      // condition is on `eng`, NOT on `out`: a harvest that already reported a per-site drop STILL needs the
+      // universe-level effect stated, or the answer names the cause without the consequence. Both, always.
+      if (!eng.length) {
+        var reason = (isObj(kmaf) && nonEmpty(kmaf.reason)) ? str(kmaf.reason)
+          : (!pKmafPresent ? 'KMAF_NOT_READY' : (!pFactsArray ? 'KMAF_NOT_READY' : 'PLANNING_FACTS_NOT_READY'));
+        out = out.concat([readinessIssue({
+          engine_code: reason, stage: 'KMAF',
+          field: !pFactsArray ? 'kmaf.receiverFacts' : 'kmaf.receiverFacts[]',
+          expected: 'at least one receiver fact for the requested (company, country) universe',
+          actual: reason === 'PLANNING_FACTS_NOT_READY'
+            ? 'zero receiver facts and zero receiver issues — every site was dropped before KMAF was called'
+            : 'KMAF produced no usable result',
+          source_table: 'fc_regular_forecast',
+          source_header: 'company, country, marketplace, sku, year + the month column for each of M+1..M+4',
+          affected_scope: scopeIdent
+        })]);
+      }
+      // The HEADLINE is the first blocking issue, which is the harvest's site-level cause when there is one
+      // and the KMAF universe-level reason otherwise. A refusal that leads with the effect sends the reader
+      // looking in the wrong place.
+      var reasonCode = out.filter(function (i) { return i.blocking; })[0];
+      return {
+        ready: false, reason: reasonCode ? reasonCode.code : READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+        issues: out, warnings: warnings, predicates: predicates, request: null
+      };
     }
 
     // planningFacts index (recovers sku / siteSku / unitsPerCarton — absent on receiverFact) by demandRef.
@@ -7341,7 +7538,17 @@ function __kmRequire(p) {
       var rf = kmaf.receiverFacts[i];
       var ref = str(rf.demandRef);
       var pf = pfByRef[ref];
-      if (!pf) { issues.push({ kind: 'JOIN', reason: 'RECEIVER_WITHOUT_PLANNING_FACT:' + ref }); continue; }
+      if (!pf) {
+        // R1: the legacy `{ kind, reason }` shape is REPLACED by the typed one rather than duplicated - a
+        // caller reading two shapes for one fact is how a UI ends up showing a raw token.
+        issues.push(readinessIssue({
+          engine_code: 'RECEIVER_WITHOUT_PLANNING_FACT', stage: 'MAPPER', field: 'planningFacts[demandRef]',
+          expected: 'a planning fact for every receiver fact, joined on demandRef',
+          actual: 'no planning fact for this demandRef',
+          affected_scope: { company: str(scope.company), country: str(scope.country), demandRef: ref }
+        }));
+        continue;
+      }
       var sku = nonEmpty(pf.masterSku) ? str(pf.masterSku) : str(pf.sku);
       var dest = str(rf.destinationWarehouseId);
       var mkt = str(rf.marketplace);
@@ -7388,15 +7595,36 @@ function __kmRequire(p) {
       skus: skus
     };
 
-    issues.sort(function (a, b) { return (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0); });
-    return { ready: true, issues: issues, request: request };
+    // NON-BLOCKING, recorded: a universe that joined to zero SKUs. It has always passed this gate and 61_
+    // refuses it downstream by name; re-gating it here would change the decision.
+    pred('SKU_LANES_NON_EMPTY', false, skus.length > 0, skus.length + ' sku group(s) after the join');
+    var allIssues = carried.concat(issues);
+    allIssues.sort(function (a, b) {
+      return (a.code < b.code ? -1 : a.code > b.code ? 1 : 0) ||
+        (a.engine_code < b.engine_code ? -1 : a.engine_code > b.engine_code ? 1 : 0);
+    });
+    // THE DECISION IS UNCHANGED: reaching here has always meant ready:true, join issues and all. `carried`
+    // holds the harvest's own per-site drops, which are REPORTED at this level too — a run can legitimately be
+    // ready while some sites were dropped, and before R1 nobody downstream could see that had happened.
+    var blockingNow = allIssues.filter(function (i) { return i.blocking; });
+    return {
+      ready: true, reason: null, issues: allIssues, warnings: warnings, predicates: predicates,
+      partial: blockingNow.length > 0, request: request
+    };
   }
 
   return {
     mapWeeklyHarvestToBatchRequest: mapWeeklyHarvestToBatchRequest,
     resolveWorkspaceLineDestination: resolveWorkspaceLineDestination,
     SURVIVAL_HORIZON_DAYS: SURVIVAL_HORIZON_DAYS,
-    _version: 'f1-7n-d-2c-r1'
+    // F1-7N-FC-1B-E3-R1 - the readiness vocabulary, exported so the server and the page name the same codes
+    // rather than each keeping a copy.
+    READINESS_CODES: READINESS_CODES,
+    ENGINE_TO_READINESS: ENGINE_TO_READINESS,
+    ENGINE_TRANSPORT: ENGINE_TRANSPORT,
+    readinessIssue: readinessIssue,
+    fromEngineIssue: fromEngineIssue,
+    _version: 'f1-7n-fc-1b-e3-r1-readiness'
   };
 });
   __kmRegister("supply-planning-weekly-harvest-adapter", module.exports);
@@ -15376,4 +15604,4 @@ var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"d782ea6d8d4f97f7031fd9718b16020628e4a3a92b5984f8895a2198a61c36ac","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"5d5dad43033e903f1a12f873eced644adbabe9ce1d39726b8c93204a0be74e42"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"5477c1b6059ce1c539c07aa6d99c4172ec48d6c35c92ef5b9b7b85b2e0930df7","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"3b4b1b5362b584ca7206753469ce649a7aff724f11bb4a508f47377327d7477b"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"}]};

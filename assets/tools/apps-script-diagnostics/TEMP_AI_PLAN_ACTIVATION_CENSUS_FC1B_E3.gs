@@ -46,6 +46,16 @@
  *   3. Read the Logger output (and the returned object).
  *   4. DELETE this file from the project. It is not part of the deployment.
  *
+ * F1-7N-FC-1B-E3-R1 §F/§G — A REFUSAL NO LONGER TAKES THE DIAGNOSIS WITH IT.
+ * ------------------------------------------------------------------------------------------
+ * The first live run answered `verdict = STOP, blocker = HARVEST_NOT_READY` and then returned, so every field
+ * that could have explained the refusal was undefined: the run that most needed to report reported the least.
+ * It now collects everything that is SAFE to read either way and skips only the allocator — which is the
+ * right boundary, because `mapped.request` is null when readiness failed, so KMWRB/KMWRR would be running on
+ * nothing. It additionally reports the FORECAST-MONTH COVERAGE that decides whether a site survives at all,
+ * per month, so "the row does not exist", "the cell is blank" and "two rows disagree" are three answers with
+ * three different fixes; and the full source_data_as_of derivation, naming both authorities.
+ *
  * WHAT IT REPORTS (§F.4)
  * ----------------------
  *   scope · planning cycle · Suggested Qty and gap for the SKU · source warehouse candidates · available
@@ -54,7 +64,7 @@
  *   stored for the scope · would_create route count · and an activation verdict.
  */
 
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R1';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -76,6 +86,109 @@ function CENSUS_rows_(ss, name) {
     }
     return out;
   } catch (e) { return []; }
+}
+
+/**
+ * F1-7N-FC-1B-E3-R1 §B/§G — THE FORECAST-MONTH COVERAGE FOR ONE SKU. Read-only.
+ *
+ * This is the census's answer to the question the first live run could not answer. The weekly harvest builds a
+ * KMAF receiver per site ONLY when the §7 demand basis is complete, which means all four of M+1..M+4 must
+ * resolve to exactly one finite value each in `fc_regular_forecast`. Any month that is missing, blank, or
+ * present TWICE WITH DIFFERENT VALUES is omitted by the canonical reader — and the site is then dropped
+ * with FORECAST_SHARE_INCOMPLETE, silently before R1. With every site dropped the harvest yields ZERO
+ * receivers, KMAF answers ready:false with an EMPTY issues array, and the only thing production could say was
+ * a bare HARVEST_NOT_READY.
+ *
+ * Reported per month so "the row does not exist", "the cell is blank" and "two rows disagree" are three
+ * different answers with three different fixes. It reads the canonical table and returns COUNTS AND FLAGS
+ * only — never row content.
+ */
+function CENSUS_forecastCoverage_(ss, scope, sku, months) {
+  var ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  var rows = CENSUS_rows_(ss, 'fc_regular_forecast');
+  var mine = rows.filter(function (r) {
+    return CENSUS_low_(r.company) === CENSUS_low_(scope.company) &&
+      CENSUS_low_(r.country) === CENSUS_low_(scope.country) &&
+      CENSUS_low_(r.marketplace) === CENSUS_low_(scope.marketplace) &&
+      (!sku || CENSUS_low_(r.sku) === CENSUS_low_(sku));
+  });
+  var per = (months || []).map(function (ym) {
+    var m = /^(\d{4})-(\d{2})$/.exec(ym);
+    if (!m) return { month: ym, status: 'BAD_MONTH_TOKEN' };
+    var year = Number(m[1]), abbr = ABBR[Number(m[2]) - 1];
+    var yearRows = mine.filter(function (r) { return Number(r.year) === year; });
+    var distinct = {}, blanks = 0;
+    yearRows.forEach(function (r) {
+      var v = r[abbr];
+      if (v === '' || v === null || v === undefined || !isFinite(Number(v))) { blanks++; return; }
+      distinct[String(Number(v))] = 1;
+    });
+    var n = Object.keys(distinct).length;
+    return {
+      month: ym, year: year, header: abbr,
+      rows_for_year: yearRows.length, blank_cells: blanks, distinct_values: n,
+      // the canonical reader keeps a month ONLY when exactly one distinct finite value exists for it
+      resolves: n === 1,
+      status: yearRows.length === 0 ? 'NO_ROW_FOR_YEAR'
+        : (n === 0 ? 'CELL_BLANK_OR_NON_NUMERIC'
+        : (n > 1 ? 'CONFLICTING_VALUES' : 'OK'))
+    };
+  });
+  var missing = per.filter(function (p) { return !p.resolves; });
+  return {
+    source_table: 'fc_regular_forecast',
+    source_headers: 'company, country, marketplace, sku, year + the month column for each required month',
+    required_months: months || [],
+    scope_row_count: mine.length,
+    per_month: per,
+    missing_months: missing.map(function (p) { return p.month; }),
+    complete: missing.length === 0,
+    // THE decisive line: this is the predicate 61_ applies per site, restated here so a reader can see the
+    // drop rather than infer it.
+    site_would_survive_forecast_gate: missing.length === 0,
+    verdict: missing.length === 0 ? 'FORECAST_BASIS_COMPLETE' : 'FORECAST_SHARE_INCOMPLETE'
+  };
+}
+
+/**
+ * §B/§G — WHERE source_data_as_of COMES FROM, and which of the two authorities is which. Read-only.
+ *
+ * Executed finding: `harvest.sourceDataAsOf` is NOT a readiness predicate (a blank, a null and a real date all
+ * produce mapped.ready:true, all else equal). It is populated ONLY from a site that SURVIVED, so a blank one is
+ * a CO-SYMPTOM of the same zero-receiver drop rather than a cause of it. It does have a real downstream
+ * consequence: weeklyAiPlanShipDate_ derives the ship date from it, so blank means no ship date for the lane.
+ *
+ * The value that is actually STORED on a generated header is a DIFFERENT authority: the GAP-INV run lineage's
+ * calculationDate, resolved by the production weeklyAiPlanResolveGapRunLineage_, which BLOCKS with
+ * LINEAGE_SOURCE_DATA_AS_OF_UNAVAILABLE rather than storing a blank. Both are reported, neither is invented,
+ * and no clock is read: there is no new Date(), no execution time, no spreadsheet modified time and no fallback
+ * anywhere in this census.
+ */
+function CENSUS_sourceAsOfCandidates_(h, planningCycle) {
+  var out = {
+    harvest_source_data_as_of: CENSUS_str_(h && h.sourceDataAsOf),
+    harvest_value_is_blank: !CENSUS_str_(h && h.sourceDataAsOf),
+    harvest_origin: 'recommendation workspace line.sourceDataAsOf, carried by the FIRST SURVIVING site only ' +
+      '(61_ weeklyAiPlanBuildKmafReceivers_); zero surviving sites => null',
+    consumed_by: 'weeklyAiPlanShipDate_ (ship date for the KMWRR lane) — NOT by any readiness predicate',
+    gap_run_lineage: null,
+    stored_header_authority: 'weeklyAiPlanResolveGapRunLineage_().source_data_as_of (the GAP-INV run calculationDate)',
+    fabrication_check: 'NO clock, NO execution time, NO spreadsheet modified time, NO fallback — a blank stays blank'
+  };
+  try {
+    if (typeof weeklyAiPlanResolveGapRunLineage_ === 'function') {
+      var lin = weeklyAiPlanResolveGapRunLineage_(planningCycle, h, { formulaVersion: 'WEEKLY_AI_PLAN_V1' });
+      out.gap_run_lineage = lin && lin.ok
+        ? { ok: true, run_id: CENSUS_str_(lin.run_id), source_data_as_of: CENSUS_str_(lin.source_data_as_of),
+            calculated_at: CENSUS_str_(lin.calculated_at), planning_cycle: CENSUS_str_(lin.planning_cycle) }
+        : { ok: false, reason: CENSUS_str_(lin && lin.reason) };
+    } else {
+      out.gap_run_lineage = { ok: false, reason: 'LINEAGE_RESOLVER_UNAVAILABLE_IN_THIS_DEPLOYMENT' };
+    }
+  } catch (e) {
+    out.gap_run_lineage = { ok: false, reason: 'LINEAGE_RESOLVER_THREW: ' + CENSUS_str_(e && e.message) };
+  }
+  return out;
 }
 
 function CENSUS_str_(v) { return String(v == null ? '' : v).trim(); }
@@ -111,11 +224,11 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   if (!company || !country || !marketplace) {
     out.blockers.push('SCOPE_INCOMPLETE: company, country and marketplace are all required (this census never ' +
       'defaults a scope, and never runs ALL_SITES)');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
   if (/^all(_sites)?$/i.test(marketplace)) {
     out.blockers.push('SCOPE_ALL_SITES_FORBIDDEN: a controlled census targets exactly one marketplace');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   // ---- the effective flag, as the answering deployment reports it (never the repository's copy) -------------
@@ -144,7 +257,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   if (missing.length) {
     out.blockers.push('PRODUCTION_READ_CONTRACT_UNAVAILABLE: ' + missing.join(', ') +
       ' — this census calls the production allocator or it reports nothing; it never approximates one');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   var ss;
@@ -153,7 +266,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     if (typeof prodAssertDbTarget_ === 'function') prodAssertDbTarget_(ss, prodExpectedDbId_());
   } catch (e) {
     out.blockers.push('DB_NOT_REACHABLE_OR_WRONG_TARGET: ' + CENSUS_str_(e && e.message));
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   // ---- planning cycle: the canonical one, resolved the way production resolves it --------------------------
@@ -165,7 +278,23 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   out.planning_cycle = planningCycle;
   if (!planningCycle) {
     out.blockers.push('PLANNING_CYCLE_UNRESOLVED');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
+  }
+  // The FOUR forecast months the §7 demand basis requires, from the canonical resolver (M+1..M+4 of the
+  // cycle month). Not derived here and not guessed: KMPCX owns the window, and 61_ blocks a site whose basis
+  // does not cover all four.
+  var months = null;
+  try {
+    var _cm = planningCycle.slice(5);
+    months = (typeof KMPCX !== 'undefined' && KMPCX && typeof KMPCX._forecastWeightMonths === 'function')
+      ? KMPCX._forecastWeightMonths(_cm) : null;
+  } catch (e) { months = null; }
+  out.required_forecast_months = months || [];
+  if (!months || months.length < 2) {
+    out.blockers.push('FORECAST_MONTHS_UNRESOLVED: KMPCX._forecastWeightMonths did not resolve the M+1..M+4 ' +
+      'window for ' + planningCycle + ' — the harvest fails closed on the same condition');
+    out.next_blocked_stage = 'FORECAST_WINDOW';
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   // ---- harvest + map: the same two calls the generation makes ----------------------------------------------
@@ -174,13 +303,20 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle });
   } catch (e) {
     out.blockers.push('HARVEST_THREW: ' + CENSUS_str_(e && e.message));
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
   out.harvest = { ok: !!(h && h.ok), source_data_as_of: CENSUS_str_(h && h.sourceDataAsOf),
-    warehouse_count: (function () { try { return Object.keys(h.warehousesById || {}).length; } catch (e) { return 0; } })() };
+    warehouse_count: (function () { try { return Object.keys(h.warehousesById || {}).length; } catch (e) { return 0; } })(),
+    // F1-7N-FC-1B-E3-R1 SECTNG - the counts and the per-site drop list the harvest used to discard. `site_count`
+    // and `receiver_count` are the two numbers that turn "the universe came out empty" into "N sites were
+    // enumerated and M survived", and `errors` names WHICH ones and WHY. `null` means this deployment predates
+    // the fix, which is itself the answer.
+    site_count: (h && h.site_count != null) ? h.site_count : null,
+    receiver_count: (h && h.receiver_count != null) ? h.receiver_count : null,
+    errors: (h && Array.isArray(h.errors)) ? h.errors : null };
   if (!h || !h.ok) {
     out.blockers.push('HARVEST_FAILED (fail-closed, exactly as the generation would)');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   var mapped;
@@ -190,43 +326,93 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
       businessScope: { company: company, country: country,
         source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment' },
       mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false,
-      actor: 'temp-e3-census', now: (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : new Date().toISOString(),
+      // No clock fallback, and the census's own header promises exactly that: when the canonical timestamp
+      // helper is absent this stays BLANK rather than reading the execution time. The field is inert here
+      // (nothing is written), and a census that invents a timestamp to look complete is the defect.
+      actor: 'temp-e3-census', now: (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : '',
       sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
       factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined') ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null,
       warehousesById: h.warehousesById, kmaf: h.kmaf,
-      horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku
+      horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku,
+      // The harvest's own per-site drop list, exactly as 61_ passes it. Without this the census reports the
+      // universe-level EFFECT (zero receivers) and not the site-level CAUSE, which is the half that names a
+      // marketplace and a SKU.
+      errors: Array.isArray(h.errors) ? h.errors : []
     });
   } catch (e) {
     out.blockers.push('MAP_THREW: ' + CENSUS_str_(e && e.message));
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
-  out.mapped = { ready: !!(mapped && mapped.ready), issues: (mapped && mapped.issues) || [] };
-  if (!mapped || !mapped.ready) {
-    out.blockers.push('HARVEST_NOT_READY (canonical facts incomplete — the generation would refuse here too)');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+  // ---- §G — THE FULL READINESS ANSWER, not a boolean. Every field the R1 mapper reports is carried
+  // through: the reason, the typed issues, the non-blocking warnings, and every predicate with its true/false.
+  out.mapped = {
+    ready: !!(mapped && mapped.ready),
+    reason: CENSUS_str_(mapped && mapped.reason),
+    issues: (mapped && mapped.issues) || [],
+    warnings: (mapped && mapped.warnings) || [],
+    readiness_predicates: (mapped && mapped.predicates) || [],
+    partial: !!(mapped && mapped.partial),
+    failed_required_predicates: ((mapped && mapped.predicates) || [])
+      .filter(function (p) { return p && p.required && !p.passed; })
+      .map(function (p) { return p.name + ': ' + p.detail; }),
+    missing_fields: ((mapped && mapped.issues) || []).map(function (i) { return CENSUS_str_(i && i.field); })
+      .filter(function (x) { return !!x; }),
+    // §G — the canonical field NAMES the mapper reads, so a name change is visible as a diagnosis and
+    // not only as an empty result.
+    mapped_field_names: ['planningCycle', 'businessScope.company', 'businessScope.country', 'sourceDataAsOf',
+      'kmaf.receiverFacts', 'kmaf.planningFacts', 'kmaf.reason', 'kmaf.issues', 'horizonsByDemandRef',
+      'poolsBySku', 'warehousesById', 'factoryIdentityConfig', 'errors']
+  };
+  // §B/§G — the timestamp derivation, both authorities, no fabrication.
+  out.source_data_as_of_candidates = CENSUS_sourceAsOfCandidates_(h, planningCycle);
+  // §G — the forecast coverage that decides whether a site survives at all. Read even when readiness
+  // passed, because a PARTIAL run (some sites dropped, others kept) is the case nobody could see before R1.
+  out.forecast_coverage = CENSUS_forecastCoverage_(ss, { company: company, country: country, marketplace: marketplace }, sku, months);
+
+  // ---- §F.2 — A NOT-READY RESULT NO LONGER TAKES THE DIAGNOSIS WITH IT.
+  //
+  // Before R1 this returned immediately and every field below became undefined, so the one run that could have
+  // explained the refusal reported the least. What follows is split: the SAFE read-only facts are collected
+  // either way, and only the ALLOCATOR is skipped. That boundary is the point — `mapped.request` is null
+  // when readiness failed, so KMWRB/KMWRR would be called on nothing, which is exactly the unsafe state
+  // §G forbids.
+  var notReady = !mapped || !mapped.ready;
+  if (notReady) {
+    out.blockers.push('HARVEST_NOT_READY: ' + (out.mapped.reason || 'canonical facts incomplete') +
+      (out.mapped.missing_fields.length ? ' (field(s): ' + out.mapped.missing_fields.join(', ') + ')' : '') +
+      ' — the generation refuses here too, with the same typed issues');
+    out.next_blocked_stage = 'CANONICAL_READINESS';
+    out.allocator_skipped_reason = 'READINESS_NOT_ESTABLISHED: mapped.request is null, so calling KMWRB / KMWRR ' +
+      'would be running the allocator on nothing. Skipped deliberately, never with a substituted input.';
   }
 
   // ---- source lines → allocated lines → the requested marketplace only -------------------------------------
-  var src = KMWRB.buildWeeklySourceLines(mapped.request);
-  out.source_lines = { ok: !!(src && src.ok), status: CENSUS_str_(src && src.status),
-    reason: CENSUS_str_(src && src.reason), count: (src && src.lines ? src.lines.length : 0) };
-  if (!src || !src.ok) {
-    out.blockers.push('SOURCE_LINES_BLOCKED: ' + (out.source_lines.status || 'BLOCKED_INPUT'));
-    CENSUS_log_('BLOCKED', out.blockers); return out;
-  }
-
   var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
-  var shipDate = weeklyAiPlanShipDate_(h);
-  var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h);
+  var shipDate = notReady ? '' : weeklyAiPlanShipDate_(h);
   out.ship_date = shipDate;
   out.carrier_authorities = { rate_cards: (carriers.rateCards || []).length, lead_times: (carriers.leadTimes || []).length };
 
-  var mine = (allocated || []).filter(function (a) { return CENSUS_str_(a.marketplace) === marketplace; });
-  out.allocated_lines = { scope_total: (allocated || []).length, this_marketplace: mine.length };
-  if (!mine.length) {
-    out.blockers.push('REQUESTED_SCOPE_EMPTY: the marketplace produced no allocated lines (the generation ' +
-      'fails closed with the same code — it never fans out to other marketplaces)');
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+  var src = null, allocated = [], mine = [];
+  if (!notReady) {
+    src = KMWRB.buildWeeklySourceLines(mapped.request);
+    out.source_lines = { ok: !!(src && src.ok), status: CENSUS_str_(src && src.status),
+      reason: CENSUS_str_(src && src.reason), count: (src && src.lines ? src.lines.length : 0) };
+    if (!src || !src.ok) {
+      out.blockers.push('SOURCE_LINES_BLOCKED: ' + (out.source_lines.status || 'BLOCKED_INPUT'));
+      out.next_blocked_stage = out.next_blocked_stage || 'SOURCE_LINES';
+    } else {
+      allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h) || [];
+      mine = allocated.filter(function (a) { return CENSUS_str_(a.marketplace) === marketplace; });
+      out.allocated_lines = { scope_total: allocated.length, this_marketplace: mine.length };
+      if (!mine.length) {
+        out.blockers.push('REQUESTED_SCOPE_EMPTY: the marketplace produced no allocated lines (the generation ' +
+          'fails closed with the same code — it never fans out to other marketplaces)');
+        out.next_blocked_stage = out.next_blocked_stage || 'REQUESTED_SCOPE';
+      }
+    }
+  } else {
+    out.source_lines = { ok: false, status: 'NOT_ATTEMPTED', reason: 'readiness not established', count: 0 };
+    out.allocated_lines = { scope_total: 0, this_marketplace: 0 };
   }
 
   // ---- the SKU under census: Suggested Qty, gap, sources, factory stock, destination ------------------------
@@ -292,6 +478,23 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   // ---- THE RANKED ROUTE. The production allocator, called exactly as the generation calls it. --------------
   // PURE by contract: 61_ computes every group with this call in a pass that writes nothing, then writes in a
   // second pass. This file is that first pass, and there is no second one here.
+  //
+  // §G — NOT CALLED IN AN UNSAFE STATE. When readiness was not established there is no request, no
+  // source lines and no allocated lines; calling the allocator on an empty or substituted input would produce a
+  // number that looks like an answer. Everything above this point was still collected.
+  if (notReady || !mine.length) {
+    out.allocator = { group_count: 0, conserved: false, conservation: null, refusals: [], routes: [],
+      skipped: true, skipped_reason: out.allocator_skipped_reason ||
+        'NO_ALLOCATED_LINES_FOR_THE_REQUESTED_MARKETPLACE: nothing to rank, and no input is substituted' };
+    out.total_allocated_quantity = 0;
+    out.would_create_route_count = 0;
+    out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
+    out.next_blocked_stage = out.next_blocked_stage || 'ALLOCATOR';
+    out.verdict = 'STOP';
+    out.elapsed_ms = Date.now() - t0;
+    CENSUS_logAll_(out);
+    return out;
+  }
   var plan;
   try {
     plan = KMWRR.buildK2GenerationPlan({
@@ -311,7 +514,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     });
   } catch (e) {
     out.blockers.push('ALLOCATOR_THREW: ' + CENSUS_str_(e && e.message));
-    CENSUS_log_('BLOCKED', out.blockers); return out;
+    out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
 
   var groups = (plan && plan.groups) || [];
@@ -348,22 +551,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   out.would_create_route_count = out.allocator.routes.length;
 
   // ---- what is ALREADY stored for this scope (so "would_create" is read against reality) -------------------
-  out.active_allocation_drafts = (function () {
-    var rows = CENSUS_rows_(ss, 'shipping_allocation_drafts'), o = [];
-    rows.forEach(function (r) {
-      if (CENSUS_low_(r.status) !== 'active') return;
-      if (company && CENSUS_low_(r.company) !== CENSUS_low_(company)) return;
-      if (country && CENSUS_low_(r.country) !== CENSUS_low_(country)) return;
-      if (marketplace && CENSUS_str_(r.destination_marketplace) && CENSUS_low_(r.destination_marketplace) !== CENSUS_low_(marketplace)) return;
-      o.push({ allocation_draft_id: CENSUS_str_(r.allocation_draft_id),
-        source_warehouse_id: CENSUS_str_(r.source_warehouse_id),
-        destination: CENSUS_str_(r.destination_marketplace || r.destination_warehouse_id),
-        method: CENSUS_str_(r.recommended_shipping_method),
-        planning_cycle: CENSUS_str_(r.planning_cycle),
-        generation_run_id: CENSUS_str_(r.generation_run_id) });
-    });
-    return o;
-  })();
+  out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
 
   // ---- §F.6 — THE VERDICT. PROCEED only against a supplied expectation that the allocator actually meets. --
   var exp = args.expect;
@@ -398,19 +586,63 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   }
 
   out.elapsed_ms = Date.now() - t0;
+  CENSUS_logAll_(out);
+  return out;
+}
+
+/** Read-only: the ACTIVE allocation draft headers already stored for this scope. Identity fields only. */
+function CENSUS_activeDrafts_(ss, company, country, marketplace) {
+  var rows = CENSUS_rows_(ss, 'shipping_allocation_drafts'), o = [];
+  rows.forEach(function (r) {
+    if (CENSUS_low_(r.status) !== 'active') return;
+    if (company && CENSUS_low_(r.company) !== CENSUS_low_(company)) return;
+    if (country && CENSUS_low_(r.country) !== CENSUS_low_(country)) return;
+    if (marketplace && CENSUS_str_(r.destination_marketplace) && CENSUS_low_(r.destination_marketplace) !== CENSUS_low_(marketplace)) return;
+    o.push({ allocation_draft_id: CENSUS_str_(r.allocation_draft_id),
+      source_warehouse_id: CENSUS_str_(r.source_warehouse_id),
+      destination: CENSUS_str_(r.destination_marketplace || r.destination_warehouse_id),
+      method: CENSUS_str_(r.recommended_shipping_method),
+      planning_cycle: CENSUS_str_(r.planning_cycle),
+      generation_run_id: CENSUS_str_(r.generation_run_id) });
+  });
+  return o;
+}
+
+/**
+ * §G — ONE log writer, used by EVERY exit that has facts to report. Before R1 the log block sat at the
+ * very bottom of the function, so the twelve early returns logged a single BLOCKED line and nothing else —
+ * a run that refused reported less than a run that succeeded, which is backwards.
+ */
+function CENSUS_logAll_(out) {
   CENSUS_log_('verdict', out.verdict);
   CENSUS_log_('scope', out.scope);
   CENSUS_log_('planning_cycle', out.planning_cycle);
+  CENSUS_log_('required_forecast_months', out.required_forecast_months);
   CENSUS_log_('flag', out.flag);
+  CENSUS_log_('harvest', out.harvest);
+  CENSUS_log_('mapped.ready', out.mapped ? out.mapped.ready : null);
+  CENSUS_log_('mapped.reason', out.mapped ? out.mapped.reason : null);
+  CENSUS_log_('mapped.issues', out.mapped ? out.mapped.issues : null);
+  CENSUS_log_('mapped.warnings', out.mapped ? out.mapped.warnings : null);
+  CENSUS_log_('mapped.readiness_predicates', out.mapped ? out.mapped.readiness_predicates : null);
+  CENSUS_log_('mapped.failed_required_predicates', out.mapped ? out.mapped.failed_required_predicates : null);
+  CENSUS_log_('mapped.missing_fields', out.mapped ? out.mapped.missing_fields : null);
+  CENSUS_log_('mapped.mapped_field_names', out.mapped ? out.mapped.mapped_field_names : null);
+  CENSUS_log_('source_data_as_of_candidates', out.source_data_as_of_candidates);
+  CENSUS_log_('forecast_coverage', out.forecast_coverage);
+  CENSUS_log_('source_lines', out.source_lines);
+  CENSUS_log_('allocated_lines', out.allocated_lines);
   CENSUS_log_('sku_facts', out.sku_facts);
   CENSUS_log_('factory_stock', out.factory_stock);
   CENSUS_log_('carrier_authorities', out.carrier_authorities);
-  CENSUS_log_('matched_carrier_cards', out.matched_carrier_cards.length);
+  CENSUS_log_('matched_carrier_cards', out.matched_carrier_cards ? out.matched_carrier_cards.length : null);
   CENSUS_log_('allocator', out.allocator);
   CENSUS_log_('total_allocated_quantity', out.total_allocated_quantity);
   CENSUS_log_('would_create_route_count', out.would_create_route_count);
-  CENSUS_log_('active_allocation_drafts', out.active_allocation_drafts.length);
+  CENSUS_log_('active_allocation_drafts', out.active_allocation_drafts ? out.active_allocation_drafts.length : null);
+  CENSUS_log_('next_blocked_stage', out.next_blocked_stage);
   CENSUS_log_('blockers', out.blockers);
+  CENSUS_log_('differences', out.differences);
+  CENSUS_log_('writer_constructed', out.writer_constructed);
   CENSUS_log_('db_writes', out.db_writes);
-  return out;
 }

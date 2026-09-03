@@ -53,12 +53,26 @@ function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_
 // recommendation either way — so with the flag OFF the recommendation half still runs and the execution half
 // answers INVENTORY_AI_PLAN_DB_GENERATION_DISABLED with zero rows written.
 //
-// F1-7N-FC-1B-E3 §E.4 — SET TO **TRUE**, USER-AUTHORIZED. The user asked for AI Plan to produce real
-// Execution Routes in shipping_allocation_drafts / _lines, which is precisely what this flag has always
-// released. Everything downstream of it was already complete and Node-verified (route derivation and K2
-// partition via KMWRR, the atomic Header+Lines write through the SAME endpoint and identity that a manual save
-// uses, the readback hydrate, and the supersede/expire lifecycle) — the flag was the only thing between the
-// button and the write.
+// F1-7N-FC-1B-E3 §E.4 — set to TRUE, USER-AUTHORIZED. Everything downstream of the flag was already
+// complete and Node-verified (route derivation and K2 partition via KMWRR, the atomic Header+Lines write through
+// the SAME endpoint and identity a manual save uses, the readback hydrate, and the supersede/expire lifecycle).
+//
+// F1-7N-FC-1B-E3-R1 §H.3/§H.4 — **REVERTED TO FALSE.** The flag was not the last thing between the
+// button and the write after all. A read-only census of the live scope answered
+// HARVEST_NOT_READY: the canonical (company,country) fact harvest produces ZERO receivers, because every site
+// is dropped for an incomplete regular-forecast basis, so there is nothing for the allocator to rank. E3-R1
+// fixes the DIAGNOSIS of that refusal in four places — it does not and cannot fix the underlying facts,
+// which live in the operator's data.
+//
+// §H.4 forbids releasing flag=true alongside HARVEST_NOT_READY, and flag=true is ALREADY on origin/main, so
+// a report saying "do not deploy" would not have been enough on its own. false is also the more truthful of the
+// two states today: with it true a Generate click reaches the server and returns HARVEST_NOT_READY; with it
+// false the page states EXECUTION_MATERIALIZATION_NOT_ENABLED. Both are visible after E3; only one of them
+// describes why no plan can be written.
+//
+// TO RE-ACTIVATE: re-run TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3 for the intended scope, confirm verdict
+// PROCEED (which requires a complete route the allocator actually produced), set this back to true, and publish
+// a NEW deployment version. Not before.
 //
 // §E.5 — THE FLAG IS NOT REMOVED, because it is the rollback switch. ROLLBACK IS TWO STEPS AND BOTH ARE
 // THE USER'S: set this back to false, then publish a NEW Apps Script deployment version (an edited file that is
@@ -71,7 +85,7 @@ function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_
 // The frontend MIRROR default stays fail-safe FALSE on purpose (km-api-foundation.js): if the capability
 // transport cannot be read, the page must not offer a write it cannot confirm the server accepts. That is a
 // deliberate asymmetry, not a drifted copy of this value.
-var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;
+var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;
 function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; }
 
 // F1-7N-FC-1B-E3 §E.9 — 00_config.gs had no build stamp, so it was the ONE owner file whose sync state
@@ -79,4 +93,4 @@ function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GEN
 // with the flag OFF while the repository said ON, and nothing would have named the difference. It is stamped and
 // registered in 63_'s module manifest now, which makes a partial sync of the CONFIG a mixed_deployment fault
 // like any other.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3';
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R1';

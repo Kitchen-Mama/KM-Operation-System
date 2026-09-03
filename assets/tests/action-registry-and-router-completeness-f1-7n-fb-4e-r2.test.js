@@ -606,7 +606,12 @@ GS_OWNED_SINCE_R1['13_procurement_handlers.gs'] = 'FC-1A-R1 typed PO over-receip
 // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ to true (the flag's whole purpose) and gives the file a build stamp
 // so a half-synced config is a named mixed_deployment fault rather than a mystery. 63_ registers it in the
 // module manifest. An unexpected file still fails.
-GS_OWNED_SINCE_R1['00_config.gs'] = 'FC-1B-E3 the feature flags of record: Inventory AI Plan DB generation activated + CONFIG_BUILD_VERSION_ added';
+GS_OWNED_SINCE_R1['00_config.gs'] = 'FC-1B-E3 the feature flags of record: Inventory AI Plan DB generation flag + CONFIG_BUILD_VERSION_ (E3 activated it; E3-R1 reverted it to false while the canonical harvest is not ready)';
+// F1-7N-FC-1B-E3-R1 — the weekly AI Plan owner. It holds the harvest, the canonical readiness decision and
+// the K2 generation, and R1 changes two things in it: the harvest stops discarding its own per-site drop list,
+// and the HARVEST_NOT_READY refusal carries typed issues under `details` (the only sub-object the browser
+// transport preserves). It also gains its first build stamp. An unexpected file still fails.
+GS_OWNED_SINCE_R1['61_api_v1_weekly_ai_plan.gs'] = 'FC-1B-E3-R1 typed canonical-readiness refusal + the harvest diagnostics it used to discard + WAP_BUILD_VERSION_';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 // The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
 var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');

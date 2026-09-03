@@ -846,9 +846,22 @@ flow.settle().then(function () {
             'D23 ONE exit clears the run flag, the trigger and the busy area…');
           // ENUMERATED, not sniffed: every `return <expr>` in the two functions that own a run must be one of
           // the allowed forms. A new exit that reports nothing shows up here as an unrecognised return.
+          // RESTATED (F1-7N-FC-1B-E3-R1): the scan counted every `return` in the text, including the ones
+          // inside .filter()/.map() callbacks, so adding any callback to these functions produced a false
+          // failure. Nested function bodies are stripped first, innermost outward, so what remains is the
+          // function's OWN exits.
+          function ownBody(src) {
+            var s = String(src), prev = null;
+            while (s !== prev) {
+              prev = s;
+              s = s.replace(/function\s*\**\s*[A-Za-z_$][\w$]*?\s*\([^)]*\)\s*\{[^{}]*\}/g, ' FN ')
+                   .replace(/function\s*\([^)]*\)\s*\{[^{}]*\}/g, ' FN ');
+            }
+            return s;
+          }
           var exits = [];
           [ '_irAiPlanRun_', '_irRunInventoryAiPlanGeneration_' ].forEach(function (fn) {
-            var body = code(extractFn(PAGE, fn));
+            var body = ownBody(code(extractFn(PAGE, fn)));
             var re = /return\s+([A-Za-z_$][\w$]*)/g, m;
             while ((m = re.exec(body))) {
               // `return new Promise(...)` inside the generation chain CONTINUES the chain rather than
@@ -872,8 +885,21 @@ function nextSection() {
 section('§E — CONTROLLED ACTIVATION, AND THE FLAG KEPT AS THE ROLLBACK SWITCH');
 // ================================================================================================================
 // §J.19 — flag TRUE calls the allocator path
-eq(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/.exec(CFG)[1], 'true',
-  'E1  00_config.gs sets the flag TRUE (§E.4)');
+// RESTATED (F1-7N-FC-1B-E3-R1 §H): E3 set the flag TRUE and this pinned that value, so it asserted "the
+// feature is still released". E3-R1 REVERTS it, and not as a change of mind: a read-only census of the live
+// scope showed the canonical harvest produces ZERO receivers (every site dropped for an incomplete forecast
+// basis), so there is nothing for the allocator to rank. §H.4 forbids shipping flag=true alongside
+// HARVEST_NOT_READY.
+//
+// What replaces the pin is the INVARIANT, which no round can satisfy by editing one literal: the flag is one
+// boolean of record read through one accessor, and if it is TRUE the file must record the census verdict that
+// authorised it. That is falsifiable by exactly the mistake it guards against and cannot fail for a correct
+// tree in either state.
+var _flagVal = /var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/.exec(CFG)[1];
+ok(_flagVal === 'true' || _flagVal === 'false',
+  'E1  00_config.gs holds ONE boolean of record for the flag (currently ' + _flagVal + ')');
+ok(_flagVal === 'false' || /verdict\s+PROCEED|PROCEED\b/.test(CFG),
+  'E1a and it is only TRUE when the file records the activation census verdict that authorised it (§H.4)');
 ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; \}/.test(CFG),
   'E2  read through exactly ONE accessor (§E.1)');
 // §E.1 — every read point goes through that accessor
@@ -916,8 +942,13 @@ ok(/inventory_ai_plan_db_generation_enabled: \(typeof inventoryAiPlanDbGeneratio
   'E8  system.health reports the EFFECTIVE flag, read from the same accessor (§E.6)');
 ok(/config_build:/.test(HLTH) && /CONFIG_BUILD_VERSION_/.test(HLTH),
   'E8a and the config build, so the value can be attributed to a deployment');
-eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3',
-  'E9  00_config.gs carries a build stamp for the first time (§E.9)');
+// RESTATED (F1-7N-FC-1B-E3-R1): pinned the literal stamp E3 introduced, so any later round touching the
+// config broke it. DERIVED from the manifest instead — the property is that the config declares exactly
+// what 63_ expects of it, which is what makes a half-synced config a named mixed_deployment fault.
+var _cfgExpect = ((HLTH.match(/\{ file: '00_config\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
+ok(_cfgExpect !== '(none)', 'E9  00_config.gs has a manifest entry at all (it had none before E3)');
+eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], _cfgExpect,
+  'E9a and declares exactly the build its manifest entry expects (' + _cfgExpect + ')');
 ok(new RegExp("\\{ file: '00_config\\.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '" +
   /var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1] + "'").test(HLTH),
   'E9a and the module manifest expects exactly that, so a half-synced CONFIG is a mixed_deployment fault');
@@ -1172,9 +1203,13 @@ eq(PF.evaluate({ routes: [{ sku: SKU, route_kind: 'manual-composer', complete: f
 // ================================================================================================================
 section('§K — RELEASE IDENTITY');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1b-e3-aiplanactive-20260903', 'K1  the round\'s token is the newest ledger entry');
+// RESTATED (F1-7N-FC-1B-E3-R1): the FIFTH round in a row to pin its own token as "the current one". E3's
+// token is a FLOOR: it was minted, and the series has not moved behind it.
+ok(RO.tokenIndex('fc1b-e3-aiplanactive-20260903') !== -1, 'K1  E3 minted its own cache token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3-aiplanactive-20260903'),
+  'K1a and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 ok(RO.tokenIndex('fc1b-e3-aiplanactive-20260903') > RO.tokenIndex('fc1b-e2-aiplancomposer-20260903'),
-  'K1a strictly after E2\'s, which was published');
+  'K1b strictly after E2\'s, which was published');
 eq((INDEX.match(/\?v=fc1b-e2-aiplancomposer-20260903/g) || []).length, 0,
   'K2  zero production references remain on E2\'s token (§K.5)');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2a and nothing is left behind on any superseded token');
@@ -1299,9 +1334,15 @@ mut('N11 a double click produced two requests', function () {
   var m = swap(PAGE, '    if (_irAiPlanIsRunning_()) {', '    if (false) {');
   return !/if \(_irAiPlanIsRunning_\(\)\)/.test(code(extractFn(m, 'handleReplenAiPlan')));
 });
-// 12. the flag is still false
-mut('N12 the flag was left false', function () {
-  return /var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;/.test(CFG);
+// 12. RESTATED (F1-7N-FC-1B-E3-R1): this "caught" its mutation by observing that the flag was true, so it
+// was really an assertion that E3 had shipped the activation — and E3-R1 reverts it. The defect worth
+// catching is the one §H.4 names: a flag set TRUE with nothing recording the census verdict that
+// authorised it. The mutant is that state, and the guard is the E1a invariant above.
+mut('N12 the flag was set true with no recorded activation verdict', function () {
+  var m = CFG.replace(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = \w+;/, 'var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;')
+    .replace(/PROCEED/g, 'proceeded');
+  var val = /var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/.exec(m)[1];
+  return val === 'true' && !/verdict\s+PROCEED|PROCEED\b/.test(m);
 });
 // 13. an incomplete route materialized
 mut('N13 an incomplete route was materialized', function () {

@@ -65,7 +65,16 @@ eq(laneB.survivalNeedQty, 36, 'B amz_b survival = ceil(18×2) = 36');
 section('C fail-closed: KMAF not ready → refuse the whole batch (no partial universe)');
 var C = KMWHA.mapWeeklyHarvestToBatchRequest(harvest({ kmaf: { ready: false, issues: [{ kind: 'KMAF', reason: 'DEMAND_WEIGHT_UNRESOLVED' }], receiverFacts: [], planningFacts: [] } }));
 ok(C.ready === false && C.request === null, 'C KMAF not ready → ready:false, request null');
-eq(C.issues[0].reason, 'DEMAND_WEIGHT_UNRESOLVED', 'C surfaces the KMAF issue');
+// RESTATED (F1-7N-FC-1B-E3-R1): the legacy `{ kind, reason }` issue shape is REPLACED by the typed readiness
+// issue, because the old shape is what made the live defect possible — a caller could not tell
+// `issues: []` (KMAF refused and said why in `reason`, which this function discarded) from "nothing was wrong".
+// The invariant C protects — the KMAF issue is SURFACED and not swallowed — is unchanged and is now
+// stronger in two ways: the engine's own code is preserved VERBATIM as `engine_code`, and the readiness code
+// the operator is shown is derived from it rather than being a second hand-maintained vocabulary.
+eq(C.issues[0].engine_code, 'DEMAND_WEIGHT_UNRESOLVED', 'C surfaces the KMAF issue, engine code verbatim');
+eq(C.issues[0].code, 'SUGGESTED_QTY_UNRESOLVED', 'C  and translates it to the readiness code the UI states');
+eq(C.issues[0].kind, 'DATA', 'C  classified as DATA, never mixed with a transport fault');
+ok(C.issues.length > 0, 'C  and ready:false is never reported with an empty issue list');
 
 section('D site included by KMAF but with no horizon shortage → no lane (not an error)');
 var D = KMWHA.mapWeeklyHarvestToBatchRequest(harvest({ horizonsByDemandRef: { 'KM|US|amz_a|SKU1|DEST-A': { cumulativeGapByWindow: { D18: 50 } } } }));
@@ -111,7 +120,19 @@ if (kmafRes && kmafRes.ready && Array.isArray(kmafRes.receiverFacts) && kmafRes.
 
 section('G determinism + single-owner surface');
 eq(KMWHA.mapWeeklyHarvestToBatchRequest(harvest()), KMWHA.mapWeeklyHarvestToBatchRequest(harvest()), 'G identical harvest → identical request');
-eq(Object.keys(KMWHA).sort(), ['SURVIVAL_HORIZON_DAYS', '_version', 'mapWeeklyHarvestToBatchRequest', 'resolveWorkspaceLineDestination'], 'G bounded surface');
+// RESTATED (F1-7N-FC-1B-E3-R1): the surface grew by the READINESS VOCABULARY, and deliberately — the
+// server (61_) and the page both name these codes, and exporting them from the one module that decides
+// readiness is what stops each of them keeping a copy that drifts. The property G defends is that the surface
+// is BOUNDED and enumerated, not that it never grows; it is still enumerated exactly.
+eq(Object.keys(KMWHA).sort(),
+  ['ENGINE_TO_READINESS', 'ENGINE_TRANSPORT', 'READINESS_CODES', 'SURVIVAL_HORIZON_DAYS', '_version',
+   'fromEngineIssue', 'mapWeeklyHarvestToBatchRequest', 'readinessIssue', 'resolveWorkspaceLineDestination'],
+  'G bounded surface (readiness vocabulary included, still enumerated)');
+eq(Object.keys(KMWHA.READINESS_CODES).sort(),
+  ['CANONICAL_MAPPING_INCOMPLETE', 'DESTINATION_UNRESOLVED', 'FACTORY_SOURCE_UNRESOLVED',
+   'PLANNING_CYCLE_MISSING', 'REQUESTED_SCOPE_EMPTY', 'SKU_FACTS_MISSING', 'SOURCE_DATA_AS_OF_MISSING',
+   'SUGGESTED_QTY_UNRESOLVED'],
+  'G  and the readiness vocabulary is exactly the eight codes the refusal contract names');
 eq(KMWHA.SURVIVAL_HORIZON_DAYS, 18, 'G frozen survival horizon = 18');
 
 console.log('\n----------------------------------------');

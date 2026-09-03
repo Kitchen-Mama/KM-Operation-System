@@ -114,10 +114,45 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
       mode: mode, confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
       actor: weeklyAiPlanStr_(body.actor) || 'user', now: procurementTimestamp_(),
       sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
+      // §D — the harvest's own per-site drops, so the readiness result can name WHICH site and WHY
+      // instead of only that the universe came out empty.
+      errors: Array.isArray(h.errors) ? h.errors : [],
       factoryIdentityConfig: WEEKLY_AI_PLAN_FACTORY_IDENTITY_, warehousesById: h.warehousesById,
       kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku
     });
-    if (!mapped.ready) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('HARVEST_NOT_READY', 'canonical §7 facts not ready (fail closed)', { issues: mapped.issues })] });
+    // F1-7N-FC-1B-E3-R1 §D — the typed readiness answer, in the ONE place the browser can read it.
+    //
+    // Two separate defects were hiding behind this line. The first is that `mapped.issues` was EMPTY for the
+    // live shape (fixed at the mapper). The second is that `weeklyAiPlanErr_` puts every extra field at the
+    // error's TOP level, and _kmWeeklyCommand_ preserves only `code`, `message` and `details` — so even a
+    // full issues array would not have reached the page. It is nested under `details` now, and the message
+    // itself names the first blocking issue instead of restating the generic code.
+    if (!mapped.ready) {
+      var _rdIssues = Array.isArray(mapped.issues) ? mapped.issues : [];
+      var _rdFirst = _rdIssues.filter(function (i) { return i && i.blocking !== false; })[0] || _rdIssues[0] || null;
+      var _rdMsg = _rdFirst
+        ? ('canonical facts not ready: ' + _rdFirst.code + (_rdFirst.field ? ' (' + _rdFirst.field + ')' : '') +
+           (_rdFirst.actual ? ' — ' + _rdFirst.actual : ''))
+        : 'canonical §7 facts not ready (fail closed)';
+      return jsonResponse_({
+        success: false,
+        errors: [weeklyAiPlanErr_('HARVEST_NOT_READY', _rdMsg, {
+          details: {
+            stage: 'READINESS',
+            readiness_reason: mapped.reason || null,
+            issues: _rdIssues,
+            warnings: Array.isArray(mapped.warnings) ? mapped.warnings : [],
+            predicates: Array.isArray(mapped.predicates) ? mapped.predicates : [],
+            harvest: { ok: h.ok === true, site_count: h.site_count == null ? null : h.site_count,
+              receiver_count: h.receiver_count == null ? null : h.receiver_count,
+              source_data_as_of: weeklyAiPlanStr_(h.sourceDataAsOf) },
+            planning_cycle: planningCycle,
+            scope: { company: company, country: country, marketplace: weeklyAiPlanStr_(body.currentMarketplace) },
+            db_writes: 0
+          }
+        })]
+      });
+    }
 
     // ---- REAL persistence deps --------------------------------------------------------------------------------
     var deps = weeklyAiPlanPersistenceDeps_(ss);
@@ -131,6 +166,12 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 }
 
 // ================================================================================================================
+// F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the readiness decision and the generation, and it carried NO
+// build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
+// "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
+// observation. Stamped and registered in 63_'s manifest.
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R1';
+
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
 // ATOMIC Header+Lines write (handleUpsertShippingAllocationDraftAtomic_ — the SAME endpoint + K2 identity manual save
@@ -571,7 +612,12 @@ function weeklyAiPlanHarvest_(ss, scope) {
   // Enumerate the eligible (marketplace, sku, destination) universe + per-site horizons via the recommendation
   // workspace (per marketplace). Each WAREHOUSE line carries sku, siteSku, warehouseId, horizons[].
   var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
-  if (!sites.length) return { ok: true, kmaf: { ready: true, receiverFacts: [], planningFacts: [] }, horizonsByDemandRef: {}, poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById, sourceDataAsOf: weeklyAiPlanSourceAsOf_(sites) };
+  // F1-7N-FC-1B-E3-R1 §D — `errors` IS CARRIED OUT. Every non-fatal drop this function makes lands in
+  // that array (WORKSPACE_NOT_OK / WORKSPACE_THREW per marketplace, FORECAST_SHARE_INCOMPLETE per site) and both
+  // SUCCESS returns used to discard it. When every site was dropped, the consequence was exact and total: zero
+  // receivers → KMAF ready:false with issues:[] → mapper ready:false with issues:[] → a bare
+  // HARVEST_NOT_READY. The reason was known at THIS line and thrown away three lines later.
+  if (!sites.length) return { ok: true, errors: errors, site_count: 0, kmaf: { ready: true, receiverFacts: [], planningFacts: [] }, horizonsByDemandRef: {}, poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById, sourceDataAsOf: weeklyAiPlanSourceAsOf_(sites) };
 
   // Build ONE multi-site KMAF receiver set (FORECAST_DRIVEN; §7 forecastShareQty basis) so demandWeight normalizes
   // ONCE across the whole (company,country) universe. demandRef encodes (marketplace|sku|destination) for join-back.
@@ -596,7 +642,10 @@ function weeklyAiPlanHarvest_(ss, scope) {
   return {
     ok: true, kmaf: kmaf, horizonsByDemandRef: horizonsByDemandRef,
     poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById,
-    sourceDataAsOf: built.sourceDataAsOf
+    sourceDataAsOf: built.sourceDataAsOf,
+    // §D — the diagnostics this function collected. `errors` is the per-site drop list the mapper turns
+    // into typed readiness issues; the counts are what make "every site was dropped" readable as one number.
+    errors: errors, site_count: sites.length, receiver_count: (built.receivers || []).length
   };
 }
 
