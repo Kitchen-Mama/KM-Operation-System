@@ -829,6 +829,207 @@ function runAssertions() {
       eq(conflicted.writes, 0, 'H17c zero writes');
       eq(writerCalls.length, 0, 'H18 across every executed path the official writer was called zero times');
     })();
+
+    // ==========================================================================================================
+    section('§C (F1-7N-FC-1B-E3-R2-R3) — 495 ROWS: the writer is NOT atomic, so the RUNNER is what is safe');
+    // ==========================================================================================================
+    // AUDITED FROM THE PRODUCTION SOURCE. The live plan is 495 rows and the official writer creates them with
+    // ONE appendRow PER ROW in a plain loop: no LockService, no try/catch, no flush, and the response is built
+    // only after the last row. So it can partially succeed, and a run killed by the Apps Script execution limit
+    // returns NOTHING — not a partial answer. The runner has to be the thing that is safe.
+    var writerFn = code(extractFn(IMPORT04, 'handleImportFcRegularForecastBatch_'));
+    eq((writerFn.match(/appendRow/g) || []).length, 1,
+      'C1  §C.3 the official writer appends ONE ROW AT A TIME inside its loop');
+    eq(/LockService|getScriptLock/.test(writerFn), false,
+      'C1a §C.3 it takes no lock, so it is not serialised against any other writer');
+    eq(/try \{/.test(writerFn), false,
+      'C1b and has no try/catch: the first throw leaves every earlier row already written');
+    // The writer has EARLY error returns (missing headers, missing sheets) that sit before the loop, so the
+    // first `return jsonResponse_` is one of those. The claim is about the SUCCESS response, which is the one a
+    // killed execution never reaches.
+    ok(/var summary = \{ total: rows\.length[\s\S]*?return jsonResponse_\(\{ success: true/.test(writerFn),
+      'C1c §C.4 the SUCCESS response is assembled only after the loop — a killed execution reports nothing at all');
+    ok(writerFn.lastIndexOf('return jsonResponse_') > writerFn.lastIndexOf('appendRow'),
+      'C1d and it is the last statement, after every append');
+
+    // The runner's answer to all of that, read from its own source before it is executed below.
+    ok(/var TEMP_FCROLL_BATCH_SIZE_ = \d+;/.test(ROLL), 'C2  §C.11 the batch boundary is a FIXED COUNT');
+    ok(/TEMP_FCROLL_TIME_BUDGET_MS_/.test(R) && /stopped = 'TIME_BUDGET_REACHED'/.test(ROLL),
+      'C2a and the clock can only stop the run STARTING another batch');
+    ok(/o\.remaining_after = \(tail\.would_create \|\| \[\]\)\.length;/.test(ROLL),
+      'C2b §C.11 what is LEFT is re-read from the table, never derived from a cursor or from elapsed time');
+    ok(/function TEMP_FCROLL_runOneBatch_/.test(ROLL) && /TEMP_FCROLL_buildPlan_\(params\)/.test(code(extractFn(ROLL, 'TEMP_FCROLL_runOneBatch_'))),
+      'C3  §C.11 every batch RE-PLANS from a fresh read, so its payload is computed moments before it is sent');
+    ok(/BATCH_ACCOUNTING_MISMATCH/.test(ROLL),
+      'C4  §C.7 a response that does not account for every row it was given is refused');
+    ok(/outcome_unknown = true/.test(R) && /out\.readback = TEMP_FCROLL_verify_\(slice\)/.test(ROLL),
+      'C5  §C.4 an unknown outcome is settled by READING the keys back, never by assuming either way');
+    ok(!/handleImportFcRegularForecastBatch_/.test(ops(ROLL).replace(/handleImportFcRegularForecastBatch_ !== .function./, '')) === false,
+      'C6  §C.11 and it still delegates: no second production writer was created');
+
+    // EXECUTED, against a MUTABLE sheet with the real official writer loaded. `appendRow` really appends, so a
+    // kill mid-loop leaves exactly the rows it had written — which is the only way to test this honestly.
+    (function fourNinetyFive() {
+      var MONTHS12 = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      var FCH = ['forecast_id','year','company','country','marketplace','sku','category','series']
+        .concat(MONTHS12).concat(['total_fc','fc_share','forecast_status','source','created_at','updated_at']);
+      function build(n) {
+        var mps = [['marketplace_sku_id','company','country','marketplace','sku','marketplace_sku_status']];
+        var fcr = [FCH.slice()], sk = [['sku','category','series']];
+        for (var i = 0; i < n; i++) {
+          var sku = 'CO' + (1000 + i) + '-R';
+          mps.push(['MS-' + i, 'ResUS', 'US', 'Amazon', sku, 'active']);
+          sk.push([sku, 'cat', 'ser']);
+          var r = new Array(FCH.length).fill('');
+          r[0] = 'FC-2026-' + i; r[1] = 2026; r[2] = 'ResUS'; r[3] = 'US'; r[4] = 'Amazon'; r[5] = sku;
+          r[FCH.indexOf('oct')] = 100; r[FCH.indexOf('nov')] = 100; r[FCH.indexOf('dec')] = 100;
+          fcr.push(r);
+        }
+        return { mps: mps, fc: fcr, sk: sk };
+      }
+      function liveSheet(rows, kill) {
+        return { _rows: rows,
+          getDataRange: function () { var self = this; return { getValues: function () { return self._rows.map(function (r) { return r.slice(); }); } }; },
+          getLastRow: function () { return this._rows.length; },
+          getLastColumn: function () { return (this._rows[0] || []).length; },
+          appendRow: function (r) {
+            if (kill && kill.remaining !== undefined) {
+              if (kill.remaining <= 0) throw new Error('Exceeded maximum execution time');
+              kill.remaining--;
+            }
+            this._rows.push(r.slice()); if (kill) kill.appends = (kill.appends || 0) + 1;
+          },
+          getRange: function (row, col) { var self = this;
+            return { setValue: function (v) { self._rows[row - 1][col - 1] = v; if (kill) kill.sets = (kill.sets || 0) + 1; },
+              getValues: function () { return []; } }; } };
+      }
+      function ctxFor(data, kill) {
+        var SH = { marketplace_skus: liveSheet(data.mps, null), fc_regular_forecast: liveSheet(data.fc, kill),
+          sku_details: liveSheet(data.sk, null) };
+        var uid = 0;
+        var sbx = { console: { log: function () {} }, Date: Date, Math: Math, JSON: JSON, RegExp: RegExp,
+          String: String, Number: Number, Boolean: Boolean, Array: Array, Object: Object, Error: Error,
+          isFinite: isFinite, isNaN: isNaN, parseInt: parseInt, parseFloat: parseFloat,
+          Logger: { log: function () {} },
+          Utilities: { getUuid: function () { uid++; return ('0000000' + uid).slice(-8) + '-z'; }, formatDate: function () { return '2026-09-04'; } },
+          Session: { getScriptTimeZone: function () { return 'Asia/Taipei'; } },
+          SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSheetByName: function (n) { return SH[n] || null; } }; } },
+          ContentService: { createTextOutput: function (t) { return { setMimeType: function () { return this; }, getContent: function () { return t; } }; },
+            MimeType: { JSON: 'application/json' } },
+          KMPCX: KMPCX };
+        sbx.global = sbx;
+        var cc = vm.createContext(sbx);
+        vm.runInContext('function jsonResponse_(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }', cc);
+        vm.runInContext(IMPORT04, cc, { filename: '04.gs' });
+        vm.runInContext(CENSUS, cc, { filename: 'census.gs' });
+        vm.runInContext(ROLL, cc, { filename: 'roll.gs' });
+        return cc;
+      }
+      function dups(data) {
+        var k = {}, n = 0;
+        for (var i = 1; i < data.fc.length; i++) {
+          var r = data.fc[i], key = [r[1], r[2], r[3], r[4], r[5]].join('|');
+          k[key] = (k[key] || 0) + 1;
+        }
+        Object.keys(k).forEach(function (x) { if (k[x] > 1) n++; });
+        return n;
+      }
+      function count(data, year) { var n = 0; for (var i = 1; i < data.fc.length; i++) if (String(data.fc[i][1]) === year) n++; return n; }
+      var CY = '{ planningCycle: "RECO-2026-09" }';
+
+      // --- the DRY RUN at the LIVE scale, and it writes nothing --------------------------------------------
+      var dA = build(495), kA = { appends: 0, sets: 0 };
+      var cA = ctxFor(dA, kA);
+      var planA = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cA);
+      eq(planA.would_create.length, 495, 'C7  EXECUTED at the live scale: would_create = 495');
+      eq(planA.conflicts.length, 0, 'C7a conflicts = 0');
+      eq(planA.writes, 0, 'C7b writes = 0');
+      eq(kA.appends, 0, 'C7c and the sheet received ZERO appendRow calls');
+      eq(count(dA, '2027'), 0, 'C7d with no 2027 row created');
+      var refusedA = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(planA.commit_token) + ', ' + CY + ')', cA);
+      eq(refusedA.blocker, 'DRY_RUN_MODE_ACTIVE', 'C8  COMMIT with the CORRECT token is still refused by the shipped flag');
+      eq(kA.appends, 0, 'C8a zero appendRow');
+
+      // --- THE CRITICAL CASE: killed mid-run, then replayed ------------------------------------------------
+      var dB = build(495), kB = { appends: 0, sets: 0, remaining: 137 };
+      var cB = ctxFor(dB, kB);
+      vm.runInContext('TEMP_FCROLL_DRY_RUN = false;', cB);     // sandbox only; the FILE still ships true
+      var pB = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cB);
+      var rB = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pB.commit_token) + ', ' + CY + ')', cB);
+      eq(rB.verdict, 'STOP', 'C9  §C.4 killed mid-run: the runner STOPS');
+      eq(rB.stopped_because, 'OFFICIAL_WRITER_THREW', 'C9a naming the writer, not guessing a cause');
+      eq(kB.appends, 137, 'C9b the sheet really did receive 137 rows before the kill');
+      eq(rB.created, 125, 'C9c 125 are ACCOUNTED FOR as created (five whole batches)');
+      var lastB = rB.batches[rB.batches.length - 1];
+      eq(lastB.outcome_unknown, true, 'C9d the dying batch is marked OUTCOME UNKNOWN, never "failed"');
+      eq(lastB.readback.verified + lastB.readback.missing.length, 25,
+        'C9e and it is settled by READING those 25 keys back: ' + lastB.readback.verified + ' present, ' +
+        lastB.readback.missing.length + ' absent');
+      eq(rB.created + rB.errored + rB.skipped_in_batch + rB.unknown + rB.remaining_after, rB.planned_total,
+        'C10 §C.7 created + errored + skipped + unknown + not-attempted = 495, exactly');
+      eq(dups(dB), 0, 'C10a and no business key is duplicated');
+
+      // --- REPLAY is the recovery, and nothing is remembered between runs ----------------------------------
+      kB.remaining = undefined;
+      var pB2 = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cB);
+      eq(pB2.would_create.length, 495 - 137,
+        'C11 §C.4 the REPLAY re-derives exactly the remainder from the table (' + (495 - 137) + ')');
+      var rB2 = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pB2.commit_token) + ', ' + CY + ')', cB);
+      eq(rB2.verdict, 'COMMITTED_AND_VERIFIED', 'C11a and completes');
+      eq(rB2.updated, 0, 'C11b with ZERO updates — nothing already present was resent to the upsert');
+      eq(kB.appends, 495, 'C11c total appends across BOTH runs is exactly 495 — no row written twice');
+      eq(count(dB, '2027'), 495, 'C11d 495 rows for 2027');
+      eq(dups(dB), 0, 'C11e zero duplicate business keys');
+      eq(rB2.readback.ok, true, 'C11f and the per-key readback passes');
+      eq(kB.sets || 0, 0, 'C12 §C across the whole thing ZERO setValue calls — no existing month was overwritten');
+      eq(count(dB, '2026'), 495, 'C12a and all 495 pre-existing 2026 rows are still there');
+
+      // --- a third run writes nothing ---------------------------------------------------------------------
+      var before = kB.appends;
+      var pB3 = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cB);
+      var rB3 = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pB3.commit_token) + ', ' + CY + ')', cB);
+      eq(pB3.would_create.length, 0, 'C13 §C replay: a third run plans nothing');
+      eq(rB3.verdict, 'NOTHING_TO_DO', 'C13a and commits nothing');
+      eq(kB.appends - before, 0, 'C13b zero additional appendRow calls');
+
+      // --- an `updated` reply is a hard stop on the FIRST batch --------------------------------------------
+      var dC = build(60), kC = { appends: 0 };
+      var cC = ctxFor(dC, kC);
+      vm.runInContext('TEMP_FCROLL_DRY_RUN = false;', cC);
+      var pC = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cC);
+      vm.runInContext('handleImportFcRegularForecastBatch_ = function (b) { return ContentService.createTextOutput(' +
+        'JSON.stringify({ success: true, data: { results: (b.rows||[]).map(function (r) { return { status: "updated", ' +
+        'year: r.year, company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku }; }) } })' +
+        ').setMimeType(ContentService.MimeType.JSON); };', cC);
+      var rC = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pC.commit_token) + ', ' + CY + ')', cC);
+      eq(rC.verdict, 'STOP', 'C14 §C.8 a writer reporting `updated` is a HARD STOP');
+      eq(rC.batches.length, 1, 'C14a on the FIRST batch, not after all of them');
+      eq(rC.stopped_because, 'UNEXPECTED_UPDATE_EXISTING_ROW_MAY_HAVE_BEEN_OVERWRITTEN', 'C14b named as possible data loss');
+
+      // --- a response that does not account for every row ---------------------------------------------------
+      var dD = build(60), kD = { appends: 0 };
+      var cD = ctxFor(dD, kD);
+      vm.runInContext('TEMP_FCROLL_DRY_RUN = false;', cD);
+      var pD = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cD);
+      vm.runInContext('handleImportFcRegularForecastBatch_ = function (b) { return ContentService.createTextOutput(' +
+        'JSON.stringify({ success: true, data: { results: (b.rows||[]).slice(0,3).map(function (r) { return { status: "created", ' +
+        'year: r.year, company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku }; }) } })' +
+        ').setMimeType(ContentService.MimeType.JSON); };', cD);
+      var rD = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pD.commit_token) + ', ' + CY + ')', cD);
+      eq(rD.batches[0].blocker, 'BATCH_ACCOUNTING_MISMATCH',
+        'C15 §C.7 a reply accounting for 3 of 25 rows is refused rather than believed');
+      eq(rD.batches[0].outcome_unknown, true, 'C15a and treated as an UNKNOWN outcome, settled by readback');
+
+      // --- a conflict still stops before the first write ---------------------------------------------------
+      var dE = build(20), kE = { appends: 0 };
+      var dupRow = dE.fc[1].slice(); dupRow[0] = 'FC-DUP'; dupRow[FCH.indexOf('oct')] = 999;
+      dE.fc.push(dupRow);
+      var cE = ctxFor(dE, kE);
+      vm.runInContext('TEMP_FCROLL_DRY_RUN = false;', cE);
+      var rE = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW("whatever", ' + CY + ')', cE);
+      eq(rE.blocker, 'CONFLICTING_FORECAST_ROWS_PRESENT', 'C16 §C.9 a conflict STOPS before the first write');
+      eq(kE.appends, 0, 'C16a with zero appendRow calls');
+    })();
   })();
 
   // ==============================================================================================================
@@ -972,9 +1173,12 @@ function runAssertions() {
     return /var TEMP_FCROLL_DRY_RUN = false;/.test(m);
   });
   // 16. an `updated` result stops being a hard failure — the data-loss shape
+  // RESTATED (F1-7N-FC-1B-E3-R3): the guard moved into the per-BATCH function when the runner was batched,
+  // so it now reads `out.updated`. The defect it catches is the same and is now caught per batch, which is
+  // strictly better: the run stops on the FIRST batch that reports an update rather than after all 495.
   mut('N16 an unexpected UPDATE is tolerated instead of stopping', function () {
-    var m = swap(ROLL, 'if (o.updated > 0) {', 'if (false) {');
-    return !/if \(o\.updated > 0\) \{/.test(m);
+    var m = swap(ROLL, 'if (out.updated > 0) {', 'if (false) {');
+    return !/if \(out\.updated > 0\) \{/.test(m);
   });
   // 17. the migration starts creating rows for a blank month
   mut('N17 the migration writes over a blank month in an existing row', function () {
