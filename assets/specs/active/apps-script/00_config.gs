@@ -88,6 +88,54 @@ function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_
 var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;
 function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; }
 
+// F1-7N-FC-1B-E3-R4-A2-R1 §9 — THE FLAG IS TOO BLUNT TO TURN ON.
+//
+// `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` is global. Flipping it to true does not enable a controlled
+// single-scope trial; it enables materialization for EVERY company, country, marketplace and SKU at once, and
+// the first controlled run and a 495-scope production write become the same gesture. That is not a risk worth
+// taking to test one SKU.
+//
+// So activation is TWO conditions, not one: the flag must be true AND the scope must be named here. The
+// allowlist is SERVER-OWNED config in the same file as the flag, which means a browser cannot widen it, a
+// request payload cannot widen it, and widening it is a deployment with a diff. ALL_SITES is unreachable by
+// construction: the entries are exact four-part scopes and there is no wildcard.
+//
+// An empty allowlist means NOTHING is enabled, even with the flag true. Fail-closed is the only safe default
+// for a list whose purpose is to be narrow.
+var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = [
+  { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }
+];
+
+// Exact, case-sensitive, four-part match. No wildcard, no prefix, no "ALL", no empty-means-any.
+function inventoryAiPlanScopeEnabled_(company, country, marketplace, sku) {
+  var c = String(company == null ? '' : company).trim();
+  var k = String(country == null ? '' : country).trim();
+  var m = String(marketplace == null ? '' : marketplace).trim();
+  var s = String(sku == null ? '' : sku).trim();
+  if (!c || !k || !m || !s) return false;                 // an incomplete scope is never enabled
+  if (/^all(_sites)?$/i.test(m) || /^all(_sites)?$/i.test(s)) return false;   // ALL_SITES can never be enabled
+  var list = INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ || [];
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i] || {};
+    if (String(e.company) === c && String(e.country) === k
+      && String(e.marketplace) === m && String(e.sku) === s) return true;
+  }
+  return false;
+}
+
+// The allowlist as reported by health/diagnostics: the SCOPES, which are business identifiers and not secrets,
+// plus the count. No spreadsheet id, no url, no key.
+function inventoryAiPlanActivationAllowlist_() {
+  var out = [];
+  var list = INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ || [];
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i] || {};
+    out.push({ company: String(e.company || ''), country: String(e.country || ''),
+      marketplace: String(e.marketplace || ''), sku: String(e.sku || '') });
+  }
+  return out;
+}
+
 // F1-7N-FC-1B-E3 §E.9 — 00_config.gs had no build stamp, so it was the ONE owner file whose sync state
 // the deployment manifest could not report: a project still running the previous copy of this file would answer
 // with the flag OFF while the repository said ON, and nothing would have named the difference. It is stamped and

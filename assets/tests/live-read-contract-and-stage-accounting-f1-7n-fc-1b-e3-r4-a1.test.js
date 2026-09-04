@@ -318,9 +318,14 @@ ok(RO.BUILD_STAMP_RE.test(sir), 'A2  the shared stamp validator accepts an A-ser
 // ================================================================================================================
 section('§K — release identity');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1be3r4a1-livecontract-20260904', 'K1  this round mints a NEW application token');
-ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-e3r4-scopedread-20260904'),
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1): the TENTH consecutive round of pinning one's own token as "the current
+// one", and the second I have written myself after correcting the previous nine. A floor states the durable
+// claim: R4-A1 minted its token, it came after R4's, and the series has never moved behind it.
+ok(RO.tokenIndex('fc1be3r4a1-livecontract-20260904') !== -1, 'K1  this round minted its own application token');
+ok(RO.tokenIndex('fc1be3r4a1-livecontract-20260904') > RO.tokenIndex('fc1b-e3r4-scopedread-20260904'),
   'K1a strictly after R4\'s, which was PUBLISHED (origin/main carries 3b44cbd)');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a1-livecontract-20260904'),
+  'K1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on a superseded token');
 var IX = RO.parseIndexTokens(INDEX);
 eq(IX['assets/js/api/km-api-foundation.js'], RO.currentAppToken(),

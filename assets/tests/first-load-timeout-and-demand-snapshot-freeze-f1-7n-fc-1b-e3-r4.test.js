@@ -80,10 +80,27 @@ var INDEX = read('index.html');
 var NL = PAGE.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
 
 // ---- a sandbox carrying 60_ (pure parts) --------------------------------------------------------------------
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1): THE CLOCK IS NOW FROZEN, and it had to be.
+//
+// R4's snapshot gate compared a row's calculation_date to today, so these fixtures needed no clock: the answer
+// was the same at every hour. A2-R1 replaced that with a SCHEDULE-aware verdict — before the daily 13:30
+// materialization the previous complete run is current; after its completion window it is overdue — which
+// means the same fixture legitimately gives different answers at different times of day. A suite reading the
+// wall clock would then pass in the morning and fail in the evening, which is worse than either.
+//
+// So the instant is pinned at the live evidence: 2026-09-04 10:41 Asia/Taipei, before the run is due.
+var FROZEN_NOW = Date.UTC(2026, 8, 4, 10, 41) - 480 * 60000;
 function gsCtx(files) {
-  var sb = { console: console, Date: Date, Math: Math, JSON: JSON, String: String, Number: Number, Object: Object,
+  var FrozenDate = function (v) {
+    return v === undefined ? new (Function.prototype.bind.call(Date, null, FROZEN_NOW))() : new Date(v);
+  };
+  FrozenDate.now = function () { return FROZEN_NOW; };
+  FrozenDate.UTC = Date.UTC;
+  FrozenDate.prototype = Date.prototype;
+  var sb = { console: console, Date: FrozenDate, Math: Math, JSON: JSON, String: String, Number: Number, Object: Object,
     Array: Array, isNaN: isNaN, isFinite: isFinite, parseFloat: parseFloat, parseInt: parseInt, Error: Error,
-    RegExp: RegExp, Boolean: Boolean, TypeError: TypeError };
+    RegExp: RegExp, Boolean: Boolean, TypeError: TypeError,
+    PropertiesService: { getScriptProperties: function () { return { getProperty: function () { return null; } }; } } };
   sb.global = sb;
   var c = vm.createContext(sb);
   files.forEach(function (f) {
@@ -93,7 +110,8 @@ function gsCtx(files) {
   return c;
 }
 var C60 = gsCtx(['60_api_v1_inventory_replenishment_workspace.gs']);
-var C61 = gsCtx(['90_generated_supply_planning_bundle.gs', '61_api_v1_weekly_ai_plan.gs']);
+var C61 = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs',
+  '43_api_v1_gap_materialization.gs', '61_api_v1_weekly_ai_plan.gs']);
 
 // ================================================================================================================
 section('§C — THE ROOT CAUSE, MEASURED. The read has no scope, and never had one.');
@@ -376,7 +394,9 @@ vm.runInContext('var gapReadObjects_ = function (ss, name) { return (ss.__rows &
 var GH = ['company', 'country', 'marketplace', 'sku', 'calculation_status', 'calculation_date',
   'd18_gap_qty', 'd18_suggested_qty', 'd30_gap_qty', 'd30_suggested_qty', 'd45_gap_qty', 'd45_suggested_qty',
   'd90_gap_qty', 'd90_suggested_qty', 'note', 'calculated_at', 'updated_at'];
-var CALC = '2026-09-01';
+// The last COMPLETE run before the frozen instant. At 10:41 today's 13:30 materialization has not started,
+// so this is the current snapshot — which is the whole point of A2-R1.
+var CALC = '2026-09-03';
 var ESCOPE = { company: 'ResUS', country: 'US', planningCycle: 'RECO-2026-09' };
 function grow(over) {
   return Object.assign({ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R',
@@ -415,11 +435,31 @@ eq(accept([grow()], null, false).read, 'CANONICAL_DEMAND_TABLE_MISSING',
 eq(accept([], GH.filter(function (h) { return h !== 'd90_suggested_qty'; })).read,
   'CANONICAL_DEMAND_HEADER_MISSING:d90_suggested_qty', 'E2a a missing required header blocks, and names the column');
 eq(accept([grow({ sku: 'OTHER' })]).code, 'CANONICAL_DEMAND_ROW_MISSING', 'E3  no row for this site blocks');
-eq(accept([grow({ calculation_status: 'BLOCKED' })]).code, 'CANONICAL_DEMAND_NOT_READY', 'E4  a BLOCKED calculation blocks');
-eq(accept([grow({ calculation_status: '' })]).code, 'CANONICAL_DEMAND_NOT_READY', 'E4a so does a blank status');
-eq(accept([grow({ calculation_date: '2026-08-01' })]).code, 'CANONICAL_DEMAND_STALE',
-  'E5  a snapshot computed for ANOTHER planning date is STALE, not usable');
-eq(accept([grow({ calculation_date: '' })]).code, 'CANONICAL_DEMAND_LINEAGE_MISSING',
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1): the DECISIONS all still happen; three of them have moved UP a level,
+// and one of them was wrong.
+//
+// A date whose only row is BLOCKED is not "a site to refuse", it is not a complete snapshot at all, so the
+// verdict is now reached before any single site is considered. Same for a row with no calculation_date: an
+// unreadable lineage is a property of the run, not of one row.
+//
+// E5 is the one that was WRONG. It asserted that a snapshot whose date differs from TODAY is STALE, and that
+// rule declared the entire database stale every morning before the 13:30 materialization — at 10:41 on
+// 2026-09-04 it refused a complete 2026-09-03 snapshot, the newest thing that had ever existed.
+// CANONICAL_DEMAND_STALE no longer exists. What replaces it is a schedule-aware verdict, and the case E5 was
+// really reaching for — a snapshot from ANOTHER PLANNING CYCLE — still blocks, as LINEAGE_MISMATCH.
+eq(accept([grow({ calculation_status: 'BLOCKED' })]).read, 'NO_COMPLETE_SNAPSHOT',
+  'E4  a snapshot whose only row is BLOCKED is not a complete snapshot');
+// A BLANK status is not the same observation as an explicit BLOCKED one: it may simply mean the column was
+// never populated, so it is not read as "the run produced nothing". The per-site gate refuses it, by itself.
+eq(accept([grow({ calculation_status: '' })]).code, 'CANONICAL_DEMAND_NOT_READY',
+  'E4a a blank status is refused at the SITE, not treated as an incomplete run');
+// A COMPLETE date with ONE blocked site still refuses that site, individually.
+eq(accept([grow(), grow({ sku: 'CO1150-R', calculation_status: 'BLOCKED' })],
+  null, true, null, { marketplace: 'Amazon', sku: 'CO1150-R', cumulativeGapByWindow: { D90: 1 } }).code,
+  'CANONICAL_DEMAND_NOT_READY', 'E4b and inside a complete run, a BLOCKED SITE is still refused on its own');
+eq(accept([grow({ calculation_date: '2026-08-01' })]).read, 'LINEAGE_MISMATCH',
+  'E5  a snapshot from another PLANNING CYCLE blocks (this is what the old STALE check was reaching for)');
+eq(accept([grow({ calculation_date: '' })]).read, 'LINEAGE_MISMATCH',
   'E5a a row with no lineage at all blocks — provenance is not optional');
 eq(accept([grow(), grow({ d90_suggested_qty: 777 })]).code, 'CANONICAL_DEMAND_DUPLICATE_ROWS',
   'E6  two rows for one site is a CONFLICT, never last-one-wins');
@@ -646,26 +686,38 @@ Promise.all(IMATRIX).then(function () {
     return /_site\.cumulativeGapByWindow = _acc\.suggestedByWindow;/.test(G61)
       && !/_acc\.suggestedByWindow;/.test(m.split('_site.liveGapByWindow')[1] || '');
   });
-  mut('N10 a NOT-READY calculation is accepted as demand', function () {
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1). N10's per-site READY check is still load-bearing INSIDE a complete
+  // run, so the mutation now targets it there. N11 mutated the today-comparison, which no longer exists — the
+  // defect it was guarding (a snapshot from the wrong run being adopted) is now guarded by the freshness
+  // authority, and that is where the mutation goes.
+  mut('N10 a NOT-READY site is accepted as demand inside an otherwise complete run', function () {
     var m = swap(G61, "if (rec.calculation_status !== 'READY') {", "if (false) {");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     vm.runInContext('var gapReadObjects_ = function (ss, name) { return (ss.__rows && ss.__rows[name]) || []; };', c);
-    var snap = vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(gss([grow({ calculation_status: 'BLOCKED' })]), ESCOPE, CALC);
-    return vm.runInContext('weeklyAiPlanAcceptCanonicalDemand_', c)(snap, ESITE, ESCOPE, CALC, null).ok === true;
+    var snap = vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(
+      gss([grow(), grow({ sku: 'CO1150-R', calculation_status: 'BLOCKED' })]), ESCOPE, CALC);
+    if (!snap.ok) return false;
+    return vm.runInContext('weeklyAiPlanAcceptCanonicalDemand_', c)(snap,
+      { marketplace: 'Amazon', sku: 'CO1150-R', cumulativeGapByWindow: { D90: 1 } }, ESCOPE, CALC, null).ok === true;
   });
-  mut('N11 a STALE snapshot is accepted', function () {
-    var m = swap(G61, 'if (calcDate && rec.calculation_date && rec.calculation_date !== calcDate) {', 'if (false) {');
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+  mut('N11 a snapshot from the WRONG RUN is adopted (the freshness authority bypassed)', function () {
+    // My first version left the NEXT line (`out.acceptedDate = fresh.acceptedDate`) in place, which promptly
+    // overwrote the mutant's value with null — so the mutant was neutered by code it had not touched. Both
+    // lines are the guard, so both are mutated: this is what "the freshness verdict is ignored" looks like.
+    var m = swap(G61, '  if (!fresh.ok) { out.reason = fresh.state; return out; }', '  ');
+    m = swap(m, '  out.acceptedDate = fresh.acceptedDate;',
+      '  out.acceptedDate = out.distinctDates[out.distinctDates.length - 1];');
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     vm.runInContext('var gapReadObjects_ = function (ss, name) { return (ss.__rows && ss.__rows[name]) || []; };', c);
     var snap = vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(gss([grow({ calculation_date: '2026-08-01' })]), ESCOPE, CALC);
-    return vm.runInContext('weeklyAiPlanAcceptCanonicalDemand_', c)(snap, ESITE, ESCOPE, CALC, null).ok === true;
+    return snap.acceptedDate === '2026-08-01';
   });
   mut('N12 a client/server quantity mismatch is silently resolved in the client\'s favour', function () {
     var m = swap(G61, "return { ok: false, code: 'EXPECTED_DEMAND_CONFLICT', key: key, window: w2, expected: e, canonical: out[w2] };",
       "out[w2] = e;");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     vm.runInContext('var gapReadObjects_ = function (ss, name) { return (ss.__rows && ss.__rows[name]) || []; };', c);
     var snap = vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(gss([grow()]), ESCOPE, CALC);
@@ -675,7 +727,7 @@ Promise.all(IMATRIX).then(function () {
   });
   mut('N13 a duplicate snapshot row becomes last-one-wins', function () {
     var m = swap(G61, "if (rec.duplicate) return { ok: false, code: 'CANONICAL_DEMAND_DUPLICATE_ROWS', key: key };", "");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     vm.runInContext('var gapReadObjects_ = function (ss, name) { return (ss.__rows && ss.__rows[name]) || []; };', c);
     var snap = vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(gss([grow(), grow({ d90_suggested_qty: 777 })]), ESCOPE, CALC);
@@ -683,7 +735,7 @@ Promise.all(IMATRIX).then(function () {
   });
   mut('N14 positive canonical demand is reported as a no-demand success', function () {
     var m = swap(G61, "if (out.positiveGapRefs.length) { out.reason = 'POSITIVE_CANONICAL_DEMAND_WITH_UNRESOLVED_WEIGHT'; return out; }", "");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     var h = hv({ horizonsByDemandRef: { 'Amazon|CO1100-R|MKT-AMZ-US': { cumulativeGapByWindow: { D90: 520 } },
       'Walmart|CO1100-R|MKT-WMT-US': { cumulativeGapByWindow: { D90: 0 } } } });
@@ -697,21 +749,21 @@ Promise.all(IMATRIX).then(function () {
   // the only places where an UNRESOLVED or POSITIVE basis is distinguished from a resolved zero.
   mut('N15 an UNRESOLVED basis is accepted as a resolved zero (unknown becomes no-demand)', function () {
     var m = swap(G61, "if (typeof b !== 'number' || !isFinite(b) || b < 0) { out.reason = 'BASIS_UNRESOLVED'; return out; }", "");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     var h = hv({ builtReceivers: [rcv({ forecastBasis: { forecastShareQty: null } }), rcv()] });
     return vm.runInContext('weeklyAiPlanNoDemandVerdict_', c)(h, mapOf(h)).noDemand === true;
   });
   mut('N16 the zero-total check is dropped, so a group with POSITIVE demand reports no-demand', function () {
     var m = swap(G61, "if (out.basisTotal !== 0) { out.reason = 'BASIS_TOTAL_NONZERO'; return out; }", "");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     var h = hv({ builtReceivers: [rcv({ forecastBasis: { forecastShareQty: 520 } }), rcv()] });
     return vm.runInContext('weeklyAiPlanNoDemandVerdict_', c)(h, mapOf(h)).noDemand === true;
   });
   mut('N17 a MISSING gap table reads as an empty snapshot instead of blocking', function () {
     var m = swap(G61, "if (!sh) { out.reason = 'CANONICAL_DEMAND_TABLE_MISSING'; return out; }", "if (!sh) { out.ok = true; return out; }");
-    var c = gsCtx(['90_generated_supply_planning_bundle.gs']);
+    var c = gsCtx(['90_generated_supply_planning_bundle.gs', '00_config.gs', '45_api_v1_automation_schedule.gs', '43_api_v1_gap_materialization.gs']);
     vm.runInContext(m, c, { filename: '61m' });
     vm.runInContext('var gapReadObjects_ = function (ss, name) { return []; };', c);
     return vm.runInContext('weeklyAiPlanCanonicalDemand_', c)(gss([], null, false), ESCOPE, CALC).ok === true;

@@ -64,7 +64,7 @@
  *   stored for the scope · would_create route count · and an activation verdict.
  */
 
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A1';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -686,15 +686,35 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
       ? (inventoryAiPlanDbGenerationEnabled_() === true) : null;
   } catch (e2) { flagEffective = null; }
 
+  // F1-7N-FC-1B-E3-R4-A2-R1 §5 — THE SCHEDULE IS PART OF THE HEADLINE, because it is what decides
+  // whether an older snapshot is CURRENT or STALE, and the previous run of this census could not say.
+  var sched = null, jobState = null, businessNow = null;
+  try { sched = (typeof weeklyAiPlanGapSchedule_ === 'function') ? weeklyAiPlanGapSchedule_() : null; } catch (eS) { sched = null; }
+  try { jobState = (typeof weeklyAiPlanGapJobState_ === 'function') ? weeklyAiPlanGapJobState_() : null; } catch (eJ) { jobState = null; }
+  try {
+    if (typeof KMSNF !== 'undefined' && KMSNF && typeof KMSNF.businessNow === 'function'
+      && typeof GAP_CALC_UTC_OFFSET_MIN_ !== 'undefined' && typeof gapCalcNowMs_ === 'function') {
+      businessNow = KMSNF.businessNow(gapCalcNowMs_(), GAP_CALC_UTC_OFFSET_MIN_);
+    }
+  } catch (eB) { businessNow = null; }
+
   CENSUS_log_('scope', S);
+  CENSUS_log_('server_business_time', businessNow ? (businessNow.ymd + ' ' + businessNow.hhmm + ' Asia/Taipei') : null);
+  CENSUS_log_('gap_schedule', sched);
+  CENSUS_log_('gap_job_state', jobState);
   CENSUS_log_('planning_cycle', planningCycle);
   CENSUS_log_('read_only', true);
   CENSUS_log_('flag_effective', flagEffective);
+  CENSUS_log_('activation_allowlist', (typeof inventoryAiPlanActivationAllowlist_ === 'function')
+    ? inventoryAiPlanActivationAllowlist_() : null);
+  CENSUS_log_('scope_in_allowlist', (typeof inventoryAiPlanScopeEnabled_ === 'function')
+    ? inventoryAiPlanScopeEnabled_(S.company, S.country, S.marketplace, S.sku) : null);
   CENSUS_log_('db_writes', 0);
   CENSUS_log_('writer_constructed', false);
   CENSUS_log_('census_build', TEMP_E3_CENSUS_BUILD_);
   CENSUS_log_('deployment_build', (typeof SYS_BUILD_VERSION_ !== 'undefined') ? SYS_BUILD_VERSION_ : null);
   CENSUS_log_('workspace_build', (typeof WAP_BUILD_VERSION_ !== 'undefined') ? WAP_BUILD_VERSION_ : null);
+  CENSUS_log_('freshness_authority', (typeof KMSNF !== 'undefined' && KMSNF) ? KMSNF._version : 'MISSING');
 
   // STOP BEFORE HARVEST if the scope is not exactly the four values this wrapper exists to run. An empty or
   // partially-edited scope is what produced the unusable log, and it must fail here rather than downstream.
@@ -719,6 +739,16 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
     company: S.company, country: S.country, marketplace: S.marketplace, sku: S.sku
   });
 
+  // §5 — WHICH RUN WAS ADOPTED, AND WHY. "A snapshot dated yesterday was accepted" is only a defensible
+  // sentence when the reason travels beside it, and the previous census reported neither.
+  try {
+    var h = res && res.harvest;
+    CENSUS_log_('freshness_state', (h && h.snapshot_freshness && h.snapshot_freshness.state) || null);
+    CENSUS_log_('accepted_snapshot_date', (h && h.accepted_snapshot_date) || null);
+    CENSUS_log_('accepted_snapshot_run', (h && h.gap_job_state && h.gap_job_state.runId) || null);
+    CENSUS_log_('snapshot_distinct_dates', (h && h.snapshot_distinct_dates) || null);
+    CENSUS_log_('forecast_normalization', (h && h.forecast_normalization) || null);
+  } catch (eF) {}
   // Re-assert the read-only facts from the RESULT rather than from this function's intentions.
   CENSUS_log_('result.read_only', res && res.read_only);
   CENSUS_log_('result.db_writes', res && res.db_writes);

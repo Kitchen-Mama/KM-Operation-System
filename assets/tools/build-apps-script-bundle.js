@@ -72,12 +72,20 @@ var MODULE_ORDER = [
   'supply-planning-request-draft-v2',            // F1-7N-FA-3C-DRAFT-MODEL KMRDV2 flat MONTHLY_ORDER draft core (SELF-CONTAINED; no deps; not yet called by any handler)
   'supply-planning-request-draft-v2-persistence', // F1-7N-FA-3C-R2b-2 KMRDV2P MONTHLY_ORDER flat persistence SHAPE ADAPTER (requires KMRDV2 + KMPR; reuses shared governance)
   'supply-planning-factory-site-allocation',     // F1-7N-FB-4E-R4B-R1 KMFSA canonical FACTORY SITE ALLOCATION (SELF-CONTAINED; no deps) - the ONE projection Site Inventory and Order Planning both read
-  'supply-planning-forecast-normalization'      // F1-7N-FC-1B-E3-R3-R1 KMFCN the ONE reading of an absent forecast month (SELF-CONTAINED; no deps)
+  'supply-planning-forecast-normalization',     // F1-7N-FC-1B-E3-R3-R1 KMFCN the ONE reading of an absent forecast month (SELF-CONTAINED; no deps)
+  'supply-planning-snapshot-freshness'          // F1-7N-FC-1B-E3-R4-A2-R1 KMSF is this snapshot current, decided by the SCHEDULE and not the calendar (SELF-CONTAINED; no deps)
 ];
 
+// F1-7N-FC-1B-E3-R4-A2-R1 — A DUPLICATE GLOBAL USED TO BE EMITTED SILENTLY, AND ONE JUST WAS.
+// I registered a new module under `KMSF`, which supply-planning-source-facts has owned all along. The
+// builder wrote BOTH `var KMSF = ...` lines, the later one won, and source-facts was replaced by a
+// snapshot module for every consumer in the bundle — with no error, no warning and a hash that looked
+// perfectly normal. A name collision in a generated file is not a naming preference; it is one module
+// silently becoming another. The builder now refuses.
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
 var GLOBALS = [
   ['KMFCN', 'supply-planning-forecast-normalization'],
+  ['KMSNF', 'supply-planning-snapshot-freshness'],
   ['KMCID', 'supply-planning-country-identity'],
   ['KMCALC', 'supply-planning-calculations'],
   ['KMQI', 'supply-planning-qualified-incoming'],
@@ -186,6 +194,18 @@ function buildBundleFromSources(sources) {
 
   var body = MODULE_ORDER.map(function (name) { return wrapModule(name, sources[name]); }).join('\n');
 
+  // F1-7N-FC-1B-E3-R4-A2-R1 — REFUSE A DUPLICATE GLOBAL. Emitting two `var X = ...` lines for the same name is
+  // legal JavaScript and catastrophic here: the later wins and one module silently becomes another, for every
+  // consumer, with no error and a perfectly ordinary hash. This round did exactly that (KMSF was already
+  // supply-planning-source-facts) and nothing objected. A name that is claimed twice is a build failure.
+  var _seenGlobal = {};
+  GLOBALS.forEach(function (g) {
+    if (_seenGlobal[g[0]]) {
+      throw new Error('DUPLICATE_BUNDLE_GLOBAL: ' + g[0] + ' is claimed by both "' + _seenGlobal[g[0]]
+        + '" and "' + g[1] + '" — the later declaration would silently replace the earlier module');
+    }
+    _seenGlobal[g[0]] = g[1];
+  });
   var tail = ['// ----- Apps Script global namespace exposure -----']
     .concat(GLOBALS.map(function (g) { return 'var ' + g[0] + ' = __kmModules[' + JSON.stringify(g[1]) + '];'; }))
     .concat(['', '// KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.',

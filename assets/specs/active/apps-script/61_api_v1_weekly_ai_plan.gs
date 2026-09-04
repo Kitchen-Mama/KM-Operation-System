@@ -204,7 +204,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -360,6 +360,51 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   // flag-false invocation is blocked with a typed CONTROLLED_GENERATION_UNAUTHORIZED (zero writes). The public handler
   // gates the flag BEFORE reaching here, and never passes controlledAuth — so no public/frontend request can pass.
   var flagTrue = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') && inventoryAiPlanDbGenerationEnabled_() === true;
+  // F1-7N-FC-1B-E3-R4-A2-R1 §9 — THE FLAG SAYS "GENERATION IS ON". IT DOES NOT SAY "FOR EVERYTHING".
+  //
+  // The global flag is the only switch this path had, and it is far too blunt to turn on for a trial: flipping
+  // it authorizes materialization for every company, country, marketplace and SKU at once, so the first
+  // controlled run and a 495-scope production write are the same gesture. The allowlist splits those apart.
+  // It is SERVER-OWNED config beside the flag itself, so no request payload and no browser can widen it, and
+  // widening it is a deployment with a diff.
+  //
+  // IT GATES AT THE WRITER, not at the harvest. A census, a dry run and a readiness report must still be able
+  // to SEE every scope — refusing to look is not safety, it is blindness. What must be narrow is what gets
+  // WRITTEN, and this is the last point before that.
+  //
+  // Lines outside the allowlist are DROPPED and COUNTED, never silently included and never silently ignored:
+  // if nothing survives, the run refuses with a typed code rather than reporting a successful plan for zero
+  // routes, because those two mean opposite things to whoever pressed the button.
+  if (flagTrue) {
+    var _gateOn = (typeof inventoryAiPlanScopeEnabled_ === 'function');
+    if (!_gateOn) {
+      return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('AI_PLAN_SCOPE_GUARD_UNAVAILABLE',
+        'the activation allowlist is not present in this deployment; generation is refused rather than run unguarded')] });
+    }
+    var _kept = {}, _keptCount = 0, _excluded = [];
+    for (var _mk in byMkt) {
+      if (!Object.prototype.hasOwnProperty.call(byMkt, _mk)) continue;
+      var _in = byMkt[_mk].filter(function (a) {
+        var okScope = inventoryAiPlanScopeEnabled_(scope0.company, scope0.country, _mk, a && a.sku);
+        if (!okScope) _excluded.push({ marketplace: _mk, sku: weeklyAiPlanStr_(a && a.sku) });
+        return okScope;
+      });
+      if (_in.length) { _kept[_mk] = _in; _keptCount += _in.length; }
+    }
+    if (!_keptCount) {
+      return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('AI_PLAN_SCOPE_NOT_ENABLED',
+        'no line in this run is inside the controlled activation allowlist; zero rows written',
+        { scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || null },
+          excluded_count: _excluded.length, excluded_sample: _excluded.slice(0, 10),
+          allowlist: (typeof inventoryAiPlanActivationAllowlist_ === 'function') ? inventoryAiPlanActivationAllowlist_() : null,
+          db_writes: 0 })] });
+    }
+    byMkt = _kept;
+    // Carried out with the result so a partial run is visible rather than inferred from a smaller number.
+    harvest = harvest || {};
+    harvest.scope_guard = { enforced: true, kept_lines: _keptCount, excluded_lines: _excluded.length,
+      excluded_sample: _excluded.slice(0, 10) };
+  }
   if (!flagTrue) {
     var liveScopeSpec = { scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt }, planning_cycle: request.planningCycle };
     var authRes = (typeof WeeklyAiPlanControlledAuthority_ !== 'undefined') ? WeeklyAiPlanControlledAuthority_.verify(controlledAuth, liveScopeSpec) : { ok: false, reason: 'AUTHORITY_MODULE_MISSING' };
@@ -654,9 +699,13 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
   // exactly the divergence this closes.
   var canonical = weeklyAiPlanCanonicalDemand_(ss, scope, calcDateForDemand);
   if (!canonical.ok) {
+    // §3 — the freshness verdict is carried out verbatim. "Not due yet" and "overdue" and "mid-write" are
+    // three different operational situations and they must not arrive as one generic unavailability.
     return { ok: false, errors: [weeklyAiPlanErr_('CANONICAL_DEMAND_UNAVAILABLE',
-      'the materialized demand snapshot could not be read: ' + canonical.reason,
-      { table: WAP_GAP_TABLE_, reason: canonical.reason })] };
+      'the materialized demand snapshot could not be used: ' + canonical.reason,
+      { table: WAP_GAP_TABLE_, reason: canonical.reason,
+        freshness: canonical.freshness || null, schedule: canonical.schedule || null,
+        distinct_dates: canonical.distinctDates || [] })] };
   }
   var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
   // F1-7N-FC-1B-E3-R1 §D — `errors` IS CARRIED OUT. Every non-fatal drop this function makes lands in
@@ -699,7 +748,13 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
     builtReceivers: built.receivers || [],
     // §1 — the normalization audit, so a report can state how many months were real, how many were an
     // explicit zero, and how many were defaulted — without re-deriving any of it.
-    forecast_normalization: built.forecastNormalization || null
+    forecast_normalization: built.forecastNormalization || null,
+    // §3 — which run was adopted and why, so the report never has to infer it.
+    snapshot_freshness: canonical.freshness || null,
+    accepted_snapshot_date: canonical.acceptedDate || null,
+    gap_schedule: canonical.schedule || null,
+    gap_job_state: canonical.jobState || null,
+    snapshot_distinct_dates: canonical.distinctDates || []
   };
 }
 
@@ -905,8 +960,72 @@ var WAP_GAP_REQUIRED_COLS_ = ['company', 'country', 'marketplace', 'sku', 'calcu
   'd18_suggested_qty', 'd30_suggested_qty', 'd45_suggested_qty', 'd90_suggested_qty'];
 var WAP_GAP_WINDOW_COL_ = { D18: 'd18_suggested_qty', D30: 'd30_suggested_qty', D45: 'd45_suggested_qty', D90: 'd90_suggested_qty' };
 
+/**
+ * F1-7N-FC-1B-E3-R4-A2-R1 §3 — READ THE SCHEDULE THIS DEPLOYMENT ACTUALLY RUNS ON.
+ *
+ * Not a constant. 45_ owns the automation configuration and a deployment can change its own hours, so the
+ * freshness rule reads the EFFECTIVE config for the Inventory Gap job and falls back to the declared default
+ * only when the stored config cannot be read. Hard-coding 13:30 here would make the rule silently wrong for
+ * any deployment that moved it, which is the same class of mistake as hard-coding today's date.
+ */
+function weeklyAiPlanGapSchedule_() {
+  var out = { hour: 13, minute: 30, enabled: true, source: 'DECLARED_DEFAULT',
+    driftMinutes: 15, completionBudgetMinutes: 240 };
+  try {
+    if (typeof AUTOMATION_JOBS_ !== 'undefined' && AUTOMATION_JOBS_) {
+      for (var i = 0; i < AUTOMATION_JOBS_.length; i++) {
+        if (AUTOMATION_JOBS_[i].key === 'inventoryGap' && AUTOMATION_JOBS_[i].defaults) {
+          out.hour = AUTOMATION_JOBS_[i].defaults.hour;
+          out.minute = AUTOMATION_JOBS_[i].defaults.minute;
+          out.enabled = AUTOMATION_JOBS_[i].defaults.enabled === true;
+        }
+      }
+    }
+    // The STORED config wins over the declared default when it exists.
+    if (typeof automationReadConfig_ === 'function' && typeof automationDefaultIo_ === 'function') {
+      var cfg = automationReadConfig_(automationDefaultIo_());
+      var c = cfg && cfg.inventoryGap;
+      if (c && typeof c.hour === 'number' && typeof c.minute === 'number') {
+        out.hour = c.hour; out.minute = c.minute; out.enabled = c.enabled === true;
+        out.source = 'EFFECTIVE_CONFIG';
+      }
+    }
+  } catch (e) { out.source = 'DECLARED_DEFAULT_AFTER_ERROR'; }
+  return out;
+}
+
+/**
+ * §3 — the Inventory Gap job's own account of itself, when it can be read. CORROBORATION ONLY: a job
+ * reporting FAILED is evidence, and a job reporting nothing is not evidence of success.
+ */
+function weeklyAiPlanGapJobState_() {
+  try {
+    if (typeof GAP_JOB_PROP_KEYS_ === 'undefined') return null;
+    var raw = PropertiesService.getScriptProperties().getProperty(GAP_JOB_PROP_KEYS_.INVENTORY);
+    if (!raw) return null;
+    var st = JSON.parse(raw);
+    if (!st) return null;
+    // §3 — THE STORED STAMP IS ALREADY A TAIPEI WALL-CLOCK STRING, so it is READ, not re-interpreted.
+    //
+    // My first version did `new Date(st.startedAt).getTime()`, which is wrong twice over. It constructs a Date
+    // from a string whose zone is implicit, so the runtime would resolve "2026-09-04 09:00:00" against the
+    // SERVER's zone rather than Asia/Taipei and could land on the wrong business day — the exact class of
+    // mistake this feature has been correcting all round. And it constructs a date object inside 61_, which the
+    // E3-R1 no-fabricated-timestamp guard forbids for good reason.
+    //
+    // The business DATE is all this needs, and the first ten characters of the stamp already are it.
+    var startedDate = weeklyAiPlanStr_(st.startedAt).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startedDate)) startedDate = null;
+    return { status: weeklyAiPlanStr_(st.status), runId: weeklyAiPlanStr_(st.runId),
+      startedAtDate: startedDate, startedAt: weeklyAiPlanStr_(st.startedAt) || null,
+      scopesProcessed: st.scopesProcessed, scopesTotal: st.scopesTotal, product: 'INVENTORY' };
+  } catch (e) { return null; }
+}
+
 function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
-  var out = { ok: false, reason: null, bySite: {}, rowCount: 0, calculationDate: calcDate || null };
+  var out = { ok: false, reason: null, bySite: {}, byKeyDate: {}, dateIndex: {}, distinctDates: [],
+    rowCount: 0, calculationDate: calcDate || null, acceptedDate: null, freshness: null,
+    freshnessState: null, schedule: null, jobState: null };
   var sh;
   try { sh = ss.getSheetByName(WAP_GAP_TABLE_); }
   catch (e) { out.reason = 'CANONICAL_DEMAND_READ_FAILED'; return out; }
@@ -942,10 +1061,77 @@ function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
       var v = (raw === '' || raw === null || raw === undefined) ? null : Number(raw);
       rec.suggestedByWindow[w] = (v !== null && isFinite(v)) ? v : null;
     }
-    // TWO ROWS FOR ONE SITE IS A CONFLICT, not a last-one-wins. Keep the flag; the caller refuses.
-    if (out.bySite[key]) { out.bySite[key].duplicate = true; continue; }
-    out.bySite[key] = rec;
+    // §3 — every row is kept, KEYED BY (site, calculation_date). R4 collapsed the table to one row per
+    // site and then compared that row's date to today, which is how a complete 2026-09-03 snapshot came to be
+    // reported as STALE at 10:41 on 2026-09-04 — three hours before today's run is even due. The dates are
+    // now collected first and the SCHEDULE decides which one is current.
+    var dk = key + '@' + rec.calculation_date;
+    if (out.byKeyDate[dk]) { out.byKeyDate[dk].duplicate = true; continue; }
+    out.byKeyDate[dk] = rec;
+    if (!out.dateIndex[rec.calculation_date]) {
+      out.dateIndex[rec.calculation_date] = { date: rec.calculation_date, status: rec.calculation_status,
+        rowCount: 0, planningCycle: 'RECO-' + rec.calculation_date.slice(0, 7) };
+    }
+    out.dateIndex[rec.calculation_date].rowCount++;
+    // ONE BLOCKED SITE DOES NOT POISON THE RUN. My first version carried the WORST status seen forward, which
+    // meant a single BLOCKED SKU made the whole date "not a complete snapshot" and refused every other site on
+    // it — the opposite of what the comment beside it claimed, and a much broader block than intended. A run
+    // that produced usable rows IS a run; the per-site gate below is what refuses the blocked site, by itself.
+    // A date is only NO_COMPLETE_SNAPSHOT when NOTHING on it is READY.
+    if (rec.calculation_status === 'READY') out.dateIndex[rec.calculation_date].status = 'READY';
+    else if (out.dateIndex[rec.calculation_date].status !== 'READY') {
+      out.dateIndex[rec.calculation_date].status = rec.calculation_status;
+    }
     out.rowCount++;
+  }
+
+  // ---- §3 THE FRESHNESS DECISION, and it is about the SCHEDULE, not the calendar --------------------------
+  var dates = [];
+  for (var dkey in out.dateIndex) { if (Object.prototype.hasOwnProperty.call(out.dateIndex, dkey)) dates.push(out.dateIndex[dkey]); }
+  out.distinctDates = dates.map(function (d) { return d.date; }).sort();
+  if (typeof KMSNF === 'undefined' || !KMSNF || typeof KMSNF.assess !== 'function') {
+    out.reason = 'SNAPSHOT_FRESHNESS_AUTHORITY_UNAVAILABLE';
+    return out;
+  }
+  // Only the LATEST date is offered to the authority. Older complete runs are history, not candidates, and
+  // offering two would make "mixed rows" indistinguishable from "we kept last week's as well".
+  var latest = out.distinctDates.length ? out.distinctDates[out.distinctDates.length - 1] : null;
+  // But a scope carrying rows from MORE THAN ONE date is exactly the partial-write case, and the authority has
+  // to see both to say so. 43_ upserts row by row with no atomic publication, so this is the only observable
+  // form a half-finished run takes.
+  var offered = dates.filter(function (d) { return d.date === latest || out.distinctDates.length > 1; });
+  out.schedule = weeklyAiPlanGapSchedule_();
+  out.jobState = weeklyAiPlanGapJobState_();
+  // §3 — THE CLOCK HAS EXACTLY ONE OWNER, and if it is absent this refuses rather than inventing one.
+  //
+  // My first version fell back to constructing a clock here. That is precisely the fabrication the E3-R1
+  // no-fabricated-timestamp guard exists to prevent, and it would have been worse than a refusal: a
+  // deployment missing the canonical planning-context owner would have silently planned against a clock
+  // nobody governs, in whatever zone the runtime happened to be in.
+  if (typeof gapCalcNowMs_ !== 'function') {
+    out.reason = 'PLANNING_CLOCK_AUTHORITY_UNAVAILABLE';
+    return out;
+  }
+  var fresh = KMSNF.assess({
+    nowMs: gapCalcNowMs_(),
+    utcOffsetMinutes: (typeof GAP_CALC_UTC_OFFSET_MIN_ !== 'undefined') ? GAP_CALC_UTC_OFFSET_MIN_ : 480,
+    schedule: out.schedule,
+    snapshotDates: offered,
+    expectedPlanningCycle: scope.planningCycle,
+    jobState: out.jobState
+  });
+  out.freshness = fresh;
+  out.freshnessState = fresh.state;
+  if (!fresh.ok) { out.reason = fresh.state; return out; }
+  out.acceptedDate = fresh.acceptedDate;
+  // The accepted date, and ONLY it, becomes the site map. Nothing from another run can reach the allocator.
+  for (var k2 in out.byKeyDate) {
+    if (!Object.prototype.hasOwnProperty.call(out.byKeyDate, k2)) continue;
+    var r2 = out.byKeyDate[k2];
+    if (r2.calculation_date !== out.acceptedDate) continue;
+    var sk = r2.company + '|' + r2.country + '|' + r2.marketplace + '|' + r2.sku;
+    if (out.bySite[sk] && out.bySite[sk] !== r2) { out.bySite[sk].duplicate = true; continue; }
+    out.bySite[sk] = r2;
   }
   out.ok = true;
   return out;
@@ -956,6 +1142,8 @@ function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
  * Returns { ok, code, lineage, suggestedByWindow } .
  */
 function weeklyAiPlanAcceptCanonicalDemand_(snapshot, site, scope, calcDate, expectedBySite) {
+  // §4 — the run the SCHEDULE selected, not the calendar date this process happens to be running on.
+  var acceptedDate = (snapshot && snapshot.acceptedDate) || null;
   var key = scope.company + '|' + scope.country + '|' + site.marketplace + '|' + site.sku;
   var rec = snapshot.bySite[key];
   if (!rec) return { ok: false, code: 'CANONICAL_DEMAND_ROW_MISSING', key: key };
@@ -964,13 +1152,21 @@ function weeklyAiPlanAcceptCanonicalDemand_(snapshot, site, scope, calcDate, exp
     return { ok: false, code: 'CANONICAL_DEMAND_NOT_READY', key: key,
       status: rec.calculation_status || '(blank)', note: rec.note || null };
   }
-  // STALE LINEAGE. The snapshot must belong to the planning date this run resolved. A snapshot computed for
-  // another date is not this plan's demand, and re-Searching / re-materializing is the fix, not a guess.
-  if (calcDate && rec.calculation_date && rec.calculation_date !== calcDate) {
-    return { ok: false, code: 'CANONICAL_DEMAND_STALE', key: key,
-      snapshotDate: rec.calculation_date, expectedDate: calcDate };
+  // F1-7N-FC-1B-E3-R4-A2-R1 §4 — THE DATE COMPARISON IS GONE, AND IT WAS THE DEFECT.
+  //
+  // R4 compared this row's calculation_date to TODAY and called any difference STALE. The Inventory Gap
+  // materialization is a daily 13:30 Asia/Taipei automation, so that rule declared every scope in the database
+  // stale from midnight until the afternoon — and at 10:41 on 2026-09-04 it refused a complete, successful
+  // 2026-09-03 snapshot, which was the newest thing that had ever existed.
+  //
+  // Which date is CURRENT is now decided once, for the whole scope, by KMSNF against the real schedule, and the
+  // caller has already narrowed `bySite` to the accepted run. What remains here is the check that the row
+  // actually belongs to that run — a genuine lineage assertion rather than a comparison with a wall clock.
+  if (acceptedDate && rec.calculation_date && rec.calculation_date !== acceptedDate) {
+    return { ok: false, code: 'CANONICAL_DEMAND_LINEAGE_MISMATCH', key: key,
+      snapshotDate: rec.calculation_date, acceptedDate: acceptedDate };
   }
-  if (calcDate && !rec.calculation_date) return { ok: false, code: 'CANONICAL_DEMAND_LINEAGE_MISSING', key: key };
+  if (!rec.calculation_date) return { ok: false, code: 'CANONICAL_DEMAND_LINEAGE_MISSING', key: key };
   // Every window this site actually has must carry a resolved quantity.
   var out = {};
   for (var w in site.cumulativeGapByWindow) {
@@ -998,7 +1194,13 @@ function weeklyAiPlanAcceptCanonicalDemand_(snapshot, site, scope, calcDate, exp
     company: rec.company, country: rec.country, marketplace: rec.marketplace, sku: rec.sku,
     planning_cycle: scope.planningCycle, calculation_status: rec.calculation_status,
     calculation_date: rec.calculation_date, calculated_at: rec.calculated_at || null,
-    updated_at: rec.updated_at || null, source_table: rec.source_table, source_reason: 'MATERIALIZED_SNAPSHOT' } };
+    updated_at: rec.updated_at || null, source_table: rec.source_table, source_reason: 'MATERIALIZED_SNAPSHOT',
+    // §3 — WHY this run was the current one, carried with the quantity. "Accepted a snapshot dated
+    // yesterday" is only defensible if the reason travels with it.
+    freshness_state: (snapshot && snapshot.freshnessState) || null,
+    accepted_snapshot_date: acceptedDate,
+    schedule_source: (snapshot && snapshot.schedule && snapshot.schedule.source) || null,
+    gap_run_id: (snapshot && snapshot.jobState && snapshot.jobState.runId) || null } };
 }
 
 function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite) {

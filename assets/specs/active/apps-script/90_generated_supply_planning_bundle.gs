@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 70f81292e50807e38d7e4e3dcc54a7274c57c8d9d2fc3958441d33220d0ae074
+// bundle_sha256 = a2ede7bd6695f5596f1842d2128c1421486775ddd84efd92316400146e9a2b00
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -61,6 +61,7 @@
 //   supply-planning-request-draft-v2-persistence  8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54
 //   supply-planning-factory-site-allocation  cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96
 //   supply-planning-forecast-normalization  4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9
+//   supply-planning-snapshot-freshness  15c1347f9836a38c5e57e4fdef82aedf29ab0451fa648444fde9a34314c5cc9f
 // ============================================================================
 
 var __kmModules = {};
@@ -15792,8 +15793,283 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-forecast-normalization", module.exports);
 })();
 
+// ----- module: supply-planning-snapshot-freshness (verbatim from assets/js/core/supply-planning-snapshot-freshness.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+/* ================================================================================================================
+ * KMSNF — SCHEDULE-AWARE SNAPSHOT FRESHNESS  (F1-7N-FC-1B-E3-R4-A2-R1 §3)
+ * ----------------------------------------------------------------------------------------------------------------
+ * "IS THIS SNAPSHOT CURRENT?" IS A QUESTION ABOUT THE SCHEDULE, NOT ABOUT THE CALENDAR.
+ *
+ * R4 answered it with `rec.calculation_date !== todayInTaipei` and called the difference STALE. That reads as
+ * reasonable until you notice what it means: the Inventory Gap materialization is a DAILY 13:30 Asia/Taipei
+ * automation, so between midnight and roughly half past one in the afternoon there is no row on today's date
+ * for any scope, and the rule declares the entire database stale every single morning. At 10:41 on 2026-09-04
+ * it refused a complete, successful 2026-09-03 snapshot — the newest thing that has ever existed — and called
+ * it a data problem.
+ *
+ * The honest question has three parts, and only the third is about dates:
+ *
+ *   1. WHERE ARE WE IN TODAY'S SCHEDULE? Before the run is due, yesterday's complete result IS the current
+ *      one; there is nothing newer and nothing is late. While the run is in flight, yesterday's complete
+ *      result is STILL the current one, because a half-written today is not a better answer than a finished
+ *      yesterday. Only after the run should have finished does its absence become a fault.
+ *   2. IS WHAT WE HAVE INTERNALLY CONSISTENT? A group whose rows carry two different calculation dates is a
+ *      run caught mid-write. That is never acceptable, at any hour, and it is a separate failure from being
+ *      late.
+ *   3. DOES ITS LINEAGE MATCH WHAT WE ARE PLANNING? A snapshot from another planning cycle is not this plan's
+ *      demand regardless of how recent it is.
+ *
+ * WHY THIS IS NOT AN AGE TOLERANCE. "Accept anything under 36 hours" would also have accepted the 2026-09-03
+ * rows, and it would have gone on accepting them at 14:00 the next day when today's run had genuinely failed.
+ * A tolerance cannot tell "not due yet" from "due and missing", and those two need opposite answers. The
+ * schedule is what separates them, so the schedule is what this reads.
+ *
+ * AND IT IS NOT "YESTERDAY IS ALWAYS FINE" EITHER. There is no rule here that a previous date is acceptable.
+ * What is acceptable is the LATEST COMPLETE run, whatever date it carries, and only while today's run is not
+ * yet overdue. Once it is overdue or has failed, the same 2026-09-03 snapshot is refused with a typed code.
+ *
+ * THE CLOCK IS THE SERVER'S. Every input is passed in — the epoch millisecond, the timezone offset, the
+ * schedule — and nothing here reads a clock or a browser. A browser clock is not a planning authority, and a
+ * module that cannot read one cannot be made into a place where that rule is broken later.
+ *
+ * COMPLETENESS, HONESTLY. The materialized table carries no run_id column (43_ upserts row by row, keyed by
+ * business key), so "this run finished" cannot be read off a row. What CAN be read is agreement: a group whose
+ * rows all carry one calculation_date was written by one run, and a group carrying two was not. That is the
+ * completeness signal used here, and it is corroborated — never overridden — by the job state when the caller
+ * can supply it. Where the two disagree, the more cautious answer wins.
+ *
+ * Exports: STATES, assess(input) → { state, ok, acceptedDate, reason, detail }.
+ * ================================================================================================================ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.KMSNF = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  var STATES = {
+    CURRENT_PRE_SCHEDULE: 'CURRENT_PRE_SCHEDULE',
+    CURRENT_DURING_REFRESH: 'CURRENT_DURING_REFRESH',
+    CURRENT_AFTER_REFRESH: 'CURRENT_AFTER_REFRESH',
+    REFRESH_OVERDUE: 'REFRESH_OVERDUE',
+    REFRESH_FAILED: 'REFRESH_FAILED',
+    PARTIAL_SNAPSHOT_BLOCKED: 'PARTIAL_SNAPSHOT_BLOCKED',
+    LINEAGE_MISMATCH: 'LINEAGE_MISMATCH',
+    NO_COMPLETE_SNAPSHOT: 'NO_COMPLETE_SNAPSHOT',
+    SCHEDULE_UNRESOLVED: 'SCHEDULE_UNRESOLVED'
+  };
+  // The states in which a snapshot may be used. Everything else is a typed block.
+  var ACCEPTING = { CURRENT_PRE_SCHEDULE: 1, CURRENT_DURING_REFRESH: 1, CURRENT_AFTER_REFRESH: 1 };
+
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function isInt(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }
+  var YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+  // The business calendar day and minute-of-day at an epoch instant, in a FIXED-offset zone. Asia/Taipei has no
+  // DST, which is why a fixed offset is correct here and would not be for a zone that observes it.
+  function businessNow(nowMs, offsetMinutes) {
+    var d = new Date(nowMs + offsetMinutes * 60000);
+    var y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+    return {
+      ymd: y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day,
+      minuteOfDay: d.getUTCHours() * 60 + d.getUTCMinutes(),
+      hhmm: ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2)
+    };
+  }
+
+  /**
+   * assess(input) → the freshness verdict.
+   *
+   * input:
+   *   nowMs                  epoch ms, SERVER-supplied
+   *   utcOffsetMinutes       the business zone's fixed offset (Asia/Taipei = 480)
+   *   schedule               { enabled, hour, minute, driftMinutes, completionBudgetMinutes }
+   *                          hour/minute = the configured daily start; drift = the trigger's own firing window;
+   *                          budget = how long the run may legitimately take before its absence is a fault.
+   *   snapshotDates          [{ date, status, rowCount, planningCycle }] — one entry per DISTINCT calculation_date
+   *                          present for the scope being planned.
+   *   expectedPlanningCycle  the cycle this plan belongs to
+   *   jobState               optional { status, runId, startedAtDate (YYYY-MM-DD, business zone), product } — corroboration only
+   */
+  function assess(input) {
+    input = input || {};
+    var out = {
+      state: null, ok: false, acceptedDate: null, acceptedCycle: null, reason: null,
+      businessNow: null, scheduledStart: null, overdueAfter: null, detail: {}
+    };
+
+    // ---- the clock, and it must be given to us -------------------------------------------------------------
+    if (!isInt(input.nowMs)) {
+      out.state = STATES.SCHEDULE_UNRESOLVED;
+      out.reason = 'nowMs must be supplied by the SERVER — this module never reads a clock';
+      return out;
+    }
+    var offset = isInt(input.utcOffsetMinutes) ? input.utcOffsetMinutes : null;
+    if (offset === null) {
+      out.state = STATES.SCHEDULE_UNRESOLVED;
+      out.reason = 'utcOffsetMinutes must be supplied — the business zone is not guessed';
+      return out;
+    }
+    var now = businessNow(input.nowMs, offset);
+    out.businessNow = { date: now.ymd, time: now.hhmm, minuteOfDay: now.minuteOfDay, utcOffsetMinutes: offset };
+
+    // ---- the schedule --------------------------------------------------------------------------------------
+    var sch = input.schedule || {};
+    if (!isInt(sch.hour) || sch.hour < 0 || sch.hour > 23 || !isInt(sch.minute) || sch.minute < 0 || sch.minute > 59) {
+      out.state = STATES.SCHEDULE_UNRESOLVED;
+      out.reason = 'the daily schedule is unresolved — without it "late" has no meaning and nothing may be assumed';
+      return out;
+    }
+    var startMin = sch.hour * 60 + sch.minute;
+    // The trigger's own firing window (Apps Script fires NEAR a minute, not at it) plus the run's budget. Both
+    // are inputs: a deployment that changes its schedule changes this without touching the rule.
+    var drift = isInt(sch.driftMinutes) ? sch.driftMinutes : 15;
+    var budget = isInt(sch.completionBudgetMinutes) ? sch.completionBudgetMinutes : 240;
+    var overdueMin = startMin + drift + budget;
+    out.scheduledStart = { minuteOfDay: startMin, hhmm: ('0' + sch.hour).slice(-2) + ':' + ('0' + sch.minute).slice(-2) };
+    out.overdueAfter = { minuteOfDay: overdueMin, driftMinutes: drift, completionBudgetMinutes: budget };
+
+    // ---- what we actually hold -----------------------------------------------------------------------------
+    var rows = Array.isArray(input.snapshotDates) ? input.snapshotDates : [];
+    var seen = [], i;
+    for (i = 0; i < rows.length; i++) {
+      var r = rows[i] || {};
+      var d = str(r.date);
+      if (!YMD.test(d)) {
+        out.state = STATES.LINEAGE_MISMATCH;
+        out.reason = 'a snapshot row carries an unreadable calculation_date (' + (d || '(blank)') + ')';
+        return out;
+      }
+      seen.push({ date: d, status: str(r.status), rowCount: isInt(r.rowCount) ? r.rowCount : null,
+        planningCycle: str(r.planningCycle) });
+    }
+    out.detail.distinctDates = seen.map(function (x) { return x.date; }).sort();
+
+    if (!seen.length) {
+      out.state = STATES.NO_COMPLETE_SNAPSHOT;
+      out.reason = 'no materialized snapshot exists for this scope at any date';
+      return out;
+    }
+
+    // ---- (2) INTERNAL CONSISTENCY, checked BEFORE the clock -------------------------------------------------
+    // Two calculation dates inside one planned group is a run caught mid-write. 43_ upserts row by row with no
+    // atomic publication, so this is the observable form of a partial run — and it is wrong at every hour,
+    // which is why it is decided before anything about the schedule is considered.
+    if (out.detail.distinctDates.length > 1) {
+      out.state = STATES.PARTIAL_SNAPSHOT_BLOCKED;
+      out.reason = 'this scope carries rows from ' + out.detail.distinctDates.length
+        + ' different calculation dates (' + out.detail.distinctDates.join(', ')
+        + ') — a run was caught mid-write and its rows must not be mixed';
+      return out;
+    }
+    var only = seen[0];
+    out.detail.snapshotDate = only.date;
+
+    // ---- (3) LINEAGE ---------------------------------------------------------------------------------------
+    var wantCycle = str(input.expectedPlanningCycle);
+    var haveCycle = only.planningCycle || ('RECO-' + only.date.slice(0, 7));
+    out.detail.snapshotCycle = haveCycle;
+    if (wantCycle && haveCycle && wantCycle !== haveCycle) {
+      out.state = STATES.LINEAGE_MISMATCH;
+      out.reason = 'the snapshot belongs to ' + haveCycle + ' and this plan is ' + wantCycle;
+      return out;
+    }
+    // A snapshot dated in the FUTURE is not fresh, it is wrong. Nothing legitimate produces one.
+    if (only.date > now.ymd) {
+      out.state = STATES.LINEAGE_MISMATCH;
+      out.reason = 'the snapshot is dated ' + only.date + ', which is after the business date ' + now.ymd;
+      return out;
+    }
+    // A row that is not READY has no quantity to offer. The per-row gate is the caller's; this refuses to call
+    // a not-ready date a complete snapshot.
+    if (only.status && only.status !== 'READY') {
+      out.state = STATES.NO_COMPLETE_SNAPSHOT;
+      out.reason = 'the only snapshot for this scope is ' + only.status + ', not READY';
+      return out;
+    }
+
+    // ---- the job's own account of itself, when the caller can supply it -------------------------------------
+    // Corroboration, never override. A job reporting FAILED is evidence; a job reporting nothing is not
+    // evidence of success.
+    var job = input.jobState || null;
+    var jobStatus = job ? str(job.status).toUpperCase() : '';
+    out.detail.jobStatus = jobStatus || null;
+    out.detail.jobRunId = job ? (str(job.runId) || null) : null;
+    // The caller supplies the job's start as a BUSINESS DATE string, already in the business zone. Converting
+    // an epoch here would mean re-deriving a zone the caller has already resolved, and a caller whose stamp is
+    // a wall-clock string in another zone would silently land on the wrong day.
+    var jobStartedToday = !!(job && YMD.test(str(job.startedAtDate)) && str(job.startedAtDate) === now.ymd);
+    out.detail.jobStartedToday = jobStartedToday;
+    var jobRunning = jobStatus === 'PENDING' || jobStatus === 'RUNNING' || jobStatus === 'RESCHEDULED_LOCKED';
+    var jobFailed = jobStatus === 'FAILED' || jobStatus === 'ERROR' || jobStatus === 'STALLED' || jobStatus === 'BLOCKED';
+
+    var haveToday = (only.date === now.ymd);
+
+    // ---- (1) WHERE ARE WE IN TODAY'S SCHEDULE? --------------------------------------------------------------
+    if (haveToday) {
+      // Today's run produced this, and it is internally consistent. Use it.
+      out.state = STATES.CURRENT_AFTER_REFRESH;
+      out.ok = true;
+      out.acceptedDate = only.date;
+      out.acceptedCycle = haveCycle;
+      out.reason = "today's run completed and its snapshot is the current one";
+      return out;
+    }
+
+    // Today's date is absent. Whether that is fine depends entirely on the hour.
+    if (jobFailed && jobStartedToday) {
+      out.state = STATES.REFRESH_FAILED;
+      out.reason = "today's materialization reported " + jobStatus
+        + ' — the previous snapshot is NOT adopted over a known failure';
+      return out;
+    }
+    if (now.minuteOfDay < startMin) {
+      // NOT DUE YET. The previous complete run is the newest thing that exists, and nothing is late.
+      out.state = STATES.CURRENT_PRE_SCHEDULE;
+      out.ok = true;
+      out.acceptedDate = only.date;
+      out.acceptedCycle = haveCycle;
+      out.reason = "today's materialization is scheduled for " + out.scheduledStart.hhmm + ' and it is '
+        + now.hhmm + ' — the latest complete snapshot (' + only.date + ') is current, not stale';
+      return out;
+    }
+    if (now.minuteOfDay < overdueMin) {
+      // DUE, POSSIBLY IN FLIGHT. A half-written today is not better than a finished yesterday, and the
+      // partial-snapshot guard above is what stops today's rows leaking in one at a time.
+      out.state = STATES.CURRENT_DURING_REFRESH;
+      out.ok = true;
+      out.acceptedDate = only.date;
+      out.acceptedCycle = haveCycle;
+      out.reason = "today's materialization is due or running (" + (jobRunning ? 'job ' + jobStatus : 'no completed rows yet')
+        + ') — the last COMPLETE snapshot (' + only.date + ') remains the authority until it finishes';
+      return out;
+    }
+    // PAST THE WINDOW AND STILL ABSENT. Now it is a fault, and the same snapshot that was fine at 10:41 is not.
+    out.state = STATES.REFRESH_OVERDUE;
+    out.reason = "today's materialization should have completed by "
+      + ('0' + Math.floor(overdueMin / 60)).slice(-2) + ':' + ('0' + (overdueMin % 60)).slice(-2)
+      + ' and no snapshot for ' + now.ymd + ' exists — the latest is ' + only.date;
+    return out;
+  }
+
+  return {
+    STATES: STATES,
+    ACCEPTING: ACCEPTING,
+    isAccepting: function (state) { return ACCEPTING[state] === 1; },
+    businessNow: businessNow,
+    assess: assess,
+    _version: 'f1-7n-fc-1b-e3-r4-a2-r1-snapshot-freshness'
+  };
+});
+  __kmRegister("supply-planning-snapshot-freshness", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMFCN = __kmModules["supply-planning-forecast-normalization"];
+var KMSNF = __kmModules["supply-planning-snapshot-freshness"];
 var KMCID = __kmModules["supply-planning-country-identity"];
 var KMCALC = __kmModules["supply-planning-calculations"];
 var KMQI = __kmModules["supply-planning-qualified-incoming"];
@@ -15851,4 +16127,4 @@ var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"70f81292e50807e38d7e4e3dcc54a7274c57c8d9d2fc3958441d33220d0ae074","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"a2ede7bd6695f5596f1842d2128c1421486775ddd84efd92316400146e9a2b00","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"a41ed91d771e6ff220bbe37b95e88c408c9b63e6402dc592553343b98e14fe52"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"15c1347f9836a38c5e57e4fdef82aedf29ab0451fa648444fde9a34314c5cc9f"}]};

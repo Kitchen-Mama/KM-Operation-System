@@ -4136,6 +4136,15 @@ window.KM.DB.checkDeploymentContract = async function () {
         caller_probe: h.caller_probe || null,
         request_order_send_diagnostic_owner: h.request_order_send_diagnostic_owner || null
     };
+    // F1-7N-FC-1B-E3-R4-A2-R1 §7 — PUBLISH THE DEPLOYMENT IDENTITY THE MOMENT IT IS KNOWN.
+    // Anything cached that describes a specific backend build — the capability snapshot above all — needs
+    // something to compare itself against, and until now there was nothing: a snapshot could outlive the
+    // deployment it described with no way for a reader to tell. This is the one place the identity is
+    // established, so it is the one place it is published.
+    try { window.__kmDeploymentIdentity = { build_id: identity.build_id || null,
+        deployed_action_contract_version: identity.deployed_action_contract_version == null ? null : identity.deployed_action_contract_version,
+        transport_contract_version: identity.transport_contract_version == null ? null : identity.transport_contract_version,
+        router_build: identity.router_build || null, at: Date.now() }; } catch (eDi) {}
     // A deployment that predates the identity block cannot report its own action contract — which is itself
     // conclusive evidence that it is older than this frontend.
     if (identity.deployed_action_contract_version == null) {
@@ -4759,20 +4768,83 @@ window.KM.DB.getWriteTimeoutMs = function () { return _kmTimeoutMs_('write'); };
 // failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
 // generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.
 // Never throws. Returns (and caches on window.__kmCapabilitySnapshot) the resolved capability snapshot.
+// F1-7N-FC-1B-E3-R4-A2-R1 §7 — CAPABILITY NEGOTIATION IS NOT A GATE, AND A LATE FAILURE IS NOT NEWS.
+//
+// The live first-load evidence: getClientCapabilities took 45 s, timed out, and its redirect target answered
+// 404 — while checkDeploymentContract succeeded afterwards and Site Inventory read fine. The bootstrap
+// already fires this WITHOUT awaiting it, so the page was never gated on it, and that part needs no change.
+//
+// What DID need changing is what happens when the slow one finally lands. Every call applied whatever it
+// resolved to, unconditionally, so a 45-second failure resolving after a later success would overwrite real
+// backend values with fail-safe defaults — silently flipping the runtime posture minutes after the page
+// looked settled. A stale answer arriving late is not new information, and the sequence guard here is the same
+// one the inventory read already uses for exactly the same reason.
+//
+// THE ASYMMETRY IS DELIBERATE. A newer SUCCESS always wins. A FAILURE only applies when nothing better has
+// been applied since it was issued — because "we could not reach the backend" says nothing about a value
+// we already have from the backend, and fail-safe defaults exist to fill a vacuum, not to replace evidence.
+//
+// THE CACHE IS BOUND TO THE DEPLOYMENT. Capabilities describe a specific backend build; a cached snapshot that
+// outlives a deployment is a lie with a timestamp on it. The stored identity is compared and a mismatch throws
+// the snapshot away rather than reconciling it.
+var _kmCapSeq_ = 0;                 // monotonic issue order
+var _kmCapAppliedSeq_ = 0;          // the sequence whose result is currently applied
+var _kmCapAppliedFromBackend_ = false;
+function _kmCapDeploymentIdentity_() {
+    try {
+        var r = (window.KM && window.KM.RELEASE) ? window.KM.RELEASE : null;
+        var d = window.__kmDeploymentIdentity || null;
+        // Before the contract check has run there is no identity to bind to, and that is reported as null
+        // rather than as a fabricated one: an unknown identity must not compare EQUAL to a known one.
+        if (!d) return null;
+        return JSON.stringify({ release: r || null, build_id: d.build_id,
+            action_contract: d.deployed_action_contract_version, transport_contract: d.transport_contract_version });
+    } catch (e) { return null; }
+}
 async function _kmApplyClientCapabilities_() {
+    var mySeq = ++_kmCapSeq_;
+    var issuedIdentity = _kmCapDeploymentIdentity_();
     var applied = null, caps = null, err = null;
     try {
         var res = await window.KM.DB.getClientCapabilities();
         caps = (res && res.success && res.data) ? res.data : null;
         if (!caps) err = (res && res.error) || { code: 'CAPABILITY_UNAVAILABLE' };
     } catch (e) { err = { code: 'CAPABILITY_BOOTSTRAP_ERROR', message: e && e.message ? e.message : String(e) }; caps = null; }
+    // §7.3 — the deployment moved while this was in flight. The answer describes a build that is no longer
+    // the one being talked to, so it is discarded rather than applied to the new one.
+    var nowIdentity = _kmCapDeploymentIdentity_();
+    if (issuedIdentity !== null && nowIdentity !== null && issuedIdentity !== nowIdentity) {
+        console.warn('[KM.capabilities] discarded: the deployment identity changed while this request was in flight');
+        return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
+            ? window.KM.api.getClientCapabilitySnapshot() : null;
+    }
+    // §7.4 — a LATE FAILURE never overwrites a LATER SUCCESS.
+    if (!caps && _kmCapAppliedFromBackend_ && _kmCapAppliedSeq_ > mySeq) {
+        console.warn('[KM.capabilities] a late failure (seq ' + mySeq + ') was DISCARDED — a newer backend answer (seq '
+            + _kmCapAppliedSeq_ + ') is already applied', err);
+        return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
+            ? window.KM.api.getClientCapabilitySnapshot() : null;
+    }
+    // And an out-of-order SUCCESS never overwrites a newer one either.
+    if (_kmCapAppliedSeq_ > mySeq && _kmCapAppliedFromBackend_) {
+        return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
+            ? window.KM.api.getClientCapabilitySnapshot() : null;
+    }
     try {
         if (window.KM && window.KM.api && typeof window.KM.api.applyClientCapabilities === 'function') {
             applied = window.KM.api.applyClientCapabilities(caps);   // caps null → fail-safe defaults applied
         }
     } catch (e2) { /* apply never throws by contract; guard anyway */ }
+    _kmCapAppliedSeq_ = mySeq;
+    _kmCapAppliedFromBackend_ = !!caps;
     if (!caps) console.warn('[KM.capabilities] backend capability unavailable — applied fail-safe defaults', err);
-    try { window.__kmCapabilitySnapshot = applied || null; } catch (e3) {}
+    try {
+        window.__kmCapabilitySnapshot = applied || null;
+        // §7 — the cache carries WHAT IT DESCRIBES. Without the identity and the time, a snapshot cannot be
+        // told from a guess, and a reader has no way to know it has outlived its backend.
+        window.__kmCapabilityMeta = { seq: mySeq, fromBackend: !!caps, at: Date.now(),
+            deploymentIdentity: nowIdentity, errorCode: (err && err.code) || null };
+    } catch (e3) {}
     return applied;
 }
 window.KM.DB.applyClientCapabilities = _kmApplyClientCapabilities_;
