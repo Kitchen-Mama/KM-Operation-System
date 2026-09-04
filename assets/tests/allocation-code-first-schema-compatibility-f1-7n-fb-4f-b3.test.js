@@ -923,7 +923,9 @@ function l9LegacyUntouched(e2) {
     eq(e2.headerObjs().length, 2, 'L9b the create got its OWN header instead of adopting one');
     // Guard 1 removed: the resolver is allowed to run for a declared intent. It still cannot adopt, because
     // the identity was already minted - which is guard 2.
-    var m = swap(SAD, '  if (!id && !intentApplies) {', '  if (!id) {');
+    // RESTATED (A2-R1-R2): the resolver branch now also admits the server-owned AI K2 intent, which RESOLVES
+    // a deterministic identity rather than minting or naming one. The mutation still removes the guard.
+    var m = swap(SAD, '  if (!id && (!intentApplies || isAiK2)) {', '  if (!id) {');
     var e3 = makeEnv(m); e3.stage35();
     l9Seed(e3);
     var r3 = e3.save({ header: mktRoute(), lines: [oneLine()] });

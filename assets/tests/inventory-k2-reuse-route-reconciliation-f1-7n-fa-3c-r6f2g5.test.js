@@ -106,7 +106,7 @@ ok(/K2 identity mismatch/.test(sadReconcileMessage_('K2_ROUTE_RECONCILIATION_REQ
 ok(/incomplete route/.test(sadReconcileMessage_('LEGACY_ROUTE_RECONCILIATION_REQUIRED')), 'C2. legacy message states incomplete route');
 ok(sadReconcileMessage_('K2_ROUTE_RECONCILIATION_REQUIRED') !== sadReconcileMessage_('LEGACY_ROUTE_RECONCILIATION_REQUIRED'), 'C3. the two reasons produce DISTINCT messages');
 // both atomic + manual BLOCK sites surface the typed reason via data.reason / data.status.
-var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
+var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 ok(/sadReconcileMessage_\(legR\)/.test(atomicCore) && /data: \{ reason: legR, existing_id: id \}/.test(atomicCore), 'C4. atomic core surfaces the typed reason (data.reason) + reason-typed message');
 var manualCore = extractFn(G16, 'sadUpsertDraftHeaderCore_');
 ok(/sadReconcileMessage_\(legR\)/.test(manualCore) && /data: \{ status: legR, existing_id: id \}/.test(manualCore), 'C4. manual core surfaces the typed reason (data.status) + reason-typed message');

@@ -121,7 +121,7 @@ eval([ 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_', 'SHIPPING_ALLOCATION_DRAFTS_HEADER
     // F1-7N-FB-4G-A2-R3 - the optional tail gained a third append; a lift that stops at two
     // ReferenceErrors inside a shipped constant.
     'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
-  'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SAD_SCHEMA_GENERATIONS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
+  'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SAD_SCHEMA_GENERATIONS_', 'SAD_AI_K2_INTENT_', 'SAD_ROUTE_INTENTS_', 'SAD_CLIENT_GRANTABLE_INTENTS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
   'SAD_LINE_ETA_TAIL_COLUMNS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_',
   'SAD_STATUSES_', 'SAD_LINE_STATUSES_', 'SAD_TERMINAL_STATUSES_', 'SAD_TERMINAL_LINE_STATUSES_',
   'SAD_GENERATION_TYPES_', 'SAD_RECOMMENDATION_FIELDS_', 'SAD_LINE_LEGACY_ALIASES_',
@@ -153,7 +153,7 @@ eval(['sadApplyLineAliases_', 'sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterminist
   // a create key, the replay lookup, and the identity mint for a new ticket. A lift that omits any of them
   // ReferenceErrors inside a shipped function, which reads exactly like a production defect.
   'sadCreateIdempotencyReady_', 'sadFindHeaderByCreateKey_', 'sadMintNewHeaderId_',
-  'sadSchemaGenerationColumns_', 'sadSupportedSchemaVersions_', 'sadResolveHeaderSchema_',
+  'sadSchemaGenerationColumns_', 'sadSupportedSchemaVersions_', 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_',
   'sadDraftsSchemaReason_', 'sadAtomicUpsertCore_', 'sadSubmitToShippingPlansCore_'
 ].map(function (fn) { return extractFn(G16, fn); }).join('\n'));
 

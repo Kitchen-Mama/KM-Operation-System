@@ -204,7 +204,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R2';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -463,6 +463,14 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       // FB-4C §D — provenance for the lifecycle. `generation_run_id` marks WHICH run owns this row; without it
       // no later run can tell its own rows from the ones it is replacing.
       g.header.generation_run_id = generationRunId;
+      // F1-7N-FC-1B-E3-R4-A2-R1-R2 §5 — AND THE PROVENANCE MARKER ITSELF, which was never set.
+      //
+      // The atomic writer defaults generation_type to `user_created`, so every AI row was STORED with a manual
+      // marker. aiplIsAiGenerated_ reads `user_created` and returns false before it ever looks at the run id,
+      // so the next generation read its own output back as a binding operator decision and suppressed itself
+      // (ALL_SUPPRESSED_BY_MANUAL). The route intent was only half the reason a replay went wrong; this is the
+      // other half, and it would have mislabelled every AI row even with the intent fixed.
+      g.header.generation_type = 'system_generated';
       planned.push({
         marketplace: M, groupNo: g.groupNo, header: g.header, lines: g.lines,
         identity_key: (typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(g.header) : '',
@@ -563,7 +571,16 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     // G — each K2 group is INDIVIDUALLY atomic (one lock inside the atomic endpoint). The overall job reports a
     // truthful per-group outcome; whole-job success is claimed ONLY when every group committed. A retry uses the
     // SAME deterministic identity (SADH-K2-…) so a committed group REUSEs (zero writes), never duplicates.
-    var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({ header: pl.header, lines: pl.lines, enforce_k2_grouping: true }));
+    // F1-7N-FC-1B-E3-R4-A2-R1-R2 §2 — THE GENERATION DECLARES WHAT IT IS DOING.
+    //
+    // A2-R3 made every route write declare its intent, and this call site never did, so from that round
+    // onward EVERY generation refused with ROUTE_INTENT_REQUIRED and wrote nothing. It is not an oversight
+    // that can be fixed by picking one of the two existing intents: this is a create-or-reconcile against a
+    // DETERMINISTIC K2 identity, which is neither minting a ticket nor editing one named by id. The execution
+    // key travels with it as the second witness to a replay, beside the K2 identity itself.
+    var resp = weeklyAiPlanParseResp_(handleUpsertShippingAllocationDraftAtomic_({
+      header: pl.header, lines: pl.lines, enforce_k2_grouping: true,
+      intent: 'UPSERT_AI_GENERATED_K2_ROUTE', execution_key: executionKey }));
     var dd = (resp && resp.data) ? resp.data : {};
     var outcome = resp && resp.success ? (resp.reused ? 'REUSED' : (dd.outcome || 'CREATED')) : ((dd && dd.reason) ? dd.reason : (resp && /COMMITTED_UNVERIFIED/.test(resp.error || '') ? 'COMMITTED_UNVERIFIED' : (resp && /RECONCILIATION_REQUIRED/.test(resp.error || '') ? 'RECONCILIATION_REQUIRED' : 'BLOCKED')));
     if (resp && resp.success) anyOk = true; else anyFail = true;

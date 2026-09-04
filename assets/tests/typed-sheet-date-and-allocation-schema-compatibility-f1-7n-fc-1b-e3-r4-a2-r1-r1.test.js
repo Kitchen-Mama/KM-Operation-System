@@ -501,14 +501,28 @@ ok(!/SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_;[\s\S]{0,400}a\.length !== ca
 // ================================================================================================================
 section('F. THE THIRD BLOCKER — reproduced, pinned, NOT fixed');
 // ================================================================================================================
-var rNoIntent = generate(plan(build({})));
-eq(rNoIntent.success, false, 'F1  as 61_ calls it today, generation FAILS');
-eq((rNoIntent.data.groups[0] || {}).error, 'ROUTE_INTENT_REQUIRED',
-  'F1a with ROUTE_INTENT_REQUIRED — the atomic writer now demands a declared intent');
-eq(census(build({})).headers.length, 0, 'F1b and zero rows are written');
-ok(/ROUTE_INTENT_REQUIRED/.test(G16), 'F2  the requirement is real, and lives in 16_');
-ok(/handleUpsertShippingAllocationDraftAtomic_\(\{ header: pl\.header, lines: pl\.lines, enforce_k2_grouping: true \}\)/.test(G61),
-  'F2a while 61_ still calls the endpoint with no intent — the call site was never updated');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R2): THIS BLOCKER IS FIXED. Everything below was TRUE and REPRODUCED
+// when it was written, and A2-R1-R2 added the third canonical intent it concluded was needed:
+// UPSERT_AI_GENERATED_K2_ROUTE, server-owned, resolving the deterministic identity rather than minting or
+// naming one. The assertions that recorded "61_ still calls with no intent" and "61_ is deliberately
+// unchanged" describe a state that no longer exists and would now fail for the right reason.
+//
+// What SURVIVES from the original section is the part that is still true and still load-bearing: the writer
+// really does require a declared intent, and NEITHER manual intent is a correct substitute for the AI path.
+// That is the whole argument for the third intent, so it is kept and re-measured rather than deleted.
+var rShipped = generate(plan(build({})));
+eq(rShipped.success, true, 'F1  as 61_ calls it TODAY, generation succeeds (the blocker is fixed)');
+eq((rShipped.data.groups[0] || {}).outcome, 'CREATED', 'F1a creating the plan');
+ok(/ROUTE_INTENT_REQUIRED/.test(G16), 'F2  the intent requirement is still real, and still lives in 16_');
+ok(/intent: 'UPSERT_AI_GENERATED_K2_ROUTE'/.test(G61),
+  'F2a and 61_ now DECLARES the server-owned generation intent at its call site');
+// The refusal itself still stands for anything that declares nothing.
+var hNo = plan(build({}));
+hNo.run('var __ra = handleUpsertShippingAllocationDraftAtomic_;' +
+  'handleUpsertShippingAllocationDraftAtomic_ = function (b) { b = b || {}; delete b.intent; return __ra(b); };');
+eq((generate(hNo).data.groups[0] || {}).error, 'ROUTE_INTENT_REQUIRED',
+  'F2b strip the declaration and the writer refuses exactly as before');
+eq(census(hNo).headers.length, 0, 'F2c with zero rows written');
 // What each candidate intent would actually do. This is evidence for the NEXT round, not a fix.
 var hC = plan(build({}), 'CREATE_NEW_ROUTE');
 var rC1 = generate(hC);
@@ -517,15 +531,29 @@ eq(census(hC).headers.length, 1, 'F3a one header');
 eq(census(hC).lines.reduce(function (a, l) { return a + Number(l.recommended_qty || 0); }, 0), 520, 'F3b holding 520');
 ok(/^SADH-K4-/.test(rC1.data.groups[0].allocation_draft_id),
   'F3c … but it mints a K4 CREATE identity, bypassing the deterministic K2 identity entirely');
+// A2-R1-R2 measured the sharper case: a second generation whose EXECUTION KEY has moved (a new daily gap
+// run) against the same route. CREATE's only replay guard is that key, so it mints a fresh random id and
+// leaves TWO active headers holding 1040 units. That is the duplicate the third intent exists to prevent.
+hC.run('__INTENT = "CREATE_NEW_ROUTE";');
+hC.run('var __ra2 = __realAtomic;' +
+  'handleUpsertShippingAllocationDraftAtomic_ = function (b) { b = b || {}; b.intent = "CREATE_NEW_ROUTE";' +
+  '  b.create_idempotency_key = "AIPLAN-KEY-DAY2"; return __ra2(b); };');
 var rC2 = generate(hC);
-eq(rC2.data.job_status, 'ALL_SUPPRESSED_BY_MANUAL',
-  'F4  and the AI run\'s own row is then read back as a BINDING MANUAL DECISION on replay');
-eq(census(hC).headers.length, 1, 'F4a no duplicate is created — but for the wrong reason');
+eq(rC2.success, true, 'F4  a second CREATE under a MOVED create key succeeds …');
+eq(census(hC).headers.filter(function (r) {
+  var st = String(r.status || '').trim().toLowerCase();
+  return st !== 'submitted' && st !== 'cancelled' && st !== 'expired';
+}).length, 2, 'F4a … and leaves TWO active headers — the duplicate plan');
+eq(census(hC).lines.reduce(function (a, l) { return a + Number(l.recommended_qty || 0); }, 0), 1040,
+  'F4b holding 1040 units for a scope whose demand is 520');
 var hU = plan(build({}), 'UPDATE_EXISTING_ROUTE');
 eq((generate(hU).data.groups[0] || {}).error, 'ROUTE_INTENT_CONTRADICTORY',
   'F5  and UPDATE_EXISTING_ROUTE cannot be used: it requires an id the first run does not have');
-ok(!/intent:/.test(extractFn(G61, 'weeklyAiPlanGenerateK2_')),
-  'F6  61_ is deliberately UNCHANGED — neither intent fits a deterministic upsert, so this is a design decision');
+// F6 RESTATED: 61_ IS changed now, and the conclusion that drove the change is what gets asserted instead.
+ok(/UPSERT_AI_GENERATED_K2_ROUTE/.test(extractFn(G61, 'weeklyAiPlanGenerateK2_')),
+  'F6  61_ declares the third intent — neither manual intent fits a deterministic upsert');
+ok(typeof hS.run('SAD_CLIENT_GRANTABLE_INTENTS_')['UPSERT_AI_GENERATED_K2_ROUTE'] === 'undefined',
+  'F6a and it is NOT client-grantable: a request can never declare it');
 
 // ================================================================================================================
 section('G. THE REST OF THE PATH IS SOUND — measured on that same state');
@@ -576,7 +604,16 @@ ok(/CENSUS_log_\('freshness_reason'/.test(TEMP) && /hErr && hErr\.freshness/.tes
 eq(RO.OWNER_STAMPS.filter(function (s) { return !RO.BUILD_STAMP_RE.test(s); }), [],
   'H8  every recorded owner stamp is well-formed under the stamp vocabulary');
 ok(RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R4-A2-R1-R1'), 'H8a including this round\'s');
-ok(/WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1'/.test(G61), 'H9  61_ carries this round\'s stamp');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R2): the TWELFTH round to pin its own stamp literal as "the current one",
+// and mine again — one round after writing the same restatement for KMSNF's version string. What is durable is
+// that 61_ carries a stamp on this line and that its deployment manifest AGREES with it; which round is newest
+// changes by design, and a test that forbids the change is a test that has to be edited to ship anything.
+var _wapStamp = (G61.match(/WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var _wapExpected = ((read(GS + '63_api_v1_system_health.gs')
+  .match(/symbol: 'WAP_BUILD_VERSION_', expected: '([^']+)'/) || [])[1]);
+ok(RO.stampAtOrAfter(_wapStamp, 'F1-7N-FC-1B-E3-R4-A2-R1-R1'),
+  'H9  61_ carries a stamp at or after this round\'s (' + _wapStamp + ')');
+eq(_wapStamp, _wapExpected, 'H9a and its deployment manifest expects exactly that stamp');
 ok(RO.staleAppTokenRefs(read('index.html')).length === 0,
   'H10 no stale frontend token (no browser asset changed this round)');
 

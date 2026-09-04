@@ -78,9 +78,17 @@ ok(/KMWRR\.buildK2GenerationPlan/.test(genK2), 'D3. K2 path derives routes + par
 // now `pl` (a planned group) rather than the loop-local `g`. What D4 exists to protect - the atomic endpoint and
 // the K2 route guard being ON - is unchanged, and the split adds a guarantee D4 could not express: there is
 // exactly ONE write site and it sits downstream of the gate.
-ok(/handleUpsertShippingAllocationDraftAtomic_\(\{ header: pl\.header, lines: pl\.lines, enforce_k2_grouping: true \}\)/.test(genK2), 'D4. each K2 group is written via the ATOMIC endpoint with the K2 route guard ON');
+// RESTATED AGAIN (F1-7N-FC-1B-E3-R4-A2-R1-R2). Still the same claim — the atomic endpoint, with the K2
+// route guard ON — and the call now also DECLARES what it is doing. It had to: A2-R3 required every route
+// write to declare an intent and this call site never did, so from that round until this one every generation
+// refused with ROUTE_INTENT_REQUIRED and wrote nothing. Matching the argument list as one frozen literal is
+// what turned that addition into a test failure rather than the fix it is, so the parts are checked by name.
+ok(/handleUpsertShippingAllocationDraftAtomic_\(\{/.test(genK2), 'D4. each K2 group is written via the ATOMIC endpoint');
+ok(/header: pl\.header, lines: pl\.lines, enforce_k2_grouping: true/.test(genK2), 'D4a with the K2 route guard ON');
+ok(/intent: 'UPSERT_AI_GENERATED_K2_ROUTE'/.test(genK2), 'D4b declaring the server-owned AI generation intent');
+ok(/execution_key: executionKey/.test(genK2), 'D4c and carrying its deterministic execution key');
 ok((genK2.match(/handleUpsertShippingAllocationDraftAtomic_\(/g) || []).length === 1, 'D4. via exactly ONE write site, so no path can bypass the gate that precedes it');
-ok(genK2.indexOf('if (!gate.ready)') < genK2.indexOf('handleUpsertShippingAllocationDraftAtomic_({ header: pl.header'), 'D4. and the schema gate refuses before it');
+ok(genK2.indexOf('if (!gate.ready)') < genK2.indexOf('handleUpsertShippingAllocationDraftAtomic_({'), 'D4. and the schema gate refuses before it');
 ok(/weeklyAiPlanReadCarrierAuthorities_/.test(G61) && /carrier_rate_cards/.test(G61) && /carrier_lead_times/.test(G61), 'D5. the K2 path harvests carrier_rate_cards + carrier_lead_times (absent from the legacy harvest)');
 
 // ============================================================ E — K2 empty-header classifier (H) + diagnostics (I)

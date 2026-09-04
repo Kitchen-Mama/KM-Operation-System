@@ -847,6 +847,21 @@ function doPost(e) {
     // F1-7N-FA-3C-R6F1 — ATOMIC Header + Lines write (one lock; validate-all-before-write; compensation/COMMITTED_
     // UNVERIFIED/fail-closed). Additive; the legacy two-call path above stays available.
     if (action === 'upsertShippingAllocationDraftAtomic') {
+      // F1-7N-FC-1B-E3-R4-A2-R1-R2 §3 — THE SERVER-OWNED INTENT IS NOT REACHABLE FROM A REQUEST.
+      //
+      // UPSERT_AI_GENERATED_K2_ROUTE resolves a DETERMINISTIC K2 identity and creates or reconciles it. That is
+      // the weekly AI Plan orchestration's operation, and 61_ performs it by calling the handler DIRECTLY, in
+      // process — it never travels this path. So the one place an external caller could ask for it is here,
+      // and here it is refused outright rather than quietly downgraded: a request asking for a server-owned
+      // intent is either a mistake or an attempt, and both deserve to be told so by name.
+      var _rIntent = String((body && (body.intent || (body.header && body.header.intent))) || '').trim();
+      if (_rIntent && typeof SAD_CLIENT_GRANTABLE_INTENTS_ !== 'undefined' && !SAD_CLIENT_GRANTABLE_INTENTS_[_rIntent]) {
+        return jsonResponse_({ success: false, error: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE',
+          code: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE', stage: 'intent', zero_write: true,
+          data: { received_intent: _rIntent,
+            client_grantable: Object.keys(SAD_CLIENT_GRANTABLE_INTENTS_),
+            message: 'this route intent is server-owned and cannot be declared by a request (zero rows written)' } });
+      }
       return handleUpsertShippingAllocationDraftAtomic_(body);
     }
 

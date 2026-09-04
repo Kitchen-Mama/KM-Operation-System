@@ -45,7 +45,7 @@ eq(sadIsK2Group_(undefined, '', ri), false, 'B3 no id + route-incomplete header 
 
 // ---- 16_ atomic + keyed cores wire the K2-aware minting (source-fact) -------------------------------------------
 section('B. 16_ cores wire K2-aware line-id minting');
-var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
+var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 ok(/var isK2Group = id \? sadIsK2Group_\(undefined, id, header\) : false;/.test(atomicCore), 'B4 atomic core classifies K2 from explicit id / header authority');
 ok(/isK2Group = sadIsK2Group_\(res\.k2, res\.id, header\);/.test(atomicCore), 'B4 atomic core classifies K2 from the resolver decision on CREATE/REUSE');
 // FB-4B §B — both cores now mint through the SAME canonical helper, which is K2-aware, and both assert the id is

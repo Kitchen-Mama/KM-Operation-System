@@ -270,7 +270,11 @@ ok(gColl.ready === false && /UNRESOLVED_ACTIVE_IDENTITY_COLLISION/.test(gColl.er
 
 // ---- the gate is placed BEFORE the only write, structurally -----------------------------------------------
 var gateIdx = G61C.indexOf('if (!gate.ready)');
-var writeIdx = G61C.indexOf('handleUpsertShippingAllocationDraftAtomic_({ header: pl.header');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R2): the CLAIM is untouched — the schema gate must precede the one and
+// only draft write site. The call now declares its route intent and carries its execution key, so the literal
+// it is found by is shorter; anchoring on the function name keeps the claim and stops the next argument added
+// to that call from reading as a lifecycle regression.
+var writeIdx = G61C.indexOf('handleUpsertShippingAllocationDraftAtomic_({');
 ok(gateIdx > 0 && writeIdx > gateIdx, 'A2 in 61_ the gate refusal precedes the ONLY draft write site');
 eq((G61C.match(/handleUpsertShippingAllocationDraftAtomic_\(/g) || []).length, 1,
   'A2 and there is exactly ONE write site, so nothing can bypass the gate');
@@ -279,7 +283,8 @@ ok(/return jsonResponse_\(\{\s*success: false, zero_write: true,\s*errors: \[gat
 // Ordering is checked on the RAW source, because the PASS markers are comments (the stripped copy has no
 // index for them) and because what matters is the order of the real statements in the shipped file.
 var rawGate = G61.indexOf('if (!gate.ready)');
-var rawWrite = G61.indexOf('handleUpsertShippingAllocationDraftAtomic_({ header: pl.header');
+// RESTATED (A2-R1-R2): anchored on the call itself, not on its frozen argument list.
+var rawWrite = G61.indexOf('handleUpsertShippingAllocationDraftAtomic_({');
 var pass1 = G61.indexOf('---- PASS 1:'), pass2 = G61.indexOf('---- PASS 2:');   // the section markers, which are unique
 ok(pass1 > 0 && pass1 < rawGate, 'A3 the compute pass precedes the gate');
 ok(pass2 > rawGate && pass2 < rawWrite, 'A3 and the write pass begins only after it');

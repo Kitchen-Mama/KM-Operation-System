@@ -130,7 +130,7 @@ ok(vK2off.ok === true, 'F2. K2 guard is OFF by default (live K2 activation HALTe
 
 section('G. atomic write source contract: one lock, validate-before-write, compensation, no delete, routed');
 ok(/function handleUpsertShippingAllocationDraftAtomic_\(body\)/.test(G16) && /LockService\.getScriptLock\(\)/.test(G16) && /tryLock\(30000\)/.test(G16), 'G1. atomic public handler wraps in ONE 30s ScriptLock');
-var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
+var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 ok(atomicCore.indexOf('sadExactSchemaReason_') >= 0 && atomicCore.indexOf('sadAtomicValidateBatch_') >= 0, 'G2. core validates BOTH schemas + the batch BEFORE any write');
 ok(/COMMITTED_UNVERIFIED[\s\S]*compensated: true/.test(atomicCore) && /R6F1_ATOMIC_COMPENSATION_LINE_WRITE_FAILED/.test(atomicCore), 'G3. NEW-header + line failure => soft-cancel compensation + COMMITTED_UNVERIFIED');
 ok(/RECONCILIATION_REQUIRED/.test(atomicCore), 'G3. EXISTING draft + line failure => RECONCILIATION_REQUIRED (fail closed)');

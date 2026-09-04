@@ -792,12 +792,44 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
       supported_versions: (_ds.supported_versions || []).map(function (v) { return v.version + '(' + v.column_count + ')'; })
     } : 'SCHEMA_AUTHORITY_OR_TABLE_UNAVAILABLE');
     // §9 — the parity fact itself, so a divergence is visible in the log rather than inferred later.
+    // F1-7N-FC-1B-E3-R4-A2-R1-R2 §11 — WHAT THE REAL GENERATION WOULD DECLARE, WITHOUT DECLARING IT.
+    //
+    // Read-only, and it constructs NO writer: it reports the intent the production call site carries and
+    // previews the deterministic identity the resolver would land on, so an operator can see which row a live
+    // Generate would create or reconcile BEFORE pressing anything. The intent is read from the server-owned
+    // constant rather than restated here, so a census cannot drift from what generation actually sends.
+    CENSUS_log_('route_intent_that_generation_would_use',
+      (typeof SAD_AI_K2_INTENT_ !== 'undefined') ? SAD_AI_K2_INTENT_ : 'UNKNOWN_INTENT_AUTHORITY_MISSING');
+    CENSUS_log_('route_intent_is_client_grantable',
+      (typeof SAD_CLIENT_GRANTABLE_INTENTS_ !== 'undefined' && typeof SAD_AI_K2_INTENT_ !== 'undefined')
+        ? (SAD_CLIENT_GRANTABLE_INTENTS_[SAD_AI_K2_INTENT_] === 1) : null);
     CENSUS_log_('schema_writer_lifecycle_parity', (_ds && typeof aiplSchemaVersionOf_ === 'function')
       ? { writer_accepts: _ds.ok === true,
           lifecycle_version: aiplSchemaVersionOf_(sadLiveHeaderNames_(_dsSheet)) || null,
           agree: (_ds.ok === true) === (_ds.version !== null) }
       : null);
   } catch (eS2) {}
+  // §11 — THE DETERMINISTIC IDENTITY PREVIEW. Derived from the SAME authority the writer resolves with,
+  // over the routes this census already computed. Nothing is written and no writer is constructed; this only
+  // answers "which row would a live Generate touch?" before anyone presses it.
+  try {
+    var _prev = [];
+    var _grps = (res && res.k2_preview && res.k2_preview.groups) || (res && res.groups) || [];
+    for (var _p = 0; _p < _grps.length && _p < 10; _p++) {
+      var _hh = _grps[_p] && (_grps[_p].header || _grps[_p]);
+      if (!_hh) continue;
+      _prev.push({
+        group_no: _hh.recommendation_group_no || null,
+        k2_group_key: (typeof sadK2GroupKey_ === 'function') ? sadK2GroupKey_(_hh) : null,
+        deterministic_header_id: (typeof ricK4DeterministicHeaderId_ === 'function')
+          ? (function () { try { return ricK4DeterministicHeaderId_(_hh); } catch (e) { return null; } })()
+          : ((typeof sadK2DeterministicHeaderId_ === 'function')
+              ? (function () { try { return sadK2DeterministicHeaderId_(_hh); } catch (e) { return null; } })() : null)
+      });
+    }
+    CENSUS_log_('deterministic_identity_preview', _prev.length ? _prev : 'NO_ROUTES_COMPUTED_IN_THIS_CENSUS');
+  } catch (eP) { CENSUS_log_('deterministic_identity_preview', 'PREVIEW_UNAVAILABLE'); }
+
   // Re-assert the read-only facts from the RESULT rather than from this function's intentions.
   CENSUS_log_('result.read_only', res && res.read_only);
   CENSUS_log_('result.db_writes', res && res.db_writes);

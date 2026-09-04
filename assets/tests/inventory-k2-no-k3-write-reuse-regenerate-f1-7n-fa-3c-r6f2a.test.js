@@ -47,7 +47,7 @@ eq(sadLegacyReconcileReason_(sheet([legacyRow]), { row: 2, col: function () { re
 eq(sadLegacyReconcileReason_(sheet([{ allocation_draft_id: 'X', status: 'draft', planning_cycle: 'C', company: 'KM', country: 'US', marketplace: 'AMZ', source_page: 'inv', recommended_source_warehouse_id: 'WH-CN', recommended_destination_warehouse_id: 'WH-US', recommended_shipping_method: 'SEA' }]), { row: 2, col: function () { return 0; } }, false), '', 'A5. a route-complete existing row edits normally');
 
 section('A. cores handle BLOCK + legacy guard; K3 callers classified');
-var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
+var atomicCore = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 // F1-7N-FB-4F-B3 - the atomic core used to choose between exactly two sentences with an inline ternary, so the
 // reason literal lived in the core itself. B3 adds a third BLOCK reason, and a third case in a two-way ternary
 // would have been described as the second one - a new failure wearing an old failure's explanation. The message

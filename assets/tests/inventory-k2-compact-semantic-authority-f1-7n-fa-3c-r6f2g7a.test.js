@@ -123,7 +123,7 @@ ok(envE.true_business_difference_count >= 1 && envE.may_run_reuse_verifier_local
 
 // ============================================================ 9 — exact retry still returns before every write (source-fact)
 section('9. atomic REUSE returns before any mutation');
-var core = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
+var core = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadAiK2IntentEvidence_', 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 var reuseIdx = core.indexOf('reused: true'), regenIdx = core.indexOf("outcome = 'REGENERATE'"), uaIdx = core.indexOf("setCol('updated_at'");
 ok(/priorFp === incFp \|\| sadK2SemanticPayloadEqual_\(/.test(core), '9. atomic REUSE gate uses sadK2SemanticPayloadEqual_ (the R6F2G7A comparator)');
 ok(reuseIdx !== -1 && reuseIdx < regenIdx && (uaIdx === -1 || reuseIdx < uaIdx), '9. zero-write REUSE return precedes REGENERATE + any updated_at write');

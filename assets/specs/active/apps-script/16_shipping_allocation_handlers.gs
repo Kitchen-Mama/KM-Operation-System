@@ -300,7 +300,132 @@ function sadLineStatusValid_(v) {
 // The statuses no writer may mutate. `expired` is terminal for the same reason `submitted` is: it is history.
 var SAD_TERMINAL_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1 };
 var SAD_TERMINAL_LINE_STATUSES_ = { submitted: 1, cancelled: 1, expired: 1, superseded: 1, superseded_user_review: 1 };
-var SAD_GENERATION_TYPES_ = { scheduled: 1, manual_refresh: 1, user_created: 1 };
+// F1-7N-FC-1B-E3-R4-A2-R1-R2 §5 — `system_generated` JOINS THE VOCABULARY, because it was already the
+// value the rest of the system used and the only list that did not know it was this one. 16_ tests for the
+// literal in two places, 69_'s AIPL_AI_GENERATION_TYPES_ contains it, and sadUpsertDraftHeaderCore_ silently
+// coerced it to `user_created` — which is precisely how an AI row came to carry a MANUAL provenance marker.
+var SAD_GENERATION_TYPES_ = { scheduled: 1, manual_refresh: 1, user_created: 1, system_generated: 1 };
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R2 §2 — THE THIRD ROUTE INTENT, AND WHY TWO WERE NOT ENOUGH.
+//
+// A2-R3 made every route write declare what it MEANS rather than letting the writer infer it from whether a
+// natural key happened to match. That was right, and it had exactly two answers: an explicit user Add Route
+// (always a new ticket) and an explicit edit of a row named by id. The AI Plan is neither. It performs a
+// CREATE-OR-RECONCILE against a DETERMINISTIC K2 group identity: the first run creates SADH-K2-<hash>, and a
+// replay of the same cycle must resolve to that same row and update it.
+//
+// So the AI Plan's call site had no answer it could truthfully give, and being unable to give one it gave
+// none — which is why every generation refused with ROUTE_INTENT_REQUIRED and wrote nothing. Measured, the
+// two available intents are not merely inconvenient, they are WRONG:
+//
+//   CREATE_NEW_ROUTE      writes, but mints a K4 create identity (SADH-K4-...), bypassing the deterministic
+//                         K2 identity that makes a replay idempotent. The row is then indistinguishable from
+//                         an operator's ticket, and the next generation reads its OWN output back as a
+//                         binding manual decision (ALL_SUPPRESSED_BY_MANUAL).
+//   UPDATE_EXISTING_ROUTE refuses: it requires the allocation_draft_id of a row the first run has not created.
+//
+// This intent is therefore a THIRD canonical operation, not an alias for either and not a relaxation of the
+// gate. It is SERVER-OWNED: 01_router.gs refuses it outright from any external request, and the evidence gate
+// below re-checks it at the writer, so an internal caller that has not actually done the work cannot use it.
+var SAD_AI_K2_INTENT_ = 'UPSERT_AI_GENERATED_K2_ROUTE';
+var SAD_ROUTE_INTENTS_ = {
+  CREATE_NEW_ROUTE: { owner: 'user', identity: 'mints a new manual (K4) identity; the resolver is never consulted' },
+  UPDATE_EXISTING_ROUTE: { owner: 'user', identity: 'updates the row named by allocation_draft_id, in place' },
+  UPSERT_AI_GENERATED_K2_ROUTE: { owner: 'server', identity: 'resolves the deterministic K2 group identity; creates or reconciles it' }
+};
+// The two a request may legitimately declare. The third is not in this set and never becomes reachable by
+// adding a field to a payload.
+var SAD_CLIENT_GRANTABLE_INTENTS_ = { CREATE_NEW_ROUTE: 1, UPDATE_EXISTING_ROUTE: 1 };
+
+/**
+ * §3 — THE EVIDENCE THAT EARNS THE AI INTENT. A declaration is not authority.
+ *
+ * `enforce_k2_grouping: true` alone must NOT be enough: it is a routing hint that any caller can set, and
+ * treating it as authorization would make the third intent a public one. What is checked here is the set of
+ * things only a real weekly-AI-Plan generation possesses at this point: a deterministic execution key, an
+ * AI generation run id, the gap-run lineage that admitted the demand, an AI provenance marker, a COMPLETE
+ * route, resolvable K2 identity inputs, and a scope inside the server-owned activation allowlist.
+ *
+ * Anything missing or contradictory is a typed refusal with ZERO writes. Fail closed, and say which fact.
+ */
+function sadAiK2IntentEvidence_(body, header, lines, liveHeaderNames) {
+  body = body || {}; header = header || {};
+  var missing = [], evidence = {};
+  function S(v) { return String(v == null ? '' : v).trim(); }
+
+  // 1. K2 grouping must actually be in force, or "the deterministic K2 identity" names nothing.
+  evidence.enforce_k2_grouping = (body.enforce_k2_grouping === true);
+  if (!evidence.enforce_k2_grouping) missing.push('enforce_k2_grouping must be true for a K2 upsert');
+
+  // 2. The execution key: the caller's own deterministic name for THIS generation attempt.
+  var execKey = S(body.execution_key || body.executionKey || header.execution_key);
+  evidence.execution_key = execKey;
+  if (!execKey) missing.push('execution_key (the deterministic name of this generation attempt)');
+  else if (execKey.length > 200) missing.push('execution_key is not a deterministic key (over 200 chars)');
+
+  // 3. AI provenance. A generation run id is what lets a later run tell its own rows from the ones it replaces.
+  var runId = S(header.generation_run_id);
+  evidence.generation_run_id = runId;
+  if (!runId) missing.push('header.generation_run_id (this run\'s immutable id)');
+  else if (!/^AIRUN-/.test(runId)) missing.push('header.generation_run_id is not an AI generation run id (expected AIRUN-...)');
+
+  var genType = S(header.generation_type).toLowerCase();
+  evidence.generation_type = genType;
+  if (genType !== 'system_generated') {
+    missing.push('header.generation_type must be system_generated (found "' + (genType || '(blank)') + '") — '
+      + 'an AI row stored with a manual marker is read back as a binding operator decision');
+  }
+
+  // 4. The demand lineage that admitted this quantity. Without it the row is a number with no provenance.
+  var calcRun = S(header.calculation_run_id);
+  evidence.calculation_run_id = calcRun;
+  if (!calcRun) missing.push('header.calculation_run_id (the GAP-INV run this plan was computed from)');
+
+  // 5. A COMPLETE route. A partial route persisted under an AI identity is the shape §7 forbids.
+  var src = S(header.recommended_source_warehouse_id);
+  var dest = S(header.recommended_destination_warehouse_id) || S(header.destination_marketplace);
+  var method = S(header.recommended_shipping_method);
+  evidence.route = { from: src, to: dest, method: method };
+  if (!src) missing.push('header.recommended_source_warehouse_id (From)');
+  if (!dest) missing.push('a destination (recommended_destination_warehouse_id or destination_marketplace)');
+  if (!method) missing.push('header.recommended_shipping_method (Method)');
+
+  // 6. The K2 identity inputs themselves must resolve, or there is nothing deterministic to upsert INTO.
+  var gkey = (typeof sadK2GroupKey_ === 'function') ? S(sadK2GroupKey_(header)) : '';
+  evidence.k2_group_key = gkey;
+  if (!gkey) missing.push('the K2 group identity does not resolve from this header');
+
+  // 7. THE SERVER-OWNED ALLOWLIST, re-checked at the writer. 61_ gates it too; this is the last point before a
+  // row exists, and a guard that only runs upstream is a guard an internal caller can skip.
+  var company = S(header.company), country = S(header.country), mkt = S(header.marketplace);
+  evidence.scope = { company: company, country: country, marketplace: mkt };
+  if (typeof inventoryAiPlanScopeEnabled_ !== 'function') {
+    missing.push('the activation allowlist is not present in this deployment');
+  } else {
+    var skus = {}, outside = [];
+    (lines || []).forEach(function (l) { var k = S(l && l.sku); if (k) skus[k] = 1; });
+    var skuList = Object.keys(skus);
+    if (!skuList.length) missing.push('no line carries a sku, so the scope cannot be checked against the allowlist');
+    skuList.forEach(function (k) {
+      if (!inventoryAiPlanScopeEnabled_(company, country, mkt, k)) outside.push(k);
+    });
+    evidence.skus = skuList;
+    evidence.outside_allowlist = outside;
+    if (outside.length) {
+      missing.push('scope is outside the controlled activation allowlist for sku(s): ' + outside.join(', '));
+    }
+  }
+
+  // 8. Whether the execution key can actually be STORED. Not a refusal: the K2 identity is the replay
+  // authority, and a 34/35-column deployment that cannot hold the key is still safe to upsert into. It is
+  // REPORTED so a reader never has to infer why the column came back blank.
+  evidence.execution_key_persistable = (typeof sadCreateIdempotencyReady_ === 'function')
+    ? sadCreateIdempotencyReady_(liveHeaderNames || []) === true : false;
+
+  return { ok: missing.length === 0, missing: missing, evidence: evidence };
+}
+
 
 // The recommendation-snapshot fields — written only when the incoming line supplies them, so an
 // Execution-Plan save (which omits them) never clobbers the immutable recommendation (§D). Canonical
@@ -1782,11 +1907,43 @@ function sadAtomicUpsertCore_(body) {
   var intentApplies = atomicRouteIntent && atomicStatus !== 'cancelled' && allowReconcile !== true;
   var createKey = String(body.create_idempotency_key || header.create_idempotency_key || '').trim();
 
-  if (intentApplies) {
+  // F1-7N-FC-1B-E3-R4-A2-R1-R2 §2/§4 — THE AI GENERATION'S OWN INTENT.
+  //
+  // It is handled FIRST and separately because it is the one intent that must reach the deterministic K2
+  // resolver below: it neither mints an identity (CREATE) nor names one (UPDATE), it RESOLVES one. Everything
+  // the two manual intents do is untouched underneath.
+  var isAiK2 = (sadIntent === SAD_AI_K2_INTENT_);
+  var aiEvidence = null;
+  if (intentApplies && isAiK2) {
+    // §3 — a declaration is not authority. The router refuses this intent from any external request; this is
+    // the second half of that gate, so an internal caller that has not done the work cannot use it either.
+    aiEvidence = sadAiK2IntentEvidence_(body, header, lines, hNames);
+    if (!aiEvidence.ok) {
+      return jsonResponse_({ success: false, error: 'AI_ROUTE_INTENT_EVIDENCE_INSUFFICIENT',
+        code: 'AI_ROUTE_INTENT_EVIDENCE_INSUFFICIENT', stage: 'intent', zero_write: true,
+        data: { intent: sadIntent, missing: aiEvidence.missing, evidence: aiEvidence.evidence,
+          message: 'UPSERT_AI_GENERATED_K2_ROUTE is server-owned and must arrive with complete generation evidence; '
+            + aiEvidence.missing.length + ' fact(s) missing or contradictory (zero rows written)' } });
+    }
+    if (id) {
+      // An AI upsert RESOLVES its identity. Naming one would let a caller point the deterministic write at an
+      // arbitrary row, which is the whole thing the deterministic identity exists to prevent.
+      return jsonResponse_({ success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY',
+        stage: 'intent', zero_write: true, data: { intent: sadIntent, allocation_draft_id: id,
+          message: 'UPSERT_AI_GENERATED_K2_ROUTE resolves its own deterministic K2 identity and must not name an allocation_draft_id (zero rows written)' } });
+    }
+    // The execution key is PERSISTED where a create key lives, so a replay has a second, independent witness
+    // beside the K2 identity. On a deployment whose header cannot hold it the upsert still proceeds — the K2
+    // identity is the replay authority — and the result says the key was not stored rather than implying it was.
+    if (aiEvidence.evidence.execution_key_persistable) createKey = aiEvidence.evidence.execution_key;
+  }
+
+  if (intentApplies && !isAiK2) {
     if (sadIntent !== 'UPDATE_EXISTING_ROUTE' && sadIntent !== 'CREATE_NEW_ROUTE') {
       return jsonResponse_({ success: false, error: 'ROUTE_INTENT_REQUIRED', code: 'ROUTE_INTENT_REQUIRED',
         stage: 'intent', zero_write: true, data: { received_intent: sadIntent,
-          message: 'a route write must declare intent = UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from whether a natural key matches (zero rows written)' } });
+          message: 'a route write must declare intent = UPDATE_EXISTING_ROUTE or CREATE_NEW_ROUTE; it is never inferred from whether a natural key matches (zero rows written)',
+          server_owned_intents: [SAD_AI_K2_INTENT_] } });
     }
     if (sadIntent === 'UPDATE_EXISTING_ROUTE' && !id) {
       return jsonResponse_({ success: false, error: 'ROUTE_INTENT_CONTRADICTORY', code: 'ROUTE_INTENT_CONTRADICTORY',
@@ -1844,13 +2001,43 @@ function sadAtomicUpsertCore_(body) {
     }
   }
 
-  if (!id && !intentApplies) {
+  // §4 — the AI K2 intent lands HERE, on the SAME deterministic identity authority manual saves and the
+  // pre-A2-R3 generation path both used. No second hash, no parallel identity family: a first run gets
+  // CREATE with a deterministic SADH-K2- id, and a replay gets REUSE of that very row.
+  if (!id && (!intentApplies || isAiK2)) {
     var res = sadResolveActiveDraftK2OrK3_(hSh, header, { allowLegacyReconcile: allowReconcile, k4Ready: k4Ready });
     if (res.status === 'CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + ' (zero rows written)', stage: 'header', zero_write: true, data: { conflictIds: res.conflictIds, k2: res.k2 } });
     if (res.status === 'BLOCK') return jsonResponse_({ success: false, error: res.reason + ' — ' + sadResolveBlockMessage_(res.reason) + ' (zero rows written)', stage: 'header', zero_write: true, data: { reason: res.reason, existing_id: res.id || null } });
     isK2Group = sadIsK2Group_(res.k2, res.id, header);
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(hSh, 'allocation_draft_id', id); }
-    else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id → INSERT with it (found stays null)
+    else if (res.status === 'CREATE' && res.id) {
+      // F1-7N-FC-1B-E3-R4-A2-R1-R2 §6 — A DETERMINISTIC ID THAT A TERMINAL ROW ALREADY HOLDS.
+      //
+      // The resolver considers ACTIVE rows only, which is right: a cancelled plan must never be revived or
+      // resurrected by a later run. But the id it then hands back for the INSERT is DETERMINISTIC, so if the
+      // operator cancelled the previous plan for this exact route, that id is already taken — and inserting
+      // anyway produced TWO ROWS WITH THE SAME allocation_draft_id (measured: one cancelled, one draft).
+      // Nothing was revived, and the identity became ambiguous instead: procurementFindRow_ returns the FIRST
+      // match, so every later lookup by id would find the CANCELLED row and refuse as terminal, leaving the
+      // new active plan unreachable by its own name.
+      //
+      // Neither reviving the cancelled row nor writing beside it is acceptable, so this refuses and says so.
+      // Deliberately NOT auto-minting a fresh id: which row an operator meant after cancelling one is a
+      // business decision, and a writer that silently invents a second identity is how a table ends up with
+      // two plans for one route.
+      var _held = procurementFindRow_(hSh, 'allocation_draft_id', res.id);
+      if (_held) {
+        var _hs = _held.col('status');
+        var _hst = _hs !== -1 ? String(hSh.getRange(_held.row, _hs + 1).getValue()).trim().toLowerCase() : '';
+        return jsonResponse_({ success: false, error: 'ROUTE_IDENTITY_HELD_BY_TERMINAL_DRAFT',
+          code: 'ROUTE_IDENTITY_HELD_BY_TERMINAL_DRAFT', stage: 'header', zero_write: true,
+          data: { allocation_draft_id: res.id, held_status: _hst,
+            message: 'the deterministic identity for this route is already held by a ' + (_hst || 'non-active')
+              + ' draft. It is not revived and nothing was written; a new plan for this route needs an explicit '
+              + 'decision about the cancelled one.' } });
+      }
+      id = res.id;   // K2/K4 deterministic id → INSERT with it (found stays null)
+    }
   }
   if (found) {
     var cS = found.col('status'); var st = cS !== -1 ? String(hSh.getRange(found.row, cS + 1).getValue()).trim().toLowerCase() : '';
