@@ -163,7 +163,18 @@
       var relaxed = (input.rateCards || []).map(kmra.normalizeRateCard).filter(function (dto) { return kmra.cardMatchesRoute(dto, routeQuery); });
       var reason = !relaxed.length ? 'NO_CARRIER_CARD_FOR_LANE'
         : (!relaxed.some(function (dto) { return dto.shippingMethod; }) ? 'NO_CANONICAL_METHOD' : 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
-      return blocked('ROUTE_METHOD_UNRESOLVED', reason);
+      // §7 — the lane key travels with the refusal. Without it a consumer can report that no method
+      // resolved but not WHICH origin/destination/marketplace triple had no card.
+      var b = blocked('ROUTE_METHOD_UNRESOLVED', reason);
+      b.lane_query = { originCountry: routeQuery.originCountry, destinationCountry: routeQuery.destinationCountry,
+        marketplace: routeQuery.marketplace, shipDate: s(input.shipDate) };
+      b.method_unresolved_candidates = relaxed.slice(0, 10).map(function (dto) {
+        return { rateCardId: dto.rateCardId, originCountry: dto.originCountry,
+          destinationCountry: dto.destinationCountry, marketplace: dto.marketplace,
+          shippingMethod: dto.shippingMethod, status: dto.status,
+          effectiveFrom: dto.effectiveFrom, effectiveTo: dto.effectiveTo };
+      });
+      return b;
     }
 
     var reqOrd = dateToOrdinal(input.requiredByDate);
@@ -318,7 +329,15 @@
     scope = scope || {};
     var buckets = {}, order = [], blocked = [];
     (routedLines || []).forEach(function (rl) {
-      if (!rl || !rl.route || rl.block) { if (rl && rl.block) blocked.push({ line: rl.line, block: rl.block, advisory: rl.advisory || null, route_candidate_status: rl.route_candidate_status || 'BLOCKED', auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null, manual_method_options: rl.manual_method_options || [] }); return; }
+      // F1-7N-FC-1B-E3-R4-A2-R1-R3 §7 — THE SUB-TYPE DIED AT THIS BOUNDARY.
+      //
+      // deriveRoute already distinguishes NO_CARRIER_CARD_FOR_LANE from CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE
+      // from NO_CANONICAL_METHOD, and R6F2D added that on purpose ("never a generic bucket when a cause is
+      // known"). This line carried `auto_ranking_insufficient_reason` through and DROPPED
+      // `method_unresolved_reason`, so a ROUTE_METHOD_UNRESOLVED block reached every consumer — the
+      // generation's `blocked` list, the census, the preflight — as the bare token with no cause attached.
+      // The lane query goes with it, because "which lane" is half of what makes the cause actionable.
+      if (!rl || !rl.route || rl.block) { if (rl && rl.block) blocked.push({ line: rl.line, block: rl.block, advisory: rl.advisory || null, route_candidate_status: rl.route_candidate_status || 'BLOCKED', auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null, method_unresolved_reason: rl.method_unresolved_reason || null, lane_query: rl.lane_query || null, manual_method_options: rl.manual_method_options || [] }); return; }
       var key = routeTuple(rl.route);
       if (!buckets[key]) { buckets[key] = { routeKey: key, route: rl.route, lines: [] }; order.push(key); }
       buckets[key].lines.push(rl.line);

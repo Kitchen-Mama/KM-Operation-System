@@ -352,7 +352,7 @@
     // ---- metrics (§D/§E) -------------------------------------------------------------------------------
     // Counts and durations only. No URL, no action payload, no row. `requests` is the number that makes
     // "exactly one request" a measured fact instead of a claim in a comment.
-    var _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [] };
+    var _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} };
     function bump(map, key) { if (!key) return; map[key] = (map[key] || 0) + 1; }
     function record(sample) {
       _metrics.requests += 1;
@@ -375,10 +375,12 @@
         recoveries: _metrics.recoveries,
         byAction: JSON.parse(JSON.stringify(_metrics.byAction)),
         byCode: JSON.parse(JSON.stringify(_metrics.byCode)),
+        // §16.3 — why reads were not shared, so `coalesced` can be read as a fact rather than a puzzle.
+        share_skipped: JSON.parse(JSON.stringify(_metrics.shareSkipped || {})),
         samples: _metrics.samples.slice()
       };
     }
-    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [] }; }
+    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} }; }
     // The legacy runners (the workspace POST path and the getTable reader) still own their own fetch, so they
     // report their outcome HERE rather than being rewritten wholesale in one round. Without this the §E report
     // would be structurally empty in production while looking like a measurement — which is worse than no
@@ -400,7 +402,17 @@
             code: sample.code ? str(sample.code) : null, phase: str(sample.phase) || null,
             ms: (typeof sample.ms === 'number' && sample.ms >= 0) ? sample.ms : 0,
             bytes: (typeof sample.bytes === 'number' && sample.bytes >= 0) ? sample.bytes : 0,
-            attempts: (typeof sample.attempts === 'number') ? sample.attempts : 1, external: true });
+            attempts: (typeof sample.attempts === 'number') ? sample.attempts : 1,
+            // §16.1 — an EXTERNALLY recorded sample (a legacy runner that owns its own fetch) usually cannot
+            // supply these. They are carried when present and left EXPLICITLY null when not, so "the runner
+            // did not tell us" is distinguishable from "the server did not answer". A classifier that read a
+            // missing field as a negative would turn a reporting gap into a false finding.
+            http_status: (typeof sample.http_status === 'number') ? sample.http_status : null,
+            redirected: sample.redirected === true,
+            server_answered: (typeof sample.server_answered === 'boolean') ? sample.server_answered : null,
+            server_ms: (typeof sample.server_ms === 'number') ? sample.server_ms : null,
+            request_id: sample.request_id ? str(sample.request_id) : null,
+            external: true });
         return true;
     }
 
@@ -467,6 +479,13 @@
       return p;
     }
     function scopedInflightKeys() { return Object.keys(_scopedInflight); }
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — a read that was NOT eligible for in-flight sharing says why.
+    // Counted per (action, reason). `coalesced: 0` beside two identical requests is ambiguous on its own, and
+    // the ambiguity is what sent the last investigation to the wrong table.
+    function noteShareSkipped(action, reason) {
+      var a = str(action) || '(unknown)', r = str(reason) || 'UNSPECIFIED';
+      _metrics.shareSkipped[a + ' :: ' + r] = (_metrics.shareSkipped[a + ' :: ' + r] || 0) + 1;
+    }
     // A stable serialization for a request payload: sorted keys at every level, so two equivalent payloads
     // produce the SAME key regardless of construction order, and two different ones never collide.
     function canonicalScope(value) {
@@ -754,8 +773,38 @@
         res.timings = t;
         res.maskedEndpoint = ep.maskedEndpoint;
         res.endpointClass = ep.endpointClass;
+        // ==========================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.1 — DID THE REQUEST REACH THE SERVER AT ALL?
+        //
+        // A live report classified five timeouts across FOUR different actions and could not answer that
+        // question, because a sample carried only action / kind / code / phase / ms / bytes / attempts.
+        // With no server evidence in the record, "the 19-table workspace read is too slow" and "nothing we
+        // sent was ever accepted" are indistinguishable — and the first reading is the one people reach
+        // for, because it names something they already know is slow.
+        //
+        // Every field added here was ALREADY computed on this code path and thrown away at this line. None
+        // of it is new measurement and none of it is a payload, a URL or a row:
+        //
+        //   http_status      the response status, or null when NO response ever arrived
+        //   redirected       whether the platform's /exec → script.googleusercontent hop happened
+        //   server_answered  whether a parseable envelope came back (the router ran)
+        //   server_ms        the server's own execution time, when the envelope reports one
+        //   request_id       the correlation id, so a client sample can be matched to a server execution
+        //
+        // `server_answered:false` with `http_status:null` on several DIFFERENT actions is what makes a
+        // SHARED transport/dispatch fault decidable rather than assumed.
+        var _d = res.details || {};
+        var _env = res.envelope || null;
+        var _meta = (_env && _env.meta) || null;
         record({ action: action, kind: kind, code: res.success ? null : res.code, phase: res.phase,
-          ms: t.total, bytes: (res.details && res.details.responseBytes) || 0, attempts: (res.details && res.details.attempt) || 1 });
+          ms: t.total, bytes: _d.responseBytes || 0, attempts: _d.attempt || 1,
+          http_status: (typeof _d.httpStatus === 'number') ? _d.httpStatus : null,
+          redirected: _d.redirected === true,
+          server_answered: !!_env,
+          server_ms: (_meta && typeof _meta.serverDurationMs === 'number') ? _meta.serverDurationMs : null,
+          request_id: requestId || null,
+          endpoint_class: ep.endpointClass || null,
+          timeout_ms: (typeof _d.timeout_ms === 'number') ? _d.timeout_ms : null });
         return res;
       });
     }
@@ -993,6 +1042,7 @@
       singleFlight: singleFlight, isMetadataKey: isMetadataKey, inflightKeys: inflightKeys,
       // F1-7N-FB-4E-R3 §E — scope-keyed in-flight reuse for BUSINESS reads (separate from the metadata latch)
       scopedSingleFlight: scopedSingleFlight, scopedInflightKeys: scopedInflightKeys, canonicalScope: canonicalScope,
+      noteShareSkipped: noteShareSkipped,
       metadataKeys: function () { return Object.keys(METADATA_KEYS); },
       // observation
       metrics: metrics, resetMetrics: resetMetrics, recordExternal: recordExternal, uiState: uiState, describe: describe,

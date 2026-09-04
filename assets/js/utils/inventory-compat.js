@@ -1390,9 +1390,39 @@
   var IR_READ_TIMEOUT_CLASSES = {
     COLD_START_OR_TRANSIENT_TIMEOUT: 'COLD_START_OR_TRANSIENT_TIMEOUT',
     REPEATED_READ_TIMEOUT: 'REPEATED_READ_TIMEOUT',
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16 — THE CLASS THE LIVE EVIDENCE ACTUALLY SUPPORTED.
+    //
+    // A live run timed out FIVE requests across FOUR different actions: getClientCapabilities (45.6s),
+    // inventoryScope.registry.get (45.6s), gapJob.status.get (45.6s) and two inventoryReplenishment
+    // .workspace.get (60.6s, 60.3s). Every one in phase DISPATCH, and not one with any server evidence.
+    //
+    // The old vocabulary had no name for that, so it came out as REPEATED_READ_TIMEOUT — a class whose name
+    // says "a read keeps timing out" and which, on this page, reads as "the 19-table workspace read is too
+    // slow". That reading is available, it is plausible, and this evidence does not support it:
+    // getClientCapabilities and gapJob.status.get are small reads that touch none of the workspace tables,
+    // and they failed at the SAME bound in the SAME phase.
+    //
+    // When lightweight and heavyweight actions fail together with no server evidence, what they share is the
+    // transport and the dispatch, not the table set. So that is what this is called — and it is deliberately
+    // a statement about what is SHARED rather than a root cause. §16.1's reach classification is what
+    // narrows it further, and until it can, the honest answer stays UNRESOLVED.
+    SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT: 'SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT',
     SUCCESS_AFTER_RETRY: 'SUCCESS_AFTER_RETRY',
     SERVER_TYPED_FAILURE: 'SERVER_TYPED_FAILURE',
     NO_TIMEOUT_OBSERVED: 'NO_TIMEOUT_OBSERVED'
+  };
+  // §16.1 — the enumerated answers to "did it reach Apps Script?". Each one has a DIFFERENT fix, which is
+  // why guessing between them is expensive. The last is not a failure of the enumeration: it is the correct
+  // answer whenever the telemetry cannot separate the others, and it must stay reachable.
+  var IR_REACH_CLASSES = {
+    CLIENT_DISPATCH_NOT_ACCEPTED: 'CLIENT_DISPATCH_NOT_ACCEPTED',
+    PLATFORM_REDIRECT_FAILURE: 'PLATFORM_REDIRECT_FAILURE',
+    SERVER_QUEUE_OR_CONCURRENCY_DELAY: 'SERVER_QUEUE_OR_CONCURRENCY_DELAY',
+    SERVER_LOCK_CONTENTION: 'SERVER_LOCK_CONTENTION',
+    SERVER_EXECUTION_EXCEEDED_CLIENT_BOUND: 'SERVER_EXECUTION_EXCEEDED_CLIENT_BOUND',
+    SERVER_RESPONSE_PARSE_FAILURE: 'SERVER_RESPONSE_PARSE_FAILURE',
+    NETWORK_OR_PLATFORM_TRANSIENT: 'NETWORK_OR_PLATFORM_TRANSIENT',
+    UNRESOLVED_WITH_CURRENT_TELEMETRY: 'UNRESOLVED_WITH_CURRENT_TELEMETRY'
   };
   var IR_TIMEOUT_CODES = ['REQUEST_TIMEOUT', 'REQUEST_TIMEOUT_WRITE_INDETERMINATE'];
   function classifyReadTimeouts(samples, action) {
@@ -1419,15 +1449,181 @@
     for (var i = 0; i < reads.length; i++) { if (IR_TIMEOUT_CODES.indexOf(sstr(reads[i].code)) !== -1) lastTimeout = i; }
     var recovered = false;
     for (var j = lastTimeout + 1; j < reads.length; j++) { if (!sstr(reads[j].code)) { recovered = true; break; } }
+    // §16.2 — HOW MANY DIFFERENT ACTIONS FAILED, AND DID ANY OF THEM HEAR FROM THE SERVER?
+    //
+    // Those two facts separate a slow read from an unavailable transport, and neither was computed before.
+    // `serverEvidence` is deliberately THREE-VALUED: a sample recorded before the R3 transport carries no
+    // `server_answered` field at all, and reading that absence as "no evidence" would let a reporting gap
+    // masquerade as a finding about the platform.
+    var actionSet = {}, nActions = 0;
+    timeouts.forEach(function (t2) {
+      var a = sstr(t2.action) || '(unnamed)';
+      if (!actionSet[a]) { actionSet[a] = 0; nActions++; }
+      actionSet[a] += 1;
+    });
+    out.timeoutActions = actionSet;
+    out.distinctTimeoutActions = nActions;
+    var known = reads.filter(function (r) { return typeof r.server_answered === 'boolean'; });
+    out.serverEvidenceKnown = known.length > 0;
+    out.serverEvidence = out.serverEvidenceKnown
+      ? known.some(function (r) { return r.server_answered === true || typeof r.server_ms === 'number'; })
+      : null;
+    out.phases = timeouts.map(function (t2) { return sstr(t2.phase); });
     if (recovered) out.classification = IR_READ_TIMEOUT_CLASSES.SUCCESS_AFTER_RETRY;
+    // A SHARED fault OUTRANKS both remaining classes: it is the only one of the three that explains
+    // lightweight and heavyweight actions failing together, and calling it a repeated READ timeout points the
+    // reader at the table set. `want` is respected — asking about ONE action can never produce this class,
+    // because a single-action view cannot see that others failed too.
+    else if (!want && nActions >= 2 && out.serverEvidence !== true) {
+      out.classification = IR_READ_TIMEOUT_CLASSES.SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT;
+    }
     else if (timeouts.length > 1) out.classification = IR_READ_TIMEOUT_CLASSES.REPEATED_READ_TIMEOUT;
+    // COLD START stays available only for a single timeout of a single action: a cold start is one execution
+    // warming up, not four different endpoints going quiet at the same bound.
     else out.classification = IR_READ_TIMEOUT_CLASSES.COLD_START_OR_TRANSIENT_TIMEOUT;
+    out.reach = classifyReach(reads);
     return out;
   }
+
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.1 — WHERE IN THE LIFECYCLE DID IT STOP?
+  //
+  // PURE, and it answers ONLY from evidence. The buckets are not ordered by likelihood and there is no default
+  // to the most familiar one: a case the samples cannot separate returns UNRESOLVED_WITH_CURRENT_TELEMETRY and
+  // NAMES the server-side evidence that would decide it. §18 permits REQUEST_REACHED_SERVER_CLASSIFIED to be
+  // "NO — TELEMETRY GAP"; it does not permit inventing a YES.
+  // ==============================================================================================================
+  function classifyReach(samples) {
+    var reads = (samples || []).filter(function (s) { return s && sstr(s.kind) !== 'write'; });
+    var timeouts = reads.filter(function (s) { return IR_TIMEOUT_CODES.indexOf(sstr(s.code)) !== -1; });
+    var out = {
+      classification: IR_REACH_CLASSES.UNRESOLVED_WITH_CURRENT_TELEMETRY,
+      timeouts: timeouts.length,
+      telemetry: { http_status: 0, redirected: 0, server_answered: 0, server_ms: 0, request_id: 0, unknown: 0 },
+      evidence: [], missing: []
+    };
+    if (!timeouts.length) { out.missing.push('NO_TIMEOUT_TO_CLASSIFY'); return out; }
+    timeouts.forEach(function (t2) {
+      if (typeof t2.http_status === 'number') out.telemetry.http_status++;
+      if (t2.redirected === true) out.telemetry.redirected++;
+      if (typeof t2.server_answered === 'boolean') out.telemetry.server_answered++; else out.telemetry.unknown++;
+      if (typeof t2.server_ms === 'number') out.telemetry.server_ms++;
+      if (t2.request_id) out.telemetry.request_id++;
+    });
+    // 1. The server told us how long it took and it was longer than the client waited. The only bucket that
+    //    means "make the server faster".
+    if (out.telemetry.server_ms > 0) {
+      out.classification = IR_REACH_CLASSES.SERVER_EXECUTION_EXCEEDED_CLIENT_BOUND;
+      out.evidence.push('a timed-out request still reported server execution time');
+      return out;
+    }
+    // 2. A response arrived and could not be turned into an envelope.
+    if (timeouts.some(function (t2) { return t2.server_answered === false && typeof t2.http_status === 'number'; })) {
+      out.classification = IR_REACH_CLASSES.SERVER_RESPONSE_PARSE_FAILURE;
+      out.evidence.push('an HTTP status arrived with no parseable envelope');
+      return out;
+    }
+    // 3. The redirect hop happened and then nothing did.
+    if (timeouts.some(function (t2) { return t2.redirected === true && t2.server_answered !== true; })) {
+      out.classification = IR_REACH_CLASSES.PLATFORM_REDIRECT_FAILURE;
+      out.evidence.push('the platform redirect completed and no answer followed it');
+      return out;
+    }
+    // 4. No response, no status, no redirect, on requests we KNOW carried the R3 telemetry. This is as far as
+    //    the browser can see: the request was dispatched and nothing came back. Which of
+    //    CLIENT_DISPATCH_NOT_ACCEPTED / SERVER_QUEUE_OR_CONCURRENCY_DELAY / SERVER_LOCK_CONTENTION /
+    //    NETWORK_OR_PLATFORM_TRANSIENT it is cannot be decided from here, and saying so beats picking one.
+    if (out.telemetry.server_answered === timeouts.length && out.telemetry.http_status === 0) {
+      out.evidence.push('every timed-out request produced no status, no redirect and no envelope');
+      out.missing.push('APPS_SCRIPT_EXECUTION_RECORD: whether an execution started for the correlation id');
+      out.missing.push('SERVER_QUEUE_TIME: whether the execution waited before running');
+      out.missing.push('SCRIPT_LOCK_WAIT: whether it blocked on a script/user lock');
+      return out;
+    }
+    // 5. Samples recorded before the R3 transport cannot be classified at all, and it says which field is absent.
+    out.missing.push('CLIENT_TELEMETRY: ' + out.telemetry.unknown + ' of ' + timeouts.length
+      + ' timed-out samples carry no server_answered field (recorded before the A2-R1-R3 transport)');
+    return out;
+  }
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.7 — ONE OUTAGE IS ONE MESSAGE.
+  //
+  // When the transport is unavailable, four reads fail and the page renders four large red errors: a capability
+  // failure, a scope-registry failure, a gap-status failure and a workspace failure. They are ONE fact told four
+  // times, and the shape of the screen actively misleads — it looks like four things are broken, and the
+  // selectors disappear underneath them, so the operator loses the scope they had chosen as well.
+  //
+  // PURE. It decides the message and the retry set from a stage report; it renders nothing and touches no DOM.
+  // Three rules it enforces by construction:
+  //
+  //   * the SHELL and the SELECTORS are never part of the failure. `preserve_scope` is unconditionally true:
+  //     a transport outage is not a reason to forget which country the operator was looking at.
+  //   * a CAPABILITY failure alone is never a page-level outage. Capabilities are advisory; blocking the main
+  //     view on them turns a degraded read into a blank screen.
+  //   * RETRY IS STAGE-SCOPED. `retry_stages` lists only the stages that actually failed, so nothing that
+  //     succeeded is re-fetched and no whole-page reload is offered.
+  // ==============================================================================================================
+  var IR_NON_BLOCKING_STAGES = ['deployment_contract'];
+  function availabilityNotice(report) {
+    report = report || {};
+    var stages = arr(report.stages);
+    var failed = stages.filter(function (st) {
+      var codes = arr(st && st.codes);
+      return codes.length > 0 && codes.every(function (c) { return sstr(c) !== '' && sstr(c) !== 'SUCCESS'; });
+    });
+    var failedNames = failed.map(function (st) { return sstr(st.stage); });
+    var blocking = failedNames.filter(function (nm) { return IR_NON_BLOCKING_STAGES.indexOf(nm) === -1; });
+    var out = {
+      // The scope the operator chose survives every outcome. This is not a message property; it is an
+      // instruction to the renderer, and it has no false branch.
+      preserve_scope: true,
+      keep_shell: true,
+      failed_stages: failedNames,
+      blocking_stages: blocking,
+      // Only the stages that failed. Never 'ALL', never a page reload.
+      retry_stages: blocking.slice(),
+      notice_count: 0, mode: 'NONE', headline: null, detail: null, action_label: null
+    };
+    if (!failedNames.length) return out;
+    // A capability failure on its own leaves the page usable, so it is reported quietly and does not block.
+    if (!blocking.length) {
+      out.notice_count = 1;
+      out.mode = 'DEGRADED_NON_BLOCKING';
+      out.headline = 'Some optional information could not be loaded.';
+      out.detail = 'The page is usable. Optional capability details are unavailable.';
+      out.action_label = 'Retry';
+      out.retry_stages = failedNames.slice();
+      return out;
+    }
+    // MORE THAN ONE stage down, or the shared-transport classification, is ONE availability message.
+    var shared = sstr(report.classification) === IR_READ_TIMEOUT_CLASSES.SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT;
+    if (shared || blocking.length > 1) {
+      out.notice_count = 1;
+      out.mode = 'SERVICE_UNAVAILABLE';
+      out.headline = 'The data service is not responding.';
+      out.detail = 'No answer arrived for ' + blocking.length + ' of the page\u2019s reads. '
+        + 'Your Country and Marketplace selection has been kept. Retry when you are ready.';
+      out.action_label = 'Retry';
+      return out;
+    }
+    // Exactly one blocking stage: name it, and only it.
+    out.notice_count = 1;
+    out.mode = 'SINGLE_STAGE_FAILED';
+    out.headline = 'One part of this page could not be loaded.';
+    out.detail = 'The ' + blocking[0].replace(/_/g, ' ') + ' read did not complete. '
+      + 'Your Country and Marketplace selection has been kept.';
+    out.action_label = 'Retry';
+    return out;
+  }
+
   var IRReadTimeoutDiagnostic = {
     CLASSES: IR_READ_TIMEOUT_CLASSES,
+    REACH_CLASSES: IR_REACH_CLASSES,
     TIMEOUT_CODES: IR_TIMEOUT_CODES,
-    classify: classifyReadTimeouts
+    NON_BLOCKING_STAGES: IR_NON_BLOCKING_STAGES,
+    classify: classifyReadTimeouts,
+    classifyReach: classifyReach,
+    availabilityNotice: availabilityNotice
   };
 
   var IRRouteProvenance = {

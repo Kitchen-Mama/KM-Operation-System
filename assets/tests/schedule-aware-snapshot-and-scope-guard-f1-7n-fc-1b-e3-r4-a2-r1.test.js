@@ -375,7 +375,18 @@ ok(RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R4-A2-R1'), 'A2a and the shared stamp 
 // ================================================================================================================
 section('§K — release identity');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1be3r4a2r1-schedaware-20260904', 'K1  this round mints a NEW application token');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R3), and restated STRUCTURALLY, because this is the THIRTEENTH
+// consecutive round in which a suite pinned its own literal as "the current one" and the next round's
+// legitimate value broke it. Each was the same mistake in a different field, and re-pinning a newer literal
+// here would only schedule the fourteenth.
+//
+// The CLAIM was never "the current token equals this string" — a later round minting its own token is the
+// system working. It was "this round minted a token of its own, and nothing later was left behind it". Both
+// halves are answerable from the shared ledger, which owns the ordering, so that is what is asked.
+ok(RO.tokenIndex('fc1be3r4a2r1-schedaware-20260904') !== -1,
+  'K1  this round\'s application token is registered in the shared ledger');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a2r1-schedaware-20260904'),
+  'K1b and no later round has been left behind it');
 ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1be3r4a1-livecontract-20260904'),
   'K1a strictly after R4-A1\'s, which was PUBLISHED (origin/main carries 6266169)');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on a superseded token');

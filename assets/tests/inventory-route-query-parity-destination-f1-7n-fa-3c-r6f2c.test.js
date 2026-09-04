@@ -109,7 +109,22 @@ section('B — carrier TRANSPORT + adapter classifier source contracts (61_ hand
 var GS61 = read('specs/active/apps-script/61_api_v1_weekly_ai_plan.gs');
 ok(/Array\.isArray\(o\) \? o : \(\(o && Array\.isArray\(o\.rows\)\) \? o\.rows : \[\]\)/.test(GS61), 'B2 weeklyAiPlanReadCarrierAuthorities_ accepts the bare-array shape gapReadObjects_ returns (the 174→0 transport fix)');
 ok(/function weeklyAiPlanClassifyDestination_/.test(GS61) && /kind: 'MARKETPLACE'/.test(GS61) && /DESTINATION_UNRESOLVED/.test(GS61), 'B3 destination is classified at the adapter (concrete active warehouse | logical marketplace | BLOCK)');
-ok(/source_multi_pool: multiPool/.test(GS61), 'B4 multi-pool null-source lines are tagged for the distinct fail-closed block');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R3): R6F2C deliberately DEFERRED the per-source split and fail-closed the
+// line instead, writing that down beside the code ("DEFERRED to a controlled generation round"). This IS that
+// round, and the deferral was the live blocker: the target SKU's 760 units were supplied 460 from the CN
+// factory and 300 from the in-country 3PL, no single source could be named, and the whole line blocked as
+// ROUTE_SOURCE_MULTI_POOL_UNRESOLVED. The allocator had already ranked the pools and decided the quantities;
+// the adapter computed that and threw it away.
+//
+// What SURVIVES is the part that was always the point and is still load-bearing: a source is NEVER guessed. A
+// breakdown with no concrete source at all, or a quantity under one whole carton, still fails closed and now
+// says which of the two it is. So the claim is re-measured rather than deleted.
+ok(/source_multi_pool: true, source_split_refused_reason: sp\.reason/.test(GS61),
+  'B4 a line whose source genuinely cannot be resolved still fails closed, and names why');
+ok(/function weeklyAiPlanSplitBySource_/.test(GS61),
+  'B4a while a line the allocator DID split per source is carried at that grain, not refused');
+ok(/agg\[id\] === undefined\) \{ agg\[id\] = 0; order\.push\(id\); \}/.test(GS61),
+  'B4b breakdown entries are aggregated PER WAREHOUSE first (two entries for one warehouse are not two lines)');
 ok(/var destination = weeklyAiPlanClassifyDestination_\(l, whById\)/.test(GS61) && !/if \(d && s\(d\.destinationKind\)/.test(GS61), 'B5 the allocated-line builder classifies at the adapter (weeklyAiPlanClassifyDestination_), not the broken resolveWorkspaceLineDestination/destinationKind path');
 
 var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');

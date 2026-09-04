@@ -146,9 +146,14 @@ ok(/ensureDb\(true, function \(ok\)/.test(GLM_JS.slice(GLM_JS.indexOf('function 
 console.log('\n== IR HALT + safety invariants ==');
 // F1-7N-FB-4G-A1-R1 — RESTATED for the same reason as 7M-B's B3: the getWorkspace call site is parameterised
 // now, so the literal `{}` is gone from the source while the POST-WRITE path it describes is untouched.
-ok(/function _irAfterWrite\(cb\)[\s\S]{0,400}_irWorkspaceRefresh_\(\)/.test(IR_JS) &&
-   !/function _irAfterWrite\(cb\)[\s\S]{0,400}carrier:\s*true/.test(IR_JS),
+// RESTATED AGAIN (A2-R1-R3): the call now declares a dispatch OWNER, which is a diagnostic label and not a
+// payload. Matching the empty argument list reported that label as a schema change. The claim is checked on
+// what it is about: the readback reaches the workspace refresh, and asks for NO carrier include.
+ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}_irWorkspaceRefresh_\(/.test(IR_JS) &&
+   !/function _irAfterWrite\(cb\)[\s\S]{0,600}carrier:\s*true/.test(IR_JS),
   'IR: post-write readback UNCHANGED (full workspace, no include) — HALT (schema-change / not-equivalent)');
+ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}owner: 'POST_WRITE_READBACK'/.test(IR_JS),
+  'IR: and it now NAMES itself as the post-write readback, so a duplicate read is attributable');
 ok(GLM_JS.indexOf('loadOperationDb') !== -1 ? /Legacy/.test(GLM_JS) : true, 'map: no new whole-DB load introduced (bounded readback is a scoped getWorkspace)');
 ok(read('js/app.js').indexOf('loadOperationDb') === -1, 'app prime remains 0');
 eq((read('js/api/operation-system-db-api.js').split('await loadOperationDb({ force: true });').length - 1), 2, 'writer full-reload remains 0');

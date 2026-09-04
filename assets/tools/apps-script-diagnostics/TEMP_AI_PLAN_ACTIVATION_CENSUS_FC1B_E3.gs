@@ -64,7 +64,10 @@
  *   stored for the scope · would_create route count · and an activation verdict.
  */
 
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1';
+// §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
+// read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
+// at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R3';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -135,18 +138,57 @@ function CENSUS_forecastCoverage_(ss, scope, sku, months) {
     };
   });
   var missing = per.filter(function (p) { return !p.resolves; });
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §9 — THE CENSUS WAS RESTATING A GATE PRODUCTION NO LONGER HAS.
+  //
+  // The block above counts a month as "missing" when no row exists for its year, when the cell is blank, or
+  // when two rows disagree. That WAS the gate, and E3-R3-R1 deliberately changed it: KMFCN now normalizes a
+  // missing row and a blank cell to ZERO (the system demonstrably looked and found nothing), and only a
+  // CONFLICT or an unreadable table still blocks. Production adopted that; this function did not.
+  //
+  // So the live census printed `2027-01 NO_ROW_FOR_YEAR`, `FORECAST_SHARE_INCOMPLETE` and
+  // `site_would_survive_forecast_gate: false` for a site that production carried through without complaint.
+  // Two authorities, one table, opposite answers — and the diagnostic was the wrong one, which is the worst
+  // way round, because it sends an operator to fix data that is already fine.
+  //
+  // The verdict is therefore taken from KMFCN itself rather than restated. The per-month observations are KEPT
+  // (they are still the useful part: they say WHICH provenance each zero has), but they no longer decide
+  // anything. When KMFCN is not in the deployment the answer is a typed unavailability, never the old rule.
+  var kmfcn = null, normalized = null;
+  try {
+    if (typeof KMFCN !== 'undefined' && KMFCN && typeof KMFCN.normalizeWindow === 'function'
+      && typeof weeklyAiPlanForecastReadContext_ === 'function') {
+      var _ctx = weeklyAiPlanForecastReadContext_(ss);
+      var _fcScope = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+      normalized = KMFCN.normalizeWindow({ context: _ctx, scope: _fcScope, sku: sku, months: months || [],
+        matchingRows: KMFCN.rowsForScope(rows, _fcScope, sku) });
+      kmfcn = 'KMFCN';
+    }
+  } catch (eK) { normalized = null; kmfcn = 'KMFCN_THREW:' + CENSUS_str_(eK && eK.message); }
+  var authoritative = !!(normalized && typeof normalized.ok === 'boolean');
   return {
     source_table: 'fc_regular_forecast',
     source_headers: 'company, country, marketplace, sku, year + the month column for each required month',
     required_months: months || [],
     scope_row_count: mine.length,
     per_month: per,
-    missing_months: missing.map(function (p) { return p.month; }),
-    complete: missing.length === 0,
-    // THE decisive line: this is the predicate 61_ applies per site, restated here so a reader can see the
-    // drop rather than infer it.
-    site_would_survive_forecast_gate: missing.length === 0,
-    verdict: missing.length === 0 ? 'FORECAST_BASIS_COMPLETE' : 'FORECAST_SHARE_INCOMPLETE'
+    // The raw observations, renamed so nothing reads them as a verdict any more.
+    months_with_no_row_or_blank: missing.map(function (p) { return p.month; }),
+    months_conflicting: per.filter(function (p) { return p.status === 'CONFLICTING_VALUES'; }).map(function (p) { return p.month; }),
+    // ---- THE VERDICT, from the authority production uses -------------------------------------------------
+    authority: kmfcn || 'FORECAST_NORMALIZATION_AUTHORITY_UNAVAILABLE',
+    normalization: authoritative ? {
+      ok: normalized.ok === true, reason: normalized.reason || null, basis: normalized.basis,
+      missing_row_normalized_to_zero: (normalized.counters || {}).default_zero_missing_year_count,
+      blank_normalized_to_zero: (normalized.counters || {}).default_zero_blank_count,
+      explicit_zero: (normalized.counters || {}).explicit_zero_count,
+      actual: (normalized.counters || {}).actual_count
+    } : null,
+    blocking: authoritative ? (normalized.ok !== true) : null,
+    site_would_survive_forecast_gate: authoritative ? (normalized.ok === true) : null,
+    verdict: authoritative
+      ? (normalized.ok === true ? 'FORECAST_BASIS_NORMALIZED' : ('FORECAST_BASIS_UNRESOLVED:' + (normalized.reason || '')))
+      : 'FORECAST_NORMALIZATION_AUTHORITY_UNAVAILABLE'
   };
 }
 
@@ -168,9 +210,14 @@ function CENSUS_sourceAsOfCandidates_(h, planningCycle) {
   var out = {
     harvest_source_data_as_of: CENSUS_str_(h && h.sourceDataAsOf),
     harvest_value_is_blank: !CENSUS_str_(h && h.sourceDataAsOf),
-    harvest_origin: 'recommendation workspace line.sourceDataAsOf, carried by the FIRST SURVIVING site only ' +
-      '(61_ weeklyAiPlanBuildKmafReceivers_); zero surviving sites => null',
-    consumed_by: 'weeklyAiPlanShipDate_ (ship date for the KMWRR lane) — NOT by any readiness predicate',
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §6/§9 — this text described the defect, and the defect is fixed. The
+    // harvest no longer takes the cutoff from the first surviving workspace line; it takes it from the DONE
+    // GAP-INV run lineage through weeklyAiPlanSourceDataAsOfAuthority_ and FAILS CLOSED without one. The
+    // workspace value is still reported (as `workspace_source_data_as_of`) so a reader can see that it is
+    // blank — but nothing depends on it any more, and this description must not keep saying it does.
+    harvest_origin: 'GAP-INV run lineage calculationDate via weeklyAiPlanSourceDataAsOfAuthority_ ' +
+      '(A2-R1-R3); the recommendation-workspace line value is a diagnostic only',
+    consumed_by: 'weeklyAiPlanShipDate_ (ship date for the KMWRR lane) AND the header source_data_as_of — one authority for both',
     gap_run_lineage: null,
     stored_header_authority: 'weeklyAiPlanResolveGapRunLineage_().source_data_as_of (the GAP-INV run calculationDate)',
     fabrication_check: 'NO clock, NO execution time, NO spreadsheet modified time, NO fallback — a blank stays blank'
@@ -300,7 +347,14 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   // ---- harvest + map: the same two calls the generation makes ----------------------------------------------
   var h;
   try {
-    h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle });
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §10 — THE CENSUS MUST ASK THE QUESTION PRODUCTION ASKS.
+    //
+    // This called the harvest WITHOUT the marketplace, so it computed the company/country universe while the
+    // report it printed was headed with one site. From R3 the harvest isolates to the allowlist intersected
+    // with the requested marketplace, so omitting it here would make the census and the generation compute
+    // different inputs — which is the exact divergence §10 exists to forbid.
+    h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle,
+      marketplace: marketplace });
   } catch (e) {
     out.blockers.push('HARVEST_THREW: ' + CENSUS_str_(e && e.message));
     out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
@@ -313,7 +367,32 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     // the fix, which is itself the answer.
     site_count: (h && h.site_count != null) ? h.site_count : null,
     receiver_count: (h && h.receiver_count != null) ? h.receiver_count : null,
-    errors: (h && Array.isArray(h.errors)) ? h.errors : null };
+    errors: (h && Array.isArray(h.errors)) ? h.errors : null,
+    // ==========================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §9 — WHY THE LIVE LOG SAID freshness_state: null ON A DONE JOB.
+    //
+    // Not because the harvest did not know. A2-R1-R1 taught the log to read the freshness verdict out of the
+    // harvest REFUSAL, and that fix was real — but on a SUCCESSFUL harvest the log reads `res.harvest`, and
+    // `res.harvest` is THIS object: a hand-built summary with six fields. `snapshot_freshness`,
+    // `accepted_snapshot_date`, `snapshot_distinct_dates`, `gap_schedule` and `forecast_normalization` were
+    // all present on `h` and none of them was copied here, so every one of them logged as null on exactly
+    // the runs that had succeeded. Same defect class as R1's discarded `kmaf.reason`, one layer out: the
+    // answer was known and dropped at the boundary.
+    //
+    // They are carried through by name. A summary that silently omits fields its own consumer reads is not a
+    // summary, it is a data loss.
+    snapshot_freshness: (h && h.snapshot_freshness) || null,
+    accepted_snapshot_date: (h && h.accepted_snapshot_date) || null,
+    snapshot_distinct_dates: (h && h.snapshot_distinct_dates) || null,
+    gap_schedule: (h && h.gap_schedule) || null,
+    gap_job_state: (h && h.gap_job_state) || null,
+    snapshot_date_normalization: (h && h.snapshot_date_normalization) || null,
+    forecast_normalization: (h && h.forecast_normalization) || null,
+    // §2/§6 — the two R3 authorities, reported so the census can be compared with production field by field.
+    isolation: (h && h.isolation) || null,
+    source_data_as_of_authority: (h && h.sourceDataAsOfAuthority) || null,
+    workspace_source_data_as_of: (h && h.workspaceSourceDataAsOf) || null,
+    gap_lineage: (h && h.gapLineage) || null };
   if (!h || !h.ok) {
     out.blockers.push('HARVEST_FAILED (fail-closed, exactly as the generation would)');
     out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
@@ -323,7 +402,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   try {
     mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
       planningCycle: planningCycle,
-      businessScope: { company: company, country: country,
+      businessScope: { company: company, country: country, marketplace: marketplace,
         source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment' },
       mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false,
       // No clock fallback, and the census's own header promises exactly that: when the canonical timestamp
@@ -434,45 +513,142 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
       });
       return o;
     })(),
+    // §4/§9 — `weeklyAiPlanClassifyDestination_` returns `kind`, and this read `type`. So every census
+    // printed a blank destination type beside a resolved marketplace, which reads like a half-resolved
+    // destination and is not one. (`warehouse_id` blank for a MARKETPLACE destination is CORRECT: an FBA
+    // destination is a LOGICAL node and the id belongs in destination_marketplace, never a fabricated FC.)
     destination_resolution: skuLines.map(function (a) {
-      return { type: CENSUS_str_(a.destination && a.destination.type),
+      return { kind: CENSUS_str_(a.destination && a.destination.kind),
+        matched_by: CENSUS_str_(a.destination && a.destination.matched_by),
+        reason: CENSUS_str_(a.destination && a.destination.reason) || null,
         marketplace: CENSUS_str_(a.destination && a.destination.marketplace),
-        warehouse_id: CENSUS_str_(a.destination && a.destination.warehouse_id) };
+        warehouse_id: CENSUS_str_(a.destination && a.destination.warehouse_id),
+        country: CENSUS_str_(a.destination && a.destination.country) };
+    }),
+    // §4 — which SIDE each source is on, from the warehouse master + the frozen factory identity config.
+    source_roles: skuLines.map(function (a) {
+      return { source_warehouse_id: CENSUS_str_(a.source_warehouse_id),
+        role: CENSUS_str_(a.source_role) || null, role_reason: CENSUS_str_(a.source_role_reason) || null,
+        allocated_qty: (a.source_allocated_qty == null ? null : a.source_allocated_qty),
+        cartons: (a.source_cartons == null ? null : a.source_cartons),
+        shipped_qty: CENSUS_num_(a.recommended_qty) };
     })
   };
   if (sku && !skuLines.length) {
     out.blockers.push('SKU_NOT_IN_SCOPE: the named SKU produced no allocated line for this marketplace');
   }
 
-  // factory stock available for the candidate sources — read-only, from the canonical table
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §5 — `factory_stock: []` NEXT TO `allocated_by_source: WH-TW-CN-FACTORY-YOUXIN`.
+  //
+  // Those two lines appeared in the same live log and only one of them was true. The reason was this filter:
+  // the rows were narrowed to `source_warehouse_candidates`, which is derived from the lines that SURVIVED to
+  // become allocated lines. The target SKU's line had blocked (multi-pool), so its candidate list was the 3PL
+  // only, so every factory row was filtered out, and the census concluded there was no factory stock — while
+  // the allocator, which had seen the same table, was allocating 460 units out of it.
+  //
+  // A diagnostic must never derive the INPUT it is checking from the OUTPUT of the thing it is checking. So
+  // the eligible warehouses come from the authority production uses (gapOpReadSupplyPoolFacts_ → poolsBySku,
+  // reached here as harvest.poolsBySku), the stock numbers come from the canonical table, and the requested /
+  // allocated / remaining columns are reported per warehouse so the arithmetic is visible rather than implied.
   out.factory_stock = (function () {
-    var rows = CENSUS_rows_(ss, 'factory_stock'), o = [];
-    var ids = {}; (out.sku_facts.source_warehouse_candidates || []).forEach(function (c) { ids[c.warehouse_id] = 1; });
-    rows.forEach(function (r) {
-      if (sku && CENSUS_low_(r.master_sku || r.sku) !== CENSUS_low_(sku)) return;
-      var wid = CENSUS_str_(r.warehouse_id);
-      if (Object.keys(ids).length && !ids[wid]) return;
-      o.push({ warehouse_id: wid, on_hand: CENSUS_num_(r.quantity_on_hand != null ? r.quantity_on_hand : r.on_hand_qty),
-        reserved: CENSUS_num_(r.reserved_qty), available: CENSUS_num_(r.available_qty != null ? r.available_qty
-          : (CENSUS_num_(r.quantity_on_hand != null ? r.quantity_on_hand : r.on_hand_qty) - CENSUS_num_(r.reserved_qty))) });
+    var rows = CENSUS_rows_(ss, 'factory_stock');
+    var pools = ((h && h.poolsBySku && sku) ? (h.poolsBySku[sku] || {}) : {});
+    var factoryPools = pools.factoryPools || [], overseasPools = pools.overseasSupplyPools || [];
+    // What the allocator actually decided per source, from the allocated lines of THIS sku.
+    var allocByWh = {};
+    (skuLines || []).forEach(function (a) {
+      var w = CENSUS_str_(a.source_warehouse_id);
+      if (!w) return;
+      allocByWh[w] = (allocByWh[w] || 0) + CENSUS_num_(a.recommended_qty);
+    });
+    var requested = (out.sku_facts && out.sku_facts.suggested_qty_total) || 0;
+    function stockRow(wid) {
+      var r = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (CENSUS_str_(rows[i].warehouse_id) !== wid) continue;
+        if (sku && CENSUS_low_(rows[i].master_sku || rows[i].sku) !== CENSUS_low_(sku)) continue;
+        r = rows[i]; break;
+      }
+      if (!r) return { present_in_table: false, on_hand: null, reserved: null, available: null };
+      var onHand = CENSUS_num_(r.quantity_on_hand != null ? r.quantity_on_hand
+        : (r.on_hand_qty != null ? r.on_hand_qty : r.fac_current_stock));
+      var reserved = CENSUS_num_(r.reserved_qty);
+      return { present_in_table: true, on_hand: onHand, reserved: reserved,
+        available: CENSUS_num_(r.available_qty != null ? r.available_qty : (onHand - reserved)) };
+    }
+    function describe(p, kind) {
+      var wid = CENSUS_str_(p.warehouseId || p.warehouse_id);
+      var w = (h && h.warehousesById) ? (h.warehousesById[wid] || null) : null;
+      var role = (typeof weeklyAiPlanWarehouseRole_ === 'function' && h)
+        ? weeklyAiPlanWarehouseRole_(wid, h.warehousesById || {},
+            (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined') ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : {})
+        : { role: null, reason: 'ROLE_AUTHORITY_UNAVAILABLE' };
+      var st = stockRow(wid);
+      var alloc = allocByWh[wid] || 0;
+      return { pool_kind: kind, warehouse_id: wid, warehouse_code: CENSUS_str_(w && w.warehouse_code),
+        country: CENSUS_str_(w && w.country), role: role.role || null, role_reason: role.reason || null,
+        effective_supply_qty: CENSUS_num_(p.effectiveSupplyQty),
+        on_hand: st.on_hand, reserved: st.reserved, available: st.available, present_in_table: st.present_in_table,
+        requested_qty: requested, allocated_qty: alloc,
+        remaining_qty: (st.available == null ? null : st.available - alloc) };
+    }
+    return {
+      authority: 'gapOpReadSupplyPoolFacts_ → harvest.poolsBySku (the SAME input the allocator receives)',
+      stock_table: 'factory_stock',
+      requested_qty: requested,
+      eligible_factory_warehouse_ids: factoryPools.map(function (p) { return CENSUS_str_(p.warehouseId); }),
+      factory_pools: factoryPools.map(function (p) { return describe(p, 'FACTORY'); }),
+      // The in-country pool is reported BESIDE the factory pools, never folded into them: the frozen
+      // allocator runs it FIRST and the factory passes over its residual, so a report that omitted it could
+      // not explain why the factory was asked for less than the full quantity.
+      overseas_supply_pools: overseasPools.map(function (p) { return describe(p, 'THREE_PL_OR_OVERSEAS'); }),
+      allocated_by_source: allocByWh,
+      total_allocated: (function () { var t = 0; for (var k in allocByWh) if (allocByWh.hasOwnProperty(k)) t += allocByWh[k]; return t; })()
+    };
+  })();
+
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §7 — `matched_carrier_cards: 0` AGAINST 294 CARDS, AND NOTHING TO ACT ON.
+  //
+  // The old block re-implemented the match by hand: `is_active` (a field the carrier schema does not use —
+  // carrier rows carry a free-text `status`), a raw lowercase country compare with no wildcard rule, no
+  // marketplace axis and no effective-date test. So its zero was not the transport's zero, and neither number
+  // explained itself. It also took its origin countries from the surviving lines, so a blocked line produced
+  // an empty origin set and therefore a vacuous match.
+  //
+  // The lane keys are now built from the SAME per-line source/destination the router derives from, and the
+  // funnel is computed by weeklyAiPlanCarrierFunnel_, which uses KMRA's own normalize/axisOk/rateCardUsable
+  // predicates. A diagnostic that cannot disagree with the transport is the only kind worth printing.
+  out.carrier_lane_funnels = (function () {
+    if (typeof weeklyAiPlanCarrierFunnel_ !== 'function') return 'CARRIER_FUNNEL_AUTHORITY_UNAVAILABLE';
+    var asOf = (typeof KMWRR !== 'undefined' && KMWRR && typeof KMWRR.dateToOrdinal === 'function' && shipDate)
+      ? KMWRR.dateToOrdinal(shipDate) : null;
+    var seen = {}, o = [];
+    (skuLines || []).forEach(function (a) {
+      var srcId = CENSUS_str_(a.source_warehouse_id);
+      var srcWh = (h && h.warehousesById) ? (h.warehousesById[srcId] || null) : null;
+      var d = a.destination || {};
+      var q = { originCountry: CENSUS_str_(srcWh && srcWh.country),
+        destinationCountry: CENSUS_str_(d.country),
+        marketplace: CENSUS_low_(d.kind) === 'marketplace' ? CENSUS_str_(d.marketplace) : '' };
+      var key = q.originCountry + '|' + q.destinationCountry + '|' + q.marketplace;
+      if (seen[key]) return;
+      seen[key] = 1;
+      var f = weeklyAiPlanCarrierFunnel_(carriers.rateCards, q, asOf);
+      f.for_source_warehouse_id = srcId;
+      f.for_window_code = CENSUS_str_(a.window_code);
+      f.ship_date = shipDate || null;
+      o.push(f);
     });
     return o;
   })();
-
-  // matched carrier cards for the lanes this SKU's candidates imply — reported, never chosen from
+  // Kept under its historical name so an operator comparing two logs can still find the number, but it is now
+  // the FINAL ELIGIBLE count from the shared authority rather than a private guess.
   out.matched_carrier_cards = (function () {
-    var origins = {};
-    (out.sku_facts.source_warehouse_candidates || []).forEach(function (c) { if (c.country) origins[CENSUS_low_(c.country)] = 1; });
-    return (carriers.rateCards || []).filter(function (rc) {
-      var oc = CENSUS_low_(rc.origin_country), dc = CENSUS_low_(rc.destination_country);
-      var okO = !Object.keys(origins).length || origins[oc];
-      var okD = !country || dc === CENSUS_low_(country);
-      return okO && okD;
-    }).map(function (rc) {
-      return { carrier: CENSUS_str_(rc.carrier_name || rc.carrier), service: CENSUS_str_(rc.shipping_method || rc.service_level),
-        origin_country: CENSUS_str_(rc.origin_country), destination_country: CENSUS_str_(rc.destination_country),
-        is_active: rc.is_active, effective_from: CENSUS_str_(rc.effective_from), effective_to: CENSUS_str_(rc.effective_to) };
-    });
+    var fs = out.carrier_lane_funnels;
+    if (!fs || typeof fs === 'string') return null;
+    return fs.reduce(function (n, f) { return n + (f.final_eligible || 0); }, 0);
   })();
 
   // ---- THE RANKED ROUTE. The production allocator, called exactly as the generation calls it. --------------
@@ -533,11 +709,18 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     var lines = (g && g.lines) || [];
     var mineLines = sku ? lines.filter(function (l) { return CENSUS_low_(l.master_sku || l.sku) === CENSUS_low_(sku); }) : lines;
     if (sku && !mineLines.length) return;
+    // §9 — KMWRR.buildGroupHeader emits `recommended_source_warehouse_id` and
+    // `recommended_destination_warehouse_id`; this read `source_warehouse_id` and `destination_type`, neither
+    // of which exists on a K2 header. So every census printed a BLANK route source next to a populated
+    // conservation total, which is the other half of the contradiction §4 was asked to explain. The
+    // historical key names are kept in the output (an operator compares logs across rounds) and are now read
+    // from the fields that exist.
     out.allocator.routes.push({
       group_no: head.recommendation_group_no,
-      source_warehouse_id: CENSUS_str_(head.source_warehouse_id),
-      destination_type: CENSUS_str_(head.destination_type),
-      destination: CENSUS_str_(head.destination_marketplace || head.destination_warehouse_id),
+      source_warehouse_id: CENSUS_str_(head.recommended_source_warehouse_id),
+      destination_type: CENSUS_str_(head.destination_marketplace) ? 'MARKETPLACE'
+        : (CENSUS_str_(head.recommended_destination_warehouse_id) ? 'WAREHOUSE' : ''),
+      destination: CENSUS_str_(head.destination_marketplace || head.recommended_destination_warehouse_id),
       method: CENSUS_str_(head.recommended_shipping_method),
       last_mile: CENSUS_str_(head.recommended_last_mile_delivery),
       expected_arrival: CENSUS_str_(head.expected_arrival_date || head.expected_arrival),
@@ -549,6 +732,48 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   });
   out.total_allocated_quantity = out.allocator.routes.reduce(function (s, r) { return s + r.total_qty; }, 0);
   out.would_create_route_count = out.allocator.routes.length;
+
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §10 — THE PARITY BLOCK.
+  //
+  // Every field a production generation decides, stated in one place, so "the census and the run agree" is a
+  // COMPARISON rather than a hope. This census is the production first pass by construction (it calls
+  // weeklyAiPlanHarvest_, KMWRB.buildWeeklySourceLines and KMWRR.buildK2GenerationPlan, which is exactly what
+  // PASS 1 of weeklyAiPlanGenerateK2_ calls), so parity is asserted by the regression suite against the real
+  // generation core with its writer replaced by a spy.
+  //
+  // It deliberately does NOT call the generation itself. Constructing the writer here — even to throw it away
+  // — would put a live write one typo from a diagnostic, and a standing mutation test fails if this file ever
+  // reaches for handleUpsertShippingAllocationDraftAtomic_.
+  out.production_parity = {
+    contract: 'the fields a production generation decides; compared against the real core in the R3 suite',
+    writer_constructed: false,
+    target_sku_set: (function () { var o = {}, l = []; (mine || []).forEach(function (a) { var k = CENSUS_str_(a.sku); if (k && !o[k]) { o[k] = 1; l.push(k); } }); return l.sort(); })(),
+    demand_identity: (h && h.isolation) ? {
+      target_scopes: h.isolation.target_scopes, requested_marketplace: h.isolation.requested_marketplace,
+      universe_site_count: h.isolation.universe_site_count,
+      target_site_count: h.isolation.target_site_count, target_sku_count: h.isolation.target_sku_count,
+      foreign_site_count: h.isolation.foreign_site_count, foreign_sku_count: h.isolation.foreign_sku_count,
+      canonical_demand_count: h.isolation.canonical_demand_count,
+      collapsed_site_count: h.isolation.collapsed_site_count
+    } : null,
+    source_line_count: (src && src.lines) ? src.lines.length : null,
+    allocated_line_count: (mine || []).length,
+    allocated_line_diagnostics: (allocated && allocated.diagnostics) || null,
+    eligible_factory_stock: (out.factory_stock && out.factory_stock.eligible_factory_warehouse_ids) || null,
+    source_data_as_of: CENSUS_str_(h && h.sourceDataAsOf),
+    source_data_as_of_authority: (h && h.sourceDataAsOfAuthority) || null,
+    ship_date: shipDate || null,
+    carrier_lane_final_eligible: out.matched_carrier_cards,
+    chosen_methods: out.allocator.routes.map(function (r) { return r.method; }).sort(),
+    total_quantity: out.total_allocated_quantity,
+    conserved: out.allocator.conserved,
+    duplicate_sku_window_in_group: (out.allocator.conservation && out.allocator.conservation.duplicate_sku_window_in_group) || [],
+    route_count: out.would_create_route_count,
+    route_intent: (typeof SAD_AI_K2_INTENT_ !== 'undefined') ? SAD_AI_K2_INTENT_ : null,
+    refusals: out.allocator.refusals,
+    blockers: out.blockers.slice()
+  };
 
   // ---- what is ALREADY stored for this scope (so "would_create" is read against reality) -------------------
   out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
@@ -635,7 +860,11 @@ function CENSUS_logAll_(out) {
   CENSUS_log_('sku_facts', out.sku_facts);
   CENSUS_log_('factory_stock', out.factory_stock);
   CENSUS_log_('carrier_authorities', out.carrier_authorities);
-  CENSUS_log_('matched_carrier_cards', out.matched_carrier_cards ? out.matched_carrier_cards.length : null);
+  // §7 — `matched_carrier_cards` is now the FINAL ELIGIBLE count from the shared authority (a number),
+  // not a private array, so `.length` would have printed undefined on every run.
+  CENSUS_log_('matched_carrier_cards', out.matched_carrier_cards);
+  CENSUS_log_('carrier_lane_funnels', out.carrier_lane_funnels);
+  CENSUS_log_('production_parity', out.production_parity);
   CENSUS_log_('allocator', out.allocator);
   CENSUS_log_('total_allocated_quantity', out.total_allocated_quantity);
   CENSUS_log_('would_create_route_count', out.would_create_route_count);
@@ -803,10 +1032,29 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
     CENSUS_log_('route_intent_is_client_grantable',
       (typeof SAD_CLIENT_GRANTABLE_INTENTS_ !== 'undefined' && typeof SAD_AI_K2_INTENT_ !== 'undefined')
         ? (SAD_CLIENT_GRANTABLE_INTENTS_[SAD_AI_K2_INTENT_] === 1) : null);
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §9 — `agree: true` WITH A NULL LIFECYCLE VERSION WAS NOT AGREEMENT.
+    //
+    // The old predicate compared `(writer accepted) === (writer resolved a version)`, which is two readings of
+    // the SAME authority and is therefore true whenever the writer is self-consistent. The lifecycle version
+    // was printed beside it and never took part, so the live log could show
+    // `resolved_schema_version: FB4G-…, lifecycle_version: null, agree: true` — a parity claim asserted over
+    // a value it had ignored.
+    //
+    // Parity now requires what the word means: the writer accepts, the lifecycle names a version, and it is
+    // the SAME version. A null on either side is a DISAGREEMENT, which is the case that matters, because it
+    // is exactly the mixed-deployment state where a generation writes and nothing expires.
     CENSUS_log_('schema_writer_lifecycle_parity', (_ds && typeof aiplSchemaVersionOf_ === 'function')
-      ? { writer_accepts: _ds.ok === true,
-          lifecycle_version: aiplSchemaVersionOf_(sadLiveHeaderNames_(_dsSheet)) || null,
-          agree: (_ds.ok === true) === (_ds.version !== null) }
+      ? (function () {
+          var _lv = aiplSchemaVersionOf_(sadLiveHeaderNames_(_dsSheet)) || null;
+          var _wv = _ds.version || null;
+          return { writer_accepts: _ds.ok === true, writer_version: _wv, lifecycle_version: _lv,
+            agree: (_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv,
+            disagreement: ((_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv) ? null
+              : (_ds.ok !== true ? 'WRITER_REFUSES_THIS_HEADER'
+                : (_wv === null ? 'WRITER_RESOLVED_NO_VERSION'
+                  : (_lv === null ? 'LIFECYCLE_RESOLVED_NO_VERSION_LIFECYCLE_COLUMNS_INCOMPLETE'
+                    : 'WRITER_AND_LIFECYCLE_NAME_DIFFERENT_VERSIONS'))) };
+        })()
       : null);
   } catch (eS2) {}
   // §11 — THE DETERMINISTIC IDENTITY PREVIEW. Derived from the SAME authority the writer resolves with,

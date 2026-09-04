@@ -847,13 +847,35 @@
       }
 
       // A scope key needs the payload; without one the read is simply not shared (fail-closed to old behaviour).
-      var scope = '';
+      // ==========================================================================================================
+      // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — WHY A READ IS NOT SHARED IS NOW RECORDED, NOT SILENT.
+      //
+      // The `!signal` condition is DELIBERATE and stays. A consumer that brought its own AbortSignal cannot be
+      // handed a shared request: the signal is passed down to the transport, so the first consumer aborting
+      // would cancel the underlying fetch out from under everyone attached to it. Sharing a cancellable
+      // request is a correctness fault, and strictly worse than the duplicate it would avoid.
+      //
+      // What was wrong is that the skip was INVISIBLE. A live report showed two identical workspace reads with
+      // coalesced_count = 0, and there was no way to tell "these were sequential, so there was nothing to
+      // share" from "these overlapped and the latch was bypassed". Those have different fixes. The reason is
+      // now recorded on the transport, so the next report can say which it was.
+      //
+      // (The inventory primary read passes NO signal and therefore DOES take the shared path — which is why
+      //  the live duplicate cannot be explained by this condition, and the dispatch ledger in the page is
+      //  what identifies the two owners instead.)
+      var scope = '', shareSkip = null;
       if (tp && typeof tp.canonicalScope === 'function' && !signal) {
         scope = tp.canonicalScope({ v: dto.apiVersion || null, p: dto.payload || null });
+        if (scope === '') shareSkip = 'NO_CANONICAL_SCOPE_KEY';
+      } else if (signal) {
+        shareSkip = 'CONSUMER_SUPPLIED_ABORT_SIGNAL';
+      } else {
+        shareSkip = 'TRANSPORT_HAS_NO_CANONICAL_SCOPE';
       }
       if (tp && typeof tp.scopedSingleFlight === 'function' && scope !== '') {
         return tp.scopedSingleFlight(normName(dto.action), scope, withBoundedDowngradeRetry);
       }
+      if (shareSkip && tp && typeof tp.noteShareSkipped === 'function') tp.noteShareSkipped(normName(dto.action), shareSkip);
       return withBoundedDowngradeRetry();
     };
 

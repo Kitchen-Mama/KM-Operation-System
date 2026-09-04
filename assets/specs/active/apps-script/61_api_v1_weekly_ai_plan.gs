@@ -108,13 +108,20 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
     // taken as true. `expectedDemand` is optional: absent means "no expectation to reconcile", present means
     // every entry must AGREE with the canonical row or the run refuses.
     var expectedBySite = weeklyAiPlanExpectedDemand_(body, company, country);
-    var h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle }, expectedBySite);
+    // §2 — the site the request names travels WITH the scope, into the harvest, where the isolation happens.
+    // It was previously read only for the readback message, so a site-level request produced a
+    // company/country-wide computation and the marketplace was re-attached at the very end for display. It
+    // can only ever NARROW the server-owned allowlist (weeklyAiPlanTargetScopes_ intersects; it never unions).
+    var requestedMarketplace = weeklyAiPlanStr_(body.currentMarketplace) || weeklyAiPlanStr_(body.requestedMarketplace);
+    var h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle,
+      marketplace: requestedMarketplace }, expectedBySite);
     if (!h.ok) return jsonResponse_({ success: false, errors: h.errors || [weeklyAiPlanErr_('HARVEST_FAILED', 'fact harvest failed')] });
 
     // ---- MAP → (company,country) batch request (PURE, Node-verified) ---------------------------------------
     var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
       planningCycle: planningCycle,
-      businessScope: { company: company, country: country, source_page: WEEKLY_AI_PLAN_SOURCE_PAGE_ },
+      businessScope: { company: company, country: country, marketplace: requestedMarketplace,
+        source_page: WEEKLY_AI_PLAN_SOURCE_PAGE_ },
       mode: mode, confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
       actor: weeklyAiPlanStr_(body.actor) || 'user', now: procurementTimestamp_(),
       sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
@@ -204,7 +211,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R2';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R3';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -259,41 +266,312 @@ function weeklyAiPlanClassifyDestination_(l, whById) {
   if (mkt) return { kind: 'MARKETPLACE', marketplace: mkt, marketplace_ref: ref, country: country, matched_by: 'marketplace_token' };
   return { kind: '', reason: 'DESTINATION_UNRESOLVED' };
 }
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R3 §4 — WHICH SIDE OF THE SHIPMENT IS THIS WAREHOUSE ON?
+//
+// The live census reported three facts that could not all be true of one route: the SOURCE candidate was
+// WH-RESUS-US-3PL-AMZLGS, the DESTINATION was marketplace Amazon with a blank warehouse, and the allocator's
+// conservation showed the quantity coming from WH-TW-CN-FACTORY-YOUXIN.
+//
+// Two of those three turned out to be reported wrongly rather than computed wrongly, and the third is not a
+// defect at all:
+//
+//   * The 3PL IS a legitimate SUPPLY pool. The frozen allocator runs the overseas shared pool FIRST and the
+//     factory passes over its residual (supply-planning-weekly-source-allocation.js, PASS 1 then PASS 2/3),
+//     so in-country 3PL stock covering an FBA shortage is the designed behaviour, not a direction inversion.
+//     It is never treated as a FACTORY: its pool type is THREE_PL and its stage token is SOURCE_OVERSEAS.
+//   * What WAS broken is that a line supplied by MORE THAN ONE pool collapsed to `sourceWarehouseId: null`
+//     and blocked as ROUTE_SOURCE_MULTI_POOL_UNRESOLVED — so the allocator's own per-source decision was
+//     computed, thrown away, and then reported as an unresolvable ambiguity. See the split below.
+//   * And the census printed the FIRST candidate of a line that had already blocked, beside a conservation
+//     total from the group that had not, which is how one route came to have two different sources.
+//
+// This function is the authority that makes the direction DECIDABLE instead of implied. It uses the warehouse
+// master and the frozen factory identity config — never a name pattern, never a substring of an id.
+function weeklyAiPlanWarehouseRole_(id, whById, factoryIdentity) {
+  var wid = weeklyAiPlanStr_(id);
+  if (!wid) return { role: '', reason: 'WAREHOUSE_ID_MISSING' };
+  var w = (whById || {})[wid];
+  if (!w) return { role: '', reason: 'WAREHOUSE_NOT_IN_MASTER' };
+  if (!weeklyAiPlanWhActive_(w)) return { role: '', reason: 'WAREHOUSE_INACTIVE' };
+  // The frozen factory identity config is the authority on which warehouses are factories, and the warehouse
+  // master's own flag/type must agree with it. A disagreement is reported, never resolved by preference.
+  var declared = false;
+  for (var k in (factoryIdentity || {})) {
+    if (Object.prototype.hasOwnProperty.call(factoryIdentity, k) && weeklyAiPlanStr_(factoryIdentity[k]) === wid) { declared = true; break; }
+  }
+  var flagged = String(w.is_factory_warehouse) === 'true' || w.is_factory_warehouse === true
+    || weeklyAiPlanStr_(w.warehouse_type).toUpperCase() === 'FACTORY';
+  if (declared && !flagged) return { role: 'FACTORY', reason: 'FACTORY_IDENTITY_MASTER_DISAGREEMENT', warehouse: w };
+  if (declared) return { role: 'FACTORY', reason: null, warehouse: w };
+  if (flagged) return { role: 'FACTORY_UNDECLARED', reason: 'FACTORY_NOT_IN_IDENTITY_CONFIG', warehouse: w };
+  return { role: 'NON_FACTORY', reason: null, warehouse: w };
+}
+
+// ================================================================================================================
+// §4/§8 — THE ALLOCATOR ALREADY DECIDED THE SPLIT. CARRY IT.
+//
+// R6F2C deferred this deliberately ("a deterministic per-source whole-carton split from allocationBreakdown is
+// possible but changes the generated line grain, so it is DEFERRED to a controlled generation round"). This is
+// that round, and the deferral is what the live refusal was: the target SKU's 760 units were supplied 460 from
+// the CN factory and 300 from the 3PL, the adapter could not name ONE source, and the whole line blocked.
+//
+// No new policy is introduced here and none is needed. The pools were already RANKED by the frozen allocator
+// (overseas pass, then CN_YOUXIN, then TW_SHENGYI) and the breakdown is emitted in that order, so the order is
+// the existing policy. This function only converts each source's already-decided quantity into WHOLE CARTONS
+// while preserving the line's total exactly:
+//
+//   * breakdown entries are AGGREGATED per source warehouse first — the overseas pool can emit two entries
+//     for one warehouse (sequence 0 and 1), and splitting on entries rather than warehouses would create two
+//     lines with the same (sku, window, source) in one group, which is a duplicate by construction;
+//   * each source takes the whole cartons it can fill from its own allocated quantity;
+//   * any cartons still unassigned — the arithmetic of flooring several partial cartons — are handed out in
+//     the allocator's own order, one at a time, only to sources that still hold a partial carton.
+//
+// Sum(parts) === floor(qty / upc) * upc === the line's recommendedQty. Nothing is invented and nothing is
+// dropped; a source may end up holding under one carton more than its raw allocation, which is inherent to
+// shipping whole cartons and is already the accepted FLOOR contract upstream.
+function weeklyAiPlanSplitBySource_(l, qty, upc) {
+  var bd = Array.isArray(l.allocationBreakdown) ? l.allocationBreakdown : [];
+  var agg = {}, order = [];
+  for (var i = 0; i < bd.length; i++) {
+    var b = bd[i] || {};
+    var id = weeklyAiPlanStr_(b.sourceWarehouseId);
+    if (!id) continue;
+    var q = Number(b.allocatedQty);
+    if (!isFinite(q) || q <= 0) continue;
+    if (agg[id] === undefined) { agg[id] = 0; order.push(id); }
+    agg[id] += q;
+  }
+  if (!order.length) return { ok: false, reason: 'NO_CONCRETE_SOURCE_IN_BREAKDOWN', parts: [] };
+  var u = Number(upc);
+  if (!isFinite(u) || u <= 0) return { ok: false, reason: 'UNITS_PER_CARTON_UNRESOLVED', parts: [] };
+  var cartonsTotal = Math.floor(Number(qty) / u);
+  if (!isFinite(cartonsTotal) || cartonsTotal <= 0) return { ok: false, reason: 'NO_WHOLE_CARTON_TO_SHIP', parts: [] };
+  var parts = [], assigned = 0;
+  order.forEach(function (id) {
+    var c = Math.floor(agg[id] / u);
+    if (c > cartonsTotal - assigned) c = cartonsTotal - assigned;
+    parts.push({ warehouse_id: id, allocated_qty: agg[id], cartons: c });
+    assigned += c;
+  });
+  var guard = 0;
+  while (assigned < cartonsTotal && guard < 1000) {
+    var progressed = false;
+    for (var pi = 0; pi < parts.length && assigned < cartonsTotal; pi++) {
+      if (parts[pi].allocated_qty - parts[pi].cartons * u > 0) { parts[pi].cartons++; assigned++; progressed = true; }
+    }
+    if (!progressed) break;
+    guard++;
+  }
+  if (assigned !== cartonsTotal) return { ok: false, reason: 'SOURCE_SPLIT_NOT_CONSERVING', parts: [] };
+  return { ok: true, reason: null, units_per_carton: u, cartons_total: cartonsTotal,
+    parts: parts.filter(function (p) { return p.cartons > 0; }).map(function (p) {
+      return { warehouse_id: p.warehouse_id, qty: p.cartons * u, cartons: p.cartons, allocated_qty: p.allocated_qty }; }) };
+}
+
+// ================================================================================================================
+// §7 — WHY NO CARRIER CARD MATCHED, STAGE BY STAGE, IN THE AUTHORITY'S OWN PREDICATES.
+//
+// The live run ended in ROUTE_METHOD_UNRESOLVED with `matched_carrier_cards = 0` against 294 rate cards, and
+// the only thing either the generation or the census could say was the token itself. That is not enough to act
+// on: "there is no lane in the master data" and "the lane exists but every card expired" need opposite
+// responses, and neither is "re-sync the code".
+//
+// So the funnel is computed with KMRA's OWN normalize/match/usable predicates — not a private re-match, which
+// is how a diagnostic comes to disagree with the transport — and it reports the EXACT canonical lane key it
+// asked for beside the count that survived each stage.
+function weeklyAiPlanCarrierFunnel_(rateCards, laneQuery, asOfOrdinal) {
+  var out = { lane_query: { origin_country: weeklyAiPlanStr_(laneQuery && laneQuery.originCountry),
+      destination_country: weeklyAiPlanStr_(laneQuery && laneQuery.destinationCountry),
+      marketplace: weeklyAiPlanStr_(laneQuery && laneQuery.marketplace) },
+    as_of_ordinal: (asOfOrdinal === undefined ? null : asOfOrdinal),
+    total: 0, source_matched: 0, destination_matched: 0, marketplace_matched: 0,
+    route_matched: 0, status_and_effective_matched: 0, method_present: 0,
+    canonical_method_matched: 0, method_unmapped: 0, final_eligible: 0,
+    distinct_methods: [], unmapped_method_sample: [], nearest_candidates: [], authority: null };
+  var kmra = (typeof KMRA !== 'undefined' && KMRA) ? KMRA : null;
+  if (!kmra || typeof kmra.normalizeRateCard !== 'function' || typeof kmra.axisOk !== 'function') {
+    out.authority = 'KMRA_UNAVAILABLE';
+    return out;
+  }
+  out.authority = 'KMRA';
+  var q = out.lane_query, methods = {}, near = [];
+  (rateCards || []).forEach(function (raw) {
+    out.total++;
+    var dto = kmra.normalizeRateCard(raw);
+    var okO = kmra.axisOk(dto.originCountry, q.origin_country);
+    var okD = kmra.axisOk(dto.destinationCountry, q.destination_country);
+    var okM = kmra.axisOk(dto.marketplace, q.marketplace);
+    if (okO) out.source_matched++;
+    if (okD) out.destination_matched++;
+    if (okM) out.marketplace_matched++;
+    if (!(okO && okD && okM)) {
+      // The closest misses, so a report can say WHICH axis differed and what value the data holds.
+      if (near.length < 10 && ((okO && okD) || (okO && okM) || (okD && okM))) {
+        near.push({ rate_card_id: dto.rateCardId, origin_country: dto.originCountry,
+          destination_country: dto.destinationCountry, marketplace: dto.marketplace,
+          shipping_method: dto.shippingMethod, status: dto.status,
+          effective_from: dto.effectiveFrom, effective_to: dto.effectiveTo,
+          failed_axis: !okO ? 'origin_country' : (!okD ? 'destination_country' : 'marketplace') });
+      }
+      return;
+    }
+    out.route_matched++;
+    if (!kmra.rateCardUsable(dto, out.as_of_ordinal)) {
+      if (near.length < 10) near.push({ rate_card_id: dto.rateCardId, origin_country: dto.originCountry,
+        destination_country: dto.destinationCountry, marketplace: dto.marketplace,
+        shipping_method: dto.shippingMethod, status: dto.status,
+        effective_from: dto.effectiveFrom, effective_to: dto.effectiveTo,
+        failed_axis: 'status_or_effective_window' });
+      return;
+    }
+    out.status_and_effective_matched++;
+    if (!dto.shippingMethod) return;
+    out.method_present++;
+    // A card can carry a method token the CANONICAL authority does not map (only Air / Sea Express / Sea /
+    // Courier / Truck are mapped; Rail and anything else are deliberately unmapped). Such a card matches the
+    // lane and is usable, so it counts as eligible for RANKING — but it has no lead-time key, which surfaces
+    // later as ROUTE_AUTO_RANKING_INSUFFICIENT / NO_LEAD_TIME rather than as a lane problem. Those two are
+    // different findings and a funnel that could not tell them apart would send the reader to the wrong table.
+    if (!dto.methodKey) {
+      out.method_unmapped++;
+      if (out.unmapped_method_sample.length < 10) {
+        out.unmapped_method_sample.push({ rate_card_id: dto.rateCardId, shipping_method: dto.shippingMethod });
+      }
+    } else {
+      out.canonical_method_matched++;
+      methods[dto.shippingMethod] = 1;
+    }
+    out.final_eligible++;
+  });
+  out.distinct_methods = Object.keys(methods).sort();
+  out.nearest_candidates = near;
+  // The precise missing key, so the answer is never only the token.
+  out.missing_canonical_key = out.final_eligible ? null
+    : { origin_country: q.origin_country, destination_country: q.destination_country,
+        marketplace: q.marketplace, needs: 'an ACTIVE carrier_rate_cards row on this lane, effective on the ship date, carrying a canonical shipping_method',
+        cause: !out.route_matched ? 'NO_CARRIER_CARD_FOR_LANE'
+          : (!out.status_and_effective_matched ? 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE' : 'NO_CANONICAL_METHOD') };
+  // The lane HAS cards but none of their method tokens is canonical, so nothing on it can be lead-time keyed.
+  out.unmapped_method_only = (out.final_eligible > 0 && out.canonical_method_matched === 0) ? {
+    origin_country: q.origin_country, destination_country: q.destination_country, marketplace: q.marketplace,
+    cause: 'METHOD_TOKEN_NOT_CANONICAL', sample: out.unmapped_method_sample.slice(0, 5),
+    needs: 'a shipping_method the route authority maps (Air / Sea Express / Sea / Courier / Truck), or an alias rule for this token'
+  } : null;
+  return out;
+}
+
 function weeklyAiPlanK2AllocatedLines_(lines, harvest) {
   var horizons = (harvest && harvest.horizonsByDemandRef) || {};
   var whById = (harvest && harvest.warehousesById) || {};
+  var factoryIdentity = (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined') ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : {};
   function s(v) { return String(v == null ? '' : v).trim(); }
   var out = [];
+  var diag = { input_lines: 0, emitted_lines: 0, horizon_join_hits: 0, horizon_join_misses: 0,
+    horizon_miss_sample: [], window_blank: 0, split_lines: 0, split_parts: 0, split_refused: [],
+    source_roles: {}, destination_roles: {} };
   (lines || []).forEach(function (l) {
     if (!l || s(l.blockedReason)) return;                              // blocked upstream → no line
+    diag.input_lines++;
     var qty = (typeof l.recommendedQty === 'number') ? l.recommendedQty : Number(l.recommendedQty);
     if (!isFinite(qty) || qty <= 0) return;                           // zero recommendation → no line
-    var dk = s(l.demandKey);
-    var hz = horizons[dk] || null;
-    // primary (earliest) window from the horizon's requiredByByWindow, if present
-    var windowCode = '', requiredBy = '';
-    if (hz && hz.requiredByByWindow) {
-      var wins = Object.keys(hz.requiredByByWindow).sort(function (a, b) { return String(hz.requiredByByWindow[a]) < String(hz.requiredByByWindow[b]) ? -1 : 1; });
-      if (wins.length) { windowCode = wins[0]; requiredBy = String(hz.requiredByByWindow[wins[0]]); }
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §3 — THE HORIZON JOIN NEVER MATCHED, SO EVERY LINE HAD A BLANK WINDOW.
+    //
+    // This looked up `horizonsByDemandRef[l.demandKey]`. Those are two DIFFERENT keys and they never met:
+    //
+    //   horizonsByDemandRef is keyed  company|country|marketplace|sku|destination   (61_ builds it)
+    //   KMWRB's demandKey is          sku|marketplace|windowCode                    (the source allocator)
+    //
+    // So `hz` was ALWAYS null, and with it `window_code` and `required_by_date` were ALWAYS blank — on every
+    // line, in every scope, since the join was written. Three consequences, all of them live:
+    //
+    //   1. Two windows of one sku (D30 and D90) both became (sku, '') and landed in the SAME route group with
+    //      the SAME conservation key, which is exactly the `duplicate_sku_window_in_group` the census
+    //      reported. `conserved:false` followed from a blank string.
+    //   2. `required_by_date` was blank, so KMWRR's on-time ranking degraded to "does any lead time exist"
+    //      and no route was ever checked against the date it is needed by.
+    //   3. window_code is part of the line grain, so the written plan could not say which shortage window a
+    //      shipment answers.
+    //
+    // The window was never missing: the source line CARRIES it as `l.windowCode`, which is where the window
+    // now comes from. The horizon is joined on the ref it is actually keyed by — reconstructed from the
+    // fields the WSA line carries — and supplies only the required-by DATE. There is no fallback to the old
+    // key: a join that cannot resolve is COUNTED and the line still carries its own window, because silently
+    // accepting a wrong key is how this went unnoticed for as long as it did.
+    var windowCode = s(l.windowCode);
+    var ref = [s(l.company), s(l.country), s(l.marketplace), s(l.masterSku), s(l.destinationWarehouseId)].join('|');
+    var hz = horizons[ref] || null;
+    if (hz) diag.horizon_join_hits++;
+    else {
+      diag.horizon_join_misses++;
+      if (diag.horizon_miss_sample.length < 5) diag.horizon_miss_sample.push({ demand_ref: ref, sku: s(l.masterSku) });
     }
+    var requiredBy = '';
+    if (hz && hz.requiredByByWindow && windowCode && hz.requiredByByWindow[windowCode] != null) {
+      requiredBy = String(hz.requiredByByWindow[windowCode]);
+    }
+    if (!windowCode) diag.window_blank++;
     // CANONICAL destination classification (concrete active warehouse | logical marketplace | BLOCK).
     var destination = weeklyAiPlanClassifyDestination_(l, whById);
-    // SOURCE: single-pool → concrete id; multi-pool (breakdown has ≥1 concrete source but no single winner) is a
-    // TRUTHFUL distinct block (never guessed). F1-7N-FA-3C-R6F2C (F): a deterministic per-source whole-carton split
-    // from allocationBreakdown is possible but changes the generated line grain (floored shipped qty), so it is
-    // DEFERRED to a controlled generation round; here the line is fail-closed as ROUTE_SOURCE_MULTI_POOL_UNRESOLVED.
-    var srcId = s(l.sourceWarehouseId), srcWh = whById[srcId] || {};
-    var bd = Array.isArray(l.allocationBreakdown) ? l.allocationBreakdown : [];
-    var multiPool = !srcId && bd.some(function (b) { return s(b.sourceWarehouseId) !== ''; });
-    out.push({
-      sku: s(l.masterSku), site_sku: s(l.siteSku || l.site_sku), window_code: windowCode,
-      window_start_date: '', window_end_date: '', required_by_date: requiredBy,
-      source_warehouse_id: srcId, source_warehouse_code_snapshot: s(srcWh.warehouse_code),
-      source_multi_pool: multiPool ? true : false,
-      planned_qty: qty, recommended_qty: qty, units_per_carton: (l.unitsPerCarton != null ? l.unitsPerCarton : ''),
-      marketplace: s(l.marketplace), destination: destination
+    // §4 — the destination side, named. A FACTORY can never be a replenishment destination, and a factory
+    // arriving here means the direction has been inverted somewhere upstream: refuse rather than route it.
+    if (destination.kind === 'WAREHOUSE') {
+      var dRole = weeklyAiPlanWarehouseRole_(destination.warehouse_id, whById, factoryIdentity);
+      diag.destination_roles[dRole.role || '(unresolved)'] = (diag.destination_roles[dRole.role || '(unresolved)'] || 0) + 1;
+      if (dRole.role === 'FACTORY') {
+        destination = { kind: '', reason: 'DESTINATION_IS_A_FACTORY_WAREHOUSE' };
+      }
+    } else {
+      diag.destination_roles[destination.kind || '(unresolved)'] = (diag.destination_roles[destination.kind || '(unresolved)'] || 0) + 1;
+    }
+    // ============================================================================================================
+    // §4/§8 — ONE ALLOCATED LINE PER SOURCE. The allocator decided the split; this carries it.
+    // ============================================================================================================
+    var srcId = s(l.sourceWarehouseId);
+    var parts;
+    if (srcId) {
+      parts = [{ warehouse_id: srcId, qty: qty, cartons: null, allocated_qty: qty }];
+    } else {
+      var sp = weeklyAiPlanSplitBySource_(l, qty, l.unitsPerCarton);
+      if (sp.ok) { parts = sp.parts; diag.split_lines++; diag.split_parts += sp.parts.length; }
+      else {
+        // The truthful refusal is KEPT for the cases that really are unresolvable — a breakdown with no
+        // concrete source at all, or a quantity below one carton — and it now says WHICH.
+        diag.split_refused.push({ sku: s(l.masterSku), window_code: windowCode, reason: sp.reason });
+        out.push({
+          sku: s(l.masterSku), site_sku: s(l.siteSku || l.site_sku), window_code: windowCode,
+          window_start_date: '', window_end_date: '', required_by_date: requiredBy,
+          source_warehouse_id: '', source_warehouse_code_snapshot: '',
+          source_multi_pool: true, source_split_refused_reason: sp.reason,
+          planned_qty: qty, recommended_qty: qty, units_per_carton: (l.unitsPerCarton != null ? l.unitsPerCarton : ''),
+          marketplace: s(l.marketplace), destination: destination
+        });
+        diag.emitted_lines++;
+        return;
+      }
+    }
+    parts.forEach(function (p) {
+      var srcWh = whById[p.warehouse_id] || {};
+      var role = weeklyAiPlanWarehouseRole_(p.warehouse_id, whById, factoryIdentity);
+      diag.source_roles[role.role || '(unresolved)'] = (diag.source_roles[role.role || '(unresolved)'] || 0) + 1;
+      out.push({
+        sku: s(l.masterSku), site_sku: s(l.siteSku || l.site_sku), window_code: windowCode,
+        window_start_date: '', window_end_date: '', required_by_date: requiredBy,
+        source_warehouse_id: p.warehouse_id, source_warehouse_code_snapshot: s(srcWh.warehouse_code),
+        source_multi_pool: false,
+        source_role: role.role, source_role_reason: role.reason || null,
+        source_allocated_qty: p.allocated_qty, source_cartons: p.cartons,
+        planned_qty: p.qty, recommended_qty: p.qty, units_per_carton: (l.unitsPerCarton != null ? l.unitsPerCarton : ''),
+        marketplace: s(l.marketplace), destination: destination
+      });
+      diag.emitted_lines++;
     });
   });
+  // Carried as a property of the returned array so every existing caller (.length / .filter / .forEach) is
+  // unaffected and JSON.stringify of the lines is unchanged.
+  out.diagnostics = diag;
   return out;
 }
 function weeklyAiPlanParseResp_(resp) { try { return JSON.parse(resp && resp.getContent ? resp.getContent() : (typeof resp === 'string' ? resp : '{}')); } catch (e) { return { success: false, parse_error: true }; } }
@@ -414,6 +692,19 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   // carry the DONE GAP-INV run id (cycle-matched) as calculation_run_id; without it the run fails closed (zero rows).
   var lineage = weeklyAiPlanResolveGapRunLineage_(request.planningCycle, harvest, request);
   if (!lineage.ok) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_(lineage.reason, 'K2 generation blocked: authoritative GAP-INV run lineage unavailable or mismatched (' + lineage.reason + '); zero rows written', { planning_cycle: request.planningCycle })] });
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §6 — ONE RUN, OR NEITHER. The harvest resolved the ship-date cutoff from the
+  // GAP-INV run lineage and the header stamps its calculation_run_id from the same authority. Those are two
+  // reads of one script property and they can only differ if the job advanced mid-generation — in which case
+  // the plan would be dated by one run and attributed to another. That is a refusal, not something to prefer
+  // a side of.
+  var _hAuth = (harvest && harvest.sourceDataAsOfAuthority) || null;
+  if (_hAuth && weeklyAiPlanStr_(_hAuth.run_id) && weeklyAiPlanStr_(_hAuth.run_id) !== weeklyAiPlanStr_(lineage.calculation_run_id)) {
+    return jsonResponse_({ success: false, zero_write: true,
+      errors: [weeklyAiPlanErr_('GAP_RUN_LINEAGE_MOVED_MID_GENERATION',
+        'the GAP-INV run that dated this harvest is not the run the header would be stamped with; zero rows written',
+        { harvest_run_id: _hAuth.run_id, writer_run_id: lineage.calculation_run_id,
+          harvest_source_data_as_of: _hAuth.date, writer_source_data_as_of: lineage.source_data_as_of, db_writes: 0 })] });
+  }
 
   var groupsWritten = [], blockedTotal = [], conservationAll = [], anyOk = false, anyFail = false;
 
@@ -728,12 +1019,62 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
         date_normalization: canonical.dateNormalization || null })] };
   }
   var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
+  // §2 — THE UNIVERSE IS ENUMERATED, THEN NARROWED, AND THE NARROWING HAPPENS HERE.
+  //
+  // Everything above this line reads the whole (company,country) universe on purpose: the census, the
+  // readiness report and the freshness verdict are all statements about the universe, and the enumeration is
+  // also where per-site drops are collected. Everything BELOW this line computes numbers — KMAF share
+  // weights, KMWRB source lines, the K2 allocator — and none of those may see a scope this run is not
+  // authorized to write. `universe_site_count` is kept so a report can still say how large the universe was.
+  var universeSiteCount = sites.length;
+  var target = weeklyAiPlanTargetScopes_(scope, scope.marketplace);
+  if (!target.ok) {
+    return { ok: false, errors: [weeklyAiPlanErr_(target.reason,
+      'the controlled activation scope could not be resolved, so no demand may enter the allocator',
+      { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace || null },
+        allowlist: (typeof inventoryAiPlanActivationAllowlist_ === 'function') ? inventoryAiPlanActivationAllowlist_() : null,
+        universe_site_count: universeSiteCount, db_writes: 0 })] };
+  }
+  var iso = weeklyAiPlanIsolateSites_(sites, target);
+  // §3 — and then ONE fact per canonical demand, before any of it is grouped or weighted.
+  var coll = weeklyAiPlanCollapseCanonicalDemand_(iso.sites, scope, errors);
+  sites = coll.sites;
+  var isolation = {
+    enforced: true, stage: 'PRE_CANONICAL_GROUPING',
+    target_scopes: target.scopes, requested_marketplace: target.requested_marketplace,
+    universe_site_count: universeSiteCount,
+    target_site_count: iso.target_site_count, target_sku_count: iso.target_sku_count,
+    foreign_site_count: iso.foreign_site_count, foreign_sku_count: iso.foreign_sku_count,
+    foreign_sample: iso.foreign_sample,
+    canonical_demand_count: coll.canonical_demand_count,
+    collapsed_site_count: coll.collapsed_site_count,
+    canonical_demand_conflicts: coll.conflicts, canonical_demand_conflict_count: coll.conflict_count
+  };
+  // A canonical-demand conflict is a refusal, not a warning: it means one demand would be counted twice.
+  if (coll.conflict_count) {
+    return { ok: false, errors: errors.concat([weeklyAiPlanErr_('CANONICAL_DEMAND_QUANTITY_CONFLICT',
+      'one canonical demand carries two different quantities; zero rows written',
+      { conflicts: coll.conflicts, isolation: isolation, db_writes: 0 })]) };
+  }
+  // §6 — the cutoff, from the DONE GAP-INV run and from nowhere else. Resolved BEFORE the early returns
+  // below so that a zero-demand answer carries the same lineage a full one does.
+  var asOf = weeklyAiPlanSourceDataAsOfAuthority_(scope.planningCycle);
+  if (!asOf.ok) {
+    return { ok: false, errors: [weeklyAiPlanErr_('SOURCE_DATA_AS_OF_UNRESOLVED',
+      'the authoritative GAP-INV run cutoff could not be resolved (' + asOf.reason + '); zero rows written',
+      { reason: asOf.reason, planning_cycle: scope.planningCycle, isolation: isolation, db_writes: 0 })] };
+  }
   // F1-7N-FC-1B-E3-R1 §D — `errors` IS CARRIED OUT. Every non-fatal drop this function makes lands in
   // that array (WORKSPACE_NOT_OK / WORKSPACE_THREW per marketplace, FORECAST_SHARE_INCOMPLETE per site) and both
   // SUCCESS returns used to discard it. When every site was dropped, the consequence was exact and total: zero
   // receivers → KMAF ready:false with issues:[] → mapper ready:false with issues:[] → a bare
   // HARVEST_NOT_READY. The reason was known at THIS line and thrown away three lines later.
-  if (!sites.length) return { ok: true, errors: errors, site_count: 0, kmaf: { ready: true, receiverFacts: [], planningFacts: [] }, horizonsByDemandRef: {}, poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById, sourceDataAsOf: weeklyAiPlanSourceAsOf_(sites) };
+  if (!sites.length) return { ok: true, errors: errors, site_count: 0, kmaf: { ready: true, receiverFacts: [], planningFacts: [] }, horizonsByDemandRef: {}, poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById,
+    sourceDataAsOf: asOf.date, sourceDataAsOfAuthority: { run_id: asOf.run_id, date: asOf.date, source: 'GAP_INV_RUN_LINEAGE' },
+    gapLineage: asOf.lineage, isolation: isolation, snapshot_freshness: canonical.freshness || null,
+    accepted_snapshot_date: canonical.acceptedDate || null, gap_schedule: canonical.schedule || null,
+    gap_job_state: canonical.jobState || null, snapshot_distinct_dates: canonical.distinctDates || [],
+    snapshot_date_normalization: canonical.dateNormalization || null };
 
   // Build ONE multi-site KMAF receiver set (FORECAST_DRIVEN; §7 forecastShareQty basis) so demandWeight normalizes
   // ONCE across the whole (company,country) universe. demandRef encodes (marketplace|sku|destination) for join-back.
@@ -759,7 +1100,14 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
   return {
     ok: true, kmaf: kmaf, horizonsByDemandRef: horizonsByDemandRef,
     poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById,
-    sourceDataAsOf: built.sourceDataAsOf,
+    // §6 — ONE authority. `built.sourceDataAsOf` is the recommendation-workspace line's own value and is
+    // kept ONLY as a diagnostic, so a report can show that it is blank without anything depending on it.
+    sourceDataAsOf: asOf.date,
+    sourceDataAsOfAuthority: { run_id: asOf.run_id, date: asOf.date, source: 'GAP_INV_RUN_LINEAGE' },
+    workspaceSourceDataAsOf: built.sourceDataAsOf || null,
+    gapLineage: asOf.lineage,
+    // §2/§3 — what was narrowed, and what one canonical demand turned out to be.
+    isolation: isolation,
     // §D — the diagnostics this function collected. `errors` is the per-site drop list the mapper turns
     // into typed readiness issues; the counts are what make "every site was dropped" readable as one number.
     errors: errors, site_count: sites.length, receiver_count: (built.receivers || []).length,
@@ -809,7 +1157,11 @@ function weeklyAiPlanWarehousesById_(ss) {
   rows.forEach(function (r) {
     var id = weeklyAiPlanStr_(r.warehouse_id);
     if (!id) return;
-    out[id] = { warehouse_id: id, warehouse_type: weeklyAiPlanStr_(r.warehouse_type), is_factory_warehouse: r.is_factory_warehouse, is_active: r.is_active, country: weeklyAiPlanStr_(r.country) };
+    // §4 — `warehouse_code` was never indexed, so every line's source_warehouse_code_snapshot and every
+    // diagnostic that printed a warehouse code read blank. The identity stays the id; the code is evidence.
+    out[id] = { warehouse_id: id, warehouse_code: weeklyAiPlanStr_(r.warehouse_code),
+      warehouse_type: weeklyAiPlanStr_(r.warehouse_type), is_factory_warehouse: r.is_factory_warehouse,
+      is_active: r.is_active, country: weeklyAiPlanStr_(r.country) };
   });
   return out;
 }
@@ -829,7 +1181,174 @@ function weeklyAiPlanPoolsBySku_(poolFacts, scope) {
   return out;
 }
 
-function weeklyAiPlanSourceAsOf_(sites) { for (var i = 0; i < sites.length; i++) if (sites[i] && sites[i].sourceDataAsOf) return sites[i].sourceDataAsOf; return null; }
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R3 §6 — THE FIRST SURVIVING WORKSPACE LINE WAS NEVER AN AUTHORITY ON ANYTHING.
+//
+// This function decided the whole run's `sourceDataAsOf` by scanning the sites and taking the first non-blank
+// value it found. Every consequence of that was wrong at once:
+//
+//   * The recommendation-workspace line does not carry the cutoff for most scopes, so the answer was BLANK —
+//     which the mapper reports as a NON-BLOCKING predicate, so the run continued with no cutoff at all.
+//   * weeklyAiPlanShipDate_ reads it, so `shipDate` was '' for the live scope. KMRA then date-gates NOTHING
+//     (a null as-of skips the effective-window filter) and KMWRR's on-time test degrades to "is there any
+//     lead time at all". A plan was being ranked with no ship date.
+//   * WHICH line was first depended on enumeration order, so the value was not even stable.
+//
+// The authority already existed and was already correct: the DONE GAP-INV run persists its own frozen input
+// cutoff (`calculationDate`), which is exactly the business-data cutoff the calculation consumed. R6F2G2 said
+// so in a comment beside weeklyAiPlanResolveGapRunLineage_ — and then the harvest went on using the workspace
+// line anyway. So there is now ONE authority, it is that run, and its date goes through the A2-R1-R1 canonical
+// Taipei normalizer like every other date. No clock, no file modification time, no fallback: a run whose
+// lineage is missing or contradictory FAILS CLOSED rather than planning against a date nobody owns.
+function weeklyAiPlanSourceDataAsOfAuthority_(planningCycle) {
+  var lin = weeklyAiPlanResolveGapRunLineage_(planningCycle, null, null);
+  if (!lin.ok) return { ok: false, reason: lin.reason, date: null, run_id: null, lineage: null };
+  var cd = weeklyAiPlanCanonicalDate_(lin.source_data_as_of);
+  if (!cd.ok) return { ok: false, reason: 'LINEAGE_SOURCE_DATA_AS_OF_UNREADABLE:' + cd.reason,
+    date: null, run_id: lin.run_id, lineage: lin };
+  return { ok: true, reason: null, date: cd.date, run_id: lin.run_id, lineage: lin };
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R3 §2 — EXACT CONTROLLED-SCOPE ISOLATION, BEFORE THE ALLOCATOR AND NOT AFTER IT.
+//
+// A2-R1 put the activation allowlist at the WRITER on a deliberate argument: a census and a readiness report
+// must be able to SEE every scope, and refusing to look is blindness rather than safety. That argument is
+// still right about READING. It was wrong about COMPUTING, and the live run showed the difference:
+//
+//   * the harvest enumerated the whole (company,country) universe — 92 receiver facts for a run authorized for
+//     ONE sku — and every one of them entered KMAF, KMWRB and the K2 allocator;
+//   * so 157 source lines and 114 allocated lines were computed, of which all but a handful were foreign;
+//   * the foreign lines then decided the shape of the answer. They formed the only route group, they supplied
+//     every duplicate in `duplicate_sku_window_in_group`, and they made `conserved:false` a property of SKUs
+//     the run was never allowed to write.
+//
+// Filtering at the writer cannot undo any of that, because by then the numbers have already been computed
+// together. So the demand facts are narrowed HERE, before canonical grouping and before the allocator, and
+// the narrowing is an INTER§ION of two things the client cannot influence: the server-owned allowlist, and
+// the marketplace the request named. A site-level request can only ever narrow the allowlist further — there
+// is no direction in which a payload widens it, and an empty marketplace is not "all", it is "no constraint
+// beyond the allowlist", which the allowlist then constrains to its own exact four-part entries.
+//
+// Shared authorities — warehouses, factory stock, carrier cards, lead times, the route authority — are still
+// read WHOLE, because computing this SKU's answer needs them. What is narrowed is the DEMAND that enters the
+// allocator, which is the thing that was leaking.
+function weeklyAiPlanTargetScopes_(scope, requestedMarketplace) {
+  if (typeof inventoryAiPlanActivationAllowlist_ !== 'function' || typeof inventoryAiPlanScopeEnabled_ !== 'function') {
+    return { ok: false, reason: 'AI_PLAN_SCOPE_GUARD_UNAVAILABLE', scopes: [], requested_marketplace: null };
+  }
+  var mk = weeklyAiPlanStr_(requestedMarketplace);
+  // ALL_SITES is not a scope, and it must not become one by being unrecognised.
+  if (/^all(_sites)?$/i.test(mk)) {
+    return { ok: false, reason: 'SCOPE_ALL_SITES_FORBIDDEN', scopes: [], requested_marketplace: mk };
+  }
+  var out = [];
+  (inventoryAiPlanActivationAllowlist_() || []).forEach(function (e) {
+    var c = weeklyAiPlanStr_(e.company), k = weeklyAiPlanStr_(e.country),
+        m = weeklyAiPlanStr_(e.marketplace), sk = weeklyAiPlanStr_(e.sku);
+    if (c !== weeklyAiPlanStr_(scope.company) || k !== weeklyAiPlanStr_(scope.country)) return;
+    if (mk && m !== mk) return;                       // INTER§ION: a named marketplace narrows, never widens
+    // The gate itself is re-asked rather than trusted from the list, so a blank/ALL entry can never pass even
+    // if one were ever added to the config by hand.
+    if (!inventoryAiPlanScopeEnabled_(c, k, m, sk)) return;
+    out.push({ company: c, country: k, marketplace: m, sku: sk });
+  });
+  if (!out.length) {
+    return { ok: false, reason: 'AI_PLAN_SCOPE_NOT_ENABLED', scopes: [], requested_marketplace: mk || null };
+  }
+  return { ok: true, reason: null, scopes: out, requested_marketplace: mk || null };
+}
+
+/** The (marketplace|sku) key set a target scope authorizes. Exact and case-sensitive, like the gate. */
+function weeklyAiPlanTargetKeySet_(target) {
+  var keep = {};
+  ((target && target.scopes) || []).forEach(function (e) { keep[e.marketplace + '|' + e.sku] = 1; });
+  return keep;
+}
+
+/**
+ * §2 — keep only the authorized demand facts. Foreign facts are DROPPED AND COUNTED, never silently included
+ * and never silently discarded: a report has to be able to say how many there were and name a few.
+ */
+function weeklyAiPlanIsolateSites_(sites, target) {
+  var keep = weeklyAiPlanTargetKeySet_(target);
+  var kept = [], foreign = [], fSkus = {}, tSkus = {};
+  (sites || []).forEach(function (st) {
+    var m = weeklyAiPlanStr_(st.marketplace), sk = weeklyAiPlanStr_(st.sku);
+    if (keep[m + '|' + sk]) { kept.push(st); tSkus[sk] = 1; return; }
+    fSkus[sk] = 1;
+    if (foreign.length < 10) foreign.push({ marketplace: m, sku: sk });
+  });
+  return { sites: kept,
+    target_site_count: kept.length, target_sku_count: Object.keys(tSkus).length,
+    foreign_site_count: (sites || []).length - kept.length, foreign_sku_count: Object.keys(fSkus).length,
+    foreign_sample: foreign };
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R3 §3 — ONE CANONICAL DEMAND, COUNTED ONCE, WITH ITS LINEAGE KEPT.
+//
+// The recommendation workspace enumerates one line per SITE SKU. The canonical demand snapshot is keyed per
+// MASTER sku: (company, country, marketplace, sku). So a master sku with two site skus in one marketplace —
+// two ASINs of the same product, which is ordinary — produced TWO sites, and
+// weeklyAiPlanAcceptCanonicalDemand_ gave EACH of them the SAME snapshot quantity. The demand was therefore
+// claimed twice: 760 units of canonical demand entered the allocator as 1520.
+//
+// Downstream, KMWRB's demandKey is (masterSku|marketplace|windowCode) — it does not carry the site sku either —
+// so one of the two lines was dropped with a DUPLICATE_WEEKLY_LINE_KEY issue and the other kept. That accident
+// is the only reason the shipped quantity was not doubled, and it is the wrong mechanism twice over: the
+// surviving line depends on enumeration order, and the issue reads like a data fault rather than the
+// structural double-count it actually was.
+//
+// So the collapse happens HERE, at the boundary that owns canonical demand, and it AGGREGATES rather than
+// dropping: one demand fact per (company, country, marketplace, sku, destination), the quantity taken from the
+// snapshot ONCE, and every contributing site sku retained on the fact as lineage. The representative site sku
+// is the lexicographic minimum — deterministic, and never "whichever the enumeration reached first".
+//
+// It REFUSES rather than choosing when two sites of one canonical demand disagree about the quantity. That
+// cannot happen while the quantity comes from the snapshot (both read the same row), and if it ever does it
+// means the snapshot is being read inconsistently, which is not something to average.
+function weeklyAiPlanCanonicalDemandRef_(scope, site) {
+  return [weeklyAiPlanStr_(scope.company), weeklyAiPlanStr_(scope.country), weeklyAiPlanStr_(site.marketplace),
+    weeklyAiPlanStr_(site.sku), weeklyAiPlanStr_(site.destinationWarehouseId)].join('|');
+}
+function weeklyAiPlanCollapseCanonicalDemand_(sites, scope, errors) {
+  var byRef = {}, order = [], collapsed = 0, conflicts = [];
+  (sites || []).forEach(function (st) {
+    var ref = weeklyAiPlanCanonicalDemandRef_(scope, st);
+    var held = byRef[ref];
+    if (!held) {
+      st.demandRef = ref;
+      st.siteSkus = [weeklyAiPlanStr_(st.siteSku)];
+      byRef[ref] = st; order.push(ref);
+      return;
+    }
+    // The SAME canonical demand. Its quantity is the snapshot's and must be counted once.
+    var a = JSON.stringify(held.cumulativeGapByWindow || {}), b = JSON.stringify(st.cumulativeGapByWindow || {});
+    if (a !== b) {
+      conflicts.push({ demandRef: ref, sku: weeklyAiPlanStr_(st.sku), marketplace: weeklyAiPlanStr_(st.marketplace),
+        site_sku_a: held.siteSkus.join(','), site_sku_b: weeklyAiPlanStr_(st.siteSku), qty_a: a, qty_b: b });
+      return;
+    }
+    var ssk = weeklyAiPlanStr_(st.siteSku);
+    if (ssk && held.siteSkus.indexOf(ssk) < 0) held.siteSkus.push(ssk);
+    collapsed++;
+  });
+  var out = order.map(function (ref) {
+    var st = byRef[ref];
+    st.siteSkus = st.siteSkus.slice().sort();
+    st.siteSku = st.siteSkus[0] || weeklyAiPlanStr_(st.siteSku);   // deterministic representative
+    return st;
+  });
+  if (conflicts.length && Array.isArray(errors)) {
+    conflicts.forEach(function (c) {
+      errors.push(weeklyAiPlanErr_('CANONICAL_DEMAND_QUANTITY_CONFLICT',
+        'two sites of one canonical demand disagree about the quantity; refused rather than reconciled', c));
+    });
+  }
+  return { sites: out, collapsed_site_count: collapsed, conflict_count: conflicts.length,
+    conflicts: conflicts.slice(0, 10), canonical_demand_count: out.length };
+}
 
 /**
  * F1-7N-FC-1B-E3-R4 §G — IS THIS A GROUP WITH NOTHING TO REPLENISH, OR A GROUP WE FAILED TO READ?

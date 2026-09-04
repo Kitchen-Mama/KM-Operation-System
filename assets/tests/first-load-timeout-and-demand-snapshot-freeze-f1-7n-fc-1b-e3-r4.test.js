@@ -163,7 +163,15 @@ function buildClient(opt) {
       DB: { adaptInventoryReplenishmentWorkspace: function (d) { return { getMarketplaceSkus: (d.marketplace_skus || []) }; } },
       loadState: { STATES: { READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR', INITIAL_LOADING: 'IL' } } } };
   var doc = { getElementById: function (id) { return Object.prototype.hasOwnProperty.call(sel, id) ? { value: sel[id] } : null; } };
-  var src = [extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, 'searchReplenishment'), extractFn(PAGE, '_irPendingFilters_')].join(NL);
+  // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — the refresh now records WHICH owner dispatched it, so the two
+  // helpers and the owner vocabulary it reads are LIFTED from the page rather than restated here. A
+  // restated copy could drift from the real list, which is exactly what the ledger exists to prevent.
+  var OWNERS_SRC = (PAGE.match(/var IR_READ_OWNERS_ = \[[\s\S]*?\];/) || [''])[0];
+  ok(!!OWNERS_SRC, 'B0  the page declares its dispatch-owner vocabulary');
+  var src = [OWNERS_SRC, 'var _irReadDispatches = [];',
+    extractFn(PAGE, '_irReadPayloadFingerprint_'), extractFn(PAGE, '_irRecordReadDispatch_'),
+    extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, 'searchReplenishment'),
+    extractFn(PAGE, '_irPendingFilters_')].join(NL);
   var f = new Function('window', 'document', 'alert', '_irSearch', '_irRegion_', '_irRenderSearchGate_', '_irApplySearch_',
     '_irEffectiveWorkspace', '_replenDemoOn', '_irNowMs_', 'renderReplenishment', '_irRenderError_',
     'var _irReadModel=null,_irReadSeq=0,_irReadModelAt=0,_irReadModelHasCarrier=false,_irLastReadMeta=null,replenCategoryTab="All";'

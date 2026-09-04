@@ -204,9 +204,11 @@ eval(extractFn(RO, '_roReloadAndRerender'));
   // `{}` no longer appears in the source. The deferral this line records is about the POST-WRITE readback, and
   // that path is unchanged: _irAfterWrite still asks for the full unfiltered workspace with no include, and the
   // bounded endpoint it is waiting for still does not exist.
-  ok(/function _irAfterWrite\(cb\)[\s\S]{0,400}_irWorkspaceRefresh_\(\)/.test(IR),
+  // RESTATED AGAIN (A2-R1-R3): an owner LABEL was added to this call. The deferral it records is about the
+  // PAYLOAD, which is unchanged, so the assertion now reads the payload rather than the argument list.
+  ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}_irWorkspaceRefresh_\(/.test(IR),
     'B3 IR post-write readback still the full unfiltered workspace (deferred — needs a new bounded endpoint)');
-  ok(!/function _irAfterWrite\(cb\)[\s\S]{0,400}carrier:\s*true/.test(IR),
+  ok(!/function _irAfterWrite\(cb\)[\s\S]{0,600}carrier:\s*true/.test(IR),
     'B3a and it deliberately carries NO include — a readback reconciles a write, not reference data');
   ok(/function _irAfterWrite\(cb\)/.test(IR), 'B3 IR _irAfterWrite present and unchanged');
 

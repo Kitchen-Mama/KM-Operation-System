@@ -5272,9 +5272,70 @@ function _irReadStageReport_() {
         + ' of ' + out.request_count + ')';
       return out;
     }
+    // ==========================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — WHO DISPATCHED EACH READ.
+    //
+    // The live report could say that two identical workspace reads happened and nothing else about them. The
+    // ledger names the owner, the reason, the wall clock and a payload fingerprint of each, so a duplicate is
+    // attributable instead of a mystery, and OVERLAP is decidable: two dispatches whose windows intersect are
+    // a coalescing question, and two that do not are a SCHEDULING question with a different fix entirely.
+    out.read_dispatches = (typeof _irReadDispatches !== 'undefined' ? _irReadDispatches : []).map(function (d) {
+      return { owner: d.owner, reason: d.reason, at: d.at, seq: d.seq, quiet: d.quiet === true,
+        payload_fingerprint: d.payload_fingerprint, settled_at: d.settled_at, outcome: d.outcome,
+        elapsed_ms: (d.settled_at && d.at) ? (d.settled_at - d.at) : null };
+    });
+    out.duplicate_reads = (function () {
+      var byFp = {}, dups = [];
+      out.read_dispatches.forEach(function (d) { (byFp[d.payload_fingerprint] = byFp[d.payload_fingerprint] || []).push(d); });
+      for (var fp in byFp) {
+        if (!Object.prototype.hasOwnProperty.call(byFp, fp) || byFp[fp].length < 2) continue;
+        var g = byFp[fp];
+        // Did the second dispatch start while the first was still open? That single fact decides which fix
+        // applies, and asserting either answer without it is how a scheduling defect gets "fixed" by adding
+        // a cache.
+        var overlapped = false;
+        for (var i = 0; i < g.length; i++) {
+          for (var j = i + 1; j < g.length; j++) {
+            var a = g[i], b = g[j];
+            if (a.settled_at == null || b.at == null) continue;
+            if (b.at < a.settled_at && a.at <= b.at) overlapped = true;
+          }
+        }
+        dups.push({ payload_fingerprint: fp, count: g.length,
+          owners: g.map(function (d) { return d.owner; }),
+          reasons: g.map(function (d) { return d.reason; }),
+          dispatched_at: g.map(function (d) { return d.at; }),
+          concurrent: overlapped,
+          finding: overlapped
+            ? 'CONCURRENT_IDENTICAL_READ: the second dispatch began while the first was still open — these must share one in-flight request'
+            : 'SEQUENTIAL_IDENTICAL_READ: the second dispatch began after the first had settled — in-flight sharing cannot help; this is a scheduling question' });
+      }
+      return dups;
+    })();
     if (window.IRReadTimeoutDiagnostic && typeof window.IRReadTimeoutDiagnostic.classify === 'function') {
       var c = window.IRReadTimeoutDiagnostic.classify(samples, null);
       out.classification = c.classification;
+      // §16.2 — the cross-action evidence, carried out so the classification can be CHECKED rather than
+      // taken on trust. Four different actions failing at one bound is the whole reason this is not reported
+      // as a workspace cost, and a reader must be able to see the four.
+      out.timeout_actions = c.timeoutActions || null;
+      out.distinct_timeout_actions = (typeof c.distinctTimeoutActions === 'number') ? c.distinctTimeoutActions : null;
+      out.server_evidence = (typeof c.serverEvidence === 'boolean') ? c.serverEvidence : null;
+      out.server_evidence_known = c.serverEvidenceKnown === true;
+      // §16.1 — where in the lifecycle it stopped, and what is still missing to decide.
+      out.reach = c.reach || null;
+      out.request_reached_server = (c.reach && c.reach.classification) || null;
+      // §16.6 — the two questions are kept APART. A shared transport outage and the workspace's own cost
+      // are different findings with different fixes, and a report that let one stand in for the other is how
+      // "we optimised the tables" comes to be offered as an answer to "nothing loads at all".
+      out.finding_split = {
+        shared_transport: out.classification === 'SHARED_TRANSPORT_OR_DISPATCH_TIMEOUT'
+          ? 'UNAVAILABLE: lightweight and heavyweight actions failed together with no server evidence'
+          : 'NOT_OBSERVED_IN_THIS_SESSION',
+        workspace_server_cost: (typeof out.server_execution_ms === 'number')
+          ? (out.server_execution_ms + ' ms of server execution on the last completed primary read')
+          : 'UNMEASURED: no primary read completed in this session, so its cost is unknown'
+      };
       // §8 — once the same first-attempt timeout has been seen more than once, "transient" is no longer
       // an available reading, and the report says the name the evidence supports.
       if (c.classification === 'SUCCESS_AFTER_RETRY' && c.timeouts >= 1) {
@@ -8063,7 +8124,9 @@ function _irBootstrapScope_() {
         // it was read and a failed revalidation does not make it invalid.
         _irBootstrap.revalidating = true;
         var qSeq = _irSearch.seq;
-        Promise.resolve(_irWorkspaceRefresh_({ quiet: true, carrier: true })).then(function () {
+        Promise.resolve(_irWorkspaceRefresh_({ quiet: true, carrier: true,
+            owner: 'RESTORED_MOUNT_REVALIDATION',
+            reason: 'a retained model was restored; this re-reads behind it without a loading state' })).then(function () {
             if (qSeq !== _irSearch.seq) return;                  // a real Search superseded the restore
             if (!_irSameScope_(_irSearch.applied, remembered)) return;   // the scope moved on
             _irBootstrap.revalidating = false;
@@ -8085,7 +8148,10 @@ function _irBootstrapScope_() {
     // STARTED TOGETHER. The workspace read is scope-INDEPENDENT (the server returns the primary-render table set
     // and the client scopes it), which is exactly why it can overlap the validation instead of following it.
     var regP = Promise.resolve(_irEnsureRegistryLoaded_())['catch'](function () { return null; });
-    var wsP = Promise.resolve(_irWorkspaceRefresh_({ carrier: true })).then(function (m) { return { ok: true, model: m }; },
+    var wsP = Promise.resolve(_irWorkspaceRefresh_({ carrier: true,
+        owner: 'COALESCED_BOOTSTRAP',
+        reason: 'a remembered scope: registry validation and the scoped workspace read run together' }))
+        .then(function (m) { return { ok: true, model: m }; },
         function (err) { return { ok: false, error: err }; });
     return Promise.all([regP, wsP]).then(function (r) {
         if (mySeq !== _irSearch.seq) return null;                    // a real Search superseded the bootstrap
@@ -8412,8 +8478,47 @@ function _irRenderError_(err) {
 
 // Scoped read: Workspace (canonical) → getWorkspace('inventoryReplenishment') → adapt → _irReadModel. Fail-closed (throws;
 // NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R3 §16.3 — TWO WORKSPACE REQUESTS, AND NOTHING COULD SAY WHO SENT THEM.
+//
+// The live evidence was exact and unhelpful in equal measure: inventory_workspace attempts = 2, the same
+// action twice, coalesced_count = 0, retry_count = 0. So the transport did not retry, nothing was shared, and
+// two physically separate reads of the identical payload were dispatched — by whom, the report could not say.
+//
+// It could not say because `_irWorkspaceRefresh_` has FOUR distinct owners and recorded none of them:
+//
+//   COALESCED_BOOTSTRAP          a mount with a remembered scope, validating the registry and reading together
+//   RESTORED_MOUNT_REVALIDATION  a mount that restored a retained model and is quietly re-reading behind it
+//   SEARCH_CLICK                 a person pressing Search, which always performs a fresh read by design
+//   POST_WRITE_READBACK          reconciling what a write just persisted
+//
+// The first two are mutually exclusive per mount, so the pairing that produces two reads of one payload is a
+// restored mount whose quiet revalidation is still open (or has just failed) when the operator presses Search
+// — which is exactly what a person does when a page looks wrong. That is a HYPOTHESIS, and it is written here
+// as one: this ledger is what lets the next live run confirm or refute it instead of reasoning about it again.
+//
+// It records the owner, the reason, the dispatch WALL CLOCK, the sequence number and a payload fingerprint, so
+// two dispatches can be compared on identity rather than on the action name they share. Bounded at 20 entries;
+// no payload contents, no rows, no URL.
+var _irReadDispatches = [];
+var IR_READ_OWNERS_ = ['COALESCED_BOOTSTRAP', 'RESTORED_MOUNT_REVALIDATION', 'SEARCH_CLICK',
+    'POST_WRITE_READBACK', 'UNDECLARED'];
+function _irReadPayloadFingerprint_(payload) {
+    try {
+        var tp = window.KM && window.KM.transport;
+        if (tp && typeof tp.canonicalScope === 'function') return tp.canonicalScope({ v: null, p: payload || null });
+        return JSON.stringify(payload || null);
+    } catch (e) { return ''; }
+}
+function _irRecordReadDispatch_(entry) {
+    try { if (_irReadDispatches.length < 20) _irReadDispatches.push(entry); } catch (e) {}
+}
 function _irWorkspaceRefresh_(opts) {
     var mySeq = ++_irReadSeq;
+    // §16.3 — an UNDECLARED owner is recorded as such rather than guessed. A ledger that invented a
+    // plausible owner would be worse than none: it is the attribution itself that is in question.
+    var _owner = (opts && opts.owner) ? String(opts.owner) : 'UNDECLARED';
+    if (IR_READ_OWNERS_.indexOf(_owner) === -1) _owner = 'UNDECLARED';
     // F1-7N-FB-4E-R4B §A -- a QUIET read drives no load region at all. This is the difference between "refresh
     // the data behind a table that is already correct" and "tell the user we have nothing", and the two must not
     // share a code path: the second is what painted "Searching..." over a valid result.
@@ -8462,7 +8567,14 @@ function _irWorkspaceRefresh_(opts) {
     // — which is the correct answer, not a regression: adopting a payload that did not carry the include would
     // install two empty tables as a settled catalogue and report a configuration problem that does not exist.
     var _wsPayload = { recentWindow: true };
+    var _dispatch = { owner: _owner, reason: (opts && opts.reason) ? String(opts.reason) : null,
+        at: _irNowMs_ ? _irNowMs_() : 0, seq: mySeq, quiet: quiet,
+        payload_fingerprint: _irReadPayloadFingerprint_(_wsPayload),
+        settled_at: null, outcome: null };
+    _irRecordReadDispatch_(_dispatch);
     return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', _wsPayload)).then(function (env) {
+        _dispatch.settled_at = _irNowMs_ ? _irNowMs_() : 0;
+        _dispatch.outcome = (env && env.success) ? 'SUCCESS' : 'FAILED';
         if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
         if (env && env.success && env.data) {
             // §B — the server's OWN execution time, which it has always reported and the page has always
@@ -8503,7 +8615,9 @@ function _irWorkspaceRefresh_(opts) {
 // documented bounded-readback deferral (7M-B / 7M-B2) which this round does not disturb.
 function _irAfterWrite(cb) {
     if (!_irEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
-    _irWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _irRenderError_(err); });
+    _irWorkspaceRefresh_({ owner: 'POST_WRITE_READBACK',
+        reason: 'reconciling what a write just persisted' })
+        .then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _irRenderError_(err); });
 }
 
 // ========================================
@@ -8544,7 +8658,9 @@ function searchReplenishment() {
         _irRenderSearchGate_();
         // F1-7N-FB-3 §C — Search is the ONLY thing that reads the inventory workspace. (FB-2A routed this
         // through the registry loader, which is what coupled selector loading to the table's load state.)
-        _irWorkspaceRefresh_({ carrier: true }).then(function () {
+        _irWorkspaceRefresh_({ carrier: true,
+            owner: 'SEARCH_CLICK',
+            reason: 'a person pressed Search, which always performs a fresh read' }).then(function () {
             _irSearch.inFlight = false;
             if (mySeq !== _irSearch.seq) return;   // a newer Search superseded this response
             _irApplySearch_(pending, mySeq);

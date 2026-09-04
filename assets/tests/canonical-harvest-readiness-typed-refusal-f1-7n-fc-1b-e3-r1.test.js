@@ -630,12 +630,36 @@ section('§F/§G — THE CENSUS: an early refusal keeps the diagnosis, and stays
   ok(res.mapped.mapped_field_names.indexOf('sourceDataAsOf') !== -1, 'G3f and the canonical field names it reads');
   ok(!!res.source_data_as_of_candidates, 'G4  §G the source_data_as_of DERIVATION is reported...');
   eq(res.source_data_as_of_candidates.harvest_value_is_blank, true, 'G4a stating that the harvest value is blank');
-  ok(/FIRST SURVIVING site/.test(res.source_data_as_of_candidates.harvest_origin), 'G4b and WHY it is blank');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R3): this asserted that the census DESCRIBES the first-surviving-line
+  // rule, and it did, correctly, for as long as that rule existed. R3 removed the rule: the cutoff now comes
+  // from the DONE GAP-INV run lineage and the harvest FAILS CLOSED without one. Keeping the old sentence
+  // pinned would have required the diagnostic to go on describing a mechanism the code no longer has.
+  //
+  // What SURVIVES is the claim that mattered: the census still says WHERE the value comes from, and the
+  // workspace line's blankness is still visible rather than hidden.
+  ok(/GAP-INV run lineage/.test(res.source_data_as_of_candidates.harvest_origin),
+    'G4b and WHY — naming the authority the value now comes from');
+  ok(/diagnostic only/.test(res.source_data_as_of_candidates.harvest_origin),
+    'G4b1 and that the workspace line is no longer an authority for it');
   ok(!!res.source_data_as_of_candidates.gap_run_lineage, 'G4c naming the second, authoritative timestamp');
   ok(/NO clock/.test(res.source_data_as_of_candidates.fabrication_check), 'G4d and that nothing was fabricated');
   ok(!!res.forecast_coverage, 'G5  §G the FORECAST COVERAGE is reported...');
-  eq(res.forecast_coverage.missing_months, ['2027-01'], 'G5a naming the exact missing month');
-  eq(res.forecast_coverage.verdict, 'FORECAST_SHARE_INCOMPLETE', 'G5b with the canonical drop code');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R3 §9): `missing_months` and `FORECAST_SHARE_INCOMPLETE` were the
+  // census's OWN restatement of a gate production stopped having in E3-R3-R1, when KMFCN began normalizing a
+  // missing row and a blank cell to ZERO. The live census printed 2027-01 NO_ROW_FOR_YEAR /
+  // FORECAST_SHARE_INCOMPLETE / site_would_survive_forecast_gate:false for a site production carried through
+  // without complaint — two authorities, one table, opposite answers, and the diagnostic was the wrong one.
+  //
+  // The OBSERVATION survives under a name that cannot be read as a verdict, and the verdict itself now comes
+  // from KMFCN. In this harness KMFCN is not loaded, so the honest answer is a typed unavailability rather
+  // than a fallback to the old rule — which is the property being asserted.
+  eq(res.forecast_coverage.months_with_no_row_or_blank, ['2027-01'],
+    'G5a naming the exact month with no row — as an OBSERVATION, not a verdict');
+  eq(res.forecast_coverage.verdict, 'FORECAST_NORMALIZATION_AUTHORITY_UNAVAILABLE',
+    'G5b and with no KMFCN present it refuses to judge rather than reviving the old gate');
+  eq(res.forecast_coverage.blocking, null, 'G5b1 blocking is UNKNOWN, never defaulted to true');
+  eq(res.forecast_coverage.site_would_survive_forecast_gate, null,
+    'G5b2 and it does not claim the site would be dropped');
   eq(res.forecast_coverage.per_month.filter(function (p) { return p.status === 'NO_ROW_FOR_YEAR'; }).map(function (p) { return p.month; }),
     ['2027-01'], 'G5c and classifying it as NO_ROW_FOR_YEAR — not as a blank cell and not as a conflict');
   eq(res.forecast_coverage.source_table, 'fc_regular_forecast', 'G5d naming the table');
@@ -686,8 +710,12 @@ section('§F/§G — THE CENSUS: an early refusal keeps the diagnosis, and stays
   eq([res2.total_allocated_quantity, res2.would_create_route_count], [520, 1], 'G11b with the quantity and route count');
   eq(res2.mapped.ready, true, 'G11c readiness true...');
   eq(res2.mapped.issues, [], 'G11d ...with no issues');
-  eq(res2.forecast_coverage.complete, false,
+  // RESTATED for the same reason: `complete` was the old gate's boolean. The point of G11e — that coverage is
+  // reported even on a READY run — is unchanged and is what gets checked.
+  ok(!!res2.forecast_coverage && Array.isArray(res2.forecast_coverage.per_month),
     'G11e and the forecast coverage is STILL reported even on a ready run (a PARTIAL run is the case nobody could see)');
+  ok(res2.forecast_coverage.months_with_no_row_or_blank.length > 0,
+    'G11e1 with the months that have no row still named');
 })();
 
 // ================================================================================================================

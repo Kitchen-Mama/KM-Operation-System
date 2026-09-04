@@ -321,12 +321,14 @@ section('§6 — THE DUPLICATE WORKSPACE READ, AND THE TIMEOUT IT CAUSED');
   var _mreg2 = read('assets/js/core/method-registry.js');
   ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(_mreg2),
     'T3a and the catalogue read names its two tables, so it can never again be a full-set read');
-  ok(/_irWorkspaceRefresh_\(\{ carrier: true \}\)/.test(code(PAGE)),
+  // RESTATED (A2-R1-R3): the primary read now also declares its dispatch owner, so the argument list is no
+  // longer one frozen literal. What matters is that a PRIMARY read — not the readback — carries the include.
+  ok(/_irWorkspaceRefresh_\(\{ carrier: true,[\s\S]{0,200}owner: '(SEARCH_CLICK|COALESCED_BOOTSTRAP|RESTORED_MOUNT_REVALIDATION)'/.test(code(PAGE)),
     'T3a and the PRIMARY read is the caller that asks for it');
   // NARROWED DELIBERATELY: the post-write readback keeps its exact previous payload, so the separate bounded-
   // readback deferral recorded by 7M-B / 7M-B2 is untouched by this round.
-  ok(/function _irAfterWrite\(cb\)[\s\S]{0,400}_irWorkspaceRefresh_\(\)/.test(code(PAGE)) &&
-     !/function _irAfterWrite\(cb\)[\s\S]{0,400}carrier:\s*true/.test(code(PAGE)),
+  ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}_irWorkspaceRefresh_\(/.test(code(PAGE)) &&
+     !/function _irAfterWrite\(cb\)[\s\S]{0,600}carrier:\s*true/.test(code(PAGE)),
     'T4  and the post-write readback deliberately does NOT ask — a readback reconciles a write, not reference data');
   var transport = read('assets/js/api/km-transport.js');
   ok(/readTimeoutMs > 0\) \? deps\.readTimeoutMs : 60000/.test(code(transport)),
