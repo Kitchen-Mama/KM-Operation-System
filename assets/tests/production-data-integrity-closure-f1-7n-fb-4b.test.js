@@ -118,7 +118,7 @@ ok(sadCanonicalLineId_(true, DRAFT, line()) !== sadCanonicalLineId_(true, DRAFT,
 eq(sadPreflightLineBatch_(true, DRAFT, [line(), line({ line_status: 'cancelled' })]).ok, true, '1. a soft-cancel is exempt');
 
 var keyed = extractFn(G16, 'sadUpsertLinesKeyedCore_');
-var atomic = extractFn(G16, 'sadAtomicUpsertCore_');
+var atomic = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 [['keyed', keyed], ['atomic', atomic]].forEach(function (pair) {
   ok(/LINE_PRIMARY_KEY_ALREADY_EXISTS/.test(pair[1]), '3. the ' + pair[0] + ' core refuses to append onto an existing primary key');
   ok(/procurementFindRow_\(\w+, 'allocation_draft_line_id', (canonicalId|canonicalLineId)\)/.test(pair[1]),

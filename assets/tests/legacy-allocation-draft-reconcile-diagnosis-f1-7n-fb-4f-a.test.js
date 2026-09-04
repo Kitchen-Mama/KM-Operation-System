@@ -630,7 +630,8 @@ section('§L — NOTHING ELSE MOVED');
     .replace(/'(?:[^'\\]|\\.)*'/g, "''").replace(/"(?:[^"\\]|\\.)*"/g, '""');
   ['handleSubmitShippingAllocationDrafts_', 'handleSubmitAllocationDraftsToShippingPlans_',
     'shippingPlanCommitFromLines_', 'handleRequestOrderSend', 'aplGenerate', 'handleUpsertShippingAllocationDraftAtomic_',
-    'sadUpsertDraftHeaderCore_', 'sadAtomicUpsertCore_', 'sadSubmitToShippingPlansCore_'].forEach(function (n) {
+    'sadUpsertDraftHeaderCore_', 'sadSchemaGenerationColumns_', 'sadSupportedSchemaVersions_', 'sadResolveHeaderSchema_',
+  'sadDraftsSchemaReason_', 'sadAtomicUpsertCore_', 'sadSubmitToShippingPlansCore_'].forEach(function (n) {
     ok(!new RegExp(n + '\\s*\\(').test(stripped), 'L1 no call site for ' + n);
   });
 

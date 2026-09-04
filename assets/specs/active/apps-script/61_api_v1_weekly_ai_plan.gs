@@ -204,7 +204,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -705,7 +705,10 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
       'the materialized demand snapshot could not be used: ' + canonical.reason,
       { table: WAP_GAP_TABLE_, reason: canonical.reason,
         freshness: canonical.freshness || null, schedule: canonical.schedule || null,
-        distinct_dates: canonical.distinctDates || [] })] };
+        distinct_dates: canonical.distinctDates || [],
+        // §10 — how the date column READ, carried with the refusal. "LINEAGE_MISMATCH" and "we could not
+        // read the date column at all" are different problems and they must not arrive looking the same.
+        date_normalization: canonical.dateNormalization || null })] };
   }
   var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
   // F1-7N-FC-1B-E3-R1 §D — `errors` IS CARRIED OUT. Every non-fatal drop this function makes lands in
@@ -754,7 +757,8 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
     accepted_snapshot_date: canonical.acceptedDate || null,
     gap_schedule: canonical.schedule || null,
     gap_job_state: canonical.jobState || null,
-    snapshot_distinct_dates: canonical.distinctDates || []
+    snapshot_distinct_dates: canonical.distinctDates || [],
+    snapshot_date_normalization: canonical.dateNormalization || null
   };
 }
 
@@ -1022,10 +1026,38 @@ function weeklyAiPlanGapJobState_() {
   } catch (e) { return null; }
 }
 
+/**
+ * F1-7N-FC-1B-E3-R4-A2-R1-R1 §2 — THE SNAPSHOT DATE, CANONICALIZED AT THE ONE BOUNDARY IT CROSSES.
+ *
+ * `calculation_date` is a DATE-FORMATTED CELL, so getValues() returns a Date OBJECT and not the text shown in
+ * the sheet. Every value below this line used to arrive through the generic `weeklyAiPlanStr_`, which is
+ * String() + trim() — correct for a text column and catastrophic for this one: a healthy row became
+ * "Thu Sep 03 2026 00:00:00 GMT+0800 (Taiwan Standard Time)", failed the YYYY-MM-DD test in the freshness
+ * authority, and was reported as LINEAGE_MISMATCH. That code means "this snapshot came from another run"; the
+ * data was fine and the reader was the fault.
+ *
+ * The conversion is KMSNF's, so production, the Census and every test resolve a cell the SAME way — a second
+ * local rule here is how the two would drift back apart. The offset is the planning zone's authority and is
+ * REQUIRED: with no zone there is no business day, and a guessed one lands on the wrong side of midnight.
+ */
+function weeklyAiPlanCanonicalDate_(v) {
+  if (typeof KMSNF === 'undefined' || !KMSNF || typeof KMSNF.canonicalDate !== 'function') {
+    return { ok: false, date: null, kind: 'UNKNOWN', reason: 'SNAPSHOT_DATE_AUTHORITY_UNAVAILABLE' };
+  }
+  if (typeof GAP_CALC_UTC_OFFSET_MIN_ === 'undefined') {
+    return { ok: false, date: null, kind: 'UNKNOWN', reason: 'TIMEZONE_AUTHORITY_UNAVAILABLE' };
+  }
+  return KMSNF.canonicalDate(v, GAP_CALC_UTC_OFFSET_MIN_);
+}
+
 function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
   var out = { ok: false, reason: null, bySite: {}, byKeyDate: {}, dateIndex: {}, distinctDates: [],
     rowCount: 0, calculationDate: calcDate || null, acceptedDate: null, freshness: null,
-    freshnessState: null, schedule: null, jobState: null };
+    freshnessState: null, schedule: null, jobState: null,
+    // §10 — how the date column was actually read, so "a Date object arrived and we handled it" and "a
+    // string arrived" are distinguishable in a diagnostic instead of both looking like a bare date.
+    dateNormalization: { by_kind: {}, unreadable: 0, unreadable_sample: [],
+      offset_minutes: (typeof GAP_CALC_UTC_OFFSET_MIN_ !== 'undefined') ? GAP_CALC_UTC_OFFSET_MIN_ : null } };
   var sh;
   try { sh = ss.getSheetByName(WAP_GAP_TABLE_); }
   catch (e) { out.reason = 'CANONICAL_DEMAND_READ_FAILED'; return out; }
@@ -1051,10 +1083,23 @@ function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
       company: weeklyAiPlanStr_(r.company), country: weeklyAiPlanStr_(r.country),
       marketplace: weeklyAiPlanStr_(r.marketplace), sku: weeklyAiPlanStr_(r.sku),
       calculation_status: weeklyAiPlanStr_(r.calculation_status),
-      calculation_date: weeklyAiPlanStr_(r.calculation_date),
+      // §2 — NOT weeklyAiPlanStr_. See weeklyAiPlanCanonicalDate_ above: this column is a Date object.
+      calculation_date: '',
       calculated_at: weeklyAiPlanStr_(r.calculated_at), updated_at: weeklyAiPlanStr_(r.updated_at),
       note: weeklyAiPlanStr_(r.note), source_table: WAP_GAP_TABLE_, suggestedByWindow: {}, duplicate: false
     };
+    // §2 — resolved BEFORE the record is keyed, because the date is half of every key below. A value that
+    // cannot be resolved keeps its raw rendering so the downstream block still fires and still NAMES it; what
+    // changes is that a Date object is no longer one of those values.
+    var _cd = weeklyAiPlanCanonicalDate_(r.calculation_date);
+    rec.calculation_date = _cd.ok ? _cd.date : weeklyAiPlanStr_(r.calculation_date);
+    rec.calculation_date_kind = _cd.kind;
+    out.dateNormalization.by_kind[_cd.kind] = (out.dateNormalization.by_kind[_cd.kind] || 0) + 1;
+    if (!_cd.ok) {
+      out.dateNormalization.unreadable++;
+      out.dateNormalization.unreadable_sample.push({ key: key, kind: _cd.kind, reason: _cd.reason,
+        raw: weeklyAiPlanStr_(r.calculation_date).slice(0, 60) });
+    }
     for (var w in WAP_GAP_WINDOW_COL_) {
       if (!Object.prototype.hasOwnProperty.call(WAP_GAP_WINDOW_COL_, w)) continue;
       var raw = r[WAP_GAP_WINDOW_COL_[w]];

@@ -80,6 +80,74 @@
     };
   }
 
+  /* ==============================================================================================================
+   * canonicalDate(value, offsetMinutes) — THE ONE PLACE A SNAPSHOT DATE BECOMES A DATE.
+   *
+   * WHAT WENT WRONG, AND WHY IT LOOKED LIKE A DATA FAULT. A Google Sheets cell formatted as a date does not
+   * hand JavaScript the text you see in the cell — it hands back a Date OBJECT, an absolute instant. The
+   * snapshot reader put that value through a generic `String(v).trim()`, which is how a perfectly good row
+   * arrived at the freshness authority as
+   *
+   *     "Thu Sep 03 2026 00:00:00 GMT+0800 (Taiwan Standard Time)"
+   *
+   * failed the YYYY-MM-DD test, and was reported as an unreadable lineage — LINEAGE_MISMATCH, the branch that
+   * exists for corrupt provenance. Nothing was corrupt. The reader simply could not read its own column, and
+   * the resulting refusal accused the database of a fault that belonged to the code.
+   *
+   * WHY toISOString().slice(0, 10) IS NOT THE FIX, and is in fact a worse bug. Taipei midnight on 2026-09-03
+   * is 2026-09-02T16:00:00Z, so the ISO form of that instant is "2026-09-02". Every daily snapshot would
+   * silently shift one business day earlier — the snapshot would still be read, still be accepted, and be
+   * wrong by a day with nothing in the output to show it. A refusal you can see beats a number you cannot
+   * check. The conversion therefore goes through the SAME fixed-offset business-zone arithmetic `businessNow`
+   * uses (Asia/Taipei is UTC+8 with no DST, which is what makes a fixed offset correct here), and is
+   * equivalent to Utilities.formatDate(value, AUTOMATION_TZ_, 'yyyy-MM-dd') at the Apps Script boundary.
+   *
+   * TWO INPUTS ARE LEGAL AND NOTHING ELSE IS: a real Date object, and a canonical YYYY-MM-DD string. A blank,
+   * an Invalid Date, a locale string, a number, a datetime string — every one of them is UNKNOWN, and unknown
+   * never becomes a date. Widening this to "parse whatever arrives" would reintroduce exactly the ambiguity
+   * that produced the shift: Date.parse is locale- and runtime-dependent, and a value it happens to accept is
+   * not thereby a value we know the meaning of.
+   *
+   * Returns { ok, date, kind, reason }.
+   */
+  function canonicalDate(value, offsetMinutes) {
+    // The zone is an AUTHORITY, not a default. Without it a Date object cannot be resolved to a business day
+    // at all, and guessing one is how a snapshot silently lands on the wrong side of midnight.
+    if (!isInt(offsetMinutes)) {
+      return { ok: false, date: null, kind: 'UNKNOWN', reason: 'TIMEZONE_AUTHORITY_UNAVAILABLE' };
+    }
+    if (value === null || value === undefined || value === '') {
+      return { ok: false, date: null, kind: 'BLANK', reason: 'CALCULATION_DATE_MISSING' };
+    }
+    // A Date is identified by BEHAVIOUR, not by `instanceof`: the value crosses a VM/realm boundary between the
+    // spreadsheet runtime and this module, and `instanceof Date` is false for a Date from another realm.
+    if (typeof value === 'object' && typeof value.getTime === 'function') {
+      var t = value.getTime();
+      if (typeof t !== 'number' || !isFinite(t)) {
+        return { ok: false, date: null, kind: 'DATE', reason: 'CALCULATION_DATE_INVALID_DATE' };
+      }
+      var b = businessNow(t, offsetMinutes);
+      return { ok: true, date: b.ymd, kind: 'DATE', reason: null };
+    }
+    if (typeof value === 'string') {
+      var sv = value.trim();
+      if (!YMD.test(sv)) {
+        return { ok: false, date: null, kind: 'STRING', reason: 'CALCULATION_DATE_UNREADABLE' };
+      }
+      // Shape is not existence: "2026-02-31" matches the pattern and is not a day.
+      var y = Number(sv.slice(0, 4)), mo = Number(sv.slice(5, 7)), da = Number(sv.slice(8, 10));
+      var probe = new Date(Date.UTC(y, mo - 1, da));
+      if (probe.getUTCFullYear() !== y || probe.getUTCMonth() + 1 !== mo || probe.getUTCDate() !== da) {
+        return { ok: false, date: null, kind: 'STRING', reason: 'CALCULATION_DATE_NOT_A_CALENDAR_DAY' };
+      }
+      return { ok: true, date: sv, kind: 'STRING', reason: null };
+    }
+    // A number, a boolean, an array. Sheets can return a number for a mis-formatted cell, and a serial number
+    // read as a date is precisely the kind of silent wrongness this function exists to refuse.
+    return { ok: false, date: null, kind: typeof value === 'number' ? 'NUMBER' : 'OTHER',
+      reason: 'CALCULATION_DATE_UNREADABLE' };
+  }
+
   /**
    * assess(input) → the freshness verdict.
    *
@@ -260,7 +328,8 @@
     ACCEPTING: ACCEPTING,
     isAccepting: function (state) { return ACCEPTING[state] === 1; },
     businessNow: businessNow,
+    canonicalDate: canonicalDate,
     assess: assess,
-    _version: 'f1-7n-fc-1b-e3-r4-a2-r1-snapshot-freshness'
+    _version: 'f1-7n-fc-1b-e3-r4-a2-r1-r1-snapshot-freshness'
   };
 });

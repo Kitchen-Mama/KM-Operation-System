@@ -114,14 +114,35 @@ function aiplSameScope_(row, scope) {
 // AIPL_MIGRATION_VERSION_ exactly when it equals the canonical order byte-for-byte, and is at no version
 // otherwise. That keeps the check honest (it cannot say "migrated" about a sheet that is not) and it cannot
 // drift out of sync with reality the way a hand-written ledger row can.
+//
+// F1-7N-FC-1B-E3-R4-A2-R1-R1 §6 — AND WHY THE VERSION IS NO LONGER A SINGLE SHAPE.
+//
+// The paragraph above is still right about deriving the version rather than storing it, and wrong about there
+// being ONE canonical shape to derive it from. SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ is frozen at 34
+// columns ON PURPOSE (the lifecycle migration appends against it), so when the FB-4F-B4 and FB-4G-A2-R3
+// appends shipped, every migrated production sheet stopped matching it byte-for-byte and this function
+// returned '' — "at no version". The activation gate compared that to AIPL_MIGRATION_VERSION_, refused with
+// MIGRATION_VERSION_MISMATCH, and the AI Plan could not write a single row on a database that was completely
+// correct. The check was honest about what it measured and measured the wrong thing.
+//
+// There is not one legal shape; there is a LINEAGE of them. sadResolveHeaderSchema_ owns that lineage and the
+// writer gate reads the same one, so the two can no longer disagree about the same header row.
 function aiplSchemaVersionOf_(liveHeaders) {
-  if (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_ === 'undefined') return '';
-  var canon = SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_;
-  var a = (liveHeaders || []).map(function (h) { return aiplStr_(h); });
-  while (a.length && a[a.length - 1] === '') a.pop();
-  if (a.length !== canon.length) return '';
-  for (var i = 0; i < canon.length; i++) if (a[i] !== canon[i]) return '';
-  return AIPL_MIGRATION_VERSION_;
+  var r = aiplResolveSchema_(liveHeaders);
+  // A generation without the lifecycle tail (the pre-migration base) is a real, writable schema — but it is
+  // not a version THIS module can run on, and saying so by name beats reporting a bare blank.
+  return (r && r.ok && r.lifecycle_complete) ? aiplStr_(r.version) : '';
+}
+
+// The shared resolver, or a typed absence when 16_ is not in the project. A missing authority must arrive at
+// the gate as a reportable fact; inventing a local copy here is exactly the divergence §5 just removed.
+function aiplResolveSchema_(liveHeaders) {
+  if (typeof sadResolveHeaderSchema_ !== 'function') {
+    return { ok: false, version: null, column_count: (liveHeaders || []).length, lifecycle_complete: false,
+      reason: 'SCHEMA_AUTHORITY_UNAVAILABLE', first_mismatch: null, missing_headers: [],
+      unexpected_headers: [], reordered_headers: [], duplicate_headers: [], supported_versions: [] };
+  }
+  return sadResolveHeaderSchema_(liveHeaders);
 }
 
 // READ-ONLY fact gathering for the gate. Deliberately uses getSheetByName rather than procurementEnsureSheet_:
@@ -159,6 +180,9 @@ function aiplReadActivationFacts_(ss, ctx) {
     header_status_accepts_expired: (typeof sadHeaderStatusValid_ === 'function') ? sadHeaderStatusValid_('expired') === true : false,
     line_status_accepts_expired: (typeof sadLineStatusValid_ === 'function') ? sadLineStatusValid_('expired') === true : false,
     migration_version: aiplSchemaVersionOf_(ht.headers),
+    // §6 — the whole resolution, not just its verdict, so the refusal can name the observed count, the
+    // first mismatching column and the versions this build supports instead of one bare "(none)".
+    schema_resolution: aiplResolveSchema_(ht.headers),
     expected_migration_version: AIPL_MIGRATION_VERSION_,
     generation_run_id: aiplStr_(ctx.generation_run_id),
     identity_collisions: ctx.identity_collisions || []
@@ -206,7 +230,19 @@ function aiplActivationGate_(facts) {
   // tell this run's rows from the rows it is replacing, so expiring anything would be guesswork).
   var wantVer = aiplStr_(facts.expected_migration_version) || AIPL_MIGRATION_VERSION_;
   var haveVer = aiplStr_(facts.migration_version);
-  if (haveVer !== wantVer) blockers.push('MIGRATION_VERSION_MISMATCH: schema reports "' + (haveVer || '(none)') + '", this build requires "' + wantVer + '"');
+  // §6 — ANY LIFECYCLE-COMPLETE GENERATION IS ACCEPTED, not one frozen shape. The four lifecycle columns
+  // are what this module needs; a later append-only migration adds columns it does not read and cannot break
+  // it. Requiring an exact match to one version made every legal append a hard outage.
+  var res = facts.schema_resolution || null;
+  var supported = (res && res.supported_versions) ? res.supported_versions.filter(function (v) { return v.lifecycle_complete; }) : [];
+  var supportedNames = supported.map(function (v) { return v.version; });
+  var versionOk = !!(res && res.ok && res.lifecycle_complete) || (haveVer && haveVer === wantVer);
+  if (!versionOk) {
+    blockers.push('MIGRATION_VERSION_MISMATCH: schema reports "' + (haveVer || '(none)')
+      + '" (' + ((res && res.column_count) != null ? res.column_count : '?') + ' columns'
+      + (res && res.reason ? '; ' + res.reason : '') + '), this build supports '
+      + (supportedNames.length ? supportedNames.join(' | ') : wantVer));
+  }
   if (!aiplStr_(facts.generation_run_id)) blockers.push('CURRENT_RUN_HAS_NO_GENERATION_RUN_ID');
 
   // §H — an unresolved active identity collision in the affected scope blocks activation. It is not this run's
@@ -217,7 +253,12 @@ function aiplActivationGate_(facts) {
   }
 
   var ok = !missingTable.length && !missingColumns.length && !invalidStatus.length && !blockers.length;
-  if (ok) return { ready: true, migration_version: wantVer };
+  if (ok) {
+    return { ready: true,
+      migration_version: (res && res.ok && res.version) ? res.version : (haveVer || wantVer),
+      schema_column_count: res ? res.column_count : null,
+      supported_migration_versions: supportedNames };
+  }
 
   var next;
   if (missingTable.length) {
@@ -226,8 +267,17 @@ function aiplActivationGate_(facts) {
     next = 'Run TEMP_AI_LIFECYCLE_MIGRATE_DRY_RUN() in the Apps Script project, review the report, then TEMP_AI_LIFECYCLE_MIGRATE_COMMIT with the mode and checksum it prints. Missing: ' + (missingColumns.join(', ') || '(none)') + '.';
   } else if (collisions.length) {
     next = 'Reconcile the listed active identity collision(s) first - two active decisions for one canonical identity cannot be resolved automatically, and this run will not guess a survivor.';
-  } else if (haveVer !== wantVer) {
-    next = 'Sync the Apps Script project and re-run TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE(); the deployed schema version does not match this build.';
+  } else if (!versionOk) {
+    // §6 — "re-sync the code" is the WRONG instruction for a header this build simply does not recognise,
+    // and telling an operator to re-sync a project that is already current is how an afternoon disappears.
+    // What the schema actually is, and what would be accepted, is the useful sentence.
+    next = 'The live `shipping_allocation_drafts` header (' + ((res && res.column_count) != null ? res.column_count : '?')
+      + ' columns) does not match any schema generation this build knows'
+      + (res && res.first_mismatch ? ' — first difference at index ' + res.first_mismatch.index
+          + ': found "' + res.first_mismatch.actual + '", expected "' + res.first_mismatch.expected + '"' : '')
+      + (res && res.duplicate_headers && res.duplicate_headers.length ? ' — duplicate header(s): ' + res.duplicate_headers.join(', ') : '')
+      + '. Supported: ' + (supported.length ? supported.map(function (v) { return v.version + ' (' + v.column_count + ' cols)'; }).join(', ') : wantVer)
+      + '. Do NOT re-sync code to fix this; compare the sheet header against the listed generation.';
   } else {
     next = 'Resolve the blocking reasons listed above, then re-run TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE().';
   }
@@ -241,7 +291,16 @@ function aiplActivationGate_(facts) {
       missing_columns: missingColumns,
       invalid_status_authority: invalidStatus,
       expected_migration_version: wantVer,
+      supported_migration_versions: supported.slice(),
       actual_migration_version: haveVer || null,
+      // §6 — everything the reader needs to identify the drift without opening the sheet.
+      observed_header_count: res ? res.column_count : null,
+      observed_schema_version: (res && res.version) || null,
+      schema_reason: (res && res.reason) || null,
+      first_mismatch: (res && res.first_mismatch) || null,
+      unexpected_headers: (res && res.unexpected_headers) ? res.unexpected_headers.slice() : [],
+      duplicate_headers: (res && res.duplicate_headers) ? res.duplicate_headers.slice() : [],
+      reordered_headers: (res && res.reordered_headers) ? res.reordered_headers.slice() : [],
       header_order_drift: (tail.misplaced || []).slice(),
       identity_collisions: collisions.slice(),
       blocking_reasons: blockers,

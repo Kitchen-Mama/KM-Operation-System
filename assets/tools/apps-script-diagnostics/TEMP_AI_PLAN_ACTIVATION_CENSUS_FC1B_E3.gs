@@ -741,14 +741,63 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
 
   // §5 — WHICH RUN WAS ADOPTED, AND WHY. "A snapshot dated yesterday was accepted" is only a defensible
   // sentence when the reason travels beside it, and the previous census reported neither.
+  //
+  // F1-7N-FC-1B-E3-R4-A2-R1-R1 §10 — READ THE REFUSAL, NOT ONLY THE SUCCESS.
+  //
+  // These five lines read a SUCCESSFUL harvest's fields, and a harvest that REFUSES does not have them: it
+  // returns { ok:false, errors:[ CANONICAL_DEMAND_UNAVAILABLE ] } and carries the freshness verdict, the
+  // schedule and the distinct dates INSIDE that error. So on the one run where an operator most needs to know
+  // which state blocked them, the census printed freshness_state: null, accepted_snapshot_date: null and
+  // snapshot_distinct_dates: null — and the live log said nothing about the LINEAGE_MISMATCH that had
+  // actually stopped it. A diagnostic that goes quiet exactly when something goes wrong is worse than none.
   try {
     var h = res && res.harvest;
-    CENSUS_log_('freshness_state', (h && h.snapshot_freshness && h.snapshot_freshness.state) || null);
-    CENSUS_log_('accepted_snapshot_date', (h && h.accepted_snapshot_date) || null);
-    CENSUS_log_('accepted_snapshot_run', (h && h.gap_job_state && h.gap_job_state.runId) || null);
-    CENSUS_log_('snapshot_distinct_dates', (h && h.snapshot_distinct_dates) || null);
+    // The refusal payload, when there is one. Both shapes are read so the fields are populated either way.
+    var hErr = null;
+    var hErrs = (h && h.errors) || (res && res.harvest_errors) || [];
+    for (var _e = 0; _e < hErrs.length; _e++) {
+      if (hErrs[_e] && hErrs[_e].code === 'CANONICAL_DEMAND_UNAVAILABLE') { hErr = hErrs[_e]; break; }
+    }
+    var fr = (h && h.snapshot_freshness) || (hErr && hErr.freshness) || null;
+    CENSUS_log_('freshness_state', (fr && fr.state) || null);
+    CENSUS_log_('freshness_reason', (fr && fr.reason) || (hErr && hErr.message) || null);
+    CENSUS_log_('freshness_accepted', fr ? (fr.ok === true) : null);
+    CENSUS_log_('accepted_snapshot_date', (h && h.accepted_snapshot_date) || (fr && fr.acceptedDate) || null);
+    CENSUS_log_('accepted_snapshot_run', (h && h.gap_job_state && h.gap_job_state.runId)
+      || (jobState && jobState.runId) || null);
+    CENSUS_log_('snapshot_distinct_dates', (h && h.snapshot_distinct_dates)
+      || (hErr && hErr.distinct_dates) || null);
+    CENSUS_log_('gap_schedule_resolved', (h && h.gap_schedule) || (hErr && hErr.schedule) || sched || null);
     CENSUS_log_('forecast_normalization', (h && h.forecast_normalization) || null);
+    CENSUS_log_('snapshot_date_normalization', (h && h.snapshot_date_normalization)
+      || (hErr && hErr.date_normalization) || null);
   } catch (eF) {}
+
+  // §10 — ALLOCATION SCHEMA DIAGNOSTICS. Read-only, and it CHANGES NO GATE: it reports what the shared
+  // authority says about the live header so "the AI Plan refuses" and "the drafts table is at a schema this
+  // build does not know" stop being the same unexplained outcome.
+  try {
+    var _ds = null, _dsSheet = null;
+    try { _dsSheet = SpreadsheetApp.openById(prodExpectedDbId_()).getSheetByName('shipping_allocation_drafts'); } catch (eD1) { _dsSheet = null; }
+    if (_dsSheet && typeof sadLiveHeaderNames_ === 'function' && typeof sadResolveHeaderSchema_ === 'function') {
+      _ds = sadResolveHeaderSchema_(sadLiveHeaderNames_(_dsSheet));
+    }
+    CENSUS_log_('allocation_schema', _ds ? {
+      observed_header_count: _ds.column_count,
+      resolved_schema_version: _ds.version,
+      compatible: _ds.ok === true,
+      lifecycle_complete: _ds.lifecycle_complete === true,
+      reason: _ds.reason || null,
+      first_mismatch: _ds.first_mismatch || null,
+      supported_versions: (_ds.supported_versions || []).map(function (v) { return v.version + '(' + v.column_count + ')'; })
+    } : 'SCHEMA_AUTHORITY_OR_TABLE_UNAVAILABLE');
+    // §9 — the parity fact itself, so a divergence is visible in the log rather than inferred later.
+    CENSUS_log_('schema_writer_lifecycle_parity', (_ds && typeof aiplSchemaVersionOf_ === 'function')
+      ? { writer_accepts: _ds.ok === true,
+          lifecycle_version: aiplSchemaVersionOf_(sadLiveHeaderNames_(_dsSheet)) || null,
+          agree: (_ds.ok === true) === (_ds.version !== null) }
+      : null);
+  } catch (eS2) {}
   // Re-assert the read-only facts from the RESULT rather than from this function's intentions.
   CENSUS_log_('result.read_only', res && res.read_only);
   CENSUS_log_('result.db_writes', res && res.db_writes);

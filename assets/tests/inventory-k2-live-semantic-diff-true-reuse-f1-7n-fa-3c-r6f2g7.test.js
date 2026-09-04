@@ -95,7 +95,7 @@ ok(missDiff.line_diffs.some(function (l) { return l.category === 'MISSING_OR_EXT
 
 // ============================================================ 8 — semantic REUSE returns before every Sheets mutation
 section('8. before-write return');
-var core = extractFn(G16, 'sadAtomicUpsertCore_');
+var core = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 var reuseIdx = core.indexOf('reused: true'), regenIdx = core.indexOf("outcome = 'REGENERATE'"), uaIdx = core.indexOf("setCol('updated_at'");
 ok(/priorFp === incFp \|\| sadK2SemanticPayloadEqual_\(/.test(core), '8. atomic REUSE gate uses sadK2SemanticPayloadEqual_');
 ok(reuseIdx !== -1 && reuseIdx < regenIdx && (uaIdx === -1 || reuseIdx < uaIdx), '8. the zero-write REUSE return precedes REGENERATE + any updated_at write');

@@ -264,8 +264,18 @@ ok(E.gate(LHDR.concat(['eta']), LFULL, LFULL.slice(30)) !== '',
     'A8 [test 8] but only when column 30 is exactly expected_arrival');
 ok(E.gate(LFULL.concat(['x']), LFULL, LFULL.slice(30)) !== '', 'A8 [test 8] and never a 32nd column');
 // And the shipped call sites use these authorities, not a private copy.
-ok(/sadExactSchemaReason_\(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_, SAD_HEADER_OPTIONAL_TAIL_COLUMNS_\)/.test(SADC),
-    'A9 the shipped header gate call uses the full authority');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R1): the CLAIM is unchanged — the shipped header gate must validate
+// against the shared full authority and never a private copy. What moved is WHERE that authority lives. The
+// AI Plan lifecycle was asking a DIFFERENT question of the same header row (byte-equality with the frozen
+// 34-column canonical) and answering it differently, so a legally migrated 35/36-column table was writable
+// and simultaneously "at no schema version". There is now ONE resolver, sadResolveHeaderSchema_, which the
+// writer reaches through sadDraftsSchemaReason_ and the lifecycle through aiplResolveSchema_.
+ok(/sadDraftsSchemaReason_\(hSh\)/.test(SADC),
+    'A9 the shipped header gate call uses the SHARED schema authority');
+ok(/function sadDraftsSchemaReason_[\s\S]{0,300}sadResolveHeaderSchema_\(sadLiveHeaderNames_\(sh\)\)/.test(SADC),
+    'A9a which resolves the LIVE header against the enumerated schema generations');
+ok(/SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_/.test(SADC) && /SAD_HEADER_OPTIONAL_TAIL_COLUMNS_/.test(SADC),
+    'A9b and the full authority + optional tail are still the constants it is built from');
 ok(/sadExactSchemaReason_\(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_, SAD_LINE_ETA_TAIL_COLUMNS_\)/.test(SADC),
     'A9 and the shipped line gate call uses its own optional tail');
 

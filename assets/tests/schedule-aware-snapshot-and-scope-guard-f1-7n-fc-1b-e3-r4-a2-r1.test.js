@@ -301,7 +301,13 @@ ok(!/getClientCapabilities/.test(ops(extractFn(read('assets/js/pages/inventory-r
 // ================================================================================================================
 section('§6/§13 — the bundle, and the duplicate global that was emitted silently');
 // ================================================================================================================
-eq(KMSNF._version, 'f1-7n-fc-1b-e3-r4-a2-r1-snapshot-freshness', 'B1  the freshness module declares its version');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R1): the ELEVENTH round to pin its own literal as "the current one", and
+// mine again. A2-R1-R1 added canonicalDate to this module and moved its version, which is exactly what a
+// version is FOR. The durable claim is that the module identifies itself and belongs to this line — not that
+// the string never changes.
+ok(/^f1-7n-fc-1b-e3-r4-a2-r1[a-z0-9-]*-snapshot-freshness$/.test(KMSNF._version),
+  'B1  the freshness module declares a version on this line (' + KMSNF._version + ')');
+eq(typeof KMSNF.assess, 'function', 'B1a and still exposes the freshness verdict');
 ok(BUNDLE.indexOf(KMSNF._version) !== -1, 'B1a and the bundle was rebuilt at exactly it');
 ok(/var KMSNF = __kmModules/.test(BUNDLE), 'B2  it is exposed as KMSNF...');
 ok(/var KMSF = __kmModules\["supply-planning-source-facts"\]/.test(BUNDLE),

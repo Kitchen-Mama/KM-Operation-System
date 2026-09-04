@@ -617,6 +617,13 @@ GS_OWNED_SINCE_R1['61_api_v1_weekly_ai_plan.gs'] = 'FC-1B-E3-R1 typed canonical-
 // cause of the 60 s first-load timeout. It gains an OPT-IN per-key recent-period projection (default payload
 // byte-identical) and reports what it dropped. An unexpected file still fails.
 GS_OWNED_SINCE_R1['60_api_v1_inventory_replenishment_workspace.gs'] = 'FC-1B-E3-R4 opt-in recent-period projection + the meta that makes the reduction visible';
+// F1-7N-FC-1B-E3-R4-A2-R1-R1 — 69_ joins the owned set. The AI Plan lifecycle derived the live schema
+// VERSION by comparing the header byte-for-byte against a 34-column constant that is deliberately frozen
+// there (the lifecycle migration appends against it). Two later append-only migrations moved the live table
+// to 35 and 36 columns, so a correct production sheet reported no version and EVERY generation refused with
+// MIGRATION_VERSION_MISMATCH and zero writes — while the writer gate accepted the very same header. It now
+// reads the shared authority in 16_. An unexpected file still fails.
+GS_OWNED_SINCE_R1['69_api_v1_ai_plan_lifecycle.gs'] = 'FC-1B-E3-R4-A2-R1-R1 the lifecycle schema resolver reads the shared allocation schema authority instead of one frozen shape';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 // The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
 var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');

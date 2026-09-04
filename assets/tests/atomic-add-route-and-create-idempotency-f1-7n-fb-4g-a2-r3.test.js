@@ -124,7 +124,7 @@ eval(extractFn(G13, 'procurementFindRow_'));
 // ONE top-level eval per group: a per-callback eval declares inside the callback and nothing escapes.
 var CONSTS = ['SHIPPING_ALLOCATION_DRAFTS_HEADERS_', 'SAD_LIFECYCLE_TAIL_COLUMNS_',
   'SAD_ROUTE_IDENTITY_TAIL_COLUMNS_', 'SAD_CREATE_IDEMPOTENCY_TAIL_COLUMNS_', 'SAD_HEADER_OPTIONAL_TAIL_COLUMNS_',
-  'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
+  'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_', 'SAD_SCHEMA_GENERATIONS_', 'SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_',
   'SAD_LINE_ETA_TAIL_COLUMNS_', 'SAD_STATUSES_', 'SAD_TERMINAL_STATUSES_', 'SAD_TERMINAL_LINE_STATUSES_',
   'SAD_GENERATION_TYPES_', 'SAD_RECOMMENDATION_FIELDS_', 'SAD_LINE_LEGACY_ALIASES_', 'SAD_K2_GROUP_DIMENSIONS_',
   'SAD_LINE_IDENTITY_FIELDS_', 'SAD_K2_BASIS_ID_MATCHES_', 'SAD_K2_BASIS_STALE_ACCEPTED_',
@@ -149,7 +149,11 @@ var FNS = ['sadApplyLineAliases_', 'sadFnv1a_', 'sadFpVal_', 'sadLineNaturalKey_
   'sadK2LinesRouteCompatibleWithHeader_', 'sadRegenerateLinePatch_', 'sadAtomicValidateBatch_',
   'sadCanonDate_', 'sadFpNorm_', 'sadK2LineIdentity_', 'sadK2SemFieldClass_', 'sadK2SemFieldEqual_',
   'sadK2SemFieldVerdict_', 'sadK4ResolveActiveDraft_',
-  'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_', 'sadAtomicUpsertCore_'];
+  'sadUpsertDraftHeaderCore_', 'sadUpsertLinesKeyedCore_',
+  // F1-7N-FC-1B-E3-R4-A2-R1-R1 — the atomic core validates the drafts header through the SHARED schema
+  // authority now (one authority for the writer and the AI Plan lifecycle), so it is lifted with the core.
+  'sadSchemaGenerationColumns_', 'sadSupportedSchemaVersions_', 'sadResolveHeaderSchema_', 'sadDraftsSchemaReason_',
+  'sadAtomicUpsertCore_'];
 eval(FNS.map(function (f) { return extractFn(G16, f); }).join(String.fromCharCode(10)));
 
 // Apps Script has ONE global scope, so 16_'s schema gate reaches 69_'s route-identity contract directly. A

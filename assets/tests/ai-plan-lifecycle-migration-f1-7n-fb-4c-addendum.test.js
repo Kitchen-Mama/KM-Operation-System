@@ -68,7 +68,13 @@ eval(extractVar(G16, 'SAD_STATUSES_'));
 eval(extractVar(G16, 'SAD_LINE_STATUSES_'));
 eval(extractVar(G16, 'SAD_TERMINAL_STATUSES_'));
 eval(extractVar(G16, 'SAD_K2_GROUP_DIMENSIONS_'));
+// F1-7N-FC-1B-E3-R4-A2-R1-R1 — the schema GENERATION lineage and its resolver. aiplSchemaVersionOf_ derives
+// the live version through this now instead of comparing byte-for-byte against one frozen 34-column shape,
+// so a suite that lifts the lifecycle without it sees SCHEMA_AUTHORITY_UNAVAILABLE and no version at all.
+eval(extractVar(G16, 'SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_'));
+eval(extractVar(G16, 'SAD_SCHEMA_GENERATIONS_'));
 eval([ 'sadHeaderStatusValid_', 'sadLineStatusValid_', 'sadExactSchemaReason_', 'sadLifecycleTailState_',
+  'sadSchemaGenerationColumns_', 'sadSupportedSchemaVersions_', 'sadResolveHeaderSchema_', 'sadDraftsSchemaReason_',
   'sadK2GroupKey_', 'sadFnv1a_' ].map(function (f) { return extractFn(G16, f); }).join('\n'));
 
 // 69_ lifecycle core
@@ -76,6 +82,7 @@ eval(['AIPL_AUDIT_COLUMNS_', 'AIPL_MIGRATION_VERSION_', 'AIPL_SCHEMA_NOT_READY_'
   'AIPL_SUPPRESSED_CODE_', 'AIPL_AI_GENERATION_TYPES_', 'AIPL_SOURCE_PAGE_', 'AIPL_PROTECTED_STATUSES_',
   'AIPL_EXPIRATION_REASON_'].map(function (v) { return extractVar(G69, v); }).join('\n'));
 eval(['aiplStr_', 'aiplLo_', 'aiplErr_', 'aiplIsAiGenerated_', 'aiplSameScope_', 'aiplSchemaVersionOf_',
+  'aiplResolveSchema_',
   'aiplReadActivationFacts_', 'aiplActivationGate_', 'aiplManualPrecedence_', 'aiplExpirationCandidates_'
 ].map(function (f) { return extractFn(G69, f); }).join('\n'));
 
@@ -386,8 +393,14 @@ ok(sadExactSchemaReason_(new FakeSheet('lines', [SHIPPING_ALLOCATION_DRAFT_LINES
   SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_) !== '', 'D3 and it still rejects any extra line column');
 // F1-7N-FB-4F-B3 - the gate now validates against the FULL authorities (35 header / 31 line) with the optional
 // tails, because the runtime learned the two append-only columns before they exist. The arguments moved.
-ok(/sadExactSchemaReason_\(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_, SAD_HEADER_OPTIONAL_TAIL_COLUMNS_\)/.test(G16C),
-  'D3 the shipped header call passes the FULL authority plus the whole optional tail');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R1): unchanged in substance — the header gate validates against the full
+// authority with its optional tail — but that decision now lives in ONE resolver shared with the AI Plan
+// lifecycle, because the two used to disagree about the same header row and the lifecycle's answer refused
+// every generation on a correctly migrated table.
+ok(/sadDraftsSchemaReason_\(hSh\)/.test(G16C),
+  'D3 the shipped header call goes through the shared schema authority');
+ok(/SAD_SCHEMA_GENERATIONS_/.test(G16C) && /SAD_HEADER_OPTIONAL_TAIL_COLUMNS_/.test(G16C),
+  'D3a which enumerates the known generations built from the same optional tail');
 ok(/sadExactSchemaReason_\(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_, SAD_LINE_ETA_TAIL_COLUMNS_\)/.test(G16C),
   'D3 and the line call now passes its own optional tail, which it never had before B3');
 

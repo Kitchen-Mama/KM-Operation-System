@@ -45,7 +45,7 @@ ok(sadK2SemanticPayloadEqual_(hdr, storedLines, incHdr, incLines) === true, 'A4.
 
 // ============================================================ B — atomic core routes representation-equiv → REUSE (before any write)
 section('B. atomic core REUSE early-return precedes every mutation');
-var core = extractFn(G16, 'sadAtomicUpsertCore_');
+var core = extractFn(G16, 'sadSchemaGenerationColumns_') + '\n' + extractFn(G16, 'sadSupportedSchemaVersions_') + '\n' + extractFn(G16, 'sadResolveHeaderSchema_') + '\n' + extractFn(G16, 'sadDraftsSchemaReason_') + '\n' + extractFn(G16, 'sadAtomicUpsertCore_');
 ok(/priorFp === incFp \|\| sadK2SemanticPayloadEqual_\(priorHeaderObj, priorLines, header, lines\)/.test(core), 'B1. REUSE condition = raw-fingerprint-equal OR semantic-equivalent');
 var reuseIdx = core.indexOf("reused: true");
 var regenIdx = core.indexOf("outcome = 'REGENERATE'");

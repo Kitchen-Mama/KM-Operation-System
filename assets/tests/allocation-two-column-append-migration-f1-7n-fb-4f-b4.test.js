@@ -738,7 +738,12 @@ section('I — the ordering guard: this tool cannot run before the B3 sync');
         .replace(/var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =[\s\S]*?;\n/, 'var __removed_hfull_ = 1;\n')
         .replace(/var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ =[\s\S]*?;\n/, 'var __removed_htail_ = 1;\n')
         .replace(/var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ =[\s\S]*?;\n/, 'var __removed_lfull_ = 1;\n')
-        .replace(/var SAD_LINE_ETA_TAIL_COLUMNS_ = \[[^\]]*\];\n/, 'var __removed_ltail_ = 1;\n');
+        .replace(/var SAD_LINE_ETA_TAIL_COLUMNS_ = \[[^\]]*\];\n/, 'var __removed_ltail_ = 1;\n')
+        // F1-7N-FC-1B-E3-R4-A2-R1-R1 — the schema GENERATION table is built from those same B3 constants at
+        // load time, so a pre-B3 fixture must drop it too. It is post-B3 code: a project old enough to lack
+        // SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ never had this table either, and leaving it in constructs a shape
+        // that cannot exist (new code over old constants) which throws on load instead of reaching the STOP.
+        .replace(/var SAD_SCHEMA_GENERATIONS_ =[\s\S]*?\n\];\n/, 'var __removed_generations_ = 1;\n');
     ok(preB3 !== SAD, 'I1 the pre-B3 fixture really differs from the shipped source');
     ok(preB3.indexOf('SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =') === -1, 'I2 and the B3 authority really is gone');
 

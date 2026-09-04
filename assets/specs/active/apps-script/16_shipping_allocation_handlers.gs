@@ -125,6 +125,121 @@ var SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ = SAD_LIFECYCLE_TAIL_COLUMNS_
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ =
   SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
 
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R1 §5 — ONE SCHEMA AUTHORITY FOR `shipping_allocation_drafts`.
+//
+// THE DEFECT THIS REPLACES. Two pieces of code were deciding whether this table's header was acceptable, and
+// they disagreed. The WRITE gate validated against the FULL authority with the optional tail, so a live sheet
+// at 34, 35 or 36 columns was exact and writable. The AI Plan lifecycle asked a different question through
+// aiplSchemaVersionOf_, which required the header to equal SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_
+// BYTE-FOR-BYTE — and that constant is deliberately frozen at 34, because the lifecycle MIGRATION appends
+// against it. So the moment either later append migration ran, a perfectly legal production sheet reported NO
+// schema version at all, and every AI Plan generation refused with MIGRATION_VERSION_MISMATCH and zero writes.
+//
+// The refusal even told the operator to sync the Apps Script project, which could not have helped: the code
+// was current and the table was correct. The stale thing was the version resolver, which had never been
+// widened when the two appends shipped.
+//
+// SO THE SHAPES ARE ENUMERATED, NOT COUNTED. Each entry below is a schema GENERATION this repository has
+// actually migrated to, named, in append order. A live header is compared POSITIONALLY against exactly one of
+// them. Counting columns would accept an unknown 35th name, a swapped tail and a duplicate alike, which is the
+// failure mode a "length is between 30 and 36" test would reintroduce — so length only ever SELECTS the
+// candidate generation, and never approves anything by itself.
+//
+// A HALF-APPLIED MIGRATION IS NOT A GENERATION. 31, 32 and 33 columns mean a tail append stopped partway, and
+// they are refused: an interrupted migration is a state to finish, not one to write through.
+//
+// Both consumers read THIS, and each applies its own POLICY to the one fact: the writer accepts any recognized
+// generation (a pre-migration 30-column sheet included), while the lifecycle additionally requires the four
+// lifecycle columns to be present. One authority, two policies — never two opinions.
+var SAD_SCHEMA_GENERATIONS_ = [
+  { version: 'SAD-HEADERS-30-BASE', appended: [], lifecycle_complete: false,
+    migration: '(pre-migration base contract)' },
+  { version: 'FB4C-AI-LIFECYCLE-1', appended: SAD_LIFECYCLE_TAIL_COLUMNS_, lifecycle_complete: true,
+    migration: 'TEMP_migrate_shipping_allocation_ai_lifecycle (F1-7N-FB-4C) — appends 30..33' },
+  { version: 'FB4F-B4-ROUTE-IDENTITY-1',
+    appended: SAD_LIFECYCLE_TAIL_COLUMNS_.concat(SAD_ROUTE_IDENTITY_TAIL_COLUMNS_), lifecycle_complete: true,
+    migration: 'F1-7N-FB-4F-B4 two-column append — appends destination_marketplace at 34' },
+  { version: 'FB4G-A2R3-CREATE-IDEMPOTENCY-1',
+    appended: SAD_HEADER_OPTIONAL_TAIL_COLUMNS_, lifecycle_complete: true,
+    migration: 'TEMP_migrate_create_idempotency_key_a2_r3 (F1-7N-FB-4G-A2-R3) — appends create_idempotency_key at 35' }
+];
+
+function sadSchemaGenerationColumns_(g) { return SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(g.appended || []); }
+function sadSupportedSchemaVersions_() {
+  return SAD_SCHEMA_GENERATIONS_.map(function (g) {
+    return { version: g.version, column_count: sadSchemaGenerationColumns_(g).length,
+      lifecycle_complete: g.lifecycle_complete === true, migration: g.migration };
+  });
+}
+
+/**
+ * §5/§6 — resolve a LIVE header row to a named schema generation. PURE over an array of strings, so the
+ * writer, the lifecycle gate, the Census and every test reach the same verdict from the same input.
+ *
+ * Returns { ok, version, column_count, lifecycle_complete, reason, first_mismatch, missing_headers,
+ *           unexpected_headers, reordered_headers, duplicate_headers, supported_versions }.
+ */
+function sadResolveHeaderSchema_(liveHeaders) {
+  var a = (liveHeaders || []).map(function (h) { return String(h == null ? '' : h).trim(); });
+  while (a.length && a[a.length - 1] === '') a.pop();
+  var out = { ok: false, version: null, column_count: a.length, lifecycle_complete: false, reason: null,
+    first_mismatch: null, missing_headers: [], unexpected_headers: [], reordered_headers: [],
+    duplicate_headers: [], supported_versions: sadSupportedSchemaVersions_() };
+
+  // A duplicate is checked FIRST and on its own. Positional comparison cannot see it (the second copy simply
+  // mismatches at its index), and "column 34 is wrong" is a badly misleading way to report "status appears twice".
+  var seen = {};
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] === '') continue;
+    if (seen[a[i]]) { if (out.duplicate_headers.indexOf(a[i]) === -1) out.duplicate_headers.push(a[i]); }
+    seen[a[i]] = 1;
+  }
+  if (out.duplicate_headers.length) { out.reason = 'DUPLICATE_HEADER:' + out.duplicate_headers.join(','); return out; }
+
+  var cand = null;
+  for (var g = 0; g < SAD_SCHEMA_GENERATIONS_.length; g++) {
+    if (sadSchemaGenerationColumns_(SAD_SCHEMA_GENERATIONS_[g]).length === a.length) { cand = SAD_SCHEMA_GENERATIONS_[g]; break; }
+  }
+  if (!cand) {
+    out.reason = 'COL_COUNT_' + a.length + '_UNSUPPORTED_EXPECTED_'
+      + out.supported_versions.map(function (v) { return v.column_count; }).join('_OR_');
+    // Name what is missing / extra relative to the WIDEST known shape, so the report says which append is
+    // half-applied rather than only that the count is odd.
+    var widest = SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_;
+    widest.forEach(function (c) { if (a.indexOf(c) === -1) out.missing_headers.push(c); });
+    a.forEach(function (c) { if (c !== '' && widest.indexOf(c) === -1) out.unexpected_headers.push(c); });
+    return out;
+  }
+
+  var want = sadSchemaGenerationColumns_(cand);
+  for (var j = 0; j < want.length; j++) {
+    if (a[j] !== want[j]) {
+      out.first_mismatch = { index: j, actual: a[j] || '(blank)', expected: want[j] };
+      out.reason = 'COL' + j + '_IS_' + (a[j] || '(blank)') + '_EXPECTED_' + want[j];
+      want.forEach(function (c) { if (a.indexOf(c) === -1) out.missing_headers.push(c); });
+      a.forEach(function (c, idx) {
+        if (c === '') return;
+        var at = want.indexOf(c);
+        if (at === -1) out.unexpected_headers.push(c);
+        else if (at !== idx) out.reordered_headers.push({ column: c, actual_index: idx, expected_index: at });
+      });
+      return out;
+    }
+  }
+  out.ok = true;
+  out.version = cand.version;
+  out.lifecycle_complete = cand.lifecycle_complete === true;
+  return out;
+}
+
+// The WRITER's policy over that fact: any recognized generation may be written, the pre-migration base
+// included. Returns '' when acceptable, else the same COLn_IS_ / COL_COUNT_ reason shape the gate always emitted.
+function sadDraftsSchemaReason_(sh) {
+  var r = sadResolveHeaderSchema_(sadLiveHeaderNames_(sh));
+  return r.ok ? '' : (r.reason || 'SCHEMA_UNRESOLVED');
+}
+
 var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // identity
   'allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku',
@@ -1602,7 +1717,9 @@ function sadAtomicUpsertCore_(body) {
   // ensure both sheets, then validate BOTH schemas EXACT (rule 9 — no order-agnostic tolerance).
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
-  var hR = sadExactSchemaReason_(hSh, SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_, SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
+  // §5 — the SHARED authority, the same one the AI Plan lifecycle gate reads. Before this the two
+  // asked different questions of the same header row and answered differently.
+  var hR = sadDraftsSchemaReason_(hSh);
   if (hR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_drafts] ' + hR, stage: 'schema', zero_write: true });
   var lR = sadExactSchemaReason_(lSh, SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_, SAD_LINE_ETA_TAIL_COLUMNS_);
   if (lR) return jsonResponse_({ success: false, error: 'SCHEMA_MISMATCH [shipping_allocation_draft_lines] ' + lR, stage: 'schema', zero_write: true });
