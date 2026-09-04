@@ -64,7 +64,7 @@
  *   stored for the scope · would_create route count · and an activation verdict.
  */
 
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R1';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A1';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -645,4 +645,84 @@ function CENSUS_logAll_(out) {
   CENSUS_log_('differences', out.differences);
   CENSUS_log_('writer_constructed', out.writer_constructed);
   CENSUS_log_('db_writes', out.db_writes);
+}
+
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A1 §6 — THE ONE ENTRY POINT, WITH THE SCOPE ALREADY IN IT.
+//
+// The live census came back with scope { company: "", country: "", marketplace: "", sku: "" } and a single
+// blocker, SCOPE_INCOMPLETE. The census was RIGHT to refuse — it never defaults a scope and never runs
+// ALL_SITES — but the result was not an AI Plan finding of any kind. It said nothing about the forecast,
+// the snapshot, the allocator or readiness, and it must not be read as though it had.
+//
+// The fault was the calling convention, not the census. `TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args)` takes a
+// parameter object, and a zero-argument wrapper around it passes nothing. Asking an operator to reconstruct an
+// internal args schema in a console is a design defect: the scope belongs in the function, not in the caller.
+//
+// So this is the only function anyone needs to run. It takes NOTHING, it carries the scope itself, and it
+// asserts that scope before any harvest happens — so a future edit that changes one of the four values
+// stops rather than quietly censusing a different site.
+//
+// READ-ONLY, and the census it delegates to is the authority on that: it never constructs a writer, never
+// opens the allocation tables for writing, never runs a migration and never touches the flag. This wrapper
+// adds no capability of its own; it only removes a way to call it wrong.
+// ================================================================================================================
+var TEMP_E3_FIXED_SCOPE_ = { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' };
+
+function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
+  var S = TEMP_E3_FIXED_SCOPE_;
+
+  // The identity header, printed BEFORE any read, so a run can be matched to what it was asked to do even if
+  // it stops on the next line.
+  var planningCycle = null;
+  try {
+    var cc = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+    planningCycle = (cc && cc.ok) ? cc.planningCycle : null;
+  } catch (e) { planningCycle = null; }
+  var flagEffective = null;
+  try {
+    flagEffective = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function')
+      ? (inventoryAiPlanDbGenerationEnabled_() === true) : null;
+  } catch (e2) { flagEffective = null; }
+
+  CENSUS_log_('scope', S);
+  CENSUS_log_('planning_cycle', planningCycle);
+  CENSUS_log_('read_only', true);
+  CENSUS_log_('flag_effective', flagEffective);
+  CENSUS_log_('db_writes', 0);
+  CENSUS_log_('writer_constructed', false);
+  CENSUS_log_('census_build', TEMP_E3_CENSUS_BUILD_);
+  CENSUS_log_('deployment_build', (typeof SYS_BUILD_VERSION_ !== 'undefined') ? SYS_BUILD_VERSION_ : null);
+  CENSUS_log_('workspace_build', (typeof WAP_BUILD_VERSION_ !== 'undefined') ? WAP_BUILD_VERSION_ : null);
+
+  // STOP BEFORE HARVEST if the scope is not exactly the four values this wrapper exists to run. An empty or
+  // partially-edited scope is what produced the unusable log, and it must fail here rather than downstream.
+  var bad = [];
+  if (CENSUS_str_(S.company) !== 'ResUS') bad.push('company');
+  if (CENSUS_str_(S.country) !== 'US') bad.push('country');
+  if (CENSUS_str_(S.marketplace) !== 'Amazon') bad.push('marketplace');
+  if (CENSUS_str_(S.sku) !== 'CO1100-R') bad.push('sku');
+  if (bad.length) {
+    var stop = { census: 'RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', read_only: true, db_writes: 0,
+      writer_constructed: false, ok: false, verdict: 'STOP', scope: S,
+      blockers: ['FIXED_SCOPE_ALTERED: ' + bad.join(', ') + ' — this wrapper runs exactly ResUS / US / Amazon / '
+        + 'CO1100-R and refuses to census a different site under the same name'] };
+    CENSUS_log_('verdict', 'STOP');
+    CENSUS_log_('blockers', stop.blockers);
+    return stop;
+  }
+
+  // The scope is passed EXPLICITLY. Nothing is defaulted, nothing falls back to the first SKU, and ALL_SITES
+  // is unreachable from here.
+  var res = TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3({
+    company: S.company, country: S.country, marketplace: S.marketplace, sku: S.sku
+  });
+
+  // Re-assert the read-only facts from the RESULT rather than from this function's intentions.
+  CENSUS_log_('result.read_only', res && res.read_only);
+  CENSUS_log_('result.db_writes', res && res.db_writes);
+  CENSUS_log_('result.writer_constructed', res && res.writer_constructed);
+  CENSUS_log_('result.verdict', res && res.verdict);
+  return res;
 }

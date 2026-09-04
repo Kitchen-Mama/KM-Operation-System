@@ -176,9 +176,19 @@
       if (!api || typeof api.getWorkspace !== 'function') {
         return Promise.resolve({ success: false, errors: [{ code: 'METHOD_REGISTRY_API_UNAVAILABLE', message: 'The workspace API is not available to this page.' }] });
       }
-      // F1-7N-FC-1B-E3-R4 §C — the lazy carrier fallback pays for the same twenty-one tables as the primary
-      // read, and needs two of them. It opts into the same bounded payload; it reads neither sales table.
-      return Promise.resolve(api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true }, recentWindow: true }));
+      // F1-7N-FC-1B-E3-R4-A1 §D — TWO SHEETS, NOT TWENTY-ONE.
+      //
+      // R4 had this ask for the bounded payload, which trimmed rows it was never going to read anyway. The live
+      // measurement says the cost is per-TABLE, not per-row: 13 107 rows still took 30 833 ms of server time
+      // across twenty-one sheets. So the catalogue now names the only two tables it consumes.
+      //
+      // This also settles a trade FB-4G-A1-R1 had to make in the other direction. It merged the carrier include
+      // onto the primary read because the alternative was a SECOND read of nineteen unrelated tables, which is
+      // what reached the 60 s bound as METHOD_CATALOGUE_ERROR. That alternative no longer exists.
+      return Promise.resolve(api.getWorkspace('inventoryReplenishment', {
+        include: { carrierPlanning: true }, recentWindow: true,
+        only: ['carrier_lead_times', 'carrier_rate_cards']
+      }));
     }
 
     // ONE catalogue per scope. Already cached -> 0 requests. In flight -> shares that request. Otherwise -> 1.

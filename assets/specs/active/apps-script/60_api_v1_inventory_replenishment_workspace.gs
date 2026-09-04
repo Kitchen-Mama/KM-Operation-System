@@ -41,6 +41,15 @@
  * SpreadsheetApp.
  */
 
+// F1-7N-FC-1B-E3-R4-A1 §A1 — 60_ HAD NO BUILD STAMP, AND THAT IS NOW A REPORTABLE RISK.
+//
+// This file was pure passthrough until R4, so nothing depended on WHICH version answered. It does now: a
+// deployment carrying the pre-R4-A1 60_ ignores `payload.recentWindow` and `payload.only` SILENTLY — it
+// returns all twenty-one tables and reports no echo — while the browser believes it asked for two. That is
+// precisely the shape of failure this round spent its evidence on, and it must be a named fault rather than a
+// number someone has to notice is too large.
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1';
+
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
 // Structural masters fail-closed on missing schema; the data/snapshot/import tables are missing-safe ([] when absent —
@@ -110,6 +119,41 @@ var SIR_WS_RECENT_WINDOW_ = {
   amazon_daily_sales_snapshot:  { keyCols: ['company', 'country', 'marketplace', 'sku'], periodCols: ['snapshot_date'], keep: 14 },
   amazon_weekly_sales_snapshot: { keyCols: ['company', 'country', 'marketplace', 'sku'], periodCols: ['week_end_date', 'snapshot_week'], keep: 4 }
 };
+
+// F1-7N-FC-1B-E3-R4-A1 §A1 — READ FEWER TABLES, NOT MERELY RETURN FEWER ROWS.
+//
+// The live evidence changed what the expensive thing is. R4 assumed payload size, because the fixture said
+// 101 319 rows; production returns 13 107 and still spends THIRTY-ONE SECONDS of server time doing it. Thirteen
+// thousand rows do not take thirty-one seconds to serialize. The cost is opening the spreadsheet and calling
+// getDataRange().getValues() twenty-one times, and no amount of trimming the response reaches it.
+//
+// `only` lets a caller name the tables it actually needs. It is opt-in and it is INTERSECTED with the existing
+// include gate rather than replacing it, so a caller cannot use it to reach an include-gated table it did not
+// also ask for. An unknown table name is ignored rather than erroring: the caller gets fewer tables, never a
+// different contract, and the echo says exactly which ones were honoured.
+//
+// The FIRST beneficiary is the carrier catalogue. F1-7J-A2 gated the two carrier tables off the primary read;
+// FB-4G-A1-R1 then merged them back ON to it, because the alternative at the time was a SECOND read of all
+// nineteen other tables to obtain two small ones. With `only` that alternative no longer exists: the catalogue
+// is two sheets, not twenty-one, so the merge can be undone and the primary render stops paying for reference
+// data a collapsed row never displays.
+function sirWsOnlyList_(payload) {
+  var raw = (payload && payload.only);
+  if (!raw || Object.prototype.toString.call(raw) !== '[object Array]' || !raw.length) return null;
+  var out = [];
+  for (var i = 0; i < raw.length; i++) {
+    var n = sirWsStr_(raw[i]);
+    if (n && out.indexOf(n) === -1) out.push(n);
+  }
+  return out.length ? out : null;
+}
+function sirWsOnlySet_(payload) {
+  var list = sirWsOnlyList_(payload);
+  if (!list) return null;
+  var m = {};
+  for (var i = 0; i < list.length; i++) m[list[i]] = true;
+  return m;
+}
 
 // PURE. Keeps, for each key, the rows whose period is among that key's `keep` most recent DISTINCT periods.
 // A row with no readable period is ALWAYS kept: it cannot be placed in time, and dropping what we cannot
@@ -191,11 +235,35 @@ function sirWorkspaceBuild_(tables, payload) {
   var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
   var out = { summary: null, capped: {}, counts: {}, recentWindow: {} };
   var summary = {};
-  // §C/§D - OPT-IN. Absent or false means the payload is byte-for-byte what it was before this round.
+  // §C/SECTD - OPT-IN. Absent or false means the payload is byte-for-byte what it was before this round.
   var windowOn = (payload.recentWindow === true);
+  // F1-7N-FC-1B-E3-R4-A1 §A1 — ECHO WHAT WAS ASKED FOR, ALWAYS, INCLUDING WHEN THE ANSWER IS "NOTHING".
+  //
+  // R4 reported `recentWindow` only when a projection actually ran, so "the caller did not ask" and "the
+  // caller asked and the request never arrived" produced the identical null. That is exactly the ambiguity
+  // the live log fell into. The REQUEST is now echoed separately from the RESULT, so a null result beside a
+  // true request is a visible contradiction rather than a silent one.
+  out.requestEcho = { recentWindow: (payload.recentWindow === true), only: null };
+  // §A1 — RESOLVED INLINE, ON PURPOSE. This function is documented PURE and four suites lift it BY
+  // ITSELF, with no other function from this file in scope. Calling a sibling helper here broke every one of
+  // them with a ReferenceError — not a wrong answer, but a harness that could no longer run at all. Six
+  // lines of duplication are the price of a function that means what its docstring says; the orchestrator's
+  // copy is checked against this one by test rather than kept in step by hope.
+  var onlyRaw = (payload && payload.only), onlySet = null, onlyList = null;
+  if (onlyRaw && Object.prototype.toString.call(onlyRaw) === '[object Array]' && onlyRaw.length) {
+    onlyList = [];
+    for (var oi = 0; oi < onlyRaw.length; oi++) {
+      var on = sirWsStr_(onlyRaw[oi]);
+      if (on && onlyList.indexOf(on) === -1) onlyList.push(on);
+    }
+    if (onlyList.length) { onlySet = {}; for (var oj = 0; oj < onlyList.length; oj++) onlySet[onlyList[oj]] = true; }
+    else onlyList = null;
+  }
+  if (onlySet) out.requestEcho.only = onlyList;
   for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
     var spec = SIR_WORKSPACE_TABLES_[i];
     var name = spec.name;
+    if (onlySet && !onlySet[name]) continue;                // §A1: an explicit subset was requested
     if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables → base payload identical (BEFORE==AFTER)
     var src = tables[name] || [];
     // §C/§D - the recent-period projection, when the caller asked for it and this table has a window.
@@ -254,12 +322,21 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
   try {
     var payload = (body && body.payload) || {};
     var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
+    var tOpen = io.now();
     var ss = io.openTarget();
-    var tables = {}, readCount = 0;
+    var openMs = io.now() - tOpen;
+    var onlySet = sirWsOnlySet_(payload);
+    var tables = {}, readCount = 0, tableMs = {};
     for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
       var spec = SIR_WORKSPACE_TABLES_[i];
+      if (onlySet && !onlySet[spec.name]) continue;           // §A1: an explicit subset was requested
       if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables (no read cost)
+      // §A1 - TIME EACH SHEET. `serverDurationMs = 30833` names the total and nothing else, so the next
+      // question ("which sheet") had no answer but a guess. Per-table timing is what turns one number into a
+      // decision about which table to stop reading.
+      var tT = io.now();
       tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
+      tableMs[spec.name] = io.now() - tT;
       readCount++;
     }
     var vm = sirWorkspaceBuild_(tables, payload);
@@ -269,8 +346,20 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
     var rowsOut = 0, wKeys = [];
     for (var t2 in vm.counts) { if (Object.prototype.hasOwnProperty.call(vm.counts, t2)) rowsOut += vm.counts[t2]; }
     for (var w2 in vm.recentWindow) { if (Object.prototype.hasOwnProperty.call(vm.recentWindow, w2)) wKeys.push(w2); }
+    // §A1 - the slowest tables, named. Sorted descending and capped at five: enough to decide, small enough
+    // that the meta never becomes a log of its own.
+    var slow = [];
+    for (var tn in tableMs) { if (Object.prototype.hasOwnProperty.call(tableMs, tn)) slow.push({ table: tn, ms: tableMs[tn], rows: (vm.counts[tn] || 0) }); }
+    slow.sort(function (a, b) { return b.ms - a.ms; });
     return sirBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount,
-      rowsReturned: rowsOut, recentWindow: (wKeys.length ? vm.recentWindow : null) });
+      rowsReturned: rowsOut, recentWindow: (wKeys.length ? vm.recentWindow : null),
+      // §A1 - THE REQUEST CONTRACT, echoed. `recentWindowRequested` is what the caller asked for and
+      // `recentWindowApplied` is what happened; a true beside a false means the request lost the field on the
+      // way in, which is precisely the defect R4 shipped and this log would have caught on day one.
+      recentWindowRequested: (vm.requestEcho && vm.requestEcho.recentWindow === true),
+      recentWindowApplied: (wKeys.length > 0),
+      onlyRequested: (vm.requestEcho && vm.requestEcho.only) || null,
+      openMs: openMs, slowestTables: slow.slice(0, 5) });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INVENTORY_REPLENISHMENT_WORKSPACE_BUILD_FAILED';
     return sirBuildEnvelope_(false, null, [{ code: code, message: String(e && e.message || e), details: (e && e.schemaDetail) || null }],

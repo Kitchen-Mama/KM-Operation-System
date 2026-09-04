@@ -123,10 +123,22 @@ ok(RC && typeof RC.get === 'function' && typeof RC.invalidate === 'function' && 
   // payload gained an unrelated field — R4 added `recentWindow: true`. The INVARIANT is that the carrier
   // include is opt-in per call site: a caller that does not ask for it does not get it. That is a property of
   // the conditional, not of the object literal's exact contents.
-  var _wsPay = /var _wsPayload = \(opts && opts\.carrier\) \? (\{[^;]*?\}) : (\{[^;]*?\});/.exec(IR);
-  ok(!!_wsPay, 'C5a the payload is chosen by opts.carrier — one expression, both branches visible');
-  ok(/carrierPlanning: true/.test(_wsPay[1]), 'C5a1 the carrier branch asks for the include...');
-  ok(!/carrierPlanning/.test(_wsPay[2]), 'C5a2 ...and the non-carrier branch does not, so it still costs nothing');
+  // RESTATED AGAIN (F1-7N-FC-1B-E3-R4-A1), and this time the ARRANGEMENT changed, not just the literal.
+  //
+  // C5 recorded FB-4G-A1-R1's decision to merge the carrier include onto the primary read, because the
+  // alternative was a SECOND read of nineteen unrelated tables to obtain two small ones. Live measurement has
+  // since shown the server cost is per-TABLE (13 107 rows still took 30 833 ms across twenty-one sheets), and
+  // the workspace now accepts an explicit table subset — so that alternative no longer exists. The primary
+  // read drops the include entirely and the catalogue asks for its two tables by name.
+  //
+  // The DURABLE claim is unchanged and is what is checked: the read the SCREEN waits on does not pay for
+  // reference data it never displays, and the catalogue costs two tables rather than twenty-one.
+  var _wsPay = /var _wsPayload = (\{[^;]*?\});/.exec(IR);
+  ok(!!_wsPay, 'C5a the primary read has ONE payload, with no carrier branch left to take');
+  ok(!/carrierPlanning/.test(_wsPay[1]), 'C5a1 and it does NOT ask for the carrier include');
+  var _mreg = read('js/core/method-registry.js');
+  ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(_mreg),
+    'C5a2 the catalogue names exactly the two tables it reads, so the second read is 2 sheets, not 21');
   // F1-7N-FB-4C — STRENGTHENED. The include-gated lazy read and the once-guard are both intact; both moved into
   // KM.methodRegistry, which owns the request, the per-scope cache and the single-flight latch. The once-guard is
   // now PROVED by execution (a second ensureLoaded issues no request) rather than by grepping for a variable.

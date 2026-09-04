@@ -1261,13 +1261,35 @@
     // the incoming reconstruction (presentation-side). Gap (inventoryReplenishmentGap.get), Recommendation
     // (recommendation.workspace.get) and the allocation-draft SSOT (getShippingAllocationDraftWorkspace) stay on their
     // EXISTING separate scoped owners — this workspace does NOT duplicate them and creates NO Request Order (FLOW-A).
+    // F1-7N-FC-1B-E3-R4-A1 — THE DTO WAS THE MISSING LINK, AND THE LIVE LOG SAID SO.
+    //
+    // R4 wired the page to ask for `recentWindow` and the handler to honour it, and left the DTO in between
+    // building `payload: { include }` and nothing else. Every field the caller passed except `include` was
+    // silently discarded, so the request that reached Apps Script was byte-for-byte the pre-R4 one. The live
+    // second-load report is unambiguous about it: `recent_window = null`, `tables_read = 21`,
+    // `rows_returned = 13107` — the server never applied a projection because it was never asked to.
+    //
+    // This is the reason a falling row count is NOT evidence that the window worked. 13 107 is simply how big
+    // this database is; it was never 101 319 in production. The only proof that the contract holds is the
+    // server ECHOING what it was asked for and what it applied, which it now does, and which the stage report
+    // now reads. A reduction nobody can trace is indistinguishable from a smaller dataset.
+    //
+    // `only` is the second half. The live report also carries `server_execution_ms = 30833` for 13 107 rows,
+    // which says the cost is in OPENING AND READING TWENTY-ONE SHEETS, not in moving rows. Trimming the
+    // response cannot touch that; asking for fewer tables can. Both fields are optional and absent means the
+    // request is exactly what it was.
     function buildInventoryReplenishmentRequestDTO(params) {
       params = params || {};
+      var payload = {
+        include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+      };
+      if (params.recentWindow === true) payload.recentWindow = true;
+      if (Array.isArray(params.only) && params.only.length) {
+        payload.only = params.only.map(function (t) { return String(t); });
+      }
       return {
         apiVersion: API_VERSION, action: 'inventoryReplenishment.workspace.get', requestId: makeRequestId(params.requestId),
-        payload: {
-          include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
-        },
+        payload: payload,
         context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
       };
     }

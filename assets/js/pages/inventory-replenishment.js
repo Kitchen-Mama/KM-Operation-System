@@ -5143,15 +5143,38 @@ window._irReadTimeoutDiagnosis_ = _irReadTimeoutDiagnosis_;
 //
 // Call `_irReadStageReport_()` from the console after a slow first load.
 var _IR_BOOT_MS_ = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
-// The stages §8 names, mapped to the ACTIONS that implement them. An action nobody called reports null
-// rather than 0 — "not measured" and "took no time" are different answers.
+// F1-7N-FC-1B-E3-R4-A1 §4 — THE MAP WAS WRONG, AND THE REPORT COULD NOT SAY SO.
+//
+// The live first-failure report is the whole indictment: request_count = 4, and every named stage
+// attempts = 0. Four requests happened and the diagnostic placed none of them. Then it printed
+// COLD_START_OR_TRANSIENT_TIMEOUT, a root-cause claim derived from nothing, next to a first_attempt of
+// `getClientCapabilities` succeeding in 3 768 ms — which says nothing at all about the inventory read.
+//
+// The cause was mundane and entirely mine: I mapped ACTION NAMES I HAD GUESSED. The transport records the
+// workspace action as `inventoryReplenishment.workspace.get`; I wrote `getInventoryReplenishmentWorkspace`,
+// which nothing emits. Same for every other stage. A map of names that do not exist classifies nothing, and
+// because unmatched samples were silently dropped, "no request reached this stage" and "I do not recognise
+// this action" produced the identical zero.
+//
+// Two things change. The names are the ones the transport actually records, taken from the DTO builders and
+// the GET action table rather than from memory. And an action that matches NO stage is now COUNTED and NAMED
+// in `unclassified_requests`, so the arithmetic is visible: when classified + ignored is less than
+// request_count, the verdict is INSTRUMENTATION_INCOMPLETE and no root cause is offered at all.
+//
+// A diagnostic that cannot fail is worse than none, because it is believed.
 var IR_READ_STAGES_ = [
-  { stage: 'deployment_contract', actions: ['checkDeploymentContract', 'system.health', 'systemHealth'] },
-  { stage: 'inventory_workspace', actions: ['getInventoryReplenishmentWorkspace', 'adaptInventoryReplenishmentWorkspace', 'loadOperationDb'] },
-  { stage: 'recommendation_read', actions: ['getInventoryReplenishmentGap', 'getGapJobStatus'] },
-  { stage: 'allocation_hydration', actions: ['getShippingAllocationDraftWorkspace', 'getShippingAllocationDrafts'] },
-  { stage: 'carrier_authorities', actions: ['getCarrierRateCards', 'getWarehouseAllocationConfig'] }
+  { stage: 'deployment_contract', actions: ['system.health', 'getClientCapabilities'] },
+  { stage: 'scope_registry', actions: ['inventoryScope.registry.get'] },
+  { stage: 'inventory_workspace', actions: ['inventoryReplenishment.workspace.get'] },
+  { stage: 'recommendation_read', actions: ['recommendation.workspace.get', 'inventoryReplenishmentGap.get', 'gapJob.status.get'] },
+  { stage: 'allocation_hydration', actions: ['getShippingAllocationDraftWorkspace', 'shippingAllocationDraft.workspace.get'] },
+  { stage: 'carrier_authorities', actions: ['getCarrierRateCards', 'getWarehouseAllocationConfig', 'carrier.rateCards.get'] }
 ];
+// Actions that legitimately belong to no read stage. They are EXPLICITLY ignored rather than unclassified, so
+// the accounting stays exact and a genuinely unknown action still surfaces.
+var IR_STAGE_IGNORED_ACTIONS_ = ['weeklyAiPlan.generate', 'submitAllocationDraftsToShippingPlans',
+  'upsertShippingAllocationDraftAtomic', 'upsertShippingAllocationDraftLines', 'upsertShippingAllocationDraft',
+  'cancelShippingAllocationDraft', 'inventoryReplenishmentGap.job.start', 'inventoryReplenishmentGap.job.cancel'];
 function _irReadStageReport_() {
   var out = { available: false, page_boot_elapsed_ms: null, client_total_elapsed_ms: null,
     server_execution_ms: null, request_count: 0, coalesced_count: 0, retry_count: 0, stages: [],
@@ -5176,21 +5199,53 @@ function _irReadStageReport_() {
     out.server_execution_ms = (_irLastReadMeta && typeof _irLastReadMeta.server_execution_ms === 'number')
         ? _irLastReadMeta.server_execution_ms : null;
     out.server_tables_read = (_irLastReadMeta && _irLastReadMeta.tables_read) || null;
+    // §A1 — THE REQUEST CONTRACT, not an inference from it. `recent_window_requested` true beside
+    // `recent_window_applied` false is the exact shape of the defect R4 shipped: the page asked, the DTO
+    // dropped the field, and the server never saw it. Reading a falling row count as proof would have missed
+    // it entirely, because 13 107 rows is simply how big this database is.
+    out.recent_window_requested = (_irLastReadMeta && _irLastReadMeta.recent_window_requested) === true;
+    out.recent_window_applied = (_irLastReadMeta && _irLastReadMeta.recent_window_applied) === true;
+    out.server_only_requested = (_irLastReadMeta && _irLastReadMeta.only_requested) || null;
+    out.server_open_ms = (_irLastReadMeta && typeof _irLastReadMeta.open_ms === 'number') ? _irLastReadMeta.open_ms : null;
+    out.server_slowest_tables = (_irLastReadMeta && _irLastReadMeta.slowest_tables) || null;
     out.server_rows_returned = (_irLastReadMeta && typeof _irLastReadMeta.rows_returned === 'number')
         ? _irLastReadMeta.rows_returned : null;
     out.recent_window = (_irLastReadMeta && _irLastReadMeta.recent_window) || null;
-    var reads = samples.filter(function (x) { return x && String(x.kind || '') === 'read'; });
+    // §4 — EVERY sample, not only the ones labelled 'read'. The previous filter dropped anything the
+    // transport classified differently, which is another way an unclassified request became an invisible one.
+    var reads = samples.slice();
     out.client_total_elapsed_ms = reads.reduce(function (a, x) { return a + (Number(x.ms) || 0); }, 0);
+    var claimed = {};
     IR_READ_STAGES_.forEach(function (st) {
       var mine = reads.filter(function (x) { return st.actions.indexOf(String(x.action || '')) !== -1; });
+      mine.forEach(function (x) { claimed[reads.indexOf(x)] = true; });
       out.stages.push({
         stage: st.stage,
         attempts: mine.length,
+        actions: mine.map(function (x) { return String(x.action || ''); }),
         elapsed_ms: mine.length ? mine.map(function (x) { return Number(x.ms) || 0; }) : null,
         codes: mine.map(function (x) { return String(x.code || '') || 'SUCCESS'; }),
+        phases: mine.map(function (x) { return String(x.phase || ''); }),
         slowest_ms: mine.length ? mine.reduce(function (a, x) { return Math.max(a, Number(x.ms) || 0); }, 0) : null
       });
     });
+    // §4 — THE ACCOUNTING. Anything neither classified nor explicitly ignored is named, not dropped.
+    out.classified_count = 0;
+    for (var ci in claimed) { if (Object.prototype.hasOwnProperty.call(claimed, ci)) out.classified_count++; }
+    out.ignored_count = 0;
+    out.unclassified_requests = [];
+    reads.forEach(function (x, i) {
+      if (claimed[i]) return;
+      var a = String(x.action || '');
+      if (IR_STAGE_IGNORED_ACTIONS_.indexOf(a) !== -1) { out.ignored_count++; return; }
+      out.unclassified_requests.push({ action: a || '(unnamed)', ms: Number(x.ms) || 0,
+        code: String(x.code || '') || 'SUCCESS', kind: String(x.kind || ''), phase: String(x.phase || '') });
+    });
+    out.sample_count = reads.length;
+    // The transport's own counter and the samples it kept can differ (samples are bounded at 400). Both are
+    // reported so a shortfall is attributable rather than mysterious.
+    out.instrumentation_complete = (out.unclassified_requests.length === 0)
+      && (out.classified_count + out.ignored_count >= out.request_count);
     // FIRST ATTEMPT vs RETRY, which is the whole question: what is DIFFERENT about the second request.
     if (reads.length) {
       out.first_attempt = { action: String(reads[0].action || ''), ms: Number(reads[0].ms) || 0,
@@ -5202,6 +5257,20 @@ function _irReadStageReport_() {
       out.retry_attempt = retry ? { action: String(retry.action || ''), ms: Number(retry.ms) || 0,
         code: String(retry.code || '') || 'SUCCESS', phase: String(retry.phase || '') } : null;
       if (out.retry_attempt) out.first_vs_retry_delta_ms = out.first_attempt.ms - out.retry_attempt.ms;
+    }
+    // §4 — A CLASSIFICATION IS ONLY OFFERED WHEN THE EVIDENCE IS COMPLETE.
+    //
+    // The live report printed COLD_START_OR_TRANSIENT_TIMEOUT while it had placed exactly zero of four
+    // requests. That is not a weak conclusion, it is a conclusion drawn from an empty set, and it sent the
+    // investigation somewhere there was no reason to go. When the accounting does not balance, the ONLY thing
+    // this reports is that it cannot see, and it says which actions it failed to recognise.
+    if (!out.instrumentation_complete) {
+      out.classification = 'INSTRUMENTATION_INCOMPLETE';
+      out.classification_withheld = 'requests were issued that this report could not place: '
+        + out.unclassified_requests.map(function (u) { return u.action; }).join(', ')
+        + ' (classified ' + out.classified_count + ' + ignored ' + out.ignored_count
+        + ' of ' + out.request_count + ')';
+      return out;
     }
     if (window.IRReadTimeoutDiagnostic && typeof window.IRReadTimeoutDiagnostic.classify === 'function') {
       var c = window.IRReadTimeoutDiagnostic.classify(samples, null);
@@ -8382,7 +8451,17 @@ function _irWorkspaceRefresh_(opts) {
     // consumers read seven days and one week. `recentWindow` asks the server to keep each scope's own most
     // recent periods. It is opt-in, so no other caller's payload changes, and the server reports what it
     // dropped so the reduction is visible rather than assumed.
-    var _wsPayload = (opts && opts.carrier) ? { include: { carrierPlanning: true }, recentWindow: true } : { recentWindow: true };
+    // F1-7N-FC-1B-E3-R4-A1 §D — THE PRIMARY RENDER STOPS PAYING FOR REFERENCE DATA IT DOES NOT DISPLAY.
+    //
+    // `opts.carrier` no longer adds two sheets to the read the screen is waiting on. It now marks the read as
+    // one that SHOULD be followed by a catalogue load, which the method registry performs separately against
+    // two tables. The blocking read drops from twenty-one sheets to nineteen; the catalogue costs two, off the
+    // critical path, and only for a scope whose rows can actually be expanded.
+    //
+    // Adoption from the primary read is therefore no longer possible, and `_irReadModelHasCarrier` stays false
+    // — which is the correct answer, not a regression: adopting a payload that did not carry the include would
+    // install two empty tables as a settled catalogue and report a configuration problem that does not exist.
+    var _wsPayload = { recentWindow: true };
     return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', _wsPayload)).then(function (env) {
         if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
         if (env && env.success && env.data) {
@@ -8394,7 +8473,13 @@ function _irWorkspaceRefresh_(opts) {
                 _irLastReadMeta = { server_execution_ms: (typeof _m.serverDurationMs === 'number') ? _m.serverDurationMs : null,
                     tables_read: (typeof _m.tablesRead === 'number') ? _m.tablesRead : null,
                     rows_returned: (typeof _m.rowsReturned === 'number') ? _m.rowsReturned : null,
-                    recent_window: _m.recentWindow || null, request_id: _m.requestId || null, at: _irNowMs_() };
+                    recent_window: _m.recentWindow || null, request_id: _m.requestId || null,
+                    // §A1 — the echoed contract and the per-table timing.
+                    recent_window_requested: _m.recentWindowRequested === true,
+                    recent_window_applied: _m.recentWindowApplied === true,
+                    only_requested: _m.onlyRequested || null,
+                    open_ms: (typeof _m.openMs === 'number') ? _m.openMs : null,
+                    slowest_tables: _m.slowestTables || null, at: _irNowMs_() };
             } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
             // Only a read that ACTUALLY requested the include may seed the catalogue. Adopting a payload that
@@ -8526,13 +8611,18 @@ function _irApplySearch_(pending, mySeq) {
     if (typeof _irHydrateDraftForAppliedScope_ === 'function') {
         try { _irHydrateDraftForAppliedScope_(); } catch (eH) {}
     }
-    // F1-7N-FB-4G-A1-R1 - THE CATALOGUE IS ALREADY IN HAND. The read this Search just completed carried the
-    // carrierPlanning include, so the registry is SEEDED from it rather than sent to fetch the same workspace
-    // a second time. Synchronous, zero requests, and it makes every later ensureLoaded a cache hit - which is
-    // why the 60 s timeout path is no longer on the normal route to an Execution Plan at all.
+    // F1-7N-FC-1B-E3-R4-A1 §A1 - RESTATED, because the trade underneath it has changed sides.
     //
-    // If the adoption is not possible (Legacy mode, or a payload without the include), the previous lazy load
-    // is still there, unchanged, as the fallback it always was.
+    // FB-4G-A1-R1 seeded the registry from the primary read to avoid a SECOND read of all nineteen other
+    // tables, which is what reached the 60 s bound as METHOD_CATALOGUE_ERROR. Live measurement has since shown
+    // the cost is per-TABLE, not per-row, and the workspace now accepts an explicit table subset - so the
+    // catalogue is two sheets rather than twenty-one, and carrying it on the read the SCREEN waits for is no
+    // longer the cheaper side of the trade.
+    //
+    // The primary read therefore no longer asks for the include, adoption reports false, and this falls
+    // through to the lazy load by design. The adoption path is KEPT rather than deleted: a mixed deployment
+    // whose 60_ predates the `only` parameter still returns the include-gated tables on the primary read, and
+    // seeding from them is correct when they are genuinely present.
     if (typeof _irAdoptCarrierCatalogue_ === 'function' && _irAdoptCarrierCatalogue_()) {
         if (typeof _irRebuildAllMethodOptions_ === 'function') _irRebuildAllMethodOptions_();
     } else if (typeof _irLoadCarrierPlanning_ === 'function') {

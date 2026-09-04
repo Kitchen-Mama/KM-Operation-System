@@ -545,13 +545,24 @@ ok(!/(appendRow|setValue|setValues)/.test(ops(extractFn(G60, 'sirWsRecentWindow_
 // ================================================================================================================
 section('§A — deployment identity');
 // ================================================================================================================
+var RO2 = require(path.join(ROOT, 'assets/tests/_release-order.js'));
 var wap = (G61.match(/WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var sys = (HLTH.match(/SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var wapExp = (HLTH.match(/\{ file: '61_api_v1_weekly_ai_plan\.gs',[^}]*expected: '([^']+)'/) || [])[1];
 var sysExp = (HLTH.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
 eq(wap, wapExp, 'A1  61_ declares exactly the build its manifest entry expects (' + wap + ')');
 eq(sys, sysExp, 'A1a and 63_ does the same (' + sys + ')');
-eq([wap, sys], ['F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4'], 'A1b both moved this round, because both changed');
+// RESTATED (F1-7N-FC-1B-E3-R4-A1): I wrote this one round ago and it broke exactly as every pin of its kind
+// has. R4-A1 changed 60_ and 63_ and did NOT change 61_, so 63_ moved and 61_ correctly did not. Equality with
+// one round's literals cannot express that; the durable claim is that each file is stamped at or after the
+// round whose behaviour it carries, and A1/A1a above already prove each AGREES with its manifest entry.
+ok(RO2.stampAtOrAfter(wap, 'F1-7N-FC-1B-E3-R4'), 'A1b 61_ is stamped at or after R4 (' + wap + ')');
+ok(RO2.stampAtOrAfter(sys, 'F1-7N-FC-1B-E3-R4'), 'A1b1 and so is 63_ (' + sys + ')');
+var sir = (read('assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs')
+  .match(/SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var sirExp = (HLTH.match(/\{ file: '60_api_v1_inventory_replenishment_workspace\.gs',[^}]*expected: '([^']+)'/) || [])[1];
+ok(!!sir, 'A1c 60_ now DECLARES a build — a stale 60_ ignores recentWindow and only SILENTLY');
+eq(sir, sirExp, 'A1d and it declares exactly what its manifest entry expects (' + sir + ')');
 var kmwhaVer = (KMWHA_SRC.match(/_version:\s*'([^']+)'/) || [])[1];
 ok(BUNDLE.indexOf(kmwhaVer) !== -1, 'A2  the bundle was rebuilt at the adapter\'s current version (' + kmwhaVer + ')');
 ['CANONICAL_DEMAND_ROW_MISSING', 'CANONICAL_DEMAND_NOT_READY', 'CANONICAL_DEMAND_STALE',
@@ -563,9 +574,15 @@ ok(BUNDLE.indexOf(kmwhaVer) !== -1, 'A2  the bundle was rebuilt at the adapter\'
 section('§K — release identity');
 // ================================================================================================================
 var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
-eq(RO.currentAppToken(), 'fc1b-e3r4-scopedread-20260904', 'K1  this round mints a NEW application token');
-ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-e3r3r1-forecastzero-20260904'),
+// RESTATED (F1-7N-FC-1B-E3-R4-A1): the NINTH consecutive round to pin its own token as "the current one",
+// and the first one I wrote myself after correcting the previous eight. It breaks the same way: the next round
+// rotates the series and an assertion about the PRESENT silently becomes one about the past. R4's token is a
+// FLOOR — it was minted, it came after R3-R1's, and the series has never moved behind it.
+ok(RO.tokenIndex('fc1b-e3r4-scopedread-20260904') !== -1, 'K1  this round minted its own application token');
+ok(RO.tokenIndex('fc1b-e3r4-scopedread-20260904') > RO.tokenIndex('fc1b-e3r3r1-forecastzero-20260904'),
   'K1a strictly after R3-R1\'s, which was PUBLISHED (origin/main carries 6c9594f)');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r4-scopedread-20260904'),
+  'K1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on any superseded token');
 var IX = RO.parseIndexTokens(INDEX);
 eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'K3  the page carries it');
@@ -704,9 +721,13 @@ Promise.all(IMATRIX).then(function () {
     var m = swap(CFG, 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true');
     return /ENABLED_ = false/.test(CFG) && /ENABLED_ = true/.test(m);
   });
+  // RESTATED (F1-7N-FC-1B-E3-R4-A1): the anchor named the carrier-branch payload, which R4-A1 removed — the
+  // primary read no longer asks for the carrier include at all. The DEFECT is unchanged (the page stops asking
+  // for the bounded payload, so a cached page keeps issuing the unbounded request), re-anchored on what the
+  // payload is now.
   mut('N19 the page stops asking for the bounded payload (a cached page keeps timing out)', function () {
-    var m = swap(PAGE, 'include: { carrierPlanning: true }, recentWindow: true }', 'include: { carrierPlanning: true } }');
-    return /carrierPlanning: true \}, recentWindow: true \}/.test(PAGE) && !/carrierPlanning: true \}, recentWindow: true \}/.test(m);
+    var m = swap(PAGE, 'var _wsPayload = { recentWindow: true };', 'var _wsPayload = {};');
+    return /_wsPayload = \{ recentWindow: true \};/.test(PAGE) && !/_wsPayload = \{ recentWindow: true \};/.test(m);
   });
   mut('N20 an asset is left behind on a superseded token', function () {
     var cur = RO.currentAppToken(), prev = 'fc1b-e3r3r1-forecastzero-20260904';

@@ -311,9 +311,16 @@ section('§6 — THE DUPLICATE WORKSPACE READ, AND THE TIMEOUT IT CAUSED');
   // RESTATED (F1-7N-FC-1B-E3-R4): pinned verbatim, so an unrelated new payload field (`recentWindow`) broke an
   // assertion about the CARRIER include. What T3 means is that the include rides on the existing read and is
   // opt-in, which is a property of the conditional rather than of the literal's full contents.
-  var _t3 = /opts && opts\.carrier\) \? (\{[^;]*?\}) : (\{[^;]*?\})/.exec(wsRefresh);
-  ok(!!_t3 && /carrierPlanning: true/.test(_t3[1]) && !/carrierPlanning/.test(_t3[2]),
-    'T3  §6 the include rides on the read Search was ALREADY making — opt-in per call site, one request not two');
+  // RESTATED AGAIN (F1-7N-FC-1B-E3-R4-A1). T3 recorded a TRADE, and live measurement reversed which side is
+  // cheaper. The include rode on the primary read because the alternative was a second full-table read; the
+  // workspace now accepts a table subset, so the catalogue is two sheets and the screen stops waiting for it.
+  // What T3 was really protecting — the Execution Plan's catalogue is never obtained by re-reading nineteen
+  // unrelated tables — is now true by a stronger route, and that is what is checked.
+  ok(!/carrierPlanning/.test(wsRefresh),
+    'T3  §6 the read Search waits on no longer asks for carrier reference data at all');
+  var _mreg2 = read('assets/js/core/method-registry.js');
+  ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(_mreg2),
+    'T3a and the catalogue read names its two tables, so it can never again be a full-set read');
   ok(/_irWorkspaceRefresh_\(\{ carrier: true \}\)/.test(code(PAGE)),
     'T3a and the PRIMARY read is the caller that asks for it');
   // NARROWED DELIBERATELY: the post-write readback keeps its exact previous payload, so the separate bounded-
@@ -635,8 +642,15 @@ ok(/data-eta-persisted/.test(PAGE) && /data-method-persisted/.test(PAGE), 'V3  �
   ok(new RegExp('inventory-replenishment\\.css\\?v=' + RO.currentIrCssToken()).test(INDEX),
     'V7a1 and index.html serves exactly that token');
   ok(!new RegExp('inventory-replenishment\\.css\\?v=' + APP).test(INDEX), 'V7a and the families are not crossed');
-  ok(/method-registry\.js\?v=fb4ga1r1-method-registry-20260902/.test(INDEX),
+  // RESTATED (F1-7N-FC-1B-E3-R4-A1): this pinned A1-R1's literal token as "the current one" — the same defect
+  // the stylesheet family already had a ledger for, in a family that had none. It now does, so the durable
+  // claim is a FLOOR: A1-R1 minted its token, and the series has never moved behind it.
+  ok(RO.methodRegistryTokenIndex('fb4ga1r1-method-registry-20260902') !== -1,
     'V8  §12 method-registry.js changed this round, so ITS own token family rotated too');
+  ok(RO.methodRegistryTokenAtOrAfter(RO.currentMethodRegistryToken(), 'fb4ga1r1-method-registry-20260902'),
+    'V8b and the series has not moved behind it (current: ' + RO.currentMethodRegistryToken() + ')');
+  ok(new RegExp('method-registry\\.js\\?v=' + RO.currentMethodRegistryToken()).test(INDEX),
+    'V8c and index.html serves exactly that token');
   ok(INDEX.indexOf('fb4c-method-registry-20260826') === -1, 'V8a and its previous token is retired');
 })();
 

@@ -209,7 +209,14 @@ var ROUND_TOKENS = [
   //   2. It also gains _irExpectedDemandFromSnapshot_, which declares the snapshot the operator is looking at.
   //      A cached page sends no expectation, and a mid-flight re-materialization goes back to being silent.
   // The stylesheet did NOT change this round and stays on its own family's current token.
-  'fc1b-e3r4-scopedread-20260904'
+  'fc1b-e3r4-scopedread-20260904',
+  // F1-7N-FC-1B-E3-R4-A1 — R4 is PUBLISHED (origin/main carries 3b44cbd), so its token cannot be reused, and
+  // the refetch is load-bearing for two browser files. km-api-foundation.js now carries `recentWindow` and
+  // `only` through the DTO — R4 shipped a page that asked for a projection the DTO silently dropped, so a
+  // cached foundation keeps sending the pre-R4 request while the new page believes it asked. And
+  // inventory-replenishment.js carries the rebuilt stage report: a cached page keeps the action-to-stage map
+  // that classified one live request in four and then printed a root cause anyway.
+  'fc1be3r4a1-livecontract-20260904'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -334,6 +341,30 @@ var IR_CSS_TOKEN_SERIES = [
   // be invisible for two rounds, so the family rotates rather than trusting the page's rotation to cover it.
   'irroutehint-20260903'
 ];
+// F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
+//
+// The file rotates on its own cadence (it is not an application-series asset), and every round that touched it
+// asserted its literal token as "the current one". That is the same defect this file was built to end for the
+// application and map series, and it broke the same way the first time the file changed again: A1-R1's round
+// wrote `method-registry.js?v=fb4ga1r1-method-registry-20260902` into an assertion about the PRESENT, and R4-A1
+// rotating it turned that into an assertion about the past.
+//
+// A series with an index makes the durable claim checkable: each round's token is a FLOOR, and the file's
+// current token is a member of the family rather than of the application series.
+var METHOD_REGISTRY_TOKEN_SERIES = [
+  'fb4c-method-registry-20260826',
+  'fb4ga1r1-method-registry-20260902',
+  // R4-A1: the carrier catalogue stops asking for all twenty-one tables and names the two it reads. A cached
+  // copy keeps issuing the full read, which is the cost this round removed.
+  'fc1be3r4a1-method-registry-20260904'
+];
+var METHOD_REGISTRY_FILE = 'assets/js/core/method-registry.js';
+function currentMethodRegistryToken() { return METHOD_REGISTRY_TOKEN_SERIES[METHOD_REGISTRY_TOKEN_SERIES.length - 1]; }
+function methodRegistryTokenIndex(t) { return METHOD_REGISTRY_TOKEN_SERIES.indexOf(String(t)); }
+function methodRegistryTokenAtOrAfter(t, floorToken) {
+  var i = methodRegistryTokenIndex(t), f = methodRegistryTokenIndex(floorToken);
+  return i !== -1 && f !== -1 && i >= f;
+}
 var IR_CSS_FILE = 'assets/css/pages/inventory-replenishment.css';
 function currentIrCssToken() { return IR_CSS_TOKEN_SERIES[IR_CSS_TOKEN_SERIES.length - 1]; }
 function isIrCssToken(t) { return IR_CSS_TOKEN_SERIES.indexOf(String(t)) !== -1; }
@@ -437,14 +468,21 @@ function appTokenRefCount(indexHtml) {
 // the shape of three entries in ROUND_TOKENS above), and this regex admitted only the -R form, so the first
 // backend owner file to declare an E-series stamp was reported as carrying no real build stamp at all by every
 // suite that validates through here. The vocabulary is fixed in the one place that owns it.
-var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+))*$/;
+// F1-7N-FC-1B-E3-R4-A1 — the A-SERIES was missing, and it had been missing all along.
+//
+// The vocabulary admitted -R<n> and -E<n> only, so it rejected FOUR stamps this project has actually shipped:
+// F1-7N-FB-4G-A0-R1, F1-7N-FB-4G-A1-R1, F1-7N-FB-4G-A2-R3-R1 and now F1-7N-FC-1B-E3-R4-A1. Three of those sit
+// in OWNER_STAMPS below, so the file simultaneously recorded them as real and would have called them malformed
+// — the gap only stayed invisible because no suite happened to validate one of them through here. An
+// A-series round is an addendum to a shipped round, which is exactly what this one is.
+var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+))*$/;
 
 // F1-7N-FB-4G-A0-R1 — THE 16_ OWNER-STAMP ORDER, and it lives HERE because it was living in four places.
 // B3, B4, B5 and FB-4F-A each carried their own copy of this array to answer "is the allocation owner build at
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
@@ -481,6 +519,11 @@ module.exports = {
   misplacedIndexTokens: misplacedIndexTokens,
   appTokenRefCount: appTokenRefCount,
   staleAppTokenRefs: staleAppTokenRefs,
+  METHOD_REGISTRY_FILE: METHOD_REGISTRY_FILE,
+  METHOD_REGISTRY_TOKEN_SERIES: METHOD_REGISTRY_TOKEN_SERIES,
+  currentMethodRegistryToken: currentMethodRegistryToken,
+  methodRegistryTokenIndex: methodRegistryTokenIndex,
+  methodRegistryTokenAtOrAfter: methodRegistryTokenAtOrAfter,
   BUILD_STAMP_RE: BUILD_STAMP_RE,
   tokenIndex: tokenIndex,
   tokenAtOrAfter: tokenAtOrAfter,

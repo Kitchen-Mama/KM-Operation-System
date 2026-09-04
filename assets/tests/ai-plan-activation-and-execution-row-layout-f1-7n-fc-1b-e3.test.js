@@ -979,8 +979,19 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
 (function oneEntry() {
   var pub = (TEMP.match(/^function ([A-Za-z_][\w]*)\(/gm) || []).map(function (s) { return s.replace(/^function /, '').replace(/\($/, ''); });
   var nonHelper = pub.filter(function (n) { return !/^CENSUS_/.test(n); });
-  eq(nonHelper, ['TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'],
-    'F1a and it is the only function not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A1): the census now has a SECOND deliberate entry point. The live run came
+  // back with an empty scope and one blocker, because the operator was asked to reconstruct an internal args
+  // schema in a console; RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R takes no parameters and carries the scope
+  // itself. The claim this assertion protects is unchanged — nothing UNINTENDED is invocable from the
+  // editor — so it names the entry points rather than assuming there is only ever one.
+  eq(nonHelper.slice().sort(), ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'],
+    'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
+  ok(/function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R\(\)/.test(TEMP),
+    'F1b the fixed-scope runner takes NO parameters, so it cannot be called with the wrong scope');
+  ok(/TEMP_E3_FIXED_SCOPE_ = \{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' \}/.test(TEMP),
+    'F1c and the scope is IN the function, not in the caller');
+  ok(/FIXED_SCOPE_ALTERED/.test(TEMP),
+    'F1d it STOPS before harvest if those four values are ever edited, rather than censusing a different site');
 })();
 // §F.1/§F.2 — zero writes, and no writer is obtainable
 (function zeroWrite() {
