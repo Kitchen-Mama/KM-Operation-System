@@ -5168,9 +5168,17 @@ function _irReadStageReport_() {
     out.request_count = m.requests || 0;
     out.coalesced_count = m.coalesced || 0;
     out.retry_count = m.retries || 0;
-    // §8 — server execution time is only reported if the transport actually carries it. It does not
-    // today, so this stays null instead of being inferred from the client number.
-    out.server_execution_ms = null;
+    // F1-7N-FC-1B-E3-R4 §B — RESTATED. R3-R1 reported this as null on the grounds that the transport
+    // records client elapsed only. That was true of the TRANSPORT and false of the ANSWER: the workspace
+    // envelope has always carried meta.serverDurationMs, and the page discarded it. It is now captured on
+    // every successful primary read and reported here. It stays null when no read has completed — which is
+    // exactly the first-attempt-timeout case, and "the server never told us" is the honest reading of that.
+    out.server_execution_ms = (_irLastReadMeta && typeof _irLastReadMeta.server_execution_ms === 'number')
+        ? _irLastReadMeta.server_execution_ms : null;
+    out.server_tables_read = (_irLastReadMeta && _irLastReadMeta.tables_read) || null;
+    out.server_rows_returned = (_irLastReadMeta && typeof _irLastReadMeta.rows_returned === 'number')
+        ? _irLastReadMeta.rows_returned : null;
+    out.recent_window = (_irLastReadMeta && _irLastReadMeta.recent_window) || null;
     var reads = samples.filter(function (x) { return x && String(x.kind || '') === 'read'; });
     out.client_total_elapsed_ms = reads.reduce(function (a, x) { return a + (Number(x.ms) || 0); }, 0);
     IR_READ_STAGES_.forEach(function (st) {
@@ -8028,9 +8036,26 @@ function _irBootstrapScope_() {
         }
         var ws = r[1];
         if (!ws || !ws.ok) {
-            _irSearch.status = 'PRE_SEARCH';
-            _irBootstrap.reason = 'the scoped workspace read failed — reported, and the scope is NOT applied';
+            // F1-7N-FC-1B-E3-R4 §D — SHOW THE SCOPE WE ALREADY KNOW.
+            //
+            // This branch used to leave both selectors reading "Select Country" / "Select Marketplace" under a red
+            // read error, because _irSetSelectors_ ran only on the success path. That is the exact failure screen
+            // this round was asked to explain, and it made the page look as though it had failed with no scope
+            // chosen — which sent the diagnosis after a cause that does not exist. The remembered scope was
+            // VALIDATED against the registry two lines above; the read is what failed. Showing it costs nothing,
+            // applies nothing, and lets the operator press Search instead of re-choosing what the page knew.
+            _irSetSelectors_(remembered);
+            _irSearch.status = 'ERROR';
+            _irSearch.error = { code: (ws && ws.error && ws.error.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED',
+                message: (ws && ws.error && ws.error.message) || 'Inventory Replenishment read failed' };
+            _irBootstrap.reason = 'the scoped workspace read failed — reported, the remembered scope is SHOWN but NOT applied';
+            _irBootstrap.selectorsShown = true;
+            // FAIL CLOSED FIRST (_irRenderError_ drops the read model so nothing can fall back to a broad
+            // cache), then paint through the SAME gate a failed Search uses — which is the one that offers a
+            // Retry. The bootstrap's own painter has none, so a failed restore left the operator with a red
+            // line and no button.
             if (typeof _irRenderError_ === 'function') _irRenderError_(ws && ws.error);
+            if (typeof _irRenderSearchGate_ === 'function') _irRenderSearchGate_();
             return null;
         }
         _irSetSelectors_(remembered);
@@ -8275,6 +8300,9 @@ window._irRebuildAllMethodOptions_ = _irRebuildAllMethodOptions_;
 // F1-7N-FB-4G-A1-R1 - true only when the workspace read that produced _irReadModel asked for the carrier
 // include. It gates adoption; nothing else reads it.
 var _irReadModelHasCarrier = false;
+// F1-7N-FC-1B-E3-R4 §B — what the SERVER said about the last primary read. Measurement only; nothing
+// reads it to make a decision.
+var _irLastReadMeta = null;
 var _irRegionCtl = null;
 function _irRegion_() {
     if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
@@ -8342,10 +8370,32 @@ function _irWorkspaceRefresh_(opts) {
     // So this is a REDUCTION, not an addition: ~40 tables transferred per Search becomes ~21, and one request
     // replaces two. It applies to the PRIMARY read only - the post-write readback keeps its exact previous
     // payload, so the separate bounded-readback deferral recorded by 7M-B/7M-B2 is untouched.
-    var _wsPayload = (opts && opts.carrier) ? { include: { carrierPlanning: true } } : {};
+    // F1-7N-FC-1B-E3-R4 §C/§D — ASK FOR THE BOUNDED PAYLOAD.
+    //
+    // This request has never carried a scope, and the handler has never had one to honour: every primary read
+    // returns twenty-one whole tables. Measured through the shipped code, a complete US/Amazon Search sends the
+    // BYTE-IDENTICAL request a blank page would, and a Search after a timeout re-sends that same request again.
+    // So the blank Country/Marketplace on the failure screen is not the cause of anything — a blank or partial
+    // scope issues ZERO inventory requests and is refused before dispatch.
+    //
+    // What IS unbounded is time: the daily and weekly sales snapshots gain rows every day forever, and their
+    // consumers read seven days and one week. `recentWindow` asks the server to keep each scope's own most
+    // recent periods. It is opt-in, so no other caller's payload changes, and the server reports what it
+    // dropped so the reduction is visible rather than assumed.
+    var _wsPayload = (opts && opts.carrier) ? { include: { carrierPlanning: true }, recentWindow: true } : { recentWindow: true };
     return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', _wsPayload)).then(function (env) {
         if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
         if (env && env.success && env.data) {
+            // §B — the server's OWN execution time, which it has always reported and the page has always
+            // thrown away. R3-R1 reported server_execution_ms as null because the transport records client
+            // elapsed only; the envelope meta carries the real number, so the stage report now uses it.
+            try {
+                var _m = (env && env.meta) || {};
+                _irLastReadMeta = { server_execution_ms: (typeof _m.serverDurationMs === 'number') ? _m.serverDurationMs : null,
+                    tables_read: (typeof _m.tablesRead === 'number') ? _m.tablesRead : null,
+                    rows_returned: (typeof _m.rowsReturned === 'number') ? _m.rowsReturned : null,
+                    recent_window: _m.recentWindow || null, request_id: _m.requestId || null, at: _irNowMs_() };
+            } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
             // Only a read that ACTUALLY requested the include may seed the catalogue. Adopting a payload that
             // did not would install two empty tables as a settled catalogue and report a configuration
@@ -9136,6 +9186,12 @@ function _irClassifyGenerationResult_(res) {
     // answer, and the backend treats it as success precisely so it still replaces the previous proposal. The
     // classifier must agree, or the page would refuse to refresh after a run that did expire last week's plan.
     var zeroResult = (d.zero_result === true) || String(d.job_status || '') === 'NO_DEMAND';
+    // F1-7N-FC-1B-E3-R4 §G — "NOTHING NEEDS REPLENISHING" AND "NOTHING COULD BE ROUTED" ARE NOT THE SAME
+    // ANSWER, and collapsing them is how an operator ends up looking for a routing problem that does not exist.
+    // The first means every site's canonical demand is zero: there is nothing to ship, and that is a complete,
+    // correct result. The second means demand EXISTS and no route could be built for it, which is worth
+    // investigating. The server names the first explicitly; the page keeps them apart.
+    var noReplenishmentRequired = String(d.code || '') === 'NO_REPLENISHMENT_REQUIRED';
     return {
         ok: backendOk || (zeroResult && !!(res && res.success)), status: status,
         marketplaceCount: (d.marketplaceCount != null ? d.marketplaceCount : mkts.length),
@@ -9151,6 +9207,9 @@ function _irClassifyGenerationResult_(res) {
         expiredHeaders: Number(d.expired_headers) || 0, expiredLines: Number(d.expired_lines) || 0,
         activeCount: Number(d.active_count) || 0, expiredCount: Number(d.expired_count) || 0,
         zeroResult: zeroResult,
+        noReplenishmentRequired: noReplenishmentRequired,
+        demandBasisTotal: (d.demand_basis_total == null) ? null : Number(d.demand_basis_total),
+        canonicalDemandTotal: (d.canonical_demand_total == null) ? null : Number(d.canonical_demand_total),
         verification: d.verification || null,
         lifecycle: d.lifecycle || null,
         errors: _errList,
@@ -9166,6 +9225,51 @@ function _irClassifyGenerationResult_(res) {
 // a manual (dismissible) result popup. Fail-closed: a reported failure never conceals committed rows (the popup lists the
 // per-marketplace draftIds/lineCounts the backend returned). NOTE: this path is gated OFF by default this round; the
 // generated-line hydration field-mapping + line-id reconciliation are Stage-3 controlled-run prerequisites (see docs §40).
+/**
+ * F1-7N-FC-1B-E3-R4 §E.2 — WHAT THE SCREEN IS LOOKING AT, DECLARED SO THE SERVER CAN DISAGREE.
+ *
+ * This is deliberately NOT "send the quantity the operator saw and let the server use it". The DOM is not a
+ * source of truth and this does not make it one: the server reads the canonical materialized row for itself
+ * and allocates THAT. What this adds is an EXPECTATION, and its only power is to stop the run.
+ *
+ * The case it exists for is the quiet one. The operator searched, read Suggested Qty 520, and pressed AI Plan.
+ * Between those two moments a re-materialization moved the row to 460. Without a declared expectation the plan
+ * is built for 460 and looks entirely successful; the operator approves a plan for a number they never saw.
+ * With it, the server refuses (EXPECTED_DEMAND_CONFLICT) and names both values, and neither side wins by
+ * default — which is the whole point, because there is no way to tell from here which one is right.
+ *
+ * The values come from _irMatState, the SAME materialized rows the cells render, so what is declared is what
+ * was on screen by construction rather than by a second read that could differ from both.
+ */
+function _irExpectedDemandFromSnapshot_() {
+    try {
+        if (typeof _irUseMaterializedGapRead !== 'function' || !_irUseMaterializedGapRead()) return null;
+        if (!_irMatState || _irMatState.status !== 'READY' || !_irMatState.bySku) return null;
+        var applied = (typeof _irSearch !== 'undefined' && _irSearch && _irSearch.applied) ? _irSearch.applied : null;
+        var scope = (typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null;
+        var marketplace = (scope && scope.marketplace) || '';
+        if (!applied || !marketplace) return null;
+        var out = [];
+        for (var sku in _irMatState.bySku) {
+            if (!Object.prototype.hasOwnProperty.call(_irMatState.bySku, sku)) continue;
+            var row = _irMatState.bySku[sku];
+            // Only a READY row carries a declarable quantity. A BLOCKED or absent one has no expectation to
+            // state, and inventing one would be exactly the fabrication this guards against.
+            if (!row || String(row.calculation_status) !== 'READY') continue;
+            var byWin = {};
+            var d90 = _irMatNum(row.d90_suggested_qty);
+            if (d90 === null) continue;
+            byWin.D90 = d90;
+            out.push({ marketplace: marketplace, sku: String(sku),
+                calculation_status: String(row.calculation_status),
+                calculation_date: String(row.calculation_date || ''),
+                suggestedByWindow: byWin });
+        }
+        return out.length ? out : null;
+    } catch (e) { return null; }
+}
+window._irExpectedDemandFromSnapshot_ = _irExpectedDemandFromSnapshot_;
+
 function _irRunInventoryAiPlanGeneration_(btn, opts) {
     var ctx = _replenCtx();
     // §G.1/§G.13 — the scope is the modal's, threaded through _replenCtx (which the applied
@@ -9174,6 +9278,14 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
     // the client's contribution is not to vary the scope between runs.
     var payload = { company: ctx.company, country: ctx.country, mode: 'MANUAL_REGENERATE', currentMarketplace: ctx.marketplace, actor: 'inventory-replenishment',
         confirmRegenerateOverUserEdits: !!(opts && opts.confirmRegenerateOverUserEdits === true) };
+    // §E.2 — identity + the lineage/quantity the screen is showing. Absent when there is no READY snapshot
+    // to declare, which is not a failure: the server still reads its own canonical rows and still refuses if
+    // they are missing. This only ever adds a way to STOP, never a way to proceed.
+    // Guarded the way this page guards every other optional helper. The expectation is an ADDITIONAL way to
+    // stop a run, never a prerequisite for one: if it cannot be built, the server still reads its own
+    // canonical rows and still refuses on its own terms.
+    var _expected = (typeof _irExpectedDemandFromSnapshot_ === 'function') ? _irExpectedDemandFromSnapshot_() : null;
+    if (_expected) payload.expectedDemand = _expected;
     return _irAiPlanWithTimeout_(Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)), 60000).then(function (res) {
         var cls = _irClassifyGenerationResult_(res);
         // §G.8 — an AI Plan FAILURE must never clear the current Execution Plan. The only path that re-hydrates
@@ -9232,6 +9344,16 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                     }
                     window._irAiPlanUnreconciled = null;
                     if (cls.zeroResult || !cls.lineTotal) {
+                        // F1-7N-FC-1B-E3-R4 §G — a scope with nothing to replenish is a NEUTRAL result, not a
+                        // warning. No red, no amber, no Retry: the question was asked and the answer is none.
+                        if (cls.noReplenishmentRequired) {
+                            return _irAiPlanTerminal_('ok',
+                                'No replenishment is required for this scope.' +
+                                ' Every site in this company/country has a canonical demand of 0 for this cycle,' +
+                                ' so 0 route(s) were written and nothing was changed in the database.' +
+                                (cls.expiredHeaders ? ' ' + cls.expiredHeaders + ' superseded route(s) were expired (kept for audit).' : ''),
+                                'No replenishment is required for this scope.');
+                        }
                         // §D.12 — a zero-result run is a real, successful answer and says so as one.
                         return _irAiPlanTerminal_('warn',
                             'AI Plan found NO ELIGIBLE ROUTE for this scope this cycle — 0 route(s) written.' +

@@ -104,7 +104,11 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
     if (!planningCycle) return jsonResponse_({ success: false, errors: [weeklyAiPlanErr_('PLANNING_CYCLE_UNRESOLVED', 'could not resolve canonical planning cycle')] });
 
     // ---- HARVEST canonical facts (LIVE-VERIFY) --------------------------------------------------------------
-    var h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle });
+    // §E.2 — the client sends IDENTITY and its EXPECTED lineage/quantity; it never sends a quantity that is
+    // taken as true. `expectedDemand` is optional: absent means "no expectation to reconcile", present means
+    // every entry must AGREE with the canonical row or the run refuses.
+    var expectedBySite = weeklyAiPlanExpectedDemand_(body, company, country);
+    var h = weeklyAiPlanHarvest_(ss, { company: company, country: country, planningCycle: planningCycle }, expectedBySite);
     if (!h.ok) return jsonResponse_({ success: false, errors: h.errors || [weeklyAiPlanErr_('HARVEST_FAILED', 'fact harvest failed')] });
 
     // ---- MAP → (company,country) batch request (PURE, Node-verified) ---------------------------------------
@@ -128,6 +132,31 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
     // full issues array would not have reached the page. It is nested under `details` now, and the message
     // itself names the first blocking issue instead of restating the generic code.
     if (!mapped.ready) {
+      // F1-7N-FC-1B-E3-R4 §G — before this is reported as a failure, ask whether it IS one.
+      var _nd = weeklyAiPlanNoDemandVerdict_(h, mapped);
+      if (_nd.noDemand) {
+        return jsonResponse_({
+          success: true,
+          data: {
+            code: 'NO_REPLENISHMENT_REQUIRED',
+            message: 'No replenishment is required for this scope.',
+            planning_cycle: planningCycle,
+            scope: { company: company, country: country, marketplace: weeklyAiPlanStr_(body.currentMarketplace) },
+            site_count: h.site_count == null ? null : h.site_count,
+            receiver_count: _nd.receiverCount,
+            requested_qty: 0, allocated_qty: 0, route_count: 0, routes: [],
+            // The page's existing zero-result classifier reads these two. A new success shape that the
+            // client cannot recognise would be reported as a generic failure, which is the opposite of
+            // the point; `status` and `zero_result` keep it on the path that already works.
+            status: 'COMPLETED', zero_result: true, job_status: 'NO_DEMAND',
+            header_created: false, line_created: false, db_writes: 0,
+            demand_basis_total: _nd.basisTotal, canonical_demand_total: _nd.gapTotal,
+            source_data_as_of: weeklyAiPlanStr_(h.sourceDataAsOf),
+            forecast_normalization: h.forecast_normalization || null
+          },
+          errors: []
+        });
+      }
       var _rdIssues = Array.isArray(mapped.issues) ? mapped.issues : [];
       var _rdFirst = _rdIssues.filter(function (i) { return i && i.blocking !== false; })[0] || _rdIssues[0] || null;
       var _rdMsg = _rdFirst
@@ -146,6 +175,11 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
             harvest: { ok: h.ok === true, site_count: h.site_count == null ? null : h.site_count,
               receiver_count: h.receiver_count == null ? null : h.receiver_count,
               source_data_as_of: weeklyAiPlanStr_(h.sourceDataAsOf) },
+            // §G — why this was NOT treated as an empty group. Without it, "you said zero demand is fine,
+            // so why is this red" has no answer but a re-read of the source.
+            no_demand_verdict: { no_demand: false, reason: _nd.reason, receiver_count: _nd.receiverCount,
+              demand_basis_total: _nd.basisTotal, canonical_demand_total: _nd.gapTotal,
+              positive_gap_refs: _nd.positiveGapRefs.slice(0, 20) },
             planning_cycle: planningCycle,
             scope: { company: company, country: country, marketplace: weeklyAiPlanStr_(body.currentMarketplace) },
             db_writes: 0
@@ -170,7 +204,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R3-R1';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -601,8 +635,12 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
  * { ok, errors?, kmaf, horizonsByDemandRef, poolsBySku, warehousesById, sourceDataAsOf }.
  * LIVE-VERIFY: reuses existing owners only; assembles ONE multi-site KMAF receiver set (FORECAST_DRIVEN).
  */
-function weeklyAiPlanHarvest_(ss, scope) {
+function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
   var errors = [];
+  // §E — the planning date this run belongs to, resolved from the SERVER's frozen planning config exactly
+  // as 43_ resolves it when it materializes. Never a browser clock, never "now".
+  var _cc = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+  var calcDateForDemand = (_cc && _cc.ok) ? _cc.calculationDate : null;
   // Pools + warehouses (headless readers, exact shapes per audit).
   var poolFacts = (typeof gapOpReadSupplyPoolFacts_ === 'function') ? gapOpReadSupplyPoolFacts_(ss) : null;
   if (!poolFacts) return { ok: false, errors: [weeklyAiPlanErr_('SUPPLY_POOL_FACTS_UNAVAILABLE', 'gapOpReadSupplyPoolFacts_ unavailable')] };
@@ -611,7 +649,16 @@ function weeklyAiPlanHarvest_(ss, scope) {
 
   // Enumerate the eligible (marketplace, sku, destination) universe + per-site horizons via the recommendation
   // workspace (per marketplace). Each WAREHOUSE line carries sku, siteSku, warehouseId, horizons[].
-  var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
+  // F1-7N-FC-1B-E3-R4 §E — the canonical demand snapshot, read ONCE for the whole universe. A read or
+  // schema failure here is FATAL: without it there is no authority for any quantity, and recomputing one is
+  // exactly the divergence this closes.
+  var canonical = weeklyAiPlanCanonicalDemand_(ss, scope, calcDateForDemand);
+  if (!canonical.ok) {
+    return { ok: false, errors: [weeklyAiPlanErr_('CANONICAL_DEMAND_UNAVAILABLE',
+      'the materialized demand snapshot could not be read: ' + canonical.reason,
+      { table: WAP_GAP_TABLE_, reason: canonical.reason })] };
+  }
+  var sites = weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite); // [{ marketplace, sku, siteSku, destinationWarehouseId, cumulativeGapByWindow, requiredByByWindow, fulfillmentModel, allocationPriority, unitsPerCarton, sourceDataAsOf }]
   // F1-7N-FC-1B-E3-R1 §D — `errors` IS CARRIED OUT. Every non-fatal drop this function makes lands in
   // that array (WORKSPACE_NOT_OK / WORKSPACE_THREW per marketplace, FORECAST_SHARE_INCOMPLETE per site) and both
   // SUCCESS returns used to discard it. When every site was dropped, the consequence was exact and total: zero
@@ -637,7 +684,8 @@ function weeklyAiPlanHarvest_(ss, scope) {
 
   // horizons keyed by the SAME demandRef the KMAF receiver used.
   var horizonsByDemandRef = {};
-  built.horizonRows.forEach(function (r) { horizonsByDemandRef[r.demandRef] = { cumulativeGapByWindow: r.cumulativeGapByWindow, requiredByByWindow: r.requiredByByWindow }; });
+  built.horizonRows.forEach(function (r) { horizonsByDemandRef[r.demandRef] = { cumulativeGapByWindow: r.cumulativeGapByWindow,
+    requiredByByWindow: r.requiredByByWindow, demandLineage: r.demandLineage || null, liveGapByWindow: r.liveGapByWindow || null }; });
 
   return {
     ok: true, kmaf: kmaf, horizonsByDemandRef: horizonsByDemandRef,
@@ -646,10 +694,35 @@ function weeklyAiPlanHarvest_(ss, scope) {
     // §D — the diagnostics this function collected. `errors` is the per-site drop list the mapper turns
     // into typed readiness issues; the counts are what make "every site was dropped" readable as one number.
     errors: errors, site_count: sites.length, receiver_count: (built.receivers || []).length,
+    // §G — the receivers themselves, so the no-demand verdict can read each basis rather than infer one
+    // from an error code. Diagnostic only: nothing downstream allocates from this field.
+    builtReceivers: built.receivers || [],
     // §1 — the normalization audit, so a report can state how many months were real, how many were an
     // explicit zero, and how many were defaulted — without re-deriving any of it.
     forecast_normalization: built.forecastNormalization || null
   };
+}
+
+/**
+ * §E.2 — normalize the caller's declared expectation into { 'company|country|marketplace|sku': {WINDOW: qty} }.
+ * The DOM is not a source of truth and this does not make it one: these values are only ever COMPARED against
+ * the canonical row, never substituted for it, and a disagreement refuses rather than choosing.
+ */
+function weeklyAiPlanExpectedDemand_(body, company, country) {
+  var list = (body && Array.isArray(body.expectedDemand)) ? body.expectedDemand : null;
+  if (!list || !list.length) return null;
+  var out = {};
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i] || {};
+    var mk = weeklyAiPlanStr_(e.marketplace), sku = weeklyAiPlanStr_(e.sku);
+    if (!mk || !sku) continue;
+    var key = company + '|' + country + '|' + mk + '|' + sku;
+    var byWin = {};
+    var src = (e.suggestedByWindow && typeof e.suggestedByWindow === 'object') ? e.suggestedByWindow : {};
+    for (var w in src) { if (Object.prototype.hasOwnProperty.call(src, w)) byWin[w] = src[w]; }
+    out[key] = byWin;
+  }
+  return out;
 }
 
 /** Index raw `warehouses` rows by warehouse_id with the raw columns KMWHA.validateFactoryConfig needs. */
@@ -681,6 +754,85 @@ function weeklyAiPlanPoolsBySku_(poolFacts, scope) {
 }
 
 function weeklyAiPlanSourceAsOf_(sites) { for (var i = 0; i < sites.length; i++) if (sites[i] && sites[i].sourceDataAsOf) return sites[i].sourceDataAsOf; return null; }
+
+/**
+ * F1-7N-FC-1B-E3-R4 §G — IS THIS A GROUP WITH NOTHING TO REPLENISH, OR A GROUP WE FAILED TO READ?
+ *
+ * KMAF is a frozen contract and it is RIGHT: when a group's total demand basis is zero there is no
+ * proportional share, and it refuses to invent one (DEMAND_WEIGHT_UNRESOLVED). What was wrong was the
+ * CONSEQUENCE. "Every site here needs nothing this week" was reaching the operator as a red failure
+ * indistinguishable from a broken read, and the honest answer to it is zero routes.
+ *
+ * So the decision is made HERE, by the consumer, on the DATA — never on the error code alone, because a
+ * no-demand success that can swallow a real allocator error is worse than the refusal it replaces. Every one
+ * of these must hold:
+ *
+ *   1. There is a universe to speak about (receivers were built). An empty universe already has its own
+ *      answer further up and is not this case.
+ *   2. The harvest dropped NOTHING. A site we could not read is not a site that needs nothing, and
+ *      `errors` is exactly the list of sites the harvest declined to carry.
+ *   3. EVERY blocking issue is DEMAND_WEIGHT_UNRESOLVED. One other issue and this is a different problem.
+ *   4. EVERY receiver's demand basis is a RESOLVED, finite, non-negative number. An unresolved basis is
+ *      unknown, and unknown is not zero — the same rule KMFCN applies to a forecast month.
+ *   5. Their total is exactly zero.
+ *   6. And the CANONICAL demand agrees: no horizon anywhere in the group carries a positive gap. This is
+ *      the one that matters most. The basis is the SHARE WEIGHT, not the quantity; a group whose forecast
+ *      weight is zero but whose materialized Suggested Qty is positive has real demand and an unresolvable
+ *      share, which is precisely the error §G says must stay an error.
+ *
+ * Returns { noDemand: bool, reason, receiverCount, basisTotal, gapTotal, positiveGapRefs[] }.
+ */
+function weeklyAiPlanNoDemandVerdict_(h, mapped) {
+  var out = { noDemand: false, reason: null, receiverCount: 0, basisTotal: 0, gapTotal: 0, positiveGapRefs: [] };
+  var kmaf = (h && h.kmaf) || {};
+  var receivers = Array.isArray(h && h.builtReceivers) ? h.builtReceivers : [];
+  out.receiverCount = receivers.length;
+  if (!receivers.length) { out.reason = 'NO_RECEIVERS_BUILT'; return out; }
+  if (Array.isArray(h.errors) && h.errors.length) { out.reason = 'HARVEST_DROPPED_SITES'; return out; }
+
+  // (3) every blocking issue is the zero-total one, from BOTH layers.
+  var issues = (Array.isArray(kmaf.issues) ? kmaf.issues : [])
+    .concat(Array.isArray(mapped && mapped.issues) ? mapped.issues : []);
+  var blocking = issues.filter(function (i) { return i && i.blocking !== false; });
+  if (!blocking.length) { out.reason = 'NOT_A_DEMAND_WEIGHT_REFUSAL'; return out; }
+  // READ THE ENGINE CODE, NOT THE MAPPED ONE. KMWHA maps DEMAND_WEIGHT_UNRESOLVED to the readiness code
+  // SUGGESTED_QTY_UNRESOLVED — and so does DAILY_DEMAND_UNRESOLVED, WEIGHT_BASIS_UNRESOLVED,
+  // MISSING_FORECAST_WEIGHT_SOURCE and FORECAST_BASIS_UNRESOLVED. Matching on the mapped code would accept
+  // five different faults as "this group needs nothing", which is precisely the swallow §G forbids. The
+  // mapper preserves `engine_code`; an issue that carries neither an engine code nor a recognizable engine
+  // code of its own is not understood, and what is not understood does not become a success.
+  for (var i = 0; i < blocking.length; i++) {
+    var eng = weeklyAiPlanStr_(blocking[i].engine_code) || weeklyAiPlanStr_(blocking[i].code);
+    if (eng !== 'DEMAND_WEIGHT_UNRESOLVED') { out.reason = 'OTHER_BLOCKING_ISSUE:' + (eng || 'UNNAMED'); return out; }
+  }
+
+  // (4)+(5) every basis resolved, finite, non-negative, and summing to exactly zero.
+  for (var r = 0; r < receivers.length; r++) {
+    var fb = receivers[r] && receivers[r].forecastBasis;
+    var b = fb ? fb.forecastShareQty : undefined;
+    if (typeof b !== 'number' || !isFinite(b) || b < 0) { out.reason = 'BASIS_UNRESOLVED'; return out; }
+    out.basisTotal += b;
+  }
+  if (out.basisTotal !== 0) { out.reason = 'BASIS_TOTAL_NONZERO'; return out; }
+
+  // (6) the CANONICAL demand must agree. A positive gap anywhere means this group is not empty.
+  var horizons = (h && h.horizonsByDemandRef) || {};
+  for (var ref in horizons) {
+    if (!Object.prototype.hasOwnProperty.call(horizons, ref)) continue;
+    var byWin = (horizons[ref] && horizons[ref].cumulativeGapByWindow) || {};
+    for (var w in byWin) {
+      if (!Object.prototype.hasOwnProperty.call(byWin, w)) continue;
+      var q = Number(byWin[w]);
+      if (!isFinite(q)) { out.reason = 'CANONICAL_DEMAND_UNRESOLVED'; return out; }
+      if (q > 0) { out.gapTotal += q; if (out.positiveGapRefs.indexOf(ref) === -1) out.positiveGapRefs.push(ref); }
+    }
+  }
+  if (out.positiveGapRefs.length) { out.reason = 'POSITIVE_CANONICAL_DEMAND_WITH_UNRESOLVED_WEIGHT'; return out; }
+
+  out.noDemand = true;
+  out.reason = 'NO_REPLENISHMENT_REQUIRED';
+  return out;
+}
 
 /**
  * Build real persistence deps (KMPR repository + KMPL LockService apply) for WEEKLY_SHIPPING — a faithful mirror of
@@ -725,7 +877,131 @@ function weeklyAiPlanPersistenceDeps_(ss) {
  * (reuses KMDR). Only lines with NO resolved canonical destination (DESTINATION_AUTHORITY_UNRESOLVED) are skipped.
  * LIVE-VERIFY (Apps-Script-runtime only).
  */
-function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors) {
+/**
+ * F1-7N-FC-1B-E3-R4 §E — THE EXECUTION DEMAND SNAPSHOT, AND WHY IT HAD TO CHANGE.
+ *
+ * The screen's Suggested Qty is a MATERIALIZED row: 43_ writes inventory_replenishment_gap and the page reads
+ * d90_suggested_qty out of it. The AI Plan was reading something else. It calls the recommendation workspace
+ * (42_), and 42_ is NOT a read facade over that table — it RECOMPUTES, live, through the frozen KMHP horizon
+ * owner. Same engine, two evaluations at two different moments, and nothing compared them.
+ *
+ * For one round that difference was invisible because both sides agreed. It is not a property of the system
+ * that they will: the snapshot is by definition older than the live recomputation, and any input that moved in
+ * between — a shipment received, a forecast edited, a snapshot re-imported — separates them. The operator
+ * approves 520 on the screen and the plan allocates whatever the engine says at generation time.
+ *
+ * So the authority is now stated instead of assumed. THE MATERIALIZED ROW IS THE DEMAND. The live workspace
+ * still supplies STRUCTURE — which destinations exist, which windows a site has, what date each window is
+ * required by — because none of that is a quantity. Every QUANTITY comes from the snapshot.
+ *
+ * This is a read gate of the same shape KMFCN uses for the forecast, and for the same reason: a zero is only
+ * honest when the system looked. A missing table, a missing header, an absent row, a BLOCKED calculation or a
+ * snapshot computed for a different planning date are all UNKNOWN, and unknown never becomes a quantity.
+ *
+ * Returns { ok, reason, bySite: { 'company|country|marketplace|sku': {...} }, rowCount, lineage }.
+ */
+var WAP_GAP_TABLE_ = 'inventory_replenishment_gap';
+var WAP_GAP_REQUIRED_COLS_ = ['company', 'country', 'marketplace', 'sku', 'calculation_status', 'calculation_date',
+  'd18_suggested_qty', 'd30_suggested_qty', 'd45_suggested_qty', 'd90_suggested_qty'];
+var WAP_GAP_WINDOW_COL_ = { D18: 'd18_suggested_qty', D30: 'd30_suggested_qty', D45: 'd45_suggested_qty', D90: 'd90_suggested_qty' };
+
+function weeklyAiPlanCanonicalDemand_(ss, scope, calcDate) {
+  var out = { ok: false, reason: null, bySite: {}, rowCount: 0, calculationDate: calcDate || null };
+  var sh;
+  try { sh = ss.getSheetByName(WAP_GAP_TABLE_); }
+  catch (e) { out.reason = 'CANONICAL_DEMAND_READ_FAILED'; return out; }
+  // A MISSING table and an EMPTY one mean opposite things, and gapReadObjects_ returns [] for both. Ask the
+  // sheet directly, or a deployment fault becomes a plan for nothing.
+  if (!sh) { out.reason = 'CANONICAL_DEMAND_TABLE_MISSING'; return out; }
+  var headers;
+  try { headers = (sh.getLastRow() > 0) ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(function (h) { return weeklyAiPlanStr_(h); }) : []; }
+  catch (e2) { out.reason = 'CANONICAL_DEMAND_READ_FAILED'; return out; }
+  for (var c = 0; c < WAP_GAP_REQUIRED_COLS_.length; c++) {
+    if (headers.indexOf(WAP_GAP_REQUIRED_COLS_[c]) === -1) {
+      out.reason = 'CANONICAL_DEMAND_HEADER_MISSING:' + WAP_GAP_REQUIRED_COLS_[c];
+      return out;
+    }
+  }
+  var rows = (typeof gapReadObjects_ === 'function') ? (gapReadObjects_(ss, WAP_GAP_TABLE_) || []) : [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (weeklyAiPlanStr_(r.company) !== scope.company || weeklyAiPlanStr_(r.country) !== scope.country) continue;
+    var key = weeklyAiPlanStr_(r.company) + '|' + weeklyAiPlanStr_(r.country) + '|'
+      + weeklyAiPlanStr_(r.marketplace) + '|' + weeklyAiPlanStr_(r.sku);
+    var rec = {
+      company: weeklyAiPlanStr_(r.company), country: weeklyAiPlanStr_(r.country),
+      marketplace: weeklyAiPlanStr_(r.marketplace), sku: weeklyAiPlanStr_(r.sku),
+      calculation_status: weeklyAiPlanStr_(r.calculation_status),
+      calculation_date: weeklyAiPlanStr_(r.calculation_date),
+      calculated_at: weeklyAiPlanStr_(r.calculated_at), updated_at: weeklyAiPlanStr_(r.updated_at),
+      note: weeklyAiPlanStr_(r.note), source_table: WAP_GAP_TABLE_, suggestedByWindow: {}, duplicate: false
+    };
+    for (var w in WAP_GAP_WINDOW_COL_) {
+      if (!Object.prototype.hasOwnProperty.call(WAP_GAP_WINDOW_COL_, w)) continue;
+      var raw = r[WAP_GAP_WINDOW_COL_[w]];
+      var v = (raw === '' || raw === null || raw === undefined) ? null : Number(raw);
+      rec.suggestedByWindow[w] = (v !== null && isFinite(v)) ? v : null;
+    }
+    // TWO ROWS FOR ONE SITE IS A CONFLICT, not a last-one-wins. Keep the flag; the caller refuses.
+    if (out.bySite[key]) { out.bySite[key].duplicate = true; continue; }
+    out.bySite[key] = rec;
+    out.rowCount++;
+  }
+  out.ok = true;
+  return out;
+}
+
+/**
+ * §E — accept or refuse ONE site's canonical demand. Typed, and never silently picks a side.
+ * Returns { ok, code, lineage, suggestedByWindow } .
+ */
+function weeklyAiPlanAcceptCanonicalDemand_(snapshot, site, scope, calcDate, expectedBySite) {
+  var key = scope.company + '|' + scope.country + '|' + site.marketplace + '|' + site.sku;
+  var rec = snapshot.bySite[key];
+  if (!rec) return { ok: false, code: 'CANONICAL_DEMAND_ROW_MISSING', key: key };
+  if (rec.duplicate) return { ok: false, code: 'CANONICAL_DEMAND_DUPLICATE_ROWS', key: key };
+  if (rec.calculation_status !== 'READY') {
+    return { ok: false, code: 'CANONICAL_DEMAND_NOT_READY', key: key,
+      status: rec.calculation_status || '(blank)', note: rec.note || null };
+  }
+  // STALE LINEAGE. The snapshot must belong to the planning date this run resolved. A snapshot computed for
+  // another date is not this plan's demand, and re-Searching / re-materializing is the fix, not a guess.
+  if (calcDate && rec.calculation_date && rec.calculation_date !== calcDate) {
+    return { ok: false, code: 'CANONICAL_DEMAND_STALE', key: key,
+      snapshotDate: rec.calculation_date, expectedDate: calcDate };
+  }
+  if (calcDate && !rec.calculation_date) return { ok: false, code: 'CANONICAL_DEMAND_LINEAGE_MISSING', key: key };
+  // Every window this site actually has must carry a resolved quantity.
+  var out = {};
+  for (var w in site.cumulativeGapByWindow) {
+    if (!Object.prototype.hasOwnProperty.call(site.cumulativeGapByWindow, w)) continue;
+    var v = rec.suggestedByWindow[w];
+    if (v === null || v === undefined) return { ok: false, code: 'CANONICAL_DEMAND_WINDOW_UNRESOLVED', key: key, window: w };
+    if (v < 0) return { ok: false, code: 'CANONICAL_DEMAND_INVALID', key: key, window: w, value: v };
+    out[w] = v;
+  }
+  // §E.8 — the CLIENT's expectation, when it sent one. A mismatch is a CONFLICT and neither side wins:
+  // the screen the operator approved and the row the server holds disagree, and allocating either one would
+  // be allocating a number nobody has seen together.
+  if (expectedBySite && Object.prototype.hasOwnProperty.call(expectedBySite, key)) {
+    var exp = expectedBySite[key];
+    for (var w2 in exp) {
+      if (!Object.prototype.hasOwnProperty.call(exp, w2)) continue;
+      var e = Number(exp[w2]);
+      if (!isFinite(e)) return { ok: false, code: 'EXPECTED_DEMAND_INVALID', key: key, window: w2 };
+      if (out[w2] !== undefined && out[w2] !== e) {
+        return { ok: false, code: 'EXPECTED_DEMAND_CONFLICT', key: key, window: w2, expected: e, canonical: out[w2] };
+      }
+    }
+  }
+  return { ok: true, suggestedByWindow: out, lineage: {
+    company: rec.company, country: rec.country, marketplace: rec.marketplace, sku: rec.sku,
+    planning_cycle: scope.planningCycle, calculation_status: rec.calculation_status,
+    calculation_date: rec.calculation_date, calculated_at: rec.calculated_at || null,
+    updated_at: rec.updated_at || null, source_table: rec.source_table, source_reason: 'MATERIALIZED_SNAPSHOT' } };
+}
+
+function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors, canonical, expectedBySite) {
   var sites = [];
   var calcMonth = weeklyAiPlanStr_(scope.planningCycle).slice(5); // RECO-YYYY-MM → YYYY-MM
   var calcCtx = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
@@ -769,13 +1045,29 @@ function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors) {
         if (!dest) continue; // DESTINATION_AUTHORITY_UNRESOLVED — no canonical destination
         if (!Array.isArray(line.horizons) || !line.horizons.length) continue; // no per-window shortage structure
         var cum = {}, reqBy = {};
+        // STRUCTURE from the live workspace: which windows this site has, and when each is required by.
+        // Those are not quantities and the snapshot does not carry them.
         line.horizons.forEach(function (h) { var wc = weeklyAiPlanStr_(h.windowCode); if (wc) { cum[wc] = h.gapQty; reqBy[wc] = h.requiredByDate; } });
-        sites.push({
+        var _site = {
           marketplace: marketplace, sku: weeklyAiPlanStr_(line.sku), siteSku: weeklyAiPlanStr_(line.siteSku),
           destinationWarehouseId: dest, destinationType: d.destinationType, cumulativeGapByWindow: cum, requiredByByWindow: reqBy,
           fulfillmentModel: weeklyAiPlanStr_(line.fulfillmentModel), allocationPriority: prByMkt[marketplace],
           unitsPerCarton: (upcBySku || {})[weeklyAiPlanStr_(line.sku)], sourceDataAsOf: line.sourceDataAsOf || null
-        });
+        };
+        // §E — QUANTITY from the materialized snapshot, or this site does not enter the plan. The live
+        // number is kept beside it as `liveGapByWindow` for diagnosis; nothing allocates from it.
+        if (canonical) {
+          var _acc = weeklyAiPlanAcceptCanonicalDemand_(canonical, _site, scope, canonical.calculationDate, expectedBySite);
+          if (!_acc.ok) {
+            errors.push(weeklyAiPlanErr_(_acc.code, 'canonical demand snapshot refused for ' + _acc.key,
+              { marketplace: marketplace, sku: _site.sku, detail: _acc }));
+            continue;
+          }
+          _site.liveGapByWindow = cum;
+          _site.cumulativeGapByWindow = _acc.suggestedByWindow;
+          _site.demandLineage = _acc.lineage;
+        }
+        sites.push(_site);
       }
       page++;
     } while (page <= totalPages);
@@ -865,7 +1157,12 @@ function weeklyAiPlanBuildKmafReceivers_(ss, scope, sites, upcBySku, errors) {
       windowCode: scope.planningCycle, destinationWarehouseId: st.destinationWarehouseId,
       forecastBasis: { forecastShareQty: shareSum, forecastMonth1: { month: months[0], baseForecast: b0 }, forecastMonth2: { month: months[1], baseForecast: b1 }, targetRules: {}, specialEventDemand: 0 }
     });
-    horizonRows.push({ demandRef: demandRef, cumulativeGapByWindow: st.cumulativeGapByWindow, requiredByByWindow: st.requiredByByWindow });
+    // F1-7N-FC-1B-E3-R4 §E.10 — the lineage travels WITH the quantity. A route that can name the snapshot
+    // row it came from can be reconciled later; one that cannot is a number with no provenance, which is
+    // the state this round exists to end.
+    horizonRows.push({ demandRef: demandRef, cumulativeGapByWindow: st.cumulativeGapByWindow,
+      requiredByByWindow: st.requiredByByWindow, demandLineage: st.demandLineage || null,
+      liveGapByWindow: st.liveGapByWindow || null });
     if (!sourceDataAsOf && st.sourceDataAsOf) sourceDataAsOf = st.sourceDataAsOf;
   }
   // §1 — EVERY DEFAULT-TO-ZERO IS COUNTED AND CARRIED OUT. A zero that nobody can account for is the

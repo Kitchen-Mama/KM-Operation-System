@@ -308,7 +308,11 @@ section('§6 — THE DUPLICATE WORKSPACE READ, AND THE TIMEOUT IT CAUSED');
   var tables = (G60.match(/\{ name: '[a-z_]+'/g) || []).length;
   ok(tables >= 19, 'T2  and that action is a FULL-SET passthrough of ' + tables + ' tables — the page\'s most expensive read');
   var wsRefresh = code(extractFn(PAGE, '_irWorkspaceRefresh_'));
-  ok(/opts && opts\.carrier\) \? \{ include: \{ carrierPlanning: true \} \} : \{\}/.test(wsRefresh),
+  // RESTATED (F1-7N-FC-1B-E3-R4): pinned verbatim, so an unrelated new payload field (`recentWindow`) broke an
+  // assertion about the CARRIER include. What T3 means is that the include rides on the existing read and is
+  // opt-in, which is a property of the conditional rather than of the literal's full contents.
+  var _t3 = /opts && opts\.carrier\) \? (\{[^;]*?\}) : (\{[^;]*?\})/.exec(wsRefresh);
+  ok(!!_t3 && /carrierPlanning: true/.test(_t3[1]) && !/carrierPlanning/.test(_t3[2]),
     'T3  §6 the include rides on the read Search was ALREADY making — opt-in per call site, one request not two');
   ok(/_irWorkspaceRefresh_\(\{ carrier: true \}\)/.test(code(PAGE)),
     'T3a and the PRIMARY read is the caller that asks for it');

@@ -176,7 +176,9 @@
       if (!api || typeof api.getWorkspace !== 'function') {
         return Promise.resolve({ success: false, errors: [{ code: 'METHOD_REGISTRY_API_UNAVAILABLE', message: 'The workspace API is not available to this page.' }] });
       }
-      return Promise.resolve(api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } }));
+      // F1-7N-FC-1B-E3-R4 §C — the lazy carrier fallback pays for the same twenty-one tables as the primary
+      // read, and needs two of them. It opts into the same bounded payload; it reads neither sales table.
+      return Promise.resolve(api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true }, recentWindow: true }));
     }
 
     // ONE catalogue per scope. Already cached -> 0 requests. In flight -> shares that request. Otherwise -> 1.

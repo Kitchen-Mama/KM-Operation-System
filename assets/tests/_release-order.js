@@ -199,7 +199,17 @@ var ROUND_TOKENS = [
   // function, so the next occurrence would be observed with nothing to observe it — which is how
   // this defect stayed 'NOT REPRODUCED' for three rounds. The stylesheet did NOT change and stays on
   // its own family's current token.
-  'fc1b-e3r3r1-forecastzero-20260904'
+  'fc1b-e3r3r1-forecastzero-20260904',
+  // F1-7N-FC-1B-E3-R4 — the first-load timeout fix and the execution demand snapshot SSOT. R3-R1 is
+  // PUBLISHED (origin/main carries 6c9594f), so its token cannot be reused. The refetch is load-bearing in
+  // both directions:
+  //   1. inventory-replenishment.js now asks the workspace for `recentWindow`. A browser on the cached page
+  //      keeps sending the old unbounded request, so the very defect this round fixes would still be observed
+  //      after a deployment that fixed it — the worst possible outcome for a timeout investigation.
+  //   2. It also gains _irExpectedDemandFromSnapshot_, which declares the snapshot the operator is looking at.
+  //      A cached page sends no expectation, and a mid-flight re-materialization goes back to being silent.
+  // The stylesheet did NOT change this round and stays on its own family's current token.
+  'fc1b-e3r4-scopedread-20260904'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -434,7 +444,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+))*$/;
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

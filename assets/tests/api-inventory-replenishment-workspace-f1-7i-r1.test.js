@@ -150,7 +150,16 @@ ok(!/getOperationDb/.test(code60), '60_ never calls getOperationDb');
 ok(!/\.setValue\(|appendRow|insertSheet|deleteRow|\.setValues\(/.test(code60), '60_ writes nothing (read-only)');
 // precise logic tokens (the table-name strings 'shipping_allocation_drafts'/'recommendation.workspace.get' in the header
 // are prose/data, not logic — so guard on computation tokens, and confirm on comment-stripped code).
-ok(!/MAX\(0|calculateGap|slaFifoCompare|generateShippingAllocation|ensureFactoryStockBaseline|fac_current_stock\s*=|shipped_qty\s*[-=]|qualifiedIncoming/i.test(code60), '60_ runs NO incoming MAX(0,..)/Gap/FIFO/allocation-compute/factory-init/PO logic');
+// RESTATED (F1-7N-FC-1B-E3-R4): the `MAX(0` token was case-INSENSITIVE, so it matched any `Math.max(0, ...)`
+// anywhere in the file. R4 added `Math.max(0, periods.length - keep)` — a SLICE INDEX in the recent-period
+// projection — and this read as "60_ now computes remaining incoming quantity". What the guard means is the
+// spec's MAX(0, shipment_qty - received_qty) arithmetic, so `Math.max(` is excluded and the excluded uses are
+// then checked to be what they claim: index arithmetic over row counts, never over quantities.
+var code60NoMathMax = code60.replace(/Math\.max\(/g, '__idx(');
+ok(!/MAX\(0|calculateGap|slaFifoCompare|generateShippingAllocation|ensureFactoryStockBaseline|fac_current_stock\s*=|shipped_qty\s*[-=]|qualifiedIncoming/i.test(code60NoMathMax), '60_ runs NO incoming MAX(0,..)/Gap/FIFO/allocation-compute/factory-init/PO logic');
+(code60.match(/Math\.max\([^)]*\)/g) || []).forEach(function (m, i) {
+  ok(/length|keep|index|idx/i.test(m), '60_ Math.max #' + (i + 1) + ' is index arithmetic, not quantity arithmetic: ' + m);
+});
 ok(!/createRequestOrder|requestOrderDraft|createPurchaseOrder|order_planning_gap|aiPlanFirstLayer/i.test(code60), '60_ FLOW-A: never creates Request Order / Purchase Order / Order-Planning-Gap / AI Plan');
 ok(/action === 'inventoryReplenishment\.workspace\.get'/.test(ROUTER) && /handleInventoryReplenishmentWorkspaceGet_\(body\)/.test(ROUTER), 'router dispatches inventoryReplenishment.workspace.get');
 

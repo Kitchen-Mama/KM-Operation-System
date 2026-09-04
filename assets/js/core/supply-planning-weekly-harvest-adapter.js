@@ -125,7 +125,22 @@
     // deployment that still carries the pre-R3-R1 61_ emits that one, and a mixed deployment must still map.
     FORECAST_BASIS_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
     FORECAST_SHARE_INCOMPLETE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
-    RECEIVER_WITHOUT_PLANNING_FACT: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE
+    RECEIVER_WITHOUT_PLANNING_FACT: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
+    // F1-7N-FC-1B-E3-R4 §E — the canonical demand snapshot gate. Every one of these means the same thing
+    // to an operator: the Suggested Qty this plan would allocate cannot be established from the materialized
+    // row, so no quantity is available. They are NOT collapsed into one engine code, because the fix differs
+    // for each — re-materialize, wait for READY, re-Search, or repair a duplicate — and `engine_code`
+    // carries which one it was.
+    CANONICAL_DEMAND_UNAVAILABLE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_ROW_MISSING: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_NOT_READY: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_STALE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_LINEAGE_MISSING: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_DUPLICATE_ROWS: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_WINDOW_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    CANONICAL_DEMAND_INVALID: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    EXPECTED_DEMAND_CONFLICT: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
+    EXPECTED_DEMAND_INVALID: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED
   };
   // TRANSPORT, not data. An exception, an unavailable module or an unreachable read says nothing about whether
   // the operator's data is complete, and reporting it as a data issue would send someone to fix a spreadsheet.
@@ -387,6 +402,6 @@
     ENGINE_TRANSPORT: ENGINE_TRANSPORT,
     readinessIssue: readinessIssue,
     fromEngineIssue: fromEngineIssue,
-    _version: 'f1-7n-fc-1b-e3-r1-readiness'
+    _version: 'f1-7n-fc-1b-e3-r4-readiness'
   };
 });

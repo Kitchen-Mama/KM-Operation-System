@@ -202,8 +202,16 @@ checks.push(Promise.resolve().then(function () {
   var stamp = /_irReadModelAt = _irNowMs_\(\);/.exec(IR);
   ok(!!stamp, 'A10 a completion time is stamped');
   eq((IR.match(/_irReadModelAt = _irNowMs_\(\)/g) || []).length, 1, 'A10 ... in exactly one place');
-  ok(/env && env\.success && env\.data[\s\S]{0,700}_irReadModelAt = _irNowMs_/.test(IR),
-    'A10 ... inside the SUCCESS branch only');
+  // RESTATED (F1-7N-FC-1B-E3-R4): the {0,700} budget was a guess about how much prose sits between the success
+  // test and the stamp, and R4's comment about capturing the server's own execution time pushed it past 700.
+  // The claim is STRUCTURAL — the stamp is inside the success branch and reachable from nowhere else — so it is
+  // now checked structurally, with no character budget to drift.
+  var _refresh = /function _irWorkspaceRefresh_\([\s\S]*?\n\}/.exec(IR)[0];
+  var _succAt = _refresh.indexOf('if (env && env.success && env.data)');
+  var _stampAt = _refresh.indexOf('_irReadModelAt = _irNowMs_()');
+  ok(_succAt !== -1 && _stampAt > _succAt, 'A10 ... inside the SUCCESS branch only');
+  ok(!/throw[\s\S]{0,400}_irReadModelAt = _irNowMs_/.test(_refresh),
+    'A10 ... and no failure path can reach it, so a failed read never presents itself as a completed one');
   // No whole-DB read, no write, restored or not.
   ok(!/getOperationDb/.test(String((restoreBlock && restoreBlock[0]) || '')), 'A11 the restore performs no whole-DB read');
   ok(!/loadOperationDb/.test(String((restoreBlock && restoreBlock[0]) || '')), 'A11 ... and no whole-DB reload');

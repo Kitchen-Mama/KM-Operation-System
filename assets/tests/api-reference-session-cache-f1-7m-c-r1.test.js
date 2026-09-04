@@ -119,8 +119,14 @@ ok(RC && typeof RC.get === 'function' && typeof RC.invalidate === 'function' && 
   // holding open, closed — for the primary read only.
   ok(/_irWorkspaceRefresh_\(\{ carrier: true \}\)/.test(IR) || /carrier: true/.test(IR),
     'C5 closed: the IR PRIMARY read now carries include.carrierPlanning — one request per Search, not two');
-  ok(/var _wsPayload = \(opts && opts\.carrier\) \? \{ include: \{ carrierPlanning: true \} \} : \{\};/.test(IR),
-    'C5a and the payload is opt-in per call site, so a caller that does not ask still sends {}');
+  // RESTATED (F1-7N-FC-1B-E3-R4): this pinned the payload EXPRESSION verbatim, so it broke the first time the
+  // payload gained an unrelated field — R4 added `recentWindow: true`. The INVARIANT is that the carrier
+  // include is opt-in per call site: a caller that does not ask for it does not get it. That is a property of
+  // the conditional, not of the object literal's exact contents.
+  var _wsPay = /var _wsPayload = \(opts && opts\.carrier\) \? (\{[^;]*?\}) : (\{[^;]*?\});/.exec(IR);
+  ok(!!_wsPay, 'C5a the payload is chosen by opts.carrier — one expression, both branches visible');
+  ok(/carrierPlanning: true/.test(_wsPay[1]), 'C5a1 the carrier branch asks for the include...');
+  ok(!/carrierPlanning/.test(_wsPay[2]), 'C5a2 ...and the non-carrier branch does not, so it still costs nothing');
   // F1-7N-FB-4C — STRENGTHENED. The include-gated lazy read and the once-guard are both intact; both moved into
   // KM.methodRegistry, which owns the request, the per-scope cache and the single-flight latch. The once-guard is
   // now PROVED by execution (a second ensureLoaded issues no request) rather than by grepping for a variable.

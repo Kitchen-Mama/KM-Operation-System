@@ -77,6 +77,97 @@ var SIR_WORKSPACE_TABLES_ = [
 var SIR_WS_ROW_MAX_ = 80000;
 
 // --------------------------------------------------------------------------------------------------------
+// F1-7N-FC-1B-E3-R4 §C/§D — THE RECENT-PERIOD PROJECTION.
+//
+// THE MEASURED ROOT CAUSE OF THE FIRST-LOAD TIMEOUT IS THAT THIS READ HAS NO BOUND ON TIME.
+//
+// The request carries no scope and this handler has no scope parameter: every call reads twenty-one whole
+// sheets and returns every row raw. Naming a company/country/marketplace/sku in the payload changes nothing.
+// Two of those tables are the only ones that grow without limit — they gain rows every day forever — and
+// they are the two whose consumers read only a recent tail:
+//
+//   * amazon_daily_sales_snapshot  -> IR.salesTrend7d, which uses exactly SEVEN calendar dates ending on the
+//     LATEST date present for that scope. Everything older is read, transferred, parsed and discarded.
+//   * amazon_weekly_sales_snapshot -> IR.avgSalesPerDay / IRCountry.weeklyUnits7d, which use the LATEST WEEK
+//     row per market and nothing else.
+//
+// So this keeps, PER SCOPE KEY, that key's own most recent periods — fourteen dates and four weeks, both
+// comfortably above the seven days and one week the consumers actually read. The window is per KEY, not an
+// absolute date cut, and that is the whole reason the result is unchanged: salesTrend7d anchors on each
+// scope's OWN latest date, so a site whose data stopped six months ago still gets its own seven days. An
+// absolute cut would have silently emptied that chart, which is exactly the kind of quiet wrongness this
+// must not trade for speed.
+//
+// EQUIVALENCE, stated so it can be checked rather than trusted: for any scope, the rows the consumers read
+// are a subset of the last 7 dates / last 1 week of each contributing key, and 14 >= 7 and 4 >= 1. The EU
+// roll-up sums member markets, each anchored on its own latest week, so per-key retention covers it too; a
+// member whose latest date falls outside the union's seven-day window contributes nothing either way.
+//
+// IT IS OPT-IN AND IT IS REPORTED. A caller that does not ask for it gets today's payload byte for byte, and
+// a caller that does gets `meta.recentWindow` naming the rows dropped per table. A reduction nobody can see
+// is indistinguishable from data loss.
+var SIR_WS_RECENT_WINDOW_ = {
+  amazon_daily_sales_snapshot:  { keyCols: ['company', 'country', 'marketplace', 'sku'], periodCols: ['snapshot_date'], keep: 14 },
+  amazon_weekly_sales_snapshot: { keyCols: ['company', 'country', 'marketplace', 'sku'], periodCols: ['week_end_date', 'snapshot_week'], keep: 4 }
+};
+
+// PURE. Keeps, for each key, the rows whose period is among that key's `keep` most recent DISTINCT periods.
+// A row with no readable period is ALWAYS kept: it cannot be placed in time, and dropping what we cannot
+// order would be a guess. Returns the rows in their original order (the consumers sort for themselves, but
+// order stability keeps BEFORE==AFTER checkable field by field).
+function sirWsRecentWindow_(rows, spec) {
+  rows = rows || [];
+  if (!spec || !(spec.keep > 0) || !rows.length) return { rows: rows, before: rows.length, after: rows.length, dropped: 0 };
+  var keyCols = spec.keyCols || [], periodCols = spec.periodCols || [];
+  function keyOf(r) {
+    var parts = [];
+    for (var i = 0; i < keyCols.length; i++) parts.push(sirWsStr_(r[keyCols[i]]).toUpperCase());
+    return parts.join('\u0001');
+  }
+  function periodOf(r) {
+    for (var i = 0; i < periodCols.length; i++) {
+      var v = r[periodCols[i]];
+      // A Date cell must become the same comparable YYYY-MM-DD the sheet's text form would be, or two rows
+      // written on the same day by different importers would sort into different periods.
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        return v.getUTCFullYear() + '-' + ('0' + (v.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + v.getUTCDate()).slice(-2);
+      }
+      var s = sirWsStr_(v);
+      if (s) return s;
+    }
+    return '';
+  }
+  // Pass 1: the distinct periods each key actually has.
+  var seen = {};
+  for (var i = 0; i < rows.length; i++) {
+    var per = periodOf(rows[i]);
+    if (!per) continue;
+    var k = keyOf(rows[i]);
+    if (!seen[k]) seen[k] = {};
+    seen[k][per] = true;
+  }
+  // Pass 2: that key's most recent `keep` of them.
+  var keepSet = {};
+  for (var k2 in seen) {
+    if (!Object.prototype.hasOwnProperty.call(seen, k2)) continue;
+    var periods = Object.keys(seen[k2]).sort();
+    var tail = periods.slice(Math.max(0, periods.length - spec.keep));
+    var m = {};
+    for (var t = 0; t < tail.length; t++) m[tail[t]] = true;
+    keepSet[k2] = m;
+  }
+  // Pass 3: keep the rows in those periods, plus every row we could not place in time.
+  var out = [];
+  for (var j = 0; j < rows.length; j++) {
+    var pj = periodOf(rows[j]);
+    if (!pj) { out.push(rows[j]); continue; }
+    var kj = keyOf(rows[j]);
+    if (keepSet[kj] && keepSet[kj][pj]) out.push(rows[j]);
+  }
+  return { rows: out, before: rows.length, after: out.length, dropped: rows.length - out.length };
+}
+
+// --------------------------------------------------------------------------------------------------------
 // PURE helpers
 // --------------------------------------------------------------------------------------------------------
 function sirWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
@@ -98,13 +189,22 @@ function sirCap_(rows) {
 function sirWorkspaceBuild_(tables, payload) {
   tables = tables || {}; payload = payload || {};
   var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
-  var out = { summary: null, capped: {}, counts: {} };
+  var out = { summary: null, capped: {}, counts: {}, recentWindow: {} };
   var summary = {};
+  // §C/§D - OPT-IN. Absent or false means the payload is byte-for-byte what it was before this round.
+  var windowOn = (payload.recentWindow === true);
   for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
     var spec = SIR_WORKSPACE_TABLES_[i];
     var name = spec.name;
     if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables → base payload identical (BEFORE==AFTER)
-    var c = sirCap_(tables[name] || []);
+    var src = tables[name] || [];
+    // §C/§D - the recent-period projection, when the caller asked for it and this table has a window.
+    if (windowOn && SIR_WS_RECENT_WINDOW_[name]) {
+      var w = sirWsRecentWindow_(src, SIR_WS_RECENT_WINDOW_[name]);
+      out.recentWindow[name] = { before: w.before, after: w.after, dropped: w.dropped, keep: SIR_WS_RECENT_WINDOW_[name].keep };
+      src = w.rows;
+    }
+    var c = sirCap_(src);
     out[name] = c.rows;                 // raw passthrough, keyed by table name
     out.capped[name] = c.capped;
     out.counts[name] = c.total;
@@ -163,7 +263,14 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       readCount++;
     }
     var vm = sirWorkspaceBuild_(tables, payload);
-    return sirBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount });
+    // §B - serverDurationMs was ALREADY here and the client was reporting server execution time as null. It
+    // is now carried through to the page's stage report, together with what the projection actually removed,
+    // so "the read is slow" can be answered with a number from the side that did the work.
+    var rowsOut = 0, wKeys = [];
+    for (var t2 in vm.counts) { if (Object.prototype.hasOwnProperty.call(vm.counts, t2)) rowsOut += vm.counts[t2]; }
+    for (var w2 in vm.recentWindow) { if (Object.prototype.hasOwnProperty.call(vm.recentWindow, w2)) wKeys.push(w2); }
+    return sirBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount,
+      rowsReturned: rowsOut, recentWindow: (wKeys.length ? vm.recentWindow : null) });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INVENTORY_REPLENISHMENT_WORKSPACE_BUILD_FAILED';
     return sirBuildEnvelope_(false, null, [{ code: code, message: String(e && e.message || e), details: (e && e.schemaDetail) || null }],

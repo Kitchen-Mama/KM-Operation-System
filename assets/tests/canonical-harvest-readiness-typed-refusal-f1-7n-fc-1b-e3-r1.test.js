@@ -765,7 +765,14 @@ ok(RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R1'), 'J5a and the shared stamp valida
 (function bundle() {
   var B = read('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs');
   ok(/READINESS_CODES/.test(B), 'J6  §I.23 the regenerated bundle carries the readiness vocabulary...');
-  ok(/f1-7n-fc-1b-e3-r1-readiness/.test(B), 'J6a ...at the new module version');
+  // RESTATED (F1-7N-FC-1B-E3-R4): this pinned KMWHA's module version string from E3-R1, so any later round
+  // that edits the adapter — R4 added the canonical-demand readiness codes — made "the bundle is current"
+  // read as "the bundle is E3-R1's". What matters is that the bundle carries the SAME version the module
+  // source declares; a stale bundle then fails, which is the actual defect.
+  var _kmwhaVer = (read('assets/js/core/supply-planning-weekly-harvest-adapter.js')
+    .match(/_version:\s*'([^']+)'/) || [])[1];
+  ok(_kmwhaVer, 'J6a  the adapter declares a module version');
+  ok(B.indexOf(_kmwhaVer) !== -1, 'J6a1 ...and the bundle was rebuilt at exactly it (' + _kmwhaVer + ')');
   ok(!/d782ea6d8d4f97f7031fd9718b16020628e4a3a92b5984f8895a2198a61c36ac/.test(B),
     'J6b and it is NOT the pre-R1 bundle (the adapter is a bundle source, so a rebuild is REQUIRED)');
 })();

@@ -612,6 +612,11 @@ GS_OWNED_SINCE_R1['00_config.gs'] = 'FC-1B-E3 the feature flags of record: Inven
 // and the HARVEST_NOT_READY refusal carries typed issues under `details` (the only sub-object the browser
 // transport preserves). It also gains its first build stamp. An unexpected file still fails.
 GS_OWNED_SINCE_R1['61_api_v1_weekly_ai_plan.gs'] = 'FC-1B-E3-R1 typed canonical-readiness refusal + the harvest diagnostics it used to discard + WAP_BUILD_VERSION_';
+// F1-7N-FC-1B-E3-R4 — 60_ joins the owned set. The inventory workspace read had no bound on TIME: two of its
+// twenty-one tables grow every day forever and their consumers read a recent tail, which is the measured root
+// cause of the 60 s first-load timeout. It gains an OPT-IN per-key recent-period projection (default payload
+// byte-identical) and reports what it dropped. An unexpected file still fails.
+GS_OWNED_SINCE_R1['60_api_v1_inventory_replenishment_workspace.gs'] = 'FC-1B-E3-R4 opt-in recent-period projection + the meta that makes the reduction visible';
 var gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 // The 11_ half of the replacement pair (see the note above the unchanged-since-R1 list).
 var _r2g11 = read('assets/specs/active/apps-script/11_shipping_plan_handlers.gs');

@@ -366,7 +366,12 @@ var wapExpect = (HLTH.match(/\{ file: '61_api_v1_weekly_ai_plan\.gs',[^}]*expect
 var sysExpect = (HLTH.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
 eq(wap, wapExpect, 'F2  §7 61_ declares exactly the build its manifest entry expects (' + wap + ')');
 eq(sys, sysExpect, 'F2a and 63_ does the same (' + sys + ')');
-eq(wap, 'F1-7N-FC-1B-E3-R3-R1', 'F2b and 61_ moved this round, because its behaviour changed');
+// RESTATED (F1-7N-FC-1B-E3-R4): this pinned the literal build R3-R1 happened to mint, so the next round to
+// change 61_ turned an assertion about "this round moved it" into one about "R3-R1 was the last to move it".
+// The DEFECT it guards is 61_ shipping at a stamp EARLIER than the round that changed its behaviour, and that
+// is what a FLOOR states. F2/F2a above still prove the stamp and the manifest AGREE, which is the live check.
+ok(require(path.join(ROOT, 'assets/tests/_release-order.js')).stampAtOrAfter(wap, 'F1-7N-FC-1B-E3-R3-R1'),
+  'F2b and 61_ is stamped at or after the round whose behaviour it carries (' + wap + ')');
 // KMFCN is registered as a bundle module and is actually IN the generated bundle.
 ok(/'supply-planning-forecast-normalization'/.test(BUILDER), 'F3  §7 KMFCN is registered in the bundle module order');
 ok(/\['KMFCN', 'supply-planning-forecast-normalization'\]/.test(BUILDER), 'F3a and bound to the KMFCN global');
@@ -458,8 +463,22 @@ ok(/window\._irReadStageReport_ = _irReadStageReport_;/.test(PAGE),
 });
 ok(/first_vs_retry_delta_ms/.test(stageFn),
   'T4  §8 and the FIRST vs RETRY difference, which is the actual question');
-ok(/out\.server_execution_ms = null;/.test(stageFn),
-  'T5  §8 server execution time is reported as NULL, not estimated from the client number');
+// RESTATED (F1-7N-FC-1B-E3-R4): THE UNDERLYING CLAIM WAS WRONG, not merely pinned.
+//
+// R3-R1 asserted a hard `= null` and justified it as "the transport records client elapsed only". That was
+// true of the TRANSPORT and false of the ANSWER: the inventory workspace envelope has always carried
+// meta.serverDurationMs, and the page was discarding it. R4 captures it, so the constant is gone and the
+// assertion that pinned the constant had to go with it.
+//
+// What must STILL hold is the thing the original was protecting: server time is REPORTED, never INFERRED from
+// the client number. So this now checks the two properties that actually encode that — the value is read from
+// the server's own meta, and no arithmetic on a client elapsed time can reach it.
+ok(/_irLastReadMeta[\s\S]{0,120}server_execution_ms/.test(stageFn),
+  'T5  §8 server execution time comes from the SERVER envelope meta, not from a client measurement');
+ok(!/server_execution_ms\s*=\s*[^;]*(client_total|reads\[|\.ms\b)/.test(stageFn),
+  'T5a and it is never derived from the client elapsed number — reported or null, never estimated');
+ok(/server_execution_ms:\s*\(typeof _m\.serverDurationMs === 'number'\)/.test(PAGE),
+  'T5b the capture requires an actual number from the envelope — a missing field stays null, not 0');
 ok(/RECURRING_FIRST_ATTEMPT_TIMEOUT/.test(PAGE),
   'T6  §8 the status is RECURRING, not a single transient occurrence');
 ok(!/NOT REPRODUCED/i.test(code(PAGE)),
@@ -486,9 +505,16 @@ ok(!/forecast/i.test(stageFn),
 // ================================================================================================================
 section('§10 - release identity');
 // ================================================================================================================
-eq(RO.currentAppToken(), 'fc1b-e3r3r1-forecastzero-20260904', 'R1  this round mints a NEW application token');
-ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-e3r2-composerstate-20260903'),
+// RESTATED (F1-7N-FC-1B-E3-R4): the EIGHTH consecutive round to pin its own token as "the current one", and it
+// has now broken in exactly the same way eight times. Every round writes an assertion about the PRESENT, the
+// next round rotates the series, and the assertion silently becomes one about the past. What R3-R1 actually
+// needed to guarantee is a FLOOR: it minted its own token, that token came after R2's, and the series has
+// never moved behind it. All three still fail if R3-R1's rotation is undone, which is the defect.
+ok(RO.tokenIndex('fc1b-e3r3r1-forecastzero-20260904') !== -1, 'R1  this round minted its own application token');
+ok(RO.tokenIndex('fc1b-e3r3r1-forecastzero-20260904') > RO.tokenIndex('fc1b-e3r2-composerstate-20260903'),
   'R1a strictly after R2\'s, which was PUBLISHED (origin/main carries 4979903)');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r3r1-forecastzero-20260904'),
+  'R1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 eq((INDEX.match(/\?v=fc1b-e3r2-composerstate-20260903/g) || []).length, 0,
   'R2  zero production refs remain on R2\'s token');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'R2a and nothing is left behind on any superseded token');
@@ -581,8 +607,11 @@ mut('N16 the new engine code is left unmapped, so the refusal loses its readines
   var m = swap(A, '    FORECAST_BASIS_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,', '    ');
   return !/FORECAST_BASIS_UNRESOLVED/.test(m);
 });
+// RESTATED (F1-7N-FC-1B-E3-R4): the mutation swapped R3-R1's literal manifest entry, so it stopped applying
+// the moment 61_ moved again and the probe threw instead of catching. The defect is unchanged — 61_ declaring
+// a build its manifest does not expect — and the anchor is now derived from whatever the manifest holds.
 mut('N17 61_ ships without moving its build stamp', function () {
-  var m = swap(HLTH, "expected: 'F1-7N-FC-1B-E3-R3-R1', owns: 'weekly AI Plan harvest",
+  var m = swap(HLTH, "expected: '" + wapExpect + "', owns: 'weekly AI Plan harvest",
     "expected: 'F1-7N-FC-1B-E3-R1', owns: 'weekly AI Plan harvest");
   var e = (m.match(/\{ file: '61_api_v1_weekly_ai_plan\.gs',[^}]*expected: '([^']+)'/) || [])[1];
   return e !== wap;
