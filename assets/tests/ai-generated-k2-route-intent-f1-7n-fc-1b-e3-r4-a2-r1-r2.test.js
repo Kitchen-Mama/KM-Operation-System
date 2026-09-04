@@ -394,7 +394,16 @@ eq(c1.headers.length, 1, 'D2  exactly one header written');
 eq(c1.lines.length, 1, 'D2a one line, matching the one generated route');
 eq(total(c1), 520, 'D2b stored total = 520');
 eq(r1.data.route_count === undefined ? (r1.data.groups || []).length : r1.data.route_count, 1, 'D2c route_count = 1');
-eq(JSON.stringify(r1.data.conservation), '[{"marketplace":"Amazon","conserved":true}]', 'D2d conserved');
+// RESTATED (A2-R1-R4): this pinned the whole serialization of `conservation`, and R4 adds the three
+// completeness verdicts to each entry (`conserved` alone was being read as a completion property when it is a
+// safety one). The CLAIM — one marketplace, Amazon, and its plan is conserved — is unchanged and is what is
+// checked; the new verdicts are asserted beside it rather than by pinning a string.
+eq((r1.data.conservation || []).map(function (c) { return [c.marketplace, c.conserved]; }),
+  [['Amazon', true]], 'D2d conserved');
+eq((r1.data.conservation || []).map(function (c) { return c.completeness && c.completeness.route_quantity_conserved; }),
+  [true], 'D2d1 and the quantity that was authorized is the quantity that reached a route');
+eq((r1.data.conservation || []).map(function (c) { return c.completeness && c.completeness.fully_routable; }),
+  [true], 'D2d2 and every authorized line found a complete route');
 var hdr1 = c1.headers[0];
 eq(hdr1.generation_type, 'system_generated', 'D3  the row carries the AI provenance marker …');
 ok(/^AIRUN-/.test(String(hdr1.generation_run_id)), 'D3a its generation run id …');

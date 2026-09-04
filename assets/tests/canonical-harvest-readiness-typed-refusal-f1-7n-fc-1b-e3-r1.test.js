@@ -695,10 +695,32 @@ section('§F/§G — THE CENSUS: an early refusal keeps the diagnosis, and stays
   sandbox2.weeklyAiPlanShipDate_ = function () { return '2026-09-01'; };
   sandbox2.KMWRR = { buildK2GenerationPlan: function () {
     calls2.kmwrr++;
-    return { groups: [{ groupNo: 1, header: { recommendation_group_no: 1, source_warehouse_id: 'WH-1',
+    // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R4) — THIS DOUBLE WAS WRONG, AND ITS WRONGNESS HID A REAL DEFECT.
+    //
+    // It returned `expected_arrival_date` and `transit_days` on the HEADER. The real buildGroupHeader emits
+    // neither, and correctly so: `expected_arrival` is a LINE field in the canonical model that 16_ adopts
+    // only from a user-supplied save. The census read them off the header, which worked HERE and produced a
+    // blank arrival date and a null lead time on every real run — and since the PROCEED gate refuses on a
+    // blank arrival date, this census could never have returned PROCEED in production while this test said it
+    // could. A double that invents fields the module does not return validates a reader looking in the wrong
+    // place.
+    //
+    // KMWRR now carries the resolved values as GROUP EVIDENCE beside the exact-30 lines, so the stub returns
+    // what the real one returns. G11a's claim — a matching expectation yields PROCEED — is unchanged, and
+    // is now checked against the real shape.
+    return { groups: [{ groupNo: 1, routeKey: 'wh-1|marketplace||amazon|m1|ddp',
+      header: { recommendation_group_no: 1, source_warehouse_id: 'WH-1',
       destination_type: 'MARKETPLACE', destination_marketplace: 'Amazon', recommended_shipping_method: 'M1',
-      recommended_last_mile_delivery: 'DDP', expected_arrival_date: '2026-10-01', transit_days: 30 },
-      lines: [{ master_sku: SKU, recommended_qty: 520 }] }], blocked: [], conservation: { conserved: true } };
+      recommended_last_mile_delivery: 'DDP' },
+      route_evidence: { expected_arrival: '2026-10-01', transit_days: 30, estimated_cost: 12,
+        currency: 'USD', route_candidate_status: 'AI_RANKED', line_count: 1, evidence_uniform: true,
+        disagreement: null },
+      lines: [{ master_sku: SKU, sku: SKU, window_code: 'D18', recommended_qty: 520, planned_qty: 520 }] }],
+      blocked: [], conservation: { conserved: true },
+      completeness: { authorized_quantity: 520, supply_allocated_quantity: 520, emitted_route_quantity: 520,
+        unresolved_quantity: 0, route_count: 1, blocked_line_count: 0, unrouted_sku_window_keys: [],
+        supply_allocation_conserved: true, route_quantity_conserved: true, fully_routable: true,
+        blockers: [], blocker_tokens: [] } };
   } };
   var ctx2 = vm.createContext(sandbox2);
   vm.runInContext(TEMP, ctx2, { filename: 'TEMP_census2.gs' });

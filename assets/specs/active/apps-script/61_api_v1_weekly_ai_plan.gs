@@ -211,7 +211,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R3';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R4';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -235,6 +235,141 @@ function weeklyAiPlanReadCarrierAuthorities_(ss) {
   }
   return { rateCards: rows('carrier_rate_cards'), leadTimes: rows('carrier_lead_times') };
 }
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R4 §2 — A RATE CARD ALONE CANNOT PRODUCE A ROUTE, AND THE FUNNEL ONLY LOOKED AT CARDS.
+//
+// The live census reported `NO_CARRIER_CARD_FOR_LANE` and stopped there, which reads as "add one rate card and
+// this lane works". Measured against the frozen route derivation, that is not true, and the difference is a
+// second round of the same STOP if anyone acts on the shorter answer:
+//
+//   carrier_rate_cards   decides whether the lane has any CANDIDATE at all. Missing -> ROUTE_METHOD_UNRESOLVED
+//                        with NO_CARRIER_CARD_FOR_LANE. This is what the funnel already measured.
+//   carrier_lead_times   decides whether a candidate can be RANKED. `carrier_rate_cards` stores no transit
+//                        days at all — 17_ REJECTS transit columns in the rate template by design, because
+//                        lead time is maintained separately. With a card and no lead-time row, deriveRoute
+//                        reaches `onTime(null) === false` for every pair and refuses with
+//                        ROUTE_AUTO_RANKING_INSUFFICIENT / NO_LEAD_TIME — a DIFFERENT token, a different
+//                        table, and a refusal that looks nothing like the one the operator was told to fix.
+//
+// So readiness is asked over BOTH authorities, on the SAME lane key, using the SAME predicates the router uses
+// (KMRA's axisOk / canonicalMethodKey), and the answer names every field that is actually missing rather than
+// the first one that failed. `matched_methods` is the intersection: a canonical method that a usable card
+// offers AND a lead-time row can key. It is that intersection, never either side alone, that makes a lane
+// routable.
+//
+// It reports and never writes. When the answer is no, the caller's move is USER_MASTER_DATA_REQUIRED and a
+// field list — never a fabricated carrier, rate, currency or transit time.
+// ================================================================================================================
+function weeklyAiPlanCarrierReadiness_(rateCards, leadTimes, laneQuery, asOfOrdinal) {
+  var q = { origin_country: weeklyAiPlanStr_(laneQuery && laneQuery.originCountry),
+    destination_country: weeklyAiPlanStr_(laneQuery && laneQuery.destinationCountry),
+    marketplace: weeklyAiPlanStr_(laneQuery && laneQuery.marketplace) };
+  var out = { lane_key: q.origin_country + '|' + q.destination_country + '|' + (q.marketplace || '(any)'),
+    lane_query: q, as_of_ordinal: (asOfOrdinal === undefined ? null : asOfOrdinal),
+    rate_card: { authority: 'carrier_rate_cards', usable_on_lane: 0, canonical_methods: [] },
+    lead_time: { authority: 'carrier_lead_times', rows_on_lane: 0, keyed_methods: [] },
+    matched_methods: [], ready: false, missing: [], missing_fields: [], blocking_token: null };
+  var kmra = (typeof KMRA !== 'undefined' && KMRA) ? KMRA : null;
+  if (!kmra || typeof kmra.normalizeRateCard !== 'function') {
+    out.missing.push('KMRA_UNAVAILABLE');
+    out.blocking_token = 'KMRA_UNAVAILABLE';
+    return out;
+  }
+  // (a) the CARD side, by the router's own predicates.
+  var cardMethods = {};
+  (rateCards || []).forEach(function (raw) {
+    var dto = kmra.normalizeRateCard(raw);
+    if (!kmra.axisOk(dto.originCountry, q.origin_country)) return;
+    if (!kmra.axisOk(dto.destinationCountry, q.destination_country)) return;
+    if (!kmra.axisOk(dto.marketplace, q.marketplace)) return;
+    if (!kmra.rateCardUsable(dto, out.as_of_ordinal)) return;
+    out.rate_card.usable_on_lane++;
+    if (dto.methodKey) cardMethods[dto.methodKey] = 1;
+  });
+  out.rate_card.canonical_methods = Object.keys(cardMethods).sort();
+  // (b) the LEAD-TIME side, on the same lane, with the same wildcard rule. A row is only usable if it can
+  //     yield a number: a row present with all three day fields blank is NOT lead-time authority.
+  var ltMethods = {};
+  (leadTimes || []).forEach(function (raw) {
+    var lt = kmra.normalizeLeadTime(raw);
+    if (!kmra.axisOk(lt.originCountry, q.origin_country)) return;
+    if (!kmra.axisOk(lt.destinationCountry, q.destination_country)) return;
+    out.lead_time.rows_on_lane++;
+    if (!lt.methodKey) return;
+    if (!isFinite(lt.avgDays) && !isFinite(lt.maxDays) && !isFinite(lt.minDays)) return;
+    ltMethods[lt.methodKey] = 1;
+  });
+  out.lead_time.keyed_methods = Object.keys(ltMethods).sort();
+  // (c) the INTER§ION is the only thing that makes a lane routable.
+  out.matched_methods = out.rate_card.canonical_methods.filter(function (m) { return ltMethods[m] === 1; });
+  if (!out.rate_card.usable_on_lane) {
+    out.missing.push('CARRIER_RATE_CARD');
+    out.blocking_token = 'NO_CARRIER_CARD_FOR_LANE';
+  } else if (!out.rate_card.canonical_methods.length) {
+    out.missing.push('CANONICAL_SHIPPING_METHOD_ON_CARD');
+    out.blocking_token = 'NO_CANONICAL_METHOD';
+  }
+  if (!out.lead_time.keyed_methods.length) {
+    out.missing.push('CARRIER_LEAD_TIME');
+    if (!out.blocking_token) out.blocking_token = 'NO_LEAD_TIME';
+  } else if (!out.matched_methods.length && out.rate_card.canonical_methods.length) {
+    out.missing.push('LEAD_TIME_FOR_A_METHOD_THE_CARD_OFFERS');
+    if (!out.blocking_token) out.blocking_token = 'NO_LEAD_TIME';
+  }
+  out.ready = out.missing.length === 0 && out.matched_methods.length > 0;
+  // The EXACT fields a person must supply, per table, with the enum or format each one accepts. A report that
+  // says only "master data missing" leaves the reader to find 17_ and read the importer.
+  if (!out.ready) out.missing_fields = weeklyAiPlanCarrierMissingFields_(q, out.missing);
+  return out;
+}
+
+// The field list, derived from 17_carrier_handlers.gs's OWN create-path requirements so it cannot drift from
+// what the importer will actually accept. Values are described, never invented: no carrier, rate, currency or
+// transit time is suggested here.
+function weeklyAiPlanCarrierMissingFields_(q, missing) {
+  var out = [];
+  if (missing.indexOf('CARRIER_RATE_CARD') !== -1 || missing.indexOf('CANONICAL_SHIPPING_METHOD_ON_CARD') !== -1) {
+    out.push({ table: 'carrier_rate_cards',
+      created_by: 'Carrier Rate Card page -> Master Template (download -> fill -> upload). Import action ' +
+        '`importCarrierRateCards` with mode=master; a blank rate_card_id row CREATES. The Update Template ' +
+        'cannot create rows.',
+      fields: [
+        { field: 'carrier_id', required: true, note: 'must already exist in `carriers`; never auto-created. carrier_name resolves to it only when unambiguous.' },
+        { field: 'origin_country', required: true, value: q.origin_country },
+        { field: 'destination_country', required: true, value: q.destination_country },
+        { field: 'marketplace', required: false, note: 'blank = wildcard (matches any marketplace on this lane); ' + (q.marketplace ? 'or exactly "' + q.marketplace + '"' : 'no marketplace constraint needed') },
+        { field: 'shipping_method', required: true, note: 'must map to a CANONICAL key or the lane cannot be lead-time joined. Mapped leading tokens: air / sea express / sea / express / courier / truck. Anything else (e.g. GROUND, RAIL) is deliberately unmapped.' },
+        { field: 'last_mile_delivery', required: true, note: 'free text; must match the carrier_lead_times row below (or be blank on both).' },
+        { field: 'charge_type', required: true, note: 'enum: weight | volume | container | shipment | carton' },
+        { field: 'charge_unit', required: true, note: 'enum: kg | lb | cbm | 20GP | 40HQ | shipment | carton' },
+        { field: 'currency', required: true, note: 'the carrier\u2019s quoted currency' },
+        { field: 'unit_rate', required: true, note: 'numeric; the carrier\u2019s quoted rate' },
+        { field: 'effective_from', required: true, note: 'yyyy-mm-dd; MUST cover the ship date or the card is not usable' },
+        { field: 'effective_to', required: false, note: 'yyyy-mm-dd, or blank for open-ended' },
+        { field: 'status', required: false, note: 'enum: active | inactive (blank is treated as active)' },
+        { field: 'import_duty_treatment', required: false, note: 'enum: included_in_rate | excluded_in_rate; blank is a valid needs-completion state and is never derived' }
+      ] });
+  }
+  if (missing.indexOf('CARRIER_LEAD_TIME') !== -1 || missing.indexOf('LEAD_TIME_FOR_A_METHOD_THE_CARD_OFFERS') !== -1) {
+    out.push({ table: 'carrier_lead_times',
+      created_by: 'NO GENERIC HANDLER EXISTS. `carrier_rate_cards` REJECTS transit columns by design and the ' +
+        'only lead-time writer in the project is the hard-coded CN->JP Sinotrans seed. This row must be ' +
+        'entered directly in the `carrier_lead_times` tab, or a maintenance handler must be added first.',
+      fields: [
+        { field: 'lead_time_id', required: true, note: 'CLT-###### (6-digit); next value continues the existing sequence' },
+        { field: 'carrier_id', required: true, note: 'the SAME carrier as the rate card above' },
+        { field: 'origin_country', required: true, value: q.origin_country },
+        { field: 'destination_country', required: true, value: q.destination_country },
+        { field: 'shipping_method', required: true, note: 'must resolve to the SAME canonical key as the rate card\u2019s method, or the two never join' },
+        { field: 'last_mile_delivery', required: true, note: 'must match the rate card\u2019s last_mile_delivery (or be blank on both)' },
+        { field: 'avg_days', required: true, note: 'numeric calendar days. avg_days is preferred; max_days/min_days are used only as a conservative fallback, so a row with all three blank is NOT authority.' },
+        { field: 'min_days', required: false, note: 'numeric calendar days' },
+        { field: 'max_days', required: false, note: 'numeric calendar days' }
+      ] });
+  }
+  return out;
+}
+
 function weeklyAiPlanShipDate_(harvest) {
   var v = harvest && harvest.sourceDataAsOf ? String(harvest.sourceDataAsOf) : '';
   var m = v.match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : '';
@@ -742,8 +877,19 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       authorizedBySkuWindow: (function () { var a = {}; byMkt[M].forEach(function (x) { var k = String(x.sku).toLowerCase() + '|' + String(x.window_code).toLowerCase(); a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0); }); return a; })(),
       sourceCeilingById: {}
     });
-    plan.blocked.forEach(function (b) { blockedTotal.push({ marketplace: M, block: b.block }); });
-    conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved });
+    // §4 — the generation's own report dropped the sub-type too. `block: b.block` alone is the bare token
+    // the live log showed, and it is the half an operator cannot act on: ROUTE_METHOD_UNRESOLVED names a
+    // symptom, NO_CARRIER_CARD_FOR_LANE names the table and the row to add.
+    plan.blocked.forEach(function (b) {
+      blockedTotal.push({ marketplace: M, block: b.block,
+        reason: b.method_unresolved_reason || b.auto_ranking_insufficient_reason || null,
+        lane_query: b.lane_query || null,
+        quantity: (b.line && (b.line.planned_qty != null ? b.line.planned_qty : b.line.recommended_qty)) || 0 });
+    });
+    // §4 — supply-allocation safety and route COMPLETENESS are recorded as the different things they are.
+    // `conserved` alone let a run report a conserved plan that had routed none of the demand.
+    conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved,
+      completeness: plan.completeness || null });
     plan.groups.forEach(function (g) {
       // R6F2G (C) — stamp the authoritative lineage onto the header before the atomic write. These fields are EXCLUDED
       // from the REUSE fingerprint (SAD_K2_HEADER_FP_/LINE_FP_), so a committed group still REUSEs (zero writes) here.
@@ -966,7 +1112,28 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       suppressed_by_active_manual_draft: suppressed,
       identity_collision_count: collisions.length,
       active_source_identity_collisions: collisions,
-      schema_gate: { ready: true, migration_version: (typeof AIPL_MIGRATION_VERSION_ !== 'undefined') ? AIPL_MIGRATION_VERSION_ : null },
+      // F1-7N-FC-1B-E3-R4-A2-R1-R4 §3 — THIS REPORTED THE VERSION IT EXPECTED, NOT THE ONE IT RAN ON.
+      //
+      // Found by probing a successful generation against a live-shaped 36-column sheet: the run resolved
+      // FB4G-A2R3-CREATE-IDEMPOTENCY-1 and its own response said FB4C-AI-LIFECYCLE-1, because
+      // AIPL_MIGRATION_VERSION_ is the EXPECTED constant and is deliberately frozen at the lifecycle append.
+      // The activation gate already reports the resolved version correctly; only this success payload did not,
+      // and this payload is what an operator reads after pressing Generate.
+      //
+      // It is the same mistake as the one §3 exists to fix, one layer along: a literal standing in for a
+      // resolution. Both are now reported, named for what each one is, so they can never be confused again.
+      schema_gate: (function () {
+        var _r = null;
+        try {
+          if (typeof sadResolveHeaderSchema_ === 'function' && typeof sadLiveHeaderNames_ === 'function') {
+            _r = sadResolveHeaderSchema_(sadLiveHeaderNames_(ss.getSheetByName('shipping_allocation_drafts')));
+          }
+        } catch (eSG) { _r = null; }
+        return { ready: true,
+          migration_version: (_r && _r.ok && _r.version) ? _r.version : null,
+          resolved_from: _r ? 'LIVE_HEADER' : 'UNRESOLVED_AUTHORITY_UNAVAILABLE',
+          expected_migration_version: (typeof AIPL_MIGRATION_VERSION_ !== 'undefined') ? AIPL_MIGRATION_VERSION_ : null };
+      })(),
       verification: { lifecycle_ok: lifecycle.ok, lifecycle_reason: lifecycle.reason, detail: lifecycle.verification, manifest: lifecycle.manifest },
       lifecycle: lifecycle,
       requested_scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || 'ALL_MARKETPLACES(company/country fan-out)' },

@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 01fddc59bb66e755aa435079559537e3d807206afa162d7d62246409e730332e
+// bundle_sha256 = 7620453a8fa7aebaea1a782cd33076e562b123e467d15445bf493741d2f99e7a
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -33,7 +33,7 @@
 //   supply-planning-weekly-recommendation-batch  8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b
 //   supply-planning-weekly-harvest-adapter  de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437
 //   supply-planning-route-authority  2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2
-//   supply-planning-weekly-route-derivation  1e7485e96eea3fd90ae4b64f7f471f543c45c7c5059311b97ded4b8cbaa4df6a
+//   supply-planning-weekly-route-derivation  517924202e6a5e8baefe6a6c08a024e99eb63f66e2801a03c7a4702fdfa1e8bd
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
@@ -8243,7 +8243,11 @@ function __kmRequire(p) {
       selected_ai_route: dto.selected || { method: method, last_mile: lastMile },
       auto_rankable_methods: (dto.aiPairs || []).map(function (p) { return { method: p.method, days: p.days, cost: p.cost, currency: p.currency }; }),
       selected_method: method, selected_last_mile: lastMile,
-      expected_arrival: eta, estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
+      // §4 (R4) — the TRANSIT DAYS the ranking actually used. `eta` is derived from it and was the only
+      // thing returned, so a consumer could see the date and not the number, and § F.4 has asked the census to
+      // report `lead_time_days` since E3 without any way to obtain it.
+      expected_arrival: eta, transit_days: days,
+      estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
     }
   }
 
@@ -8295,17 +8299,44 @@ function __kmRequire(p) {
       // The lane query goes with it, because "which lane" is half of what makes the cause actionable.
       if (!rl || !rl.route || rl.block) { if (rl && rl.block) blocked.push({ line: rl.line, block: rl.block, advisory: rl.advisory || null, route_candidate_status: rl.route_candidate_status || 'BLOCKED', auto_ranking_insufficient_reason: rl.auto_ranking_insufficient_reason || null, method_unresolved_reason: rl.method_unresolved_reason || null, lane_query: rl.lane_query || null, manual_method_options: rl.manual_method_options || [] }); return; }
       var key = routeTuple(rl.route);
-      if (!buckets[key]) { buckets[key] = { routeKey: key, route: rl.route, lines: [] }; order.push(key); }
+      if (!buckets[key]) { buckets[key] = { routeKey: key, route: rl.route, lines: [], evidence: [] }; order.push(key); }
       buckets[key].lines.push(rl.line);
+      // F1-7N-FC-1B-E3-R4-A2-R1-R4 §4 — THE ETA HAD NOWHERE TO LIVE, SO NOTHING COULD SEE IT.
+      //
+      // deriveRoute resolves transit days and computes an arrival date; okRoute returns them; and then they
+      // stopped here. The group keeps only `rl.line`, which is the exact-30 write payload by deliberate
+      // design, and buildGroupHeader carries route CONTEXT but not the ETA — correctly, because
+      // `expected_arrival` is a LINE field in the canonical model and 16_ adopts it only when a save supplies
+      // one. So the evidence existed at every step and was readable at none.
+      //
+      // The measured consequence was not cosmetic: the census reads the arrival date to decide PROCEED, found
+      // it blank on a route that had a resolved 4-day lead time, and would have refused a correct activation
+      // for a field the plan never had a way to hand it.
+      //
+      // It is carried as GROUP EVIDENCE, a sibling of `lines` — deliberately NOT merged into the line
+      // payload, which would put an AI-computed arrival into a column documented as user-supplied and change
+      // what the writer stores. Read-side only.
+      buckets[key].evidence.push({ expected_arrival: s(rl.expected_arrival), transit_days: (rl.transit_days == null ? null : num(rl.transit_days)), estimated_cost: (rl.estimated_cost == null ? null : num(rl.estimated_cost)), currency: s(rl.currency), route_candidate_status: s(rl.route_candidate_status) });
     });
     // deterministic ordinal: sort the complete route tuples (never row order / timestamp / random)
     order.sort();
     var groups = order.map(function (key, i) {
       var b = buckets[key];
+      // Every line in a bucket shares the complete route tuple, so its evidence must be identical. If it is
+      // not, that is reported rather than silently represented by whichever line happened to be first — a
+      // first-row-wins pick is exactly the class of defect this file keeps finding.
+      var evUniq = uniq((b.evidence || []).map(function (e) { return e.expected_arrival + '|' + e.transit_days + '|' + e.estimated_cost + '|' + e.currency; }));
+      var ev0 = (b.evidence || [])[0] || { expected_arrival: '', transit_days: null, estimated_cost: null, currency: '', route_candidate_status: '' };
       return {
         groupNo: i + 1, routeKey: key,
         header: buildGroupHeader(scope, b.route, i + 1),
-        lines: b.lines
+        lines: b.lines,
+        route_evidence: { expected_arrival: ev0.expected_arrival, transit_days: ev0.transit_days,
+          estimated_cost: ev0.estimated_cost,
+          currency: ev0.currency, route_candidate_status: ev0.route_candidate_status,
+          line_count: (b.evidence || []).length,
+          evidence_uniform: evUniq.length <= 1,
+          disagreement: evUniq.length > 1 ? evUniq : null }
       };
     });
     return { groups: groups, blocked: blocked };
@@ -8397,11 +8428,23 @@ function __kmRequire(p) {
       var destKind = (al.destination && low(al.destination.kind)) === 'marketplace' ? 'MARKETPLACE' : ((al.destination && low(al.destination.kind)) === 'warehouse' ? 'WAREHOUSE' : '');
       // carry the THREE parity layers (G/A) so partition/preflight/diagnostic all read ONE contract.
       return r.ok
-        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, estimated_cost: r.estimated_cost, currency: r.currency }
-        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, method_unresolved_reason: r.method_unresolved_reason || null, manual_method_options: r.manual_method_options || [], ai_rankable_route_pairs: r.ai_rankable_route_pairs || [], advisory: r.advisory || null };
+        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, transit_days: (r.transit_days == null ? null : r.transit_days), estimated_cost: r.estimated_cost, currency: r.currency }
+        // F1-7N-FC-1B-E3-R4-A2-R1-R4 §2 — THE LANE QUERY DIED ONE LAYER ABOVE WHERE R3 FIXED IT.
+        //
+        // R3 found `method_unresolved_reason` being dropped by partitionRoutedLines and fixed it there. In the
+        // SAME change deriveRoute began attaching `lane_query` to the refusal, "because a consumer can report
+        // that no method resolved but not WHICH origin/destination/marketplace triple had no card". This line
+        // is the layer between the two, and it enumerates the fields it carries — so it carried the reason and
+        // dropped the lane. partitionRoutedLines then read `rl.lane_query` and found nothing, every round.
+        //
+        // Measured on the live fixture before this line changed: blocked_lanes = [null] beside a refusal that
+        // knew the lane was US -> US / Amazon. An enumerating hand-off is a place a field can be forgotten
+        // silently, which is why both halves of one refusal are now listed together.
+        : { line: line, block: r.block, destination_kind: destKind, route_candidate_status: r.route_candidate_status, auto_ranking_insufficient_reason: r.auto_ranking_insufficient_reason || null, method_unresolved_reason: r.method_unresolved_reason || null, lane_query: r.lane_query || null, method_unresolved_candidates: r.method_unresolved_candidates || [], manual_method_options: r.manual_method_options || [], ai_rankable_route_pairs: r.ai_rankable_route_pairs || [], advisory: r.advisory || null };
     });
     var part = partitionRoutedLines(scope, routed);
     var conservation = checkConservation(input.authorizedBySkuWindow, part.groups, input.sourceCeilingById);
+    var completeness = buildCompleteness(input.authorizedBySkuWindow, part, conservation);
     // flat per-line outcomes (ONE shared contract for stage accounting + the three parity layers).
     var lineOutcomes = routed.map(function (rl) {
       return {
@@ -8412,10 +8455,100 @@ function __kmRequire(p) {
         manual_method_options: rl.manual_method_options || [], ai_rankable_route_pairs: rl.ai_rankable_route_pairs || [],
         selected_ai_route: rl.selected_ai_route || null,
         selected_method: rl.route ? rl.route.recommended_shipping_method : null,
-        selected_last_mile: rl.route ? rl.route.recommended_last_mile_delivery : null, expected_arrival: rl.expected_arrival || null
+        selected_last_mile: rl.route ? rl.route.recommended_last_mile_delivery : null, expected_arrival: rl.expected_arrival || null,
+        transit_days: (rl.transit_days == null ? null : rl.transit_days)
       };
     });
-    return { ok: conservation.conserved, groups: part.groups, blocked: part.blocked, conservation: conservation, lineOutcomes: lineOutcomes };
+    return { ok: conservation.conserved, groups: part.groups, blocked: part.blocked, conservation: conservation,
+      completeness: completeness, lineOutcomes: lineOutcomes };
+  }
+
+  // =============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R4 §4 — "CONSERVED" WAS ANSWERING A NARROWER QUESTION THAN ANYONE READ IT AS.
+  //
+  // THE LIVE REPORT. suggested 760 · supply allocated 760 · emitted route quantity 0 · route count 0 ·
+  // conserved TRUE · blockers [] · outer verdict STOP. Every one of those is individually correct and together
+  // they are unreadable, because two different questions were sharing one word.
+  //
+  // checkConservation asks: did any group take MORE than it was authorized, go negative, or claim one
+  // (sku, window) twice? On this fixture no group did any of that — there are no groups. So the honest answer
+  // to the question it asks is yes, and the answer a reader takes from `conserved: true` beside a demand of
+  // 760 is "the 760 is planned", which is the opposite of the truth.
+  //
+  // A safety property that reads as a completion property is worse than no property, so the one word becomes
+  // THREE, each answerable independently and none able to stand in for another:
+  //
+  //   supply_allocation_conserved   nothing was over-allocated, went negative, or was claimed twice.
+  //                                 THIS is the old `conserved`, unchanged in meaning and still computed by
+  //                                 checkConservation. It is a SAFETY property and says nothing about coverage.
+  //   route_quantity_conserved      the quantity that reached a route EQUALS the authorized quantity. False
+  //                                 whenever anything was authorized and less of it was routed.
+  //   fully_routable                every authorized (sku, window) landed in a group with a complete route
+  //                                 identity — source, destination and canonical method. False if ANY line
+  //                                 blocked, even when everything that did route was conserved.
+  //
+  // And `unresolved_quantity` is stated as a NUMBER, not implied by a difference the reader must compute. On
+  // this fixture: authorized 760, emitted 0, unresolved 760, blockers NO_CARRIER_CARD_FOR_LANE +
+  // ROUTE_METHOD_UNRESOLVED. Nothing there can be misread as a finished plan.
+  //
+  // The blockers travel WITH the numbers, sub-type included, because "760 unresolved" and "no carrier card on
+  // the US -> US / Amazon lane" are one finding, and a consumer that had to join them from two places is a
+  // consumer that will print the first without the second.
+  // =============================================================================================================
+  function buildCompleteness(authorizedBySkuWindow, part, conservation) {
+    authorizedBySkuWindow = authorizedBySkuWindow || {};
+    var authorized = 0, authKeys = [];
+    Object.keys(authorizedBySkuWindow).forEach(function (k) {
+      var q = num(authorizedBySkuWindow[k]); if (!isFinite(q)) q = 0;
+      authorized += q; authKeys.push(k);
+    });
+    var emitted = 0, routedKeys = {};
+    ((part && part.groups) || []).forEach(function (g) {
+      (g.lines || []).forEach(function (l) {
+        var q = num(l.planned_qty); if (!isFinite(q)) q = num(l.recommended_qty); if (!isFinite(q)) q = 0;
+        emitted += q;
+        routedKeys[low(l.sku) + '|' + low(l.window_code)] = 1;
+      });
+    });
+    // Blockers keep their sub-type and their lane. A bare token sends the reader to the wrong table.
+    var blockers = [], seenB = {};
+    ((part && part.blocked) || []).forEach(function (b) {
+      var tok = s(b && b.block); if (!tok) return;
+      var sub2 = s(b && (b.method_unresolved_reason || b.auto_ranking_insufficient_reason));
+      var k = tok + '|' + sub2;
+      if (seenB[k]) { seenB[k].quantity += (num(b.line && (b.line.planned_qty != null ? b.line.planned_qty : b.line.recommended_qty)) || 0); return; }
+      var entry = { block: tok, reason: sub2 || null, lane_query: (b && b.lane_query) || null,
+        quantity: num(b.line && (b.line.planned_qty != null ? b.line.planned_qty : b.line.recommended_qty)) || 0 };
+      seenB[k] = entry; blockers.push(entry);
+    });
+    // The sub-type is listed as a blocker token in its OWN right, because it is the actionable half: an
+    // operator acts on "no carrier card for this lane", never on "method unresolved".
+    var tokens = [];
+    blockers.forEach(function (b) {
+      if (b.reason && tokens.indexOf(b.reason) === -1) tokens.push(b.reason);
+      if (tokens.indexOf(b.block) === -1) tokens.push(b.block);
+    });
+    var unroutedKeys = authKeys.filter(function (k) { return !routedKeys[k]; });
+    return {
+      authorized_quantity: authorized,
+      supply_allocated_quantity: authorized,
+      emitted_route_quantity: emitted,
+      unresolved_quantity: authorized - emitted,
+      route_count: ((part && part.groups) || []).length,
+      blocked_line_count: ((part && part.blocked) || []).length,
+      unrouted_sku_window_keys: unroutedKeys,
+      // (1) SAFETY. Unchanged in meaning; it is checkConservation's own verdict, not a restatement of it.
+      supply_allocation_conserved: !!(conservation && conservation.conserved),
+      // (2) COVERAGE OF QUANTITY. Authorized nothing and routed nothing is conserved; authorized 760 and
+      //     routed 0 is not, and no amount of "nothing was over-allocated" makes it so.
+      route_quantity_conserved: Math.abs((authorized - emitted)) <= 1e-9,
+      // (3) COVERAGE OF IDENTITY. Every authorized (sku, window) reached a group with a complete route, and
+      //     nothing blocked. A single blocked line makes this false even when the routed remainder is exact.
+      fully_routable: ((part && part.blocked) || []).length === 0 && unroutedKeys.length === 0
+        && Math.abs((authorized - emitted)) <= 1e-9,
+      blockers: blockers,
+      blocker_tokens: tokens
+    };
   }
 
   return {
@@ -16215,4 +16348,4 @@ var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"01fddc59bb66e755aa435079559537e3d807206afa162d7d62246409e730332e","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"1e7485e96eea3fd90ae4b64f7f471f543c45c7c5059311b97ded4b8cbaa4df6a"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"7620453a8fa7aebaea1a782cd33076e562b123e467d15445bf493741d2f99e7a","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"517924202e6a5e8baefe6a6c08a024e99eb63f66e2801a03c7a4702fdfa1e8bd"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"}]};

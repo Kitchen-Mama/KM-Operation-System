@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R3';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R4';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -315,6 +315,17 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     out.blockers.push('DB_NOT_REACHABLE_OR_WRONG_TARGET: ' + CENSUS_str_(e && e.message));
     out.elapsed_ms = Date.now() - t0; CENSUS_logAll_(out); return out;
   }
+
+  // §3 (R4) — ESTABLISHED AS SOON AS THE DATABASE IS REACHABLE, AND NOT ONE LINE LATER.
+  //
+  // The parity used to be computed inside CENSUS_logAll_, so it appeared on every exit path by accident of
+  // where it lived. Moving it into the census body put it after the verdict, and the early returns — the ones
+  // that fire when the harvest is NOT ready — stopped reporting it at all. That is precisely the run on which
+  // an operator most needs it: a mixed deployment is a likely reason the harvest failed.
+  //
+  // It depends on the live header row and nothing else: not the harvest, not the scope, not the allocator. So
+  // it belongs here, above every early return, where it is a fact the whole rest of the census can gate on.
+  out.schema_parity = (typeof CENSUS_schemaParity_ === 'function') ? CENSUS_schemaParity_() : null;
 
   // ---- planning cycle: the canonical one, resolved the way production resolves it --------------------------
   var planningCycle = '';
@@ -651,6 +662,59 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     return fs.reduce(function (n, f) { return n + (f.final_eligible || 0); }, 0);
   })();
 
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R4 §2/§7 — "NO CARRIER CARD" WAS A TRUE ANSWER TO HALF THE QUESTION.
+  //
+  // The funnel above measures carrier_rate_cards and reports NO_CARRIER_CARD_FOR_LANE, which reads as "add one
+  // rate card and this lane works". It does not: carrier_rate_cards stores no transit days at all, and without
+  // a carrier_lead_times row on the same lane the route refuses again with a DIFFERENT token
+  // (ROUTE_AUTO_RANKING_INSUFFICIENT / NO_LEAD_TIME) pointing at a DIFFERENT table. Measured on a fixture with
+  // the card added and the lead time withheld: still zero routes, still 760 unresolved.
+  //
+  // So readiness is asked over BOTH authorities at once, by the shared weeklyAiPlanCarrierReadiness_, and the
+  // answer lists every field a person must supply per table. Nothing is written and no value is invented.
+  // ==============================================================================================================
+  out.carrier_readiness = (function () {
+    if (typeof weeklyAiPlanCarrierReadiness_ !== 'function') return 'CARRIER_READINESS_AUTHORITY_UNAVAILABLE';
+    var asOf = (typeof KMWRR !== 'undefined' && KMWRR && typeof KMWRR.dateToOrdinal === 'function' && shipDate)
+      ? KMWRR.dateToOrdinal(shipDate) : null;
+    var seen = {}, o = [];
+    (skuLines || []).forEach(function (a) {
+      var srcId = CENSUS_str_(a.source_warehouse_id);
+      var srcWh = (h && h.warehousesById) ? (h.warehousesById[srcId] || null) : null;
+      var d = a.destination || {};
+      var q = { originCountry: CENSUS_str_(srcWh && srcWh.country),
+        destinationCountry: CENSUS_str_(d.country),
+        marketplace: CENSUS_low_(d.kind) === 'marketplace' ? CENSUS_str_(d.marketplace) : '' };
+      var key = q.originCountry + '|' + q.destinationCountry + '|' + q.marketplace;
+      if (seen[key]) return;
+      seen[key] = 1;
+      var r = weeklyAiPlanCarrierReadiness_(carriers.rateCards, carriers.leadTimes, q, asOf);
+      r.for_source_warehouse_id = srcId;
+      r.for_window_code = CENSUS_str_(a.window_code);
+      r.ship_date = shipDate || null;
+      o.push(r);
+    });
+    return o;
+  })();
+  out.carrier_master_data_ready = (function () {
+    var rs = out.carrier_readiness;
+    if (!rs || typeof rs === 'string' || !rs.length) return null;
+    return rs.every(function (r) { return r.ready === true; });
+  })();
+  out.carrier_lane_key = (function () {
+    var rs = out.carrier_readiness;
+    if (!rs || typeof rs === 'string') return null;
+    return rs.map(function (r) { return r.lane_key; });
+  })();
+  out.carrier_missing_fields = (function () {
+    var rs = out.carrier_readiness;
+    if (!rs || typeof rs === 'string') return [];
+    var o = [];
+    rs.forEach(function (r) { (r.missing_fields || []).forEach(function (m) { o.push({ lane_key: r.lane_key, table: m.table, created_by: m.created_by, fields: m.fields }); }); });
+    return o;
+  })();
+
   // ---- THE RANKED ROUTE. The production allocator, called exactly as the generation calls it. --------------
   // PURE by contract: 61_ computes every group with this call in a pass that writes nothing, then writes in a
   // second pass. This file is that first pass, and there is no second one here.
@@ -707,6 +771,19 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   groups.forEach(function (g) {
     var head = (g && g.header) || {};
     var lines = (g && g.lines) || [];
+    // F1-7N-FC-1B-E3-R4-A2-R1-R4 §4 — THIS CENSUS COULD NEVER HAVE RETURNED PROCEED.
+    //
+    // It read the arrival date, the transit days and the cost off the HEADER. buildGroupHeader emits none of
+    // them, and correctly so: `expected_arrival` is a LINE field in the canonical model and 16_ adopts it only
+    // when a save supplies one, so the header has no business carrying an AI-computed date. The plan resolved
+    // all three (measured: a 4-day TRUCK lead time and a 2026-09-08 arrival on the authorized-card fixture)
+    // and had nowhere to hand them over, so this block printed blank/null every time.
+    //
+    // That was not only a display gap. The PROCEED gate below refuses when `expected_arrival` is empty, which
+    // means a correct, fully routed, conserved plan was going to be STOPPED for a field the census was
+    // reading from the wrong object. KMWRR now carries the resolved values as GROUP EVIDENCE beside the
+    // exact-30 lines, and they are read from there.
+    var evd = (g && g.route_evidence) || {};
     var mineLines = sku ? lines.filter(function (l) { return CENSUS_low_(l.master_sku || l.sku) === CENSUS_low_(sku); }) : lines;
     if (sku && !mineLines.length) return;
     // §9 — KMWRR.buildGroupHeader emits `recommended_source_warehouse_id` and
@@ -723,15 +800,66 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
       destination: CENSUS_str_(head.destination_marketplace || head.recommended_destination_warehouse_id),
       method: CENSUS_str_(head.recommended_shipping_method),
       last_mile: CENSUS_str_(head.recommended_last_mile_delivery),
-      expected_arrival: CENSUS_str_(head.expected_arrival_date || head.expected_arrival),
-      lead_time_days: head.transit_days != null ? CENSUS_num_(head.transit_days) : null,
-      estimated_cost: head.estimated_cost != null ? CENSUS_num_(head.estimated_cost) : null,
+      expected_arrival: CENSUS_str_(evd.expected_arrival),
+      // § F.4 has asked for this since E3 and it read `head.transit_days`, which no K2 header carries. It is the
+      // number the ranking used, and it now travels with the route rather than being re-derived or left null.
+      lead_time_days: evd.transit_days != null ? CENSUS_num_(evd.transit_days) : null,
+      estimated_cost: evd.estimated_cost != null ? CENSUS_num_(evd.estimated_cost) : null,
+      currency: CENSUS_str_(evd.currency),
+      route_candidate_status: CENSUS_str_(evd.route_candidate_status),
+      route_evidence_uniform: evd.evidence_uniform === undefined ? null : (evd.evidence_uniform === true),
       line_count: mineLines.length,
       total_qty: mineLines.reduce(function (s, l) { return s + CENSUS_num_(l.recommended_qty); }, 0)
     });
   });
   out.total_allocated_quantity = out.allocator.routes.reduce(function (s, r) { return s + r.total_qty; }, 0);
   out.would_create_route_count = out.allocator.routes.length;
+
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R4 §4 — THE REPORT THAT SAID `conserved: true` ABOUT 760 UNROUTED UNITS.
+  //
+  // The live census printed: suggested 760 · supply allocated 760 · emitted route quantity 0 · route count 0 ·
+  // conserved TRUE · production_parity.blockers [] · verdict STOP. Each field was correct in isolation and the
+  // set was unreadable, because `conserved` answers a SAFETY question (did anything take more than it was
+  // authorized?) and was being read as a COMPLETENESS one (is the demand planned?).
+  //
+  // KMWRR now answers the three separately and this census reports its answer rather than deriving its own —
+  // one authority, so the census and a live generation can never disagree about whether 760 units were routed.
+  // The historical `total_quantity` / `conserved` keys are kept so an operator can still compare logs across
+  // rounds, and each now sits beside the verdict that says what it means.
+  // ==============================================================================================================
+  out.completeness = (function () {
+    var c = (plan && plan.completeness) || null;
+    if (!c) return { authority: 'KMWRR_COMPLETENESS_UNAVAILABLE', authorized_quantity: null,
+      supply_allocated_quantity: null, emitted_route_quantity: null, unresolved_quantity: null,
+      supply_allocation_conserved: null, route_quantity_conserved: null, fully_routable: null, blockers: [] };
+    return { authority: 'KMWRR.buildK2GenerationPlan().completeness (the SAME object a live generation gets)',
+      authorized_quantity: c.authorized_quantity,
+      supply_allocated_quantity: c.supply_allocated_quantity,
+      emitted_route_quantity: c.emitted_route_quantity,
+      unresolved_quantity: c.unresolved_quantity,
+      route_count: c.route_count, blocked_line_count: c.blocked_line_count,
+      unrouted_sku_window_keys: c.unrouted_sku_window_keys || [],
+      supply_allocation_conserved: c.supply_allocation_conserved,
+      route_quantity_conserved: c.route_quantity_conserved,
+      fully_routable: c.fully_routable,
+      blockers: c.blockers || [], blocker_tokens: c.blocker_tokens || [] };
+  })();
+  out.authorized_quantity = out.completeness.authorized_quantity;
+  out.supply_allocated_quantity = out.completeness.supply_allocated_quantity;
+  out.emitted_route_quantity = out.completeness.emitted_route_quantity;
+  out.unresolved_quantity = out.completeness.unresolved_quantity;
+  out.supply_allocation_conserved = out.completeness.supply_allocation_conserved;
+  out.route_quantity_conserved = out.completeness.route_quantity_conserved;
+  out.fully_routable = out.completeness.fully_routable;
+  // The route blockers, plus the carrier master-data finding, as the flat token list an operator reads first.
+  out.route_blockers = (function () {
+    var toks = (out.completeness.blocker_tokens || []).slice();
+    if (out.carrier_master_data_ready === false && toks.indexOf('USER_MASTER_DATA_REQUIRED') === -1) {
+      toks.push('USER_MASTER_DATA_REQUIRED');
+    }
+    return toks;
+  })();
 
   // ==============================================================================================================
   // F1-7N-FC-1B-E3-R4-A2-R1-R3 §10 — THE PARITY BLOCK.
@@ -766,13 +894,35 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     ship_date: shipDate || null,
     carrier_lane_final_eligible: out.matched_carrier_cards,
     chosen_methods: out.allocator.routes.map(function (r) { return r.method; }).sort(),
+    // §4 — kept under their historical names, and no longer alone. `total_quantity` is the EMITTED route
+    // total and `conserved` is the SAFETY verdict; on the live fixture those are 0 and true, which is exactly
+    // the pair that read as a finished plan. The three verdicts state what each one is not.
     total_quantity: out.total_allocated_quantity,
     conserved: out.allocator.conserved,
+    authorized_quantity: out.authorized_quantity,
+    supply_allocated_quantity: out.supply_allocated_quantity,
+    emitted_route_quantity: out.emitted_route_quantity,
+    unresolved_quantity: out.unresolved_quantity,
+    supply_allocation_conserved: out.supply_allocation_conserved,
+    route_quantity_conserved: out.route_quantity_conserved,
+    fully_routable: out.fully_routable,
+    carrier_master_data_ready: out.carrier_master_data_ready,
+    carrier_lane_key: out.carrier_lane_key,
     duplicate_sku_window_in_group: (out.allocator.conservation && out.allocator.conservation.duplicate_sku_window_in_group) || [],
     route_count: out.would_create_route_count,
     route_intent: (typeof SAD_AI_K2_INTENT_ !== 'undefined') ? SAD_AI_K2_INTENT_ : null,
     refusals: out.allocator.refusals,
-    blockers: out.blockers.slice()
+    // §4 — THIS LINE RAN BEFORE THE ROUTE VERDICT EXISTED.
+    //
+    // `out.blockers.slice()` took a snapshot at THIS point in the function, and NO_COMPLETE_ROUTE is pushed
+    // forty lines further down. So on the live run the outer verdict was STOP with one blocker and
+    // production_parity reported `blockers: []` — the parity block, the one thing a reader consults to
+    // compare the census with a real generation, said the run had nothing wrong with it.
+    //
+    // It is assembled after the verdict instead (see `production_parity.blockers` below), which is the only
+    // ordering in which it can contain the route findings. Set to null here so a partial return can never be
+    // mistaken for "no blockers".
+    blockers: null
   };
 
   // ---- what is ALREADY stored for this scope (so "would_create" is read against reality) -------------------
@@ -785,8 +935,28 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     out.verdict = 'STOP';
   } else if (!out.allocator.routes.length) {
     out.verdict = 'STOP';
-    out.blockers.push('NO_COMPLETE_ROUTE: the allocator produced no route for this SKU. Activation must not ' +
-      'proceed on the assumption that a route exists — read `allocator.refusals` for the typed reason.');
+    // §7 — WHEN THE ONLY THING MISSING IS MASTER DATA, SAY SO BY NAME.
+    //
+    // `NO_COMPLETE_ROUTE` is true and tells an operator nothing about what to do next. When every code gate
+    // has passed and the single remaining fact is that a lane has no carrier authority, the blocker is a DATA
+    // task with a named owner, and the census says which fields and in which table. It still STOPS —
+    // fail-closed is the correct behaviour and §5 forbids routing around it — but it stops with an action.
+    if (out.carrier_master_data_ready === false) {
+      out.blockers.push('USER_MASTER_DATA_REQUIRED: every code gate passed and the demand cannot be routed '
+        + 'because the lane has no carrier authority. Unresolved ' + out.unresolved_quantity + ' units on '
+        + JSON.stringify(out.carrier_lane_key) + '. Missing: '
+        + (out.carrier_readiness && out.carrier_readiness.length
+            ? out.carrier_readiness.map(function (r) { return r.lane_key + ' -> ' + (r.missing || []).join('+'); }).join(' ; ')
+            : '(unknown)')
+        + '. Read `carrier_missing_fields` for the exact fields, and NOTE that carrier_lead_times has no '
+        + 'generic write handler — that row is entered directly in the tab. No value may be invented.');
+      out.blockers.push('NO_COMPLETE_ROUTE: ' + out.unresolved_quantity + ' of '
+        + out.authorized_quantity + ' authorized units reached no route. Typed reasons: '
+        + (out.route_blockers || []).join(', ') + '.');
+    } else {
+      out.blockers.push('NO_COMPLETE_ROUTE: the allocator produced no route for this SKU. Activation must not ' +
+        'proceed on the assumption that a route exists — read `allocator.refusals` for the typed reason.');
+    }
   } else if (!exp) {
     out.verdict = 'REVIEW';
     out.ok = true;
@@ -810,6 +980,42 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     }
   }
 
+  // §4/§7 — assembled HERE, after the verdict, so the route findings are actually in it.
+  out.production_parity.blockers = out.blockers.slice();
+  out.production_parity.route_blockers = (out.route_blockers || []).slice();
+  // §7 — "the only thing left is master data" is a CLAIM, so the gates it rests on are listed with their
+  // observed values. A reader can check each one rather than take the summary on trust.
+  out.gates_passed = {
+    scope_isolated: !!(h && h.isolation && h.isolation.foreign_site_count === 0),
+    harvest_ready: !!(out.mapped && out.mapped.ready),
+    forecast_not_blocking: !!(out.forecast_coverage && out.forecast_coverage.blocking === false),
+    snapshot_accepted: CENSUS_str_(h && h.sourceDataAsOf) !== '',
+    // The authority object is CONSTRUCTED only on the resolved path (61_ returns it after checking its own
+    // `ok`), so it carries no `ok` field of its own — reading one asserted a shape that does not exist and
+    // reported a false failure on a healthy run. The gate reads the two facts the object actually makes:
+    // which GAP-INV run dated this harvest, and the date it resolved to.
+    gap_lineage_resolved: !!(h && h.sourceDataAsOfAuthority
+      && CENSUS_str_(h.sourceDataAsOfAuthority.run_id) !== ''
+      && CENSUS_str_(h.sourceDataAsOfAuthority.date) !== ''),
+    source_lines_built: !!(out.source_lines && out.source_lines.ok),
+    allocated_lines_present: (out.production_parity.allocated_line_count || 0) > 0,
+    destination_resolved: !!(out.sku_facts && (out.sku_facts.destination_resolution || []).length
+      && (out.sku_facts.destination_resolution || []).every(function (d) { return CENSUS_str_(d.kind || d.destination_kind) !== ''; })),
+    supply_allocation_conserved: out.supply_allocation_conserved === true,
+    schema_parity: (out.schema_parity == null) ? null : (out.schema_parity.agree === true),
+    carrier_master_data_ready: out.carrier_master_data_ready,
+    route_quantity_conserved: out.route_quantity_conserved,
+    fully_routable: out.fully_routable
+  };
+  out.first_failing_predicate = (function () {
+    var order = ['scope_isolated', 'harvest_ready', 'forecast_not_blocking', 'snapshot_accepted',
+      'gap_lineage_resolved', 'source_lines_built', 'allocated_lines_present', 'destination_resolved',
+      'supply_allocation_conserved', 'carrier_master_data_ready', 'route_quantity_conserved', 'fully_routable'];
+    for (var i = 0; i < order.length; i++) {
+      if (out.gates_passed[order[i]] === false) return order[i];
+    }
+    return null;
+  })();
   out.elapsed_ms = Date.now() - t0;
   CENSUS_logAll_(out);
   return out;
@@ -838,6 +1044,102 @@ function CENSUS_activeDrafts_(ss, company, country, marketplace) {
  * very bottom of the function, so the twelve early returns logged a single BLOCKED line and nothing else —
  * a run that refused reported less than a run that succeeded, which is backwards.
  */
+// F1-7N-FC-1B-E3-R4-A2-R1-R4 §3 — LIFTED OUT OF THE LOGGER.
+//
+// This computation lived inside CENSUS_logAll_, which runs after the verdict, so the parity was a line printed
+// at the end rather than a fact the census held. Nothing could gate on it: reading it from the gate list
+// produced null on every run, healthy or not. A verdict input must be established before the verdict.
+function CENSUS_schemaParity_() {
+  var _ds = null, _dsSheet = null;
+  try { _dsSheet = SpreadsheetApp.openById(prodExpectedDbId_()).getSheetByName('shipping_allocation_drafts'); } catch (eD1) { _dsSheet = null; }
+  if (!(_dsSheet && typeof sadLiveHeaderNames_ === 'function' && typeof sadResolveHeaderSchema_ === 'function')) return null;
+  try { _ds = sadResolveHeaderSchema_(sadLiveHeaderNames_(_dsSheet)); } catch (eD2) { return null; }
+  try {
+  // ==========================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R4 §3 — THE DISAGREEMENT NAMED A CAUSE IT HAD NOT MEASURED.
+  //
+  // R3 fixed the predicate (a null lifecycle version is a disagreement, and it is) and then labelled the
+  // result `LIFECYCLE_RESOLVED_NO_VERSION_LIFECYCLE_COLUMNS_INCOMPLETE`. The live log printed that token
+  // beside `lifecycle_complete: true`, so the report contradicted itself in adjacent fields, and the token
+  // sent the reader to look for missing columns on a sheet that has all of them.
+  //
+  // WHAT THE REPOSITORY ACTUALLY DOES, measured offline over the real header constants before this block was
+  // touched: at 34, 35 and 36 columns the writer and the lifecycle BOTH resolve, and both name the SAME
+  // version (FB4C-AI-LIFECYCLE-1, FB4F-B4-ROUTE-IDENTITY-1, FB4G-A2R3-CREATE-IDEMPOTENCY-1). aiplSchemaVersionOf_
+  // has delegated to sadResolveHeaderSchema_ since R1, so in SOURCE there is one authority and no
+  // disagreement is possible. §3.4 is therefore already satisfied by the code in this repository.
+  //
+  // WHICH LEAVES EXACTLY ONE EXPLANATION for the live pair (writer FB4G / lifecycle null), and it is not a
+  // source defect: the two readings came from DIFFERENT BUILDS. Both sides here read the same sheet through
+  // the same sadLiveHeaderNames_, so the input is identical by construction and the only variable is which
+  // module body ran. The pre-R1 aiplSchemaVersionOf_ compared the header byte-for-byte against
+  // SHIPPING_ALLOCATION_DRAFTS_HEADERS_CANONICAL_, which is frozen at 34 ON PURPOSE, and returned '' for any
+  // 36-column sheet — reproducing the live output exactly. The deployed project has a current 16_ and a
+  // stale 69_.
+  //
+  // That is a state a diagnostic MUST be able to name, because it is the dangerous one: the writer accepts
+  // and the lifecycle expires nothing, so a generation writes rows that no later run can supersede. So the
+  // cause is now DISCRIMINATED from the facts at hand, and each branch asserts only what it can see:
+  //
+  //   * the writer refuses            -> the header itself is wrong
+  //   * writer ok, generation is not  -> the lifecycle columns really ARE incomplete, and they are named
+  //     lifecycle_complete
+  //   * writer ok, generation IS      -> the columns are present and complete, so the resolver disagreeing
+  //     lifecycle_complete, and yet      with itself cannot be about columns. The expected version is
+  //     the lifecycle names nothing      re-derived from the shared authority and reported beside what the
+  //                                     lifecycle module returned, and the finding is a DEPLOYMENT skew.
+  //
+  // `shares_authority` is checked at RUNTIME rather than asserted by comment: the lifecycle resolver is
+  // asked to resolve the same header and its verdict compared with the writer's, which is the only way this
+  // file can tell a project with one authority from a project that merely used to have one.
+  // ==========================================================================================================
+  return (_ds && typeof aiplSchemaVersionOf_ === 'function')
+    ? (function () {
+        var _live = sadLiveHeaderNames_(_dsSheet);
+        var _lv = aiplSchemaVersionOf_(_live) || null;
+        var _wv = _ds.version || null;
+        var _lifeRes = (typeof aiplResolveSchema_ === 'function') ? aiplResolveSchema_(_live) : null;
+        // Does the lifecycle module reach the SAME resolution the writer did? Same input, same verdict.
+        var _shares = !!(_lifeRes && _lifeRes.ok === _ds.ok
+          && CENSUS_str_(_lifeRes.version) === CENSUS_str_(_ds.version)
+          && _lifeRes.lifecycle_complete === _ds.lifecycle_complete);
+        var _need = (typeof SAD_LIFECYCLE_TAIL_COLUMNS_ !== 'undefined') ? SAD_LIFECYCLE_TAIL_COLUMNS_.slice() : [];
+        var _have = {}; (_live || []).forEach(function (hh) { _have[CENSUS_str_(hh)] = 1; });
+        var _missingLife = _need.filter(function (c) { return !_have[c]; });
+        var _agree = (_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv;
+        var _dis = null;
+        if (!_agree) {
+          if (_ds.ok !== true) _dis = 'WRITER_REFUSES_THIS_HEADER';
+          else if (_wv === null) _dis = 'WRITER_RESOLVED_NO_VERSION';
+          else if (_lv === null) {
+            // The ONLY branch that was previously guessed. It is now decided by whether the recognized
+            // generation is lifecycle-complete — a fact this block already holds.
+            _dis = (_ds.lifecycle_complete === true)
+              ? 'LIFECYCLE_RESOLVER_STALE_IN_DEPLOYED_PROJECT: the recognized generation IS '
+                + 'lifecycle-complete and every lifecycle column is present, so this cannot be a column '
+                + 'problem. The writer and the lifecycle read the same header and returned different '
+                + 'answers, which means different builds are running. Expected ' + _wv
+                + ' from the shared authority; the lifecycle module returned none. Sync '
+                + '69_api_v1_ai_plan_lifecycle.gs into the Apps Script project.'
+              : ('LIFECYCLE_COLUMNS_INCOMPLETE: missing ' + (_missingLife.join(',') || '(none named)'));
+          } else _dis = 'WRITER_AND_LIFECYCLE_NAME_DIFFERENT_VERSIONS';
+        }
+        return { live_header_count: (_live || []).length,
+          writer_accepts: _ds.ok === true, writer_version: _wv,
+          recognized_generation: _wv, lifecycle_complete: _ds.lifecycle_complete === true,
+          lifecycle_version: _lv,
+          lifecycle_required_columns: _need, missing_lifecycle_columns: _missingLife,
+          shares_authority: _shares,
+          lifecycle_resolution: _lifeRes ? { ok: _lifeRes.ok, version: _lifeRes.version,
+            lifecycle_complete: _lifeRes.lifecycle_complete, reason: _lifeRes.reason || null } : null,
+          supported_versions: _ds.supported_versions || null,
+          agree: _agree, disagreement: _dis };
+      })()
+    : null;
+
+  } catch (eS3) { return null; }
+}
+
 function CENSUS_logAll_(out) {
   CENSUS_log_('verdict', out.verdict);
   CENSUS_log_('scope', out.scope);
@@ -864,6 +1166,7 @@ function CENSUS_logAll_(out) {
   // not a private array, so `.length` would have printed undefined on every run.
   CENSUS_log_('matched_carrier_cards', out.matched_carrier_cards);
   CENSUS_log_('carrier_lane_funnels', out.carrier_lane_funnels);
+  CENSUS_log_('schema_writer_lifecycle_parity', out.schema_parity);
   CENSUS_log_('production_parity', out.production_parity);
   CENSUS_log_('allocator', out.allocator);
   CENSUS_log_('total_allocated_quantity', out.total_allocated_quantity);
@@ -1043,19 +1346,9 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
     // Parity now requires what the word means: the writer accepts, the lifecycle names a version, and it is
     // the SAME version. A null on either side is a DISAGREEMENT, which is the case that matters, because it
     // is exactly the mixed-deployment state where a generation writes and nothing expires.
-    CENSUS_log_('schema_writer_lifecycle_parity', (_ds && typeof aiplSchemaVersionOf_ === 'function')
-      ? (function () {
-          var _lv = aiplSchemaVersionOf_(sadLiveHeaderNames_(_dsSheet)) || null;
-          var _wv = _ds.version || null;
-          return { writer_accepts: _ds.ok === true, writer_version: _wv, lifecycle_version: _lv,
-            agree: (_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv,
-            disagreement: ((_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv) ? null
-              : (_ds.ok !== true ? 'WRITER_REFUSES_THIS_HEADER'
-                : (_wv === null ? 'WRITER_RESOLVED_NO_VERSION'
-                  : (_lv === null ? 'LIFECYCLE_RESOLVED_NO_VERSION_LIFECYCLE_COLUMNS_INCOMPLETE'
-                    : 'WRITER_AND_LIFECYCLE_NAME_DIFFERENT_VERSIONS'))) };
-        })()
-      : null);
+    // R4: the runner's census result is `res`. Referencing `out` here threw straight into the empty catch
+    // below, so this line silently stopped appearing in the operator's log the moment the computation moved.
+    CENSUS_log_('schema_writer_lifecycle_parity', res && res.schema_parity);
   } catch (eS2) {}
   // §11 — THE DETERMINISTIC IDENTITY PREVIEW. Derived from the SAME authority the writer resolves with,
   // over the routes this census already computed. Nothing is written and no writer is constructed; this only

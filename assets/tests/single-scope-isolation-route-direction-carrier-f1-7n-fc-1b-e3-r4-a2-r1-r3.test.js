@@ -646,7 +646,14 @@ eq(h.run('weeklyAiPlanSplitBySource_({ allocationBreakdown: [{ sourceWarehouseId
 // ================================================================================================================
 section('H. §9 — the diagnostic stops contradicting production');
 // ================================================================================================================
-eq(CEN.build, 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'H1  the census reports the build it actually is');
+// RESTATED STRUCTURALLY (A2-R1-R4). This suite already fixed its K1-equivalent against the shared ledger for
+// exactly this reason and left three sibling assertions pinned to the same literal, so the very next round
+// broke them. The CLAIM is that the census reports a REAL, ledger-registered stamp that is not older than the
+// round which introduced this suite — never that it equals one string a later round must be free to move.
+ok(RO.OWNER_STAMPS.indexOf(CEN.build) !== -1,
+  'H1  the census reports a build stamp the shared ledger recognises');
+ok(RO.stampAtOrAfter(CEN.build, 'F1-7N-FC-1B-E3-R4-A2-R1-R3'),
+  'H1b and no older than the round that introduced this suite');
 ok(CEN.harvest.snapshot_freshness && CEN.harvest.snapshot_freshness.state === 'CURRENT_AFTER_REFRESH',
   'H2  on a DONE job the freshness STATE is present, not null');
 eq(CEN.harvest.snapshot_freshness.ok, true, 'H2a and accepted');
@@ -673,7 +680,11 @@ var PAR = CEN.harvest ? h.run('(function () { var sh = SS.getSheetByName("shippi
   + ' var lv = aiplSchemaVersionOf_(sadLiveHeaderNames_(sh)) || null;'
   + ' return { writer: ds.version, lifecycle: lv }; })()') : null;
 eq(PAR.writer, PAR.lifecycle, 'H6  writer and lifecycle name the SAME schema version on a healthy header');
-var parityLine = /agree: \(_ds\.ok === true\) && _wv !== null && _lv !== null && _wv === _lv/.test(TEMP);
+// RESTATED (A2-R1-R4): R4 lifted this computation out of CENSUS_logAll_ into CENSUS_schemaParity_ so the
+// verdict could be a FACT established before the census judges on it (reading it from the gate list returned
+// null on every run, healthy or not). The predicate is unchanged and now sits in a named variable, so the
+// assertion reads the predicate rather than one formatting of it.
+var parityLine = /\(_ds\.ok === true\) && _wv !== null && _lv !== null && _wv === _lv/.test(TEMP);
 ok(parityLine, 'H6a and parity REQUIRES both to be non-null and equal');
 // Asserted through the operator's own entry point, not only against the source text.
 var hRun = build({});
@@ -683,11 +694,13 @@ var parLog = runLog(/schema_writer_lifecycle_parity/);
 ok(/"agree":true/.test(parLog), 'H6c the shipped runner reports parity on a healthy header');
 ok(/"disagreement":null/.test(parLog), 'H6d with no disagreement to name');
 ok(!/"lifecycle_version":null/.test(parLog), 'H6e and a real lifecycle version, not a null it agreed with');
-ok(/F1-7N-FC-1B-E3-R4-A2-R1-R3/.test(runLog(/census_build/)), 'H6f the runner reports this round\'s census build');
+ok(RO.OWNER_STAMPS.some(function (st) {
+    return RO.stampAtOrAfter(st, 'F1-7N-FC-1B-E3-R4-A2-R1-R3') && runLog(/census_build/).indexOf(st) !== -1;
+  }), 'H6f the runner reports a census build no older than this suite\'s round');
 ok(/UPSERT_AI_GENERATED_K2_ROUTE/.test(runLog(/route_intent_that_generation_would_use/)),
   'H6g and the intent a live Generate would declare');
 ok(/false/.test(runLog(/route_intent_is_client_grantable/)), 'H6h which no client can grant');
-ok(!/agree: \(_ds\.ok === true\) === \(_ds\.version !== null\)/.test(TEMP),
+ok(!/\(_ds\.ok === true\) === \(_ds\.version !== null\)/.test(TEMP),
   'H6b the old self-comparison (which was true whenever the writer was self-consistent) is gone');
 // The destination and route field-name bugs.
 eq(CEN.sku_facts.destination_resolution[0].kind, 'MARKETPLACE',
@@ -811,7 +824,8 @@ ok(/company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R'/.tes
   'K2a and it is the one scope under census');
 ok(!/clasp|git push|gh pr/.test(G61 + TEMP), 'K3  nothing in this round reaches for a remote');
 var _wapStamp = (G61.match(/var WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-eq(_wapStamp, 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'K4  61_ carries this round\'s stamp');
+ok(RO.stampAtOrAfter(_wapStamp, 'F1-7N-FC-1B-E3-R4-A2-R1-R3'),
+  'K4  61_ carries a stamp no older than this suite\'s round');
 eq(_wapStamp, ((G63.match(/symbol: 'WAP_BUILD_VERSION_', expected: '([^']+)'/) || [])[1]),
   'K4a and its deployment manifest expects exactly that');
 ok(RO.BUILD_STAMP_RE.test(_wapStamp), 'K4b which the shared stamp validator accepts');
@@ -924,8 +938,8 @@ mut('L14 a missing Forecast row BLOCKS the census again', function () {
 });
 mut('L15 schema parity AGREES with a null lifecycle version', function () {
   var hm = build({ mutate: function (S) {
-    S.census = swap(S.census, "            agree: (_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv,",
-      "            agree: (_ds.ok === true) === (_wv !== null),");
+    S.census = swap(S.census, "        var _agree = (_ds.ok === true) && _wv !== null && _lv !== null && _wv === _lv;",
+      "        var _agree = (_ds.ok === true) === (_wv !== null);");
     S.aipl = swap(S.aipl, 'return (r && r.ok && r.lifecycle_complete) ? aiplStr_(r.version) : ', 'return (false) ? aiplStr_(r.version) : ');
   } });
   // The parity line is logged by the OPERATOR'S runner, not by the census function, so that is what is called.

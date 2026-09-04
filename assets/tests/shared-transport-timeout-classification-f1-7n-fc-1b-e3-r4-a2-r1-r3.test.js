@@ -314,11 +314,24 @@ section('H. release identity');
 var IDX = read('index.html');
 eq(RO.staleAppTokenRefs(IDX), [], 'H1  no browser asset is left behind on an older application token');
 ok(RO.appTokenRefCount(IDX) >= 19, 'H1a and the co-deployed set carries the current one');
-ok(/fc1be3r4a2r1r3-transport-20260904/.test(IDX), 'H2  this round minted a NEW application token');
-['assets/js/utils/inventory-compat.js', 'assets/js/api/km-transport.js',
- 'assets/js/api/km-api-foundation.js', 'assets/js/pages/inventory-replenishment.js'].forEach(function (f) {
-  ok(IDX.indexOf(f + '?v=fc1be3r4a2r1r3-transport-20260904') !== -1,
-    'H3  ' + f.split('/').pop() + ' carries it (it changed this round)');
+// RESTATED STRUCTURALLY (F1-7N-FC-1B-E3-R4-A2-R1-R4). This is the FOURTEENTH consecutive round in which a
+// suite pinned its own token literal as "the current one" and the next round's legitimate rotation broke it.
+// R3 recognised the pattern, fixed its K1 assertion against the shared ledger, and left THESE two pinned — so
+// the very next round reproduced the failure in the same file.
+//
+// The claims were never "the token equals this string". They were: (a) this round minted a token of its own,
+// and (b) the four files it changed are co-deployed on ONE token, so no browser can hold a mixed set. Both are
+// answerable from the ledger, which owns the ordering, and from index.html itself. Neither needs a literal.
+ok(RO.tokenIndex('fc1be3r4a2r1r3-transport-20260904') !== -1,
+  'H2  this round minted a NEW application token, and the shared ledger records it');
+var _codep = ['assets/js/utils/inventory-compat.js', 'assets/js/api/km-transport.js',
+ 'assets/js/api/km-api-foundation.js', 'assets/js/pages/inventory-replenishment.js'];
+var _codepTokens = RO.parseIndexTokens(IDX);
+_codep.forEach(function (f) {
+  // The token these four carry must be the CURRENT one — whichever round that now is. A later round rotating
+  // them together is the system working; a later round rotating only some of them is the defect.
+  ok(_codepTokens[f] === RO.currentAppToken(),
+    'H3  ' + f.split('/').pop() + ' carries the CURRENT application token (co-deployed set)');
 });
 
 // ================================================================================================================
