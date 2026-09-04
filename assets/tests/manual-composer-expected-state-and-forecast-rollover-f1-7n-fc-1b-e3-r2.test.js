@@ -608,8 +608,13 @@ function runAssertions() {
   var G61 = read('assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs');
   ok(/gapReadObjects_\(ss, 'fc_regular_forecast'\)/.test(code(extractFn(G61, 'weeklyAiPlanBuildKmafReceivers_'))),
     'G7  §G.6 the harvest reads fc_regular_forecast LIVE at run time...');
-  ok(/recoWsRegularForecastByMonth_/.test(code(extractFn(G61, 'weeklyAiPlanBuildKmafReceivers_'))),
-    'G7a ...through the shipped monthly reader, so a new base row takes effect on the next run');
+  // RESTATED (F1-7N-FC-1B-E3-R3-R1): named the reader by its identifier, and R3-R1 replaces it with KMFCN —
+  // deliberately, because `recoWsRegularForecastByMonth_` discards a CONFLICTING duplicate exactly as it
+  // discards a missing row, so the harvest could not tell a year boundary from a data conflict. The property
+  // §G.6 protects is that the harvest reads the table LIVE through a SHARED canonical reader (so a new base
+  // row takes effect on the next run and no second reading of the table exists), which is still true.
+  ok(/KMFCN\.normalizeWindow/.test(code(extractFn(G61, 'weeklyAiPlanBuildKmafReceivers_'))),
+    'G7a ...through the SHARED canonical reader, so a new base row takes effect on the next run');
 
   // ==============================================================================================================
   section('§F — the census: read-only, and the four causes stay four');
@@ -1047,8 +1052,14 @@ function runAssertions() {
   // Nothing backend changed this round, so the build stamps must NOT have moved: §K's sync set is NONE.
   eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R1',
     'I3  §K 00_config.gs is UNCHANGED this round — its stamp still reads R1');
-  eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(HLTH)[1], 'F1-7N-FC-1B-E3-R1',
-    'I3a and so does 63_ — a frontend round must not bump a backend build');
+  // RESTATED (F1-7N-FC-1B-E3-R3-R1): true of R2, which changed no backend file. R3-R1 IS a backend round — it
+  // changes 61_ and the manifest — so the stamp moves by design. What must ALWAYS hold, in every round, is
+  // that 63_ declares exactly what its own manifest entry expects; a half-synced 63_ is the named
+  // mixed_deployment fault this manifest exists to produce.
+  var _sysExpect = (HLTH.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
+  ok(_sysExpect, 'I3a 63_ has a manifest entry for itself');
+  eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(HLTH)[1], _sysExpect,
+    'I3b and declares exactly the build that entry expects (' + _sysExpect + ')');
   ok(/inventory_ai_plan_db_generation_enabled/.test(HLTH),
     'I4  §I health still reports the flag, so flag_effective is readable after a deploy');
   // §K — the TEMP tools are NOT production files.
@@ -1060,8 +1071,14 @@ function runAssertions() {
   // ==============================================================================================================
   section('§K — release identity');
   // ==============================================================================================================
-  eq(RO.currentAppToken(), 'fc1b-e3r2-composerstate-20260903', 'K1  this round mints a NEW application token');
-  ok(RO.tokenIndex(RO.currentAppToken()) > RO.tokenIndex('fc1b-e3r1-readiness-20260903'),
+  // RESTATED (F1-7N-FC-1B-E3-R3-R1): the SEVENTH consecutive round to pin its own token as "the current
+  // one", and it breaks the same way every time - the next round rotates the series and an assertion about
+  // the PRESENT silently becomes one about the past. R2's token is a FLOOR: it was minted, it came after
+  // R1's, and the series has never moved behind it. All three still fail if R2's rotation is undone.
+  ok(RO.tokenIndex('fc1b-e3r2-composerstate-20260903') !== -1, 'K1  this round minted its own application token');
+  ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r2-composerstate-20260903'),
+    'K1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
+  ok(RO.tokenIndex('fc1b-e3r2-composerstate-20260903') > RO.tokenIndex('fc1b-e3r1-readiness-20260903'),
     'K1a strictly after R1\'s, which was PUBLISHED (origin/main carries 951d58c)');
   eq((INDEX.match(/\?v=fc1b-e3r1-readiness-20260903/g) || []).length, 0, 'K2  zero production refs remain on it');
   eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2a and nothing is left behind on any superseded token');
@@ -1203,10 +1220,13 @@ function runAssertions() {
     return !!block && /#dc2626/.test(block[1]);
   });
   // 20. a token not rotated while the module that must be refetched did change
-  mut('N20 the cache token is left on R1\'s while three assets changed', function () {
-    var m = swap(INDEX, 'inventory-compat.js?v=fc1b-e3r2-composerstate-20260903',
-      'inventory-compat.js?v=fc1b-e3r1-readiness-20260903');
-    return RO.staleAppTokenRefs(m).length > 0;
+  // RESTATED (F1-7N-FC-1B-E3-R3-R1): the anchor named R2's literal token, so the mutation stopped applying
+  // the moment the series moved. The defect it catches - one asset left behind on a superseded token - is
+  // unchanged; the anchor is now derived from whatever the CURRENT token is.
+  mut('N20 one asset is left behind on a superseded token', function () {
+    var cur = RO.currentAppToken(), prev = 'fc1b-e3r1-readiness-20260903';
+    var m = swap(INDEX, 'inventory-compat.js?v=' + cur, 'inventory-compat.js?v=' + prev);
+    return RO.staleAppTokenRefs(INDEX).length === 0 && RO.staleAppTokenRefs(m).length > 0;
   });
 
   summary();

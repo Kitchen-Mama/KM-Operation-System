@@ -5122,6 +5122,97 @@ function _irReadTimeoutDiagnosis_(action) {
 }
 window._irReadTimeoutDiagnosis_ = _irReadTimeoutDiagnosis_;
 
+// F1-7N-FC-1B-E3-R3-R1 §8 — PER-STAGE MEASUREMENT FOR THE RECURRING FIRST-ATTEMPT TIMEOUT.
+//
+// THE STATUS CHANGED, SO THE REPORT MUST. This was carried as NOT REPRODUCED; it has now been observed
+// repeatedly across acceptance rounds in the same shape — the FIRST entry into Site Inventory times out
+// at the 60s client bound, the second read succeeds, and every read after that succeeds. That is
+// RECURRING_FIRST_ATTEMPT_TIMEOUT with SUCCESS_AFTER_RETRY, and it is NOT the forecast gap: the forecast is a
+// server-side data question and this is a first-request latency question, with no causal path between them.
+//
+// WHAT THIS ADDS IS MEASUREMENT AND NOTHING ELSE. No bound is raised, no retry is added, and nothing cached is
+// ever presented as a fresh answer. "Cold start" is a HYPOTHESIS, and the point of measuring per stage is to
+// find out whether it survives contact with the numbers: a cold Apps Script container, a first-call
+// authorization round trip, an unwarmed cache table, a redirect that only the first request follows, and a
+// concurrency pile-up all produce the same one-line symptom and need different fixes.
+//
+// It reads what the transport ALREADY records (bounded at 400 samples: action, kind, code, phase, ms — no
+// URL, no payload, no row) plus one page-boot mark taken here. Server execution time is NOT available: the
+// transport records client elapsed only, so it is reported as null rather than estimated from the client
+// number, which would be a guess wearing a measurement's clothes.
+//
+// Call `_irReadStageReport_()` from the console after a slow first load.
+var _IR_BOOT_MS_ = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
+// The stages §8 names, mapped to the ACTIONS that implement them. An action nobody called reports null
+// rather than 0 — "not measured" and "took no time" are different answers.
+var IR_READ_STAGES_ = [
+  { stage: 'deployment_contract', actions: ['checkDeploymentContract', 'system.health', 'systemHealth'] },
+  { stage: 'inventory_workspace', actions: ['getInventoryReplenishmentWorkspace', 'adaptInventoryReplenishmentWorkspace', 'loadOperationDb'] },
+  { stage: 'recommendation_read', actions: ['getInventoryReplenishmentGap', 'getGapJobStatus'] },
+  { stage: 'allocation_hydration', actions: ['getShippingAllocationDraftWorkspace', 'getShippingAllocationDrafts'] },
+  { stage: 'carrier_authorities', actions: ['getCarrierRateCards', 'getWarehouseAllocationConfig'] }
+];
+function _irReadStageReport_() {
+  var out = { available: false, page_boot_elapsed_ms: null, client_total_elapsed_ms: null,
+    server_execution_ms: null, request_count: 0, coalesced_count: 0, retry_count: 0, stages: [],
+    first_attempt: null, retry_attempt: null, classification: 'NO_SAMPLES' };
+  try {
+    out.page_boot_elapsed_ms = ((typeof Date !== 'undefined' && Date.now) ? Date.now() : 0) - _IR_BOOT_MS_;
+    if (!(window.KM && window.KM.transport && typeof window.KM.transport.metrics === 'function')) {
+      out.classification = 'TRANSPORT_METRICS_UNAVAILABLE';
+      return out;
+    }
+    var m = window.KM.transport.metrics() || {};
+    var samples = m.samples || [];
+    out.available = true;
+    out.request_count = m.requests || 0;
+    out.coalesced_count = m.coalesced || 0;
+    out.retry_count = m.retries || 0;
+    // §8 — server execution time is only reported if the transport actually carries it. It does not
+    // today, so this stays null instead of being inferred from the client number.
+    out.server_execution_ms = null;
+    var reads = samples.filter(function (x) { return x && String(x.kind || '') === 'read'; });
+    out.client_total_elapsed_ms = reads.reduce(function (a, x) { return a + (Number(x.ms) || 0); }, 0);
+    IR_READ_STAGES_.forEach(function (st) {
+      var mine = reads.filter(function (x) { return st.actions.indexOf(String(x.action || '')) !== -1; });
+      out.stages.push({
+        stage: st.stage,
+        attempts: mine.length,
+        elapsed_ms: mine.length ? mine.map(function (x) { return Number(x.ms) || 0; }) : null,
+        codes: mine.map(function (x) { return String(x.code || '') || 'SUCCESS'; }),
+        slowest_ms: mine.length ? mine.reduce(function (a, x) { return Math.max(a, Number(x.ms) || 0); }, 0) : null
+      });
+    });
+    // FIRST ATTEMPT vs RETRY, which is the whole question: what is DIFFERENT about the second request.
+    if (reads.length) {
+      out.first_attempt = { action: String(reads[0].action || ''), ms: Number(reads[0].ms) || 0,
+        code: String(reads[0].code || '') || 'SUCCESS', phase: String(reads[0].phase || '') };
+      var retry = null;
+      for (var i = 1; i < reads.length; i++) {
+        if (String(reads[i].action || '') === out.first_attempt.action) { retry = reads[i]; break; }
+      }
+      out.retry_attempt = retry ? { action: String(retry.action || ''), ms: Number(retry.ms) || 0,
+        code: String(retry.code || '') || 'SUCCESS', phase: String(retry.phase || '') } : null;
+      if (out.retry_attempt) out.first_vs_retry_delta_ms = out.first_attempt.ms - out.retry_attempt.ms;
+    }
+    if (window.IRReadTimeoutDiagnostic && typeof window.IRReadTimeoutDiagnostic.classify === 'function') {
+      var c = window.IRReadTimeoutDiagnostic.classify(samples, null);
+      out.classification = c.classification;
+      // §8 — once the same first-attempt timeout has been seen more than once, "transient" is no longer
+      // an available reading, and the report says the name the evidence supports.
+      if (c.classification === 'SUCCESS_AFTER_RETRY' && c.timeouts >= 1) {
+        out.recurring_status = 'RECURRING_FIRST_ATTEMPT_TIMEOUT';
+      }
+    }
+    return out;
+  } catch (e) {
+    out.classification = 'STAGE_REPORT_THREW';
+    out.error = (e && e.message) ? String(e.message) : String(e);
+    return out;
+  }
+}
+window._irReadStageReport_ = _irReadStageReport_;
+
 // F1-7N-FA-3C-R6E-P0 — SAFE STRUCTURED save-error surface. Never fakes success (no "Saved"), never renders
 // "[object Object]", never exposes a stack/token. Concise user line + a COLLAPSED technical disclosure (code /
 // affected table / missing header / request id — all HTML-escaped). Keeps the sessionStorage recovery cache.

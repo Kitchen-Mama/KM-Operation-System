@@ -119,6 +119,11 @@
     PLANNING_FACTS_NOT_READY: READINESS_CODES.SKU_FACTS_MISSING,
     KMAF_NOT_READY: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE,
     // 61_ harvest-level codes (carried in `harvest.errors`)
+    // F1-7N-FC-1B-E3-R3-R1 — the code 61_ raises now. It is DELIBERATELY the same readiness code: to an
+    // operator the consequence is identical (this SKU has no resolvable demand basis), and §C of E3-R1 says to
+    // reuse an existing code rather than mint a synonym. FORECAST_SHARE_INCOMPLETE is KEPT beside it because a
+    // deployment that still carries the pre-R3-R1 61_ emits that one, and a mixed deployment must still map.
+    FORECAST_BASIS_UNRESOLVED: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
     FORECAST_SHARE_INCOMPLETE: READINESS_CODES.SUGGESTED_QTY_UNRESOLVED,
     RECEIVER_WITHOUT_PLANNING_FACT: READINESS_CODES.CANONICAL_MAPPING_INCOMPLETE
   };

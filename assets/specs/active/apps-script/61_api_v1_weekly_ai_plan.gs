@@ -170,7 +170,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R1';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R3-R1';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -645,7 +645,10 @@ function weeklyAiPlanHarvest_(ss, scope) {
     sourceDataAsOf: built.sourceDataAsOf,
     // §D — the diagnostics this function collected. `errors` is the per-site drop list the mapper turns
     // into typed readiness issues; the counts are what make "every site was dropped" readable as one number.
-    errors: errors, site_count: sites.length, receiver_count: (built.receivers || []).length
+    errors: errors, site_count: sites.length, receiver_count: (built.receivers || []).length,
+    // §1 — the normalization audit, so a report can state how many months were real, how many were an
+    // explicit zero, and how many were defaulted — without re-deriving any of it.
+    forecast_normalization: built.forecastNormalization || null
   };
 }
 
@@ -786,6 +789,29 @@ function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors) {
  * Σ Regular FC over M+1..M+4 (reused via recoWsRegularForecastByMonth_ + KMPCX._forecastWeightMonths — the internal
  * resolveForecastWeight/buildRegularForecastByMonth are NOT globally callable). LIVE-VERIFY.
  */
+/**
+ * F1-7N-FC-1B-E3-R3-R1 §1/§3 — THE READ CONTEXT FOR THE FORECAST TABLE.
+ *
+ * KMFCN is allowed to read an absent month as zero ONLY when the system demonstrably looked and found nothing.
+ * `gapReadObjects_` cannot supply that: it returns [] for a sheet that is MISSING and for one that is merely
+ * EMPTY, and those two mean opposite things. A missing table read as "every month is zero" would turn a
+ * deployment fault into a silent plan for nothing, which is the exact failure the zero-default must not create.
+ * So the tab and its header row are inspected directly (read-only) and the result is passed as context.
+ */
+function weeklyAiPlanForecastReadContext_(ss) {
+  try {
+    var sh = ss.getSheetByName('fc_regular_forecast');
+    if (!sh) return { readSucceeded: true, tableMissing: true, schemaValid: false, headers: [] };
+    if (sh.getLastColumn() < 1) return { readSucceeded: true, tableMissing: false, schemaValid: false, headers: [] };
+    var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+      .map(function (h) { return weeklyAiPlanStr_(h).toLowerCase(); });
+    return { readSucceeded: true, tableMissing: false, schemaValid: true, headers: hdr };
+  } catch (e) {
+    // A THROW IS NOT AN EMPTY TABLE. The outcome is unknown, and unknown never becomes zero.
+    return { readSucceeded: false, readOutcomeUnknown: true, transportFailed: true, headers: [] };
+  }
+}
+
 function weeklyAiPlanBuildKmafReceivers_(ss, scope, sites, upcBySku, errors) {
   var calcMonth = weeklyAiPlanStr_(scope.planningCycle).slice(5);
   var months = (typeof KMPCX !== 'undefined' && KMPCX && typeof KMPCX._forecastWeightMonths === 'function') ? KMPCX._forecastWeightMonths(calcMonth) : null;
@@ -794,15 +820,44 @@ function weeklyAiPlanBuildKmafReceivers_(ss, scope, sites, upcBySku, errors) {
   var warehouses = (typeof gapReadObjects_ === 'function') ? gapReadObjects_(ss, 'warehouses') : [];
 
   var receivers = [], horizonRows = [], sourceDataAsOf = null;
+  // F1-7N-FC-1B-E3-R3-R1 §1/§3 — ONE READING OF AN ABSENT FORECAST MONTH, AND IT IS ZERO.
+  //
+  // WHAT THIS REPLACES, AND WHY IT WAS WRONG. The §7 basis used to require all four months to be PRESENT and
+  // dropped the whole site otherwise (`FORECAST_SHARE_INCOMPLETE`). At a year boundary that is every site: the
+  // window for RECO-2026-09 is 2026-10..2027-01 and nobody had created the 2027 base rows, so all 495 active
+  // scopes were dropped, the receiver universe was empty, and the AI Plan answered HARVEST_NOT_READY.
+  //
+  // The same absence was ALREADY being read the opposite way by the same table's other consumer: the
+  // recommendation workspace skips a month it cannot resolve and carries on, which is how Site Inventory
+  // showed a materialized Suggested Qty of 520 for a SKU with no 2027 row. One fact, two readings, and the
+  // Shipping side's was the one that stopped the work.
+  //
+  // KMFCN is now the only authority for that reading, shared with every other consumer, and it keeps the
+  // distinction the old code could not make: `recoWsRegularForecastByMonth_` discards a CONFLICTING duplicate
+  // exactly as it discards a missing row, so a genuine data conflict was indistinguishable from a year
+  // boundary. KMFCN returns 0 for the three absences and REFUSES a conflict, an invalid value, a missing
+  // table, a missing header, an incomplete scope and any unknown read outcome.
+  var fcCtx = weeklyAiPlanForecastReadContext_(ss);
+  var fcNorm = { explicit_zero: 0, default_zero_blank: 0, default_zero_missing_year: 0, actual: 0 };
   for (var i = 0; i < sites.length; i++) {
     var st = sites[i];
     var demandRef = [scope.company, scope.country, st.marketplace, st.sku, st.destinationWarehouseId].join('|');
-    var fcMap = (typeof recoWsRegularForecastByMonth_ === 'function') ? recoWsRegularForecastByMonth_(fcRows, { company: scope.company, country: scope.country, marketplace: st.marketplace }, st.sku, months) : {};
-    // §7 basis needs all four covered months present; else the receiver has no canonical basis → block it (never fake 0).
-    var complete = true, shareSum = 0;
-    for (var k = 0; k < months.length; k++) { var v = Number(fcMap[months[k]]); if (!isFinite(v)) { complete = false; break; } shareSum += v; }
-    var b0 = Number(fcMap[months[0]]), b1 = Number(fcMap[months[1]]);
-    if (!complete || !isFinite(b0) || !isFinite(b1)) { errors.push(weeklyAiPlanErr_('FORECAST_SHARE_INCOMPLETE', 'missing regular forecast month', { demandRef: demandRef })); continue; }
+    var fcScope = { company: scope.company, country: scope.country, marketplace: st.marketplace };
+    var win = KMFCN.normalizeWindow({ context: fcCtx, scope: fcScope, sku: st.sku, months: months,
+      matchingRows: KMFCN.rowsForScope(fcRows, fcScope, st.sku) });
+    if (!win.ok) {
+      // STILL A HARD BLOCK, and now it says WHICH of the eight refusals it is instead of one word that covered
+      // a year boundary and a corrupt table alike.
+      errors.push(weeklyAiPlanErr_('FORECAST_BASIS_UNRESOLVED', 'forecast month cannot be resolved: ' + win.reason,
+        { demandRef: demandRef, reason: win.reason, months: (win.issues || []).map(function (x) { return x.month; }) }));
+      continue;
+    }
+    fcNorm.actual += win.counters.actual_count;
+    fcNorm.explicit_zero += win.counters.explicit_zero_count;
+    fcNorm.default_zero_blank += win.counters.default_zero_blank_count;
+    fcNorm.default_zero_missing_year += win.counters.default_zero_missing_year_count;
+    var shareSum = win.basis;
+    var b0 = win.values[months[0]], b1 = win.values[months[1]];
     receivers.push({
       receiverKey: demandRef, demandRef: demandRef, demandKey: demandRef, demandDriver: 'FORECAST_DRIVEN',
       company: scope.company, country: scope.country, marketplace: st.marketplace, sku: st.sku, masterSku: st.sku, siteSku: st.siteSku,
@@ -813,5 +868,8 @@ function weeklyAiPlanBuildKmafReceivers_(ss, scope, sites, upcBySku, errors) {
     horizonRows.push({ demandRef: demandRef, cumulativeGapByWindow: st.cumulativeGapByWindow, requiredByByWindow: st.requiredByByWindow });
     if (!sourceDataAsOf && st.sourceDataAsOf) sourceDataAsOf = st.sourceDataAsOf;
   }
-  return { fatal: false, receivers: receivers, kmafWarehouses: warehouses, horizonRows: horizonRows, calculationDate: calcMonth + '-01', sourceDataAsOf: sourceDataAsOf };
+  // §1 — EVERY DEFAULT-TO-ZERO IS COUNTED AND CARRIED OUT. A zero that nobody can account for is the
+  // thing this contract exists to prevent, so the three provenances are reported separately from the actuals.
+  return { fatal: false, receivers: receivers, kmafWarehouses: warehouses, horizonRows: horizonRows,
+    calculationDate: calcMonth + '-01', sourceDataAsOf: sourceDataAsOf, forecastNormalization: fcNorm };
 }

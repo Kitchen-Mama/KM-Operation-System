@@ -708,10 +708,17 @@ ok(/config_build:/.test(HLTH), 'H4a ...and the config build it belongs to');
 eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R1', 'H5  the config stamp moved with the change');
 ok(new RegExp("\\{ file: '00_config\\.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R1'").test(HLTH),
   'H5a and the manifest expects exactly that');
-eq(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], 'F1-7N-FC-1B-E3-R1',
-  'H6  61_ carries a build stamp for the FIRST TIME — it owns the readiness refusal and had none');
-ok(new RegExp("\\{ file: '61_api_v1_weekly_ai_plan\\.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R1'").test(HLTH),
-  'H6a registered in the manifest, so a deployment that predates this fix is a NAMED fault');
+// RESTATED (F1-7N-FC-1B-E3-R3-R1): pinned the literal stamp R1 introduced, so the next round to change 61_
+// broke it — and R3-R1 changes 61_ on purpose (the forecast normalization gate). The property worth
+// defending is not "the stamp reads R1", it is that 61_ HAS a stamp and the manifest expects exactly that
+// stamp. Both halves are derived, and both still fail if the stamp or its registration is removed.
+var _wap = /var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61);
+ok(_wap && _wap[1], 'H6  61_ carries a build stamp — it owns the readiness refusal and had none before R1');
+// RESTATED with H6: the REGISTRATION is what matters, and it must AGREE with the file. Pinning the
+// literal build turned this into an assertion about which round last touched 61_.
+var _wapExpect = (HLTH.match(/\{ file: '61_api_v1_weekly_ai_plan\.gs',[^}]*expected: '([^']+)'/) || [])[1];
+ok(_wapExpect, 'H6a registered in the manifest, so a deployment that predates this fix is a NAMED fault');
+eq(_wap[1], _wapExpect, 'H6b and 61_ declares exactly the build its manifest entry expects (' + _wapExpect + ')');
 // §I.14/§I.15 — zero writes in both flag states
 ok(/if \(!genEnabled\)/.test(G61) && /INVENTORY_AI_PLAN_DB_GENERATION_DISABLED/.test(G61) && /zero rows written/.test(G61),
   'H7  §I.14 flag FALSE → the server refuses with zero rows');

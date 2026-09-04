@@ -71,11 +71,13 @@ var MODULE_ORDER = [
   'supply-planning-surplus-reallocation',        // F1-7N-FA-3A/3B1 KMFSR §41 factory surplus reallocation (requires allocations + calculations)
   'supply-planning-request-draft-v2',            // F1-7N-FA-3C-DRAFT-MODEL KMRDV2 flat MONTHLY_ORDER draft core (SELF-CONTAINED; no deps; not yet called by any handler)
   'supply-planning-request-draft-v2-persistence', // F1-7N-FA-3C-R2b-2 KMRDV2P MONTHLY_ORDER flat persistence SHAPE ADAPTER (requires KMRDV2 + KMPR; reuses shared governance)
-  'supply-planning-factory-site-allocation'      // F1-7N-FB-4E-R4B-R1 KMFSA canonical FACTORY SITE ALLOCATION (SELF-CONTAINED; no deps) - the ONE projection Site Inventory and Order Planning both read
+  'supply-planning-factory-site-allocation',     // F1-7N-FB-4E-R4B-R1 KMFSA canonical FACTORY SITE ALLOCATION (SELF-CONTAINED; no deps) - the ONE projection Site Inventory and Order Planning both read
+  'supply-planning-forecast-normalization'      // F1-7N-FC-1B-E3-R3-R1 KMFCN the ONE reading of an absent forecast month (SELF-CONTAINED; no deps)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
 var GLOBALS = [
+  ['KMFCN', 'supply-planning-forecast-normalization'],
   ['KMCID', 'supply-planning-country-identity'],
   ['KMCALC', 'supply-planning-calculations'],
   ['KMQI', 'supply-planning-qualified-incoming'],
