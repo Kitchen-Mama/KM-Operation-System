@@ -480,16 +480,37 @@ section('B. \u00a73/\u00a74 \u2014 the safety rule, and the optimistic number th
 var CFG = read(GS + '00_config.gs');
 ok(/var WEEKLY_AI_PLAN_TRANSIT_BUFFER_ = \{/.test(CFG),
   'B1  the transit buffer is a NAMED config authority \u2014 there was none before this round');
-ok(/provisional: true/.test(CFG), 'B1a declared PROVISIONAL in the data itself');
-ok(/default_days: 7/.test(CFG) && /by_method: \{\}/.test(CFG),
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6 §1) — A PRODUCT RULE WAS SUPERSEDED, AND THE CHECK HAD A SECOND DEFECT.
+//
+// R5 declared the buffer PROVISIONAL so that activation could not proceed on a number nobody had agreed to.
+// The business has confirmed 7 calendar days as the Phase 1 default, so `provisional` is now false and the
+// R5 assertion is asserting the opposite of the intended state. That is a supersession, not a regression.
+//
+// SEPARATELY, this check was defective in the way R5's own stamp audit was: `/provisional: true/` matched the
+// file ANYWHERE, so the sentence in the R6 comment block explaining that R5 used to set it kept the assertion
+// GREEN after the declaration had flipped. A check that a comment can satisfy is not a check. Both sides now
+// match the DECLARATION — the key at the start of a line inside the object — which prose cannot imitate.
+ok(/^\s*provisional: false,\s*$/m.test(CFG), 'B1a declared CONFIRMED (not provisional) in the data itself');
+ok(!/^\s*provisional: true,\s*$/m.test(CFG), 'B1a1 and nothing in the file still declares it provisional');
+ok(/^\s*calendar: 'calendar_days',\s*$/m.test(CFG),
+  'B1a2 with the UNIT stated — days_until_stockout is a calendar difference, so the buffer must be too');
+ok(/^\s*default_days: 7,\s*$/m.test(CFG) && /^\s*by_method: \{\},\s*$/m.test(CFG),
   'B1b with a default and a per-method override map, so it never becomes a scattered magic number');
-eq(KMMR.bufferFor(CFG_BUF, '').provisional, true, 'B1c and the flag travels with every lookup');
-eq(KMMR.bufferFor({ provisional: false, default_days: 5, by_method: { 'Sea Freight': 12 } }, 'sea express intl'),
-   { days: 5, source: 'default_days', provisional: false },
+ok(/overrides_supported:/.test(CFG),
+  'B1b1 and the overrides a later round will add are NAMED here, so the next one lands in this object');
+eq(KMMR.bufferFor(CFG_BUF, '').provisional, true, 'B1c the flag still travels with every lookup');
+eq(KMMR.bufferFor({ provisional: false, default_days: 7, by_method: {} }, '').provisional, false,
+  'B1c1 and a CONFIRMED config reports itself as confirmed');
+// RESTATED (A2-R1-R6 §1): an ANCHOR moved — the buffer DTO gained `calendar`, which these two assertions are
+// not about. Comparing the whole object made every future field a failure of a claim about method matching, so
+// each now states the two fields it actually owns: WHICH source won, and WHAT number came back.
+var _bfMiss = KMMR.bufferFor({ provisional: false, default_days: 5, by_method: { 'Sea Freight': 12 } }, 'sea express intl');
+eq([_bfMiss.days, _bfMiss.source], [5, 'default_days'],
   'B1d a per-method override is matched on the CANONICAL key, so "Sea Freight" does not capture Sea Express');
-eq(KMMR.bufferFor({ provisional: false, default_days: 5, by_method: { 'Sea Freight': 12 } }, 'sea'),
-   { days: 12, source: 'by_method:Sea Freight', provisional: false },
+var _bfHit = KMMR.bufferFor({ provisional: false, default_days: 5, by_method: { 'Sea Freight': 12 } }, 'sea');
+eq([_bfHit.days, _bfHit.source], [12, 'by_method:Sea Freight'],
   'B1e and it DOES capture Sea, however the config spells it');
+eq(_bfHit.calendar, 'calendar_days', 'B1e1 and the unit travels with the number in every lookup');
 
 // \u00a73's exact case: 30 days of supply, a 28-day service. It must not be called safe.
 var SLOW28 = [lt('CAR-S', 'CN', 'US', 'Sea', 'Truck', 24, 28, 26)];
@@ -586,8 +607,18 @@ eq(tA.recommended_method, null, 'C2c no method is guessed');
 eq(tA.method_status, 'MANUAL_REVIEW_REQUIRED', 'C2d it is marked for manual review');
 ok(cA.warnings.some(function (w) { return /CARRIER_MASTER_DATA_INCOMPLETE \(warning, not a blocker\)/.test(w); }),
   'C3  the carrier gap is reported as a WARNING and says so in its own text');
-ok(cA.warnings.some(function (w) { return /TRANSIT_BUFFER_PROVISIONAL/.test(w); }),
-  'C3a and the provisional buffer is surfaced, so activation cannot proceed unaware of it');
+// RESTATED (A2-R1-R6 §1) — THE PRODUCT RULE THIS ASSERTION PROTECTED HAS BEEN SATISFIED, NOT WEAKENED.
+//
+// R5 required every recommendation to carry TRANSIT_BUFFER_PROVISIONAL so nobody could activate on an
+// unconfirmed number. The business confirmed it, so the warning must now be ABSENT — and the claim inverts
+// with it: the census must not report a provisional buffer when the config declares a confirmed one.
+//
+// The WARNING ITSELF STAYS IN THE CODE. It is not dead: it fires if a deployment is ever running a config
+// that is behind this one, which is the only situation left in which it would be true.
+ok(!cA.warnings.some(function (w) { return /TRANSIT_BUFFER_PROVISIONAL/.test(w); }),
+  'C3a the buffer is CONFIRMED, so no recommendation warns that it is provisional');
+ok(/TRANSIT_BUFFER_PROVISIONAL/.test(G61),
+  'C3a1 and the warning still exists, for a deployment running a config that is behind');
 ok(!/USER_MASTER_DATA_REQUIRED/.test(JSON.stringify(cA.verdict)),
   'C3b USER_MASTER_DATA_REQUIRED is no longer the verdict');
 
@@ -658,7 +689,9 @@ eq(/var AIPL_BUILD_VERSION_ = '([^']*)'/.exec(G69L)[1], 'F1-7N-FC-1B-E3-R4-A2-R1
   'why a label comparison called a mixed deployment UNIFORM');
 eq(/var SAD_BUILD_VERSION_ = '([^']*)'/.exec(read(GS + '16_shipping_allocation_handlers.gs'))[1],
    'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'E3a 16_ likewise');
-eq(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R5',
+// RESTATED (A2-R1-R6): a pinned stamp literal. R6 changes 00_config again (§1), so the durable claim is a
+// FLOOR against the shared ledger — the stamp is at or after the round that last rotated it.
+ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R5'),
   'E3b and 00_config, which this round changes');
 
 // A STANDING check on the METHOD, not just on these three instances: a manifest owner whose file changed after
@@ -759,8 +792,10 @@ ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG), 'G5  the g
 eq(hA.run('inventoryAiPlanActivationAllowlist_()'),
    [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }],
   'G5a and the allowlist is still the single authorized scope');
-eq(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'G5b census build stamp');
-eq(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'G5c workspace build stamp');
+// RESTATED (A2-R1-R6): pinned stamp literal → floor. R6 changes the census (§2/§3/§5/§6).
+ok(RO.stampAtOrAfter(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5'), 'G5b census build stamp');
+// RESTATED (A2-R1-R6): pinned stamp literal → floor. R6 changes 61_ (§3/§4/§8).
+ok(RO.stampAtOrAfter(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5'), 'G5c workspace build stamp');
 
 // ================================================================================================================
 section('H. \u00a713 \u2014 mutation coverage');

@@ -686,6 +686,12 @@ function mkWorld(o) {
     extractFn(PAGE, '_irAiPlanWithTimeout_'), extractFn(PAGE, '_irAiPlanReconcile_'),
     extractFn(PAGE, '_irInventoryAiPlanDbGenerationEnabled_'), extractFn(PAGE, '_irAiPlanDbGenEligible_'),
     extractFn(PAGE, '_irClassifyGenerationResult_'), extractFn(PAGE, '_irShowAiPlanResult_'),
+    // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6 §4): an ANCHOR moved. The AI Plan handler gained a third
+    // outcome and consults _irAiPlanAdviceSentence_ before both the no-route and the failure wording,
+    // so a harness that lifts individual functions has to lift that one too. Omitting it turned every
+    // terminal path in this section into a ReferenceError, which is exactly what a lift-by-name harness
+    // is expected to report when the code under test grows a new collaborator.
+    extractFn(PAGE, '_irAiPlanAdviceSentence_'),
     extractFn(PAGE, '_irRunInventoryAiPlanGeneration_'),
     extractFn(PAGE, 'handleReplenAiPlan'), extractFn(PAGE, '_irAiPlanRun_'),
     'return { click: handleReplenAiPlan, running: _irAiPlanIsRunning_, reconcile: _irAiPlanReconcile_ };'
@@ -984,8 +990,20 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
   // schema in a console; RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R takes no parameters and carries the scope
   // itself. The claim this assertion protects is unchanged — nothing UNINTENDED is invocable from the
   // editor — so it names the entry points rather than assuming there is only ever one.
-  eq(nonHelper.slice().sort(), ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'],
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6 §5/§6): an ANCHOR moved. Two entry points were added — the candidate
+  // SEARCH and the census of whatever it selects — and both are deliberate. Pinning the exact list made every
+  // future intended entry point a failure of a claim that was never about the count.
+  //
+  // The claim is that nothing UNINTENDED is invocable from the editor, and it is now checked as the property
+  // rather than as a list: each entry point is a declared RUN_E3_/TEMP_ name, and each takes NO PARAMETERS, so
+  // none can be invoked against the wrong scope by someone guessing at an args object in a console.
+  var ALLOWED_ENTRY_POINTS = ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE',
+    'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
+  eq(nonHelper.slice().sort(), ALLOWED_ENTRY_POINTS,
     'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
+  eq(nonHelper.filter(function (n) { return n !== 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'
+      && !new RegExp('function ' + n + '\(\)').test(TEMP); }), [],
+    'F1a1 and every RUN_E3_ entry point takes NO PARAMETERS, so none can be aimed at the wrong scope');
   ok(/function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R\(\)/.test(TEMP),
     'F1b the fixed-scope runner takes NO parameters, so it cannot be called with the wrong scope');
   ok(/TEMP_E3_FIXED_SCOPE_ = \{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' \}/.test(TEMP),

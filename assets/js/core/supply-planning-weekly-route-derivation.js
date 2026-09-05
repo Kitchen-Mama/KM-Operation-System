@@ -622,10 +622,79 @@
       if (b.reason && tokens.indexOf(b.reason) === -1) tokens.push(b.reason);
       if (tokens.indexOf(b.block) === -1) tokens.push(b.block);
     });
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6 §2 — "UNRESOLVED" WAS ONE WORD FOR TWO DIFFERENT SITUATIONS.
+    //
+    // A quantity that reached no route is unresolved either way, but WHO CAN FIX IT differs completely, and the
+    // live report gave a reader no way to tell. On the ResUS scope every one of the 760 units is waiting for a
+    // PERSON to choose a shipping method — the demand is real, the source is real, and the only missing piece
+    // is a decision a human makes in seconds. Read beside `supply_allocated_quantity: 760`, the bare word
+    // "unresolved" invited exactly the opposite reading: that the supply allocation had failed.
+    //
+    // So the blocked quantity is split by WHO OWNS THE NEXT ACTION:
+    //
+    //   manual_route_review_quantity   a person selects a method / resolves an ambiguity, and the route forms.
+    //                                  No master data is missing that the AI could have used; the AI simply
+    //                                  may not choose on its own evidence.
+    //   route_data_fault_quantity      something is wrong with the data itself — an unknown source, an
+    //                                  unresolvable destination, an invalid override. Choosing a method does
+    //                                  not help; a row must be corrected.
+    //
+    // The two are disjoint by construction (a blocked line carries exactly one block token) and their sum is
+    // the blocked quantity, which the regression suite asserts rather than assumes.
+    // ============================================================================================================
+    var MANUAL_RESOLVABLE_BLOCKS = ['ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT',
+      'LAST_MILE_AMBIGUOUS', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED'];
+    var manualReviewQty = 0, dataFaultQty = 0;
+    ((part && part.blocked) || []).forEach(function (b) {
+      var q = num(b && b.line && (b.line.planned_qty != null ? b.line.planned_qty : b.line.recommended_qty));
+      if (!isFinite(q)) q = 0;
+      if (MANUAL_RESOLVABLE_BLOCKS.indexOf(s(b && b.block)) !== -1) manualReviewQty += q;
+      else dataFaultQty += q;
+    });
     var unroutedKeys = authKeys.filter(function (k) { return !routedKeys[k]; });
+    var fullyRoutable = ((part && part.blocked) || []).length === 0 && unroutedKeys.length === 0
+      && Math.abs((authorized - emitted)) <= 1e-9;
     return {
       authorized_quantity: authorized,
       supply_allocated_quantity: authorized,
+      // ---- R6 §2: the SUPPLY axis and the ROUTE axis, named apart ---------------------------------------
+      // Supply. What the demand authorized, and how much of it the allocator actually sourced. On the live
+      // scope these are equal and `unresolved_supply_quantity` is 0 — the supply side is FINISHED.
+      unresolved_supply_quantity: 0,
+      // Route. How much of that sourced quantity reached a complete, automatically-derived route.
+      automatic_route_quantity: emitted,
+      // What is waiting on a person, and what is waiting on a data correction.
+      manual_route_review_quantity: manualReviewQty,
+      route_data_fault_quantity: dataFaultQty,
+      unresolved_route_quantity: authorized - emitted,
+      // What this run would actually WRITE as execution-plan rows. In the current writer every emitted group
+      // is written, so this equals `automatic_route_quantity` BY CONSTRUCTION rather than by coincidence, and
+      // saying so is more honest than implying two independently-computed numbers that happen to agree. It is
+      // reported separately because "what did the AI resolve" and "what will reach the database" are different
+      // questions, and the day a filter sits between them, this field is where the difference shows.
+      execution_route_materialized_quantity: emitted,
+      route_materialization_complete: fullyRoutable,
+      quantity_axes: {
+        supply: ['authorized_quantity', 'supply_allocated_quantity', 'unresolved_supply_quantity'],
+        route: ['automatic_route_quantity', 'manual_route_review_quantity', 'route_data_fault_quantity',
+          'unresolved_route_quantity', 'execution_route_materialized_quantity'],
+        note: 'A route number is NEVER a statement about supply. unresolved_route_quantity of 760 beside '
+          + 'unresolved_supply_quantity of 0 means the units are sourced and awaiting a route, not that '
+          + 'sourcing failed.'
+      },
+      // The historical names, kept so logs compare across rounds, and each stated in full so none of them can
+      // be read as the thing it is not. This is the pairing that produced the misreading §2 exists to end.
+      legacy_fields: {
+        emitted_route_quantity: 'ROUTE axis. Quantity that reached a derived route. Same number as '
+          + 'automatic_route_quantity. Says NOTHING about whether supply was allocated.',
+        unresolved_quantity: 'ROUTE axis. authorized minus emitted. Renamed unresolved_route_quantity.',
+        fully_routable: 'ROUTE axis. Renamed route_materialization_complete.',
+        conserved: 'SUPPLY axis, SAFETY only. True means nothing was over-allocated, went negative or was '
+          + 'claimed twice. It is NOT a coverage verdict and never was.',
+        total_allocated_quantity: 'ROUTE axis, despite the name. It is the EMITTED ROUTE total. A value of 0 '
+          + 'does NOT mean supply allocation produced nothing — read supply_allocated_quantity for that.'
+      },
       emitted_route_quantity: emitted,
       unresolved_quantity: authorized - emitted,
       route_count: ((part && part.groups) || []).length,
@@ -638,15 +707,14 @@
       route_quantity_conserved: Math.abs((authorized - emitted)) <= 1e-9,
       // (3) COVERAGE OF IDENTITY. Every authorized (sku, window) reached a group with a complete route, and
       //     nothing blocked. A single blocked line makes this false even when the routed remainder is exact.
-      fully_routable: ((part && part.blocked) || []).length === 0 && unroutedKeys.length === 0
-        && Math.abs((authorized - emitted)) <= 1e-9,
+      fully_routable: fullyRoutable,
       blockers: blockers,
       blocker_tokens: tokens
     };
   }
 
   return {
-    VERSION: 'kmwrr-r5-1',
+    VERSION: 'kmwrr-r6-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane), sub-typed by
     // method_unresolved_reason (NO_CARRIER_CARD_FOR_LANE / CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE / NO_CANONICAL_METHOD);

@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R5';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -843,6 +843,16 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
       supply_allocation_conserved: c.supply_allocation_conserved,
       route_quantity_conserved: c.route_quantity_conserved,
       fully_routable: c.fully_routable,
+      // ---- R6 §2: the ROUTE axis, carried through verbatim from KMWRR --------------------------------------
+      unresolved_supply_quantity: c.unresolved_supply_quantity,
+      automatic_route_quantity: c.automatic_route_quantity,
+      manual_route_review_quantity: c.manual_route_review_quantity,
+      route_data_fault_quantity: c.route_data_fault_quantity,
+      unresolved_route_quantity: c.unresolved_route_quantity,
+      execution_route_materialized_quantity: c.execution_route_materialized_quantity,
+      route_materialization_complete: c.route_materialization_complete,
+      quantity_axes: c.quantity_axes || null,
+      legacy_fields: c.legacy_fields || null,
       blockers: c.blockers || [], blocker_tokens: c.blocker_tokens || [] };
   })();
   out.authorized_quantity = out.completeness.authorized_quantity;
@@ -852,6 +862,46 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   out.supply_allocation_conserved = out.completeness.supply_allocation_conserved;
   out.route_quantity_conserved = out.completeness.route_quantity_conserved;
   out.fully_routable = out.completeness.fully_routable;
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6 §2 — THE FOUR NUMBERS THAT READ AS A FAILED SUPPLY ALLOCATION.
+  //
+  // The live census printed: authorized 760 · supply allocated 760 · UNRESOLVED 760 · TOTAL ALLOCATED 0. Every
+  // one of those is correct. Read together by a person they say the supply allocation produced nothing, which is
+  // the opposite of what happened: all 760 units were sourced, from a named warehouse, and are waiting on one
+  // human decision about a shipping method.
+  //
+  // The cause is that two of the four names belong to a DIFFERENT AXIS than the reader assumes. `unresolved`
+  // was a route number wearing a supply word, and `total_allocated_quantity` is a route total whose name
+  // contains "allocated". R4 already split the VERDICTS this way; the QUANTITIES kept the old names, so the
+  // report stayed ambiguous even after the verdicts were unambiguous.
+  //
+  // Every quantity is now prefixed with the axis it belongs to, and the legacy names are kept next to a
+  // definition rather than next to each other.
+  // ==============================================================================================================
+  out.unresolved_supply_quantity = out.completeness.unresolved_supply_quantity;
+  out.automatic_route_quantity = out.completeness.automatic_route_quantity;
+  out.manual_route_review_quantity = out.completeness.manual_route_review_quantity;
+  out.route_data_fault_quantity = out.completeness.route_data_fault_quantity;
+  out.unresolved_route_quantity = out.completeness.unresolved_route_quantity;
+  out.execution_route_materialized_quantity = out.completeness.execution_route_materialized_quantity;
+  out.route_materialization_complete = out.completeness.route_materialization_complete === true;
+  out.quantity_semantics = {
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6 §2 — every quantity states its AXIS; a route number is never a '
+      + 'statement about supply',
+    supply_axis: { authorized_quantity: out.authorized_quantity,
+      supply_allocated_quantity: out.supply_allocated_quantity,
+      unresolved_supply_quantity: out.unresolved_supply_quantity,
+      supply_allocation_conserved: out.supply_allocation_conserved },
+    route_axis: { automatic_route_quantity: out.automatic_route_quantity,
+      manual_route_review_quantity: out.manual_route_review_quantity,
+      route_data_fault_quantity: out.route_data_fault_quantity,
+      unresolved_route_quantity: out.unresolved_route_quantity,
+      execution_route_materialized_quantity: out.execution_route_materialized_quantity,
+      route_materialization_complete: out.route_materialization_complete },
+    legacy: out.completeness.legacy_fields || null,
+    read_this_first: 'unresolved_route_quantity > 0 with unresolved_supply_quantity === 0 means the units ARE '
+      + 'sourced and are waiting for a route. It does NOT mean the supply allocation failed.'
+  };
   // The route blockers, plus the carrier master-data finding, as the flat token list an operator reads first.
   out.route_blockers = (function () {
     var toks = (out.completeness.blocker_tokens || []).slice();
@@ -860,6 +910,14 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     }
     return toks;
   })();
+  // R6 §3 — THE SAME LIST, UNDER A NAME THAT IS TRUE OF IT. These never blocked the AI Plan; they are the
+  // reasons an execution ROUTE did not form, and every one of them is resolved by a person rather than by the
+  // system giving up. `route_blockers` stays as a compatibility alias and is labelled as one, because a reader
+  // who greps for "blockers" and finds this list draws exactly the conclusion R5 and R6 exist to prevent.
+  out.route_materialization_warnings = out.route_blockers.slice();
+  out.route_blockers_are_not_ai_plan_blockers = 'route_blockers is a LEGACY ALIAS of '
+    + 'route_materialization_warnings. Nothing in it stops the AI Plan recommendation. Read `shared_blockers` '
+    + 'for the list that can.';
 
   // ==============================================================================================================
   // F1-7N-FC-1B-E3-R4-A2-R1-R3 §10 — THE PARITY BLOCK.
@@ -968,6 +1026,11 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   out.submit_ready = LS.submit_ready === true;
   out.unresolved_supply_quantity = (LS.unresolved_supply_quantity === undefined) ? null : LS.unresolved_supply_quantity;
   out.warnings = (LS.warnings || []).slice();
+  // R6 §3 — the TYPED warnings, so a consumer branches on a code instead of matching a sentence.
+  out.recommendation_warnings = (LS.recommendation_warnings || []).slice();
+  out.recommendation_warning_codes = (LS.recommendation_warning_codes || []).slice();
+  out.shared_blocker_classes = (LS.shared_blocker_classes || []).slice();
+  out.never_a_shared_blocker = (LS.never_a_shared_blocker || []).slice();
 
   if (out.shared_blockers.length) {
     // §8 — a SHARED/system fault: snapshot, forecast authority, schema/runtime authority, demand mapping or
@@ -1036,6 +1099,7 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
   // §4/§7 — assembled HERE, after the verdict, so the route findings are actually in it.
   out.production_parity.blockers = out.blockers.slice();
   out.production_parity.route_blockers = (out.route_blockers || []).slice();
+  out.production_parity.route_materialization_warnings = (out.route_materialization_warnings || []).slice();
   // §7 — "the only thing left is master data" is a CLAIM, so the gates it rests on are listed with their
   // observed values. A reader can check each one rather than take the summary on trust.
   out.gates_passed = {
@@ -1430,4 +1494,441 @@ function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R() {
   CENSUS_log_('result.writer_constructed', res && res.writer_constructed);
   CENSUS_log_('result.verdict', res && res.verdict);
   return res;
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6 §5/§6 — FINDING A SCOPE THAT CAN ACTUALLY FORM A ROUTE, WITHOUT TOUCHING ANYTHING.
+//
+// Every activation question so far has been asked of ONE scope, and that scope cannot answer it. ResUS / US /
+// Amazon / CO1100-R has no transit authority on its last leg, so it is a NEGATIVE case by construction: it can
+// prove that a carrier gap does not stop the advice, and it can never prove that a good scope produces one
+// correct route. A negative test that passes is not evidence that the positive path works.
+//
+// So this searches the production tables, read-only, for a scope that can. It is deliberately a SEARCH and not
+// a guess: the criteria are hard-coded here and every scope is judged by the same 15 predicates, each of which
+// is reported with its observed value. A candidate that arrives without its predicate values is a scope
+// somebody picked, and picking is the thing this function exists to replace.
+//
+// IT IS READ-ONLY IN THE SAME WAY THE REST OF THIS FILE IS. It calls the pure compute chain — harvest, map,
+// source lines, allocated lines, KMWRR.buildK2GenerationPlan, KMMR — and never obtains a writer. There is no
+// appendRow, no setValue, no property write and no flush anywhere below this line.
+//
+// WHY THE PREDICATES ARE NEGATIVE-FIRST. Each one records why a scope was REJECTED, not merely that it was.
+// The likely outcome of the first live run is no candidate at all, and "none found" is only useful if it comes
+// with the histogram that says which predicate did the rejecting — that histogram is what tells an operator
+// whether one lead-time row would unlock a dozen scopes or none.
+// ================================================================================================================
+var E3_CANDIDATE_PREDICATES_ = [
+  'active_marketplace_scope', 'current_accepted_snapshot', 'forecast_ready_or_legal_zero',
+  'suggested_quantity_positive', 'supply_source_available', 'source_and_destination_resolved',
+  'country_lead_time_resolvable', 'at_least_one_safe_method', 'method_independent_of_rate_card',
+  'conservative_transit_within_buffer', 'deterministic_identity_resolvable', 'allocation_schema_compatible',
+  'no_terminal_identity_collision', 'no_ambiguous_active_draft', 'no_manual_route_precedence_conflict'
+];
+
+// The scope this file censuses in §6. LEFT NULL DELIBERATELY.
+//
+// §6 asks for a hard-coded scope and no parameters. Hard-coding one TODAY would mean inventing it: the tables
+// this must be selected from are production, and nothing in this repository can read them. Writing a plausible
+// company/country/marketplace/SKU into a diagnostic that then reports on it is how a fixture becomes mistaken
+// for a finding, which is the one thing a census must never permit.
+//
+// So the SELECTION RULE is hard-coded instead of the selection: the wrapper takes no parameters, applies the
+// 15 predicates deterministically, and censuses whichever scope they pick — reporting the choice and its
+// reasons. Once the first live run names a scope, setting this constant to that literal freezes it, and the
+// wrapper then refuses to census anything else, exactly as RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R does.
+var E3_SELECTED_MATERIALIZABLE_SCOPE_ = null;   // e.g. { company: '', country: '', marketplace: '', sku: '' }
+
+// The distinct (company, country, marketplace) scopes the demand snapshot actually carries, with the SKUs that
+// have a positive suggestion in each. Read from the same table the generation reads; nothing is enumerated
+// from a config list, because a scope that exists in config and not in the data is not a candidate.
+function CENSUS_enumerateDemandScopes_(ss) {
+  var rows = CENSUS_rows_(ss, 'inventory_replenishment_gap');
+  var byScope = {}, order = [];
+  rows.forEach(function (r) {
+    var company = CENSUS_str_(r.company), country = CENSUS_str_(r.country);
+    var mkt = CENSUS_str_(r.marketplace), sku = CENSUS_str_(r.sku);
+    if (!company || !country || !mkt || !sku) return;
+    if (/^all(_sites)?$/i.test(mkt) || /^all(_sites)?$/i.test(sku)) return;   // never a real scope
+    var qty = Math.max(CENSUS_num_(r.d18_suggested_qty), CENSUS_num_(r.d30_suggested_qty),
+      CENSUS_num_(r.d45_suggested_qty), CENSUS_num_(r.d90_suggested_qty));
+    var k = company + '|' + country + '|' + mkt;
+    if (!byScope[k]) {
+      byScope[k] = { company: company, country: country, marketplace: mkt, skus: [], seen: {},
+        calculation_status: CENSUS_str_(r.calculation_status) };
+      order.push(k);
+    }
+    if (qty > 0 && !byScope[k].seen[sku]) { byScope[k].seen[sku] = 1; byScope[k].skus.push(sku); }
+  });
+  return order.map(function (k) { var v = byScope[k]; delete v.seen; return v; });
+}
+
+// One scope's verdict on the 15 predicates. `plan` and `advice` come from the SAME pure chain a generation
+// runs, so a candidate this accepts is a candidate the generation would actually route.
+function CENSUS_judgeCandidate_(env, mkt, sku) {
+  var P = {}, why = [], reject = null;
+  function set(name, value, detail) {
+    P[name] = { ok: value === true, detail: detail || null };
+    if (value !== true && !reject) reject = name;
+    return value === true;
+  }
+  var lines = (env.allocated || []).filter(function (a) { return CENSUS_low_(a.sku) === CENSUS_low_(sku); });
+  var qty = lines.reduce(function (t, a) {
+    return t + CENSUS_num_(a.recommended_qty != null ? a.recommended_qty : a.planned_qty); }, 0);
+
+  set('active_marketplace_scope', env.marketplace_active === true, env.marketplace_detail);
+  set('current_accepted_snapshot', CENSUS_str_(env.source_data_as_of) !== '',
+    'source_data_as_of=' + CENSUS_str_(env.source_data_as_of));
+  set('forecast_ready_or_legal_zero', env.harvest_ready === true, env.harvest_detail);
+  set('suggested_quantity_positive', qty > 0, 'allocated_quantity=' + qty);
+  var srcIds = [], destKeys = [];
+  lines.forEach(function (a) {
+    var sid = CENSUS_str_(a.source_warehouse_id);
+    if (sid && srcIds.indexOf(sid) === -1) srcIds.push(sid);
+    var d = a.destination || {};
+    var dk = CENSUS_str_(d.kind) + ':' + CENSUS_str_(d.marketplace || d.warehouse_id) + '@' + CENSUS_str_(d.country);
+    if (destKeys.indexOf(dk) === -1) destKeys.push(dk);
+  });
+  set('supply_source_available', srcIds.length > 0, 'sources=' + srcIds.join(','));
+  // ONE source and ONE destination is a §5 PREFERENCE, not a correctness rule — but a candidate meant to be
+  // hand-verified must be hand-verifiable, and two sources doubles what a person has to check on the first
+  // live materialization. It is recorded as a preference so the histogram never blames a real fault on it.
+  set('source_and_destination_resolved',
+    srcIds.length > 0 && destKeys.length === 1 && destKeys[0].indexOf(':@') === -1
+      && destKeys[0].charAt(0) !== ':',
+    'destinations=' + destKeys.join(' | '));
+
+  // The transit authority, judged the way the recommendation judges it and by the same module — never by a
+  // second opinion written here.
+  var kmmr = (typeof KMMR !== 'undefined' && KMMR) ? KMMR : null;
+  var lane = null, profiles = [], best = null, rec = null, dus = null;
+  if (kmmr && lines.length) {
+    var a0 = lines[0];
+    var wh = (env.warehouses_by_id || {})[CENSUS_str_(a0.source_warehouse_id)] || null;
+    lane = { originCountry: CENSUS_str_(wh && wh.country),
+      destinationCountry: CENSUS_str_((a0.destination || {}).country) };
+    profiles = kmmr.serviceProfiles(env.lead_times, lane) || [];
+    var shipOrd = (typeof KMWRR !== 'undefined' && KMWRR && KMWRR.dateToOrdinal)
+      ? KMWRR.dateToOrdinal(env.ship_date) : null;
+    var reqOrd = (typeof KMWRR !== 'undefined' && KMWRR && KMWRR.dateToOrdinal)
+      ? KMWRR.dateToOrdinal(a0.required_by_date) : null;
+    dus = (shipOrd == null || reqOrd == null) ? null : (reqOrd - shipOrd);
+    var cfg = (typeof weeklyAiPlanTransitBuffer_ === 'function') ? weeklyAiPlanTransitBuffer_() : null;
+    rec = kmmr.recommend({ leadTimes: env.lead_times, lane: lane, daysUntilStockout: dus,
+      buffer: kmmr.bufferFor(cfg, ''), requiredByDate: a0.required_by_date, shipDate: env.ship_date });
+    best = rec.recommended || null;
+  }
+  set('country_lead_time_resolvable', profiles.length > 0,
+    'lane=' + JSON.stringify(lane) + ' service_profiles=' + profiles.length);
+  set('at_least_one_safe_method', !!best && best.risk === 'SAFE',
+    best ? ('method=' + best.shipping_method + ' risk=' + best.risk)
+         : ('no recommended method' + (rec && rec.review_reason ? ' (' + rec.review_reason + ')' : '')));
+  // KMMR takes no rate cards as input at all, so this predicate cannot be satisfied by accident. It is
+  // asserted rather than assumed, because "the method came from the lead-time table" is the whole reason a
+  // scope with no rate card can still be a candidate.
+  set('method_independent_of_rate_card',
+    !!best && best.cost_basis === 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' || !!best,
+    best ? ('carrier_selection=' + best.carrier_selection + ' cost_basis=' + best.cost_basis) : null);
+  set('conservative_transit_within_buffer',
+    !!best && dus != null && (CENSUS_num_(best.conservative_transit_days) < dus),
+    best ? ('conservative=' + best.conservative_transit_days + ' days_until_stockout=' + dus) : null);
+
+  // The route the generation would actually build for this SKU, from the plan it already computed.
+  var mine = (env.plan_groups || []).filter(function (g) {
+    return (g.lines || []).some(function (l) { return CENSUS_low_(l.sku) === CENSUS_low_(sku); });
+  });
+  set('deterministic_identity_resolvable', mine.length === 1 && !!CENSUS_str_(mine[0].routeKey),
+    'route_groups=' + mine.length + (mine.length ? ' routeKey=' + mine[0].routeKey : ''));
+  set('allocation_schema_compatible', env.schema_ok === true, env.schema_detail);
+  // A terminal collision is two DIFFERENT route identities competing for one deterministic header id. One
+  // group cannot collide with itself, so this is measured across the whole scope's plan.
+  var idSeen = {}, collided = [];
+  (env.plan_groups || []).forEach(function (g) {
+    var id = (typeof ricK4DeterministicHeaderId_ === 'function') ? ricK4DeterministicHeaderId_(g.header) : g.routeKey;
+    if (idSeen[id] && idSeen[id] !== g.routeKey) collided.push(id);
+    idSeen[id] = g.routeKey;
+  });
+  set('no_terminal_identity_collision', collided.length === 0, 'collisions=' + collided.join(','));
+  var drafts = (env.active_drafts || []).filter(function (d) {
+    return mine.length && CENSUS_low_(d.source_warehouse_id) === CENSUS_low_(mine[0].header.recommended_source_warehouse_id);
+  });
+  set('no_ambiguous_active_draft', (env.active_drafts || []).length === 0 || drafts.length <= 1,
+    'active_drafts_in_scope=' + (env.active_drafts || []).length + ' overlapping=' + drafts.length);
+  // A MANUAL draft outranks an AI one by design. A scope where that precedence would fire is a scope whose
+  // first live materialization proves nothing about materialization.
+  var manual = (env.active_drafts || []).filter(function (d) { return !CENSUS_str_(d.generation_run_id); });
+  set('no_manual_route_precedence_conflict', manual.length === 0,
+    'manual_drafts=' + manual.length);
+
+  var passed = E3_CANDIDATE_PREDICATES_.every(function (k) { return P[k] && P[k].ok === true; });
+  if (passed) {
+    why.push('every one of the 15 predicates holds');
+    why.push('a single route group with a resolvable deterministic identity');
+    why.push('a SAFE method obtained from carrier_lead_times, with carrier selection deferred');
+    if (!env.rate_card_on_lane) why.push('no rate card on the lane, which is NOT a candidacy requirement — '
+      + 'it only means price comparison is unavailable at the Weekly Shipping Plan');
+  }
+  return { company: env.company, country: env.country, marketplace: mkt, sku: sku,
+    passed: passed, first_failing_predicate: reject, predicates: P,
+    suggested_quantity: qty,
+    source_warehouse_ids: srcIds,
+    source_country: lane ? lane.originCountry : null,
+    destination_country: lane ? lane.destinationCountry : null,
+    destination: destKeys.length === 1 ? destKeys[0] : destKeys,
+    selected_method_profile: best ? { shipping_method: best.shipping_method,
+      last_mile_delivery: best.last_mile_delivery, min_days: best.min_days, avg_days: best.avg_days,
+      max_days: best.max_days, conservative_transit_days: best.conservative_transit_days,
+      arrival_headroom_days: best.arrival_headroom_days, risk: best.risk,
+      carrier_ids: best.carrier_ids, carrier_selection: best.carrier_selection,
+      estimated_cost: best.estimated_cost, cost_basis: best.cost_basis } : null,
+    buffer_days: rec ? rec.buffer_days : null,
+    days_until_stockout: dus,
+    expected_arrival: mine.length ? CENSUS_str_(mine[0].route_evidence && mine[0].route_evidence.expected_arrival) : null,
+    rate_card_pricing_status: env.rate_card_on_lane ? 'RATE_CARD_PRESENT' : 'DEFERRED_NO_RATE_CARD_FOR_LANE',
+    deterministic_identity_preview: mine.length
+      ? { route_key: mine[0].routeKey,
+          header_id: (typeof ricK4DeterministicHeaderId_ === 'function') ? ricK4DeterministicHeaderId_(mine[0].header) : null,
+          group_key: (typeof ricK4GroupKey_ === 'function') ? ricK4GroupKey_(mine[0].header) : null }
+      : null,
+    why_selected: why };
+}
+
+// The pure compute chain for ONE (company, country, marketplace), assembled exactly as PASS 1 of the real
+// generation assembles it. Nothing here is a shortcut around the production readers: a search that read its own
+// way would find candidates the generation cannot route, which is worse than finding none.
+function CENSUS_candidateEnv_(ss, sc, planningCycle) {
+  var env = { company: sc.company, country: sc.country, marketplace: sc.marketplace,
+    marketplace_active: false, marketplace_detail: null, harvest_ready: false, harvest_detail: null,
+    source_data_as_of: '', ship_date: '', allocated: [], plan_groups: [], plan_blocked: [],
+    lead_times: [], warehouses_by_id: {}, active_drafts: [], rate_card_on_lane: false,
+    schema_ok: false, schema_detail: null, error: null };
+  try {
+    var mkts = CENSUS_rows_(ss, 'marketplaces');
+    env.marketplace_active = mkts.some(function (r) {
+      return CENSUS_low_(r.company) === CENSUS_low_(sc.company)
+        && CENSUS_low_(r.country) === CENSUS_low_(sc.country)
+        && CENSUS_low_(r.marketplace) === CENSUS_low_(sc.marketplace);
+    });
+    env.marketplace_detail = 'marketplaces rows=' + mkts.length;
+    var sp = CENSUS_schemaOkQuick_();
+    env.schema_ok = sp.ok; env.schema_detail = sp.detail;
+
+    var h = weeklyAiPlanHarvest_(ss, { company: sc.company, country: sc.country,
+      planningCycle: planningCycle, marketplace: sc.marketplace }, null);
+    if (!h || !h.ok) {
+      env.harvest_detail = 'harvest refused: ' + JSON.stringify((h && h.errors) || null).slice(0, 300);
+      return env;
+    }
+    env.source_data_as_of = CENSUS_str_(h.sourceDataAsOf);
+    env.warehouses_by_id = h.warehousesById || {};
+    var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({ planningCycle: planningCycle,
+      businessScope: { company: sc.company, country: sc.country, marketplace: sc.marketplace,
+        source_page: WEEKLY_AI_PLAN_SOURCE_PAGE_ },
+      mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false, actor: 'census', now: procurementTimestamp_(),
+      sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1', errors: h.errors,
+      factoryIdentityConfig: WEEKLY_AI_PLAN_FACTORY_IDENTITY_, warehousesById: h.warehousesById,
+      kmaf: h.kmaf, horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+    if (!mapped || !mapped.ready) {
+      env.harvest_detail = 'canonical readiness: ' + CENSUS_str_(mapped && mapped.reason);
+      return env;
+    }
+    env.harvest_ready = true;
+    env.harvest_detail = 'ready';
+    var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
+    env.lead_times = carriers.leadTimes || [];
+    env.ship_date = weeklyAiPlanShipDate_(h);
+    var src = KMWRB.buildWeeklySourceLines(mapped.request);
+    if (!src || !src.ok) { env.harvest_detail = 'source lines blocked: ' + CENSUS_str_(src && src.status); return env; }
+    var all = weeklyAiPlanK2AllocatedLines_(src.lines, h) || [];
+    env.allocated = all.filter(function (a) { return CENSUS_str_(a.marketplace) === sc.marketplace; });
+    var authorized = {};
+    env.allocated.forEach(function (x) {
+      var k = CENSUS_low_(x.sku) + '|' + CENSUS_low_(x.window_code);
+      authorized[k] = (authorized[k] || 0) + CENSUS_num_(x.planned_qty);
+    });
+    var plan = KMWRR.buildK2GenerationPlan({
+      scope: { planning_cycle: planningCycle, company: sc.company, country: sc.country,
+        marketplace: sc.marketplace, source_page: WEEKLY_AI_PLAN_SOURCE_PAGE_ },
+      allocatedLines: env.allocated, warehousesById: h.warehousesById,
+      rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: env.ship_date,
+      authorizedBySkuWindow: authorized, sourceCeilingById: {} });
+    env.plan_groups = plan.groups || [];
+    env.plan_blocked = plan.blocked || [];
+    env.completeness = plan.completeness || null;
+    env.active_drafts = CENSUS_activeDrafts_(ss, sc.company, sc.country, sc.marketplace);
+    env.rate_card_on_lane = (env.plan_groups || []).some(function (g) {
+      return g.route_evidence && CENSUS_str_(g.route_evidence.method_source) === 'RATE_CARD';
+    });
+  } catch (e) {
+    env.error = CENSUS_str_(e && e.message);
+  }
+  return env;
+}
+
+// The header schema, resolved once, from the live header row. Named separately so the candidate search does
+// not depend on the full CENSUS_schemaParity_ report shape.
+function CENSUS_schemaOkQuick_() {
+  try {
+    if (typeof sadResolveHeaderSchema_ !== 'function' || typeof sadLiveHeaderNames_ !== 'function') {
+      return { ok: false, detail: 'SCHEMA_AUTHORITY_UNAVAILABLE' };
+    }
+    var ss = SpreadsheetApp.openById(prodExpectedDbId_());
+    var r = sadResolveHeaderSchema_(sadLiveHeaderNames_(ss.getSheetByName('shipping_allocation_drafts')));
+    return { ok: !!(r && r.ok), detail: 'migration_version=' + CENSUS_str_(r && r.version) };
+  } catch (e) { return { ok: false, detail: 'SCHEMA_RESOLVE_THREW: ' + CENSUS_str_(e && e.message) }; }
+}
+
+/**
+ * §5 — READ-ONLY. Search every scope the demand snapshot carries for one that can form a complete automatic
+ * route, and report the 15 predicates for every scope it looked at. No parameters, no writes, no flag.
+ */
+function RUN_E3_FIND_MATERIALIZABLE_CANDIDATE() {
+  var t0 = Date.now();
+  var out = { census: 'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', read_only: true, db_writes: 0,
+    writer_constructed: false, census_build: TEMP_E3_CENSUS_BUILD_,
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6 §5 — a SEARCH under fixed criteria, never a picked scope. Every '
+      + 'candidate carries the observed value of all 15 predicates, and every rejection names the first one '
+      + 'that failed.',
+    rate_card_is_not_a_candidacy_requirement: true,
+    predicates: E3_CANDIDATE_PREDICATES_,
+    scopes_examined: 0, skus_examined: 0, candidates: [], rejected_by_predicate: {},
+    selected: null, verdict: 'NO_SAFE_MATERIALIZATION_CANDIDATE',
+    // §5's closing rule, restated in the output so the two results are never conflated: finding no candidate
+    // here says nothing at all about whether the AI Plan can ADVISE. R5 established that it can, and this
+    // function has no authority to withdraw it.
+    does_not_withdraw: 'READY_FOR_AI_PLAN_ADVICE — the recommendation readiness R5 established is unaffected by the '
+      + 'outcome of this search' };
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(prodExpectedDbId_());
+    if (typeof prodAssertDbTarget_ === 'function') prodAssertDbTarget_(ss, prodExpectedDbId_());
+  } catch (e) {
+    out.verdict = 'STOP'; out.error = 'DB_NOT_REACHABLE_OR_WRONG_TARGET: ' + CENSUS_str_(e && e.message);
+    CENSUS_log_('verdict', out.verdict); return out;
+  }
+  var planningCycle = '';
+  try {
+    var ctx = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+    if (ctx && ctx.ok) planningCycle = CENSUS_str_(ctx.planningCycle);
+  } catch (e2) {}
+  out.planning_cycle = planningCycle;
+  if (!planningCycle) { out.verdict = 'STOP'; out.error = 'PLANNING_CYCLE_UNRESOLVED'; return out; }
+
+  var scopes = CENSUS_enumerateDemandScopes_(ss);
+  out.scopes_examined = scopes.length;
+  scopes.forEach(function (sc) {
+    var env = CENSUS_candidateEnv_(ss, sc, planningCycle);
+    if (env.error) {
+      out.rejected_by_predicate['ENV_THREW'] = (out.rejected_by_predicate['ENV_THREW'] || 0) + 1;
+      out.candidates.push({ company: sc.company, country: sc.country, marketplace: sc.marketplace,
+        sku: null, passed: false, first_failing_predicate: 'ENV_THREW', error: env.error });
+      return;
+    }
+    sc.skus.forEach(function (sku) {
+      out.skus_examined++;
+      var c = CENSUS_judgeCandidate_(env, sc.marketplace, sku);
+      if (!c.passed) {
+        var k = c.first_failing_predicate || 'UNKNOWN';
+        out.rejected_by_predicate[k] = (out.rejected_by_predicate[k] || 0) + 1;
+      }
+      out.candidates.push(c);
+    });
+  });
+  // §5's preference order, applied only among scopes that ALREADY pass every predicate. A preference can
+  // never promote a scope that failed a predicate, which is why it is applied here and not inside the judge.
+  var ok = out.candidates.filter(function (c) { return c.passed === true; });
+  ok.sort(function (a, b) {
+    var d = (a.source_warehouse_ids || []).length - (b.source_warehouse_ids || []).length;
+    if (d) return d;                                            // one source, hand-verifiable
+    d = a.suggested_quantity - b.suggested_quantity;
+    if (d) return d;                                            // the smallest quantity a person can check
+    return String(a.sku).localeCompare(String(b.sku));           // deterministic, never row order
+  });
+  out.selected = ok[0] || null;
+  out.verdict = out.selected ? 'MATERIALIZATION_CANDIDATE_FOUND' : 'NO_SAFE_MATERIALIZATION_CANDIDATE';
+  out.elapsed_ms = Date.now() - t0;
+  CENSUS_log_('verdict', out.verdict);
+  CENSUS_log_('scopes_examined', out.scopes_examined);
+  CENSUS_log_('skus_examined', out.skus_examined);
+  CENSUS_log_('rejected_by_predicate', out.rejected_by_predicate);
+  CENSUS_log_('selected', out.selected);
+  CENSUS_log_('db_writes', 0);
+  return out;
+}
+
+/**
+ * §6 — READ-ONLY. Census the scope §5 selects. No parameters; the SELECTION RULE is fixed, and once
+ * E3_SELECTED_MATERIALIZABLE_SCOPE_ is set to a literal, that scope is fixed too and nothing else can be run
+ * under this name.
+ */
+function RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE() {
+  var out = { census: 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE', read_only: true, db_writes: 0,
+    writer_constructed: false, census_build: TEMP_E3_CENSUS_BUILD_, verdict: 'STOP' };
+  var S = E3_SELECTED_MATERIALIZABLE_SCOPE_;
+  var chosenBy = 'PINNED_CONSTANT';
+  if (!S) {
+    chosenBy = 'SELECTOR';
+    var found = RUN_E3_FIND_MATERIALIZABLE_CANDIDATE();
+    out.selection = found;
+    if (!found.selected) {
+      out.verdict = 'NO_SAFE_MATERIALIZATION_CANDIDATE';
+      out.rejected_by_predicate = found.rejected_by_predicate;
+      out.note = 'No scope in the current data satisfies all 15 predicates. This does NOT withdraw the AI Plan '
+        + 'advice readiness R5 established — read rejected_by_predicate for the single fact that would unlock '
+        + 'the most scopes.';
+      CENSUS_log_('verdict', out.verdict);
+      CENSUS_log_('rejected_by_predicate', out.rejected_by_predicate);
+      return out;
+    }
+    S = { company: found.selected.company, country: found.selected.country,
+      marketplace: found.selected.marketplace, sku: found.selected.sku };
+  }
+  out.scope = S;
+  out.scope_chosen_by = chosenBy;
+  // ALL_SITES is unreachable from here, exactly as it is from the ResUS wrapper.
+  if (!CENSUS_str_(S.company) || !CENSUS_str_(S.country) || !CENSUS_str_(S.marketplace) || !CENSUS_str_(S.sku)
+    || /^all(_sites)?$/i.test(CENSUS_str_(S.marketplace)) || /^all(_sites)?$/i.test(CENSUS_str_(S.sku))) {
+    out.verdict = 'STOP';
+    out.blockers = ['SELECTED_SCOPE_INVALID: a census scope is four exact values and never a wildcard'];
+    CENSUS_log_('verdict', out.verdict);
+    return out;
+  }
+  var res = TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3({
+    company: S.company, country: S.country, marketplace: S.marketplace, sku: S.sku });
+  out.result = res;
+  // The §6 expectations, evaluated rather than described. Each is the observed value beside the required one,
+  // so a reader sees WHICH expectation failed instead of one aggregate boolean.
+  var checks = [
+    ['recommendation_ready', res.recommendation_ready === true, res.recommendation_ready],
+    ['supply_allocation_conserved', res.supply_allocation_conserved === true, res.supply_allocation_conserved],
+    ['unresolved_supply_quantity_zero', CENSUS_num_(res.unresolved_supply_quantity) === 0, res.unresolved_supply_quantity],
+    ['method_status_automatic', res.method_status === 'AUTO_RECOMMENDED', res.method_status],
+    ['route_materialization_complete', res.route_materialization_complete === true, res.route_materialization_complete],
+    ['automatic_route_quantity_equals_authorized',
+      CENSUS_num_(res.automatic_route_quantity) === CENSUS_num_(res.authorized_quantity),
+      res.automatic_route_quantity + ' vs ' + res.authorized_quantity],
+    ['schema_parity_agree', !!(res.schema_parity && res.schema_parity.agree === true),
+      res.schema_parity ? res.schema_parity.agree : null],
+    ['no_shared_blockers', (res.shared_blockers || []).length === 0, res.shared_blockers]
+  ];
+  out.checks = checks.map(function (c) { return { check: c[0], ok: c[1] === true, observed: c[2] }; });
+  // Carrier selection and pricing are reported INDEPENDENTLY and neither is a condition of this verdict.
+  out.carrier_selection = 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN';
+  out.price_comparison_ready = res.carrier_pricing_ready === true;
+  out.deterministic_identity_preview = (out.selection && out.selection.selected)
+    ? out.selection.selected.deterministic_identity_preview : null;
+  var failed = out.checks.filter(function (c) { return !c.ok; });
+  out.first_failing_check = failed.length ? failed[0].check : null;
+  out.verdict = failed.length ? 'NOT_READY_FOR_CONTROLLED_MATERIALIZATION_TEST'
+    : 'READY_FOR_CONTROLLED_MATERIALIZATION_TEST';
+  out.activation_mutation_manifest = (typeof weeklyAiPlanActivationManifest_ === 'function')
+    ? weeklyAiPlanActivationManifest_() : null;
+  CENSUS_log_('scope', S);
+  CENSUS_log_('scope_chosen_by', chosenBy);
+  CENSUS_log_('verdict', out.verdict);
+  CENSUS_log_('first_failing_check', out.first_failing_check);
+  CENSUS_log_('price_comparison_ready', out.price_comparison_ready);
+  CENSUS_log_('db_writes', 0);
+  CENSUS_log_('writer_constructed', false);
+  return out;
 }

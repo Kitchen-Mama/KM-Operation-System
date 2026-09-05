@@ -9366,6 +9366,66 @@ function _irReadinessSentence_(issue) {
 }
 window._irReadinessSentence_ = _irReadinessSentence_;
 
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6 §4 — SAYING WHAT THE PLAN ADVISES, INSTEAD OF WHAT IT DID NOT WRITE.
+//
+// The reported behaviour: an operator opens AI Support, picks Amazon US, presses Generate AI Plan, and is told
+// the AI Plan found NO ELIGIBLE ROUTE and that nothing in the current data supports a shipment here. What the
+// server actually returned was a finished recommendation — 760 units, sourced entirely from the in-country 3PL,
+// nothing needed from a factory — held back from an execution route only because no carrier_lead_times row
+// covers the last leg and a person therefore picks the method.
+//
+// "Nothing supports a shipment" and "everything supports a shipment except one human decision" are opposite
+// statements, and the page was making the first one. An operator who believes it does not ship.
+//
+// This builds the sentence for the middle case. Rules it follows, all from §4:
+//   * it leads with what SUCCEEDED (the recommendation), not with what is missing;
+//   * it names the quantity and the source warehouse, because a total with no source is not actionable;
+//   * it states the factory allocation even at zero — an omitted zero reads as "we did not look";
+//   * it says the Execution Plan was NOT changed, as a fact the server measured;
+//   * it never uses the words failed, error, or database, and never asks for Carrier master data as a
+//     precondition for a recommendation that has already been made.
+// ================================================================================================================
+function _irAiPlanAdviceSentence_(cls) {
+    var a = cls && cls.advice;
+    if (!a || a.recommendation_ready !== true) return null;
+    var q = a.quantities || {};
+    var n = function (v) { var x = Number(v); return isFinite(x) ? x : 0; };
+    var parts = [];
+    parts.push('AI recommendation completed. Suggested quantity ' + n(q.authorized) + ' unit(s)' +
+        (n(q.unresolved_supply) === 0 ? ', fully sourced' : ', ' + n(q.unresolved_supply) + ' unit(s) not sourced') + '.');
+    // The source split, by name. One warehouse is the common case and reads best as a sentence; several read
+    // best as a list, and either way the FACTORY total is stated even when it is zero.
+    var srcs = [], factoryQty = 0, sawFactoryField = false;
+    (a.scopes || []).forEach(function (sc) {
+        var ss = sc && sc.sources;
+        if (!ss) return;
+        sawFactoryField = true;
+        factoryQty += n(ss.factory_quantity);
+        (ss.by_warehouse || []).forEach(function (w) {
+            srcs.push(n(w.quantity) + ' from ' + (w.warehouse_code ? w.warehouse_code + ' / ' : '') + w.warehouse_id);
+        });
+    });
+    if (srcs.length) parts.push('Source: ' + srcs.join('; ') + '.');
+    if (sawFactoryField) parts.push('Factory allocation ' + factoryQty + ' unit(s).');
+    // What a person still has to do, named by CODE rather than guessed from wording.
+    var codes = cls.adviceWarningCodes || [];
+    var has = function (k) { return codes.indexOf(k) !== -1; };
+    if (has('NO_TRANSIT_AUTHORITY_FOR_LANE') || has('ROUTE_METHOD_MANUAL_REVIEW_REQUIRED')) {
+        parts.push('An automatic shipping method is not available for this lane, so the route needs a method' +
+            ' chosen by hand. This does not affect the quantity or the source above.');
+    }
+    if (has('CARRIER_PRICING_DEFERRED') || has('MANUAL_CARRIER_SELECTION_REQUIRED')) {
+        parts.push('Carrier selection and pricing are deferred to the Weekly Shipping Plan.');
+    }
+    if (a.execution_plan_changed === true) {
+        parts.push('The Execution Plan below is the readback of what was stored.');
+    } else {
+        parts.push('The Execution Plan was NOT changed automatically and nothing on screen was discarded.');
+    }
+    return parts.join(' ');
+}
+
 function _irClassifyGenerationResult_(res) {
     var d = (res && res.data) || {};
     // §D.2 — read the SINGULAR `error` the command result actually carries, as well as the plural
@@ -9422,6 +9482,25 @@ function _irClassifyGenerationResult_(res) {
         // the server's own top-level code, so a refusal is reported by name and never as the literal 'FAILED'
         code: String((_e1 && _e1.code) || ''),
         readiness: _rd,
+        // ==========================================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6 §4 — THE THIRD OUTCOME. THERE WERE ONLY EVER TWO, AND THE TRUTH NEEDED THREE.
+        //
+        // This classifier could say `ok` or not `ok`. A run that computed a complete recommendation — the right
+        // quantity, from the right warehouse, by the right date — and wrote no execution route because a person
+        // still has to choose a shipping method is neither of those. It was landing on the `ok` path with a zero
+        // line count, and the zero-line branch then told the operator that nothing in the current data supports a
+        // shipment here. The server knew better the entire time; nothing in the response reached this function in
+        // a form it could branch on.
+        //
+        // `adviceOutcome` is the server's own three-valued answer, read verbatim rather than re-derived. Deriving
+        // it here would be a second opinion about a question the server has already answered, and the two would
+        // eventually disagree — which is precisely the class of defect this round is closing.
+        // ==========================================================================================================
+        advice: (d.advice && typeof d.advice === 'object') ? d.advice : null,
+        adviceOutcome: (d.advice && d.advice.outcome) ? String(d.advice.outcome) : null,
+        adviceReady: !!(d.advice && d.advice.recommendation_ready === true),
+        adviceWarningCodes: (d.advice && Array.isArray(d.advice.warning_codes)) ? d.advice.warning_codes : [],
+        executionPlanChanged: !!(d.advice && d.advice.execution_plan_changed === true),
         reason: zeroResult ? 'no allocation needed this cycle'
             : status === 'BLOCKED_INPUT' ? 'blocked (input)'
             : (blocked.length ? 'blocked/conflict on ' + blocked.length + ' marketplace(s)' : '')
@@ -9560,6 +9639,20 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                                 (cls.expiredHeaders ? ' ' + cls.expiredHeaders + ' superseded route(s) were expired (kept for audit).' : ''),
                                 'No replenishment is required for this scope.');
                         }
+                        // R6 §4 — ADVICE OUTRANKS "no route". A run that produced a recommendation and wrote
+                        // no route because a person still has to choose a method is a SUCCESSFUL run with a
+                        // decision outstanding, and it must be reported as one. The old wording below is
+                        // reached only when the server has no recommendation to offer either — which is the
+                        // case it was actually written for.
+                        var _adv = _irAiPlanAdviceSentence_(cls);
+                        if (_adv) {
+                            return _irAiPlanTerminal_(
+                                cls.adviceOutcome === 'SUCCESS_WITH_WARNINGS' ? 'warn' : 'ok',
+                                _adv + ' Open + Add Route, or edit the route below, to choose the method.',
+                                'AI recommendation ready — ' +
+                                Number((cls.advice.quantities || {}).authorized || 0) +
+                                ' unit(s). A shipping method still needs to be chosen.');
+                        }
                         // §D.12 — a zero-result run is a real, successful answer and says so as one.
                         return _irAiPlanTerminal_('warn',
                             'AI Plan found NO ELIGIBLE ROUTE for this scope this cycle — 0 route(s) written.' +
@@ -9578,6 +9671,37 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                 });
         }
         _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds
+        // ==========================================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6 §4 — THIS IS THE BRANCH THE LIVE RUN ACTUALLY TOOK, AND IT SHOWED RED.
+        //
+        // Measured, not assumed. On the ResUS scope the server returns success:false with job_status ALL_BLOCKED,
+        // because `runSucceeded` means "something committed" and nothing did. So the run never reached the
+        // zero-result wording at all — it fell all the way through to the generic failure at the bottom of this
+        // function and told an operator "AI Plan could not complete — ALL_BLOCKED", in the error tone, about a
+        // run that had just produced a complete and correct recommendation for 760 units.
+        //
+        // The server's `success` flag is LEFT ALONE. It answers "did anything commit", which is the question the
+        // lifecycle depends on: flipping it to true would expire last week's superseded drafts on a run that
+        // wrote nothing, leaving the operator with no active plan at all. That flag is right; the page's reading
+        // of it was too coarse.
+        //
+        // So the advice is consulted HERE, before the failure wording, and only when there is nothing else to
+        // report: no readiness refusal, no per-marketplace conflict, no server error. Any of those is a real
+        // finding an operator must see, and none of them is silenced by a recommendation being available.
+        // Nothing is re-hydrated on this path and nothing on screen is touched — which is already correct, and
+        // is exactly what the message now says out loud.
+        // ==========================================================================================================
+        if (!cls.readiness && !cls.blockedCount && !(cls.errors && cls.errors.length)) {
+            var _advBlocked = _irAiPlanAdviceSentence_(cls);
+            if (_advBlocked) {
+                return _irAiPlanTerminal_(
+                    cls.adviceOutcome === 'SUCCESS_WITH_WARNINGS' ? 'warn' : 'ok',
+                    _advBlocked + ' Open + Add Route, or edit the route below, to choose the method.',
+                    'AI recommendation ready — ' +
+                    Number((cls.advice.quantities || {}).authorized || 0) +
+                    ' unit(s). A shipping method still needs to be chosen.');
+            }
+        }
         // F1-7N-FC-1B-E3-R1 §D.3 — A READINESS REFUSAL IS NOT A GENERIC FAILURE.
         //
         // "AI Plan could not complete — FAILED" tells an operator nothing they can act on. When the server

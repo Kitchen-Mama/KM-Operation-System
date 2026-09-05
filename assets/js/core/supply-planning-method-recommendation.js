@@ -266,11 +266,16 @@
         break;
       }
     }
-    return { days: d, source: src, provisional: config.provisional === true };
+    // R6 §1 — the UNIT travels with the number. `days_until_stockout` is a difference between two calendar
+    // dates and a lead-time row states calendar days, so a buffer expressed in anything else would be added
+    // to two calendar quantities and quietly shorten itself. A config that does not say is read as calendar
+    // days, which is the only unit the comparison is valid in.
+    return { days: d, source: src, provisional: config.provisional === true,
+      calendar: s(config.calendar) || 'calendar_days' };
   }
 
   return {
-    VERSION: 'kmmr-r5-1',
+    VERSION: 'kmmr-r6-1',
     METHOD_STATUS: METHOD_STATUS,
     METHOD_REVIEW_REASONS: METHOD_REVIEW_REASONS,
     RISK: RISK,
