@@ -6612,6 +6612,52 @@ function _execRebuildMethodOptions(sku) {
         // The reason lives next to the control, so an operator never has to guess which of the five states
         // produced the placeholder they are looking at.
         methodEl.setAttribute('data-method-state', res.status);
+        // ======================================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §5 — THE SIBLING HAS TO MOVE WITH IT.
+        //
+        // This function runs when the carrier catalogue finishes loading, which is normally AFTER the first
+        // paint. On that first paint there were no methods, so `_execLastMileOptionsHtml` returned nothing and
+        // the row rendered the hidden field. Repainting only the method <select> would leave that hidden field
+        // in place next to a now-ambiguous method — and the operator would have no way to choose a last mile
+        // until something else happened to re-render the row.
+        //
+        // The two controls are one answer to one question, so they are repainted together. A value the operator
+        // has already chosen is preserved: it is read off the existing control before the swap, never reset.
+        // ======================================================================================================
+        var cellEl = methodEl.parentNode;
+        var lmEl = cellEl && cellEl.querySelector ? cellEl.querySelector('[data-field="last_mile_delivery"]') : null;
+        if (lmEl) {
+            var lmCurrent = String(lmEl.value || '').trim();
+            var lmHtml = _execLastMileOptionsHtml(methods, methodEl.value, lmCurrent);
+            var isSelect = String(lmEl.tagName || '').toUpperCase() === 'SELECT';
+            if (lmHtml && !isSelect) {
+                // An ambiguous method arrived where a hidden field was: the picker replaces it.
+                var sel = document.createElement('select');
+                sel.className = 'replen-card__select replen-card__select--lastmile';
+                sel.setAttribute('data-field', 'last_mile_delivery');
+                sel.setAttribute('aria-label', 'Last mile');
+                sel.innerHTML = lmHtml;
+                sel.onchange = lmEl.onchange || methodEl.onchange;
+                cellEl.replaceChild(sel, lmEl);
+            } else if (lmHtml && isSelect) {
+                lmEl.innerHTML = lmHtml;
+                lmEl.value = lmCurrent;
+            } else if (!lmHtml) {
+                // Unambiguous (or unresolved): the single value rides on the option, and is carried rather
+                // than cleared — a method with one last mile still has one.
+                var only = '';
+                methods.forEach(function (m) { if (!only && svcEq(methodEl.value, m.value)) only = m.lastMileDelivery || ''; });
+                if (isSelect) {
+                    var hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.setAttribute('data-field', 'last_mile_delivery');
+                    hidden.value = only || lmCurrent;
+                    cellEl.replaceChild(hidden, lmEl);
+                } else if (only && !lmCurrent) {
+                    lmEl.value = only;
+                }
+            }
+        }
         if (res.status === 'ERROR' && res.error) methodEl.setAttribute('title', res.error.code + ' — ' + (res.error.message || ''));
         else if (res.status === 'EMPTY_CONFIGURATION' && res.configuration) methodEl.setAttribute('title', res.configuration.code + ' — ' + res.configuration.next_action);
         else methodEl.removeAttribute('title');

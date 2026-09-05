@@ -301,6 +301,17 @@ ok(IRDraft.canonicalRouteGroupKey({ company: 'ResUS', country: 'US', marketplace
    !== IRDraft.canonicalRouteGroupKey({ company: 'ResUS', country: 'US', marketplace: 'Amazon' },
      { source_warehouse_id: 'WH-CN-1', shipping_method: 'sea', last_mile_delivery: 'parcel', destination_marketplace: 'Amazon' }),
   'F7c and sea+truck and sea+parcel are two DIFFERENT route identities — which is what dropping the last mile merged');
+// THE ASYNC PAINT. The catalogue normally arrives AFTER the first render, so on that first paint there are no
+// methods, the picker is not rendered, and the row carries the hidden field instead. Repainting only the
+// method <select> would leave that hidden field beside a now-ambiguous method, and the operator would have no
+// way to choose a last mile at all until something else re-rendered the row.
+var refreshFn = extractFn(PAGE, '_execRebuildMethodOptions');
+ok(/_execLastMileOptionsHtml\(methods, methodEl\.value, lmCurrent\)/.test(refreshFn),
+  'F8  the async catalogue refresh repaints the last-mile control alongside the method it belongs to');
+ok(/var lmCurrent = String\(lmEl\.value \|\| ''\)\.trim\(\);/.test(refreshFn),
+  'F8a reading the operator’s existing choice off the control BEFORE the swap — never resetting it');
+ok(/cellEl\.replaceChild\(sel, lmEl\)/.test(refreshFn) && /cellEl\.replaceChild\(hidden, lmEl\)/.test(refreshFn),
+  'F8b and swapping between picker and hidden field in BOTH directions, as the method changes');
 
 // ================================================================================================================
 section('G. §7 — a hundred-SKU run announced by its own reason code');
