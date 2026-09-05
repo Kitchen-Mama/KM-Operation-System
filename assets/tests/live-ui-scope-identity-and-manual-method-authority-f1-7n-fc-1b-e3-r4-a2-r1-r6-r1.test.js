@@ -280,6 +280,27 @@ ok(/last_mile_delivery: fieldVal\('last_mile_delivery'\)/.test(PAGE),
 ok(/#ops-section \.replen-card__method-cell \{/.test(CSS),
   'F5  the control sits INSIDE the existing Method track — no grid column was guessed at');
 ok(/data-last-mile="/.test(PAGE), 'F6  every option carries the last mile it belongs to');
+// THE WHOLE CHAIN, EXECUTED. Naming the column is not the same as reaching it: the value has to survive the
+// option, the row, the collect, the header payload and the write. The last two links are the ones that were
+// never exercised, because until this round the row had no control and the collect had no field.
+var COMPAT = read('assets/js/utils/inventory-compat.js');
+ok(/recommended_last_mile_delivery: String\(route\.last_mile_delivery/.test(COMPAT),
+  'F7  the header payload maps the collected last_mile_delivery onto the column it belongs in');
+var IRDraft = require('../js/utils/inventory-compat.js').IRDraft;
+var hdr = IRDraft.routeHeaderFields({ company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+  { source_warehouse_id: 'WH-CN-1', shipping_method: 'sea', last_mile_delivery: 'truck',
+    destination_marketplace: 'Amazon' });
+eq(hdr.recommended_last_mile_delivery, 'truck',
+  'F7a and a route composed with a last mile REACHES the column — measured, not inferred from a field name');
+var hdrBlank = IRDraft.routeHeaderFields({ company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+  { source_warehouse_id: 'WH-CN-1', shipping_method: 'sea', destination_marketplace: 'Amazon' });
+eq(hdrBlank.recommended_last_mile_delivery, '',
+  'F7b while a route with none stays blank — nothing is invented to fill the column');
+ok(IRDraft.canonicalRouteGroupKey({ company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+     { source_warehouse_id: 'WH-CN-1', shipping_method: 'sea', last_mile_delivery: 'truck', destination_marketplace: 'Amazon' })
+   !== IRDraft.canonicalRouteGroupKey({ company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+     { source_warehouse_id: 'WH-CN-1', shipping_method: 'sea', last_mile_delivery: 'parcel', destination_marketplace: 'Amazon' }),
+  'F7c and sea+truck and sea+parcel are two DIFFERENT route identities — which is what dropping the last mile merged');
 
 // ================================================================================================================
 section('G. §7 — a hundred-SKU run announced by its own reason code');
