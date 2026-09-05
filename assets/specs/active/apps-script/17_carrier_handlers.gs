@@ -73,6 +73,52 @@ function customsTypeLabel_(code) {
   return CUSTOMS_TYPE_LABELS_.hasOwnProperty(key) ? CUSTOMS_TYPE_LABELS_[key] : '';
 }
 
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §7 — THE WEEKLY SHIPPING PLAN CARRIER COMPARISON. THE CONTRACT, FROZEN.
+//
+// Round R5 moved carrier SELECTION out of the AI Plan. The AI Plan recommends a transport/service profile
+// (method + last-mile + conservative transit + risk) and deliberately names no carrier, because a lead-time row
+// carries a carrier_id and treating that as "the carrier" would pre-empt this comparison from a table that
+// exists to describe transit rather than commerce.
+//
+// This round does NOT build the comparison UI. What it freezes is the BOUNDARY, so the next round cannot
+// quietly move the decision back up a layer: the inputs the comparison is entitled to read, the axes it
+// compares on, and the fact that price is the FIRST ordering and not the permanent one. Publishing this as a
+// declaration rather than as prose in a document means a test can hold the boundary still.
+//
+// It is a pure declaration: no sheet, no request, no write. Nothing calls it to make a decision yet.
+function weeklyShippingPlanCarrierComparisonContract_() {
+  return {
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R5 §7 — Layer 2: given a CHOSEN method, compare carriers. Layer 1 (AI '
+      + 'Plan) never selects a carrier; Layer 3 (Submit) is the only layer that may refuse for missing fields.',
+    layer: 'WEEKLY_SHIPPING_PLAN',
+    selects: 'CARRIER',
+    // Supplied by the operator or defaulted from the AI Plan recommendation — never re-derived here.
+    method_is_an_input_not_an_output: true,
+    match_axes: ['origin_warehouse_or_address', 'destination_warehouse_or_address_or_destination_authority',
+      'destination_country', 'shipping_method', 'last_mile_delivery', 'effective_date'],
+    quantity_axes: ['shipment_quantity', 'carton_count', 'weight', 'volume'],
+    rate_axes: ['currency', 'charge_type', 'charge_unit', 'unit_rate', 'min_charge', 'fuel_surcharge',
+      'customs_fee', 'doc_fee'],
+    source_table: 'carrier_rate_cards',
+    // PHASE 1 ordering. Total comparable cost only, and only across an identical currency + charge basis — a
+    // per-kg and a per-carton rate are not comparable without shipment dimensions, and pretending otherwise is
+    // how a cheaper-looking carrier wins on a unit nobody checked.
+    initial_ranking: ['comparable_total_cost'],
+    comparability_rule: 'costs compare ONLY within one currency AND one charge_type+charge_unit basis',
+    // Reserved, so a later round adds a weight rather than inventing a new ranking surface.
+    reserved_ranking_signals: ['trust_score', 'on_time_rate', 'damage_or_claim_rate', 'historical_reliability'],
+    // What this layer may NOT do, stated positively so the boundary is testable.
+    must_not: [
+      'block the AI Plan recommendation when no rate card covers a lane',
+      'select a carrier on behalf of the operator',
+      'derive a shipping METHOD from a rate card (the transit authority owns methods)',
+      'treat carrier_lead_times.carrier_id as a carrier selection'
+    ],
+    ui_delivered_in_this_round: false
+  };
+}
+
 function crcNorm_(v) { return String(v == null ? '' : v).trim(); }
 function crcLower_(v) { return crcNorm_(v).toLowerCase(); }
 function crcIsNum_(v) { return v !== '' && v != null && !isNaN(parseFloat(v)); }

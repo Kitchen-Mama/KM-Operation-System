@@ -688,7 +688,11 @@ section('§13 — DEPLOYMENT');
   var expects = G63.match(/symbol: 'SAD_BUILD_VERSION_', expected: '([^']+)'/);
   eq(expects && expects[1], stamp, 'D2  §13 and the health manifest expects exactly what the source declares');
   // The durable form: whatever the source declares, the manifest expects it in EXACTLY ONE place.
-  eq((G63.match(new RegExp("expected: '" + stamp + "'", 'g')) || []).length, 1, 'D2a in exactly one place');
+  // RESTATED (A2-R1-R5): this counted the STAMP STRING, and after R5 rotated the stamps that had never been
+  // rotated, two owner files that legitimately last changed in the same round now share one expectation
+  // string. What must appear exactly once is the entry for this SYMBOL.
+  eq((G63.match(/symbol: 'SAD_BUILD_VERSION_'/g) || []).length, 1,
+    'D2a and the manifest carries exactly ONE entry for this symbol');
   ok(RO.stampAtOrAfter(stamp, 'F1-7N-FB-4G-A2'), 'D3  §13 and it is at or after A2');
   var APP = RO.currentAppToken();
   // Same shape, same restatement: the token series is append-only, so at-or-after is the durable claim.

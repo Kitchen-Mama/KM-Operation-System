@@ -35,7 +35,14 @@
 
 // Build stamp for the deployment-identity manifest in 63_api_v1_system_health.gs. If the deployed project is
 // missing this module the health check names it, instead of the page silently expiring nothing.
-var AIPL_BUILD_VERSION_ = 'F1-7N-FB-4C';
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — THIS STAMP WAS THREE ROUNDS STALE, AND THAT IS WHY THE CONTRACT
+// SAID UNIFORM ABOUT A MIXED DEPLOYMENT. This file's behaviour changed in F1-7N-FC-1B-E3-R4-A2-R1-R1
+// (aiplSchemaVersionOf_ began delegating to the shared resolver) and the label stayed at FB-4C. The
+// manifest expected FB-4C, the stale deployed body declared FB-4C, so a label comparison matched and
+// reported a healthy deployment while the writer resolved FB4G and the lifecycle resolved nothing.
+// Set to the round this file last changed. Bumping it to the CURRENT round would be worse than leaving
+// it stale: it would assert a sync that never happened.
+var AIPL_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1';
 var AIPL_CONTRACT_VERSION_ = '1';
 var AIPL_SOURCE_PAGE_ = 'inventory_replenishment';
 var AIPL_EXPIRATION_REASON_ = 'SUPERSEDED_BY_NEW_AI_PLAN';

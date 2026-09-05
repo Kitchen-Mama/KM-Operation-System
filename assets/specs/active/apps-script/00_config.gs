@@ -102,6 +102,39 @@ function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GEN
 //
 // An empty allowlist means NOTHING is enabled, even with the flag true. Fail-closed is the only safe default
 // for a list whose purpose is to be narrow.
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §3 — THE TRANSIT SAFETY BUFFER. SEARCHED FOR, NOT FOUND, SO DECLARED HERE.
+//
+// Before writing this, the repository was searched for an existing owner of the idea: buffer_days, bufferDays,
+// SAFETY_BUFFER, OPERATIONAL_BUFFER, lead_time_buffer and the days-of-supply / stockout modules. There is no
+// existing authority — `carrier_lead_times` stores raw transit days and nothing anywhere adds slack to them.
+// So this is a NEW authority rather than a duplicate of one, and it is declared in the one place that already
+// owns cross-cutting constants so it cannot become a magic number scattered through the planning code.
+//
+// WHAT IT IS. The operational slack between "the carrier's transit clock" and "the shelf is empty": booking and
+// pickup delay, consolidation, customs, the receiving appointment, and put-away at the destination. None of
+// that is in a lead-time row, and all of it happens before a unit is sellable.
+//
+// HOW IT IS USED. `max_days + buffer_days < days_until_stockout` (STRICT), evaluated by KMMR. The strictness
+// matters at the boundary: with 30 days of supply and a 28-day service, even a 2-day buffer must NOT return
+// safe, and `<` gives exactly that. min_days is never consulted by the verdict.
+//
+// PROVISIONAL, AND SAID SO IN THE DATA. `provisional: true` travels with every recommendation this value
+// produces, so no report can present it as a confirmed business rule. 7 days is a starting figure chosen to be
+// defensible rather than precise; the round that confirms it with the business flips this flag and nothing else
+// changes. ACTIVATION MUST NOT PROCEED ON A PROVISIONAL BUFFER.
+//
+// `by_method` overrides are matched on the CANONICAL method key, so "Sea" here and "sea freight" in a
+// lead-time row agree. An empty map means every method uses `default_days`.
+var WEEKLY_AI_PLAN_TRANSIT_BUFFER_ = {
+  provisional: true,
+  default_days: 7,
+  by_method: {},
+  authority: 'F1-7N-FC-1B-E3-R4-A2-R1-R5 §3 — provisional operational buffer pending business confirmation',
+  rule: 'SAFE requires max_days + buffer_days < days_until_stockout (strict)'
+};
+function weeklyAiPlanTransitBuffer_() { return WEEKLY_AI_PLAN_TRANSIT_BUFFER_; }
+
 var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = [
   { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }
 ];
@@ -141,4 +174,6 @@ function inventoryAiPlanActivationAllowlist_() {
 // with the flag OFF while the repository said ON, and nothing would have named the difference. It is stamped and
 // registered in 63_'s module manifest now, which makes a partial sync of the CONFIG a mixed_deployment fault
 // like any other.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R1';
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — also never rotated, and this round changes the file again (the
+// transit buffer authority), so it moves to the current round.
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R5';

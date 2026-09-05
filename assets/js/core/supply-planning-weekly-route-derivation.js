@@ -29,6 +29,13 @@
   // (transit-day) join are OWNED by KMRA so the Inventory AI Plan and the Execution Plan UI cannot diverge. Resolved
   // lazily (Node require → Apps Script bundle global → browser window.KM.routeAuthority). KMWRR keeps only the
   // ranking (on-time → lowest comparable cost → last-mile) OVER the shared candidate set — it never re-derives the set.
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 §2 — the transit-safe method authority, resolved the same three ways as KMRA.
+  function getKMMR() {
+    try { if (typeof require === 'function') return require('./supply-planning-method-recommendation'); } catch (e) {}
+    if (typeof KMMR !== 'undefined' && KMMR) return KMMR;
+    try { if (typeof window !== 'undefined' && window.KM && window.KM.methodRecommendation) return window.KM.methodRecommendation; } catch (e2) {}
+    return null;
+  }
   function getKMRA() {
     try { if (typeof require === 'function') return require('./supply-planning-route-authority'); } catch (e) {}
     if (typeof KMRA !== 'undefined' && KMRA) return KMRA;
@@ -156,12 +163,50 @@
     if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED', 'KMRA_UNAVAILABLE');
     var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '' };
     var lane = kmra.laneCards(routeQuery, input.rateCards, { asOfOrdinal: asOf });
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R5 §2/§7 — A PRICE LIST WAS DECIDING WHETHER A METHOD EXISTED.
+    //
+    // `laneCards` reads carrier_rate_cards, and this function refused here before it had ever consulted a
+    // lead time. So the METHOD — a transit fact — was gated on commercial data, and gated through the
+    // marketplace axis that rate cards carry and lead times do not. Measured: KMRA.eligibleMethods over zero
+    // rate cards returns [], while KMRA.leadDays answers CN->US Sea/Truck with no marketplace anywhere in the
+    // question. That is how a marketplace-independent fact came to look marketplace-specific.
+    //
+    // The rate card is now ENRICHMENT: when the lane has cards, they are the candidate set exactly as before
+    // (cost is comparable and the ranking is unchanged). When it has none, the candidates come from the
+    // TRANSIT authority instead, priced at null and labelled as such. A route derived this way is still a
+    // COMPLETE route — source, destination, method and last-mile are all present, and cost has never been a
+    // header field — so nothing schema-invalid becomes writable. What changes is only that a missing price
+    // list no longer erases a method that demonstrably exists.
+    var methodSource = 'RATE_CARD';
+    var candidates = lane;
     if (!lane.length) {
+      var kmmr = getKMMR();
+      var profiles = (kmmr && typeof kmmr.serviceProfiles === 'function')
+        ? kmmr.serviceProfiles(input.leadTimes, { originCountry: originCountry, destinationCountry: destCountry })
+        : [];
+      if (profiles.length) {
+        methodSource = 'LEAD_TIME_AUTHORITY';
+        // Shaped like a rate-card DTO so the ranking below is untouched, with every commercial field ABSENT
+        // rather than defaulted: an unpriced candidate must never sort as if it were free.
+        candidates = profiles.map(function (p) {
+          return { rateCardId: '', carrierId: '', shippingMethod: p.shipping_method,
+            shippingMethodLabel: p.shipping_method, lastMileDelivery: p.last_mile_delivery,
+            currency: '', unitRate: NaN, minCharge: NaN, chargeType: '', chargeUnit: '',
+            originCountry: originCountry, destinationCountry: destCountry, marketplace: '' };
+        });
+      }
+    }
+    if (!candidates.length) {
       // F1-7N-FA-3C-R6F2D (D) — TYPE the no-method cause precisely (never a generic bucket when a cause is known):
       // no card for the lane at all vs cards exist for the lane but were inactive / outside the effective window vs the
       // matching cards carry no shipping_method token.
       var relaxed = (input.rateCards || []).map(kmra.normalizeRateCard).filter(function (dto) { return kmra.cardMatchesRoute(dto, routeQuery); });
-      var reason = !relaxed.length ? 'NO_CARRIER_CARD_FOR_LANE'
+      // §2 (R5) — with the rate card no longer able to supply a method, reaching here means NEITHER
+      // authority covers the lane. The rate-card sub-types are still reported when cards exist, because
+      // "the card expired" and "there is no transit authority" send a reader to different tables; but the
+      // primary cause is now the missing TRANSIT authority, which is what actually blocks a method.
+      var reason = !relaxed.length ? 'NO_TRANSIT_AUTHORITY_FOR_LANE'
         : (!relaxed.some(function (dto) { return dto.shippingMethod; }) ? 'NO_CANONICAL_METHOD' : 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
       // §7 — the lane key travels with the refusal. Without it a consumer can report that no method
       // resolved but not WHICH origin/destination/marketplace triple had no card.
@@ -192,7 +237,7 @@
 
     // manual override path — the override method must be in the SHARED candidate set (never a fabricated method).
     if (s(override.shipping_method)) {
-      var ovLane = lane.filter(function (dto) { return low(dto.shippingMethod) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(dto.lastMileDelivery) === low(override.last_mile_delivery)); });
+      var ovLane = candidates.filter(function (dto) { return low(dto.shippingMethod) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(dto.lastMileDelivery) === low(override.last_mile_delivery)); });
       if (!ovLane.length) return blocked('OVERRIDE_INVALID');
       var ovLm = resolveLastMile(ovLane, override.last_mile_delivery);
       if (ovLm.block) return blocked(ovLm.block);
@@ -204,12 +249,12 @@
     // manual vs a post-ranking selected result). AI ranking then operates over ROUTE PAIRS {method,last_mile}; the
     // SELECTED last_mile becomes part of the K2 key/header (distinct last_mile values are NEVER merged into one header).
     var manualSeen = {}, manualOptions = [];
-    lane.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
+    candidates.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
     manualOptions.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
 
     // distinct candidate PAIRS (dedup by method|last_mile; first card is the cost representative).
     var pairSeen = {}, pairs = [];
-    lane.forEach(function (dto) {
+    candidates.forEach(function (dto) {
       var m = s(dto.shippingMethod); if (!m) return;
       var lmv = s(dto.lastMileDelivery), pk = low(m) + '||' + low(lmv);
       if (pairSeen[pk]) return; pairSeen[pk] = 1;
@@ -291,7 +336,11 @@
       // thing returned, so a consumer could see the date and not the number, and § F.4 has asked the census to
       // report `lead_time_days` since E3 without any way to obtain it.
       expected_arrival: eta, transit_days: days,
-      estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
+      // §7 — which authority named this method, so a consumer never has to guess whether a null cost means
+      // "free", "not yet compared" or "no rate card exists".
+      method_source: methodSource,
+      estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency),
+      cost_basis: methodSource === 'RATE_CARD' ? 'RATE_CARD' : 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' };
     }
   }
 
@@ -360,7 +409,7 @@
       // It is carried as GROUP EVIDENCE, a sibling of `lines` — deliberately NOT merged into the line
       // payload, which would put an AI-computed arrival into a column documented as user-supplied and change
       // what the writer stores. Read-side only.
-      buckets[key].evidence.push({ expected_arrival: s(rl.expected_arrival), transit_days: (rl.transit_days == null ? null : num(rl.transit_days)), estimated_cost: (rl.estimated_cost == null ? null : num(rl.estimated_cost)), currency: s(rl.currency), route_candidate_status: s(rl.route_candidate_status) });
+      buckets[key].evidence.push({ expected_arrival: s(rl.expected_arrival), transit_days: (rl.transit_days == null ? null : num(rl.transit_days)), estimated_cost: (rl.estimated_cost == null ? null : num(rl.estimated_cost)), currency: s(rl.currency), route_candidate_status: s(rl.route_candidate_status), method_source: s(rl.method_source), cost_basis: s(rl.cost_basis) });
     });
     // deterministic ordinal: sort the complete route tuples (never row order / timestamp / random)
     order.sort();
@@ -370,7 +419,7 @@
       // not, that is reported rather than silently represented by whichever line happened to be first — a
       // first-row-wins pick is exactly the class of defect this file keeps finding.
       var evUniq = uniq((b.evidence || []).map(function (e) { return e.expected_arrival + '|' + e.transit_days + '|' + e.estimated_cost + '|' + e.currency; }));
-      var ev0 = (b.evidence || [])[0] || { expected_arrival: '', transit_days: null, estimated_cost: null, currency: '', route_candidate_status: '' };
+      var ev0 = (b.evidence || [])[0] || { expected_arrival: '', transit_days: null, estimated_cost: null, currency: '', route_candidate_status: '', method_source: '', cost_basis: '' };
       return {
         groupNo: i + 1, routeKey: key,
         header: buildGroupHeader(scope, b.route, i + 1),
@@ -378,6 +427,7 @@
         route_evidence: { expected_arrival: ev0.expected_arrival, transit_days: ev0.transit_days,
           estimated_cost: ev0.estimated_cost,
           currency: ev0.currency, route_candidate_status: ev0.route_candidate_status,
+          method_source: ev0.method_source, cost_basis: ev0.cost_basis,
           line_count: (b.evidence || []).length,
           evidence_uniform: evUniq.length <= 1,
           disagreement: evUniq.length > 1 ? evUniq : null }
@@ -472,7 +522,7 @@
       var destKind = (al.destination && low(al.destination.kind)) === 'marketplace' ? 'MARKETPLACE' : ((al.destination && low(al.destination.kind)) === 'warehouse' ? 'WAREHOUSE' : '');
       // carry the THREE parity layers (G/A) so partition/preflight/diagnostic all read ONE contract.
       return r.ok
-        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, transit_days: (r.transit_days == null ? null : r.transit_days), estimated_cost: r.estimated_cost, currency: r.currency }
+        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, transit_days: (r.transit_days == null ? null : r.transit_days), estimated_cost: r.estimated_cost, currency: r.currency, method_source: r.method_source || null, cost_basis: r.cost_basis || null }
         // F1-7N-FC-1B-E3-R4-A2-R1-R4 §2 — THE LANE QUERY DIED ONE LAYER ABOVE WHERE R3 FIXED IT.
         //
         // R3 found `method_unresolved_reason` being dropped by partitionRoutedLines and fixed it there. In the
@@ -596,7 +646,7 @@
   }
 
   return {
-    VERSION: 'kmwrr-r6f2d-2',
+    VERSION: 'kmwrr-r5-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane), sub-typed by
     // method_unresolved_reason (NO_CARRIER_CARD_FOR_LANE / CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE / NO_CANONICAL_METHOD);
@@ -607,7 +657,7 @@
     BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED',
       'DESTINATION_MISSING', 'DESTINATION_UNKNOWN', 'DESTINATION_INACTIVE',
       'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
-    METHOD_UNRESOLVED_REASONS: ['NO_CARRIER_CARD_FOR_LANE', 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'NO_CANONICAL_METHOD', 'KMRA_UNAVAILABLE'],
+    METHOD_UNRESOLVED_REASONS: ['NO_TRANSIT_AUTHORITY_FOR_LANE', 'NO_CARRIER_CARD_FOR_LANE', 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'NO_CANONICAL_METHOD', 'KMRA_UNAVAILABLE'],
     ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'AMBIGUOUS', 'BLOCKED'],
     dateToOrdinal: dateToOrdinal, ordinalToDate: ordinalToDate, indexWarehouses: indexWarehouses,
     deriveRoute: deriveRoute, routeTuple: routeTuple,

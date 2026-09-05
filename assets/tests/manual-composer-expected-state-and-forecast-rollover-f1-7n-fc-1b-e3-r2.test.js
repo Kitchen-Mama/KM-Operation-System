@@ -1049,10 +1049,11 @@ function runAssertions() {
   ok(/FORECAST_BASIS_COMPLETE|forecast/i.test(CFG),
     'I2a and names the forecast census as a re-activation condition');
   ok(/PROCEED/.test(CFG), 'I2b together with the activation census verdict it requires');
-  // Nothing backend changed this round, so the build stamps must NOT have moved: §K's sync set is NONE.
-  eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R1',
-    'I3  §K 00_config.gs is UNCHANGED this round — its stamp still reads R1');
-  // RESTATED (F1-7N-FC-1B-E3-R3-R1): true of R2, which changed no backend file. R3-R1 IS a backend round — it
+  // RESTATED (A2-R1-R5): R2's claim is that R2 did not churn 00_config — true of R2, and silent about
+  // later rounds. R5 both rotated this stamp (it had never moved when the file changed) and changed the
+  // file again, adding the transit-buffer authority. The durable form is a floor.
+  ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R1'),
+    'I3  §K 00_config.gs carries a stamp at or after R1 — R2 itself churned nothing');
   // changes 61_ and the manifest — so the stamp moves by design. What must ALWAYS hold, in every round, is
   // that 63_ declares exactly what its own manifest entry expects; a half-synced 63_ is the named
   // mixed_deployment fault this manifest exists to produce.

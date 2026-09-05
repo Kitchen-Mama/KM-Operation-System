@@ -294,7 +294,11 @@ eq(H.module_build_stamps.modules.length, manifestRows.length,
 var cancelRow = (H.required_actions || []).filter(function (r) { return r && r.action === 'cancelShipmentDraft'; })[0];
 ok(!!cancelRow, 'D6  EXECUTED: cancelShipmentDraft is present in the required-action answer');
 eq(cancelRow && cancelRow.available, true, 'D6a EXECUTED: and it RESOLVES — its handler symbol exists in the deployment');
-eq(H.router_build, 'F1-7N-FC-1A-R1', 'D7  EXECUTED: the router reports the R1 build');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): a pinned build-stamp literal. R5 found this stamp had never been
+// rotated when its file actually changed — which is precisely how a mixed deployment came to report
+// UNIFORM — and corrected it. The durable claim is a FLOOR against the shared ledger.
+ok(require('./_release-order.js').stampAtOrAfter(H.router_build, 'F1-7N-FC-1A-R1'),
+  'D7  EXECUTED: the router reports a build at or after the R1 line');
 ok(/^UNIFORM/.test(String(H.deployment_uniformity_verdict)),
   'D8  EXECUTED: the uniformity verdict is UNIFORM — ' + String(H.deployment_uniformity_verdict).slice(0, 60));
 

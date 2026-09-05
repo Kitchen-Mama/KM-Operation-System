@@ -37,7 +37,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R4';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R5';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -237,21 +237,21 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R4', owns: 'deployment identity + health + transport contract + the effective feature-flag report' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R5', owns: 'deployment identity + health + transport contract + the effective feature-flag report' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R1', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R5', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
-  { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R4', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
+  { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R5', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
   { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A1', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
   { file: '70_api_v1_overseas_stock_workspace.gs', symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3', owns: 'Overseas Stock scoped read workspace' },
-  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4A', owns: 'Request Order Send orchestration + planning-cycle authority' },
+  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'Request Order Send orchestration + planning-cycle authority' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
   // F1-7N-FB-4E-R2: 68_ changed because its duplicate diagnostic became REACHABLE for the first time and
   // needed a scope guard on the routed path. A deployment carrying the R2 router but a FB-4D copy of 68_ would
@@ -266,7 +266,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // moves and this expectation moves with it. The pair is the partial-sync detector for this deployment set:
   // sync 16_ without 63_ and the stale manifest still expects F1-7N-FB-4D; sync 63_ without 16_ and the new
   // manifest expects B3 while the file declares 4D. Either direction reports mixed_deployment.
-  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R3-R1', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
+  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R2', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
   // F1-7N-FB-4F-B3 — REGISTERED HERE FOR THE REASON THIS MANIFEST EXISTS. B1 landed the route-identity contract
   // deliberately unmanifested because it was inert. It is not inert any more: 16_ now calls into it for the
   // typed schema refusals and for the K4 identity, so a deployment carrying the B3 writer WITHOUT this file
@@ -292,7 +292,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R2', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
@@ -308,7 +308,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R4', owns: 'Request Order Send diagnostic status action + its configuration (single owner)' },
   // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
   // still write its own rows and simply expire nothing, leaving last week's plan active and looking like advice.
-  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FB-4C', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' },
+  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R1', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' },
   // F1-7N-FB-4C-ADDENDUM-MIGRATION — the USER-run lifecycle schema migration. Registered because its absence is
   // ACTIONABLE: the AI Plan will refuse to run until the columns exist, and the only supported way to add them is
   // this tool. Without the entry, "the run is blocked" and "the tool that unblocks it was never synced" look the same.
@@ -341,17 +341,106 @@ function sysModuleBuildStamps_() {
   var absent = rows.filter(function (r) { return !r.present && !r.optional; });
   var absent_optional = rows.filter(function (r) { return !r.present && r.optional; });
   var stale = rows.filter(function (r) { return r.present && !r.matches_expected; });
+  // §10 — the executed invariant, which a version string cannot fake in either direction.
+  var runtime = sysRuntimeAuthorityChecks_();
   return {
     deployment_build: SYS_BUILD_VERSION_,
     modules: rows,
+    runtime_authority: runtime,
     absent_modules: absent.map(function (r) { return r.file; }),
     absent_optional_modules: absent_optional.map(function (r) { return r.file; }),
     stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
-    mixed_deployment: (absent.length + stale.length) > 0,
-    verdict: (absent.length + stale.length) === 0
-      ? 'UNIFORM — every probed owner file declares the build its manifest entry expects'
-      : 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this deployment expects. Re-copy the files listed and publish a NEW deployment version.'
+    // A runtime divergence IS a mixed deployment, whatever the labels say. This is the half that would have
+    // caught the live R4 state, where every label matched and the two resolvers did not.
+    mixed_deployment: (absent.length + stale.length) > 0 || runtime.uniform !== true,
+    verdict: ((absent.length + stale.length) === 0 && runtime.uniform === true)
+      ? 'UNIFORM — every probed owner file declares the build its manifest entry expects, AND the writer and '
+        + 'lifecycle resolve identically at every known schema generation'
+      : (runtime.uniform !== true
+          ? 'MIXED_OR_PARTIAL_SYNC (RUNTIME) — ' + runtime.verdict
+          : 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this deployment expects. Re-copy the files listed and publish a NEW deployment version.')
   };
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — A LABEL COMPARED WITH A LABEL CANNOT SEE A STALE BODY.
+//
+// The live R4 census reported writer FB4G, lifecycle null, shares_authority FALSE — and this contract, in the
+// same run, reported UNIFORM. Both were correct about what they measured. The contract compares the string a
+// file DECLARES with the string the manifest EXPECTS, and three owner files had labels that were never rotated
+// when their behaviour changed, so a stale deployed body and a stale expectation agreed with each other.
+// Rotating the three labels fixes those three instances; it does not fix the METHOD, and the next round that
+// edits a file and forgets its stamp reproduces this exactly.
+//
+// So the contract now also EXECUTES the invariant it cares about. This cannot be fooled by a label, does not
+// depend on Apps Script file ordering, and does not care which copy of a function won the global scope: it
+// hands the SAME header row to the writer's resolver and to the lifecycle's, and compares the answers. If a
+// project is running a lifecycle body that predates the delegation, the two disagree here and the deployment is
+// reported MIXED however tidy its version strings are.
+//
+// It probes EVERY known schema generation rather than one, because the pre-delegation body agrees with the
+// shared authority at exactly one shape (the 34-column canonical) and disagrees at the others — so a
+// single-shape probe would have passed on the very deployment that motivated this.
+//
+// Pure reads: resolver calls over synthetic header arrays. No sheet is opened and nothing is written.
+// ================================================================================================================
+function sysRuntimeAuthorityChecks_() {
+  // `checked` and `uniform` are DIFFERENT questions, and collapsing them makes the check dishonest in both
+  // directions. A project that does not compile 16_ or 69_ at all is already named by absent_modules, so
+  // reporting that a second time as a runtime DIVERGENCE would be one fault wearing two names. What this
+  // check asserts is narrower, and is the thing a label cannot see: where both authorities ARE present,
+  // they agree.
+  var out = { checked: false, checks: [], divergent: [], missing_authority: [], uniform: true,
+    contract: 'where both authorities are present they must resolve the SAME version from the SAME header, at every known generation' };
+  var haveSad = (typeof sadResolveHeaderSchema_ === 'function');
+  var haveAipl = (typeof aiplSchemaVersionOf_ === 'function');
+  if (!haveSad) out.missing_authority.push('sadResolveHeaderSchema_ (16_shipping_allocation_handlers.gs)');
+  if (!haveAipl) out.missing_authority.push('aiplSchemaVersionOf_ (69_api_v1_ai_plan_lifecycle.gs)');
+  if (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ === 'undefined'
+      || typeof SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ === 'undefined') {
+    out.missing_authority.push('SHIPPING_ALLOCATION_DRAFTS_HEADERS_ / SAD_HEADER_OPTIONAL_TAIL_COLUMNS_');
+  }
+  if (out.missing_authority.length) {
+    // NOT a divergence: nothing was compared, so nothing disagreed. `checked` says so plainly.
+    out.verdict = 'RUNTIME_AUTHORITY_NOT_CHECKED — ' + out.missing_authority.join('; ')
+      + ' (absent owners are reported by the module manifest, not duplicated here)';
+    return out;
+  }
+  out.checked = true;
+  var full = SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
+  var shapes = [];
+  for (var i = 0; i < (typeof SAD_SCHEMA_GENERATIONS_ !== 'undefined' ? SAD_SCHEMA_GENERATIONS_.length : 0); i++) {
+    var g = SAD_SCHEMA_GENERATIONS_[i];
+    shapes.push(SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(g.appended || []).length);
+  }
+  if (!shapes.length) shapes = [full.length];
+  shapes.forEach(function (n) {
+    var hdr = full.slice(0, n);
+    var w = null, l = null, err = null;
+    try { w = sadResolveHeaderSchema_(hdr); } catch (e1) { err = String(e1 && e1.message || e1); }
+    try { l = aiplSchemaVersionOf_(hdr) || null; } catch (e2) { err = (err || '') + ' ' + String(e2 && e2.message || e2); }
+    var writerVersion = (w && w.ok) ? w.version : null;
+    var lifecycleComplete = !!(w && w.lifecycle_complete);
+    // The lifecycle deliberately returns nothing for a generation that is not lifecycle-complete, so THAT is
+    // agreement, not divergence. Divergence is: the writer says this generation IS lifecycle-complete and the
+    // lifecycle either names nothing or names something else.
+    var expectLifecycle = (writerVersion && lifecycleComplete) ? writerVersion : null;
+    var agree = (l === expectLifecycle) && !err;
+    var row = { column_count: n, writer_version: writerVersion, writer_lifecycle_complete: lifecycleComplete,
+      lifecycle_version: l, expected_lifecycle_version: expectLifecycle, agree: agree, error: err };
+    out.checks.push(row);
+    if (!agree) {
+      out.uniform = false;
+      out.divergent.push('at ' + n + ' columns the writer resolves ' + (writerVersion || '(none)')
+        + ' and the lifecycle resolves ' + (l || '(none)'));
+    }
+  });
+  out.verdict = out.uniform
+    ? 'UNIFORM — the writer and the lifecycle resolve identically at every known schema generation'
+    : 'RUNTIME_AUTHORITY_DIVERGENCE — the deployed lifecycle body does not share the writer\'s schema authority. '
+      + 'Re-copy 69_api_v1_ai_plan_lifecycle.gs (and 16_shipping_allocation_handlers.gs) and publish a NEW '
+      + 'deployment version. Version strings may look correct and be stale.';
+  return out;
 }
 
 // Answer the CALLER's list. `probe_actions` are checked against the router's action->handler map AND the actual

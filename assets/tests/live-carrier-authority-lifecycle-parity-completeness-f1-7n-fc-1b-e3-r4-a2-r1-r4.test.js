@@ -442,8 +442,12 @@ eq(rA.target_lines[0].multi_pool, false, 'A4c one pool, so no multi-pool refusal
 eq(rA.group_count, 0, 'A5  zero routes');
 eq(rA.routes, [], 'A5a routes = []');
 eq(rA.block_tokens, { ROUTE_METHOD_UNRESOLVED: 1 }, 'A5b one ROUTE_METHOD_UNRESOLVED');
-eq(rA.blocked_detail[0].method_reason, 'NO_CARRIER_CARD_FOR_LANE',
-  'A5c sub-typed NO_CARRIER_CARD_FOR_LANE \u2014 not a bare token');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): the sub-type moved because the RULE moved. A rate card no longer
+// decides whether a method exists — carrier_lead_times does — so the cause on a lane with neither is now
+// NO_TRANSIT_AUTHORITY_FOR_LANE. R4's claim, that the cause is typed rather than left as a bare token, is
+// unchanged, and it now points at the table an operator must actually populate first.
+eq(rA.blocked_detail[0].method_reason, 'NO_TRANSIT_AUTHORITY_FOR_LANE',
+  'A5c sub-typed NO_TRANSIT_AUTHORITY_FOR_LANE — not a bare token');
 eq(rA.blocked_lanes[0], { originCountry: 'US', destinationCountry: 'US', marketplace: 'Amazon', shipDate: '2026-09-04' },
   'A5d THE LANE QUERY REACHES THE CONSUMER \u2014 R3 attached it to the refusal and the routed-line hand-off ' +
   'silently dropped it; measured as [null] before this round');
@@ -467,9 +471,9 @@ eq(compA.supply_allocation_conserved, true,
 eq(compA.route_quantity_conserved, false,
   'B2a route_quantity_conserved FALSE \u2014 760 authorized, 0 routed. This is the reading the single word hid');
 eq(compA.fully_routable, false, 'B2b fully_routable FALSE');
-ok(compA.blocker_tokens.indexOf('NO_CARRIER_CARD_FOR_LANE') !== -1
+ok(compA.blocker_tokens.indexOf('NO_TRANSIT_AUTHORITY_FOR_LANE') !== -1
    && compA.blocker_tokens.indexOf('ROUTE_METHOD_UNRESOLVED') !== -1,
-  'B3  both tokens present \u2014 the symptom AND the actionable cause');
+  'B3  both tokens present — the symptom AND the actionable cause');
 eq(compA.blockers[0].quantity, 760, 'B3a and the blocker carries the quantity it is blocking');
 eq(compA.blockers[0].lane_query.originCountry + '|' + compA.blockers[0].lane_query.destinationCountry, 'US|US',
   'B3b and the lane it is blocking on');
@@ -751,12 +755,17 @@ ok((cA2.carrier_missing_fields || []).length > 0, 'G3h carrier_missing_fields');
 eq(cA2.carrier_lane_key, ['US|US|Amazon'], 'G3i carrier_lane_key');
 
 // \u00a74 — the parity blockers are no longer a snapshot taken before the verdict.
-ok((cA2.production_parity.blockers || []).length > 0,
-  'G4  production_parity.blockers is NOT empty on a STOP \u2014 it was `[]` beside verdict STOP on the live run, ' +
-  'because the snapshot was taken forty lines before the route verdict pushed anything into it');
+// RESTATED (A2-R1-R5): R4's defect was that `production_parity.blockers` was SNAPSHOTTED before the route
+// verdict, so it read `[]` beside a STOP. R5 changes the verdict itself — a carrier gap is now a WARNING
+// and this scope is no longer a STOP at all — so `blockers` is legitimately empty. The property R4 was
+// protecting is that the parity block is assembled AFTER the verdict and carries the route findings, and
+// that is what is asserted, on the field those findings now occupy.
 eq(cA2.production_parity.blockers, cA2.blockers,
-  'G4a and it now equals the census\u2019s own blocker list');
-ok(cA2.production_parity.route_blockers.indexOf('NO_CARRIER_CARD_FOR_LANE') !== -1,
+  "G4  production_parity.blockers is assembled AFTER the verdict — it equals the census's own list, " +
+  'never a snapshot taken before the route was judged');
+ok((cA2.production_parity.route_blockers || []).length > 0,
+  'G4a and the route findings reach it');
+ok(cA2.production_parity.route_blockers.indexOf('NO_TRANSIT_AUTHORITY_FOR_LANE') !== -1,
   'G4b carrying the typed route cause');
 eq([cA2.production_parity.route_quantity_conserved, cA2.production_parity.fully_routable], [false, false],
   'G4c and the parity block states the completeness verdicts beside the historical `conserved`');
@@ -764,11 +773,24 @@ eq(cA2.production_parity.conserved, true,
   'G4d the historical key keeps its historical meaning \u2014 an operator comparing rounds still finds it');
 
 // \u00a77 — a master-data STOP is named, and the gates it rests on are shown.
-eq(cA2.verdict, 'STOP', 'G5  verdict STOP');
-ok(cA2.blockers.some(function (b) { return /USER_MASTER_DATA_REQUIRED/.test(b); }),
-  'G5a with USER_MASTER_DATA_REQUIRED by name');
-ok(cA2.blockers.some(function (b) { return /entered directly in the tab|no[\s\S]{0,20}generic write handler/i.test(b); }),
-  'G5b and the caveat that carrier_lead_times has no handler to create the row');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5) — THIS IS THE RULE R5 EXISTS TO REVERSE.
+//
+// R4 made a missing Carrier Rate Card the verdict of the whole AI Plan, and discarded a correct quantity,
+// a correct source and a correct required-by date along with it. The AI Plan is decision support; the
+// carrier gap belongs to the Weekly Shipping Plan (comparison) and to Submit (completeness). So the
+// verdict is no longer STOP, and USER_MASTER_DATA_REQUIRED is no longer a blocker.
+//
+// What R4 got right and R5 keeps is the ACTIONABLE half: the exact fields, the exact tables, and the fact
+// that carrier_lead_times has no handler to create its row. That is still asserted, as a WARNING.
+eq(cA2.verdict, 'RECOMMENDATION_READY_WITH_WARNINGS',
+  "G5  a carrier gap is no longer the AI Plan's verdict");
+eq(cA2.blockers, [], 'G5a and it is not a blocker at all');
+ok(cA2.warnings.some(function (w) { return /CARRIER_MASTER_DATA_INCOMPLETE/.test(w); }),
+  'G5a1 it is a WARNING, named');
+ok(cA2.warnings.some(function (w) { return /entered directly in the tab|no[\s\S]{0,20}generic write handler/i.test(w); }),
+  'G5b and the caveat that carrier_lead_times has no handler to create the row is preserved');
+ok((cA2.carrier_missing_fields || []).length > 0,
+  'G5b1 together with the exact field list R4 introduced');
 eq(cA2.first_failing_predicate, 'carrier_master_data_ready',
   'G5c and the FIRST failing predicate is named \u2014 not a vague "not ready"');
 eq([cA2.gates_passed.scope_isolated, cA2.gates_passed.harvest_ready, cA2.gates_passed.forecast_not_blocking,
@@ -791,8 +813,9 @@ eq(hA.run('inventoryAiPlanActivationAllowlist_()'),
   'G8  the activation allowlist is still exactly the one authorized scope');
 ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG),
   'G9  and the repository generation flag is STILL false \u2014 this round enables nothing');
-eq(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'G10 census build stamp');
-eq(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'G10a workspace build stamp');
+// RESTATED (A2-R1-R5): pinned stamp literals. The durable claim is a floor against the shared ledger.
+ok(RO.stampAtOrAfter(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4'), 'G10 census build stamp');
+ok(RO.stampAtOrAfter(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4'), 'G10a workspace build stamp');
 ok(RO.tokenIndex(RO.currentAppToken()) >= 0, 'G11 and the shared release ledger still resolves a current token');
 
 // ---- two more standing invariants, so \u00a78.11 and \u00a78.12 have something to mutate -----------------------
@@ -894,14 +917,17 @@ mut('H4  route_quantity_conserved hard-coded true \u2192 760 unrouted units repo
 });
 
 // 5. The route blockers never reach the parity block \u2014 the live `blockers: []` beside verdict STOP.
-mut('H5  production_parity.blockers left as the pre-verdict snapshot \u2192 empty beside a STOP', function () {
+// RESTATED (A2-R1-R5): the detection rested on the verdict being STOP, which R5 no longer produces for
+// this scope. The PROPERTY is unchanged — the parity block's blocker list must be ASSEMBLED after the
+// verdict rather than left at its pre-assembly value — and the mutation now removes the assembly, which
+// is what the defect actually was.
+mut('H5  the parity blocker list never assembled → it stays at its pre-verdict null', function () {
   var m = build(A({ mutate: function (S) {
     S.census = swap(S.census, '  out.production_parity.blockers = out.blockers.slice();',
-                              '  out.production_parity.blockers = [];');
+                              '  /* never assembled */');
   } }));
   pass1(m);
-  var c = census(m);
-  return c.verdict === 'STOP' && (c.production_parity.blockers || []).length === 0;
+  return census(m).production_parity.blockers === null;
 });
 
 // 6. A route produced from a card that does not cover the lane.
@@ -939,6 +965,15 @@ mut('H7  canonicalMethodKey returns the raw token when unmapped \u2192 a GROUND 
 
 // 8. An inactive card adopted.
 mut('H8  statusActive forced true \u2192 an INACTIVE card produces a route', function () {
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): these fixtures also supplied a LEAD TIME, and under R5 a lead time
+// alone resolves a method — so the lane routed regardless of the card and the mutation had nothing to
+// change. The CLAIM is about the CARD being unusable, so the transit fallback is withheld and the card
+// is once again the only candidate source.
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): under R5 a route needs a TRANSIT row to be ranked, so an unusable
+// card can no longer be detected by a route appearing or not appearing. The claim is that an inactive or
+// expired card is not a CANDIDATE, and that is now read where it is visible: with a valid lead time present
+// the lane routes either way, and `method_source` says WHICH authority named the method. If the unusable
+// card were adopted it would read RATE_CARD.
   var base = build(A({ domesticCard: { status: 'inactive' } }));
   var rb = pass1(base);
   var m = build(A({ domesticCard: { status: 'inactive' }, mutate: function (S) {
@@ -946,11 +981,21 @@ mut('H8  statusActive forced true \u2192 an INACTIVE card produces a route', fun
                               '  function statusActive(status) { return true; }');
   } }));
   var rm = pass1(m);
-  return rb.group_count === 0 && rm.group_count === 1;
+  return rb.group_count === 1 && base.run('PLAN.groups[0].route_evidence.method_source') === 'LEAD_TIME_AUTHORITY'
+    && rm.group_count === 1 && m.run('PLAN.groups[0].route_evidence.method_source') === 'RATE_CARD';
 });
 
 // 9. An expired card adopted.
 mut('H9  inEffectiveWindow forced true \u2192 a card that expired in 2025 produces a 2026 route', function () {
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): these fixtures also supplied a LEAD TIME, and under R5 a lead time
+// alone resolves a method — so the lane routed regardless of the card and the mutation had nothing to
+// change. The CLAIM is about the CARD being unusable, so the transit fallback is withheld and the card
+// is once again the only candidate source.
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): under R5 a route needs a TRANSIT row to be ranked, so an unusable
+// card can no longer be detected by a route appearing or not appearing. The claim is that an inactive or
+// expired card is not a CANDIDATE, and that is now read where it is visible: with a valid lead time present
+// the lane routes either way, and `method_source` says WHICH authority named the method. If the unusable
+// card were adopted it would read RATE_CARD.
   var opt = { domesticCard: { effectiveFrom: '2024-01-01', effectiveTo: '2025-12-31' } };
   var rb = pass1(build(A(opt)));
   var m = build(A({ domesticCard: opt.domesticCard, mutate: function (S) {
@@ -958,7 +1003,8 @@ mut('H9  inEffectiveWindow forced true \u2192 a card that expired in 2025 produc
                               '    return true;');
   } }));
   var rm = pass1(m);
-  return rb.group_count === 0 && rm.group_count === 1;
+  return rb.group_count === 1 && rm.group_count === 1
+    && m.run('PLAN.groups[0].route_evidence.method_source') === 'RATE_CARD';
 });
 
 // 10. The 3PL-first policy quietly replaced by a factory-first one.

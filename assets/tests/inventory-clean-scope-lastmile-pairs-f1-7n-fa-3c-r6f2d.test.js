@@ -104,11 +104,29 @@ ok(/REQUESTED_SCOPE_EMPTY/.test(GS61), 'F4 a requested marketplace that produced
 
 // =====================================================================================================
 section('D2 — method-failure classification (typed, never a generic bucket)');
-var noCard = der([], [lt('Air', 'FBA', 7)]);
-eq(noCard.block, 'ROUTE_METHOD_UNRESOLVED', 'D2a no card for the lane → ROUTE_METHOD_UNRESOLVED');
-eq(noCard.method_unresolved_reason, 'NO_CARRIER_CARD_FOR_LANE', 'D2b typed reason NO_CARRIER_CARD_FOR_LANE');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): the PRODUCT RULE changed here, not the anchor. A missing rate card
+// no longer means a missing method — methods now come from carrier_lead_times, and this fixture supplies
+// one, so the lane RESOLVES, unpriced. R6F2D's actual claim, that a cause is typed rather than bucketed, is
+// unchanged and is asserted against BOTH of the states that now exist.
+var withTransit = der([], [lt('Air', 'FBA', 7)]);
+eq(withTransit.block, undefined,
+  'D2a no rate card but a lead time for the lane — the method now RESOLVES from the transit authority');
+eq(withTransit.method_source, 'LEAD_TIME_AUTHORITY', 'D2a1 and records which authority named it');
+eq(withTransit.cost_basis, 'NOT_PRICED_NO_RATE_CARD_FOR_LANE',
+  'D2a2 with the missing price TYPED rather than defaulted to zero');
+var noCard = der([], []);
+eq(noCard.block, 'ROUTE_METHOD_UNRESOLVED', 'D2b neither authority covers the lane — ROUTE_METHOD_UNRESOLVED');
+eq(noCard.method_unresolved_reason, 'NO_TRANSIT_AUTHORITY_FOR_LANE',
+  'D2b1 typed NO_TRANSIT_AUTHORITY_FOR_LANE — the transit table now decides whether a method exists');
 var inactiveOnly = der([{ origin_country: 'CN', destination_country: 'US', marketplace: '', shipping_method: 'Air', status: 'inactive', last_mile_delivery: 'FBA', unit_rate: '5', currency: 'USD', charge_type: 'per_kg', charge_unit: 'kg' }], [lt('Air', 'FBA', 7)]);
-eq(inactiveOnly.method_unresolved_reason, 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'D2c cards for the lane exist but all inactive → CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
+// The rate-card sub-types still matter and are still reported: "the card expired" and "there is no transit
+// authority" send a reader to different tables. Showing the card sub-type now requires BOTH authorities
+// absent, because a lead time alone is enough to resolve the method.
+var inactiveOnlyNoTransit = der([{ origin_country: 'CN', destination_country: 'US', marketplace: '', shipping_method: 'Air', status: 'inactive', last_mile_delivery: 'FBA', unit_rate: '5', currency: 'USD', charge_type: 'per_kg', charge_unit: 'kg' }], []);
+eq(inactiveOnlyNoTransit.method_unresolved_reason, 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE',
+  'D2c cards for the lane exist but all inactive, and no transit authority — CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
+eq(inactiveOnly.block, undefined,
+  'D2c1 and with a lead time present that same lane resolves anyway — an expired PRICE does not remove a METHOD');
 ok(KMWRR.METHOD_UNRESOLVED_REASONS.indexOf('NO_CARRIER_CARD_FOR_LANE') >= 0, 'D2d the typed reasons are enumerated on KMWRR');
 ok(/method_failure_breakdown/.test(TEMP), 'D2e the dry assembly + preflight report a method_failure_breakdown histogram');
 

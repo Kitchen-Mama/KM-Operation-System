@@ -1051,8 +1051,11 @@ section('§L — WHAT THIS ROUND DID NOT TOUCH');
     'L1  §F.9 11_ declares exactly the build its deployment manifest expects (' + _l1Expected + ')');
   ok(!/allocation_draft_id/.test(code(extractFn(G11, 'shippingPlanRouteGroupKey_'))),
     'L2  §F.4 and allocation_draft_id is still absent from the physical grouping key');
-  eq((code(G16).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A2-R3-R1',
-    'L3  16_ is unchanged this round — its submit contract was measured correct and a file that did not change is not churned');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): this pinned the literal stamp, and R5 found that stamp had never
+  // been rotated when 16_ actually last changed. A3's own claim is that A3 did not churn 16_, which is a FLOOR
+  // against the shared ledger rather than a string a later round must never move.
+  ok(RO.stampAtOrAfter((code(G16).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1], 'F1-7N-FB-4G-A2-R3-R1'),
+    'L3  16_ carries a stamp at or after the round before A3 — A3 itself churned nothing');
   ok(/ROSEND_DIAG_BUILD_VERSION_/.test(G63), 'L4  A2-R4\'s permanent diagnostic owner is still the manifest entry');
 })();
 

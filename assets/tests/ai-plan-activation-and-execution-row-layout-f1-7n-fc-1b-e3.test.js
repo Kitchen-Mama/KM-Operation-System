@@ -1051,8 +1051,13 @@ ok(/PRODUCTION_READ_CONTRACT_UNAVAILABLE/.test(TEMP),
 // §F.6 — the verdict STOPS activation on a disagreement
 ok(/ALLOCATOR_DISAGREES_WITH_EXPECTATION: activation STOPS/.test(TEMP),
   'F6  a disagreement with the supplied expectation STOPS activation (§F.6)');
-ok(/'STOP'/.test(TEMP) && /'PROCEED'/.test(TEMP) && /'REVIEW'/.test(TEMP) && /verdict: 'STOP'/.test(TEMP),
-  'F6a with three verdicts and STOP as the default, so "not judged" is never reported as "approved"');
+// RESTATED (A2-R1-R5): E3's census had exactly three verdicts. R5 replaces that with a readiness ladder —
+// STOP is reserved for shared/system faults, and an advisable scope reports RECOMMENDATION_READY or
+// RECOMMENDATION_READY_WITH_WARNINGS. The claim E3 owns is the SAFE DEFAULT: the verdict field is
+// initialised to STOP, so a run that never reaches a judgement can never be read as approved.
+ok(/'STOP'/.test(TEMP) && /'PROCEED'/.test(TEMP) && /verdict: 'STOP'/.test(TEMP)
+   && /RECOMMENDATION_READY_WITH_WARNINGS/.test(TEMP),
+  'F6a with STOP as the initialised default, so "not judged" is never reported as "approved"');
 ok(/NO_COMPLETE_ROUTE/.test(TEMP) && /method is EMPTY/.test(TEMP) && /conservation NOT conserved/.test(TEMP),
   'F6b and an incomplete route, a missing method or a conservation break each STOP it');
 ok(/SCOPE_ALL_SITES_FORBIDDEN/.test(TEMP) && /SCOPE_INCOMPLETE/.test(TEMP),

@@ -598,8 +598,17 @@ var CARD = { carrier: 'CarrierA', shipping_method: 'sea_express', origin_country
   destination_marketplace: 'Amazon', status: 'active', effective_from: '2026-01-01', effective_to: '2026-12-31',
   price_per_kg: 3.2, currency: 'USD', last_mile_delivery: 'DDP' };
 var CARD2 = Object.assign({}, CARD, { carrier: 'CarrierB', shipping_method: 'air', price_per_kg: 8.9 });
-var LEAD = { origin_country: 'CN', destination_country: 'US', shipping_method: 'sea_express', transit_days: 25, status: 'active' };
-var LEAD2 = { origin_country: 'CN', destination_country: 'US', shipping_method: 'air', transit_days: 7, status: 'active' };
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5) — THIS FIXTURE WAS PASSING BECAUSE OF A DEFECT.
+//
+// `transit_days` is not a carrier_lead_times column: that table stores min_days / max_days / avg_days, and
+// 17_ REJECTS transit columns from the rate template on purpose. So every day field here was ABSENT, and
+// KMRA normalized each absence with `Number('')` — which is 0 and passes isFinite. The plan below therefore
+// resolved on a transit time of ZERO DAYS, with an arrival of "today", and this suite called that a pass.
+//
+// R5 fixes the coercion (an absent figure is NaN; a genuine 0 is still 0), so the fixture now states the
+// transit it always meant. The 25- and 7-day intents are preserved exactly.
+var LEAD = { origin_country: 'CN', destination_country: 'US', shipping_method: 'sea_express', min_days: 25, max_days: 25, avg_days: 25, last_mile_delivery: 'DDP', status: 'active' };
+var LEAD2 = { origin_country: 'CN', destination_country: 'US', shipping_method: 'air', min_days: 7, max_days: 7, avg_days: 7, last_mile_delivery: 'DDP', status: 'active' };
 var ALLOC = [{ sku: SKU, site_sku: SKU, window_code: 'D90', window_start_date: '2026-09-03',
   window_end_date: '2026-12-02', required_by_date: '2026-11-01',
   source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN', source_warehouse_code_snapshot: 'CNYOUXIN',
@@ -625,15 +634,23 @@ eq(p1.lineOutcomes[0].route_candidate_status, 'AI_RANKED', 'H6  the outcome is A
 ok(!!p1.lineOutcomes[0].expected_arrival, 'H7  with an Expected Arrival derived from the lead time');
 eq(p1.conservation.conserved, true, 'H8  §H the allocator output is CONSERVED — no quantity invented or lost');
 // §H.3/§H.4 — it does NOT simply pick the first card. Two materially different pairs that tie are REFUSED.
-var p2 = plan({ rateCards: [CARD, CARD2], leadTimes: [LEAD, LEAD2] });
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): this tie existed only because BOTH lead times normalized to zero
+// days under the blank-as-zero defect, so two services 18 days apart compared as equal. The CLAIM — two
+// materially different route pairs that TIE are refused rather than first-row picked — is unchanged, and now
+// needs a fixture that genuinely ties: same transit, and no comparable cost basis to separate them.
+var LEAD2_TIE = { origin_country: 'CN', destination_country: 'US', shipping_method: 'air', min_days: 25, max_days: 25, avg_days: 25, last_mile_delivery: 'DDP', status: 'active' };
+var p2 = plan({ rateCards: [CARD, CARD2], leadTimes: [LEAD, LEAD2_TIE] });
 eq([p2.groups.length, p2.lineOutcomes[0].route_candidate_status], [0, 'AMBIGUOUS'],
   'H9  §H.3 two tying route pairs are NOT first-row picked — the allocator refuses and says AMBIGUOUS');
 eq(p2.lineOutcomes[0].block, 'LAST_MILE_AMBIGUOUS', 'H9a under a typed block');
 // §I's typed reasons are the allocator's own, not invented here.
-var p3 = plan({ rateCards: [] });
+// RESTATED (A2-R1-R5): the PRODUCT RULE changed — an empty rate-card set no longer removes the METHOD,
+// because methods come from carrier_lead_times. "No authority for the lane" now means neither table covers
+// it, and the typed reason names the TRANSIT table, which is the one an operator must act on.
+var p3 = plan({ rateCards: [], leadTimes: [] });
 eq([p3.groups.length, p3.lineOutcomes[0].block, p3.lineOutcomes[0].method_unresolved_reason],
-  [0, 'ROUTE_METHOD_UNRESOLVED', 'NO_CARRIER_CARD_FOR_LANE'],
-  'H10 §I no rate card for the lane → typed NO_CARRIER_CARD_FOR_LANE, and ZERO half-routes');
+  [0, 'ROUTE_METHOD_UNRESOLVED', 'NO_TRANSIT_AUTHORITY_FOR_LANE'],
+  'H10 §I no authority for the lane → typed NO_TRANSIT_AUTHORITY_FOR_LANE, and ZERO half-routes');
 var p4 = plan({ leadTimes: [] });
 eq([p4.groups.length, p4.lineOutcomes[0].auto_ranking_insufficient_reason],
   [0, 'NO_LEAD_TIME'], 'H11 §D.7 a missing lead time is NO_LEAD_TIME — a different answer from a missing card');
@@ -810,7 +827,9 @@ mut('N9  the AI Plan click made a silent no-op again', function () {
 
 mut('N10 the allocator reduced to picking the first rate card', function () {
   // the shipped policy REFUSES a tie. A first-row picker would return a group instead.
-  var tie = plan({ rateCards: [CARD, CARD2], leadTimes: [LEAD, LEAD2] });
+  // RESTATED (A2-R1-R5): LEAD2 is a 7-day service and LEAD a 25-day one, so they only ever "tied" because
+  // the blank-as-zero defect flattened both to zero. The tie fixture now genuinely ties.
+  var tie = plan({ rateCards: [CARD, CARD2], leadTimes: [LEAD, LEAD2_TIE] });
   return tie.groups.length === 0 && tie.lineOutcomes[0].route_candidate_status === 'AMBIGUOUS';
 });
 

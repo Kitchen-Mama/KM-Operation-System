@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 7620453a8fa7aebaea1a782cd33076e562b123e467d15445bf493741d2f99e7a
+// bundle_sha256 = aa191371b538498b9e7bd06351425ad8645dfe059ee36fe6cfc435f9a608c000
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -32,8 +32,9 @@
 //   supply-planning-weekly-recommendation-runtime  0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3
 //   supply-planning-weekly-recommendation-batch  8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b
 //   supply-planning-weekly-harvest-adapter  de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437
-//   supply-planning-route-authority  2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2
-//   supply-planning-weekly-route-derivation  517924202e6a5e8baefe6a6c08a024e99eb63f66e2801a03c7a4702fdfa1e8bd
+//   supply-planning-route-authority  c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443
+//   supply-planning-method-recommendation  3869ef22a408673e357a402a369e3f6a2531fe5f1361b0f0c4158968dcef32ea
+//   supply-planning-weekly-route-derivation  1d436f3aaef5680b84da82e4f3ca8ef0f9c4652499e1216194bb518d2111a3d5
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
@@ -7697,6 +7698,19 @@ function __kmRequire(p) {
   function s(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim(); }
   function low(v) { return s(v).toLowerCase(); }
   function num(v) { var n = Number(v); return isFinite(n) ? n : NaN; }
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 — A BLANK IS NOT A ZERO, AND FOR A TRANSIT TIME THE DIFFERENCE IS THE WHOLE
+  // POINT. `Number('')` and `Number(null)` are both 0 and both pass isFinite, so a carrier_lead_times row with
+  // an empty max_days was normalizing to a max transit of ZERO DAYS — an instant delivery that every downstream
+  // safety check then believed. Found by a mutation probe whose fixture happened to leave two day columns
+  // blank; the profile came back with max_days 0, a 7-day conservative estimate and 83 days of headroom.
+  //
+  // This is not confined to the AI Plan: leadDays() filters on isFinite(avgDays), so the Execution Plan ETA
+  // would have taken the same 0 and dated an arrival for today. An ABSENT figure must be absent.
+  function days(v) {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === 'string' && v.trim() === '') return NaN;
+    return num(v);
+  }
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
   function pick() { for (var i = 0; i < arguments.length; i++) { var v = arguments[i]; if (v !== undefined && v !== null && String(v) !== '') return v; } return ''; }
 
@@ -7786,9 +7800,10 @@ function __kmRequire(p) {
       shippingMethod: method,
       methodKey: canonicalMethodKey(method),
       lastMileDelivery: s(pick(raw.last_mile_delivery, raw.lastMileDelivery)),
-      minDays: num(pick(raw.min_days, raw.minDays)),
-      maxDays: num(pick(raw.max_days, raw.maxDays)),
-      avgDays: num(pick(raw.avg_days, raw.avgDays))
+      // `days` rather than `num`: a blank column is NO transit authority, never a zero-day transit.
+      minDays: days(pick(raw.min_days, raw.minDays)),
+      maxDays: days(pick(raw.max_days, raw.maxDays)),
+      avgDays: days(pick(raw.avg_days, raw.avgDays))
     };
   }
 
@@ -7949,6 +7964,296 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-route-authority", module.exports);
 })();
 
+// ----- module: supply-planning-method-recommendation (verbatim from assets/js/core/supply-planning-method-recommendation.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// ================================================================================================================
+// KMMR — TRANSIT-SAFE METHOD RECOMMENDATION (F1-7N-FC-1B-E3-R4-A2-R1-R5 §2/§3/§4)
+// ----------------------------------------------------------------------------------------------------------------
+// WHY THIS MODULE EXISTS AT ALL, AND WHY IT IS NOT PART OF ROUTE DERIVATION.
+//
+// R4 ended with the whole AI Plan reporting STOP because one lane had no Carrier Rate Card. That was the wrong
+// product boundary: the AI Plan is a DECISION-SUPPORT tool, and a decision-support tool that refuses to advise
+// on quantity and source because a price list is incomplete has stopped doing its job in order to police
+// someone else's data. The three responsibilities are now separated, and this module owns the first one:
+//
+//   Layer 1  AI Plan                 what to ship, from where, how much, by when, and BY WHAT TRANSPORT METHOD
+//                                    it can safely arrive.  <-- this module
+//   Layer 2  Weekly Shipping Plan    given the chosen method, which CARRIER — compared on rate cards.
+//   Layer 3  Submit Plan             the only layer that may refuse for incomplete mandatory fields.
+//
+// TWO COUPLINGS MEASURED BEFORE ANY CODE WAS WRITTEN, and only one of them existed:
+//
+//   * "marketplace is a required join key for international lead times" — IT IS NOT, and never was. The
+//     lead-time DTO has no marketplace field at all (leadTimeId, carrierId, originCountry, destinationCountry,
+//     shippingMethod, methodKey, lastMileDelivery, minDays, maxDays, avgDays) and KMRA.leadDays joins on
+//     method + origin + destination + last-mile. CN->US Amazon and CN->US Shopify already share their transit
+//     authority. This module keeps that property by CONSTRUCTION: it never reads a marketplace, so it cannot
+//     grow the coupling later.
+//
+//   * "a Rate Card is required to obtain a method" — IT WAS. KMRA.eligibleMethods over zero rate cards returns
+//     [], and route derivation refuses before it ever consults a lead time. So the marketplace axis on RATE
+//     CARDS was transitively gating method resolution, which is how a marketplace-independent transit fact came
+//     to look marketplace-specific. That is the coupling this module breaks: METHODS COME FROM THE TRANSIT
+//     AUTHORITY. Price is enrichment, and its absence is a warning, never a refusal.
+//
+// SAFETY IS DECIDED CONSERVATIVELY, AND THE OPTIMISTIC NUMBER IS NEVER THE DECIDING ONE. A method is SAFE only
+// when `max_days + buffer < days_until_stockout`. Using min_days, or avg_days alone, would call a 28-day
+// service safe against 30 days of supply — which is the exact case §3 names, and which is a stockout dressed
+// as a plan. min_days is carried for display and is deliberately never consulted by the verdict.
+//
+// AND NO CARRIER IS CHOSEN HERE. A lead-time row carries a carrier_id, and treating that as "the carrier" would
+// silently pre-empt Layer 2's comparison from a table that exists to describe transit, not commerce. When
+// several carriers serve one service profile their days are folded CONSERVATIVELY (the slowest max, the slowest
+// avg) so no single optimistic carrier can make a profile look safe, and every contributing carrier id is
+// reported as PROVENANCE with the selection explicitly deferred.
+//
+// PURE. No I/O, no clock, no sheet, no config literal: the buffer is supplied by the caller from the config
+// authority so it can never become a magic number hiding in here.
+// ================================================================================================================
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./supply-planning-route-authority.js'));
+  else root.KMMR = factory(root.KMRA);
+})(this, function (KMRA) {
+  'use strict';
+
+  function s(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim(); }
+  function low(v) { return s(v).toLowerCase(); }
+  function num(v) { var n = Number(v); return isFinite(n) ? n : NaN; }
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+
+  // Typed statuses. A consumer switches on these; it never parses prose.
+  var METHOD_STATUS = {
+    AUTO_RECOMMENDED: 'AUTO_RECOMMENDED',
+    MANUAL_REVIEW_REQUIRED: 'MANUAL_REVIEW_REQUIRED'
+  };
+  var METHOD_REVIEW_REASONS = {
+    NO_LEAD_TIME_AUTHORITY_FOR_LANE: 'NO_LEAD_TIME_AUTHORITY_FOR_LANE',
+    NO_SAFE_METHOD_WITHIN_BUFFER: 'NO_SAFE_METHOD_WITHIN_BUFFER',
+    NO_REQUIRED_ARRIVAL_DATE: 'NO_REQUIRED_ARRIVAL_DATE'
+  };
+  // SAFE  — the conservative estimate still lands before the shortage.
+  // TIGHT — only the AVERAGE lands before it; the slow tail does not. Never auto-recommended.
+  // UNSAFE— not even the average lands before it.
+  var RISK = { SAFE: 'SAFE', TIGHT: 'TIGHT', UNSAFE: 'UNSAFE' };
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // SERVICE PROFILES. The unit the AI Plan recommends is a TRANSPORT/SERVICE PROFILE — {method, last_mile} — and
+  // never a carrier. Built from carrier_lead_times over origin+destination only; a marketplace is not read here
+  // and there is no parameter through which one could be supplied.
+  // ---------------------------------------------------------------------------------------------------------------
+  function serviceProfiles(leadTimes, lane) {
+    lane = lane || {};
+    var out = [], byKey = {};
+    var ok = (KMRA && typeof KMRA.normalizeLeadTime === 'function' && typeof KMRA.axisOk === 'function');
+    if (!ok) return out;
+    (leadTimes || []).forEach(function (raw) {
+      var lt = KMRA.normalizeLeadTime(raw);
+      if (!KMRA.axisOk(lt.originCountry, lane.originCountry)) return;
+      if (!KMRA.axisOk(lt.destinationCountry, lane.destinationCountry)) return;
+      // An unmapped method token has no canonical key, so it cannot be joined to anything downstream and is
+      // not a recommendable service. It is counted, never guessed at.
+      if (!lt.methodKey) return;
+      // A row with no usable day figure at all is not transit authority, however well it matches the lane.
+      if (!isFinite(lt.avgDays) && !isFinite(lt.maxDays) && !isFinite(lt.minDays)) return;
+      var key = lt.methodKey + '|' + low(lt.lastMileDelivery);
+      var p = byKey[key];
+      if (!p) {
+        p = byKey[key] = {
+          profile_key: key,
+          shipping_method: lt.shippingMethod, method_key: lt.methodKey,
+          last_mile_delivery: lt.lastMileDelivery,
+          min_days: null, avg_days: null, max_days: null,
+          carrier_ids: [], row_count: 0,
+          // Stated on every profile so it cannot be read as a carrier decision by omission.
+          carrier_selection: 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN'
+        };
+        out.push(p);
+      }
+      p.row_count++;
+      var cid = s(lt.carrierId);
+      if (cid && p.carrier_ids.indexOf(cid) === -1) p.carrier_ids.push(cid);
+      // CONSERVATIVE FOLD across carriers. max and avg take the SLOWEST value on offer, so adding a fast
+      // carrier can never make a profile look safer than its slowest member; min takes the fastest purely
+      // because it is display-only and is never consulted by the verdict.
+      if (isFinite(lt.maxDays)) p.max_days = (p.max_days == null) ? lt.maxDays : Math.max(p.max_days, lt.maxDays);
+      if (isFinite(lt.avgDays)) p.avg_days = (p.avg_days == null) ? lt.avgDays : Math.max(p.avg_days, lt.avgDays);
+      if (isFinite(lt.minDays)) p.min_days = (p.min_days == null) ? lt.minDays : Math.min(p.min_days, lt.minDays);
+    });
+    out.forEach(function (p) { p.carrier_ids.sort(); });
+    out.sort(function (a, b) { return a.profile_key < b.profile_key ? -1 : (a.profile_key > b.profile_key ? 1 : 0); });
+    return out;
+  }
+
+  // The days the verdict is allowed to use: the slow tail. avg is the fallback ONLY when a row carries no max,
+  // and that substitution is reported (`basis`) rather than made silently.
+  function conservativeBasis(p) {
+    if (p.max_days != null && isFinite(p.max_days)) return { days: p.max_days, basis: 'max_days' };
+    if (p.avg_days != null && isFinite(p.avg_days)) return { days: p.avg_days, basis: 'avg_days_no_max_recorded' };
+    return { days: null, basis: 'NONE' };
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // THE RECOMMENDATION.
+  //
+  // input = { leadTimes, lane:{originCountry,destinationCountry}, daysUntilStockout, buffer:{days, source,
+  //           provisional, byMethod}, requiredByDate?, shipDate? }
+  //
+  // The DEFAULT recommendation is the SLOWEST option that still preserves the buffer. Not the fastest — a plan
+  // that always picks air burns money it was never asked to spend — and not "the cheapest", which this module
+  // has no evidence for and must not claim: it never reads a rate card. Slowest-safe is a decision made on
+  // transit evidence alone, and it is the one that leaves the most room for Layer 2 to find a good price.
+  // ---------------------------------------------------------------------------------------------------------------
+  function recommend(input) {
+    input = isObj(input) ? input : {};
+    var lane = input.lane || {};
+    var buf = input.buffer || {};
+    var bufferDays = num(buf.days);
+    if (!isFinite(bufferDays) || bufferDays < 0) bufferDays = 0;
+    // A MISSING date is not a date of zero. `Number(null)` is 0 and `Number('')` is 0, so coercing first would
+    // read "no required-arrival date supplied" as "the shortage is today" and call every method unsafe — an
+    // invented urgency, which is the same class of error as an invented ETA. Absence is checked BEFORE coercion.
+    var dus = (input.daysUntilStockout === null || input.daysUntilStockout === undefined
+      || input.daysUntilStockout === '') ? NaN : num(input.daysUntilStockout);
+    var profiles = serviceProfiles(input.leadTimes, lane);
+
+    var out = {
+      lane: { origin_country: s(lane.originCountry), destination_country: s(lane.destinationCountry) },
+      // Recorded so a reader can confirm the axis is absent rather than merely unmentioned.
+      marketplace_used_in_lead_time_join: false,
+      days_until_stockout: isFinite(dus) ? dus : null,
+      required_by_date: s(input.requiredByDate) || null,
+      ship_date: s(input.shipDate) || null,
+      buffer_days: bufferDays,
+      buffer_source: s(buf.source) || null,
+      buffer_provisional: buf.provisional === true,
+      safety_rule: 'SAFE requires max_days + buffer_days < days_until_stockout (strict). min_days is display-only and is never consulted.',
+      profile_count: profiles.length,
+      options: [],
+      recommended: null,
+      alternatives: [],
+      status: METHOD_STATUS.MANUAL_REVIEW_REQUIRED,
+      review_reason: null,
+      // Layer 2's job, stated here so its absence is never mistaken for a decision made.
+      carrier_selection: 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN'
+    };
+
+    if (!profiles.length) {
+      out.review_reason = METHOD_REVIEW_REASONS.NO_LEAD_TIME_AUTHORITY_FOR_LANE;
+      return out;
+    }
+    if (!isFinite(dus)) {
+      // Every profile is still reported — the operator can choose one by hand — but nothing is called safe
+      // without a date to be safe against, and no arrival is invented.
+      out.options = profiles.map(function (p) {
+        var cb = conservativeBasis(p);
+        return option(p, cb, bufferDays, null);
+      });
+      out.alternatives = out.options.slice();
+      out.review_reason = METHOD_REVIEW_REASONS.NO_REQUIRED_ARRIVAL_DATE;
+      return out;
+    }
+
+    out.options = profiles.map(function (p) { return option(p, conservativeBasis(p), bufferDays, dus); });
+    var safe = out.options.filter(function (o) { return o.risk === RISK.SAFE; });
+
+    if (!safe.length) {
+      // Nothing arrives in time even optimistically-but-honestly. The AI Plan does NOT pick the least-bad
+      // option and call it a recommendation; it hands the operator the ranked evidence and says so.
+      out.review_reason = METHOD_REVIEW_REASONS.NO_SAFE_METHOD_WITHIN_BUFFER;
+      out.alternatives = rank(out.options);
+      return out;
+    }
+
+    // Slowest safe wins: the largest conservative transit that still clears the shortage date.
+    var ranked = safe.slice().sort(function (a, b) {
+      if (a.conservative_transit_days !== b.conservative_transit_days) return b.conservative_transit_days - a.conservative_transit_days;
+      return a.profile_key < b.profile_key ? -1 : 1;      // deterministic; never row order
+    });
+    out.recommended = ranked[0];
+    out.status = METHOD_STATUS.AUTO_RECOMMENDED;
+    out.alternatives = rank(out.options.filter(function (o) { return o.profile_key !== out.recommended.profile_key; }));
+    return out;
+  }
+
+  function option(p, cb, bufferDays, dus) {
+    var cons = (cb.days == null) ? null : (cb.days + bufferDays);
+    var headroom = (cons == null || dus == null) ? null : (dus - cons);
+    var avgPlus = (p.avg_days == null || !isFinite(p.avg_days)) ? null : (p.avg_days + bufferDays);
+    var risk;
+    if (dus == null || cons == null) risk = null;
+    else if (cons < dus) risk = RISK.SAFE;
+    else if (avgPlus != null && avgPlus < dus) risk = RISK.TIGHT;
+    else risk = RISK.UNSAFE;
+    return {
+      profile_key: p.profile_key,
+      shipping_method: p.shipping_method, method_key: p.method_key,
+      last_mile_delivery: p.last_mile_delivery,
+      min_days: p.min_days, avg_days: p.avg_days, max_days: p.max_days,
+      transit_basis: cb.basis,
+      buffer_days: bufferDays,
+      conservative_transit_days: cons,
+      arrival_headroom_days: headroom,
+      risk: risk,
+      // Provenance, never a selection. `carrier_ids` says which rows produced these days.
+      carrier_ids: p.carrier_ids.slice(), lead_time_row_count: p.row_count,
+      carrier_selection: 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN',
+      // This module reads no rate card, so it states the absence rather than leaving a reader to assume one.
+      estimated_cost: null, cost_basis: 'NOT_EVALUATED_IN_AI_PLAN'
+    };
+  }
+
+  // SAFE first, then TIGHT, then UNSAFE; within a band the largest headroom first, ties broken on the key.
+  var BAND = { SAFE: 0, TIGHT: 1, UNSAFE: 2 };
+  function rank(options) {
+    return options.slice().sort(function (a, b) {
+      var ba = BAND[a.risk] === undefined ? 3 : BAND[a.risk];
+      var bb = BAND[b.risk] === undefined ? 3 : BAND[b.risk];
+      if (ba !== bb) return ba - bb;
+      var ha = a.arrival_headroom_days == null ? -Infinity : a.arrival_headroom_days;
+      var hb = b.arrival_headroom_days == null ? -Infinity : b.arrival_headroom_days;
+      if (ha !== hb) return hb - ha;
+      return a.profile_key < b.profile_key ? -1 : 1;
+    });
+  }
+
+  // The buffer for one method, from the caller's config authority. Per-method overrides are matched on the
+  // CANONICAL key so a config written as "Sea" and a lead-time row written as "sea freight" agree.
+  function bufferFor(config, methodKey) {
+    config = isObj(config) ? config : {};
+    var byMethod = isObj(config.by_method) ? config.by_method : {};
+    var d = num(config.default_days);
+    if (!isFinite(d) || d < 0) d = 0;
+    var src = 'default_days';
+    var k = (KMRA && typeof KMRA.canonicalMethodKey === 'function') ? KMRA.canonicalMethodKey(methodKey) : s(methodKey);
+    for (var name in byMethod) {
+      if (!Object.prototype.hasOwnProperty.call(byMethod, name)) continue;
+      var nk = (KMRA && typeof KMRA.canonicalMethodKey === 'function') ? KMRA.canonicalMethodKey(name) : s(name);
+      if (nk && k && nk === k) {
+        var v = num(byMethod[name]);
+        if (isFinite(v) && v >= 0) { d = v; src = 'by_method:' + name; }
+        break;
+      }
+    }
+    return { days: d, source: src, provisional: config.provisional === true };
+  }
+
+  return {
+    VERSION: 'kmmr-r5-1',
+    METHOD_STATUS: METHOD_STATUS,
+    METHOD_REVIEW_REASONS: METHOD_REVIEW_REASONS,
+    RISK: RISK,
+    serviceProfiles: serviceProfiles,
+    conservativeBasis: conservativeBasis,
+    recommend: recommend,
+    bufferFor: bufferFor
+  };
+});
+  __kmRegister("supply-planning-method-recommendation", module.exports);
+})();
+
 // ----- module: supply-planning-weekly-route-derivation (verbatim from assets/js/core/supply-planning-weekly-route-derivation.js) -----
 (function () {
   var require = __kmRequire;
@@ -7985,6 +8290,13 @@ function __kmRequire(p) {
   // (transit-day) join are OWNED by KMRA so the Inventory AI Plan and the Execution Plan UI cannot diverge. Resolved
   // lazily (Node require → Apps Script bundle global → browser window.KM.routeAuthority). KMWRR keeps only the
   // ranking (on-time → lowest comparable cost → last-mile) OVER the shared candidate set — it never re-derives the set.
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 §2 — the transit-safe method authority, resolved the same three ways as KMRA.
+  function getKMMR() {
+    try { if (typeof require === 'function') return require('./supply-planning-method-recommendation'); } catch (e) {}
+    if (typeof KMMR !== 'undefined' && KMMR) return KMMR;
+    try { if (typeof window !== 'undefined' && window.KM && window.KM.methodRecommendation) return window.KM.methodRecommendation; } catch (e2) {}
+    return null;
+  }
   function getKMRA() {
     try { if (typeof require === 'function') return require('./supply-planning-route-authority'); } catch (e) {}
     if (typeof KMRA !== 'undefined' && KMRA) return KMRA;
@@ -8112,12 +8424,50 @@ function __kmRequire(p) {
     if (!kmra || typeof kmra.laneCards !== 'function') return blocked('ROUTE_METHOD_UNRESOLVED', 'KMRA_UNAVAILABLE');
     var routeQuery = { originCountry: originCountry, destinationCountry: destCountry, marketplace: destKind === 'MARKETPLACE' ? destMarketplace : '' };
     var lane = kmra.laneCards(routeQuery, input.rateCards, { asOfOrdinal: asOf });
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R5 §2/§7 — A PRICE LIST WAS DECIDING WHETHER A METHOD EXISTED.
+    //
+    // `laneCards` reads carrier_rate_cards, and this function refused here before it had ever consulted a
+    // lead time. So the METHOD — a transit fact — was gated on commercial data, and gated through the
+    // marketplace axis that rate cards carry and lead times do not. Measured: KMRA.eligibleMethods over zero
+    // rate cards returns [], while KMRA.leadDays answers CN->US Sea/Truck with no marketplace anywhere in the
+    // question. That is how a marketplace-independent fact came to look marketplace-specific.
+    //
+    // The rate card is now ENRICHMENT: when the lane has cards, they are the candidate set exactly as before
+    // (cost is comparable and the ranking is unchanged). When it has none, the candidates come from the
+    // TRANSIT authority instead, priced at null and labelled as such. A route derived this way is still a
+    // COMPLETE route — source, destination, method and last-mile are all present, and cost has never been a
+    // header field — so nothing schema-invalid becomes writable. What changes is only that a missing price
+    // list no longer erases a method that demonstrably exists.
+    var methodSource = 'RATE_CARD';
+    var candidates = lane;
     if (!lane.length) {
+      var kmmr = getKMMR();
+      var profiles = (kmmr && typeof kmmr.serviceProfiles === 'function')
+        ? kmmr.serviceProfiles(input.leadTimes, { originCountry: originCountry, destinationCountry: destCountry })
+        : [];
+      if (profiles.length) {
+        methodSource = 'LEAD_TIME_AUTHORITY';
+        // Shaped like a rate-card DTO so the ranking below is untouched, with every commercial field ABSENT
+        // rather than defaulted: an unpriced candidate must never sort as if it were free.
+        candidates = profiles.map(function (p) {
+          return { rateCardId: '', carrierId: '', shippingMethod: p.shipping_method,
+            shippingMethodLabel: p.shipping_method, lastMileDelivery: p.last_mile_delivery,
+            currency: '', unitRate: NaN, minCharge: NaN, chargeType: '', chargeUnit: '',
+            originCountry: originCountry, destinationCountry: destCountry, marketplace: '' };
+        });
+      }
+    }
+    if (!candidates.length) {
       // F1-7N-FA-3C-R6F2D (D) — TYPE the no-method cause precisely (never a generic bucket when a cause is known):
       // no card for the lane at all vs cards exist for the lane but were inactive / outside the effective window vs the
       // matching cards carry no shipping_method token.
       var relaxed = (input.rateCards || []).map(kmra.normalizeRateCard).filter(function (dto) { return kmra.cardMatchesRoute(dto, routeQuery); });
-      var reason = !relaxed.length ? 'NO_CARRIER_CARD_FOR_LANE'
+      // §2 (R5) — with the rate card no longer able to supply a method, reaching here means NEITHER
+      // authority covers the lane. The rate-card sub-types are still reported when cards exist, because
+      // "the card expired" and "there is no transit authority" send a reader to different tables; but the
+      // primary cause is now the missing TRANSIT authority, which is what actually blocks a method.
+      var reason = !relaxed.length ? 'NO_TRANSIT_AUTHORITY_FOR_LANE'
         : (!relaxed.some(function (dto) { return dto.shippingMethod; }) ? 'NO_CANONICAL_METHOD' : 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE');
       // §7 — the lane key travels with the refusal. Without it a consumer can report that no method
       // resolved but not WHICH origin/destination/marketplace triple had no card.
@@ -8148,7 +8498,7 @@ function __kmRequire(p) {
 
     // manual override path — the override method must be in the SHARED candidate set (never a fabricated method).
     if (s(override.shipping_method)) {
-      var ovLane = lane.filter(function (dto) { return low(dto.shippingMethod) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(dto.lastMileDelivery) === low(override.last_mile_delivery)); });
+      var ovLane = candidates.filter(function (dto) { return low(dto.shippingMethod) === low(override.shipping_method) && (s(override.last_mile_delivery) === '' || low(dto.lastMileDelivery) === low(override.last_mile_delivery)); });
       if (!ovLane.length) return blocked('OVERRIDE_INVALID');
       var ovLm = resolveLastMile(ovLane, override.last_mile_delivery);
       if (ovLm.block) return blocked(ovLm.block);
@@ -8160,12 +8510,12 @@ function __kmRequire(p) {
     // manual vs a post-ranking selected result). AI ranking then operates over ROUTE PAIRS {method,last_mile}; the
     // SELECTED last_mile becomes part of the K2 key/header (distinct last_mile values are NEVER merged into one header).
     var manualSeen = {}, manualOptions = [];
-    lane.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
+    candidates.forEach(function (dto) { var m = s(dto.shippingMethod); if (!m) return; var mk = low(m); if (manualSeen[mk]) return; manualSeen[mk] = 1; manualOptions.push({ value: m, label: s(dto.shippingMethodLabel) || m }); });
     manualOptions.sort(function (a, b) { return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0); });
 
     // distinct candidate PAIRS (dedup by method|last_mile; first card is the cost representative).
     var pairSeen = {}, pairs = [];
-    lane.forEach(function (dto) {
+    candidates.forEach(function (dto) {
       var m = s(dto.shippingMethod); if (!m) return;
       var lmv = s(dto.lastMileDelivery), pk = low(m) + '||' + low(lmv);
       if (pairSeen[pk]) return; pairSeen[pk] = 1;
@@ -8247,7 +8597,11 @@ function __kmRequire(p) {
       // thing returned, so a consumer could see the date and not the number, and § F.4 has asked the census to
       // report `lead_time_days` since E3 without any way to obtain it.
       expected_arrival: eta, transit_days: days,
-      estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency) };
+      // §7 — which authority named this method, so a consumer never has to guess whether a null cost means
+      // "free", "not yet compared" or "no rate card exists".
+      method_source: methodSource,
+      estimated_cost: isFinite(ev.cost) ? ev.cost : null, currency: s(ev.currency),
+      cost_basis: methodSource === 'RATE_CARD' ? 'RATE_CARD' : 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' };
     }
   }
 
@@ -8316,7 +8670,7 @@ function __kmRequire(p) {
       // It is carried as GROUP EVIDENCE, a sibling of `lines` — deliberately NOT merged into the line
       // payload, which would put an AI-computed arrival into a column documented as user-supplied and change
       // what the writer stores. Read-side only.
-      buckets[key].evidence.push({ expected_arrival: s(rl.expected_arrival), transit_days: (rl.transit_days == null ? null : num(rl.transit_days)), estimated_cost: (rl.estimated_cost == null ? null : num(rl.estimated_cost)), currency: s(rl.currency), route_candidate_status: s(rl.route_candidate_status) });
+      buckets[key].evidence.push({ expected_arrival: s(rl.expected_arrival), transit_days: (rl.transit_days == null ? null : num(rl.transit_days)), estimated_cost: (rl.estimated_cost == null ? null : num(rl.estimated_cost)), currency: s(rl.currency), route_candidate_status: s(rl.route_candidate_status), method_source: s(rl.method_source), cost_basis: s(rl.cost_basis) });
     });
     // deterministic ordinal: sort the complete route tuples (never row order / timestamp / random)
     order.sort();
@@ -8326,7 +8680,7 @@ function __kmRequire(p) {
       // not, that is reported rather than silently represented by whichever line happened to be first — a
       // first-row-wins pick is exactly the class of defect this file keeps finding.
       var evUniq = uniq((b.evidence || []).map(function (e) { return e.expected_arrival + '|' + e.transit_days + '|' + e.estimated_cost + '|' + e.currency; }));
-      var ev0 = (b.evidence || [])[0] || { expected_arrival: '', transit_days: null, estimated_cost: null, currency: '', route_candidate_status: '' };
+      var ev0 = (b.evidence || [])[0] || { expected_arrival: '', transit_days: null, estimated_cost: null, currency: '', route_candidate_status: '', method_source: '', cost_basis: '' };
       return {
         groupNo: i + 1, routeKey: key,
         header: buildGroupHeader(scope, b.route, i + 1),
@@ -8334,6 +8688,7 @@ function __kmRequire(p) {
         route_evidence: { expected_arrival: ev0.expected_arrival, transit_days: ev0.transit_days,
           estimated_cost: ev0.estimated_cost,
           currency: ev0.currency, route_candidate_status: ev0.route_candidate_status,
+          method_source: ev0.method_source, cost_basis: ev0.cost_basis,
           line_count: (b.evidence || []).length,
           evidence_uniform: evUniq.length <= 1,
           disagreement: evUniq.length > 1 ? evUniq : null }
@@ -8428,7 +8783,7 @@ function __kmRequire(p) {
       var destKind = (al.destination && low(al.destination.kind)) === 'marketplace' ? 'MARKETPLACE' : ((al.destination && low(al.destination.kind)) === 'warehouse' ? 'WAREHOUSE' : '');
       // carry the THREE parity layers (G/A) so partition/preflight/diagnostic all read ONE contract.
       return r.ok
-        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, transit_days: (r.transit_days == null ? null : r.transit_days), estimated_cost: r.estimated_cost, currency: r.currency }
+        ? { line: line, route: r.route, destination_kind: destKind, route_candidate_status: r.route_candidate_status, manual_method_options: r.manual_method_options, ai_rankable_route_pairs: r.ai_rankable_route_pairs, selected_ai_route: r.selected_ai_route, auto_rankable_methods: r.auto_rankable_methods, expected_arrival: r.expected_arrival, transit_days: (r.transit_days == null ? null : r.transit_days), estimated_cost: r.estimated_cost, currency: r.currency, method_source: r.method_source || null, cost_basis: r.cost_basis || null }
         // F1-7N-FC-1B-E3-R4-A2-R1-R4 §2 — THE LANE QUERY DIED ONE LAYER ABOVE WHERE R3 FIXED IT.
         //
         // R3 found `method_unresolved_reason` being dropped by partitionRoutedLines and fixed it there. In the
@@ -8552,7 +8907,7 @@ function __kmRequire(p) {
   }
 
   return {
-    VERSION: 'kmwrr-r6f2d-2',
+    VERSION: 'kmwrr-r5-1',
     buildK2GenerationPlan: buildK2GenerationPlan, planLineKey: planLineKey,
     // typed route-candidate outcomes. ROUTE_METHOD_UNRESOLVED = NO eligible method (empty lane), sub-typed by
     // method_unresolved_reason (NO_CARRIER_CARD_FOR_LANE / CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE / NO_CANONICAL_METHOD);
@@ -8563,7 +8918,7 @@ function __kmRequire(p) {
     BLOCK_TOKENS: ['ROUTE_SOURCE_UNKNOWN', 'ROUTE_SOURCE_INACTIVE', 'ROUTE_SOURCE_MULTI_POOL_UNRESOLVED',
       'DESTINATION_MISSING', 'DESTINATION_UNKNOWN', 'DESTINATION_INACTIVE',
       'ROUTE_METHOD_UNRESOLVED', 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'LAST_MILE_AMBIGUOUS', 'OVERRIDE_INVALID'],
-    METHOD_UNRESOLVED_REASONS: ['NO_CARRIER_CARD_FOR_LANE', 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'NO_CANONICAL_METHOD', 'KMRA_UNAVAILABLE'],
+    METHOD_UNRESOLVED_REASONS: ['NO_TRANSIT_AUTHORITY_FOR_LANE', 'NO_CARRIER_CARD_FOR_LANE', 'CARD_INACTIVE_OR_OUTSIDE_EFFECTIVE_DATE', 'NO_CANONICAL_METHOD', 'KMRA_UNAVAILABLE'],
     ROUTE_CANDIDATE_STATUSES: ['AI_RANKED', 'MANUAL_ONLY', 'AMBIGUOUS', 'BLOCKED'],
     dateToOrdinal: dateToOrdinal, ordinalToDate: ordinalToDate, indexWarehouses: indexWarehouses,
     deriveRoute: deriveRoute, routeTuple: routeTuple,
@@ -16319,6 +16674,7 @@ var KMWRT = __kmModules["supply-planning-weekly-recommendation-runtime"];
 var KMWRB = __kmModules["supply-planning-weekly-recommendation-batch"];
 var KMWHA = __kmModules["supply-planning-weekly-harvest-adapter"];
 var KMRA = __kmModules["supply-planning-route-authority"];
+var KMMR = __kmModules["supply-planning-method-recommendation"];
 var KMWRR = __kmModules["supply-planning-weekly-route-derivation"];
 var KMSR = __kmModules["supply-planning-source-reader"];
 var KMSI = __kmModules["supply-planning-recommendation-source-integration"];
@@ -16348,4 +16704,4 @@ var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"7620453a8fa7aebaea1a782cd33076e562b123e467d15445bf493741d2f99e7a","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"2dea1a4fc16cfc036d14457419f037217f7a24e02f5d398acffff91cc69df2e2"},{"module":"supply-planning-weekly-route-derivation","sha256":"517924202e6a5e8baefe6a6c08a024e99eb63f66e2801a03c7a4702fdfa1e8bd"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"aa191371b538498b9e7bd06351425ad8645dfe059ee36fe6cfc435f9a608c000","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443"},{"module":"supply-planning-method-recommendation","sha256":"3869ef22a408673e357a402a369e3f6a2531fe5f1361b0f0c4158968dcef32ea"},{"module":"supply-planning-weekly-route-derivation","sha256":"1d436f3aaef5680b84da82e4f3ca8ef0f9c4652499e1216194bb518d2111a3d5"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"}]};

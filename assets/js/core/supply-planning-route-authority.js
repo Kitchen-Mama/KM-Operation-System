@@ -38,6 +38,19 @@
   function s(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim(); }
   function low(v) { return s(v).toLowerCase(); }
   function num(v) { var n = Number(v); return isFinite(n) ? n : NaN; }
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 — A BLANK IS NOT A ZERO, AND FOR A TRANSIT TIME THE DIFFERENCE IS THE WHOLE
+  // POINT. `Number('')` and `Number(null)` are both 0 and both pass isFinite, so a carrier_lead_times row with
+  // an empty max_days was normalizing to a max transit of ZERO DAYS — an instant delivery that every downstream
+  // safety check then believed. Found by a mutation probe whose fixture happened to leave two day columns
+  // blank; the profile came back with max_days 0, a 7-day conservative estimate and 83 days of headroom.
+  //
+  // This is not confined to the AI Plan: leadDays() filters on isFinite(avgDays), so the Execution Plan ETA
+  // would have taken the same 0 and dated an arrival for today. An ABSENT figure must be absent.
+  function days(v) {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === 'string' && v.trim() === '') return NaN;
+    return num(v);
+  }
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
   function pick() { for (var i = 0; i < arguments.length; i++) { var v = arguments[i]; if (v !== undefined && v !== null && String(v) !== '') return v; } return ''; }
 
@@ -127,9 +140,10 @@
       shippingMethod: method,
       methodKey: canonicalMethodKey(method),
       lastMileDelivery: s(pick(raw.last_mile_delivery, raw.lastMileDelivery)),
-      minDays: num(pick(raw.min_days, raw.minDays)),
-      maxDays: num(pick(raw.max_days, raw.maxDays)),
-      avgDays: num(pick(raw.avg_days, raw.avgDays))
+      // `days` rather than `num`: a blank column is NO transit authority, never a zero-day transit.
+      minDays: days(pick(raw.min_days, raw.minDays)),
+      maxDays: days(pick(raw.max_days, raw.maxDays)),
+      avgDays: days(pick(raw.avg_days, raw.avgDays))
     };
   }
 

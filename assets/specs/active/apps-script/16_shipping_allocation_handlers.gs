@@ -907,7 +907,9 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // half-finished file-by-file Apps Script sync is a NAMED fact rather than a mystery: every action in this file
 // still resolves when the file is a round behind, so a resolvable action list cannot detect it. FB-4D changed
 // this file (the pre-write duplicate-PK gate and the route-group keys on the write response).
-var SAD_BUILD_VERSION_ = 'F1-7N-FB-4G-A2-R3-R1';
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — also never rotated. This file last changed in
+// F1-7N-FC-1B-E3-R4-A2-R1-R2; the label was left at the round before that.
+var SAD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R2';
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',

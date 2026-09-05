@@ -736,6 +736,9 @@ var statusRep = extractFn(G66, 'rosendStatusReport_');
 
 // §H — a MIXED deployment is a NAMED fact, on evidence that is not self-referential.
 eval(extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_'));
+// R5: the contract now EXECUTES the writer/lifecycle invariant as well as comparing labels, so its helper
+// must be lifted with it. Lifting only the caller left the check undefined at run time.
+eval(extractFn(G63, 'sysRuntimeAuthorityChecks_'));
 eval(extractFn(G63, 'sysModuleBuildStamps_'));
 var SYS_BUILD_VERSION_ = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
 // the manifest must match what the files ACTUALLY declare, or the check is a lie on day one
@@ -764,6 +767,9 @@ ok(unchanged.length >= 1, '20. at least one owner legitimately declares an OLDER
 ok(unchanged.every(function (m) { return declaredBy[m.symbol] === m.expected; }), '20. and it is still treated as current');
 // execute the real stamp reader against a UNIFORM and a MIXED project
 global.sysGlobalValue_ = function (n) { return declaredBy[n]; };
+// R5: the contract now EXECUTES the writer/lifecycle invariant as well as comparing labels, so its helper
+// must be lifted with it. Lifting only the caller left the check undefined at run time.
+eval(extractFn(G63, 'sysRuntimeAuthorityChecks_'));
 eval(extractFn(G63, 'sysModuleBuildStamps_'));
 var uniform = sysModuleBuildStamps_();
 eq([uniform.mixed_deployment, uniform.absent_modules.length, uniform.stale_modules.length], [false, 0, 0], '20. a fully synced project is UNIFORM');
@@ -775,7 +781,10 @@ eq(mixed.mixed_deployment, true, '20. a 66_ left a round behind is detected as a
 ok(/66_api_v1_request_order_send\.gs declares F1-7N-FB-3C/.test(mixed.stale_modules.join('|')), '20. naming the exact file and what it declares');
 ok(/MIXED_OR_PARTIAL_SYNC/.test(mixed.verdict), '20. with a verdict the operator can act on');
 // a file absent from the deployment entirely
-declaredBy['ROS_BUILD_VERSION_'] = 'F1-7N-FB-4A';
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): this RESTORE hard-coded the stamp it was putting back, so when R5
+// rotated 66_ (its label had never moved when the file last changed) the restore silently left the module
+// STALE for every scenario below it. Restored from the manifest, exactly as the SAD restore below is.
+declaredBy['ROS_BUILD_VERSION_'] = SYS_MODULE_BUILD_STAMPS_.filter(function (m) { return m.symbol === 'ROS_BUILD_VERSION_'; })[0].expected;
 // §J — the manifest no longer names a TEMP file at all, so "a file that was never copied" is demonstrated on
 // a permanent owner. This is the property that matters: the deployment is COMPLETE without any TEMP file.
 delete declaredBy['SAD_BUILD_VERSION_'];

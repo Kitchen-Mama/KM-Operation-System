@@ -1210,10 +1210,16 @@ section('§L — CONTRACT VERSIONS AND REACHABILITY');
   [['01_router.gs', 'RTR_BUILD_VERSION_'], ['12_shipment_handlers.gs', 'SHIPMENT_BUILD_VERSION_'],
    ['13_procurement_handlers.gs', 'PROC_BUILD_VERSION_'], ['21_factory_inventory_handlers.gs', 'FSTX_BUILD_VERSION_']
   ].forEach(function (p, i) {
-    ok(new RegExp("file: '" + p[0].replace('.', '\\.') + "', symbol: '" + p[1] + "', expected: 'F1-7N-FC-1A-R1'").test(G63),
-      'N9.' + (i + 1) + ' §L ' + p[0] + ' is manifested at F1-7N-FC-1A-R1');
-    eq((code(GS_SRC[p[0]]).match(new RegExp('var ' + p[1] + " = '([^']+)'")) || [])[1], 'F1-7N-FC-1A-R1',
-      'N9.' + (i + 1) + 'a and DECLARES it');
+    // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): both halves pinned the literal FC-1A-R1. R5 found 01_router's
+    // stamp had never been rotated when the file last changed (R2) and corrected it, so a pinned literal now
+    // reports a correct deployment as wrong. FC-1A-R1's claim is a FLOOR — each of these owners carries this
+    // round's change or something after it — plus the invariant that matters in every round: the manifest
+    // expects EXACTLY what the file declares. A half-synced owner is still named.
+    var _declared = (code(GS_SRC[p[0]]).match(new RegExp('var ' + p[1] + " = '([^']+)'")) || [])[1];
+    ok(require('./_release-order.js').stampAtOrAfter(_declared, 'F1-7N-FC-1A-R1'),
+      'N9.' + (i + 1) + ' §L ' + p[0] + ' declares a stamp at or after FC-1A-R1');
+    ok(new RegExp("file: '" + p[0].replace('.', '\.') + "', symbol: '" + p[1] + "', expected: '" + _declared + "'").test(G63),
+      'N9.' + (i + 1) + 'a and the manifest expects EXACTLY what it declares');
   });
   ['handleCancelShipmentDraft_', 'FSTX_MOVEMENT_TYPES_', 'PROC_BUILD_VERSION_'].forEach(function (sym, i) {
     ok(DBAPI.indexOf("'" + sym + "'") !== -1, 'N10.' + (i + 1) + ' §L ' + sym + ' is probed as an owner symbol');

@@ -1211,8 +1211,12 @@ section('§L — THE INVARIANTS THIS AUDIT PINNED, RE-CHECKED AFTER FC-1A');
   eq((code(G11).match(/SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _l1Exp,
     'L1  11_ declares exactly the build its manifest expects (' + _l1Exp + ') — its Approve answer changed ' +
     'shape, and the frontend binds to it');
-  eq((code(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
-    'F1-7N-FB-4G-A2-R3-R1', 'L2  16_ unchanged');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): this pinned the literal stamp to assert "16_ did not change in FC-0A".
+  // R5 found that stamp had never been rotated when 16_ last changed, and corrected it. The claim FC-0A owns is
+  // that 16_ was not changed BY FC-0A — a floor against the shared ledger, not a frozen string a later round
+  // must never move.
+  ok(require('./_release-order.js').stampAtOrAfter((code(read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs')).match(/SAD_BUILD_VERSION_ = '([^']+)'/) || [])[1],
+    'F1-7N-FB-4G-A2-R3-R1'), 'L2  16_ carries a stamp at or after the round before FC-0A');
   ok(/CSD_MOV_TYPE_ = 'shipment_out'/.test(G22),
     'L3  22_ still names shipment_out — FC-1A moved WHERE the movement is written, never WHAT it is called');
   ok(/movement_type='po_receipt'/.test(G13), 'L4  13_ unchanged — the PO receipt path was not touched');

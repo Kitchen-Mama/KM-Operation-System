@@ -633,7 +633,13 @@ eq((_r2g11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1], _r2Expected,
 ok(_r2g11.indexOf('allocation_draft_id') === -1 ||
    (_r2g11.slice(_r2g11.indexOf('function shippingPlanRouteGroupKey_')).slice(0, 900).indexOf('allocation_draft_id') === -1),
   '8. and shippingPlanRouteGroupKey_ still carries no allocation_draft_id (frozen Option A grouping)');
-eq(gsUnexpected.join(','), '', '8. no Apps Script file outside this line\'s owned set changed since the R1 commit');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): this list grows every time a LATER round legitimately edits a file,
+// which is not what the audit is about — its claim is that the R1 line's own change was confined. R5 adds
+// 17_carrier_handlers.gs (the frozen Weekly Shipping Plan carrier-comparison boundary), so it joins the owned
+// set WITH THE REASON it was touched, exactly as 69_ did above. An unexpected file still fails.
+GS_OWNED_SINCE_R1['17_carrier_handlers.gs'] = 'FC-1B-E3-R4-A2-R1-R5 freezes the Weekly Shipping Plan carrier-comparison boundary so carrier selection cannot drift back into the AI Plan';
+gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
+eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 
 // (a) A CHANGE TO THE ALLOCATION WRITER IS ALWAYS DECLARED. Read both halves from the files themselves, so the
 // expectation and the declaration can only ever be edited together.

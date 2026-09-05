@@ -590,7 +590,10 @@ ok((ND.block_tokens.ROUTE_METHOD_UNRESOLVED || 0) > 0, 'F7  so those lines refus
 ok(ND.blocked_detail.some(function (b) { return b.block === 'ROUTE_METHOD_UNRESOLVED'; }),
   'F7a … the refusal is present …');
 ok(ND.blocked_detail.filter(function (b) { return b.block === 'ROUTE_METHOD_UNRESOLVED'; })
-  .every(function (b) { return b.method_reason === 'NO_CARRIER_CARD_FOR_LANE'; }),
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): the sub-type moved because the rule moved — a rate card no longer
+// decides whether a method exists, so a lane with neither authority is typed NO_TRANSIT_AUTHORITY_FOR_LANE.
+// R3's claim, that the refusal is SUB-TYPED and never a bare token, is unchanged.
+  .every(function (b) { return b.method_reason === 'NO_TRANSIT_AUTHORITY_FOR_LANE'; }),
   'F7b … SUB-TYPED, never the bare token …');
 ok(ND.blocked_lanes.filter(function (l) { return !!l; })
   .every(function (l) { return l.originCountry === 'US' && l.destinationCountry === 'US'; }),
@@ -736,7 +739,12 @@ eq(PP.duplicate_sku_window_in_group, R.duplicates, 'I9a duplicate list');
 eq(PP.route_count, R.routes.length, 'I10 route count');
 eq(PP.route_intent, 'UPSERT_AI_GENERATED_K2_ROUTE', 'I11 route intent');
 eq(PP.refusals, [], 'I12 refusals');
-eq(CEN.verdict, 'REVIEW', 'I13 and with no `expect` supplied the census reports rather than judges');
+// RESTATED (A2-R1-R5): 'REVIEW' was the census's name for "nothing to judge against". R5 replaces the
+// single verdict with a readiness ladder, so an advisable scope with warnings now says so by name. The
+// claim — that with no expectation supplied the census REPORTS rather than approving — is unchanged, and
+// is checked on the property that carries it: the verdict is never PROCEED without an expectation.
+ok(CEN.verdict !== 'PROCEED' && /^(REVIEW|RECOMMENDATION_READY|RECOMMENDATION_READY_WITH_WARNINGS|STOP)$/.test(CEN.verdict),
+  'I13 and with no `expect` supplied the census reports rather than judges');
 eq(PP.writer_constructed, false, 'I14 the parity block is computed with no writer');
 // A divergence must show up AS a divergence. Narrow the census's scope only, and the sets must differ.
 var hDiv = build({ mutate: function (S) {

@@ -45,6 +45,7 @@ var MODULE_ORDER = [
   'supply-planning-weekly-recommendation-batch', // F1-7N-D-2a (company,country) batch owner (requires input-assembler + weekly-source-allocation + plan-bridge + orchestrator)
   'supply-planning-weekly-harvest-adapter',    // F1-7N-D-2b pure harvest→batch-request join (no deps)
   'supply-planning-route-authority',           // F1-7N-FA-3C-R6F2B KMRA shared canonical route candidate authority (SELF-CONTAINED; no deps) — before KMWRR
+  'supply-planning-method-recommendation',     // F1-7N-FC-1B-E3-R4-A2-R1-R5 KMMR transit-safe method recommendation (requires KMRA) — before KMWRR
   'supply-planning-weekly-route-derivation',   // F1-7N-FA-3C-R6F2 KMWRR deterministic route derivation + K2 partition (requires KMRA)
   'supply-planning-source-reader',             // requires source-facts
   'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
@@ -114,6 +115,7 @@ var GLOBALS = [
   ['KMWRB', 'supply-planning-weekly-recommendation-batch'],
   ['KMWHA', 'supply-planning-weekly-harvest-adapter'],
   ['KMRA', 'supply-planning-route-authority'],
+  ['KMMR', 'supply-planning-method-recommendation'],
   ['KMWRR', 'supply-planning-weekly-route-derivation'],
   ['KMSR', 'supply-planning-source-reader'],
   ['KMSI', 'supply-planning-recommendation-source-integration'],

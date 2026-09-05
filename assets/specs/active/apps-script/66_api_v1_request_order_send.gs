@@ -52,7 +52,9 @@
 // this handler contend with its own callee's tryLock(30000).
 // ============================================================
 
-var ROS_BUILD_VERSION_ = 'F1-7N-FB-4A';
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — found by the standing stamp-rotation check added this round, not by
+// reading: this file last changed in F1-7N-FB-4E-R4B-R3 and its label was still at FB-4A.
+var ROS_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R3';
 
 // The flat V2 canonical tables. The child line table is RETIRED under the cutover and is never read here.
 var ROS_DRAFTS_TABLE_ = 'request_order_allocation_drafts';

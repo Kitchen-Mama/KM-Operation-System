@@ -722,13 +722,24 @@ section('§F/§G — THE CENSUS: an early refusal keeps the diagnosis, and stays
         supply_allocation_conserved: true, route_quantity_conserved: true, fully_routable: true,
         blockers: [], blocker_tokens: [] } };
   } };
+  // R5: the census now separates the three layers' readiness through 61_'s status authority. This sandbox
+  // is a doubles-only fixture and never loads 61_, so the REAL functions are lifted in — a double of a
+  // verdict authority would be a second opinion, which is the failure mode this file exists to catch.
   var ctx2 = vm.createContext(sandbox2);
+  vm.runInContext(extractFn(G61, 'weeklyAiPlanStr_') + ';' + extractFn(G61, 'weeklyAiPlanNum_') + ';'
+    + extractFn(G61, 'weeklyAiPlanMethodAdvice_') + ';' + extractFn(G61, 'weeklyAiPlanAdviceStatus_'),
+    ctx2, { filename: 'wap-status.gs' });
   vm.runInContext(TEMP, ctx2, { filename: 'TEMP_census2.gs' });
   var res2 = vm.runInContext('TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(' + JSON.stringify({
     company: SCOPE.company, country: SCOPE.country, marketplace: SCOPE.marketplace, sku: SKU, expect: { qty: 520 }
   }) + ')', ctx2);
   eq(calls2.kmwrr, 1, 'G11 §I.1/§I.16 a READY scope DOES reach the canonical allocator, exactly once');
-  eq(res2.verdict, 'PROCEED', 'G11a and a matching expectation yields PROCEED');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R5): 'PROCEED' meant "the expectation was met and nothing is wrong".
+  // R5 separates those: an expectation can be met while the scope still carries warnings (no carrier pricing,
+  // a provisional transit buffer), and the verdict then says RECOMMENDATION_READY_WITH_WARNINGS. G11a's claim
+  // is that a MATCHING expectation does not stop the run, and that is what is checked.
+  eq(res2.differences, [], 'G11a a matching expectation produces NO differences');
+  ok(res2.verdict !== 'STOP', 'G11a1 and does not stop the run');
   eq([res2.total_allocated_quantity, res2.would_create_route_count], [520, 1], 'G11b with the quantity and route count');
   eq(res2.mapped.ready, true, 'G11c readiness true...');
   eq(res2.mapped.issues, [], 'G11d ...with no issues');
@@ -755,9 +766,13 @@ ok(/function inventoryAiPlanDbGenerationEnabled_\(\) \{ return INVENTORY_AI_PLAN
 ok(/inventory_ai_plan_db_generation_enabled: \(typeof inventoryAiPlanDbGenerationEnabled_ === 'function'\)/.test(HLTH),
   'H4  §H.6 system health still reports the EFFECTIVE value...');
 ok(/config_build:/.test(HLTH), 'H4a ...and the config build it belongs to');
-eq(/var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R1', 'H5  the config stamp moved with the change');
-ok(new RegExp("\\{ file: '00_config\\.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R1'").test(HLTH),
-  'H5a and the manifest expects exactly that');
+// RESTATED (A2-R1-R5): pinned stamp literals on both sides. R5 rotated this stamp (it had never moved when
+// the file changed) and changed the file again. The durable claim is that the DECLARATION and the
+// MANIFEST agree — a half-synced 00_config is the fault this pairing exists to name — plus a floor.
+var _cfgStamp = /var CONFIG_BUILD_VERSION_ = '([^']+)'/.exec(CFG)[1];
+ok(RO.stampAtOrAfter(_cfgStamp, 'F1-7N-FC-1B-E3-R1'), 'H5  the config stamp is at or after E3-R1');
+ok(new RegExp("\\{ file: '00_config\\.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '" + _cfgStamp + "'").test(HLTH),
+  'H5a and the manifest expects exactly what the file declares');
 // RESTATED (F1-7N-FC-1B-E3-R3-R1): pinned the literal stamp R1 introduced, so the next round to change 61_
 // broke it — and R3-R1 changes 61_ on purpose (the forecast normalization gate). The property worth
 // defending is not "the stamp reads R1", it is that 61_ HAS a stamp and the manifest expects exactly that

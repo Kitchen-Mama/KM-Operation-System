@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R4';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R5';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -925,58 +925,111 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     blockers: null
   };
 
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 §11 — SIX READINESSES, BECAUSE ONE VERDICT WAS ANSWERING SIX QUESTIONS.
+  //
+  // R4's census returned STOP for this scope because a lane had no Carrier Rate Card, and in doing so it threw
+  // away a correct quantity, a correct source and a correct required-by date. The AI Plan is decision support;
+  // refusing to advise because someone else's price list is incomplete is not caution, it is the tool declining
+  // to do its job. Each layer now answers its own question and no layer may answer another's.
+  // ==============================================================================================================
+  out.method_advice = (typeof weeklyAiPlanMethodAdvice_ === 'function')
+    ? weeklyAiPlanMethodAdvice_(skuLines, h, carriers.leadTimes, shipDate)
+    : { authority: 'METHOD_ADVICE_AUTHORITY_UNAVAILABLE', tranches: [], status: 'MANUAL_REVIEW_REQUIRED', review_reasons: [] };
+  // §8 — only a SHARED/system fault may STOP. Carrier coverage is deliberately NOT in this list, and the
+  // list is emitted so that exclusion is visible rather than inferred from silence.
+  out.shared_blockers = out.blockers.slice();
+  out.layered_status = (typeof weeklyAiPlanAdviceStatus_ === 'function')
+    ? weeklyAiPlanAdviceStatus_({
+        shared_blockers: out.shared_blockers,
+        completeness: out.completeness,
+        method_advice: out.method_advice,
+        carrier_pricing_ready: out.matched_carrier_cards > 0
+      })
+    : null;
+  // §10 — the executed runtime-authority invariant, carried into the census so an operator sees a mixed
+  // deployment here rather than having to run a second diagnostic to discover it.
+  out.runtime_authority = (typeof sysRuntimeAuthorityChecks_ === 'function')
+    ? sysRuntimeAuthorityChecks_() : 'RUNTIME_AUTHORITY_CHECK_UNAVAILABLE';
+
   // ---- what is ALREADY stored for this scope (so "would_create" is read against reality) -------------------
   out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
 
   // ---- §F.6 — THE VERDICT. PROCEED only against a supplied expectation that the allocator actually meets. --
   var exp = args.expect;
   out.expectation = exp || null;
-  if (out.blockers.length) {
+  // §11 — the readiness fields an operator reads first, lifted to the top level under the names the three
+  // layers use. Each is owned by exactly one layer and none may stand in for another.
+  var LS = out.layered_status || {};
+  out.recommendation_ready = LS.recommendation_ready === true;
+  out.method_status = LS.method_status || 'MANUAL_REVIEW_REQUIRED';
+  out.carrier_pricing_ready = LS.carrier_pricing_ready === true;
+  out.execution_route_materialized = LS.execution_route_materialized === true;
+  out.submit_ready = LS.submit_ready === true;
+  out.unresolved_supply_quantity = (LS.unresolved_supply_quantity === undefined) ? null : LS.unresolved_supply_quantity;
+  out.warnings = (LS.warnings || []).slice();
+
+  if (out.shared_blockers.length) {
+    // §8 — a SHARED/system fault: snapshot, forecast authority, schema/runtime authority, demand mapping or
+    // quantity conservation. These make the numbers themselves untrustworthy, so there is nothing honest left
+    // to advise. This is the ONLY road to STOP.
     out.verdict = 'STOP';
-  } else if (!out.allocator.routes.length) {
+  } else if (!out.recommendation_ready) {
     out.verdict = 'STOP';
-    // §7 — WHEN THE ONLY THING MISSING IS MASTER DATA, SAY SO BY NAME.
+    out.blockers.push('RECOMMENDATION_NOT_READY: the quantity or source advice could not be computed. This is '
+      + 'NOT a Carrier-coverage outcome — read `layered_status` for the failing layer.');
+  } else {
+    // ============================================================================================================
+    // §7/§11 — `USER_MASTER_DATA_REQUIRED` IS NO LONGER A STOP. IT IS A WARNING WITH AN OWNER.
     //
-    // `NO_COMPLETE_ROUTE` is true and tells an operator nothing about what to do next. When every code gate
-    // has passed and the single remaining fact is that a lane has no carrier authority, the blocker is a DATA
-    // task with a named owner, and the census says which fields and in which table. It still STOPS —
-    // fail-closed is the correct behaviour and §5 forbids routing around it — but it stops with an action.
+    // R4 made it the whole AI Plan's verdict. It is a Layer 2 (carrier comparison) and Layer 3 (submit)
+    // concern, and at Layer 1 the correct behaviour is to advise the quantity, the source and the safest
+    // transport method the TRANSIT authority supports, and to say plainly what a person must still do.
+    // Nothing is guessed: with no transit authority the method is left to a person, with no rate card no price
+    // is claimed, and no partial execution route is written either way.
+    // ============================================================================================================
     if (out.carrier_master_data_ready === false) {
-      out.blockers.push('USER_MASTER_DATA_REQUIRED: every code gate passed and the demand cannot be routed '
-        + 'because the lane has no carrier authority. Unresolved ' + out.unresolved_quantity + ' units on '
-        + JSON.stringify(out.carrier_lane_key) + '. Missing: '
+      out.warnings.push('CARRIER_MASTER_DATA_INCOMPLETE (warning, not a blocker): '
+        + JSON.stringify(out.carrier_lane_key) + ' — '
         + (out.carrier_readiness && out.carrier_readiness.length
             ? out.carrier_readiness.map(function (r) { return r.lane_key + ' -> ' + (r.missing || []).join('+'); }).join(' ; ')
             : '(unknown)')
-        + '. Read `carrier_missing_fields` for the exact fields, and NOTE that carrier_lead_times has no '
-        + 'generic write handler — that row is entered directly in the tab. No value may be invented.');
-      out.blockers.push('NO_COMPLETE_ROUTE: ' + out.unresolved_quantity + ' of '
-        + out.authorized_quantity + ' authorized units reached no route. Typed reasons: '
-        + (out.route_blockers || []).join(', ') + '.');
-    } else {
-      out.blockers.push('NO_COMPLETE_ROUTE: the allocator produced no route for this SKU. Activation must not ' +
-        'proceed on the assumption that a route exists — read `allocator.refusals` for the typed reason.');
+        + '. Read `carrier_missing_fields` for the exact fields. carrier_lead_times has no generic write '
+        + 'handler, so that row is entered directly in the tab. This is a Weekly Shipping Plan / Submit '
+        + 'prerequisite and does NOT block the AI Plan recommendation.');
     }
-  } else if (!exp) {
-    out.verdict = 'REVIEW';
+    // (The un-materialized route is already reported once by weeklyAiPlanAdviceStatus_ as
+    // EXECUTION_ROUTE_NOT_MATERIALIZED, with the same typed reasons. Saying it twice in different words would
+    // make the warning list look longer than the problem.)
     out.ok = true;
-    out.note = 'no `expect` supplied, so this census reports and does not judge. Compare the route above with ' +
-      'the one the previous round reported before publishing the activation deployment.';
-  } else {
-    var r0 = out.allocator.routes[0];
-    var diffs = [];
-    if (exp.qty != null && CENSUS_num_(exp.qty) !== r0.total_qty) diffs.push('qty: expected ' + exp.qty + ', allocator says ' + r0.total_qty);
-    if (CENSUS_str_(exp.method) && CENSUS_low_(exp.method) !== CENSUS_low_(r0.method)) diffs.push('method: expected ' + exp.method + ', allocator says ' + (r0.method || '(none)'));
-    if (CENSUS_str_(exp.sourceWarehouseId) && CENSUS_low_(exp.sourceWarehouseId) !== CENSUS_low_(r0.source_warehouse_id)) diffs.push('source: expected ' + exp.sourceWarehouseId + ', allocator says ' + (r0.source_warehouse_id || '(none)'));
-    if (CENSUS_str_(exp.destination) && CENSUS_low_(exp.destination) !== CENSUS_low_(r0.destination)) diffs.push('destination: expected ' + exp.destination + ', allocator says ' + (r0.destination || '(none)'));
-    if (!r0.method) diffs.push('method is EMPTY — an incomplete route must never be materialized');
-    if (!r0.expected_arrival) diffs.push('expected_arrival is EMPTY — no lead time resolved for this lane');
-    if (!out.allocator.conserved) diffs.push('conservation NOT conserved — the allocated quantity does not match the authorized quantity');
-    out.differences = diffs;
-    out.verdict = diffs.length ? 'STOP' : 'PROCEED';
-    out.ok = !diffs.length;
-    if (diffs.length) {
-      out.blockers.push('ALLOCATOR_DISAGREES_WITH_EXPECTATION: activation STOPS. ' + diffs.join(' · '));
+    out.verdict = out.warnings.length ? 'RECOMMENDATION_READY_WITH_WARNINGS' : 'RECOMMENDATION_READY';
+
+    // The EXPECTATION comparison is a separate question from readiness, and it is asked only when one is
+    // supplied. It can still STOP the run — an allocator that disagrees with a stated expectation is a real
+    // fault — but it no longer decides the verdict by itself when no expectation was given.
+    if (exp) {
+      var r0 = out.allocator.routes[0] || null;
+      var diffs = [];
+      if (!r0) diffs.push('no route was materialized, so an expectation about one cannot be met');
+      else {
+        if (exp.qty != null && CENSUS_num_(exp.qty) !== r0.total_qty) diffs.push('qty: expected ' + exp.qty + ', allocator says ' + r0.total_qty);
+        if (CENSUS_str_(exp.method) && CENSUS_low_(exp.method) !== CENSUS_low_(r0.method)) diffs.push('method: expected ' + exp.method + ', allocator says ' + (r0.method || '(none)'));
+        if (CENSUS_str_(exp.sourceWarehouseId) && CENSUS_low_(exp.sourceWarehouseId) !== CENSUS_low_(r0.source_warehouse_id)) diffs.push('source: expected ' + exp.sourceWarehouseId + ', allocator says ' + (r0.source_warehouse_id || '(none)'));
+        if (CENSUS_str_(exp.destination) && CENSUS_low_(exp.destination) !== CENSUS_low_(r0.destination)) diffs.push('destination: expected ' + exp.destination + ', allocator says ' + (r0.destination || '(none)'));
+        if (!r0.method) diffs.push('method is EMPTY — an incomplete route must never be materialized');
+        if (!r0.expected_arrival) diffs.push('expected_arrival is EMPTY — no lead time resolved for this lane');
+      }
+      if (!out.allocator.conserved) diffs.push('conservation NOT conserved — the allocated quantity does not match the authorized quantity');
+      out.differences = diffs;
+      if (diffs.length) {
+        out.verdict = 'STOP';
+        out.ok = false;
+        out.blockers.push('ALLOCATOR_DISAGREES_WITH_EXPECTATION: activation STOPS. ' + diffs.join(' — '));
+      } else {
+        out.verdict = out.warnings.length ? 'RECOMMENDATION_READY_WITH_WARNINGS' : 'PROCEED';
+      }
+    } else {
+      out.note = 'no `expect` supplied, so this census reports readiness and does not judge a route against one.';
     }
   }
 

@@ -28,6 +28,9 @@ var WEEKLY_AI_PLAN_FACTORY_IDENTITY_ = { CN_YOUXIN: 'WH-TW-CN-FACTORY-YOUXIN', T
 var WEEKLY_AI_PLAN_SOURCE_PAGE_ = 'inventory_replenishment';
 
 function weeklyAiPlanStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+// R5: a numeric coercion beside the string one. Non-numeric reads as 0 rather than NaN, so a missing
+// quantity can never poison a total by arithmetic.
+function weeklyAiPlanNum_(v) { var n = Number(v); return isFinite(n) ? n : 0; }
 function weeklyAiPlanErr_(code, message, extra) { var e = { code: code, message: message || code }; if (extra) for (var k in extra) e[k] = extra[k]; return e; }
 
 // ================================================================================================================
@@ -211,7 +214,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // build stamp: it was the one file in this chain whose sync state the deployment manifest could not report, so
 // "the deployment answers HARVEST_NOT_READY with no issues" and "the deployment predates the fix" were the same
 // observation. Stamped and registered in 63_'s manifest.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R4';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R5';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -367,6 +370,195 @@ function weeklyAiPlanCarrierMissingFields_(q, missing) {
         { field: 'max_days', required: false, note: 'numeric calendar days' }
       ] });
   }
+  return out;
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R5 §5 — TRANCHE METHOD ADVICE, AND THE QUANTITY THAT MUST NOT BE COUNTED TWICE.
+//
+// The obvious way to offer several shipping methods is to price the whole 760 against each one. That is also
+// the way to ship 2280 units: the moment a reader treats the three lines as a plan rather than as a menu, the
+// quantity has tripled. So the demand is split into TRANCHES using the canonical demand windows that already
+// exist (one allocated line per sku+window, each with its own required-by date), and exactly ONE method per
+// tranche is COUNTED. Every other option travels as an alternative SCENARIO carrying
+// `counted_in_shipment_total: false`, and the totals below are computed from the counted set alone.
+//
+// A tranche's urgency is its own: `days_until_stockout` is that window's required-by date minus the ship date,
+// so a near-term window can take air while a far-term window takes sea, and neither borrows the other's slack.
+//
+// Nothing here writes, and nothing here invents. A tranche with no transit authority keeps its source, its
+// quantity and its required-by date, and reports that a person must choose the method — it does not guess a
+// method, an ETA or a carrier, and it does not withdraw the quantity advice it can legitimately give.
+// ================================================================================================================
+function weeklyAiPlanMethodAdvice_(allocatedLines, harvest, leadTimes, shipDate) {
+  var out = { authority: 'KMMR', buffer: null, ship_date: weeklyAiPlanStr_(shipDate) || null,
+    tranches: [], counted_quantity: 0, alternative_scenario_count: 0,
+    tranches_with_method: 0, tranches_needing_review: 0,
+    status: 'MANUAL_REVIEW_REQUIRED', review_reasons: [] };
+  var kmmr = (typeof KMMR !== 'undefined' && KMMR) ? KMMR : null;
+  if (!kmmr || typeof kmmr.recommend !== 'function') { out.authority = 'KMMR_UNAVAILABLE'; return out; }
+  var cfg = (typeof weeklyAiPlanTransitBuffer_ === 'function') ? weeklyAiPlanTransitBuffer_() : null;
+  var shipOrd = (typeof KMWRR !== 'undefined' && KMWRR && typeof KMWRR.dateToOrdinal === 'function')
+    ? KMWRR.dateToOrdinal(shipDate) : null;
+  var whById = (harvest && harvest.warehousesById) || {};
+  var seenReason = {};
+
+  (allocatedLines || []).forEach(function (a) {
+    var srcId = weeklyAiPlanStr_(a.source_warehouse_id);
+    var srcWh = whById[srcId] || null;
+    var dest = a.destination || {};
+    var lane = { originCountry: weeklyAiPlanStr_(srcWh && srcWh.country),
+      destinationCountry: weeklyAiPlanStr_(dest.country) };
+    var reqOrd = (typeof KMWRR !== 'undefined' && KMWRR && typeof KMWRR.dateToOrdinal === 'function')
+      ? KMWRR.dateToOrdinal(a.required_by_date) : null;
+    // The tranche's OWN urgency. Never the plan's, never the earliest window's.
+    var dus = (reqOrd == null || shipOrd == null) ? null : (reqOrd - shipOrd);
+    // The buffer is looked up per method only when a method is already known; the tranche-level lookup uses
+    // the default, and KMMR re-resolves per option where an override exists.
+    var buf = kmmr.bufferFor(cfg, '');
+    if (!out.buffer) out.buffer = { days: buf.days, source: buf.source, provisional: buf.provisional === true,
+      authority: (cfg && cfg.authority) || null, rule: (cfg && cfg.rule) || null };
+    var rec = kmmr.recommend({ leadTimes: leadTimes, lane: lane, daysUntilStockout: dus,
+      buffer: buf, requiredByDate: a.required_by_date, shipDate: shipDate });
+    var qty = weeklyAiPlanNum_(a.recommended_qty != null ? a.recommended_qty : a.planned_qty) || 0;
+    var t = {
+      sku: weeklyAiPlanStr_(a.sku), site_sku: weeklyAiPlanStr_(a.site_sku),
+      window_code: weeklyAiPlanStr_(a.window_code), required_by_date: weeklyAiPlanStr_(a.required_by_date),
+      source_warehouse_id: srcId, destination: dest,
+      lane: rec.lane, days_until_stockout: rec.days_until_stockout,
+      quantity: qty,
+      method_status: rec.status, review_reason: rec.review_reason,
+      // THE COUNTED RECOMMENDATION. One per tranche, or none.
+      recommended_method: rec.recommended ? {
+        shipping_method: rec.recommended.shipping_method,
+        last_mile_delivery: rec.recommended.last_mile_delivery,
+        conservative_transit_days: rec.recommended.conservative_transit_days,
+        arrival_headroom_days: rec.recommended.arrival_headroom_days,
+        risk: rec.recommended.risk, quantity: qty, counted_in_shipment_total: true,
+        carrier_ids: rec.recommended.carrier_ids, carrier_selection: rec.recommended.carrier_selection,
+        estimated_cost: rec.recommended.estimated_cost, cost_basis: rec.recommended.cost_basis
+      } : null,
+      // SCENARIOS. Same quantity shown for comparison, and explicitly NOT part of any total.
+      alternative_scenarios: (rec.alternatives || []).map(function (o) {
+        return { shipping_method: o.shipping_method, last_mile_delivery: o.last_mile_delivery,
+          conservative_transit_days: o.conservative_transit_days,
+          arrival_headroom_days: o.arrival_headroom_days, risk: o.risk,
+          quantity_if_chosen: qty, counted_in_shipment_total: false,
+          carrier_ids: o.carrier_ids, carrier_selection: o.carrier_selection,
+          estimated_cost: o.estimated_cost, cost_basis: o.cost_basis };
+      })
+    };
+    out.alternative_scenario_count += t.alternative_scenarios.length;
+    if (t.recommended_method) { out.counted_quantity += qty; out.tranches_with_method++; }
+    else {
+      out.tranches_needing_review++;
+      var rr = weeklyAiPlanStr_(rec.review_reason);
+      if (rr && !seenReason[rr]) { seenReason[rr] = 1; out.review_reasons.push(rr); }
+    }
+    out.tranches.push(t);
+  });
+
+  out.status = (out.tranches.length && out.tranches_needing_review === 0) ? 'AUTO_RECOMMENDED'
+    : (out.tranches_with_method > 0 ? 'PARTIAL_MANUAL_REVIEW_REQUIRED' : 'MANUAL_REVIEW_REQUIRED');
+  return out;
+}
+
+// ================================================================================================================
+// §1/§6/§8 — THREE LAYERS, THREE VERDICTS. ONE READINESS ANSWER WAS SERVING ALL OF THEM.
+//
+// R4 returned STOP for the whole AI Plan because one lane had no Carrier Rate Card. Quantity and source were
+// correct, computed, and thrown away with the verdict. That happened because a single verdict was answering
+// three different questions owned by three different layers, and the strictest one won by default.
+//
+// They are separated here, and a consumer must switch on the one it owns:
+//
+//   recommendation_ready          Layer 1. Can we advise WHAT and HOW MUCH, from WHERE, by WHEN?
+//   supply_allocation_ready       Layer 1. Is the source split conserved and within available stock?
+//   method_status                 Layer 1. Is the transport method advisable, or does a person choose it?
+//   carrier_pricing_ready         Layer 2. Are rate cards available to compare carriers? NEVER blocks Layer 1.
+//   execution_route_materialized  can a schema-COMPLETE execution route be written right now?
+//   submit_ready                  Layer 3. The only layer permitted to refuse for incomplete mandatory fields.
+//
+// A SHARED blocker — snapshot, forecast authority, schema/runtime authority, demand mapping, quantity
+// conservation — still STOPs, because those make the numbers themselves untrustworthy. Carrier coverage does
+// not, and `carrier_coverage_is_not_a_shared_blocker` is asserted in the output so that rule is visible rather
+// than implied by its absence.
+// ================================================================================================================
+function weeklyAiPlanAdviceStatus_(input) {
+  input = input || {};
+  var sharedBlockers = (input.shared_blockers || []).slice();
+  var completeness = input.completeness || null;
+  var advice = input.method_advice || null;
+  var out = {
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R5 §1 — AI Plan / Weekly Shipping Plan / Submit are three layers with '
+      + 'three verdicts; a Carrier gap is a WARNING at layer 1 and a refusal only at layer 3',
+    shared_blockers: sharedBlockers,
+    carrier_coverage_is_not_a_shared_blocker: true,
+    supply_allocation_ready: !!(completeness && completeness.supply_allocation_conserved === true),
+    authorized_quantity: completeness ? completeness.authorized_quantity : null,
+    supply_allocated_quantity: completeness ? completeness.supply_allocated_quantity : null,
+    unresolved_supply_quantity: 0,
+    recommendation_ready: false,
+    method_status: advice ? advice.status : 'MANUAL_REVIEW_REQUIRED',
+    method_review_reasons: advice ? (advice.review_reasons || []) : [],
+    carrier_pricing_ready: input.carrier_pricing_ready === true,
+    execution_route_materialized: false,
+    execution_route_blockers: [],
+    submit_ready: false,
+    warnings: [],
+    verdict: 'STOP'
+  };
+  // Supply is UNRESOLVED only when the allocator could not source it — never when a carrier is missing.
+  var auth = Number(out.authorized_quantity);
+  var alloc = Number(out.supply_allocated_quantity);
+  out.unresolved_supply_quantity = (isFinite(auth) && isFinite(alloc)) ? (auth - alloc) : null;
+
+  // Layer 1 is ready when the numbers exist and are trustworthy. The method is a PROPERTY of the advice, not
+  // a precondition for giving it.
+  // NOTE the absent clause. An earlier draft also required the METHOD advice to have produced tranches, which
+  // quietly recreated the very coupling this round exists to remove: a scope whose transport advice could not
+  // be computed would have reported its QUANTITY advice as not ready. Layer 1's recommendation readiness is
+  // about the numbers — is the demand authorized, and is the source split conserved — and the method is a
+  // property OF the advice with a status of its own.
+  out.recommendation_ready = sharedBlockers.length === 0
+    && out.supply_allocation_ready === true
+    && isFinite(auth) && auth > 0;
+  // The advice authority being unavailable is a real fact and is reported, but it is a METHOD-layer fact.
+  if (!advice || advice.authority === 'KMMR_UNAVAILABLE' || advice.authority === 'METHOD_ADVICE_AUTHORITY_UNAVAILABLE') {
+    out.method_status = 'MANUAL_REVIEW_REQUIRED';
+    out.method_review_reasons = ['METHOD_ADVICE_AUTHORITY_UNAVAILABLE'];
+  }
+
+  // Materialization is stricter and stays fail-closed: a route is written only when it is schema-COMPLETE.
+  var routeCount = completeness ? Number(completeness.route_count) : 0;
+  out.execution_route_materialized = out.recommendation_ready && isFinite(routeCount) && routeCount > 0
+    && completeness.fully_routable === true;
+  if (!out.execution_route_materialized && completeness) {
+    out.execution_route_blockers = (completeness.blocker_tokens || []).slice();
+  }
+  // Layer 3. Named here so its condition is visible, and deliberately NOT satisfied by advice alone.
+  out.submit_ready = out.execution_route_materialized === true && out.carrier_pricing_ready === true;
+
+  if (advice && advice.status !== 'AUTO_RECOMMENDED') {
+    out.warnings.push('METHOD_' + advice.status + (advice.review_reasons.length ? ': ' + advice.review_reasons.join(',') : ''));
+  }
+  if (!out.carrier_pricing_ready) {
+    out.warnings.push('CARRIER_PRICING_UNAVAILABLE: no usable carrier_rate_cards row covers this lane. This is a '
+      + 'Weekly Shipping Plan concern (carrier comparison) and does NOT block the AI Plan recommendation.');
+  }
+  if (!out.execution_route_materialized) {
+    out.warnings.push('EXECUTION_ROUTE_NOT_MATERIALIZED: '
+      + (out.execution_route_blockers.join(',') || 'route identity incomplete')
+      + '. Quantity and source advice stand; no partial execution route is written.');
+  }
+  if (advice && advice.buffer && advice.buffer.provisional === true) {
+    out.warnings.push('TRANSIT_BUFFER_PROVISIONAL: safety used a provisional ' + advice.buffer.days
+      + '-day operational buffer pending business confirmation. Activation must not proceed on a provisional buffer.');
+  }
+  out.verdict = sharedBlockers.length ? 'STOP'
+    : (out.recommendation_ready
+        ? (out.warnings.length ? 'RECOMMENDATION_READY_WITH_WARNINGS' : 'RECOMMENDATION_READY')
+        : 'STOP');
   return out;
 }
 
@@ -888,8 +1080,32 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     });
     // §4 — supply-allocation safety and route COMPLETENESS are recorded as the different things they are.
     // `conserved` alone let a run report a conserved plan that had routed none of the demand.
+    // §9 (R5) — and the per-scope ADVICE beside them, so a batch can report which scope carries which
+    // warning instead of collapsing every scope into one outcome.
+    var _advice = (typeof weeklyAiPlanMethodAdvice_ === 'function')
+      ? weeklyAiPlanMethodAdvice_(byMkt[M], harvest, carriers.leadTimes, shipDate) : null;
+    var _status = (typeof weeklyAiPlanAdviceStatus_ === 'function')
+      ? weeklyAiPlanAdviceStatus_({ shared_blockers: [], completeness: plan.completeness || null,
+          method_advice: _advice,
+          carrier_pricing_ready: (function () {
+            // Layer 2 readiness for THIS scope: does any usable rate card cover any of its lanes?
+            if (typeof weeklyAiPlanCarrierReadiness_ !== 'function' || !KMWRR || typeof KMWRR.dateToOrdinal !== 'function') return false;
+            var asOf = KMWRR.dateToOrdinal(shipDate), any = false, seen = {};
+            (byMkt[M] || []).forEach(function (a) {
+              var w = (harvest.warehousesById || {})[weeklyAiPlanStr_(a.source_warehouse_id)] || null;
+              var d = a.destination || {};
+              var q = { originCountry: weeklyAiPlanStr_(w && w.country), destinationCountry: weeklyAiPlanStr_(d.country),
+                marketplace: weeklyAiPlanStr_(d.marketplace) };
+              var k = q.originCountry + '|' + q.destinationCountry + '|' + q.marketplace;
+              if (seen[k]) return; seen[k] = 1;
+              var r = weeklyAiPlanCarrierReadiness_(carriers.rateCards, carriers.leadTimes, q, asOf);
+              if (r.rate_card && r.rate_card.usable_on_lane > 0) any = true;
+            });
+            return any;
+          })() })
+      : null;
     conservationAll.push({ marketplace: M, conserved: plan.conservation.conserved,
-      completeness: plan.completeness || null });
+      completeness: plan.completeness || null, method_advice: _advice, layered_status: _status });
     plan.groups.forEach(function (g) {
       // R6F2G (C) — stamp the authoritative lineage onto the header before the atomic write. These fields are EXCLUDED
       // from the REUSE fingerprint (SAD_K2_HEADER_FP_/LINE_FP_), so a committed group still REUSEs (zero writes) here.
@@ -1052,6 +1268,52 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
   var allSuppressed = (jobStatus === 'ALL_SUPPRESSED_BY_MANUAL');
   var runSucceeded = zeroResult || allSuppressed || (anyOk && !anyFail);
 
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R5 §9 — A BATCH NEEDS THREE OUTCOMES, NOT TWO.
+  //
+  // With only SUCCESS and STOP, any scope that could not be fully routed dragged the whole batch down, and a
+  // Carrier gap on ONE lane discarded correct advice for every other scope in the run. That is the same
+  // boundary error as R4's, one level up.
+  //
+  //   SUCCESS                 every scope produced advice and nothing warned
+  //   SUCCESS_WITH_WARNINGS   every scope produced advice; at least one carries a warning (missing method
+  //                           authority, missing pricing, or a route that could not be materialized)
+  //   STOP                    a SHARED/system fault, or a scope whose numbers are untrustworthy
+  //
+  // Carrier coverage can only ever move a batch into the middle band. It is written here as an explicit list of
+  // what MAY stop a batch, so the exclusion is a rule rather than an omission.
+  var scopeWarnings = [], scopesWithWarnings = [], scopesReady = 0;
+  conservationAll.forEach(function (c) {
+    var ls = c.layered_status || null;
+    if (ls && ls.recommendation_ready === true) scopesReady++;
+    if (ls && ls.warnings && ls.warnings.length) {
+      scopesWithWarnings.push(c.marketplace);
+      ls.warnings.forEach(function (w) { scopeWarnings.push({ marketplace: c.marketplace, warning: w }); });
+    }
+  });
+  // The ONLY faults that may stop a batch. A missing rate card and a missing lead time are deliberately absent.
+  var batchStopReasons = [];
+  if (anyFail && !anyOk) batchStopReasons.push('EVERY_SCOPE_FAILED_TO_COMMIT');
+  conservationAll.forEach(function (c) {
+    if (c.conserved !== true) batchStopReasons.push('QUANTITY_CONSERVATION_FAILED:' + c.marketplace);
+  });
+  var batchVerdict = batchStopReasons.length ? 'STOP'
+    : (scopeWarnings.length ? 'SUCCESS_WITH_WARNINGS' : 'SUCCESS');
+  var batchReport = {
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R5 §9 — Carrier coverage may move a batch to SUCCESS_WITH_WARNINGS and '
+      + 'may NEVER move it to STOP; one scope\'s gap never blocks another scope',
+    verdict: batchVerdict,
+    scope_count: conservationAll.length,
+    scopes_recommendation_ready: scopesReady,
+    scopes_with_warnings: scopesWithWarnings,
+    warnings: scopeWarnings,
+    stop_reasons: batchStopReasons,
+    may_stop_a_batch: ['SNAPSHOT_UNAVAILABLE', 'FORECAST_AUTHORITY_UNRESOLVED', 'SCHEMA_OR_RUNTIME_AUTHORITY_DIVERGENCE',
+      'DEMAND_MAPPING_FAILED', 'QUANTITY_CONSERVATION_FAILED', 'EVERY_SCOPE_FAILED_TO_COMMIT'],
+    never_stops_a_batch: ['NO_TRANSIT_AUTHORITY_FOR_LANE', 'NO_CARRIER_CARD_FOR_LANE', 'CARRIER_PRICING_UNAVAILABLE',
+      'EXECUTION_ROUTE_NOT_MATERIALIZED']
+  };
+
   // §E Stage 3 steps 5-7 — EXPIRE ONLY AFTER THE CURRENT RUN IS COMMITTED AND VERIFIED. A failed or partial run
   // expires NOTHING, so the operator is never left without an active plan because a replacement half-landed.
   var lifecycle = { attempted: false, ok: null, expired_headers: 0, expired_lines: 0, reason: null, verification: null, manifest: null };
@@ -1140,7 +1402,8 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
       applied_scope: { company: scope0.company, country: scope0.country, marketplaces: appliedList }, applied_equals_requested: scopeEqual ? 'YES' : 'NO',
       groups_written: groupsWritten.length, per_group_outcome_counts: outcomeCounts, groups: groupsWritten,
       blocked_count: blockedTotal.length, blocked: blockedTotal,
-      conservation: conservationAll, skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal,
+      conservation: conservationAll, batch: batchReport,
+      skuCount: src.skuCount, unresolvedProductionNeedQty: src.unresolvedTotal,
       atomicity_note: 'Each K2 group is atomic under its own lock; the job is NOT a single all-or-nothing transaction across groups — a PARTIAL job is reported truthfully per group, and a retry REUSEs committed groups by deterministic identity (no duplicates). Superseded AI drafts are expired ONLY after this run has committed and verified.'
     },
     errors: (anyFail ? [weeklyAiPlanErr_('K2_GENERATION_PARTIAL', 'one or more K2 groups did not commit; see data.groups (per-group outcome)')] : [])

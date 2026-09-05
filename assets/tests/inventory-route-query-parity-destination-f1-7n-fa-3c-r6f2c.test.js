@@ -42,8 +42,14 @@ var eMan = KMWRR.deriveRoute({ source: { warehouse_id: 'SRC' }, destination: { k
 eq(eMan.block, 'ROUTE_AUTO_RANKING_INSUFFICIENT', 'E1 eligible-but-late method → AUTO_RANKING_INSUFFICIENT (not ROUTE_METHOD_UNRESOLVED)');
 eq(eMan.route_candidate_status, 'MANUAL_ONLY', 'E2 status MANUAL_ONLY');
 ok(eMan.manual_method_options.length === 1 && eMan.manual_method_options[0].value === 'Air', 'E3 the valid manual method is still offered');
-var eNoLane = KMWRR.deriveRoute({ source: { warehouse_id: 'SRC' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'DST' }, requiredByDate: '2026-12-31', shipDate: '2026-08-01', warehousesById: whById, rateCards: [], leadTimes: lts });
-eq(eNoLane.block, 'ROUTE_METHOD_UNRESOLVED', 'E4 truly no eligible method (empty lane) → ROUTE_METHOD_UNRESOLVED');
+// RESTATED (A2-R1-R5): the PRODUCT RULE changed. An empty rate-card set is no longer an empty CANDIDATE
+// set, because methods now come from carrier_lead_times — and `lts` here supplies them. "Truly no eligible
+// method" therefore means neither authority covers the lane, and that is what is now constructed.
+var eNoLane = KMWRR.deriveRoute({ source: { warehouse_id: 'SRC' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'DST' }, requiredByDate: '2026-12-31', shipDate: '2026-08-01', warehousesById: whById, rateCards: [], leadTimes: [] });
+eq(eNoLane.block, 'ROUTE_METHOD_UNRESOLVED', 'E4 truly no eligible method (neither authority) — ROUTE_METHOD_UNRESOLVED');
+var eTransitOnly = KMWRR.deriveRoute({ source: { warehouse_id: 'SRC' }, destination: { kind: 'WAREHOUSE', warehouse_id: 'DST' }, requiredByDate: '2026-12-31', shipDate: '2026-08-01', warehousesById: whById, rateCards: [], leadTimes: lts });
+eq(eTransitOnly.block, undefined,
+  'E4a while an empty rate-card set WITH transit authority now resolves — price is enrichment, not a gate');
 var eAi = cWh;
 eq(eAi.route_candidate_status, 'AI_RANKED', 'E5 on-time + comparable → AI_RANKED');
 ok(eAi.auto_rankable_methods.length >= 1 && eAi.expected_arrival === '2026-08-08', 'E6 AI_RANKED carries auto_rankable_methods + expected_arrival (2026-08-01 + 7d)');
