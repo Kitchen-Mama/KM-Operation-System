@@ -793,8 +793,10 @@ eq(hA.run('inventoryAiPlanActivationAllowlist_()'),
    [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }],
   'G5a and the allowlist is still the single authorized scope');
 // RESTATED (A2-R1-R6): pinned stamp literal → floor. R6 changes the census (§2/§3/§5/§6).
+// RESTATED (A2-R1-R6-R1): a pinned census build stamp. R6-R1 changes the census (§2 — it now reports the
+// PAGE's draft scope beside its own, with the reason each row falls on each side). The durable claim is a
+// FLOOR against the shared ledger.
 ok(RO.stampAtOrAfter(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5'), 'G5b census build stamp');
-// RESTATED (A2-R1-R6): pinned stamp literal → floor. R6 changes 61_ (§3/§4/§8).
 ok(RO.stampAtOrAfter(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R5'), 'G5c workspace build stamp');
 
 // ================================================================================================================

@@ -97,7 +97,21 @@ function etaEnv(leadRows, opts) {
     live: function (destCountry, route) { sb.__r = route; sb.__c = destCountry;
       return vm.runInContext('_irComputeRouteEta(__c, __r)', ctx); } };
 }
-function LEAD(method, country, avg) { return { shippingMethod: method, destinationCountry: country, avgDays: avg }; }
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §6) — THE PRODUCT RULE THIS FIXTURE ENCODES WAS SUPERSEDED.
+//
+// B6-R1 computed the expected arrival from `avg_days`. An average is the middle of a distribution: roughly
+// half of real shipments arrive after it, so presenting it as THE expected arrival gives an operator a date
+// that is a coin-flip. R6-R1 §6 requires the CONSERVATIVE arrival — `max_days`, the slowest the service is
+// known to run — and that is what the calculator now uses.
+//
+// EVERY OTHER CLAIM IN THIS SUITE IS UNCHANGED AND STILL CHECKED: the project-calendar base, the lane match,
+// the wildcard row, the absence of a prefix ladder, the structured return value, and a stored snapshot
+// outranking a live recomputation. So the fixture supplies max_days ALONGSIDE avg_days at the same number,
+// and every date this file asserts stays byte-for-byte what it was — which is the point: the restatement
+// must not quietly weaken a single one of them.
+function LEAD(method, country, avg) {
+  return { shippingMethod: method, destinationCountry: country, avgDays: avg, maxDays: avg };
+}
 var SEA_15 = LEAD('Sea', 'US', 15), EXPRESS_9 = LEAD('Sea Express', 'US', 9), AIR_5 = LEAD('Air', 'US', 5);
 
 // The project's own calendar day, computed the way the page computes it — never a literal in an assertion.
@@ -127,7 +141,7 @@ section('A — [§C] THE ETA AUTHORITY, traced by execution');
     'A2 [§C.1] read in the project timezone, not the browser one');
 
   // §C.2 — which lead-time record.
-  eq(sea.days, 15, 'A3 [§C.2] the day count is carrier_lead_times.avg_days for the matched row');
+  eq(sea.days, 15, 'A3 [§C.2] the day count comes from the matched carrier_lead_times row (max_days, per R6-R1 §6)');
   eq(sea.lead_key, 'Sea', 'A4 [§C.2] matched on shippingMethod + destinationCountry');
   var noCountry = etaEnv([LEAD('Sea', '', 20)]).live('US', { shipping_method: 'sea' });
   eq(noCountry.days, 20, 'A5 [§C.2] a row with no destination country is a wildcard match');
@@ -150,7 +164,12 @@ section('A — [§C] THE ETA AUTHORITY, traced by execution');
 
   // §C.6/§C.7 — where the value lives.
   ok(sea.date && /^\d{4}-\d{2}-\d{2}$/.test(sea.date), 'A13 [§C.6] the calculator returns a STRUCTURED date…');
-  ok(sea.text.indexOf(sea.date) === 0 && /est\. 15d/.test(sea.text), 'A14 [§C.7] …and the display string is derived FROM it');
+  // RESTATED (A2-R1-R6-R1 §6): the sentence changed with the number behind it. `(est. 15d)` described an
+  // AVERAGE; the figure is now the conservative one, so it reads `(latest, 15d)`. B6-R1's claim is that the
+  // display string is DERIVED FROM the structured date rather than being the only place the date exists, and
+  // that is what is asserted: the text starts with the date and carries the same day count.
+  ok(sea.text.indexOf(sea.date) === 0 && sea.text.indexOf('15d') !== -1,
+    'A14 [§C.7] …and the display string is derived FROM it');
   ok(!/String\(etaEl\.textContent/.test(PAGEC), 'A15 [§C] nothing reads the ETA back out of the rendered sentence');
   eq((PAGEC.match(/_irCarrierGet\('getCarrierLeadTimes'\)/g) || []).length, 1,
     'A16 [§C] there is exactly ONE ETA calculator — no second one was created');
@@ -248,7 +267,11 @@ section('E — [tests 1, 2, 3, 4, 19] THE PATH: render → collect → payload')
   var hydrateFn = code(extractFn(PAGE, '_hydrateAllocationDraftFromDb'));
 
   // test 19 — the displayed value and the structured value come from ONE computation.
-  ok(/var eta = _irRouteEtaFor\(destCountry, route\);/.test(renderFn), 'E1 [test 19] the render asks the single owner');
+  // RESTATED (A2-R1-R6-R1 §6): an ANCHOR moved. The call gained the ORIGIN country — without it a US→US
+  // domestic row could answer for a CN→US ocean one, and `.filter(...)[0]` made that a first-row-wins pick.
+  // The claim is unchanged: the render asks the SINGLE owner rather than computing its own.
+  ok(/var eta = _irRouteEtaFor\(destCountry, route(, originCountry)?\);/.test(renderFn),
+    'E1 [test 19] the render asks the single owner');
   ok(/data-eta="' \+ _execEsc\(eta\.date/.test(renderFn) && /_execEsc\(eta\.text\)/.test(renderFn),
     'E2 [test 19] and publishes BOTH the structured date and the text it derived — one source, two renderings');
   ok(/_irCanonicalDateOrBlank_\(etaEl\.getAttribute\('data-eta'\)\)/.test(collectFn),

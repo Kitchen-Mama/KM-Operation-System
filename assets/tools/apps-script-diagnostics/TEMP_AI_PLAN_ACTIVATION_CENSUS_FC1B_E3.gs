@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -729,6 +729,11 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
     out.total_allocated_quantity = 0;
     out.would_create_route_count = 0;
     out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
+    // §2 — and the set the PAGE would show for the same station, with the difference between the two
+    // explained row by row. `active_allocation_drafts: 0` beside two routes on screen is a scope-definition
+    // difference, never evidence that this run created something.
+    out.draft_scope_difference = (typeof CENSUS_draftScopeDifference_ === 'function')
+      ? CENSUS_draftScopeDifference_(ss, company, country, marketplace) : null;
     out.next_blocked_stage = out.next_blocked_stage || 'ALLOCATOR';
     out.verdict = 'STOP';
     out.elapsed_ms = Date.now() - t0;
@@ -1012,6 +1017,11 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
 
   // ---- what is ALREADY stored for this scope (so "would_create" is read against reality) -------------------
   out.active_allocation_drafts = CENSUS_activeDrafts_(ss, company, country, marketplace);
+  // §2 — and the set the PAGE would show for the same station, with the difference between the two
+  // explained row by row. `active_allocation_drafts: 0` beside two routes on screen is a scope-definition
+  // difference, never evidence that this run created something.
+  out.draft_scope_difference = (typeof CENSUS_draftScopeDifference_ === 'function')
+    ? CENSUS_draftScopeDifference_(ss, company, country, marketplace) : null;
 
   // ---- §F.6 — THE VERDICT. PROCEED only against a supplied expectation that the allocator actually meets. --
   var exp = args.expect;
@@ -1139,6 +1149,123 @@ function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3(args) {
 }
 
 /** Read-only: the ACTIVE allocation draft headers already stored for this scope. Identity fields only. */
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §2 — THE CENSUS SAID ZERO AND THE SCREEN SHOWED TWO, AND BOTH WERE HONEST.
+//
+// They were answering different questions, and neither said which. `CENSUS_activeDrafts_` and the page's
+// `_hydrateAllocationDraftFromDb` select from the same table with FOUR differences, any ONE of which produces
+// "census 0, screen 2":
+//
+//   STATUS       census: status === 'active', exactly.
+//                page:   status !== 'cancelled' && status !== 'submitted'.
+//                So a row whose status is 'draft', 'expired' or BLANK is invisible to the census and visible
+//                on screen. A blank status is the likeliest: nothing forces that column to be populated.
+//
+//   COMPANY      census: an exact match, and a row with a BLANK company is EXCLUDED.
+//                page:   a blank company on either side used to match anything (fixed this round, §1).
+//                So a legacy header carrying no company is invisible to the census and was visible on screen.
+//
+//   MARKETPLACE  census: `destination_marketplace` — the route's DESTINATION.
+//                page:   `marketplace` — the SCOPE the plan belongs to.
+//                Two different columns. A warehouse-destination route (CN -> AMZLG&S IN) has a blank
+//                destination_marketplace and a populated scope marketplace.
+//
+//   SOURCE       census: a live read of the sheet. page: the workspace read-model.
+//
+// Rather than argue about which definition is right, the census now reports BOTH SETS and the difference
+// between them, with the reason each row falls on each side. One run answers "where did those two routes come
+// from" instead of leaving two counts that disagree and no way to reconcile them.
+//
+// It remains strictly READ-ONLY: this reads the same rows the rest of the file reads and writes nothing.
+// ================================================================================================================
+function CENSUS_uiVisibleDrafts_(ss, company, country, marketplace) {
+  var rows = CENSUS_rows_(ss, 'shipping_allocation_drafts');
+  var lines = CENSUS_rows_(ss, 'shipping_allocation_draft_lines');
+  var out = [];
+  rows.forEach(function (r) {
+    var st = CENSUS_low_(r.status);
+    if (st === 'cancelled' || st === 'submitted') return;
+    if (country && CENSUS_low_(r.country) !== CENSUS_low_(country)) return;
+    // The SCOPE marketplace, which is the column the page filters on.
+    if (marketplace && CENSUS_low_(r.marketplace) !== CENSUS_low_(marketplace)) return;
+    var id = CENSUS_str_(r.allocation_draft_id);
+    var mine = lines.filter(function (l) { return CENSUS_str_(l.allocation_draft_id) === id; });
+    // WHY this row is or is not in the census's own set. An operator reading a difference needs the reason,
+    // not the fact of the difference.
+    var whyNotInCensusSet = [];
+    if (st !== 'active') whyNotInCensusSet.push('STATUS_IS_' + (st ? st.toUpperCase() : 'BLANK') + '_NOT_ACTIVE');
+    if (company && CENSUS_low_(r.company) !== CENSUS_low_(company)) {
+      whyNotInCensusSet.push(CENSUS_str_(r.company) ? 'COMPANY_IS_' + CENSUS_str_(r.company) : 'COMPANY_IS_BLANK');
+    }
+    if (marketplace && CENSUS_str_(r.destination_marketplace)
+      && CENSUS_low_(r.destination_marketplace) !== CENSUS_low_(marketplace)) {
+      whyNotInCensusSet.push('DESTINATION_MARKETPLACE_IS_' + CENSUS_str_(r.destination_marketplace));
+    }
+    out.push({
+      allocation_draft_id: id,
+      company: CENSUS_str_(r.company),
+      country: CENSUS_str_(r.country),
+      scope_marketplace: CENSUS_str_(r.marketplace),
+      destination_marketplace: CENSUS_str_(r.destination_marketplace),
+      destination_warehouse_id: CENSUS_str_(r.destination_warehouse_id),
+      source_warehouse_id: CENSUS_str_(r.source_warehouse_id),
+      method: CENSUS_str_(r.recommended_shipping_method),
+      last_mile_delivery: CENSUS_str_(r.recommended_last_mile_delivery),
+      status: CENSUS_str_(r.status),
+      planning_cycle: CENSUS_str_(r.planning_cycle),
+      source_page: CENSUS_str_(r.source_page),
+      // The provenance §2 asks for, read verbatim. `generation_run_id` is the single field that separates an
+      // AI-produced header from one a person composed: only a generation stamps it.
+      generation_type: CENSUS_str_(r.generation_type || r.source_type),
+      generation_run_id: CENSUS_str_(r.generation_run_id),
+      calculation_run_id: CENSUS_str_(r.calculation_run_id),
+      created_by: CENSUS_str_(r.created_by),
+      created_at: CENSUS_str_(r.created_at),
+      updated_by: CENSUS_str_(r.updated_by),
+      updated_at: CENSUS_str_(r.updated_at),
+      draft_version: CENSUS_str_(r.draft_version),
+      line_count: mine.length,
+      line_ids: mine.map(function (l) { return CENSUS_str_(l.allocation_draft_line_id); }),
+      skus: mine.map(function (l) { return CENSUS_str_(l.sku); }),
+      quantity: mine.reduce(function (t, l) {
+        return t + CENSUS_num_(l.planned_qty != null && l.planned_qty !== '' ? l.planned_qty : l.recommended_qty); }, 0),
+      // The classification §2 asks for, decided from stored fields only — never guessed from what is on screen.
+      classified_as: CENSUS_str_(r.generation_run_id)
+        ? 'STORED_AI_DRAFT (carries a generation_run_id)'
+        : 'STORED_MANUAL_DRAFT (no generation_run_id — composed by a person, or written before generations were stamped)',
+      in_census_active_set: whyNotInCensusSet.length === 0,
+      why_not_in_census_active_set: whyNotInCensusSet
+    });
+  });
+  return out;
+}
+
+// The two definitions, side by side, so the difference is a REPORT rather than an argument.
+function CENSUS_draftScopeDifference_(ss, company, country, marketplace) {
+  var strict = CENSUS_activeDrafts_(ss, company, country, marketplace);
+  var uiVisible = CENSUS_uiVisibleDrafts_(ss, company, country, marketplace);
+  var strictIds = {};
+  strict.forEach(function (d) { strictIds[d.allocation_draft_id] = 1; });
+  var onlyUi = uiVisible.filter(function (d) { return !strictIds[d.allocation_draft_id]; });
+  return {
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §2 — the census and the page select from one table under two '
+      + 'definitions. Both are reported, with the reason each row falls on each side.',
+    census_definition: 'status === active AND company exact (blank excluded) AND country exact AND '
+      + 'destination_marketplace matches when present',
+    ui_definition: 'status not cancelled/submitted AND country exact AND scope marketplace exact AND '
+      + '(from R6-R1) company exact, blank on either side excluded',
+    census_active_count: strict.length,
+    ui_visible_count: uiVisible.length,
+    visible_on_screen_but_not_in_census: onlyUi.length,
+    rows_only_the_ui_shows: onlyUi,
+    ui_visible_rows: uiVisible,
+    total_quantity_ui_visible: uiVisible.reduce(function (t, d) { return t + CENSUS_num_(d.quantity); }, 0),
+    read_this_first: 'A row listed under rows_only_the_ui_shows was ALREADY in the database before this run. '
+      + 'Its why_not_in_census_active_set names the exact column that hides it from the strict set. None of '
+      + 'these rows was created by the run that produced this report — the census constructs no writer.'
+  };
+}
+
 function CENSUS_activeDrafts_(ss, company, country, marketplace) {
   var rows = CENSUS_rows_(ss, 'shipping_allocation_drafts'), o = [];
   rows.forEach(function (r) {

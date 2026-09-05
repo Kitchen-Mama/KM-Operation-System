@@ -587,12 +587,22 @@ mut('M7  summing duplicate physical rows is detected', function () {
   var out = runHydrate({ sourceMode: 'WORKSPACE', headers: [H4], lines: dupes });
   return out.draft.bySku['CO1100-R'].length === 1 && out.draft.bySku['CO1100-R'][0].planned_qty === 800;
 });
-// M8 — scope separation removed, so JP bleeds into US. Removing ONLY the country/marketplace test is an
-// EQUIVALENT mutant: H3 is ResTW, so the company test still excludes it and nothing changes. The mutant has to
-// remove the whole scope predicate, which is what a real "we relaxed the filter" regression would look like.
+// M8 — scope separation removed, so JP bleeds into US.
+//
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §1): the mutation TARGET moved because the filter did. The company
+// clause used to be permissive (`!ctx.company || !d.company || …`), so a blank company on either side matched
+// anything; it is now exact and fail-closed, and the station predicate is a separate first pass. What the
+// mutant has to remove is that station pass — which is exactly what a real "we relaxed the filter" regression
+// looks like. The CLAIM is unchanged: another country's rows must never reach this station.
 mut('M8  losing the scope filter is detected', function () {
-  var out = runHydrateWith(mutateHydrate(/return lo\(d\.country\)[\s\S]{0,240}?lo\(d\.status\) !== 'cancelled'/,
-    "return lo(d.status) !== 'cancelled'"));
+  // The scope is now decided in TWO passes — the station (country + marketplace + terminal status), then the
+  // company, exactly so the second can be exact and fail-closed. A mutant that removes only one of them is
+  // EQUIVALENT: H3 is ResTW/JP, so either pass alone still excludes it. "We relaxed the filter" means both,
+  // and that is what is replaced — the whole scope computation, down to a bare terminal-status test.
+  var out = runHydrateWith(mutateHydrate(
+    /var _inStation = drafts\.filter\([\s\S]*?\.sort\(function \(a, b\) \{ return String\(a\.allocationDraftId \|\| ''\) < String\(b\.allocationDraftId \|\| ''\) \? -1 : 1; \}\);/,
+    "var _scopeCompany = 'x'; var _inStation = drafts; var activeDrafts = drafts.filter(function (d) {" +
+    " return lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted'; });"));
   return Object.keys(out.draft.bySku).indexOf('JP-SKU-1') !== -1;
 });
 // M9 — the default editor seeded from a fabricated number while the recommendation is still pending.

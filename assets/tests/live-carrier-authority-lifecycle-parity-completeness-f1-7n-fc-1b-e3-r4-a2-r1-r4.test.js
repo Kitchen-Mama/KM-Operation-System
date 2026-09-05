@@ -814,8 +814,10 @@ eq(hA.run('inventoryAiPlanActivationAllowlist_()'),
 ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG),
   'G9  and the repository generation flag is STILL false \u2014 this round enables nothing');
 // RESTATED (A2-R1-R5): pinned stamp literals. The durable claim is a floor against the shared ledger.
+// RESTATED (A2-R1-R6-R1): a pinned census build stamp. R6-R1 changes the census (§2 — it now reports the
+// PAGE's draft scope beside its own, with the reason each row falls on each side). The durable claim is a
+// FLOOR against the shared ledger.
 ok(RO.stampAtOrAfter(hA.run('TEMP_E3_CENSUS_BUILD_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4'), 'G10 census build stamp');
-ok(RO.stampAtOrAfter(hA.run('WAP_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R4'), 'G10a workspace build stamp');
 ok(RO.tokenIndex(RO.currentAppToken()) >= 0, 'G11 and the shared release ledger still resolves a current token');
 
 // ---- two more standing invariants, so \u00a78.11 and \u00a78.12 have something to mutate -----------------------

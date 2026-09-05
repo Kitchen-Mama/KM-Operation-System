@@ -84,8 +84,14 @@ section('D. Method loading — in-flight dedupe + LOADING/READY/EMPTY_CONFIGURAT
   Promise.all([p1, p2]).then(function () {
     var r = reg.resolve(SCOPE, ROUTE);
     eq(r.status, 'READY', 'D3. after resolve → READY');
-    eq(_execMethodOptionsHtml(r, ''), '<option value="">Method…</option><option value="SEA">Sea</option>',
-      'D3. READY with matches → real options');
+    // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §5): an ANCHOR moved. The option now carries the last mile it
+    // belongs to (and where the method offers several, the fact that it does), so a byte-exact string forbids
+    // every future attribute without protecting anything more. The claim is about CONTENT: exactly the
+    // methods the catalogue holds, under their canonical values, and no fabricated one.
+    var _d3html = _execMethodOptionsHtml(r, '');
+    ok(/<option value="">Method/.test(_d3html), 'D3. READY with matches → a real, unselected placeholder');
+    ok(/<option value="SEA"[^>]*>Sea<\/option>/.test(_d3html), 'D3a. and the SEA option the catalogue holds');
+    eq((_d3html.match(/<option /g) || []).length, 2, 'D3b0. and nothing else — no method is invented');
     // an EMPTY CONFIGURATION is a different state from a failure, and says so
     var rEmpty = reg.resolve(SCOPE, { originCountry: 'CN', destinationCountry: 'JP', marketplace: 'Amazon' });
     eq(rEmpty.status, 'EMPTY_CONFIGURATION', 'D3b. a route nothing covers → EMPTY_CONFIGURATION (only AFTER the lookup completes)');
@@ -100,7 +106,16 @@ section('D. Method loading — in-flight dedupe + LOADING/READY/EMPTY_CONFIGURAT
     // names the configuration reason, and it never borrows the vocabulary of a read failure. A byte-exact
     // match would have forbidden the extra word without protecting anything more.
     var emptyHtml = _execMethodOptionsHtml(rEmpty, '');
-    ok(emptyHtml.indexOf('No eligible method configured for this route') !== -1,
+    // RESTATED (A2-R1-R6-R1 §4) — THE PRODUCT RULE MOVED, AND SO DID THE SENTENCE.
+    //
+    // Until this round the only authority consulted was `carrier_rate_cards`, so an empty answer could only
+    // mean "add a rate card". The registry now also reads `carrier_lead_times`, and when BOTH are silent it
+    // says so — because sending an operator to add a rate card for a lane whose real gap is a missing
+    // lead-time row is sending them to the wrong table.
+    //
+    // What R6E owns is unchanged and is what is asserted: this is a CONFIGURATION answer, it names WHICH
+    // one, and it never borrows the vocabulary of a read failure.
+    ok(/No (eligible method configured for this route|shipping service is configured for this lane)/.test(emptyHtml),
       'D3c. an empty configuration still reads as a CONFIGURATION answer');
     ok(emptyHtml.indexOf('NO_RATE_CARD_MATCHES_THIS_ROUTE') !== -1,
       'D3c1. and now names WHICH configuration answer it is');

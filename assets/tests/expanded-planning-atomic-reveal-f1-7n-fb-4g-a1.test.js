@@ -474,8 +474,15 @@ section('§H.18–§H.19 / §F — WHAT THE SHELL SHOWS AND WHAT IT REFUSES');
 // ================================================================================================================
 (function () {
   var esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
-  var f = new Function('escapeReplenHtml', '_irRevealExecSkeletonHtml_',
-    extractFn(PAGE, '_irExecPlanCardInnerHtml_') + ' return _irExecPlanCardInnerHtml_;')(esc, function () { return '<div class="ir-skel ir-skel--routes"></div>'; });
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §1): an ANCHOR moved. The Execution Plan card now asks
+  // _irScopeCompanyBadgeHtml_ which company it belongs to — a page showing US / Amazon / CO1100-R cannot
+  // otherwise tell KM's Amazon station from ResUS's. A harness that builds the card from a lifted function
+  // has to supply it, and it is supplied as a STUB here on purpose: this section is about what the SHELL
+  // shows and what it refuses, and the badge's own content is asserted where it belongs.
+  var f = new Function('escapeReplenHtml', '_irRevealExecSkeletonHtml_', '_irScopeCompanyBadgeHtml_',
+    extractFn(PAGE, '_irExecPlanCardInnerHtml_') + ' return _irExecPlanCardInnerHtml_;')(
+      esc, function () { return '<div class="ir-skel ir-skel--routes"></div>'; },
+      function () { return '<span class="ir-scope-company">ResUS</span>'; });
   var pending = f('CO1100-R', false), ready = f('CO1100-R', true);
   ok(/ir-skel--routes/.test(pending), 'F1  the pending Execution Plan shows a route-row-shaped skeleton');
   ok(/disabled/.test(pending) && !/addExecutionRoute/.test(pending), 'H18 + Add Route is DISABLED and unwired while the panel is a shell');

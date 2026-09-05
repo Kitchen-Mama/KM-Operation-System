@@ -243,7 +243,7 @@ function makeWorld(opts) {
     // composer instead of the deleted message.
     extractFn(PAGE, '_execDropPristineComposers_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
-    extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
     extractFn(PAGE, '_irSuggestedQtyState_'),
     extractFn(PAGE, '_irSuggestedQtyNumber_'),
@@ -587,7 +587,15 @@ ok(/window\.KM\.DB\.generateWeeklyAiPlanDraft = function/.test(DBAPI), 'G9  the 
 ok(/if \(action === 'weeklyAiPlan\.generate'\)/.test(code(G01)), 'G10 the router action EXISTS');
 ok(/function handleGenerateWeeklyAiPlanDraft_/.test(G61), 'G11 the server handler EXISTS');
 ok(/KMWRR\.buildK2GenerationPlan/.test(G61), 'G12 and it calls the authoritative route planner');
-eq(/RECOMMENDATION|EXECUTION PLAN was not changed/.test(aiFn), true,
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §7) — THE SENTENCE MOVED, THE PROPERTY DID NOT.
+//
+// This is the flag-OFF notice, which is the path the live button actually takes (R6 rewrote the
+// DB-generation path, and the flag being false makes that one unreachable). It was announcing a completed
+// advice run by its internal reason code, so §7 reordered it: the outcome first, the flag second.
+//
+// The property this assertion protects is that BOTH HALVES are still reported — what ran, and what did not
+// and why — and it is matched on the clauses rather than on one round's phrasing.
+eq(/AI recommendations refreshed|Execution Plans are UNCHANGED/.test(aiFn), true,
   'G13 so the click is category 3: it recalculates the RECOMMENDATION only');
 
 // ================================================================================================================
@@ -667,9 +675,22 @@ ok(/EXECUTION_MATERIALIZATION_UNAVAILABLE/.test(aiFn),
 // RESTATED (F1-7N-FC-1B-E3): "was not changed" became "was NOT changed" when the notice was promoted from
 // 'info' to 'warn' - "your plan was not written" is not neutral news to someone who pressed Generate. The
 // property is unchanged and is matched case-insensitively on the clause rather than on its capitalisation.
-ok(/RECOMMENDATIONS regenerated/.test(aiFn) && /EXECUTION PLAN was not changed/i.test(aiFn),
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §7) — THE SENTENCE MOVED, THE PROPERTY DID NOT.
+//
+// This is the flag-OFF notice, which is the path the live button actually takes (R6 rewrote the
+// DB-generation path, and the flag being false makes that one unreachable). It was announcing a completed
+// advice run by its internal reason code, so §7 reordered it: the outcome first, the flag second.
+//
+// The property this assertion protects is that BOTH HALVES are still reported — what ran, and what did not
+// and why — and it is matched on the clauses rather than on one round's phrasing.
+ok(/AI recommendations refreshed for/.test(aiFn) && /Execution Plans are UNCHANGED/i.test(aiFn),
   'I2  saying separately which half ran and which did not');
-ok(/use \+ Add Route/.test(aiFn), 'I3  and telling the operator what they CAN do instead');
+// RESTATED (A2-R1-R6-R1 §7): the ACTION changed with the sentence. "Use + Add Route" was the only thing an
+// operator could do when the notice carried no advice; the run now points them at the SKU's own row, where
+// §3's reconciliation states the recommended quantity, the source, and what is already planned. That is a
+// better next step, and it is still an explicit one — which is all E2 asked for.
+ok(/Expand a SKU to see its recommended quantity/.test(aiFn),
+  'I3  and telling the operator what they CAN do instead');
 ok(!/Recommendations regenerated for ' \+ Object\.keys\(_irRecoByKey \|\| \{\}\)\.length \+ ' SKU\(s\) from the materialized gap already loaded\. Nothing was written to the database\.'/.test(aiFn),
   'I4  the old message, which read as "the plan ran and produced nothing", is gone');
 // the paths that were already truthful stay truthful

@@ -1087,7 +1087,11 @@ function runAssertions() {
   eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'K3  the page carries it');
   eq(IX['assets/js/utils/inventory-compat.js'], RO.currentAppToken(),
     'K3a and so does inventory-compat.js — it is where IRRouteUiState lives');
-  eq(RO.currentIrCssToken(), 'irroutehint-20260903', 'K4  the stylesheet family ALSO rotates: .ir-route-hint is new');
+  // RESTATED (A2-R1-R6-R1): R2's claim is that ITS round rotated the family — a fact about R2, and silent
+  // about later rounds. R6-R1 rotates it again for three rules that did not exist. The durable form is a
+  // floor; K4b below already states the strictly-after relation R2 actually owns.
+  ok(RO.irCssTokenAtOrAfter(RO.currentIrCssToken(), 'irroutehint-20260903'),
+    'K4  the stylesheet family rotates when the file changes: .ir-route-hint was new in R2');
   eq(IX[RO.IR_CSS_FILE], RO.currentIrCssToken(), 'K4a and index.html carries the stylesheet\'s own token');
   ok(RO.irCssTokenAtOrAfter('irroutehint-20260903', 'irexecrow-20260903'), 'K4b strictly after E3\'s');
   ok(RO.stampAtOrAfter('F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R1'), 'K5  the owner stamp is recorded, after R1\'s');

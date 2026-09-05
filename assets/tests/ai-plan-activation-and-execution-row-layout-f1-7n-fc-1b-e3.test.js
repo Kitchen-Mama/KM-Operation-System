@@ -282,7 +282,7 @@ function renderRow(route) {
   var src = [
     extractFn(PAGE, '_irComposerKind_'),
     extractFn(PAGE, '_irRouteProvenanceOf_'),
-    extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_renderManualComposer_'),
     'return { route: _renderExecutionRoute, composer: _renderManualComposer_ };'
   ].join('\n');
@@ -772,20 +772,39 @@ flow.settle().then(function () {
   off.api.click();
   off.flush();
   eq(off.genCalls.length, 0, 'D15 flag OFF → zero requests, zero writes (§E.2)');
-  ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(off.notice().innerHTML),
-    'D16 and the reason is NAMED to the operator (§J.13)');
-  ok(/RECOMMENDATIONS regenerated/.test(off.notice().innerHTML) && /EXECUTION PLAN was NOT changed/.test(off.notice().innerHTML),
-    'D16a with the two halves reported separately');
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §7) — THE PRODUCT RULE MOVED: AN OUTCOME MAY NOT LEAD WITH ITS
+  // OWN REASON CODE.
+  //
+  // E3's finding was right and is kept: the two halves must be reported separately, so an operator is never
+  // left to read "recommendations were regenerated and nothing was written" as "the plan ran and produced
+  // nothing". What R6-R1 changes is the ORDER and the VOCABULARY. This is the path a hundred-SKU run actually
+  // takes — R6 rewrote the DB-generation path, which the flag being OFF makes unreachable — and it was
+  // announcing a completed advice run by its internal reason code.
+  //
+  // So: the run's success is stated first, the Execution Plans are said to be unchanged, and the flag is named
+  // second as the reason no route was written. All three are still asserted; only the leading sentence moved.
+  ok(/refreshed for \d+ SKU\(s\)/.test(off.notice().innerHTML)
+    && /COMPLETED/.test(off.notice().innerHTML) && /not a failure/.test(off.notice().innerHTML),
+    'D16 the advice half is reported as the completed run it was');
+  ok(/Execution Plans are UNCHANGED/.test(off.notice().innerHTML)
+    && /nothing was written to the database/.test(off.notice().innerHTML),
+    'D16a with the two halves reported separately — advice done, nothing written');
+  ok(/feature flag/.test(off.notice().innerHTML) && /OFF/.test(off.notice().innerHTML),
+    'D16a1 and the flag is NAMED as the reason, after the outcome rather than in place of it');
   ok(/replen-ai-plan-result--warn/.test(off.notice().className),
     'D16b as a WARNING — "your plan was not written" is not neutral news to someone who pressed Generate');
   ok(!/__spinner/.test(off.notice().innerHTML), 'D16c spinner cleared on this terminal path too');
-  ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(off.status().textContent),
+  ok(/refreshed for \d+ SKU\(s\)/.test(off.status().textContent)
+    && /unchanged/i.test(off.status().textContent),
     'D16d and it stays in the Execution Plan area');
 
   var unavail = mkWorld({ flagOn: true, apiConfigured: false });
   unavail.api.click();
   unavail.flush();
-  ok(/EXECUTION_MATERIALIZATION_UNAVAILABLE/.test(unavail.notice().innerHTML),
+  // The two reasons stay distinguishable, which is the whole of D17's claim. They no longer share the word
+  // EXECUTION_MATERIALIZATION_*; the sentences differ instead, and the difference is what is asserted.
+  ok(/does not expose the AI Plan generation action/.test(unavail.notice().innerHTML)
+    && !/feature flag/.test(unavail.notice().innerHTML),
     'D17 an unreachable writer is a DIFFERENT stated reason from a disabled flag');
 
   // §J.12 — a zero-result run

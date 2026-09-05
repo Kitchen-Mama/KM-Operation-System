@@ -237,7 +237,14 @@ var ROUND_TOKENS = [
   // telling an operator that a run which produced a complete 760-unit recommendation found no eligible
   // route and that nothing supports a shipment - the exact sentence this round exists to stop, served
   // from cache against a server that is already sending the recommendation.
-  'fc1be3r4a2r1r6-advicecontract-20260905'
+  'fc1be3r4a2r1r6-advicecontract-20260905',
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 - live UI scope identity, manual method authority, advice/plan reconciliation.
+  // pages/inventory-replenishment.js changes on the path the LIVE button actually takes: the hydrate stops
+  // adopting another company's stored route, the Method dropdown resolves from carrier_lead_times, the arrival
+  // becomes the conservative one, and the hundred-SKU notice stops leading with an internal reason code. A
+  // browser holding the R6 copy keeps every one of those, and the first of them is a cross-company Execution
+  // Plan - which is the one defect on this page that can reach Submit.
+  'fc1be3r4a2r1r6r1-scopeidentity-20260905'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -360,7 +367,13 @@ var IR_CSS_TOKEN_SERIES = [
   // NEW, so a browser serving the cached stylesheet renders the sentence with no rule at all: no background, no
   // border, and inheriting whatever the card gives it. That is precisely how `.replen-ai-plan-result` came to
   // be invisible for two rounds, so the family rotates rather than trusting the page's rotation to cover it.
-  'irroutehint-20260903'
+  'irroutehint-20260903',
+  // R6-R1 - `.ir-scope-company`, `.ir-plan-recon` and `.replen-card__method-cell`. All three rules are NEW, so
+  // a browser serving the cached stylesheet renders the company badge as bare text, the advice/plan
+  // reconciliation as three spans running together, and stacks nothing in the Method cell. The reconciliation
+  // is the one that matters: its whole job is to stop 760 and 520 being read as one number, and an unstyled
+  // run-together version does the opposite.
+  'irscopecompany-20260905'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //
@@ -377,7 +390,12 @@ var METHOD_REGISTRY_TOKEN_SERIES = [
   'fb4ga1r1-method-registry-20260902',
   // R4-A1: the carrier catalogue stops asking for all twenty-one tables and names the two it reads. A cached
   // copy keeps issuing the full read, which is the cost this round removed.
-  'fc1be3r4a1-method-registry-20260904'
+  'fc1be3r4a1-method-registry-20260904',
+  // R6-R1: the registry stops treating a PRICE LIST as the authority on whether a shipping method exists. It
+  // already loaded carrier_lead_times and never read them; it now derives service profiles from them when no
+  // rate card covers the lane. A cached copy keeps answering 'No eligible method' for every route whose lane
+  // has transit data and no price - which is the reported defect itself.
+  'fc1be3r4a2r1r6r1-method-registry-20260905'
 ];
 var METHOD_REGISTRY_FILE = 'assets/js/core/method-registry.js';
 function currentMethodRegistryToken() { return METHOD_REGISTRY_TOKEN_SERIES[METHOD_REGISTRY_TOKEN_SERIES.length - 1]; }
@@ -507,7 +525,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+)
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

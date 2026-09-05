@@ -109,6 +109,114 @@
     return out;
   }
 
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §4/§5 — THE COUPLING R5 REMOVED FROM THE SERVER WAS STILL HERE.
+  //
+  // R5 established that a PRICE LIST does not decide whether a shipping method exists — `carrier_lead_times`
+  // does — and broke that coupling in the AI Plan's route derivation. This registry is the OTHER consumer, and
+  // it was never touched. `methodsForRoute` reads `carrier_rate_cards` and nothing else, so the manual
+  // Execution Plan composer kept the old rule: no rate card on the lane, no method in the dropdown.
+  //
+  // That is what an operator sees as "No eligible method" on a CN -> US route that has perfectly good transit
+  // data. The registry has been LOADING `carrier_lead_times` into its cache all along (see adopt/ensureLoaded)
+  // and never reading them.
+  //
+  // MARKETPLACE IS NOT A JOIN KEY HERE, and cannot become one by accident: `carrier_lead_times` has no
+  // marketplace column, so the DTO has no such field and there is nothing to match on. CN->US/Amazon and
+  // CN->US/Shopify share one transit authority by construction, not by a rule someone remembered to write.
+  //
+  // WHAT A PROFILE IS. One (origin, destination, method, last-mile) service, folded from every carrier row that
+  // offers it. The fold is CONSERVATIVE — slowest max, slowest avg, fastest min — so a single fast carrier can
+  // never make a service look quicker than the slowest operator who actually runs it. Carrier ids travel as
+  // PROVENANCE only; `carrierSelection` is DEFERRED_TO_WEEKLY_SHIPPING_PLAN on every profile, because a
+  // carrier_id sitting in a lead-time row is evidence that a service exists, never a commercial decision.
+  // ==============================================================================================================
+  var DEFERRED_ = 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN';
+
+  // A blank is not a zero. `Number('')` and `Number(null)` are both 0 and both pass isFinite, so a lead-time
+  // row with an empty max_days would normalise to a ZERO-DAY transit and present itself as the fastest service
+  // on the lane. The DTO already yields '' for a blank; this refuses anything that is not a real number.
+  function days(v) {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'string' && v.trim() === '') return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+
+  // Lane match on COUNTRY only. A blank on the row is a wildcard; a blank on the route does not constrain.
+  // There is deliberately no marketplace clause and no rate-card clause.
+  function leadTimeOnLane(lt, route) {
+    route = route || {};
+    var ro = lo(lt.originCountry), rd = lo(lt.destinationCountry);
+    var qo = lo(route.originCountry), qd = lo(route.destinationCountry);
+    if (ro && qo && ro !== qo) return false;
+    if (rd && qd && rd !== qd) return false;
+    return !!str(lt.shippingMethod);
+  }
+
+  // Distinct service profiles for one lane, conservatively folded. Sorted deterministically — never row order.
+  function serviceProfilesForRoute(leadTimes, route) {
+    var byKey = {}, order = [];
+    (leadTimes || []).forEach(function (lt) {
+      if (!lt || !leadTimeOnLane(lt, route)) return;
+      var method = str(lt.shippingMethod);
+      var lastMile = str(lt.lastMileDelivery);
+      var k = method.toLowerCase() + '|' + lastMile.toLowerCase();
+      if (!byKey[k]) {
+        byKey[k] = { profileKey: k, value: method, method: method, lastMileDelivery: lastMile,
+          label: method + (lastMile ? ' + ' + lastMile : ''),
+          minDays: null, avgDays: null, maxDays: null,
+          carrierIds: [], carrierSelection: DEFERRED_, source: 'CARRIER_LEAD_TIMES' };
+        order.push(k);
+      }
+      var p = byKey[k];
+      var mn = days(lt.minDays), av = days(lt.avgDays), mx = days(lt.maxDays);
+      // SLOWEST max and SLOWEST avg; FASTEST min. min is display-only and is never a safety input.
+      if (mx !== null) p.maxDays = (p.maxDays === null) ? mx : Math.max(p.maxDays, mx);
+      if (av !== null) p.avgDays = (p.avgDays === null) ? av : Math.max(p.avgDays, av);
+      if (mn !== null) p.minDays = (p.minDays === null) ? mn : Math.min(p.minDays, mn);
+      var cid = str(lt.carrierId);
+      if (cid && p.carrierIds.indexOf(cid) === -1) p.carrierIds.push(cid);
+    });
+    var out = order.map(function (k) { var p = byKey[k]; p.carrierIds.sort(); return p; });
+    out.sort(function (a, b) { return a.label.localeCompare(b.label) || a.profileKey.localeCompare(b.profileKey); });
+    return out;
+  }
+
+  // The profiles as METHOD options, in the shape the picker already consumes. `value` stays the canonical
+  // shipping_method token — the same thing the header persists and the same thing IRService.matches compares —
+  // so nothing about persistence or selection changes. The LAST-MILE variants a method offers travel WITH it
+  // rather than being flattened away: see the note on lastMileOptions below.
+  function methodsFromLeadTimes(leadTimes, route) {
+    var profiles = serviceProfilesForRoute(leadTimes, route);
+    var byMethod = {}, order = [];
+    profiles.forEach(function (p) {
+      var k = p.method.toLowerCase();
+      if (!byMethod[k]) {
+        byMethod[k] = { value: p.method, label: p.method, carrierId: '',
+          source: 'CARRIER_LEAD_TIMES', carrierSelection: DEFERRED_,
+          // EVERY last-mile this method actually runs on this lane. A method with two of them is a REAL
+          // ambiguity the route row must resolve, and it is reported rather than resolved by taking the first.
+          lastMileOptions: [], profiles: [], carrierIds: [] };
+        order.push(k);
+      }
+      var m = byMethod[k];
+      m.profiles.push(p);
+      if (p.lastMileDelivery && m.lastMileOptions.indexOf(p.lastMileDelivery) === -1) m.lastMileOptions.push(p.lastMileDelivery);
+      p.carrierIds.forEach(function (c) { if (m.carrierIds.indexOf(c) === -1) m.carrierIds.push(c); });
+    });
+    return order.map(function (k) {
+      var m = byMethod[k];
+      m.lastMileOptions.sort();
+      m.carrierIds.sort();
+      // The single unambiguous last mile, when there is exactly one. Null when a person must choose, which the
+      // page turns into a second control rather than a silent default.
+      m.lastMileDelivery = (m.lastMileOptions.length === 1) ? m.lastMileOptions[0] : '';
+      m.lastMileAmbiguous = m.lastMileOptions.length > 1;
+      return m;
+    }).sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
+  }
+
   // §C — when nothing matches, say exactly WHY, and what row would fix it. This is a configuration answer, not
   // an error: the catalogue was read successfully and is being reported faithfully.
   function configurationDiagnosis(cards, route, today) {
@@ -238,10 +346,30 @@
         return { status: STATUS.IDLE, methods: [], scope_key: key };
       }
       var methods = methodsForRoute(entry.cards, route, today);
-      if (methods.length) return { status: STATUS.READY, methods: methods, scope_key: key };
+      if (methods.length) {
+        return { status: STATUS.READY, methods: methods, method_source: 'CARRIER_RATE_CARDS', scope_key: key };
+      }
+      // §4 — NO RATE CARD IS NOT NO METHOD. The price list is silent about this lane; the transit authority
+      // may not be, and it is the one that decides whether a service exists. Consulted only as a FALLBACK, so
+      // a lane that does have rate cards keeps its existing answer byte-for-byte.
+      var viaTransit = methodsFromLeadTimes(entry.leadTimes, route);
+      if (viaTransit.length) {
+        return { status: STATUS.READY, methods: viaTransit, method_source: 'CARRIER_LEAD_TIMES',
+          // Layer 2's decision, and it has not been made. Stated on the resolution so no consumer has to
+          // infer it from the absence of a carrier id.
+          carrier_selection: DEFERRED_,
+          pricing: { available: false, reason: 'NO_RATE_CARD_FOR_LANE',
+            note: 'Carrier comparison and price belong to the Weekly Shipping Plan. Method and transit time '
+              + 'come from carrier_lead_times and do not depend on a rate card.' },
+          scope_key: key };
+      }
       return {
         status: STATUS.EMPTY_CONFIGURATION, methods: [], scope_key: key,
-        configuration: configurationDiagnosis(entry.cards, route, today)
+        configuration: configurationDiagnosis(entry.cards, route, today),
+        // Both authorities were consulted and both are silent. Saying so keeps an operator from adding a rate
+        // card to fix a missing lead time, which is the wrong table and would not help.
+        transit_authority: { checked: true, profiles: 0, missing_table: 'carrier_lead_times',
+          note: 'No carrier_lead_times row covers this lane either, so no service is known to run it.' }
       };
     }
 
@@ -288,13 +416,16 @@
       invalidate: function () { cache = {}; errors = {}; },
       // pure helpers (exported for direct unit testing)
       scopeKey: scopeKey, rateCardUsable: rateCardUsable, methodsForRoute: methodsForRoute,
+      serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
       configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection
     };
   }
 
   var API = {
     STATUS: STATUS, create: create, scopeKey: scopeKey, rateCardUsable: rateCardUsable,
-    methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection
+    methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection,
+    serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
+    DEFERRED_CARRIER_SELECTION: DEFERRED_
   };
 
   if (root) {

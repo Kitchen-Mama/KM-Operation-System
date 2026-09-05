@@ -2308,17 +2308,117 @@ function _irRevealExecSkeletonHtml_() {
 }
 // ONE builder for the Execution Plan card, used by the pending paint and the reveal paint alike, so the two
 // cannot drift into different markup.
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §1 — THE SCOPE WAS COMPLETE AND THE SCREEN NEVER SAID SO.
+//
+// `_replenSelectedScope` derives company from the selected marketplace_id, the option values are marketplace_ids
+// and distinct ids are never collapsed — so the page HAS always known which company it is looking at. What it
+// never did was SAY. An operator reading "US / Amazon / CO1100-R" cannot tell KM's Amazon station from ResUS's,
+// and the option label only appends the company when two labels collide EXACTLY, which is a coincidence and not
+// a guarantee.
+//
+// §1 requires the company to be displayed or unambiguously identifiable before Submit. It is displayed.
+// ================================================================================================================
+function _irScopeCompanyBadgeHtml_() {
+    var sc = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
+    var company = String((sc && sc.company) || '').trim();
+    if (!company) {
+        // Fail-closed and SAID so: an unknown company is the state in which the hydrate refuses to adopt any
+        // stored route, and an operator must be able to see that rather than wonder where their plan went.
+        return '<span class="ir-scope-company ir-scope-company--unknown" title="This marketplace record carries no company, '
+            + 'so no stored Execution Plan can be attributed to it. Nothing was loaded and nothing was changed.">'
+            + 'Company unknown</span>';
+    }
+    return '<span class="ir-scope-company" title="Company of the selected marketplace. Recommendation, Execution Plan, '
+        + 'edit, delete and Submit all operate on company + country + marketplace + SKU.">' + escapeReplenHtml(company) + '</span>';
+}
+window._irScopeCompanyBadgeHtml_ = _irScopeCompanyBadgeHtml_;
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §3 — 760 AND 520 WERE ON THE SAME SCREEN WITH NOTHING SAYING HOW THEY RELATE.
+//
+// The live screen showed a recommendation of 760 above an Execution Plan totalling 520, and every reading an
+// operator could take from that pair was wrong in a different direction: that the 760 had been applied, that the
+// 520 was what the AI had just produced, or that the two agreed and only a carrier was missing. None is true.
+// The 520 is what was ALREADY there, the 760 is ADVICE, and 240 units of the advice are not in any route.
+//
+// So the relationship is stated as an arithmetic identity rather than left to be inferred from two numbers in
+// different cards. `remaining` is never auto-planned: materialization is flag-gated and off, and a difference
+// an operator has not acted on is a decision they still have to make.
+// ================================================================================================================
+function _irAdviceVsPlan_(sku) {
+    function n(v) { var x = Number(v); return isFinite(x) ? x : 0; }
+    var dto = (typeof _irRecoByKey !== 'undefined' && _irRecoByKey) ? _irRecoByKey[String(sku)] : null;
+    var recommended = dto ? n(dto.suggestedQty) : null;
+    var planned = 0, routeCount = 0;
+    var list = (typeof document !== 'undefined' && document.getElementById)
+        ? document.getElementById('shipping-methods-' + sku) : null;
+    if (list && list.querySelectorAll) {
+        list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+            if (typeof _irIsComposerEl_ === 'function' && _irIsComposerEl_(rowEl)) return;   // a half-typed row is not a plan
+            var q = rowEl.querySelector('[data-field="qty"]');
+            planned += n(q && q.value);
+            routeCount++;
+        });
+    }
+    var remaining = (recommended === null) ? null : Math.max(0, recommended - planned);
+    var over = (recommended === null) ? null : Math.max(0, planned - recommended);
+    return {
+        recommended_quantity: recommended,
+        currently_planned_quantity: planned,
+        route_count: routeCount,
+        remaining_unplanned: remaining,
+        over_planned: over,
+        // Whether THIS run changed the stored plan. It is false on every flag-off run by construction: nothing
+        // on that path writes. Stated as a fact rather than as reassurance.
+        execution_plan_changed_by_this_run: (typeof window !== 'undefined' && window._irExecPlanChangedByLastRun === true),
+        materialization_enabled: (typeof _irInventoryAiPlanDbGenerationEnabled_ === 'function')
+            ? _irInventoryAiPlanDbGenerationEnabled_() : false
+    };
+}
+window._irAdviceVsPlan_ = _irAdviceVsPlan_;
+
+// The reconciliation strip. Rendered under the Execution Plan total, where the two numbers actually meet.
+function _irAdviceVsPlanHtml_(sku) {
+    var r = _irAdviceVsPlan_(sku);
+    if (r.recommended_quantity === null) return '';
+    var diffTxt;
+    if (r.over_planned > 0) {
+        diffTxt = '<span class="ir-plan-recon__over">' + r.over_planned + ' over-planned</span>';
+    } else if (r.remaining_unplanned > 0) {
+        diffTxt = '<span class="ir-plan-recon__remaining">' + r.remaining_unplanned + ' not yet in a route</span>';
+    } else {
+        diffTxt = '<span class="ir-plan-recon__matched">fully planned</span>';
+    }
+    return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status">'
+        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">AI recommends</span>'
+        + '<strong>' + r.recommended_quantity + '</strong></span>'
+        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
+        + '<strong>' + r.currently_planned_quantity + '</strong>'
+        + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span></span>'
+        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Difference</span>' + diffTxt + '</span>'
+        + '<span class="ir-plan-recon__note">The recommendation has NOT been applied. These route(s) were already here'
+        + ' and this run did not change them'
+        + (r.remaining_unplanned > 0 ? '; the difference is not added automatically.' : '.') + '</span>'
+        + '</div>';
+}
+window._irAdviceVsPlanHtml_ = _irAdviceVsPlanHtml_;
+
 function _irExecPlanCardInnerHtml_(sku, ready) {
     var addBtn = ready
         ? '<button class="replen-card__add-route-btn" onclick="addExecutionRoute(event, \'' + sku + '\')" onmousedown="event.stopPropagation()">+ Add Route</button>'
         : '<button class="replen-card__add-route-btn" disabled aria-disabled="true" title="Loading the Execution Plan">+ Add Route</button>';
-    var head = '<div class="replen-card__title-row"><h4 class="replen-card__title" style="margin: 0;">Execution Plan</h4>' + addBtn + '</div>'
+    // R6-R1 §3 — CURRENT Execution Plan. The word is load-bearing: it is what is stored now, not what the AI
+    // just proposed, and the two were being read as one thing.
+    var head = '<div class="replen-card__title-row"><h4 class="replen-card__title" style="margin: 0;">Current Execution Plan</h4>'
+        + _irScopeCompanyBadgeHtml_() + addBtn + '</div>'
         + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Expected Arrival</span><span>Action</span></div>';
     if (!ready) return head + _irRevealExecSkeletonHtml_();
     return head
         + '<div id="shipping-methods-' + sku + '" class="exec-routes-list"></div>'
         + '<div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">'
-        + '<span class="replen-card__summary-label">Total</span><span class="replen-card__summary-value" id="allocation-total-' + sku + '">0</span></div>'
+        + '<span class="replen-card__summary-label">Currently planned total</span><span class="replen-card__summary-value" id="allocation-total-' + sku + '">0</span></div>'
+        + '<div id="ir-plan-recon-host-' + sku + '"></div>'
         + '<div class="replen-card__hint" id="allocation-hint-' + sku + '" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>'
         + '<div class="replen-card__carton-error" id="allocation-carton-error-' + sku + '" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>'
         // F1-7N-FC-1B-E3-R2 §D.1/§D.2 — THE NEUTRAL SURFACE, AND IT IS ITS OWN ELEMENT.
@@ -5481,11 +5581,52 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
         // This used to sort by updated_at and take [0]. Under the frozen K2 contract one station legitimately holds
         // several shipment groups — that is what a second route IS — so taking one header silently dropped every
         // other route on refresh and made a two-route plan look like a one-route plan.
-        var activeDrafts = drafts.filter(function (d) {
+        // ==========================================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §1 — COMPANY WAS THE ONE AXIS THIS FILTER TREATED AS OPTIONAL.
+        //
+        // The clause was `(!ctx.company || !d.company || lo(d.company) === lo(ctx.company))`. Read it as three
+        // separate permissions, because that is how it behaves:
+        //
+        //   !ctx.company  — if the PAGE does not know its company, every draft in the country/marketplace
+        //                   matches. `_replenSelectedScope` derives company from the selected marketplace_id,
+        //                   so a marketplaces row with a blank company makes this true.
+        //   !d.company    — if the STORED ROW does not name a company, it matches EVERY company. One legacy
+        //                   header with a blank company is adopted into whichever company is on screen.
+        //
+        // KM/US/Amazon and ResUS/US/Amazon are two real, separate stations. Country and marketplace cannot tell
+        // them apart, and company was the axis that could — made optional in both directions. This is the one
+        // filter on the page that could put another company's route into this company's Execution Plan, and
+        // everything downstream (edit, delete, Submit) then operates on it under the wrong scope.
+        //
+        // It is now EXACT and FAIL-CLOSED: an unknown page company hydrates nothing, and a row that names no
+        // company is never adopted. Both exclusions are COUNTED and reported rather than silently applied — a
+        // route that vanishes without explanation is the failure mode this page keeps being asked about.
+        // ==========================================================================================================
+        var _scopeCompany = lo(ctx.company);
+        var _excludedNoRowCompany = 0, _excludedOtherCompany = 0;
+        var _inStation = drafts.filter(function (d) {
             return lo(d.country) === lo(ctx.country) && lo(d.marketplace) === lo(ctx.marketplace) &&
-                (!ctx.company || !d.company || lo(d.company) === lo(ctx.company)) &&
                 lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted';
+        });
+        var activeDrafts = _inStation.filter(function (d) {
+            if (!_scopeCompany) return false;                    // the page does not know whose plan this is
+            if (!lo(d.company)) { _excludedNoRowCompany++; return false; }
+            if (lo(d.company) !== _scopeCompany) { _excludedOtherCompany++; return false; }
+            return true;
         }).sort(function (a, b) { return String(a.allocationDraftId || '') < String(b.allocationDraftId || '') ? -1 : 1; });
+        // Published so a diagnostic (and §2's provenance report) can state WHY a row on the sheet is not on the
+        // screen, instead of leaving an operator to compare two counts that disagree.
+        window._irHydrateScopeAudit = {
+            at: new Date().toISOString(),
+            scope: { company: ctx.company || '', country: ctx.country || '', marketplace: ctx.marketplace || '' },
+            scope_company_known: !!_scopeCompany,
+            in_station_before_company_filter: _inStation.length,
+            hydrated: activeDrafts.length,
+            excluded_row_has_no_company: _excludedNoRowCompany,
+            excluded_row_belongs_to_another_company: _excludedOtherCompany,
+            rule: 'company + country + marketplace, all three EXACT. A blank on either side is never a wildcard.'
+        };
+        if (!_scopeCompany) return false;
         if (myToken !== _replenHydrateToken) return false;   // a newer context request superseded this one
         if (!activeDrafts.length) return false;
 
@@ -5976,6 +6117,10 @@ function _saveAllocationDraftFromDom(sku) {
         // four-field completeness gate below — a truthy "any intent" check is NOT enough (§4).
         var row = {
             shipping_method: method,
+            // R6-R1 §5 — collected from whichever control the row rendered: a picker when the method is
+            // ambiguous, a hidden field carrying the single value when it is not. Blank stays blank; nothing
+            // is invented, and nothing is written into a field that is not its own.
+            last_mile_delivery: fieldVal('last_mile_delivery'),
             qty: qty,                              // = planned_qty (canonical)
             planned_qty: qty,
             source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
@@ -6209,6 +6354,13 @@ function updateShippingAllocationTotal(sku) {
 
     if (totalSpan) totalSpan.textContent = total;
 
+    // R6-R1 §3 — the reconciliation is repainted wherever the planned total moves, so "AI recommends 760 /
+    // currently planned 520 / 240 not yet in a route" can never drift out of step with the number above it.
+    try {
+        var _reconHost = document.getElementById('ir-plan-recon-host-' + sku);
+        if (_reconHost && typeof _irAdviceVsPlanHtml_ === 'function') _reconHost.innerHTML = _irAdviceVsPlanHtml_(sku);
+    } catch (_eRecon) {}
+
     // Live carton-multiple validation (inline red text under the allocation block).
     validateAllocationCartons(sku);
 
@@ -6300,6 +6452,38 @@ function _execRateCardMethods(originCountry, destCountry, marketplace) {
 // missing rate card are different problems with different fixes, so they can no longer share a sentence — and a
 // genuine empty configuration is never reported as a transport failure.
 // `resolution` is the registry's own answer; the legacy (methods, selected) call shape is still accepted.
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §5 — WHERE THE LAST MILE HAD NOWHERE TO GO.
+//
+// The diagnosis §5 asks for, stated plainly: the ROUTE SCHEMA can hold it. `recommended_last_mile_delivery` is a
+// real column on shipping_allocation_drafts, the K2 header builder writes it, and ricK4GroupKey_ counts it as a
+// route-identity dimension. What could not hold it was the ROUTE ROW IN THIS PAGE, which has five controls —
+// From, To, Qty, Method, ETA — and no sixth. So a manual route saved from here has always written a BLANK
+// last mile, and two services that differ only in their last mile collapsed to one identity.
+//
+// That is a silent drop, and §5 forbids both silent dropping and stuffing the value into a field that is not
+// its own. So it gets its own control, in the Method cell rather than in a new grid column (a new column would
+// mean a CSS layout change this round has no measurements for), and it appears ONLY when there is a real
+// choice to make: a method offering exactly one last mile carries it invisibly on the option, and a method
+// offering two or more renders the picker instead of choosing for the operator.
+// ================================================================================================================
+function _execLastMileOptionsHtml(methods, selectedMethod, selectedLastMile) {
+    var svc = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
+        ? window.IRService.matches
+        : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
+    var m = null;
+    (methods || []).forEach(function (x) { if (!m && svc(selectedMethod, x.value)) m = x; });
+    if (!m || !m.lastMileAmbiguous) return '';
+    var sel = String(selectedLastMile == null ? '' : selectedLastMile).trim().toLowerCase();
+    var opts = '<option value="">Last mile…</option>';
+    (m.lastMileOptions || []).forEach(function (lm) {
+        opts += '<option value="' + _execEsc(lm) + '"' + (sel === String(lm).toLowerCase() ? ' selected' : '') +
+            '>' + _execEsc(lm) + '</option>';
+    });
+    return opts;
+}
+window._execLastMileOptionsHtml = _execLastMileOptionsHtml;
+
 function _execMethodOptionsHtml(resolution, selected) {
     var res = (resolution && resolution.status) ? resolution
         : { status: (resolution && resolution.length) ? 'READY' : 'EMPTY_CONFIGURATION', methods: resolution || [] };
@@ -6322,6 +6506,18 @@ function _execMethodOptionsHtml(resolution, selected) {
         // owners, so the reason token is shown. The full proposed row stays on the resolution object for the
         // diagnostic surfaces; a <select> option is not the place for it.
         var cfgReason = (res.configuration && res.configuration.reason) || '';
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §4 — NAME THE TABLE THAT IS ACTUALLY MISSING.
+        //
+        // Until this round the only authority consulted was `carrier_rate_cards`, so every empty answer read
+        // as "add a rate card" — and on a lane whose real gap is a missing `carrier_lead_times` row that
+        // sends an operator to the wrong table, where the row they add will not help. Both authorities are
+        // consulted now, and the sentence says which one is silent.
+        var _ta = res.transit_authority;
+        if (_ta && _ta.checked === true) {
+            return '<option value="">No shipping service is configured for this lane' +
+                (cfgReason && cfgReason !== 'RESOLVED' ? (' (' + _execEsc(cfgReason) + ')') : '') +
+                ' — carrier_lead_times has no row for it either</option>';
+        }
         return '<option value="">No eligible method configured for this route' +
             (cfgReason && cfgReason !== 'RESOLVED' ? (' (' + _execEsc(cfgReason) + ')') : '') + '</option>';
     }
@@ -6336,13 +6532,26 @@ function _execMethodOptionsHtml(resolution, selected) {
     // IRService.matches is the shared identity test: exact text first, then canonical identity through the
     // mirror of 69_ ricCanonicalService_. An UNRECOGNISED spelling matches nothing but itself, so an unknown
     // service can never quietly select the first option, and `sea` can never answer for `sea_express`.
+    // R6-R1 §5 — THE LAST MILE TRAVELS WITH THE OPTION.
+    //
+    // `sea + truck` and `sea + parcel` are two different services with two different transit times, and
+    // `recommended_last_mile_delivery` is a real header column AND a K4 route-identity dimension — so losing
+    // it here does not merely lose a label, it merges two distinct routes into one identity. The option
+    // carries the last mile it belongs to, and where a method offers more than one the row renders a second
+    // control rather than picking the first (see _execLastMileOptionsHtml).
     var svc = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
         ? window.IRService.matches
         : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
     var html = '<option value="">Method…</option>';
     methods.forEach(function (m) {
         var sel = svc(selected, m.value) ? ' selected' : '';
-        html += '<option value="' + _execEsc(m.value) + '"' + sel + '>' + _execEsc(m.label) + '</option>';
+        var lmList = (m.lastMileOptions || []).join(',');
+        html += '<option value="' + _execEsc(m.value) + '"' + sel +
+            ' data-last-mile="' + _execEsc(m.lastMileDelivery || '') + '"' +
+            ' data-last-mile-options="' + _execEsc(lmList) + '"' +
+            ' data-method-source="' + _execEsc(m.source || 'CARRIER_RATE_CARDS') + '"' +
+            ' data-carrier-selection="' + _execEsc(m.carrierSelection || '') + '"' +
+            '>' + _execEsc(m.label) + '</option>';
     });
     return html;
 }
@@ -6516,7 +6725,7 @@ window._irCanonicalDateOrBlank_ = _irCanonicalDateOrBlank_;
 //
 // So the calculation now yields the DATE, and the display string is derived FROM it. There is still exactly
 // one calculator; what changed is that its answer is structured.
-function _irComputeRouteEta(destCountry, route) {
+function _irComputeRouteEta(destCountry, route, originCountry) {
     var method = route && route.shipping_method;
     var none = { text: '—', available: false, date: '', days: null, lead_key: '', source: 'NONE' };
     if (!method) return none;
@@ -6526,17 +6735,71 @@ function _irComputeRouteEta(destCountry, route) {
     if (!key) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: '', source: 'NO_LEAD_KEY' };
     var rows = _irCarrierGet('getCarrierLeadTimes');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
     function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    // ==========================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §6 — THE ARRIVAL WAS THE AVERAGE, AND THE LANE WAS HALF A LANE.
+    //
+    // Two things were wrong with the same three lines.
+    //
+    // (1) THE LANE. The filter matched `destinationCountry` and never `originCountry`, so a US -> US domestic
+    //     row and a CN -> US ocean row were both "a US destination" and either could answer for the other.
+    //     With `.filter(...)[0]` deciding it, the answer was whichever row happened to come first out of the
+    //     sheet — a first-row-wins pick, on a number an operator plans a shipment around.
+    //
+    // (2) THE NUMBER. It used `avg_days`. An average is the middle of a distribution: roughly half of real
+    //     shipments arrive AFTER it. Presenting that as the expected arrival tells an operator a date that is
+    //     a coin-flip, and every downstream safety judgement inherits the optimism. The conservative arrival
+    //     is `max_days` — the slowest the service is known to run — and that is what is shown.
+    //
+    // THE 7-DAY BUFFER IS NOT ADDED HERE, DELIBERATELY. It is operational slack the AI Plan uses to decide
+    // whether a method is SAFE; it is not part of any carrier's transit commitment, and adding it to a
+    // displayed arrival would present our own caution as the carrier's promise. Safety judgement and quoted
+    // transit are different claims and stay in different places.
+    //
+    // A BLANK IS NOT A ZERO. `Number('')` is 0 and passes isFinite, so an empty max_days would render as an
+    // arrival of TODAY — the fastest service on the lane, arriving before it ships. Absence is checked before
+    // any coercion, and a row with no usable number simply does not answer.
+    // ==========================================================================================================
+    function nDays(v) {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string' && v.trim() === '') return null;
+        var n = Number(v);
+        return isFinite(n) ? n : null;
+    }
     var matches = rows.filter(function (r) {
-        return lo(r.shippingMethod) === lo(key) &&
-            (!destCountry || !r.destinationCountry || lo(r.destinationCountry) === lo(destCountry));
+        if (lo(r.shippingMethod) !== lo(key)) return false;
+        // A blank on the row is a wildcard; a blank on the query does not constrain. Marketplace is not an
+        // axis here and never was — carrier_lead_times has no such column.
+        if (originCountry && r.originCountry && lo(r.originCountry) !== lo(originCountry)) return false;
+        if (destCountry && r.destinationCountry && lo(r.destinationCountry) !== lo(destCountry)) return false;
+        return true;
     });
-    // Prefer a row that actually carries avg_days.
-    var withAvg = matches.filter(function (r) { return r.avgDays !== '' && r.avgDays != null && !isNaN(r.avgDays); })[0];
+    // Fold CONSERVATIVELY across every carrier that runs this service on this lane: the slowest max. One fast
+    // operator must not make the service look quicker than the slowest one who actually runs it.
+    var maxDays = null, minDays = null, avgDays = null;
+    matches.forEach(function (r) {
+        var mx = nDays(r.maxDays), mn = nDays(r.minDays), av = nDays(r.avgDays);
+        if (mx !== null) maxDays = (maxDays === null) ? mx : Math.max(maxDays, mx);
+        if (mn !== null) minDays = (minDays === null) ? mn : Math.min(minDays, mn);
+        if (av !== null) avgDays = (avgDays === null) ? av : Math.max(avgDays, av);
+    });
     // §D.10 — no exact lead time = blank and an explicit unavailable state. No date is guessed.
-    if (!withAvg) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: key, source: 'NO_LEAD_TIME' };
-    var days = Math.round(parseFloat(withAvg.avgDays));
+    if (maxDays === null) {
+        return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: key,
+            min_days: minDays, avg_days: avgDays, max_days: null,
+            source: matches.length ? 'NO_USABLE_MAX_DAYS' : 'NO_LEAD_TIME' };
+    }
+    var days = Math.round(maxDays);
     var iso = _irIsoPlusDays_(_irProjectCalendarDay_(), days);
-    return { text: iso + ' (est. ' + days + 'd)', available: true, date: iso, days: days, lead_key: key, source: 'COMPUTED' };
+    var earliest = (minDays === null) ? '' : _irIsoPlusDays_(_irProjectCalendarDay_(), Math.round(minDays));
+    return { text: iso + ' (latest, ' + days + 'd)', available: true, date: iso, days: days, lead_key: key,
+        min_days: minDays, avg_days: avgDays, max_days: maxDays,
+        earliest_date: earliest,
+        // The range an operator plans against, and the basis of the single date shown.
+        range_text: earliest ? (earliest + ' \u2013 ' + iso) : iso,
+        basis: 'MAX_DAYS_CONSERVATIVE',
+        buffer_excluded_note: 'The 7-day operational buffer is a safety input for the AI Plan and is NOT part '
+            + 'of this transit time. It is never added to a displayed arrival.',
+        source: 'COMPUTED' };
 }
 
 // F1-7N-FB-4F-B6-R1 §D.5/§D.6 — THE SINGLE OWNER OF "WHICH ETA DOES THIS ROUTE SHOW?".
@@ -6550,7 +6813,7 @@ function _irComputeRouteEta(destCountry, route) {
 // route (service is a K4 identity dimension), so the snapshot no longer describes it and the live figure
 // takes over. Changing the method does not edit the stored value — the stored row keeps its own date until a
 // save replaces it.
-function _irRouteEtaFor(destCountry, route) {
+function _irRouteEtaFor(destCountry, route, originCountry) {
     route = route || {};
     var snapshot = _irCanonicalDateOrBlank_(route.expected_arrival);
     if (snapshot) {
@@ -6564,7 +6827,7 @@ function _irRouteEtaFor(destCountry, route) {
             return { text: snapshot, available: true, date: snapshot, days: null, lead_key: nowKey, source: 'PERSISTED' };
         }
     }
-    return _irComputeRouteEta(destCountry, route);
+    return _irComputeRouteEta(destCountry, route, originCountry);
 }
 window._irRouteEtaFor = _irRouteEtaFor;
 
@@ -6582,11 +6845,20 @@ function _irUpdateRouteEtas(sku) {
         // not a user edit. It must therefore never replace a PERSISTED snapshot with a freshly computed figure:
         // doing so would make a saved commitment drift every time the lead-time table changed. The row's own
         // stored value is carried on the cell, so the shared owner can make the same decision it makes at render.
+        // R6-R1 §6 — the ORIGIN half of the lane, read from the row's own From selection exactly as the
+        // method refresh above reads it. Without it a US -> US domestic row could answer for a CN -> US
+        // ocean one, and whichever came first out of the sheet would win.
+        var _fromEl = rowEl.querySelector('[data-field="source_warehouse_id"]');
+        var _originCountry = '';
+        if (_fromEl && _fromEl.options && _fromEl.selectedIndex >= 0) {
+            var _fopt = _fromEl.options[_fromEl.selectedIndex];
+            _originCountry = _fopt ? String(_fopt.getAttribute('data-wh-country') || '').trim() : '';
+        }
         var eta = _irRouteEtaFor(destCountry, {
             shipping_method: method,
             expected_arrival: cell.getAttribute('data-eta-persisted') || '',
             expected_arrival_basis: cell.getAttribute('data-eta-basis') || ''
-        });
+        }, _originCountry);
         cell.textContent = eta.text;
         cell.setAttribute('data-eta', eta.date || '');
         cell.setAttribute('data-eta-source', eta.source || '');
@@ -6919,7 +7191,9 @@ function _renderExecutionRoute(sku, route) {
     var destCountry = '';
     try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
     if (!destCountry) destCountry = scope.country;   // Amazon dest country comes from Site/Marketplace context
-    var eta = _irRouteEtaFor(destCountry, route);
+    // R6-R1 §6 — the ETA is computed BELOW, once the From warehouse (and therefore the origin country) is
+    // resolved. It used to be computed here, before anything knew where the shipment starts, so the lookup
+    // matched on destination alone and a domestic row could answer for an international one.
     // Warehouse picker candidates for the current scope + the saved (or name-resolved) selections.
     var cand = _execWarehouseCandidates();
     var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
@@ -6939,11 +7213,25 @@ function _renderExecutionRoute(sku, route) {
     // destination country + marketplace. No hardcoded fallback.
     var fromWh = cand.from.filter(function (w) { return String(w.warehouseId) === String(fromSelId); })[0];
     var originCountry = fromWh ? fromWh.country : '';
+    var eta = _irRouteEtaFor(destCountry, route, originCountry);
     var toWh = cand.to.filter(function (w) { return !w.logicalDestination && String(w.warehouseId) === String(toSelId); })[0];
     var _mres = _execResolveMethods(_execMethodRouteCtx(originCountry, destCountry, scope.marketplace,
         fromSelId || '', toWh ? (toWh.warehouseCode || '') : ''));
     var methods = _mres.methods || [];
     var methodOpts = _execMethodOptionsHtml(_mres, route.shipping_method);
+    // R6-R1 §5 — the last mile that belongs to the chosen method. `_lmOpts` is non-empty ONLY when the
+    // method genuinely runs on more than one; `_lmSingle` is the unambiguous value, which is still CARRIED
+    // rather than dropped — a blank last mile on a saved route is what merged two distinct K4 identities.
+    var _lmOpts = _execLastMileOptionsHtml(methods, route.shipping_method, route.last_mile_delivery);
+    var _lmSingle = (function () {
+        var svcEq = (window.IRService && window.IRService.matches) ? window.IRService.matches
+            : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
+        var hit = null;
+        methods.forEach(function (m) { if (!hit && svcEq(route.shipping_method, m.value)) hit = m; });
+        // A PERSISTED value always wins over a freshly derived one: it is what the route was saved as, and
+        // a later edit to the carrier tables must not silently rewrite a commitment already made.
+        return String(route.last_mile_delivery || (hit ? (hit.lastMileDelivery || '') : '') || '').trim();
+    })();
     // F1-7N-FC-1B-E2 §D.1-§D.3 — A METHOD CANNOT BE OFFERED FOR A ROUTE THAT DOES NOT EXIST YET.
     //
     // Until BOTH From and To are chosen there is no lane to look a carrier up for, so the Method select stays
@@ -6994,7 +7282,15 @@ function _renderExecutionRoute(sku, route) {
         (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" aria-label="Qty" title="Qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
+        // R6-R1 §5 — the Method cell holds the SERVICE, and a service is (method, last mile). The second
+        // control appears only when the chosen method actually runs on more than one last mile; otherwise the
+        // single value rides invisibly on the option and is collected from the hidden field beside it.
+        '<span class="replen-card__method-cell">' +
         '<select class="replen-card__select" data-field="shipping_method" aria-label="Method" title="' + (methodDisabled ? 'Choose From and To first' : 'Method') + '" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        (_lmOpts
+            ? '<select class="replen-card__select replen-card__select--lastmile" data-field="last_mile_delivery" aria-label="Last mile" title="Last mile" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()">' + _lmOpts + '</select>'
+            : '<input type="hidden" data-field="last_mile_delivery" value="' + _execEsc(_lmSingle) + '">') +
+        '</span>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
@@ -9300,15 +9596,40 @@ function _irAiPlanRun_(scope, btn) {
     var _matReason = !_irAiPlanDbGenEligible_()
         ? 'EXECUTION_MATERIALIZATION_UNAVAILABLE'
         : 'EXECUTION_MATERIALIZATION_NOT_ENABLED';
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §7 — THIS IS THE SENTENCE THE LIVE BUTTON PRODUCES, AND IT LED WITH A CODE.
+    //
+    // MEASURED, and it corrects an assumption the previous round made: R6 rewrote the notice on the
+    // DB-GENERATION path, which is only reachable when the materialization flag is ON. The flag is OFF, so the
+    // live click has never reached a line of it. THIS is the path a hundred-SKU run actually takes, and it was
+    // still saying "RECOMMENDATIONS regenerated ... EXECUTION_MATERIALIZATION_NOT_ENABLED" — an outcome
+    // announced by its internal reason code.
+    //
+    // What the run genuinely did: it refreshed the advice for every SKU in the scope and changed nothing. That
+    // is a COMPLETE, SUCCESSFUL answer, and the wording now says so first and names the flag second.
+    //
+    // ONE COUNT, AND IT IS THE BATCH'S. A single SKU's suggested quantity is a per-SKU fact and belongs in that
+    // SKU's expanded row, where the reconciliation strip states it beside what is currently planned. Putting it
+    // in a batch notice would present one SKU's number as the hundred-SKU total, so no per-SKU quantity appears
+    // here at all — not a smaller one, none.
+    // ============================================================================================================
+    var _needsMethod = 0;
+    try {
+        Object.keys(_irRecoByKey || {}).forEach(function (k) {
+            var d = _irRecoByKey[k];
+            if (d && Number(d.suggestedQty) > 0) _needsMethod++;
+        });
+    } catch (_eNm) { _needsMethod = 0; }
     return _irAiPlanTerminal_('warn',
-        'RECOMMENDATIONS regenerated for ' + _nReco + ' SKU(s) from the materialized gap already loaded.' +
-        ' The EXECUTION PLAN was NOT changed and NOTHING was written to the database — ' + _matReason + '.' +
+        'AI recommendations refreshed for ' + _nReco + ' SKU(s). Advice generation COMPLETED — this is not a failure.' +
+        ' Your current Execution Plans are UNCHANGED and nothing was written to the database' +
         (_matReason === 'EXECUTION_MATERIALIZATION_UNAVAILABLE'
-            ? ' This deployment does not expose the AI Plan generation action, so no plan could be written.'
-            : ' Execution materialization is staged behind a backend feature flag that this deployment reports as' +
-              ' OFF, so this run could only refresh the recommendation.') +
-        ' To plan a shipment now, use + Add Route on the SKU and choose From / To / Qty / Method.',
-        'Recommendation refreshed — ' + _matReason + '. No route was written.');
+            ? ': this deployment does not expose the AI Plan generation action, so no route could be written.'
+            : ': automatic route materialization is behind a backend feature flag that this deployment reports as OFF.') +
+        (_needsMethod ? ' ' + _needsMethod + ' SKU(s) have a suggested quantity and need a route with a shipping'
+            + ' method chosen by hand.' : '') +
+        ' Expand a SKU to see its recommended quantity, its source, and how it compares with what is already planned.',
+        'AI recommendations refreshed for ' + _nReco + ' SKU(s) — Execution Plans unchanged, nothing written.');
 }
 window._irAiPlanRun_ = _irAiPlanRun_;
 // R6D1 — the DB-generation feature flag (mirrors the backend owner-of-record via KM.api). Default OFF (fail-safe: if the

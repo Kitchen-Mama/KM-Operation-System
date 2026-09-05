@@ -635,7 +635,11 @@ eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on a
 var IX = RO.parseIndexTokens(INDEX);
 eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'K3  the page carries it');
 eq(IX[RO.IR_CSS_FILE], RO.currentIrCssToken(), 'K4  the stylesheet stays on its own family token: it did NOT change');
-eq(RO.currentIrCssToken(), 'irroutehint-20260903', 'K4a which is still R2\'s');
+// RESTATED (A2-R1-R6-R1): a pinned stylesheet-token literal. R6-R1 adds `.ir-scope-company`,
+// `.ir-plan-recon` and `.replen-card__method-cell`, so the family legitimately rotated again. The
+// durable claim is a FLOOR against the shared ledger, not equality with one round's value.
+ok(RO.irCssTokenAtOrAfter(RO.currentIrCssToken(), 'irroutehint-20260903'),
+  'K4a which is at or after R2\'s');
 ok(RO.stampAtOrAfter('F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R3-R1'), 'K5  the owner stamp is recorded, after R3-R1\'s');
 
 // ================================================================================================================

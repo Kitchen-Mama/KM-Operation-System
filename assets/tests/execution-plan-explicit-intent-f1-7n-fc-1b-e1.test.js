@@ -261,7 +261,7 @@ function makeWorld(opts) {
     // composer instead of the deleted message.
     extractFn(PAGE, '_execDropPristineComposers_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
-    extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
     extractFn(PAGE, '_irSuggestedQtyState_'),
     extractFn(PAGE, '_irSuggestedQtyNumber_'),
@@ -555,7 +555,15 @@ ok(!/_renderExecutionRoute/.test(aiFn), 'E1a and creates no execution route itse
 // RESTATED (F1-7N-FC-1B-E2): the notice was rewritten because it read as "the plan ran and produced
 // nothing". The property E1 wanted — the operator is TOLD that nothing was written — is stronger now: the
 // message separates the recommendation half from the execution half and names why the second did not run.
-ok(/NOTHING was written to the database/.test(aiFn), 'E1b saying so to the operator...');
+// RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §7) — THE SENTENCE MOVED, THE PROPERTY DID NOT.
+//
+// This is the flag-OFF notice, which is the path the live button actually takes (R6 rewrote the
+// DB-generation path, and the flag being false makes that one unreachable). It was announcing a completed
+// advice run by its internal reason code, so §7 reordered it: the outcome first, the flag second.
+//
+// The property this assertion protects is that BOTH HALVES are still reported — what ran, and what did not
+// and why — and it is matched on the clauses rather than on one round's phrasing.
+ok(/nothing was written to the database/i.test(aiFn), 'E1b saying so to the operator...');
 ok(/EXECUTION_MATERIALIZATION_NOT_ENABLED/.test(aiFn), 'E1b1 ...and naming why execution did not materialize');
 var aiGen = code(extractFn(PAGE, '_irRunInventoryAiPlanGeneration_'));
 ok(/if \(cls\.ok\)/.test(aiGen), 'E2  only a SUCCESSFUL generation re-hydrates the Execution Plan');

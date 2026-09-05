@@ -1269,6 +1269,15 @@
 #ops-section .replen-card__to-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 #ops-section .replen-card__to-cell > .replen-card__select { width: 100%; }
 #ops-section .replen-card__to-cell--needs-confirm > .replen-card__select { border-color: #D97706; }
+/* F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §5 — THE METHOD CELL HOLDS A SERVICE, AND A SERVICE IS (METHOD, LAST MILE).
+   `recommended_last_mile_delivery` is a real header column and a K4 route-identity dimension, but the row had
+   no control for it, so every manually composed route saved a BLANK one and two services that differ only in
+   their last mile collapsed into one identity. The picker goes INSIDE the existing Method track — exactly the
+   pattern the To cell already uses — so the six-track layout is unchanged and no measurement is guessed at.
+   It renders only when the chosen method genuinely runs on more than one last mile. */
+#ops-section .replen-card__method-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#ops-section .replen-card__method-cell > .replen-card__select { width: 100%; }
+#ops-section .replen-card__select--lastmile { font-size: 11px; }
 #ops-section .replen-card__to-warning {
     font-size: 10px;
     line-height: 1.2;
@@ -1461,6 +1470,7 @@
 }
 /* §B.6 — the two non-control cells sit on the controls' centre line, not the row's top. */
 #ops-section .ir-exec-plan__grid .replen-card__to-cell,
+#ops-section .ir-exec-plan__grid .replen-card__method-cell,
 #ops-section .ir-exec-plan__grid .replen-card__eta { align-self: center; }
 /* Warehouse pickers (From / To) — canonical value is warehouse_id; label is warehouse_name. Disabled =
    no candidates for the current scope (empty state). Error flash = From/To collided on the same id.
@@ -2115,4 +2125,58 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ================================================================================================================
+   F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §1/§3 — THE COMPANY BADGE AND THE ADVICE/PLAN RECONCILIATION.
+
+   Two surfaces that did not exist before this round, so a browser holding the cached stylesheet renders both
+   with no rule at all — the company badge as bare inline text and the reconciliation strip as three unstyled
+   spans running together. That is the same class of defect `.replen-ai-plan-result` produced for two rounds
+   (markup shipped, stylesheet not), which is why the IR CSS token family rotates with this change.
+   ================================================================================================================ */
+#ops-section .ir-scope-company {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+    color: #1E3A8A;
+    background-color: #DBEAFE;
+    border: 1px solid #BFDBFE;
+}
+/* An unknown company is not decoration: it is the state in which no stored route can be attributed to this
+   station, so it reads as a warning rather than as a neutral chip. */
+#ops-section .ir-scope-company--unknown {
+    color: #92400E;
+    background-color: #FEF3C7;
+    border-color: #FDE68A;
+}
+#ops-section .ir-plan-recon {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 16px;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--border-light, #E2E8F0);
+    border-radius: 6px;
+    background-color: #F8FAFC;
+    font-size: 11px;
+}
+#ops-section .ir-plan-recon__cell { display: flex; align-items: baseline; gap: 4px; }
+#ops-section .ir-plan-recon__label { color: var(--text-muted, #64748B); }
+#ops-section .ir-plan-recon__sub { color: #94A3B8; }
+#ops-section .ir-plan-recon__remaining { color: #B45309; font-weight: 600; }
+#ops-section .ir-plan-recon__over { color: #B91C1C; font-weight: 600; }
+#ops-section .ir-plan-recon__matched { color: #15803D; font-weight: 600; }
+/* The note is the half that stops the two numbers being read as one: it says the recommendation was NOT
+   applied and that the difference is not added on its own. It takes the full width so it is never truncated
+   into a fragment that could be read as the opposite. */
+#ops-section .ir-plan-recon__note {
+    flex-basis: 100%;
+    color: var(--text-muted, #64748B);
+    line-height: 1.4;
 }

@@ -116,7 +116,13 @@ function optHtml(res, selected, withService) {
 }
 function ready(methods) { return { status: 'READY', methods: methods }; }
 function selectedLabel(html) {
-  var m = /<option value="[^"]*" selected>([^<]*)<\/option>/.exec(html);
+  // RESTATED (F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §5): an ANCHOR moved, in this HELPER rather than in the claim.
+  // The regex required `selected` to be the LAST thing before `>`, so the moment an option gained any
+  // further attribute it matched nothing and every assertion about WHICH option is selected reported an
+  // empty string — a parser artefact wearing the shape of the exact defect this suite exists to catch.
+  // R6-R1 adds data-last-mile / data-last-mile-options / data-method-source / data-carrier-selection, so the
+  // helper now finds the selected option wherever `selected` sits among the attributes.
+  var m = /<option\b(?=[^>]*\bselected\b)[^>]*>([^<]*)<\/option>/.exec(html);
   return m ? m[1] : '';
 }
 
