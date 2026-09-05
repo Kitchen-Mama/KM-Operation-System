@@ -460,6 +460,7 @@ section('§7 — THE OPERATOR\'S SECOND ROUTE IS NOT THIS ROUND\'S TO TOUCH');
   var added = route('air', true);          // the operator chose Air on the route they added
   var rebuild = new Function('document', '_replenSelectedScope', '_execResolveMethods', '_execMethodRouteCtx',
     '_execMethodOptionsHtml', 'window',
+    'function _execEsc(x){return String(x==null?"":x);} ' + extractFn(PAGE, '_irLastMileChoices_') + extractFn(PAGE, '_irLastMileCellHtml_') + extractFn(PAGE, '_irPaintLastMileCell_') + 
     extractFn(PAGE, '_execRebuildMethodOptions') + ' return _execRebuildMethodOptions;')(
       doc,
       function () { return { company: 'ResUS', country: 'US', marketplace: 'Amazon' }; },
@@ -788,6 +789,8 @@ mut('M9  a catalogue repaint overwrites the method the operator chose', function
     list.appendChild(row);
     new Function('document', '_replenSelectedScope', '_execResolveMethods', '_execMethodRouteCtx',
       '_execMethodOptionsHtml', 'window',
+      'function _execEsc(x){return String(x==null?"":x);} ' + extractFn(src, '_irLastMileChoices_') +
+      extractFn(src, '_irLastMileCellHtml_') + extractFn(src, '_irPaintLastMileCell_') +
       extractFn(src, '_execRebuildMethodOptions') + ' return _execRebuildMethodOptions;')(
         doc, function () { return {}; },
         function () { return { status: 'READY', methods: [{ value: 'sea', label: 'S' }, { value: 'air', label: 'A' }] }; },

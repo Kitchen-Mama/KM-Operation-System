@@ -282,7 +282,7 @@ function renderRow(route) {
   var src = [
     extractFn(PAGE, '_irComposerKind_'),
     extractFn(PAGE, '_irRouteProvenanceOf_'),
-    extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_renderManualComposer_'),
     'return { route: _renderExecutionRoute, composer: _renderManualComposer_ };'
   ].join('\n');
@@ -1018,8 +1018,12 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
   // none can be invoked against the wrong scope by someone guessing at an args object in a console.
   // R6-R2 adds RUN_R6R2_ROUTE_PROVENANCE: the \u00a72 route-provenance census. Like the others it takes NO
   // parameters and its scope is a hard-coded constant, so it cannot be aimed at a scope from a console.
+  // R6-R4 adds RUN_R6R4_SAVE_TARGET_FREEZE: the save-target freeze §7 asks for. It is a WRAPPER over
+  // RUN_R6R2_ROUTE_PROVENANCE rather than a second census, takes NO parameters, and inherits that runner's
+  // hard-coded scope — so it too cannot be aimed at a scope from a console.
   var ALLOWED_ENTRY_POINTS = ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE',
-    'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'RUN_R6R2_ROUTE_PROVENANCE', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
+    'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'RUN_R6R2_ROUTE_PROVENANCE', 'RUN_R6R4_SAVE_TARGET_FREEZE',
+    'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
   eq(nonHelper.slice().sort(), ALLOWED_ENTRY_POINTS,
     'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
   eq(nonHelper.filter(function (n) { return n !== 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'

@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R4';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -2327,6 +2327,21 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
     totals_agree: null,
     included_route_ids: [],
     excluded_route_ids_with_reason: [],
+    // R6-R4 §4 — STATION-LEVEL AND SKU-LEVEL ARE NOT THE SAME SET, and reporting only the first is what made
+    // four header ids look like they should be four rows on screen. A header counts toward THIS STATION's plan
+    // when KMARC says its lifecycle and every scope axis match; it contributes a VISIBLE ROW only if it also
+    // carries a line for the SKU being looked at. The difference is not an error — it is other SKUs' work in
+    // the same station — and naming it is the whole point.
+    station_included_header_ids: [],
+    sku_contributing_header_ids: [],
+    sku_contributing_line_ids: [],
+    headers_included_without_sku_line: [],
+    visible_route_rows: [],
+    future_save_targets: [],
+    ambiguous_save_targets: [],
+    shared_k4_groups: [],
+    save_target_authority: null,
+    ready_for_manual_route_save_test: null,
     source_of_520: null,
     headers: [], lines: [],
     counts: null,
@@ -2545,6 +2560,136 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
     out.included_route_ids = inc.map(function (h) { return h.allocation_draft_id; });
     finish();
 
+    // ============================================================================================================
+    // R6-R4 §4/§7 — FREEZE WHAT A SAVE WOULD TOUCH, BEFORE ANY SAVE HAPPENS.
+    //
+    // The target is NOT recomputed here from a copy of the rule. `sadK4ResolveActiveDraft_` is the function the
+    // write path itself calls, so this REPLAYS it, read-only, over the same rows — a second implementation could
+    // agree with the server today and diverge on the row that matters. Its three answers are the three facts §4
+    // asks for: REUSE names the one header an update would land on, CREATE means a save would MINT a new header
+    // (which, for a row that already holds an identity, is the duplicate-header defect), and BLOCKED_CONFLICT
+    // means two active headers already share this route identity and no save may proceed until a person
+    // resolves it.
+    //
+    // Nothing here writes, and nothing is repaired: a row that reports CREATE or BLOCKED_CONFLICT is reported
+    // as such and READY_FOR_MANUAL_ROUTE_SAVE_TEST goes to NO.
+    // ============================================================================================================
+    begin('FREEZE_VISIBLE_ROW_SAVE_TARGETS');
+    var headerById = {};
+    for (var hb = 0; hb < headers.length; hb++) {
+      var hbid = CENSUS_str_(headers[hb].allocation_draft_id);
+      if (hbid) headerById[hbid] = headers[hb];
+    }
+    for (var sk in keep) {
+      if (!Object.prototype.hasOwnProperty.call(keep, sk)) continue;
+      out.station_included_header_ids.push(sk);
+      if (skuLineHeaderIds[sk] === 1) out.sku_contributing_header_ids.push(sk);
+      else out.headers_included_without_sku_line.push({ allocation_draft_id: sk,
+        why: 'counts toward this station\'s plan, but no line on it names ' + SC.sku
+           + ' — it is another SKU\'s work in the same station, not a missing row' });
+    }
+    out.station_included_header_ids.sort();
+    out.sku_contributing_header_ids.sort();
+
+    var resolverPresent = (typeof sadK4ResolveActiveDraft_ === 'function');
+    out.save_target_authority = resolverPresent
+      ? 'sadK4ResolveActiveDraft_ (16_shipping_allocation_handlers) — replayed read-only'
+      : 'UNAVAILABLE — sync 16_shipping_allocation_handlers.gs before trusting this section';
+    var byGroup = {};
+    for (var vk in keep) {
+      if (!Object.prototype.hasOwnProperty.call(keep, vk)) continue;
+      var vh = headerById[vk];
+      if (!vh) continue;
+      var vlines = linesByHeader[vk] || [];
+      for (var vi = 0; vi < vlines.length; vi++) {
+        var vl = vlines[vi];
+        if (CENSUS_low_(vl.sku) !== CENSUS_low_(SC.sku)) continue;
+        if (!arc.lineCounts(vl)) continue;
+        var lineId = CENSUS_str_(vl.allocation_draft_line_id);
+        out.sku_contributing_line_ids.push(lineId);
+        var vgk = '', vgkErr = '';
+        try { vgk = (typeof ricK4GroupKey_ === 'function') ? CENSUS_str_(ricK4GroupKey_(vh)) : ''; }
+        catch (eVg) { vgkErr = CENSUS_str_(eVg && eVg.message); }
+        if (vgk) { if (!byGroup[vgk]) byGroup[vgk] = []; byGroup[vgk].push(vk); }
+        // The target the WRITE PATH would choose, from the write path's own resolver.
+        var tgt = null, tgtErr = '';
+        if (resolverPresent) {
+          try { tgt = sadK4ResolveActiveDraft_(headers, vh); }
+          catch (eT) { tgtErr = CENSUS_str_(eT && eT.message); }
+        }
+        var reuseSelf = !!(tgt && tgt.status === 'REUSE' && CENSUS_str_(tgt.allocation_draft_id) === vk);
+        // A terminal header carrying the SAME identity must never be the target. Counted so the claim is
+        // evidence rather than an appeal to the resolver's ACTIVE table.
+        var terminalSameKey = 0;
+        for (var ti = 0; ti < headers.length; ti++) {
+          var th = headers[ti];
+          if (CENSUS_str_(th.allocation_draft_id) === vk) continue;
+          var tc = arc.classifyHeader(th, scope);
+          if (tc.status_class === 'ACTIVE') continue;
+          var tgk = '';
+          try { tgk = (typeof ricK4GroupKey_ === 'function') ? CENSUS_str_(ricK4GroupKey_(th)) : ''; } catch (eTk) { tgk = ''; }
+          if (tgk && tgk === vgk) terminalSameKey++;
+        }
+        var row = {
+          visible_row_key: vk + '::' + lineId,
+          allocation_draft_id: vk,
+          allocation_draft_line_id: lineId,
+          k4_group_key: vgk,
+          k4_group_key_error: vgkErr,
+          company: CENSUS_str_(vh.company),
+          country: CENSUS_str_(vh.country),
+          station_marketplace: CENSUS_str_(vh.marketplace),
+          destination_kind: CENSUS_str_(vl.destination_kind)
+            || (CENSUS_str_(vh.destination_marketplace) ? 'MARKETPLACE_DESTINATION' : 'WAREHOUSE'),
+          destination_id: CENSUS_str_(vl.destination_warehouse_id || vh.destination_warehouse_id
+            || vh.recommended_destination_warehouse_id || vl.destination_marketplace || vh.destination_marketplace),
+          destination_marketplace: CENSUS_str_(vh.destination_marketplace),
+          source_warehouse_id: CENSUS_str_(vl.source_warehouse_id || vh.source_warehouse_id
+            || vh.recommended_source_warehouse_id),
+          sku: CENSUS_str_(vl.sku),
+          quantity: CENSUS_num_(arc.lineQuantity(vl)),
+          status: CENSUS_str_(vh.status),
+          line_status: CENSUS_str_(vl.line_status),
+          generation_type: CENSUS_str_(vh.generation_type || vh.source_type),
+          ownership: CENSUS_str_(vh.generation_run_id)
+            ? ('AI_GENERATED (generation_run_id ' + CENSUS_str_(vh.generation_run_id) + ')')
+            : 'MANUAL (no generation_run_id — composed by a person)',
+          shipping_method: CENSUS_str_(vh.recommended_shipping_method),
+          last_mile_delivery: CENSUS_str_(vh.recommended_last_mile_delivery),
+          save_target_status: tgt ? CENSUS_str_(tgt.status) : (tgtErr ? 'RESOLVER_ERROR' : 'RESOLVER_UNAVAILABLE'),
+          save_target_allocation_draft_id: tgt ? CENSUS_str_(tgt.allocation_draft_id) : '',
+          save_target_conflict_ids: (tgt && tgt.conflictIds) ? tgt.conflictIds : [],
+          save_target_error: tgtErr,
+          save_would_update_this_header: reuseSelf,
+          save_would_mint_new_header: !!(tgt && tgt.status === 'CREATE'),
+          terminal_headers_sharing_this_identity: terminalSameKey,
+          terminal_header_can_be_target: false,   // proven by the resolver's ACTIVE gate; count above is the evidence
+          why: reuseSelf
+            ? 'exactly one ACTIVE header carries this route identity, and it is this row\'s own header — a save UPDATES it'
+            : (tgt && tgt.status === 'BLOCKED_CONFLICT'
+              ? 'TWO OR MORE active headers share this route identity — the write path refuses rather than choosing'
+              : (tgt && tgt.status === 'CREATE'
+                ? 'the resolver found no ACTIVE header for this identity, so a save would MINT one — investigate before saving'
+                : 'no verdict: ' + (tgtErr || 'the write path resolver is not present in this project')))
+        };
+        out.visible_route_rows.push(row);
+        out.future_save_targets.push({ visible_row_key: row.visible_row_key,
+          allocation_draft_id: row.save_target_allocation_draft_id,
+          allocation_draft_line_id: lineId, status: row.save_target_status });
+        if (!reuseSelf) out.ambiguous_save_targets.push({ visible_row_key: row.visible_row_key,
+          status: row.save_target_status, conflict_ids: row.save_target_conflict_ids, why: row.why });
+      }
+    }
+    out.sku_contributing_line_ids.sort();
+    for (var gkk in byGroup) {
+      if (!Object.prototype.hasOwnProperty.call(byGroup, gkk)) continue;
+      if (byGroup[gkk].length > 1) out.shared_k4_groups.push({ k4_group_key: gkk, allocation_draft_ids: byGroup[gkk] });
+    }
+    // §7 — one visible row with zero or several valid targets is a NO, stated here rather than left to a reader.
+    out.ready_for_manual_route_save_test = !!(resolverPresent && out.visible_route_rows.length &&
+      out.ambiguous_save_targets.length === 0 && out.shared_k4_groups.length === 0);
+    finish();
+
     begin('CLASSIFY_SOURCE_OF_520');
     var anyAi = false, anyBlankCompany = false, anyOtherCompany = false;
     for (var ii = 0; ii < inc.length; ii++) {
@@ -2604,6 +2749,9 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
       out.counts.omitted_for_size += (out.headers.length - keptHeaders.length);
       out.headers = keptHeaders;
       out.lines = out.lines.slice(0, 20);
+      // R6-R4 — `visible_route_rows`, `future_save_targets` and `ambiguous_save_targets` are deliberately NOT
+      // trimmed. They are one entry per row an operator can actually see, so they are bounded by the screen
+      // rather than by the sheet, and dropping one would remove exactly the answer this run exists to give.
       out.output_trimmed = true;
       try { bytes = JSON.stringify(out).length; } catch (eS2) { bytes = -1; }
     }
@@ -2620,9 +2768,68 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
     logB('r6r3_read_metrics', out.read_metrics);
     logB('r6r3_output_bytes', out.output_bytes);
     logB('r6r3_elapsed_ms', out.elapsed_ms);
+    logB('r6r4_station_included_header_ids', out.station_included_header_ids.join(','));
+    logB('r6r4_sku_contributing_header_ids', out.sku_contributing_header_ids.join(','));
+    logB('r6r4_visible_route_rows', out.visible_route_rows.length);
+    logB('r6r4_future_save_targets', out.future_save_targets);
+    logB('r6r4_ambiguous_save_targets', out.ambiguous_save_targets);
+    logB('r6r4_ready_for_manual_route_save_test', out.ready_for_manual_route_save_test);
     logB('verdict', out.verdict);
     return out;
   } catch (e) {
     return fail('PROVENANCE_DIAGNOSTIC_FAILED', e);
   }
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 §7 — THE SAVE-TARGET FREEZE, AS ITS OWN ENTRY POINT.
+//
+// Deliberately a WRAPPER. RUN_R6R2_ROUTE_PROVENANCE keeps its name and its contract (§7: kept for
+// compatibility), and the classification, the totals and the save-target replay all still happen in exactly
+// one place. This adds a menu entry whose name says what this round needs to read, and puts the §4 answer at
+// the TOP of the log instead of at the bottom of a provenance dump.
+//
+// Read-only, like everything it calls: no writer is constructed, no Submit is issued, no reservation and no
+// carrier master data is touched, and nothing is repaired.
+// ================================================================================================================
+function RUN_R6R4_SAVE_TARGET_FREEZE() {
+  var res = RUN_R6R2_ROUTE_PROVENANCE();
+  var summary = {
+    census: 'RUN_R6R4_SAVE_TARGET_FREEZE',
+    delegates_to: 'RUN_R6R2_ROUTE_PROVENANCE',
+    read_only: true,
+    db_writes: res.db_writes, writer_constructed: res.writer_constructed,
+    submit_calls: res.submit_calls, reservation_writes: res.reservation_writes,
+    carrier_master_data_writes: res.carrier_master_data_writes,
+    verdict: res.verdict,
+    totals_agree: res.totals_agree,
+    ui_current_plan_total: res.ui_current_plan_total,
+    census_current_plan_total: res.census_current_plan_total,
+    station_included_header_ids: res.station_included_header_ids,
+    sku_contributing_header_ids: res.sku_contributing_header_ids,
+    sku_contributing_line_ids: res.sku_contributing_line_ids,
+    headers_included_without_sku_line: res.headers_included_without_sku_line,
+    visible_route_rows: res.visible_route_rows,
+    future_save_targets: res.future_save_targets,
+    ambiguous_save_targets: res.ambiguous_save_targets,
+    shared_k4_groups: res.shared_k4_groups,
+    save_target_authority: res.save_target_authority,
+    ready_for_manual_route_save_test: res.ready_for_manual_route_save_test,
+    elapsed_ms: res.elapsed_ms, stage_timings: res.stage_timings,
+    output_bytes: res.output_bytes, output_trimmed: res.output_trimmed,
+    error: res.error,
+    // The arithmetic §4 asks to be shown rather than asserted: why N station headers become M visible rows.
+    reduction: {
+      station_included: (res.station_included_header_ids || []).length,
+      of_which_carry_a_line_for_the_sku: (res.sku_contributing_header_ids || []).length,
+      of_which_carry_none: (res.headers_included_without_sku_line || []).length,
+      visible_rows: (res.visible_route_rows || []).length,
+      note: 'A station header without a line for this SKU is another SKU\'s work in the same station. It is'
+        + ' correctly included in the station plan and correctly absent from this SKU\'s Execution Plan.'
+    }
+  };
+  CENSUS_log_('r6r4_freeze_verdict', summary.verdict);
+  CENSUS_log_('r6r4_freeze_reduction', JSON.stringify(summary.reduction));
+  CENSUS_log_('r6r4_freeze_ready_for_manual_route_save_test', String(summary.ready_for_manual_route_save_test));
+  return summary;
 }

@@ -2346,10 +2346,47 @@ window._irScopeCompanyBadgeHtml_ = _irScopeCompanyBadgeHtml_;
 // different cards. `remaining` is never auto-planned: materialization is flag-gated and off, and a difference
 // an operator has not acted on is a decision they still have to make.
 // ================================================================================================================
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 §5 — WHY 920 / 520 / 400 WAS NOWHERE ON THE SCREEN.
+//
+// The strip was complete, styled, hosted and repainted on every quantity change. It rendered nothing, because
+// its FIRST line is `if (r.recommended_quantity === null) return ''` and it read the recommendation from
+// `_irRecoByKey` — a map that is populated in exactly one place, inside handleReplenAiPlan, i.e. only after
+// somebody clicks Generate AI Plan. On an ordinary load (Search, expand a SKU) it is `{}`, so the number was
+// null and the whole block returned an empty string. Nothing was broken; it was asking a source that a normal
+// session never fills.
+//
+// The number the operator can already see in the table comes from `_irSuggestedQtyState_`, which the page
+// declares as THE single authority for this quantity (F1-7N-FB-4G-A0 §I, written after the top cell and the
+// editor were caught reading two different sources for one number). So that is what this asks, and the AI DTO
+// is preferred only when one actually exists. Both are reported by NAME — an AI plan's recommendation and the
+// standing suggested quantity are different claims with different freshness, and a strip that showed a number
+// without saying which it was would be the same class of defect in a new place.
+// ================================================================================================================
 function _irAdviceVsPlan_(sku) {
     function n(v) { var x = Number(v); return isFinite(x) ? x : 0; }
     var dto = (typeof _irRecoByKey !== 'undefined' && _irRecoByKey) ? _irRecoByKey[String(sku)] : null;
     var recommended = dto ? n(dto.suggestedQty) : null;
+    var recSource = dto ? 'AI_PLAN_RECOMMENDATION' : '';
+    var recState = dto ? 'READY' : '';
+    if (recommended === null) {
+        // The standing recommendation, through its declared owner. PENDING and NONE are NOT zero and must not
+        // become one: a strip that printed 0 would read as "nothing is recommended", which is a claim the page
+        // has no basis for while the read is still in flight or the gap row is BLOCKED.
+        try {
+            var _items = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+            var _item = null;
+            _items.forEach(function (it) { if (!_item && it && String(it.sku) === String(sku)) _item = it; });
+            if (_item && typeof _irSuggestedQtyState_ === 'function') {
+                var _st = _irSuggestedQtyState_(_item);
+                recState = _st.state;
+                if (_st.state === 'READY' || _st.state === 'LEGACY') {
+                    recommended = n(_st.value);
+                    recSource = (_st.state === 'LEGACY') ? 'LEGACY_SUGGESTED_QTY' : 'MATERIALIZED_SUGGESTED_QTY';
+                }
+            }
+        } catch (_eRQ) {}
+    }
     var planned = 0, routeCount = 0;
     var list = (typeof document !== 'undefined' && document.getElementById)
         ? document.getElementById('shipping-methods-' + sku) : null;
@@ -2413,6 +2450,9 @@ function _irAdviceVsPlan_(sku) {
     }
     return {
         recommended_quantity: recommended,
+        // WHICH recommendation answered, and what state its owner is in. Never inferred from the number.
+        recommendation_source: recSource || 'NONE',
+        recommendation_state: recState || 'NONE',
         currently_planned_quantity: planned,
         route_count: routeCount,
         remaining_unplanned: remaining,
@@ -2434,7 +2474,25 @@ window._irAdviceVsPlan_ = _irAdviceVsPlan_;
 // The reconciliation strip. Rendered under the Execution Plan total, where the two numbers actually meet.
 function _irAdviceVsPlanHtml_(sku) {
     var r = _irAdviceVsPlan_(sku);
-    if (r.recommended_quantity === null) return '';
+    // R6-R4 §5 — an UNKNOWN recommendation still gets a strip, because "we do not know yet" and "there is
+    // nothing to reconcile" are different answers and the second one was being shown for both. What is never
+    // shown is a fabricated number: the recommendation side says PENDING or NONE in words.
+    if (r.recommended_quantity === null) {
+        if (!r.currently_planned_quantity && !r.route_count) return '';
+        return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status">'
+            + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Recommendation</span>'
+            + '<strong>&mdash;</strong><span class="ir-plan-recon__sub">'
+            + (r.recommendation_state === 'PENDING'
+                ? 'still loading for this scope'
+                : 'no recommendation is available for this SKU')
+            + '</span></span>'
+            + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
+            + '<strong>' + r.currently_planned_quantity + '</strong>'
+            + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span></span>'
+            + '<span class="ir-plan-recon__note">No difference can be computed without a recommendation, and'
+            + ' none is invented. These route(s) were already here and this run did not change them.</span>'
+            + '</div>';
+    }
     var diffTxt;
     if (r.over_planned > 0) {
         diffTxt = '<span class="ir-plan-recon__over">' + r.over_planned + ' over-planned</span>';
@@ -2459,9 +2517,16 @@ function _irAdviceVsPlanHtml_(sku) {
         comparability = ' The recommendation and the saved route(s) draw on DIFFERENT supply, so the difference'
             + ' is not a quantity still to be shipped from the same stock.';
     }
-    return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status">'
-        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">AI recommends</span>'
-        + '<strong>' + r.recommended_quantity + '</strong>' + recSrc + '</span>'
+    // The strip names WHICH recommendation it is showing. "AI recommends" was printed over a number that,
+    // after this round, usually comes from the standing gap read instead — and those are not the same claim.
+    var recLabel = (r.recommendation_source === 'AI_PLAN_RECOMMENDATION') ? 'AI recommends' : 'Recommended';
+    var recBasis = (r.recommendation_source === 'AI_PLAN_RECOMMENDATION')
+        ? ''
+        : '<span class="ir-plan-recon__sub">standing suggested quantity — no AI Plan has been run this session</span>';
+    return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status"'
+        + ' data-recommendation-source="' + _execEsc(r.recommendation_source) + '">'
+        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">' + recLabel + '</span>'
+        + '<strong>' + r.recommended_quantity + '</strong>' + recBasis + recSrc + '</span>'
         + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
         + '<strong>' + r.currently_planned_quantity + '</strong>'
         + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span>'
@@ -2483,7 +2548,7 @@ function _irExecPlanCardInnerHtml_(sku, ready) {
     // just proposed, and the two were being read as one thing.
     var head = '<div class="replen-card__title-row"><h4 class="replen-card__title" style="margin: 0;">Current Execution Plan</h4>'
         + _irScopeCompanyBadgeHtml_() + addBtn + '</div>'
-        + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Expected Arrival</span><span>Action</span></div>';
+        + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Last Mile</span><span>Expected Arrival</span><span>Action</span></div>';
     if (!ready) return head + _irRevealExecSkeletonHtml_();
     return head
         + '<div id="shipping-methods-' + sku + '" class="exec-routes-list"></div>'
@@ -6592,16 +6657,119 @@ function _execRateCardMethods(originCountry, destCountry, marketplace) {
 // choice to make: a method offering exactly one last mile carries it invisibly on the option, and a method
 // offering two or more renders the picker instead of choosing for the operator.
 // ================================================================================================================
-function _execLastMileOptionsHtml(methods, selectedMethod, selectedLastMile) {
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 §2 — A DEMAND TO CHOOSE, WITH NOTHING TO CHOOSE WITH.
+//
+// R6-R1 gave the row a last-mile control. R6-R3 gave the arrival calculator a transit-profile authority. On
+// the live screen the operator saw the calculator's sentence — "Choose a last mile" — beside a Method cell
+// that offered no second control at all, and there was no way to answer it.
+//
+// MEASURED CAUSE, by running both owners on one lane. The picker's ambiguity comes from the METHOD OPTION
+// (`m.lastMileAmbiguous`); the calculator's comes from `serviceProfilesForRoute` read straight off
+// `carrier_lead_times`. The registry builds those options from EITHER table — rate cards when the lane is
+// priced, lead times when it is not — and only the lead-time branch ever carried a last mile. So on a priced
+// lane the option said nothing, the picker rendered a hidden field, and the calculator (which never reads the
+// options) still saw two profiles and correctly refused to pick one. Two authorities, one question.
+//
+// The registry now attaches the transit authority's last-mile facts to every option whichever table named it,
+// so the two agree by construction. This is the SECOND guarantee, and it is the one that cannot drift: the
+// cell is built from the option list AND from the calculator's own candidate list, so a round that reintroduces
+// a disagreement produces a CONTROL, not a dead-end sentence.
+//
+// WHY NOT ONE COMPOUND METHOD OPTION PER SERVICE PROFILE. The catalogue does define distinct profiles, and a
+// compound option is the shape §2 prefers — but the option's DOM value cannot express one. `ricK4GroupKey_`
+// takes the canonical service and the last mile as TWO SEPARATE route-identity axes, and the header stores
+// them in two columns (`recommended_shipping_method`, `recommended_last_mile_delivery`). A value carrying both
+// would be persisted as the method, corrupting one axis and leaving the other blank — which is the exact defect
+// R6-R1 §5 existed to repair. Two profiles of one method therefore share one option VALUE and cannot be told
+// apart by a <select>, so the honest design is the explicit control §2 calls Design B: it appears only when
+// there is a real fork, and a method that runs exactly one last mile still carries it without asking anyone.
+// ================================================================================================================
+
+// The eligible last miles for the chosen method on this lane, and whether a person must choose between them.
+// `eta` is the arrival calculator's answer for the same row when one is available — a SECOND WITNESS, never a
+// replacement: its candidates are merged in, so the sentence and the control are produced from one set.
+function _irLastMileChoices_(methods, selectedMethod, selectedLastMile, eta) {
     var svc = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
         ? window.IRService.matches
-        : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
+        : function (a, b) { return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim(); };
     var m = null;
     (methods || []).forEach(function (x) { if (!m && svc(selectedMethod, x.value)) m = x; });
-    if (!m || !m.lastMileAmbiguous) return '';
-    var sel = String(selectedLastMile == null ? '' : selectedLastMile).trim().toLowerCase();
+    var opts = (m && m.lastMileOptions) ? m.lastMileOptions.slice() : [];
+    if (eta && eta.source === 'LAST_MILE_REQUIRED') {
+        (eta.last_mile_options || []).forEach(function (v) {
+            var s = String(v == null ? '' : v).trim();
+            if (s && opts.indexOf(s) === -1) opts.push(s);
+        });
+        opts.sort();
+    }
+    var sel = String(selectedLastMile == null ? '' : selectedLastMile).trim();
+    var selLow = sel.toLowerCase();
+    var stillEligible = false;
+    opts.forEach(function (o) { if (String(o).toLowerCase() === selLow) stillEligible = true; });
+    // INVALIDATION, in the one place that can do it consistently (§2: reset when Method / From / To change
+    // incompatibly). A stored value the method no longer runs is NOT kept — keeping it produced
+    // LAST_MILE_NOT_ON_THIS_METHOD and an arrival that read as missing data. But when the lane knows NO
+    // profiles at all, the stored value is kept verbatim: nothing has contradicted it, and silently blanking a
+    // persisted K4 identity axis because a reference table is thin would be a data change nobody asked for.
+    var value;
+    if (!opts.length) value = sel;
+    else if (opts.length === 1) value = opts[0];
+    else value = stillEligible ? sel : '';
+    return { options: opts, ambiguous: opts.length > 1, value: value,
+        invalidated: !!(sel && opts.length && !stillEligible), method_matched: !!m };
+}
+window._irLastMileChoices_ = _irLastMileChoices_;
+
+// The Last Mile CELL — its own grid track (§6), and always present so the seven columns line up whether or not
+// this particular row has a choice to make. A row with one eligible last mile shows it as text and carries it in
+// a hidden field; a row with a real fork gets the picker. Either way the value is visible, which it never was
+// while it lived invisibly on an option.
+function _irLastMileCellHtml_(methods, selectedMethod, selectedLastMile, eta, sku, isComposer) {
+    var c = _irLastMileChoices_(methods, selectedMethod, selectedLastMile, eta);
+    var onchange = (isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)';
+    if (c.ambiguous) {
+        var opts = '<option value="">Last mile…</option>';
+        var selLow = String(c.value).toLowerCase();
+        c.options.forEach(function (lm) {
+            opts += '<option value="' + _execEsc(lm) + '"' +
+                (selLow === String(lm).toLowerCase() ? ' selected' : '') + '>' + _execEsc(lm) + '</option>';
+        });
+        return '<select class="replen-card__select replen-card__select--lastmile" data-field="last_mile_delivery"'
+            + ' aria-label="Last mile" title="Last mile" onchange="' + onchange + '"'
+            + ' onclick="event.stopPropagation()">' + opts + '</select>';
+    }
+    // Not a choice: state what it IS. "—" means the lane names no last mile for this service, which is a
+    // different fact from an unanswered question and must not look like one.
+    var shown = c.value || '—';
+    return '<span class="replen-card__lastmile-static" title="' + _execEsc(shown) + '">' + _execEsc(shown) + '</span>'
+        + '<input type="hidden" data-field="last_mile_delivery" value="' + _execEsc(c.value) + '">';
+}
+window._irLastMileCellHtml_ = _irLastMileCellHtml_;
+
+// Repaint one row's Last Mile cell, preserving whatever the operator has already chosen. The single place that
+// swaps a picker for a static value and back, so the two can never end up in the wrong combination.
+function _irPaintLastMileCell_(rowEl, methods, selectedMethod, eta, sku) {
+    if (!rowEl || !rowEl.querySelector) return null;
+    var cell = rowEl.querySelector('.replen-card__lastmile-cell');
+    if (!cell) return null;
+    var cur = cell.querySelector('[data-field="last_mile_delivery"]');
+    var chosen = cur ? String(cur.value || '').trim() : '';
+    // The row already knows whether it is a composer; asking it here means no caller has to carry the answer,
+    // and no caller can get it wrong. Guarded, because a composer row is a page concept and this is also
+    // exercised in isolation.
+    var isComposer = (typeof _irIsComposerEl_ === 'function') ? _irIsComposerEl_(rowEl) : false;
+    cell.innerHTML = _irLastMileCellHtml_(methods, selectedMethod, chosen, eta, sku, isComposer);
+    return cell;
+}
+
+function _execLastMileOptionsHtml(methods, selectedMethod, selectedLastMile, eta) {
+    // R6-R4 §2 — delegated, so the option list and the cell can never disagree about what is eligible.
+    var c = _irLastMileChoices_(methods, selectedMethod, selectedLastMile, eta);
+    if (!c.ambiguous) return '';
+    var sel = String(c.value).toLowerCase();
     var opts = '<option value="">Last mile…</option>';
-    (m.lastMileOptions || []).forEach(function (lm) {
+    c.options.forEach(function (lm) {
         opts += '<option value="' + _execEsc(lm) + '"' + (sel === String(lm).toLowerCase() ? ' selected' : '') +
             '>' + _execEsc(lm) + '</option>';
     });
@@ -6749,40 +6917,13 @@ function _execRebuildMethodOptions(sku) {
         // The two controls are one answer to one question, so they are repainted together. A value the operator
         // has already chosen is preserved: it is read off the existing control before the swap, never reset.
         // ======================================================================================================
-        var cellEl = methodEl.parentNode;
-        var lmEl = cellEl && cellEl.querySelector ? cellEl.querySelector('[data-field="last_mile_delivery"]') : null;
-        if (lmEl) {
-            var lmCurrent = String(lmEl.value || '').trim();
-            var lmHtml = _execLastMileOptionsHtml(methods, methodEl.value, lmCurrent);
-            var isSelect = String(lmEl.tagName || '').toUpperCase() === 'SELECT';
-            if (lmHtml && !isSelect) {
-                // An ambiguous method arrived where a hidden field was: the picker replaces it.
-                var sel = document.createElement('select');
-                sel.className = 'replen-card__select replen-card__select--lastmile';
-                sel.setAttribute('data-field', 'last_mile_delivery');
-                sel.setAttribute('aria-label', 'Last mile');
-                sel.innerHTML = lmHtml;
-                sel.onchange = lmEl.onchange || methodEl.onchange;
-                cellEl.replaceChild(sel, lmEl);
-            } else if (lmHtml && isSelect) {
-                lmEl.innerHTML = lmHtml;
-                lmEl.value = lmCurrent;
-            } else if (!lmHtml) {
-                // Unambiguous (or unresolved): the single value rides on the option, and is carried rather
-                // than cleared — a method with one last mile still has one.
-                var only = '';
-                methods.forEach(function (m) { if (!only && svcEq(methodEl.value, m.value)) only = m.lastMileDelivery || ''; });
-                if (isSelect) {
-                    var hidden = document.createElement('input');
-                    hidden.type = 'hidden';
-                    hidden.setAttribute('data-field', 'last_mile_delivery');
-                    hidden.value = only || lmCurrent;
-                    cellEl.replaceChild(hidden, lmEl);
-                } else if (only && !lmCurrent) {
-                    lmEl.value = only;
-                }
-            }
-        }
+        // R6-R4 §2/§6 — ONE OWNER REPAINTS THE WHOLE CELL. The version below this did the swap by hand in four
+        // branches, and the branch that mattered most was wrong: an unambiguous method arriving where a value
+        // was already typed kept the OLD value (`only && !lmCurrent`), so changing the Method left a last mile
+        // the new method does not run — which resolves to LAST_MILE_NOT_ON_THIS_METHOD and reads on screen as
+        // missing lead-time data. The eligibility test and the invalidation now live in _irLastMileChoices_,
+        // and this simply asks for the cell again.
+        _irPaintLastMileCell_(rowEl, methods, methodEl.value, null, sku);
         if (res.status === 'ERROR' && res.error) methodEl.setAttribute('title', res.error.code + ' — ' + (res.error.message || ''));
         else if (res.status === 'EMPTY_CONFIGURATION' && res.configuration) methodEl.setAttribute('title', res.configuration.code + ' — ' + res.configuration.next_action);
         else methodEl.removeAttribute('title');
@@ -6944,13 +7085,20 @@ function _irLeadTimeProfileFor_(rows, lane, method, lastMile) {
     var all = reg.serviceProfilesForRoute(rows || [], lane || {}) || [];
     // EXACT TOKEN FIRST, canonical identity only as a fallback. Both steps are IRService.matches' own order,
     // applied to SET SELECTION rather than to a single comparison — and that distinction matters: a lane
-    // carrying both `美森海卡` and `Sea Express` holds two spellings of one canonical service, and collecting
-    // both at once would report an ambiguity between two last miles that no operator's choice created. A row
-    // whose token is present is answered by its own token; only a token no row spells is widened.
-    var mine = all.filter(function (p) {
-        return String(p.method == null ? '' : p.method).trim() === String(method == null ? '' : method).trim();
-    });
-    if (!mine.length) mine = all.filter(function (p) { return svcEq(method, p.method); });
+    // carrying two spellings of one canonical service holds two token sets, and collecting both at once would
+    // report an ambiguity between two last miles that no operator's choice created. A row whose token is
+    // present is answered by its own token; only a token no row spells is widened.
+    //
+    // R6-R4 §2 — and the rule is the REGISTRY'S, not a second copy of it. The picker's option list is built by
+    // the same selection, so the set this resolves over and the set the row offers are the same set. The local
+    // fallback below runs only if the deployment predates the shared helper.
+    var mine = (typeof reg.profilesForMethod === 'function') ? reg.profilesForMethod(all, method) : null;
+    if (mine === null) {
+        mine = all.filter(function (p) {
+            return String(p.method == null ? '' : p.method).trim() === String(method == null ? '' : method).trim();
+        });
+        if (!mine.length) mine = all.filter(function (p) { return svcEq(method, p.method); });
+    }
     if (!mine.length) return { status: 'NO_PROFILE_FOR_METHOD', profile: null, candidates: all };
     var want = String(lastMile == null ? '' : lastMile).trim().toLowerCase();
     if (want) {
@@ -7204,6 +7352,26 @@ function _irUpdateRouteEtas(sku) {
         cell.setAttribute('data-eta', eta.date || '');
         cell.setAttribute('data-eta-source', eta.source || '');
         cell.classList.toggle('replen-card__eta--na', !eta.available);
+        // ==================================================================================================
+        // R6-R4 §2 — NEVER "Choose a last mile" WITHOUT SOMETHING TO CHOOSE WITH.
+        //
+        // This is the function that writes that sentence into the cell, so it is the function that must be
+        // able to answer it. It repaints the Last Mile cell on the SAME pass, from the same `eta` — which
+        // carries the candidate list the refusal was based on. A future round can reintroduce a disagreement
+        // between the picker's authority and the arrival's; it cannot reintroduce a dead end, because the
+        // demand and the control are now one statement.
+        //
+        // The repaint is not conditional on the refusal: a method that STOPPED being ambiguous must lose its
+        // picker just as surely, or the row would keep offering a choice that no longer exists.
+        // ==================================================================================================
+        try {
+            var _lmMethods = (typeof _execResolveMethods === 'function' && typeof _execMethodRouteCtx === 'function')
+                ? (_execResolveMethods(_execMethodRouteCtx(_originCountry, destCountry,
+                    (typeof _replenSelectedScope === 'function' ? (_replenSelectedScope().marketplace || '') : ''),
+                    _fromEl ? String(_fromEl.value || '') : '', '')).methods || [])
+                : [];
+            _irPaintLastMileCell_(rowEl, _lmMethods, method, eta, sku);
+        } catch (_eLM) {}
     });
 }
 
@@ -7560,19 +7728,9 @@ function _renderExecutionRoute(sku, route) {
         fromSelId || '', toWh ? (toWh.warehouseCode || '') : ''));
     var methods = _mres.methods || [];
     var methodOpts = _execMethodOptionsHtml(_mres, route.shipping_method);
-    // R6-R1 §5 — the last mile that belongs to the chosen method. `_lmOpts` is non-empty ONLY when the
-    // method genuinely runs on more than one; `_lmSingle` is the unambiguous value, which is still CARRIED
-    // rather than dropped — a blank last mile on a saved route is what merged two distinct K4 identities.
-    var _lmOpts = _execLastMileOptionsHtml(methods, route.shipping_method, route.last_mile_delivery);
-    var _lmSingle = (function () {
-        var svcEq = (window.IRService && window.IRService.matches) ? window.IRService.matches
-            : function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
-        var hit = null;
-        methods.forEach(function (m) { if (!hit && svcEq(route.shipping_method, m.value)) hit = m; });
-        // A PERSISTED value always wins over a freshly derived one: it is what the route was saved as, and
-        // a later edit to the carrier tables must not silently rewrite a commitment already made.
-        return String(route.last_mile_delivery || (hit ? (hit.lastMileDelivery || '') : '') || '').trim();
-    })();
+    // R6-R1 §5 / R6-R4 §2 — the last mile that belongs to the chosen method. Both the choices and the single
+    // carried value are now resolved by _irLastMileChoices_, which is also what the repaint and the arrival
+    // refresher use, so the three cannot form three opinions about one route.
     // F1-7N-FC-1B-E2 §D.1-§D.3 — A METHOD CANNOT BE OFFERED FOR A ROUTE THAT DOES NOT EXIST YET.
     //
     // Until BOTH From and To are chosen there is no lane to look a carrier up for, so the Method select stays
@@ -7628,10 +7786,13 @@ function _renderExecutionRoute(sku, route) {
         // single value rides invisibly on the option and is collected from the hidden field beside it.
         '<span class="replen-card__method-cell">' +
         '<select class="replen-card__select" data-field="shipping_method" aria-label="Method" title="' + (methodDisabled ? 'Choose From and To first' : 'Method') + '" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
-        (_lmOpts
-            ? '<select class="replen-card__select replen-card__select--lastmile" data-field="last_mile_delivery" aria-label="Last mile" title="Last mile" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()">' + _lmOpts + '</select>'
-            : '<input type="hidden" data-field="last_mile_delivery" value="' + _execEsc(_lmSingle) + '">') +
         '</span>' +
+        // R6-R4 §6 — the Last Mile gets a TRACK, not a corner of the Method cell. It is a route-identity axis
+        // in its own right (ricK4GroupKey_ counts it separately from the service), and while it lived inside
+        // the Method cell it was invisible on every row that had no choice to make — so an operator could not
+        // see what a saved route's last mile actually was. The cell is ALWAYS rendered, so the seven columns
+        // line up whether this row shows a picker, a single value, or a lane that names none.
+        '<span class="replen-card__lastmile-cell">' + _irLastMileCellHtml_(methods, route.shipping_method, route.last_mile_delivery, eta, sku, _isComposer) + '</span>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.

@@ -245,7 +245,7 @@ function makeWorld(opts) {
     // composer instead of the deleted message.
     extractFn(PAGE, '_execDropPristineComposers_'),
     extractFn(PAGE, '_execSyncEmptyState_'),
-    extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_allocationDraftRowsFor'),
     extractFn(PAGE, '_irSuggestedQtyState_'),
     extractFn(PAGE, '_irSuggestedQtyNumber_'),

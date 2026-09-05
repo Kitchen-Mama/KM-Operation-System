@@ -246,7 +246,13 @@ var ROUND_TOKENS = [
   // Plan - which is the one defect on this page that can reach Submit.
   'fc1be3r4a2r1r6r1-scopeidentity-20260905',
   'fc1be3r4a2r1r6r2-routeparity-20260905',
-  'fc1be3r4a2r1r6r3-etaalign-20260905'
+  'fc1be3r4a2r1r6r3-etaalign-20260905',
+  // R6-R4: the Last Mile becomes a real column with a real control, the Execution Plan reconciliation stops
+  // reading a map only the AI Plan button fills, and the arrival's method-profile selection is delegated to
+  // the registry. A browser holding the R6-R3 copy is served a page that renders six cells into a seven-track
+  // grid - every column after Method lands one place to the left, and the row that asks for a last mile still
+  // has nowhere to answer it.
+  'fc1be3r4a2r1r6r4-lastmilecol-20260905'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -376,7 +382,10 @@ var IR_CSS_TOKEN_SERIES = [
   // is the one that matters: its whole job is to stop 760 and 520 being read as one number, and an unstyled
   // run-together version does the opposite.
   'irscopecompany-20260905',
-  'iretaalign-20260905'
+  'iretaalign-20260905',
+  // R6-R4: seven tracks, and a Last Mile cell that must be styled to clip inside its own track. A cached
+  // six-track stylesheet puts every column after Method out of register with its heading.
+  'irlastmilecol-20260905'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //
@@ -398,7 +407,11 @@ var METHOD_REGISTRY_TOKEN_SERIES = [
   // already loaded carrier_lead_times and never read them; it now derives service profiles from them when no
   // rate card covers the lane. A cached copy keeps answering 'No eligible method' for every route whose lane
   // has transit data and no price - which is the reported defect itself.
-  'fc1be3r4a2r1r6r1-method-registry-20260905'
+  'fc1be3r4a2r1r6r1-method-registry-20260905',
+  // R6-R4: resolve() now attaches the transit authority's last-mile facts to every method option, whichever
+  // table named it. A cached copy keeps returning rate-card options that know nothing about a last mile, so
+  // the row cannot offer the choice the arrival calculator is asking for.
+  'fc1be3r4a2r1r6r4-method-registry-20260905'
 ];
 var METHOD_REGISTRY_FILE = 'assets/js/core/method-registry.js';
 function currentMethodRegistryToken() { return METHOD_REGISTRY_TOKEN_SERIES[METHOD_REGISTRY_TOKEN_SERIES.length - 1]; }
@@ -528,7 +541,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+)
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R4'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

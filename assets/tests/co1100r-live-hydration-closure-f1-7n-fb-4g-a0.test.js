@@ -416,9 +416,39 @@ ok(PAGE.indexOf('空派') === -1 && PAGE.indexOf('普船海卡') === -1 &&
 // the wrong test: A0-R1 legitimately ADDS the canonical service table — a byte-identical mirror of 69_
 // RIC_SERVICE_LABELS_, which contains 普船 and 美森海卡. Adding the server's own mapping is not a rename. What
 // §G.9 protects is that no existing label spelling is REMOVED or changed, so that is what is measured now.
-var DIFF = cp.execSync('git diff HEAD -- assets/js assets/css index.html', { cwd: ROOT }).toString();
-ok(!/^[-].*(空運|普船|快船|美森海卡|空派|普船海卡)/m.test(DIFF),
-  'E13 §G.9 and this round removes or renames no method label');
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 — RESTATED, AND MADE TO TEST WHAT ITS OWN COMMENT SAYS IT PROTECTS.
+//
+// The diff form failed on a round that deleted a COMMENT quoting a label — no mapping changed, no spelling was
+// renamed, and the label was still in the table two lines away. "A removed line that mentions a label" and "a
+// label that no longer exists" are different facts, and only the second is a §G.9 violation.
+//
+// So the property is measured on CONTENT, at both revisions: every label spelling present in the shipped
+// sources before this round must still be present after it. That is strictly stronger than the diff scan for
+// the case that matters — deleting the last occurrence of a label is caught wherever in the file it lived, and
+// a rename (remove + add under a new spelling) is caught because the old spelling is gone — while a comment
+// rewrite that keeps the vocabulary intact is correctly not a finding.
+var LABELS_ = ['空運', '普船', '快船', '美森海卡', '空派', '普船海卡'];
+var SHIPPED_ = ['assets/js/pages/inventory-replenishment.js', 'assets/js/utils/inventory-compat.js'];
+// PER FILE, not pooled: two modules keep their own label tables, and a label deleted from one of them is a
+// vocabulary loss in that module even though the other still spells it.
+function labelsPresentIn_(text) {
+  return LABELS_.filter(function (x) { return String(text).indexOf(x) !== -1; });
+}
+// COMMENTS ARE NOT VOCABULARY. Both revisions are compared with comments STRIPPED, so a prose rewrite cannot
+// satisfy this and cannot break it either — only the code that actually maps a label counts.
+var beforeTexts_ = SHIPPED_.map(function (p) {
+  try { return code(cp.execSync('git show HEAD:"' + p + '"', { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).toString()); }
+  catch (e) { return ''; }
+});
+var afterTexts_ = SHIPPED_.map(function (p) { return code(read(p)); });
+var lostLabels_ = [];
+SHIPPED_.forEach(function (p, i) {
+  var after = labelsPresentIn_(afterTexts_[i]);
+  labelsPresentIn_(beforeTexts_[i]).forEach(function (x) {
+    if (after.indexOf(x) === -1) lostLabels_.push(p + ": " + x);
+  });
+});
+eq(lostLabels_, [], 'E13 §G.9 and this round removes or renames no method label');
 ok(/'sea_express': 'Sea Express'/.test(PAGEC) && /'sea': 'Sea'/.test(PAGEC), 'E14 §G.8 canonical method mapping is unchanged');
 // §E.11 — a repeated Search must not duplicate routes or listeners.
 var twice = runHydrate({ sourceMode: 'WORKSPACE' });

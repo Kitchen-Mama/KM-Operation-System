@@ -432,8 +432,13 @@ ok(new RegExp('supply-planning-active-route-classification\\.js\\?v=' + RO.curre
 var kmarcTag = INDEX.indexOf('supply-planning-active-route-classification.js');
 var pageTag = INDEX.indexOf('pages/inventory-replenishment.js');
 ok(kmarcTag !== -1 && pageTag !== -1 && kmarcTag < pageTag, 'H4 and loads it BEFORE the page that consumes it');
-eq(RO.currentMethodRegistryToken(), 'fc1be3r4a2r1r6r1-method-registry-20260905',
-  'H5 method-registry.js did not change this round, so its own token does not move');
+// R6-R4 RESTATEMENT — same reasoning as the R6-R3 suite's A7. "The registry did not change THIS round" was a
+// true statement about R6-R2 and a false one about every round after it. The durable rule is that the registry
+// has its own token family and that index.html serves the current member.
+ok(RO.METHOD_REGISTRY_TOKEN_SERIES.indexOf('fc1be3r4a2r1r6r1-method-registry-20260905') !== -1,
+  'H5 the registry token this round shipped is still in the ledger');
+ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== -1,
+  'H5a and index.html serves the CURRENT registry token');
 ok(/SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'/.test(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')),
   'H6 the deployment stamp is bumped for a sync-visible backend change');
 ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(WORKSPACE_GS),

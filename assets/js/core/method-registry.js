@@ -183,6 +183,77 @@
     return out;
   }
 
+  // ==============================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 §2 — THE LAST MILE BELONGS TO THE LANE, NOT TO WHICHEVER TABLE NAMED THE METHOD.
+  //
+  // `resolve` answers from `carrier_rate_cards` when the lane is priced and falls back to `carrier_lead_times`
+  // when it is not. Those two branches used to produce DIFFERENTLY SHAPED options: the transit branch carried
+  // `lastMileOptions` / `lastMileAmbiguous`, and the rate-card branch carried neither — `methodsForRoute`
+  // returns `{ value, label, carrierId }` and consults no transit row at all.
+  //
+  // MEASURED CONSEQUENCE. On a PRICED lane the Execution Plan row could never show a last-mile control, because
+  // `_execLastMileOptionsHtml` renders one only when the chosen method reports `lastMileAmbiguous`. The arrival
+  // calculator does not read the option list — it asks `serviceProfilesForRoute` directly — so it saw the two
+  // profiles the option had thrown away and correctly refused to invent one, printing "Choose a last mile".
+  // A demand to choose, and nothing to choose with. R6-R1's whole last-mile feature was dead on every lane that
+  // had a price list.
+  //
+  // A rate card DOES carry `last_mile_delivery` — it is a pricing dimension — but it is deliberately NOT the
+  // source here. What the row must offer is the set of last miles that can actually produce an ARRIVAL, and
+  // that is `carrier_lead_times`' answer alone. Offering a priced last mile no carrier has a transit row for
+  // would put a choice in the list that resolves to LAST_MILE_NOT_ON_THIS_METHOD the moment it is picked.
+  // ==============================================================================================================
+
+  // The profiles of ONE method on this lane. EXACT TOKEN FIRST, canonical identity only as a fallback — the
+  // same order `IRService.matches` itself applies, applied to SET SELECTION rather than to a single
+  // comparison. A lane carrying two spellings of one canonical service holds two token sets; answering a
+  // present token with its own rows is what stops a spelling difference from being reported as a last-mile
+  // fork nobody's choice created. Exported, so the page's arrival calculator selects through this and not
+  // through a second copy of the rule.
+  function profilesForMethod(profiles, method) {
+    var want = str(method);
+    var exact = (profiles || []).filter(function (p) { return str(p.method) === want; });
+    if (exact.length) return exact;
+    var svc = (root && root.IRService && typeof root.IRService.matches === 'function') ? root.IRService.matches : null;
+    if (!svc) return [];
+    return (profiles || []).filter(function (p) { return svc(want, p.method); });
+  }
+
+  // What a set of profiles says about the last mile. AN AMBIGUITY IS TWO CHOICES, NOT TWO ROWS: a profile
+  // whose last mile is blank makes no competing claim, so it neither offers an option nor creates a fork.
+  function lastMileFacts(profiles) {
+    var opts = [];
+    (profiles || []).forEach(function (p) {
+      var v = str(p.lastMileDelivery);
+      if (v && opts.indexOf(v) === -1) opts.push(v);
+    });
+    opts.sort();
+    return {
+      lastMileOptions: opts,
+      lastMileDelivery: (opts.length === 1) ? opts[0] : '',
+      lastMileAmbiguous: opts.length > 1
+    };
+  }
+
+  // Give an option list the transit authority's last-mile facts, whatever named the methods. The method SET is
+  // never changed here — a priced lane keeps exactly the methods its rate cards name — only what each option
+  // knows about itself.
+  function withTransitLastMile(methods, leadTimes, route) {
+    var profiles = serviceProfilesForRoute(leadTimes || [], route || {});
+    return (methods || []).map(function (m) {
+      var mine = profilesForMethod(profiles, m.value);
+      var facts = lastMileFacts(mine);
+      m.profiles = mine;
+      m.lastMileOptions = facts.lastMileOptions;
+      m.lastMileDelivery = facts.lastMileDelivery;
+      m.lastMileAmbiguous = facts.lastMileAmbiguous;
+      // Stated rather than inferred from an empty list: "this service has no transit row on this lane" and
+      // "this service runs one unnamed last mile" are different facts with different remedies.
+      m.transitProfileCount = mine.length;
+      return m;
+    });
+  }
+
   // The profiles as METHOD options, in the shape the picker already consumes. `value` stays the canonical
   // shipping_method token — the same thing the header persists and the same thing IRService.matches compares —
   // so nothing about persistence or selection changes. The LAST-MILE variants a method offers travel WITH it
@@ -207,12 +278,15 @@
     });
     return order.map(function (k) {
       var m = byMethod[k];
-      m.lastMileOptions.sort();
       m.carrierIds.sort();
-      // The single unambiguous last mile, when there is exactly one. Null when a person must choose, which the
-      // page turns into a second control rather than a silent default.
-      m.lastMileDelivery = (m.lastMileOptions.length === 1) ? m.lastMileOptions[0] : '';
-      m.lastMileAmbiguous = m.lastMileOptions.length > 1;
+      // R6-R4 §2 — through the SAME fold the rate-card branch uses, so the two branches cannot answer this
+      // differently. (The single unambiguous last mile rides on the option; a real fork is reported, never
+      // resolved by taking the first.)
+      var facts = lastMileFacts(m.profiles);
+      m.lastMileOptions = facts.lastMileOptions;
+      m.lastMileDelivery = facts.lastMileDelivery;
+      m.lastMileAmbiguous = facts.lastMileAmbiguous;
+      m.transitProfileCount = m.profiles.length;
       return m;
     }).sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
   }
@@ -347,7 +421,11 @@
       }
       var methods = methodsForRoute(entry.cards, route, today);
       if (methods.length) {
-        return { status: STATUS.READY, methods: methods, method_source: 'CARRIER_RATE_CARDS', scope_key: key };
+        // R6-R4 §2 — the METHOD SET is still the price list's answer, byte for byte. What is added is the
+        // transit authority's last-mile knowledge, so a priced lane's option is the same SHAPE as an
+        // unpriced lane's and the row can render the same control from either.
+        return { status: STATUS.READY, methods: withTransitLastMile(methods, entry.leadTimes, route),
+          method_source: 'CARRIER_RATE_CARDS', last_mile_source: 'CARRIER_LEAD_TIMES', scope_key: key };
       }
       // §4 — NO RATE CARD IS NOT NO METHOD. The price list is silent about this lane; the transit authority
       // may not be, and it is the one that decides whether a service exists. Consulted only as a FALLBACK, so
@@ -355,6 +433,7 @@
       var viaTransit = methodsFromLeadTimes(entry.leadTimes, route);
       if (viaTransit.length) {
         return { status: STATUS.READY, methods: viaTransit, method_source: 'CARRIER_LEAD_TIMES',
+          last_mile_source: 'CARRIER_LEAD_TIMES',
           // Layer 2's decision, and it has not been made. Stated on the resolution so no consumer has to
           // infer it from the absence of a carrier id.
           carrier_selection: DEFERRED_,
@@ -417,6 +496,7 @@
       // pure helpers (exported for direct unit testing)
       scopeKey: scopeKey, rateCardUsable: rateCardUsable, methodsForRoute: methodsForRoute,
       serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
+      profilesForMethod: profilesForMethod, lastMileFacts: lastMileFacts, withTransitLastMile: withTransitLastMile,
       configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection
     };
   }
@@ -425,6 +505,7 @@
     STATUS: STATUS, create: create, scopeKey: scopeKey, rateCardUsable: rateCardUsable,
     methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection,
     serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
+    profilesForMethod: profilesForMethod, lastMileFacts: lastMileFacts, withTransitLastMile: withTransitLastMile,
     DEFERRED_CARRIER_SELECTION: DEFERRED_
   };
 

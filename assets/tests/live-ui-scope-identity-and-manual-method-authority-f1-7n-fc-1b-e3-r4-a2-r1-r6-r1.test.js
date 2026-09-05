@@ -296,8 +296,23 @@ ok(/recommended_last_mile_delivery/.test(read('assets/specs/active/apps-script/6
   'F1a and it is a K4 route-IDENTITY dimension, so dropping it merges two distinct routes into one');
 ok(/data-field="last_mile_delivery"/.test(PAGE), 'F2  the ROW can now hold it too — that was the missing half');
 ok(/function _execLastMileOptionsHtml/.test(PAGE), 'F3  a picker appears when the method offers more than one');
-ok(/if \(!m \|\| !m\.lastMileAmbiguous\) return '';/.test(extractFn(PAGE, '_execLastMileOptionsHtml')),
-  'F3a and ONLY then — an unambiguous method carries its single value invisibly');
+// R6-R4 RESTATEMENT — RUN it. The claim is about what an unambiguous method produces, and that survives any
+// refactor of how the decision is spelled; the previous form matched one line of the implementation it was
+// written against and failed the moment that line moved into a shared owner.
+var _lmApi = (function () {
+  var w = { IRService: require('../js/utils/inventory-compat.js').IRService };
+  var s = extractFn(PAGE, '_irLastMileChoices_') + String.fromCharCode(10) +
+    extractFn(PAGE, '_irLastMileCellHtml_') + String.fromCharCode(10) +
+    extractFn(PAGE, '_execLastMileOptionsHtml') + String.fromCharCode(10) +
+    'return { choices: _irLastMileChoices_, cell: _irLastMileCellHtml_, opts: _execLastMileOptionsHtml };';
+  return new Function('window', '_execEsc', s)(w, function (x) { return String(x == null ? '' : x); });
+})();
+var _mAmb = { value: 'SVC-A', lastMileOptions: ['PARCEL', 'TRUCK'], lastMileAmbiguous: true };
+var _mOne = { value: 'SVC-B', lastMileOptions: ['PARCEL'], lastMileAmbiguous: false, lastMileDelivery: 'PARCEL' };
+eq(_lmApi.opts([_mAmb, _mOne], 'SVC-B', ''), '',
+  'F3a and ONLY then — an unambiguous method offers no picker, carrying its single value instead');
+ok(/value="PARCEL"/.test(_lmApi.cell([_mAmb, _mOne], 'SVC-B', '', null, 'SKU', false)),
+  'F3b and the value it carries is the one the lane actually names — never blank');
 ok(/last_mile_delivery: fieldVal\('last_mile_delivery'\)/.test(PAGE),
   'F4  and the collect reads it back into the model');
 ok(/#ops-section \.replen-card__method-cell \{/.test(CSS),
@@ -329,12 +344,22 @@ ok(IRDraft.canonicalRouteGroupKey({ company: 'ResUS', country: 'US', marketplace
 // method <select> would leave that hidden field beside a now-ambiguous method, and the operator would have no
 // way to choose a last mile at all until something else re-rendered the row.
 var refreshFn = extractFn(PAGE, '_execRebuildMethodOptions');
-ok(/_execLastMileOptionsHtml\(methods, methodEl\.value, lmCurrent\)/.test(refreshFn),
+ok(/_irPaintLastMileCell_\(rowEl, methods, methodEl\.value/.test(refreshFn),
   'F8  the async catalogue refresh repaints the last-mile control alongside the method it belongs to');
-ok(/var lmCurrent = String\(lmEl\.value \|\| ''\)\.trim\(\);/.test(refreshFn),
+// R6-R4: reading the existing choice before the swap moved INTO the repainter, which is where it belongs —
+// every caller now gets that behaviour instead of each remembering to implement it.
+var paintFn = extractFn(PAGE, '_irPaintLastMileCell_');
+ok(/querySelector\('\[data-field="last_mile_delivery"\]'\)/.test(paintFn) &&
+   paintFn.indexOf('var chosen') < paintFn.indexOf('cell.innerHTML'),
   'F8a reading the operator’s existing choice off the control BEFORE the swap — never resetting it');
-ok(/cellEl\.replaceChild\(sel, lmEl\)/.test(refreshFn) && /cellEl\.replaceChild\(hidden, lmEl\)/.test(refreshFn),
+// Both directions, PROVEN by running the cell builder rather than by matching two replaceChild calls.
+var _toPicker = _lmApi.cell([_mAmb, _mOne], 'SVC-A', '', null, 'SKU', false);
+var _toHidden = _lmApi.cell([_mAmb, _mOne], 'SVC-B', 'TRUCK', null, 'SKU', false);
+ok(/<select/.test(_toPicker) && !/type="hidden"/.test(_toPicker) &&
+   /type="hidden"/.test(_toHidden) && !/<select/.test(_toHidden),
   'F8b and swapping between picker and hidden field in BOTH directions, as the method changes');
+eq(_lmApi.choices([_mAmb, _mOne], 'SVC-B', 'TRUCK', null).value, 'PARCEL',
+  'F8c and a last mile the NEW method does not run is dropped, not carried across the change');
 
 // ================================================================================================================
 section('G. §7 — a hundred-SKU run announced by its own reason code');

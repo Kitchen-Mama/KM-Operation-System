@@ -204,7 +204,7 @@ function runRebuild(opts) {
       return null;                                                    // no From/To selection in this row
     }
   };
-  var src = [extractFn(PAGE, '_execRebuildMethodOptions'), '_execRebuildMethodOptions("CO1100-R");'].join(String.fromCharCode(10));
+  var src = [extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execRebuildMethodOptions'), '_execRebuildMethodOptions("CO1100-R");'].join(String.fromCharCode(10));
   (new Function('document', 'window', '_replenSelectedScope', '_execResolveMethods', '_execMethodRouteCtx',
     '_execMethodOptionsHtml', '_execEsc', src))(
     { getElementById: function () { return { querySelectorAll: function () { return { forEach: function (f) { f(row); } }; } }; } },
@@ -256,8 +256,26 @@ ok(PAGE.indexOf('普船海卡') === -1 && CMP.indexOf('普船海卡') === -1 && 
 ok(PAGE.indexOf('空派') === -1 && CMP.indexOf('空派') === -1,
   'C10 §C.5 nor 空派 — the picker shows whatever label the operator maintains');
 // And the labels this round must not rename are untouched.
-var DIFF = cp.execSync('git diff HEAD -- assets/js assets/css index.html', { cwd: ROOT }).toString();
-ok(!/^[-].*(空運|普船|快船|美森海卡)/m.test(DIFF), 'C11 §C no existing method label spelling was REMOVED by this round');
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 — RESTATED, for the same reason as this round's E13 in the A0 closure suite.
+// A diff scan cannot tell "the mapping lost a spelling" from "a comment that quoted one was reworded", and it
+// reported the second as the first. The property is measured on CONTENT instead, PER FILE and with comments
+// STRIPPED: every label spelling a shipped module's CODE held before this round must still be in that module's
+// code after it. Deleting the last real occurrence is caught wherever in the file it lived; a rename is caught
+// because the old spelling is gone; prose is correctly not vocabulary.
+var LABELS_C11_ = ['空運', '普船', '快船', '美森海卡'];
+var FILES_C11_ = ['assets/js/pages/inventory-replenishment.js', 'assets/js/utils/inventory-compat.js',
+  'assets/js/core/method-registry.js'];
+var lostC11_ = [];
+FILES_C11_.forEach(function (p) {
+  var before = '';
+  try { before = code(cp.execSync('git show HEAD:"' + p + '"', { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).toString()); }
+  catch (e) { before = ''; }
+  var after = code(read(p));
+  LABELS_C11_.forEach(function (x) {
+    if (before.indexOf(x) !== -1 && after.indexOf(x) === -1) lostC11_.push(p + ': ' + x);
+  });
+});
+eq(lostC11_, [], 'C11 §C no existing method label spelling was REMOVED by this round');
 ok(/'空運': 'Air', '普船': 'Sea', '快船': 'Sea Express', '美森海卡': 'Sea Express'/.test(PAGEC),
   'C12 §C the page lead-time label table is unchanged');
 
@@ -682,7 +700,7 @@ mut('M11 a rebuild that reads only the DOM is detected', function () {
   var rowAttrs = { 'data-method-persisted': 'sea' };
   var row = { getAttribute: function (k) { return Object.prototype.hasOwnProperty.call(rowAttrs, k) ? rowAttrs[k] : null; },
     querySelector: function (q) { return /shipping_method/.test(q) ? methodEl : null; } };
-  var src = [extractFn(mutated, '_execRebuildMethodOptions'), '_execRebuildMethodOptions("X");'].join(String.fromCharCode(10));
+  var src = [extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(mutated, '_execRebuildMethodOptions'), '_execRebuildMethodOptions("X");'].join(String.fromCharCode(10));
   (new Function('document', 'window', '_replenSelectedScope', '_execResolveMethods', '_execMethodRouteCtx',
     '_execMethodOptionsHtml', '_execEsc', src))(
     { getElementById: function () { return { querySelectorAll: function () { return { forEach: function (f) { f(row); } }; } }; } },

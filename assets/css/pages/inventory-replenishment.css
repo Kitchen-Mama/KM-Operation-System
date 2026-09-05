@@ -1272,12 +1272,33 @@
        Long values are CLIPPED, never allowed to resize a column: the controls are native <select>s, which
        show the full option text when opened, and the read-only Expected Arrival cell carries the full string
        in its `title`. Nothing is truncated in the data. */
+    /* F1-7N-FC-1B-E3-R4-A2-R1-R6-R4 §6 — SEVEN TRACKS. Last Mile is a route-identity axis of its own
+       (ricK4GroupKey_ hashes it separately from the service), and while it lived inside the Method cell it
+       was invisible on every row that had no choice to make — an operator could not see what a saved route's
+       last mile actually was. It now has a track, the header has a label, and the cell is rendered on every
+       row (picker, single value, or an em dash when the lane names none) so the seven columns line up
+       whatever each row happens to contain.
+
+       THE NUMBERS ARE MEASURED, not carried over. Adding a column necessarily raises the minimum width, so
+       the seven minima were resolved against the real track algorithm at 720 / 620 / 560 px with the header
+       labels and the widest realistic values: 72+74+56+84+68+96+40 = 490px plus six 8px gaps = 538px, which
+       leaves 22px of slack in the 560px panel §6 names as the narrowest. Qty (56px) and Action (40px) keep
+       R6-R3's own measured values; the reduction is taken entirely from the FLEXIBLE tracks, which give it
+       back as soon as the panel is wider. Expected Arrival keeps the largest minimum because its header
+       label is the longest one: at 560px it resolves to 100px against a 98px label, so no column heading is
+       clipped at any tested width.
+
+       Every track is still width-determined by the CONTAINER — fixed px or a fraction of what remains — so
+       no cell's own text can move a column (R6-R3 §4). Long values CLIP: From / To / Method / Last Mile are
+       native <select>s that show the full option text when opened, and the read-only Expected Arrival and
+       Last Mile cells carry the full string in `title`. Nothing is truncated in the data. */
     grid-template-columns:
-        minmax(84px, 1.1fr)      /* From */
-        minmax(84px, 1.4fr)      /* To — the longest warehouse names live here */
+        minmax(72px, 1.1fr)      /* From */
+        minmax(74px, 1.4fr)      /* To — the longest warehouse names live here */
         56px                     /* Qty — fixed: 1 to 5 digits must not move a column */
-        minmax(112px, 1.25fr)    /* Method */
-        minmax(100px, 1.2fr)     /* Expected Arrival — WAS minmax(100px, auto): the defect */
+        minmax(84px, 1.2fr)      /* Method */
+        minmax(68px, 1fr)        /* Last Mile */
+        minmax(96px, 1.15fr)     /* Expected Arrival — never `auto`: a content-sized track was the R6-R3 defect */
         40px;                    /* Action */
     column-gap: 8px;
     row-gap: 6px;
@@ -1302,7 +1323,20 @@
    It renders only when the chosen method genuinely runs on more than one last mile. */
 #ops-section .replen-card__method-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 #ops-section .replen-card__method-cell > .replen-card__select { width: 100%; }
-#ops-section .replen-card__select--lastmile { font-size: 11px; }
+/* R6-R4 §6 — the Last Mile cell. Always present, so the track is occupied on every row and the columns line
+   up whether this row shows a picker or a settled value. `min-width: 0` is what lets a long value clip inside
+   its own track instead of widening it. */
+#ops-section .replen-card__lastmile-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#ops-section .replen-card__lastmile-cell > .replen-card__select { width: 100%; }
+#ops-section .replen-card__select--lastmile { font-size: 11px; width: 100%; box-sizing: border-box; }
+#ops-section .replen-card__lastmile-static {
+    font-size: 11px;
+    color: var(--text-muted, #64748B);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
 #ops-section .replen-card__to-warning {
     font-size: 10px;
     line-height: 1.2;

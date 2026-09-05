@@ -89,13 +89,25 @@ ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(stripComments(CF
 var allowlist = /var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[([\s\S]*?)\];/.exec(stripComments(CFG))[1];
 eq((allowlist.match(/\{/g) || []).length, 1, 'A2 the activation allowlist still holds exactly one entry');
 ok(allowlist.indexOf("sku: 'CO1100-R'") !== -1, 'A3 and it is still the single live scope');
-ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3') === RO.OWNER_STAMPS.length - 1,
-  'A4 R6-R3 is the newest owner stamp');
+// R6-R4 RESTATEMENT. The claim was never "R6-R3 is last for ever" — it was that this round's stamp is
+// REGISTERED and ORDERED. A suite that pins itself to the tail of a growing list fails on the next round for
+// a reason that has nothing to do with what it tests.
+ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3') !== -1,
+  'A4 R6-R3 is a registered owner stamp');
+ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R2') < RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'),
+  'A4a and it is ordered after the round it followed');
 eq(RO.staleAppTokenRefs(INDEX), [], 'A5 no index.html asset is left behind on an older app token');
 ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(G60),
   'A6 60_ is UNCHANGED — no server defect was proven, so its stamp does not move');
-eq(RO.currentMethodRegistryToken(), 'fc1be3r4a2r1r6r1-method-registry-20260905',
-  'A7 method-registry.js did not change either — R6-R2 proved its resolution correct once hydrated');
+// R6-R4 RESTATEMENT. R6-R3 did not change method-registry.js, and pinning its token was a fair way to say so
+// AT THE TIME. It is not a property of R6-R3's work: R6-R4 changed the registry (resolve() now attaches the
+// transit authority's last-mile facts to every option) and MUST rotate that token or a cached copy is served.
+// What this round actually depends on is that the registry has its own token family and that index.html serves
+// the current member of it — the rule the pin existed to protect.
+ok(RO.METHOD_REGISTRY_TOKEN_SERIES.indexOf('fc1be3r4a2r1r6r1-method-registry-20260905') !== -1,
+  'A7 the registry token R6-R2 shipped is still in the ledger');
+ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== -1,
+  'A7a and index.html serves the CURRENT registry token, whatever round last moved it');
 
 // ================================================================================================================
 section('§1 — the carrier lazy-load R6-R2 fixed is still fixed');
@@ -322,11 +334,20 @@ function gridBlock(css) {
 }
 var BLOCK = gridBlock(CSS);
 var TRACKS = parseTracks(BLOCK);
-eq(TRACKS.length, 6, 'E1  six tracks: From · To · Qty · Method · Expected Arrival · Action');
+// R6-R4 RESTATEMENT. §6 of the following round required a SEVENTH track (Last Mile), so the count is no
+// longer the invariant — R6-R3's actual finding was that NO track may be content-sized and that the header
+// resolves the identical widths every row does. Both of those are asserted below and still hold at seven.
+ok(TRACKS.length >= 6, 'E1  the shared template still declares every column of the row');
 eq(TRACKS.filter(function (t) { return t.kind === 'auto'; }).length, 0,
   'E2  NOT ONE of them is content-sized — that keyword is the whole defect');
-eq(TRACKS.map(function (t) { return t.kind; }), ['flex', 'flex', 'fixed', 'flex', 'flex', 'fixed'],
-  'E3  Qty and Action are fixed; everything else is a fraction of the container');
+// R6-R4: the SHAPE is the claim — Qty and Action are fixed because a digit count and a button must never move
+// a column; every other track is a fraction of the container. Stated structurally so a new column does not
+// look like a regression.
+var KINDS = TRACKS.map(function (t) { return t.kind; });
+eq(KINDS[2], 'fixed', 'E3  Qty is a fixed track — 1 to 5 digits must not move a column');
+eq(KINDS[KINDS.length - 1], 'fixed', 'E3a Action is a fixed track — the button keeps its own column');
+eq(KINDS.filter(function (k) { return k === 'flex'; }).length, TRACKS.length - 2,
+  'E3b and every remaining track is a fraction of the container, not of its own text');
 // The rows the live screen shows, plus the header, plus the cases §4 enumerates.
 var GAP = 8;
 var ROW_CASES = [
@@ -506,7 +527,14 @@ ok(/R6R2_PROVENANCE_SCOPE_ = \{ company: 'ResUS', country: 'US', marketplace: 'A
 var runnerSrc = extractFn(CENSUSC, 'RUN_R6R2_ROUTE_PROVENANCE');
 ok(!/appendRow|setValue|deleteRow|getRange\([^)]*\)\.set/.test(runnerSrc),
   'G4  it constructs no mutation of any kind');
-ok(/TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'/.test(CENSUS), 'G5  the census build stamp is rotated');
+// R6-R4 RESTATEMENT: "rotated" is a relationship to the OWNER STAMPS, not a constant. The census must carry
+// a stamp this repo knows about, and the diagnostic must not ship under a stamp older than the round that last
+// edited it.
+var censusStamp = (/TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS) || [])[1];
+ok(RO.OWNER_STAMPS.indexOf(censusStamp) !== -1, 'G5  the census build stamp is a registered owner stamp');
+ok(RO.OWNER_STAMPS.indexOf(censusStamp) >= RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'),
+  'G5a and it is at least the round that rewrote this runner');
+
 
 // ================================================================================================================
 section('§5 — recommendation, current plan and difference stay three separate facts');
@@ -657,8 +685,10 @@ mut('M17 the marketplace destination resolving its country from the word "Amazon
   return fromScope === true && parsesLabel === false;
 });
 mut('M18 the header row declaring its own template drifts from the rows it labels', function () {
+  // R6-R4: the mutant is a header that re-declares the template, whatever the column COUNT is. Pinning the
+  // count made this probe fail on the round that added a column, which is not the drift it was written to catch.
   var headBlock = /#ops-section \.ir-exec-plan__grid--head \{([\s\S]*?)\}/.exec(CSS)[1];
-  return /grid-template-columns/.test(headBlock) === false && TRACKS.length === 6;
+  return /grid-template-columns/.test(headBlock) === false && TRACKS.length >= 6;
 });
 
 console.log('\n---------------------------------------------------------------');
