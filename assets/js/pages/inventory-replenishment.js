@@ -6896,15 +6896,154 @@ window._irCanonicalDateOrBlank_ = _irCanonicalDateOrBlank_;
 //
 // So the calculation now yields the DATE, and the display string is derived FROM it. There is still exactly
 // one calculator; what changed is that its answer is structured.
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R3 §3 — THE DROPDOWN AND THE ARRIVAL WERE READING THE SAME TABLE IN TWO VOCABULARIES.
+//
+// MEASURED, by running the shipped owners against the lane the live screen shows. The Method picker offered
+// three services, and every one of them produced "Lead time unavailable" — by two DIFFERENT routes to the
+// same wrong answer:
+//
+//   two of the three -> NO_LEAD_KEY   (absent from both mapping tables, so no key at all)
+//   the third        -> NO_LEAD_TIME  (mapped to a key, then no row on the lane IS spelled that way)
+//
+// The labels themselves are deliberately NOT written here. They are operator-maintained carrier data, and
+// A0 §G.9 is the rule that keeps them out of every shipped source, precisely so that no source change can
+// rename one. Quoting them inside the comment that explains why they must not be quoted would have been the
+// same defect in a smaller font.
+//
+// The cause is one sentence. THE OPTION VALUE IS `carrier_lead_times.shipping_method` VERBATIM — the registry
+// builds the picker straight from that column (methodsFromLeadTimes: `value: p.method`) — and this calculator
+// then TRANSLATED it away before looking the row back up. IR_SERVICE_TO_LEAD_KEY_ was written when the sheet
+// held an English display vocabulary (Sea / Sea Express / Air / Courier); the live sheet holds Chinese. So the
+// picker matched the row and the arrival could not, and the two disagreed about what a method IS.
+//
+// THE LABEL IS NOT PARSED AND NOTHING IS TRANSLATED. What is matched is the TOKEN the header persists
+// (`recommended_shipping_method`) and that ricK4GroupKey_ treats as route identity, compared through the ONE
+// shared identity test (IRService.matches: exact text first, canonical identity second, an unrecognised
+// spelling matching nothing but itself). Whether that token reads `sea_express` or `美森海卡` is a property of
+// the data, not a thing this function is entitled to have an opinion about.
+//
+// THE FOLD IS NOT REIMPLEMENTED. The conservative profile — slowest max, slowest avg, fastest min, per
+// (origin, destination, method, last-mile) — already has an owner in method-registry.serviceProfilesForRoute,
+// and it is the same owner that produced the option. Asking it is what makes the picker and the arrival one
+// answer rather than two; computing a second fold here is how they drifted apart in the first place.
+//
+// LAST MILE IS PART OF THE QUESTION. One ocean service delivered by truck and the same ocean service delivered
+// by parcel are two services, with two transit times and two K4 identities. When the chosen method runs on
+// exactly one last mile, that one is used. When it runs on more and the row has not chosen, this REFUSES with
+// a named state rather than taking the first — which is the silent pick §3 forbids.
+// ================================================================================================================
+function _irLeadTimeProfileFor_(rows, lane, method, lastMile) {
+    var reg = (typeof window !== 'undefined' && window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    if (!reg || typeof reg.serviceProfilesForRoute !== 'function') {
+        return { status: 'NO_PROFILE_AUTHORITY', profile: null, candidates: [] };
+    }
+    var svcEq = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
+        ? window.IRService.matches
+        : function (a, b) { return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim(); };
+    var all = reg.serviceProfilesForRoute(rows || [], lane || {}) || [];
+    // EXACT TOKEN FIRST, canonical identity only as a fallback. Both steps are IRService.matches' own order,
+    // applied to SET SELECTION rather than to a single comparison — and that distinction matters: a lane
+    // carrying both `美森海卡` and `Sea Express` holds two spellings of one canonical service, and collecting
+    // both at once would report an ambiguity between two last miles that no operator's choice created. A row
+    // whose token is present is answered by its own token; only a token no row spells is widened.
+    var mine = all.filter(function (p) {
+        return String(p.method == null ? '' : p.method).trim() === String(method == null ? '' : method).trim();
+    });
+    if (!mine.length) mine = all.filter(function (p) { return svcEq(method, p.method); });
+    if (!mine.length) return { status: 'NO_PROFILE_FOR_METHOD', profile: null, candidates: all };
+    var want = String(lastMile == null ? '' : lastMile).trim().toLowerCase();
+    if (want) {
+        var exact = mine.filter(function (p) { return String(p.lastMileDelivery || '').trim().toLowerCase() === want; });
+        if (exact.length) return { status: 'RESOLVED', profile: exact[0], candidates: mine };
+        // A last mile the method does not run is a MISMATCH, never a reason to fall back to a different one.
+        return { status: 'LAST_MILE_NOT_ON_THIS_METHOD', profile: null, candidates: mine };
+    }
+    // AN AMBIGUITY IS TWO CHOICES, NOT TWO ROWS. A profile whose last mile is BLANK makes no competing claim
+    // about the last mile — it is a row that did not say. So the question "must a person choose?" is asked of
+    // the DISTINCT NON-BLANK last miles: two of those are a real fork an operator has to resolve, and anything
+    // less is not.
+    var distinct = [];
+    mine.forEach(function (p) {
+        var v = String(p.lastMileDelivery || '').trim();
+        if (v && distinct.indexOf(v) === -1) distinct.push(v);
+    });
+    if (distinct.length > 1) return { status: 'AMBIGUOUS_LAST_MILE', profile: null, candidates: mine };
+    if (mine.length === 1) return { status: 'RESOLVED', profile: mine[0], candidates: mine };
+    // Several rows, one (or no) last mile between them — the same service written more than one way. Take the
+    // SLOWEST, for the reason the registry's own fold gives: one fast operator must never make a service look
+    // quicker than the slowest one who actually runs it. A profile with no usable max cannot win, but it is
+    // still eligible when nothing else has one, so the caller still gets a typed NO_USABLE_MAX_DAYS rather
+    // than a missing answer.
+    var best = null;
+    mine.forEach(function (p) {
+        if (best === null) { best = p; return; }
+        var a = p.maxDays, b = best.maxDays;
+        if (a === null || a === undefined) return;
+        if (b === null || b === undefined || a > b) best = p;
+    });
+    return { status: 'RESOLVED_SLOWEST_OF_EQUIVALENT_SPELLINGS', profile: best, candidates: mine };
+}
+
 function _irComputeRouteEta(destCountry, route, originCountry) {
     var method = route && route.shipping_method;
     var none = { text: '—', available: false, date: '', days: null, lead_key: '', source: 'NONE' };
     if (!method) return none;
+    var rows = _irCarrierGet('getCarrierLeadTimes');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
+    var _lane = { originCountry: originCountry, destinationCountry: destCountry };
+    var _lm = String((route && route.last_mile_delivery) || '').trim();
+    // R6-R3 §3 — ASK THE AUTHORITY THAT PRODUCED THE OPTION. See the note above _irLeadTimeProfileFor_.
+    var _pf = _irLeadTimeProfileFor_(rows, _lane, method, _lm);
+    if (_pf.status === 'AMBIGUOUS_LAST_MILE') {
+        // The method runs on more than one last mile and the route has not said which. Two of them are two
+        // transit times, so there is no single arrival to show, and picking one would be inventing the answer.
+        return { text: 'Choose a last mile', available: false, date: '', days: null, lead_key: '',
+            last_mile_options: _pf.candidates.map(function (p) { return p.lastMileDelivery; }),
+            source: 'LAST_MILE_REQUIRED' };
+    }
+    if (_pf.profile) {
+        var _mx = _pf.profile.maxDays;
+        if (_mx === null || _mx === undefined) {
+            // A blank max_days on every carrier that runs this service. Fail CLOSED — an absent number is not a
+            // zero-day transit, and a zero-day transit would present itself as arriving before it ships.
+            return { text: 'Lead time unavailable', available: false, date: '', days: null,
+                lead_key: _pf.profile.method, min_days: _pf.profile.minDays, avg_days: _pf.profile.avgDays,
+                max_days: null, last_mile_delivery: _pf.profile.lastMileDelivery,
+                resolved_by: 'CARRIER_LEAD_TIMES_TRANSIT_PROFILE', profile_status: _pf.status,
+                source: 'NO_USABLE_MAX_DAYS' };
+        }
+        var _d = Math.round(_mx);
+        var _iso = _irIsoPlusDays_(_irProjectCalendarDay_(), _d);
+        var _early = (_pf.profile.minDays === null || _pf.profile.minDays === undefined)
+            ? '' : _irIsoPlusDays_(_irProjectCalendarDay_(), Math.round(_pf.profile.minDays));
+        return { text: _iso + ' (latest, ' + _d + 'd)', available: true, date: _iso, days: _d,
+            lead_key: _pf.profile.method, min_days: _pf.profile.minDays, avg_days: _pf.profile.avgDays,
+            max_days: _mx, last_mile_delivery: _pf.profile.lastMileDelivery,
+            carrier_ids: _pf.profile.carrierIds, carrier_selection: _pf.profile.carrierSelection,
+            earliest_date: _early,
+            range_text: _early ? (_early + ' \u2013 ' + _iso) : _iso,
+            basis: 'MAX_DAYS_CONSERVATIVE',
+            pricing: { available: false, reason: 'NOT_REQUIRED_FOR_TRANSIT',
+                note: 'A rate card prices a lane; it does not decide how long the lane takes. No rate card is '
+                    + 'consulted here and none is required.' },
+            buffer_excluded_note: 'The 7-day operational buffer is a safety input for the AI Plan and is NOT part '
+                + 'of this transit time. It is never added to a displayed arrival.',
+            // `source` keeps its shipped value: it is published as data-eta-source and read back off the row,
+            // and a second way of reaching the same date is not a reason to change what a stored field says.
+            // Which authority answered is reported alongside it rather than inside it.
+            resolved_by: 'CARRIER_LEAD_TIMES_TRANSIT_PROFILE',
+            profile_key: _pf.profile.profileKey || '',
+            profile_status: _pf.status,
+            source: 'COMPUTED' };
+    }
+    // FALLBACK — the mapped display vocabulary. Kept, not replaced: a route saved before this round may hold a
+    // value like `sea_express` that is no longer any row's spelling, and it must keep resolving to the row it
+    // always resolved to. It can only ever ADD an answer where the authority above had none.
     var key = _irMethodToLeadKey(method);
     // §D.10 — an unmapped service resolves to NOTHING. It never borrows a neighbouring service's number, so
     // `sea_express` can never be answered by `sea`, in either direction.
-    if (!key) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: '', source: 'NO_LEAD_KEY' };
-    var rows = _irCarrierGet('getCarrierLeadTimes');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
+    if (!key) return { text: 'Lead time unavailable', available: false, date: '', days: null, lead_key: '',
+        profile_status: _pf.status, source: 'NO_LEAD_KEY' };
     function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
     // ==========================================================================================================
     // F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §6 — THE ARRIVAL WAS THE AVERAGE, AND THE LANE WAS HALF A LANE.
@@ -6991,10 +7130,33 @@ function _irRouteEtaFor(destCountry, route, originCountry) {
         // Both sides go through the SAME canonicaliser, so a display spelling and its enum are one basis and
         // `sea` still never equals `sea_express`. An empty basis means "no service recorded", which is treated
         // as still-applicable rather than as a mismatch: a stored date with no recorded basis is still stored.
-        var nowKey = String(_irMethodToLeadKey(route.shipping_method) || '').trim().toLowerCase();
-        var rawBasis = String(route.expected_arrival_basis == null ? '' : route.expected_arrival_basis).trim();
-        var basis = rawBasis ? String(_irMethodToLeadKey(rawBasis) || rawBasis).trim().toLowerCase() : '';
-        if (!basis || basis === nowKey) {
+        // ==========================================================================================
+        // R6-R3 §3 — THE TWO SIDES OF THIS COMPARISON WERE NOT THE SAME FUNCTION.
+        //
+        // `basis` fell back to its RAW value when the mapping table did not know it; `nowKey` did not. With a
+        // live vocabulary the mapping table has never heard of — and two of the three services on the lane are
+        // exactly that — the asymmetry made the two sides incomparable in both directions at once: a snapshot
+        // saved under an unmapped service had a non-empty basis and a blank nowKey, so it was always
+        // discarded; and had both sides collapsed to blank, EVERY unmapped method would have matched every
+        // other one, and changing the Method would have left a stale date sitting under a service that never
+        // earned it. (The labels are not written here: A0 §G.9 keeps operator carrier data out of every
+        // shipped source, so that no source change can rename one.)
+        //
+        // Both sides now go through the SAME normalisation — the mapped key when there is one, otherwise the
+        // token itself — and are compared through the shared service identity test. A snapshot with NO recorded
+        // basis is still treated as applicable, exactly as before: a stored date with no recorded basis is
+        // still a stored date, and this round is not entitled to discard one.
+        // ==========================================================================================
+        function _basisKey(v) {
+            var raw = String(v == null ? '' : v).trim();
+            if (!raw) return '';
+            return String(_irMethodToLeadKey(raw) || raw).trim().toLowerCase();
+        }
+        var nowKey = _basisKey(route.shipping_method);
+        var basis = _basisKey(route.expected_arrival_basis);
+        var _svcEq = (typeof window !== 'undefined' && window.IRService && typeof window.IRService.matches === 'function')
+            ? window.IRService.matches : function (a, b) { return String(a) === String(b); };
+        if (!basis || basis === nowKey || _svcEq(route.expected_arrival_basis, route.shipping_method)) {
             return { text: snapshot, available: true, date: snapshot, days: null, lead_key: nowKey, source: 'PERSISTED' };
         }
     }
@@ -7025,12 +7187,20 @@ function _irUpdateRouteEtas(sku) {
             var _fopt = _fromEl.options[_fromEl.selectedIndex];
             _originCountry = _fopt ? String(_fopt.getAttribute('data-wh-country') || '').trim() : '';
         }
+        // R6-R3 §3 — THE LAST MILE HAD TO COME WITH IT. This synthetic route carried the method and nothing
+        // else, so after a Method change (or a late catalogue settle) the profile lookup could not tell one
+        // service's truck last mile from its parcel one — two different transit times — and a method offering
+        // more than one would have read as ambiguous even when the operator had already chosen. It is read off
+        // the row's own control, exactly as _execRebuildMethodOptions reads it.
+        var _lmEl = rowEl.querySelector('[data-field="last_mile_delivery"]');
         var eta = _irRouteEtaFor(destCountry, {
             shipping_method: method,
+            last_mile_delivery: _lmEl ? String(_lmEl.value || '').trim() : '',
             expected_arrival: cell.getAttribute('data-eta-persisted') || '',
             expected_arrival_basis: cell.getAttribute('data-eta-basis') || ''
         }, _originCountry);
         cell.textContent = eta.text;
+        cell.setAttribute('title', eta.text || '');   // R6-R3 §4 — the clipped cell's full value, kept current
         cell.setAttribute('data-eta', eta.date || '');
         cell.setAttribute('data-eta-source', eta.source || '');
         cell.classList.toggle('replen-card__eta--na', !eta.available);
@@ -7465,7 +7635,8 @@ function _renderExecutionRoute(sku, route) {
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
-        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival" aria-label="Expected Arrival"' +
+        // R6-R3 §4 — the cell CLIPS to its track, so the full string travels in `title`.
+        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival" aria-label="Expected Arrival" title="' + _execEsc(eta.text || '') + '"' +
         ' data-eta="' + _execEsc(eta.date || '') + '" data-eta-source="' + _execEsc(eta.source || '') + '"' +
         ' data-eta-persisted="' + _execEsc(_irCanonicalDateOrBlank_(route.expected_arrival)) + '"' +
         ' data-eta-basis="' + _execEsc(String(route.expected_arrival_basis || '')) + '">' + _execEsc(eta.text) + '</span>' +

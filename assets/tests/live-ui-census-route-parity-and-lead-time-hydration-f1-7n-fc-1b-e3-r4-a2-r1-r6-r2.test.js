@@ -115,9 +115,13 @@ var allowlist = /var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[([\s\S]*?)\];/.
 eq((allowlist.match(/\{/g) || []).length, 1, 'A2 the activation allowlist still holds exactly one entry');
 ok(allowlist.indexOf("company: 'ResUS'") !== -1 && allowlist.indexOf("sku: 'CO1100-R'") !== -1,
   'A3 that entry is still the single live scope, unwidened');
-ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R2') === RO.OWNER_STAMPS.length - 1,
-  'A4 R6-R2 is the newest owner stamp');
-eq(RO.currentAppToken(), 'fc1be3r4a2r1r6r2-routeparity-20260905', 'A5 the round token is current');
+// R6-R3 RESTATEMENT. These pinned "this round is the newest", which is true exactly once and false for every
+// round after. What they are about is that the round IS registered and that the family moved together, and
+// that is round-independent.
+ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R2') !== -1,
+  'A4 R6-R2 is a registered owner stamp');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a2r1r6r2-routeparity-20260905'),
+  'A5 the application token is at R6-R2\'s or later');
 eq(RO.staleAppTokenRefs(INDEX), [], 'A6 no index.html asset is left behind on an older app token');
 
 // ================================================================================================================
@@ -423,8 +427,8 @@ section('§9/§11 — release contract');
 // ================================================================================================================
 ok(/'supply-planning-active-route-classification'/.test(BUILDER), 'H1 KMARC is in MODULE_ORDER');
 ok(/\['KMARC', 'supply-planning-active-route-classification'\]/.test(BUILDER), 'H2 and registered under KMARC');
-ok(/supply-planning-active-route-classification\.js\?v=fc1be3r4a2r1r6r2-routeparity-20260905/.test(INDEX),
-  'H3 the browser loads it on the current token');
+ok(new RegExp('supply-planning-active-route-classification\\.js\\?v=' + RO.currentAppToken()).test(INDEX),
+  'H3 the browser loads it on the current application token');
 var kmarcTag = INDEX.indexOf('supply-planning-active-route-classification.js');
 var pageTag = INDEX.indexOf('pages/inventory-replenishment.js');
 ok(kmarcTag !== -1 && pageTag !== -1 && kmarcTag < pageTag, 'H4 and loads it BEFORE the page that consumes it');
@@ -434,8 +438,8 @@ ok(/SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'/.test(read('assets/spec
   'H6 the deployment stamp is bumped for a sync-visible backend change');
 ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(WORKSPACE_GS),
   'H7 60_ is UNCHANGED — the lead-time DTO transport was proven present, so its stamp does not move');
-ok(/TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'/.test(CENSUS),
-  'H8 the census build stamp is rotated');
+ok(RO.stampAtOrAfter(/TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'),
+  'H8 the census build stamp is at R6-R2\'s or later');
 // The bundle must be reproducible from the sources in the tree.
 var built = require('../tools/build-apps-script-bundle.js');
 var sources = {};

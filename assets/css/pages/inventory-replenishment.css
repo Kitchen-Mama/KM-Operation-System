@@ -1253,7 +1253,32 @@
        track is a fixed 40px so the X button always sits in its own column, in normal document flow, never
        overlapping Expected Arrival and never crossing the card border. min-width:0 on items lets Method/
        ETA shrink+ellipsis rather than push the button out. */
-    grid-template-columns: minmax(84px, 1fr) minmax(84px, 1fr) 52px minmax(112px, 1fr) minmax(100px, auto) 40px;
+    /* F1-7N-FC-1B-E3-R4-A2-R1-R6-R3 §4 — THE FIFTH TRACK WAS SIZED BY ITS OWN TEXT, AND THAT IS WHY ROWS
+       DID NOT LINE UP.
+
+       `minmax(100px, auto)` makes Expected Arrival a CONTENT-SIZED track: `auto` as a maximum resolves to the
+       item's max-content width. Every route row is its own grid container, so a row reading
+       `2026-09-19 (latest, 14d)` claimed more of the free space than a row reading `Lead time unavailable` —
+       and because that space is taken BEFORE the flexible tracks are resolved, whatever was left over for
+       From / To / Method differed row by row. Four rows, four column layouts. The misalignment was one
+       keyword, not the markup: the six-track template was already shared by the header and every row kind.
+
+       Every track is now width-determined by the CONTAINER — fixed px, or a fraction of what remains — so no
+       cell's own text can move a column, and the header resolves the identical six widths every row does.
+       The minima are the existing, visually-tested ones rather than new numbers: 84+84+56+112+100+40 = 476px
+       plus five 8px gaps = 516px, against the 512px the previous template already required, so the narrow
+       panel this card already fits into still fits. Qty gains 4px because five digits were tight at 52px.
+
+       Long values are CLIPPED, never allowed to resize a column: the controls are native <select>s, which
+       show the full option text when opened, and the read-only Expected Arrival cell carries the full string
+       in its `title`. Nothing is truncated in the data. */
+    grid-template-columns:
+        minmax(84px, 1.1fr)      /* From */
+        minmax(84px, 1.4fr)      /* To — the longest warehouse names live here */
+        56px                     /* Qty — fixed: 1 to 5 digits must not move a column */
+        minmax(112px, 1.25fr)    /* Method */
+        minmax(100px, 1.2fr)     /* Expected Arrival — WAS minmax(100px, auto): the defect */
+        40px;                    /* Action */
     column-gap: 8px;
     row-gap: 6px;
     align-items: center;
@@ -1285,7 +1310,10 @@
     white-space: normal;
 }
 /* Expected Arrival read-only cell (right of Method). Unavailable/lead-time-missing state is muted. */
-#ops-section .replen-card__eta { font-size: 11px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* R6-R3 §4 — this cell CLIPS rather than widening its track (the track is no longer content-sized, so a long
+   arrival can no longer push From / To / Method around). The full string stays reachable: the renderer puts it
+   in `title`, and the cell keeps its aria-label. Clipping a display string is not truncating a value. */
+#ops-section .replen-card__eta { font-size: 11px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #ops-section .replen-card__eta--na { color: #94A3B8; font-style: italic; }
 /* Decision area — Recommendation Summary stacked directly above Execution Plan, same width. */
 #ops-section .ir-decision-area { display: flex; flex-direction: column; gap: 12px; }

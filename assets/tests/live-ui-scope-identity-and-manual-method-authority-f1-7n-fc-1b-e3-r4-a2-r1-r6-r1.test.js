@@ -274,8 +274,15 @@ ok(/NO_USABLE_MAX_DAYS/.test(etaFn),
   'E3a and a row that cannot answer says so rather than answering with a zero');
 ok(/buffer_excluded_note/.test(etaFn) && /is NOT part/.test(etaFn),
   'E4  §6 the 7-day buffer is EXCLUDED from the displayed transit — it is our caution, not the carrier’s promise');
-ok(!/\+ 7|buffer/.test(etaFn.replace(/buffer_excluded_note[\s\S]*?source: 'COMPUTED'/, '')),
-  'E4a and it is not added anywhere in the calculation');
+// R6-R3 RESTATEMENT. R6-R3 gave the calculator a second return path (the transit-profile authority), and each
+// path declares the exclusion — so the WORD `buffer` legitimately appears twice, and a text scan that strips
+// only the first note now trips over the second. The claim was never about the word: it is that no buffer
+// value is ever ADDED to the days that get displayed. That is what is asserted.
+var _daysExprs = etaFn.match(/(?:var )?_?d(?:ays)? = Math\.round\([^)]*\)/g) || [];
+ok(_daysExprs.length >= 1 && _daysExprs.every(function (e) { return !/\+|buffer/i.test(e); }),
+  'E4a and the displayed days are a rounded max_days with nothing added to them');
+ok(!/\+\s*(7|buffer|_buf|bufferDays)/i.test(etaFn.replace(/buffer_excluded_note[^,]*,/g, '')),
+  'E4a1 no buffer term is summed anywhere in the calculation');
 ok(/Lead time unavailable/.test(etaFn), 'E5  §6 no method or no lead time stays an explicit unavailable state');
 ok(/range_text/.test(etaFn) && /earliest_date/.test(etaFn),
   'E6  §6 with the arrival RANGE available beside the single conservative date');

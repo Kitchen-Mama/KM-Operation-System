@@ -245,7 +245,8 @@ var ROUND_TOKENS = [
   // browser holding the R6 copy keeps every one of those, and the first of them is a cross-company Execution
   // Plan - which is the one defect on this page that can reach Submit.
   'fc1be3r4a2r1r6r1-scopeidentity-20260905',
-  'fc1be3r4a2r1r6r2-routeparity-20260905'
+  'fc1be3r4a2r1r6r2-routeparity-20260905',
+  'fc1be3r4a2r1r6r3-etaalign-20260905'
 ];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
@@ -374,7 +375,8 @@ var IR_CSS_TOKEN_SERIES = [
   // reconciliation as three spans running together, and stacks nothing in the Method cell. The reconciliation
   // is the one that matters: its whole job is to stop 760 and 520 being read as one number, and an unstyled
   // run-together version does the opposite.
-  'irscopecompany-20260905'
+  'irscopecompany-20260905',
+  'iretaalign-20260905'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //
@@ -526,7 +528,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+)
 // or after round X". A0-R1 moved the stamp and broke all four in one step — the exact failure a duplicated
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
-var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'];
+var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

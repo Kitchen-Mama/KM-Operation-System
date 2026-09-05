@@ -79,6 +79,11 @@ function etaEnv(leadRows, opts) {
   sb.window = sb; sb.globalThis = sb;
   sb.__carrierCalls = 0;
   sb._irCarrierGet = function () { sb.__carrierCalls++; return leadRows || []; };
+  // R6-R3: the SHIPPED registry, not a stub — the conservative fold has one owner and this is it.
+  var _MR6R3 = require('../js/core/method-registry.js');
+  var _CMP6R3 = require('../js/utils/inventory-compat.js');
+  sb.window = { KM: { methodRegistry: { serviceProfilesForRoute: _MR6R3.serviceProfilesForRoute } },
+    IRService: _CMP6R3.IRService };
   var ctx = vm.createContext(sb);
   vm.runInContext([
     extractVar(PAGE, 'IR_SERVICE_TO_LEAD_KEY_'),
@@ -88,6 +93,11 @@ function etaEnv(leadRows, opts) {
     extractFn(PAGE, '_irProjectCalendarDay_'),
     extractFn(PAGE, '_irIsoPlusDays_'),
     extractFn(PAGE, '_irCanonicalDateOrBlank_'),
+    // R6-R3 §3 — the calculator now asks the TRANSIT PROFILE AUTHORITY before it falls back to the mapped
+    // display vocabulary, because the option the operator picks IS `carrier_lead_times.shipping_method`
+    // verbatim and translating it away is what made every live method unresolvable. That resolver is part of
+    // the calculator and has to be lifted with it.
+    extractFn(PAGE, '_irLeadTimeProfileFor_'),
     extractFn(PAGE, '_irComputeRouteEta'),
     extractFn(PAGE, '_irRouteEtaFor')
   ].join('\n'), ctx);

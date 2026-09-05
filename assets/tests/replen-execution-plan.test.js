@@ -28,7 +28,13 @@ var removeBtnRule = (css.match(/\.exec-route-row \.replen-card__remove-btn\s*\{[
 eq(/position:\s*absolute/.test(removeBtnRule), false, 'G7: X button is NOT absolutely positioned (stays in the Action track)');
 
 // Execution Plan grid = 6 tracks, Action fixed 40px (last), box-sizing so it fits the card
-var gridRule = (css.match(/#ops-section \.ir-exec-plan__grid \{[\s\S]{0,700}?\}/) || [''])[0];
+// R6-R3: this captured at most 700 characters of the rule, so any comment inside it could push a declaration
+// out of range and fail an assertion about a property that is still there. The rule is now captured to its
+// own closing brace, which is what "the rule" means.
+var gridRule = (function () {
+  var i = css.indexOf('#ops-section .ir-exec-plan__grid {');
+  return i < 0 ? '' : css.slice(i, css.indexOf('}', i) + 1);
+})();
 eq(/grid-template-columns:[^;]*40px;/.test(gridRule), true, 'G7: Action is a fixed 40px last grid track');
 eq((gridRule.match(/minmax|px/g) || []).length >= 6, true, 'G6: six explicit grid tracks');
 eq(/box-sizing:\s*border-box/.test(gridRule), true, 'C: exec grid is border-box (fits inside the card)');

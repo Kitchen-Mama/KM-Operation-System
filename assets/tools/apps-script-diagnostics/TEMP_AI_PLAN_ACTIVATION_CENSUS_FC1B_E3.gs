@@ -67,14 +67,22 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
-function CENSUS_rows_(ss, name) {
+// R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
+// sheets it opened, how many getDataRange()/getValues() calls it made, and how many rows and columns it read;
+// measuring that anywhere but inside the single reader would be measuring a second reader's behaviour.
+// Existing two-argument callers pass nothing and are byte-for-byte unaffected.
+function CENSUS_rows_(ss, name, _m) {
   try {
     var sh = ss.getSheetByName(name);
-    if (!sh) return [];
+    if (_m) { _m.sheets_opened++; _m.sheets.push(name); }
+    if (!sh) { if (_m) _m.sheets_absent.push(name); return []; }
+    if (_m) _m.get_data_range_calls++;
     var v = sh.getDataRange().getValues();
+    if (_m) { _m.rows_read += (v ? v.length : 0); _m.columns_read += (v && v[0] ? v[0].length : 0);
+      _m.by_sheet.push({ sheet: name, rows: v ? v.length : 0, columns: (v && v[0]) ? v[0].length : 0 }); }
     if (!v || v.length < 2) return [];
     var head = v[0].map(function (h) { return String(h == null ? '' : h).trim(); });
     var out = [];
@@ -2261,17 +2269,55 @@ function RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE() {
 // ==============================================================================================================
 var R6R2_PROVENANCE_SCOPE_ = { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' };
 
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R3 §2 — WHY THIS RETURNED "發生不明錯誤，請稍後再試", AND WHAT WAS CHANGED.
+//
+// The Apps Script editor's generic message is what you get when the function itself reports nothing — an
+// uncaught exception, an execution that ran out of time, or a return value the editor cannot render. The R6-R2
+// version could produce all three, and could not distinguish them, because it had no stage boundaries, no
+// timings, no top-level catch, and no bound on what it returned. Four concrete defects:
+//
+//   1. UNBOUNDED OUTPUT. It kept a ~25-field object for EVERY header where `country === 'US' OR marketplace ===
+//      'Amazon'` — across every company in the sheet, not this station's. On a production drafts tab that is
+//      thousands of objects, and the whole structure was then handed to the editor to render. That alone is
+//      enough to fail with no message worth reading.
+//   2. AN UNGUARDED CALL PER ROW. `ricK4GroupKey_(r)` ran on every candidate header. One malformed row throwing
+//      there takes down a diagnostic whose entire purpose is to describe malformed rows.
+//   3. NO STAGE, NO CLOCK. When it died there was nothing to say WHERE, or how long anything took, so a timeout
+//      and a serialization failure were indistinguishable from a bad row.
+//   4. UNBOUNDED LOGGING. `CENSUS_log_` was handed values with no length limit.
+//
+// WHAT IT DOES NOW. Scope is applied EARLY — a row is kept in full only when it counts for this station, is a
+// near-miss on exactly one axis, or carries a line for this SKU; everything else is COUNTED and not kept. Each
+// sheet is read exactly once through the one metered reader. Every stage logs its start, its completion and its
+// elapsed milliseconds. The top level catches, and returns a TYPED failure carrying code, failed_stage, message,
+// stack and elapsed_ms — because a diagnostic that collapses into the host's generic message has failed at the
+// one job it has. Output is measured and, if it exceeds the cap, trimmed with the trim declared rather than
+// silently performed.
+//
+// STILL COMPLETELY READ-ONLY. It opens the spreadsheet, reads two sheets, and constructs NO writer. It cannot
+// create, update, expire, cancel or re-scope a row, and it does not repair the ones it finds.
+// ==============================================================================================================
+var R6R3_PROVENANCE_LIMITS_ = {
+  max_reported_headers: 60,     // in-scope + one-axis near-misses; everything else is counted only
+  max_reported_lines: 200,
+  max_log_chars: 900,
+  max_output_bytes: 200000      // well under what the editor will render; the trim is reported when it happens
+};
+
 function RUN_R6R2_ROUTE_PROVENANCE() {
-  var t0 = Date.now();
+  var T0 = Date.now();
   var SC = R6R2_PROVENANCE_SCOPE_;
+  var LIM = R6R3_PROVENANCE_LIMITS_;
+  var stage = null;
   var out = {
     census: 'RUN_R6R2_ROUTE_PROVENANCE', read_only: true,
     db_writes: 0, writer_constructed: false, submit_calls: 0, reservation_writes: 0,
     carrier_master_data_writes: 0,
     census_build: TEMP_E3_CENSUS_BUILD_,
-    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 \u00a72 \u2014 every persisted header and line that could contribute to '
-      + 'the screen total, with the reason it is included or excluded by the ONE shared authority (KMARC). '
-      + 'Nothing is repaired, migrated, deleted or reassigned.',
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3 §2 — every persisted header and line that can contribute to '
+      + 'this station\'s plan total, with the reason each is included or excluded by the ONE shared authority '
+      + '(KMARC). Staged, bounded, and typed on failure. Nothing is repaired, migrated, deleted or reassigned.',
     scope: SC,
     shared_authority: 'KMARC (supply-planning-active-route-classification)',
     shared_authority_present: false,
@@ -2283,198 +2329,300 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
     excluded_route_ids_with_reason: [],
     source_of_520: null,
     headers: [], lines: [],
-    schema_columns_present: null,
+    counts: null,
+    read_metrics: null,
+    output_bytes: null,
+    output_trimmed: false,
+    elapsed_ms: null,
+    stage_timings: [],
+    error: null,
     verdict: 'INCOMPLETE'
   };
-  var arc = CENSUS_arc_();
-  if (!arc) {
-    out.verdict = 'STOP';
-    out.error = 'KMARC_UNAVAILABLE \u2014 the shared active-route classification module is not present in this '
-      + 'Apps Script project. Sync the generated bundle (90_) before running this census. Nothing was read.';
-    CENSUS_log_('verdict', out.verdict);
+  // Bounded logging. A diagnostic that floods the transcript is a diagnostic whose transcript nobody can open.
+  function logB(label, value) {
+    var s = (value && typeof value === 'object') ? JSON.stringify(value) : String(value);
+    if (s.length > LIM.max_log_chars) s = s.slice(0, LIM.max_log_chars) + '…[+' + (s.length - LIM.max_log_chars) + ' chars]';
+    CENSUS_log_(label, s);
+  }
+  function begin(name) {
+    stage = { stage: name, started_ms: Date.now() - T0, elapsed_ms: null };
+    out.stage_timings.push(stage);
+    logB('stage_start', name);
+    return stage;
+  }
+  function finish() {
+    if (!stage) return;
+    stage.elapsed_ms = (Date.now() - T0) - stage.started_ms;
+    logB('stage_done', stage.stage + ' ' + stage.elapsed_ms + 'ms');
+  }
+  function fail(code, e) {
+    out.verdict = 'FAILED';
+    out.elapsed_ms = Date.now() - T0;
+    if (stage && stage.elapsed_ms === null) stage.elapsed_ms = out.elapsed_ms - stage.started_ms;
+    out.error = {
+      code: code,
+      failed_stage: stage ? stage.stage : 'INIT',
+      message: CENSUS_str_(e && e.message ? e.message : e),
+      stack: CENSUS_str_(e && e.stack ? String(e.stack).slice(0, 1500) : ''),
+      elapsed_ms: out.elapsed_ms
+    };
+    logB('verdict', out.verdict);
+    logB('error', out.error.code + ' @ ' + out.error.failed_stage + ' — ' + out.error.message);
     return out;
   }
-  out.shared_authority_present = true;
-  out.shared_definition = arc.CONTRACT;
 
-  var ss;
   try {
-    ss = SpreadsheetApp.openById(prodExpectedDbId_());
-    if (typeof prodAssertDbTarget_ === 'function') prodAssertDbTarget_(ss, prodExpectedDbId_());
-  } catch (e) {
-    out.verdict = 'STOP';
-    out.error = 'DB_NOT_REACHABLE_OR_WRONG_TARGET: ' + CENSUS_str_(e && e.message);
-    CENSUS_log_('verdict', out.verdict);
+    begin('RESOLVE_SHARED_AUTHORITY');
+    var arc = CENSUS_arc_();
+    if (!arc) {
+      finish();
+      return fail('KMARC_UNAVAILABLE', new Error('The shared active-route classification module is not present '
+        + 'in this Apps Script project. Sync the generated bundle (90_) before running this census. '
+        + 'Nothing was read and nothing was written.'));
+    }
+    out.shared_authority_present = true;
+    out.shared_definition = arc.CONTRACT;
+    finish();
+
+    begin('OPEN_SPREADSHEET');
+    var ss;
+    try {
+      ss = SpreadsheetApp.openById(prodExpectedDbId_());
+      if (typeof prodAssertDbTarget_ === 'function') prodAssertDbTarget_(ss, prodExpectedDbId_());
+    } catch (eOpen) { finish(); return fail('DB_NOT_REACHABLE_OR_WRONG_TARGET', eOpen); }
+    finish();
+
+    var metrics = { sheets_opened: 0, sheets: [], sheets_absent: [], get_data_range_calls: 0,
+      rows_read: 0, columns_read: 0, by_sheet: [] };
+
+    begin('READ_ALLOCATION_DRAFT_HEADERS');
+    var headers = CENSUS_rows_(ss, 'shipping_allocation_drafts', metrics);
+    finish();
+
+    begin('READ_ALLOCATION_DRAFT_LINES');
+    var lines = CENSUS_rows_(ss, 'shipping_allocation_draft_lines', metrics);
+    finish();
+    out.read_metrics = metrics;
+
+    begin('INDEX_LINES_BY_HEADER');
+    var linesByHeader = {}, skuLineHeaderIds = {};
+    for (var li = 0; li < lines.length; li++) {
+      var lrow = lines[li];
+      var lk = CENSUS_str_(lrow.allocation_draft_id);
+      if (!lk) continue;
+      if (!linesByHeader[lk]) linesByHeader[lk] = [];
+      linesByHeader[lk].push(lrow);
+      if (CENSUS_low_(lrow.sku) === CENSUS_low_(SC.sku)) skuLineHeaderIds[lk] = 1;
+    }
+    finish();
+
+    begin('CLASSIFY_HEADERS');
+    var scope = { company: SC.company, country: SC.country, marketplace: SC.marketplace };
+    var counts = { headers_in_sheet: headers.length, lines_in_sheet: lines.length,
+      counted: 0, near_miss_one_axis: 0, carries_sku_line: 0, other: 0, reported: 0, omitted_for_size: 0 };
+    var keep = {}, seen = {};
+    for (var hi = 0; hi < headers.length; hi++) {
+      var r = headers[hi];
+      var id = CENSUS_str_(r.allocation_draft_id);
+      var c = arc.classifyHeader(r, scope);
+      var carriesSku = skuLineHeaderIds[id] === 1;
+      var nearMiss = !c.counts_toward_current_plan && c.exclusion_reasons.length === 1;
+      if (c.counts_toward_current_plan) { counts.counted++; keep[id] = 1; }
+      else if (nearMiss) counts.near_miss_one_axis++;
+      else if (carriesSku) counts.carries_sku_line++;
+      else { counts.other++; continue; }        // COUNTED, not kept. This is the bound.
+      if (out.headers.length >= LIM.max_reported_headers && !c.counts_toward_current_plan) {
+        counts.omitted_for_size++;
+        continue;                                // a counting header is NEVER omitted
+      }
+      seen[id] = 1;
+      var mine = linesByHeader[id] || [];
+      // §2 asks for the route group key. It is a shared helper over a row this diagnostic did not write, so a
+      // malformed row must not be able to end the run: the failure is recorded ON THE ROW and the census
+      // continues describing exactly the kind of data it exists to describe.
+      var gk = '', gkErr = '';
+      try { gk = (typeof ricK4GroupKey_ === 'function') ? CENSUS_str_(ricK4GroupKey_(r)) : ''; }
+      catch (eGk) { gkErr = CENSUS_str_(eGk && eGk.message); }
+      out.headers.push({
+        allocation_draft_id: id,
+        company: CENSUS_str_(r.company),
+        country: CENSUS_str_(r.country),
+        marketplace: CENSUS_str_(r.marketplace),
+        marketplace_id: CENSUS_str_(r.marketplace_id),
+        sku_association_source: carriesSku
+          ? ('shipping_allocation_draft_lines.sku (' + mine.length + ' line(s) on this header)')
+          : ('NONE — no line on this header names ' + SC.sku),
+        status: CENSUS_str_(r.status),
+        status_class: c.status_class,
+        lifecycle_status: CENSUS_str_(r.lifecycle_status || r.draft_lifecycle_status),
+        generation_type: CENSUS_str_(r.generation_type || r.source_type),
+        generation_run_id: CENSUS_str_(r.generation_run_id),
+        source_data_as_of: CENSUS_str_(r.source_data_as_of),
+        planning_cycle: CENSUS_str_(r.planning_cycle),
+        route_group_key: gk,
+        route_group_key_error: gkErr,
+        destination_marketplace: CENSUS_str_(r.destination_marketplace),
+        destination_warehouse_id: CENSUS_str_(r.destination_warehouse_id || r.recommended_destination_warehouse_id),
+        source_warehouse_id: CENSUS_str_(r.source_warehouse_id || r.recommended_source_warehouse_id),
+        recommended_shipping_method: CENSUS_str_(r.recommended_shipping_method),
+        recommended_last_mile_delivery: CENSUS_str_(r.recommended_last_mile_delivery),
+        create_idempotency_key: CENSUS_str_(r.create_idempotency_key),
+        created_at: CENSUS_str_(r.created_at),
+        created_by: CENSUS_str_(r.created_by),
+        updated_at: CENSUS_str_(r.updated_at),
+        updated_by: CENSUS_str_(r.updated_by),
+        draft_version: CENSUS_str_(r.draft_version),
+        counts_toward_current_plan: c.counts_toward_current_plan,
+        why_included_or_excluded: c.counts_toward_current_plan
+          ? 'INCLUDED — lifecycle-active and every scope axis matches exactly'
+          : ('EXCLUDED — ' + c.exclusion_reasons.join(' + ')),
+        ui_includes_it: c.counts_toward_current_plan,
+        census_includes_it: c.counts_toward_current_plan,
+        classification: CENSUS_str_(r.generation_run_id)
+          ? ('AI_GENERATED (carries generation_run_id ' + CENSUS_str_(r.generation_run_id) + ')')
+          : (CENSUS_str_(r.company)
+            ? 'MANUAL (no generation_run_id — composed by a person)'
+            : 'STRUCTURALLY_AMBIGUOUS (no generation_run_id AND no company — legacy blank-company work)')
+      });
+    }
+    counts.reported = out.headers.length;
+    out.counts = counts;
+    finish();
+
+    begin('COLLECT_SKU_LINES');
+    for (var lj = 0; lj < lines.length && out.lines.length < LIM.max_reported_lines; lj++) {
+      var l = lines[lj];
+      var hid = CENSUS_str_(l.allocation_draft_id);
+      if (!seen[hid]) continue;
+      if (CENSUS_low_(l.sku) !== CENSUS_low_(SC.sku)) continue;
+      var lineCounts = keep[hid] === 1 && arc.lineCounts(l);
+      out.lines.push({
+        allocation_draft_line_id: CENSUS_str_(l.allocation_draft_line_id),
+        allocation_draft_id: hid,
+        sku: CENSUS_str_(l.sku),
+        source_warehouse_id: CENSUS_str_(l.source_warehouse_id),
+        source_warehouse_code: CENSUS_str_(l.source_warehouse_code || l.source_warehouse_code_snapshot),
+        destination_kind: CENSUS_str_(l.destination_kind),
+        destination_id: CENSUS_str_(l.destination_warehouse_id || l.destination_marketplace),
+        quantity: arc.lineQuantity(l),
+        planned_qty: CENSUS_str_(l.planned_qty),
+        recommended_qty: CENSUS_str_(l.recommended_qty),
+        shipping_method: CENSUS_str_(l.shipping_method || l.selected_shipping_method),
+        last_mile_delivery: CENSUS_str_(l.last_mile_delivery),
+        expected_arrival: CENSUS_str_(l.expected_arrival),
+        line_status: CENSUS_str_(l.line_status),
+        contributes_to_ui_current_total: lineCounts,
+        contributes_to_census_active_total: lineCounts,
+        why: lineCounts ? 'its header counts and its own line_status is not terminal'
+          : (keep[hid] === 1 ? 'line_status is terminal (cancelled/expired)'
+                             : 'its header does not count — see the header row')
+      });
+    }
+    finish();
+
+    begin('COMPUTE_TOTALS');
+    // The total is computed over EVERY counting header's lines, not over the reported subset, so the size bound
+    // can never change the arithmetic. A bound that moved a number would be worse than no bound at all.
+    var total = 0;
+    for (var lk2 in keep) {
+      if (!Object.prototype.hasOwnProperty.call(keep, lk2)) continue;
+      var own = linesByHeader[lk2] || [];
+      for (var oi = 0; oi < own.length; oi++) {
+        if (CENSUS_low_(own[oi].sku) !== CENSUS_low_(SC.sku)) continue;
+        if (!arc.lineCounts(own[oi])) continue;
+        total += CENSUS_num_(arc.lineQuantity(own[oi]));
+      }
+    }
+    out.ui_current_plan_total = total;
+    out.census_current_plan_total = total;
+    out.totals_agree = (out.ui_current_plan_total === out.census_current_plan_total);
+    var inc = [];
+    for (var hk = 0; hk < out.headers.length; hk++) {
+      if (out.headers[hk].counts_toward_current_plan) inc.push(out.headers[hk]);
+      else out.excluded_route_ids_with_reason.push({ allocation_draft_id: out.headers[hk].allocation_draft_id,
+        reason: out.headers[hk].why_included_or_excluded });
+    }
+    out.included_route_ids = inc.map(function (h) { return h.allocation_draft_id; });
+    finish();
+
+    begin('CLASSIFY_SOURCE_OF_520');
+    var anyAi = false, anyBlankCompany = false, anyOtherCompany = false;
+    for (var ii = 0; ii < inc.length; ii++) {
+      if (inc[ii].classification.indexOf('AI_GENERATED') === 0) anyAi = true;
+      if (!inc[ii].company) anyBlankCompany = true;
+    }
+    for (var xi = 0; xi < out.excluded_route_ids_with_reason.length; xi++) {
+      if (out.excluded_route_ids_with_reason[xi].reason.indexOf('COMPANY_MISMATCH') !== -1) anyOtherCompany = true;
+    }
+    if (!inc.length) {
+      out.source_of_520 = 'F — NO PERSISTED ROW ACCOUNTS FOR THE SCREEN TOTAL. Every candidate header was '
+        + 'excluded; see excluded_route_ids_with_reason. If the screen still shows a total, it is E '
+        + '(locally synthesized UI state) and the page model must be read next.';
+    } else if (anyBlankCompany) {
+      out.source_of_520 = 'B — LEGACY BLANK-COMPANY WORK is being counted. This should be impossible under the '
+        + 'shared authority; if it appears, KMARC is not the predicate that produced this list.';
+    } else if (anyOtherCompany) {
+      out.source_of_520 = 'A — CORRECTLY PERSISTED MANUAL WORK for this company, and separately C was CHECKED: '
+        + 'headers belonging to another company exist and are excluded by name, not by luck.';
+    } else if (anyAi) {
+      out.source_of_520 = 'A/AI — persisted work that carries a generation_run_id. It is NOT the run that '
+        + 'produced the current recommendation unless that run id matches; compare generation_run_id against '
+        + 'the Gap run before describing it as newly generated.';
+    } else {
+      out.source_of_520 = 'A — CORRECTLY PERSISTED MANUAL WORK. Every counting header carries a company, a '
+        + 'lifecycle-active status and no generation_run_id, which is exactly what a person composing a route '
+        + 'in the Execution Plan writes (16_ persists status `draft`). It was NOT produced by any AI run.';
+    }
+    // The superseded predicate, evaluated beside the new one so the change is visible rather than asserted.
+    var legacyActive = 0;
+    for (var si = 0; si < headers.length; si++) { if (CENSUS_low_(headers[si].status) === 'active') legacyActive++; }
+    out.superseded_predicate_check = {
+      predicate: "status === 'active'",
+      matches_anywhere_in_the_sheet: legacyActive,
+      canonical_status_enum: '16_ SAD_STATUSES_ = { draft, site_confirmed, submitted, cancelled, expired }',
+      finding: legacyActive === 0
+        ? 'ZERO, across the WHOLE sheet and not merely this scope. The predicate has no satisfier: `active` is '
+          + 'not in the canonical enum and the write handler coerces anything unrecognised to `draft`. The '
+          + 'previously reported active_allocation_drafts: 0 was a constant, not a measurement.'
+        : 'NON-ZERO — a row carries a status outside the canonical enum. Investigate before trusting either count.'
+    };
+    finish();
+
+    begin('BOUND_OUTPUT');
+    // §2 asks for the serialized size, and a size that is only discovered by the editor failing to render it is
+    // not a measurement. It is taken here, and a trim is DECLARED rather than silently performed.
+    var bytes = 0;
+    try { bytes = JSON.stringify(out).length; } catch (eSer) {
+      finish();
+      return fail('OUTPUT_NOT_SERIALIZABLE', eSer);
+    }
+    if (bytes > LIM.max_output_bytes) {
+      var keptHeaders = [];
+      for (var ti = 0; ti < out.headers.length; ti++) {
+        if (out.headers[ti].counts_toward_current_plan) keptHeaders.push(out.headers[ti]);
+      }
+      out.counts.omitted_for_size += (out.headers.length - keptHeaders.length);
+      out.headers = keptHeaders;
+      out.lines = out.lines.slice(0, 20);
+      out.output_trimmed = true;
+      try { bytes = JSON.stringify(out).length; } catch (eS2) { bytes = -1; }
+    }
+    out.output_bytes = bytes;
+    finish();
+
+    out.elapsed_ms = Date.now() - T0;
+    out.verdict = out.totals_agree ? 'PARITY_ESTABLISHED' : 'PARITY_FAILED';
+    logB('r6r2_ui_current_plan_total', out.ui_current_plan_total);
+    logB('r6r2_census_current_plan_total', out.census_current_plan_total);
+    logB('r6r2_totals_agree', out.totals_agree);
+    logB('r6r2_included_route_ids', out.included_route_ids.join(','));
+    logB('r6r2_source_of_520', out.source_of_520);
+    logB('r6r3_read_metrics', out.read_metrics);
+    logB('r6r3_output_bytes', out.output_bytes);
+    logB('r6r3_elapsed_ms', out.elapsed_ms);
+    logB('verdict', out.verdict);
     return out;
+  } catch (e) {
+    return fail('PROVENANCE_DIAGNOSTIC_FAILED', e);
   }
-
-  var headers = CENSUS_rows_(ss, 'shipping_allocation_drafts');
-  var lines = CENSUS_rows_(ss, 'shipping_allocation_draft_lines');
-  out.schema_columns_present = {
-    headers: headers.length ? Object.keys(headers[0]) : [],
-    lines: lines.length ? Object.keys(lines[0]) : []
-  };
-
-  var scope = { company: SC.company, country: SC.country, marketplace: SC.marketplace };
-  var linesByHeader = {};
-  lines.forEach(function (l) {
-    var k = CENSUS_str_(l.allocation_draft_id);
-    if (!k) return;
-    if (!linesByHeader[k]) linesByHeader[k] = [];
-    linesByHeader[k].push(l);
-  });
-
-  // ---- HEADERS ------------------------------------------------------------------------------------------
-  // Every header that names this country OR this SKU's lines, so a row excluded on company is still SEEN and
-  // reported rather than filtered away before anyone can read why it was excluded.
-  headers.forEach(function (r) {
-    var id = CENSUS_str_(r.allocation_draft_id);
-    var mine = linesByHeader[id] || [];
-    var touchesSku = mine.some(function (l) { return CENSUS_low_(l.sku) === CENSUS_low_(SC.sku); });
-    var nearScope = CENSUS_low_(r.country) === CENSUS_low_(SC.country)
-      || CENSUS_low_(r.marketplace) === CENSUS_low_(SC.marketplace);
-    if (!touchesSku && !nearScope) return;
-    var c = arc.classifyHeader(r, scope);
-    out.headers.push({
-      allocation_draft_id: id,
-      company: CENSUS_str_(r.company),
-      country: CENSUS_str_(r.country),
-      marketplace: CENSUS_str_(r.marketplace),
-      marketplace_id: CENSUS_str_(r.marketplace_id),
-      sku_association_source: touchesSku
-        ? 'shipping_allocation_draft_lines.sku (' + mine.length + ' line(s) on this header)'
-        : 'NONE \u2014 no line on this header names ' + SC.sku,
-      status: CENSUS_str_(r.status),
-      status_class: c.status_class,
-      lifecycle_status: CENSUS_str_(r.lifecycle_status || r.draft_lifecycle_status),
-      generation_type: CENSUS_str_(r.generation_type || r.source_type),
-      generation_run_id: CENSUS_str_(r.generation_run_id),
-      source_data_as_of: CENSUS_str_(r.source_data_as_of),
-      planning_cycle: CENSUS_str_(r.planning_cycle),
-      route_group_key: (typeof ricK4GroupKey_ === 'function') ? CENSUS_str_(ricK4GroupKey_(r)) : '',
-      destination_marketplace: CENSUS_str_(r.destination_marketplace),
-      destination_warehouse_id: CENSUS_str_(r.destination_warehouse_id || r.recommended_destination_warehouse_id),
-      source_warehouse_id: CENSUS_str_(r.source_warehouse_id || r.recommended_source_warehouse_id),
-      recommended_shipping_method: CENSUS_str_(r.recommended_shipping_method),
-      recommended_last_mile_delivery: CENSUS_str_(r.recommended_last_mile_delivery),
-      create_idempotency_key: CENSUS_str_(r.create_idempotency_key),
-      created_at: CENSUS_str_(r.created_at),
-      created_by: CENSUS_str_(r.created_by),
-      updated_at: CENSUS_str_(r.updated_at),
-      updated_by: CENSUS_str_(r.updated_by),
-      draft_version: CENSUS_str_(r.draft_version),
-      // The SAME answer for both consumers, because there is only one predicate now.
-      counts_toward_current_plan: c.counts_toward_current_plan,
-      why_included_or_excluded: c.counts_toward_current_plan
-        ? 'INCLUDED \u2014 lifecycle-active and every scope axis matches exactly'
-        : ('EXCLUDED \u2014 ' + c.exclusion_reasons.join(' + ')),
-      ui_includes_it: c.counts_toward_current_plan,
-      census_includes_it: c.counts_toward_current_plan,
-      // §2's A-F classification, decided from STORED fields only.
-      classification: CENSUS_str_(r.generation_run_id)
-        ? 'AI_GENERATED (carries generation_run_id ' + CENSUS_str_(r.generation_run_id) + ')'
-        : (CENSUS_str_(r.company)
-          ? 'MANUAL (no generation_run_id \u2014 composed by a person)'
-          : 'STRUCTURALLY_AMBIGUOUS (no generation_run_id AND no company \u2014 legacy blank-company work)')
-    });
-  });
-
-  // ---- LINES --------------------------------------------------------------------------------------------
-  var keep = {};
-  out.headers.forEach(function (h) { if (h.counts_toward_current_plan) keep[h.allocation_draft_id] = 1; });
-  var seenHeaderIds = {};
-  out.headers.forEach(function (h) { seenHeaderIds[h.allocation_draft_id] = 1; });
-  lines.forEach(function (l) {
-    var hid = CENSUS_str_(l.allocation_draft_id);
-    if (!seenHeaderIds[hid]) return;
-    if (CENSUS_low_(l.sku) !== CENSUS_low_(SC.sku)) return;
-    var counts = keep[hid] === 1 && arc.lineCounts(l);
-    out.lines.push({
-      allocation_draft_line_id: CENSUS_str_(l.allocation_draft_line_id),
-      allocation_draft_id: hid,
-      sku: CENSUS_str_(l.sku),
-      source_warehouse_id: CENSUS_str_(l.source_warehouse_id),
-      source_warehouse_code: CENSUS_str_(l.source_warehouse_code || l.source_warehouse_code_snapshot),
-      destination_kind: CENSUS_str_(l.destination_kind),
-      destination_id: CENSUS_str_(l.destination_warehouse_id || l.destination_marketplace),
-      quantity: arc.lineQuantity(l),
-      planned_qty: CENSUS_str_(l.planned_qty),
-      recommended_qty: CENSUS_str_(l.recommended_qty),
-      shipping_method: CENSUS_str_(l.shipping_method || l.selected_shipping_method),
-      last_mile_delivery: CENSUS_str_(l.last_mile_delivery),
-      expected_arrival: CENSUS_str_(l.expected_arrival),
-      line_status: CENSUS_str_(l.line_status),
-      contributes_to_ui_current_total: counts,
-      contributes_to_census_active_total: counts,
-      why: counts ? 'its header counts and its own line_status is not terminal'
-        : (keep[hid] === 1 ? 'line_status is terminal (cancelled/expired)' : 'its header does not count \u2014 see the header row')
-    });
-  });
-
-  // ---- THE ARITHMETIC -----------------------------------------------------------------------------------
-  var total = 0;
-  out.lines.forEach(function (l) { if (l.contributes_to_ui_current_total) total += CENSUS_num_(l.quantity); });
-  out.ui_current_plan_total = total;
-  out.census_current_plan_total = total;
-  // Not a tautology: both sides are computed from ONE predicate, and this states that they were. A future
-  // change that re-forks the predicate makes this false rather than silently disagreeing again.
-  out.totals_agree = (out.ui_current_plan_total === out.census_current_plan_total);
-  out.included_route_ids = out.headers.filter(function (h) { return h.counts_toward_current_plan; })
-    .map(function (h) { return h.allocation_draft_id; });
-  out.excluded_route_ids_with_reason = out.headers.filter(function (h) { return !h.counts_toward_current_plan; })
-    .map(function (h) { return { allocation_draft_id: h.allocation_draft_id, reason: h.why_included_or_excluded }; });
-
-  // ---- THE ANSWER §2 ASKS FOR -----------------------------------------------------------------------
-  var inc = out.headers.filter(function (h) { return h.counts_toward_current_plan; });
-  var anyAi = inc.some(function (h) { return h.classification.indexOf('AI_GENERATED') === 0; });
-  var anyBlankCompany = inc.some(function (h) { return !h.company; });
-  var anyOtherCompany = out.headers.some(function (h) {
-    return !h.counts_toward_current_plan && h.why_included_or_excluded.indexOf('COMPANY_MISMATCH') !== -1;
-  });
-  var anyTerminalShown = false;   // by construction: a terminal header can never be in `inc`
-  if (!inc.length) {
-    out.source_of_520 = 'F \u2014 NO PERSISTED ROW ACCOUNTS FOR THE SCREEN TOTAL. Every candidate header was '
-      + 'excluded; see excluded_route_ids_with_reason. If the screen still shows a total, it is E '
-      + '(locally synthesized UI state) and the page model must be read next.';
-  } else if (anyBlankCompany) {
-    out.source_of_520 = 'B \u2014 LEGACY BLANK-COMPANY WORK is being counted. This should be impossible under the '
-      + 'shared authority; if it appears, KMARC is not the predicate that produced this list.';
-  } else if (anyOtherCompany) {
-    out.source_of_520 = 'A \u2014 CORRECTLY PERSISTED MANUAL WORK for this company, and separately C was CHECKED: '
-      + 'headers belonging to another company exist and are excluded by name, not by luck.';
-  } else if (anyAi) {
-    out.source_of_520 = 'A/AI \u2014 persisted work that carries a generation_run_id. It is NOT the run that '
-      + 'produced the current recommendation unless that run id matches; compare generation_run_id against '
-      + 'the Gap run in the report header before describing it as newly generated.';
-  } else {
-    out.source_of_520 = 'A \u2014 CORRECTLY PERSISTED MANUAL WORK. Every counting header carries a company, a '
-      + 'lifecycle-active status and no generation_run_id, which is exactly what a person composing a route '
-      + 'in the Execution Plan writes (16_ persists status `draft`). It was NOT produced by any AI run.';
-  }
-  out.terminal_rows_displayed = anyTerminalShown;
-
-  // The census's OWN previous predicate, evaluated beside the new one so the change is visible rather than
-  // asserted. This is the number that was reported as 0.
-  var legacyActiveCount = 0;
-  headers.forEach(function (r) { if (CENSUS_low_(r.status) === 'active') legacyActiveCount++; });
-  out.superseded_predicate_check = {
-    predicate: "status === 'active'",
-    matches_anywhere_in_the_sheet: legacyActiveCount,
-    canonical_status_enum: '16_ SAD_STATUSES_ = { draft, site_confirmed, submitted, cancelled, expired }',
-    finding: legacyActiveCount === 0
-      ? 'ZERO, across the WHOLE sheet and not merely this scope. The predicate has no satisfier: `active` is '
-        + 'not in the canonical enum and the write handler coerces anything unrecognised to `draft`. The '
-        + 'previously reported active_allocation_drafts: 0 was a constant, not a measurement.'
-      : 'NON-ZERO \u2014 a row carries a status outside the canonical enum. Investigate before trusting either count.'
-  };
-
-  out.verdict = out.totals_agree ? 'PARITY_ESTABLISHED' : 'PARITY_FAILED';
-  out.elapsed_ms = Date.now() - t0;
-  CENSUS_log_('r6r2_ui_current_plan_total', out.ui_current_plan_total);
-  CENSUS_log_('r6r2_census_current_plan_total', out.census_current_plan_total);
-  CENSUS_log_('r6r2_totals_agree', out.totals_agree);
-  CENSUS_log_('r6r2_included_route_ids', out.included_route_ids.join(','));
-  CENSUS_log_('r6r2_source_of_520', out.source_of_520);
-  CENSUS_log_('verdict', out.verdict);
-  return out;
 }
