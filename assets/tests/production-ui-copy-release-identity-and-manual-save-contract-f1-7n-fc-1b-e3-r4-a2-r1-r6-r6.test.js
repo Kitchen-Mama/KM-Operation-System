@@ -570,6 +570,270 @@ var NOBEFORE = runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK', AFTER_OK, null);
 eq((NOBEFORE.res || {}).verdict, 'STOP', 'E18 a readback with no BEFORE refuses rather than inventing one');
 
 // ================================================================================================================
+section('R6-R6-R1 — the frozen BEFORE, and a readback the editor can press');
+// ================================================================================================================
+// The whole point of this round: an argument-taking readback cannot be run from the Apps Script editor, whose
+// Run button passes nothing. Everything below is EXECUTED against the same census sandbox as §5/§8.
+// Sliced from the DECLARATION at column 0: the preflight's paste-ready emitter contains the same text inside
+// a string literal, and it appears earlier in the file.
+var _frozenAt = CENSUS.indexOf(NL + 'var R6R6_FROZEN_BEFORE_ = {');
+var FROZEN = CENSUS.slice(_frozenAt, CENSUS.indexOf(NL + '};', _frozenAt));
+ok(/function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN\(\)/.test(CENSUS),
+  'R1  the no-argument entry point exists and takes NO parameters');
+// The freeze is SOURCE. A value a later run could have written is not a BEFORE.
+// Comment-stripped, because the round's own note on why it uses none of these necessarily names all of them.
+var CENSUS_CODE = CENSUS.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+ok(!/CacheService|PropertiesService|ScriptProperties|UserProperties/.test(CENSUS_CODE),
+  'R2  the snapshot uses no CacheService, PropertiesService or other persisted state');
+var frozenFn = extractFn(CENSUS, 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN');
+ok(!/appendRow|setValues|setValue\(/.test(frozenFn), 'R2a and it contains no write primitive');
+
+// Every field §5 of the brief requires, present in the constant.
+['captured_from', 'verdict', 'allocation_draft_id', 'allocation_draft_line_id', 'expected_draft_version',
+ 'company', 'country', 'station_marketplace', 'sku', 'source_warehouse_id', 'destination_kind',
+ 'destination_id', 'destination_marketplace', 'quantity', 'shipping_method', 'last_mile_delivery',
+ 'expected_arrival', 'status', 'generation_type', 'ownership', 'k4_group_key', 'updated_at',
+ 'line_updated_at', 'header_count', 'line_count', 'other_rows',
+ 'allowed_mutation_fields', 'forbidden_mutation_fields'].forEach(function (k) {
+  ok(new RegExp('(^|[^_a-zA-Z])' + k + ':').test(FROZEN), 'R3  the snapshot names ' + k);
+});
+// And it carries the production values, not a fixture's.
+ok(/allocation_draft_id: 'SADH-K4-38523A90'/.test(FROZEN), 'R3a with the production header id');
+ok(/allocation_draft_line_id: 'SADL-K2-92B8BAD2'/.test(FROZEN), 'R3b the production line id');
+ok(/expected_draft_version: '1'/.test(FROZEN), 'R3c and the version the preflight reported');
+ok(/last_mile_delivery: ''/.test(FROZEN), 'R3d with the last mile BLANK, which is what makes it completable');
+
+// A K4 key with the last-mile segment substituted, computed by the shipped helper.
+function censusHelper(name) {
+  var sb = { CENSUS_str_: function (v) { return String(v == null ? '' : v).trim(); },
+             CENSUS_num_: function (v) { var n = Number(v); return isFinite(n) ? n : 0; } };
+  var ctx = vm.createContext(sb);
+  vm.runInContext(extractFn(CENSUS, name) + NL + 'this.__fn = ' + name + ';', ctx);
+  return sb.__fn;
+}
+var k4with = censusHelper('CENSUS_r6r6K4WithLastMile_');
+var FROZEN_K4 = '|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin|marketplace|amazon|sea_express||';
+eq(k4with(FROZEN_K4, 'TRUCK'),
+  '|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin|marketplace|amazon|sea_express|truck|',
+  'R4  the expected AFTER key is the frozen key with ONE segment substituted');
+eq(k4with(FROZEN_K4, 'TRUCK').split('|').length, 11, 'R4a and it still has the contract\'s eleven segments');
+eq(k4with('|too|few|', 'TRUCK'), '',
+  'R4b a key that is not the contract\'s shape yields NO expectation, so a comparison fails closed');
+var snapIssues = censusHelper('CENSUS_r6r6SnapshotIssues_');
+eq(snapIssues(null), ['the frozen snapshot constant is absent'], 'R5  an absent snapshot is an issue, not a pass');
+
+// ---- THE NINE STOP GATES, each executed --------------------------------------------------------------------
+// The live plan the freeze describes, rebuilt as sheets so the frozen constant is what the readback compares
+// against. Route A is the marketplace route; the ids and the K4 inputs match the production capture.
+var PROD_HEADER = { allocation_draft_id: 'SADH-K4-38523A90', company: 'ResUS', country: 'US',
+  marketplace: 'Amazon', status: 'draft', destination_marketplace: 'Amazon',
+  recommended_source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN', recommended_shipping_method: 'sea_express',
+  recommended_last_mile_delivery: '', draft_version: 1, updated_at: '2026-09-05 10:00:00' };
+var PROD_LINE = { allocation_draft_line_id: 'SADL-K2-92B8BAD2', allocation_draft_id: 'SADH-K4-38523A90',
+  sku: SKU, planned_qty: 320, line_status: 'draft', source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+  destination_kind: 'MARKETPLACE', destination_marketplace: 'Amazon', expected_arrival: '',
+  updated_at: '2026-09-05 10:00:00' };
+var PROD_B_HEADER = { allocation_draft_id: 'SADH-K4-A3872518', company: 'ResUS', country: 'US',
+  marketplace: 'Amazon', status: 'draft', recommended_destination_warehouse_id: 'WH-AMZLGS-IN',
+  recommended_source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN', recommended_shipping_method: 'air',
+  recommended_last_mile_delivery: 'PARCEL', draft_version: 2, updated_at: '2026-09-01 09:00:00' };
+var PROD_B_LINE = { allocation_draft_line_id: 'SADL-K2-344FB2B2', allocation_draft_id: 'SADH-K4-A3872518',
+  sku: SKU, planned_qty: 200, line_status: 'draft', source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+  destination_kind: 'WAREHOUSE', destination_warehouse_id: 'WH-AMZLGS-IN', expected_arrival: '2026-09-20',
+  updated_at: '2026-09-01 09:00:00' };
+function prodSheets(mut) {
+  mut = mut || {};
+  function cp(o, over) { var x = {}; Object.keys(o).forEach(function (k) { x[k] = o[k]; });
+    Object.keys(over || {}).forEach(function (k) { x[k] = over[k]; }); return x; }
+  var Hs = [HEADER_COLS.slice()], Ls = [LINE_COLS.slice()];
+  function h(o) { Hs.push(HEADER_COLS.map(function (c) { return o[c] === undefined ? '' : o[c]; })); }
+  function l(o) { Ls.push(LINE_COLS.map(function (c) { return o[c] === undefined ? '' : o[c]; })); }
+  h(cp(PROD_B_HEADER, mut.bHeader)); l(cp(PROD_B_LINE, mut.bLine));      // listed FIRST on purpose
+  h(cp(PROD_HEADER, mut.aHeader)); l(cp(PROD_LINE, mut.aLine));
+  (mut.extraHeaders || []).forEach(h); (mut.extraLines || []).forEach(l);
+  return { shipping_allocation_drafts: Hs, shipping_allocation_draft_lines: Ls };
+}
+function frozenRun(mut) {
+  return (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(mut)).res) || {};
+}
+// The authorized change, and nothing else: last mile blank -> TRUCK, version 1 -> 2, ETA now resolvable.
+var GOOD = { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2,
+  updated_at: '2026-09-05 12:00:00' }, aLine: { expected_arrival: '2026-10-15', updated_at: '2026-09-05 12:00:00' } };
+var OKR = frozenRun(GOOD);
+eq(OKR.census, 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', 'R6  the frozen readback runs with no arguments');
+eq(OKR.verdict, 'NARROW_MUTATION_CONFIRMED', 'R6a and the authorized change is the ONLY success verdict');
+eq([OKR.read_only, OKR.db_writes, OKR.writer_constructed, OKR.submit_calls, OKR.reservation_writes],
+  [true, 0, false, 0, 0], 'R6b read_only true, and four zeroes');
+eq(OKR.draft_version_before + '->' + OKR.draft_version_after, '1->2', 'R6c the version advanced by exactly one');
+eq(OKR.k4_actual_after, OKR.k4_expected_after, 'R6d the K4 key is the frozen key with only the last mile moved');
+eq(OKR.last_mile_absorbed_by_identity, true, 'R6e and the identity absorbed the value, which is what makes it valid');
+eq(OKR.snapshot_gaps, ['status', 'generation_type', 'ownership'],
+  'R6f the three fields the capture did not carry are NAMED, not silently treated as unchanged');
+eq([OKR.status_still_active, OKR.ownership_still_manual], [true, true],
+  'R6g and each is covered by an invariant gate instead');
+eq([OKR.header_count_before, OKR.header_count_after, OKR.line_count_before, OKR.line_count_after], [2, 2, 2, 2],
+  'R6h with the plan shape unchanged');
+ok(/other routes compared/.test(OKR.other_row_guarantee),
+  'R6i and the guarantee on the other route is STATED rather than implied: ' + OKR.other_row_guarantee);
+
+function stops(label, mut, expectFragment) {
+  var r = frozenRun(mut);
+  ok(r.verdict === 'STOP' && (!expectFragment || new RegExp(expectFragment, 'i').test(r.stop_reason || '')),
+    label + ' — ' + (r.verdict === 'STOP' ? String(r.stop_reason).slice(0, 90) : 'DID NOT STOP'));
+  return r;
+}
+// 1. target absent
+stops('R7  the target row is gone', { aLine: { allocation_draft_line_id: 'SADL-OTHER' } }, 'NOT PRESENT');
+// 2. target id changed
+stops('R7a the header id changed', { aHeader: { allocation_draft_id: 'SADH-K4-CHANGED' },
+  aLine: { allocation_draft_id: 'SADH-K4-CHANGED', ...{} } }, 'NOT PRESENT');
+// 3. quantity changed
+stops('R7b the quantity changed', { aHeader: GOOD.aHeader, aLine: { expected_arrival: '2026-10-15', planned_qty: 999 } },
+  'outside the allowed set');
+// 4. the From warehouse changed
+stops('R7c the source warehouse changed',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2, recommended_source_warehouse_id: 'WH-OTHER' },
+    aLine: { expected_arrival: '2026-10-15', source_warehouse_id: 'WH-OTHER' } }, 'outside the allowed set');
+// 5. the method changed
+stops('R7d the shipping method changed',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2, recommended_shipping_method: 'air' },
+    aLine: { expected_arrival: '2026-10-15' } }, 'outside the allowed set');
+// 6. status left the ACTIVE set
+stops('R7e the row left the ACTIVE statuses',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2, status: 'cancelled' },
+    aLine: { expected_arrival: '2026-10-15' } }, 'NOT PRESENT|ACTIVE');
+// 7. ownership became AI
+stops('R7f the row became AI-owned',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2, generation_run_id: 'RUN-1' },
+    aLine: { expected_arrival: '2026-10-15' } }, 'AI-owned');
+// 8. an unauthorized route changed
+stops('R7g Route B drifted', { aHeader: GOOD.aHeader, aLine: GOOD.aLine, bLine: { planned_qty: 111 } },
+  'another visible route drifted');
+// 9. a header/line was added
+stops('R7h a header was created', { aHeader: GOOD.aHeader, aLine: GOOD.aLine,
+  extraHeaders: [{ allocation_draft_id: 'SADH-NEW', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+    status: 'draft', destination_marketplace: 'Amazon', recommended_source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+    recommended_shipping_method: 'air' }],
+  extraLines: [{ allocation_draft_line_id: 'SADL-NEW', allocation_draft_id: 'SADH-NEW', sku: SKU,
+    planned_qty: 10, line_status: 'draft', destination_kind: 'MARKETPLACE', destination_marketplace: 'Amazon' }] },
+  'COUNT moved');
+// 10. the last mile is still blank
+stops('R7i the last mile never changed', {}, 'STILL blank');
+// 11. the version did not advance
+stops('R7j the version did not advance',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 1 }, aLine: { expected_arrival: '2026-10-15' } },
+  'draft_version went 1 -> 1');
+// 12. the version advanced twice
+stops('R7k the version advanced by two — something wrote twice',
+  { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 3 }, aLine: { expected_arrival: '2026-10-15' } },
+  'draft_version went 1 -> 3');
+
+// 13. THE SILENT RE-IDENTIFICATION. `planning_cycle` is a K4 dimension and is NOT one of the fields compared
+// row-by-row, so moving it re-keys the route's identity while every equality gate above still passes. This is
+// the case the exact K4 derivation exists for: no other gate in this readback can see it.
+var K4ONLY = frozenRun({ aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2,
+  planning_cycle: '2026-W40' }, aLine: { expected_arrival: '2026-10-15' } });
+eq(K4ONLY.verdict, 'STOP', 'R7l  a route re-keyed by a K4 dimension nothing else compares STOPS');
+eq(K4ONLY.unexpected_changed_fields, [],
+  'R7l1 and NO forbidden field changed — every other gate passed it');
+ok(/not the frozen key/.test(K4ONLY.stop_reason || ''),
+  'R7l2 so the exact K4 derivation is the only thing that caught it');
+eq(K4ONLY.k4_derives_from_last_mile_only, false, 'R7l3 stated as its own fact, not folded into another');
+
+// 14. A LAST MILE THE IDENTITY NEVER ABSORBED. Today the K4 key is DERIVED from the header on every read, so
+// the column and the key cannot disagree — which means this gate is a guard against a future in which the key
+// becomes stored rather than computed, and against a malformed key. Simulated by making the row emit a key
+// whose last-mile segment was never filled in: the column says TRUCK and the identity does not.
+(function () {
+  var m = CENSUS.replace('          k4_group_key: vgk,',
+    '          k4_group_key: (function () { var _s = CENSUS_str_(vgk).split("|");'
+    + ' if (_s.length === 11) _s[9] = ""; return _s.join("|"); })(),');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(GOOD), null, m).res) || {};
+  eq(r.verdict, 'STOP', 'R7m a last mile the route identity did not absorb STOPS');
+  eq(r.last_mile_absorbed_by_identity, false, 'R7m1 and says which gate refused it');
+  eq(OKR.last_mile_absorbed_by_identity, true, 'R7m2 while the authorized change absorbs it');
+})();
+
+// THE SNAPSHOT-COMPLETENESS GATE, executed by mutating the constant rather than by inspecting it.
+(function () {
+  var m = CENSUS.replace("  allocation_draft_id: 'SADH-K4-38523A90',", '  allocation_draft_id: null,');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(GOOD), null, m).res) || {};
+  ok(r.verdict === 'STOP' && /missing required field: allocation_draft_id/.test(r.stop_reason || ''),
+    'R8  a snapshot missing a required field STOPS and names the field');
+  eq(r.db_writes, 0, 'R8a and still reports zero writes');
+})();
+(function () {
+  var m = CENSUS.replace("  last_mile_delivery: '',                 // BLANK", "  last_mile_delivery: 'TRUCK',   // BLANK");
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(GOOD), null, m).res) || {};
+  ok(r.verdict === 'STOP' && /does not describe a route awaiting completion/.test(r.stop_reason || ''),
+    'R8b a snapshot whose last mile is not blank STOPS — it does not describe a completable route');
+})();
+
+mut('R-M1 the draft_version contract dropped → a no-op write reports success', function () {
+  var m = CENSUS.replace('  out.draft_version_advanced_by_contract = (aVer === bVer + 1);',
+    '  out.draft_version_advanced_by_contract = true;');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(
+    { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 1 },
+      aLine: { expected_arrival: '2026-10-15' } }), null, m).res) || {};
+  return r.verdict === 'NARROW_MUTATION_CONFIRMED';
+});
+mut('R-M2 the exact K4 derivation weakened back to "explained by" → a silent re-key confirms', function () {
+  var m = CENSUS.replace('  out.k4_derives_from_last_mile_only = !k4Known',
+    '  out.k4_derives_from_last_mile_only = true || !k4Known');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(
+    { aHeader: { recommended_last_mile_delivery: 'TRUCK', draft_version: 2, planning_cycle: '2026-W40' },
+      aLine: { expected_arrival: '2026-10-15' } }), null, m).res) || {};
+  return r.verdict === 'NARROW_MUTATION_CONFIRMED' && K4ONLY.verdict === 'STOP';
+});
+mut('R-M3 the snapshot-completeness gate dropped → an incomplete BEFORE is used anyway', function () {
+  var m = CENSUS.replace("  allocation_draft_id: 'SADH-K4-38523A90',", '  allocation_draft_id: null,')
+    .replace('  if (issues.length) {', '  if (false) {');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(GOOD), null, m).res) || {};
+  // With no id to locate by, the mutant cannot even find the row — it must not report a confirmation.
+  return r.verdict !== 'NARROW_MUTATION_CONFIRMED' && !/not usable/.test(r.stop_reason || '');
+});
+mut('R-M4 an uncaptured field silently treated as unchanged instead of named', function () {
+  var m = CENSUS.replace('    if (b[gk] === null || b[gk] === undefined) out.snapshot_gaps.push(gk);', '');
+  var r = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', prodSheets(GOOD), null, m).res) || {};
+  // The mutant reports no gaps AND compares a null BEFORE against a real value, so it invents a change.
+  return JSON.stringify(r.snapshot_gaps || []) === '[]'
+    && JSON.stringify(OKR.snapshot_gaps) === '["status","generation_type","ownership"]';
+});
+
+// THE PREFLIGHT NOW EMITS A PASTE-READY FREEZE, so the three invariant gates can become equality gates without
+// anyone transcribing a snapshot by hand.
+ok(typeof P0.frozen_snapshot_source === 'string' && /var R6R6_FROZEN_BEFORE_ = \{/.test(P0.frozen_snapshot_source),
+  'R9  the preflight emits the frozen constant as paste-ready source');
+ok(/"status":/.test(P0.frozen_snapshot_source) && /"ownership":/.test(P0.frozen_snapshot_source),
+  'R9a including the three fields the current freeze could not capture');
+ok(/"allocation_draft_id": "SADH-K4-38523A90"/.test(P0.frozen_snapshot_source),
+  'R9b and it is THIS run\'s target, not a template');
+
+// ---- §9 — the different-source warning claims nothing it does not know ---------------------------------------
+// The page is UNCHANGED this round; these assertions record that the required property already holds, so a
+// later round cannot quietly weaken it.
+var oneSideUnknown = makeRecon(PAGE, { rows: LIVE_ROWS,
+  suggested: function () { return { state: 'READY', value: 920 }; }, advice: null });
+eq(oneSideUnknown.model('CO1100-R').supply_sources_comparable, null,
+  'R10 with the recommendation side unknown, comparability is NULL — not false');
+ok(!/Different inventory sources/.test(oneSideUnknown.html('CO1100-R')),
+  'R10a so the strip claims no difference: unknown is not different');
+var noRouteSource = makeRecon(PAGE, { rows: [routeRow(320, { id: '', name: '', country: '' })],
+  suggested: function () { return { state: 'READY', value: 920 }; },
+  advice: { scopes: [{ supply_sources: ['WH-RESUS-US-3PL-AMZLGS'] }] } });
+eq(noRouteSource.model('CO1100-R').supply_sources_comparable, null,
+  'R10b and with the ROUTE side unresolved it is NULL too');
+ok(!/Different inventory sources/.test(noRouteSource.html('CO1100-R')),
+  'R10c so no claim is made from one side alone');
+ok(/data-supply-comparable="null"/.test(oneSideUnknown.html('CO1100-R')),
+  'R11 and UNKNOWN is published as its own value, distinct from false');
+ok(/data-supply-comparable="false"/.test(HD) && /data-supply-comparable="true"/.test(same.html('CO1100-R')),
+  'R11a with false and true published for the two known cases');
+var visR = HD.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+ok(visR.length <= 80 && !/\./.test(visR),
+  'R12 and the safety fact is still carried without a paragraph returning (' + visR.length + ' chars)');
+
+// ================================================================================================================
 section('§6 — what the browser actually does when the Last Mile changes');
 // ================================================================================================================
 // Measured on the shipped source, because the answer decides whether a live click is safe.
@@ -1080,8 +1344,13 @@ async function runSave(page, rows) {
       + ' before = { target: before.target, target_row: b, other_rows: rows.filter(function (x) {'
       + ' return x.allocation_draft_id !== before.target.allocation_draft_id; }),'
       + ' header_count: before.header_count, line_count: before.line_count };');
-    var mutRes = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK', BAD_B, P0, m).res) || {};
-    return mutRes.verdict === 'NARROW_MUTATION_CONFIRMED' && (BB.res || {}).verdict === 'STOP';
+    // Probed on the fixture the SHIPPED readback confirms, because R6-R6-R1 made the rebuilt baseline
+    // structurally detectable: a BEFORE re-derived from the current rows carries the AFTER version, so the
+    // draft_version contract (exactly one step) can never be satisfied. The mutant therefore cannot confirm
+    // anything at all — which is a stronger statement than the one this probe made before.
+    var mutRes = (runCensus('RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK', AFTER_OK, P0, m).res) || {};
+    return mutRes.verdict === 'STOP' && (B0.verdict === 'NARROW_MUTATION_CONFIRMED')
+      && (BB.res || {}).verdict === 'STOP';
   });
   await amut('M11 a held route re-sent by the next unrelated edit', async function () {
     resetDb(); freshStore(); __cri = 0;

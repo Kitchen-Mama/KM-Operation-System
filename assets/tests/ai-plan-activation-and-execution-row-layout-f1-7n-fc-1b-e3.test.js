@@ -1027,6 +1027,8 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
   var ALLOWED_ENTRY_POINTS = ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE',
     'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'RUN_R6R2_ROUTE_PROVENANCE', 'RUN_R6R4_SAVE_TARGET_FREEZE',
     'RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT', 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK',
+    // R6-R6-R1: the NO-ARGUMENT readback, which is the only one the editor's Run button can press.
+    'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN',
     'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
   eq(nonHelper.slice().sort(), ALLOWED_ENTRY_POINTS,
     'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');

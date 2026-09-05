@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R1';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -2895,6 +2895,11 @@ var R6R6_FORBIDDEN_MUTATION_FIELDS_ = ['company', 'country', 'station_marketplac
 // mutation as a violation; calling it allowed would hide a route silently changing identity. It is checked
 // separately: it may move, and it may move ONLY because the last mile did.
 var R6R6_DERIVED_MUTATION_FIELDS_ = ['k4_group_key'];
+// Compared case-insensitively: every one of these is frozen from the K4 group key, which lowercases each
+// segment. A case difference here is a spelling of the same identity, not a mutation of it.
+var R6R6_CASE_INSENSITIVE_FIELDS_ = ['company', 'country', 'station_marketplace', 'sku', 'source_warehouse_id',
+  'destination_kind', 'destination_id', 'destination_marketplace', 'shipping_method', 'last_mile_delivery',
+  'k4_group_key'];
 
 function CENSUS_r6r6MatchRouteA_(rows) {
   var out = [];
@@ -3000,7 +3005,37 @@ function RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT() {
   return CENSUS_r6r6FinishPre_(out);
 }
 
+// The frozen constant, rendered from THIS run. Emitted rather than described, because a snapshot transcribed
+// by hand is a snapshot with a typo in it.
+function CENSUS_r6r6FreezeSource_(out) {
+  if (!out || !out.target) return '';
+  var t = out.target;
+  var snap = {
+    captured_from: 'RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT (production, read-only, db_writes 0)',
+    captured_for_build: TEMP_E3_CENSUS_BUILD_,
+    verdict: out.verdict, db_writes: 0,
+    allocation_draft_id: t.allocation_draft_id, allocation_draft_line_id: t.allocation_draft_line_id,
+    expected_draft_version: CENSUS_str_(t.draft_version),
+    company: t.company, country: t.country, station_marketplace: t.marketplace, sku: t.sku,
+    source_page: 'inventory_replenishment', source_warehouse_id: t.source_warehouse_id,
+    destination_kind: t.destination_kind, destination_id: t.destination_id,
+    destination_marketplace: t.destination_marketplace,
+    quantity: CENSUS_num_(t.quantity), shipping_method: t.shipping_method,
+    last_mile_delivery: t.last_mile_delivery, expected_arrival: t.expected_arrival,
+    k4_group_key: t.k4_group_key,
+    status: t.status, generation_type: t.generation_type, ownership: t.ownership,
+    updated_at: t.updated_at, line_updated_at: t.line_updated_at,
+    header_count: CENSUS_num_(out.header_count), line_count: CENSUS_num_(out.line_count),
+    other_rows: (out.other_rows || []),
+    allowed_mutation_fields: R6R6_ALLOWED_MUTATION_FIELDS_,
+    forbidden_mutation_fields: R6R6_FORBIDDEN_MUTATION_FIELDS_,
+    derived_mutation_fields: R6R6_DERIVED_MUTATION_FIELDS_
+  };
+  return 'var R6R6_FROZEN_BEFORE_ = ' + JSON.stringify(snap, null, 2) + ';';
+}
+
 function CENSUS_r6r6FinishPre_(out) {
+  out.frozen_snapshot_source = CENSUS_r6r6FreezeSource_(out);
   CENSUS_log_('r6r6_preflight_verdict', out.verdict + (out.stop_reason ? ' — ' + out.stop_reason : ''));
   if (out.target) {
     CENSUS_log_('r6r6_preflight_target', out.target.allocation_draft_id + ' :: ' + out.target.allocation_draft_line_id);
@@ -3019,6 +3054,160 @@ function CENSUS_r6r6FinishPre_(out) {
 // It takes the BEFORE as an argument rather than re-deriving it, because a readback that recomputes its own
 // baseline cannot detect a change: whatever it finds becomes what it expected.
 // ----------------------------------------------------------------------------------------------------------------
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R1 §3/§4 — A READBACK THE EDITOR'S RUN BUTTON CAN ACTUALLY PRESS.
+//
+// R6-R6 shipped a readback that takes the preflight's own output as an argument, for a reason that has not
+// changed: a readback which rebuilds its own baseline cannot detect a change, because whatever it finds becomes
+// what it expected. The Apps Script editor's Run button passes NO arguments, so that contract could be executed
+// from a console and not from the editor — and the controlled write was blocked on exactly that.
+//
+// The BEFORE is therefore frozen as SOURCE. Not CacheService, not PropertiesService, not a sheet row: a value
+// that a later run could have written is not a BEFORE, it is whatever the last run happened to leave behind.
+// A constant in a file has the property that matters here — it can only change through a diff.
+//
+// WHAT WAS ACTUALLY CAPTURED, AND WHAT WAS NOT. The production preflight output supplied for this freeze names
+// the ids, the version, the quantity, the method, the last mile, the ETA and the K4 route key. It does NOT name
+// `status`, `generation_type` or `ownership`. Those are not quietly dropped and they are not guessed:
+//
+//   • a captured field is an EQUALITY gate — it must still equal what was frozen;
+//   • an uncaptured field is an INVARIANT gate — it must satisfy the property the authorized action requires
+//     (the row stays ACTIVE, and it stays manually owned), which is checkable without a BEFORE;
+//   • and every uncaptured field is REPORTED in `snapshot_gaps`, so the difference between the two kinds of
+//     guarantee is visible to whoever reads the verdict rather than buried in this comment.
+//
+// To upgrade the three invariant gates to equality gates, run the preflight again and paste the
+// `frozen_snapshot_source` string it now emits over the constant below.
+//
+// WHY THE SCOPE FIELDS ARE STORED LOWERCASED. They are read from the K4 group key, which is the identity the
+// write path itself computes, and which lowercases every segment by construction. Freezing a guess at the
+// stored casing of a warehouse id would produce a STOP for a spelling difference that means nothing, so these
+// are compared case-insensitively and the K4 key is the authority for all of them at once.
+// ================================================================================================================
+var R6R6_FROZEN_BEFORE_ = {
+  captured_from: 'RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT (production, read-only, db_writes 0)',
+  captured_for_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6',
+  verdict: 'EXACTLY_ONE_SAVE_TARGET',
+  db_writes: 0,
+
+  allocation_draft_id: 'SADH-K4-38523A90',
+  allocation_draft_line_id: 'SADL-K2-92B8BAD2',
+  expected_draft_version: '1',
+
+  // Read from the K4 key below, hence lowercase; compared case-insensitively.
+  company: 'resus',
+  country: 'us',
+  station_marketplace: 'amazon',
+  sku: 'CO1100-R',
+  source_page: 'inventory_replenishment',
+  source_warehouse_id: 'wh-tw-cn-factory-youxin',
+  destination_kind: 'marketplace',
+  destination_id: 'amazon',
+  destination_marketplace: 'amazon',
+
+  quantity: 320,
+  shipping_method: 'sea_express',
+  last_mile_delivery: '',                 // BLANK — the one field the authorized action completes
+  expected_arrival: '',                   // blank because it waits for the last mile
+  k4_group_key: '|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin|marketplace|amazon|sea_express||',
+
+  // NOT PRESENT in the captured output. Enforced as invariants, and named as gaps in the verdict.
+  status: null,
+  generation_type: null,
+  ownership: null,
+  updated_at: null,
+  line_updated_at: null,
+
+  // The plan this row sits in. A completion must not change the shape of it.
+  header_count: 2,
+  line_count: 2,
+  // The other visible row, frozen by the identity and quantity the live provenance states. Its remaining
+  // fields were not captured, so drift in them is REPORTED rather than claimed to be impossible — see
+  // `other_row_guarantee` in the verdict.
+  other_rows: [
+    { allocation_draft_id: 'SADH-K4-A3872518', allocation_draft_line_id: 'SADL-K2-344FB2B2', quantity: 200 }
+  ],
+
+  allowed_mutation_fields: ['last_mile_delivery', 'expected_arrival', 'draft_version', 'updated_at', 'line_updated_at'],
+  forbidden_mutation_fields: ['company', 'country', 'station_marketplace', 'sku', 'source_warehouse_id',
+    'destination_kind', 'destination_id', 'destination_marketplace', 'quantity', 'shipping_method', 'status',
+    'generation_type', 'ownership', 'allocation_draft_id', 'allocation_draft_line_id'],
+  derived_mutation_fields: ['k4_group_key']
+};
+
+// Every field whose ABSENCE makes the readback unable to decide. A blank string is a captured value here (the
+// last mile really was blank); only null/undefined is absent.
+var R6R6_FROZEN_REQUIRED_FIELDS_ = ['allocation_draft_id', 'allocation_draft_line_id', 'expected_draft_version',
+  'company', 'country', 'station_marketplace', 'sku', 'source_warehouse_id', 'destination_kind', 'destination_id',
+  'quantity', 'shipping_method', 'last_mile_delivery', 'expected_arrival', 'k4_group_key',
+  'header_count', 'line_count', 'allowed_mutation_fields', 'forbidden_mutation_fields'];
+// Fields the capture did not carry. Each has an invariant gate below instead of an equality gate.
+var R6R6_FROZEN_INVARIANT_FIELDS_ = ['status', 'generation_type', 'ownership'];
+// The statuses under which a route is still part of the current plan (KMARC's ACTIVE set). A completion must
+// never move a row out of it.
+var R6R6_ACTIVE_STATUSES_ = ['draft', 'site_confirmed', 'partially_submitted'];
+
+function CENSUS_r6r6SnapshotIssues_(snap) {
+  var issues = [];
+  if (!snap) return ['the frozen snapshot constant is absent'];
+  for (var i = 0; i < R6R6_FROZEN_REQUIRED_FIELDS_.length; i++) {
+    var k = R6R6_FROZEN_REQUIRED_FIELDS_[i];
+    if (snap[k] === null || snap[k] === undefined) issues.push('missing required field: ' + k);
+  }
+  if (snap.verdict !== 'EXACTLY_ONE_SAVE_TARGET') {
+    issues.push('the captured preflight verdict was ' + CENSUS_str_(snap.verdict) + ', not EXACTLY_ONE_SAVE_TARGET');
+  }
+  if (CENSUS_str_(snap.last_mile_delivery) !== '') {
+    issues.push('the frozen last mile is NOT blank, so this snapshot does not describe a route awaiting completion');
+  }
+  var seg = CENSUS_str_(snap.k4_group_key).split('|');
+  if (seg.length !== 11) issues.push('the frozen K4 key does not have the 11 segments the contract defines');
+  else if (seg[9] !== '') issues.push('the frozen K4 key already carries a last mile, contradicting the blank field');
+  return issues;
+}
+
+// The K4 key this row WOULD have after the authorized change, derived by substituting the one segment the
+// action is allowed to move. Returns '' when the key is not the shape the contract defines, so a caller that
+// compares against it fails closed rather than matching an empty string against an empty string.
+function CENSUS_r6r6K4WithLastMile_(k4, lastMile) {
+  var seg = CENSUS_str_(k4).split('|');
+  if (seg.length !== 11) return '';
+  seg[9] = CENSUS_str_(lastMile).toLowerCase();
+  return seg.join('|');
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// THE NO-ARGUMENT ENTRY POINT. Run it from the editor AFTER the one authorized UI change. It reads; it never
+// writes; and it answers NARROW_MUTATION_CONFIRMED or it answers STOP with the reason.
+// ----------------------------------------------------------------------------------------------------------------
+function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN() {
+  var snap = R6R6_FROZEN_BEFORE_;
+  var issues = CENSUS_r6r6SnapshotIssues_(snap);
+  if (issues.length) {
+    var bad = { census: 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN', build: TEMP_E3_CENSUS_BUILD_,
+      read_only: true, db_writes: 0, writer_constructed: false, submit_calls: 0, reservation_writes: 0,
+      carrier_master_data_writes: 0,
+      snapshot_issues: issues, verdict: 'STOP',
+      stop_reason: 'the frozen BEFORE snapshot is not usable: ' + issues.join('; '),
+      changed_fields: [], unexpected_changed_fields: [],
+      header_count_before: null, header_count_after: null, line_count_before: null, line_count_after: null };
+    return CENSUS_r6r6FinishBack_(bad);
+  }
+  // Shaped exactly like the preflight output the argument-taking readback expects, so ONE comparison serves
+  // both entry points and the two contracts cannot drift apart.
+  var before = {
+    target: snap,
+    target_row: snap,
+    other_rows: snap.other_rows || [],
+    header_count: snap.header_count,
+    line_count: snap.line_count,
+    frozen: true
+  };
+  var out = RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK(before);
+  out.census = 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK_FROZEN';
+  out.snapshot_issues = [];
+  return out;
+}
 function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK(before) {
   var res = RUN_R6R2_ROUTE_PROVENANCE();
   var rows = res.visible_route_rows || [];
@@ -3060,28 +3249,55 @@ function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK(before) {
     return CENSUS_r6r6FinishBack_(out);
   }
   out.before_values = b; out.after_values = a;
+  // A field the BEFORE never captured cannot be an equality gate. It is listed, and it is covered by an
+  // invariant gate further down instead — never silently treated as unchanged, and never treated as changed.
+  out.snapshot_gaps = [];
+  for (var gi = 0; gi < R6R6_FROZEN_INVARIANT_FIELDS_.length; gi++) {
+    var gk = R6R6_FROZEN_INVARIANT_FIELDS_[gi];
+    if (b[gk] === null || b[gk] === undefined) out.snapshot_gaps.push(gk);
+  }
   var fields = R6R6_ALLOWED_MUTATION_FIELDS_.concat(R6R6_FORBIDDEN_MUTATION_FIELDS_)
     .concat(R6R6_DERIVED_MUTATION_FIELDS_);
   for (var fi = 0; fi < fields.length; fi++) {
     var k = fields[fi];
+    if (out.snapshot_gaps.indexOf(k) !== -1) continue;      // not captured — see the invariant gates
     var bv = CENSUS_str_(b[k]), av = CENSUS_str_(a[k]);
+    // The scope fields are read from the K4 key, which lowercases every segment by construction, so they are
+    // compared case-insensitively. A warehouse id spelled in a different case is not a mutation.
+    if (R6R6_CASE_INSENSITIVE_FIELDS_.indexOf(k) !== -1) { bv = bv.toLowerCase(); av = av.toLowerCase(); }
     if (bv === av) continue;
     out.changed_fields.push({ field: k, before: bv, after: av });
     if (R6R6_FORBIDDEN_MUTATION_FIELDS_.indexOf(k) !== -1) out.unexpected_changed_fields.push(k);
   }
   // Route B and every other visible row, compared field by field against its own frozen copy.
   var otherBefore = before.other_rows || [], drift = [];
+  out.other_row_uncompared_fields = {};
   for (var oi = 0; oi < otherBefore.length; oi++) {
     var ob = otherBefore[oi], oa = null;
     for (var oj = 0; oj < rows.length; oj++) {
       if (rows[oj].visible_row_key === ob.visible_row_key) { oa = rows[oj]; break; }
     }
     out.other_rows_compared++;
-    if (!oa) { drift.push({ visible_row_key: ob.visible_row_key, field: '(row)', before: 'present', after: 'ABSENT' }); continue; }
+    // Matched by visible_row_key when the frozen row carries one, and by the id pair otherwise: a snapshot
+    // frozen from a summary has the ids and not the composite key.
+    if (!oa) {
+      for (var op = 0; op < rows.length; op++) {
+        if (CENSUS_str_(rows[op].allocation_draft_id) === CENSUS_str_(ob.allocation_draft_id) &&
+            CENSUS_str_(rows[op].allocation_draft_line_id) === CENSUS_str_(ob.allocation_draft_line_id)) { oa = rows[op]; break; }
+      }
+    }
+    if (!oa) { drift.push({ visible_row_key: CENSUS_str_(ob.visible_row_key) || CENSUS_str_(ob.allocation_draft_id),
+      field: '(row)', before: 'present', after: 'ABSENT' }); continue; }
     for (var ok = 0; ok < fields.length; ok++) {
       var kk = fields[ok];
-      if (CENSUS_str_(ob[kk]) !== CENSUS_str_(oa[kk])) {
-        drift.push({ visible_row_key: ob.visible_row_key, field: kk, before: CENSUS_str_(ob[kk]), after: CENSUS_str_(oa[kk]) });
+      // Only fields the frozen row actually CARRIES are compared. A field it never captured is not evidence
+      // of stability and must not be reported as drift the moment the census returns a value for it.
+      if (ob[kk] === null || ob[kk] === undefined) { out.other_row_uncompared_fields[kk] = 1; continue; }
+      var obv = CENSUS_str_(ob[kk]), oav = CENSUS_str_(oa[kk]);
+      if (R6R6_CASE_INSENSITIVE_FIELDS_.indexOf(kk) !== -1) { obv = obv.toLowerCase(); oav = oav.toLowerCase(); }
+      if (obv !== oav) {
+        drift.push({ visible_row_key: CENSUS_str_(ob.visible_row_key) || CENSUS_str_(ob.allocation_draft_id),
+          field: kk, before: obv, after: oav });
       }
     }
   }
@@ -3095,18 +3311,76 @@ function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK(before) {
   out.derived_change_explained = !out.derived_changed_fields.length || lastMileMoved;
   var countsHeld = (out.header_count_before === out.header_count_after) && (out.line_count_before === out.line_count_after);
   var onlyAllowed = (out.unexpected_changed_fields.length === 0);
-  var lastMileFilled = CENSUS_str_(a.last_mile_delivery) !== '';
+
+  // ---- THE LAST MILE IS VALID, NOT MERELY NON-BLANK ----------------------------------------------------------
+  // Validity is checked STRUCTURALLY rather than against a spelled vocabulary: the value counts as valid when
+  // the route identity itself absorbed it, which is what the K4 key's last-mile segment records. That also
+  // means no operator-facing label is written into this diagnostic, and a catalogue rename cannot silently
+  // stop this from matching.
+  var afterLm = CENSUS_str_(a.last_mile_delivery);
+  var lastMileFilled = afterLm !== '';
+  var afterSeg = CENSUS_str_(a.k4_group_key).split('|');
+  out.last_mile_absorbed_by_identity = (afterSeg.length === 11 && afterSeg[9] === afterLm.toLowerCase() && afterLm !== '');
+
+  // ---- THE K4 KEY MOVED BY THE LAST MILE AND BY NOTHING ELSE -------------------------------------------------
+  // Derived exactly rather than 'explained': the key this row must now carry is the frozen key with one segment
+  // substituted. Anything else is a route that changed identity for a reason the authorized action does not
+  // account for — which is the same class of defect as a silent re-route.
+  out.k4_expected_after = CENSUS_r6r6K4WithLastMile_(CENSUS_str_(b.k4_group_key), afterLm);
+  out.k4_actual_after = CENSUS_str_(a.k4_group_key);
+  var k4Known = CENSUS_str_(b.k4_group_key) !== '' && out.k4_expected_after !== '';
+  out.k4_derives_from_last_mile_only = !k4Known
+    || (out.k4_actual_after.toLowerCase() === out.k4_expected_after.toLowerCase());
+  // Kept for readers of the previous contract; the exact derivation above is what decides.
+  var lastMileMovedFlag = out.changed_fields.some(function (x) { return x.field === 'last_mile_delivery'; });
+  out.derived_change_explained = !out.derived_changed_fields.length || lastMileMovedFlag;
+
+  // ---- THE VERSION ADVANCED BY EXACTLY THE CONTRACT'S ONE STEP ------------------------------------------------
+  // 16_ sets draft_version = prior + 1 on an UPDATE. Exactly one step is the whole claim: no step means the
+  // write did not land, and two means something wrote twice.
+  var bVer = CENSUS_num_(b.expected_draft_version !== undefined && b.expected_draft_version !== null
+    ? b.expected_draft_version : b.draft_version);
+  var aVer = CENSUS_num_(a.draft_version);
+  out.draft_version_before = bVer; out.draft_version_after = aVer;
+  out.draft_version_advanced_by_contract = (aVer === bVer + 1);
+
+  // ---- THE INVARIANT GATES, for the fields the capture did not carry -----------------------------------------
+  var afterStatus = CENSUS_str_(a.status).toLowerCase();
+  out.status_still_active = R6R6_ACTIVE_STATUSES_.indexOf(afterStatus) !== -1;
+  out.ownership_still_manual = CENSUS_str_(a.ownership).indexOf('AI_GENERATED') !== 0;
+
   if (!countsHeld) out.stop_reason = 'the header or line COUNT moved: a completion must not create anything.';
   else if (!onlyAllowed) out.stop_reason = 'fields outside the allowed set changed: ' + out.unexpected_changed_fields.join(', ');
   else if (!out.route_b_unchanged) out.stop_reason = 'another visible route drifted; see other_row_drift.';
   else if (!lastMileFilled) out.stop_reason = 'the last mile is STILL blank, so the intended change did not land.';
-  else if (!out.derived_change_explained) out.stop_reason = 'the route identity key moved without the last mile'
-    + ' moving, so this row changed identity for a reason the authorized action does not account for.';
+  else if (!out.last_mile_absorbed_by_identity) out.stop_reason = 'the last mile has a value the route identity'
+    + ' did not absorb, so it is not a valid last mile for this lane.';
+  else if (!out.k4_derives_from_last_mile_only) out.stop_reason = 'the route identity key is not the frozen key'
+    + ' with only the last mile substituted, so this row changed identity for a reason the authorized action'
+    + ' does not account for. expected ' + out.k4_expected_after + ' / actual ' + out.k4_actual_after;
+  else if (!out.draft_version_advanced_by_contract) out.stop_reason = 'draft_version went ' + bVer + ' -> ' + aVer
+    + ', and the contract advances it by exactly one on an UPDATE. No step means the write did not land; more'
+    + ' than one means something wrote twice.';
+  else if (!out.status_still_active) out.stop_reason = 'the row is no longer in an ACTIVE status (' + afterStatus
+    + '), so it has left the current plan.';
+  else if (!out.ownership_still_manual) out.stop_reason = 'the row is now AI-owned, which a manual completion'
+    + ' must never produce.';
   out.verdict = out.stop_reason ? 'STOP' : 'NARROW_MUTATION_CONFIRMED';
+  // Stated rather than implied: which routes were compared field by field, and which only by identity.
+  out.other_row_guarantee = Object.keys(out.other_row_uncompared_fields).length
+    ? 'other routes compared on the fields the frozen snapshot carries; NOT compared on: '
+      + Object.keys(out.other_row_uncompared_fields).join(', ')
+    : 'other routes compared field by field';
   return CENSUS_r6r6FinishBack_(out);
 }
 
 function CENSUS_r6r6FinishBack_(out) {
+  // Asserted on the way out, so a caller reads the same four zeroes whichever entry point produced the answer.
+  out.read_only = true;
+  out.db_writes = CENSUS_num_(out.db_writes) || 0;
+  out.writer_constructed = out.writer_constructed === true;
+  out.submit_calls = CENSUS_num_(out.submit_calls) || 0;
+  out.reservation_writes = CENSUS_num_(out.reservation_writes) || 0;
   CENSUS_log_('r6r6_readback_verdict', out.verdict + (out.stop_reason ? ' — ' + out.stop_reason : ''));
   CENSUS_log_('r6r6_readback_changed', JSON.stringify(out.changed_fields));
   CENSUS_log_('r6r6_readback_unexpected', JSON.stringify(out.unexpected_changed_fields));
