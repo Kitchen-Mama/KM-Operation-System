@@ -667,19 +667,35 @@ eq(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7N-FC-1B-E3-R4-A2-R
   var cp = require('child_process');
   var G63S = read(GS + '63_api_v1_system_health.gs');
   var re = /\{ file: '([^']+)', symbol: '([A-Z_]+)', expected: '([^']+)'/g, m, bad = [];
+    // ONE STAMP PER FILE ONLY, and the limitation is deliberate rather than an oversight. 66_ carries TWO
+    // manifest stamps for two separate concerns (send orchestration, send diagnostic), and this check works
+    // at FILE granularity, so it cannot tell which concern a commit touched. Applying it there would demand
+    // that BOTH stamps move whenever EITHER does — exactly the churn the manifest warns against, because a
+    // stamp bumped to look current makes the whole contract useless. A check that creates pressure to lie is
+    // worse than a narrower one that does not, so those files are EXCLUDED and NAMED.
+    var entryCountByFile = {}, multiStamp = {}, c;
+    var cre = /\{ file: '([^']+)', symbol: '([A-Z_]+)', expected: '([^']+)'/g;
+    while ((c = cre.exec(G63S)) !== null) { entryCountByFile[c[1]] = (entryCountByFile[c[1]] || 0) + 1; }
   while ((m = re.exec(G63S)) !== null) {
-    var file = m[1], stamp = m[3], p = GS + file;
+    var file = m[1], symbol = m[2], stamp = m[3], p = GS + file;
+    if (entryCountByFile[file] !== 1) { multiStamp[file] = 1; continue; }
     if (!fs.existsSync(path.join(ROOT, p))) continue;
     function git(a) { try { return cp.execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).trim(); } catch (e) { return ''; } }
     var fileLast = git(['log', '-1', '--format=%H', '--', p]);
-    var stampLast = git(['log', '-1', '--format=%H', '-S', stamp, '--', p]);
+    // Match the DECLARATION, not the bare stamp string. R5's own commit rotated 66_ while also naming the
+    // new stamp in a comment, so a bare -S search found the older commit that first mentioned it in prose
+    // and reported a correctly-rotated file as stale. The declaration text is unambiguous.
+    var stampLast = git(['log', '-1', '--format=%H', '-S', 'var ' + symbol + " = '" + stamp + "'", '--', p]);
     // An uncommitted working-tree change is this round's own edit and is not evidence of a stale stamp.
     if (git(['diff', '--name-only', 'HEAD', '--', p])) continue;
     if (fileLast && stampLast && fileLast !== stampLast) bad.push(file + ' (stamp ' + stamp + ')');
   }
   eq(bad, [],
-    'E4  NO manifest owner carries a stamp older than its own last change \u2014 the METHOD is checked, not just ' +
-    'the three instances this round repaired');
+    'E4  NO single-stamp manifest owner carries a stamp older than its own last change — the METHOD is ' +
+    'checked, not just the instances this round repaired');
+  ok(Object.keys(multiStamp).length > 0,
+    'E4a and the files this check cannot cover (two stamps, one file) are NAMED rather than silently skipped: '
+    + Object.keys(multiStamp).join(', '));
 })();
 
 // ================================================================================================================
