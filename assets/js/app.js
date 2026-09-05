@@ -394,11 +394,23 @@ window.addEventListener('DOMContentLoaded', () => {
     // instead of three independently hardcoded booleans. app.js calls only the KM.DB legacy surface (never the API
     // Foundation directly). READ-ONLY, fire-and-forget; on any failure the documented fail-safe defaults apply (flat
     // V2 = true, site confirm = true, inventory generation = false). Never blocks startup.
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §4 — THE BOOT READ IS NOW DECLARED, NOT JUST FIRED.
+    //
+    // This is still fire-and-forget and still never blocks startup. What changed is that it says so: the
+    // arbiter is told a capability read is OPEN, and told again when it settles either way. That single fact is
+    // what lets the Inventory workspace read wait for an actual event instead of for a few seconds of luck —
+    // and a FAILED capability read releases its waiters exactly like a successful one, so a soft dependency can
+    // never become a hard outage.
+    var _capSettle = (window.KM && window.KM.bootArbiter)
+        ? window.KM.bootArbiter.declare('capabilities') : function () {};
     try {
         if (window.KM && window.KM.DB && typeof window.KM.DB.applyClientCapabilities === 'function') {
-            window.KM.DB.applyClientCapabilities();
-        }
-    } catch (e) { console.error('[App] capability bootstrap failed:', e); }
+            var _capP = window.KM.DB.applyClientCapabilities();
+            if (_capP && typeof _capP.then === 'function') {
+                _capP.then(function () { _capSettle(true); }, function () { _capSettle(false); });
+            } else { _capSettle(true); }
+        } else { _capSettle(true); }
+    } catch (e) { _capSettle(false); console.error('[App] capability bootstrap failed:', e); }
     // 設定初始頁面生命週期（首頁）— MUST run before the other startup inits.
     // Home markup is partial-loaded (Phase 1): switchTo('home-section') triggers the Home mount,
     // which loads the partial and renders. Running it first ensures a failure in any later init

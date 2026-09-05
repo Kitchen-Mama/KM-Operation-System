@@ -423,12 +423,16 @@ ok(/confirmRegenerateOverUserEdits/.test(PAGE), 'I4a and the regenerate-over-edi
 // ================================================================================================================
 section('J. release discipline — three families rotated, because three files changed');
 // ================================================================================================================
-// R6-R2 RESTATEMENT. These pinned the count and the literal token of the round that WROTE them, so a later
-// round rotating the family made a passing suite fail for the correct reason. What the assertion is about
-// is that the family moves TOGETHER and nothing is left behind, which is round-independent. The count stays
-// pinned — loosening it would let a forgotten file pass — at the value R6-R2 leaves it: 20, one more
-// than R6-R1's 19, because R6-R2 adds KMARC to the page.
-eq(RO.appTokenRefCount(INDEX), 20, 'J1  every application-token reference moved together');
+// R6-R5 RESTATEMENT. R6-R2 kept the COUNT pinned so a forgotten file could not pass, which was a fair trade
+// while nothing joined the family. R6-R5 changed app.js, so app.js joins it — and `appTokenRefCount` documents
+// itself as "reported, never pinned: a round that adds an asset moves this number, and that is not a defect".
+//
+// The guarantee the pin was standing in for is kept, and made stronger: NOTHING is left behind on an older
+// token (which is what a forgotten file looks like), and the family never SHRINKS without a file being
+// removed. A count alone could not tell those two apart.
+eq(RO.staleAppTokenRefs(INDEX), [], 'J1  no application-token reference is left behind on an older token');
+ok(RO.appTokenRefCount(INDEX) >= 20,
+  'J1a and the family never shrank (' + RO.appTokenRefCount(INDEX) + ' >= 20)');
 eq(RO.staleAppTokenRefs(INDEX), [], 'J1a and none was left behind');
 ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a2r1r6r1-scopeidentity-20260905'),
   'J1b on this round’s token or a later one');

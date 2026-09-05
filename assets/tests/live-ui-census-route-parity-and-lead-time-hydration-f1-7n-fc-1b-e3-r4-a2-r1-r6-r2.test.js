@@ -23,6 +23,7 @@
 // ================================================================================================================
 var fs = require('fs');
 var path = require('path');
+var cp = require('child_process');
 
 var pass = 0, fail = 0;
 var neg = { caught: 0, missed: 0 };
@@ -441,8 +442,12 @@ ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== 
   'H5a and index.html serves the CURRENT registry token');
 ok(/SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'/.test(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')),
   'H6 the deployment stamp is bumped for a sync-visible backend change');
-ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(WORKSPACE_GS),
-  'H7 60_ is UNCHANGED — the lead-time DTO transport was proven present, so its stamp does not move');
+// R6-R5 RESTATEMENT: checked against this round's OWN commit rather than against a literal stamp that a
+// later round is required to move. R6-R2 proved the lead-time DTO transport present and touched no server file.
+var _ownFiles = cp.execSync('git show --name-only --format= 7290ac0', { cwd: ROOT, encoding: 'utf8' })
+  .split(/\r?\n/).filter(Boolean);
+eq(_ownFiles.filter(function (p) { return /60_api_v1_inventory_replenishment_workspace\.gs$/.test(p); }), [],
+  'H7 R6-R2 did not touch 60_ — the lead-time DTO transport was proven present, so it moved that stamp not at all');
 ok(RO.stampAtOrAfter(/TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'),
   'H8 the census build stamp is at R6-R2\'s or later');
 // The bundle must be reproducible from the sources in the tree.

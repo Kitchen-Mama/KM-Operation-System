@@ -48,7 +48,7 @@
 // returns all twenty-one tables and reports no echo — while the browser believes it asked for two. That is
 // precisely the shape of failure this round spent its evidence on, and it must be a named fault rather than a
 // number someone has to notice is too large.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1';
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -314,17 +314,41 @@ function sirWorkspaceDefaultIo_() {
   };
 }
 
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §3 — STAGE EVIDENCE, SO A TIMED-OUT READ CAN BE FOUND.
+//
+// This handler already timed itself and every table it read. What it could not say is WHEN it started in wall
+// time, or how long the request waited between the router accepting it and this function beginning — and those
+// are the two facts that separate "the read is slow" from "the read waited for a slot". Both readings were
+// available for the live 60 s timeout and the telemetry could not choose between them.
+//
+// `stages` is a bounded list of named offsets from handler entry. It costs one Date.now() per boundary, is a
+// few hundred bytes, and is emitted on SUCCESS as well as failure so a healthy read establishes the baseline a
+// slow one is compared against.
+//
+// NOTHING IS PERSISTED. No sheet row, no CacheService, no PropertiesService. The correlation id travels in the
+// response and the wall-clock entry time is what lets an operator locate this execution in the Apps Script
+// execution list — which is a log that already exists and costs nothing to keep.
+//
+// NO LOCK IS TAKEN by this handler. That is reported as a fact (`lock: null`) rather than left unmentioned:
+// lock contention is one of the enumerated reach classes, and "we did not look" and "there is no lock" are
+// different answers.
+// ================================================================================================================
 function handleInventoryReplenishmentWorkspaceGet_(body, io) {
   io = io || sirWorkspaceDefaultIo_();
   var t0 = io.now();
   var seq = (io && typeof io.nextSeq === 'function') ? io.nextSeq() : 0;
   var reqId = sirWsStr_(body && body.requestId) || ('REQ-S' + ('000000' + seq).slice(-6));
+  var _stages = [];
+  function _stage(name, startedMs) { _stages.push({ stage: name, started_ms: startedMs, elapsed_ms: io.now() - startedMs }); }
+  var _entry = (typeof rtrEntryEvidence_ === 'function') ? rtrEntryEvidence_() : null;
   try {
     var payload = (body && body.payload) || {};
     var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
     var tOpen = io.now();
     var ss = io.openTarget();
     var openMs = io.now() - tOpen;
+    _stage('OPEN_SPREADSHEET', tOpen);
     var onlySet = sirWsOnlySet_(payload);
     var tables = {}, readCount = 0, tableMs = {};
     for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
@@ -339,7 +363,10 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       tableMs[spec.name] = io.now() - tT;
       readCount++;
     }
+    _stage('READ_TABLES', tOpen);
+    var tBuild = io.now();
     var vm = sirWorkspaceBuild_(tables, payload);
+    _stage('BUILD_VIEW_MODEL', tBuild);
     // §B - serverDurationMs was ALREADY here and the client was reporting server execution time as null. It
     // is now carried through to the page's stage report, together with what the projection actually removed,
     // so "the read is slow" can be answered with a number from the side that did the work.
@@ -359,10 +386,24 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
       recentWindowRequested: (vm.requestEcho && vm.requestEcho.recentWindow === true),
       recentWindowApplied: (wKeys.length > 0),
       onlyRequested: (vm.requestEcho && vm.requestEcho.only) || null,
-      openMs: openMs, slowestTables: slow.slice(0, 5) });
+      openMs: openMs, slowestTables: slow.slice(0, 5),
+      // R6-R5 §3 — the entry and stage evidence. `handlerExitAt` closes the interval, so the client can compare
+      // (handlerExitAt - routerEntryAt) against its OWN elapsed time: a large difference is transport or queue,
+      // a small one means the two clocks agree and the time was spent here.
+      entry: _entry,
+      stages: _stages.concat([{ stage: 'SERIALIZE_AND_EXIT', started_ms: t0, elapsed_ms: (io.now() - t0) }]),
+      handlerEntryAt: (_entry && _entry.routerEntryAt !== null) ? (_entry.routerEntryAt + _entry.routerToHandlerMs) : null,
+      handlerExitAt: Date.now(),
+      // No lock is taken on this path. Stated, so "lock contention" is an answered question and not an
+      // unexamined possibility.
+      lock: null,
+      handler: 'handleInventoryReplenishmentWorkspaceGet_',
+      serverBuild: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INVENTORY_REPLENISHMENT_WORKSPACE_BUILD_FAILED';
     return sirBuildEnvelope_(false, null, [{ code: code, message: String(e && e.message || e), details: (e && e.schemaDetail) || null }],
-      { requestId: reqId, serverDurationMs: (io.now() - t0) });
+      { requestId: reqId, serverDurationMs: (io.now() - t0), entry: _entry, stages: _stages,
+        handler: 'handleInventoryReplenishmentWorkspaceGet_', lock: null,
+        serverBuild: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null });
   }
 }

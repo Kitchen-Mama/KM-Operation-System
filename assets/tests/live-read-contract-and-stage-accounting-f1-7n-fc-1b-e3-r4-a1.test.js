@@ -315,7 +315,14 @@ var sir = (G60.match(/SIR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var sirExp = (HLTH.match(/\{ file: '60_api_v1_inventory_replenishment_workspace\.gs',[^}]*expected: '([^']+)'/) || [])[1];
 ok(!!sir, 'A1  60_ DECLARES a build for the first time');
 eq(sir, sirExp, 'A1a and the manifest expects exactly it (' + sir + ')');
-eq(sir, 'F1-7N-FC-1B-E3-R4-A1', 'A1b which is this round — 60_\'s request contract changed');
+// R6-R5 RESTATEMENT. "Which is this round" was a true statement about R4-A1 and a false one about every round
+// that legitimately edits 60_ afterwards — R6-R5 added the router-entry/stage evidence to this very handler and
+// MUST move the stamp, or a stale deployment would become undetectable. The durable claim is that the stamp is
+// a REGISTERED owner stamp and that the manifest agrees with it (A1a), which is what makes a stale 60_ a named
+// fault rather than a silent one.
+ok(RO.OWNER_STAMPS.indexOf(sir) !== -1, 'A1b and it is a registered owner stamp, so a stale 60_ is a NAMED fault');
+ok(RO.OWNER_STAMPS.indexOf(sir) >= RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A1'),
+  'A1c at least the round that introduced the declaration');
 ok(RO.BUILD_STAMP_RE.test(sir), 'A2  the shared stamp validator accepts an A-series stamp...');
 ['F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A1-R1', 'F1-7N-FB-4G-A2-R3-R1'].forEach(function (st, i) {
   ok(RO.BUILD_STAMP_RE.test(st), 'A2.' + (i + 1) + ' ...and so does ' + st + ', which it had been rejecting all along');

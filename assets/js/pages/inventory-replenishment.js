@@ -8731,6 +8731,11 @@ function _irEnsureRegistryLoaded_(opts) {
     var force = !!(opts && opts.force);
     if (!force && _irRegistry.status === 'READY' && _irRegistry.model) return Promise.resolve(_irRegistry.model);
     if (_irRegistryPending) return _irRegistryPending;                                          // single-flight
+    // R6-R5 §4 — DECLARED HERE, where a request is actually about to be issued. Declaring it at the mount
+    // instead would make "pending" mean "we intend to read", and a read that is never issued would hold the
+    // primary read until the cap. The two branches above return without reading and correctly declare nothing.
+    var _regSettle = (window.KM && window.KM.bootArbiter)
+        ? window.KM.bootArbiter.declare('scopeRegistry') : function () {};
 
     // F1-7N-FB-4C §B2 — THE REQUEST, THE CACHE AND THE SINGLE-FLIGHT LATCH NOW LIVE IN ONE PLACE.
     // This page and the "AI Plan — Inventory" scope modal used to be two independent registry consumers with
@@ -8751,6 +8756,7 @@ function _irEnsureRegistryLoaded_(opts) {
     _irRenderRegistryState_();
     _irRegistryPending = Promise.resolve(reg.ensureLoaded({ force: force, retry: true })).then(function (snap) {
         _irRegistryPending = null;
+        _regSettle(!!(snap && snap.status !== reg.STATUS.ERROR));
         if (mySeq !== _irRegistry.seq) return _irRegistry.model;      // superseded by a newer load
         if (!snap || snap.status === reg.STATUS.ERROR) {
             _irRegistry.status = 'ERROR';
@@ -8769,6 +8775,7 @@ function _irEnsureRegistryLoaded_(opts) {
         return _irRegistry.model;
     })['catch'](function (err) {
         _irRegistryPending = null;
+        _regSettle(false);
         if (mySeq !== _irRegistry.seq) return null;
         _irRegistry.status = 'ERROR';
         _irRegistry.error = { code: (err && err.code) || 'SCOPE_REGISTRY_READ_FAILED', message: (err && err.message) || 'The scope registry could not be read.' };
@@ -8944,6 +8951,10 @@ function _irBootstrapScope_() {
     _irSearch.status = 'LOADING';
     _irSearch.error = null;
     var rg = _irRegion_(); if (rg && window.KM && window.KM.loadState) rg.beginLoad(false);   // ONE loading state
+    // R6-R5 §4 — PAINT THE WAITING STATE NOW. The bootstrap sets LOADING and then awaits; without this the
+    // table's own bodies keep whatever they had until the first render after the reads resolve, so a user who
+    // navigates immediately sees the pre-search sentence while a read is being prepared for them.
+    if (typeof _irRenderSearchGate_ === 'function') { try { _irRenderSearchGate_(); } catch (_eG) {} }
     // STARTED TOGETHER. The workspace read is scope-INDEPENDENT (the server returns the primary-render table set
     // and the client scopes it), which is exactly why it can overlap the validation instead of following it.
     var regP = Promise.resolve(_irEnsureRegistryLoaded_())['catch'](function () { return null; });
@@ -9122,7 +9133,19 @@ function _irRenderSearchGate_() {
     if (!body) return;
     var html = '';
     if (_irSearch.status === 'LOADING') {
-        html = '<div class="replen-empty replen-search-loading" style="color:#64748B;padding:10px;">Searching…</div>';
+        // R6-R5 §4 — "Preparing" and "Searching" are different truths and the user is owed the right one.
+        // While the arbiter is waiting for the boot reads to settle, NO inventory request has been dispatched
+        // yet; saying "Searching…" there claims work that is not happening. The state is still LOADING (§7
+        // keeps four states, not five) — this only tells the truth about which half of it we are in.
+        var _ba = (window.KM && window.KM.bootArbiter) ? window.KM.bootArbiter : null;
+        var _preparing = false;
+        try {
+          _preparing = !!(_ba && typeof _irCriticalReadKey_ === 'function' &&
+            _ba.phaseFor(_irCriticalReadKey_({ carrier: true })) === _ba.PHASE.PREPARING);
+        } catch (_ePh) { _preparing = false; }
+        html = _preparing
+          ? '<div class="replen-empty replen-search-loading" data-load-phase="PREPARING" style="color:#64748B;padding:10px;">Preparing… waiting for the page to finish starting up, then this search runs.</div>'
+          : '<div class="replen-empty replen-search-loading" data-load-phase="READING" style="color:#64748B;padding:10px;">Searching…</div>';
     } else if (_irSearch.status === 'ERROR') {
         var e = _irSearch.error || {};
         var code = _irEsc_(e.code || 'INVENTORY_REPLENISHMENT_READ_FAILED');
@@ -9377,6 +9400,8 @@ function _irRenderError_(err) {
 // two dispatches can be compared on identity rather than on the action name they share. Bounded at 20 entries;
 // no payload contents, no rows, no URL.
 var _irReadDispatches = [];
+// §6 — the last late answer this page refused because its scope had moved on. Reported, never silent.
+var _irLastStaleDrop_ = null;
 var IR_READ_OWNERS_ = ['COALESCED_BOOTSTRAP', 'RESTORED_MOUNT_REVALIDATION', 'SEARCH_CLICK',
     'POST_WRITE_READBACK', 'UNDECLARED'];
 function _irReadPayloadFingerprint_(payload) {
@@ -9389,7 +9414,160 @@ function _irReadPayloadFingerprint_(payload) {
 function _irRecordReadDispatch_(entry) {
     try { if (_irReadDispatches.length < 20) _irReadDispatches.push(entry); } catch (e) {}
 }
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §5 — WHAT EACH TABLE IN THE PRIMARY READ IS ACTUALLY FOR.
+//
+// §5 asks whether the twenty-one-table read should be split into a critical response and a deferred detail
+// response. That is a question about EVIDENCE, and the evidence needed to answer it is the one thing the live
+// report did not have: `server_execution_ms: null`. Until a cold-boot run returns the §3 stage evidence, "the
+// payload is too big" and "the read waited for a slot" are both available readings, and the second is the one
+// this round MEASURED (queue wait 6 480 ms out of a 60 000 ms budget, reproduced end to end).
+//
+// So the classification is shipped and the split is NOT taken. That is the §5 instruction followed, not dodged:
+// "If splitting is not justified, optimize the existing scoped Workspace request instead" — which is what the
+// arbitration above does. What the table below records is the ANALYSIS, so the decision can be revisited from
+// data rather than re-derived from scratch:
+//
+//   · four of the twenty-one tables are DETAIL-ONLY — nothing in the initial table reads them;
+//   · the server already supports the subset (`payload.only`) and the recent-period projection
+//     (`payload.recentWindow`), so a split needs no new server surface, only a reason;
+//   · and the four detail tables are exactly the ones R6-R2 and R6-R4 depend on being present at Search time
+//     (the carrier catalogue is ADOPTED from this response, and the Execution Plan hydrates from the drafts).
+//     Deferring them without care would reintroduce the empty-catalogue adoption R6-R2 removed, which is why
+//     this is a decision and not an oversight.
+//
+// `scope_filterable_server_side` records a separate, real observation: this action carries NO scope (see
+// _irCriticalReadKey_), so no table is filtered by station before serialization. Several could be. That is the
+// largest single reduction available to a future round, and it is written down here rather than discovered again.
+// ================================================================================================================
+var IR_WORKSPACE_TABLE_ROLES_ = [
+    { table: 'marketplaces',                     initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'scope + filter options' },
+    { table: 'marketplace_skus',                 initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'the SKU list itself' },
+    { table: 'sku_details',                      initial: true,  detail: false, route: false, scope_filterable_server_side: false, note: 'category, units per carton' },
+    { table: 'warehouses',                       initial: true,  detail: true,  route: true,  scope_filterable_server_side: false, note: 'filters AND the From/To pickers' },
+    { table: 'amazon_inventory_snapshot',        initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'current stock' },
+    { table: 'amazon_inventory_health_snapshot', initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'stock health' },
+    { table: 'amazon_daily_sales_snapshot',      initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'avg sales per day; recentWindow-projected' },
+    { table: 'amazon_weekly_sales_snapshot',     initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'sales; recentWindow-projected' },
+    { table: 'fc_regular_forecast',              initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'forecast + days of supply' },
+    { table: 'fc_target_rules',                  initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'forecast targets' },
+    { table: 'fc_special_events',                initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'the upcoming-event column' },
+    { table: 'overseas_inventory_snapshot',      initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: '3PL stock column' },
+    { table: 'factory_stock',                    initial: true,  detail: true,  route: false, scope_filterable_server_side: false, note: 'CN/TW stock + the allocation hint' },
+    { table: 'shipments',                        initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'on-the-way' },
+    { table: 'shipment_lines',                   initial: true,  detail: false, route: false, scope_filterable_server_side: false, note: 'on-the-way' },
+    { table: 'shipping_plans',                   initial: true,  detail: false, route: false, scope_filterable_server_side: true,  note: 'qualified incoming' },
+    { table: 'shipping_plan_lines',              initial: true,  detail: false, route: false, scope_filterable_server_side: false, note: 'qualified incoming' },
+    { table: 'shipping_allocation_drafts',       initial: false, detail: true,  route: true,  scope_filterable_server_side: true,  note: 'Execution Plan hydration only' },
+    { table: 'shipping_allocation_draft_lines',  initial: false, detail: true,  route: true,  scope_filterable_server_side: false, note: 'Execution Plan hydration only' },
+    { table: 'carrier_lead_times',               initial: false, detail: true,  route: true,  scope_filterable_server_side: false, note: 'Method options + arrival; include-gated' },
+    { table: 'carrier_rate_cards',               initial: false, detail: true,  route: true,  scope_filterable_server_side: false, note: 'Method options; include-gated' }
+];
+// The analysis §5 asks to be REPORTED, merged with whatever the server said about its own read. Read-only, and
+// it issues nothing: `slowestTables` / `counts` are already on the last response's meta.
+function _irWorkspaceTableRoles_() {
+    // Reads the page's EXISTING last-read meta rather than a second copy of it: one owner for the server's
+    // own numbers, whoever is reporting them.
+    var meta = (typeof _irLastReadMeta !== 'undefined' && _irLastReadMeta) ? _irLastReadMeta : null;
+    var slow = {}, counts = (meta && meta.counts) || {};
+    ((meta && meta.slowest_tables) || []).forEach(function (s) { slow[s.table] = s.ms; });
+    var rows = IR_WORKSPACE_TABLE_ROLES_.map(function (r) {
+        return { table: r.table, rows_returned: (counts[r.table] === undefined ? null : counts[r.table]),
+            server_read_ms: (slow[r.table] === undefined ? null : slow[r.table]),
+            needed_for_initial_table: r.initial, needed_only_after_expanding_a_sku: r.detail && !r.initial,
+            needed_only_for_route_or_carrier: r.route && !r.initial,
+            already_lazy_loaded_elsewhere: false,
+            safely_cacheable: !r.initial,
+            scope_filterable_server_side: r.scope_filterable_server_side, note: r.note };
+    });
+    return {
+        contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §5 — per-table role analysis for inventoryReplenishment.workspace.get',
+        tables: rows,
+        initial_count: rows.filter(function (r) { return r.needed_for_initial_table; }).length,
+        detail_only_count: rows.filter(function (r) { return !r.needed_for_initial_table; }).length,
+        server_meta_present: !!meta,
+        server_duration_ms: (meta && typeof meta.server_execution_ms === 'number') ? meta.server_execution_ms : null,
+        server_stages: (meta && meta.server_stages) || null,
+        server_entry: (meta && meta.server_entry) || null,
+        split_taken: false,
+        split_blocked_on: 'A live cold-boot run returning the §3 stage evidence. The measured cause of the '
+            + 'observed timeout is dispatch contention (queue wait inside the client bound), not payload size, '
+            + 'and no split may be justified by an unmeasured hypothesis. The server already supports '
+            + 'payload.only and payload.recentWindow, so the split needs a reason rather than new surface.'
+    };
+}
+window._irWorkspaceTableRoles_ = _irWorkspaceTableRoles_;
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §4/§6 — THE PRIMARY READ GOES THROUGH THE ARBITER.
+//
+// Two things change and nothing else does. First, the read WAITS for the boot reads it was measured to compete
+// with — by their settlement, never by a timer — so its 60 s budget is spent on its own execution instead of on
+// other requests' queueing. Second, it is SINGLE-FLIGHT BY SCOPE: a Search pressed while the bootstrap read is
+// still open attaches to that request rather than starting a second one, and so does a remount.
+//
+// The scope is IN THE KEY, which is what makes the sharing safe. Two reads that collide on this key are, by
+// construction, requests for the same answer; a genuinely different scope has a different key and a new
+// generation, so it can neither be served by nor overwritten by the old one.
+// ================================================================================================================
+// THE KEY IS THE PAYLOAD, NOT THE SCOPE — because the payload is where the scope would have to be, and it is
+// not there. `inventoryReplenishment.workspace.get` is dispatched with `{ recentWindow: true }` and nothing
+// else: the server returns the primary-render table set and the CLIENT scopes it (see the note above
+// _irWorkspaceRefresh_, and the live evidence's own `payload` field). Keying on the selected scope would
+// therefore invent a distinction the request does not have, and it would break the one case §4 names: the
+// bootstrap read is dispatched before the selectors are populated, so a Search pressed a moment later would
+// compute a DIFFERENT key for a BYTE-IDENTICAL request and issue a second one.
+//
+// Sharing is safe here for the strongest possible reason: two reads that collide on this key are not merely
+// expected to be the same request, they ARE the same request.
+function _irCriticalReadKey_(opts) {
+    return 'inventoryReplenishment.workspace.get|' + (opts && opts.carrier ? 'carrier' : 'plain') +
+        '|' + (opts && opts.recentWindow === false ? 'full' : 'recent');
+}
+// A QUIET revalidation behind an already-painted table is not on the critical path and must not be arbitrated
+// as though it were: nothing is waiting for it, and holding it would only delay a refresh nobody can see.
+function _irReadIsCritical_(opts) { return !(opts && opts.quiet); }
+
 function _irWorkspaceRefresh_(opts) {
+    var _ba = (typeof window !== 'undefined' && window.KM && window.KM.bootArbiter) ? window.KM.bootArbiter : null;
+    if (_ba && _irReadIsCritical_(opts) && !(opts && opts.__arbitrated)) {
+        var _key = _irCriticalReadKey_(opts);
+        var _inner = Object.assign({}, opts || {}, { __arbitrated: true });
+        // THE DEPENDENCY SET IS THE MEASURED MINIMUM, not everything that happens to be in flight.
+        //
+        // Both boot reads were candidates. Measured across backend concurrencies 1, 2 and 4, waiting for the
+        // capability read as well bought NOTHING at concurrency 1 (identical table-ready) and cost ~4s at 2 and
+        // 4 — because the registry read is already queued behind capabilities, so waiting for the registry
+        // ALREADY waits out the capability read wherever that matters. Depending on it too would be ordering
+        // for its own sake, which is what §4 forbids.
+        //
+        // `scopeRegistry` earns its place twice over: it is the measured contender for the same slot, AND §4
+        // requires registry validation and remembered-scope resolution to complete in a deterministic order.
+        // `capabilities` is still DECLARED by app.js, because observing it costs nothing and the arbiter's
+        // state report is where the next investigation will start.
+        return _ba.critical(_key, function () { return _irWorkspaceRefresh_(_inner); },
+            { deps: ['scopeRegistry'] })
+            .then(function (r) {
+                // ==========================================================================================
+                // §6 — WHAT A GENERATION CHANGE MEANS FOR *THIS* READ, AND WHY IT IS NOT A DROP.
+                //
+                // The generation is recorded, and a read that outlived its generation is reported as such. It
+                // is NOT discarded, and discarding it would be a defect rather than a safeguard: this read
+                // carries no scope, so its answer is not about the old scope at all — the same bytes serve
+                // whatever the operator has selected by the time they arrive. Rejecting it would mean a Search
+                // pressed during bootstrap fails for no reason and issues a second identical read, which is
+                // exactly what §4 requires it not to do.
+                //
+                // Scope safety is enforced where the scope actually enters: every consumer compares its own
+                // sequence before it applies anything, so a late answer can neither apply a stale FILTER nor
+                // clear a newer request's error. That is asserted in the suite rather than assumed here.
+                // ==========================================================================================
+                if (r && r.stale) _irLastStaleDrop_ = { key: _key, generation: r.generation,
+                    current_generation: _ba.generation(), scope_independent: true, applied: false };
+                if (r && r.ok) return r.value;
+                return Promise.reject(r ? r.error : { code: 'WORKSPACE_READ_FAILED' });
+            });
+    }
     var mySeq = ++_irReadSeq;
     // §16.3 — an UNDECLARED owner is recorded as such rather than guessed. A ledger that invented a
     // plausible owner would be worse than none: it is the attribution itself that is in question.
@@ -9467,7 +9645,17 @@ function _irWorkspaceRefresh_(opts) {
                     recent_window_applied: _m.recentWindowApplied === true,
                     only_requested: _m.onlyRequested || null,
                     open_ms: (typeof _m.openMs === 'number') ? _m.openMs : null,
-                    slowest_tables: _m.slowestTables || null, at: _irNowMs_() };
+                    slowest_tables: _m.slowestTables || null,
+                    // R6-R5 §3 — the server-side entry and stage evidence, carried through so the reach
+                    // question ("did it reach Apps Script, and when?") is answerable from a SUCCESSFUL read
+                    // too. A baseline from healthy runs is what makes a slow one legible.
+                    server_entry: _m.entry || null,
+                    server_stages: _m.stages || null,
+                    server_handler: _m.handler || null,
+                    server_build: _m.serverBuild || null,
+                    server_lock: (_m.lock === undefined) ? undefined : _m.lock,
+                    counts: (env.data && env.data.counts) || null,
+                    at: _irNowMs_() };
             } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
             // ==========================================================================================
@@ -9626,6 +9814,17 @@ function searchReplenishment() {
 function _irApplySearch_(pending, mySeq) {
     if (mySeq !== _irSearch.seq) return;                  // superseded while resolving
     if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+    // R6-R5 §6 — a genuinely DIFFERENT applied scope advances the arbiter's generation. Nothing is discarded
+    // on this page as a result (the primary read carries no scope), but the boundary is recorded so a late
+    // answer can always be told which side of a scope change it belongs to.
+    try {
+        var _prevApplied = _irSearch.applied;
+        if (window.KM && window.KM.bootArbiter && (!_prevApplied ||
+            String(_prevApplied.country || '') !== String(pending.country || '') ||
+            String(_prevApplied.marketplaceId || '') !== String(pending.marketplaceId || ''))) {
+            window.KM.bootArbiter.newGeneration('APPLIED_SCOPE_CHANGED');
+        }
+    } catch (_eGen) {}
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
     // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
     // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
@@ -9789,7 +9988,28 @@ window._irGapJobFailMsg_ = _irGapJobFailMsg_;
 
 // §13 mount/reload recovery — if a backend Inventory job is already PENDING/RUNNING (e.g. started in another tab, or
 // this tab was refreshed), resume READ-ONLY status polling and refresh on DONE. The original tab need not be alive.
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §4 — DEFERRED, BECAUSE IT WAS MEASURED COMPETING AND IT IS NOT CRITICAL.
+//
+// This is a status poll for a gap job that is USUALLY NOT RUNNING, fired unconditionally on every mount. In the
+// cold-boot timeline it is the fourth concurrent request, and at a serialized backend it was measured taking a
+// slot ahead of the read the table is waiting for — and then waiting 45 s behind it anyway. Nothing on screen
+// depends on it, so it now runs when the critical lane is clear.
+//
+// DEFERRED IS NOT DROPPED. It still runs, and a job that IS running is still resumed; it simply stops paying
+// for that with the primary read's timeout budget.
 function _irResumeGapJobOnMount_() {
+  var _ba = (typeof window !== 'undefined' && window.KM && window.KM.bootArbiter) ? window.KM.bootArbiter : null;
+  if (_ba && !_irGapResumeDeferred_) {
+    _irGapResumeDeferred_ = true;
+    return _ba.deferred('gapJob.status.get:INVENTORY', function () {
+      _irGapResumeDeferred_ = false;
+      return _irResumeGapJobNow_();
+    });
+  }
+  return _irResumeGapJobNow_();
+}
+var _irGapResumeDeferred_ = false;
+function _irResumeGapJobNow_() {
   var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
   if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
   var btn = _irRecalcBtn_();
@@ -13188,6 +13408,11 @@ if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('ops-section', {
         mount() {
             console.log('[Replenishment] mount');
+            // R6-R5 §4 — INTENT IS RECORDED BEFORE ANYTHING IS AWAITED. The markup is partial-loaded, so the
+            // first thing this mount does is a fetch; without this line the arbiter would not know a Site
+            // Inventory read is coming until after that fetch resolved, and the honest "preparing" state the
+            // user must see from the first frame would have nothing to render from.
+            try { if (window.KM && window.KM.bootArbiter) window.KM.bootArbiter.noteIntent('ops-section'); } catch (_eBA) {}
             // Migration compat: sweep any stale body-level Allocation Draft panel created by previously-loaded
             // (pre-fix) code before this page (re)owns it inside its own root.
             _removeLegacyBodyAllocPanel();

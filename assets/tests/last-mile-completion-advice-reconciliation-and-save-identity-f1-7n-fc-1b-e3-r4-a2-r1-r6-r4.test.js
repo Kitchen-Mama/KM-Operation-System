@@ -47,9 +47,12 @@ function mut(label, f) {
 }
 var ROOT = path.join(__dirname, '..', '..');
 function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
-function atHead(rel) {
-  return cp.execSync('git show HEAD:"' + rel + '"', { cwd: ROOT, encoding: 'buffer', maxBuffer: 1 << 28 }).toString('utf8');
+// The revision this round was written against, NAMED rather than tracked. `HEAD` moves; the defect does not.
+var BEFORE_REV = '530f93a';
+function atRev(rev, rel) {
+  return cp.execSync('git show ' + rev + ':"' + rel + '"', { cwd: ROOT, encoding: 'buffer', maxBuffer: 1 << 28 }).toString('utf8');
 }
+function atHead(rel) { return atRev(BEFORE_REV, rel); }
 // Comments are prose and prose is not behaviour.
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 function extractFn(src, name) {
@@ -87,8 +90,14 @@ eq((allowlist.match(/\{/g) || []).length, 1, 'A2  the activation allowlist still
 ok(allowlist.indexOf("sku: 'CO1100-R'") !== -1, 'A3  and it is still the single live scope');
 ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R4') !== -1, 'A4  R6-R4 is a registered owner stamp');
 eq(RO.staleAppTokenRefs(INDEX), [], 'A5  no index.html asset is left behind on an older app token');
-ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(read('assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs')),
-  'A6  60_ is UNCHANGED — no server defect was proven, so its stamp does not move');
+// R6-R5 RESTATEMENT. "60_ does not move" was a statement about R6-R4's OWN diff — it proved no server defect,
+// so it changed no server file — and it is not a claim about every future round. R6-R5 was required by its §3
+// to add router-entry and stage evidence to this handler, which necessarily moves the stamp. What R6-R4
+// asserted is therefore checked where it is still checkable: R6-R4's own commit touched no server file.
+var _r4Files = cp.execSync('git show --name-only --format= ' + 'f60f683', { cwd: ROOT, encoding: 'utf8' })
+  .split(/\r?\n/).filter(Boolean);
+eq(_r4Files.filter(function (p) { return /60_api_v1_inventory_replenishment_workspace\.gs$/.test(p); }), [],
+  'A6  R6-R4 did not touch 60_ — it proved no server defect, so it moved that stamp not at all');
 // The registry DID change this round, and a changed asset must be served under a new token or a browser keeps
 // the old one. That is the rule; the token's spelling is not.
 ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== -1,

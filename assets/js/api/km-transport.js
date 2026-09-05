@@ -352,6 +352,27 @@
     // ---- metrics (§D/§E) -------------------------------------------------------------------------------
     // Counts and durations only. No URL, no action payload, no row. `requests` is the number that makes
     // "exactly one request" a measured fact instead of a claim in a comment.
+    // ============================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §2 — A DURATION IS NOT A TIMELINE.
+    //
+    // Every sample carried `ms` and no timestamps, so two requests that ran back to back and two that ran on
+    // top of each other produced identical records. Every previous round's overlap claim was therefore an
+    // INFERENCE FROM DURATIONS, which is exactly what §2 forbids — and it is the inference that matters here,
+    // because the live evidence (four requests, three small reads at 5.4-6.7s each, one large read at the 60s
+    // bound) reads completely differently depending on whether those four were concurrent or sequential.
+    //
+    // What is added is the smallest thing that settles it: a monotonic sequence, the dispatch offset from a
+    // fixed epoch, the settle offset, and HOW MANY REQUESTS WERE ALREADY OPEN when this one was dispatched.
+    // The last is the whole point — peak concurrency is a fact about the boot, not about any one request.
+    //
+    // `owner` and `reason` are carried when a caller declares them and left null when it does not. An
+    // undeclared owner is reported as undeclared: inventing a plausible one would make the attribution
+    // unfalsifiable, and attribution is what is in question.
+    // ============================================================================================================
+    var _epoch = _now();
+    var _openRequests = 0;                 // requests dispatched and not yet settled
+    var _peakConcurrent = 0;
+    var _seq = 0;
     var _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} };
     function bump(map, key) { if (!key) return; map[key] = (map[key] || 0) + 1; }
     function record(sample) {
@@ -360,6 +381,43 @@
       bump(_metrics.byCode, sample.code || 'SUCCESS');
       if (_metrics.samples.length < 400) _metrics.samples.push(sample);      // bounded: never an unbounded log
     }
+    // The chronological overlap report §2 asks for. Built from the recorded samples, never from durations.
+    function timeline() {
+      var rows = _metrics.samples.filter(function (s) { return typeof s.dispatch_ms === 'number'; })
+        .map(function (s) {
+          return { seq: s.seq, action: s.action, kind: s.kind, owner: s.owner || null, reason: s.reason || null,
+            payload_fingerprint: s.payload_fingerprint || null,
+            dispatch_ms: s.dispatch_ms, settled_ms: s.settled_ms, elapsed_ms: s.ms,
+            concurrent_at_dispatch: s.concurrent_at_dispatch,
+            code: s.code || null, phase: s.phase || null, http_status: s.http_status,
+            redirected: s.redirected === true, server_answered: s.server_answered, server_ms: s.server_ms,
+            request_id: s.request_id || null, attempts: s.attempts };
+        })
+        .sort(function (a, b) { return a.dispatch_ms - b.dispatch_ms || a.seq - b.seq; });
+      // Two requests OVERLAP when each was open while the other was. Computed from the recorded intervals, so
+      // it is a measurement and not a guess about what "probably" ran together.
+      function overlaps(row) {
+        return rows.filter(function (o) {
+          return o.seq !== row.seq && o.dispatch_ms < row.settled_ms && row.dispatch_ms < o.settled_ms;
+        }).map(function (o) { return o.action; });
+      }
+      var withOverlap = rows.map(function (r) {
+        var o = {};
+        for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k];
+        o.overlapped_with = overlaps(r);
+        return o;
+      });
+      return {
+        epoch_offset_ms: 0,
+        request_timeline: withOverlap,
+        peak_concurrent_requests: _peakConcurrent,
+        requests: withOverlap.length,
+        // A request that was ALONE for its whole life had no contention to blame, whatever it cost.
+        solitary_requests: withOverlap.filter(function (r) { return r.overlapped_with.length === 0; })
+          .map(function (r) { return r.action; })
+      };
+    }
+
     function metrics() {
       return {
         transport_build: TRANSPORT_BUILD,
@@ -377,10 +435,18 @@
         byCode: JSON.parse(JSON.stringify(_metrics.byCode)),
         // §16.3 — why reads were not shared, so `coalesced` can be read as a fact rather than a puzzle.
         share_skipped: JSON.parse(JSON.stringify(_metrics.shareSkipped || {})),
+        // R6-R5 §2 — peak concurrency is a property of the BURST, so it is reported beside the counts.
+        peak_concurrent_requests: _peakConcurrent,
+        open_requests: _openRequests,
         samples: _metrics.samples.slice()
       };
     }
-    function resetMetrics() { _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} }; }
+    function resetMetrics() {
+      _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} };
+      _epoch = _now(); _peakConcurrent = 0; _seq = 0;
+      // `_openRequests` is deliberately NOT reset: requests already in flight will decrement it when they
+      // settle, and zeroing it here would drive the counter negative and misreport every later dispatch.
+    }
     // The legacy runners (the workspace POST path and the getTable reader) still own their own fetch, so they
     // report their outcome HERE rather than being rewritten wholesale in one round. Without this the §E report
     // would be structurally empty in production while looking like a measurement — which is worse than no
@@ -557,13 +623,31 @@
       var kind = (str(opts.kind) === 'write') ? 'write' : 'read';
       var requestId = str(opts.requestId);
       var t = { start: _now(), endpoint: 0, queue: 0, network: 0, bodyRead: 0, parse: 0, validate: 0, total: 0 };
+      // R6-R5 §2 — the marks. Taken HERE, before any await, so `concurrent_at_dispatch` is the number of
+      // requests genuinely open at the moment this one entered the transport.
+      var _mySeq = ++_seq;
+      var _dispatchMs = t.start - _epoch;
+      _openRequests += 1;
+      var _concurrentAtDispatch = _openRequests;
+      if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;
+      var _settled = false;
+      function _closeRequest() { if (_settled) return; _settled = true; _openRequests -= 1; }
+      var _owner = str(opts.owner) || null;
+      var _reason = str(opts.reason) || null;
+      var _payloadFp = isObj(opts.payload) ? canonicalScope(opts.payload).slice(0, 200) : null;
+      function _marks() {
+        return { seq: _mySeq, dispatch_ms: _dispatchMs, settled_ms: _now() - _epoch,
+          concurrent_at_dispatch: _concurrentAtDispatch, owner: _owner, reason: _reason,
+          payload_fingerprint: _payloadFp };
+      }
       var maxRetries = (kind === 'write') ? 0 : ((typeof opts.maxRetries === 'number') ? Math.max(0, Math.min(1, opts.maxRetries)) : 1);
 
       // ---- BUILD ----
       if (action === '') {
         var b = fail(PHASE.BUILD, CODES.API_ENDPOINT_CONFIGURATION_INVALID,
           'No action was supplied, so no request was issued.', { action: null, zero_write: true, retryable: false }, t);
-        record({ action: '(blank)', kind: kind, code: b.code, phase: b.phase, ms: 0, bytes: 0 });
+        _closeRequest();
+        record(Object.assign({ action: '(blank)', kind: kind, code: b.code, phase: b.phase, ms: 0, bytes: 0 }, _marks()));
         return Promise.resolve(b);
       }
       var t0 = _now();
@@ -577,13 +661,15 @@
             masked_endpoint: ep.maskedEndpoint, zero_write: true, retryable: false,
             next_action: 'Correct the configured Web App /exec URL. Retrying cannot change the configuration.' }, t);
         e0.endpointClass = ep.endpointClass;
-        record({ action: action, kind: kind, code: e0.code, phase: e0.phase, ms: 0, bytes: 0, endpointClass: ep.endpointClass });
+        _closeRequest();
+        record(Object.assign({ action: action, kind: kind, code: e0.code, phase: e0.phase, ms: 0, bytes: 0, endpointClass: ep.endpointClass }, _marks()));
         return Promise.resolve(e0);
       }
       if (typeof _fetch !== 'function') {
         var e1 = fail(PHASE.BUILD, CODES.API_ENDPOINT_CONFIGURATION_INVALID, 'No fetch implementation is available.',
           { action: action, zero_write: true, retryable: false }, t);
-        record({ action: action, kind: kind, code: e1.code, phase: e1.phase, ms: 0, bytes: 0 });
+        _closeRequest();
+        record(Object.assign({ action: action, kind: kind, code: e1.code, phase: e1.phase, ms: 0, bytes: 0 }, _marks()));
         return Promise.resolve(e1);
       }
 
@@ -796,15 +882,21 @@
         var _d = res.details || {};
         var _env = res.envelope || null;
         var _meta = (_env && _env.meta) || null;
-        record({ action: action, kind: kind, code: res.success ? null : res.code, phase: res.phase,
+        _closeRequest();
+        record(Object.assign({ action: action, kind: kind, code: res.success ? null : res.code, phase: res.phase,
           ms: t.total, bytes: _d.responseBytes || 0, attempts: _d.attempt || 1,
           http_status: (typeof _d.httpStatus === 'number') ? _d.httpStatus : null,
           redirected: _d.redirected === true,
           server_answered: !!_env,
+          // R6-R5 §3 — the server's own stage evidence, carried through to the sample when the envelope
+          // reports it. `server_ms` alone cannot separate "queued behind three other executions" from
+          // "executed slowly"; `server_stages` can.
           server_ms: (_meta && typeof _meta.serverDurationMs === 'number') ? _meta.serverDurationMs : null,
+          server_stages: (_meta && _meta.stages) ? _meta.stages : null,
+          server_request_id: (_meta && _meta.requestId) ? str(_meta.requestId) : null,
           request_id: requestId || null,
           endpoint_class: ep.endpointClass || null,
-          timeout_ms: (typeof _d.timeout_ms === 'number') ? _d.timeout_ms : null });
+          timeout_ms: (typeof _d.timeout_ms === 'number') ? _d.timeout_ms : null }, _marks()));
         return res;
       });
     }
@@ -1046,6 +1138,9 @@
       metadataKeys: function () { return Object.keys(METADATA_KEYS); },
       // observation
       metrics: metrics, resetMetrics: resetMetrics, recordExternal: recordExternal, uiState: uiState, describe: describe,
+      // R6-R5 §2 — the chronological overlap report, and the live in-flight count the arbiter reads.
+      timeline: timeline, openRequests: function () { return _openRequests; },
+      peakConcurrentRequests: function () { return _peakConcurrent; },
       errorFields: errorFields, errorLine: errorLine, beginExternal: beginExternal,
       status: function () {
         var ep = endpoint();

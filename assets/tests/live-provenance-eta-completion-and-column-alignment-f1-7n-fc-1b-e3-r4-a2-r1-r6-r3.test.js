@@ -97,8 +97,12 @@ ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3') !== -1,
 ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R2') < RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R3'),
   'A4a and it is ordered after the round it followed');
 eq(RO.staleAppTokenRefs(INDEX), [], 'A5 no index.html asset is left behind on an older app token');
-ok(/SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A1'/.test(G60),
-  'A6 60_ is UNCHANGED — no server defect was proven, so its stamp does not move');
+// R6-R5 RESTATEMENT: checked against this round's OWN commit rather than against a literal stamp that a
+// later round is required to move. R6-R3 proved no server defect and touched no server file.
+var _ownFiles = cp.execSync('git show --name-only --format= 530f93a', { cwd: ROOT, encoding: 'utf8' })
+  .split(/\r?\n/).filter(Boolean);
+eq(_ownFiles.filter(function (p) { return /60_api_v1_inventory_replenishment_workspace\.gs$/.test(p); }), [],
+  'A6 R6-R3 did not touch 60_ — no server defect was proven, so it moved that stamp not at all');
 // R6-R4 RESTATEMENT. R6-R3 did not change method-registry.js, and pinning its token was a fair way to say so
 // AT THE TIME. It is not a property of R6-R3's work: R6-R4 changed the registry (resolve() now attaches the
 // transit authority's last-mile facts to every option) and MUST rotate that token or a cached copy is served.

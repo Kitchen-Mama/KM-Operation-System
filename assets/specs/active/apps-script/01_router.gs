@@ -32,7 +32,7 @@
 // stamp behind would make a CORRECTLY synced router report as current while being unable to give units back.
 // F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — found by the standing stamp-rotation check added this round: this file
 // last changed in F1-7N-FC-1B-E3-R4-A2-R1-R2 and its label was still at FC-1A-R1.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R2';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -175,8 +175,45 @@ function rtrParseGetBody_(e, action) {
   return { body: body };
 }
 
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §3 — WHEN THIS EXECUTION STARTED, AND WHICH REQUEST IT IS.
+//
+// Per-execution state only. Apps Script runs each invocation in its own script instance, so these globals are
+// never shared between requests, never persist, and need no eviction — the property a CacheService or
+// PropertiesService approach would have had to argue for and could not, since both are mutable shared state
+// that would have to be written on every read.
+//
+// `RTR_ENTRY_AT_` is a WALL CLOCK. It is the field that lets an operator open the Apps Script execution list
+// and find the execution belonging to a client request that timed out — the correlation §3 asks for, without
+// writing a diagnostic row anywhere.
+var RTR_ENTRY_AT_ = null;          // ms since epoch, at router entry
+var RTR_ENTRY_T0_ = null;          // the same instant, as the base for stage offsets
+var RTR_ENTRY_METHOD_ = null;      // 'GET' or 'POST'
+var RTR_ENTRY_RID_ = null;         // the client's correlation id, as it arrived
+function rtrMarkEntry_(e, method) {
+  RTR_ENTRY_AT_ = Date.now();
+  RTR_ENTRY_T0_ = RTR_ENTRY_AT_;
+  RTR_ENTRY_METHOD_ = method;
+  RTR_ENTRY_RID_ = (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null;
+  return RTR_ENTRY_AT_;
+}
+// The entry evidence, in the shape a handler embeds in its own meta. Null-safe: a handler invoked directly by a
+// test has no router entry, and reports that rather than inventing one.
+function rtrEntryEvidence_() {
+  return {
+    routerEntryAt: RTR_ENTRY_AT_,
+    routerEntryMethod: RTR_ENTRY_METHOD_,
+    routerRequestId: RTR_ENTRY_RID_,
+    routerBuild: RTR_BUILD_VERSION_,
+    // How long the request sat between the router accepting it and the handler starting. On a warm, uncontended
+    // execution this is a couple of milliseconds; a large value here is the queueing evidence that
+    // `serverDurationMs` alone can never show.
+    routerToHandlerMs: (RTR_ENTRY_T0_ === null) ? null : (Date.now() - RTR_ENTRY_T0_)
+  };
+}
+
 function doGet(e) {
   try {
+    rtrMarkEntry_(e, 'GET');
     var action = (e && e.parameter && e.parameter.action) || '';
 
     // F1-7N-FB-4E-R4A1 §3 — ONE body for every GET read, parsed once and refused once if malformed.
@@ -306,6 +343,7 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
+    rtrMarkEntry_(e, 'POST');
     var body = JSON.parse(e.postData.contents);
     var action = body.action || '';
 
