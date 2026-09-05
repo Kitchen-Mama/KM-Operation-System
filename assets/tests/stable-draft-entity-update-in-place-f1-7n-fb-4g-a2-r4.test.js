@@ -297,6 +297,7 @@ function routeRow(spec) {
 var COLLECT_VARS = ['IR_ROUTE_PERSISTABLE_FIELDS', 'IR_ISO_DATE_RE_'];
 var COLLECT_FNS = ['_saveAllocationDraftFromDom', '_isRouteComplete', '_irRouteSignature_', '_irMarkRouteTouched_',
   '_irTouchedInstances_', '_irCanonicalDateOrBlank_', '_irCancelUnusedDraftHeaders_', 'addExecutionRoute',
+  '_irAckStore_', '_irAckUnknownIsHeld_', '_irHoldAckUnknown_', '_irClearAckUnknown_', '_irReleaseAckUnknown_',  // R6-R6 §7 — the write scope's hold
   '_irAnySaveInFlight_',
   // F1-7N-FC-1B-E1 - the collect now asks each row which explicit act produced it. Lifted into the executed
   // scope rather than stubbed, so this suite exercises the REAL rule.

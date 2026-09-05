@@ -246,13 +246,44 @@ eq(live.over_planned, 0, 'D3a and nothing over-planned');
 eq(live.execution_plan_changed_by_this_run, false,
   'D4  §3 this run changed nothing — a FACT the page measured, not a reassurance');
 eq(live.materialization_enabled, false, 'D4a with materialization off');
-// The difference is never added on its own.
-ok(/is not added automatically/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
-  'D5  §3 and the strip says the difference is NOT added automatically');
-ok(/has NOT been applied/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
-  'D5a nor has the recommendation been applied');
-ok(/These route\(s\) were already here/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
-  'D6  §3 the 520 is named as pre-existing — it must never read as this run’s output');
+// ----------------------------------------------------------------------------------------------------------------
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 RESTATEMENT — THE DENIALS WENT AWAY WITH THE CLAIM THEY WERE DENYING.
+//
+// This suite pinned the PRESENCE of sentences: "has NOT been applied", "These route(s) were already here",
+// "is not added automatically", "DIFFERENT supply". Every one of them existed to deny something the strip was
+// asserting IMPLICITLY — by putting two numbers side by side, under a card that also carries the Generate AI
+// Plan button, in a panel where anything printed after an action reads as that action's result.
+//
+// R6-R6 removed the prose, on the operator's explicit instruction that the screen must be clean. That does not
+// weaken these claims; it removes what they were defending against. A strip of three labelled numbers makes no
+// assertion about who wrote what, so there is nothing left to deny.
+//
+// The guarantee is therefore checked as an ABSENCE, and the absence is STRICTER than the sentence was: no
+// application vocabulary may appear in what the strip EMITS at all. The old pin was satisfied by a source in
+// which the word "applied" appeared; this one is not.
+//
+// Scanned over emitted string literals only. Scanning raw source would match this very comment, which is the
+// same defect in a new place — and it is the defect the R6-R2/R6-R3 diff scans were narrowed to avoid.
+function r6r6EmittedText(fnSrc) {
+  var out = [], re = /'((?:[^'\\]|\\.)*)'/g, m;
+  var noComments = String(fnSrc).replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  while ((m = re.exec(noComments)) !== null) out.push(m[1]);
+  return out.join(' ');
+}
+var R6R6_APPLICATION_VOCAB = /(applied|added automatically|this run(?:'s)? output|already here|were already)/i;
+// A number that is not known must never be printed as a quantity. The em dash is the page's stated way of
+// saying so, and the compact strip has no room for a sentence that says it instead.
+var R6R6_DASH = '\u2014';
+// ----------------------------------------------------------------------------------------------------------------
+// The difference is never added on its own — and the strip no longer says so, because it no longer implies
+// the opposite. What it must not do is CLAIM one, in either direction.
+var D5_EMITTED = r6r6EmittedText(extractFn(PAGE, '_irAdviceVsPlanHtml_') + extractFn(PAGE, '_irReconCell_'));
+ok(!R6R6_APPLICATION_VOCAB.test(D5_EMITTED),
+  'D5  §3 the strip emits no application vocabulary at all — there is no claim left to deny');
+ok(!/addExecutionRoute|appendChild|\.value\s*=/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
+  'D5a and it still adds nothing: the difference is reported, never planned');
+ok(/data-plan-changed-by-this-run/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
+  'D6  §3 whether THIS run changed the plan is still published — as a measured attribute, not as a sentence');
 // Over-planned is a real state and is reported as one.
 var over = advice(200, [300]);
 eq([over.remaining_unplanned, over.over_planned], [0, 100], 'D7  over-planning is its own number, not a negative remainder');
@@ -409,7 +440,7 @@ section('I. §8 — the safety envelope');
 ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG), 'I1  the materialization flag is still false');
 eq((CFG.match(/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[[\s\S]*?\]/) || [''])[0].split('{').length - 1, 1,
   'I1a and the allowlist is still the single scope');
-var reconSrc = extractFn(PAGE, '_irAdviceVsPlan_') + extractFn(PAGE, '_irAdviceVsPlanHtml_');
+var reconSrc = extractFn(PAGE, '_irReconTooltip_') + extractFn(PAGE, '_irReconCell_') + extractFn(PAGE, '_irAdviceVsPlan_') + extractFn(PAGE, '_irAdviceVsPlanHtml_');
 ok(!/addExecutionRoute|_persistAllocationDraft|appendChild/.test(reconSrc),
   'I2  §8 nothing in the reconciliation adds a route, or writes anything at all');
 ok(!/remaining_unplanned[\s\S]{0,400}?(qty|planned_qty)\s*=/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_')),
@@ -472,11 +503,19 @@ mut('K1  KM and ResUS collapse on company → one station answers for the other'
     && permissive.length === 2 && permissive.indexOf('LEGACY') !== -1;
 });
 mut('K2  the recommendation is reported as APPLIED → an operator believes 760 is planned', function () {
-  var h = extractFn(PAGE, '_irAdviceVsPlanHtml_');
-  return /has NOT been applied/.test(h) && !/has been applied/.test(h.replace('has NOT been applied', ''));
+  // The mutant that matters now is a strip that says anything at all about application. Probed by MUTATING
+  // the shipped renderer to reintroduce the claim, so this catches the regression rather than restating the
+  // absence a plain assertion already checks.
+  var clean = !R6R6_APPLICATION_VOCAB.test(r6r6EmittedText(extractFn(PAGE, '_irAdviceVsPlanHtml_')));
+  var mutated = extractFn(PAGE, '_irAdviceVsPlanHtml_').replace("var flag = '';",
+    "var flag = '<span>The recommendation has been applied.</span>';");
+  return clean && R6R6_APPLICATION_VOCAB.test(r6r6EmittedText(mutated));
 });
-mut('K3  the 520 is attributed to THIS run → pre-existing routes read as the AI’s output', function () {
-  return /These route\(s\) were already here/.test(extractFn(PAGE, '_irAdviceVsPlanHtml_'));
+mut('K3  a pending or unavailable number is printed as 0 → an operator reads "nothing is recommended"', function () {
+  // R6-R6 replaces K3's claim with the one the compact strip can actually get wrong. The old sentence named
+  // the 520 as pre-existing; the new failure mode is the OTHER column printing a quantity nobody stated.
+  var h = extractFn(PAGE, '_irAdviceVsPlanHtml_');
+  return /recKnown \?/.test(h) && /planKnown \?/.test(h) && h.indexOf('DASH') !== -1;
 });
 mut('K4  the difference is auto-planned → 240 units are added while the flag is off', function () {
   var h = extractFn(PAGE, '_irAdviceVsPlanHtml_') + extractFn(PAGE, '_irAdviceVsPlan_');

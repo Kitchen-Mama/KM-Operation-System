@@ -741,6 +741,8 @@ eval(extractVar(G63, 'SYS_MODULE_BUILD_STAMPS_'));
 eval(extractFn(G63, 'sysRuntimeAuthorityChecks_'));
 eval(extractFn(G63, 'sysModuleBuildStamps_'));
 var SYS_BUILD_VERSION_ = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+// R6-R6 §4 — the RELEASE is now its own constant, read by the identity block and by the stamp report.
+var SYS_DEPLOYMENT_RELEASE_ = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1];
 // the manifest must match what the files ACTUALLY declare, or the check is a lie on day one
 // F1-7N-FB-4E-R4B-R3 - DERIVED, not hand-listed. This map had one line per manifest entry and a comment warning
 // that a missing line makes the comparison vacuous - a warning that was correct and still had to be obeyed by

@@ -2390,6 +2390,10 @@ function _irAdviceVsPlan_(sku) {
     var planned = 0, routeCount = 0;
     var list = (typeof document !== 'undefined' && document.getElementById)
         ? document.getElementById('shipping-methods-' + sku) : null;
+    // R6-R6 §2 — WHETHER THE PLAN CAN BE COUNTED AT ALL. Absent host = the Execution Plan has not
+    // rendered yet, and its total is UNAVAILABLE. An empty host is a real, countable zero. Printing
+    // 0 for both is the recommendation-side defect R6-R4 removed, in the other column.
+    var plannedState = list ? 'READY' : 'UNAVAILABLE';
     if (list && list.querySelectorAll) {
         list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
             if (typeof _irIsComposerEl_ === 'function' && _irIsComposerEl_(rowEl)) return;   // a half-typed row is not a plan
@@ -2398,8 +2402,9 @@ function _irAdviceVsPlan_(sku) {
             routeCount++;
         });
     }
-    var remaining = (recommended === null) ? null : Math.max(0, recommended - planned);
-    var over = (recommended === null) ? null : Math.max(0, planned - recommended);
+    var _bothKnown = (recommended !== null) && (plannedState === 'READY');
+    var remaining = _bothKnown ? Math.max(0, recommended - planned) : null;
+    var over = _bothKnown ? Math.max(0, planned - recommended) : null;
     // ==========================================================================================================
     // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §5 — TWO NUMBERS ABOUT DIFFERENT WAREHOUSES ARE NOT A DIFFERENCE.
     //
@@ -2454,6 +2459,8 @@ function _irAdviceVsPlan_(sku) {
         recommendation_source: recSource || 'NONE',
         recommendation_state: recState || 'NONE',
         currently_planned_quantity: planned,
+        // R6-R6 §2 — READY (the number is countable, including a true 0) or UNAVAILABLE (it is not).
+        currently_planned_state: plannedState,
         route_count: routeCount,
         remaining_unplanned: remaining,
         over_planned: over,
@@ -2471,71 +2478,98 @@ function _irAdviceVsPlan_(sku) {
 }
 window._irAdviceVsPlan_ = _irAdviceVsPlan_;
 
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §2 — THE OPERATOR ASKED FOR THREE NUMBERS, NOT AN ESSAY.
+//
+// What shipped was correct and unusable. Every sentence in it was defending against a specific misreading —
+// that the standing quantity was an AI recommendation, that this run had applied it, that two numbers about
+// different warehouses could be subtracted — and each defence was a paragraph printed under a card whose job
+// is to be operated. Five lines of prose sat between the plan total and the next control, and the operator
+// said so: the screen must be clean, and the commentary was in the way of the work.
+//
+// A paragraph is not the only way to be honest, and it turned out to be the worst one available here. Every
+// claim the prose was making is now made STRUCTURALLY instead, which is both quieter and harder to get wrong:
+//
+//   • The strip never says APPLIED, CREATED, ADDED or SAVED BY THIS RUN, because it has no sentences at all.
+//     A label that cannot form a verb cannot make a false claim about what this run did. The old note existed
+//     to deny something the compact strip never asserts.
+//   • PENDING and UNAVAILABLE render as an em dash, never as 0. This is the R6-R4 rule applied to the second
+//     column as well: `0 planned` and `the plan has not loaded` are different facts and were the same glyph.
+//   • A plan larger than the recommendation is EXCESS, not a negative Remaining. `max(rec - planned, 0)` alone
+//     would have silently printed 0 for an over-plan, which reads as `nothing left to do` for the one state
+//     that most needs an operator to look at it.
+//   • Different supply sources stay a WARNING, but a four-word one. The detail — which stock each side means —
+//     moves to the title/aria-label, where an operator who wants it can get it and everyone else is not made
+//     to read it. The warning is suppressed entirely when the sources agree, so its presence is information.
+//
+// The internal vocabulary (AI_PLAN_RECOMMENDATION, MATERIALIZED_SUGGESTED_QTY, run state, source authority)
+// is not deleted — it moves to data-* attributes, where diagnostics and tests can still read every one of them
+// and the operator is not asked to. That is the whole trade: same facts, no prose.
+// ==============================================================================================================
+function _irReconTooltip_(r) {
+    // Built from the DATA on both sides, never from a hardcoded warehouse or carrier label.
+    var out = [];
+    var rs = (r.recommendation_supply_sources || []);
+    if (rs.length) out.push('Recommendation: ' + rs.join(', '));
+    var ps = (r.existing_route_sources || []).map(function (x) {
+        return (x.name || x.warehouse_id) + (x.country ? ' (' + x.country + ')' : '');
+    });
+    if (ps.length) out.push('Current plan: ' + ps.join(', '));
+    return out.join('\n');
+}
+window._irReconTooltip_ = _irReconTooltip_;
+
+// One compact cell. `title` carries the detail for the states where a bare dash would be a question.
+function _irReconCell_(label, value, valueClass, title) {
+    return '<span class="ir-plan-recon__cell"' + (title ? ' title="' + _execEsc(title) + '"' : '') + '>'
+        + '<span class="ir-plan-recon__label">' + _execEsc(label) + '</span>'
+        + '<strong class="ir-plan-recon__value' + (valueClass ? ' ' + valueClass : '') + '">'
+        + _execEsc(String(value)) + '</strong></span>';
+}
+
 // The reconciliation strip. Rendered under the Execution Plan total, where the two numbers actually meet.
 function _irAdviceVsPlanHtml_(sku) {
     var r = _irAdviceVsPlan_(sku);
-    // R6-R4 §5 — an UNKNOWN recommendation still gets a strip, because "we do not know yet" and "there is
-    // nothing to reconcile" are different answers and the second one was being shown for both. What is never
-    // shown is a fabricated number: the recommendation side says PENDING or NONE in words.
-    if (r.recommended_quantity === null) {
-        if (!r.currently_planned_quantity && !r.route_count) return '';
-        return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status">'
-            + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Recommendation</span>'
-            + '<strong>&mdash;</strong><span class="ir-plan-recon__sub">'
-            + (r.recommendation_state === 'PENDING'
-                ? 'still loading for this scope'
-                : 'no recommendation is available for this SKU')
-            + '</span></span>'
-            + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
-            + '<strong>' + r.currently_planned_quantity + '</strong>'
-            + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span></span>'
-            + '<span class="ir-plan-recon__note">No difference can be computed without a recommendation, and'
-            + ' none is invented. These route(s) were already here and this run did not change them.</span>'
-            + '</div>';
-    }
-    var diffTxt;
-    if (r.over_planned > 0) {
-        diffTxt = '<span class="ir-plan-recon__over">' + r.over_planned + ' over-planned</span>';
-    } else if (r.remaining_unplanned > 0) {
-        diffTxt = '<span class="ir-plan-recon__remaining">' + r.remaining_unplanned + ' not yet in a route</span>';
+    var recKnown = (r.recommended_quantity !== null);
+    var planKnown = (r.currently_planned_state === 'READY');
+    // Nothing known and nothing planned is not a reconciliation — it is an empty card, and an empty card gets
+    // no strip. This is the one case that renders nothing at all.
+    if (!recKnown && (!r.currently_planned_quantity && !r.route_count)) return '';
+    var DASH = '\u2014';
+    // Column 3 is one of three things, and it SAYS which by its label rather than by its sign.
+    var thirdLabel, thirdValue, thirdClass;
+    if (!recKnown || !planKnown) {
+        thirdLabel = 'Remaining'; thirdValue = DASH; thirdClass = '';
+    } else if (r.over_planned > 0) {
+        thirdLabel = 'Excess'; thirdValue = r.over_planned; thirdClass = 'ir-plan-recon__over';
     } else {
-        diffTxt = '<span class="ir-plan-recon__matched">fully planned</span>';
+        thirdLabel = 'Remaining'; thirdValue = r.remaining_unplanned;
+        thirdClass = (r.remaining_unplanned > 0) ? 'ir-plan-recon__remaining' : 'ir-plan-recon__matched';
     }
-    // R6-R2 §5 — each side names its own supply, and an UNSTATED source says so rather than being left blank
-    // for the reader to fill in with the other side's.
-    function srcLine(txt) { return '<span class="ir-plan-recon__sub">' + _execEsc(txt) + '</span>'; }
-    var recSrc = r.recommendation_supply_sources && r.recommendation_supply_sources.length
-        ? srcLine('from ' + r.recommendation_supply_sources.join(', '))
-        : srcLine('supply source not stated by this run');
-    var routeSrc = r.existing_route_sources && r.existing_route_sources.length
-        ? srcLine('from ' + r.existing_route_sources.map(function (x) {
-            return (x.name || x.warehouse_id) + (x.country ? ' (' + x.country + ')' : ''); }).join(', '))
-        : srcLine('no source warehouse resolved on these rows');
-    // The one sentence that stops the wrong subtraction being read into the numbers.
-    var comparability = '';
+    // The only reason a number is missing, kept out of the main line and available on hover.
+    var recTitle = recKnown ? ''
+        : (r.recommendation_state === 'PENDING' ? 'Still loading' : 'Not available');
+    var planTitle = planKnown ? '' : 'Not available';
+    var flag = '';
     if (r.supply_sources_comparable === false) {
-        comparability = ' The recommendation and the saved route(s) draw on DIFFERENT supply, so the difference'
-            + ' is not a quantity still to be shipped from the same stock.';
+        // Four words on screen; the specifics live in the accessible description, not in the layout.
+        var tip = _irReconTooltip_(r);
+        flag = '<span class="ir-plan-recon__flag" tabindex="0" role="note"'
+            + ' title="' + _execEsc(tip) + '" aria-label="Different inventory sources. ' + _execEsc(tip) + '">'
+            + 'Different inventory sources</span>';
     }
-    // The strip names WHICH recommendation it is showing. "AI recommends" was printed over a number that,
-    // after this round, usually comes from the standing gap read instead — and those are not the same claim.
-    var recLabel = (r.recommendation_source === 'AI_PLAN_RECOMMENDATION') ? 'AI recommends' : 'Recommended';
-    var recBasis = (r.recommendation_source === 'AI_PLAN_RECOMMENDATION')
-        ? ''
-        : '<span class="ir-plan-recon__sub">standing suggested quantity — no AI Plan has been run this session</span>';
     return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status"'
-        + ' data-recommendation-source="' + _execEsc(r.recommendation_source) + '">'
-        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">' + recLabel + '</span>'
-        + '<strong>' + r.recommended_quantity + '</strong>' + recBasis + recSrc + '</span>'
-        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
-        + '<strong>' + r.currently_planned_quantity + '</strong>'
-        + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span>'
-        + routeSrc + '</span>'
-        + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Difference</span>' + diffTxt + '</span>'
-        + '<span class="ir-plan-recon__note">The recommendation has NOT been applied. These route(s) were already here'
-        + ' and this run did not change them'
-        + (r.remaining_unplanned > 0 ? '; the difference is not added automatically.' : '.')
-        + comparability + '</span>'
+        + ' data-recommendation-source="' + _execEsc(r.recommendation_source) + '"'
+        + ' data-recommendation-state="' + _execEsc(r.recommendation_state) + '"'
+        + ' data-planned-state="' + _execEsc(r.currently_planned_state) + '"'
+        + ' data-difference-kind="' + _execEsc(thirdLabel.toUpperCase()) + '"'
+        + ' data-supply-comparable="' + String(r.supply_sources_comparable) + '"'
+        + ' data-route-count="' + r.route_count + '"'
+        + ' data-plan-changed-by-this-run="' + String(r.execution_plan_changed_by_this_run === true) + '">'
+        + _irReconCell_('Recommended', recKnown ? r.recommended_quantity : DASH, '', recTitle)
+        + _irReconCell_('Planned', planKnown ? r.currently_planned_quantity : DASH, '', planTitle)
+        + _irReconCell_(thirdLabel, thirdValue, thirdClass, '')
+        + flag
         + '</div>';
 }
 window._irAdviceVsPlanHtml_ = _irAdviceVsPlanHtml_;
@@ -4197,6 +4231,96 @@ function _irMarkRouteTouched_(sku, instanceId) {
 }
 window._irMarkRouteTouched_ = _irMarkRouteTouched_;
 function _irTouchedInstances_(sku) { return Object.keys(_draftDbTouched[sku] || {}); }
+
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §7 — A WRITE WHOSE OUTCOME IS UNKNOWN MUST NOT INVITE ANOTHER WRITE.
+//
+// THE GAP, MEASURED ON THE SHIPPED FLUSH. A route that times out becomes `indeterminate`, is reconciled
+// against the database, and — when the read-back cannot settle it — is badged OUTCOME_UNKNOWN. It also STAYS
+// in the touched set, deliberately, so that it is retried rather than quietly dropped. That is the right
+// instinct for a route that is proven unsaved and the wrong one for a route nobody can classify: the very
+// next edit anywhere on the SKU flushes, finds it still touched, and re-sends a mutation that may already
+// have committed. Nobody clicked Retry; the retry is a side effect of the operator continuing to work.
+//
+// The idempotency identity makes that survivable — a CREATE replays under the same key, an UPDATE is guarded
+// by expected_draft_version — but survivable is not the same as correct, and neither guard covers the case the
+// read-back could not classify in the first place. §7 is explicit: an ambiguous read-back STOPS and asks for
+// operator review.
+//
+// So an unclassifiable route is HELD. It keeps its identity, its edit and its badge; what it loses is its
+// automatic place in the write scope. The hold is released by exactly two things: a read-back that later
+// settles it, or an operator who is shown the state and explicitly chooses. Nothing else clears it, and in
+// particular no amount of ordinary editing does.
+//
+// WHAT IS NOT HELD, and this is the half that keeps the page usable: a route the read-back PROVED unsaved is
+// not ambiguous — it is a known zero-write — so it stays retryable under the same idempotency identity, which
+// is what §7 permits. Only genuine ambiguity stops the line.
+// ==============================================================================================================
+var _irAckUnknown = {};      // sku -> instanceId -> { code, reconciliation, identity fields, at }
+// The store is reached through a resolver rather than by name, and the reason is a failure mode this page has
+// already been bitten by once. `_flushDraftDbPersist` wraps its whole body in a try/catch, so a symbol that is
+// missing where the flush runs does not raise — it SILENTLY CANCELS THE WRITE. The A2-R3-R1 harness note says
+// exactly that about a missing dependency, and it says it because nineteen assertions about the database once
+// failed instead of one about the harness. A module-level `var` is not visible to a suite that lifts these
+// functions individually, so reaching it by name would reintroduce that defect for every future harness.
+//
+// The fallback is the SAME SHAPE and the same lifetime, so the hold behaves identically wherever it resolves;
+// what changes is only which cell holds it.
+function _irAckStore_() {
+    if (typeof _irAckUnknown !== 'undefined' && _irAckUnknown) return _irAckUnknown;
+    var g = (typeof globalThis !== 'undefined') ? globalThis
+          : ((typeof window !== 'undefined' && window) ? window : null);
+    if (!g) return {};
+    if (!g.__irAckUnknownStore) g.__irAckUnknownStore = {};
+    return g.__irAckUnknownStore;
+}
+function _irAckUnknownHeld_(sku) { return Object.keys(_irAckStore_()[sku] || {}); }
+function _irAckUnknownIsHeld_(sku, instanceId) {
+    var s = _irAckStore_();
+    return !!(s[sku] && s[sku][String(instanceId || '')]);
+}
+// Record the hold from the outcome, carrying the SAME identity a later retry must reuse. Stored rather than
+// re-derived, because re-deriving it after a re-render is how a retry acquires a new identity and mints a
+// second ticket.
+function _irHoldAckUnknown_(sku, o) {
+    var s = _irAckStore_();
+    if (!s[sku]) s[sku] = {};
+    (o.instanceIds || []).forEach(function (k) {
+        if (!k) return;
+        s[sku][String(k)] = {
+            code: String(o.code || ''),
+            reconciliation: String(o.reconciliation || ''),
+            intent: String(o.intent || ''),
+            allocation_draft_id: String(o.allocation_draft_id || ''),
+            create_idempotency_key: String(o.create_idempotency_key || ''),
+            expected_draft_version: String(o.expected_draft_version || ''),
+            at: new Date().toISOString()
+        };
+    });
+}
+// Released when a read-back settles the route, in EITHER direction: proven saved and proven not saved are both
+// classifications, and only the absence of one is a reason to hold.
+function _irClearAckUnknown_(sku, instanceIds) {
+    var s = _irAckStore_();
+    if (!s[sku]) return 0;
+    var n = 0;
+    (instanceIds || []).forEach(function (k) {
+        if (s[sku][String(k)]) { delete s[sku][String(k)]; n++; }
+    });
+    return n;
+}
+// The ONLY operator-facing release. It is deliberately not wired to any edit: an explicit gesture is what §7
+// asks for, and an implicit one is what this whole mechanism exists to prevent. The route keeps its stored
+// identity, so the retry it enables is the SAME mutation, never a new one.
+function _irReleaseAckUnknown_(sku, instanceId) {
+    var released = _irClearAckUnknown_(sku, [String(instanceId || '')]);
+    if (released) _irMarkRouteTouched_(sku, String(instanceId || ''));
+    return released > 0;
+}
+window._irAckUnknownHeld_ = _irAckUnknownHeld_;
+window._irAckUnknownIsHeld_ = _irAckUnknownIsHeld_;
+window._irReleaseAckUnknown_ = _irReleaseAckUnknown_;
+window._irAckUnknownRecord_ = function (sku, k) { return (_irAckStore_()[sku] || {})[String(k)] || null; };
 window._irTouchedInstances_ = _irTouchedInstances_;
 
 function _scheduleDraftDbPersist(sku) {
@@ -4530,14 +4654,14 @@ function _irReconcileIndeterminate_(sku, outcomes) {
     var unknown = (outcomes || []).filter(function (o) { return o && o.status === 'indeterminate'; });
     if (!unknown.length) return Promise.resolve(outcomes);
     if (!(window.KM && window.KM.DB && typeof window.KM.DB.getShippingAllocationDraftWorkspace === 'function')) {
-        unknown.forEach(function (o) { o.reconciliation = 'READBACK_UNAVAILABLE'; });
+        unknown.forEach(function (o) { o.reconciliation = 'READBACK_UNAVAILABLE'; o.classification = 'ACK_UNKNOWN_NEEDS_REVIEW'; });
         return Promise.resolve(outcomes);
     }
     var scope = (typeof _allocWorkspaceScope === 'function') ? _allocWorkspaceScope() : null;
     return Promise.resolve(window.KM.DB.getShippingAllocationDraftWorkspace(scope))
         .then(function (res) {
             if (!res || res.success === false || !res.data) {
-                unknown.forEach(function (o) { o.reconciliation = 'READBACK_FAILED'; });
+                unknown.forEach(function (o) { o.reconciliation = 'READBACK_FAILED'; o.classification = 'ACK_UNKNOWN_NEEDS_REVIEW'; });
                 return outcomes;
             }
             var drafts = res.data.drafts || [];
@@ -4564,32 +4688,37 @@ function _irReconcileIndeterminate_(sku, outcomes) {
                         // The key is stored on every create this contract writes, so its ABSENCE from the
                         // station's active drafts is proof the create did not land.
                         o.status = 'not_persisted'; o.reconciliation = 'READBACK_NOT_SAVED';
+                        o.classification = 'NOT_COMMITTED_CONFIRMED_BY_READBACK';
                         o.message = 'The request did not complete, and a read-back of this station finds no draft carrying this Add Route’s idempotency key, so nothing was created. Saving again is safe.';
                         return;
                     }
                 } else {
                     hit = byId(o.allocation_draft_id || _irRouteInstanceDraftId_(sku, o.instanceIds));
-                    if (!hit) { o.reconciliation = 'READBACK_INCONCLUSIVE'; return; }   // stays OUTCOME UNKNOWN
+                    if (!hit) { o.reconciliation = 'READBACK_INCONCLUSIVE'; o.classification = 'ACK_UNKNOWN_NEEDS_REVIEW'; return; }   // stays OUTCOME UNKNOWN
                     var storedVer = String((hit.draft && hit.draft.draft_version) || '').trim();
                     var expected = String(o.expected_draft_version || '').trim();
                     if (expected && storedVer && storedVer === expected) {
                         o.status = 'not_persisted'; o.reconciliation = 'READBACK_NOT_SAVED';
+                        o.classification = 'NOT_COMMITTED_CONFIRMED_BY_READBACK';
                         o.message = 'The request did not complete, and the stored route is still at the version this edit expected, so the change was not applied. Saving again is safe.';
                         return;
                     }
-                    if (!expected || !storedVer) { o.reconciliation = 'READBACK_INCONCLUSIVE'; return; }
+                    if (!expected || !storedVer) { o.reconciliation = 'READBACK_INCONCLUSIVE'; o.classification = 'ACK_UNKNOWN_NEEDS_REVIEW'; return; }
                 }
                 // The write DID land. Adopt exactly what the database holds, so the row stops being dirty and
                 // a retry cannot write it a second time.
                 var did = String((hit.draft && hit.draft.allocation_draft_id) || hit.allocation_draft_id || '').trim();
-                o.status = 'persisted'; o.reconciliation = 'READBACK_SAVED'; o.allocation_draft_id = did;
+                // §7 — the named classification, not a bare status. COMMITTED_CONFIRMED_BY_READBACK is the
+                // one outcome that permits the row to stop being dirty on evidence rather than on a response.
+                o.status = 'persisted'; o.reconciliation = 'READBACK_SAVED';
+                o.classification = 'COMMITTED_CONFIRMED_BY_READBACK'; o.allocation_draft_id = did;
                 o.draft_version = String((hit.draft && hit.draft.draft_version) || '');
                 o.message = 'The response was lost, but a read-back confirms this route IS saved. Nothing was written twice.';
                 try { _irAdoptReconciledRoute_(sku, o, hit); } catch (eR) {}
             });
             return outcomes;
         })['catch'](function () {
-            unknown.forEach(function (o) { o.reconciliation = 'READBACK_FAILED'; });
+            unknown.forEach(function (o) { o.reconciliation = 'READBACK_FAILED'; o.classification = 'ACK_UNKNOWN_NEEDS_REVIEW'; });
             return outcomes;
         });
 }
@@ -4983,6 +5112,19 @@ function _flushDraftDbPersist(sku) {
         var _scoped = (_touched.length
             ? rows.filter(function (r) { return _touchedSet[String(r.client_route_instance_id || '')]; })
             : rows).filter(function (r) { return !(_irIsComposerRow_(r) && !_isRouteComplete(r)); });
+        // R6-R6 §7 — A ROUTE UNDER AN ACK_UNKNOWN HOLD IS NOT A WRITE CANDIDATE, IN EITHER BRANCH.
+        // Filtered here rather than at the call sites for the reason R2 gave for the composer: two statements
+        // that must agree are better as one statement. Note this also covers the empty-touched-set fallback,
+        // which widens the scope to every row on screen — the exact path by which a held route would have been
+        // re-sent by an edit that had nothing to do with it.
+        var _held = _scoped.filter(function (r) { return _irAckUnknownIsHeld_(sku, r.client_route_instance_id); });
+        _scoped = _scoped.filter(function (r) { return !_irAckUnknownIsHeld_(sku, r.client_route_instance_id); });
+        if (_held.length) {
+            _irSetRouteSaveState_(sku, _held.map(function (r) { return String(r.client_route_instance_id || ''); }),
+                'OUTCOME_UNKNOWN');
+            console.warn('[replen] ' + _held.length + ' route(s) held at ACK_UNKNOWN — not re-sent; ' +
+                'operator review required (window._irReleaseAckUnknown_).');
+        }
         var complete = _scoped.filter(_isRouteComplete);
         // F1-7N-FB-4G-A2-R4 §G.8 — A DIRTY BUT INCOMPLETE ROUTE IS NAMED, NEVER SILENTLY SKIPPED.
         //
@@ -5123,6 +5265,11 @@ function _flushDraftDbPersist(sku) {
                 if (!o) return;
                 _irSetRouteSaveState_(sku, o.instanceIds,
                     o.status === 'persisted' ? 'SAVED' : (o.status === 'indeterminate' ? 'OUTCOME_UNKNOWN' : 'NOT_SAVED'));
+                // R6-R6 §7 — the hold goes on for exactly the routes the read-back could NOT classify, and
+                // comes off for every route it could, in either direction. A route proven unsaved is a known
+                // zero-write and stays freely retryable; only ambiguity stops the line.
+                if (o.status === 'indeterminate') _irHoldAckUnknown_(sku, o);
+                else _irClearAckUnknown_(sku, o.instanceIds);
             });
             try { _irSaveBusySync_(); } catch (eB2) {}
             // §D.7 — report PER ROUTE. A single bare SAVE_FAILED across a multi-header write is exactly the

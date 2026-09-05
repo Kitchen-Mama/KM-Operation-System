@@ -270,6 +270,7 @@ var PAGE_VARS = ['IR_DRAFT_TYPED_REASONS_', 'IR_ROUTE_PERSISTABLE_FIELDS', 'IR_R
 var PAGE_FNS = ['_flushDraftDbPersist', '_irPersistOneRouteGroup_', '_irDispatchLineCancels_',
   '_cancelAllocationDraftLine', '_cancelAllocationDraftHeader', '_irCancelUnusedDraftHeaders_',
   '_irQueueStaleGroupCancels_', '_irTouchedInstances_', '_isRouteComplete', '_irStoredDraftVersion_',
+  '_irAckStore_', '_irAckUnknownIsHeld_', '_irHoldAckUnknown_', '_irClearAckUnknown_', '_irReleaseAckUnknown_',  // R6-R6 §7 — the write scope's hold
   '_irRouteLabel_', '_irMakeDraftSaveError_', '_irSaveAcknowledged_', '_irAdoptPersistedLineIds_',
   '_irStampRouteGroupIds_', '_irMultiRouteOutcomeEnvelope_', '_irMultiLineHeaderBlock_',
   '_irAdoptionGroupsNeedingConfirmation_', '_irRouteGroupConflictEnvelope_', '_irMarkRouteTouched_',

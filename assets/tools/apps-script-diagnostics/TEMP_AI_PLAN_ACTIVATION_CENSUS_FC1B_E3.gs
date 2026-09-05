@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R4';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -2639,8 +2639,12 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
           company: CENSUS_str_(vh.company),
           country: CENSUS_str_(vh.country),
           station_marketplace: CENSUS_str_(vh.marketplace),
+          // R6-R6: the fallback now speaks the SERVER's vocabulary (RIC_DESTINATION_TYPES_), which is what the
+          // stored column holds. It used to fall back to the CLIENT's destination_type token,
+          // 'MARKETPLACE_DESTINATION' — a different field in a different vocabulary — so one row could be
+          // described two ways depending only on whether the line carried the column.
           destination_kind: CENSUS_str_(vl.destination_kind)
-            || (CENSUS_str_(vh.destination_marketplace) ? 'MARKETPLACE_DESTINATION' : 'WAREHOUSE'),
+            || (CENSUS_str_(vh.destination_marketplace) ? 'MARKETPLACE' : 'WAREHOUSE'),
           destination_id: CENSUS_str_(vl.destination_warehouse_id || vh.destination_warehouse_id
             || vh.recommended_destination_warehouse_id || vl.destination_marketplace || vh.destination_marketplace),
           destination_marketplace: CENSUS_str_(vh.destination_marketplace),
@@ -2656,6 +2660,15 @@ function RUN_R6R2_ROUTE_PROVENANCE() {
             : 'MANUAL (no generation_run_id — composed by a person)',
           shipping_method: CENSUS_str_(vh.recommended_shipping_method),
           last_mile_delivery: CENSUS_str_(vh.recommended_last_mile_delivery),
+          // R6-R6 §5 — the ETA is a LINE field in the canonical model, and it is the field the controlled
+          // action will cause to be RECOMPUTED, so it must be frozen before rather than reconstructed after.
+          expected_arrival: CENSUS_str_(vl.expected_arrival),
+          // The optimistic-concurrency evidence. `draft_version` is what an UPDATE sends as
+          // expected_draft_version and what the writer increments; a version that MOVED is how a lost
+          // response is later proven to have committed. Frozen here so the readback has a BEFORE to compare.
+          draft_version: CENSUS_str_(vh.draft_version),
+          updated_at: CENSUS_str_(vh.updated_at),
+          line_updated_at: CENSUS_str_(vl.updated_at),
           save_target_status: tgt ? CENSUS_str_(tgt.status) : (tgtErr ? 'RESOLVER_ERROR' : 'RESOLVER_UNAVAILABLE'),
           save_target_allocation_draft_id: tgt ? CENSUS_str_(tgt.allocation_draft_id) : '',
           save_target_conflict_ids: (tgt && tgt.conflictIds) ? tgt.conflictIds : [],
@@ -2832,4 +2845,273 @@ function RUN_R6R4_SAVE_TARGET_FREEZE() {
   CENSUS_log_('r6r4_freeze_reduction', JSON.stringify(summary.reduction));
   CENSUS_log_('r6r4_freeze_ready_for_manual_route_save_test', String(summary.ready_for_manual_route_save_test));
   return summary;
+}
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §5/§8 — THE CONTROLLED MANUAL ROUTE SAVE TARGET, RESOLVED AND FROZEN.
+//
+// R6-R4 froze TWO visible rows and proved neither target is ambiguous. That is not yet enough to authorize a
+// live save, because it does not say WHICH of the two the operator means. The live plan holds:
+//
+//   Route A  a CN factory source -> a MARKETPLACE destination, 320 units, NO last mile, ETA waiting on it
+//   Route B  the same source     -> a real 3PL WAREHOUSE,      200 units, a last mile already chosen
+//
+// and the brief is explicit that list order proves nothing about which is which. So Route A is selected by its
+// own ROUTE IDENTITY, from three facts that are structural rather than cosmetic:
+//
+//   • destination_kind — a marketplace destination and a warehouse destination are different by the frozen XOR
+//     contract, not by their labels. This alone separates A from B in the live plan.
+//   • quantity — a number, carried in the data.
+//   • last_mile_delivery is BLANK — which is both a discriminator and the precondition for the intended action.
+//     A route that already has one is not the route that needs completing.
+//
+// DELIBERATELY NOT A DISCRIMINATOR: the shipping method. It is the one field on this row whose value is an
+// operator-facing display token, and spelling it in a shipped source is how a diagnostic silently stops matching
+// the day a catalogue label is edited. Nothing here needs it, so nothing here spells it.
+//
+// THE VERDICT IS EXACTLY_ONE_SAVE_TARGET OR IT IS A STOP. Zero matches means the plan is not what this preflight
+// was written against; more than one means the identity does not identify. Neither is a state in which a
+// production write may be authorized, and both are reported as the reason rather than as a bare refusal.
+//
+// STRICTLY READ-ONLY. It resolves through the census, which constructs no writer, and it asserts DB_WRITES = 0
+// on its own output. There is deliberately NO helper here that performs the write: the only future write is the
+// ordinary UI path, after the operator authorizes it.
+// ================================================================================================================
+var R6R6_ROUTE_A_SELECTOR_ = {
+  // The SERVER's vocabulary — RIC_DESTINATION_TYPES_ = ['WAREHOUSE','MARKETPLACE'] — because that is what the
+  // stored column holds. The client's 'MARKETPLACE_DESTINATION' is a different field entirely.
+  destination_kind: 'MARKETPLACE',
+  quantity: 320,
+  last_mile_delivery_is_blank: true
+};
+// The narrow mutation contract. Everything not named here is FORBIDDEN to change, and the readback checks the
+// forbidden list field by field rather than trusting that only the allowed one was sent.
+var R6R6_ALLOWED_MUTATION_FIELDS_ = ['last_mile_delivery', 'expected_arrival', 'draft_version', 'updated_at', 'line_updated_at'];
+var R6R6_FORBIDDEN_MUTATION_FIELDS_ = ['company', 'country', 'station_marketplace', 'sku', 'source_warehouse_id',
+  'destination_kind', 'destination_id', 'destination_marketplace', 'quantity', 'shipping_method', 'status',
+  'generation_type', 'ownership', 'allocation_draft_id', 'allocation_draft_line_id'];
+// DERIVED, not free. `k4_group_key` is computed from the header's route dimensions and the last mile is one of
+// them, so the intended completion necessarily moves it. Calling it forbidden would report the correct
+// mutation as a violation; calling it allowed would hide a route silently changing identity. It is checked
+// separately: it may move, and it may move ONLY because the last mile did.
+var R6R6_DERIVED_MUTATION_FIELDS_ = ['k4_group_key'];
+
+function CENSUS_r6r6MatchRouteA_(rows) {
+  var out = [];
+  for (var i = 0; i < (rows || []).length; i++) {
+    var r = rows[i];
+    if (CENSUS_str_(r.destination_kind) !== R6R6_ROUTE_A_SELECTOR_.destination_kind) continue;
+    if (CENSUS_num_(r.quantity) !== R6R6_ROUTE_A_SELECTOR_.quantity) continue;
+    if (R6R6_ROUTE_A_SELECTOR_.last_mile_delivery_is_blank && CENSUS_str_(r.last_mile_delivery)) continue;
+    out.push(r);
+  }
+  return out;
+}
+
+function RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT() {
+  var res = RUN_R6R2_ROUTE_PROVENANCE();
+  var rows = res.visible_route_rows || [];
+  var hits = CENSUS_r6r6MatchRouteA_(rows);
+  var out = {
+    census: 'RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT',
+    build: TEMP_E3_CENSUS_BUILD_,
+    read_only: true,
+    // Carried from the census rather than re-asserted: this preflight cannot write, and it also cannot be the
+    // thing that proves it, because it delegates every read.
+    db_writes: res.db_writes, writer_constructed: res.writer_constructed,
+    submit_calls: res.submit_calls, reservation_writes: res.reservation_writes,
+    carrier_master_data_writes: res.carrier_master_data_writes,
+    selector: R6R6_ROUTE_A_SELECTOR_,
+    selector_note: 'destination_kind + quantity + blank last mile. The shipping METHOD is deliberately not a'
+      + ' discriminator: it is a display token, and a diagnostic that spells one stops matching when a'
+      + ' catalogue label is edited.',
+    visible_row_count: rows.length,
+    matched_row_count: hits.length,
+    header_count: (res.sku_contributing_header_ids || []).length,
+    line_count: (res.sku_contributing_line_ids || []).length,
+    station_included_header_ids: res.station_included_header_ids,
+    allowed_mutation_fields: R6R6_ALLOWED_MUTATION_FIELDS_,
+    forbidden_mutation_fields: R6R6_FORBIDDEN_MUTATION_FIELDS_,
+    target: null,
+    other_rows: [],
+    verdict: 'STOP',
+    stop_reason: '',
+    error: res.error
+  };
+  if (res.error) { out.stop_reason = 'the census itself failed: ' + CENSUS_str_(res.error); return CENSUS_r6r6FinishPre_(out); }
+  if (!res.ready_for_manual_route_save_test) {
+    out.stop_reason = 'the R6-R4 freeze does not report READY: an ambiguous save target or a shared K4 group is'
+      + ' present, and neither may be resolved by picking one.';
+    return CENSUS_r6r6FinishPre_(out);
+  }
+  if (hits.length !== 1) {
+    out.verdict = 'STOP';
+    out.stop_reason = (hits.length === 0)
+      ? 'ZERO rows match the Route A identity. The live plan is not the plan this preflight was written'
+        + ' against; re-read it before authorizing anything.'
+      : hits.length + ' rows match the Route A identity, so the identity does not IDENTIFY. Picking one would'
+        + ' be the guess this whole contract exists to remove.';
+    return CENSUS_r6r6FinishPre_(out);
+  }
+  var t = hits[0];
+  // The target is REUSE-of-itself or it is not a target: a save that would mint a header is a different
+  // operation from completing an existing route, whatever the row looks like.
+  if (!t.save_would_update_this_header) {
+    out.stop_reason = 'the write path would not UPDATE this row\'s own header (' + CENSUS_str_(t.save_target_status)
+      + '), so the intended narrow mutation is not what a save would perform.';
+    return CENSUS_r6r6FinishPre_(out);
+  }
+  out.target = {
+    allocation_draft_id: t.allocation_draft_id,
+    allocation_draft_line_id: t.allocation_draft_line_id,
+    k4_group_key: t.k4_group_key,
+    company: t.company, country: t.country, marketplace: t.station_marketplace, sku: t.sku,
+    source_warehouse_id: t.source_warehouse_id,
+    destination_kind: t.destination_kind, destination_id: t.destination_id,
+    destination_marketplace: t.destination_marketplace,
+    quantity: t.quantity,
+    shipping_method: t.shipping_method,
+    last_mile_delivery: t.last_mile_delivery,
+    expected_arrival: t.expected_arrival,
+    status: t.status,
+    generation_type: t.generation_type,
+    ownership: t.ownership,
+    draft_version: t.draft_version,
+    updated_at: t.updated_at,
+    line_updated_at: t.line_updated_at,
+    save_target_status: t.save_target_status,
+    save_target_allocation_draft_id: t.save_target_allocation_draft_id,
+    // The identity a retry must reuse. An UPDATE is guarded by the version it expects; it carries no create key,
+    // and inventing one would make a retry look like a create.
+    mutation_identity: { intent: 'UPDATE_EXISTING_ROUTE', allocation_draft_id: t.allocation_draft_id,
+      expected_draft_version: t.draft_version, create_idempotency_key: '' }
+  };
+  // The RAW row, frozen exactly as the census emits it. The readable view above renames fields for a person;
+  // comparing a renamed view against a raw row is how every run reported `station_marketplace` as changed.
+  out.target_row = t;
+  out.other_rows = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].visible_row_key === t.visible_row_key) continue;
+    // Every OTHER row is frozen too, byte for byte as far as this census can see it, because "Route B is
+    // unchanged" is a claim the readback has to be able to check rather than assert.
+    out.other_rows.push(rows[i]);
+  }
+  out.verdict = 'EXACTLY_ONE_SAVE_TARGET';
+  return CENSUS_r6r6FinishPre_(out);
+}
+
+function CENSUS_r6r6FinishPre_(out) {
+  CENSUS_log_('r6r6_preflight_verdict', out.verdict + (out.stop_reason ? ' — ' + out.stop_reason : ''));
+  if (out.target) {
+    CENSUS_log_('r6r6_preflight_target', out.target.allocation_draft_id + ' :: ' + out.target.allocation_draft_line_id);
+    CENSUS_log_('r6r6_preflight_before_last_mile', '"' + out.target.last_mile_delivery + '" (blank = the field to complete)');
+    CENSUS_log_('r6r6_preflight_expected_draft_version', out.target.draft_version);
+  }
+  CENSUS_log_('r6r6_preflight_db_writes', String(out.db_writes));
+  return out;
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// THE READBACK. Run AFTER the operator has performed the one authorized UI action, with the preflight's own
+// output handed back in. It answers one question — did exactly the intended field change, and nothing else? —
+// and it answers it by COMPARING, never by trusting either side.
+//
+// It takes the BEFORE as an argument rather than re-deriving it, because a readback that recomputes its own
+// baseline cannot detect a change: whatever it finds becomes what it expected.
+// ----------------------------------------------------------------------------------------------------------------
+function RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK(before) {
+  var res = RUN_R6R2_ROUTE_PROVENANCE();
+  var rows = res.visible_route_rows || [];
+  var out = {
+    census: 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK',
+    build: TEMP_E3_CENSUS_BUILD_,
+    read_only: true,
+    db_writes: res.db_writes, writer_constructed: res.writer_constructed,
+    submit_calls: res.submit_calls, reservation_writes: res.reservation_writes,
+    carrier_master_data_writes: res.carrier_master_data_writes,
+    target_ids: null, before_values: null, after_values: null,
+    changed_fields: [], unexpected_changed_fields: [],
+    header_count_before: null, header_count_after: (res.sku_contributing_header_ids || []).length,
+    line_count_before: null, line_count_after: (res.sku_contributing_line_ids || []).length,
+    route_b_unchanged: null, other_rows_compared: 0,
+    verdict: 'STOP', stop_reason: '', error: res.error
+  };
+  if (!before || !before.target) {
+    out.stop_reason = 'no preflight output was supplied, so there is no BEFORE to compare against. Run'
+      + ' RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT first and pass its result here.';
+    return CENSUS_r6r6FinishBack_(out);
+  }
+  // Compared raw-to-raw. `before.target` is the readable view and is kept for the report; `target_row` is what
+  // the comparison uses, because it is the same shape as what this run reads back.
+  var b = before.target_row || before.target;
+  out.target_ids = { allocation_draft_id: b.allocation_draft_id, allocation_draft_line_id: b.allocation_draft_line_id };
+  out.header_count_before = CENSUS_num_(before.header_count);
+  out.line_count_before = CENSUS_num_(before.line_count);
+  // Located by the IDs it was frozen with — never by the selector again. The selector matched a BLANK last
+  // mile, and the whole point of the action is that the blank is gone.
+  var a = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (CENSUS_str_(rows[i].allocation_draft_id) === CENSUS_str_(b.allocation_draft_id) &&
+        CENSUS_str_(rows[i].allocation_draft_line_id) === CENSUS_str_(b.allocation_draft_line_id)) { a = rows[i]; break; }
+  }
+  if (!a) {
+    out.stop_reason = 'the frozen target row is NOT PRESENT after the action. A row that disappeared is not a'
+      + ' narrow mutation, whatever else changed.';
+    return CENSUS_r6r6FinishBack_(out);
+  }
+  out.before_values = b; out.after_values = a;
+  var fields = R6R6_ALLOWED_MUTATION_FIELDS_.concat(R6R6_FORBIDDEN_MUTATION_FIELDS_)
+    .concat(R6R6_DERIVED_MUTATION_FIELDS_);
+  for (var fi = 0; fi < fields.length; fi++) {
+    var k = fields[fi];
+    var bv = CENSUS_str_(b[k]), av = CENSUS_str_(a[k]);
+    if (bv === av) continue;
+    out.changed_fields.push({ field: k, before: bv, after: av });
+    if (R6R6_FORBIDDEN_MUTATION_FIELDS_.indexOf(k) !== -1) out.unexpected_changed_fields.push(k);
+  }
+  // Route B and every other visible row, compared field by field against its own frozen copy.
+  var otherBefore = before.other_rows || [], drift = [];
+  for (var oi = 0; oi < otherBefore.length; oi++) {
+    var ob = otherBefore[oi], oa = null;
+    for (var oj = 0; oj < rows.length; oj++) {
+      if (rows[oj].visible_row_key === ob.visible_row_key) { oa = rows[oj]; break; }
+    }
+    out.other_rows_compared++;
+    if (!oa) { drift.push({ visible_row_key: ob.visible_row_key, field: '(row)', before: 'present', after: 'ABSENT' }); continue; }
+    for (var ok = 0; ok < fields.length; ok++) {
+      var kk = fields[ok];
+      if (CENSUS_str_(ob[kk]) !== CENSUS_str_(oa[kk])) {
+        drift.push({ visible_row_key: ob.visible_row_key, field: kk, before: CENSUS_str_(ob[kk]), after: CENSUS_str_(oa[kk]) });
+      }
+    }
+  }
+  out.route_b_unchanged = (drift.length === 0);
+  out.other_row_drift = drift;
+  // A derived key that moved WITHOUT the field it derives from is a route changing identity for no stated
+  // reason, which is the one thing this classification exists to catch.
+  var lastMileMoved = out.changed_fields.some(function (x) { return x.field === 'last_mile_delivery'; });
+  out.derived_changed_fields = out.changed_fields.filter(function (x) {
+    return R6R6_DERIVED_MUTATION_FIELDS_.indexOf(x.field) !== -1; }).map(function (x) { return x.field; });
+  out.derived_change_explained = !out.derived_changed_fields.length || lastMileMoved;
+  var countsHeld = (out.header_count_before === out.header_count_after) && (out.line_count_before === out.line_count_after);
+  var onlyAllowed = (out.unexpected_changed_fields.length === 0);
+  var lastMileFilled = CENSUS_str_(a.last_mile_delivery) !== '';
+  if (!countsHeld) out.stop_reason = 'the header or line COUNT moved: a completion must not create anything.';
+  else if (!onlyAllowed) out.stop_reason = 'fields outside the allowed set changed: ' + out.unexpected_changed_fields.join(', ');
+  else if (!out.route_b_unchanged) out.stop_reason = 'another visible route drifted; see other_row_drift.';
+  else if (!lastMileFilled) out.stop_reason = 'the last mile is STILL blank, so the intended change did not land.';
+  else if (!out.derived_change_explained) out.stop_reason = 'the route identity key moved without the last mile'
+    + ' moving, so this row changed identity for a reason the authorized action does not account for.';
+  out.verdict = out.stop_reason ? 'STOP' : 'NARROW_MUTATION_CONFIRMED';
+  return CENSUS_r6r6FinishBack_(out);
+}
+
+function CENSUS_r6r6FinishBack_(out) {
+  CENSUS_log_('r6r6_readback_verdict', out.verdict + (out.stop_reason ? ' — ' + out.stop_reason : ''));
+  CENSUS_log_('r6r6_readback_changed', JSON.stringify(out.changed_fields));
+  CENSUS_log_('r6r6_readback_unexpected', JSON.stringify(out.unexpected_changed_fields));
+  CENSUS_log_('r6r6_readback_counts', 'headers ' + out.header_count_before + '->' + out.header_count_after
+    + ' lines ' + out.line_count_before + '->' + out.line_count_after);
+  CENSUS_log_('r6r6_readback_db_writes', String(out.db_writes));
+  return out;
 }

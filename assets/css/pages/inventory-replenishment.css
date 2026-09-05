@@ -2216,29 +2216,46 @@
     background-color: #FEF3C7;
     border-color: #FDE68A;
 }
+/* F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §3 — ONE COMPACT LINE, NOT A PARAGRAPH.
+
+   The previous rule had `flex-wrap: wrap` and a full-width `__note`, which is how a reconciliation summary
+   became five lines of prose under the plan total and pushed the next control off the fold. There is no note
+   any more, so there is nothing to wrap for: three label/value pairs and an optional four-word flag fit on
+   one line at every panel width this card is used at.
+
+   It is deliberately QUIETER than the Route rows above it: no filled background, a hairline top rule instead
+   of a box, muted labels and normal-weight values. A reconciliation is a reading, not an action, and it must
+   not out-compete the controls the operator came here to use. Only the third column may take a colour, and
+   only as text — a large warning fill for a number that is often simply `400 remaining` would be alarm
+   fatigue by the second SKU. */
 #ops-section .ir-plan-recon {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: baseline;
-    gap: 4px 16px;
-    margin-top: 6px;
-    padding: 6px 8px;
-    border: 1px solid var(--border-light, #E2E8F0);
-    border-radius: 6px;
-    background-color: #F8FAFC;
+    gap: 14px;
+    margin-top: 4px;
+    padding: 4px 2px 0;
+    border-top: 1px solid var(--border-light, #E2E8F0);
     font-size: 11px;
+    line-height: 1.5;
+    overflow: hidden;
 }
-#ops-section .ir-plan-recon__cell { display: flex; align-items: baseline; gap: 4px; }
+#ops-section .ir-plan-recon__cell { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 #ops-section .ir-plan-recon__label { color: var(--text-muted, #64748B); }
-#ops-section .ir-plan-recon__sub { color: #94A3B8; }
-#ops-section .ir-plan-recon__remaining { color: #B45309; font-weight: 600; }
-#ops-section .ir-plan-recon__over { color: #B91C1C; font-weight: 600; }
-#ops-section .ir-plan-recon__matched { color: #15803D; font-weight: 600; }
-/* The note is the half that stops the two numbers being read as one: it says the recommendation was NOT
-   applied and that the difference is not added on its own. It takes the full width so it is never truncated
-   into a fragment that could be read as the opposite. */
-#ops-section .ir-plan-recon__note {
-    flex-basis: 100%;
-    color: var(--text-muted, #64748B);
-    line-height: 1.4;
+/* The number is the thing being read, so it is the thing that is legible; the label beside it is not. */
+#ops-section .ir-plan-recon__value { color: var(--text-primary, #0F172A); font-weight: 600; font-variant-numeric: tabular-nums; }
+#ops-section .ir-plan-recon__remaining { color: #B45309; }
+#ops-section .ir-plan-recon__over { color: #B91C1C; }
+#ops-section .ir-plan-recon__matched { color: #15803D; }
+/* Four words, and it TRUNCATES rather than wrapping: a second line here is the paragraph coming back. The
+   detail it stands for is in the title/aria-label, which is why losing the tail costs the reader nothing. */
+#ops-section .ir-plan-recon__flag {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #92400E;
+    cursor: help;
+    border-bottom: 1px dotted #D97706;
 }

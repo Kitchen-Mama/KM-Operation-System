@@ -331,7 +331,11 @@ function makeRecon(pageSrc, opts) {
   (opts.rows || []).forEach(function (r) { list.appendChild(r); });
   var doc = { getElementById: function (id) { return id === 'shipping-methods-CO1100-R' ? list : null; } };
   var win = { _irLastAdvice: opts.advice || null, _irExecPlanChangedByLastRun: false };
-  var src = extractFn(pageSrc, '_irAdviceVsPlan_') + '\n' + extractFn(pageSrc, '_irAdviceVsPlanHtml_') +
+  // R6-R6: the strip delegates its cell and its tooltip, so both are lifted with it.
+  // OPTIONALLY, because this harness is also pointed at the BEFORE revision, where neither helper exists yet —
+  // and a BEFORE that cannot be BUILT is a BEFORE/AFTER proof that proves nothing.
+  function optFn(src, name) { try { return extractFn(src, name); } catch (e) { return ''; } }
+  var src = optFn(pageSrc, '_irReconTooltip_') + '\n' + optFn(pageSrc, '_irReconCell_') + '\n' + extractFn(pageSrc, '_irAdviceVsPlan_') + '\n' + extractFn(pageSrc, '_irAdviceVsPlanHtml_') +
     '\nreturn { model: _irAdviceVsPlan_, html: _irAdviceVsPlanHtml_ };';
   return new Function('document', 'window', '_irRecoByKey', '_irIsComposerEl_', 'getReplenishmentData',
     '_irSuggestedQtyState_', '_irInventoryAiPlanDbGenerationEnabled_', '_execEsc', src)(
@@ -359,7 +363,15 @@ ok(H.indexOf('920') !== -1 && H.indexOf('520') !== -1 && H.indexOf('400') !== -1
   'F3  all three numbers are RENDERED — this is what the live screen was missing');
 ok(/Recommended</.test(H) && !/AI recommends/.test(H),
   'F3a labelled "Recommended", because no AI Plan produced it');
-ok(/standing suggested quantity/.test(H), 'F3b with its basis stated in words');
+// R6-R6 RESTATEMENT. The basis was a sub-line under the number — 'standing suggested quantity — no AI Plan
+// has been run this session' — and it is one of the sentences the operator named as being in the way. The
+// claim it stood for is that the strip never shows a number without recording WHICH claim it is, and that is
+// unchanged: the source is published on the element, where a diagnostic and this test can both read it and an
+// operator is not made to. F3a above still proves the visible LABEL distinguishes the two cases.
+ok(/data-recommendation-source="MATERIALIZED_SUGGESTED_QTY"/.test(H),
+  'F3b with its basis recorded on the element rather than printed as prose');
+ok(/data-recommendation-state="READY"/.test(H),
+  'F3b1 and the state of that owner alongside it, so PENDING can never be read as zero');
 // The previous revision, same inputs: nothing at all.
 var reconBefore = makeRecon(atHead('assets/js/pages/inventory-replenishment.js'),
   { rows: LIVE_ROWS, items: LIVE_ITEMS, recoByKey: {},
@@ -372,21 +384,42 @@ var reconAi = makeRecon(PAGE, { rows: LIVE_ROWS, items: LIVE_ITEMS,
   recoByKey: { 'CO1100-R': { suggestedQty: 760 } },
   suggested: function () { return { state: 'READY', value: 920 }; } });
 eq(reconAi.model('CO1100-R').recommended_quantity, 760, 'F5  an AI Plan recommendation still takes precedence');
-ok(/AI recommends/.test(reconAi.html('CO1100-R')), 'F5a and is labelled as the AI\'s answer');
+// R6-R6 RESTATEMENT. The visible label is now 'Recommended' in both cases: WHICH recommendation this is counts
+// as source authority — internal vocabulary the operator explicitly asked to have off the screen. It is not
+// lost; it is published on the element, where the diagnostic that needs it reads it and an operator is not
+// made to. The claim that mattered is that the two remain DISTINGUISHABLE, and that is what is checked here;
+// F5 above still proves the AI DTO takes precedence.
+ok(/data-recommendation-source="AI_PLAN_RECOMMENDATION"/.test(reconAi.html('CO1100-R')),
+  'F5a and the answer is still identifiable as the AI\'s, on the element rather than in prose');
+ok(!/data-recommendation-source="AI_PLAN_RECOMMENDATION"/.test(H),
+  'F5b while the standing-gap answer is not — the two never collapse into one claim');
 // PENDING and NONE are not zero.
 var reconPending = makeRecon(PAGE, { rows: LIVE_ROWS, items: LIVE_ITEMS,
   suggested: function () { return { state: 'PENDING', value: null }; } });
 eq(reconPending.model('CO1100-R').recommended_quantity, null,
   'F6  a PENDING read is not a recommendation of 0 — no number is invented');
-ok(/still loading/.test(reconPending.html('CO1100-R')) && !/\b0\b/.test(reconPending.html('CO1100-R').replace(/520|400/g, '')),
-  'F6a and the strip says so instead of showing a fabricated figure');
+// R6-R6 RESTATEMENT: same guarantee, compact form. An unknown number renders as an em dash and NEVER as 0 —
+// which is the half that matters — and the reason it is unknown moves to the title, where it is available
+// without occupying the line. The zero-check is kept verbatim.
+var _pendingH = reconPending.html('CO1100-R');
+ok(_pendingH.indexOf('\u2014') !== -1 && /title="Still loading"/.test(_pendingH),
+  'F6a and the strip shows an em dash with the reason on hover, never a fabricated figure');
+ok(!/\b0\b/.test(_pendingH.replace(/520|400/g, '')),
+  'F6a1 and 0 appears nowhere — PENDING is not a recommendation of nothing');
 // The two supply origins, and the sentence that stops the wrong subtraction.
 eq(M.existing_route_source_countries, ['CN'], 'F7  the existing plan\'s origin is read from the ROWS themselves');
 eq(M.recommendation_supply_sources, ['WH-RESUS-US-3PL-AMZLGS'], 'F7a the advice\'s origin from the advice');
 eq(M.supply_sources_comparable, false, 'F7b and they are NOT the same supply');
-ok(/DIFFERENT supply/.test(H) && /not a quantity still to be shipped from the same stock/.test(H),
-  'F8  so the strip says the difference is not another shipment from the same stock');
-ok(/has NOT been applied/.test(H), 'F8a and that the recommendation was not applied by this run');
+// R6-R6 RESTATEMENT: four words on the line, the specifics in the accessible description. The warning is the
+// part that must survive compaction — and the part that must still be ABSENT when the sources agree.
+ok(/Different inventory sources/.test(H) && /aria-label="Different inventory sources/.test(H),
+  'F8  so the strip still warns that the two numbers describe different stock');
+ok(/Recommendation: WH-RESUS-US-3PL-AMZLGS/.test(H),
+  'F8b and the detail names each side\'s own supply, where an operator who wants it can reach it');
+// The denial is gone because the claim is: a strip of three labelled numbers asserts nothing about who wrote
+// what. Checked as the absence, which is stricter than the sentence was.
+ok(!/(applied|added automatically|already here)/i.test(H),
+  'F8a and it makes no claim about application at all — there is nothing left to deny');
 ok(!/\b(CN|from CN)\b[^<]*400|400[^<]*from CN/.test(H),
   'F8b the 400 is never presented as another shipment from the CN factory');
 
@@ -721,7 +754,7 @@ mut('M10 the difference presented as comparable when the supply differs', functi
   var r = makeRecon(m, { rows: LIVE_ROWS, items: LIVE_ITEMS, recoByKey: {},
     suggested: function () { return { state: 'READY', value: 920 }; },
     advice: { scopes: [{ supply_sources: ['WH-RESUS-US-3PL-AMZLGS'] }] } });
-  return !/DIFFERENT supply/.test(r.html('CO1100-R')) && /DIFFERENT supply/.test(H);
+  return !/Different inventory sources/.test(r.html('CO1100-R')) && /Different inventory sources/.test(H);
 });
 mut('M11 station-level inclusion reported as the visible-row set', function () {
   var m = mutateFn(CENSUS, 'RUN_R6R2_ROUTE_PROVENANCE',

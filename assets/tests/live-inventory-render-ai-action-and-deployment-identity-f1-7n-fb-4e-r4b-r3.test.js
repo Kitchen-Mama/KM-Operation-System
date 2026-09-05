@@ -515,7 +515,17 @@ ok(Number((HEALTH.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])
 ok(/var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;/.test(HEALTH), '1.10 transport contract stays 1');
 
 // The health identity payload reads BOTH stamps, so a truthful file produces a truthful answer.
-ok(/build_id:\s*SYS_BUILD_VERSION_/.test(HEALTH), '1.11 build_id is read from SYS_BUILD_VERSION_');
+// R6-R6 RESTATEMENT (§4): one constant was answering two questions, and it answered the wrong one. After
+// R6-R5 was deployed, build_id read R6-R2 beside a router and a workspace at R6-R5 — because
+// SYS_BUILD_VERSION_ is 63_'s OWN module stamp and R6-R5 did not bump it. An operator reasonably read that as
+// "R6-R5 is not deployed". build_id is the DEPLOYMENT RELEASE, the frontend already treats it as one, and it
+// now says so. The claim here is unchanged in kind — build_id is a compiled constant, never computed — and it
+// is now read from the constant whose meaning matches the field.
+ok(/build_id:\s*SYS_DEPLOYMENT_RELEASE_/.test(HEALTH), '1.11 build_id is read from SYS_DEPLOYMENT_RELEASE_');
+ok(/system_health_module_build:\s*SYS_BUILD_VERSION_/.test(HEALTH),
+  '1.11a and 63_\'s own module stamp is published SEPARATELY, so the two can never be conflated again');
+ok(/deployment_release:\s*SYS_DEPLOYMENT_RELEASE_/.test(HEALTH) && /workspace_module_build:/.test(HEALTH),
+  '1.11b with the release and each module build named individually');
 ok(/router_build:\s*\(typeof RTR_BUILD_VERSION_/.test(HEALTH), '1.12 router_build is read from RTR_BUILD_VERSION_');
 
 // The client asks for the symbols it now depends on, so a bundle that predates R4B-R1 reports itself absent

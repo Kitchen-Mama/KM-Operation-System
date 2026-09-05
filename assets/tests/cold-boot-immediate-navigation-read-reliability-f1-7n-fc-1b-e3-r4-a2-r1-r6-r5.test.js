@@ -99,8 +99,11 @@ ok(arbTag !== -1 && pageTag !== -1 && arbTag < pageTag, 'A6a and loads BEFORE th
 // it loads it, and matching that made this assertion about prose rather than about load order.
 var appTag = INDEX.indexOf('<script src="assets/js/app.js');
 ok(appTag !== -1 && arbTag < appTag, 'A6b and before app.js, which declares the first dependency');
-ok(INDEX.indexOf('assets/js/app.js?v=fc1be3r4a2r1r6r5-coldboot-20260905') !== -1,
-  'A6c app.js changed this round, so it is served on the current token');
+// R6-R6 RESTATEMENT: a pinned literal token, written by the round that set it. app.js joined the application
+// family in R6-R5 and the durable claim is that it never LEAVES it — checked against the ledger's current
+// member, so a later round that rotates the family correctly does not fail here.
+ok(INDEX.indexOf('assets/js/app.js?v=' + RO.currentAppToken()) !== -1,
+  'A6c app.js is served on the CURRENT application token, whichever round last set it');
 // No write path is touched anywhere in this round's own changes.
 ok(!/appendRow|setValues\(|deleteRow/.test(code(ARB_SRC)), 'A7  the arbiter contains no write of any kind');
 ok(!/fetch\(|XMLHttpRequest/.test(code(ARB_SRC)), 'A7a and issues no request itself — it only orders other people\'s');

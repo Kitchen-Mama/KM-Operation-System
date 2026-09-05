@@ -552,10 +552,40 @@ ok(/recommended_quantity/.test(recon) && /currently_planned_quantity/.test(recon
 ok(/recommendation_supply_sources/.test(recon) && /existing_route_sources/.test(recon),
   'H3  each side names its own supply');
 ok(/supply_sources_comparable/.test(recon), 'H3a and whether they are the same supply is stated');
+// ----------------------------------------------------------------------------------------------------------------
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 RESTATEMENT — THE DENIALS WENT AWAY WITH THE CLAIM THEY WERE DENYING.
+//
+// This suite pinned the PRESENCE of sentences: "has NOT been applied", "These route(s) were already here",
+// "is not added automatically", "DIFFERENT supply". Every one of them existed to deny something the strip was
+// asserting IMPLICITLY — by putting two numbers side by side, under a card that also carries the Generate AI
+// Plan button, in a panel where anything printed after an action reads as that action's result.
+//
+// R6-R6 removed the prose, on the operator's explicit instruction that the screen must be clean. That does not
+// weaken these claims; it removes what they were defending against. A strip of three labelled numbers makes no
+// assertion about who wrote what, so there is nothing left to deny.
+//
+// The guarantee is therefore checked as an ABSENCE, and the absence is STRICTER than the sentence was: no
+// application vocabulary may appear in what the strip EMITS at all. The old pin was satisfied by a source in
+// which the word "applied" appeared; this one is not.
+//
+// Scanned over emitted string literals only. Scanning raw source would match this very comment, which is the
+// same defect in a new place — and it is the defect the R6-R2/R6-R3 diff scans were narrowed to avoid.
+function r6r6EmittedText(fnSrc) {
+  var out = [], re = /'((?:[^'\\]|\\.)*)'/g, m;
+  var noComments = String(fnSrc).replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  while ((m = re.exec(noComments)) !== null) out.push(m[1]);
+  return out.join(' ');
+}
+var R6R6_APPLICATION_VOCAB = /(applied|added automatically|this run(?:'s)? output|already here|were already)/i;
+// A number that is not known must never be printed as a quantity. The em dash is the page's stated way of
+// saying so, and the compact strip has no room for a sentence that says it instead.
+var R6R6_DASH = '\u2014';
+// ----------------------------------------------------------------------------------------------------------------
 var reconHtml = extractFn(PAGEC, '_irAdviceVsPlanHtml_');
-ok(/DIFFERENT supply/.test(reconHtml),
-  'H4  when the sources differ, the strip refuses the reading that 400 ships from the same stock');
-ok(/has NOT been applied/.test(reconHtml), 'H5  and never calls the saved routes this run\'s output');
+ok(/supply_sources_comparable === false/.test(reconHtml) && /Different inventory sources/.test(reconHtml),
+  'H4  when the sources differ, the strip still refuses the reading that 400 ships from the same stock');
+ok(!R6R6_APPLICATION_VOCAB.test(r6r6EmittedText(reconHtml)),
+  'H5  and emits no application vocabulary, so it cannot call the saved routes this run\'s output');
 ok(!/upsertShippingAllocationDraft|_persistAllocationDraft|buildDraftHeaderPayload/.test(recon + reconHtml),
   'H6  the manual 520 is never written to by the reconciliation');
 // KMARC still owns which rows are the 520.

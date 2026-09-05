@@ -282,7 +282,7 @@ function renderRow(route) {
   var src = [
     extractFn(PAGE, '_irComposerKind_'),
     extractFn(PAGE, '_irRouteProvenanceOf_'),
-    extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
+    extractFn(PAGE, '_irLastMileChoices_'), extractFn(PAGE, '_irLastMileCellHtml_'), extractFn(PAGE, '_irPaintLastMileCell_'), extractFn(PAGE, '_execLastMileOptionsHtml'), extractFn(PAGE, '_irScopeCompanyBadgeHtml_'), extractFn(PAGE, '_irReconTooltip_'), extractFn(PAGE, '_irReconCell_'), extractFn(PAGE, '_irAdviceVsPlan_'), extractFn(PAGE, '_irAdviceVsPlanHtml_'), extractFn(PAGE, '_renderExecutionRoute'),
     extractFn(PAGE, '_renderManualComposer_'),
     'return { route: _renderExecutionRoute, composer: _renderManualComposer_ };'
   ].join('\n');
@@ -1021,14 +1021,34 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
   // R6-R4 adds RUN_R6R4_SAVE_TARGET_FREEZE: the save-target freeze §7 asks for. It is a WRAPPER over
   // RUN_R6R2_ROUTE_PROVENANCE rather than a second census, takes NO parameters, and inherits that runner's
   // hard-coded scope — so it too cannot be aimed at a scope from a console.
+  // R6-R6 adds the two halves of the controlled Manual Route Save contract (§8). Both are wrappers over
+  // RUN_R6R2_ROUTE_PROVENANCE and inherit its hard-coded scope; neither writes, and there is deliberately no
+  // third entry point that performs the production write.
   var ALLOWED_ENTRY_POINTS = ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE',
     'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'RUN_R6R2_ROUTE_PROVENANCE', 'RUN_R6R4_SAVE_TARGET_FREEZE',
+    'RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT', 'RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK',
     'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
   eq(nonHelper.slice().sort(), ALLOWED_ENTRY_POINTS,
     'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
+  // R6-R6 RESTATEMENT. Zero arity was a PROXY for the claim, and the claim is that no entry point can be
+  // AIMED — its scope must come from the hard-coded constant, never from something a console can pass. The
+  // readback necessarily takes one argument (the preflight's frozen BEFORE; a readback that recomputes its own
+  // baseline cannot detect a change, because whatever it finds becomes what it expected), so the proxy would
+  // now forbid a parameter that carries no scope at all.
+  //
+  // Checked as the property instead, and it is STRICTER than the arity rule it replaces: zero-arity entry
+  // points are still required to be zero-arity, and the one that takes an argument must not read a scope field
+  // out of it. company/country/marketplace/sku off the parameter would be exactly the aiming this forbids.
+  var SCOPE_ARG_ENTRY_POINTS = ['RUN_R6R6_MANUAL_ROUTE_SAVE_READBACK'];
   eq(nonHelper.filter(function (n) { return n !== 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'
+      && SCOPE_ARG_ENTRY_POINTS.indexOf(n) === -1
       && !new RegExp('function ' + n + '\(\)').test(TEMP); }), [],
-    'F1a1 and every RUN_E3_ entry point takes NO PARAMETERS, so none can be aimed at the wrong scope');
+    'F1a1 and every entry point but the named readback takes NO PARAMETERS, so none can be aimed at a scope');
+  eq(SCOPE_ARG_ENTRY_POINTS.filter(function (n) {
+    var body = extractFn(TEMP, n);
+    return /\b(before|args|opts|params)\s*(\.|\[\s*['\"])\s*(company|country|marketplace|sku)\b/.test(body);
+  }), [], 'F1a2 and the one entry point that DOES take an argument reads no scope field out of it — its scope'
+    + ' still comes from the runner it delegates to');
   ok(/function RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R\(\)/.test(TEMP),
     'F1b the fixed-scope runner takes NO parameters, so it cannot be called with the wrong scope');
   ok(/TEMP_E3_FIXED_SCOPE_ = \{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' \}/.test(TEMP),

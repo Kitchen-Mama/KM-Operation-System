@@ -719,8 +719,29 @@ ok(RO.stampAtOrAfter(/var CONFIG_BUILD_VERSION_ = '([^']*)'/.exec(CFG)[1], 'F1-7
     // new stamp in a comment, so a bare -S search found the older commit that first mentioned it in prose
     // and reported a correctly-rotated file as stale. The declaration text is unambiguous.
     var stampLast = git(['log', '-1', '--format=%H', '-S', 'var ' + symbol + " = '" + stamp + "'", '--', p]);
-    // An uncommitted working-tree change is this round's own edit and is not evidence of a stale stamp.
-    if (git(['diff', '--name-only', 'HEAD', '--', p])) continue;
+    // R6-R6 §4 RESTATEMENT — THIS CHECK WENT SILENT DURING EXACTLY THE ROUND THAT BROKE THE RULE.
+    //
+    // It used to `continue` on any file with uncommitted changes, reasoning that a dirty file is the round's
+    // own edit in progress. That is true and it is also the whole window in which the rule can be violated:
+    // R6-R5 edited 63_ without moving SYS_BUILD_VERSION_, this check skipped 63_ for being dirty, the sweep
+    // passed, the round shipped, and the failure only appeared afterwards — against a clean tree, where the
+    // round that could still have fixed it was over. A guard that abstains while the edit is happening is not
+    // a guard on the edit.
+    //
+    // A dirty file is now CHECKED, by the only question that makes sense mid-round: did this working tree move
+    // the stamp along with the file? The stamp declared on disk is compared against the one HEAD declares, so
+    // an in-progress edit that also rotates its stamp passes, and one that forgets is named while there is
+    // still a round in which to name it.
+    if (git(['diff', '--name-only', 'HEAD', '--', p])) {
+      var headSrc = git(['show', 'HEAD:' + p]);
+      var declRe = new RegExp('var ' + symbol + " = '([^']*)'");
+      var headDecl = declRe.exec(headSrc), diskDecl = declRe.exec(read(p));
+      // A file that declares no stamp at HEAD is a NEW owner: its first stamp is by definition current.
+      if (headDecl && diskDecl && headDecl[1] === diskDecl[1]) {
+        bad.push(file + ' (edited in this working tree, stamp still ' + diskDecl[1] + ')');
+      }
+      continue;
+    }
     if (fileLast && stampLast && fileLast !== stampLast) bad.push(file + ' (stamp ' + stamp + ')');
   }
   eq(bad, [],

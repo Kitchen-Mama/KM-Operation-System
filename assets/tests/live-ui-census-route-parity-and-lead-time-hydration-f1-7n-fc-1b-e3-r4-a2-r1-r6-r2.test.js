@@ -389,12 +389,47 @@ ok(/data-wh-country/.test(recon) && !/ship_from/.test(recon),
   'F6 the route origin is read from the warehouse identity, never from a display label');
 ok(/supply_sources_comparable/.test(recon),
   'F7 and whether the two are the same supply is stated rather than assumed');
+// ----------------------------------------------------------------------------------------------------------------
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 RESTATEMENT — THE DENIALS WENT AWAY WITH THE CLAIM THEY WERE DENYING.
+//
+// This suite pinned the PRESENCE of sentences: "has NOT been applied", "These route(s) were already here",
+// "is not added automatically", "DIFFERENT supply". Every one of them existed to deny something the strip was
+// asserting IMPLICITLY — by putting two numbers side by side, under a card that also carries the Generate AI
+// Plan button, in a panel where anything printed after an action reads as that action's result.
+//
+// R6-R6 removed the prose, on the operator's explicit instruction that the screen must be clean. That does not
+// weaken these claims; it removes what they were defending against. A strip of three labelled numbers makes no
+// assertion about who wrote what, so there is nothing left to deny.
+//
+// The guarantee is therefore checked as an ABSENCE, and the absence is STRICTER than the sentence was: no
+// application vocabulary may appear in what the strip EMITS at all. The old pin was satisfied by a source in
+// which the word "applied" appeared; this one is not.
+//
+// Scanned over emitted string literals only. Scanning raw source would match this very comment, which is the
+// same defect in a new place — and it is the defect the R6-R2/R6-R3 diff scans were narrowed to avoid.
+function r6r6EmittedText(fnSrc) {
+  var out = [], re = /'((?:[^'\\]|\\.)*)'/g, m;
+  var noComments = String(fnSrc).replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  while ((m = re.exec(noComments)) !== null) out.push(m[1]);
+  return out.join(' ');
+}
+var R6R6_APPLICATION_VOCAB = /(applied|added automatically|this run(?:'s)? output|already here|were already)/i;
+// A number that is not known must never be printed as a quantity. The em dash is the page's stated way of
+// saying so, and the compact strip has no room for a sentence that says it instead.
+var R6R6_DASH = '\u2014';
+// ----------------------------------------------------------------------------------------------------------------
 var reconHtml = extractFn(PAGE_CODE, '_irAdviceVsPlanHtml_');
-ok(/DIFFERENT supply/.test(reconHtml),
-  'F8 when they differ, the strip says the difference is not a quantity still to ship from the same stock');
-ok(/has NOT been applied/.test(reconHtml), 'F9 and never describes the saved routes as this run output');
-ok(/supply source not stated by this run/.test(reconHtml),
-  'F10 an unstated recommendation source says so rather than borrowing the route origin');
+var reconTip = extractFn(PAGE_CODE, '_irReconTooltip_');
+// The warning survives the compaction — four words on the line, the specifics in the accessible description.
+// What it must NOT do is disappear when the sources differ, so the CONDITION is what is checked.
+ok(/supply_sources_comparable === false/.test(reconHtml) && /Different inventory sources/.test(reconHtml),
+  'F8 when they differ, the strip still warns — compactly, and only when they differ');
+ok(/aria-label=/.test(reconHtml) && /title=/.test(reconHtml),
+  'F8a and the detail it stands for is reachable, not deleted');
+ok(!R6R6_APPLICATION_VOCAB.test(r6r6EmittedText(reconHtml)),
+  'F9 and it emits no application vocabulary, so it cannot describe the saved routes as this run output');
+ok(/recommendation_supply_sources/.test(reconTip) && /existing_route_sources/.test(reconTip),
+  'F10 each side of the tooltip names its OWN supply — neither borrows the other\'s');
 // Manual precedence: nothing in this round writes to a route.
 ok(!/upsertShippingAllocationDraft|buildDraftHeaderPayload/.test(recon + reconHtml),
   'F11 the reconciliation constructs no writer');
@@ -440,8 +475,13 @@ ok(RO.METHOD_REGISTRY_TOKEN_SERIES.indexOf('fc1be3r4a2r1r6r1-method-registry-202
   'H5 the registry token this round shipped is still in the ledger');
 ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== -1,
   'H5a and index.html serves the CURRENT registry token');
-ok(/SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'/.test(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')),
-  'H6 the deployment stamp is bumped for a sync-visible backend change');
+// R6-R6 RESTATEMENT. This pinned the LITERAL stamp R6-R2 set, so it asserted equality-with-then and failed the
+// first time a later round legitimately moved it — the exact defect _release-order.js exists to end. The claim
+// is the RULE (a sync-visible backend change bumps the deployment stamp), and R6-R6 gives that rule its own
+// constant, so it is checked against the shared ledger as a floor.
+var _h6Sys = /var SYS_DEPLOYMENT_RELEASE_ = '([^']*)'/.exec(read('assets/specs/active/apps-script/63_api_v1_system_health.gs'));
+ok(_h6Sys && RO.stampAtOrAfter(_h6Sys[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2'),
+  'H6 the deployment release stamp is bumped for a sync-visible backend change, and never moves backwards');
 // R6-R5 RESTATEMENT: checked against this round's OWN commit rather than against a literal stamp that a
 // later round is required to move. R6-R2 proved the lead-time DTO transport present and touched no server file.
 var _ownFiles = cp.execSync('git show --name-only --format= 7290ac0', { cwd: ROOT, encoding: 'utf8' })
@@ -569,7 +609,14 @@ mut('M18 subtracting across different supply sources invents a shippable differe
   var routeSources = ['WH-CN-FACTORY'];
   var comparable = routeSources.every(function (r) { return recSources.indexOf(r) !== -1; });
   var difference = RECOMMENDED - PLANNED;
-  return comparable === false && difference === 400 && /DIFFERENT supply/.test(extractFn(PAGE_CODE, '_irAdviceVsPlanHtml_'));
+  // R6-R6: the warning is compact now, and the mutant is the one that removes it entirely rather than the one
+  // that shortens it. A strip that renders the difference with no source warning is the invented-difference
+  // this probe is named for.
+  var shipped = extractFn(PAGE_CODE, '_irAdviceVsPlanHtml_');
+  var mutated = shipped.replace('if (r.supply_sources_comparable === false) {', 'if (false) {');
+  return comparable === false && difference === 400
+    && /Different inventory sources/.test(shipped) && !/Different inventory sources/.test(
+         mutated.slice(0, mutated.indexOf('return ')) );
 });
 
 // ================================================================================================================

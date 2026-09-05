@@ -32,12 +32,55 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // what the FRONTEND expects.
 //
 // Rules for these constants:
-//   • SYS_BUILD_VERSION_ MUST be bumped in the same commit as any sync-visible backend change.
+//   • SYS_DEPLOYMENT_RELEASE_ MUST be bumped in the same commit as any sync-visible backend change.
+//   • SYS_BUILD_VERSION_ MUST be bumped in the same commit as any change to THIS FILE.
 //   • SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ MUST be bumped whenever a router ACTION is added or removed.
 //   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
 // The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
 // ------------------------------------------------------------------------------------------------------------
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2';
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §4 — ONE CONSTANT WAS ANSWERING TWO QUESTIONS, AND IT ANSWERED THE WRONG ONE.
+//
+// THE LIVE OBSERVATION. After R6-R5 was deployed the operator read `identity.build_id = ...-R6-R2` beside
+// `router_build = ...-R6-R5` and `SIR_BUILD_VERSION_ = ...-R6-R5`, with `mixed_deployment: false`. The
+// reasonable conclusion — that R6-R5 had not been deployed — was wrong, and the field that produced it is the
+// one whose entire purpose is to prove which code answered. That is the FB-3A defect recorded at the top of
+// this file, recurring, and the recurrence is worth naming rather than quietly patching.
+//
+// WHY THE EXISTING GUARD DID NOT FIRE. There IS a standing check (R5 suite E4: no manifest owner may carry a
+// stamp older than its own last change), and running it against a clean tree reports 63_ correctly. It was
+// silent during R6-R5 for a timing reason: it SKIPS any file with uncommitted changes, on the reasoning that
+// a dirty file is the round's own edit in progress. So it goes quiet during exactly the window in which the
+// rule is broken, and by the time it would speak, the round has shipped. The check is repaired in the same
+// change as the stamp, because a rule with a hole this shaped is how the omission happened at all.
+//
+// WHY THE MANIFEST COULD NOT SEE IT EITHER. 63_'s own entry in SYS_MODULE_BUILD_STAMPS_ compares
+// SYS_BUILD_VERSION_ against a literal written a few lines above it in the SAME FILE. That comparison is
+// tautological — it cannot fail, and it cannot detect anything — which is precisely the `missing_actions=[]`
+// self-reference this file's header warns about, in a new place. It stays (a stale 63_ is caught first and by
+// different evidence: its action-contract version is older than the frontend pins), but it is now DOCUMENTED
+// as self-referential instead of being mistaken for coverage.
+//
+// THE SPLIT. Two different questions were sharing one answer:
+//
+//   • WHICH RELEASE is this deployment meant to be?  → SYS_DEPLOYMENT_RELEASE_. It moves whenever ANY
+//     sync-visible backend file changes, which is what an operator means by "is R6-R5 deployed?".
+//   • WHICH ROUND did THIS FILE last change?          → SYS_BUILD_VERSION_. It is 63_'s module stamp, the
+//     same kind of fact every other owner file declares, and it must NOT be bumped to look current.
+//
+// Those two are equal today and will usually be equal, because a release that changes any server file
+// normally touches this manifest too. They are still separate constants, because "usually equal" is not a
+// contract and a round that changes only 60_ would silently make them differ.
+//
+// WHAT `mixed_deployment: false` STILL MEANS, UNCHANGED AND STILL HONEST. It is a PER-FILE claim: every
+// probed owner declares the build its manifest entry expects. It was true during the live observation and it
+// was not the misleading field. build_id says which release this deployment INTENDS to be; mixed_deployment
+// says whether the files actually AGREE with that intention. Neither substitutes for the other, and a reader
+// needs both — which is why the identity block below now names each build it can see, individually, instead
+// of publishing one string and leaving the operator to guess its scope.
+// ------------------------------------------------------------------------------------------------------------
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6';
+// 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -237,7 +280,11 @@ function sysHandlerPresent_(name) {
 // -------------------------------------------------------------------------------------------------------------
 // file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
 var SYS_MODULE_BUILD_STAMPS_ = [
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2', owns: 'deployment identity + health + transport contract + the effective feature-flag report' },
+  // R6-R6 §4 — SELF-REFERENTIAL BY CONSTRUCTION, AND SAID SO. Both sides of this comparison are declared in
+  // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
+  // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
+  // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -344,7 +391,7 @@ function sysModuleBuildStamps_() {
   // §10 — the executed invariant, which a version string cannot fake in either direction.
   var runtime = sysRuntimeAuthorityChecks_();
   return {
-    deployment_build: SYS_BUILD_VERSION_,
+    deployment_build: SYS_DEPLOYMENT_RELEASE_,          // the RELEASE, not this module's stamp
     modules: rows,
     runtime_authority: runtime,
     absent_modules: absent.map(function (r) { return r.file; }),
@@ -525,7 +572,16 @@ function handleSystemHealth_(body) {
     ok: ok,
     // F1-7N-FB-3A §C — the IMMUTABLE deployment identity block. Every field here is a constant compiled into
     // the answering code, so together they identify exactly which deployment replied.
-    build_id: SYS_BUILD_VERSION_,
+    // R6-R6 §4 — build_id is the DEPLOYMENT RELEASE. The frontend already reads it that way (it prints
+    // "deployment build" in the partial-sync error), so this makes the server agree with its only consumer
+    // rather than inventing a new field the consumer would ignore.
+    build_id: SYS_DEPLOYMENT_RELEASE_,
+    deployment_release: SYS_DEPLOYMENT_RELEASE_,
+    // The four module builds an operator compares against it, each named for the file it comes from, so
+    // "which of these is the deployment?" stops being a question. A null here is an ABSENT file, which is a
+    // different fault from a stale one and must not look like it.
+    system_health_module_build: SYS_BUILD_VERSION_,
+    workspace_module_build: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null,
     contract_version: SYS_API_CONTRACT_VERSION_,
     // F1-7N-FB-4E §H — the transport axis, plus the router's own build and the identity fields it can emit.
     // A frontend compares all three: a mismatch on the ACTION contract means "publish a deployment with this
@@ -565,7 +621,8 @@ function handleSystemHealth_(body) {
     deployment_uniformity_verdict: moduleStamps.verdict,
     caller_probe: callerProbe,
     api_contract_version: SYS_API_CONTRACT_VERSION_,
-    build_version: SYS_BUILD_VERSION_,
+    // Legacy alias for build_id — the frontend falls back to it, so it must carry the RELEASE too.
+    build_version: SYS_DEPLOYMENT_RELEASE_,
     environment_mode: 'production',
     router_ready: router.all_available,
     entrypoints: router.entrypoints,
@@ -593,7 +650,7 @@ function handleSubmitFlowDiagnostic_(body) {
   var out = {
     success: true, request_id: requestId,
     read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
-    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_BUILD_VERSION_
+    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_
   };
   var router = sysRouterReadiness_();
   out.router_ready = router.all_available;
@@ -822,7 +879,7 @@ function handleShippingAllocationDraftDiagnostic_(body) {
   var out = {
     success: true, request_id: requestId,
     read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
-    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_BUILD_VERSION_,
+    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_,
     evaluator: 'production (prodRequireSheet_ + sadHeaderRouteIsComplete_ + sadResolveActiveDraftK2OrK3_ + sadLegacyReconcileReason_)'
   };
   var blockers = [];

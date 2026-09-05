@@ -4122,6 +4122,12 @@ window.KM.DB.checkDeploymentContract = async function () {
         // handler is a NAMED fault rather than an unexplained gap in the method-downgrade proof.
         transport_contract_version: (h.transport_contract_version == null) ? null : Number(h.transport_contract_version),
         router_build: h.router_build || null,
+        // R6-R6 §4 — the release and the module builds are DIFFERENT facts, and reading one string for both
+        // is how a deployed R6-R5 was read as an undeployed one. Each is carried under its own name; a null
+        // means the answering deployment predates the field, never that the module is absent.
+        deployment_release: h.deployment_release || h.build_id || h.build_version || null,
+        system_health_module_build: h.system_health_module_build || null,
+        workspace_module_build: h.workspace_module_build || null,
         router_response_identity: h.router_response_identity || null,
         answered_by_handler: h.handler || null,
         inventory_registry_projection_version: h.inventory_registry_projection_version || null,

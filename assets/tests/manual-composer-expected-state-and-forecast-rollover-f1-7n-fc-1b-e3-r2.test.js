@@ -211,6 +211,12 @@ function harness(opts) {
     extractFn(PAGE, '_irShowRouteStateHint_'),
     extractFn(PAGE, '_irHideRouteStateHint_'),
     extractFn(PAGE, '_irTouchedInstances_'),
+    // R6-R6 §7 — the ACK_UNKNOWN hold is part of the write scope this suite executes.
+    extractFn(PAGE, '_irAckStore_'),
+    extractFn(PAGE, '_irAckUnknownIsHeld_'),
+    extractFn(PAGE, '_irHoldAckUnknown_'),
+    extractFn(PAGE, '_irClearAckUnknown_'),
+    extractFn(PAGE, '_irReleaseAckUnknown_'),
     extractFn(PAGE, '_flushDraftDbPersist')
   ].join('\n'), ctx);
   var errEl = mkEl('div'), hintEl = mkEl('div');
