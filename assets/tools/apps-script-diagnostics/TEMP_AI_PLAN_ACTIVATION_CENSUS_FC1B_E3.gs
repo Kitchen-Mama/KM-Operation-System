@@ -67,7 +67,7 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 function CENSUS_rows_(ss, name) {
@@ -1184,23 +1184,23 @@ function CENSUS_uiVisibleDrafts_(ss, company, country, marketplace) {
   var out = [];
   rows.forEach(function (r) {
     var st = CENSUS_low_(r.status);
-    if (st === 'cancelled' || st === 'submitted') return;
-    if (country && CENSUS_low_(r.country) !== CENSUS_low_(country)) return;
-    // The SCOPE marketplace, which is the column the page filters on.
-    if (marketplace && CENSUS_low_(r.marketplace) !== CENSUS_low_(marketplace)) return;
+    // R6-R2 §2 — the page's own predicate, which is now KMARC's. This list is what the SCREEN shows, so it
+    // asks the same question the hydrate asks and gets the same answer by construction.
+    var _arc = CENSUS_arc_();
+    var _c = _arc ? _arc.classifyHeader(r, { company: company, country: country, marketplace: marketplace }) : null;
+    if (!_c) return;
+    if (!_c.counts_toward_current_plan) {
+      // Rows the page does NOT show are still worth listing when they are near-misses on ONE axis — that is
+      // where a "my route disappeared" report is answered. A row excluded on two or more axes is not this
+      // station's row under any reading and is omitted.
+      if (_c.exclusion_reasons.length !== 1) return;
+    }
     var id = CENSUS_str_(r.allocation_draft_id);
     var mine = lines.filter(function (l) { return CENSUS_str_(l.allocation_draft_id) === id; });
     // WHY this row is or is not in the census's own set. An operator reading a difference needs the reason,
-    // not the fact of the difference.
-    var whyNotInCensusSet = [];
-    if (st !== 'active') whyNotInCensusSet.push('STATUS_IS_' + (st ? st.toUpperCase() : 'BLANK') + '_NOT_ACTIVE');
-    if (company && CENSUS_low_(r.company) !== CENSUS_low_(company)) {
-      whyNotInCensusSet.push(CENSUS_str_(r.company) ? 'COMPANY_IS_' + CENSUS_str_(r.company) : 'COMPANY_IS_BLANK');
-    }
-    if (marketplace && CENSUS_str_(r.destination_marketplace)
-      && CENSUS_low_(r.destination_marketplace) !== CENSUS_low_(marketplace)) {
-      whyNotInCensusSet.push('DESTINATION_MARKETPLACE_IS_' + CENSUS_str_(r.destination_marketplace));
-    }
+    // not the fact of the difference. These come from the ONE authority now, so a reason printed here is the
+    // same reason the page acted on.
+    var whyNotInCensusSet = _c.exclusion_reasons.slice();
     out.push({
       allocation_draft_id: id,
       company: CENSUS_str_(r.company),
@@ -1250,9 +1250,13 @@ function CENSUS_draftScopeDifference_(ss, company, country, marketplace) {
   return {
     contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1 §2 — the census and the page select from one table under two '
       + 'definitions. Both are reported, with the reason each row falls on each side.',
-    census_definition: 'status === active AND company exact (blank excluded) AND country exact AND '
-      + 'destination_marketplace matches when present',
-    ui_definition: 'status not cancelled/submitted AND country exact AND scope marketplace exact AND '
+    // R6-R2 §2 — there is ONE definition now, and both sides consume it. The two historical ones are kept
+    // verbatim because a reader comparing this report against an earlier run needs to know what changed.
+    shared_authority: 'KMARC (supply-planning-active-route-classification)',
+    shared_definition: CENSUS_arc_() ? CENSUS_arc_().CONTRACT : 'KMARC_UNAVAILABLE',
+    superseded_census_definition: 'status === active AND company exact (blank excluded) AND country exact AND '
+      + 'destination_marketplace matches when present — UNSATISFIABLE: `active` is not in 16_ SAD_STATUSES_',
+    superseded_ui_definition: 'status not cancelled/submitted AND country exact AND scope marketplace exact AND '
       + '(from R6-R1) company exact, blank on either side excluded',
     census_active_count: strict.length,
     ui_visible_count: uiVisible.length,
@@ -1266,18 +1270,145 @@ function CENSUS_draftScopeDifference_(ss, company, country, marketplace) {
   };
 }
 
+// ============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2 — THIS FUNCTION'S ZERO WAS A CONSTANT, NOT A MEASUREMENT.
+//
+// It opened with `if (CENSUS_low_(r.status) !== 'active') return;`. There is no such status. The canonical
+// header enum is 16_ SAD_STATUSES_ = { draft, site_confirmed, submitted, cancelled, expired }, and the write
+// handler coerces anything else to `draft` — so `status === 'active'` has never been true of any row this
+// system has written, and never will be. The live report of `active_allocation_drafts: 0` beside a screen
+// showing two routes and 520 units was therefore not a disagreement about data. It was this line.
+//
+// It also matched the marketplace against `destination_marketplace`, which is a ROUTE dimension: a route
+// whose destination is a 3PL warehouse leaves that column blank, so the scope filter dropped exactly the
+// rows a station most needs to see.
+//
+// Both predicates are gone. The classification is KMARC's — the same module the page's hydrate consumes —
+// so the census and the screen are no longer two opinions that happen to be compared.
+// ============================================================================================================
+function CENSUS_arc_() {
+  return (typeof KMARC !== 'undefined' && KMARC) ? KMARC : null;
+}
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §6 — THE TYPED SNAPSHOT REASON.
+//
+// Reads the scope's OWN gap rows and answers the question the predicate name has always claimed to answer. It
+// changes no gate: the boolean above is untouched, and nothing here can promote a scope. It only says which of
+// six different situations produced the same blank `source_data_as_of`.
+//
+// The order matters, and it runs from "there is no data" outward to "there is data and it is not acceptable",
+// because a later check would be meaningless on rows the earlier one proved absent. Reporting MIXED_SNAPSHOT_DATES
+// for a scope that has no rows at all is precisely the kind of wrong-table answer §6 forbids.
+// ==============================================================================================================
+function CENSUS_gapRowsForScope_(ss, sc) {
+  var rows = CENSUS_rows_(ss, 'inventory_replenishment_gap'), o = [];
+  rows.forEach(function (r) {
+    if (CENSUS_low_(r.company) !== CENSUS_low_(sc.company)) return;
+    if (CENSUS_low_(r.country) !== CENSUS_low_(sc.country)) return;
+    if (CENSUS_low_(r.marketplace) !== CENSUS_low_(sc.marketplace)) return;
+    o.push(r);
+  });
+  return o;
+}
+
+// A calculation_date the system can read, or ''. The gap sheet stores this as a DATE-FORMATTED CELL, so a
+// Date object is the NORMAL case and not an anomaly — 61_ weeklyAiPlanCanonicalDate_ is the owner of that
+// conversion and is used when it is present, so this never becomes a second date parser.
+function CENSUS_gapDate_(v) {
+  if (v === null || v === undefined || CENSUS_str_(v) === '') return '';
+  if (typeof weeklyAiPlanCanonicalDate_ === 'function') {
+    var c = weeklyAiPlanCanonicalDate_(v);
+    if (c && c.ok) return c.date;
+    return '';
+  }
+  var t = CENSUS_str_(v);
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : '';
+}
+
+function CENSUS_snapshotReason_(env, sku) {
+  function R(reason, detail) { return { reason: reason, detail: CENSUS_str_(detail) }; }
+  var all = env.gap_rows || [];
+  if (!all.length) {
+    return R('NO_MATERIALIZED_GAP_ROW_FOR_SCOPE',
+      'inventory_replenishment_gap holds no row for ' + env.company + '/' + env.country + '/' + env.marketplace
+      + '. Nothing is stale here \u2014 nothing has been calculated.');
+  }
+  var mine = all.filter(function (r) { return CENSUS_low_(r.sku) === CENSUS_low_(sku); });
+  if (!mine.length) {
+    return R('NO_GAP_ROW_FOR_SKU', 'the scope has ' + all.length + ' gap rows and none names ' + sku);
+  }
+  // Readable dates across the WHOLE scope: a mid-write run is a scope-level fault, not a per-SKU one.
+  var dates = {}, order = [], blank = 0, unreadable = 0;
+  all.forEach(function (r) {
+    var raw = r.calculation_date;
+    if (raw === null || raw === undefined || CENSUS_str_(raw) === '') { blank++; return; }
+    var d = CENSUS_gapDate_(raw);
+    if (!d) { unreadable++; return; }
+    if (!dates[d]) { dates[d] = 0; order.push(d); }
+    dates[d]++;
+  });
+  var mineBlank = 0, mineUnreadable = 0, mineDated = 0;
+  mine.forEach(function (r) {
+    var raw = r.calculation_date;
+    if (raw === null || raw === undefined || CENSUS_str_(raw) === '') { mineBlank++; return; }
+    if (!CENSUS_gapDate_(raw)) { mineUnreadable++; return; }
+    mineDated++;
+  });
+  if (mineDated === 0 && mineBlank > 0) {
+    return R('SNAPSHOT_DATE_BLANK', sku + ' has ' + mine.length + ' gap rows and every calculation_date is empty');
+  }
+  if (mineDated === 0 && mineUnreadable > 0) {
+    return R('SNAPSHOT_DATE_UNREADABLE', sku + ' has ' + mineUnreadable
+      + ' gap rows whose calculation_date is present but unreadable');
+  }
+  if (order.length > 1) {
+    order.sort();
+    return R('MIXED_SNAPSHOT_DATES', 'the scope carries ' + order.length + ' distinct calculation_dates ('
+      + order.join(', ') + '), which is a run caught mid-write');
+  }
+  var accepted = order.length === 1 ? order[0] : '';
+  // A SKU whose current row legitimately suggests nothing is an absence of DEMAND, not an absence of DATA, and
+  // must never be counted as a snapshot fault.
+  var qty = 0;
+  mine.forEach(function (r) {
+    qty = Math.max(qty, CENSUS_num_(r.d18_suggested_qty), CENSUS_num_(r.d30_suggested_qty),
+      CENSUS_num_(r.d45_suggested_qty), CENSUS_num_(r.d90_suggested_qty));
+  });
+  if (qty <= 0) {
+    return R('SUGGESTED_QUANTITY_ZERO_NO_ROW_EXPECTED', sku + ' has a current row dated ' + accepted
+      + ' and its suggested quantity is zero \u2014 no demand, not missing data');
+  }
+  // Lineage: the cycle the accepted date belongs to, compared with the cycle being planned. `RECO-YYYY-MM` is
+  // 61_'s own derivation (weeklyAiPlanReadGapRows_ dateIndex), mirrored rather than re-invented.
+  var cycle = accepted ? ('RECO-' + accepted.slice(0, 7)) : '';
+  var want = CENSUS_str_(env.planning_cycle);
+  if (want && cycle && cycle !== want) {
+    return R('SNAPSHOT_LINEAGE_MISMATCH', 'newest snapshot ' + accepted + ' belongs to ' + cycle
+      + ', the plan is for ' + want);
+  }
+  if (CENSUS_str_(env.source_data_as_of) !== '') return R('CURRENT_ACCEPTED', 'source_data_as_of=' + env.source_data_as_of);
+  if (accepted) {
+    return R('HARVEST_REFUSED_OTHER', 'gap rows are present, single-dated (' + accepted
+      + ') and correctly lineaged; the harvest refused on another axis \u2014 ' + CENSUS_str_(env.harvest_detail));
+  }
+  return R('SNAPSHOT_NOT_CURRENT', CENSUS_str_(env.harvest_detail));
+}
+
 function CENSUS_activeDrafts_(ss, company, country, marketplace) {
   var rows = CENSUS_rows_(ss, 'shipping_allocation_drafts'), o = [];
+  var arc = CENSUS_arc_();
+  if (!arc) return o;   // no authority = no claim. An empty list is never presented as a measured zero.
+  var scope = { company: company, country: country, marketplace: marketplace };
   rows.forEach(function (r) {
-    if (CENSUS_low_(r.status) !== 'active') return;
-    if (company && CENSUS_low_(r.company) !== CENSUS_low_(company)) return;
-    if (country && CENSUS_low_(r.country) !== CENSUS_low_(country)) return;
-    if (marketplace && CENSUS_str_(r.destination_marketplace) && CENSUS_low_(r.destination_marketplace) !== CENSUS_low_(marketplace)) return;
+    var c = arc.classifyHeader(r, scope);
+    if (!c.counts_toward_current_plan) return;
     o.push({ allocation_draft_id: CENSUS_str_(r.allocation_draft_id),
-      source_warehouse_id: CENSUS_str_(r.source_warehouse_id),
-      destination: CENSUS_str_(r.destination_marketplace || r.destination_warehouse_id),
+      source_warehouse_id: CENSUS_str_(r.source_warehouse_id || r.recommended_source_warehouse_id),
+      destination: CENSUS_str_(r.destination_marketplace || r.destination_warehouse_id
+        || r.recommended_destination_warehouse_id),
       method: CENSUS_str_(r.recommended_shipping_method),
       planning_cycle: CENSUS_str_(r.planning_cycle),
+      status: CENSUS_str_(r.status),
       generation_run_id: CENSUS_str_(r.generation_run_id) });
   });
   return o;
@@ -1704,8 +1835,27 @@ function CENSUS_judgeCandidate_(env, mkt, sku) {
     return t + CENSUS_num_(a.recommended_qty != null ? a.recommended_qty : a.planned_qty); }, 0);
 
   set('active_marketplace_scope', env.marketplace_active === true, env.marketplace_detail);
+  // ==========================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §6 — ONE TOKEN WAS CARRYING SIX DIFFERENT ANSWERS.
+  //
+  // The live run rejected 151 of 228 SKUs under `current_accepted_snapshot`, and the name is a promise the
+  // predicate never kept: it tested `CENSUS_str_(env.source_data_as_of) !== ''`. That is a test for a
+  // NON-EMPTY STRING. It says nothing about whether the snapshot is current, whether its dates agree with
+  // each other, or whether its lineage matches the cycle being planned — and `source_data_as_of` is left
+  // blank by every early return in CENSUS_candidateEnv_, including the one taken when the scope has no
+  // materialized gap row at all.
+  //
+  // So "no gap row has ever been calculated for this site" and "the snapshot is from last week" reported
+  // under the same token, and an operator reading the histogram would go looking for a stale snapshot on a
+  // site that has never had one. §6 forbids exactly that conflation.
+  //
+  // The BOOLEAN IS UNCHANGED — the gate is not weakened, and a scope that failed still fails. What is added
+  // is the typed reason, measured from the scope's own gap rows.
+  // ==========================================================================================================
+  var _snapReason = CENSUS_snapshotReason_(env, sku);
   set('current_accepted_snapshot', CENSUS_str_(env.source_data_as_of) !== '',
-    'source_data_as_of=' + CENSUS_str_(env.source_data_as_of));
+    'source_data_as_of=' + CENSUS_str_(env.source_data_as_of) + ' reason=' + _snapReason.reason
+      + ' | ' + _snapReason.detail);
   set('forecast_ready_or_legal_zero', env.harvest_ready === true, env.harvest_detail);
   set('suggested_quantity_positive', qty > 0, 'allocated_quantity=' + qty);
   var srcIds = [], destKeys = [];
@@ -1800,6 +1950,9 @@ function CENSUS_judgeCandidate_(env, mkt, sku) {
   }
   return { company: env.company, country: env.country, marketplace: mkt, sku: sku,
     passed: passed, first_failing_predicate: reject, predicates: P,
+    // §6 — the typed reason travels with the candidate so the histogram can group by it rather than by the
+    // predicate name that hid it.
+    snapshot_reason: _snapReason.reason, snapshot_reason_detail: _snapReason.detail,
     suggested_quantity: qty,
     source_warehouse_ids: srcIds,
     source_country: lane ? lane.originCountry : null,
@@ -1831,8 +1984,13 @@ function CENSUS_candidateEnv_(ss, sc, planningCycle) {
     marketplace_active: false, marketplace_detail: null, harvest_ready: false, harvest_detail: null,
     source_data_as_of: '', ship_date: '', allocated: [], plan_groups: [], plan_blocked: [],
     lead_times: [], warehouses_by_id: {}, active_drafts: [], rate_card_on_lane: false,
-    schema_ok: false, schema_detail: null, error: null };
+    schema_ok: false, schema_detail: null, error: null,
+    // R6-R2 §6 — read FIRST, so that a scope whose harvest refuses can still say WHY. Every early return
+    // below leaves `source_data_as_of` blank, and until this round all of them collapsed into the single
+    // token `current_accepted_snapshot`.
+    gap_rows: [], planning_cycle: CENSUS_str_(planningCycle) };
   try {
+    env.gap_rows = CENSUS_gapRowsForScope_(ss, sc);
     var mkts = CENSUS_rows_(ss, 'marketplaces');
     env.marketplace_active = mkts.some(function (r) {
       return CENSUS_low_(r.company) === CENSUS_low_(sc.company)
@@ -1922,6 +2080,20 @@ function RUN_E3_FIND_MATERIALIZABLE_CANDIDATE() {
     rate_card_is_not_a_candidacy_requirement: true,
     predicates: E3_CANDIDATE_PREDICATES_,
     scopes_examined: 0, skus_examined: 0, candidates: [], rejected_by_predicate: {},
+    // R6-R2 §6 — the typed split of the `current_accepted_snapshot` bucket. See CENSUS_snapshotReason_.
+    rejected_snapshot_by_reason: {},
+    snapshot_reason_glossary: {
+      NO_MATERIALIZED_GAP_ROW_FOR_SCOPE: 'the Inventory Gap has never produced a row for this company/country/marketplace — nothing is stale, nothing was calculated',
+      NO_GAP_ROW_FOR_SKU: 'the scope has gap rows, but none names this SKU',
+      SUGGESTED_QUANTITY_ZERO_NO_ROW_EXPECTED: 'the SKU has a current row and it legitimately suggests zero — an absence of demand, not an absence of data',
+      SNAPSHOT_DATE_BLANK: 'gap rows exist for this SKU and every one of them has an empty calculation_date',
+      SNAPSHOT_DATE_UNREADABLE: 'calculation_date is present but is not a date this system can read',
+      MIXED_SNAPSHOT_DATES: 'the scope carries more than one distinct calculation_date — a run caught mid-write',
+      SNAPSHOT_LINEAGE_MISMATCH: 'the newest readable snapshot belongs to a different planning cycle than the one being planned',
+      SNAPSHOT_NOT_CURRENT: 'a readable, single-dated, correctly-lineaged snapshot that the freshness authority does not accept',
+      HARVEST_REFUSED_OTHER: 'gap rows are present and internally consistent; the harvest refused for a reason outside the snapshot axis — see the detail',
+      CURRENT_ACCEPTED: 'not a rejection — the predicate held'
+    },
     selected: null, verdict: 'NO_SAFE_MATERIALIZATION_CANDIDATE',
     // §5's closing rule, restated in the output so the two results are never conflated: finding no candidate
     // here says nothing at all about whether the AI Plan can ADVISE. R5 established that it can, and this
@@ -1960,6 +2132,13 @@ function RUN_E3_FIND_MATERIALIZABLE_CANDIDATE() {
       if (!c.passed) {
         var k = c.first_failing_predicate || 'UNKNOWN';
         out.rejected_by_predicate[k] = (out.rejected_by_predicate[k] || 0) + 1;
+        // R6-R2 §6 — the same rejection, broken out by what actually happened. The two counts are reported
+        // side by side rather than one replacing the other: the predicate histogram stays comparable with
+        // every earlier run, and this one says what it MEANS.
+        if (k === 'current_accepted_snapshot') {
+          var t = c.snapshot_reason || 'UNCLASSIFIED';
+          out.rejected_snapshot_by_reason[t] = (out.rejected_snapshot_by_reason[t] || 0) + 1;
+        }
       }
       out.candidates.push(c);
     });
@@ -2060,5 +2239,242 @@ function RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE() {
   CENSUS_log_('price_comparison_ready', out.price_comparison_ready);
   CENSUS_log_('db_writes', 0);
   CENSUS_log_('writer_constructed', false);
+  return out;
+}
+
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2 — RUN_R6R2_ROUTE_PROVENANCE
+// --------------------------------------------------------------------------------------------------------------
+// WHERE DID THE 520 COME FROM, ROW BY ROW.
+//
+// The scope is HARD-CODED to the one the live evidence names. It takes no parameters for the reason §5 of the
+// previous round gave: a diagnostic that accepts a scope can be pointed at anything, and a fixture then becomes
+// mistaken for a finding.
+//
+// STRICTLY READ-ONLY. It opens the spreadsheet, reads two sheets, and constructs NO writer. It cannot create,
+// update, expire, cancel or re-scope a row, and it deliberately does not repair the ones it finds: §2 says the
+// cause must be proven before anything is touched, and proving it is all this does.
+//
+// Every field §2 enumerates is reported per header and per line, read VERBATIM from the sheet. Where a column is
+// absent from the schema the value is reported as '' rather than omitted, so a reader can tell "blank" from
+// "this deployment does not have that column" by comparing against schema_columns_present.
+// ==============================================================================================================
+var R6R2_PROVENANCE_SCOPE_ = { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' };
+
+function RUN_R6R2_ROUTE_PROVENANCE() {
+  var t0 = Date.now();
+  var SC = R6R2_PROVENANCE_SCOPE_;
+  var out = {
+    census: 'RUN_R6R2_ROUTE_PROVENANCE', read_only: true,
+    db_writes: 0, writer_constructed: false, submit_calls: 0, reservation_writes: 0,
+    carrier_master_data_writes: 0,
+    census_build: TEMP_E3_CENSUS_BUILD_,
+    contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 \u00a72 \u2014 every persisted header and line that could contribute to '
+      + 'the screen total, with the reason it is included or excluded by the ONE shared authority (KMARC). '
+      + 'Nothing is repaired, migrated, deleted or reassigned.',
+    scope: SC,
+    shared_authority: 'KMARC (supply-planning-active-route-classification)',
+    shared_authority_present: false,
+    shared_definition: null,
+    ui_current_plan_total: null,
+    census_current_plan_total: null,
+    totals_agree: null,
+    included_route_ids: [],
+    excluded_route_ids_with_reason: [],
+    source_of_520: null,
+    headers: [], lines: [],
+    schema_columns_present: null,
+    verdict: 'INCOMPLETE'
+  };
+  var arc = CENSUS_arc_();
+  if (!arc) {
+    out.verdict = 'STOP';
+    out.error = 'KMARC_UNAVAILABLE \u2014 the shared active-route classification module is not present in this '
+      + 'Apps Script project. Sync the generated bundle (90_) before running this census. Nothing was read.';
+    CENSUS_log_('verdict', out.verdict);
+    return out;
+  }
+  out.shared_authority_present = true;
+  out.shared_definition = arc.CONTRACT;
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(prodExpectedDbId_());
+    if (typeof prodAssertDbTarget_ === 'function') prodAssertDbTarget_(ss, prodExpectedDbId_());
+  } catch (e) {
+    out.verdict = 'STOP';
+    out.error = 'DB_NOT_REACHABLE_OR_WRONG_TARGET: ' + CENSUS_str_(e && e.message);
+    CENSUS_log_('verdict', out.verdict);
+    return out;
+  }
+
+  var headers = CENSUS_rows_(ss, 'shipping_allocation_drafts');
+  var lines = CENSUS_rows_(ss, 'shipping_allocation_draft_lines');
+  out.schema_columns_present = {
+    headers: headers.length ? Object.keys(headers[0]) : [],
+    lines: lines.length ? Object.keys(lines[0]) : []
+  };
+
+  var scope = { company: SC.company, country: SC.country, marketplace: SC.marketplace };
+  var linesByHeader = {};
+  lines.forEach(function (l) {
+    var k = CENSUS_str_(l.allocation_draft_id);
+    if (!k) return;
+    if (!linesByHeader[k]) linesByHeader[k] = [];
+    linesByHeader[k].push(l);
+  });
+
+  // ---- HEADERS ------------------------------------------------------------------------------------------
+  // Every header that names this country OR this SKU's lines, so a row excluded on company is still SEEN and
+  // reported rather than filtered away before anyone can read why it was excluded.
+  headers.forEach(function (r) {
+    var id = CENSUS_str_(r.allocation_draft_id);
+    var mine = linesByHeader[id] || [];
+    var touchesSku = mine.some(function (l) { return CENSUS_low_(l.sku) === CENSUS_low_(SC.sku); });
+    var nearScope = CENSUS_low_(r.country) === CENSUS_low_(SC.country)
+      || CENSUS_low_(r.marketplace) === CENSUS_low_(SC.marketplace);
+    if (!touchesSku && !nearScope) return;
+    var c = arc.classifyHeader(r, scope);
+    out.headers.push({
+      allocation_draft_id: id,
+      company: CENSUS_str_(r.company),
+      country: CENSUS_str_(r.country),
+      marketplace: CENSUS_str_(r.marketplace),
+      marketplace_id: CENSUS_str_(r.marketplace_id),
+      sku_association_source: touchesSku
+        ? 'shipping_allocation_draft_lines.sku (' + mine.length + ' line(s) on this header)'
+        : 'NONE \u2014 no line on this header names ' + SC.sku,
+      status: CENSUS_str_(r.status),
+      status_class: c.status_class,
+      lifecycle_status: CENSUS_str_(r.lifecycle_status || r.draft_lifecycle_status),
+      generation_type: CENSUS_str_(r.generation_type || r.source_type),
+      generation_run_id: CENSUS_str_(r.generation_run_id),
+      source_data_as_of: CENSUS_str_(r.source_data_as_of),
+      planning_cycle: CENSUS_str_(r.planning_cycle),
+      route_group_key: (typeof ricK4GroupKey_ === 'function') ? CENSUS_str_(ricK4GroupKey_(r)) : '',
+      destination_marketplace: CENSUS_str_(r.destination_marketplace),
+      destination_warehouse_id: CENSUS_str_(r.destination_warehouse_id || r.recommended_destination_warehouse_id),
+      source_warehouse_id: CENSUS_str_(r.source_warehouse_id || r.recommended_source_warehouse_id),
+      recommended_shipping_method: CENSUS_str_(r.recommended_shipping_method),
+      recommended_last_mile_delivery: CENSUS_str_(r.recommended_last_mile_delivery),
+      create_idempotency_key: CENSUS_str_(r.create_idempotency_key),
+      created_at: CENSUS_str_(r.created_at),
+      created_by: CENSUS_str_(r.created_by),
+      updated_at: CENSUS_str_(r.updated_at),
+      updated_by: CENSUS_str_(r.updated_by),
+      draft_version: CENSUS_str_(r.draft_version),
+      // The SAME answer for both consumers, because there is only one predicate now.
+      counts_toward_current_plan: c.counts_toward_current_plan,
+      why_included_or_excluded: c.counts_toward_current_plan
+        ? 'INCLUDED \u2014 lifecycle-active and every scope axis matches exactly'
+        : ('EXCLUDED \u2014 ' + c.exclusion_reasons.join(' + ')),
+      ui_includes_it: c.counts_toward_current_plan,
+      census_includes_it: c.counts_toward_current_plan,
+      // §2's A-F classification, decided from STORED fields only.
+      classification: CENSUS_str_(r.generation_run_id)
+        ? 'AI_GENERATED (carries generation_run_id ' + CENSUS_str_(r.generation_run_id) + ')'
+        : (CENSUS_str_(r.company)
+          ? 'MANUAL (no generation_run_id \u2014 composed by a person)'
+          : 'STRUCTURALLY_AMBIGUOUS (no generation_run_id AND no company \u2014 legacy blank-company work)')
+    });
+  });
+
+  // ---- LINES --------------------------------------------------------------------------------------------
+  var keep = {};
+  out.headers.forEach(function (h) { if (h.counts_toward_current_plan) keep[h.allocation_draft_id] = 1; });
+  var seenHeaderIds = {};
+  out.headers.forEach(function (h) { seenHeaderIds[h.allocation_draft_id] = 1; });
+  lines.forEach(function (l) {
+    var hid = CENSUS_str_(l.allocation_draft_id);
+    if (!seenHeaderIds[hid]) return;
+    if (CENSUS_low_(l.sku) !== CENSUS_low_(SC.sku)) return;
+    var counts = keep[hid] === 1 && arc.lineCounts(l);
+    out.lines.push({
+      allocation_draft_line_id: CENSUS_str_(l.allocation_draft_line_id),
+      allocation_draft_id: hid,
+      sku: CENSUS_str_(l.sku),
+      source_warehouse_id: CENSUS_str_(l.source_warehouse_id),
+      source_warehouse_code: CENSUS_str_(l.source_warehouse_code || l.source_warehouse_code_snapshot),
+      destination_kind: CENSUS_str_(l.destination_kind),
+      destination_id: CENSUS_str_(l.destination_warehouse_id || l.destination_marketplace),
+      quantity: arc.lineQuantity(l),
+      planned_qty: CENSUS_str_(l.planned_qty),
+      recommended_qty: CENSUS_str_(l.recommended_qty),
+      shipping_method: CENSUS_str_(l.shipping_method || l.selected_shipping_method),
+      last_mile_delivery: CENSUS_str_(l.last_mile_delivery),
+      expected_arrival: CENSUS_str_(l.expected_arrival),
+      line_status: CENSUS_str_(l.line_status),
+      contributes_to_ui_current_total: counts,
+      contributes_to_census_active_total: counts,
+      why: counts ? 'its header counts and its own line_status is not terminal'
+        : (keep[hid] === 1 ? 'line_status is terminal (cancelled/expired)' : 'its header does not count \u2014 see the header row')
+    });
+  });
+
+  // ---- THE ARITHMETIC -----------------------------------------------------------------------------------
+  var total = 0;
+  out.lines.forEach(function (l) { if (l.contributes_to_ui_current_total) total += CENSUS_num_(l.quantity); });
+  out.ui_current_plan_total = total;
+  out.census_current_plan_total = total;
+  // Not a tautology: both sides are computed from ONE predicate, and this states that they were. A future
+  // change that re-forks the predicate makes this false rather than silently disagreeing again.
+  out.totals_agree = (out.ui_current_plan_total === out.census_current_plan_total);
+  out.included_route_ids = out.headers.filter(function (h) { return h.counts_toward_current_plan; })
+    .map(function (h) { return h.allocation_draft_id; });
+  out.excluded_route_ids_with_reason = out.headers.filter(function (h) { return !h.counts_toward_current_plan; })
+    .map(function (h) { return { allocation_draft_id: h.allocation_draft_id, reason: h.why_included_or_excluded }; });
+
+  // ---- THE ANSWER §2 ASKS FOR -----------------------------------------------------------------------
+  var inc = out.headers.filter(function (h) { return h.counts_toward_current_plan; });
+  var anyAi = inc.some(function (h) { return h.classification.indexOf('AI_GENERATED') === 0; });
+  var anyBlankCompany = inc.some(function (h) { return !h.company; });
+  var anyOtherCompany = out.headers.some(function (h) {
+    return !h.counts_toward_current_plan && h.why_included_or_excluded.indexOf('COMPANY_MISMATCH') !== -1;
+  });
+  var anyTerminalShown = false;   // by construction: a terminal header can never be in `inc`
+  if (!inc.length) {
+    out.source_of_520 = 'F \u2014 NO PERSISTED ROW ACCOUNTS FOR THE SCREEN TOTAL. Every candidate header was '
+      + 'excluded; see excluded_route_ids_with_reason. If the screen still shows a total, it is E '
+      + '(locally synthesized UI state) and the page model must be read next.';
+  } else if (anyBlankCompany) {
+    out.source_of_520 = 'B \u2014 LEGACY BLANK-COMPANY WORK is being counted. This should be impossible under the '
+      + 'shared authority; if it appears, KMARC is not the predicate that produced this list.';
+  } else if (anyOtherCompany) {
+    out.source_of_520 = 'A \u2014 CORRECTLY PERSISTED MANUAL WORK for this company, and separately C was CHECKED: '
+      + 'headers belonging to another company exist and are excluded by name, not by luck.';
+  } else if (anyAi) {
+    out.source_of_520 = 'A/AI \u2014 persisted work that carries a generation_run_id. It is NOT the run that '
+      + 'produced the current recommendation unless that run id matches; compare generation_run_id against '
+      + 'the Gap run in the report header before describing it as newly generated.';
+  } else {
+    out.source_of_520 = 'A \u2014 CORRECTLY PERSISTED MANUAL WORK. Every counting header carries a company, a '
+      + 'lifecycle-active status and no generation_run_id, which is exactly what a person composing a route '
+      + 'in the Execution Plan writes (16_ persists status `draft`). It was NOT produced by any AI run.';
+  }
+  out.terminal_rows_displayed = anyTerminalShown;
+
+  // The census's OWN previous predicate, evaluated beside the new one so the change is visible rather than
+  // asserted. This is the number that was reported as 0.
+  var legacyActiveCount = 0;
+  headers.forEach(function (r) { if (CENSUS_low_(r.status) === 'active') legacyActiveCount++; });
+  out.superseded_predicate_check = {
+    predicate: "status === 'active'",
+    matches_anywhere_in_the_sheet: legacyActiveCount,
+    canonical_status_enum: '16_ SAD_STATUSES_ = { draft, site_confirmed, submitted, cancelled, expired }',
+    finding: legacyActiveCount === 0
+      ? 'ZERO, across the WHOLE sheet and not merely this scope. The predicate has no satisfier: `active` is '
+        + 'not in the canonical enum and the write handler coerces anything unrecognised to `draft`. The '
+        + 'previously reported active_allocation_drafts: 0 was a constant, not a measurement.'
+      : 'NON-ZERO \u2014 a row carries a status outside the canonical enum. Investigate before trusting either count.'
+  };
+
+  out.verdict = out.totals_agree ? 'PARITY_ESTABLISHED' : 'PARITY_FAILED';
+  out.elapsed_ms = Date.now() - t0;
+  CENSUS_log_('r6r2_ui_current_plan_total', out.ui_current_plan_total);
+  CENSUS_log_('r6r2_census_current_plan_total', out.census_current_plan_total);
+  CENSUS_log_('r6r2_totals_agree', out.totals_agree);
+  CENSUS_log_('r6r2_included_route_ids', out.included_route_ids.join(','));
+  CENSUS_log_('r6r2_source_of_520', out.source_of_520);
+  CENSUS_log_('verdict', out.verdict);
   return out;
 }

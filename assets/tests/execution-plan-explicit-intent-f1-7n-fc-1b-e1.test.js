@@ -178,7 +178,9 @@ function makeWorld(opts) {
     counts: { persistScheduled: 0, touched: 0, sessionWrites: 0, totals: [], warnings: [], dbWrites: 0, aiPlanCalls: 0 },
     suggested: opts.suggested === undefined ? SUGGESTED : opts.suggested
   };
-  var win = { IRRouteProvenance: RP, IRDraft: CMP.IRDraft, IRWarehouse: CMP.IRWarehouse, KM: {} };
+  // R6-R2: KMARC owns the hydrate's scope predicate now; a lift without it refuses, correctly.
+  var win = { IRRouteProvenance: RP, IRDraft: CMP.IRDraft, IRWarehouse: CMP.IRWarehouse, KM: {},
+    KMARC: require('../js/core/supply-planning-active-route-classification.js') };
   w.win = win;
 
   var deps = {
@@ -490,8 +492,16 @@ ok(!/route_provenance/.test(code(extractFn(PAGE, '_saveAllocationDraftFromDom'))
 // §C.1/C.2/C.3 — the hydrate's own filters, read from the shipped source because they are what decides which
 // rows exist at all.
 var hyd = code(extractFn(PAGE, '_hydrateAllocationDraftFromDb'));
-ok(/lo\(d\.status\) !== 'cancelled'/.test(hyd), 'C8  a cancelled header is excluded from the hydrate');
-ok(/lo\(d\.status\) !== 'submitted'/.test(hyd), 'C8a as is a submitted one');
+// R6-R2 RESTATEMENT. KMARC owns the status rule now, and states it positively rather than as two exclusions.
+var _ARC_E1 = require('../js/core/supply-planning-active-route-classification.js');
+function _e1(status) {
+  return _ARC_E1.classifyHeader({ status: status, company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon' }).counts_toward_current_plan;
+}
+ok(_e1('cancelled') === false && /window\.KMARC/.test(hyd),
+  'C8  a cancelled header is excluded from the hydrate');
+ok(_e1('submitted') === false && _e1('expired') === false,
+  'C8a as is a submitted one — and an expired one, which the old two-exclusion rule admitted');
 ok(/lo\(l\.lineStatus \|\| l\.line_status\) !== 'cancelled'/.test(hyd), 'C9  and every cancelled LINE is excluded');
 ok(/route_provenance: _prov/.test(hyd), 'C10 every hydrated row is stamped with the provenance its caller declared');
 ok(/opts && opts\.provenance/.test(hyd) && /'PERSISTED_ACTIVE_DRAFT'/.test(hyd),
@@ -854,8 +864,15 @@ mut('N3  a missing identity treated as an implicit create', function () {
 });
 
 mut('N4  a cancelled header hydrated', function () {
-  var h = swap(PAGE, "lo(d.status) !== 'cancelled' && ", '');
-  return !/lo\(d\.status\) !== 'cancelled'/.test(code(extractFn(h, '_hydrateAllocationDraftFromDb')));
+  // R6-R2: the predicate is a call now, so the mutation is asking the owner a WEAKER question. `scope_match`
+  // keeps every scope axis and drops the lifecycle test, and a cancelled header is in scope in every other
+  // respect — so it is exactly what would let one back in.
+  var A = require('../js/core/supply-planning-active-route-classification.js');
+  var scope = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+  var row = { status: 'cancelled', company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+  var c = A.classifyHeader(row, scope);
+  return c.counts_toward_current_plan === false && c.scope_match === true
+    && /!c\.counts_toward_current_plan/.test(code(extractFn(PAGE, '_hydrateAllocationDraftFromDb')));
 });
 
 mut('N5  an orphan / zero-active-line header hydrated as a route', function () {

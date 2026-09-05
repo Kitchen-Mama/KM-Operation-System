@@ -161,8 +161,14 @@ eq(rD.length, 0, 'T4  `only` cannot reach an include-gated table without the inc
 ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(MREG), 'T5  the method registry names its two tables');
 // ops() — the function's own COMMENT explains why the include was removed, and matching prose is how a probe
 // reports a defect that is not there. The claim is about the CODE.
-eq(/carrierPlanning/.test(ops(extractFn(PAGE, '_irWorkspaceRefresh_'))), false,
+// R6-R2 RESTATEMENT: the claim is about the REQUEST, so it is asserted against the request. R6-R2 must name
+// `include.carrierPlanning` inside this function in order to test whether the RESPONSE carried it (the
+// adoption gate), so the word's presence in the body no longer distinguishes asking from checking.
+var _payloadR6R2 = /var _wsPayload = \{[^}]*\};/.exec(ops(PAGE))[0];
+eq(/carrierPlanning/.test(_payloadR6R2), false,
   'T6  and the read the SCREEN waits on no longer asks for the include at all');
+eq(/getWorkspace\('inventoryReplenishment', \{ include/.test(ops(extractFn(PAGE, '_irWorkspaceRefresh_'))), false,
+  'T6b nor does it pass an inline include object to the workspace call');
 ok(/var _wsPayload = \{ recentWindow: true \};/.test(PAGE), 'T6a its payload is the bounded one, unconditionally');
 // PURITY — four suites lift sirWorkspaceBuild_ by itself.
 var lifted = new Function('SIR_WORKSPACE_TABLES_', 'sirWsStr_', 'sirCap_', 'SIR_WS_RECENT_WINDOW_', 'sirWsRecentWindow_',
@@ -396,8 +402,10 @@ mut('N5  `only` can reach an include-gated table WITHOUT the include', function 
 mut('N6  the primary read goes back to carrying the carrier include', function () {
   var m = swap(PAGE, 'var _wsPayload = { recentWindow: true };',
     'var _wsPayload = { include: { carrierPlanning: true }, recentWindow: true };');
-  return !/carrierPlanning/.test(ops(extractFn(PAGE, '_irWorkspaceRefresh_')))
-    && /carrierPlanning/.test(ops(extractFn(m, '_irWorkspaceRefresh_')));
+  // The MUTANT payload nests an object, so the extractor has to tolerate one level of braces — otherwise
+  // it fails to match the very thing the mutation introduces, and the probe errors instead of catching it.
+  function payloadOf(src) { return /var _wsPayload = \{(?:[^{}]|\{[^{}]*\})*\};/.exec(ops(src))[0]; }
+  return !/carrierPlanning/.test(payloadOf(PAGE)) && /carrierPlanning/.test(payloadOf(m));
 });
 // N7 REPLACED. My first attempt dropped only the `unclassified_requests.push`, and the mutant survived —
 // correctly — because the completeness test has a SECOND, independent guard: classified + ignored must also

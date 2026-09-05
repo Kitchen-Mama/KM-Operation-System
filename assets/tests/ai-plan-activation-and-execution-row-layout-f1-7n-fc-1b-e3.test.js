@@ -1016,8 +1016,10 @@ ok(/function TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3\(args\)/.test(TEMP), 'F1  th
   // The claim is that nothing UNINTENDED is invocable from the editor, and it is now checked as the property
   // rather than as a list: each entry point is a declared RUN_E3_/TEMP_ name, and each takes NO PARAMETERS, so
   // none can be invoked against the wrong scope by someone guessing at an args object in a console.
+  // R6-R2 adds RUN_R6R2_ROUTE_PROVENANCE: the \u00a72 route-provenance census. Like the others it takes NO
+  // parameters and its scope is a hard-coded constant, so it cannot be aimed at a scope from a console.
   var ALLOWED_ENTRY_POINTS = ['RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R', 'RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE',
-    'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
+    'RUN_E3_FIND_MATERIALIZABLE_CANDIDATE', 'RUN_R6R2_ROUTE_PROVENANCE', 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'];
   eq(nonHelper.slice().sort(), ALLOWED_ENTRY_POINTS,
     'F1a and those are the ONLY functions not prefixed CENSUS_ — nothing else is invocable from the editor by accident');
   eq(nonHelper.filter(function (n) { return n !== 'TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3'

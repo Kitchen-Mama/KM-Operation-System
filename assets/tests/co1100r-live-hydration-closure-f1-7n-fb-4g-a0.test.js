@@ -141,6 +141,8 @@ function runHydrate(opts) {
   var sandbox = {
     window: {
       IRWarehouse: COMPAT.IRWarehouse, IRDraft: COMPAT.IRDraft,
+      // R6-R2: the scope predicate moved to KMARC and the hydrate asks for it by name.
+      KMARC: require('../js/core/supply-planning-active-route-classification.js'),
       KM: { DB: {
         getShippingAllocationDrafts: function () { return broad.drafts; },
         getShippingAllocationDraftLines: function () { return broad.lines; }
@@ -442,8 +444,21 @@ var submitted = runHydrate({ sourceMode: 'WORKSPACE', headers: [Object.assign({}
 eq(submitted.ok, false, 'F8  §H.7 a submitted header is still excluded from hydration');
 var cancelledH = runHydrate({ sourceMode: 'WORKSPACE', headers: [Object.assign({}, H4, { status: 'cancelled' })] });
 eq(cancelledH.ok, false, 'F9  §H.7 and so is a cancelled one');
-ok(/lo\(d\.status\) !== 'cancelled' && lo\(d\.status\) !== 'submitted'/.test(PAGEC),
-  'F10 §H.7 the terminal-status rule is exactly the one that shipped — not widened');
+// R6-R2 RESTATEMENT. The rule is no longer written here; KMARC owns it, and it is now a POSITIVE test
+// ({draft, site_confirmed, partially_submitted}) rather than two exclusions — which also closes `expired`,
+// a status 16_ explicitly calls read-only and not part of any active set. Not widened: narrowed, by name.
+var _ARC_A0 = require('../js/core/supply-planning-active-route-classification.js');
+var _S_A0 = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+function _liveA0(status) {
+  return _ARC_A0.classifyHeader({ status: status, company: 'ResUS', country: 'US', marketplace: 'Amazon' }, _S_A0)
+    .counts_toward_current_plan;
+}
+eq(['cancelled', 'submitted', 'expired'].map(_liveA0), [false, false, false],
+  'F10 §H.7 every terminal status is excluded — cancelled, submitted, and now expired too');
+eq(['draft', 'site_confirmed', 'partially_submitted'].map(_liveA0), [true, true, true],
+  'F10a and exactly the three the server itself calls ACTIVE are admitted');
+ok(/counts_toward_current_plan/.test(PAGEC) && /window\.KMARC/.test(PAGEC),
+  'F10b the hydrate asks that owner rather than carrying its own copy');
 // §H.8 — a missing destination blocks WRITE, never READBACK.
 eq(AFTER.ok, true, 'F11 §H.8 a destination-less route reads back fine');
 ok(/_irRoutesMissingDestination_/.test(PAGEC), 'F12 §H.8 and Save/Submit is what a missing destination blocks');
@@ -599,10 +614,12 @@ mut('M8  losing the scope filter is detected', function () {
   // company, exactly so the second can be exact and fail-closed. A mutant that removes only one of them is
   // EQUIVALENT: H3 is ResTW/JP, so either pass alone still excludes it. "We relaxed the filter" means both,
   // and that is what is replaced — the whole scope computation, down to a bare terminal-status test.
+  // R6-R2: the two passes are now ONE call to KMARC, so the realistic "we relaxed the filter" change is to
+  // ask it a weaker question. `lifecycle_active` alone keeps the status test and drops all three scope axes,
+  // which is exactly the mutation this probe is about.
   var out = runHydrateWith(mutateHydrate(
-    /var _inStation = drafts\.filter\([\s\S]*?\.sort\(function \(a, b\) \{ return String\(a\.allocationDraftId \|\| ''\) < String\(b\.allocationDraftId \|\| ''\) \? -1 : 1; \}\);/,
-    "var _scopeCompany = 'x'; var _inStation = drafts; var activeDrafts = drafts.filter(function (d) {" +
-    " return lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted'; });"));
+    'if (!c || !c.counts_toward_current_plan) {',
+    'if (!c || !c.lifecycle_active) {'));
   return Object.keys(out.draft.bySku).indexOf('JP-SKU-1') !== -1;
 });
 // M9 — the default editor seeded from a fabricated number while the recommendation is still pending.
@@ -612,8 +629,10 @@ mut('M9  seeding a quantity from a PENDING state is detected', function () {
 });
 // M10 — the terminal-status guard widened to admit a submitted header.
 mut('M10 admitting a submitted header is detected', function () {
-  var out = runHydrateWith(mutateHydrate("lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted'",
-    "lo(d.status) !== 'cancelled'"), { headers: [Object.assign({}, H4, { status: 'submitted' })] });
+  // R6-R2: the mirror-image weakening — keep the scope axes, drop the lifecycle test. A submitted header
+  // is in scope in every other respect, so this is precisely what admits one.
+  var out = runHydrateWith(mutateHydrate('if (!c || !c.counts_toward_current_plan) {',
+    'if (!c || !c.scope_match) {'), { headers: [Object.assign({}, H4, { status: 'submitted' })] });
   return out.ok === true;
 });
 
@@ -634,7 +653,9 @@ function runHydrateWith(mutatedPage, opts) {
     'RESULT = { ok: _hydrateAllocationDraftFromDb(CTX), draft: replenAllocationDraft };'
   ].join(String.fromCharCode(10));
   var f = new Function('window', 'sessionStorage', 'console', '_irReadModel', 'CTX', 'var RESULT;' + src + 'return RESULT;');
-  return f({ IRWarehouse: COMPAT.IRWarehouse, IRDraft: COMPAT.IRDraft, KM: { DB: {
+  return f({ IRWarehouse: COMPAT.IRWarehouse, IRDraft: COMPAT.IRDraft,
+    KMARC: require('../js/core/supply-planning-active-route-classification.js'),   // R6-R2: the scope predicate's owner
+    KM: { DB: {
       getShippingAllocationDrafts: function () { return []; }, getShippingAllocationDraftLines: function () { return []; } } } },
     { setItem: function () {}, getItem: function () { return null; }, removeItem: function () {} },
     { warn: function () {}, log: function () {}, error: function () {} }, readModel, opts.ctx || US);

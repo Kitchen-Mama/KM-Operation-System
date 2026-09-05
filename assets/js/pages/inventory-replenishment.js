@@ -2363,12 +2363,65 @@ function _irAdviceVsPlan_(sku) {
     }
     var remaining = (recommended === null) ? null : Math.max(0, recommended - planned);
     var over = (recommended === null) ? null : Math.max(0, planned - recommended);
+    // ==========================================================================================================
+    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §5 — TWO NUMBERS ABOUT DIFFERENT WAREHOUSES ARE NOT A DIFFERENCE.
+    //
+    // The live screen recommends 920 units sourced from an overseas 3PL and shows 520 units already routed from
+    // a CN factory. Printing "920 recommended, 520 planned, 400 remaining" invites the one reading that is
+    // certainly wrong: that the 520 is part of the 920 and 400 is what is left to do. They are separate supply
+    // decisions from separate stock, and subtracting them is arithmetic without meaning.
+    //
+    // So both sides now say where their units come from. The existing routes' origin is read from the ROWS
+    // THEMSELVES — the From select's own warehouse identity, never a label parsed for a country name — and the
+    // recommendation's is read from the server's advice, verbatim. When the advice does not name one, this says
+    // so; it does not guess, and it never presents the route's origin as the recommendation's.
+    // ==========================================================================================================
+    var routeSources = [], routeSourceCountries = [];
+    if (list && list.querySelectorAll) {
+        list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+            if (typeof _irIsComposerEl_ === 'function' && _irIsComposerEl_(rowEl)) return;
+            var f = rowEl.querySelector('[data-field="source_warehouse_id"]');
+            if (!f || !f.options || f.selectedIndex < 0) return;
+            var o = f.options[f.selectedIndex];
+            if (!o) return;
+            var id = String(f.value || '').trim();
+            var nm = String(o.getAttribute('data-wh-name') || '').trim();
+            var ct = String(o.getAttribute('data-wh-country') || '').trim();
+            var ty = String(o.getAttribute('data-wh-type') || '').trim();
+            if (!id) return;
+            var hit = null;
+            routeSources.forEach(function (x) { if (x.warehouse_id === id) hit = x; });
+            if (!hit) routeSources.push({ warehouse_id: id, name: nm, country: ct, warehouse_type: ty });
+            if (ct && routeSourceCountries.indexOf(ct) === -1) routeSourceCountries.push(ct);
+        });
+    }
+    var adv = (typeof window !== 'undefined' && window._irLastAdvice) ? window._irLastAdvice : null;
+    var recSources = [];
+    try {
+        (((adv && adv.scopes) || [])).forEach(function (sc) {
+            ((sc && sc.supply_sources) || []).forEach(function (x) {
+                var id = String((x && (x.warehouse_id || x.source_warehouse_id)) || x || '').trim();
+                if (id && recSources.indexOf(id) === -1) recSources.push(id);
+            });
+        });
+    } catch (eS) { recSources = []; }
+    // A difference is only a quantity gap when both sides describe the SAME supply. When they do not, the
+    // number is still shown — an operator asked for it — but it is named for what it is.
+    var sameSupply = null;
+    if (recSources.length && routeSources.length) {
+        sameSupply = routeSources.every(function (r) { return recSources.indexOf(r.warehouse_id) !== -1; });
+    }
     return {
         recommended_quantity: recommended,
         currently_planned_quantity: planned,
         route_count: routeCount,
         remaining_unplanned: remaining,
         over_planned: over,
+        // §5 provenance. `null`/empty means NOT STATED, which is different from "the same".
+        recommendation_supply_sources: recSources,
+        existing_route_sources: routeSources,
+        existing_route_source_countries: routeSourceCountries,
+        supply_sources_comparable: sameSupply,
         // Whether THIS run changed the stored plan. It is false on every flag-off run by construction: nothing
         // on that path writes. Stated as a fact rather than as reassurance.
         execution_plan_changed_by_this_run: (typeof window !== 'undefined' && window._irExecPlanChangedByLastRun === true),
@@ -2390,16 +2443,34 @@ function _irAdviceVsPlanHtml_(sku) {
     } else {
         diffTxt = '<span class="ir-plan-recon__matched">fully planned</span>';
     }
+    // R6-R2 §5 — each side names its own supply, and an UNSTATED source says so rather than being left blank
+    // for the reader to fill in with the other side's.
+    function srcLine(txt) { return '<span class="ir-plan-recon__sub">' + _execEsc(txt) + '</span>'; }
+    var recSrc = r.recommendation_supply_sources && r.recommendation_supply_sources.length
+        ? srcLine('from ' + r.recommendation_supply_sources.join(', '))
+        : srcLine('supply source not stated by this run');
+    var routeSrc = r.existing_route_sources && r.existing_route_sources.length
+        ? srcLine('from ' + r.existing_route_sources.map(function (x) {
+            return (x.name || x.warehouse_id) + (x.country ? ' (' + x.country + ')' : ''); }).join(', '))
+        : srcLine('no source warehouse resolved on these rows');
+    // The one sentence that stops the wrong subtraction being read into the numbers.
+    var comparability = '';
+    if (r.supply_sources_comparable === false) {
+        comparability = ' The recommendation and the saved route(s) draw on DIFFERENT supply, so the difference'
+            + ' is not a quantity still to be shipped from the same stock.';
+    }
     return '<div class="ir-plan-recon" id="ir-plan-recon-' + sku + '" role="status">'
         + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">AI recommends</span>'
-        + '<strong>' + r.recommended_quantity + '</strong></span>'
+        + '<strong>' + r.recommended_quantity + '</strong>' + recSrc + '</span>'
         + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Currently planned</span>'
         + '<strong>' + r.currently_planned_quantity + '</strong>'
-        + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span></span>'
+        + '<span class="ir-plan-recon__sub">' + r.route_count + ' route(s) already saved</span>'
+        + routeSrc + '</span>'
         + '<span class="ir-plan-recon__cell"><span class="ir-plan-recon__label">Difference</span>' + diffTxt + '</span>'
         + '<span class="ir-plan-recon__note">The recommendation has NOT been applied. These route(s) were already here'
         + ' and this run did not change them'
-        + (r.remaining_unplanned > 0 ? '; the difference is not added automatically.' : '.') + '</span>'
+        + (r.remaining_unplanned > 0 ? '; the difference is not added automatically.' : '.')
+        + comparability + '</span>'
         + '</div>';
 }
 window._irAdviceVsPlanHtml_ = _irAdviceVsPlanHtml_;
@@ -5602,30 +5673,84 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
         // company is never adopted. Both exclusions are COUNTED and reported rather than silently applied — a
         // route that vanishes without explanation is the failure mode this page keeps being asked about.
         // ==========================================================================================================
+        // ==========================================================================================================
+        // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2 — THE PREDICATE MOVES TO ITS OWN OWNER.
+        //
+        // R6-R1 wrote the company rule here and got it right. What it could not fix from here is that the SAME
+        // question was also being answered, differently, by the read-only census — which is how a screen showing
+        // 520 units and a census reporting `active_allocation_drafts: 0` were both produced honestly in the same
+        // minute. (The census tested `status === 'active'`; that value is not in 16_ SAD_STATUSES_ and no writer
+        // has ever produced it, so its zero was a constant rather than a measurement.)
+        //
+        // KMARC is now the one owner of "is this header part of this station's current plan", and both consume it.
+        // Two things change here beyond the move, and both are corrections:
+        //
+        //   * STATUS IS A POSITIVE TEST, not a list of two exclusions. It was `not cancelled and not submitted`,
+        //     which admits `expired` and admits any unrecognised value. 16_ states the rule in the other
+        //     direction — "An expired row is READ-ONLY: it is not editable, not submittable, and not part of any
+        //     active set" — and its three ACTIVE literals are {draft, site_confirmed, partially_submitted}. An
+        //     expired header rendered as part of the current plan is exactly §2's cause D.
+        //   * COUNTRY AND MARKETPLACE fail closed on a blank, as company already did. A stored row with no
+        //     country was previously compared `'' === 'us'` and excluded by luck rather than by rule; a row with
+        //     no marketplace likewise. Now they are refused BY NAME, and counted.
+        //
+        // Every exclusion is COUNTED and published. A route that vanishes without explanation is the failure mode
+        // this page keeps being asked about.
+        // ==========================================================================================================
         var _scopeCompany = lo(ctx.company);
-        var _excludedNoRowCompany = 0, _excludedOtherCompany = 0;
-        var _inStation = drafts.filter(function (d) {
-            return lo(d.country) === lo(ctx.country) && lo(d.marketplace) === lo(ctx.marketplace) &&
-                lo(d.status) !== 'cancelled' && lo(d.status) !== 'submitted';
+        var _arc = (typeof window !== 'undefined' && window.KMARC) ? window.KMARC : null;
+        var _classified = [], _excludedDetail = [], _byReason = {};
+        drafts.forEach(function (d) {
+            // The DTO carries camelCase; KMARC reads either spelling, and the raw sheet row is preferred when
+            // present so the classification sees exactly what is stored.
+            var row = (d && d.raw) ? d.raw : d;
+            var c = _arc ? _arc.classifyHeader({
+                allocation_draft_id: d.allocationDraftId || (row && row.allocation_draft_id),
+                status: (row && row.status != null && row.status !== '') ? row.status : d.status,
+                company: (row && row.company != null && row.company !== '') ? row.company : d.company,
+                country: (row && row.country != null && row.country !== '') ? row.country : d.country,
+                marketplace: (row && row.marketplace != null && row.marketplace !== '') ? row.marketplace : d.marketplace,
+                destination_marketplace: (row && row.destination_marketplace) || d.destinationMarketplace || ''
+            }, { company: ctx.company, country: ctx.country, marketplace: ctx.marketplace }) : null;
+            // No KMARC on the page is a REFUSAL, not a fallback to the old rule. A second copy of the predicate
+            // living here is the thing this round removed; re-adding it as a fallback would re-create the drift.
+            if (!c || !c.counts_toward_current_plan) {
+                var reasons = c ? c.exclusion_reasons : ['ACTIVE_ROUTE_CLASSIFICATION_MODULE_UNAVAILABLE'];
+                _excludedDetail.push({ allocation_draft_id: String((d && d.allocationDraftId) || ''), reasons: reasons });
+                reasons.forEach(function (k) { _byReason[k] = (_byReason[k] || 0) + 1; });
+                return;
+            }
+            _classified.push(d);
         });
-        var activeDrafts = _inStation.filter(function (d) {
-            if (!_scopeCompany) return false;                    // the page does not know whose plan this is
-            if (!lo(d.company)) { _excludedNoRowCompany++; return false; }
-            if (lo(d.company) !== _scopeCompany) { _excludedOtherCompany++; return false; }
-            return true;
-        }).sort(function (a, b) { return String(a.allocationDraftId || '') < String(b.allocationDraftId || '') ? -1 : 1; });
+        var activeDrafts = _classified.sort(function (a, b) { return String(a.allocationDraftId || '') < String(b.allocationDraftId || '') ? -1 : 1; });
         // Published so a diagnostic (and §2's provenance report) can state WHY a row on the sheet is not on the
         // screen, instead of leaving an operator to compare two counts that disagree.
         window._irHydrateScopeAudit = {
             at: new Date().toISOString(),
             scope: { company: ctx.company || '', country: ctx.country || '', marketplace: ctx.marketplace || '' },
             scope_company_known: !!_scopeCompany,
-            in_station_before_company_filter: _inStation.length,
+            authority: 'KMARC',
+            authority_present: !!_arc,
+            contract: _arc ? _arc.CONTRACT : null,
+            examined: drafts.length,
             hydrated: activeDrafts.length,
-            excluded_row_has_no_company: _excludedNoRowCompany,
-            excluded_row_belongs_to_another_company: _excludedOtherCompany,
-            rule: 'company + country + marketplace, all three EXACT. A blank on either side is never a wildcard.'
+            hydrated_ids: activeDrafts.map(function (d) { return String(d.allocationDraftId || ''); }),
+            excluded: _excludedDetail.length,
+            excluded_ids_with_reason: _excludedDetail,
+            excluded_by_reason: _byReason,
+            // Kept under their R6-R1 names so an existing reader of this audit does not silently lose a field.
+            excluded_row_has_no_company: _byReason[_arc ? _arc.EXCLUSION.COMPANY_BLANK_ON_ROW : 'COMPANY_BLANK_ON_ROW'] || 0,
+            excluded_row_belongs_to_another_company: _byReason[_arc ? _arc.EXCLUSION.COMPANY_MISMATCH : 'COMPANY_MISMATCH'] || 0,
+            rule: 'company + country + marketplace, all three EXACT, plus a POSITIVE status test. A blank on '
+                + 'either side of any axis is never a wildcard.'
         };
+        if (!_arc) {
+            try {
+                console.warn('[replen] ACTIVE_ROUTE_CLASSIFICATION_MODULE_UNAVAILABLE - the Execution Plan was ' +
+                    'not hydrated. Nothing was rendered and nothing was written.');
+            } catch (eArc) {}
+            return false;
+        }
         if (!_scopeCompany) return false;
         if (myToken !== _replenHydrateToken) return false;   // a newer context request superseded this one
         if (!activeDrafts.length) return false;
@@ -8747,6 +8872,67 @@ function _irAdoptCarrierCatalogue_() {
     return reg.adopt(_irMethodScope_(), _irReadModel);
 }
 window._irAdoptCarrierCatalogue_ = _irAdoptCarrierCatalogue_;
+
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §3 — THE PIPELINE, END TO END, AS A MEASUREMENT.
+//
+// §3 asks for a count at every boundary between the sheet and the dropdown, because the failure lived at one of
+// them and no surface reported any of them. Each boundary is read from the SHIPPED owner of that boundary — the
+// transport ledger, the registry cache, the warehouse authority, the registry's own resolution — so the trace can
+// never drift from what the page actually did. It issues NO request and writes NOTHING.
+// ================================================================================================================
+function _irCarrierPipelineTrace_(routeCtx) {
+    var reg = (typeof window !== 'undefined' && window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
+    var scope = _irMethodScope_();
+    var out = {
+        contract: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §3 — read-only boundary census. No request, no write.',
+        scope: scope, scope_key: reg && reg.scopeKey ? reg.scopeKey(scope) : null,
+        transport: _irCarrierTransport,
+        registry_module_present: !!reg,
+        registry_settled: !!(reg && reg.isLoaded && reg.isLoaded(scope)),
+        registry_error: (reg && reg.getError) ? reg.getError(scope) : null,
+        cached_lead_time_rows: (reg && reg.getLeadTimes) ? (reg.getLeadTimes(scope) || []).length : null,
+        cached_rate_card_rows: (reg && reg.getRateCards) ? (reg.getRateCards(scope) || []).length : null,
+        registry_request_count: (reg && reg.requestCount) ? reg.requestCount() : null,
+        route: null
+    };
+    if (routeCtx && reg) {
+        var lts = reg.getLeadTimes(scope) || [];
+        var profiles = (reg.serviceProfilesForRoute) ? reg.serviceProfilesForRoute(lts, routeCtx) : [];
+        // The rejection histogram §3 asks for: why each lead-time row did NOT describe this lane. A row is
+        // counted under the FIRST axis that eliminated it, so the counts sum to the rows examined.
+        var hist = { ORIGIN_COUNTRY_MISMATCH: 0, DESTINATION_COUNTRY_MISMATCH: 0, NO_SHIPPING_METHOD_ON_ROW: 0, MATCHED: 0 };
+        function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+        lts.forEach(function (lt) {
+            var ro = lo(lt.originCountry), rd = lo(lt.destinationCountry);
+            var qo = lo(routeCtx.originCountry), qd = lo(routeCtx.destinationCountry);
+            if (ro && qo && ro !== qo) { hist.ORIGIN_COUNTRY_MISMATCH++; return; }
+            if (rd && qd && rd !== qd) { hist.DESTINATION_COUNTRY_MISMATCH++; return; }
+            if (!String(lt.shippingMethod || '').trim()) { hist.NO_SHIPPING_METHOD_ON_ROW++; return; }
+            hist.MATCHED++;
+        });
+        var res = reg.resolve(scope, routeCtx);
+        out.route = {
+            requested: routeCtx,
+            lead_time_rows_examined: lts.length,
+            rejection_histogram: hist,
+            service_profiles: profiles.map(function (p) {
+                return { profile_key: p.profileKey, method: p.method, last_mile: p.lastMileDelivery,
+                    min_days: p.minDays, avg_days: p.avgDays, max_days: p.maxDays,
+                    carrier_ids: p.carrierIds, carrier_selection: p.carrierSelection };
+            }),
+            resolution_status: res.status,
+            method_source: res.method_source || null,
+            final_options: (res.methods || []).map(function (m) {
+                return { value: m.value, last_mile_options: m.lastMileOptions || [], ambiguous: !!m.lastMileAmbiguous };
+            }),
+            transit_authority: res.transit_authority || null,
+            pricing: res.pricing || null
+        };
+    }
+    return out;
+}
+window._irCarrierPipelineTrace_ = _irCarrierPipelineTrace_;
 // Explicit operator retry from the Method picker's ERROR state — exactly ONE request, then a repaint.
 function _irRetryMethodRegistry_(sku) {
     var reg = (window.KM && window.KM.methodRegistry) ? window.KM.methodRegistry : null;
@@ -8764,7 +8950,20 @@ function _irRebuildAllMethodOptions_() {
         var lists = document.querySelectorAll('[id^="shipping-methods-"]');
         for (var i = 0; i < lists.length; i++) {
             var sku = String(lists[i].id || '').replace('shipping-methods-', '');
-            if (sku && typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
+            if (!sku) continue;
+            if (typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
+            // R6-R2 §7 — THE ARRIVAL HAD TO MOVE WITH THE METHOD, AND IT DID NOT.
+            //
+            // This is the repaint that runs when the catalogue settles for the whole station. It refreshed the
+            // Method select and left the Expected Arrival cell exactly as the first paint wrote it — so a row
+            // rendered before hydration kept saying "Lead time unavailable" beside a Method that had just
+            // acquired real options, until some unrelated event happened to re-render it. The per-SKU path
+            // (initializeShippingAllocation's catalogue .then) has always refreshed both; this one did not, and
+            // it is the path a station-wide settle takes.
+            //
+            // _irUpdateRouteEtas is an in-place cell rewrite that issues no request and honours a PERSISTED
+            // snapshot over a computed one, so adding it here cannot move a saved commitment.
+            if (typeof _irUpdateRouteEtas === 'function') _irUpdateRouteEtas(sku);
         }
     } catch (e) {}
     // F1-7N-FB-4G-A1-R1 - the catalogue's settle reaches the EXECUTION gate only. The Recommendation Summary
@@ -8777,6 +8976,9 @@ window._irRebuildAllMethodOptions_ = _irRebuildAllMethodOptions_;
 // F1-7N-FB-4G-A1-R1 - true only when the workspace read that produced _irReadModel asked for the carrier
 // include. It gates adoption; nothing else reads it.
 var _irReadModelHasCarrier = false;
+// R6-R2 §3 — the transport boundary, recorded rather than inferred. What the read asked for, what the server
+// returned, what survived normalization, and whether any of it was adoptable. Measurement only.
+var _irCarrierTransport = null;
 // F1-7N-FC-1B-E3-R4 §B — what the SERVER said about the last primary read. Measurement only; nothing
 // reads it to make a decision.
 var _irLastReadMeta = null;
@@ -8936,10 +9138,53 @@ function _irWorkspaceRefresh_(opts) {
                     slowest_tables: _m.slowestTables || null, at: _irNowMs_() };
             } catch (e) { _irLastReadMeta = null; }
             _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
-            // Only a read that ACTUALLY requested the include may seed the catalogue. Adopting a payload that
-            // did not would install two empty tables as a settled catalogue and report a configuration
-            // problem that does not exist.
-            _irReadModelHasCarrier = !!(opts && opts.carrier);
+            // ==========================================================================================
+            // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §3 — THE CATALOGUE WAS SETTLED EMPTY, AND THAT IS WHY THE
+            // LANE HAD NO METHODS.
+            //
+            // The comment above this line stated the rule correctly and the code did not implement it.
+            // `opts.carrier` USED to mean "this read carries include.carrierPlanning", and R4-A1 §D changed
+            // it to mean "this read should be FOLLOWED BY a separate catalogue load" — it removed the
+            // include from `_wsPayload` and left this assignment reading the same flag. All three primary
+            // readers (SEARCH_CLICK, COALESCED_BOOTSTRAP, RESTORED_MOUNT_REVALIDATION) pass carrier:true,
+            // so from that round onward every Search:
+            //
+            //   1. sent { recentWindow: true } — no include — and 60_ correctly SKIPPED both carrier tables
+            //      (`if (spec.include && !include[spec.include]) continue;`),
+            //   2. set _irReadModelHasCarrier = true anyway,
+            //   3. adopted a model whose getCarrierLeadTimes/getCarrierRateCards are both [],
+            //   4. and, because adoption REPORTED SUCCESS, never fell through to the lazy load.
+            //
+            // The registry then held an empty catalogue as a SETTLED one. resolve() answers
+            // EMPTY_CONFIGURATION with transit_authority.checked = true — "carrier_lead_times has no row
+            // for it either" — for a lane that has twenty-one perfectly good rows, and getLeadTimes()
+            // returns [] so every arrival reads "Lead time unavailable". This is the whole of the live
+            // CN -> US symptom, and it is why R6-R1's registry fix appeared to change nothing: correct code
+            // was being handed an empty table.
+            //
+            // THE GATE IS NOW EVIDENCE, NOT INTENT. What may be adopted is decided by what the response
+            // ACTUALLY CONTAINS, not by what the caller meant to ask for. This keeps the mixed-deployment
+            // path the R4-A1 note describes — a 60_ that predates the include gate returns those tables on
+            // the primary read, and seeding from them is correct BECAUSE THEY ARE THERE — while making it
+            // impossible for an absent table to install itself as a settled answer. A request that did ask
+            // for the include and got nothing back is a genuinely empty catalogue, so it still adopts.
+            // ==========================================================================================
+            var _wsAskedCarrier = !!(_wsPayload.include && _wsPayload.include.carrierPlanning);
+            var _wsDataHasCarrier = !!((env.data.carrier_lead_times && env.data.carrier_lead_times.length) ||
+                (env.data.carrier_rate_cards && env.data.carrier_rate_cards.length));
+            _irReadModelHasCarrier = _wsAskedCarrier || _wsDataHasCarrier;
+            // The boundary counts §3 asks for, recorded where the transport actually settles. Measurement
+            // only — nothing reads this to make a decision.
+            _irCarrierTransport = { asked_include: _wsAskedCarrier, requested_owner: (opts && opts.carrier) ? String(_owner) : null,
+                server_lead_time_rows: (env.data.carrier_lead_times || []).length,
+                server_rate_card_rows: (env.data.carrier_rate_cards || []).length,
+                normalized_lead_time_rows: (_irReadModel.getCarrierLeadTimes || []).length,
+                normalized_rate_card_rows: (_irReadModel.getCarrierRateCards || []).length,
+                adoptable: _irReadModelHasCarrier,
+                reason: _irReadModelHasCarrier
+                    ? (_wsAskedCarrier ? 'READ_REQUESTED_THE_INCLUDE' : 'SERVER_RETURNED_CARRIER_TABLES_UNASKED')
+                    : 'NO_CARRIER_TABLES_IN_THIS_RESPONSE - the catalogue loads separately; nothing empty is adopted',
+                at: _irNowMs_ ? _irNowMs_() : 0 };
             // F1-7N-FB-4E-R4B §A — the completion stamp. Only a SUCCESSFUL read sets it, so a failure can never
             // present itself as a completed result, and an aged result can be told from a current one.
             _irReadModelAt = _irNowMs_();
@@ -9863,7 +10108,13 @@ function _irClassifyGenerationResult_(res) {
         // it here would be a second opinion about a question the server has already answered, and the two would
         // eventually disagree — which is precisely the class of defect this round is closing.
         // ==========================================================================================================
-        advice: (d.advice && typeof d.advice === 'object') ? d.advice : null,
+        advice: (function () {
+            var _a = (d.advice && typeof d.advice === 'object') ? d.advice : null;
+            // R6-R2 §5 — the advice is also kept on the page, because the reconciliation strip needs to name
+            // WHERE the recommended units would come from. Held as page state only; nothing reads it to decide.
+            try { if (typeof window !== 'undefined') window._irLastAdvice = _a; } catch (eA) {}
+            return _a;
+        })(),
         adviceOutcome: (d.advice && d.advice.outcome) ? String(d.advice.outcome) : null,
         adviceReady: !!(d.advice && d.advice.recommendation_ready === true),
         adviceWarningCodes: (d.advice && Array.isArray(d.advice.warning_codes)) ? d.advice.warning_codes : [],

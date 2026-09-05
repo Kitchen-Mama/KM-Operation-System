@@ -255,6 +255,9 @@ function clientEnv() {
     console: { warn: function () {}, log: function () {}, error: function () {} }
   };
   sb.window = sb; sb.globalThis = sb;
+  // R6-R2: the hydrate's scope predicate now belongs to KMARC. A harness that lifts the hydrate has to
+  // supply it, or the shipped code correctly refuses to hydrate anything at all.
+  sb.KMARC = require('../js/core/supply-planning-active-route-classification.js');
   sb.replenAllocationDraft = { context: null, bySku: {}, targetDays: '' };
   sb._persistAllocationDraft = function () {};
   sb._irRenderDuplicateCorruptionBanner_ = function () {};

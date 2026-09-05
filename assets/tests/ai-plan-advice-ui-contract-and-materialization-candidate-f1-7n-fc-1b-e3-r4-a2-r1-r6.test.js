@@ -946,9 +946,16 @@ mut('H12 a candidate with a MANUAL route conflict is accepted → the first live
   m.SHEETS['shipping_allocation_drafts'].appendRow((function () {
     var hdrs = m.SHEETS['shipping_allocation_drafts'].rows[0], r = hdrs.map(function () { return ''; });
     function put(k, v) { var i = hdrs.indexOf(k); if (i >= 0) r[i] = v; }
-    put('allocation_draft_id', 'SADH-MANUAL-1'); put('status', 'active');
-    put('company', 'ResUS'); put('country', 'US'); put('destination_marketplace', 'Amazon');
-    put('source_warehouse_id', THREE_PL); put('generation_run_id', '');
+    // R6-R2: this fixture used to write status 'active' and set only destination_marketplace. Neither is
+    // something the system produces \u2014 16_ SAD_STATUSES_ has no `active` and coerces it to `draft`, and the
+    // STATION marketplace lives in `marketplace`. The census only ever saw this row because its own predicate
+    // was equally unsatisfiable; under the shared authority (KMARC) the fixture has to be what a real manual
+    // route actually is, or the probe tests nothing.
+    put('allocation_draft_id', 'SADH-MANUAL-1'); put('status', 'draft');
+    put('company', 'ResUS'); put('country', 'US'); put('marketplace', 'Amazon');
+    put('destination_marketplace', 'Amazon');
+    put('source_warehouse_id', THREE_PL); put('recommended_source_warehouse_id', THREE_PL);
+    put('generation_run_id', '');
     return r;
   })());
   var sel = m.run('RUN_E3_FIND_MATERIALIZABLE_CANDIDATE()');

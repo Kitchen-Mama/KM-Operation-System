@@ -316,7 +316,10 @@ section('§6 — THE DUPLICATE WORKSPACE READ, AND THE TIMEOUT IT CAUSED');
   // workspace now accepts a table subset, so the catalogue is two sheets and the screen stops waiting for it.
   // What T3 was really protecting — the Execution Plan's catalogue is never obtained by re-reading nineteen
   // unrelated tables — is now true by a stronger route, and that is what is checked.
-  ok(!/carrierPlanning/.test(wsRefresh),
+  // R6-R2 RESTATEMENT: the claim is about the REQUEST. R6-R2 names `include.carrierPlanning` inside this
+  // function to test whether the RESPONSE carried it, so the word's presence in the body no longer
+  // distinguishes asking from checking. The payload is what does.
+  ok(!/carrierPlanning/.test(/var _wsPayload = \{[^}]*\};/.exec(wsRefresh)[0]),
     'T3  §6 the read Search waits on no longer asks for carrier reference data at all');
   var _mreg2 = read('assets/js/core/method-registry.js');
   ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(_mreg2),

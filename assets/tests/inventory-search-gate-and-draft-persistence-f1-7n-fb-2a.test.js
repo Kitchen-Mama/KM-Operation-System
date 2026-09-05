@@ -470,7 +470,15 @@ var hydrate = extractFn(INV, '_hydrateAllocationDraftFromDb');
  'last_mile_delivery', 'generation_type', 'allocation_draft_line_id'].forEach(function (f) {
   ok(hydrate.indexOf(f) !== -1, 'I1. the DB reload preserves ' + f);
 });
-ok(/lo\(d\.country\) === lo\(ctx\.country\)/.test(hydrate), 'I1. scoped by country + marketplace identity');
+// R6-R2 RESTATEMENT. The comparison is no longer written here: KMARC owns it, and it checks company,
+// country and the station marketplace, all exact, all fail-closed on a blank. What this assertion is
+// about — that the reload is SCOPED and not global — is asserted against that owner plus the delegation.
+var _ARC_FB2A = require('../js/core/supply-planning-active-route-classification.js');
+ok(/counts_toward_current_plan/.test(hydrate) && /window\.KMARC/.test(hydrate),
+  'I1. scoped through the shared active-route classification authority');
+ok(_ARC_FB2A.classifyHeader({ status: 'draft', company: 'ResUS', country: 'CA', marketplace: 'Amazon' },
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon' }).counts_toward_current_plan === false,
+  'I1. scoped by country + marketplace identity');
 ok(/lo\(l\.lineStatus \|\| l\.line_status\) !== 'cancelled'/.test(hydrate), 'I1. excluding cancelled lines');
 ['handleSubmitAllocationDraftsToShippingPlans_', 'sadSubmitToShippingPlansCore_'].forEach(function (f) {
   eq((G16.match(new RegExp('function ' + f + '\\(', 'g')) || []).length, 1, 'I2. ' + f + ' still defined exactly once');

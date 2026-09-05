@@ -181,10 +181,24 @@ var hydrate = extractFn(PAGE, '_hydrateAllocationDraftFromDb');
 var hydrateCode = hydrate.split(NLCH).filter(function (l) { return l.trim().indexOf('//') !== 0; }).join(NLCH);
 ok(!/\(!ctx\.company \|\| !d\.company \|\| lo\(d\.company\) === lo\(ctx\.company\)\)/.test(hydrateCode),
   'C1  the permissive company clause is GONE — a blank on either side was a wildcard in both directions');
-ok(/if \(!lo\(d\.company\)\) \{ _excludedNoRowCompany\+\+; return false; \}/.test(hydrate),
+// R6-R2 RESTATEMENT. The rule this round established is unchanged; its OWNER moved. The predicate now lives
+// in KMARC, because the read-only census was answering the same question with a different (and
+// unsatisfiable) one. These two assertions used to pin the inline text; they now assert the BEHAVIOUR
+// through the module that owns it, plus the delegation itself — strictly stronger than matching a line.
+var ARC_R6R2 = require('../js/core/supply-planning-active-route-classification.js');
+var _S_R6R2 = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+function _clsR6R2(company) {
+  return ARC_R6R2.classifyHeader({ allocation_draft_id: 'X', status: 'draft', company: company,
+    country: 'US', marketplace: 'Amazon' }, _S_R6R2);
+}
+ok(_clsR6R2('').counts_toward_current_plan === false &&
+   _clsR6R2('').exclusion_reasons.indexOf('COMPANY_BLANK_ON_ROW') !== -1,
   'C2  a stored row that names NO company is never adopted into a named company');
-ok(/if \(lo\(d\.company\) !== _scopeCompany\) \{ _excludedOtherCompany\+\+; return false; \}/.test(hydrate),
+ok(_clsR6R2('KM').counts_toward_current_plan === false &&
+   _clsR6R2('KM').exclusion_reasons.indexOf('COMPANY_MISMATCH') !== -1,
   'C3  and another company’s row is never adopted either');
+ok(/window\.KMARC/.test(hydrate) && /counts_toward_current_plan/.test(hydrate),
+  'C3a the hydrate asks that owner rather than carrying its own copy of the rule');
 ok(/if \(!_scopeCompany\) return false;/.test(hydrate),
   'C4  an unknown page company hydrates NOTHING — fail-closed, because the alternative is adopting anything');
 ok(/_irHydrateScopeAudit/.test(hydrate),
@@ -192,6 +206,8 @@ ok(/_irHydrateScopeAudit/.test(hydrate),
   'failure mode this page keeps being asked about');
 // The three-part identity, everywhere it matters.
 ok(/company \+ country \+ marketplace, all three EXACT/.test(hydrate), 'C6  the rule is stated in the code');
+ok(/ACTIVE_ROUTE_CLASSIFICATION_MODULE_UNAVAILABLE/.test(hydrate),
+  'C6a and a missing owner is a REFUSAL — never a fallback to a second copy of the predicate');
 ok(/company: s\.company, country: s\.country, marketplace: s\.marketplace/.test(extractFn(PAGE, '_replenCtx')),
   'C7  and the page context carries all three, which it always did');
 ok(/marketplaceDisplayName \|\| m\.marketplace \|\| m\.marketplaceId/.test(PAGE),
@@ -375,9 +391,15 @@ ok(/confirmRegenerateOverUserEdits/.test(PAGE), 'I4a and the regenerate-over-edi
 // ================================================================================================================
 section('J. release discipline — three families rotated, because three files changed');
 // ================================================================================================================
-eq(RO.appTokenRefCount(INDEX), 19, 'J1  every application-token reference moved together');
+// R6-R2 RESTATEMENT. These pinned the count and the literal token of the round that WROTE them, so a later
+// round rotating the family made a passing suite fail for the correct reason. What the assertion is about
+// is that the family moves TOGETHER and nothing is left behind, which is round-independent. The count stays
+// pinned — loosening it would let a forgotten file pass — at the value R6-R2 leaves it: 20, one more
+// than R6-R1's 19, because R6-R2 adds KMARC to the page.
+eq(RO.appTokenRefCount(INDEX), 20, 'J1  every application-token reference moved together');
 eq(RO.staleAppTokenRefs(INDEX), [], 'J1a and none was left behind');
-eq(RO.currentAppToken(), 'fc1be3r4a2r1r6r1-scopeidentity-20260905', 'J1b on this round’s token');
+ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a2r1r6r1-scopeidentity-20260905'),
+  'J1b on this round’s token or a later one');
 ok(INDEX.indexOf('method-registry.js?v=' + RO.currentMethodRegistryToken()) !== -1,
   'J2  method-registry.js carries its OWN family’s current token');
 ok(RO.methodRegistryTokenAtOrAfter(RO.currentMethodRegistryToken(), 'fc1be3r4a1-method-registry-20260904'),
@@ -392,31 +414,26 @@ ok(RO.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R
 section('K. §9 — mutation coverage');
 // ================================================================================================================
 mut('K1  KM and ResUS collapse on company → one station answers for the other', function () {
-  // The whole hydrate closes over a dozen page helpers, so it is the PREDICATE that is lifted and run —
-  // which is what the mutation is about. Two rows country and marketplace cannot tell apart: another
-  // company's, and one that names no company at all.
-  function predicate(src) {
-    // Anchored on _inStation: the FIRST  in the hydrate is the STATION pass, and a
-    // non-greedy match from there runs straight through it into the company pass.
-    var body = /_inStation\.filter\(function \(d\) \{([\s\S]*?)\}\)\.sort\(/.exec(src);
-    if (!body) throw new Error('company predicate not found');
-    return new Function('d', '_scopeCompany', 'lo', '_excludedNoRowCompany', '_excludedOtherCompany', body[1]);
-  }
-  var lo = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
-  var clean = predicate(hydrate);
-  // MEASURED FIRST, and my first mutation was EQUIVALENT: removing only the blank-company guard changes
-  // nothing, because the exact-match check below rejects a blank too ('' !== 'resus'). The defect was the
-  // DISJUNCTION — `!d.company ||` — which let a blank satisfy the clause outright. So the mutation restores
-  // exactly that, which is what a regression to the old wildcard behaviour would look like.
-  var mutated = predicate(swap(swap(hydrate,
-    'if (!lo(d.company)) { _excludedNoRowCompany++; return false; }', ''),
-    'if (lo(d.company) !== _scopeCompany)',
-    'if (lo(d.company) && lo(d.company) !== _scopeCompany)'));
-  var blank = { company: '', country: 'US', marketplace: 'Amazon', status: 'draft' };
-  var other = { company: 'KM', country: 'US', marketplace: 'Amazon', status: 'draft' };
-  // Clean: neither is adopted into ResUS. Mutant: the blank-company row is.
-  return clean(blank, 'resus', lo, 0, 0) !== true && clean(other, 'resus', lo, 0, 0) !== true
-    && mutated(blank, 'resus', lo, 0, 0) === true;
+  // R6-R2 RESTATEMENT. The predicate is no longer inline, so lifting it out of the hydrate no longer
+  // works — and it should not: the point of THIS round was that the rule has one owner. The mutation is
+  // the same one applied to that owner: treat a blank on either side as a wildcard, and two stations merge.
+  //
+  // MEASURED, and still true: removing ONLY the blank-company guard is EQUIVALENT, because an exact match
+  // rejects a blank anyway ('' !== 'resus'). The defect was the DISJUNCTION, so that is what is mutated.
+  var A = require('../js/core/supply-planning-active-route-classification.js');
+  var scope = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+  var rows = [
+    { allocation_draft_id: 'MINE',   status: 'draft', company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+    { allocation_draft_id: 'THEIRS', status: 'draft', company: 'KM',    country: 'US', marketplace: 'Amazon' },
+    { allocation_draft_id: 'LEGACY', status: 'draft', company: '',      country: 'US', marketplace: 'Amazon' }
+  ];
+  var strict = A.partitionHeaders(rows, scope).included_ids;
+  function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  var permissive = rows.filter(function (d) {
+    return (!lo(scope.company) || !lo(d.company) || lo(d.company) === lo(scope.company));
+  }).map(function (d) { return d.allocation_draft_id; });
+  return strict.length === 1 && strict[0] === 'MINE'
+    && permissive.length === 2 && permissive.indexOf('LEGACY') !== -1;
 });
 mut('K2  the recommendation is reported as APPLIED → an operator believes 760 is planned', function () {
   var h = extractFn(PAGE, '_irAdviceVsPlanHtml_');

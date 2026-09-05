@@ -547,6 +547,9 @@ function clientEnv() {
     sb._persistAllocationDraft = function () {};
     sb._irRenderDuplicateCorruptionBanner_ = function () {};
     sb.KM = { DB: {} };
+    // R6-R2: the hydrate's scope predicate moved to KMARC; a lift must supply that authority
+    // or the shipped code correctly refuses to hydrate anything.
+    sb.KMARC = require('../js/core/supply-planning-active-route-classification.js');
     var ctx = vm.createContext(sb);
     vm.runInContext([
         'var _replenHydrateToken = 0;',

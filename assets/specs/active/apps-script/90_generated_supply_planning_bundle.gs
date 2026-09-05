@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = b936f7a82cb10dc068fde1dd7080bf66c69b78458e8cc13a0e4a65d13dde8cd0
+// bundle_sha256 = d2225101d9142c4bf744d2ef3e06b548f8c1a20913911815f2c8b5a2c9987d81
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -63,6 +63,7 @@
 //   supply-planning-factory-site-allocation  cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96
 //   supply-planning-forecast-normalization  4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9
 //   supply-planning-snapshot-freshness  eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f
+//   supply-planning-active-route-classification  09208a12661f0987aae81db783782a56d155860cd7cdde169b8bd2761ed3efaf
 // ============================================================================
 
 var __kmModules = {};
@@ -16716,6 +16717,249 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-snapshot-freshness", module.exports);
 })();
 
+// ----- module: supply-planning-active-route-classification (verbatim from assets/js/core/supply-planning-active-route-classification.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+/* ================================================================================================================
+ * KMARC — ACTIVE ROUTE CLASSIFICATION  (F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2)
+ * ----------------------------------------------------------------------------------------------------------------
+ * THE PAGE AND THE CENSUS WERE ANSWERING THE SAME QUESTION WITH TWO DIFFERENT PREDICATES, AND ONE OF THEM COULD
+ * NEVER BE TRUE.
+ *
+ * The live screen showed two persisted routes totalling 520 units. The census, reading the same sheet in the same
+ * scope in the same minute, reported `active_allocation_drafts: 0`. Both numbers were produced honestly; they were
+ * simply not answers to the same question.
+ *
+ *   THE PAGE asked: status is not `cancelled` and not `submitted`, country exact, scope-marketplace exact, and
+ *   (since R6-R1) company exact.
+ *
+ *   THE CENSUS asked: status === 'active', company exact, country exact, and `destination_marketplace` matching
+ *   when present.
+ *
+ * THE CENSUS PREDICATE HAS NO SATISFIER. The canonical header status enum is 16_ `SAD_STATUSES_` =
+ * { draft, site_confirmed, submitted, cancelled, expired } — `active` is not a member of it. The write handler
+ * coerces anything unrecognised to `draft` (`if (!SAD_STATUSES_[status]) status = 'draft';`), so no writer in this
+ * system has ever produced the value the census tests for. `active_allocation_drafts: 0` was therefore not a
+ * measurement of the data at all: it is a constant, and it would read 0 against a sheet holding ten thousand rows.
+ * That is the whole of the 520-vs-0 discrepancy, and it is a defect in the DIAGNOSTIC, not in the data.
+ *
+ * The server itself already knows the right answer and states it three times — `sadK2ResolveActiveDraft_`,
+ * `sadK4ResolveActiveDraft_` and the scope resolver each open with the identical literal
+ * `var ACTIVE = { draft: 1, site_confirmed: 1, partially_submitted: 1 };`. Three copies of a rule are three
+ * chances to drift, and the census's fourth copy is what drifted. This module is the ONE named owner.
+ *
+ * WHICH MARKETPLACE COLUMN IS THE SCOPE. `marketplace` and `destination_marketplace` are different facts.
+ * `marketplace` is the STATION the header belongs to — the company/country/marketplace the operator has on
+ * screen. `destination_marketplace` is a ROUTE dimension: where the goods are going, and one of ricK4GroupKey_'s
+ * identity axes. Scope membership is decided by the station, never by the destination, because a route whose
+ * destination is a 3PL warehouse has a BLANK destination_marketplace and is still unambiguously part of its
+ * station's plan. The census matched on the destination column and so would have dropped exactly those rows.
+ *
+ * A BLANK IS NEVER A WILDCARD, ON EITHER SIDE. R6-R1 established this for company after finding that an unknown
+ * page company matched every stored row and a stored row with a blank company matched every company. The rule is
+ * the same for all three axes here: a blank on the query and a blank on the row are both refusals. Fail closed.
+ *
+ * THIS MODULE DECIDES NOTHING ELSE. It does not read a sheet, it does not know what a quantity is for, it never
+ * mutates its input, and it has no opinion about whether a route should exist. It answers one question — is THIS
+ * persisted header part of THAT station's current plan, and if not, which axis excluded it — so that the page and
+ * the census can stop guessing at each other's arithmetic.
+ * ================================================================================================================ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.KMARC = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  // The three statuses in which a header is part of a live plan. Byte-for-byte the server's own ACTIVE literal
+  // (16_ sadK2ResolveActiveDraft_ / sadK4ResolveActiveDraft_). `partially_submitted` is not in SAD_STATUSES_ and
+  // is kept anyway, exactly as the server keeps it: the server is the authority on what it treats as live, and a
+  // status it accepts as active must not become invisible here.
+  var ACTIVE_STATUSES = { draft: 1, site_confirmed: 1, partially_submitted: 1 };
+  // The statuses that end a header's participation. Named individually because they mean different things to a
+  // reader: submitted became a shipment, cancelled was withdrawn, expired aged out of its cycle.
+  var TERMINAL_STATUSES = { submitted: 1, cancelled: 1, expired: 1 };
+
+  var STATUS_CLASS = {
+    ACTIVE: 'ACTIVE',                       // in ACTIVE_STATUSES
+    TERMINAL: 'TERMINAL',                   // in TERMINAL_STATUSES
+    BLANK: 'BLANK',                         // no status stored at all
+    UNRECOGNISED: 'UNRECOGNISED'            // a value in neither set — reported, never guessed at
+  };
+
+  // Every reason a header can fail to count. One row is attributed to EVERY axis that excluded it, so a reader
+  // sees the whole picture rather than the first thing that happened to be checked.
+  var EXCLUSION = {
+    STATUS_TERMINAL: 'STATUS_TERMINAL',
+    STATUS_BLANK: 'STATUS_BLANK',
+    STATUS_UNRECOGNISED: 'STATUS_UNRECOGNISED',
+    COMPANY_BLANK_ON_ROW: 'COMPANY_BLANK_ON_ROW',
+    COMPANY_BLANK_ON_SCOPE: 'COMPANY_BLANK_ON_SCOPE',
+    COMPANY_MISMATCH: 'COMPANY_MISMATCH',
+    COUNTRY_BLANK_ON_ROW: 'COUNTRY_BLANK_ON_ROW',
+    COUNTRY_BLANK_ON_SCOPE: 'COUNTRY_BLANK_ON_SCOPE',
+    COUNTRY_MISMATCH: 'COUNTRY_MISMATCH',
+    MARKETPLACE_BLANK_ON_ROW: 'MARKETPLACE_BLANK_ON_ROW',
+    MARKETPLACE_BLANK_ON_SCOPE: 'MARKETPLACE_BLANK_ON_SCOPE',
+    MARKETPLACE_MISMATCH: 'MARKETPLACE_MISMATCH'
+  };
+
+  var CONTRACT = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 2 - a header counts toward a station current plan when its '
+    + 'status is one of {draft, site_confirmed, partially_submitted} AND company, country and the STATION '
+    + 'marketplace all match exactly. A blank on either side of any axis is a refusal, never a wildcard. '
+    + 'destination_marketplace is route identity and is never a scope input.';
+
+  function str(v) { return String(v == null ? '' : v).trim(); }
+  function lo(v) { return str(v).toLowerCase(); }
+
+  function statusClass(v) {
+    var s = lo(v);
+    if (!s) return STATUS_CLASS.BLANK;
+    if (ACTIVE_STATUSES[s] === 1) return STATUS_CLASS.ACTIVE;
+    if (TERMINAL_STATUSES[s] === 1) return STATUS_CLASS.TERMINAL;
+    return STATUS_CLASS.UNRECOGNISED;
+  }
+
+  // One axis, three outcomes, both blanks refused. Returns '' when the axis matches.
+  function axis(rowValue, scopeValue, blankRow, blankScope, mismatch) {
+    var r = lo(rowValue), q = lo(scopeValue);
+    if (!q) return blankScope;
+    if (!r) return blankRow;
+    return (r === q) ? '' : mismatch;
+  }
+
+  /**
+   * Classify one persisted allocation-draft HEADER against one station.
+   *
+   * `row` is read verbatim from the sheet/DTO and is never mutated. Both the snake_case sheet spelling and the
+   * page's camelCase DTO spelling are accepted, because the page and the census hold the same row in two shapes
+   * and neither shape is more correct than the other.
+   */
+  function classifyHeader(row, scope) {
+    row = row || {}; scope = scope || {};
+    var status = str(row.status);
+    var cls = statusClass(status);
+    var reasons = [];
+
+    if (cls === STATUS_CLASS.TERMINAL) reasons.push(EXCLUSION.STATUS_TERMINAL);
+    else if (cls === STATUS_CLASS.BLANK) reasons.push(EXCLUSION.STATUS_BLANK);
+    else if (cls === STATUS_CLASS.UNRECOGNISED) reasons.push(EXCLUSION.STATUS_UNRECOGNISED);
+
+    var rowCompany = row.company != null ? row.company : row.Company;
+    var rowCountry = row.country != null ? row.country : row.Country;
+    // The STATION marketplace, never `destination_marketplace`. See the header note.
+    var rowMarketplace = row.marketplace != null ? row.marketplace : row.Marketplace;
+
+    var scopeReasons = [];
+    var a = axis(rowCompany, scope.company, EXCLUSION.COMPANY_BLANK_ON_ROW, EXCLUSION.COMPANY_BLANK_ON_SCOPE, EXCLUSION.COMPANY_MISMATCH);
+    if (a) scopeReasons.push(a);
+    a = axis(rowCountry, scope.country, EXCLUSION.COUNTRY_BLANK_ON_ROW, EXCLUSION.COUNTRY_BLANK_ON_SCOPE, EXCLUSION.COUNTRY_MISMATCH);
+    if (a) scopeReasons.push(a);
+    a = axis(rowMarketplace, scope.marketplace, EXCLUSION.MARKETPLACE_BLANK_ON_ROW, EXCLUSION.MARKETPLACE_BLANK_ON_SCOPE, EXCLUSION.MARKETPLACE_MISMATCH);
+    if (a) scopeReasons.push(a);
+
+    return {
+      allocation_draft_id: str(row.allocation_draft_id || row.allocationDraftId),
+      status: status,
+      status_class: cls,
+      lifecycle_active: cls === STATUS_CLASS.ACTIVE,
+      scope_match: scopeReasons.length === 0,
+      scope_reasons: scopeReasons,
+      // THE one question. A header counts toward a station's current plan when it is lifecycle-active AND every
+      // scope axis matches exactly. Nothing else participates in this decision.
+      counts_toward_current_plan: (cls === STATUS_CLASS.ACTIVE) && scopeReasons.length === 0,
+      exclusion_reasons: reasons.concat(scopeReasons),
+      // Route identity dimensions, carried for the report. NOT scope inputs — see the header note.
+      destination_marketplace: str(row.destination_marketplace || row.destinationMarketplace),
+      contract: CONTRACT
+    };
+  }
+
+  // Partition a list of headers in one pass. `included` / `excluded` are the two sides of
+  // counts_toward_current_plan, and `by_reason` is the histogram a reader needs to see WHY a total is what it is.
+  function partitionHeaders(rows, scope) {
+    var included = [], excluded = [], byReason = {};
+    (rows || []).forEach(function (r) {
+      var c = classifyHeader(r, scope);
+      if (c.counts_toward_current_plan) { included.push(c); return; }
+      excluded.push(c);
+      c.exclusion_reasons.forEach(function (k) { byReason[k] = (byReason[k] || 0) + 1; });
+    });
+    return {
+      contract: CONTRACT,
+      examined: (rows || []).length,
+      included: included, excluded: excluded,
+      included_ids: included.map(function (c) { return c.allocation_draft_id; }),
+      excluded_ids_with_reason: excluded.map(function (c) {
+        return { allocation_draft_id: c.allocation_draft_id, reasons: c.exclusion_reasons };
+      }),
+      by_reason: byReason
+    };
+  }
+
+  // A LINE is terminal on its own axis, independently of its header. `submitted` is deliberately NOT terminal
+  // here: 16_ keeps a submitted line in its active set (a partially submitted header still owns the quantity it
+  // submitted), and this must not disagree with the writer.
+  var TERMINAL_LINE_STATUSES = { cancelled: 1, expired: 1 };
+  function lineCounts(line) {
+    var s = lo(line && line.line_status != null ? line.line_status : (line && line.lineStatus));
+    return !(TERMINAL_LINE_STATUSES[s] === 1);
+  }
+
+  // The planned quantity a line contributes. `planned_qty` is what an operator decided; `recommended_qty` is
+  // what a generation proposed. The decided value wins whenever one exists, and a blank is not a zero.
+  function lineQuantity(line) {
+    line = line || {};
+    var p = line.planned_qty != null ? line.planned_qty : line.plannedQty;
+    if (p !== null && p !== undefined && str(p) !== '') {
+      var n = Number(p);
+      if (isFinite(n)) return n;
+    }
+    var r = line.recommended_qty != null ? line.recommended_qty : line.recommendedQty;
+    var m = Number(r);
+    return (str(r) !== '' && isFinite(m)) ? m : 0;
+  }
+
+  // The station's CURRENT PLAN TOTAL: every counting line of every counting header. This is the single
+  // arithmetic both the page and the census report, so `totals_agree` is a property rather than a coincidence.
+  function currentPlanTotal(headers, lines, scope) {
+    var part = partitionHeaders(headers, scope);
+    var keep = {};
+    part.included_ids.forEach(function (id) { if (id) keep[id] = 1; });
+    var total = 0, counted = [];
+    (lines || []).forEach(function (l) {
+      var hid = str(l && (l.allocation_draft_id || l.allocationDraftId));
+      if (!hid || !keep[hid]) return;
+      if (!lineCounts(l)) return;
+      var q = lineQuantity(l);
+      total += q;
+      counted.push({ allocation_draft_line_id: str(l.allocation_draft_line_id || l.allocationDraftLineId),
+        allocation_draft_id: hid, sku: str(l.sku), quantity: q });
+    });
+    return { contract: CONTRACT, total: total, header_partition: part, counted_lines: counted };
+  }
+
+  return {
+    CONTRACT: CONTRACT,
+    ACTIVE_STATUSES: ACTIVE_STATUSES,
+    TERMINAL_STATUSES: TERMINAL_STATUSES,
+    TERMINAL_LINE_STATUSES: TERMINAL_LINE_STATUSES,
+    STATUS_CLASS: STATUS_CLASS,
+    EXCLUSION: EXCLUSION,
+    statusClass: statusClass,
+    classifyHeader: classifyHeader,
+    partitionHeaders: partitionHeaders,
+    lineCounts: lineCounts,
+    lineQuantity: lineQuantity,
+    currentPlanTotal: currentPlanTotal,
+    _version: 'f1-7n-fc-1b-e3-r4-a2-r1-r6-r2-active-route-classification'
+  };
+});
+  __kmRegister("supply-planning-active-route-classification", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMFCN = __kmModules["supply-planning-forecast-normalization"];
 var KMSNF = __kmModules["supply-planning-snapshot-freshness"];
@@ -16775,6 +17019,7 @@ var KMFSR = __kmModules["supply-planning-surplus-reallocation"];
 var KMRDV2 = __kmModules["supply-planning-request-draft-v2"];
 var KMRDV2P = __kmModules["supply-planning-request-draft-v2-persistence"];
 var KMFSA = __kmModules["supply-planning-factory-site-allocation"];
+var KMARC = __kmModules["supply-planning-active-route-classification"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"b936f7a82cb10dc068fde1dd7080bf66c69b78458e8cc13a0e4a65d13dde8cd0","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443"},{"module":"supply-planning-method-recommendation","sha256":"637b1ab94c1a3d02a1089888d5f34b9c0ebd828277d93d7348b528e35d29c9ed"},{"module":"supply-planning-weekly-route-derivation","sha256":"fb34cd4835959a45b8ede47029f42cf2bc8555d98f935869c326821254e76499"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"d2225101d9142c4bf744d2ef3e06b548f8c1a20913911815f2c8b5a2c9987d81","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"b9234bf33ae2de963992156118ee5fdb6c7e8e9063e92c2f9a818b12705612a0"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"c824cfe0187e69946f59fa1c0cd15f5b54dac1e2a58e7b24f12f1fd1f9c4887d"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-weekly-recommendation-batch","sha256":"8b62fb304778609b72dc63ef777babaae5254543dee81c21884cf59c50348c8b"},{"module":"supply-planning-weekly-harvest-adapter","sha256":"de6b3021c5aa174d038b8ec2cdc83ff28a118f0179e0a881ad67c56442b72437"},{"module":"supply-planning-route-authority","sha256":"c9cfa475b33229e6433f5a16eb3bd9245037f0950cbe9c031ebb911c2b751443"},{"module":"supply-planning-method-recommendation","sha256":"637b1ab94c1a3d02a1089888d5f34b9c0ebd828277d93d7348b528e35d29c9ed"},{"module":"supply-planning-weekly-route-derivation","sha256":"fb34cd4835959a45b8ede47029f42cf2bc8555d98f935869c326821254e76499"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"b534ee574459386f5b7c3160c6aa0c4aba6f3a05460bba588a96f85f93fe06fd"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1e4c4d156fc32d924b9a30116f8b7bcc2b50bb3ba666842c3ced8190f934463c"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"},{"module":"supply-planning-ongoing-order-projection","sha256":"571f0e021188ee063b92942fe0240d9bc588df65db64130e714d0218da567cc7"},{"module":"supply-planning-ongoing-order-tpp-adapter","sha256":"d83c6b9f06e98338d64c170233b3fd2ec7f79967e57d2861d55b40bb646b45f5"},{"module":"supply-planning-ongoing-order-runtime","sha256":"37190e390dbfecd85769274aa1e684bab60861a947d2cb6e84ce2e2d591e38a2"},{"module":"supply-planning-surplus-reallocation","sha256":"283e14650f6e5e1ed7168908c6aa98a45c59dc980be108d98123ab9c6d8afa8c"},{"module":"supply-planning-request-draft-v2","sha256":"20c6520c158df94aff2ec25544ba2c27327abe709bb419e2c0846b0941228505"},{"module":"supply-planning-request-draft-v2-persistence","sha256":"8d28e4bb1ac0d5fbe70685674a0c21e507c8825dfbeea58ea161f8982b8e6a54"},{"module":"supply-planning-factory-site-allocation","sha256":"cd56eaea5cb40610dc98fab7bfd76b895b163eda5d287f71c454010478970b96"},{"module":"supply-planning-forecast-normalization","sha256":"4c17ccf4cca6f7925b625dc2be396f3c09d372e5a3b214b70668b92ce87ec6f9"},{"module":"supply-planning-snapshot-freshness","sha256":"eb7112e9e9d162e0d6a5f5d21455849995ce38d23a10df6d4c377c1a09c1020f"},{"module":"supply-planning-active-route-classification","sha256":"09208a12661f0987aae81db783782a56d155860cd7cdde169b8bd2761ed3efaf"}]};

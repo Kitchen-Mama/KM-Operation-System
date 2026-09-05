@@ -165,7 +165,9 @@ function makeWorld(opts) {
     cand: opts.cand || { from: [], to: [], isAmazon: true },
     methods: opts.methods || { methods: [], status: 'EMPTY_CONFIGURATION' }
   };
-  var win = { IRRouteProvenance: RP, IRRouteComposer: RC, IRDraft: CMP.IRDraft, IRWarehouse: CMP.IRWarehouse, KM: {} };
+  // R6-R2: KMARC owns the hydrate's scope predicate now; a lift without it refuses, correctly.
+  var win = { IRRouteProvenance: RP, IRRouteComposer: RC, IRDraft: CMP.IRDraft, IRWarehouse: CMP.IRWarehouse,
+    KM: {}, KMARC: require('../js/core/supply-planning-active-route-classification.js') };
   w.win = win;
 
   var deps = {
@@ -714,7 +716,11 @@ ok(/BLOCKED_CONFLICT/.test(PAGE) || /BLOCKED_CONFLICT/.test(G61),
   'J2a and a conflict is a named per-marketplace outcome, never a silent overwrite');
 ok(/PASS 1: compute every group\. ZERO WRITES\./.test(G61),
   'J3  §K.2 the plan is computed in full BEFORE any write, so a gate refusal cannot half-write');
-ok(/lo\(d\.status\) !== 'cancelled'/.test(code(extractFn(PAGE, '_hydrateAllocationDraftFromDb'))),
+// R6-R2 RESTATEMENT. KMARC owns the status rule; the hydrate delegates to it.
+var _ARC_E2 = require('../js/core/supply-planning-active-route-classification.js');
+ok(_ARC_E2.classifyHeader({ status: 'cancelled', company: 'ResUS', country: 'US', marketplace: 'Amazon' },
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon' }).counts_toward_current_plan === false
+  && /window\.KMARC/.test(code(extractFn(PAGE, '_hydrateAllocationDraftFromDb'))),
   'J4  §J.6 and AI Plan cannot revive a cancelled draft — the hydrate excludes them');
 ok(/sadK2DeterministicHeaderId_|SADH-K2-/.test(G16),
   'J5  §K.6 allocation identity stays the deterministic K2 header/line contract');
@@ -862,8 +868,12 @@ mut('N11 a zero-result generation reported as a completed plan', function () {
 });
 
 mut('N12 a cancelled draft reused by the hydrate', function () {
-  var h = swap(PAGE, "lo(d.status) !== 'cancelled' && ", '');
-  return !/lo\(d\.status\) !== 'cancelled'/.test(code(extractFn(h, '_hydrateAllocationDraftFromDb')));
+  // R6-R2: see E1 N4 — the weakening is asking KMARC for `scope_match` instead of the full question.
+  var A = require('../js/core/supply-planning-active-route-classification.js');
+  var scope = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
+  var c = A.classifyHeader({ status: 'cancelled', company: 'ResUS', country: 'US', marketplace: 'Amazon' }, scope);
+  return c.counts_toward_current_plan === false && c.scope_match === true
+    && /!c\.counts_toward_current_plan/.test(code(extractFn(PAGE, '_hydrateAllocationDraftFromDb')));
 });
 
 mut('N13 the E1 rule broken: a route seeded from the Suggested Qty', function () {

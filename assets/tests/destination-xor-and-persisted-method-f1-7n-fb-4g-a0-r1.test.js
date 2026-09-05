@@ -143,7 +143,9 @@ var hyd = (function () {
     'RESULT = { ok: _hydrateAllocationDraftFromDb(CTX), draft: replenAllocationDraft };'
   ].join(String.fromCharCode(10));
   var f = new Function('window', 'sessionStorage', 'console', '_irReadModel', 'CTX', 'var RESULT;' + src + 'return RESULT;');
-  return f({ IRWarehouse: IRWarehouse, IRDraft: IRDraft, KM: { DB: {} } },
+  // R6-R2: KMARC now owns the hydrate's scope predicate and the hydrate asks for it by name.
+  return f({ IRWarehouse: IRWarehouse, IRDraft: IRDraft, KM: { DB: {} },
+    KMARC: require('../js/core/supply-planning-active-route-classification.js') },
     { setItem: function () {}, getItem: function () { return null; }, removeItem: function () {} },
     { warn: function () {}, log: function () {}, error: function () {} },
     { getShippingAllocationDrafts: [normH(H4)], getShippingAllocationDraftLines: [normL(L4)] }, US);
