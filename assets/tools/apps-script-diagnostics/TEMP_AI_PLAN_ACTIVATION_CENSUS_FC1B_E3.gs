@@ -1623,12 +1623,15 @@ function CENSUS_judgeCandidate_(env, mkt, sku) {
   set('at_least_one_safe_method', !!best && best.risk === 'SAFE',
     best ? ('method=' + best.shipping_method + ' risk=' + best.risk)
          : ('no recommended method' + (rec && rec.review_reason ? ' (' + rec.review_reason + ')' : '')));
-  // KMMR takes no rate cards as input at all, so this predicate cannot be satisfied by accident. It is
-  // asserted rather than assumed, because "the method came from the lead-time table" is the whole reason a
-  // scope with no rate card can still be a candidate.
+  // KMMR takes NO rate cards as an input at all, so the method either came from the transit authority or it
+  // did not come. That cannot be observed directly from an option, so what is asserted is the OBSERVABLE form
+  // of the same property: the recommendation names no carrier and claims no price. A method that arrived with
+  // a price attached did not come from carrier_lead_times, whatever anything else says.
   set('method_independent_of_rate_card',
-    !!best && best.cost_basis === 'NOT_PRICED_NO_RATE_CARD_FOR_LANE' || !!best,
-    best ? ('carrier_selection=' + best.carrier_selection + ' cost_basis=' + best.cost_basis) : null);
+    !!best && best.carrier_selection === 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN'
+      && (best.estimated_cost === null || best.estimated_cost === undefined),
+    best ? ('carrier_selection=' + best.carrier_selection + ' estimated_cost=' + best.estimated_cost
+      + ' cost_basis=' + best.cost_basis) : null);
   set('conservative_transit_within_buffer',
     !!best && dus != null && (CENSUS_num_(best.conservative_transit_days) < dus),
     best ? ('conservative=' + best.conservative_transit_days + ' days_until_stockout=' + dus) : null);

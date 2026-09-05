@@ -702,6 +702,12 @@ Object.keys(selPos.selected.predicates).forEach(function (k) {
 });
 ok(Object.keys(selPos.selected.predicates).every(function (k) { return selPos.selected.predicates[k].detail !== undefined; }),
   'E8a each with the observed value beside it, so a reader checks rather than trusts');
+// The rate-card-independence predicate has to assert something. Written carelessly it collapses to "a method
+// exists" through operator precedence, which is true of every candidate and therefore checks nothing.
+ok(/estimated_cost=null/.test(selPos.selected.predicates.method_independent_of_rate_card.detail),
+  'E8b method independence is judged on the OBSERVABLE form — no carrier named, no price claimed');
+ok(/carrier_selection=DEFERRED_TO_WEEKLY_SHIPPING_PLAN/.test(selPos.selected.predicates.method_independent_of_rate_card.detail),
+  'E8c with both halves in the detail, so the predicate cannot silently become a tautology');
 
 // §6 — the census of whatever the selector picks.
 var cSel = hPos.run('RUN_E3_CENSUS_SELECTED_MATERIALIZABLE_SCOPE()');
@@ -964,7 +970,10 @@ mut('H14 the AI Plan LOCKS a carrier → a lead-time row’s carrier_id becomes 
                        .join("carrier_selection: 'LOCKED_BY_AI_PLAN'");
   } }));
   var sel = m.run('RUN_E3_FIND_MATERIALIZABLE_CANDIDATE()');
-  return !!sel.selected && sel.selected.selected_method_profile.carrier_selection !== 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN';
+  // Either the lock shows up on the profile, or the deferral predicate rejects the scope outright. Both are
+  // detections; only silence would be a survival.
+  return sel.verdict === 'NO_SAFE_MATERIALIZATION_CANDIDATE'
+    || (!!sel.selected && sel.selected.selected_method_profile.carrier_selection !== 'DEFERRED_TO_WEEKLY_SHIPPING_PLAN');
 });
 // A different execution key does NOT duplicate: the header identity comes from the ROUTE TUPLE, not from the
 // key. Asserted positively rather than mutated, because it is the property that makes a replay safe.
