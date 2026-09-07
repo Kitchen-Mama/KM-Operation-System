@@ -23,6 +23,7 @@
 // Run: node assets/tests/controlled-no-action-activation-manifest-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r3.test.js
 
 var fs = require('fs');
+var RO = require('./_release-order.js');
 var path = require('path');
 var vm = require('vm');
 
@@ -118,13 +119,23 @@ function proofOf(r) { var s = lineOf(r.world, 'r6r7_proof'); return s === null ?
 // extractVar stops at the first closing bracket, which was enough while a snippet was one array literal.
 // R3-P1 composes them — a shared body wrapped twice — so the whole STATEMENT has to come across or the
 // suite would be testing three header lines and calling it a snippet.
+// R6-R7-R3 — COMMENT-AWARE, and it has to be. This scanner was quote-aware only, so an apostrophe in a
+// prose comment ("the page's projection") opened a string it never closed on purpose — the scan then walked
+// past every brace until the parity happened to work out again. It DID work out, for four rounds, which is
+// exactly what makes it dangerous: adding one more comment containing one more apostrophe to the census
+// flipped the parity and this function reported `unterminated: R6R7_NO_ACTION_BEFORE_` about a statement that
+// is perfectly well formed. A scanner that is right by luck is a scanner that will be wrong later. Comments
+// are now skipped BEFORE a quote can open, and `q` is still checked first so `'http://…'` inside a string is
+// not mistaken for a comment.
 function extractStmt(src, name) {
   var m = new RegExp('var ' + name + '\\s*=').exec(src);
   if (!m) throw new Error('not found: ' + name);
   var i = src.indexOf('=', m.index) + 1, d = 0, q = null;
   for (; i < src.length; i++) {
-    var ch = src[i];
+    var ch = src[i], nx = src[i + 1];
     if (q) { if (ch === '\\') { i++; continue; } if (ch === q) q = null; continue; }
+    if (ch === '/' && nx === '/') { var e = src.indexOf('\n', i); if (e < 0) break; i = e; continue; }
+    if (ch === '/' && nx === '*') { var b = src.indexOf('*/', i); if (b < 0) break; i = b + 1; continue; }
     if (ch === "'" || ch === '"') { q = ch; continue; }
     if (ch === '(' || ch === '[' || ch === '{') d++;
     else if (ch === ')' || ch === ']' || ch === '}') d--;
@@ -625,9 +636,16 @@ eq(G6.res.verdict, 'STOP', 'G6  a readback cannot CONFIRM beside a new row');
 section('H — a design round: nothing was flipped, deployed, generated or written');
 // ================================================================================================================
 
-eq(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD, 'H1  61_ is untouched');
-eq(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], DEPLOYMENT_BUILD,
-  'H2  and the census still reports the build it diagnoses');
+// R6-R7-R3 - RE-AIMED, NOT WAIVED. This suite's round genuinely did not move these stamps, and it was
+// right to say so. R6-R7-R3 does move them: 61_ now states `reservations` in the NO_ACTION envelope, so
+// the release and 63_ move with it, and the census's capture snippet changed too. An equality against
+// THIS round's build can only hold until the next release, so the surviving invariant is the FLOOR - the
+// file must not be BEHIND the round this suite covers. What stays exact is the parity that actually
+// governs a deployment: 63_'s manifest must expect precisely the build 61_ carries.
+ok(RO.stampAtOrAfter(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD),
+  'H1  61_ was untouched by THIS round and is not behind it');
+ok(RO.stampAtOrAfter(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], DEPLOYMENT_BUILD),
+  'H2  and the census reports a build at or after the one it diagnoses');
 eq(['RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST', 'RUN_R6R7_CONTROLLED_NO_ACTION_READBACK',
   'CENSUS_r6r7RouteFingerprint_', 'CENSUS_r6r7RowCount_', 'CENSUS_r6r7Deployment_',
   'CENSUS_r6r7ActivationSteps_', 'CENSUS_r6r7ActivationRollback_', 'CENSUS_r6r7BrowserAudit_',

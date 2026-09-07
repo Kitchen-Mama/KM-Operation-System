@@ -560,16 +560,28 @@ mut('G10 the gate order rewritten so the refusal precedes the short circuit', fu
 section('H — release identity');
 // ================================================================================================================
 
-eq(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], STAMP, 'H1  61_ moved, because 61_ changed');
-eq(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], STAMP, 'H2  the census moved, because it changed');
-eq(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], STAMP,
+// R6-R7-R3 - RE-AIMED, NOT WAIVED. This suite's round genuinely did not move these stamps, and it was
+// right to say so. R6-R7-R3 does move them: 61_ now states `reservations` in the NO_ACTION envelope, so
+// the release and 63_ move with it, and the census's capture snippet changed too. An equality against
+// THIS round's build can only hold until the next release, so the surviving invariant is the FLOOR - the
+// file must not be BEHIND the round this suite covers. What stays exact is the parity that actually
+// governs a deployment: 63_'s manifest must expect precisely the build 61_ carries.
+var _wap = /var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1];
+var _sysB = /var SYS_BUILD_VERSION_ = '([^']+)'/.exec(G63)[1];
+ok(RO.stampAtOrAfter(_wap, STAMP), 'H1  61_ moved, because 61_ changed, and is not behind this round');
+ok(RO.stampAtOrAfter(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], STAMP),
+  'H2  the census moved, because it changed');
+ok(RO.stampAtOrAfter(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], STAMP),
   'H3  and the RELEASE moved: 61_ changed, so a new Web App deployment version is required');
-eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(G63)[1], STAMP, 'H4  63_ moved too, because 63_ changed');
-ok(new RegExp("symbol: 'WAP_BUILD_VERSION_', expected: '" + STAMP + "'").test(G63),
+ok(RO.stampAtOrAfter(_sysB, STAMP), 'H4  63_ moved too, because 63_ changed');
+// EXACT, and it stays exact: this is the parity a mixed deployment is actually detected by.
+ok(new RegExp("symbol: 'WAP_BUILD_VERSION_', expected: '" + _wap + "'").test(G63),
   'H5  and 63_\'s manifest expects the build 61_ now carries');
-ok(new RegExp("file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + STAMP + "'").test(G63),
+ok(new RegExp("file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + _sysB + "'").test(G63),
   'H5a including its own self-referential row');
-eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP, 'H6  this round is the newest entry in the release order');
+ok(RO.OWNER_STAMPS.indexOf(STAMP) !== -1
+  && RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
+  'H6  this round is registered in the release order, with nothing older after it');
 ok(!/CACHE_TOKEN|cache_token/.test('') && true,
   'H7  no browser file changed, so no cache token was minted — a rotated token would force a download that'
   + ' carries nothing new');

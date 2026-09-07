@@ -79,7 +79,13 @@ var _r6d1Vars = 'var _irAiSupportTriggerOwner = null; var _irAiPlanRunning = fal
 var _r6d1Fns = [ '_replenCtx', '_irRecoNow_', '_irInventoryAiPlanDbGenerationEnabled_', '_irAiPlanDbGenEligible_', '_irClassifyGenerationResult_', '_irRunInventoryAiPlanGeneration_', '_irAiPlanReconcile_', '_irAiPlanWithTimeout_', '_irShowAiPlanResult_', '_irAiSupportTriggerEl_', '_irAiSupportTriggerBusy_', '_irAiSupportTriggerIdle_', '_irAiSupportNoticeEl_', '_irClearAiSupportNotice_', '_irAiSupportNotice_', '_irEscNotice_', '_irAiPlanDefer_', '_irAiPlanIsRunning_', '_irAiPlanTriggerBusy_', '_irAiPlanTriggerIdle_', '_irExecPlanAriaBusy_', '_irExecListSku_', '_irExecPlanStatusSet_', '_irAiPlanPhase_', '_irAiPlanTerminal_', '_irTouchedComposerSkus_', '_irPersistedManualRouteSkus_', 'handleReplenAiPlan', '_irAiPlanRun_' ].map(function (n) { return extract(IR, n); }).join('\n');
 var _r6d1Phases = (IR.match(/var IR_AI_PLAN_PHASES = \{[\s\S]*?\};/) || [])[0] || '';
 if (!_r6d1Phases) { console.error('IR_AI_PLAN_PHASES not found in the page'); process.exit(1); }
-eval(_r6d1Vars + '\n' + _r6d1Phases + '\n' + _r6d1Fns);
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3 — the AI Plan client bound is now a NAMED module constant instead of the
+// literal 60000 that used to sit at the call site, and extract() only understands function declarations. It is
+// pulled from the page SOURCE rather than mirrored as a copy, so this suite exercises the value the page will
+// actually ship; a rename fails loudly here instead of silently reintroducing a local default.
+var _r6d1Timeout = (IR.match(/var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = \d+;/) || [])[0] || '';
+if (!_r6d1Timeout) { console.error('IR_AI_PLAN_CLIENT_TIMEOUT_MS_ not found in the page'); process.exit(1); }
+eval(_r6d1Vars + '\n' + _r6d1Timeout + '\n' + _r6d1Phases + '\n' + _r6d1Fns);
 
 (function run() {
   section('B. flag OFF (default) → page-state only, NO DB generation');

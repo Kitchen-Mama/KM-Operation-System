@@ -957,9 +957,17 @@ var listed = (function () {
 })();
 eq(listed.slice().sort(), listed, 'F3a and the list is in sorted order, which is how it is compared');
 
-eq(vm.runInContext('TEMP_E3_CENSUS_BUILD_', new World().ctx), STAMP, 'F4 the census build stamp moved with the file');
-ok(RO.OWNER_STAMPS.indexOf(STAMP) === RO.OWNER_STAMPS.length - 1,
-  'F4a and this round is the newest entry in the release order');
+// R6-R7-R3 - RE-AIMED, NOT WAIVED. This suite's round genuinely did not move these stamps, and it was
+// right to say so. R6-R7-R3 does move them: 61_ now states `reservations` in the NO_ACTION envelope, so
+// the release and 63_ move with it, and the census's capture snippet changed too. An equality against
+// THIS round's build can only hold until the next release, so the surviving invariant is the FLOOR - the
+// file must not be BEHIND the round this suite covers. What stays exact is the parity that actually
+// governs a deployment: 63_'s manifest must expect precisely the build 61_ carries.
+ok(RO.stampAtOrAfter(vm.runInContext('TEMP_E3_CENSUS_BUILD_', new World().ctx), STAMP),
+  'F4 the census build stamp moved with the file, and has not fallen behind it since');
+ok(RO.OWNER_STAMPS.indexOf(STAMP) !== -1
+  && RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
+  'F4a and this round is registered in the release order, with nothing older after it');
 // No frontend file changed this round, so no cache token may have been rotated for it.
 ok(RO.ROUND_TOKENS.indexOf('fc1be3r4a2r1r6r7') === -1,
   'F5 no cache token was minted — this round changes no browser file, and a rotated token would force a'

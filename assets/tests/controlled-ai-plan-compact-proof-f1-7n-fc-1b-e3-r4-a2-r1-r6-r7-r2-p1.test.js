@@ -25,6 +25,7 @@
 // Run: node assets/tests/controlled-ai-plan-compact-proof-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r2-p1.test.js
 
 var fs = require('fs');
+var RO = require('./_release-order.js');
 var path = require('path');
 var vm = require('vm');
 
@@ -226,7 +227,9 @@ eq([PROOF.manual_routes.row_count, PROOF.manual_routes.planned_total], [2, 520],
 eq([PROOF.manual_routes.route_a_version, PROOF.manual_routes.route_b_version], ['4', '3'],
   'D14 at the versions section 0 records');
 eq(PROOF.current_run.calculation_status, 'READY', 'D15 the run this was measured against');
-eq(PROOF.build, DEPLOYMENT_BUILD, 'D16 and the build it was measured on');
+// R6-R7-R3 - a FLOOR, for the same reason as section G: the census's own stamp moves with the census.
+ok(RO.stampAtOrAfter(PROOF.build, DEPLOYMENT_BUILD),
+  'D16 and the build it was measured on is at or after the one this patch was written against');
 
 // EVERY MUTATION COUNTER IS ZERO, in the line an operator keeps.
 eq([PROOF.db_writes, PROOF.writer_calls, PROOF.writer_constructed, PROOF.submit_calls,
@@ -311,13 +314,19 @@ eq([X.proof_complete, X.proof_missing], [true, []],
 section('G — a diagnostic patch, and nothing else');
 // ================================================================================================================
 
-eq(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD,
-  'G1  61_ is untouched — its build has not moved');
-eq(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD,
-  'G2  the deployment release has not moved, so no new Web App version is required');
-eq(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD, 'G3  nor has 63_');
-eq(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], DEPLOYMENT_BUILD,
-  'G4  the census still reports the build it is diagnosing, not a build of its own');
+// R6-R7-R3 - RE-AIMED, NOT WAIVED. This suite's round genuinely did not move these stamps, and it was
+// right to say so. R6-R7-R3 does move them: 61_ now states `reservations` in the NO_ACTION envelope, so
+// the release and 63_ move with it, and the census's capture snippet changed too. An equality against
+// THIS round's build can only hold until the next release, so the surviving invariant is the FLOOR - the
+// file must not be BEHIND the round this suite covers. What stays exact is the parity that actually
+// governs a deployment: 63_'s manifest must expect precisely the build 61_ carries.
+ok(RO.stampAtOrAfter(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD),
+  'G1  61_ was untouched by THIS patch and is not behind the build it was measured on');
+ok(RO.stampAtOrAfter(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD),
+  'G2  the deployment release did not move for THIS patch, and has not fallen behind since');
+ok(RO.stampAtOrAfter(/var SYS_BUILD_VERSION_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD), 'G3  nor has 63_');
+ok(RO.stampAtOrAfter(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/.exec(CENSUS)[1], DEPLOYMENT_BUILD),
+  'G4  the census reports a build at or after the one it is diagnosing');
 ok(G61.indexOf('r6r7_proof') < 0 && G61.indexOf('CENSUS_quiet_') < 0,
   'G5  and no part of this patch reached the production module');
 eq(['RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT', 'CENSUS_r6r7ProofObject_', 'CENSUS_r6r7ProofGuard_',

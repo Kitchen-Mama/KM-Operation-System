@@ -576,7 +576,7 @@ var BUILD_STAMP_RE = /^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+)
 // constant exists to produce. Append-only; a round that moves SAD_BUILD_VERSION_ adds one line here and
 // nowhere else.
 var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB-4F-B6', 'F1-7N-FB-4G-A0-R1', 'F1-7N-FB-4G-A0-R2', 'F1-7N-FB-4G-A2', 'F1-7N-FB-4G-A2-R2', 'F1-7N-FB-4G-A2-R3', 'F1-7N-FB-4G-A2-R3-R1', 'F1-7N-FB-4G-A2-R4', 'F1-7N-FB-4G-A3', 'F1-7N-FC-0A', 'F1-7N-FC-1A', 'F1-7N-FC-1A-R1', 'F1-7N-FC-1B-E3', 'F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3-R2', 'F1-7N-FC-1B-E3-R3-R1', 'F1-7N-FC-1B-E3-R4', 'F1-7N-FC-1B-E3-R4-A1', 'F1-7N-FC-1B-E3-R4-A2-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R1-B1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R3', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R1', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

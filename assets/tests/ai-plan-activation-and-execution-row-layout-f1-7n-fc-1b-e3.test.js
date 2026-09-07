@@ -672,10 +672,14 @@ function mkWorld(o) {
   };
   var names = Object.keys(deps);
   var phases = (PAGE.match(/var IR_AI_PLAN_PHASES = \{[\s\S]*?\};/) || [])[0];
-  if (!phases) throw new Error('IR_AI_PLAN_PHASES not found');
+  // R6-R7-R3 - the AI Plan client bound is a NAMED module constant now (the call site used to carry the
+  // literal 60000). extractFn only understands function declarations, so it is pulled from the page source
+  // the same way IR_AI_PLAN_PHASES is - the suite then runs against the value the page actually ships.
+  var aiTimeout = (PAGE.match(/var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = \d+;/) || [])[0];
+  if (!phases || !aiTimeout) throw new Error('IR_AI_PLAN_PHASES / IR_AI_PLAN_CLIENT_TIMEOUT_MS_ not found');
   var src = [
     'var _irAiSupportTriggerOwner = null; var _irAiPlanRunning = false;',
-    phases.replace(/\r/g, ''),
+    phases.replace(/\r/g, ''), aiTimeout.replace(/\r/g, ''),
     extractFn(PAGE, '_irEscNotice_'), extractFn(PAGE, '_irAiPlanDefer_'), extractFn(PAGE, '_irAiPlanIsRunning_'),
     extractFn(PAGE, '_irAiSupportTriggerEl_'), extractFn(PAGE, '_irAiSupportTriggerBusy_'), extractFn(PAGE, '_irAiSupportTriggerIdle_'),
     extractFn(PAGE, '_irAiPlanTriggerBusy_'), extractFn(PAGE, '_irAiPlanTriggerIdle_'),

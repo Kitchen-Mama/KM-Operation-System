@@ -594,12 +594,18 @@ function browserWorld(opts) {
 }
 function install(w) { return vm.runInContext(CAP_SNIP, w.ctx); }
 
+// R6-R7-R3 - THE FIXTURE WAS MODELLING THE READER, NOT THE CONTRACT, and that is why this suite passed
+// while the live capture reported seven nulls. The counters used to sit in `data.summary` here because that
+// is where the capture snippet looked; 61_'s weeklyAiPlanNoActionResponse_ has never had a `summary`
+// sub-object and states every counter FLAT on `data`. A double that agrees with the code under test instead
+// of with the contract cannot fail, and this one could not. It is now the real shape, and F-ENV below reads
+// 61_ to prove it stays the real shape.
 var NO_ACTION_ENVELOPE = { success: true, data: { outcome: 'AI_PLAN_NO_ACTION',
   code: 'NO_REPLENISHMENT_REQUIRED', no_action_reason: 'VALID_ZERO_RECOMMENDATION',
   recommendation_state: 'VALID_ZERO', recommended_qty: 0, qualifying_planned_qty: 520, residual_qty: 0,
   db_writes: 0, writer_reached: false, routes: [], groups: [],
-  summary: { created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
-    cancelled_headers: 0, cancelled_lines: 0, reservations: 0 } },
+  created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
+  cancelled_headers: 0, cancelled_lines: 0, reservations: 0 },
   // The things a sanitized capture must NOT carry out.
   auth_token: 'SECRET-TOKEN-123', headers: { Authorization: 'Bearer SECRET' },
   request_payload: { everything: 'the page sent' } };
@@ -842,9 +848,16 @@ eq(REQ.filter(function (k) { return !Object.prototype.hasOwnProperty.call(pasted
     'J6' + (i ? String.fromCharCode(96 + i) : '') + '  the ' + c[0] + ' wrote nothing, by six counters');
   eq(c[1].world.dbWrites(), 0, 'J6' + (i ? String.fromCharCode(96 + i) : '') + '-m measured on the sheets');
 });
-eq(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD, 'J7  61_ is untouched');
-eq(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD,
-  'J7a and the deployment release does not move for a diagnostic patch');
+// R6-R7-R3 - RE-AIMED, NOT WAIVED. This suite's round genuinely did not move these stamps, and it was
+// right to say so. R6-R7-R3 does move them: 61_ now states `reservations` in the NO_ACTION envelope, so
+// the release and 63_ move with it, and the census's capture snippet changed too. An equality against
+// THIS round's build can only hold until the next release, so the surviving invariant is the FLOOR - the
+// file must not be BEHIND the round this suite covers. What stays exact is the parity that actually
+// governs a deployment: 63_'s manifest must expect precisely the build 61_ carries.
+ok(RO.stampAtOrAfter(/var WAP_BUILD_VERSION_ = '([^']+)'/.exec(G61)[1], DEPLOYMENT_BUILD),
+  'J7  61_ was untouched by THIS round and is not behind it');
+ok(RO.stampAtOrAfter(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(G63)[1], DEPLOYMENT_BUILD),
+  'J7a the deployment release did not move for THIS diagnostic patch, and is not behind it');
 eq(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3-P1'), -1,
   'J7b which is why this round is not in the release order either');
 ok(/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false/.test(G00), 'J8  the flag is still false in 00_config');
@@ -973,7 +986,11 @@ mut('N8 the expected decision copied into the actual response', function () {
     + " source: 'recomputed', why_not_measured_here: 'nobody received', values: { captured: true,"
     + " response_outcome: pp.outcome, response_code: pp.code, recommended_qty: 0, qualifying_planned_qty: 520,"
     + ' residual_qty: 0, created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,'
-    + ' cancelled_headers: 0, cancelled_lines: 0, db_writes: 0, writer_reached: false, routes_count: 0,'
+    // R6-R7-R3 — `reservations` joins the fabrication for the same reason the others are here: a mutant whose
+    // forged object cannot satisfy the contract never reaches CONFIRMED, and then it is no longer testing the
+    // lock it claims to test — only that an incomplete forgery fails, which proves nothing about the lock.
+    + ' cancelled_headers: 0, cancelled_lines: 0, reservations: 0, db_writes: 0, writer_reached: false,'
+    + ' routes_count: 0,'
     + ' groups_count: 0, exactly_one_generation_request: true, new_mutation_requests: 1,'
     + ' generation_requests: 1, capture_installed: true, capture_restored: true, capture_calls: 1,'
     + ' route_save_requests: 0, submit_requests: 0, reservation_requests: 0 } };');

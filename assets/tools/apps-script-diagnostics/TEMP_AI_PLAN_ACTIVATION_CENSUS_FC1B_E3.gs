@@ -67,7 +67,9 @@
 // §9 — THE CENSUS WAS REPORTING A BUILD IT NO LONGER WAS. Its behaviour changed in A2-R1-R1 (it learned to
 // read the harvest REFUSAL) and again in A2-R1-R2 (route intent + identity preview) while this literal stayed
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
+// R6-R7-R3 — moves again: the capture snippet was reading the mutation counters out of a nested sub-object
+// the response contract does not have, so it recorded seven measured zeros as nulls.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7513,17 +7515,42 @@ var R6R7_BROWSER_CAPTURE_SNIPPET_ = [
   '  function pick(res) {',
   '    var r = res || {}, d = r.data || {}, s = d.summary || d.counters || d.written || {};',
   '    var err = (r.errors && r.errors[0]) || {};',
+  // ============================================================================================================
+  // R6-R7-R3 — THIS READER WAS LOOKING IN A PLACE THE CONTRACT NEVER USED.
+  //
+  // MEASURED: the controlled activation captured a complete, correct response, and seven counters came back
+  // `null` while every other field came back right. The split is exact and it names the defect: every field
+  // that arrived correctly was read off `d` (d.outcome, d.code, d.db_writes, d.writer_reached, d.routes,
+  // d.groups); every field that arrived null was read off `s` — `d.summary || d.counters || d.written`, three
+  // sub-objects that 61_'s NO_ACTION envelope does not have and never had. `s` was `{}`, so `s.created_headers`
+  // was `undefined`, and `n()` faithfully recorded `null`.
+  //
+  // So the backend was NOT omitting the counters. It states them flat on `data`, which is the canonical DTO
+  // location the shipped page's own classifier reads (`Number(d.created_headers) || 0`). The one exception was
+  // `reservations`, which the contract genuinely lacked and 61_ now states — that is a backend fix, and it is
+  // the only zero in this whole round that comes from changing a response.
+  //
+  // `c()` reads the canonical flat location FIRST and keeps the nested objects as a fallback for other
+  // response shapes, and `counters_read_from` records which one answered — so a future reading cannot repeat
+  // this round's ambiguity between "no counter" and "counter I looked for in the wrong place".
+  // ============================================================================================================
+  '    var cSrc = null;',
+  '    function c(k) {',
+  '      if (d[k] !== undefined) { if (cSrc === null) cSrc = "data"; return d[k]; }',
+  '      if (s[k] !== undefined) { if (cSrc === null || cSrc === "data") cSrc = (cSrc === "data") ? "data+nested" : "nested"; return s[k]; }',
+  '      return null; }',
   '    return { captured: true, resolved_or_rejected: "resolved", action: "weeklyAiPlan.generate",',
   '      response_outcome: n(d.outcome), response_code: n(err.code !== undefined ? err.code : d.code),',
   '      no_action_reason: n(d.no_action_reason), recommendation_state: n(d.recommendation_state),',
   '      recommended_qty: n(d.recommended_qty), qualifying_planned_qty: n(d.qualifying_planned_qty),',
   '      residual_qty: n(d.residual_qty),',
-  '      created_headers: n(s.created_headers), created_lines: n(s.created_lines),',
-  '      updated_headers: n(s.updated_headers), updated_lines: n(s.updated_lines),',
-  '      cancelled_headers: n(s.cancelled_headers), cancelled_lines: n(s.cancelled_lines),',
-  '      reservations: n(s.reservations), db_writes: n(d.db_writes !== undefined ? d.db_writes : s.db_writes),',
+  '      created_headers: n(c("created_headers")), created_lines: n(c("created_lines")),',
+  '      updated_headers: n(c("updated_headers")), updated_lines: n(c("updated_lines")),',
+  '      cancelled_headers: n(c("cancelled_headers")), cancelled_lines: n(c("cancelled_lines")),',
+  '      reservations: n(c("reservations")), db_writes: n(c("db_writes")),',
   '      writer_reached: n(d.writer_reached), routes_count: (d.routes || []).length,',
-  '      groups_count: (d.groups || []).length, error_code: n(err.code) }; }',
+  '      groups_count: (d.groups || []).length, error_code: n(err.code),',
+  '      counters_read_from: cSrc }; }',
   '  function wrapped() {',
   '    state.calls++;',
   '    if (state.calls > 1) {',
@@ -7651,6 +7678,9 @@ var R6R7_BROWSER_AUDIT_SNIPPET_ = ['// RUN AFTER THE CLICK. Merges the transport
     '    cancelled_headers: resp.cancelled_headers === undefined ? null : resp.cancelled_headers,',
     '    cancelled_lines: resp.cancelled_lines === undefined ? null : resp.cancelled_lines,',
     '    reservations: resp.reservations === undefined ? null : resp.reservations,',
+    // R6-R7-R3 — WHERE the counters were read from travels with them. A number and the place it came from are
+    // one fact; separating them is what let seven nulls look like a backend omission for a whole round.
+    '    counters_read_from: resp.counters_read_from === undefined ? null : resp.counters_read_from,',
     '    db_writes: resp.db_writes === undefined ? null : resp.db_writes,',
     '    writer_reached: resp.writer_reached === undefined ? null : resp.writer_reached,',
     '    routes_count: resp.routes_count === undefined ? null : resp.routes_count,',
@@ -7690,6 +7720,10 @@ var R6R7_ACTUAL_BROWSER_RESPONSE_ = {
   recommended_qty: null, qualifying_planned_qty: null, residual_qty: null,
   created_headers: null, created_lines: null, updated_headers: null, updated_lines: null,
   cancelled_headers: null, cancelled_lines: null, reservations: null,
+  // R6-R7-R3 — 'data' | 'nested' | 'data+nested' | null. Deliberately NOT in the REQUIRED list below: an
+  // audit captured before this round cannot carry it, and back-filling a field into evidence somebody already
+  // pasted would be editing the evidence. When it IS present the readback checks it (see §the counters gate).
+  counters_read_from: null,
   db_writes: null, writer_reached: null, routes_count: null, groups_count: null, error_code: null,
   baseline_max_seq: null, new_requests: null, new_mutation_requests: null,
   generation_requests: null, exactly_one_generation_request: null, unexpected_mutations: null,
@@ -8089,7 +8123,7 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_READBACK() {
   var expShape = { outcome: 'AI_PLAN_NO_ACTION', code: 'NO_REPLENISHMENT_REQUIRED',
     recommended_qty: 0, qualifying_planned_qty: R6R7_SET_BEFORE_.current_plan_total, residual_qty: 0,
     created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
-    cancelled_headers: 0, cancelled_lines: 0, db_writes: 0, writer_reached: false,
+    cancelled_headers: 0, cancelled_lines: 0, reservations: 0, db_writes: 0, writer_reached: false,
     routes: [], groups: [] };
   var pp = CENSUS_r6r7ProductionPath_() || {};
   out.expected_production_decision = {
@@ -8143,12 +8177,24 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_READBACK() {
       A.recommended_qty === expShape.recommended_qty
         && A.qualifying_planned_qty === expShape.qualifying_planned_qty
         && A.residual_qty === expShape.residual_qty);
+    // R6-R7-R3 — `reservations` JOINS THE LIST. It was on the capture's field list and NOT on this gate's,
+    // so the one counter 61_'s contract did not state was also the one counter this predicate would not have
+    // noticed. A field that is measured but never checked is not evidence.
     P('every_mutation_counter_in_the_actual_response_is_zero',
-      [0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
       [A.created_headers, A.created_lines, A.updated_headers, A.updated_lines,
-        A.cancelled_headers, A.cancelled_lines, A.db_writes],
+        A.cancelled_headers, A.cancelled_lines, A.reservations, A.db_writes],
       A.created_headers === 0 && A.created_lines === 0 && A.updated_headers === 0 && A.updated_lines === 0
-        && A.cancelled_headers === 0 && A.cancelled_lines === 0 && A.db_writes === 0);
+        && A.cancelled_headers === 0 && A.cancelled_lines === 0 && A.reservations === 0
+        && A.db_writes === 0);
+    // R6-R7-R3 — AND A ZERO MUST HAVE COME FROM THE CANONICAL LOCATION. Reading the counters out of a nested
+    // sub-object that 61_ does not emit produced seven nulls that looked exactly like a backend omission.
+    // Checked only when the audit carries the field: an audit captured before this round cannot, and refusing
+    // it would be refusing evidence for not predicting a later contract.
+    if (A.counters_read_from !== null && A.counters_read_from !== undefined) {
+      P('the_actual_response_counters_came_from_the_canonical_dto', 'data', A.counters_read_from,
+        A.counters_read_from === 'data');
+    }
     P('the_actual_response_says_the_writer_was_not_reached', false, A.writer_reached,
       A.writer_reached === false);
     P('the_actual_response_carries_no_route_and_no_group', [0, 0], [A.routes_count, A.groups_count],

@@ -10555,9 +10555,39 @@ function _irPersistedManualRouteSkus_() {
     }
     return out;
 }
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3 §5 — A CLIENT BOUND BELOW THE TRANSPORT'S OWN BOUND CAN ONLY LIE.
+//
+// MEASURED: a controlled `weeklyAiPlan.generate` resolved at 60 990 ms with a complete, correct
+// AI_PLAN_NO_ACTION answer, and this page had already declared TIMEOUT at 60 000 ms — 990 ms early. The
+// operator was shown a red failure for a run that succeeded and wrote nothing.
+//
+// WHY 60 000 WAS ALWAYS WRONG, not merely too small. `weeklyAiPlan.generate` goes through
+// `_kmWeeklyCommand_` → `_kmFetchBounded_(…, 'write')`, which aborts at `KM_WRITE_TIMEOUT_MS_` = 90 000 ms
+// and NEVER auto-retries. So for a full 30 seconds the transport was still legitimately waiting for a write
+// it would have reported honestly (REQUEST_TIMEOUT_WRITE_INDETERMINATE, an ACK_UNKNOWN hold), while this
+// wrapper had already pre-empted it with a verdict of its own. Any page bound below the transport's bound
+// converts the transport's careful answer into a guess, whatever number it is set to.
+//
+// THE RULE, not the number: this MUST exceed KM_WRITE_TIMEOUT_MS_ in assets/js/api/operation-system-db-api.js,
+// so the transport's own bounded answer is what surfaces and this wrapper is only a backstop for a promise
+// that never settles at all. The relation is asserted by the R6-R7-R3 suite against both files, the same way
+// ROS_CLIENT_WRITE_TIMEOUT_MS_ is held equal to it in 66_.
+//
+// RAISING IT INTRODUCES NO RETRY. Nothing here retries, `_kmWeeklyCommand_` does not retry a timed-out write
+// by contract, and the re-entry guard (_irAiPlanIsRunning_) still refuses a second click. A longer bound
+// changes only how long the browser is willing to WAIT for the one request it sent.
+// ==============================================================================================================
+var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = 120000;   // > KM_WRITE_TIMEOUT_MS_ (90 000); asserted, not assumed
+try { if (typeof window !== 'undefined') window.IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = IR_AI_PLAN_CLIENT_TIMEOUT_MS_; } catch (eT) {}
 // §D.15 — a request that never answers is its own outcome. Note what this does NOT claim: a timeout
 // after the POST left the browser is UNKNOWN, not failed, so it terminates as RECONCILING and the readback is
 // what decides (§G.14).
+//
+// R6-R7-R3 — `done` is also what makes a LATE answer harmless. When the timer has already fired, both
+// settle handlers below return without touching the outer promise, so a response arriving after the UI has
+// declared TIMEOUT cannot drive a second state transition: the `.then` chain in the caller is never entered
+// again. That property was already here; it is now stated, and tested.
 function _irAiPlanWithTimeout_(p, ms) {
     if (typeof Promise === 'undefined') return p;
     return new Promise(function (resolve, reject) {
@@ -10890,6 +10920,20 @@ function _irClassifyGenerationResult_(res) {
         createdLines: Number(d.created_lines) || 0, updatedLines: Number(d.updated_lines) || 0,
         expiredHeaders: Number(d.expired_headers) || 0, expiredLines: Number(d.expired_lines) || 0,
         activeCount: Number(d.active_count) || 0, expiredCount: Number(d.expired_count) || 0,
+        // R6-R7-R3 §6 — the rest of the mutation ledger, so Technical details can state the whole of it. A
+        // NO_ACTION run's honest technical surface is a row of zeros; a row of BLANKS reads as "not checked".
+        cancelledHeaders: Number(d.cancelled_headers) || 0, cancelledLines: Number(d.cancelled_lines) || 0,
+        reservations: Number(d.reservations) || 0,
+        dbWrites: Number(d.db_writes) || 0, writerReached: d.writer_reached === true,
+        // R6-R7-R3 §6 — the three quantities that make a no-action ANSWER rather than a shrug: what was
+        // recommended, what is already planned, and what is left over. MISSING IS NEVER ZERO here — a null
+        // stays null, because "the server did not say" and "the server said none" are different facts and
+        // this page has been bitten by collapsing them before. The renderer omits a null row rather than
+        // printing a 0 nobody measured.
+        noActionReason: d.no_action_reason ? String(d.no_action_reason) : null,
+        recommendedQty: (d.recommended_qty == null) ? null : Number(d.recommended_qty),
+        qualifyingPlannedQty: (d.qualifying_planned_qty == null) ? null : Number(d.qualifying_planned_qty),
+        residualQty: (d.residual_qty == null) ? null : Number(d.residual_qty),
         zeroResult: zeroResult,
         noReplenishmentRequired: noReplenishmentRequired,
         demandBasisTotal: (d.demand_basis_total == null) ? null : Number(d.demand_basis_total),
@@ -10995,7 +11039,9 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
     // canonical rows and still refuses on its own terms.
     var _expected = (typeof _irExpectedDemandFromSnapshot_ === 'function') ? _irExpectedDemandFromSnapshot_() : null;
     if (_expected) payload.expectedDemand = _expected;
-    return _irAiPlanWithTimeout_(Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)), 60000).then(function (res) {
+    // R6-R7-R3 §5 — action-specific bound, above the transport's own write bound. The literal 60000 that used
+    // to be here declared TIMEOUT 990 ms before a measured, correct answer arrived.
+    return _irAiPlanWithTimeout_(Promise.resolve(window.KM.DB.generateWeeklyAiPlanDraft(payload)), IR_AI_PLAN_CLIENT_TIMEOUT_MS_).then(function (res) {
         var cls = _irClassifyGenerationResult_(res);
         // §G.8 — an AI Plan FAILURE must never clear the current Execution Plan. The only path that re-hydrates
         // is a SUCCESSFUL run (including a zero-result one, which legitimately empties the AI half); a failure
@@ -11056,12 +11102,30 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                         // F1-7N-FC-1B-E3-R4 §G — a scope with nothing to replenish is a NEUTRAL result, not a
                         // warning. No red, no amber, no Retry: the question was asked and the answer is none.
                         if (cls.noReplenishmentRequired) {
+                            // R6-R7-R3 §6 — SAY THE THREE NUMBERS, and say WHICH no-action this is.
+                            //
+                            // The old sentence asserted "every site has a canonical demand of 0", which is only
+                            // true for VALID_ZERO_RECOMMENDATION. The measured activation was exactly that — and
+                            // it ALSO had 520 units already planned, which the sentence never mentioned. For
+                            // FULLY_COVERED_BY_ACTIVE_PLAN the old sentence is simply false: demand exists and is
+                            // already covered. An operator reading "demand is 0" while looking at a 520-unit plan
+                            // has been told something they can see is wrong, and that costs the message its
+                            // credibility on the runs where it matters.
+                            var _q = function (v) { return (v === null || v === undefined) ? null : Number(v); };
+                            var _rec = _q(cls.recommendedQty), _qual = _q(cls.qualifyingPlannedQty), _res = _q(cls.residualQty);
+                            var _nums = '';
+                            if (_rec !== null) _nums += ' Recommended ' + _rec + '.';
+                            if (_qual !== null) _nums += ' Already planned (qualifying) ' + _qual + '.';
+                            if (_res !== null) _nums += ' Residual ' + _res + '.';
+                            var _why = (cls.noActionReason === 'FULLY_COVERED_BY_ACTIVE_PLAN')
+                                ? 'The recommended quantity for this scope is already fully covered by the active Execution Plan, so the AI has nothing to add.'
+                                : 'Nothing is short in this scope for this cycle.';
                             return _irAiPlanTerminal_('ok',
-                                'No replenishment is required for this scope.' +
-                                ' Every site in this company/country has a canonical demand of 0 for this cycle,' +
-                                ' so 0 route(s) were written and nothing was changed in the database.' +
+                                'No replenishment is required for this scope. ' + _why + _nums +
+                                ' No AI route was created: 0 header(s) and 0 line(s) were created, updated or' +
+                                ' cancelled, 0 reservation(s) were made, and your manual routes were not touched.' +
                                 (cls.expiredHeaders ? ' ' + cls.expiredHeaders + ' superseded route(s) were expired (kept for audit).' : ''),
-                                'No replenishment is required for this scope.');
+                                'No replenishment is required for this scope — nothing was created or changed.');
                         }
                         // R6 §4 — ADVICE OUTRANKS "no route". A run that produced a recommendation and wrote
                         // no route because a person still has to choose a method is a SUCCESSFUL run with a
@@ -11163,15 +11227,30 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
         // the request had already left the browser; it terminates as RECONCILING and blocks Submit.
         if (err && err.__irAiPlanTimeout) {
             window._irAiPlanUnreconciled = { at: new Date().toISOString(), reason: 'REQUEST_TIMED_OUT', expected: '?', acknowledged: 0 };
+            // R6-R7-R3 §6 — the counters are stated, not omitted. This literal is where "undefined created ·
+            // undefined updated · undefined expired" actually came from. NOTE WHAT THESE ZEROS MEAN: they are
+            // "this browser observed no acknowledged mutation", NOT "the database was not written" — a timed-out
+            // write is INDETERMINATE, which is exactly what the message below says and why Submit stays blocked.
             _irShowAiPlanResult_({ ok: false, status: 'TIMEOUT', marketplaceResults: [], draftIds: [], lineTotal: 0,
+                createdHeaders: 0, updatedHeaders: 0, expiredHeaders: 0,
+                createdLines: 0, updatedLines: 0, expiredLines: 0,
+                cancelledHeaders: 0, cancelledLines: 0, reservations: 0, dbWrites: 0, writerReached: false,
                 errors: [{ message: 'no response within ' + Math.round((err.ms || 0) / 1000) + 's' }], reason: 'request timed out' });
             return _irAiPlanTerminal_('warn',
                 'AI Plan TIMED OUT after ' + Math.round((err.ms || 0) / 1000) + 's with no answer. The request had' +
                 ' already been sent, so whether anything was written is UNKNOWN — this is not being reported as' +
-                ' a failure. Submit Plan is BLOCKED until a run reconciles. Reload to re-read the stored plan.',
-                'AI Plan timed out — outcome unknown. Submit is blocked until this reconciles.');
+                ' a failure. DO NOT PRESS GENERATE AGAIN: read the database back first, because a second click' +
+                ' against a request that may still be committing is how one plan becomes two. Submit Plan is' +
+                ' BLOCKED until a run reconciles. Reload to re-read the stored plan.',
+                'AI Plan timed out — outcome unknown. Do not press Generate again; read the plan back first.' +
+                ' Submit is blocked until this reconciles.');
         }
-        _irShowAiPlanResult_({ ok: false, status: 'FAILED', marketplaceResults: [], draftIds: [], lineTotal: 0, errors: [{ message: String(err && err.message || err) }], reason: 'request failed' });
+        // R6-R7-R3 §6 — same reason as the TIMEOUT literal above: a synthetic cls must state its counters.
+        _irShowAiPlanResult_({ ok: false, status: 'FAILED', marketplaceResults: [], draftIds: [], lineTotal: 0,
+            createdHeaders: 0, updatedHeaders: 0, expiredHeaders: 0,
+            createdLines: 0, updatedLines: 0, expiredLines: 0,
+            cancelledHeaders: 0, cancelledLines: 0, reservations: 0, dbWrites: 0, writerReached: false,
+            errors: [{ message: String(err && err.message || err) }], reason: 'request failed' });
         return _irAiPlanTerminal_('bad',
             'AI Plan request FAILED before any answer: ' + String((err && err.message) || err) +
             '. Your current Execution Plan is unchanged.',
@@ -11211,15 +11290,51 @@ function _irShowAiPlanResult_(cls) {
         ? (' Replaced ' + cls.expiredHeaders + ' superseded route(s) (now expired, kept for audit).')
         : '';
     var headline = cls.ok
-        ? (cls.zeroResult
+        // R6-R7-R3 §6 — a NO_ACTION run is named as one. "No recommendation" was the nearest available
+        // wording and it is not the same statement: the server DID produce a recommendation and its value is
+        // nothing to add. The headline must not leave an operator looking for a missing recommendation.
+        ? (cls.noReplenishmentRequired
+            ? ('AI Plan: no replenishment required for this scope — nothing was created or changed.' + replaced)
+            : cls.zeroResult
             ? ('AI Plan: no recommendation for this scope this cycle.' + replaced)
             : ('AI Plan generated — ' + (cls.marketplaceCount || 0) + ' marketplace(s), ' + (cls.lineTotal || 0) + ' line(s).' + replaced))
         : (cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready. Your current Execution Plan is unchanged.'
             : ('AI Plan could not complete' + (cls.reason ? ' — ' + esc(cls.reason) : '') + '. Your current Execution Plan is unchanged.'));
+    // ==========================================================================================================
+    // R6-R7-R3 §6 — A COUNTER IS A NUMBER OR IT IS NOT A COUNTER.
+    //
+    // MEASURED: Technical details read "Headers: undefined created / undefined updated / undefined expired".
+    // The source was NOT the server. `_irClassifyGenerationResult_` coerces every counter it reads, so a
+    // response reaching the classifier always yields numbers. The `undefined`s came from the two SYNTHETIC
+    // cls objects this function is also called with — the TIMEOUT and FAILED literals below in
+    // `_irRunInventoryAiPlanGeneration_`, which never carried the counter keys at all. Those literals now
+    // state their zeros, and this renderer no longer trusts any caller to have done so: `cnt` is the single
+    // place a counter becomes text, so no future call site can reintroduce the defect.
+    //
+    // This is a floor, not a substitute. The backend contract test proves the server really sends numeric 0
+    // for a NO_ACTION run; this coercion exists so a MISSING key is reported as 0-with-a-known-shape rather
+    // than as the word "undefined", never to manufacture a zero the server did not state.
+    // ==========================================================================================================
+    function cnt(v) { var n = Number(v); return isFinite(n) ? n : 0; }
     var rows = '<div><strong>Status:</strong> ' + esc(cls.status || '') + '</div>';
     if (cls.generationRunId) rows += '<div><strong>Run:</strong> ' + esc(cls.generationRunId) + '</div>';
-    rows += '<div><strong>Headers:</strong> ' + cls.createdHeaders + ' created · ' + cls.updatedHeaders + ' updated · ' + cls.expiredHeaders + ' expired</div>';
-    rows += '<div><strong>Lines:</strong> ' + cls.createdLines + ' created · ' + cls.updatedLines + ' updated · ' + cls.expiredLines + ' expired</div>';
+    rows += '<div><strong>Headers:</strong> ' + cnt(cls.createdHeaders) + ' created · ' + cnt(cls.updatedHeaders) + ' updated · ' + cnt(cls.expiredHeaders) + ' expired</div>';
+    rows += '<div><strong>Lines:</strong> ' + cnt(cls.createdLines) + ' created · ' + cnt(cls.updatedLines) + ' updated · ' + cnt(cls.expiredLines) + ' expired</div>';
+    rows += '<div><strong>Cancelled:</strong> ' + cnt(cls.cancelledHeaders) + ' header(s) · ' + cnt(cls.cancelledLines) + ' line(s)</div>';
+    rows += '<div><strong>Reservations:</strong> ' + cnt(cls.reservations) + '</div>';
+    rows += '<div><strong>DB writes:</strong> ' + cnt(cls.dbWrites) + ' · writer reached: ' + (cls.writerReached === true ? 'yes' : 'no') + '</div>';
+    // R6-R7-R3 §6 — the no-action ANSWER, stated as quantities. Each row appears only when the server
+    // supplied that number: a null is silence, and silence must not be printed as a measured 0.
+    if (cls.recommendedQty !== null && cls.recommendedQty !== undefined) {
+        rows += '<div><strong>Recommended:</strong> ' + cnt(cls.recommendedQty) + '</div>';
+    }
+    if (cls.qualifyingPlannedQty !== null && cls.qualifyingPlannedQty !== undefined) {
+        rows += '<div><strong>Existing qualifying plan:</strong> ' + cnt(cls.qualifyingPlannedQty) + '</div>';
+    }
+    if (cls.residualQty !== null && cls.residualQty !== undefined) {
+        rows += '<div><strong>Residual:</strong> ' + cnt(cls.residualQty) + '</div>';
+    }
+    if (cls.noActionReason) rows += '<div><strong>No-action reason:</strong> ' + esc(cls.noActionReason) + '</div>';
     if (cls.lifecycle && cls.lifecycle.ok === false) {
         rows += '<div style="color:#B91C1C;"><strong>Lifecycle:</strong> superseded drafts were NOT fully expired (' +
             esc(cls.lifecycle.reason || 'unknown') + '). The previous plan may still be active — do not submit until this is resolved.</div>';

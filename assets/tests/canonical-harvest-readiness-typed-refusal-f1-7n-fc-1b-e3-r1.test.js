@@ -432,10 +432,14 @@ function mkWorld(o) {
   var names = Object.keys(deps);
   var phases = (PAGE.match(/var IR_AI_PLAN_PHASES = \{[\s\S]*?\};/) || [])[0];
   var sentences = (PAGE.match(/var IR_READINESS_SENTENCES = \{[\s\S]*?\};/) || [])[0];
-  if (!phases || !sentences) throw new Error('IR_AI_PLAN_PHASES / IR_READINESS_SENTENCES not found');
+  // R6-R7-R3 - the AI Plan client bound is a NAMED module constant now (the call site used to carry the
+  // literal 60000). extractFn only understands function declarations, so it is pulled from the page source
+  // the same way IR_AI_PLAN_PHASES is - the suite then runs against the value the page actually ships.
+  var aiTimeout = (PAGE.match(/var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = \d+;/) || [])[0];
+  if (!phases || !sentences || !aiTimeout) throw new Error('IR_AI_PLAN_PHASES / IR_READINESS_SENTENCES / IR_AI_PLAN_CLIENT_TIMEOUT_MS_ not found');
   var src = [
     'var _irAiSupportTriggerOwner = null; var _irAiPlanRunning = false;',
-    phases.replace(/\r/g, ''), sentences.replace(/\r/g, ''),
+    phases.replace(/\r/g, ''), sentences.replace(/\r/g, ''), aiTimeout.replace(/\r/g, ''),
     extractFn(PAGE, '_irEscNotice_'), extractFn(PAGE, '_irAiPlanDefer_'), extractFn(PAGE, '_irAiPlanIsRunning_'),
     extractFn(PAGE, '_irReadinessSentence_'),
     extractFn(PAGE, '_irAiSupportTriggerEl_'), extractFn(PAGE, '_irAiSupportTriggerBusy_'), extractFn(PAGE, '_irAiSupportTriggerIdle_'),

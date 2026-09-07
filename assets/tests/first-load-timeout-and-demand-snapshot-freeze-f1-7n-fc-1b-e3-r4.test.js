@@ -562,9 +562,24 @@ ok(/header_created: false, line_created: false, db_writes: 0/.test(G61), 'G10b n
 ok(/zero_result: true/.test(G61), 'G10c and it speaks the page\'s existing zero-result vocabulary');
 var clsSrc = extractFn(PAGE, '_irClassifyGenerationResult_');
 ok(/noReplenishmentRequired/.test(clsSrc), 'G11 the page distinguishes it from "no eligible route found"...');
-ok(PAGE.indexOf("'No replenishment is required for this scope.'") !== -1, 'G11a ...with §G\'s exact neutral sentence');
-ok(/cls\.noReplenishmentRequired\) \{[\s\S]{0,200}_irAiPlanTerminal_\('ok'/.test(PAGE),
+// R6-R7-R3 §6 - RE-AIMED, NOT WAIVED. The neutral sentence is still the opening clause and is still
+// reported as 'ok'; what changed is that the branch now also STATES THE THREE QUANTITIES and names which
+// of the two no-actions this is. The old G11a matched a standalone quoted literal, which a sentence that
+// gained a concatenated tail no longer is; the old G11b matched within 200 characters of the `if`, which a
+// documented branch no longer is. Both now assert the PROPERTY rather than the byte offset - and G11c/G11d
+// add the requirement that produced the change, so the numbers cannot quietly disappear again.
+ok(PAGE.indexOf("'No replenishment is required for this scope. '") !== -1
+  || PAGE.indexOf("'No replenishment is required for this scope.'") !== -1,
+  'G11a ...with §G\'s exact neutral sentence as the opening clause');
+var _noActBranch = (/if \(cls\.noReplenishmentRequired\) \{[\s\S]*?\n                        \}/.exec(PAGE) || [])[0] || '';
+ok(_noActBranch && /_irAiPlanTerminal_\('ok'/.test(_noActBranch)
+  && !/_irAiPlanTerminal_\('(warn|bad)'/.test(_noActBranch),
   'G11b reported as ok, not warn and not red');
+ok(/Recommended '/.test(_noActBranch) && /Already planned \(qualifying\) '/.test(_noActBranch)
+  && /Residual '/.test(_noActBranch),
+  'G11c and it states the three quantities - recommended, already planned, residual');
+ok(/FULLY_COVERED_BY_ACTIVE_PLAN/.test(_noActBranch),
+  'G11d and it names FULLY_COVERED_BY_ACTIVE_PLAN separately, because "demand is 0" is false for it');
 
 // ================================================================================================================
 section('§J — the AI Plan boundary this round must not have moved');

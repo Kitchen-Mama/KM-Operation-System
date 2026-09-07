@@ -231,7 +231,10 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // (AI_PLAN_NO_ACTION, zero writes) instead of a REQUESTED_SCOPE_EMPTY refusal, and the canonical demand is
 // netted by the qualifying MANUAL plan before the allocator sizes anything. A stamp records the round a
 // module last changed; it is not the release.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
+// R6-R7-R3 — moved because THIS FILE changed again: the NO_ACTION success envelope now states `reservations`
+// as an explicit 0. It was the only counter on the controlled activation's proof list that this contract did
+// not carry, so it was the only one the browser could not report as a number.
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -2514,8 +2517,17 @@ function weeklyAiPlanNoActionResponse_(decision, ctx) {
       generation_run_id: ctx.generation_run_id || null,
       // Every mutation counter, explicitly zero. A reader must never have to infer "nothing happened" from
       // the absence of a number.
+      //
+      // R6-R7-R3 — `reservations` JOINS THEM, and it is the one that was genuinely absent. The controlled
+      // activation's browser proof reads a fixed list of counters out of this envelope; every other name on
+      // that list was already here, so every other one came back as a number and this one came back as
+      // `undefined` — which the proof could only record as `null`. A counter that is missing from the
+      // contract cannot be distinguished from a counter nobody measured, and "no reservation was created" is
+      // exactly the kind of claim that has to be a stated number rather than an absence. NO_ACTION never
+      // reaches the writer, so the value is zero by construction, not by hope.
       created_headers: 0, updated_headers: 0, created_lines: 0, updated_lines: 0,
       cancelled_headers: 0, cancelled_lines: 0, expired_headers: 0, expired_lines: 0,
+      reservations: 0,
       header_created: false, line_created: false,
       route_count: 0, routes: [], groups: [],
       requested_qty: decision.recommended_qty, allocated_qty: 0,
