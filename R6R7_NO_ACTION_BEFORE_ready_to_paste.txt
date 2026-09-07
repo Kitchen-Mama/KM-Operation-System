@@ -1,0 +1,396 @@
+var R6R7_NO_ACTION_BEFORE_ = {
+  frozen_by: "manual operator from READY_TO_AUTHORIZE manifest",
+    "frozen_at": "2026-09-06 21:56:31",
+    "calculation_run_id": "GAP-INV-20260906T132340-0001",
+    "calculation_date": "Sun Sep 06 2026 00:00:00 GMT+0800 (Taiwan Standard Time)",
+    "calculation_status": "READY",
+    "freshness_state": "CURRENT_AFTER_REFRESH",
+    "recommended_qty": 0,
+    "qualifying_active_planned_qty": 520,
+    "residual_qty": 0,
+    "header_schema_version": "FB4G-A2R3-CREATE-IDEMPOTENCY-1",
+    "header_column_count": 36,
+    "header_column_names_fingerprint": "a318ac6b",
+    "line_schema_version": "LINE-ETA-TAIL-PRESENT",
+    "line_column_count": 31,
+    "line_column_names_fingerprint": "684ddaa1",
+    "route_a_header_snapshot": {
+      "table": "shipping_allocation_drafts",
+      "row_found": true,
+      "canonical_field_count": 36,
+      "covered_field_count": 36,
+      "excluded_fields": [],
+      "unexpected_live_columns": [],
+      "field_classes": {
+        "DAY": 0,
+        "NUMERIC": 1,
+        "INSTANT_OR_TEXT": 35
+      },
+      "fields": {
+        "allocation_draft_id": "SADH-K4-38523A90",
+        "planning_cycle": "",
+        "source_page": "inventory_replenishment",
+        "company": "ResUS",
+        "country": "US",
+        "marketplace": "Amazon",
+        "status": "draft",
+        "recommended_source_warehouse_id": "WH-TW-CN-FACTORY-YOUXIN",
+        "recommended_destination_warehouse_id": "",
+        "recommended_source_warehouse_code_snapshot": "CN_YOUXIN",
+        "recommended_destination_warehouse_code_snapshot": "",
+        "recommendation_group_no": "",
+        "recommended_shipping_method": "sea_express",
+        "recommended_last_mile_delivery": "truck",
+        "generation_type": "user_created",
+        "calculation_run_id": "",
+        "formula_version": "",
+        "calculated_at": "",
+        "source_data_as_of": "",
+        "draft_version": "4",
+        "created_by": "inventory-replenishment",
+        "created_at": "D:1788439268000",
+        "updated_by": "inventory-replenishment",
+        "updated_at": "D:1788678746000",
+        "submitted_by": "",
+        "submitted_at": "",
+        "cancelled_by": "",
+        "cancelled_at": "",
+        "cancel_reason": "",
+        "note": "",
+        "generation_run_id": "",
+        "expired_at": "",
+        "expired_by_run_id": "",
+        "expiration_reason": "",
+        "destination_marketplace": "Amazon",
+        "create_idempotency_key": "CRI-MTLIK26L-1"
+      },
+      "fingerprint": "86577c4d"
+    },
+    "route_a_line_snapshot": {
+      "table": "shipping_allocation_draft_lines",
+      "row_found": true,
+      "canonical_field_count": 31,
+      "covered_field_count": 31,
+      "excluded_fields": [],
+      "unexpected_live_columns": [],
+      "field_classes": {
+        "DAY": 3,
+        "NUMERIC": 12,
+        "INSTANT_OR_TEXT": 16
+      },
+      "fields": {
+        "allocation_draft_line_id": "SADL-K2-92B8BAD2",
+        "allocation_draft_id": "SADH-K4-38523A90",
+        "sku": "CO1100-R",
+        "site_sku": "",
+        "window_code": "",
+        "window_start_date": "",
+        "window_end_date": "",
+        "required_by_date": "",
+        "regular_demand_snapshot": "",
+        "special_event_demand_snapshot": "",
+        "destination_stock_snapshot": "",
+        "qualified_incoming_snapshot": "",
+        "approved_supply_snapshot": "",
+        "calculated_gap_qty": "",
+        "source_initial_available_qty_snapshot": "",
+        "source_available_before_allocation_snapshot": "",
+        "allocation_sequence": "",
+        "recommendation_reason": "",
+        "recommendation_flags": "",
+        "recommended_qty": "",
+        "source_warehouse_id": "",
+        "source_warehouse_code_snapshot": "",
+        "planned_qty": "320",
+        "units_per_carton": "",
+        "route_no": "",
+        "line_status": "",
+        "override_reason": "",
+        "note": "",
+        "created_at": "D:1788439268000",
+        "updated_at": "D:1788678746000",
+        "expected_arrival": ""
+      },
+      "fingerprint": "2ec7fc63"
+    },
+    "route_a_header_full_fingerprint": "86577c4d",
+    "route_a_line_full_fingerprint": "2ec7fc63",
+    "route_a_combined_full_fingerprint": "7bae9b37",
+    "route_b_header_snapshot": {
+      "table": "shipping_allocation_drafts",
+      "row_found": true,
+      "canonical_field_count": 36,
+      "covered_field_count": 36,
+      "excluded_fields": [],
+      "unexpected_live_columns": [],
+      "field_classes": {
+        "DAY": 0,
+        "NUMERIC": 1,
+        "INSTANT_OR_TEXT": 35
+      },
+      "fields": {
+        "allocation_draft_id": "SADH-K4-A3872518",
+        "planning_cycle": "",
+        "source_page": "inventory_replenishment",
+        "company": "ResUS",
+        "country": "US",
+        "marketplace": "Amazon",
+        "status": "draft",
+        "recommended_source_warehouse_id": "WH-TW-CN-FACTORY-YOUXIN",
+        "recommended_destination_warehouse_id": "WH-RESUS-US-3PL-AMZLGS",
+        "recommended_source_warehouse_code_snapshot": "CN_YOUXIN",
+        "recommended_destination_warehouse_code_snapshot": "AMZLG&S",
+        "recommendation_group_no": "",
+        "recommended_shipping_method": "air",
+        "recommended_last_mile_delivery": "",
+        "generation_type": "user_created",
+        "calculation_run_id": "",
+        "formula_version": "",
+        "calculated_at": "",
+        "source_data_as_of": "",
+        "draft_version": "3",
+        "created_by": "inventory-replenishment",
+        "created_at": "D:1788444289000",
+        "updated_by": "r6r6r3-compensating-repair",
+        "updated_at": "D:1788659764000",
+        "submitted_by": "",
+        "submitted_at": "",
+        "cancelled_by": "",
+        "cancelled_at": "",
+        "cancel_reason": "",
+        "note": "",
+        "generation_run_id": "",
+        "expired_at": "",
+        "expired_by_run_id": "",
+        "expiration_reason": "",
+        "destination_marketplace": "",
+        "create_idempotency_key": "CRI-MTLLJ8AC-2"
+      },
+      "fingerprint": "af399355"
+    },
+    "route_b_line_snapshot": {
+      "table": "shipping_allocation_draft_lines",
+      "row_found": true,
+      "canonical_field_count": 31,
+      "covered_field_count": 31,
+      "excluded_fields": [],
+      "unexpected_live_columns": [],
+      "field_classes": {
+        "DAY": 3,
+        "NUMERIC": 12,
+        "INSTANT_OR_TEXT": 16
+      },
+      "fields": {
+        "allocation_draft_line_id": "SADL-K2-344FB2B2",
+        "allocation_draft_id": "SADH-K4-A3872518",
+        "sku": "CO1100-R",
+        "site_sku": "",
+        "window_code": "",
+        "window_start_date": "",
+        "window_end_date": "",
+        "required_by_date": "",
+        "regular_demand_snapshot": "",
+        "special_event_demand_snapshot": "",
+        "destination_stock_snapshot": "",
+        "qualified_incoming_snapshot": "",
+        "approved_supply_snapshot": "",
+        "calculated_gap_qty": "",
+        "source_initial_available_qty_snapshot": "",
+        "source_available_before_allocation_snapshot": "",
+        "allocation_sequence": "",
+        "recommendation_reason": "",
+        "recommendation_flags": "",
+        "recommended_qty": "",
+        "source_warehouse_id": "",
+        "source_warehouse_code_snapshot": "",
+        "planned_qty": "200",
+        "units_per_carton": "",
+        "route_no": "",
+        "line_status": "",
+        "override_reason": "",
+        "note": "",
+        "created_at": "D:1788444289000",
+        "updated_at": "D:1788659764000",
+        "expected_arrival": ""
+      },
+      "fingerprint": "9b9ea4a9"
+    },
+    "route_b_header_full_fingerprint": "af399355",
+    "route_b_line_full_fingerprint": "9b9ea4a9",
+    "route_b_combined_full_fingerprint": "d442c0b1",
+    "identity_universe": {
+      "available": true,
+      "reason": null,
+      "too_large": false,
+      "header_ids": [
+        "SAD-27976058-2",
+        "SAD-C787D1B1-D",
+        "SAD-FD833D8A-E",
+        "SADH-K2-179FBB0E",
+        "SADH-K2-E7AF9242",
+        "SADH-K4-38523A90",
+        "SADH-K4-507F3A05",
+        "SADH-K4-A3872518",
+        "SADH-K4-D8E6A23B",
+        "SADH-K4-DCF3CFC8"
+      ],
+      "line_ids": [
+        "SADL-K2-0AA58729",
+        "SADL-K2-0D2C920B",
+        "SADL-K2-16F4E4F9",
+        "SADL-K2-344FB2B2",
+        "SADL-K2-4B150F56",
+        "SADL-K2-8756129E",
+        "SADL-K2-92B8BAD2",
+        "SADL-K2-A5AF5DC0"
+      ],
+      "relations": [
+        {
+          "header_id": "SAD-27976058-2",
+          "line_ids": []
+        },
+        {
+          "header_id": "SAD-C787D1B1-D",
+          "line_ids": []
+        },
+        {
+          "header_id": "SAD-FD833D8A-E",
+          "line_ids": [
+            "SADL-K2-4B150F56"
+          ]
+        },
+        {
+          "header_id": "SADH-K2-179FBB0E",
+          "line_ids": [
+            "SADL-K2-0D2C920B"
+          ]
+        },
+        {
+          "header_id": "SADH-K2-E7AF9242",
+          "line_ids": [
+            "SADL-K2-16F4E4F9"
+          ]
+        },
+        {
+          "header_id": "SADH-K4-38523A90",
+          "line_ids": [
+            "SADL-K2-92B8BAD2"
+          ]
+        },
+        {
+          "header_id": "SADH-K4-507F3A05",
+          "line_ids": [
+            "SADL-K2-A5AF5DC0"
+          ]
+        },
+        {
+          "header_id": "SADH-K4-A3872518",
+          "line_ids": [
+            "SADL-K2-344FB2B2"
+          ]
+        },
+        {
+          "header_id": "SADH-K4-D8E6A23B",
+          "line_ids": [
+            "SADL-K2-8756129E"
+          ]
+        },
+        {
+          "header_id": "SADH-K4-DCF3CFC8",
+          "line_ids": [
+            "SADL-K2-0AA58729"
+          ]
+        }
+      ],
+      "relation_fingerprint": "5f6a7180",
+      "active_manual_header_ids": [
+        "SAD-27976058-2",
+        "SAD-C787D1B1-D",
+        "SADH-K4-38523A90",
+        "SADH-K4-A3872518"
+      ],
+      "active_ai_header_ids": [],
+      "terminal_ai_header_ids": [],
+      "terminal_manual_header_ids": [
+        "SAD-FD833D8A-E",
+        "SADH-K2-179FBB0E",
+        "SADH-K2-E7AF9242",
+        "SADH-K4-507F3A05",
+        "SADH-K4-D8E6A23B",
+        "SADH-K4-DCF3CFC8"
+      ],
+      "counts_by_status": {
+        "draft": 4,
+        "cancelled": 6
+      },
+      "counts_by_provenance": {
+        "manual": 10
+      },
+      "counts_by_status_and_provenance": {
+        "draft|manual": 4,
+        "cancelled|manual": 6
+      },
+      "line_counts_by_status": {
+        "(blank)": 8
+      },
+      "header_count": 10,
+      "line_count": 8,
+      "universe_fingerprint": "7a648f6d",
+      "note": "the two frozen routes are covered field-by-field by their own full-row snapshots; this covers EVERY OTHER row the scope can reach, at identity + status + provenance + relation grain."
+    },
+    "reservation_observation": {
+      "table": "reservations",
+      "observation_state": "SHEET_ABSENT",
+      "authority": "SERVER_MANIFEST_GUARANTEED_ZERO_MUTATION",
+      "server_guarantee": true,
+      "row_count": null,
+      "column_names": [],
+      "scope_columns_present": [],
+      "id_column": null,
+      "scoped_ids": [],
+      "scoped_count": null,
+      "scoped_fingerprint": null,
+      "acceptable": true,
+      "reason": "the table does not exist in this database, and 61_'s own activation manifest lists it among the tables a generation cannot mutate — a structural guarantee, not a count"
+    },
+    "route_a_fingerprint": "65926828",
+    "route_a_updated_at": "Sun Sep 06 2026 15:12:26 GMT+0800 (Taiwan Standard Time)",
+    "route_a_line_updated_at": "Sun Sep 06 2026 15:12:26 GMT+0800 (Taiwan Standard Time)",
+    "route_b_fingerprint": "01acba40",
+    "route_b_updated_at": "Sun Sep 06 2026 09:56:04 GMT+0800 (Taiwan Standard Time)",
+    "route_b_line_updated_at": "Sun Sep 06 2026 09:56:04 GMT+0800 (Taiwan Standard Time)",
+    "active_ai_headers": 0,
+    "active_ai_lines": 0,
+    "calculated_at": "Sun Sep 06 2026 13:26:04 GMT+0800 (Taiwan Standard Time)",
+    "windows": {
+      "D18": 0,
+      "D30": 0,
+      "D45": 0,
+      "D90": 0
+    },
+    "manual_header_ids": [
+      "SADH-K4-38523A90",
+      "SADH-K4-A3872518"
+    ],
+    "manual_line_ids": [
+      "SADL-K2-344FB2B2",
+      "SADL-K2-92B8BAD2"
+    ],
+    "manual_planned_total": 520,
+    "reservation_row_count": null,
+  route_a: R6R7_MANUAL_ROUTES_[0],
+  route_b: R6R7_MANUAL_ROUTES_[1]
+};
+
+var R6R7_BEFORE_REQUIRED_ = ['frozen_at', 'calculation_run_id', 'calculation_date', 'calculation_status',
+  'freshness_state', 'recommended_qty', 'qualifying_active_planned_qty', 'residual_qty',
+  'header_schema_version', 'header_column_count', 'header_column_names_fingerprint',
+  'line_schema_version', 'line_column_count', 'line_column_names_fingerprint',
+  'route_a_header_snapshot', 'route_a_line_snapshot',
+  'route_a_header_full_fingerprint', 'route_a_line_full_fingerprint', 'route_a_combined_full_fingerprint',
+  'route_b_header_snapshot', 'route_b_line_snapshot',
+  'route_b_header_full_fingerprint', 'route_b_line_full_fingerprint', 'route_b_combined_full_fingerprint',
+  'identity_universe', 'reservation_observation',
+  'route_a_fingerprint', 'route_a_updated_at', 'route_a_line_updated_at',
+  'route_b_fingerprint', 'route_b_updated_at', 'route_b_line_updated_at',
+  'active_ai_headers', 'active_ai_lines'];
