@@ -81,6 +81,11 @@ var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
 // back over the cap.
 var PROOF_KEYS = ['census', 'build', 'verdict', 'predicates_passed', 'predicates_failed',
   'export_complete', 'export_missing', 'proof_complete', 'proof_missing',
+  // R6-R7-R3-P2 — the phase this reading was taken in, and the effective flag it was taken against.
+  // READY_NO_ACTION before the flag flip and READY_NO_ACTION after it are different facts, and this is
+  // the line an operator keeps.
+  'flag_phase', 'flag_effective', 'flag_observable', 'authorization_is_external',
+  'allowlist_is_exactly_the_frozen_scope',
   'db_writes', 'writer_calls', 'writer_constructed', 'submit_calls', 'route_save_calls', 'reservation_writes',
   'current_run', 'recommendation', 'production_path', 'parity', 'legacy_projection', 'manual_routes',
   'stop_reason'];
@@ -199,7 +204,8 @@ section('D — the live case, in the line that survives');
 // ================================================================================================================
 
 eq(PROOF.verdict, 'READY_NO_ACTION', 'D1  verdict');
-eq([PROOF.predicates_passed, PROOF.predicates_failed], [30, 0], 'D2  30 predicates, none failed');
+eq([PROOF.predicates_passed, PROOF.predicates_failed], [34, 0],
+  'D2  34 predicates, none failed — R6-R7-R3-P2 replaced one flag precondition with five phase claims');
 eq([PROOF.export_complete, PROOF.export_missing], [true, []], 'D3  export complete');
 eq([PROOF.proof_complete, PROOF.proof_missing], [true, []], 'D4  proof complete');
 eq(PROOF.production_path.outcome, 'AI_PLAN_NO_ACTION', 'D5  production outcome');

@@ -1,4 +1,4 @@
-# Controlled no-action activation runbook — F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3 · P1
+# Controlled no-action activation runbook — F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3 · P1 · P2
 
 The first time this system is allowed to write an AI Plan, the correct outcome is that it writes nothing.
 
@@ -61,6 +61,28 @@ browser and the browser cannot see the database:
 A confirmation needs all three. **A timeline phase of `SUCCESS` is not a response body**, and a recomputed
 decision is not a received reply.
 
+**The flag is a phase, and the preflight reads both of them.** `RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT()`
+used to require the flag to be **off**, which contradicted step 8 below: that step runs it again *after* the
+flip, and it STOPPED every time. Worse, it made a read-only diagnostic into an implicit authorization gate,
+which it is not. Whether the flag *may* be flipped is the **manifest's** question, and the manifest keeps its
+own `flag_is_still_false` for it. What the preflight answers is *where the flag is*, and both positions have a
+name:
+
+| phase | flag reads | what the preflight requires |
+|---|---|---|
+| `PRE_ACTIVATION` | strictly `false` | the staged-off read. 34 predicates. |
+| `POST_ACTIVATION` | strictly `true` | the last read before Generate. 42 predicates — **more**, not fewer. |
+| `UNOBSERVABLE` | anything else | **STOP.** Absent reader, a throw, `null`, or a truthy **non-boolean** — `'false'` is truthy, so a lenient read would have called it `POST_ACTIVATION`. |
+
+`POST_ACTIVATION` additionally requires the allowlist to be exactly the one frozen scope, and production to
+still answer `AI_PLAN_NO_ACTION` / `NO_REPLENISHMENT_REQUIRED` with `would_write false`,
+`writer_reached false`, `recommended_qty 0`, `qualifying_active_planned_qty 520` and `residual_qty 0`. A
+residual appearing after the flip is the state changing underneath the authorization, and the answer to that
+is STOP while a STOP still costs nothing.
+
+Every preflight run carries `flag_phase`, `flag_effective` and `authorization_is_external` in its bounded
+proof, because `READY_NO_ACTION` means a different thing on each side of the flip.
+
 ---
 
 ## The order, and why it is this order
@@ -71,11 +93,15 @@ is still null authorizes a click that nothing can check afterwards.
 ### Phase PREPARE — read-only
 
 1. Run `RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST()` and read the `r6r7_proof` line. It must say
-   `READY_TO_AUTHORIZE`.
+   `READY_TO_AUTHORIZE`. The preflight it runs on the way through reports `flag_phase: PRE_ACTIVATION`.
 2. Copy the `freeze_paste_block` — emitted as `r6r7_freeze_paste_block_1_of_N` … `N_of_N`, before the detailed
    export — into `R6R7_NO_ACTION_BEFORE_` in the census file. It carries the full-row field maps, not only the
    fingerprints: a fingerprint says a row moved, the field maps say **which column** did.
 3. Re-sync **only** the census file. No production file changes to freeze a baseline.
+   — **If your editor copy already holds a frozen `R6R7_NO_ACTION_BEFORE_`, do not re-paste the whole
+   file.** The repository copy is null on every live field, by design. Follow
+   `docs/planning/R6R7_PREFLIGHT_PHASE_MINIMAL_PASTE.md`, then re-run step 4: `AWAITING_ACTIVATION` is the
+   proof the freeze survived.
 4. Run `RUN_R6R7_CONTROLLED_NO_ACTION_READBACK()` as a baseline check. Expect **`AWAITING_ACTIVATION`** with
    `baseline_frozen: true`. `BASELINE_NOT_FROZEN` here means step 2 did not take.
 
@@ -92,7 +118,8 @@ is still null authorizes a click that nothing can check afterwards.
    does not change what the Web App answers.
 8. Verify the deployment contract OK, `mixed_deployment false`, the **effective** flag `true`, and the
    allowlist still exactly one scope; then run `RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT()` again and require
-   `READY_NO_ACTION`. The flag is now true, so this is a different state from every earlier preflight.
+   `READY_NO_ACTION` with **`flag_phase: POST_ACTIVATION`** and `predicates_failed 0`. The flag is now true,
+   so this is a different state from every earlier preflight — and a stricter one.
 
 ### Phase PRESS
 
@@ -110,7 +137,8 @@ is still null authorizes a click that nothing can check afterwards.
 
 13. Set the flag back to `false`, sync `00_config.gs`, publish a deployment version.
 14. Verify the effective flag is `false` again and the deployment contract is still OK. **Re-running the
-    manifest IS this check**: it STOPs while the flag is `true`.
+    manifest IS this check**: it STOPs while the flag is `true`. The preflight is the second half of it —
+    back to `flag_phase: PRE_ACTIVATION`, or the restore did not take.
 
 ---
 
@@ -121,6 +149,9 @@ is still null authorizes a click that nothing can check afterwards.
 - the deployment build is not `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2`, is mixed, has stale modules, or **cannot be
   read** — not being able to ask is not the same as the answer being yes
 - the flag is already `true`, or the allowlist is not exactly the one scope, or any axis is blank
+  — this is the **manifest's** gate and it is untouched by P2; it is the one thing a person authorizes
+  against, and it is deliberately NOT the preflight's job
+- the flag cannot be read as a strict boolean, so the phase is `UNOBSERVABLE`
 - the header schema is not a generation 16_ enumerates, is not 36 columns, or its column **names** do not match
   the authority byte for byte — and the same three for the 31-column line
 - any of the four full-row snapshots covers fewer than its canonical columns, or **excludes** one

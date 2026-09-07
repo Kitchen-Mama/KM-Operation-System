@@ -371,6 +371,10 @@ World.prototype.run = function (entry) {
 };
 World.prototype.dbWrites = function () { return this.H.writes + this.L.writes + this.G.writes; };
 function failed(r) { return (r.predicates || []).filter(function (p) { return !p.pass; }).map(function (p) { return p.predicate; }); }
+// A multi-line swap anchor, joined once. This suite reads the census RAW, and the repo is CRLF, so an
+// anchor joined with LF would silently fail to match — which is a mutant surviving for a reason that
+// has nothing to do with the code.
+function L2(lines) { return lines.join(CR); }
 function has(r, name) { return (r.predicates || []).some(function (p) { return p.predicate === name; }); }
 function predicate(r, name) { return (r.predicates || []).filter(function (p) { return p.predicate === name; })[0] || null; }
 
@@ -597,8 +601,22 @@ eq(reconOf(300), 'Excess 220', 'B9a recommendation below the plan is EXCESS, nev
 eq(reconOf(520), 'Remaining 0', 'B9b and an exact match is a remaining of zero, which is a real number');
 
 // ---- the refusals ----------------------------------------------------------------------------------------
+// R6-R7-R3-P2 — B10 USED TO ASSERT THE CONTRADICTION. A flag that is already true was read as a failed
+// precondition, so the one run the activation procedure needs most — the read AFTER the flip, immediately
+// before Generate is pressed — could never pass. Whether the flag MAY be flipped is the activation
+// manifest's question and it keeps its own gate (see that suite's B12). What this census answers is where
+// the flag IS, and both positions have a name.
 var B_FLAG = new World({ flag: true }).run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
-eq(B_FLAG.verdict, 'STOP', 'B10 a flag that is already TRUE stops this round — activation is a later decision');
+eq(B_FLAG.verdict, 'READY_NO_ACTION',
+  'B10 a flag that is already TRUE is a PHASE, not a failed precondition');
+eq(B_FLAG.flag_phase.phase, 'POST_ACTIVATION', 'B10a reported as POST_ACTIVATION');
+eq([B_FLAG.flag_phase.flag_effective, B_FLAG.flag_phase.observable], [true, true],
+  'B10b with the effective flag observed as a strict boolean');
+eq(B_FLAG.flag_phase.authorization_is_external, true,
+  'B10c and the census still refuses to be its own authorization source');
+var B_PRE = new World({}).run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
+eq([B_PRE.verdict, B_PRE.flag_phase.phase], ['READY_NO_ACTION', 'PRE_ACTIVATION'],
+  'B10d and the staged-off read is PRE_ACTIVATION, same verdict, different phase');
 var B_ALLOW = new World({ allowlist: [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' },
   { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'OTHER-SKU' }] })
   .run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
@@ -1306,14 +1324,25 @@ mut('N12 the readback checking row counts but not the arithmetic of the total', 
   var r = withAiSrc(m, { aLine: { planned_qty: '1' } });
   return failed(r).indexOf('station_total_is_the_manual_total_plus_the_ai_units') === -1;
 });
-mut('N13 the preflight passing while the flag is already on', function () {
-  var m = swap(CENSUS, "P('flag_is_still_false_this_round', false, flagVal, flagVal === false);",
-    "P('flag_is_still_false_this_round', false, flagVal, true);");
-  var r = new World({ flag: true }, m).run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
-  return r.verdict !== 'STOP';
+mut('N13 the hard-coded flag=false precondition restored, so the POST-flip read STOPS again', function () {
+  // The regression this round exists to prevent coming back. Reinstating the old predicate makes the
+  // preflight refuse the exact run step 8 of the runbook requires, which is how the contradiction was
+  // measured live in the first place.
+  var m = swap(CENSUS, L2([
+    "  if (fp.phase === 'PRE_ACTIVATION') {",
+    "    P('pre_activation_flag_effective_is_false', false, flagVal, flagVal === false);"
+  ]), L2([
+    '  if (true) {',
+    "    P('flag_is_still_false_this_round', false, flagVal, flagVal === false);"
+  ]));
+  var clean = new World({ flag: true }).run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
+  var bad = new World({ flag: true }, m).run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT').res;
+  return clean.verdict === 'READY_NO_ACTION' && clean.flag_phase.phase === 'POST_ACTIVATION'
+    && bad.verdict === 'STOP'
+    && failed(bad).indexOf('flag_is_still_false_this_round') !== -1;
 });
 mut('N14 the preflight ignoring a widened allowlist', function () {
-  var m = swap(CENSUS, "P('allowlist_holds_exactly_this_one_scope', 1, allow ? allow.length : null, !!allow && allow.length === 1);",
+  var m = swap(CENSUS, "P('allowlist_holds_exactly_this_one_scope', 1, allow ? allow.length : null, exactList);",
     "P('allowlist_holds_exactly_this_one_scope', 1, allow ? allow.length : null, true);");
   // The verdict cannot isolate this claim: a widened allowlist also gives the production path a scope with
   // no canonical row, so the preflight stops for a second, independent reason. Asked where it is made.

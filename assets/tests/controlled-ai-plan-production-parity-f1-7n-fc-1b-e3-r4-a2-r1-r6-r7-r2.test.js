@@ -341,7 +341,7 @@ eq(X.export_complete, true, 'D3  and the export declares itself complete');
 
 // THE GUARD. A census whose verdict rests on evidence it did not report STOPS.
 var REQ = vm.runInNewContext(SHARED.extractVar(CENSUS, 'R6R7_REQUIRED_EXPORT_') + ' R6R7_REQUIRED_EXPORT_');
-eq(REQ.RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT, ['production_path', 'parity'],
+eq(REQ.RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT, ['production_path', 'parity', 'flag_phase'],
   'D4  the preflight declares which fields its verdict rests on');
 ok(/out\.verdict = 'STOP';\r?\n\s*out\.stop_reason = \(out\.stop_reason \? out\.stop_reason \+ ' ' : ''\)/.test(CENSUS)
   && CENSUS.indexOf('EXPORT_INCOMPLETE: ') > 0,

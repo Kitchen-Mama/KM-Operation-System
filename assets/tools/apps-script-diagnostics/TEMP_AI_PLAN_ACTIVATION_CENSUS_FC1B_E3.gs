@@ -5544,6 +5544,74 @@ function RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS() {
   return CENSUS_r6r7Finish_(out);
 }
 
+// ================================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3-P2 — THE FLAG IS A PHASE THIS CENSUS OBSERVES, NOT A POSTURE IT DEMANDS.
+//
+// RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT asserted P('flag_is_still_false_this_round', false, flagVal,
+// flagVal === false), and that made it contradict the runbook it belongs to. The activation procedure
+// requires running the preflight AGAIN after the flag is on — that run is the last read before a person
+// presses the button — and the predicate STOPPED every time, reporting a failed condition for the operator
+// having done exactly what step 8 told them to do. It was measured live: production answered
+// AI_PLAN_NO_ACTION / NO_REPLENISHMENT_REQUIRED with would_write false, writer_reached false and db_writes
+// 0, and the ONLY failing predicate was the flag being in the position the procedure had just put it in.
+//
+// The deeper mistake is a category one. 'MAY the flag be flipped' is the activation manifest's question,
+// and the manifest keeps its own flag_is_still_false for exactly that — untouched by this patch, because
+// that is the gate a person is authorized against. 'WOULD a generation write anything' is this file's
+// question, and it is legitimate in both postures. A read-only diagnostic that refuses to read is not a
+// safety mechanism; it is a diagnostic that has quietly appointed itself an authorization source.
+//
+// So the flag becomes a FACT WITH A NAME, in two legal phases and one illegal one:
+//
+//   PRE_ACTIVATION   the flag reads strictly false. Nothing can write yet; this is the staged-off read.
+//   POST_ACTIVATION  the flag reads strictly true. A generation is now possible, so what it WOULD do
+//                    matters more here than anywhere else, and this phase carries EXTRA requirements
+//                    rather than fewer — the frozen no-action expectation, in full.
+//   UNOBSERVABLE     anything else: the reader is absent, it threw, it answered null, or it answered a
+//                    truthy NON-boolean. That last case is why the read is strict: the string 'false' is
+//                    truthy, so a lenient read would have called it POST_ACTIVATION and proceeded.
+//                    A flag we could not read is not a flag in a known position.
+//
+// Nothing here authorizes anything. authorization_is_external is reported as a constant true, and it is
+// asserted as a predicate, so a future edit that made this census the source of its own permission would
+// have to delete a named claim rather than quietly change a default.
+// ================================================================================================================
+var R6R7_FLAG_PHASES_ = ['PRE_ACTIVATION', 'POST_ACTIVATION'];
+var R6R7_FLAG_NAME_ = 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_';
+
+/** The effective flag, read through the server's own reader, and the phase that reading puts us in. */
+function CENSUS_r6r7FlagPhase_() {
+  var o = { name: R6R7_FLAG_NAME_, flag_effective: null, observable: false, reader_present: false,
+    phase: 'UNOBSERVABLE', authorization_is_external: true, authorized_by: null, reason: null,
+    why_external: 'this census is read-only and is not an authorization source. Whether the flag MAY be'
+      + ' flipped is RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST\'s question, and it keeps its own'
+      + ' flag_is_still_false predicate for it. This one only reports where the flag IS.' };
+  var present = false;
+  try { present = typeof inventoryAiPlanDbGenerationEnabled_ === 'function'; } catch (eP) { present = false; }
+  o.reader_present = present;
+  if (!present) {
+    o.reason = 'FLAG_READER_ABSENT: ' + R6R7_FLAG_NAME_ + ' cannot be read because inventoryAiPlanDbGenerationEnabled_ is not in this project. 00_config.gs is not synced.';
+    return o;
+  }
+  var v = null;
+  try { v = inventoryAiPlanDbGenerationEnabled_(); }
+  catch (eT) {
+    o.reason = 'FLAG_READER_THREW: ' + CENSUS_str_(eT && eT.message);
+    return o;
+  }
+  o.flag_effective = v;
+  // STRICTLY boolean. A truthy non-boolean is the dangerous case, not the harmless one.
+  if (v === true || v === false) {
+    o.observable = true;
+    o.phase = v === true ? 'POST_ACTIVATION' : 'PRE_ACTIVATION';
+    return o;
+  }
+  o.reason = 'FLAG_NOT_A_BOOLEAN: the gate answered ' + JSON.stringify(v) + ' (' + (typeof v) + ').'
+    + ' A phase is only observable from a strict true or false; anything else is a value whose truthiness'
+    + ' this census refuses to guess at.';
+  return o;
+}
+
 // ----------------------------------------------------------------------------------------------------------------
 // §4 — THE CONTROLLED AI PLAN PREFLIGHT. Read-only, no arguments, hard-coded scope.
 //
@@ -5571,6 +5639,9 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT() {
     allowed_tables: null, allowed_fields: null, forbidden_mutations: null,
     manual_route_snapshots: [],
     idempotency_contract: null, optimistic_concurrency_contract: null, ack_unknown_contract: null,
+    // R6-R7-R3-P2 — the phase this run was taken in. A preflight result read without it cannot be placed:
+    // 'production would not write' means something different before and after the flag went on.
+    flag_phase: null,
     flag: null, allowlist: null,
     // R6-R7-R1 §F — WHAT THE PRODUCTION HANDLER WOULD ACTUALLY ANSWER, resolved from the production
     // functions themselves rather than restated here. The first version of this preflight returned READY
@@ -5590,21 +5661,67 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT() {
   function P(name, expected, observed, pass) { return CENSUS_r6r6r3P_(out, name, expected, observed, pass); }
 
   // ---- THE TWO GATES, read from the server's own config rather than restated. -------------------------------
-  var flagVal = null;
-  try { flagVal = (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? inventoryAiPlanDbGenerationEnabled_() : null; } catch (eF) { flagVal = null; }
+  //
+  // R6-R7-R3-P2 — the flag is OBSERVED into a phase (see CENSUS_r6r7FlagPhase_ above). The predicate this
+  // replaces demanded flagVal === false and therefore STOPPED the one run the runbook needs most.
+  var fp = CENSUS_r6r7FlagPhase_();
+  out.flag_phase = fp;
+  var flagVal = fp.flag_effective;
   var allow = null;
   try { allow = (typeof INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ !== 'undefined') ? INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ : null; } catch (eA) { allow = null; }
-  out.flag = { name: 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_', value: flagVal,
-    note: 'FALSE here is CORRECT for this round. A preflight runs against the staged-off posture; the flag is'
-      + ' the operator\'s to flip, in a deployment with a diff, and never this file\'s.' };
+  out.flag = { name: R6R7_FLAG_NAME_, value: flagVal,
+    phase: fp.phase, observable: fp.observable, authorization_is_external: true,
+    note: 'BOTH positions are legal for this census, and each has its own name. PRE_ACTIVATION is the'
+      + ' staged-off read; POST_ACTIVATION is the last read before Generate is pressed, and it carries MORE'
+      + ' requirements, not fewer. The flag is the operator\'s to flip, in a deployment with a diff, and'
+      + ' never this file\'s — which is why the gate on flipping it lives in the activation manifest.' };
+  var exactList = !!allow && allow.length === 1;
+  var wild = !allow ? [] : allow.filter(function (e) {
+    return !CENSUS_str_(e.company) || !CENSUS_str_(e.country) || !CENSUS_str_(e.marketplace)
+      || !CENSUS_str_(e.sku) || /^all(_sites)?$/i.test(CENSUS_str_(e.marketplace));
+  });
   out.allowlist = { entries: allow,
     scope_is_listed: !!(allow && allow.filter(function (e) {
       return CENSUS_str_(e.company) === R6R7_SCOPE_.company && CENSUS_str_(e.country) === R6R7_SCOPE_.country
         && CENSUS_str_(e.marketplace) === R6R7_SCOPE_.marketplace && CENSUS_str_(e.sku) === R6R7_SCOPE_.sku;
-    }).length === 1) };
-  P('flag_is_still_false_this_round', false, flagVal, flagVal === false);
-  P('allowlist_holds_exactly_this_one_scope', 1, allow ? allow.length : null, !!allow && allow.length === 1);
+    }).length === 1),
+    wildcard_or_partial_entries: wild,
+    is_exactly_the_frozen_scope: exactList && wild.length === 0
+      && !!allow && CENSUS_str_(allow[0].company) === R6R7_SCOPE_.company
+      && CENSUS_str_(allow[0].country) === R6R7_SCOPE_.country
+      && CENSUS_str_(allow[0].marketplace) === R6R7_SCOPE_.marketplace
+      && CENSUS_str_(allow[0].sku) === R6R7_SCOPE_.sku };
+
+  // THE FLAG MUST BE READABLE, AND THE READING MUST LAND IN A DECLARED PHASE. This is the replacement for
+  // the hard-coded false: not 'the flag is off' but 'the flag is somewhere we can name'.
+  P('flag_effective_is_an_observable_boolean',
+    'strictly true or false, through ' + R6R7_FLAG_NAME_,
+    fp.observable ? (fp.phase + ' / ' + JSON.stringify(fp.flag_effective))
+      : ('UNOBSERVABLE: ' + CENSUS_str_(fp.reason)),
+    fp.observable === true);
+  P('flag_phase_is_one_of_the_two_declared_phases', R6R7_FLAG_PHASES_, fp.phase,
+    R6R7_FLAG_PHASES_.indexOf(fp.phase) !== -1);
+  // A diagnostic may not be its own permission. Asserted rather than assumed, so removing it is visible.
+  P('this_preflight_is_not_an_authorization_source', true, fp.authorization_is_external,
+    fp.authorization_is_external === true && fp.authorized_by === null);
+  P('allowlist_holds_exactly_this_one_scope', 1, allow ? allow.length : null, exactList);
   P('allowlist_entry_is_this_scope', true, out.allowlist.scope_is_listed, out.allowlist.scope_is_listed === true);
+  P('no_wildcard_or_partial_allowlist_entry', [], wild, wild.length === 0);
+
+  // ---- AND THE PHASE'S OWN CLAIM, in both directions. ------------------------------------------------------
+  //
+  // PRE_ACTIVATION asserts the flag is off; POST_ACTIVATION asserts it is on. Neither is the safety gate on
+  // FLIPPING it — that stayed in the activation manifest — but a phase label nothing checks is a label.
+  if (fp.phase === 'PRE_ACTIVATION') {
+    P('pre_activation_flag_effective_is_false', false, flagVal, flagVal === false);
+  } else if (fp.phase === 'POST_ACTIVATION') {
+    P('post_activation_flag_effective_is_true', true, flagVal, flagVal === true);
+    // THE WINDOW IS OPEN, SO THE FROZEN EXPECTATION IS REQUIRED IN FULL. What was authorized was a
+    // no-action for one scope. A residual appearing after the flag went on is the state changing underneath
+    // the authorization, and the right answer to that is STOP rather than 'ready to generate'.
+    P('post_activation_allowlist_is_exactly_the_frozen_scope', true, out.allowlist.is_exactly_the_frozen_scope,
+      out.allowlist.is_exactly_the_frozen_scope === true);
+  }
 
   // ---- THE AUTHORITATIVE RECOMMENDATION, through §2 rather than through a second reader. --------------------
   var rec = CENSUS_quiet_('RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS',
@@ -5997,6 +6114,26 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT() {
     pp.available === true
       && (pp.outcome === 'AI_PLAN_NO_ACTION' || (pp.outcome === 'WOULD_GENERATE' && wouldWrite)));
 
+  // ---- R6-R7-R3-P2 §F — POST_ACTIVATION REQUIRES THE WHOLE FROZEN NO-ACTION, not just a legal outcome.
+  //
+  // Before the flag goes on, 'production would generate' is a fact to read. After it goes on, for THIS
+  // activation, it is a state nobody authorized: the authorization was for a run that writes nothing. So
+  // the second phase pins every number the authorization rested on, one named predicate each, and any one
+  // of them moving is a STOP in the phase where a STOP still costs nothing.
+  if ((out.flag_phase || {}).phase === 'POST_ACTIVATION') {
+    P('post_activation_production_outcome_is_no_action', 'AI_PLAN_NO_ACTION', pp.outcome,
+      pp.outcome === 'AI_PLAN_NO_ACTION');
+    P('post_activation_production_code_is_no_replenishment_required', 'NO_REPLENISHMENT_REQUIRED', pp.code,
+      pp.code === 'NO_REPLENISHMENT_REQUIRED');
+    P('post_activation_production_would_not_write', false, pp.would_write, pp.would_write === false);
+    P('post_activation_writer_would_not_be_reached', false, pp.writer_reached, pp.writer_reached === false);
+    P('post_activation_recommended_qty_is_zero', 0, pp.recommended_qty, pp.recommended_qty === 0);
+    P('post_activation_qualifying_active_planned_qty_is_520', R6R7_SET_BEFORE_.current_plan_total,
+      pp.qualifying_active_planned_qty,
+      pp.qualifying_active_planned_qty === R6R7_SET_BEFORE_.current_plan_total);
+    P('post_activation_residual_qty_is_zero', 0, pp.residual_qty, pp.residual_qty === 0);
+  }
+
   if (out.predicates_failed !== 0) {
     out.verdict = 'STOP';
     out.stop_reason = out.predicates_failed + ' predicate(s) failed: '
@@ -6380,7 +6517,9 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_READBACK() {
 // quieter report.
 // ================================================================================================================
 var R6R7_REQUIRED_EXPORT_ = {
-  RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT: ['production_path', 'parity'],
+  // R6-R7-R3-P2 adds the phase: a preflight verdict read without knowing which side of the flag flip it
+  // was taken on is not a verdict a reader can place.
+  RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT: ['production_path', 'parity', 'flag_phase'],
   RUN_R6R7_RECOMMENDATION_AUTHORITY_CENSUS: ['suggested_qty', 'disputed_value_provenance', 'current_run'],
   RUN_R6R7_CONTROLLED_AI_PLAN_READBACK: ['counts'],
   // R6-R7-R3. The manifest's verdict rests on what it FROZE; a READY_TO_AUTHORIZE that does not carry the
@@ -8101,6 +8240,15 @@ function CENSUS_r6r7ProofObject_(out) {
     proof_complete: out.proof_complete === true,
     proof_missing: out.proof_missing || [],
 
+    // R6-R7-R3-P2 — WHICH SIDE OF THE FLAG FLIP THIS READING WAS TAKEN ON. In the bounded line, because
+    // that is the line an operator keeps, and READY_NO_ACTION means a different thing in each phase.
+    flag_phase: (out.flag_phase || {}).phase || null,
+    flag_effective: (out.flag_phase || {}).flag_effective === undefined
+      ? null : (out.flag_phase || {}).flag_effective,
+    flag_observable: (out.flag_phase || {}).observable === true,
+    authorization_is_external: (out.flag_phase || {}).authorization_is_external === true,
+    allowlist_is_exactly_the_frozen_scope: !!out.allowlist && out.allowlist.is_exactly_the_frozen_scope === true,
+
     db_writes: CENSUS_num_(out.db_writes) || 0,
     writer_calls: CENSUS_num_(out.writer_calls) || 0,
     writer_constructed: out.writer_constructed === true,
@@ -8473,7 +8621,12 @@ function CENSUS_r6r7ProofGuard_(out) {
   var pp = out.production_path || {};
   var pa = out.parity || {};
   var lp = out.legacy_projection || {};
+  var fph = out.flag_phase || {};
   var missing = [];
+  // R6-R7-R3-P2 — a preflight proof with no phase cannot be placed: READY_NO_ACTION before the flip and
+  // READY_NO_ACTION after it are different facts, and an operator keeping one line needs to know which.
+  if (!out.flag_phase || R6R7_FLAG_PHASES_.indexOf(fph.phase) === -1) missing.push('flag_phase');
+  if (fph.authorization_is_external !== true) missing.push('authorization_is_external');
   if (!out.production_path || pp.available !== true || !pp.outcome) missing.push('production_path.outcome');
   if (!out.parity || !pa.production_outcome || typeof pa.agree !== 'boolean') missing.push('parity');
   if (!out.legacy_projection || lp.is_production_generation_authority !== false) {
