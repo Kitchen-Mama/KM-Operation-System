@@ -7449,7 +7449,25 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
   return CENSUS_r6r7Finish_(out);
 }
 
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
+// ================================================================================================================
+// THE BUILD EVERY PREFLIGHT IN THIS ACTIVATION WAS MEASURED ON. A build that is not this one is a different
+// system, and none of the evidence transfers to it — which is why `deployment_build_is_the_measured_one` is a
+// STOP and not a warning.
+//
+// IT STAYS AN INDEPENDENT PINNED VALUE. It must never be read from the deployment being examined: an expected
+// value taken from the observed value is a comparison with itself, it cannot fail, and a gate that cannot fail
+// is not a gate. The whole point is that a person writes this down when they take the measurements, so a later
+// deployment that has moved underneath them is REFUSED rather than silently accepted.
+//
+// R6-R7-R3 — moved to R3, and the reason it had to be moved by hand is worth recording. R6-R7-R3 changed 61_
+// and therefore the RELEASE, and this pin was left at R2: the live manifest then STOPped on a deployment that
+// was independently verified healthy (build R3, mixed_deployment false, stale_modules []). Nothing caught it
+// beforehand because the test double reported R2 too — the fixture agreed with the pin instead of with the
+// release, so the two moved out of step and every assertion still passed. The R6-R7-R3 manifest suite now
+// asserts this pin against 63_'s SYS_DEPLOYMENT_RELEASE_ in the repository, which is a source-level check and
+// NOT a runtime self-comparison: it makes the pin unable to lag a release, while leaving it unable to adopt
+// whatever a deployment happens to claim.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

@@ -64,13 +64,32 @@ var World = SHARED.World, failed = SHARED.failed, swap = SHARED.swap;
 var extractFn = SHARED.extractFn, extractVar = SHARED.extractVar;
 var CENSUS = SHARED.CENSUS, G61 = SHARED.G61, live = SHARED.live, projection = SHARED.projection;
 var NLF = SHARED.NLF;
+// THE ROUND THIS SUITE WAS WRITTEN AGAINST. It is a FLOOR for the stamp assertions in §H and nothing else.
 var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
+
+// ================================================================================================================
+// R6-R7-R3-P3 — TWO DIFFERENT FACTS THAT WERE SHARING ONE CONSTANT, and that is how they drifted apart.
+//
+// `DEPLOYMENT_BUILD` above used to be BOTH the floor for "these stamps have not fallen behind my round" AND
+// the build the deployment double reports. So when R6-R7-R3 moved the release, the census's own
+// `R6R7_ACTIVATION_BUILD_` pin stayed at R2 — and the double reported R2 as well, so
+// `deployment_build_is_the_measured_one` compared R2 with R2 and passed. The suite was green while the live
+// manifest STOPped on a deployment that was independently verified healthy.
+//
+// They are separate now, and all three are falsifiable:
+//   OBSERVED_BUILD   what a healthy production deployment reports — a literal here, standing in for 63_.
+//   ACTIVATION_PIN   what the census expects, READ OUT OF THE CENSUS rather than restated.
+//   the release      63_'s SYS_DEPLOYMENT_RELEASE_, read out of 63_.
+// §B-P3 asserts the three agree. Nothing is derived from anything else, so any one of them moving alone fails.
+// ================================================================================================================
+var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
+var ACTIVATION_PIN = (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] || null;
 
 // The deployment contract is 63_'s to report and 63_ is not in this world. A DOUBLE stands in for it, and it
 // is a double of the SHAPE 63_ returns — the manifest reads exactly those fields and nothing else. A healthy
 // double is not a claim that production is healthy; the manifest re-reads the real one there.
 function deployment(over) {
-  var d = { deployment_build: DEPLOYMENT_BUILD, modules: [], runtime_authority: { uniform: true },
+  var d = { deployment_build: OBSERVED_BUILD, modules: [], runtime_authority: { uniform: true },
     absent_modules: [], absent_optional_modules: [], stale_modules: [], mixed_deployment: false,
     verdict: 'UNIFORM' };
   Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
@@ -345,6 +364,61 @@ ok(failed(B20.res).indexOf('parity_says_production_would_not_write') >= 0, 'B20a
 var B21 = manifest(NONZERO);
 eq(B21.res.production_path.would_write, true, 'B21 a residual really does set would_write');
 ok(failed(B21.res).indexOf('production_would_not_write') >= 0, 'B21a which the manifest refuses');
+
+// ================================================================================================================
+section('B-P3 — the pinned activation build, and why it must be pinned rather than adopted');
+// ================================================================================================================
+// R6-R7-R3-P3. The live manifest STOPped on `deployment_build_is_the_measured_one` against a deployment that
+// was independently verified healthy: build R3, mixed_deployment false, stale_modules []. The census pin was
+// still R2 because R6-R7-R3 moved the release and nobody moved the pin — and nothing here caught it, because
+// the deployment double reported R2 too. The fixture agreed with the pin instead of with the release, so the
+// two drifted together and every assertion stayed green. These assertions close that.
+var G63_P3 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
+var RELEASE_P3 = (G63_P3.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1] || null;
+var CENSUS_STAMP_P3 = (CENSUS.match(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/) || [])[1] || null;
+
+eq((CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '[^']+';/g) || []).length, 1,
+  'BP1  R6R7_ACTIVATION_BUILD_ is declared exactly once — two pins would let a reader trust the stale one');
+eq((CENSUS.match(/R6R7_ACTIVATION_BUILD_/g) || []).length, 3,
+  'BP1a and it is referenced exactly twice besides its declaration: the expected value and the comparison');
+ok(ACTIVATION_PIN !== null, 'BP2  the pin is readable from the census');
+eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3', 'BP2a and it is this round: R6-R7-R3');
+eq(ACTIVATION_PIN, RELEASE_P3,
+  'BP3  the pin equals 63_\'s SYS_DEPLOYMENT_RELEASE_ — a pin that lags a release refuses a healthy deployment');
+eq(ACTIVATION_PIN, CENSUS_STAMP_P3,
+  'BP3a and it equals TEMP_E3_CENSUS_BUILD_, so the diagnostic and the build it expects move together');
+// THE THREE SOURCES ARE INDEPENDENT. This is the property that makes BP3/BP3a able to fail: the pin is read
+// out of the census, the release out of 63_, and OBSERVED_BUILD is a literal here. None is derived from another.
+ok(/var R6R7_ACTIVATION_BUILD_ = '/.test(CENSUS) && /var SYS_DEPLOYMENT_RELEASE_ = '/.test(G63_P3),
+  'BP4  each of the three values has its own source; none is computed from the observed deployment');
+ok(!/R6R7_ACTIVATION_BUILD_\s*=\s*(out\.deployment|.*deployment_build)/.test(CENSUS),
+  'BP4a THE POINT: the census never assigns the pin FROM the deployment it is examining — an expected value'
+  + ' taken from the observed value is a comparison with itself, and it cannot fail');
+
+// OBSERVED R3 PASSES. The default double reports OBSERVED_BUILD, so this is the live shape.
+var BP = manifest();
+eq(BP.res.deployment.deployment_build, OBSERVED_BUILD, 'BP5  the double reports the observed R3 build');
+ok(failed(BP.res).indexOf('deployment_build_is_the_measured_one') === -1,
+  'BP5a and deployment_build_is_the_measured_one PASSES against it');
+eq(BP.res.verdict, 'READY_TO_AUTHORIZE',
+  'BP5b so the manifest reaches READY_TO_AUTHORIZE with every other fixture condition holding');
+eq(BP.res.predicates_failed, 0, 'BP5c with no predicate failed');
+eq([BP.res.deployment.mixed_deployment, BP.res.deployment.stale_modules], [false, []],
+  'BP5d on a deployment that is not mixed and has no stale module — the live conditions');
+
+// EVERY OTHER MISMATCH STILL STOPS. Raising the pin must not have turned this gate into a formality.
+[['an older release', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2'],
+ ['an older release still', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1'],
+ ['a NEWER release nobody measured on', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4'],
+ ['an empty build', ''], ['a null build', null]
+].forEach(function (c, i) {
+  var r = manifest(live(), { deployment: { deployment_build: c[1] } });
+  eq(r.res.verdict, 'STOP', 'BP6' + (i ? String.fromCharCode(96 + i) : '') + ' ' + c[0] + ' is a STOP');
+  ok(failed(r.res).indexOf('deployment_build_is_the_measured_one') >= 0,
+    'BP6' + (i ? String.fromCharCode(96 + i) : '') + '-n named as deployment_build_is_the_measured_one');
+});
+// A NEWER build is refused for the same reason an older one is: the evidence was taken somewhere else.
+ok(true, 'BP7  newer is not better — none of the measurements transfer to a build they were not taken on');
 
 // ================================================================================================================
 section('C — the readback refuses to prove stillness against a baseline nobody froze');
@@ -825,6 +899,37 @@ mut('N12 the manifest proof dropping the frozen fingerprints', function () {
   return !!proofOf(manifest()).routes.a_route_view
     && proofOf(bad).routes.a_route_view === null
     && proofOf(bad).proof_complete === true;
+});
+
+// R6-R7-R3-P3 — THE REGRESSION THAT ACTUALLY HAPPENED, as a mutant. The pin left behind at R2 while the
+// release moved to R3: the live manifest STOPs on a healthy deployment, and the old suite saw nothing.
+mut('N13 the activation build pin left behind at R2 while the release is R3', function () {
+  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';",
+    "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';");
+  var stalePin = (m.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1];
+  var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST');
+  // Caught three ways, and all three have to hold — the source parity, the live verdict, and the named
+  // predicate. The source parity alone is what the old suite was missing.
+  return ACTIVATION_PIN === RELEASE_P3            // the shipped pin agrees with the release
+    && stalePin !== RELEASE_P3                     // the mutated one does not
+    && manifest().res.verdict === 'READY_TO_AUTHORIZE'
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf('deployment_build_is_the_measured_one') >= 0;
+});
+
+// AND THE OPPOSITE FAILURE MODE: the pin made to follow whatever the deployment reports. That would end the
+// STOPs forever, which is worse than the drift it "fixes" — so it must be caught too.
+mut('N14 the pin adopting the observed deployment build instead of being pinned', function () {
+  var m = swap(CENSUS, "  P('deployment_build_is_the_measured_one', R6R7_ACTIVATION_BUILD_, out.deployment.deployment_build," + NLF
+    + '    out.deployment.deployment_build === R6R7_ACTIVATION_BUILD_);',
+    "  P('deployment_build_is_the_measured_one', out.deployment.deployment_build, out.deployment.deployment_build," + NLF
+    + '    out.deployment.deployment_build === out.deployment.deployment_build);');
+  var wrong = { deployment: { deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1' } };
+  var clean = manifest(live(), wrong);
+  var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST', live(), wrong);
+  return clean.res.verdict === 'STOP'
+    && failed(clean.res).indexOf('deployment_build_is_the_measured_one') >= 0
+    && failed(bad.res).indexOf('deployment_build_is_the_measured_one') === -1;
 });
 
 
