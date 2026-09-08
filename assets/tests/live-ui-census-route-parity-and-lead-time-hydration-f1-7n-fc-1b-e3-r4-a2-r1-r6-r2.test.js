@@ -497,7 +497,10 @@ built.MODULE_ORDER.forEach(function (m) { sources[m] = read('assets/js/core/' + 
 var b = built.buildBundleFromSources(sources);
 var onDisk = read('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs').replace(/\r\n/g, '\n');
 eq(b.code.replace(/\r\n/g, '\n'), onDisk, 'H9 the committed bundle is exactly what the tool produces');
-eq(built.MODULE_ORDER.length, 59, 'H10 the bundle carries 59 modules');
+// R6-R7-R5 — 60. KMFSG (supply-planning-factory-stock-guard) joined the bundle as the ONE shared factory
+// pool arithmetic. Kept EXACT rather than floored: H9 proves the bundle equals the tool's output, so this
+// row's whole job is to make an unannounced addition or removal visible.
+eq(built.MODULE_ORDER.length, 60, 'H10 the bundle carries 60 modules');
 ok(/var KMARC = /.test(onDisk), 'H11 and KMARC is a global in it, so the census can consume it');
 
 // ================================================================================================================

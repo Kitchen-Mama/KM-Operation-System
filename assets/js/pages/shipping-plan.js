@@ -1083,6 +1083,12 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                             (plan.completedAt ? '<div class="sp-rationale-item"><strong>Decision Completed:</strong> ' + _spEsc(plan.completedAt) + (plan.completedBy ? ' by ' + _spEsc(plan.completedBy) : '') + '</div>' : '') +
                             noteInput +
                             noteHtml +
+                            // R6-R7-R5 §7 — filled asynchronously by spFactoryGuardRefresh. It is a DIV and
+                            // not a number baked into this string, because the figure must come from the same
+                            // server function the submit gate runs rather than from the rows already here.
+                            (statusType === 'draft'
+                              ? ('<div id="sp-factory-guard-' + _spEsc(pid) + '"></div>')
+                              : '') +
                         '</div>' +
                     '</div>' +
                     costBreakdown +
@@ -1092,6 +1098,16 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
     });
 
     container.innerHTML = html;
+
+    // R6-R7-R5 §7 — the indicator is fetched AFTER the DOM exists, per Draft card. It is deliberately not
+    // awaited and cannot fail the render: an availability figure is useful, and a page that would not draw
+    // without it would be worse than a page that draws and then says the figure is unavailable.
+    try {
+        Array.prototype.forEach.call(container.querySelectorAll('[id^="sp-factory-guard-"]'), function (el) {
+            var pid = el.id.replace('sp-factory-guard-', '');
+            if (pid) spFactoryGuardRefresh(pid);
+        });
+    } catch (eFGR) { /* an indicator is never allowed to break a render */ }
 }
 
 function _spSummary(label, valueHtml) {
@@ -1263,6 +1279,254 @@ function spDbSaveQty(planId) {
     }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed' });
 }
 
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §4/§7 — THE FACTORY STOCK OVERAGE MODAL.
+//
+// ONLY ON SEND TO PENDING APPROVAL. Typing a large number into a Draft is not an authorisation and must not be
+// treated as one, so nothing here fires while a Draft is being edited; the Draft carries a NON-BLOCKING
+// indicator instead. Interrupting an edit to ask a question the operator has not finished answering is how a
+// confirmation becomes a reflex, and a reflex confirms nothing.
+//
+// AND THE MODAL IS NOT THE GUARD. The server refuses the transition on its own and recomputes availability
+// inside its write lock. This dialog exists so a person can supply the reason and accept the shortfall — which
+// is why the flow is SUBMIT FIRST and the modal is opened by the server saying it is required, rather than by
+// the page pre-checking and deciding whether to ask. A page that decided would be a second authority, and the
+// one it did not consult is the one holding the lock.
+//
+// NO GENERIC CONFIRM (§7). The primary button says "Confirm Overage", never "OK": the operator is agreeing to a
+// specific, named, audited thing, and a button that does not say so asks them to agree to nothing in particular.
+// ==============================================================================================================
+var _spOverageDom = null;
+
+// The typed code the server uses for the challenge. Matched EXACTLY — a substring test would also match a
+// message that merely mentions the code.
+var SP_OVERAGE_CODE_ = 'FACTORY_STOCK_OVERAGE_CONFIRMATION_REQUIRED';
+
+function _spOverageClose() {
+    if (_spOverageDom && _spOverageDom.overlay && _spOverageDom.overlay.parentNode) {
+        _spOverageDom.overlay.parentNode.removeChild(_spOverageDom.overlay);
+    }
+    _spOverageDom = null;
+}
+
+function _spOvNum(v) { var n = Number(v); return isFinite(n) ? n.toLocaleString() : String(v == null ? '' : v); }
+
+function _spOvEsc(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Is this response the server's overage challenge? Returns the challenge data, or null.
+ *
+ * A challenge carrying no pool numbers is deliberately NOT treated as one: this page can only present a
+ * shortfall it can show the arithmetic for, and a bare code with no figures would put an operator in front of a
+ * Confirm Overage button with nothing to read.
+ */
+function _spIsOverageChallenge(res) {
+    if (!res || res.success !== false) return null;
+    var e = res.error || {};
+    var code = e.code || res.code || null;
+    if (code !== SP_OVERAGE_CODE_) return null;
+    var d = e.data || res.data || null;
+    if (!d || !d.overage_pools || !d.overage_pools.length) return null;
+    return d;
+}
+
+/**
+ * Open the modal for one server-issued challenge. Resolves with:
+ *   null   the operator cancelled — NOTHING is sent, so nothing mutates
+ *   {...}  the confirmation payload, to travel WITH the transition it authorises
+ *
+ * Every number shown is read from `challenge`; none is recomputed here, because a page that recomputed could
+ * show a total the server never agreed to.
+ */
+function _spOverageAsk(challenge) {
+    return new Promise(function (resolve) {
+        _spOverageClose();
+        var pools = (challenge && challenge.overage_pools) || [];
+        var affected = (challenge && challenge.affected) || [];
+        var reasons = (challenge && challenge.reason_options) || [];
+
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(17,24,39,.55);' +
+            'z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;';
+        var box = document.createElement('div');
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+        box.style.cssText = 'background:#fff;border-radius:10px;max-width:780px;width:100%;max-height:88vh;' +
+            'overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.3);' +
+            'font:13px/1.5 system-ui,-apple-system,sans-serif;color:#111827;';
+
+        var TD = 'padding:6px 8px;border-top:1px solid #e5e7eb';
+        var TDR = TD + ';text-align:right';
+        var rowsHtml = pools.map(function (p) {
+            return '<tr>' +
+                '<td style="' + TD + '">' + _spOvEsc(p.source_warehouse_id) + '</td>' +
+                '<td style="' + TD + '">' + _spOvEsc(p.sku) + '</td>' +
+                '<td style="' + TDR + '">' + _spOvNum(p.factory_available_stock) + '</td>' +
+                '<td style="' + TDR + '">' + _spOvNum(p.already_allocated_qty) + '</td>' +
+                '<td style="' + TDR + '">' + _spOvNum(p.current_plan_qty) + '</td>' +
+                '<td style="' + TDR + '">' + _spOvNum(p.projected_total_qty) + '</td>' +
+                '<td style="' + TDR + ';color:#b91c1c;font-weight:600">+' + _spOvNum(p.overage_qty) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        // WHO ELSE holds the units this plan is short of. §4 asks for the affected destinations by name,
+        // because "review allocations to other companies and marketplaces" is not an instruction anyone can
+        // follow without being told which ones.
+        var affectedHtml = '';
+        if (affected.length) {
+            affectedHtml = '<div style="margin-top:14px">' +
+                '<div style="font-weight:600;margin-bottom:4px">Allocations held elsewhere</div>' +
+                '<ul style="margin:0;padding-left:18px">' +
+                affected.map(function (a) {
+                    var who = [a.company, a.country, a.marketplace].filter(Boolean).join(' / ') || a.stage;
+                    var refs = (a.references && a.references.length) ? (': ' + a.references.join(', ')) : '';
+                    return '<li>' + _spOvEsc(who) + ' &mdash; <strong>' + _spOvNum(a.quantity) +
+                        '</strong> units (' + _spOvEsc(a.stage) + _spOvEsc(refs) + ')</li>';
+                }).join('') +
+                '</ul></div>';
+        }
+
+        var reasonOpts = '<option value="">&mdash; select a reason &mdash;</option>' +
+            reasons.map(function (r) {
+                return '<option value="' + _spOvEsc(r.value) + '">' + _spOvEsc(r.label) + '</option>';
+            }).join('');
+
+        box.innerHTML =
+            '<div style="padding:18px 20px 14px;border-bottom:1px solid #e5e7eb">' +
+            '<h3 style="margin:0;font-size:16px;color:#b91c1c">' +
+            _spOvEsc(challenge.title || 'Planned Quantity Exceeds Available Factory Stock') +
+            '</h3></div>' +
+            '<div style="padding:16px 20px">' +
+            '<p style="margin:0 0 12px">' + _spOvEsc(challenge.message || '') + '</p>' +
+            '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+            '<thead><tr style="text-align:left;color:#6b7280">' +
+            '<th style="padding:4px 8px">Warehouse</th>' +
+            '<th style="padding:4px 8px">SKU</th>' +
+            '<th style="padding:4px 8px;text-align:right">Factory available</th>' +
+            '<th style="padding:4px 8px;text-align:right">Already allocated</th>' +
+            '<th style="padding:4px 8px;text-align:right">This plan</th>' +
+            '<th style="padding:4px 8px;text-align:right">Projected total</th>' +
+            '<th style="padding:4px 8px;text-align:right">Overage</th>' +
+            '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' +
+            affectedHtml +
+            '<div style="margin-top:16px">' +
+            '<label for="sp-overage-reason" style="display:block;font-weight:600;margin-bottom:4px">Reason *</label>' +
+            '<select id="sp-overage-reason" style="width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px">' +
+            reasonOpts + '</select></div>' +
+            '<div style="margin-top:10px">' +
+            '<label for="sp-overage-note" style="display:block;font-weight:600;margin-bottom:4px">Note</label>' +
+            '<textarea id="sp-overage-note" rows="2" style="width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px"></textarea></div>' +
+            '<p id="sp-overage-err" style="margin:10px 0 0;color:#b91c1c;display:none"></p>' +
+            '<p style="margin:12px 0 0;font-size:11px;color:#6b7280">Inventory snapshot ' +
+            _spOvEsc(challenge.inventory_snapshot_fingerprint || '') +
+            '. If the factory stock or another plan changes before you confirm, this confirmation is refused and ' +
+            'the current figures are shown again.</p>' +
+            '</div>' +
+            '<div style="padding:12px 20px 18px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid #e5e7eb">' +
+            '<button type="button" id="sp-overage-cancel" style="padding:8px 16px;border:1px solid #d1d5db;background:#fff;border-radius:6px;cursor:pointer">Cancel</button>' +
+            '<button type="button" id="sp-overage-ok" style="padding:8px 16px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;border-radius:6px;cursor:pointer;font-weight:600">Confirm Overage</button>' +
+            '</div>';
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        _spOverageDom = { overlay: overlay, box: box };
+
+        var sel = box.querySelector('#sp-overage-reason');
+        var note = box.querySelector('#sp-overage-note');
+        var err = box.querySelector('#sp-overage-err');
+        function done(v) { _spOverageClose(); resolve(v); }
+
+        // Cancel is a NON-EVENT: it resolves null, the caller sends nothing at all, and the plan stays a Draft.
+        box.querySelector('#sp-overage-cancel').addEventListener('click', function () { done(null); });
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) done(null); });
+
+        box.querySelector('#sp-overage-ok').addEventListener('click', function () {
+            // A reason is REQUIRED, and the server requires it independently. Checking here saves a round trip;
+            // it is not the enforcement, which is why the server never trusts it.
+            if (!sel.value) {
+                err.textContent = 'Select a reason before confirming this overage.';
+                err.style.display = 'block';
+                sel.focus();
+                return;
+            }
+            done({
+                inventory_snapshot_fingerprint: challenge.inventory_snapshot_fingerprint,
+                confirmation_token: challenge.confirmation_token,
+                override_reason: sel.value,
+                override_note: (note.value || '').trim(),
+                override_by: 'operation-system'
+            });
+        });
+        sel.focus();
+    });
+}
+
+/**
+ * F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §7 — THE NON-BLOCKING FACTORY AVAILABILITY INDICATOR.
+ *
+ * Shown on a DRAFT card only, and it BLOCKS NOTHING. Entering an over-quantity into a Draft is a legitimate
+ * thing to do — the operator may be mid-edit, or planning against production that has not landed — so the Draft
+ * states the position and says nothing about permission. The authorisation question is asked once, at Send to
+ * Pending Approval, by the server.
+ *
+ * IT READS THE SAME FUNCTION THE GATE RUNS. `factoryStockGuard.get` with a `shipping_plan_id` calls
+ * `fsgEvaluatePlanOverage_` — the identical availability read the submit gate uses. So the number on the card
+ * and the number in the refusal cannot disagree, which is the whole reason it is not computed here from the
+ * workspace rows already in the browser.
+ *
+ * A FAILURE SAYS SO. If the guard cannot be reached the indicator prints that it is unavailable rather than
+ * rendering blank or zero: a blank reads as "nothing to worry about", and that is the one thing it does not know.
+ */
+function spFactoryGuardRefresh(planId) {
+    var el = document.getElementById('sp-factory-guard-' + planId);
+    if (!el) return;
+    if (!window.KM || !window.KM.DB || typeof window.KM.DB.factoryStockGuardGet !== 'function') {
+        el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: guard unavailable in this build.</div>';
+        return;
+    }
+    el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: checking…</div>';
+    Promise.resolve(window.KM.DB.factoryStockGuardGet({ shipping_plan_id: planId })).then(function (res) {
+        var d = (res && res.data) || null;
+        if (!res || res.success === false || !d || d.guard_available !== true) {
+            var why = (res && res.error && (res.error.code || res.error.message)) || (d && d.reason) || 'unavailable';
+            el.innerHTML = '<div style="font-size:11px;color:#B45309">Factory availability could not be read (' +
+                _spOvEsc(why) + '). The check still runs on Send to Pending Approval.';
+            return;
+        }
+        var pools = d.pools || [];
+        if (!pools.length) {
+            el.innerHTML = '<div style="font-size:11px;color:#94A3B8">Factory availability: this plan draws on no factory pool.</div>';
+            return;
+        }
+        var over = (d.overage_pools || []).length > 0;
+        var rows = pools.map(function (p) {
+            var short = Number(p.overage_qty) > 0;
+            return '<div style="display:flex;gap:10px;font-size:11px;padding:2px 0;' +
+                (short ? 'color:#B91C1C;font-weight:600' : 'color:#475569') + '">' +
+                '<span style="min-width:150px">' + _spOvEsc(p.source_warehouse_id) + ' / ' + _spOvEsc(p.sku) + '</span>' +
+                '<span>Available ' + _spOvNum(p.factory_available_stock) + '</span>' +
+                '<span>Allocated ' + _spOvNum(p.already_allocated_qty) + '</span>' +
+                '<span>This plan ' + _spOvNum(p.current_plan_qty) + '</span>' +
+                (short ? '<span>Overage +' + _spOvNum(p.overage_qty) + '</span>' : '') +
+                '</div>';
+        }).join('');
+        el.innerHTML = '<div style="margin-top:6px;padding:8px;border-radius:4px;background:' +
+            (over ? '#FEF2F2' : '#F8FAFC') + ';border-left:3px solid ' + (over ? '#EF4444' : '#CBD5E1') + '">' +
+            '<div style="font-size:11px;font-weight:600;margin-bottom:2px">Shared factory stock' +
+            (over ? ' — this plan currently exceeds it' : '') + '</div>' + rows +
+            '<div style="font-size:10px;color:#94A3B8;margin-top:4px">Information only. ' +
+            (over ? 'You will be asked to confirm the overage when you send this plan for approval.'
+                  : 'No confirmation will be required.') + '</div></div>';
+    }, function () {
+        el.innerHTML = '<div style="font-size:11px;color:#B45309">Factory availability could not be read. ' +
+            'The check still runs on Send to Pending Approval.</div>';
+    });
+}
+try { if (typeof window !== 'undefined') window.spFactoryGuardRefresh = spFactoryGuardRefresh; } catch (eFG) {}
+
 function spDbSubmit(planId) {
     // One guarded flow: persist qty (if any) then Submit; ONE readback after Submit. A genuine qty-save failure
     // is surfaced and STOPS the Submit — no more "qty error shown while the plan already became Pending".
@@ -1272,7 +1536,24 @@ function spDbSubmit(planId) {
         return Promise.resolve(pre).then(function (qtyRes) {
             if (qtyRes && qtyRes.success === false && qtyRes.error && qtyRes.error.code !== 'ALREADY_IN_TARGET_STATE') return qtyRes; // stop
             if (lines.length && qtyRes && qtyRes.success) _spPatchLocalQty(lines);
-            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' });
+            // R6-R7-R5 §4 — SUBMIT, and if the server says an overage must be confirmed, ask a person and
+            // send ONCE more with the confirmation attached. At most two attempts: looping here would turn a
+            // stale fingerprint into a retry storm, and a stale fingerprint means the facts moved and somebody
+            // has to look at them again.
+            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' })
+                .then(function (res) {
+                    var challenge = _spIsOverageChallenge(res);
+                    if (!challenge) return res;
+                    return _spOverageAsk(challenge).then(function (conf) {
+                        // Cancelled: return the ORIGINAL refusal. Nothing further was sent, nothing mutated,
+                        // and the plan is still a Draft the operator can edit.
+                        if (!conf) return res;
+                        return window.KM.DB.updateShippingPlanStatus({
+                            shipping_plan_id: planId, transition: 'submit', actor: 'operation-system',
+                            overage_confirmation: conf
+                        });
+                    });
+                });
         });
     }, { successMsg: 'Submitted for approval.', failPrefix: 'Submit failed' });
 }

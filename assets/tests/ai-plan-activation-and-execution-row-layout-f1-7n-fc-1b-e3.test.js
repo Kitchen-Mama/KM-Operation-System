@@ -989,8 +989,12 @@ ok(new RegExp("\\{ file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERS
   var act = /SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(HLTH)[1];
   var lst = /SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(HLTH)[1];
   var tr = /SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.exec(HLTH)[1];
-  eq([act, lst, tr], ['11', '12', '1'],
-    'E10 the action contract, required-action list and transport contract are UNCHANGED — this round adds no action (§E.8)');
+  // R6-R7-R5 — the ACTION CONTRACT is now a floor and the other two stay exact. This round's claim was
+  // "E3 adds no action", which was true of E3; the two versions that must still be UNCHANGED by anything
+  // are the required-action LIST (the frontend's pinned set) and the TRANSPORT envelope.
+  ok(Number(act) >= 11, 'E10 the deployed action contract is not below the version E3 required');
+  eq([lst, tr], ['12', '1'],
+    'E10-r and the required-action list and transport contract are UNCHANGED (§E.8)');
   ok(/weeklyAiPlan\.generate/.test(read('assets/specs/active/apps-script/01_router.gs')),
     'E10a because the action it activates has been routed since R6D1');
 })();

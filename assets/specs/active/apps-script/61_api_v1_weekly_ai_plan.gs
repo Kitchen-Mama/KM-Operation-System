@@ -266,7 +266,7 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // valid-zero scope now returns before weeklyAiPlanBuildKmafReceivers_, KMAF.projectAllocationFacts and the
 // batch mapper instead of after all three. A deployment still answering the old 61_ spends the browser's
 // whole write budget arriving at the same answer.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -1494,6 +1494,158 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
     });
   }
 
+  // ==========================================================================================================
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §3 — THE FACTORY STOCK HARD GUARD. NO AI RUN MAY OVER-COMMIT THE POOL.
+  //
+  // WHAT WAS MISSING, MEASURED. `gapOpReadSupplyPoolFacts_` (43_) builds the FACTORY pool from
+  // `factory_stock.fac_current_stock` alone: it never subtracts `fac_reserved_stock`, and it never reads a
+  // single persisted plan. KMMSA/KMALLOC then conserves THAT pool correctly across the receivers of ONE run —
+  // so a single generation cannot over-allocate itself, and it never has. But a manual Execution Plan, a draft
+  // from a previous run, ANOTHER MARKETPLACE, another COMPANY, and a Weekly Shipping Plan already sitting in
+  // Pending Approval are all live claims on the same physical cartons at the same factory warehouse, and not one
+  // of them was visible to the arithmetic. Two companies could each plan the same 520 units, and the system
+  // would report two healthy plans.
+  //
+  // WHY IT IS HERE AND NOT INSIDE THE WRITER. PASS 1 above computes every proposed group and writes nothing;
+  // PASS 2 writes. The complete proposed set only exists between them, and a per-group check inside PASS 2
+  // could not see the run's own later groups competing for the same pool — it would approve each one against a
+  // pool the earlier ones had already spent. There is no code path from a refusal here to a write, which is what
+  // makes "zero writes" structural rather than asserted.
+  //
+  // THE RELEASE SET IS NOT A TIME COMPARISON (§3.3/§3.4). A regeneration must net against the drafts it is
+  // replacing, or the second run competes with the first and every regeneration shrinks. But "older" is not the
+  // rule: the rule is provenance and scope, and the authority for it already exists and is already pure —
+  // `aiplExpirationCandidates_` (69_), the SAME selector that will actually expire them after this run commits.
+  // Using it here means the set released in memory and the set expired on disk cannot differ. It preserves a
+  // MANUAL row by name ("a manual route is never replaced by a generation run"), preserves every other scope,
+  // and preserves anything submitted, cancelled or already expired — so none of those can be released by this.
+  //
+  // AND THERE IS NO OVERRIDE ON THIS PATH. `fsgEvaluateAiClaims_` takes no token, no reason and no actor. A
+  // shortfall it cannot settle with the FROZEN allocation priority is a STOP the operator resolves as a person,
+  // through the Weekly Shipping Plan overage confirmation, with a reason recorded against their name.
+  // ==========================================================================================================
+  var fsgClaims = [], fsgClaimIndex = {}, fsgSkipped = [];
+  planned.forEach(function (pl) {
+    var d0 = decisionByKey[pl.identity_key] || { decision: 'PROCEED' };
+    // A suppressed identity is not going to be written, so it is not a claim on anything.
+    if (d0.decision === 'SUPPRESSED_BY_ACTIVE_MANUAL_DRAFT' || d0.decision === 'ACTIVE_SOURCE_IDENTITY_COLLISION') return;
+    (pl.lines || []).forEach(function (ln, li) {
+      var wh = weeklyAiPlanStr_(ln.source_warehouse_id) || weeklyAiPlanStr_(pl.header.recommended_source_warehouse_id);
+      var q = weeklyAiPlanQty_(ln.planned_qty);
+      if (q === null) q = weeklyAiPlanQty_(ln.recommended_qty);
+      if (q === null || q <= 0) return;              // nothing proposed on this line; nothing to guard
+      // ONLY A FACTORY-SOURCED LINE IS A CLAIM ON FACTORY STOCK, and this is where that is decided.
+      //
+      // 43_ builds the FACTORY pool from `factory_stock` filtered to `warehouses.is_factory_warehouse`, and the
+      // OVERSEAS pool from `overseas_inventory_snapshot` filtered to active 3PL warehouses; it calls them
+      // "INDEPENDENT pools, INDEPENDENTLY conserved". A line sourced from a 3PL therefore draws on stock this
+      // guard does not own, correctly has no `factory_stock` row, and must not be judged here at all — asking
+      // the factory guard about it produced a POOL_UNKNOWN refusal of a generation that was entirely sound.
+      //
+      // AND THIS IS ALSO WHAT DECIDES WHETHER THE SEAM IS REQUIRED. A run with no factory-sourced line does
+      // not need the factory guard, so a project missing 71_ must not be refused on its behalf. A run WITH one
+      // does, and is refused without it. The dependency is exactly as wide as the thing it protects.
+      var whMeta = (harvest.warehousesById || {})[wh] || null;
+      var isFactoryWh = whMeta ? ((typeof gapTruthy_ === 'function') ? gapTruthy_(whMeta.is_factory_warehouse)
+        : /^(true|yes|1|y)$/i.test(weeklyAiPlanStr_(whMeta.is_factory_warehouse))) : false;
+      if (!isFactoryWh) {
+        fsgSkipped.push({ marketplace: pl.marketplace, sku: weeklyAiPlanStr_(ln.sku), warehouse_id: wh,
+          quantity: q,
+          reason: whMeta ? 'SOURCE_IS_NOT_A_FACTORY_WAREHOUSE' : (wh ? 'SOURCE_WAREHOUSE_UNKNOWN' : 'LINE_NAMES_NO_SOURCE_WAREHOUSE') });
+        return;
+      }
+      var canonC = (typeof gapCanonCountry_ === 'function') ? gapCanonCountry_(scope0.country) : scope0.country;
+      fsgClaims.push({ warehouse_id: wh, sku: weeklyAiPlanStr_(ln.sku), quantity: q,
+        receiver_key: weeklyAiPlanStr_(scope0.company) + '||' + weeklyAiPlanStr_(canonC) + '||' + weeklyAiPlanStr_(pl.marketplace),
+        company: scope0.company, country: scope0.country, marketplace: pl.marketplace,
+        identity_key: pl.identity_key,
+        // The position this claim was SUBMITTED in. The seam filters out non-factory-sourced claims before
+        // guarding them, so a returned claim record cannot be matched back by its own array index.
+        submitted_index: fsgClaims.length });
+      fsgClaimIndex[fsgClaims.length - 1] = { pl: pl, line: ln, line_index: li };
+    });
+  });
+  var fsgReleaseSet = {}, fsgReleaseDetail = [];
+  if (typeof aiplExpirationCandidates_ === 'function') {
+    // The applied marketplace set AT THIS POINT is the keys of byMkt: appliedList is not computed until after
+    // PASS 2, and reading it here would read an undefined.
+    (requestedMkt ? [requestedMkt] : Object.keys(byMkt).sort()).forEach(function (M) {
+      var cand = aiplExpirationCandidates_(activeRows, {
+        company: scope0.company, country: scope0.country, marketplace: M,
+        planning_cycle: request.planningCycle,
+        source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : scope0.source_page,
+        generation_run_id: generationRunId, committed_ids: [] });
+      (cand.expire || []).forEach(function (e) {
+        if (fsgReleaseSet[e.allocation_draft_id]) return;
+        fsgReleaseSet[e.allocation_draft_id] = 1;
+        fsgReleaseDetail.push({ marketplace: M, allocation_draft_id: e.allocation_draft_id,
+          previous_status: e.previous_status, generation_run_id: e.generation_run_id });
+      });
+    });
+  }
+  var fsgVerdict = null;
+  if (fsgClaims.length) {
+    fsgVerdict = (typeof fsgEvaluateAiClaims_ === 'function' && typeof KMFSG !== 'undefined' && KMFSG)
+      ? fsgEvaluateAiClaims_(ss, fsgClaims, { releaseSet: fsgReleaseSet })
+      : { ok: false, verdict: 'STOP', guard_unavailable: true, reason: 'FACTORY_STOCK_GUARD_SEAM_MISSING',
+          stops: [{ code: 'FACTORY_STOCK_GUARD_SEAM_MISSING' }] };
+    // A MIXED DEPLOYMENT is not a reason to proceed. Without the guard this run would over-commit exactly as
+    // freely as it did before this round, and nothing in the response would say so.
+    if (fsgVerdict.guard_unavailable || !fsgVerdict.ok) {
+      return jsonResponse_({ success: false, zero_write: true,
+        errors: [weeklyAiPlanErr_(weeklyAiPlanStr_(fsgVerdict.reason) || 'FACTORY_STOCK_GUARD_UNAVAILABLE',
+          'the shared factory stock guard could not establish what is available, so no row may be written: an '
+          + 'unguarded generation is exactly the over-commitment this gate exists to prevent',
+          { db_writes: 0, guard: fsgVerdict })],
+        data: { job_status: 'BLOCKED_FACTORY_STOCK_GUARD_UNAVAILABLE', generation_run_id: generationRunId,
+          created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
+          expired_headers: 0, expired_lines: 0, reservations: 0, db_writes: 0, groups: [],
+          factory_stock_guard: fsgVerdict } });
+    }
+    if (fsgVerdict.verdict === KMFSG.VERDICT.STOP) {
+      // §3.9 — the frozen allocator cannot settle this, and inventing a company or station order here is exactly
+      // what this round is forbidden to do. STOP, with the whole arithmetic, and zero rows written.
+      return jsonResponse_({ success: false, zero_write: true,
+        errors: [weeklyAiPlanErr_('FACTORY_STOCK_GUARD_STOP',
+          'this generation would commit more factory stock than the shared pool can supply, and the frozen '
+          + 'allocation authority cannot decide how to divide the shortfall; zero rows written',
+          { db_writes: 0, stops: fsgVerdict.stops })],
+        data: { job_status: 'BLOCKED_FACTORY_STOCK_INSUFFICIENT', generation_run_id: generationRunId,
+          created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
+          expired_headers: 0, expired_lines: 0, reservations: 0, db_writes: 0, groups: [],
+          factory_stock_guard: fsgVerdict,
+          factory_stock_release_set: fsgReleaseDetail } });
+    }
+    if (fsgVerdict.verdict === KMFSG.VERDICT.CLAMPED) {
+      // The clamp is applied to the PROPOSED lines, in place, before PASS 2 sees them. `recommended_qty` is
+      // deliberately NOT rewritten: it is the immutable snapshot of what the calculation proposed, and
+      // overwriting it would destroy the evidence that a clamp happened at all. `planned_qty` is what the write
+      // commits, so that is the one that moves.
+      fsgVerdict.claims.forEach(function (c) {
+        var ref = fsgClaimIndex[c.submitted_index]; if (!ref) return;
+        if (c.granted_qty === null || c.granted_qty === c.requested_qty) return;
+        ref.line.planned_qty = c.granted_qty;
+        ref.line.factory_stock_clamped_from = c.requested_qty;
+      });
+      // A group every one of whose lines was clamped to zero must not be written as an empty plan: an empty
+      // header is indistinguishable from a route that was planned and then emptied by hand.
+      var kept = [];
+      planned.forEach(function (pl) {
+        var live = (pl.lines || []).filter(function (ln) {
+          var q = weeklyAiPlanQty_(ln.planned_qty);
+          if (q === null) q = weeklyAiPlanQty_(ln.recommended_qty);
+          return q !== null && q > 0;
+        });
+        if (live.length) { pl.lines = live; kept.push(pl); return; }
+        groupsWritten.push({ marketplace: pl.marketplace, groupNo: pl.groupNo,
+          outcome: 'DROPPED_FACTORY_STOCK_EXHAUSTED', allocation_draft_id: null, draft_version: null,
+          line_count: 0, ok: true, suppressed: true, created: false, updated: false, blocks_run: false,
+          identity_key: pl.identity_key, error: null });
+      });
+      planned = kept;
+    }
+  }
+
   // ---- PASS 2: write. Only identities the gate and precedence allow. ----
   planned.forEach(function (pl) {
     var d = decisionByKey[pl.identity_key] || { decision: 'PROCEED' };
@@ -1618,6 +1770,24 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
 
   // §E Stage 3 steps 5-7 — EXPIRE ONLY AFTER THE CURRENT RUN IS COMMITTED AND VERIFIED. A failed or partial run
   // expires NOTHING, so the operator is never left without an active plan because a replacement half-landed.
+  // R6-R7-R5 §3 — the guard's verdict travels WITH the write counters, so a clamped run is visible in the same
+  // object an audit reads rather than inferable from a smaller number.
+  var factoryStockGuardReport = fsgVerdict ? {
+    verdict: fsgVerdict.verdict, overridable: false,
+    requested_total: fsgVerdict.requested_total, granted_total: fsgVerdict.granted_total,
+    clamped_total: fsgVerdict.clamped_total,
+    inventory_snapshot_fingerprint: fsgVerdict.fingerprint || null,
+    pools: fsgVerdict.byPool || {}, stops: fsgVerdict.stops || [],
+    release_set: fsgReleaseDetail, release_set_size: fsgReleaseDetail.length,
+    // NOT the same as "approved". A line the factory guard did not apply to is a line drawing on the overseas
+    // pool, and saying so is the difference between "checked and fine" and "not this guard's question".
+    not_factory_sourced_lines: fsgSkipped.length, not_factory_sourced_sample: fsgSkipped.slice(0, 10)
+  } : { verdict: 'NOT_APPLICABLE', overridable: false,
+        reason: fsgSkipped.length ? 'no proposed line draws on a factory warehouse pool'
+          : 'no positive quantity was proposed',
+        not_factory_sourced_lines: fsgSkipped.length, not_factory_sourced_sample: fsgSkipped.slice(0, 10),
+        requested_total: 0, granted_total: 0, clamped_total: 0, release_set: fsgReleaseDetail,
+        release_set_size: fsgReleaseDetail.length };
   var lifecycle = { attempted: false, ok: null, expired_headers: 0, expired_lines: 0, reason: null, verification: null, manifest: null };
   if (runSucceeded) {
     if (typeof aiplExpireSupersededDrafts_ !== 'function') {
@@ -1776,6 +1946,9 @@ function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAut
           resolved_from: _r ? 'LIVE_HEADER' : 'UNRESOLVED_AUTHORITY_UNAVAILABLE',
           expected_migration_version: (typeof AIPL_MIGRATION_VERSION_ !== 'undefined') ? AIPL_MIGRATION_VERSION_ : null };
       })(),
+      // R6-R7-R5 §3 — reported beside the write counters, never instead of them. A clamped run wrote fewer units
+      // than it calculated, and the only honest place to say so is next to what it wrote.
+      factory_stock_guard: factoryStockGuardReport,
       verification: { lifecycle_ok: lifecycle.ok, lifecycle_reason: lifecycle.reason, detail: lifecycle.verification, manifest: lifecycle.manifest },
       lifecycle: lifecycle,
       requested_scope: { company: scope0.company, country: scope0.country, marketplace: requestedMkt || 'ALL_MARKETPLACES(company/country fan-out)' },

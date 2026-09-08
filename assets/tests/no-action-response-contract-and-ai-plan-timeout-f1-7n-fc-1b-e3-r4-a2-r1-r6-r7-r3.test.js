@@ -536,8 +536,10 @@ settle()
       'I7  00_config.gs keeps its own stamp and its manifest row still expects it — an unchanged file is not bumped');
     ok(cfg !== STAMP, 'I7a and it is NOT this round: nothing in 00_config.gs changed');
     // No action added, no transport change.
-    eq((G63.match(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1], '11',
-      'I8  no router action was added, so the action contract does not move');
+    // R6-R7-R5 — re-aimed to a FLOOR. R5 added factoryStockGuard.get, so "no action was added" is no longer
+    // a property of the deployed contract; "it is not below what this round needed" is.
+    ok(Number((G63.match(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) >= 11,
+      'I8  the deployed action contract is not below the version this round required');
     eq((G63.match(/SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/) || [])[1], '1',
       'I8a and the envelope shape is unchanged, so the transport contract does not move');
 

@@ -404,7 +404,11 @@ section('§B / §K — ATOMICITY OF THE ONE COMPOUND TRANSITION');
 // ================================================================================================================
 (function () {
   // S6 writes the plan status and THEN creates the shipment. If the second half throws, the first half stands.
-  var f = code(extractFn(G11, 'handleUpdateShipmentStatusNoSuchFn_'.replace('handleUpdateShipmentStatusNoSuchFn_', 'handleUpdateShippingPlanStatus_')));
+  // R6-R7-R5 — the body this section measures moved into spUpdateShippingPlanStatusCore_ when
+  // handleUpdateShippingPlanStatus_ became a ScriptLock wrapper around it. The ORDERING being asserted (status
+  // written before the shipment is attempted, inside a try/catch that does not undo it) is unchanged; only
+  // which function declares it moved, so the scan follows it rather than reporting the rename as a defect.
+  var f = code(extractFn(G11, 'spUpdateShippingPlanStatusCore_'));
   var statusIdx = f.indexOf("setCell('status', 'approved')");
   var shipIdx = f.indexOf('createShipmentFromApprovedPlan_');
   ok(statusIdx > -1 && shipIdx > statusIdx,

@@ -93,13 +93,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // R6-R7-R4 - THE RELEASE MOVES AGAIN: 61_ changed, so a new Web App deployment version is required. A
 // deployment still on R3 answers NO_ACTION only after the full KMAF pipeline, which is the 90-second
 // request this round exists to end.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
 // R6-R7-R3 — moved because 61_'s manifest row moved with 61_ itself, which is a change to THIS FILE.
 // R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -132,7 +132,11 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // permanently, so it must be rejected BY VERSION at the browser's first contract check rather than discovered
 // when an operator finds the Cancel button does nothing. The frontend raises its pinned minimum to 11 in the
 // same commit.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 11;
+// R6-R7-R5 — 12. One router ACTION was added (factoryStockGuard.get), which is exactly this constant's
+// stated rule. No action was removed and no existing action changed shape, so the frontend's pinned minimum
+// is satisfied by 11 and by 12 alike; what moves here is the deployment's ability to answer "do you have the
+// guard read?" without anyone having to call it and see.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 12;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -206,6 +210,10 @@ var SYS_REQUIRED_ACTIONS_ = [
   { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
   { action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
   { action: 'submitAllocationDraftsToShippingPlans', handler: 'handleSubmitAllocationDraftsToShippingPlans_', used_by: 'Site Inventory Submit Plan' },
+  // R6-R7-R5 §4/§7 — READ ONLY, and the only guard action there is. An overage is confirmed by sending the
+  // confirmation WITH updateShippingPlanStatus, so there is deliberately no confirm action to register: a
+  // second endpoint would be a way to reach the write without passing the gate.
+  { action: 'factoryStockGuard.get', handler: 'handleFactoryStockGuardGet_', used_by: 'Weekly Shipping Plan factory-availability indicator + operator guard preflight (read only)' },
   { action: 'confirmShipmentAndDispatch', handler: 'handleConfirmShipmentAndDispatch_', used_by: 'Confirm Shipment' },
   // F1-7N-FC-1A §C/§J — THE SHIPMENT DRAFT RECOVERY ACTION.
   //
@@ -303,7 +311,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -311,13 +319,17 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
-  { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
+  { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
   { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log' },
   // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
   { file: '70_api_v1_overseas_stock_workspace.gs', symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3', owns: 'Overseas Stock scoped read workspace' },
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'Request Order Send orchestration + planning-cycle authority' },
+  // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
+  // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than
+  // running it unguarded — but only a deployment that can be ASKED which files it has can tell an operator why.
+  { file: '71_api_v1_factory_stock_guard.gs', symbol: 'FSG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate and the append-only override audit' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
   // F1-7N-FB-4E-R2: 68_ changed because its duplicate diagnostic became REACHABLE for the first time and
   // needed a scope guard on the routed path. A deployment carrying the R2 router but a FB-4D copy of 68_ would
@@ -339,7 +351,10 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // would refuse a marketplace route it is supposed to accept, and would fall back to K2 for a route the
   // writer believes is K4-resolved. That is exactly the half-finished sync this manifest is here to name.
   { file: '69_api_v1_route_identity_contract.gs', symbol: 'RIC_BUILD_VERSION_', expected: 'F1-7N-FB-4F-B3', owns: 'frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)' },
-  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1A', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer' },
+  // R6-R7-R5 §4 — 11_ now also owns the shared factory stock overage gate on submit/approve. A project running
+  // the previous copy of it routes the same action, accepts the same payload and applies NO guard, so this row
+  // is the only thing that can tell an operator why a plan that should have been challenged went through.
+  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer + the shared factory stock overage gate on submit/approve and the approval recheck' },
   // F1-7N-FC-1A §J — THE FOUR OWNERS OF THE RESERVATION MODEL. Each answers every one of its actions
   // when a round behind, so no resolvable action list and no handler probe can see a partial sync of them.
   // What each one does differently is the point:
@@ -358,7 +373,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R5', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

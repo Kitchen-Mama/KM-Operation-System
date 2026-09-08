@@ -491,11 +491,21 @@ D5.settle()
     var sysB = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1];
     var cen = (CENSUS.match(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/) || [])[1];
     var pin = (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1];
-    eq(wap, STAMP, 'F1  61_ moved, because 61_ changed');
-    eq(sysRel, STAMP, 'F2  the RELEASE moved, so a new Web App deployment version is required');
-    eq(sysB, STAMP, 'F3  63_ moved, because its manifest row moved');
-    eq(cen, STAMP, 'F4  the census moved');
-    eq(pin, STAMP, 'F5  and the pinned activation build moved — the R3 preflight timings do not transfer');
+    // R6-R7-R5 — FLOORS. These four moved in THIS round and will move again in the next; an equality
+    // against this round's build can only hold until it does. What must never be true is that any of them
+    // is BEHIND the round this suite covers. The 61_-to-63_ manifest parity below stays EXACT, because a
+    // disagreement between a file's own stamp and the row that expects it is what a mixed deployment IS.
+    ok(RO.stampAtOrAfter(wap, STAMP), 'F1  61_ moved, because 61_ changed, and is not behind this round');
+    ok(RO.stampAtOrAfter(sysRel, STAMP),
+      'F2  the RELEASE moved, so a new Web App deployment version is required');
+    ok(RO.stampAtOrAfter(sysB, STAMP), 'F3  63_ moved, because its manifest row moved');
+    // R6-R7-R5 — FLOORS, for the same reason F1-F3 became floors. The census and the activation pin move in
+    // every round that changes what a preflight measures, and R5 changed it again (the write path now passes
+    // through the factory stock guard). BP3 in the manifest suite keeps the pin EXACTLY equal to 63_'s
+    // release, which is the comparison that actually catches a pin left behind.
+    ok(RO.stampAtOrAfter(cen, STAMP), 'F4  the census moved, and is not behind this round');
+    ok(RO.stampAtOrAfter(pin, STAMP),
+      'F5  and the pinned activation build moved — the R4 preflight timings do not transfer');
     ok(new RegExp("symbol: 'WAP_BUILD_VERSION_', expected: '" + wap + "'").test(G63),
       'F6  63_\'s manifest expects precisely the build 61_ carries — the mixed-deployment parity');
     ok(new RegExp("file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + sysB + "'").test(G63),
@@ -503,15 +513,19 @@ D5.settle()
     var cfg = (G00.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
     ok(cfg !== STAMP && new RegExp("symbol: 'CONFIG_BUILD_VERSION_', expected: '" + cfg + "'").test(G63),
       'F7  00_config.gs did NOT change, so its stamp is not marched forward and its row still expects it');
-    eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP, 'F8  this round is the newest registered owner stamp');
+    ok(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
+      'F8  this round is registered, and nothing older was registered after it');
     ok(/^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+))*$/.test(STAMP),
       'F8a and it is well-formed against the canonical stamp vocabulary');
     eq(RO.OWNER_STAMPS.filter(function (s) {
       return !/^F1-7N-[A-Z]+-\d+[A-Z](?:-(?:R\d+[A-Z]?\d*|E\d+|A\d+|B\d+))*$/.test(s);
     }), [], 'F8b as is every other entry in the list');
     // No router action added, no envelope change.
-    eq((G63.match(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1], '11',
-      'F9  no router action was added, so the action contract does not move');
+    // R6-R7-R5 — A LATER ROUND IS ALLOWED TO ADD AN ACTION, and R5 did (factoryStockGuard.get). "This
+    // round added none" was a true statement about R4 and is not a property of the system, so what survives
+    // is the FLOOR: the deployed contract is never BELOW the version this round's frontend needed.
+    ok(Number((G63.match(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) >= 11,
+      'F9  the deployed action contract is not below the version this round required');
     eq((G63.match(/SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/) || [])[1], '1',
       'F9a and the envelope shape is unchanged, so the transport contract does not move');
 
@@ -527,7 +541,11 @@ D5.settle()
     eq(RO.misplacedIndexTokens(IDX), [], 'F11a no asset carries a token from the wrong series');
     eq(RO.staleAppTokenRefs(IDX), [], 'F11b and no co-deployed asset was left behind on a previous token');
     var tok = RO.currentAppToken();
-    ok(/^fc1be3r4a2r1r6r7r4-/.test(tok), 'F12 a cache token was minted for this round', tok);
+    // R6-R7-R5 — the LITERAL token belongs to R4 and is replaced every round that ships a browser file.
+    // The durable assertion is that index.html carries ONE registered token and no asset was left behind
+    // on a previous one, which F11a/F11b above measure directly.
+    ok(!!tok && RO.ROUND_TOKENS.indexOf(tok) !== -1,
+      'F12 index.html carries a REGISTERED round cache token', tok);
     ['assets/js/pages/inventory-replenishment.js', 'assets/js/api/operation-system-db-api.js'
     ].forEach(function (f) {
       ok(IDX.indexOf(f + '?v=' + tok) >= 0,

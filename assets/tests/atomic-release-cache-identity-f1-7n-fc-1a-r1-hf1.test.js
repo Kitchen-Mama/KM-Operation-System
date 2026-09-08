@@ -206,7 +206,11 @@ var LIST_VERSION = Number((/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(
 var TRANSPORT = Number((/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.exec(G63) || [])[1]);
 var CLIENT_PIN = Number((/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI) || [])[1]);
 var CLIENT_TRANSPORT_PIN = Number((/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI) || [])[1]);
-eq(ACTION_CONTRACT, 11, 'B3  deployed_action_contract_version is 11');
+// R6-R7-R5 — a FLOOR. This suite's subject is CACHE IDENTITY, and the action-contract number was pinned
+// only to record what the round shipped against. A later round that adds an action (R5 added
+// factoryStockGuard.get) does not break cache identity, and reporting it as if it did would bury the one
+// assertion here that matters. The client-pin-equals-deployed-version check below stays EXACT.
+ok(ACTION_CONTRACT >= 11, 'B3  deployed_action_contract_version is not below 11');
 eq(LIST_VERSION, 12, 'B3a required_action_list_version is 12');
 eq(TRANSPORT, 1, 'B3b transport_contract_version is UNCHANGED at 1 — no envelope field moved in this hotfix');
 eq(CLIENT_PIN, ACTION_CONTRACT, 'B3c the client pin AGREES with the deployment, derived rather than restated');
@@ -282,7 +286,8 @@ function health(dep) {
 
 var DEP = makeDeployment();
 var H = health(DEP);
-eq(H.deployed_action_contract_version, 11, 'D1  EXECUTED: deployed_action_contract_version = 11');
+ok(H.deployed_action_contract_version >= 11,
+  'D1  EXECUTED: deployed_action_contract_version is not below 11');
 eq(H.required_action_list_version, 12, 'D2  EXECUTED: required_action_list_version = 12');
 eq(H.transport_contract_version, 1, 'D3  EXECUTED: transport_contract_version = 1 (unmoved)');
 eq(H.missing_actions, [], 'D4  EXECUTED: missing_actions = []');
@@ -422,7 +427,12 @@ mut('N10 the cancelled-shipment refusal removed while the stamp still claims it'
 });
 
 mut('N11 the client pin lowered to admit a v10 deployment', function () {
-  var m = DBAPI.replace('var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 11;', 'var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 10;');
+  // R6-R7-R5 — the mutation is built from the SHIPPED literal rather than from R4's. Hardcoding the old
+  // value made the mutant a no-op the moment the pin moved: replace() found nothing, the source was
+  // unchanged, and a mutant that changes nothing cannot be caught.
+  var _pin = Number((/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(DBAPI) || [])[1]);
+  var m = DBAPI.replace('var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = ' + _pin + ';',
+    'var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = ' + (_pin - 1) + ';');
   return Number((/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(m) || [])[1]) !== ACTION_CONTRACT;
 });
 

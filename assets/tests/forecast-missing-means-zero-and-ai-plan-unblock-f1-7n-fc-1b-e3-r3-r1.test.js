@@ -424,7 +424,10 @@ section('§7 — EXECUTED: the health handler, with every .gs in one context');
   eq(h.missing_actions, [], 'H4  §7 missing_actions = []');
   eq((h.module_build_stamps || {}).stale_modules, [], 'H5  §7 stale_modules = []');
   ok(/^UNIFORM/.test(String(h.deployment_uniformity_verdict)), 'H6  §7 deployment uniformity = UNIFORM');
-  eq(h.deployed_action_contract_version, 11, 'H7  §7 deployed_action_contract_version = 11');
+  // R6-R7-R5 — a FLOOR, for the reason F9 gives: a later round may add a router action, and this suite's
+  // subject is the forecast-normalization gate rather than the size of the action registry.
+  ok(h.deployed_action_contract_version >= 11,
+    'H7  §7 deployed_action_contract_version is not below 11');
   eq(h.required_action_list_version, 12, 'H7a required_action_list_version = 12');
   eq(h.transport_contract_version, 1, 'H7b transport_contract_version = 1');
   eq(h.build_id, sys, 'H8  and the deployment build is 63_\'s own stamp');

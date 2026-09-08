@@ -4005,7 +4005,14 @@ function _kmWriterError_(json, fallbackMessage) {
 // drops permanently, and the only symptom is shipments refused for stock that is physically on the floor. The
 // version gate must say so first, with the message that names the fix, rather than letting an operator find
 // out by pressing Cancel.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 11;      // the minimum deployed_action_contract_version this build needs
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §4 — 12, AND THIS ONE IS LOAD-BEARING IN A WAY MOST BUMPS ARE NOT.
+//
+// This build sends Submit Plan expecting the server to REFUSE it when the plan exceeds shared factory stock.
+// A pre-R5 deployment routes the same action, accepts the same payload, returns the same success shape - and
+// applies no guard at all. There is nothing in the response for the page to notice, so an operator would be
+// told the plan was sent for approval and would be right, while the over-commitment this round exists to stop
+// happened silently. That is worse than a visible mismatch, which is exactly what this constant is for.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 12;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -4099,8 +4106,12 @@ var KM_PAGE_REQUIRED_ACTIONS_ = {
     // decision AND attempts the Execution Commit, and createShipmentFromPlan is now the recovery path for the
     // half of that which can fail. A deployment that cannot serve either must disable both buttons rather than
     // let an operator approve into a state whose recovery action the deployment does not route.
+    // R6-R7-R5 §4/§7 — factoryStockGuard.get is named here because the page READS it for the non-blocking
+    // Factory Available / Allocated / Overage indicator while a Draft is being edited. A deployment that
+    // cannot route it cannot show the operator what the gate is about to enforce, so the indicator degrades
+    // to a stated "unavailable" rather than to a comforting blank.
     'weekly-shipping-plan': ['weeklyShipping.workspace.get', 'updateShippingPlanStatus',
-        'createShipmentFromPlan', 'completeShippingPlan'],
+        'createShipmentFromPlan', 'completeShippingPlan', 'factoryStockGuard.get'],
     // F1-7N-FC-1A-R1 §L — the Shipment Draft page. It is the page that can cancel, and a cancellation
     // it cannot route would leave the reservation held while the operator believes it was released, so the
     // action is named here and the button is disabled on a mismatch rather than allowed to fail.
@@ -4625,7 +4636,17 @@ async function _kmWeeklyCommand_(command, payload) {
 
 // Status transitions: { shipping_plan_id, transition: submit|approve|reject|cancel, rejected_reason?, actor? }.
 // Returns the canonical C1 command result (never throws; no internal readback — the page reads back once).
+// R6-R7-R5 §4 — `overage_confirmation` travels WITH the transition it authorises:
+//   { inventory_snapshot_fingerprint, confirmation_token, override_reason, override_note?, override_by }
+// It is passed straight through, unvalidated here, because the client is not the authority on any part of it:
+// the server recomputes availability inside its own write lock and refuses a stale fingerprint. A frontend
+// that pre-checked would only be able to make the refusal LOOK less likely, never make it less necessary.
 window.KM.DB.updateShippingPlanStatus = function(payload) { return _kmWeeklyCommand_('updateShippingPlanStatus', payload); };
+// R6-R7-R5 §4/§7 — the shared factory stock guard, READ ONLY. With `shipping_plan_id` it answers that plan's
+// availability picture (the same function the submit gate runs); without one it answers the whole pool census.
+// There is no confirm method, on purpose: confirming goes through updateShippingPlanStatus above, so the
+// browser has no path to a write that skips the gate.
+window.KM.DB.factoryStockGuardGet = function(payload) { return _kmWeeklyCommand_('factoryStockGuard.get', payload || {}); };
 // Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }.
 window.KM.DB.updateShippingPlanLineQty = function(payload) { return _kmWeeklyCommand_('updateShippingPlanLineQty', payload); };
 // Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.

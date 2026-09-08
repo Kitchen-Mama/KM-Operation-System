@@ -70,7 +70,7 @@
 // R6-R7-R3 — moves again: the capture snippet was reading the mutation counters out of a nested sub-object
 // the response contract does not have, so it recorded seven measured zeros as nulls.
 // R6-R7-R4 - moves with the file: the census now records the NO_ACTION short-circuit.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7473,7 +7473,7 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // KMAF pipeline instead of after it. The R3 activation's preflight timings were taken on a system that no
 // longer exists, so the preflight and the manifest must be re-run on the R4 deployment. The frozen ROW
 // baseline is unaffected: rows are rows, and none of them moved.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

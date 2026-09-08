@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1A';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -942,7 +942,40 @@ function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
  * Actor fields are placeholder identities for MVP (see WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §13A);
  * a future Role & Permission module replaces them with real user identity.
  */
+// ==============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §4.6 — THE RECHECK AND THE WRITE MUST BE ONE OPERATION.
+//
+// This handler held NO LOCK. It read the row, decided, and wrote cells, and two operators submitting two plans
+// that draw on the same factory pool could each pass a check that was true when they read it and false by the
+// time they wrote. A fingerprint cannot close that window on its own: both would compute the SAME fingerprint
+// from the SAME pre-write snapshot, so both confirmations would be valid and both plans would commit.
+//
+// So the guard's read and the status cells are now inside one ScriptLock, and the core keeps its original body.
+// A wrapper rather than a rewrite: the core has more than a dozen early returns, and threading a release through
+// every one of them is exactly how a lock comes to be leaked on the one path nobody tested.
+//
+// 30 000 ms matches every other writer in this project (16_, 21_, 12_). A caller that cannot get the lock is told
+// to READ BACK rather than retry, because a submit that timed out waiting is indeterminate, not failed.
+// ==============================================================================================================
 function handleUpdateShippingPlanStatus_(body) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var lock = LockService.getScriptLock(), locked = false;
+  try { locked = lock.tryLock(30000); }
+  catch (eLk) {
+    return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_ERROR', stage: 'lock',
+      error: 'Lock error: ' + (eLk && eLk.message ? eLk.message : eLk) });
+  }
+  if (!locked) {
+    return jsonResponse_({ success: false, zero_write: true, code: 'IN_PROGRESS_SAME_PLAN', stage: 'lock',
+      error: 'IN_PROGRESS — another status transition is in progress. Read the plan back rather than retrying: a '
+        + 'transition that timed out waiting for the lock is indeterminate, not failed.',
+      data: { shipping_plan_id: String((body && body.shipping_plan_id) || '').trim() } });
+  }
+  try { return spUpdateShippingPlanStatusCore_(ss, body); }
+  finally { try { lock.releaseLock(); } catch (eRl) { /* best-effort */ } }
+}
+
+function spUpdateShippingPlanStatusCore_(ss, body) {
   var planId = String((body && body.shipping_plan_id) || '').trim();
   var transition = String((body && body.transition) || '').trim();
   var actor = String((body && body.actor) || 'operation-system').trim();
@@ -963,7 +996,6 @@ function handleUpdateShippingPlanStatus_(body) {
     return jsonResponse_({ success: false, error: 'rejected_reason is required to reject' });
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('shipping_plans');
   if (!sheet) return jsonResponse_({ success: false, error: 'shipping_plans sheet not found' });
 
@@ -992,6 +1024,38 @@ function handleUpdateShippingPlanStatus_(body) {
   var parentRef = pcCol !== -1 ? String(rowVals[pcCol] || '').trim() : '';
   if (parentRef && parentRef !== planId && (transition === 'submit' || transition === 'approve' || transition === 'cancel')) {
     return jsonResponse_({ success: false, error: 'Plan ' + planId + ' is a child of Combined Parent ' + parentRef + ' — submit/approve/cancel via the Combined Parent (or uncombine first).' });
+  }
+
+  // ============================================================================================================
+  // R6-R7-R5 §4 — THE SHARED FACTORY STOCK GATE, ON THE TRANSITION ITSELF.
+  //
+  // IT IS HERE, AND NOT IN A `confirmOverage` ACTION OF ITS OWN, BECAUSE §4 REQUIRES THAT AN API CALLER IS
+  // GOVERNED BY THE SAME GUARD AS THE MODAL. A separate confirm endpoint would be a second door into the same
+  // room: the page would use the guarded one and anything else would walk past it. There is one door.
+  //
+  // The gate runs ONLY for submit and approve. reject and cancel REDUCE exposure, and a plan that cannot be
+  // cancelled because the factory is short is a plan nobody can get rid of.
+  //
+  // NOTHING IS MUTATED ON A REFUSAL. Every path in fsgGatePlanTransition_ that does not return proceed:true
+  // returns a complete response and writes nothing, and it is reached before the first setCell below.
+  // ============================================================================================================
+  var fsgGate = { proceed: true, audit: null };
+  if (transition === 'submit' || transition === 'approve') {
+    if (typeof fsgGatePlanTransition_ !== 'function') {
+      // A MIXED DEPLOYMENT. 11_ is one round ahead of 71_/90_, and proceeding would leave the transition as
+      // unguarded as it was before this round while the operator had every reason to believe otherwise.
+      return jsonResponse_({ success: false, zero_write: true, stage: 'inventory_guard',
+        code: 'FACTORY_STOCK_GUARD_SEAM_MISSING',
+        error: 'FACTORY_STOCK_GUARD_SEAM_MISSING — 71_api_v1_factory_stock_guard.gs is not present in this Apps '
+          + 'Script project, so this transition is refused rather than run unguarded.',
+        data: { shipping_plan_id: planId, transition: transition,
+          next_action: 'Sync 71_api_v1_factory_stock_guard.gs and 90_generated_supply_planning_bundle.gs, then '
+            + 'publish a new deployment version.' } });
+    }
+    // The row status is validated by the branches below; the gate is asked only about inventory. Passing the
+    // row itself keeps the gate from re-reading what this function already holds.
+    fsgGate = fsgGatePlanTransition_(ss, planId, transition, { shipping_plan_id: planId, status: curStatus }, body);
+    if (!fsgGate.proceed) return fsgGate.response;
   }
 
   if (transition === 'submit') {
@@ -1058,6 +1122,43 @@ function handleUpdateShippingPlanStatus_(body) {
   setCell('updated_by', updatedBy);
   setCell('updated_at', now);
 
+  // R6-R7-R5 §4.6 — THE OVERRIDE AUDIT, in the same lock as the status it justifies.
+  //
+  // Written only when an overage was actually CONFIRMED: `fsgGate.audit` is present only on that path, so a plan
+  // that simply fitted can never acquire `inventory_override = true`. Two records, deliberately: the append-only
+  // ledger is the audit, and the one line on the plan's own note is what makes it findable by someone who does
+  // not know the ledger exists.
+  var overrideAudit = null;
+  if (fsgGate && fsgGate.audit) {
+    var auditRows = 0;
+    try {
+      auditRows = fsgAppendOverrideAudit_(ss, 'shipping_plan', planId, transition,
+        { company: col('company') !== -1 ? rowVals[col('company')] : '',
+          country: col('country') !== -1 ? rowVals[col('country')] : '',
+          marketplace: col('marketplace') !== -1 ? rowVals[col('marketplace')] : '' },
+        fsgGate.audit,
+        { confirmation_token: (fsgGate.confirmation && fsgGate.confirmation.evaluation)
+            ? fsgGate.confirmation.evaluation.confirmation_token : '' });
+    } catch (eAu) { auditRows = -1; }
+    if (col('note') !== -1) {
+      var noteLine = fsgOverrideNoteLine_(fsgGate.audit);
+      if (noteLine) {
+        var prevNote = String(rowVals[col('note')] || '').trim();
+        var stamped = '[' + noteLine + ' @' + now + ']';
+        setCell('note', prevNote ? (prevNote + '\n' + stamped) : stamped);
+      }
+    }
+    overrideAudit = { inventory_override: true, audit_rows_appended: auditRows,
+      override_reason: fsgGate.audit.override_reason, override_by: fsgGate.audit.override_by,
+      override_at: fsgGate.audit.override_at, total_overage_qty: fsgGate.audit.total_overage_qty,
+      inventory_snapshot_fingerprint: fsgGate.audit.inventory_snapshot_fingerprint,
+      pools: fsgGate.audit.pools,
+      // -1 means the ledger could not be appended. The override is REPORTED as unrecorded rather than
+      // silently presented as audited; the plan moved, and an operator must be able to see that the trail
+      // did not.
+      audit_persisted: auditRows > 0 };
+  }
+
   // EXECUTION COMMIT: approving a plan creates its Shipment Draft (shipments + shipment_lines),
   // copying the Decision Snapshot into the Execution Snapshot (SHIPMENT_CENTER_SPEC §15 step 10;
   // ARCHITECTURE §3A/§4A). Idempotent. A failure here does NOT roll back the approval — the
@@ -1094,7 +1195,18 @@ function handleUpdateShippingPlanStatus_(body) {
     shipping_plan_id: planId, transition: transition, shipment: shipmentResult,
     approval_committed: (transition === 'approve'),
     execution_commit: commitState,
-    recovery: recovery
+    recovery: recovery,
+    // R6-R7-R5 §4 — present on EVERY guarded transition, so "no overage" is a stated fact rather than the
+    // absence of a field. null only on reject/cancel, which the gate does not run for.
+    inventory_guard: (transition === 'submit' || transition === 'approve') ? {
+      evaluated: true,
+      overage_present: !!(fsgGate && fsgGate.overage && fsgGate.overage.ok === false),
+      inventory_snapshot_fingerprint: (fsgGate && fsgGate.overage)
+        ? (fsgGate.overage.inventory_snapshot_fingerprint || null) : null,
+      recheck: (fsgGate && fsgGate.recheck) ? { snapshot_unchanged: fsgGate.recheck.snapshot_unchanged,
+        silent: fsgGate.recheck.silent, code: fsgGate.recheck.code } : null,
+      override: overrideAudit
+    } : null
   } });
 }
 

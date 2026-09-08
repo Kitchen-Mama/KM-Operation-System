@@ -75,7 +75,8 @@ var MODULE_ORDER = [
   'supply-planning-factory-site-allocation',     // F1-7N-FB-4E-R4B-R1 KMFSA canonical FACTORY SITE ALLOCATION (SELF-CONTAINED; no deps) - the ONE projection Site Inventory and Order Planning both read
   'supply-planning-forecast-normalization',     // F1-7N-FC-1B-E3-R3-R1 KMFCN the ONE reading of an absent forecast month (SELF-CONTAINED; no deps)
   'supply-planning-snapshot-freshness',         // F1-7N-FC-1B-E3-R4-A2-R1 KMSF is this snapshot current, decided by the SCHEDULE and not the calendar (SELF-CONTAINED; no deps)
-  'supply-planning-active-route-classification' // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 KMARC the ONE answer to "is this persisted header part of this station's current plan" (SELF-CONTAINED; no deps)
+  'supply-planning-active-route-classification', // F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 KMARC the ONE answer to "is this persisted header part of this station's current plan" (SELF-CONTAINED; no deps)
+  'supply-planning-factory-stock-guard'         // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 KMFSG the ONE shared factory pool arithmetic both the AI hard limit and the human overage confirmation read (SELF-CONTAINED; no deps)
 ];
 
 // F1-7N-FC-1B-E3-R4-A2-R1 — A DUPLICATE GLOBAL USED TO BE EMITTED SILENTLY, AND ONE JUST WAS.
@@ -144,7 +145,8 @@ var GLOBALS = [
   ['KMRDV2', 'supply-planning-request-draft-v2'],
   ['KMRDV2P', 'supply-planning-request-draft-v2-persistence'],
   ['KMFSA', 'supply-planning-factory-site-allocation'],
-  ['KMARC', 'supply-planning-active-route-classification']
+  ['KMARC', 'supply-planning-active-route-classification'],
+  ['KMFSG', 'supply-planning-factory-stock-guard']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

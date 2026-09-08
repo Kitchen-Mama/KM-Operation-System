@@ -154,11 +154,16 @@ function build(opts) {
     }
   };
   var ctx = vm.createContext(sb);
+  // R6-R7-R5 — AND 71_, THE FACTORY STOCK GUARD SEAM. 61_ now refuses to write a factory-sourced plan when
+  // the guard is not in the project (FACTORY_STOCK_GUARD_SEAM_MISSING), because an unguarded generation can
+  // over-commit the shared pool. Omitting it here would report this harness's own missing file as a
+  // production defect, exactly as the route-identity note above describes.
   var SRC = { bundle: read(GS + '90_generated_supply_planning_bundle.gs'), cfg: CFG,
+    fsg: read(GS + '71_api_v1_factory_stock_guard.gs'),
     ric: read(GS + '69_api_v1_route_identity_contract.gs'), aipl: read(GS + '69_api_v1_ai_plan_lifecycle.gs'),
     sad: G16, wap: G61, census: TEMP };
   if (opts.mutate) opts.mutate(SRC);
-  [SRC.bundle, SRC.cfg, SRC.ric, SRC.aipl, SRC.sad, SRC.wap].forEach(function (src, i) {
+  [SRC.bundle, SRC.cfg, SRC.ric, SRC.aipl, SRC.sad, SRC.wap, SRC.fsg].forEach(function (src, i) {
     vm.runInContext(src, ctx, { filename: 'src' + i });
   });
   vm.runInContext([

@@ -339,6 +339,17 @@ function runApprove(w, body, g11, g12, g21) {
   return buildRunner([
     extractFn(g11 || G11, 'shippingPlanTimestamp_'),
     extractFn(g11 || G11, 'handleUpdateShippingPlanStatus_'),
+    // R6-R7-R5 — 11_'s status handler is now a LOCK WRAPPER over spUpdateShippingPlanStatusCore_, so the
+    // core has to be extracted too: extracting the wrapper alone yields a function whose only statement
+    // calls something that is not in scope.
+    extractFn(g11 || G11, 'spUpdateShippingPlanStatusCore_'),
+    // And the guard seam is SUPPLIED, not loaded. `proceed: true, audit: null` is the "this plan fits"
+    // answer — which is what every fixture in this suite is, since none of them over-commits a factory pool.
+    // The guard itself (challenge, stale fingerprint, confirm, audit) is measured by the R6-R7-R5 suite
+    // against real availability, and duplicating it here would only prove the stub agrees with itself.
+    'function fsgGatePlanTransition_(ss, planId, transition, plan, body) { return { proceed: true, audit: null }; }',
+    'function fsgAppendOverrideAudit_() { return 0; }',
+    'function fsgOverrideNoteLine_() { return \'\'; }',
     extractFn(g11 || G11, 'spApprovalRecoveryState_'),
     (g12 || G12), G22, core21(g21)
   ], 'handleUpdateShippingPlanStatus_')(w, body);
@@ -1178,10 +1189,19 @@ section('§L — CONTRACT VERSIONS AND REACHABILITY');
 (function () {
   // §L — the action-contract version MUST move, because a router ACTION was added. This is the raise that
   // protects stock rather than a read: a deployment at 10 acquires reservations and cannot release them.
-  eq(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]), 11,
-    'N1  §L SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ 10 -> 11 (a router ACTION was added)');
-  eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]), 11,
-    'N2  §L and the frontend raises its pinned minimum to match, in the same commit');
+  // R6-R7-R5 — a FLOOR. The raise this round asserted (10 -> 11) HAPPENED and is history; what must keep
+  // holding is that the deployment never drops below it, because a deployment at 10 acquires reservations
+  // and cannot release them. A later round adding its own action must not read as that regression.
+  ok(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]) >= 11,
+    'N1  §L SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ is not below 11 (the round that added the release action)');
+  // R6-R7-R5 — THE PAIRING, KEPT EXACT, WHICH IS THE WHOLE POINT OF THIS ASSERTION. The literal 11 was never
+  // the subject: "the frontend pin MATCHES the deployed contract" is, because a frontend pinned BELOW the
+  // deployment silently accepts a backend that lacks the action it depends on — which is the failure this
+  // round had to guard again, since a pre-R5 backend routes updateShippingPlanStatus and applies no factory
+  // stock guard at all. So read BOTH values and compare them, rather than restating one of them.
+  eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]),
+    Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]),
+    'N2  §L and the frontend pinned minimum equals the deployed contract, in the same commit');
   eq(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]), 12,
     'N3  §L SYS_REQUIRED_ACTION_LIST_VERSION_ 11 -> 12 (the registry gained an entry)');
   eq(Number((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]), 1,

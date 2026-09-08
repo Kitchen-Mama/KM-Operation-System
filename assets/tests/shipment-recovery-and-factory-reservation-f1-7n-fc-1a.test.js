@@ -305,6 +305,17 @@ var APPROVE_SRC = function (g11, g12, g21) {
   return [
     extractFn(g11 || G11, 'shippingPlanTimestamp_'),
     extractFn(g11 || G11, 'handleUpdateShippingPlanStatus_'),
+    // R6-R7-R5 — 11_'s status handler is now a LOCK WRAPPER over spUpdateShippingPlanStatusCore_, so the
+    // core has to be extracted too: extracting the wrapper alone yields a function whose only statement
+    // calls something that is not in scope.
+    extractFn(g11 || G11, 'spUpdateShippingPlanStatusCore_'),
+    // And the guard seam is SUPPLIED, not loaded. `proceed: true, audit: null` is the "this plan fits"
+    // answer — which is what every fixture in this suite is, since none of them over-commits a factory pool.
+    // The guard itself (challenge, stale fingerprint, confirm, audit) is measured by the R6-R7-R5 suite
+    // against real availability, and duplicating it here would only prove the stub agrees with itself.
+    'function fsgGatePlanTransition_(ss, planId, transition, plan, body) { return { proceed: true, audit: null }; }',
+    'function fsgAppendOverrideAudit_() { return 0; }',
+    'function fsgOverrideNoteLine_() { return \'\'; }',
     extractFn(g11 || G11, 'spApprovalRecoveryState_'),
     (g12 || G12), core21(g21)
   ];
@@ -1231,7 +1242,11 @@ section('§J — THE DEPLOYMENT CONTRACT AND THE UI GATES');
     ok(DBAPI.indexOf("'" + p[1] + "'") !== -1,
       'J5.' + (i + 1) + 'a and the frontend probes §J.2 ' + p[1] + ' as an owner symbol');
   });
-  ok(/symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1A'/.test(G63),
+  // R6-R7-R5 — 11_'s stamp moved again when it took on the factory stock overage gate, so the literal is
+  // read from the file rather than restated: what this asserts is that 11_ and its manifest row AGREE,
+  // which is the mixed-deployment check, not which round they happen to agree on.
+  var _sp11 = (G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+  ok(!!_sp11 && new RegExp("symbol: 'SP_BUILD_VERSION_', expected: '" + _sp11 + "'").test(G63),
     'J6  §J.2 and 11_\'s stamp MOVED, because the shape of its Approve answer moved');
   ['spApprovalRecoveryState_', 'factoryStockAcquireReservationTx_'].forEach(function (sym, i) {
     ok(DBAPI.indexOf("'" + sym + "'") !== -1, 'J7.' + (i + 1) + ' §J.2 ' + sym + ' is probed as an owner symbol');

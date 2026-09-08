@@ -273,7 +273,11 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // SYS_REQUIRED_ACTIONS_ and this list never needed 12_. FC-1A connects it as the recovery path for a
   // committed approval whose Execution Commit failed, which registers it — and the list's own note
   // above warns that a new owner file must be added or the probe reads a registered handler as undefined.
-  read('specs/active/apps-script/12_shipment_handlers.gs')].join(String.fromCharCode(10));
+  read('specs/active/apps-script/12_shipment_handlers.gs'),
+  // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5: the factory stock guard seam owns handleFactoryStockGuardGet_, which
+  // 63_ registers for factoryStockGuard.get. The list's own note above warns that a new owner file must be
+  // added here or the probe reads a registered handler as undefined — which is exactly what it did.
+  read('specs/active/apps-script/71_api_v1_factory_stock_guard.gs')].join(String.fromCharCode(10));
 (G63.match(/handler: '([A-Za-z0-9_]+)'/g) || []).forEach(function (m) {
   var h = m.replace(/handler: '|'/g, '');
   var n = (HANDLER_SOURCES.match(new RegExp('function ' + h + '\\(', 'g')) || []).length;
