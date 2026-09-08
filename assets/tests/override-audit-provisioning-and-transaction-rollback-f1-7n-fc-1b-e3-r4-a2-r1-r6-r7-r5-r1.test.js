@@ -206,8 +206,13 @@ function World(spec) {
   }
   sheet('warehouses', ['warehouse_id', 'company', 'country', 'is_active', 'is_factory_warehouse'],
     spec.warehouses || [{ warehouse_id: 'FW-CN', company: 'ResUS', country: 'CN', is_active: true, is_factory_warehouse: true }]);
-  sheet('factory_stock', ['warehouse_id', 'sku', 'fac_current_stock', 'fac_reserved_stock'],
-    spec.factory_stock || [{ warehouse_id: 'FW-CN', sku: 'SKU1', fac_current_stock: 1000, fac_reserved_stock: 0 }]);
+  // `factory_stock_absent: true` builds the world where availability CANNOT BE ESTABLISHED. An absent table
+  // is a different fact from an empty one and the guard reports them differently, so the fixture must be
+  // able to say which.
+  if (spec.factory_stock_absent !== true) {
+    sheet('factory_stock', ['warehouse_id', 'sku', 'fac_current_stock', 'fac_reserved_stock'],
+      spec.factory_stock || [{ warehouse_id: 'FW-CN', sku: 'SKU1', fac_current_stock: 1000, fac_reserved_stock: 0 }]);
+  }
   sheet('shipping_allocation_drafts', ['allocation_draft_id', 'company', 'country', 'marketplace', 'status',
     'recommended_source_warehouse_id', 'generation_type', 'generation_run_id'], spec.drafts || []);
   sheet('shipping_allocation_draft_lines', ['allocation_draft_line_id', 'allocation_draft_id', 'sku',
@@ -663,21 +668,47 @@ ok(iGateB > 0 && iTry > iGateB,
 section('C. §C — THE CORRECTED SYNC SET, MEASURED FROM THE TREE');
 // ================================================================================================================
 // The previous report said "5 files" and listed six. The set is not a matter of memory: it is what changed.
-function changedVsHead() {
-  try {
-    return cp.execSync('git diff --name-only HEAD', { cwd: ROOT, encoding: 'utf8' })
-      .split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-  } catch (e) { return null; }
+// THE ROUND'S BASELINE, DERIVED. The commit that first put this stamp into 63_ is the start of the round;
+// its parent is the release the operator is upgrading FROM. Everything since is what has to be synced,
+// working-tree edits included.
+function git(cmd) {
+  try { return cp.execSync('git ' + cmd, { cwd: ROOT, encoding: 'utf8' }); } catch (e) { return null; }
 }
-function untracked() {
-  try {
-    return cp.execSync('git ls-files --others --exclude-standard', { cwd: ROOT, encoding: 'utf8' })
-      .split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-  } catch (e) { return null; }
+var REL63 = 'assets/specs/active/apps-script/63_api_v1_system_health.gs';
+function roundBaseline() {
+  // NOTHING IS PASSED THROUGH A SHELL QUOTE. The first attempt used `git log -S"…'stamp'…"`, and a
+  // single-quoted argument means nothing to cmd.exe: the pickaxe matched no commit, the baseline silently
+  // became HEAD, and the diff was empty — a derivation that failed by returning a plausible answer.
+  var log = git('log --format=%H -- ' + REL63);
+  if (log === null) return null;
+  var commits = log.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  for (var i = 0; i < commits.length; i++) {
+    var blob = git('show ' + commits[i] + ':' + REL63);
+    if (blob === null) continue;
+    // The newest commit whose 63_ does NOT carry this stamp is the release being upgraded from.
+    if (blob.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") === -1) return commits[i];
+  }
+  return null;
 }
-var changed = changedVsHead(), newFiles = untracked();
-if (changed === null || newFiles === null) {
-  ok(false, 'C0  git is readable so the sync set can be MEASURED rather than remembered');
+var BASE = roundBaseline();
+ok(!!BASE, 'C0  the round baseline is DERIVED from the commit that introduced this stamp', BASE);
+// A baseline that resolves to HEAD is the failure mode of the first attempt: it makes the diff empty and
+// the sync set look like nothing changed. It has to be a STRICT ancestor.
+ok(!!BASE && String(git('merge-base --is-ancestor ' + BASE + ' HEAD')) !== 'null'
+  && String(git('rev-parse HEAD')).trim() !== BASE,
+  'C0a and it is a STRICT ancestor of HEAD, not HEAD itself', BASE);
+ok(!!BASE && String(git('show ' + BASE + ':' + REL63)).indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + PREV_STAMP + "'") !== -1,
+  'C0b and 63_ at that baseline declares the PREVIOUS release, which is what makes it the right baseline');
+function changedSinceBaseline() {
+  if (!BASE) return null;
+  var tracked = git('diff --name-only ' + BASE);
+  var others = git('ls-files --others --exclude-standard');
+  if (tracked === null || others === null) return null;
+  return (tracked + '\n' + others).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+}
+var changed = changedSinceBaseline(), newFiles = [];
+if (changed === null) {
+  ok(false, 'C0a git is readable so the sync set can be MEASURED rather than remembered');
 } else {
   var all = changed.concat(newFiles);
   var gsChanged = all.filter(function (f) { return /\.gs$/.test(f); }).sort();
@@ -694,8 +725,8 @@ if (changed === null || newFiles === null) {
     'assets/tools/apps-script-migrations/TEMP_migrate_factory_stock_override_audit_r5.gs'
   ], 'C1  §C the Apps Script set that changed this round is 71_, 11_, 63_, the census pin and the new TEMP migration');
   // And what changed in the census is TWO STAMPS. Not the captured activation evidence.
-  var censusDiff = cp.execSync('git diff --numstat HEAD -- assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs',
-    { cwd: ROOT, encoding: 'utf8' }).trim().split(/\s+/);
+  var censusDiff = String(git('diff --numstat ' + BASE
+    + ' -- assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs')).trim().split(/\s+/);
   eq([censusDiff[0], censusDiff[1]], ['2', '2'],
     'C1a and the census changed by exactly two lines — the two build pins, not one byte of captured evidence');
   ok(all.indexOf('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs') === -1,
@@ -899,6 +930,227 @@ eq(readCounts['TEMP_FC_FORECAST_YEAR_ROLLOVER_CENSUS_FC1B_E3_R2.gs'] > 0, true,
 ok(/TEMP_migrate_shipping_allocation_ai_lifecycle\.gs'[^}]*optional: true/.test(G63),
   'D8  §D.6 the completed lifecycle migration is manifest-OPTIONAL, so removing it breaks no contract');
 
+// ================================================================================================================
+section('F. THE EDITOR ENTRY POINTS — the census exists, is top-level, and writes nothing');
+// ================================================================================================================
+// WHY THIS SECTION EXISTS. The R5-R1 runbook told the operator to run
+// RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS() and it did not say which FILE to open first. The Apps Script Run
+// selector is populated from the file selected in the editor, so an operator who had just finished the
+// migration — with TEMP_migrate_factory_stock_override_audit_r5.gs open — could not see it, and the natural
+// reading of that is "the function was never implemented".
+//
+// It WAS implemented. What was missing was any standing assertion about it: R5's G5 write-freedom list names
+// fsgReadInventoryFacts_, fsgEvaluateAiClaims_, fsgEvaluatePlanOverage_, handleFactoryStockGuardGet_ and
+// fsgLastConfirmedOverride_ — and NEITHER of the two RUN_ entry points an operator actually invokes. The two
+// functions a human runs by hand against production were the two nothing measured.
+
+// ---- F1  IT EXISTS, EXACTLY ONCE, AT THE TOP LEVEL, AND TAKES NO ARGUMENTS ------------------------------
+// Brace-depth walked outside comments and strings. Depth 0 is what the Run selector can offer; a function
+// nested inside anything is unreachable from the toolbar no matter how it is named.
+function topLevelFns(src) {
+  var out = [], d = 0, q = null, line = false, block = false;
+  for (var i = 0; i < src.length; i++) {
+    var c = src[i], n = src[i + 1];
+    if (line) { if (c === '\n') line = false; continue; }
+    if (block) { if (c === '*' && n === '/') { block = false; i++; } continue; }
+    if (q) { if (c === '\\') { i++; continue; } if (c === q) q = null; continue; }
+    if (c === '/' && n === '/') { line = true; i++; continue; }
+    if (c === '/' && n === '*') { block = true; i++; continue; }
+    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+    if (c === '{') { d++; continue; }
+    if (c === '}') { d--; continue; }
+    if (c === 'f' && src.substr(i, 9) === 'function ') {
+      var m = /^function\s+([A-Za-z0-9_$]+)\s*\(([^)]*)\)/.exec(src.slice(i));
+      if (m) out.push({ name: m[1], depth: d, params: m[2].trim(),
+        line: src.slice(0, i).split('\n').length });
+    }
+  }
+  return out;
+}
+var CENSUS_FN = 'RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS';
+var SCHEMA_FN = 'RUN_R6R7_R5_FACTORY_STOCK_GUARD_SCHEMA_VALIDATE';
+var fns71 = topLevelFns(G71);
+[CENSUS_FN, SCHEMA_FN].forEach(function (nm, i) {
+  var hits = fns71.filter(function (f) { return f.name === nm; });
+  eq(hits.length, 1, 'F1.' + (i + 1) + ' ' + nm + ' is declared exactly once in 71_');
+  if (!hits.length) return;
+  eq([hits[0].depth, hits[0].params], [0, ''],
+    'F1.' + (i + 1) + 'a and it is TOP-LEVEL and argument-free, so the Run selector can offer it');
+});
+// And nowhere else in the project, because one shared global scope means a duplicate silently wins.
+var elsewhere = fs.readdirSync(path.join(ROOT, GS)).filter(function (f) {
+  return /\.gs$/.test(f) && f !== '71_api_v1_factory_stock_guard.gs';
+}).filter(function (f) { return read(GS + f).indexOf('function ' + CENSUS_FN) !== -1; });
+eq(elsewhere, [], 'F2  no other runtime module defines it — no shadowing in the one shared global scope');
+['assets/tools/apps-script-diagnostics', 'assets/tools/apps-script-migrations'].forEach(function (dir, i) {
+  var dup = fs.readdirSync(path.join(ROOT, dir)).filter(function (f) {
+    return /\.gs$/.test(f) && read(dir + '/' + f).indexOf('function ' + CENSUS_FN) !== -1;
+  });
+  eq(dup, [], 'F2.' + (i + 1) + ' nor does any file in ' + dir.split('/').pop());
+});
+// The file it lives in is the file the sync list names, and the census is in its LAST 40 lines — which is why
+// a truncated paste is a real possibility and is the second thing to check.
+var censusLine = fns71.filter(function (f) { return f.name === CENSUS_FN; })[0].line;
+var total71 = G71.split('\n').length;
+ok(total71 - censusLine < 40,
+  'F3  the census is in the TAIL of 71_ (line ' + censusLine + ' of ' + total71 + ') — a short paste loses it first');
+
+// ---- F4  THE WHOLE TRANSITIVE CLOSURE NAMES NO WRITE API ------------------------------------------------
+var WRITE_APIS = /setValue\(|setValues\(|appendRow\(|insertSheet\(|deleteSheet\(|deleteRow\(|deleteRows\(|insertRowsAfter\(|insertRowsBefore\(|insertColumn|deleteColumn|clearContent|setName\(|LockService|setProperty\(|deleteProperty\(|fcWriteAppendByHeader_|prodMigrateCreateSheet_|prodMigrateAppendColumns_/;
+function closureOf(src, entry) {
+  var seen = {}, reached = [], queue = [entry];
+  while (queue.length) {
+    var nm = queue.shift();
+    if (seen[nm]) continue;
+    seen[nm] = 1;
+    var body;
+    try { body = extractFn(src, nm); } catch (e) { continue; }   // defined outside this file
+    var b = bareCode(body);
+    reached.push({ name: nm, writes: WRITE_APIS.test(b) });
+    (b.match(/\b[A-Za-z0-9_$]+\s*\(/g) || []).forEach(function (call) {
+      var c = call.replace(/\s*\($/, '');
+      if (c === nm) return;
+      try { if (extractFn(src, c)) queue.push(c); } catch (e) { /* not local */ }
+    });
+  }
+  return reached;
+}
+var censusClosure = closureOf(G71, CENSUS_FN);
+ok(censusClosure.length >= 6, 'F4  the census closure inside 71_ is walked', censusClosure.length);
+eq(censusClosure.filter(function (o) { return o.writes; }).map(function (o) { return o.name; }), [],
+  'F4a §3 NOT ONE function the census can reach names a write API, a lock or a property write');
+eq(closureOf(G71, SCHEMA_FN).filter(function (o) { return o.writes; }).map(function (o) { return o.name; }), [],
+  'F4b and the same holds for the schema validator beside it');
+// The two readers it reaches OUTSIDE 71_ are read-only in their own files, which is where that must be true.
+ok(!WRITE_APIS.test(bareCode(extractFn(read(GS + '43_api_v1_gap_materialization.gs'), 'gapReadObjects_'))),
+  'F4c and gapReadObjects_ — the one sheet reader it calls — writes nothing either');
+ok(!/SpreadsheetApp|getRange|appendRow|setValue|LockService/.test(read('assets/js/core/supply-planning-factory-stock-guard.js')),
+  'F4d while the pool arithmetic it delegates to cannot touch a spreadsheet at all');
+
+// ---- F5  RUN IT. Every mutating API on these sheets RECORDS THE ATTEMPT AND THEN THROWS ------------------
+// A source scan says "no write is named". This says "it wrote nothing", which is a different and stronger
+// claim — and the sheets are rigged so a write cannot even succeed quietly.
+function censusWorld(spec) {
+  spec = spec || {};
+  var attempts = [];
+  var w = new World(spec);
+  Object.keys(w.S).forEach(function (n) {
+    var sh = w.S[n];
+    sh.fail.setValue = function () { attempts.push({ op: 'setValue', sheet: n }); return 'WRITE_ATTEMPTED'; };
+    sh.fail.setValues = function () { attempts.push({ op: 'setValues', sheet: n }); return 'WRITE_ATTEMPTED'; };
+    sh.fail.appendRow = function () { attempts.push({ op: 'appendRow', sheet: n }); return 'WRITE_ATTEMPTED'; };
+    sh.fail.deleteRow = function () { attempts.push({ op: 'deleteRow', sheet: n }); return 'WRITE_ATTEMPTED'; };
+  });
+  return { w: w, attempts: attempts, s: seam(w, spec) };
+}
+// TWO physical factory pools, TWO companies drawing on ONE of them, one MANUAL draft, one plan already
+// transferred to a shipment, and one non-factory warehouse carrying stock. Every distinction the pool
+// arithmetic has to make is present in this one world.
+var CW = {
+  warehouses: [
+    { warehouse_id: 'FW-CN', company: 'ResUS', country: 'CN', is_active: true, is_factory_warehouse: true },
+    { warehouse_id: 'FW-TW', company: 'ResUS', country: 'TW', is_active: true, is_factory_warehouse: true },
+    { warehouse_id: 'WH-3PL', company: 'ResUS', country: 'US', is_active: true, is_factory_warehouse: false }],
+  factory_stock: [
+    { warehouse_id: 'FW-CN', sku: 'SKU1', fac_current_stock: 1000, fac_reserved_stock: 0 },
+    { warehouse_id: 'FW-TW', sku: 'SKU1', fac_current_stock: 900, fac_reserved_stock: 0 },
+    { warehouse_id: 'WH-3PL', sku: 'SKU1', fac_current_stock: 5000, fac_reserved_stock: 0 }],
+  drafts: [{ allocation_draft_id: 'D-MAN', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+    status: 'draft', recommended_source_warehouse_id: 'FW-CN', generation_type: 'user_created' }],
+  draft_lines: [{ allocation_draft_line_id: 'L1', allocation_draft_id: 'D-MAN', sku: 'SKU1',
+    source_warehouse_id: 'FW-CN', planned_qty: 300 }],
+  plans: [
+    { shipping_plan_id: 'SP-US', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+      source_warehouse_id: 'FW-CN', status: 'pending_approval' },
+    { shipping_plan_id: 'SP-JP', company: 'OtherCo', country: 'JP', marketplace: 'Rakuten',
+      source_warehouse_id: 'FW-CN', status: 'approved' },
+    { shipping_plan_id: 'SP-GONE', company: 'OtherCo', country: 'JP', marketplace: 'Rakuten',
+      source_warehouse_id: 'FW-CN', status: 'approved', transferred_shipment_id: 'SHP-9' }],
+  plan_lines: [
+    { shipping_plan_line_id: 'P1', shipping_plan_id: 'SP-US', sku: 'SKU1', requested_qty: 500 },
+    { shipping_plan_line_id: 'P2', shipping_plan_id: 'SP-JP', sku: 'SKU1', requested_qty: 400 },
+    { shipping_plan_line_id: 'P3', shipping_plan_id: 'SP-GONE', sku: 'SKU1', requested_qty: 777 }]
+};
+function runCensus(over) {
+  var spec = {};
+  Object.keys(CW).forEach(function (k) { spec[k] = CW[k]; });
+  Object.keys(over || {}).forEach(function (k) { spec[k] = over[k]; });
+  var C = censusWorld(spec);
+  // A THROW is an outcome, not an accident: the rigged sheets refuse every write, so a census that tries
+  // one dies here. Capturing it is what lets E17 distinguish 'wrote nothing' from 'was stopped'.
+  var res = null, threw = null;
+  try { res = C.s.call(CENSUS_FN + '()'); }
+  catch (e) { threw = String((e && e.message) ? e.message : e); }
+  return { res: res, threw: threw, attempts: C.attempts, w: C.w };
+}
+var F5 = runCensus();
+eq(F5.attempts, [], 'F5  §3 the census attempted ZERO writes — measured, not scanned');
+eq(F5.threw, null, 'F5.0 and it completed, so the zero above is a full run rather than an early death');
+eq(F5.res.writes, 0, 'F5a and it reports writes: 0');
+eq(F5.res.ok, true, 'F5b having read a complete database');
+eq(F5.res.build, STAMP, 'F5c stamped with the deployed build, so the answer names the code that produced it');
+eq(F5.res.tables_read, ['warehouses', 'factory_stock', 'shipping_allocation_drafts',
+  'shipping_allocation_draft_lines', 'shipping_plans', 'shipping_plan_lines', 'marketplaces'],
+  'F5d and it states which seven tables it read');
+
+// ---- F6  THE POOL ARITHMETIC IS THE PRODUCTION ONE, NOT A SECOND READING OF IT --------------------------
+// 300 manual draft (ResUS) + 500 plan (ResUS) + 400 plan (OtherCo) = 1200 against 1000 on ONE warehouse.
+// The 777 on the transferred plan is NOT counted — it is already inside fac_reserved_stock.
+var oc = F5.res.pools_already_over_committed;
+eq(oc.length, 1, 'F6  exactly one pool is over-committed …');
+eq([oc[0].pool_key, oc[0].warehouse_id, oc[0].sku], ['WH:FW-CN||SKU1', 'FW-CN', 'SKU1'],
+  'F6a … and it is named by pool key, WAREHOUSE and SKU — the identifiers a review needs');
+eq([oc[0].factory_current_stock, oc[0].factory_reserved_stock, oc[0].factory_available_stock,
+  oc[0].active_allocation_draft_qty, oc[0].active_shipping_plan_qty,
+  oc[0].already_allocated_qty, oc[0].available_to_allocate],
+  [1000, 0, 1000, 300, 900, 1200, -200],
+  'F6b with the full arithmetic, and a NEGATIVE headroom reported rather than clamped to zero');
+eq(oc[0].active_allocation_draft_manual_qty, 300,
+  'F6c the manual draft is counted and labelled MANUAL, so nobody reads it as the AI\'s');
+// CROSS-COMPANY. This is the defect the whole guard exists for: if the census filtered by company it would
+// see 800 against 1000 and report a healthy pool.
+ok(oc[0].active_shipping_plan_qty === 900,
+  'F6d §4 the two companies\' plans are SUMMED (500 + 400), never filtered to the requesting company');
+// PER POOL. Two physical factory warehouses are two pools; adding them would show 1900 of stock and hide it.
+eq(F5.res.pool_count, 2, 'F6e two physical factory pools stay two pools …');
+eq(F5.res.pools_sample.map(function (r) { return r.pool_key; }).sort(),
+  ['WH:FW-CN||SKU1', 'WH:FW-TW||SKU1'], 'F6f … keyed by warehouse and SKU');
+eq(F5.res.pools_sample.filter(function (r) { return r.warehouse_id === 'FW-TW'; })[0].available_to_allocate, 900,
+  'F6g and the untouched pool keeps its own headroom — the shortfall does not leak across warehouses');
+// The 3PL warehouse holds 5000 units of the same SKU and is NOT factory stock. Counting it would erase the
+// overcommit entirely, which is exactly the category error 43_ calls two INDEPENDENT pools.
+eq([F5.res.balances.examined, F5.res.balances.counted, F5.res.balances.skipped_non_factory], [3, 2, 1],
+  'F6h the non-factory warehouse is examined, EXCLUDED, and the exclusion is counted');
+// And the transferred plan.
+eq(F5.res.plan_exposure.released.TRANSFERRED_TO_SHIPMENT, 1,
+  'F6i the plan already transferred to a shipment is released BY NAME, so its units are not double-counted');
+
+// ---- F7  SCHEMA READINESS, AND WHAT AN INCOMPLETE DATABASE MUST *NOT* LOOK LIKE ------------------------
+eq([F5.res.schema.verdict, F5.res.schema.runtime_would_accept, F5.res.schema.writes],
+  ['READY', true, 0], 'F7  the census carries the override-audit schema readiness, and asks the RUNTIME');
+eq(F5.res.schema.dry_run, true, 'F7a declared dry_run');
+eq(F5.res.guard_module_present, true, 'F7b and states that the pure guard module is loaded');
+// AN UNREADABLE DATABASE MUST NEVER PRODUCE A CLEAN BILL OF HEALTH. `pools_already_over_committed: []` on a
+// failed read would read to an operator as "no pool is over-committed", which is the worst possible lie for
+// this particular field. The census OMITS it instead and says why.
+var F8 = runCensus({ factory_stock_absent: true });
+eq([F8.res.ok, F8.res.reason], [false, 'FACTORY_STOCK_READ_FAILED'],
+  'F8  §4 an unreadable factory_stock is reported as a FAILED read, with the reason');
+eq(F8.res.pools_already_over_committed, undefined,
+  'F8a and pools_already_over_committed is ABSENT, never an empty list that reads as "nothing is wrong"');
+eq(F8.res.pool_count, undefined, 'F8b nor is a pool count invented for a census that counted nothing');
+eq(F8.attempts, [], 'F8c and the failure path writes nothing either');
+eq(F8.res.writes, 0, 'F8d still reporting writes: 0');
+
+// ---- F9  THE RUNBOOK DEFECT, RECORDED SO IT CANNOT RECUR -----------------------------------------------
+// The census is reachable ONLY from the file that defines it, because the Apps Script Run selector is
+// populated from the file open in the editor. Any runbook line that names it must name its file.
+ok(/Run from the editor: `RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS\(\)`/.test(G71),
+  'F9  71_ documents its own entry point at the definition, which is where an operator can find it');
+eq(fns71.filter(function (f) { return /^RUN_/.test(f.name) && f.depth === 0; })
+  .map(function (f) { return f.name; }).sort(),
+  [CENSUS_FN, SCHEMA_FN].sort(),
+  'F9a and 71_ offers the selector exactly TWO entry points — the pair a runbook must name together');
 // ================================================================================================================
 section('E. MUTANTS — §E');
 // ================================================================================================================
@@ -1128,6 +1380,71 @@ mut('E14 the ledger requirement accepts a reordered header, so the row is filed 
     var hr = confirmOnce(H).send();
     return r.success === true && hr.code === 'FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING';
   });
+
+
+mut('E15 the census filters the pool by the requesting company, hiding a cross-company overcommit', function () {
+  // The one defect the whole guard exists to close, aimed at the CENSUS: company / country / marketplace are
+  // the DESTINATION. Filtering exposure by company before the arithmetic is precisely how two companies came
+  // to plan the same cartons, and a census that did it would report FW-CN as healthy at 800 of 1000.
+  var mSrc = swap(G71, '  var pEx = KMFSG.planExposure(plans, planLines, { selfPlanId: opts.selfPlanId || \'\' });',
+    '  var pEx = KMFSG.planExposure(plans.filter(function (p) { return String(p.company) === \'ResUS\'; }),'
+    + ' planLines, { selfPlanId: opts.selfPlanId || \'\' });');
+  var bad = runCensus({ g71: mSrc });
+  var good = runCensus();
+  return good.res.pools_already_over_committed.length === 1
+    && good.res.pools_already_over_committed[0].available_to_allocate === -200
+    && bad.res.pools_already_over_committed.length === 0;
+});
+
+mut('E16 the per-pool arithmetic is collapsed to one SKU total across every factory warehouse', function () {
+  // Two physical factories are not one bigger factory. Collapsed, FW-CN and FW-TW would show 1900 of stock
+  // against 1200 of exposure and the overcommit would vanish — while the cartons in Taiwan still cannot be
+  // loaded onto a container in China.
+  var mSrc = swap(read('assets/js/core/supply-planning-factory-stock-guard.js'),
+    "  if (p) return 'POOL:' + p + '||' + s;",
+    "  if (p) return 'POOL:' + p + '||' + s;" + NL + '  return s;');
+  var tmp = path.join(require('os').tmpdir(), 'kmfsg_e16_' + Date.now() + '.js');
+  fs.writeFileSync(tmp, mSrc, 'utf8');
+  var mutModule = require(tmp);
+  var good = runCensus();
+  var badPools = mutModule.availableToAllocate({
+    balances: mutModule.normalizeBalances(CW.factory_stock, { eligibleWarehouseIds: { 'FW-CN': 1, 'FW-TW': 1 } }),
+    draftExposure: mutModule.draftExposure(CW.drafts, CW.draft_lines, {}),
+    planExposure: mutModule.planExposure(CW.plans, CW.plan_lines, {})
+  });
+  try { fs.unlinkSync(tmp); } catch (e) {}
+  var badOver = badPools.pool_keys.filter(function (k) { return badPools.byPool[k].available_to_allocate < 0; });
+  return good.res.pool_count === 2 && good.res.pools_already_over_committed.length === 1
+    && badPools.pool_keys.length === 1 && badOver.length === 0;
+});
+
+mut('E17 the census writes — writes: 0 becomes a literal nobody checked', function () {
+  // `writes: 0` is a field in an object. It is worth exactly as much as the absence of a write API on every
+  // path that can reach it, which is why F4a walks the closure and F5 runs the thing.
+  var mSrc = swap(G71, '  Logger.log(JSON.stringify(out, null, 2));' + NL + '  return out;' + NL + '}',
+    "  ss.getSheetByName('factory_stock').getRange(2, 3).setValue(0);" + NL
+    + '  Logger.log(JSON.stringify(out, null, 2));' + NL + '  return out;' + NL + '}');
+  var bad = runCensus({ g71: mSrc });
+  var good = runCensus();
+  // The mutant's write is REFUSED by the rigged sheet, so it dies on the attempt. What distinguishes the
+  // two is the attempt log — not the `writes: 0` field, which the mutant would have reported just as
+  // cheerfully had the sheet let it through. That is the whole reason this probe runs the code.
+  return good.threw === null && good.attempts.length === 0 && good.res.writes === 0
+    && bad.attempts.length > 0
+    && (bad.threw !== null || (bad.res && bad.res.writes === 0));
+});
+
+mut('E18 an unreadable database is reported as a census with nothing over-committed', function () {
+  // The most dangerous shape this function can take: a clean bill of health issued by a read that failed.
+  var mSrc = swap(G71, '  if (facts.ok) {' + NL + '    out.tables_read = facts.tables_read;',
+    '  out.pools_already_over_committed = [];' + NL
+    + '  if (facts.ok) {' + NL + '    out.tables_read = facts.tables_read;');
+  var bad = runCensus({ factory_stock_absent: true, g71: mSrc });
+  var good = runCensus({ factory_stock_absent: true });
+  return good.res.ok === false && good.res.pools_already_over_committed === undefined
+    && bad.res.ok === false && Array.isArray(bad.res.pools_already_over_committed)
+    && bad.res.pools_already_over_committed.length === 0;
+});
 
 // ================================================================================================================
 console.log(NL + '-'.repeat(112));
