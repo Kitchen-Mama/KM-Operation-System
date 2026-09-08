@@ -657,12 +657,17 @@ settle()
         && !/Already planned \(qualifying\) /.test(f2) && !/FULLY_COVERED_BY_ACTIVE_PLAN/.test(f2);
     });
     // N9: the readback's zero-counter gate stops checking `reservations` — the field measured but not checked.
+    // R5-R1 — RE-AIMED. The gate is no longer a chain of `&&`; the counters are a NAMED list, because
+    // `[0,0,0,0,0,0,null,0]` cost a round of tracing to discover that the seventh one is `reservations`.
+    // The property is unchanged: `reservations` must be one of the counters the gate actually reads. And it
+    // must be on the REQUIRED list too — a counter that is checked but not required is how a missing paste
+    // field came to look like a backend omission.
     mut('N9 reservations removed from the readback zero-counter gate', function () {
-      var m = swap(CENSUS, '        && A.cancelled_headers === 0 && A.cancelled_lines === 0 && A.reservations === 0\n'
-        + '        && A.db_writes === 0);',
-        '        && A.cancelled_headers === 0 && A.cancelled_lines === 0 && A.db_writes === 0);');
+      var m = swap(CENSUS, "      ['reservations', A.reservations], ['db_writes', A.db_writes]];",
+        '      [\'db_writes\', A.db_writes]];');
       var g = extractFn(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_READBACK');
-      return /A\.reservations === 0/.test(RB) && !/A\.reservations === 0/.test(g);
+      return /\['reservations', A\.reservations\]/.test(RB) && !/\['reservations', A\.reservations\]/.test(g)
+        && /'reservations'/.test(extractVar(CENSUS, 'R6R7_ACTUAL_RESPONSE_REQUIRED_'));
     });
     // N10: `reservations` emitted as null instead of 0. A null is exactly the shape this round is closing —
     // and it is the shape a careless "fix" would produce, so it must be caught separately from N3.

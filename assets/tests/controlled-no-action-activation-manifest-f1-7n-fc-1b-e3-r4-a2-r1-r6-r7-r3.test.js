@@ -198,7 +198,7 @@ function freezeFrom(over, opts) {
 var CLEAN_AUDIT = {
   captured: true, resolved_or_rejected: 'resolved', action: 'weeklyAiPlan.generate',
   response_outcome: 'AI_PLAN_NO_ACTION', response_code: 'NO_REPLENISHMENT_REQUIRED',
-  no_action_reason: 'VALID_ZERO_RECOMMENDATION', recommendation_state: 'VALID_ZERO',
+  no_action_reason: 'VALID_ZERO_RECOMMENDATION', recommendation_state: 'VALID_ZERO_RECOMMENDATION',
   recommended_qty: 0, qualifying_planned_qty: 520, residual_qty: 0,
   created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
   cancelled_headers: 0, cancelled_lines: 0, reservations: 0,

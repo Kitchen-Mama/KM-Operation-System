@@ -555,6 +555,229 @@ ok(failed(G16r.res).indexOf('the_actual_response_and_the_database_agree') >= 0,
   'G16a and the disagreement between the two halves is named');
 
 // ================================================================================================================
+section('K — R5-R1: the readback expected the OTHER correct class and refused a completed activation');
+// ================================================================================================================
+//
+// THE FALSE NEGATIVE. A controlled activation ran once, produced the correct answer, and the readback said
+// STOP on three predicates. None of the three was about production.
+//
+//   1. no_route_save_or_submit_or_reservation_request_rode_along   expected [0,0,0]  observed [null,null,null]
+//   2. the_actual_response_quantities_match_the_frozen_baseline    expected [0,520,0] observed [160,520,0]
+//   3. every_mutation_counter_in_the_actual_response_is_zero       …[0,0,0,0,0,0,null,0]
+//
+// (2) is the root defect: the gate hardcoded `recommended_qty: 0`, which is the VALID_ZERO_RECOMMENDATION
+// class written in as though it were the only one. The frozen baseline said 160 and the response said 160,
+// and they were compared against a literal that agreed with neither.
+//
+// (1) and (3) are ONE defect, and it is not a production one: six fields were read by unconditional value
+// gates while being absent from R6R7_ACTUAL_RESPONSE_REQUIRED_. An incomplete paste therefore passed the
+// completeness check and then failed the value checks — reporting a paste omission in the vocabulary of a
+// backend omission. A gate can only be trusted when the completeness check guarantees its input exists.
+
+// THE WORLD THE R5-R1 EVIDENCE DESCRIBES: D18/D30/D45 = 0, D90 = 160, standing manual plan 520.
+var K_FC = { gap: { d18_gap_qty: 0, d18_suggested_qty: 0, d30_gap_qty: 0, d30_suggested_qty: 0,
+  d45_gap_qty: 0, d45_suggested_qty: 0, d90_gap_qty: 160, d90_suggested_qty: 160 } };
+var KFZ = freezeFrom(live(K_FC));
+eq([KFZ.before.recommended_qty, KFZ.before.qualifying_active_planned_qty, KFZ.before.residual_qty],
+  [160, 520, 0], 'K0  the frozen baseline is the R5-R1 one: 160 recommended, 520 already planned, 0 residual');
+
+// THE BROWSER RESPONSE ACTUALLY OBSERVED, field for field as the operator reported it.
+var K_AUDIT = { response_outcome: 'AI_PLAN_NO_ACTION', response_code: 'NO_REPLENISHMENT_REQUIRED',
+  no_action_reason: 'FULLY_COVERED_BY_ACTIVE_PLAN', recommendation_state: 'NONZERO_RECOMMENDATION',
+  recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0 };
+function kb(over, opts) {
+  var a = {};
+  Object.keys(K_AUDIT).forEach(function (k) { a[k] = K_AUDIT[k]; });
+  Object.keys(over || {}).forEach(function (k) { a[k] = over[k]; });
+  var o = { audit: a };
+  Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+  return readback(KFZ, live(K_FC), o);
+}
+
+// ---- K1  THE EXACT R5-R1 EVIDENCE NOW CONFIRMS. --------------------------------------------------------
+var K1 = kb();
+eq(K1.res.verdict, 'CONTROLLED_NO_ACTION_CONFIRMED',
+  'K1  160 / 520 / 0 against a 160 / 520 / 0 baseline CONFIRMS — the false negative is gone');
+eq(failed(K1.res), [], 'K1a with no predicate failed');
+eq([K1.res.no_action_class_expected.resolved_class,
+  K1.res.no_action_class_expected.required_recommendation_state],
+  ['FULLY_COVERED_BY_ACTIVE_PLAN', 'NONZERO_RECOMMENDATION'],
+  'K1b the class is resolved, and it names the recommendation_state it therefore requires');
+ok(String(K1.res.no_action_class_expected.resolved_from).indexOf('R6R7_NO_ACTION_BEFORE_') === 0,
+  'K1c resolved from the FROZEN BASELINE, not from the response being marked');
+eq(K1.res.no_action_class_expected.cross_class_fallback, 'PROHIBITED — an unresolved class expects nothing and refuses',
+  'K1d and cross-class fallback is refused by name');
+eq(K1.res.actual_response_counters.by_name,
+  { created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0, cancelled_headers: 0,
+    cancelled_lines: 0, reservations: 0, db_writes: 0 },
+  'K1e every counter is reported UNDER ITS OWN NAME — the seventh never has to be traced again');
+eq(K1.res.actual_response_counters.not_a_real_zero, [], 'K1f with none of them missing or non-zero');
+
+// ---- K2  THE OLD CLASS IS UNTOUCHED. -------------------------------------------------------------------
+var K2 = readback(FZ);
+eq([K2.res.verdict, failed(K2.res)], ['CONTROLLED_NO_ACTION_CONFIRMED', []],
+  'K2  a VALID_ZERO activation — 0 / 520 / 0 — still CONFIRMS unchanged');
+eq([K2.res.no_action_class_expected.resolved_class,
+  K2.res.no_action_class_expected.required_recommendation_state],
+  ['VALID_ZERO_RECOMMENDATION', 'VALID_ZERO_RECOMMENDATION'],
+  'K2a resolved to the zero class, whose state contract is the VALUE and not the enum key');
+var K2names = K2.res.predicates.map(function (x) { return x.predicate; });
+eq(K2names.filter(function (n) { return /^the_fully_covered_/.test(n); }), [],
+  'K2b and no class-B-only condition is asserted against it');
+ok(K1.res.predicates.map(function (x) { return x.predicate; })
+  .filter(function (n) { return /^the_fully_covered_/.test(n); }).length === 2,
+  'K2c while the class-B run carries two conditions class A cannot state');
+
+// ---- K3  THE QUANTITIES ARE STRICT, TYPED AND CLASS-BOUND. ---------------------------------------------
+var KQ = 'the_actual_response_quantities_match_the_frozen_baseline';
+[['a FULLY_COVERED response reporting recommended 0 — the old expectation itself',
+  { recommended_qty: 0 }, KQ],
+ ['a FULLY_COVERED response reporting recommended 161 — one more than frozen',
+  { recommended_qty: 161 }, KQ],
+ ['a FULLY_COVERED response reporting recommended 159', { recommended_qty: 159 }, KQ],
+ ['a qualifying total that is not the frozen one', { qualifying_planned_qty: 519 }, KQ],
+ ['a residual that is not zero', { residual_qty: 1 }, KQ],
+ ['a recommendation reported as a STRING rather than a number', { recommended_qty: '160' }, KQ],
+ ['a plan that does not cover the recommendation',
+  { qualifying_planned_qty: 100 }, 'the_fully_covered_response_plan_covers_the_whole_recommendation']
+].forEach(function (c, i) {
+  var r = kb(c[1]);
+  eq(r.res.verdict, 'STOP', 'K3.' + (i + 1) + ' ' + c[0] + ' → STOP');
+  ok(failed(r.res).indexOf(c[2]) >= 0,
+    'K3.' + (i + 1) + 'a naming ' + c[2], failed(r.res).slice(0, 5));
+});
+// AND THE STRING CASE IS NOT COERCED. '160' == 160 is true in JavaScript; the gate must not be built on ==.
+ok(kb({ recommended_qty: '160' }).res.verdict === 'STOP',
+  'K3a a numeric string is not the number — no coercion anywhere in the quantity gate');
+
+// ---- K4  CROSS-CLASS MISMATCH. -------------------------------------------------------------------------
+var K4 = kb({ no_action_reason: 'VALID_ZERO_RECOMMENDATION',
+  recommendation_state: 'VALID_ZERO_RECOMMENDATION', recommended_qty: 0 });
+eq(K4.res.verdict, 'STOP',
+  'K4  a VALID_ZERO response against a FULLY_COVERED baseline is a STOP, never absorbed');
+ok(failed(K4.res).indexOf('the_actual_response_no_action_reason_is_the_frozen_class') >= 0
+  && failed(K4.res).indexOf('the_actual_recommendation_state_is_exactly_the_class_contract') >= 0,
+  'K4a refused by BOTH class gates, so the reader is told which class was expected', failed(K4.res));
+var K4b = readback(FZ, live(), { audit: { no_action_reason: 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  recommendation_state: 'NONZERO_RECOMMENDATION' } });
+eq(K4b.res.verdict, 'STOP', 'K4b and the mirror case — FULLY_COVERED response, VALID_ZERO baseline — too');
+// THE STATE CONTRACT IS THE VALUE, AND THE ENUM KEY IS NOT IT. Both doubles in this repo had spelled the
+// key; production emits the value.
+var K4c = kb({ recommendation_state: 'NONZERO' });
+ok(K4c.res.verdict === 'STOP'
+  && failed(K4c.res).indexOf('the_actual_recommendation_state_is_exactly_the_class_contract') >= 0,
+  'K4c an abbreviated recommendation_state is refused — the contract is the exact emitted value');
+
+// ---- K5  A FROZEN BASELINE THAT RESOLVES TO NO CLASS EXPECTS NOTHING. ----------------------------------
+// A null or blank frozen recommendation never reaches the class resolution: `recommended_qty` is on
+// R6R7_BEFORE_REQUIRED_, so the readback answers BASELINE_NOT_FROZEN first — an earlier and better refusal,
+// because it says the freeze did not take rather than describing what the baseline implies. Measured, and
+// asserted here so the two refusals are not mistaken for each other.
+['null', "''"].forEach(function (v, i) {
+  var r = kb({}, { after: '(function(){ R6R7_NO_ACTION_BEFORE_.recommended_qty = ' + v + '; })();' });
+  eq([r.res.verdict, r.res.verdict === 'CONTROLLED_NO_ACTION_CONFIRMED'],
+    ['BASELINE_NOT_FROZEN', false],
+    'K5.0.' + (i + 1) + ' a frozen recommendation of ' + v + ' is BASELINE_NOT_FROZEN, caught before the class');
+});
+// A value that IS present and still resolves to no class is the case the class gate owns.
+[['a frozen recommendation that is negative', '-5'],
+ ['a frozen recommendation that is a numeric string', "'160'"],
+ ['a frozen recommendation that is a boolean', 'true'],
+ ['a frozen recommendation that is not finite', '1/0']
+].forEach(function (c, i) {
+  var r = kb({}, { after: '(function(){ R6R7_NO_ACTION_BEFORE_.recommended_qty = ' + c[1] + '; })();' });
+  eq(r.res.verdict, 'STOP', 'K5.' + (i + 1) + ' ' + c[0] + ' → STOP');
+  ok(failed(r.res).indexOf('the_frozen_baseline_resolves_to_exactly_one_no_action_class') >= 0,
+    'K5.' + (i + 1) + 'a naming the unresolved class rather than falling back to zero');
+  eq(r.res.no_action_class_expected.resolved_class, null,
+    'K5.' + (i + 1) + 'b and no class is claimed');
+});
+var K5e = kb({}, { after: "(function(){ R6R7_NO_ACTION_BEFORE_.residual_qty = 3; })();" });
+ok(K5e.res.verdict === 'STOP'
+  && failed(K5e.res).indexOf('the_frozen_baseline_residual_is_exactly_zero') >= 0,
+  'K5e a frozen baseline whose own residual is not zero is refused before the response is judged');
+var K5f = kb({}, { after: "(function(){ R6R7_NO_ACTION_BEFORE_.qualifying_active_planned_qty = 999; })();" });
+ok(K5f.res.verdict === 'STOP'
+  && failed(K5f.res).indexOf('the_two_frozen_authorities_agree_on_the_qualifying_plan_total') >= 0,
+  'K5f and two frozen authorities that disagree is its OWN failure, not a silent preference');
+
+// ---- K6  THE SIX FIELDS THAT WERE CHECKED WITHOUT BEING REQUIRED. --------------------------------------
+// A field omitted from the paste is now an AWAITING state that NAMES the field, rather than a STOP whose
+// observed value is null. That is a different answer from STOP and the right one: nothing is wrong with the
+// run, the evidence is incomplete. Which awaiting state it is depends on the flag, and BOTH are real — the
+// press happens with the flag on, and the flag is restored to false afterwards, so a re-paste is read back
+// in the off state. Both are asserted so neither reads as a surprise.
+var K6REQ = vm.runInNewContext(extractVar(CENSUS, 'R6R7_ACTUAL_RESPONSE_REQUIRED_')
+  + ' R6R7_ACTUAL_RESPONSE_REQUIRED_');
+['no_action_reason', 'recommendation_state', 'reservations',
+ 'route_save_requests', 'submit_requests', 'reservation_requests'].forEach(function (f, i) {
+  ok(K6REQ.indexOf(f) >= 0, 'K6.' + (i + 1) + ' ' + f + ' is on the REQUIRED list');
+  var nul = {}; nul[f] = null;
+  var off = kb(nul), on = kb(nul, { flagTrue: true });
+  eq([off.res.verdict, on.res.verdict], ['AWAITING_ACTIVATION', 'AWAITING_BROWSER_AUDIT'],
+    'K6.' + (i + 1) + 'a a null ' + f + ' is an AWAITING state in both flag phases, never a STOP');
+  eq([off.res.actual_browser_response.supplied_by_operator,
+    off.res.actual_browser_response.missing_fields.indexOf(f) >= 0], [false, true],
+    'K6.' + (i + 1) + 'b the evidence is incomplete and ' + f + ' is NAMED as the reason');
+  ok(off.res.verdict !== 'CONTROLLED_NO_ACTION_CONFIRMED'
+    && on.res.verdict !== 'CONTROLLED_NO_ACTION_CONFIRMED',
+    'K6.' + (i + 1) + 'c and neither phase CONFIRMS');
+});
+// AND THE OBSERVED VALUE IS NO LONGER A NULL STANDING IN A GATE. This is the exact shape the round is
+// closing: the ride-along gate used to report [null,null,null] against [0,0,0], which reads as a backend
+// omission. It cannot happen now, because the run does not reach that gate at all.
+var K6G = kb({ route_save_requests: null });
+eq(failed(K6G.res).indexOf('no_route_save_or_submit_or_reservation_request_rode_along'), -1,
+  'K6d an omitted ride-along field no longer fails the VALUE gate — it fails completeness, by name');
+eq(failed(K6G.res), [],
+  'K6e no predicate fails at all: an incomplete paste is not a wrong answer', failed(K6G.res));
+// A key that is ABSENT ENTIRELY, which is not the same act as pasting a null — and is the same answer,
+// because both mean nobody supplied a value. Stated rather than left to be inferred.
+function kDrop(field) {
+  return readback(KFZ, live(K_FC), { noAudit: true, after: auditSrc(K_AUDIT)
+    + '(function(){ delete R6R7_ACTUAL_BROWSER_RESPONSE_[' + JSON.stringify(field) + ']; })();' });
+}
+['route_save_requests', 'reservations'].forEach(function (f, i) {
+  var r = kDrop(f);
+  eq([r.res.verdict, r.res.actual_browser_response.missing_fields.indexOf(f) >= 0],
+    ['AWAITING_ACTIVATION', true],
+    'K6a.' + (i + 1) + ' ' + f + ' ABSENT is the same answer as null — nobody supplied a value');
+});
+
+// ---- K7  AND A REAL VALUE THAT IS WRONG IS A STOP, which is a different thing again. -------------------
+[['a non-zero reservations counter', { reservations: 1 },
+  'every_mutation_counter_in_the_actual_response_is_zero'],
+ ['a non-zero reservations counter, named by the browser authority', { reservations: 2 },
+  'the_browser_response_reservations_counter_is_a_real_zero'],
+ ['a route save that rode along', { route_save_requests: 1 },
+  'no_route_save_or_submit_or_reservation_request_rode_along'],
+ ['a Submit that rode along', { submit_requests: 1 },
+  'no_route_save_or_submit_or_reservation_request_rode_along'],
+ ['a reservation request that rode along', { reservation_requests: 1 },
+  'no_route_save_or_submit_or_reservation_request_rode_along']
+].forEach(function (c, i) {
+  var r = kb(c[1]);
+  eq(r.res.verdict, 'STOP', 'K7.' + (i + 1) + ' ' + c[0] + ' → STOP');
+  ok(failed(r.res).indexOf(c[2]) >= 0, 'K7.' + (i + 1) + 'a naming ' + c[2], failed(r.res).slice(0, 5));
+});
+// THE COUNTER THAT IS NOT A ZERO IS NAMED, so nobody counts positions in an array again.
+eq(kb({ reservations: 4 }).res.actual_response_counters.not_a_real_zero, ['reservations=4'],
+  'K7a the offending counter is reported BY NAME with its value');
+
+// ---- K8  THE TWO RESERVATION AUTHORITIES ARE DIFFERENT FACTS. ------------------------------------------
+var K8 = K1.res.reservation_counter_authorities;
+eq(K8.browser_response_reservations, 0, 'K8  the browser response counter is reported on its own');
+ok(String(K8.browser_response_source).indexOf('R6R7_ACTUAL_BROWSER_RESPONSE_.reservations') === 0,
+  'K8a under the constant it actually came from');
+ok(typeof K8.database_observed_state === 'string' && K8.database_observed_state.length > 0,
+  'K8b beside the DATABASE-observed state, which is a named state and not a number', K8.database_observed_state);
+ok(String(K8.database_observed_source).indexOf('the reservations table') === 0,
+  'K8c and the database authority names the table it read');
+ok(String(K8.apps_script_sandbox_reservation_writes).indexOf('reservation_writes') > 0
+  && String(K8.apps_script_sandbox_reservation_writes).indexOf('neither of the two above') > 0,
+  'K8d while reservation_writes is named as a THIRD, different counter, not a synonym for either');
+
+// ================================================================================================================
 section('H — the capture snippet, executed against a double');
 // ================================================================================================================
 
@@ -602,7 +825,7 @@ function install(w) { return vm.runInContext(CAP_SNIP, w.ctx); }
 // 61_ to prove it stays the real shape.
 var NO_ACTION_ENVELOPE = { success: true, data: { outcome: 'AI_PLAN_NO_ACTION',
   code: 'NO_REPLENISHMENT_REQUIRED', no_action_reason: 'VALID_ZERO_RECOMMENDATION',
-  recommendation_state: 'VALID_ZERO', recommended_qty: 0, qualifying_planned_qty: 520, residual_qty: 0,
+  recommendation_state: 'VALID_ZERO_RECOMMENDATION', recommended_qty: 0, qualifying_planned_qty: 520, residual_qty: 0,
   db_writes: 0, writer_reached: false, routes: [], groups: [],
   created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
   cancelled_headers: 0, cancelled_lines: 0, reservations: 0 },
@@ -993,7 +1216,10 @@ mut('N8 the expected decision copied into the actual response', function () {
     + ' routes_count: 0,'
     + ' groups_count: 0, exactly_one_generation_request: true, new_mutation_requests: 1,'
     + ' generation_requests: 1, capture_installed: true, capture_restored: true, capture_calls: 1,'
-    + ' route_save_requests: 0, submit_requests: 0, reservation_requests: 0 } };');
+    + ' route_save_requests: 0, submit_requests: 0, reservation_requests: 0,'
+    // R5-R1 — and the two class-contract fields, for the same reason as `reservations` above.
+    + " no_action_reason: 'VALID_ZERO_RECOMMENDATION',"
+    + " recommendation_state: 'VALID_ZERO_RECOMMENDATION' } };");
   var clean = readback(FZ, live(), { noAudit: true });
   var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_READBACK', live(), { after: FZ.source });
   return clean.res.verdict === 'AWAITING_ACTIVATION'
@@ -1081,6 +1307,129 @@ mut('N14 a representation-only difference read as a business change', function (
   return clean.res.verdict === 'CONTROLLED_NO_ACTION_CONFIRMED'
     && bad.res.verdict === 'STOP'
     && bad.res.changed_fields.some(function (c) { return c.field === 'window_start_date'; });
+});
+
+// ---- N15-N23  R5-R1: THE CLASS-AWARE READBACK. ---------------------------------------------------------
+// Each mutant is run against the R5-R1 FULLY_COVERED evidence, and each has to turn a CONFIRMED into a
+// STOP or a STOP into a CONFIRMED. A mutant that merely fails for some other reason proves nothing.
+
+function kbCensus(src, over, opts) {
+  var a = {};
+  Object.keys(K_AUDIT).forEach(function (k) { a[k] = K_AUDIT[k]; });
+  Object.keys(over || {}).forEach(function (k) { a[k] = over[k]; });
+  var o = { audit: a, census: src };
+  Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; });
+  return readback(KFZ, live(K_FC), o);
+}
+
+mut('N15 the expected recommendation is hardcoded to zero again — the exact false negative', function () {
+  var m = swap(CENSUS, "    recommended_qty: naClass ? frozenRec : null,",
+    '    recommended_qty: 0,');
+  return kb().res.verdict === 'CONTROLLED_NO_ACTION_CONFIRMED'
+    && kbCensus(m).res.verdict === 'STOP'
+    && failed(kbCensus(m).res).indexOf('the_actual_response_quantities_match_the_frozen_baseline') >= 0;
+});
+
+mut('N16 the class is taken from the RESPONSE instead of the frozen baseline', function () {
+  // A response that chooses which test it is marked against is not being tested. Here a FULLY_COVERED
+  // baseline is met by a VALID_ZERO response, which the mutant then judges on the class the RESPONSE named.
+  var m = swap(CENSUS, '  out.no_action_class_expected = {',
+    '  naClass = CENSUS_str_((R6R7_ACTUAL_BROWSER_RESPONSE_ || {}).no_action_reason) || naClass;' + NLF
+    + '  naState = CENSUS_str_((R6R7_ACTUAL_BROWSER_RESPONSE_ || {}).recommendation_state) || naState;' + NLF
+    + '  out.no_action_class_expected = {');
+  var probe = { no_action_reason: 'VALID_ZERO_RECOMMENDATION',
+    recommendation_state: 'VALID_ZERO_RECOMMENDATION', recommended_qty: 0,
+    qualifying_planned_qty: 520, residual_qty: 0 };
+  // Aimed at the two CLASS gates by name. The quantity gate refuses this probe under the mutant too — the
+  // frozen 160 is still the expected number — so a verdict-level claim would be measuring that lock and
+  // reporting it as this one.
+  var clean = kb(probe), bad = kbCensus(m, probe);
+  var A = 'the_actual_response_no_action_reason_is_the_frozen_class';
+  var B2 = 'the_actual_recommendation_state_is_exactly_the_class_contract';
+  return failed(clean.res).indexOf(A) >= 0 && failed(clean.res).indexOf(B2) >= 0
+    && failed(bad.res).indexOf(A) === -1 && failed(bad.res).indexOf(B2) === -1;
+});
+
+mut('N17 an unresolved class falls back to the zero class instead of refusing', function () {
+  var m = swap(CENSUS, "    naUnresolved = 'FROZEN_RECOMMENDED_QTY_IS_NOT_A_FINITE_NON_NEGATIVE_NUMBER: '",
+    "    naClass = 'VALID_ZERO_RECOMMENDATION'; naState = 'VALID_ZERO_RECOMMENDATION';" + NLF
+    + "    naDiscardedMessage = 'FROZEN_RECOMMENDED_QTY_IS_NOT_A_FINITE_NON_NEGATIVE_NUMBER: '");
+  var bend = { after: '(function(){ R6R7_NO_ACTION_BEFORE_.recommended_qty = -5; })();' };
+  var probe = { no_action_reason: 'VALID_ZERO_RECOMMENDATION',
+    recommendation_state: 'VALID_ZERO_RECOMMENDATION', recommended_qty: 0 };
+  var clean = kb(probe, bend), bad = kbCensus(m, probe, bend);
+  return clean.res.verdict === 'STOP'
+    && failed(clean.res).indexOf('the_frozen_baseline_resolves_to_exactly_one_no_action_class') >= 0
+    && failed(bad.res).indexOf('the_frozen_baseline_resolves_to_exactly_one_no_action_class') === -1;
+});
+
+mut('N18 the quantity gate compares loosely, so a numeric STRING passes as the number', function () {
+  var m = swap(CENSUS, '      && rbNum_(A.recommended_qty) === expShape.recommended_qty',
+    '      && A.recommended_qty == expShape.recommended_qty');
+  var probe = { recommended_qty: '160' };
+  var NM = 'the_actual_response_quantities_match_the_frozen_baseline';
+  // The class-B positivity gate reads the same field through rbNum_ and refuses the probe under the mutant
+  // as well, which is defence in depth and also why this claim names the gate rather than the verdict.
+  return failed(kb(probe).res).indexOf(NM) >= 0
+    && failed(kbCensus(m, probe).res).indexOf(NM) === -1;
+});
+
+mut('N19 the six fields leave the REQUIRED list again, so a null stands in a value gate', function () {
+  // The defect exactly as it was: an incomplete paste passes completeness and then fails the VALUE gate,
+  // reporting [null,null,null] against [0,0,0] — a paste omission in the vocabulary of a backend omission.
+  var m = swap(CENSUS, "  'route_save_requests', 'submit_requests', 'reservation_requests'," + NLF
+    + "  'capture_installed', 'capture_restored'];",
+    "  'capture_installed', 'capture_restored'];");
+  var probe = { route_save_requests: null };
+  var clean = kb(probe), bad = kbCensus(m, probe);
+  return clean.res.verdict === 'AWAITING_ACTIVATION' && failed(clean.res).length === 0
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf('no_route_save_or_submit_or_reservation_request_rode_along') >= 0;
+});
+
+mut('N20 `reservations` leaves the REQUIRED list, so the seventh counter is a null again', function () {
+  var m = swap(CENSUS, "  'cancelled_headers', 'cancelled_lines', 'reservations', 'db_writes', 'writer_reached',",
+    "  'cancelled_headers', 'cancelled_lines', 'db_writes', 'writer_reached',");
+  var probe = { reservations: null };
+  var clean = kb(probe), bad = kbCensus(m, probe);
+  return clean.res.verdict === 'AWAITING_ACTIVATION'
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf('every_mutation_counter_in_the_actual_response_is_zero') >= 0;
+});
+
+mut('N21 the counter gate treats a missing or null counter as a zero', function () {
+  var m = swap(CENSUS, "    var rbBad = rbCounters.filter(function (c) { return !(typeof c[1] === 'number' && c[1] === 0); })",
+    '    var rbBad = rbCounters.filter(function (c) { return !(c[1] === 0 || c[1] === null || c[1] === undefined); })');
+  // Probed through a census whose REQUIRED list still lets the null through, because the two locks are
+  // independent and this one has to be shown to work on its own.
+  var noReq = swap(CENSUS, "  'cancelled_headers', 'cancelled_lines', 'reservations', 'db_writes', 'writer_reached',",
+    "  'cancelled_headers', 'cancelled_lines', 'db_writes', 'writer_reached',");
+  var bothOff = swap(m, "  'cancelled_headers', 'cancelled_lines', 'reservations', 'db_writes', 'writer_reached',",
+    "  'cancelled_headers', 'cancelled_lines', 'db_writes', 'writer_reached',");
+  var probe = { reservations: null };
+  return failed(kbCensus(noReq, probe).res).indexOf('every_mutation_counter_in_the_actual_response_is_zero') >= 0
+    && failed(kbCensus(bothOff, probe).res).indexOf('every_mutation_counter_in_the_actual_response_is_zero') === -1;
+});
+
+mut('N22 the recommendation_state gate accepts the enum KEY as well as its value', function () {
+  // The KEY/VALUE confusion, which both test doubles in this repo carried until this round. 61_ emits
+  // WAP_RECOMMENDATION_STATES_.NONZERO, whose VALUE is 'NONZERO_RECOMMENDATION'; 'NONZERO' is the key.
+  var m = swap(CENSUS, "      naState !== null && CENSUS_str_(A.recommendation_state) === naState);",
+    "      naState !== null && (CENSUS_str_(A.recommendation_state) === naState" + NLF
+    + "        || naState.indexOf(CENSUS_str_(A.recommendation_state)) === 0));");
+  var probe = { recommendation_state: 'NONZERO' };
+  return kb(probe).res.verdict === 'STOP'
+    && kbCensus(m, probe).res.verdict === 'CONTROLLED_NO_ACTION_CONFIRMED';
+});
+
+mut('N23 the class-B coverage condition is dropped, so a plan short of the recommendation passes', function () {
+  var m = swap(CENSUS, "      P('the_fully_covered_response_plan_covers_the_whole_recommendation',",
+    "      if (false) P('the_fully_covered_response_plan_covers_the_whole_recommendation',");
+  // The quantities gate also refuses this probe, so the claim is aimed at the coverage predicate itself.
+  var probe = { qualifying_planned_qty: 100 };
+  var NM = 'the_fully_covered_response_plan_covers_the_whole_recommendation';
+  return failed(kb(probe).res).indexOf(NM) >= 0
+    && failed(kbCensus(m, probe).res).indexOf(NM) === -1;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

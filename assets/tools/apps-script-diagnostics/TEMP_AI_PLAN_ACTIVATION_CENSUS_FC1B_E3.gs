@@ -8081,12 +8081,25 @@ var R6R7_ACTUAL_BROWSER_RESPONSE_ = {
   audit_verdict: null
 };
 // A `false` and a `0` are ANSWERS. Only null, undefined and '' mean nobody pasted anything.
+// R5-R1 — SIX FIELDS JOIN THE LIST, and every one of them was already being CHECKED.
+//
+//   no_action_reason · recommendation_state   — the class contract below reads both
+//   reservations                              — the seventh mutation counter
+//   route_save_requests · submit_requests · reservation_requests  — the ride-along gate
+//
+// The audit snippet has always PRINTED all six (see R6R7_BROWSER_AUDIT_SNIPPET_'s paste_block). They were
+// missing from this list only, which is why an incomplete paste presented itself as a backend omission:
+// three nulls where the gate wanted three zeros, and a null seventh counter that had to be traced by
+// counting positions in an array. Nothing is back-filled into anyone's evidence — a paste without them is
+// now AWAITING_BROWSER_AUDIT naming the fields, which is the honest answer and the one that says what to do.
 var R6R7_ACTUAL_RESPONSE_REQUIRED_ = ['captured', 'response_outcome', 'response_code',
+  'no_action_reason', 'recommendation_state',
   'recommended_qty', 'qualifying_planned_qty', 'residual_qty',
   'created_headers', 'created_lines', 'updated_headers', 'updated_lines',
-  'cancelled_headers', 'cancelled_lines', 'db_writes', 'writer_reached',
+  'cancelled_headers', 'cancelled_lines', 'reservations', 'db_writes', 'writer_reached',
   'routes_count', 'groups_count',
   'exactly_one_generation_request', 'new_mutation_requests', 'generation_requests',
+  'route_save_requests', 'submit_requests', 'reservation_requests',
   'capture_installed', 'capture_restored'];
 
 function CENSUS_r6r7ActualResponseState_() {
@@ -8468,9 +8481,63 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_READBACK() {
     changed_fields: out.changed_fields.length
   };
 
+  // ---- R5-R1 §2 — WHICH NO-ACTION CLASS THE FROZEN BASELINE ESTABLISHED, AND THEREFORE WHAT THE RESPONSE
+  //      HAS TO SAY.
+  //
+  // The old shape hardcoded `recommended_qty: 0`. That is the VALID_ZERO_RECOMMENDATION class written into
+  // the readback as if it were the only one, so a correct FULLY_COVERED_BY_ACTIVE_PLAN response reporting the
+  // frozen 160 was compared against 0 and refused. A false negative on a completed activation: the run was
+  // right and the diagnostic said it was not.
+  //
+  // THE CLASS COMES FROM THE FROZEN BASELINE, which is the authority a person pasted BEFORE the press and
+  // which this file may not recompute. Not from the response — a response that chose which test it would be
+  // marked against is not being tested. Not from R6R7_SET_BEFORE_ either; that constant is cross-checked
+  // against the baseline below, and a disagreement between two frozen authorities is its own named failure
+  // rather than a silent preference for one of them.
+  //
+  // A frozen recommended_qty that is null, blank, non-finite or negative resolves to NO class. There is no
+  // fallback: an unresolved class fails its own predicate and every expectation it would have produced stays
+  // null. Falling back to zero is exactly how a FULLY_COVERED run came to be judged as a VALID_ZERO one.
+  function rbNum_(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+  var frozenRec = rbNum_(B.recommended_qty), frozenQual = rbNum_(B.qualifying_active_planned_qty),
+    frozenResid = rbNum_(B.residual_qty);
+  var naClass = null, naState = null, naUnresolved = null;
+  if (frozenRec === 0) { naClass = 'VALID_ZERO_RECOMMENDATION'; naState = 'VALID_ZERO_RECOMMENDATION'; }
+  else if (frozenRec !== null && frozenRec > 0) {
+    naClass = 'FULLY_COVERED_BY_ACTIVE_PLAN'; naState = 'NONZERO_RECOMMENDATION';
+  } else {
+    naUnresolved = 'FROZEN_RECOMMENDED_QTY_IS_NOT_A_FINITE_NON_NEGATIVE_NUMBER: '
+      + JSON.stringify(B.recommended_qty === undefined ? null : B.recommended_qty);
+  }
+  out.no_action_class_expected = {
+    classes: R6R7_NO_ACTION_CLASSES_.slice(),
+    resolved_class: naClass,
+    required_recommendation_state: naState,
+    resolved_from: 'R6R7_NO_ACTION_BEFORE_.recommended_qty — the baseline frozen before the press',
+    frozen_recommended_qty: B.recommended_qty === undefined ? null : B.recommended_qty,
+    frozen_qualifying_active_planned_qty: B.qualifying_active_planned_qty === undefined
+      ? null : B.qualifying_active_planned_qty,
+    frozen_residual_qty: B.residual_qty === undefined ? null : B.residual_qty,
+    unresolved_reason: naUnresolved,
+    cross_class_fallback: 'PROHIBITED — an unresolved class expects nothing and refuses'
+  };
+  P('the_frozen_baseline_resolves_to_exactly_one_no_action_class', R6R7_NO_ACTION_CLASSES_,
+    naClass || naUnresolved, naClass !== null);
+  P('the_frozen_baseline_residual_is_exactly_zero', 0,
+    B.residual_qty === undefined ? null : B.residual_qty, frozenResid === 0);
+  // TWO FROZEN AUTHORITIES, COMPARED RATHER THAN CHOSEN BETWEEN. R6R7_SET_BEFORE_ is the hand-frozen plan
+  // total and the baseline carries the qualifying total the decision saw; if they ever disagree, the reader
+  // is told, instead of one of them quietly winning.
+  P('the_two_frozen_authorities_agree_on_the_qualifying_plan_total',
+    R6R7_SET_BEFORE_.current_plan_total, frozenQual,
+    frozenQual !== null && frozenQual === R6R7_SET_BEFORE_.current_plan_total);
+
   // ---- THE THREE OBJECTS, KEPT APART. -----------------------------------------------------------------------
   var expShape = { outcome: 'AI_PLAN_NO_ACTION', code: 'NO_REPLENISHMENT_REQUIRED',
-    recommended_qty: 0, qualifying_planned_qty: R6R7_SET_BEFORE_.current_plan_total, residual_qty: 0,
+    no_action_reason: naClass, recommendation_state: naState,
+    recommended_qty: naClass ? frozenRec : null,
+    qualifying_planned_qty: naClass ? frozenQual : null,
+    residual_qty: naClass ? frozenResid : null,
     created_headers: 0, created_lines: 0, updated_headers: 0, updated_lines: 0,
     cancelled_headers: 0, cancelled_lines: 0, reservations: 0, db_writes: 0, writer_reached: false,
     routes: [], groups: [] };
@@ -8520,22 +8587,75 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_READBACK() {
       A.response_outcome === expShape.outcome);
     P('the_actual_response_code_is_no_replenishment_required', expShape.code, A.response_code,
       A.response_code === expShape.code);
+    // R5-R1 §2 — THE CLASS FIRST, THEN THE NUMBERS THAT CLASS REQUIRES.
+    //
+    // The response has to belong to the class the baseline established. A VALID_ZERO response against a
+    // FULLY_COVERED baseline is not a small mismatch to be absorbed by a lenient comparison — it means the
+    // press produced a decision about a different situation than the one that was authorized.
+    P('the_actual_response_no_action_reason_is_the_frozen_class', naClass, A.no_action_reason,
+      naClass !== null && CENSUS_str_(A.no_action_reason) === naClass);
+    P('the_actual_recommendation_state_is_exactly_the_class_contract', naState, A.recommendation_state,
+      naState !== null && CENSUS_str_(A.recommendation_state) === naState);
+    // STRICT AND TYPED: each of the three has to BE a finite number and BE the frozen one. `null === 0` is
+    // false in JavaScript and that is the only reason the old gate ever reported anything — it is written
+    // out here so a later edit cannot make a missing value pass by coercing it.
+    var qOK = naClass !== null
+      && rbNum_(A.recommended_qty) === expShape.recommended_qty
+      && rbNum_(A.qualifying_planned_qty) === expShape.qualifying_planned_qty
+      && rbNum_(A.residual_qty) === expShape.residual_qty;
     P('the_actual_response_quantities_match_the_frozen_baseline',
       [expShape.recommended_qty, expShape.qualifying_planned_qty, expShape.residual_qty],
-      [A.recommended_qty, A.qualifying_planned_qty, A.residual_qty],
-      A.recommended_qty === expShape.recommended_qty
-        && A.qualifying_planned_qty === expShape.qualifying_planned_qty
-        && A.residual_qty === expShape.residual_qty);
+      [A.recommended_qty, A.qualifying_planned_qty, A.residual_qty], qOK);
+    // CLASS B CARRIES ONE CONDITION CLASS A CANNOT STATE: something IS short, and the standing plan covers
+    // all of it. For a valid zero there is nothing to cover, so the condition is not asserted rather than
+    // being asserted vacuously.
+    if (naClass === 'FULLY_COVERED_BY_ACTIVE_PLAN') {
+      P('the_fully_covered_response_recommendation_is_finite_and_positive', 'a finite number > 0',
+        A.recommended_qty, rbNum_(A.recommended_qty) !== null && A.recommended_qty > 0);
+      P('the_fully_covered_response_plan_covers_the_whole_recommendation',
+        'qualifying_planned_qty >= recommended_qty',
+        [A.qualifying_planned_qty, A.recommended_qty],
+        rbNum_(A.qualifying_planned_qty) !== null && rbNum_(A.recommended_qty) !== null
+          && A.qualifying_planned_qty >= A.recommended_qty);
+    }
     // R6-R7-R3 — `reservations` JOINS THE LIST. It was on the capture's field list and NOT on this gate's,
     // so the one counter 61_'s contract did not state was also the one counter this predicate would not have
     // noticed. A field that is measured but never checked is not evidence.
+    // R5-R1 §3 — THE COUNTERS ARE NAMED, NOT POSITIONAL. `[0,0,0,0,0,0,null,0]` cost a round of tracing to
+    // learn that the seventh one is `reservations`. A name never has to be counted to, so each counter is
+    // reported under its own key and any that is not a real zero is listed BY NAME.
+    var rbCounters = [['created_headers', A.created_headers], ['created_lines', A.created_lines],
+      ['updated_headers', A.updated_headers], ['updated_lines', A.updated_lines],
+      ['cancelled_headers', A.cancelled_headers], ['cancelled_lines', A.cancelled_lines],
+      ['reservations', A.reservations], ['db_writes', A.db_writes]];
+    var rbBad = rbCounters.filter(function (c) { return !(typeof c[1] === 'number' && c[1] === 0); })
+      .map(function (c) {
+        return c[0] + '=' + (c[1] === undefined ? 'MISSING'
+          : (c[1] === null ? 'null' : JSON.stringify(c[1])));
+      });
+    out.actual_response_counters = { by_name: {}, not_a_real_zero: rbBad,
+      note: 'a missing or null counter is NOT a zero. Each is required to BE the number 0.' };
+    rbCounters.forEach(function (c) {
+      out.actual_response_counters.by_name[c[0]] = c[1] === undefined ? null : c[1];
+    });
     P('every_mutation_counter_in_the_actual_response_is_zero',
-      [0, 0, 0, 0, 0, 0, 0, 0],
-      [A.created_headers, A.created_lines, A.updated_headers, A.updated_lines,
-        A.cancelled_headers, A.cancelled_lines, A.reservations, A.db_writes],
-      A.created_headers === 0 && A.created_lines === 0 && A.updated_headers === 0 && A.updated_lines === 0
-        && A.cancelled_headers === 0 && A.cancelled_lines === 0 && A.reservations === 0
-        && A.db_writes === 0);
+      [0, 0, 0, 0, 0, 0, 0, 0], rbBad.length ? rbBad : rbCounters.map(function (c) { return c[1]; }),
+      rbBad.length === 0);
+    // AND THE TWO RESERVATION AUTHORITIES ARE DIFFERENT FACTS, REPORTED APART. Folding them together would
+    // let one answer for the other, and they are measured in places that cannot see each other.
+    out.reservation_counter_authorities = {
+      browser_response_reservations: A.reservations === undefined ? null : A.reservations,
+      browser_response_source: 'R6R7_ACTUAL_BROWSER_RESPONSE_.reservations — what the server told the page',
+      database_observed_state: RN.observation_state,
+      database_observed_rows: RN.row_count,
+      database_observed_rows_before: RB.row_count === undefined ? null : RB.row_count,
+      database_observed_source: 'the reservations table, read in this execution',
+      apps_script_sandbox_reservation_writes: 'reported by the MANIFEST as reservation_writes; it counts what a sandboxed call attempted here and is neither of the two above',
+      note: 'the response is what the server SAYS it reserved; the rows are what exists. Both are required.'
+    };
+    P('the_browser_response_reservations_counter_is_a_real_zero', 0,
+      A.reservations === undefined ? null : A.reservations,
+      typeof A.reservations === 'number' && A.reservations === 0);
     // R6-R7-R3 — AND A ZERO MUST HAVE COME FROM THE CANONICAL LOCATION. Reading the counters out of a nested
     // sub-object that 61_ does not emit produced seven nulls that looked exactly like a backend omission.
     // Checked only when the audit carries the field: an audit captured before this round cannot, and refusing
