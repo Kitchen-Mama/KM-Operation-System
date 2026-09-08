@@ -6208,6 +6208,20 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT() {
 // ================================================================================================================
 var R6R7_NO_ACTION_CLASSES_ = ['VALID_ZERO_RECOMMENDATION', 'FULLY_COVERED_BY_ACTIVE_PLAN'];
 
+// THE RECOMMENDATION STATE CLASS B REQUIRES, PINNED AS AN EXACT VALUE.
+//
+// The previous round wrote this as an EXCLUSION — 'not VALID_ZERO, not MISSING_RECOMMENDATION, not empty' —
+// and an exclusion is only as good as the list, which was wrong in the one way that mattered: 'VALID_ZERO' is
+// the KEY of 61_'s WAP_RECOMMENDATION_STATES_, while the string production actually emits is the VALUE
+// 'VALID_ZERO_RECOMMENDATION'. So the single state the exclusion existed to keep out was the one state it let
+// through, and every unknown value — a typo, a rename, a state added next year — passed as well.
+//
+// This is pinned rather than read from WAP_RECOMMENDATION_STATES_.NONZERO on purpose. A check that takes its
+// expectation from the thing it is checking cannot fail: if production renamed the value, reading the enum
+// would follow the rename silently, and following a rename is the opposite of what a contract check is for.
+// The pin and the production enum are compared in the suite, where a rename becomes a red test.
+var R6R7_NONZERO_RECOMMENDATION_STATE_ = 'NONZERO_RECOMMENDATION';
+
 function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
   pp = pp || {};
   var W = CENSUS_r6r7Windows_();
@@ -6218,6 +6232,9 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     recommended_qty: null, qualifying_active_planned_qty: null, residual_qty: null,
     over_planned_qty_reported: null, over_planned_qty_expected: null,
     over_planned_source: 'sum of production per_scope[].over_planned_qty',
+    per_scope_count: null, per_scope_over_planned_non_finite: [], per_scope_over_planned_negative: [],
+    per_scope_under_covered: [], per_scope_residual_non_zero: [],
+    per_scope_recommended_sum: null, per_scope_qualifying_planned_sum: null,
     checks: [] };
   function C(name, expected, observed, pass) {
     out.checks.push({ predicate: name, expected: expected, observed: observed, pass: !!pass });
@@ -6250,16 +6267,56 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
   var qp = pp.qualifying_active_planned_qty === undefined ? null : pp.qualifying_active_planned_qty;
   var rs = pp.residual_qty === undefined ? null : pp.residual_qty;
   out.recommended_qty = rq; out.qualifying_active_planned_qty = qp; out.residual_qty = rs;
-  if (Object.prototype.toString.call(pp.per_scope) === '[object Array]' && pp.per_scope.length) {
-    var sum = 0, allNum = true;
-    pp.per_scope.forEach(function (sc) {
+  // ---- THE PER-SCOPE ROWS, READ INDIVIDUALLY AND NOT ONLY ADDED UP.
+  //
+  // The surplus is a SUM across scopes, and a sum can be right for the wrong reasons. 520 planned against 160
+  // recommended leaves 360; so does 660 against 160 in one scope beside a NEGATIVE 140 in another, and so does
+  // one scope over-planned by 400 beside one that is 40 SHORT. The second and third are not fully-covered
+  // scopes: they are a shortfall hidden behind a surplus somewhere else, and 'the total is covered' is exactly
+  // the sentence a per-scope shortfall can hide inside.
+  //
+  // Production cannot produce these — its own per-scope surplus is clamped at zero and any residual scope
+  // returns RESIDUAL_REMAINS instead of a no-action — but this census does not get to assume that. It is
+  // reading a decision object, and an assertion that only holds because of a property of the caller is an
+  // assertion about the caller. So every row is checked on its own, and the rows must add up to the totals
+  // they were reported beside.
+  var ps = Object.prototype.toString.call(pp.per_scope) === '[object Array]' ? pp.per_scope : null;
+  out.per_scope_count = ps ? ps.length : null;
+  if (ps && ps.length) {
+    var sum = 0, allNum = true, recSum = 0, planSum = 0, sumsReadable = true;
+    ps.forEach(function (sc, i) {
+      var id = CENSUS_str_((sc && (sc.key || sc.sku)) || '') || ('per_scope[' + i + ']');
       var v = Number(sc && sc.over_planned_qty);
-      if (!isFinite(v)) { allNum = false; return; }
-      sum += v;
+      if (!isFinite(v)) { allNum = false; out.per_scope_over_planned_non_finite.push(id); }
+      else { sum += v;
+        if (v < 0) out.per_scope_over_planned_negative.push({ scope: id, over_planned_qty: v }); }
+      var r = Number(sc && sc.recommended_qty), q = Number(sc && sc.qualifying_planned_qty);
+      if (isFinite(r) && isFinite(q)) {
+        recSum += r; planSum += q;
+        if (q < r) out.per_scope_under_covered.push({ scope: id, recommended_qty: r,
+          qualifying_planned_qty: q, short_by: r - q });
+      } else {
+        sumsReadable = false;
+        out.per_scope_under_covered.push({ scope: id, recommended_qty: sc && sc.recommended_qty,
+          qualifying_planned_qty: sc && sc.qualifying_planned_qty,
+          short_by: null, note: 'SCOPE_COVERAGE_NOT_READABLE' });
+      }
+      var rr = sc && sc.residual_qty;
+      if (!(typeof rr === 'number' && isFinite(rr) && rr === 0)) {
+        out.per_scope_residual_non_zero.push({ scope: id, residual_qty: rr === undefined ? null : rr });
+      }
     });
     out.over_planned_qty_reported = allNum ? sum : null;
+    if (sumsReadable) {
+      out.per_scope_recommended_sum = recSum;
+      out.per_scope_qualifying_planned_sum = planSum;
+    }
   }
-  out.over_planned_qty_expected = (fin(qp) && fin(rq)) ? Math.max(0, qp - rq) : null;
+  // The plain difference, NOT clamped at zero. `Math.max(0, qp - rq)` made the predicate named
+  // `..._equals_planned_minus_recommended` accept a case where planned is BELOW recommended and the reported
+  // surplus is zero — the coverage check catches that on its own, but a check whose name states an equation
+  // should compute that equation.
+  out.over_planned_qty_expected = (fin(qp) && fin(rq)) ? (qp - rq) : null;
 
   // ---- THE FLOOR BOTH CLASSES STAND ON. Not one of these is relaxed by either branch.
   C('no_action_outcome_is_exactly_ai_plan_no_action', 'AI_PLAN_NO_ACTION', pp.outcome,
@@ -6293,7 +6350,7 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     C('every_window_is_a_stored_finite_zero', 'four finite zeros', out.stored_windows, allZero);
   }
 
-  // ---- CLASS B — SEVEN CONDITIONS WHERE CLASS A HAS TWO.
+  // ---- CLASS B — ELEVEN CONDITIONS WHERE CLASS A HAS TWO.
   if (out.classification === 'FULLY_COVERED_BY_ACTIVE_PLAN') {
     C('fully_covered_recommended_qty_is_finite_and_positive', 'a finite number > 0', rq, fin(rq) && rq > 0);
     C('fully_covered_qualifying_planned_qty_is_finite', 'a finite number', qp, fin(qp));
@@ -6309,10 +6366,30 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     C('fully_covered_furthest_window_equals_the_recommendation',
       { window: last, qty: rq }, { window: last, qty: out.furthest_window_qty },
       fin(rq) && out.furthest_window_qty !== null && out.furthest_window_qty === rq);
-    C('fully_covered_recommendation_state_is_not_a_zero_state', 'a non-zero recommendation state',
-      pp.recommendation_state, CENSUS_str_(pp.recommendation_state) !== 'VALID_ZERO'
-        && CENSUS_str_(pp.recommendation_state) !== ''
-        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');
+    // THE EXACT VALUE, not everything-except-a-list. A zero state, a missing state, a blank, and any value
+    // nobody has proven belongs here are all the same answer: this is not the state class B was proven for.
+    C('fully_covered_recommendation_state_is_exactly_nonzero_recommendation',
+      R6R7_NONZERO_RECOMMENDATION_STATE_, pp.recommendation_state === undefined ? null : pp.recommendation_state,
+      CENSUS_str_(pp.recommendation_state) === R6R7_NONZERO_RECOMMENDATION_STATE_);
+    // ---- AND THE SURPLUS CANNOT BE A CANCELLATION. Five conditions on the rows the sum came from.
+    C('fully_covered_per_scope_evidence_is_present', 'at least one per_scope row', out.per_scope_count,
+      out.per_scope_count !== null && out.per_scope_count > 0);
+    C('fully_covered_every_scope_over_planned_is_finite_and_nonnegative', 'no negative or unreadable surplus',
+      { negative: out.per_scope_over_planned_negative, non_finite: out.per_scope_over_planned_non_finite },
+      out.per_scope_count > 0 && out.per_scope_over_planned_negative.length === 0
+        && out.per_scope_over_planned_non_finite.length === 0);
+    C('fully_covered_every_scope_is_individually_covered',
+      'qualifying_planned_qty >= recommended_qty in EVERY scope', out.per_scope_under_covered,
+      out.per_scope_count > 0 && out.per_scope_under_covered.length === 0);
+    C('fully_covered_every_scope_residual_is_exactly_zero', 'residual_qty === 0 in EVERY scope',
+      out.per_scope_residual_non_zero,
+      out.per_scope_count > 0 && out.per_scope_residual_non_zero.length === 0);
+    C('fully_covered_per_scope_totals_reconcile_with_the_reported_totals',
+      { recommended_qty: rq, qualifying_active_planned_qty: qp },
+      { recommended_qty: out.per_scope_recommended_sum,
+        qualifying_active_planned_qty: out.per_scope_qualifying_planned_sum },
+      fin(rq) && fin(qp) && out.per_scope_recommended_sum === rq
+        && out.per_scope_qualifying_planned_sum === qp);
   }
 
   out.checks_failed = out.checks.filter(function (c) { return !c.pass; })

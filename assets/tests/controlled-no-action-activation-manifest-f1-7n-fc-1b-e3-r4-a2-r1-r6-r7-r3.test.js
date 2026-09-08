@@ -800,12 +800,20 @@ var LBnames = LB.res.predicates.map(function (x) { return x.predicate; });
  'fully_covered_active_plan_covers_the_whole_recommendation',
  'fully_covered_over_planned_equals_planned_minus_recommended',
  'fully_covered_furthest_window_equals_the_recommendation',
- 'fully_covered_recommendation_state_is_not_a_zero_state'].forEach(function (nm, i) {
+ 'fully_covered_recommendation_state_is_exactly_nonzero_recommendation',
+ 'fully_covered_per_scope_evidence_is_present',
+ 'fully_covered_every_scope_over_planned_is_finite_and_nonnegative',
+ 'fully_covered_every_scope_is_individually_covered',
+ 'fully_covered_every_scope_residual_is_exactly_zero',
+ 'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'].forEach(function (nm, i) {
   ok(LBnames.indexOf(nm) >= 0, 'L3.' + (i + 1) + ' the ledger carries ' + nm);
 });
-// TWO CONDITIONS BECOME FOURTEEN. Class B is not class A with a test removed.
-ok(LBnames.filter(function (n) { return /^fully_covered_/.test(n); }).length === 6,
-  'L3a six of them are specific to class B');
+// TWO CONDITIONS BECOME NINETEEN. Class B is not class A with a test removed.
+ok(LBnames.filter(function (n) { return /^fully_covered_/.test(n); }).length === 11,
+  'L3a eleven of them are specific to class B',
+  LBnames.filter(function (n) { return /^fully_covered_/.test(n); }));
+eq(LBnames.filter(function (n) { return /recommendation_state_is_not_a_zero_state/.test(n); }), [],
+  'L3a1 and the exclusion-style state check is gone from the ledger entirely');
 eq(LBnames.filter(function (n) {
   return n === 'recommended_qty_is_zero' || n === 'every_window_is_a_stored_finite_zero';
 }), [], 'L3b and the two class-A predicates are NOT asserted against a class-B run');
@@ -937,7 +945,7 @@ eq([LC0.ok, LC0.classification, LC0.checks_failed],
 // And class A is refused by its OWN conditions, not by class B's.
 function ppA(over) {
   var d = { outcome: 'AI_PLAN_NO_ACTION', code: 'NO_REPLENISHMENT_REQUIRED',
-    reason: 'VALID_ZERO_RECOMMENDATION', recommendation_state: 'VALID_ZERO',
+    reason: 'VALID_ZERO_RECOMMENDATION', recommendation_state: 'VALID_ZERO_RECOMMENDATION',
     recommended_qty: 0, qualifying_active_planned_qty: 520, residual_qty: 0,
     would_write: false, writer_reached: false, db_writes: 0, per_scope: [{ over_planned_qty: 520 }] };
   Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
@@ -1042,6 +1050,223 @@ eq([LB.res.flag_flipped_this_round, LB.res.generation_called_this_round], [false
 ok(!/setValue|appendRow|deleteRow|setValues|LockService/
   .test(extractFn(CENSUS, 'CENSUS_r6r7ClassifyNoAction_')),
   'L15c the classifier itself contains no write API at all');
+// ================================================================================================================
+section('M — R6-R7-R5-R1 final tightening: the state is an exact value, and a sum is not evidence');
+// ================================================================================================================
+//
+// TWO FAIL-OPEN CONDITIONS, BOTH MEASURED BEFORE THEY WERE CHANGED.
+//
+// (1) `fully_covered_recommendation_state_is_not_a_zero_state` was an EXCLUSION, and its list was wrong in the
+//     one way that mattered. It excluded 'VALID_ZERO' — the KEY of 61_'s WAP_RECOMMENDATION_STATES_ — while the
+//     string production emits is the VALUE 'VALID_ZERO_RECOMMENDATION'. So the single state it existed to keep
+//     out was the one state it admitted, and it admitted every unknown value besides. Measured: a class-B
+//     decision carrying recommendation_state 'VALID_ZERO_RECOMMENDATION' classified ok=true, checks_failed [].
+//
+// (2) The over-planned surplus is a SUM ACROSS SCOPES, and it was checked only as a sum. 520 planned against
+//     160 recommended leaves 360 — and so does 660 in one scope beside NEGATIVE 140 in another, and so does one
+//     scope over-planned by 400 beside one that is 40 SHORT. Measured: all three classified ok=true. The last
+//     is the dangerous one, because 'fully covered' is precisely the sentence a per-scope shortfall hides in.
+
+// ---- M1  THE EXACT CONTRACT. One value passes; nothing else does. ---------------------------------------
+var MPIN = extractVar(CENSUS, 'R6R7_NONZERO_RECOMMENDATION_STATE_');
+ok(/'NONZERO_RECOMMENDATION'/.test(MPIN), 'M1  the required state is pinned as an exact value', MPIN);
+var M1 = CLASSIFY(ppB({ recommendation_state: 'NONZERO_RECOMMENDATION' }), GOOD_WINS);
+eq([M1.ok, M1.classification, M1.checks_failed], [true, 'FULLY_COVERED_BY_ACTIVE_PLAN', []],
+  'M1a NONZERO_RECOMMENDATION passes');
+
+// Every other value, including the one the old exclusion let through. Each must be refused BY THE STATE
+// CHECK ITSELF — not merely refused, which any other broken condition could also accomplish.
+[['VALID_ZERO_RECOMMENDATION — the enum VALUE, and the state the old check admitted', 'VALID_ZERO_RECOMMENDATION'],
+ ["'VALID_ZERO' — the enum KEY, which 61_ never emits", 'VALID_ZERO'],
+ ['MISSING_RECOMMENDATION', 'MISSING_RECOMMENDATION'],
+ ['an empty string', ''],
+ ['null', null],
+ ['a lower-case spelling of the right value', 'nonzero_recommendation'],
+ ['an arbitrary unknown value', 'BOGUS_STATE'],
+ ['a number', 1],
+ ['a truthy object', { state: 'NONZERO_RECOMMENDATION' }]
+].forEach(function (c, i) {
+  var r = CLASSIFY(ppB({ recommendation_state: c[1] }), GOOD_WINS);
+  ok(r.ok === false
+    && r.checks_failed.indexOf('fully_covered_recommendation_state_is_exactly_nonzero_recommendation') >= 0,
+    'M2.' + (i + 1) + ' ' + c[0] + ' → refused BY THE STATE CHECK', [r.ok, r.checks_failed]);
+});
+// And the key being absent altogether, which is not the same fact as it being null.
+var MU = ppB(); delete MU.recommendation_state;
+var MUr = CLASSIFY(MU, GOOD_WINS);
+ok(MUr.ok === false
+  && MUr.checks_failed.indexOf('fully_covered_recommendation_state_is_exactly_nonzero_recommendation') >= 0,
+  'M2.10 undefined — the key absent entirely — → refused BY THE STATE CHECK', MUr.checks_failed);
+eq(MUr.checks.filter(function (c) {
+  return c.predicate === 'fully_covered_recommendation_state_is_exactly_nonzero_recommendation';
+}).map(function (c) { return [c.expected, c.observed]; }), [['NONZERO_RECOMMENDATION', null]],
+  'M2a and the check REPORTS what it wanted beside what it got, rather than only failing');
+// WHAT IS ACCEPTED BESIDES THE BARE VALUE, STATED RATHER THAN LEFT TO BE DISCOVERED: surrounding whitespace,
+// because every string comparison in this census goes through CENSUS_str_, which trims. I first asserted a
+// padded value was refused; the measurement said otherwise and the measurement is right — this file reads
+// spreadsheet-sourced strings, one reader trims them all, and a check that trimmed differently from its
+// neighbours would be the surprise. Case is NOT folded, which is the half that matters (M2.6 covers it).
+eq(CLASSIFY(ppB({ recommendation_state: ' NONZERO_RECOMMENDATION ' }), GOOD_WINS).ok, true,
+  'M2b a padded spelling of the exact value IS accepted — CENSUS_str_ trims, uniformly, everywhere');
+
+// ---- M3  THE PIN IS A CONTRACT, NOT AN ECHO. -------------------------------------------------------------
+// Pinned rather than read from WAP_RECOMMENDATION_STATES_.NONZERO, because a check that takes its expectation
+// from the thing it is checking cannot fail — it would follow a rename in silence. So the comparison against
+// production's own enum lives HERE, where a rename turns red instead of being absorbed.
+var MSTATES = vm.runInContext('WAP_RECOMMENDATION_STATES_', W(live()).ctx);
+eq([MSTATES.NONZERO, MSTATES.VALID_ZERO, MSTATES.MISSING],
+  ['NONZERO_RECOMMENDATION', 'VALID_ZERO_RECOMMENDATION', 'MISSING_RECOMMENDATION'],
+  'M3  61_ still emits these three exact recommendation-state VALUES');
+ok(MPIN.indexOf("'" + MSTATES.NONZERO + "'") >= 0,
+  'M3a and the census pin is that value byte for byte — a rename in 61_ fails HERE, not silently');
+ok(MPIN.indexOf(MSTATES.VALID_ZERO) < 0 && MPIN.indexOf(MSTATES.MISSING) < 0,
+  'M3b while neither of the other two states appears in the pin');
+// The KEY is not the VALUE, and confusing them is the defect this section closes. Asserted so the two can
+// never be quietly swapped back.
+ok(MSTATES.VALID_ZERO !== 'VALID_ZERO',
+  'M3c the enum KEY `VALID_ZERO` is NOT the value it holds — which is why the old exclusion never matched');
+
+// ---- M4  NO EXCLUSION-STYLE STATE COMPARISON SURVIVES IN THE SOURCE. -------------------------------------
+var MFN = extractFn(CENSUS, 'CENSUS_r6r7ClassifyNoAction_');
+ok(/CENSUS_str_\(pp\.recommendation_state\) === R6R7_NONZERO_RECOMMENDATION_STATE_/.test(MFN),
+  'M4  the state is compared for EQUALITY against the pin');
+ok(!/recommendation_state\) !== /.test(MFN),
+  'M4a and not against a list of things it must not be', (MFN.match(/.*recommendation_state.*/g) || []).slice(0, 6));
+ok(MFN.indexOf("'VALID_ZERO'") < 0,
+  'M4b the string that was never a production value appears nowhere in the classifier');
+
+// ---- M5  AND THE WHOLE MANIFEST STOPS, not just the classifier. -----------------------------------------
+// The classifier is replayed through P, so a state contract failure has to reach the verdict — a repair that
+// only shows up in a nested object is a repair an operator never sees.
+var MSTATE_W = manifest(live(FULLY_COVERED), { after:
+  'weeklyAiPlanNoActionDecision_ = (function (orig) { return function (recState, planned) {' + NLF
+  + '  var d = orig.apply(null, arguments);' + NLF
+  + "  if (d && d.reason === 'FULLY_COVERED_BY_ACTIVE_PLAN') d.recommendation_state = 'VALID_ZERO_RECOMMENDATION';" + NLF
+  + '  return d; }; })(weeklyAiPlanNoActionDecision_);' });
+eq(MSTATE_W.res.verdict, 'STOP',
+  'M5  a class-B run reporting a ZERO recommendation state STOPS the whole manifest');
+ok(failed(MSTATE_W.res).indexOf('fully_covered_recommendation_state_is_exactly_nonzero_recommendation') >= 0,
+  'M5a naming the state contract among the reasons', failed(MSTATE_W.res).slice(0, 6));
+ok(labels(MSTATE_W.world).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length === 0,
+  'M5b and it hands over no freeze block, because the safety lock is downstream of the verdict');
+
+// ---- M6/M7/M8  THE PER-SCOPE EVIDENCE CANNOT CANCEL. ----------------------------------------------------
+// Production cannot build these: its per-scope surplus is clamped at zero, and any scope with a residual
+// returns RESIDUAL_REMAINS rather than a no-action. They are put to the classifier directly for exactly that
+// reason — a property that holds only because of what the caller happens to pass is a property of the caller,
+// and this census reads a decision object it did not build.
+function psB(rows, over) {
+  var o = over || {}; o.per_scope = rows; return ppB(o);
+}
+var GOOD_SCOPE = [{ key: 'ResUS|US|Amazon|CO1100-R', recommended_qty: 160, qualifying_planned_qty: 520,
+  residual_qty: 0, over_planned_qty: 360 }];
+var M6 = CLASSIFY(psB(GOOD_SCOPE), GOOD_WINS);
+eq([M6.ok, M6.per_scope_count, M6.per_scope_recommended_sum, M6.per_scope_qualifying_planned_sum],
+  [true, 1, 160, 520],
+  'M6  the one real scope reconciles with the totals it was reported beside');
+eq([M6.per_scope_over_planned_negative, M6.per_scope_under_covered, M6.per_scope_residual_non_zero],
+  [[], [], []], 'M6a with nothing negative, nothing short, and no residual anywhere');
+// TWO scopes that genuinely are both covered still pass — the guard is against cancellation, not against
+// there being more than one scope.
+var M6B = CLASSIFY(psB([
+  { key: 'A', recommended_qty: 100, qualifying_planned_qty: 300, residual_qty: 0, over_planned_qty: 200 },
+  { key: 'B', recommended_qty: 60, qualifying_planned_qty: 220, residual_qty: 0, over_planned_qty: 160 }],
+  { recommended_qty: 160, qualifying_active_planned_qty: 520 }), GOOD_WINS);
+eq([M6B.ok, M6B.checks_failed], [true, []],
+  'M6b two scopes that are EACH covered are accepted — this guards cancellation, not multiplicity');
+
+[['a NEGATIVE surplus in one scope offsetting a larger one in another',
+  [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 660, residual_qty: 0, over_planned_qty: 500 },
+   { key: 'B', recommended_qty: 0, qualifying_planned_qty: 0, residual_qty: 0, over_planned_qty: -140 }],
+  'fully_covered_every_scope_over_planned_is_finite_and_nonnegative'],
+ ['a scope that is genuinely SHORT, hidden behind a surplus elsewhere',
+  [{ key: 'A', recommended_qty: 60, qualifying_planned_qty: 460, residual_qty: 0, over_planned_qty: 400 },
+   { key: 'B', recommended_qty: 100, qualifying_planned_qty: 60, residual_qty: 40, over_planned_qty: -40 }],
+  'fully_covered_every_scope_is_individually_covered'],
+ ['a scope carrying a NON-ZERO residual of its own',
+  [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 12, over_planned_qty: 360 }],
+  'fully_covered_every_scope_residual_is_exactly_zero'],
+ ['a scope whose residual is not a number at all',
+  [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: null, over_planned_qty: 360 }],
+  'fully_covered_every_scope_residual_is_exactly_zero'],
+ ['rows whose own quantities have nothing to do with the reported totals',
+  [{ key: 'Z', recommended_qty: 9999, qualifying_planned_qty: 10359, residual_qty: 0, over_planned_qty: 360 }],
+  'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'],
+ ['a surplus reported with no scope quantities behind it at all',
+  [{ over_planned_qty: 360 }],
+  'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'],
+ ['an EMPTY per_scope beside a 360 surplus in the totals', [],
+  'fully_covered_per_scope_evidence_is_present'],
+ ['a scope whose surplus is not a finite number',
+  [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 'x' }],
+  'fully_covered_every_scope_over_planned_is_finite_and_nonnegative']
+].forEach(function (c, i) {
+  var r = CLASSIFY(psB(c[1]), GOOD_WINS);
+  ok(r.ok === false && r.checks_failed.indexOf(c[2]) >= 0,
+    'M7.' + (i + 1) + ' ' + c[0] + ' → refused, naming ' + c[2], [r.ok, r.checks_failed]);
+});
+// per_scope ABSENT is a different fact from per_scope EMPTY, and both are the absence of evidence.
+var MNOPS = ppB(); delete MNOPS.per_scope;
+var MNOPSr = CLASSIFY(MNOPS, GOOD_WINS);
+ok(MNOPSr.ok === false && MNOPSr.checks_failed.indexOf('fully_covered_per_scope_evidence_is_present') >= 0
+  && MNOPSr.per_scope_count === null,
+  'M7.9 per_scope absent entirely → refused, and the count is null rather than 0', MNOPSr.per_scope_count);
+eq(CLASSIFY(psB([]), GOOD_WINS).per_scope_count, 0,
+  'M7a while an EMPTY array reports 0 — no evidence and no rows are told apart');
+
+// The cancelling shapes must not be accepted by the SUM check either — that check is what made them look
+// right, and it still reports 360 == 360. The refusal comes from the rows, which is the whole point.
+var MCANCEL = CLASSIFY(psB([
+  { key: 'A', recommended_qty: 160, qualifying_planned_qty: 660, residual_qty: 0, over_planned_qty: 500 },
+  { key: 'B', recommended_qty: 0, qualifying_planned_qty: 0, residual_qty: 0, over_planned_qty: -140 }]),
+  GOOD_WINS);
+eq([MCANCEL.over_planned_qty_reported, MCANCEL.over_planned_qty_expected], [360, 360],
+  'M8  the cancelling sum STILL adds up to the expected surplus …');
+ok(MCANCEL.checks.filter(function (c) {
+  return c.predicate === 'fully_covered_over_planned_equals_planned_minus_recommended';
+})[0].pass === true, 'M8a … and the arithmetic check still passes it, unchanged …');
+eq(MCANCEL.per_scope_over_planned_negative, [{ scope: 'B', over_planned_qty: -140 }],
+  'M8b … so the refusal comes from the ROWS, which name the scope and the negative amount');
+
+// ---- M9  THE ARITHMETIC CHECK COMPUTES THE EQUATION ITS NAME STATES. ------------------------------------
+// It was `Math.max(0, qp - rq)`. A predicate called `..._equals_planned_minus_recommended` should compute
+// planned minus recommended: with 100 planned against 160 recommended the surplus is MINUS 60, and clamping
+// it to zero made a zero reported surplus match. The coverage check refuses that case regardless, so this is
+// about the number the census PRINTS being the number it claims to have compared.
+var M9 = CLASSIFY(ppB({ qualifying_active_planned_qty: 100,
+  per_scope: [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 100, residual_qty: 0,
+    over_planned_qty: 0 }] }), GOOD_WINS);
+eq(M9.over_planned_qty_expected, -60,
+  'M9  planned 100 against recommended 160 is reported as MINUS 60, not clamped to zero');
+ok(M9.checks_failed.indexOf('fully_covered_over_planned_equals_planned_minus_recommended') >= 0
+  && M9.checks_failed.indexOf('fully_covered_active_plan_covers_the_whole_recommendation') >= 0
+  && M9.checks_failed.indexOf('fully_covered_every_scope_is_individually_covered') >= 0,
+  'M9a and three separate conditions refuse it — the equation, the total, and the scope',
+  M9.checks_failed);
+
+// ---- M10 CLASS A IS STILL UNTOUCHED BY EVERY ONE OF THESE. ----------------------------------------------
+// Eleven class-B conditions now, and a class-A run must be judged by none of them. The class-A double also
+// now spells the enum VALUE rather than the KEY, which is where the runtime defect came from.
+var M10 = CLASSIFY(ppA(), ZERO_WINS);
+eq([M10.ok, M10.classification, M10.checks_failed], [true, 'VALID_ZERO_RECOMMENDATION', []],
+  'M10 a class-A run with a VALID_ZERO_RECOMMENDATION state still classifies clean');
+eq(M10.checks.map(function (c) { return c.predicate; })
+  .filter(function (n) { return /^fully_covered_/.test(n); }), [],
+  'M10a and not one class-B condition is asserted against it');
+eq([M10.per_scope_count, M10.per_scope_recommended_sum], [1, null],
+  'M10b the per-scope fields are still REPORTED for class A — reported, and not gated on');
+var M10C = manifest();
+eq([M10C.res.verdict, failed(M10C.res)], ['READY_TO_AUTHORIZE', []],
+  'M10c and the whole class-A manifest is still READY_TO_AUTHORIZE with nothing unmet');
+var M10D = manifest(live(FULLY_COVERED));
+eq([M10D.res.verdict, failed(M10D.res)], ['READY_TO_AUTHORIZE', []],
+  'M10d as is the class-B one — the tightening refuses nothing that was already true');
+
+
+// ---- M8  THE PER-SCOPE EVIDENCE CANNOT CANCEL. ----------------------------------------------------------
+
+// ---- M9  THE ARITHMETIC CHECK COMPUTES THE EQUATION ITS NAME STATES. ------------------------------------
+
 // ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
@@ -1320,6 +1545,107 @@ mut('N16 the classification is inferred by the census instead of taken from prod
     return cleanR.ok === false && cleanR.checks_failed.indexOf(c[4]) >= 0
       && badR.checks_failed.indexOf(c[4]) === -1;
   });
+});
+
+// ---- N26-N33  THE FINAL TIGHTENING. --------------------------------------------------------------------
+
+mut('N26 the exclusion-style state check is restored — exactly the shape that was fail-open', function () {
+  // The mutant is the ORIGINAL line, put back verbatim. Its probe is the state production really emits for a
+  // zero recommendation, so this catches the defect as it actually existed rather than a caricature of it.
+  var m = swap(CENSUS,
+    "      CENSUS_str_(pp.recommendation_state) === R6R7_NONZERO_RECOMMENDATION_STATE_);",
+    "      CENSUS_str_(pp.recommendation_state) !== 'VALID_ZERO'" + NLF
+    + "        && CENSUS_str_(pp.recommendation_state) !== ''" + NLF
+    + "        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');");
+  var probe = ppB({ recommendation_state: 'VALID_ZERO_RECOMMENDATION' });
+  var cleanR = CLASSIFY(probe, GOOD_WINS);
+  var w2 = W(live()); vm.runInContext(m, w2.ctx);
+  var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
+    + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+  return cleanR.ok === false && badR.ok === true;
+});
+
+mut('N27 the exclusion is restored with the list CORRECTED — still open to every unknown state', function () {
+  // The tempting half-fix: keep the exclusion, spell the value right. It closes the one case that was found
+  // and leaves a typo, a rename and next year's new state all passing — which is why the repair is an
+  // equality and not a longer list.
+  var m = swap(CENSUS,
+    "      CENSUS_str_(pp.recommendation_state) === R6R7_NONZERO_RECOMMENDATION_STATE_);",
+    "      CENSUS_str_(pp.recommendation_state) !== 'VALID_ZERO_RECOMMENDATION'" + NLF
+    + "        && CENSUS_str_(pp.recommendation_state) !== ''" + NLF
+    + "        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');");
+  var probe = ppB({ recommendation_state: 'BOGUS_STATE' });
+  var cleanR = CLASSIFY(probe, GOOD_WINS);
+  var w2 = W(live()); vm.runInContext(m, w2.ctx);
+  var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
+    + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+  return cleanR.ok === false && badR.ok === true;
+});
+
+var CANCEL_NEG = [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 660, residual_qty: 0,
+  over_planned_qty: 500 },
+  { key: 'B', recommended_qty: 0, qualifying_planned_qty: 0, residual_qty: 0, over_planned_qty: -140 }];
+var CANCEL_SHORT = [{ key: 'A', recommended_qty: 60, qualifying_planned_qty: 460, residual_qty: 0,
+  over_planned_qty: 400 },
+  { key: 'B', recommended_qty: 100, qualifying_planned_qty: 60, residual_qty: 0, over_planned_qty: -40 }];
+
+[['N28 a negative per-scope surplus is accepted, so two scopes can cancel to the right total',
+  "    C('fully_covered_every_scope_over_planned_is_finite_and_nonnegative', 'no negative or unreadable surplus',",
+  "    if (false) C('fully_covered_every_scope_over_planned_is_finite_and_nonnegative', 'no negative or unreadable surplus',",
+  ppB({ per_scope: CANCEL_NEG }), 'fully_covered_every_scope_over_planned_is_finite_and_nonnegative'],
+ ['N29 coverage is checked only in total, so a short scope hides behind a surplus elsewhere',
+  "    C('fully_covered_every_scope_is_individually_covered',",
+  "    if (false) C('fully_covered_every_scope_is_individually_covered',",
+  ppB({ per_scope: CANCEL_SHORT }), 'fully_covered_every_scope_is_individually_covered'],
+ ['N30 the rows no longer have to add up to the totals they were reported beside',
+  "    C('fully_covered_per_scope_totals_reconcile_with_the_reported_totals',",
+  "    if (false) C('fully_covered_per_scope_totals_reconcile_with_the_reported_totals',",
+  ppB({ per_scope: [{ key: 'Z', recommended_qty: 9999, qualifying_planned_qty: 10359, residual_qty: 0,
+    over_planned_qty: 360 }] }), 'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'],
+ ['N31 an empty per_scope counts as per-scope evidence',
+  "    C('fully_covered_per_scope_evidence_is_present', 'at least one per_scope row', out.per_scope_count,",
+  "    if (false) C('fully_covered_per_scope_evidence_is_present', 'at least one per_scope row', out.per_scope_count,",
+  ppB({ per_scope: [], qualifying_active_planned_qty: 160 }), 'fully_covered_per_scope_evidence_is_present'],
+ ['N32 a scope may carry a residual of its own',
+  "    C('fully_covered_every_scope_residual_is_exactly_zero', 'residual_qty === 0 in EVERY scope',",
+  "    if (false) C('fully_covered_every_scope_residual_is_exactly_zero', 'residual_qty === 0 in EVERY scope',",
+  ppB({ per_scope: [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 12,
+    over_planned_qty: 360 }] }), 'fully_covered_every_scope_residual_is_exactly_zero'],
+ ['N33 the state check is dropped from class B altogether',
+  "    C('fully_covered_recommendation_state_is_exactly_nonzero_recommendation',",
+  "    if (false) C('fully_covered_recommendation_state_is_exactly_nonzero_recommendation',",
+  ppB({ recommendation_state: 'VALID_ZERO_RECOMMENDATION' }),
+  'fully_covered_recommendation_state_is_exactly_nonzero_recommendation']
+].forEach(function (c) {
+  mut(c[0], function () {
+    var m = swap(CENSUS, c[1], c[2]);
+    var cleanR = CLASSIFY(c[3], GOOD_WINS);
+    var w2 = W(live()); vm.runInContext(m, w2.ctx);
+    var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(c[3]) + ', '
+      + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+    return cleanR.ok === false && cleanR.checks_failed.indexOf(c[4]) >= 0
+      && badR.checks_failed.indexOf(c[4]) === -1;
+  });
+});
+
+mut('N34 the surplus expectation is clamped at zero again, so the printed number is not the equation',
+function () {
+  var m = swap(CENSUS,
+    "  out.over_planned_qty_expected = (fin(qp) && fin(rq)) ? (qp - rq) : null;",
+    "  out.over_planned_qty_expected = (fin(qp) && fin(rq)) ? Math.max(0, qp - rq) : null;");
+  var probe = ppB({ qualifying_active_planned_qty: 100,
+    per_scope: [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 100, residual_qty: 0,
+      over_planned_qty: 0 }] });
+  var cleanR = CLASSIFY(probe, GOOD_WINS);
+  var w2 = W(live()); vm.runInContext(m, w2.ctx);
+  var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
+    + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+  // Both refuse the run — the coverage conditions see to that. What the mutant loses is the honest number
+  // and the arithmetic condition that names it.
+  return cleanR.over_planned_qty_expected === -60
+    && cleanR.checks_failed.indexOf('fully_covered_over_planned_equals_planned_minus_recommended') >= 0
+    && badR.over_planned_qty_expected === 0
+    && badR.checks_failed.indexOf('fully_covered_over_planned_equals_planned_minus_recommended') === -1;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
