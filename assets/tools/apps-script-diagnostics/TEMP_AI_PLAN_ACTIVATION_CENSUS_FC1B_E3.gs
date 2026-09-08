@@ -6235,6 +6235,9 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     per_scope_count: null, per_scope_over_planned_non_finite: [], per_scope_over_planned_negative: [],
     per_scope_under_covered: [], per_scope_residual_non_zero: [],
     per_scope_recommended_sum: null, per_scope_qualifying_planned_sum: null,
+    per_scope_row_arithmetic_mismatch: [], per_scope_identity: null,
+    expected_scope: { company: R6R7_SCOPE_.company, country: R6R7_SCOPE_.country,
+      marketplace: R6R7_SCOPE_.marketplace, sku: R6R7_SCOPE_.sku },
     checks: [] };
   function C(name, expected, observed, pass) {
     out.checks.push({ predicate: name, expected: expected, observed: observed, pass: !!pass });
@@ -6305,12 +6308,52 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
       if (!(typeof rr === 'number' && isFinite(rr) && rr === 0)) {
         out.per_scope_residual_non_zero.push({ scope: id, residual_qty: rr === undefined ? null : rr });
       }
+      // THE ROW AGAINST ITSELF. Not clamped: a row claiming a surplus its own two numbers do not produce is
+      // reporting something that did not happen, whichever direction it is wrong in.
+      if (!(isFinite(r) && isFinite(q) && isFinite(v) && v === (q - r))) {
+        out.per_scope_row_arithmetic_mismatch.push({ scope: id, recommended_qty: sc && sc.recommended_qty,
+          qualifying_planned_qty: sc && sc.qualifying_planned_qty,
+          over_planned_qty: sc && sc.over_planned_qty,
+          required: (isFinite(r) && isFinite(q)) ? (q - r) : null });
+      }
     });
     out.over_planned_qty_reported = allNum ? sum : null;
     if (sumsReadable) {
       out.per_scope_recommended_sum = recSum;
       out.per_scope_qualifying_planned_sum = planSum;
     }
+  }
+
+  // ---- WHICH SCOPE THE ONE ROW IS, READ OUT OF PRODUCTION'S KEY AND NOT REBUILT FROM THE PARTS.
+  //
+  // The decision's per_scope rows carry `key`, `marketplace` and `sku`; the company and the country exist
+  // ONLY inside the key, which 61_ builds as company|country|marketplace|sku. So the key is SPLIT and its
+  // four parts are compared — rebuilding the string here would mean this census asserting production's key
+  // format against its own copy of that format, which is one file agreeing with itself. Splitting reads it.
+  //
+  // A key that does not split into four parts fails: that is a key format this census has not been proven
+  // against, and 'I cannot parse the identity' is not 'the identity is right'.
+  if (ps && ps.length === 1) {
+    var row0 = ps[0] || {};
+    var parts = CENSUS_str_(row0.key).split('|');
+    var idn = { key: row0.key === undefined ? null : row0.key, key_parts: parts.length,
+      company: parts.length === 4 ? parts[0] : null, country: parts.length === 4 ? parts[1] : null,
+      marketplace: parts.length === 4 ? parts[2] : null, sku: parts.length === 4 ? parts[3] : null,
+      row_marketplace: row0.marketplace === undefined ? null : row0.marketplace,
+      row_sku: row0.sku === undefined ? null : row0.sku, mismatched: [] };
+    if (parts.length !== 4) idn.mismatched.push('key_does_not_split_into_four_parts');
+    else {
+      if (CENSUS_str_(idn.company) !== R6R7_SCOPE_.company) idn.mismatched.push('company');
+      if (CENSUS_str_(idn.country) !== R6R7_SCOPE_.country) idn.mismatched.push('country');
+      if (CENSUS_str_(idn.marketplace) !== R6R7_SCOPE_.marketplace) idn.mismatched.push('marketplace');
+      if (CENSUS_str_(idn.sku) !== R6R7_SCOPE_.sku) idn.mismatched.push('sku');
+      // AND THE ROW'S OWN FIELDS MUST AGREE WITH ITS OWN KEY. A row whose key says one site while its `sku`
+      // says another is not a row about one site, and either half could be the one an operator reads.
+      if (CENSUS_str_(idn.row_marketplace) !== CENSUS_str_(idn.marketplace)) idn.mismatched.push('row_marketplace_disagrees_with_key');
+      if (CENSUS_str_(idn.row_sku) !== CENSUS_str_(idn.sku)) idn.mismatched.push('row_sku_disagrees_with_key');
+    }
+    idn.ok = idn.mismatched.length === 0;
+    out.per_scope_identity = idn;
   }
   // The plain difference, NOT clamped at zero. `Math.max(0, qp - rq)` made the predicate named
   // `..._equals_planned_minus_recommended` accept a case where planned is BELOW recommended and the reported
@@ -6350,7 +6393,7 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     C('every_window_is_a_stored_finite_zero', 'four finite zeros', out.stored_windows, allZero);
   }
 
-  // ---- CLASS B — ELEVEN CONDITIONS WHERE CLASS A HAS TWO.
+  // ---- CLASS B — FIFTEEN CONDITIONS WHERE CLASS A HAS TWO.
   if (out.classification === 'FULLY_COVERED_BY_ACTIVE_PLAN') {
     C('fully_covered_recommended_qty_is_finite_and_positive', 'a finite number > 0', rq, fin(rq) && rq > 0);
     C('fully_covered_qualifying_planned_qty_is_finite', 'a finite number', qp, fin(qp));
@@ -6374,6 +6417,18 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     // ---- AND THE SURPLUS CANNOT BE A CANCELLATION. Five conditions on the rows the sum came from.
     C('fully_covered_per_scope_evidence_is_present', 'at least one per_scope row', out.per_scope_count,
       out.per_scope_count !== null && out.per_scope_count > 0);
+    // EXACTLY ONE ROW, because this activation is ONE frozen scope. Two rows is not a richer answer, it is
+    // an answer about something else — and it is also what made cancellation arithmetically possible at all.
+    // The per-row conditions below stay regardless: they are what would still hold if the frozen scope ever
+    // became more than one, and a guard that only works because of a count is a guard resting on the count.
+    C('fully_covered_per_scope_has_exactly_one_row', 1, out.per_scope_count, out.per_scope_count === 1);
+    C('fully_covered_per_scope_row_is_exactly_the_frozen_scope',
+      out.expected_scope, out.per_scope_identity,
+      !!out.per_scope_identity && out.per_scope_identity.ok === true);
+    C('fully_covered_scope_recommended_qty_is_finite_and_positive', 'a finite number > 0',
+      out.per_scope_identity ? (ps[0] || {}).recommended_qty : null,
+      out.per_scope_count === 1 && isFinite(Number((ps[0] || {}).recommended_qty))
+        && Number((ps[0] || {}).recommended_qty) > 0);
     C('fully_covered_every_scope_over_planned_is_finite_and_nonnegative', 'no negative or unreadable surplus',
       { negative: out.per_scope_over_planned_negative, non_finite: out.per_scope_over_planned_non_finite },
       out.per_scope_count > 0 && out.per_scope_over_planned_negative.length === 0
@@ -6384,6 +6439,10 @@ function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
     C('fully_covered_every_scope_residual_is_exactly_zero', 'residual_qty === 0 in EVERY scope',
       out.per_scope_residual_non_zero,
       out.per_scope_count > 0 && out.per_scope_residual_non_zero.length === 0);
+    C('fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended',
+      'over_planned_qty === qualifying_planned_qty - recommended_qty, IN EVERY ROW',
+      out.per_scope_row_arithmetic_mismatch,
+      out.per_scope_count > 0 && out.per_scope_row_arithmetic_mismatch.length === 0);
     C('fully_covered_per_scope_totals_reconcile_with_the_reported_totals',
       { recommended_qty: rq, qualifying_active_planned_qty: qp },
       { recommended_qty: out.per_scope_recommended_sum,

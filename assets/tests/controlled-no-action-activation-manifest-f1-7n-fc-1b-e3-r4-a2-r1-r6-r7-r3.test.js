@@ -802,15 +802,19 @@ var LBnames = LB.res.predicates.map(function (x) { return x.predicate; });
  'fully_covered_furthest_window_equals_the_recommendation',
  'fully_covered_recommendation_state_is_exactly_nonzero_recommendation',
  'fully_covered_per_scope_evidence_is_present',
+ 'fully_covered_per_scope_has_exactly_one_row',
+ 'fully_covered_per_scope_row_is_exactly_the_frozen_scope',
+ 'fully_covered_scope_recommended_qty_is_finite_and_positive',
  'fully_covered_every_scope_over_planned_is_finite_and_nonnegative',
  'fully_covered_every_scope_is_individually_covered',
  'fully_covered_every_scope_residual_is_exactly_zero',
+ 'fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended',
  'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'].forEach(function (nm, i) {
   ok(LBnames.indexOf(nm) >= 0, 'L3.' + (i + 1) + ' the ledger carries ' + nm);
 });
-// TWO CONDITIONS BECOME NINETEEN. Class B is not class A with a test removed.
-ok(LBnames.filter(function (n) { return /^fully_covered_/.test(n); }).length === 11,
-  'L3a eleven of them are specific to class B',
+// TWO CONDITIONS BECOME TWENTY-THREE. Class B is not class A with a test removed.
+ok(LBnames.filter(function (n) { return /^fully_covered_/.test(n); }).length === 15,
+  'L3a fifteen of them are specific to class B',
   LBnames.filter(function (n) { return /^fully_covered_/.test(n); }));
 eq(LBnames.filter(function (n) { return /recommendation_state_is_not_a_zero_state/.test(n); }), [],
   'L3a1 and the exclusion-style state check is gone from the ledger entirely');
@@ -890,8 +894,8 @@ function ppB(over) {
     reason: 'FULLY_COVERED_BY_ACTIVE_PLAN', recommendation_state: 'NONZERO_RECOMMENDATION',
     recommended_qty: 160, qualifying_active_planned_qty: 520, residual_qty: 0,
     would_write: false, writer_reached: false, db_writes: 0,
-    per_scope: [{ key: 'ResUS|US|Amazon|CO1100-R', recommended_qty: 160, qualifying_planned_qty: 520,
-      residual_qty: 0, over_planned_qty: 360 }] };
+    per_scope: [{ key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+      recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 360 }] };
   Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
   return d;
 }
@@ -1158,22 +1162,30 @@ ok(labels(MSTATE_W.world).filter(function (n) { return /^r6r7_freeze_paste_block
 function psB(rows, over) {
   var o = over || {}; o.per_scope = rows; return ppB(o);
 }
-var GOOD_SCOPE = [{ key: 'ResUS|US|Amazon|CO1100-R', recommended_qty: 160, qualifying_planned_qty: 520,
-  residual_qty: 0, over_planned_qty: 360 }];
+var GOOD_SCOPE = [{ key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+  recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 360 }];
 var M6 = CLASSIFY(psB(GOOD_SCOPE), GOOD_WINS);
 eq([M6.ok, M6.per_scope_count, M6.per_scope_recommended_sum, M6.per_scope_qualifying_planned_sum],
   [true, 1, 160, 520],
   'M6  the one real scope reconciles with the totals it was reported beside');
 eq([M6.per_scope_over_planned_negative, M6.per_scope_under_covered, M6.per_scope_residual_non_zero],
   [[], [], []], 'M6a with nothing negative, nothing short, and no residual anywhere');
-// TWO scopes that genuinely are both covered still pass — the guard is against cancellation, not against
-// there being more than one scope.
+// TWO SCOPES ARE NOW REFUSED, AND THIS REVERSES WHAT I ASSERTED ONE COMMIT AGO. c335a06 accepted any set of
+// individually-covered scopes on the reasoning that the guard was against cancellation rather than against
+// multiplicity. For THIS activation that is the wrong boundary: it is one frozen scope, so a second row is
+// not a richer answer, it is an answer about something else — and a decision covering more sites than the
+// authorization does is the shape that must never reach READY. Refused now, deliberately.
 var M6B = CLASSIFY(psB([
-  { key: 'A', recommended_qty: 100, qualifying_planned_qty: 300, residual_qty: 0, over_planned_qty: 200 },
-  { key: 'B', recommended_qty: 60, qualifying_planned_qty: 220, residual_qty: 0, over_planned_qty: 160 }],
+  { key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R', recommended_qty: 100,
+    qualifying_planned_qty: 300, residual_qty: 0, over_planned_qty: 200 },
+  { key: 'ResUS|US|Amazon|CO1200-R', marketplace: 'Amazon', sku: 'CO1200-R', recommended_qty: 60,
+    qualifying_planned_qty: 220, residual_qty: 0, over_planned_qty: 160 }],
   { recommended_qty: 160, qualifying_active_planned_qty: 520 }), GOOD_WINS);
-eq([M6B.ok, M6B.checks_failed], [true, []],
-  'M6b two scopes that are EACH covered are accepted — this guards cancellation, not multiplicity');
+ok(M6B.ok === false && M6B.checks_failed.indexOf('fully_covered_per_scope_has_exactly_one_row') >= 0,
+  'M6b two scopes — even individually covered ones — are REFUSED: this activation is one frozen scope',
+  M6B.checks_failed);
+eq(M6B.per_scope_identity, null,
+  'M6b1 and no identity is claimed for a set of rows, because there is no single row to identify');
 
 [['a NEGATIVE surplus in one scope offsetting a larger one in another',
   [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 660, residual_qty: 0, over_planned_qty: 500 },
@@ -1266,6 +1278,226 @@ eq([M10D.res.verdict, failed(M10D.res)], ['READY_TO_AUTHORIZE', []],
 // ---- M8  THE PER-SCOPE EVIDENCE CANNOT CANCEL. ----------------------------------------------------------
 
 // ---- M9  THE ARITHMETIC CHECK COMPUTES THE EQUATION ITS NAME STATES. ------------------------------------
+
+// ================================================================================================================
+section('P — R6-R7-R5-R1 fail-closed: ONE row, and it has to be THIS site');
+// ================================================================================================================
+//
+// c335a06 proved a surplus cannot be reached by cancellation. It still accepted a decision whose per_scope
+// described a DIFFERENT SITE, or several sites, or a row whose own three numbers did not produce the surplus
+// it reported. This activation authorizes ONE scope, so the evidence has to be one row and it has to be that
+// scope — and the row has to be arithmetically true about itself, not merely add up in aggregate.
+//
+// THREE STATEMENTS, NONE IMPLYING ANOTHER: a row is consistent with itself; the rows sum to the totals; the
+// totals are consistent with each other. c335a06 had the last two.
+
+function pRow(over) {
+  var r = { key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+    recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 360 };
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+function pDrop(over, drop) { var r = pRow(over); delete r[drop]; return r; }
+
+// ---- P1  THE LIVE CASE IS UNTOUCHED. 160 / 520 / 0 / 360 still classifies clean. ------------------------
+var P1 = CLASSIFY(ppB(), GOOD_WINS);
+eq([P1.ok, P1.classification, P1.checks_failed], [true, 'FULLY_COVERED_BY_ACTIVE_PLAN', []],
+  'P1  the live class-B decision still classifies clean under the tighter contract');
+eq(P1.per_scope_identity.mismatched, [],
+  'P1a with the one row identified as the frozen scope, nothing mismatched');
+eq([P1.per_scope_identity.company, P1.per_scope_identity.country,
+  P1.per_scope_identity.marketplace, P1.per_scope_identity.sku],
+  ['ResUS', 'US', 'Amazon', 'CO1100-R'],
+  'P1b read out of PRODUCTION\'s own key by splitting it, not rebuilt from the parts here');
+eq(P1.expected_scope, { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' },
+  'P1c and reported beside the scope this census is frozen to');
+eq(P1.checks.filter(function (c) { return /^fully_covered_/.test(c.predicate); }).length, 15,
+  'P1d fifteen class-B conditions now, on the same eight-condition shared floor');
+var PLIVE = manifest(live(FULLY_COVERED));
+eq([PLIVE.res.verdict, failed(PLIVE.res)], ['READY_TO_AUTHORIZE', []],
+  'P1e and the whole live manifest is still READY_TO_AUTHORIZE with nothing unmet');
+eq([PLIVE.res.no_action_classification.per_scope_count,
+  PLIVE.res.no_action_classification.per_scope_identity.ok], [1, true],
+  'P1f REAL 61_ produces exactly one row and it identifies as the frozen scope');
+
+// ---- P2  THE ROW HAS TO BE THIS SITE. ------------------------------------------------------------------
+var PIDN = 'fully_covered_per_scope_row_is_exactly_the_frozen_scope';
+[['a different SKU', pRow({ key: 'ResUS|US|Amazon|CO1200-R', sku: 'CO1200-R' })],
+ ['a different MARKETPLACE', pRow({ key: 'ResUS|US|Walmart|CO1100-R', marketplace: 'Walmart' })],
+ ['a different COMPANY', pRow({ key: 'ResEU|US|Amazon|CO1100-R' })],
+ ['a different COUNTRY', pRow({ key: 'ResUS|CA|Amazon|CO1100-R' })],
+ ['a key that does not split into four parts', pRow({ key: 'ResUS|US|Amazon' })],
+ ['a key with an extra part', pRow({ key: 'ResUS|US|Amazon|CO1100-R|X' })],
+ ['no key at all', pDrop({}, 'key')],
+ ['a blank key', pRow({ key: '' })],
+ ['a row whose own sku disagrees with its own key', pRow({ sku: 'CO9999-R' })],
+ ['a row whose own marketplace disagrees with its own key', pRow({ marketplace: 'Walmart' })],
+ ['a row with no sku field', pDrop({}, 'sku')],
+ ['a row with no marketplace field', pDrop({}, 'marketplace')]
+].forEach(function (c, i) {
+  var r = CLASSIFY(ppB({ per_scope: [c[1]] }), GOOD_WINS);
+  ok(r.ok === false && r.checks_failed.indexOf(PIDN) >= 0,
+    'P2.' + (i + 1) + ' ' + c[0] + ' → refused, naming the frozen-scope identity', r.checks_failed);
+});
+// The identity is REPORTED, field by field, so a STOP says WHICH part of the site is wrong.
+eq(CLASSIFY(ppB({ per_scope: [pRow({ key: 'ResEU|CA|Amazon|CO1100-R' })] }), GOOD_WINS)
+  .per_scope_identity.mismatched, ['company', 'country'],
+  'P2a and it names the parts that differ rather than only failing');
+eq(CLASSIFY(ppB({ per_scope: [pRow({ key: 'ResUS|US|Amazon' })] }), GOOD_WINS)
+  .per_scope_identity.mismatched, ['key_does_not_split_into_four_parts'],
+  'P2b an unparseable key is its own reason — \'cannot read the identity\' is not \'the identity is right\'');
+
+// ---- P3  EXACTLY ONE ROW. ------------------------------------------------------------------------------
+var PONE = 'fully_covered_per_scope_has_exactly_one_row';
+[['the frozen row PLUS an unauthorized second scope',
+  [pRow(), pRow({ key: 'ResUS|US|Amazon|CO1200-R', sku: 'CO1200-R', recommended_qty: 0,
+    qualifying_planned_qty: 0, over_planned_qty: 0 })]],
+ ['the frozen row twice', [pRow(), pRow()]],
+ ['two scopes that are EACH individually covered',
+  [pRow({ recommended_qty: 100, qualifying_planned_qty: 300, over_planned_qty: 200 }),
+   pRow({ key: 'ResUS|US|Amazon|CO1200-R', sku: 'CO1200-R', recommended_qty: 60,
+     qualifying_planned_qty: 220, over_planned_qty: 160 })]],
+ ['an empty per_scope', []]
+].forEach(function (c, i) {
+  var r = CLASSIFY(ppB({ per_scope: c[1] }), GOOD_WINS);
+  ok(r.ok === false && r.checks_failed.indexOf(PONE) >= 0,
+    'P3.' + (i + 1) + ' ' + c[0] + ' → refused, naming the one-row requirement', r.checks_failed);
+});
+var PNO = ppB(); delete PNO.per_scope;
+var PNOr = CLASSIFY(PNO, GOOD_WINS);
+ok(PNOr.ok === false && PNOr.checks_failed.indexOf(PONE) >= 0
+  && PNOr.checks_failed.indexOf('fully_covered_per_scope_evidence_is_present') >= 0,
+  'P3.5 per_scope missing entirely → refused by BOTH the evidence and the one-row conditions');
+var PNA = CLASSIFY(ppB({ per_scope: { key: 'ResUS|US|Amazon|CO1100-R' } }), GOOD_WINS);
+ok(PNA.ok === false && PNA.checks_failed.indexOf(PONE) >= 0 && PNA.per_scope_count === null,
+  'P3.6 per_scope that is not an array at all → refused, and the count is null');
+// CROSS-SCOPE OFFSETTING IS NOW STRUCTURALLY IMPOSSIBLE, and the per-row conditions still hold anyway.
+var POFF = CLASSIFY(ppB({ per_scope: [
+  pRow({ recommended_qty: 160, qualifying_planned_qty: 660, over_planned_qty: 500 }),
+  pRow({ key: 'ResUS|US|Amazon|CO1200-R', sku: 'CO1200-R', recommended_qty: 0,
+    qualifying_planned_qty: 0, over_planned_qty: -140 })] }), GOOD_WINS);
+eq([POFF.over_planned_qty_reported, POFF.over_planned_qty_expected], [360, 360],
+  'P3a the offsetting pair STILL sums to the expected surplus …');
+ok(POFF.checks_failed.indexOf(PONE) >= 0
+  && POFF.checks_failed.indexOf('fully_covered_every_scope_over_planned_is_finite_and_nonnegative') >= 0,
+  'P3b … and is refused twice over: it is two rows, and one of them is negative', POFF.checks_failed);
+
+// ---- P4  THE ROW HAS TO BE TRUE ABOUT ITSELF. ----------------------------------------------------------
+var PARI = 'fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended';
+[['a surplus higher than its own two numbers produce', pRow({ over_planned_qty: 400 }), 360],
+ ['a surplus lower than its own two numbers produce', pRow({ over_planned_qty: 0 }), 360],
+ ['a NEGATIVE surplus on a row that is over-planned', pRow({ over_planned_qty: -360 }), 360],
+ ['a surplus that is not a number', pRow({ over_planned_qty: 'x' }), 360],
+ ['no surplus field at all', pDrop({}, 'over_planned_qty'), 360],
+ ['no recommended_qty on the row', pDrop({}, 'recommended_qty'), null],
+ ['no qualifying_planned_qty on the row', pDrop({}, 'qualifying_planned_qty'), null]
+].forEach(function (c, i) {
+  var r = CLASSIFY(ppB({ per_scope: [c[1]] }), GOOD_WINS);
+  ok(r.ok === false && r.checks_failed.indexOf(PARI) >= 0,
+    'P4.' + (i + 1) + ' ' + c[0] + ' → refused, naming the row\'s own arithmetic', r.checks_failed);
+  if (c[2] !== null) {
+    eq((r.per_scope_row_arithmetic_mismatch[0] || {}).required, c[2],
+      'P4.' + (i + 1) + 'a and it reports what that row\'s numbers REQUIRED (' + c[2] + ')');
+  }
+});
+// A row that is internally consistent about a SHORTFALL passes this condition and is refused by the ones
+// that own the sign. Each condition says one thing.
+var PSHORT = CLASSIFY(ppB({ per_scope: [pRow({ recommended_qty: 520, qualifying_planned_qty: 160,
+  over_planned_qty: -360 })] }), GOOD_WINS);
+ok(PSHORT.checks_failed.indexOf(PARI) === -1,
+  'P4a a row consistent about a shortfall passes its OWN arithmetic — that check has one job');
+ok(PSHORT.ok === false
+  && PSHORT.checks_failed.indexOf('fully_covered_every_scope_is_individually_covered') >= 0
+  && PSHORT.checks_failed.indexOf('fully_covered_every_scope_over_planned_is_finite_and_nonnegative') >= 0,
+  'P4b … and is refused by coverage and by the non-negative surplus, which are the ones that own it');
+// The row's own recommendation has to be a positive number, not merely finite.
+var PZERO = 'fully_covered_scope_recommended_qty_is_finite_and_positive';
+[['the row recommends zero', pRow({ recommended_qty: 0, over_planned_qty: 520 })],
+ ['the row recommends a negative amount', pRow({ recommended_qty: -10, over_planned_qty: 530 })],
+ ['the row recommendation is blank', pRow({ recommended_qty: null })]
+].forEach(function (c, i) {
+  var r = CLASSIFY(ppB({ per_scope: [c[1]] }), GOOD_WINS);
+  ok(r.ok === false && r.checks_failed.indexOf(PZERO) >= 0,
+    'P4c.' + (i + 1) + ' ' + c[0] + ' → refused, naming the row\'s own recommendation', r.checks_failed);
+});
+
+// ---- P5  AND THE ROWS STILL HAVE TO AGREE WITH THE TOP-LEVEL TOTALS. -----------------------------------
+var PREC = 'fully_covered_per_scope_totals_reconcile_with_the_reported_totals';
+var P5A = CLASSIFY(ppB({ per_scope: [pRow({ recommended_qty: 100, qualifying_planned_qty: 460,
+  over_planned_qty: 360 })] }), GOOD_WINS);
+ok(P5A.ok === false && P5A.checks_failed.indexOf(PREC) >= 0,
+  'P5  a row internally consistent but disagreeing with the reported totals → refused', P5A.checks_failed);
+eq([P5A.per_scope_recommended_sum, P5A.per_scope_qualifying_planned_sum], [100, 460],
+  'P5a and the row sums are reported beside the totals they contradict (160 / 520)');
+var P5B = CLASSIFY(ppB({ per_scope: [pRow({ recommended_qty: 160, qualifying_planned_qty: 520,
+  over_planned_qty: 360 })], qualifying_active_planned_qty: 900 }), GOOD_WINS);
+ok(P5B.ok === false && P5B.checks_failed.indexOf(PREC) >= 0,
+  'P5b and a top-level total the row does not account for → refused', P5B.checks_failed);
+
+// ---- P6  EVERY NEW STOP SHAPE HANDS OVER NOTHING. ------------------------------------------------------
+// The classifier is replayed through P, so each of these has to reach the VERDICT and then be caught by the
+// freeze locks. Measured on the full manifest, through the real router and the real production decision,
+// with the decision wrapped at the seam — because these are shapes 61_ will not produce on its own.
+function pBend(mutate) {
+  return manifest(live(FULLY_COVERED), { after:
+    'weeklyAiPlanNoActionDecision_ = (function (orig) { return function (recState, planned) {' + NLF
+    + '  var d = orig.apply(null, arguments);' + NLF
+    + "  if (d && d.reason === 'FULLY_COVERED_BY_ACTIVE_PLAN') { " + mutate + ' }' + NLF
+    + '  return d; }; })(weeklyAiPlanNoActionDecision_);' });
+}
+[['recommendation_state BROKEN_STATE', "d.recommendation_state = 'BROKEN_STATE';",
+  'fully_covered_recommendation_state_is_exactly_nonzero_recommendation'],
+ ['a blank recommendation_state', "d.recommendation_state = '';",
+  'fully_covered_recommendation_state_is_exactly_nonzero_recommendation'],
+ ['recommendation_state deleted', 'delete d.recommendation_state;',
+  'fully_covered_recommendation_state_is_exactly_nonzero_recommendation'],
+ ['per_scope deleted', 'delete d.per_scope;', 'fully_covered_per_scope_has_exactly_one_row'],
+ ['per_scope emptied', 'd.per_scope = [];', 'fully_covered_per_scope_evidence_is_present'],
+ ['an extra unauthorized scope appended',
+  "d.per_scope = d.per_scope.concat([{ key: 'ResUS|US|Amazon|CO1200-R', marketplace: 'Amazon',"
+  + " sku: 'CO1200-R', recommended_qty: 0, qualifying_planned_qty: 0, residual_qty: 0,"
+  + ' over_planned_qty: 0 }]);', 'fully_covered_per_scope_has_exactly_one_row'],
+ ['the one row rewritten to a different site',
+  "d.per_scope[0].key = 'ResUS|US|Walmart|CO1100-R'; d.per_scope[0].marketplace = 'Walmart';",
+  'fully_covered_per_scope_row_is_exactly_the_frozen_scope'],
+ ['the row surplus falsified', 'd.per_scope[0].over_planned_qty = 400;',
+  'fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended'],
+ ['the rows no longer summing to the totals', 'd.per_scope[0].qualifying_planned_qty = 460;',
+  'fully_covered_per_scope_totals_reconcile_with_the_reported_totals'],
+ ['a cross-scope offsetting pair',
+  "d.per_scope[0].qualifying_planned_qty = 660; d.per_scope[0].over_planned_qty = 500;"
+  + " d.per_scope.push({ key: 'ResUS|US|Amazon|CO1200-R', marketplace: 'Amazon', sku: 'CO1200-R',"
+  + ' recommended_qty: 0, qualifying_planned_qty: -140, residual_qty: 0, over_planned_qty: -140 });',
+  'fully_covered_every_scope_over_planned_is_finite_and_nonnegative']
+].forEach(function (c, i) {
+  var r = pBend(c[1]);
+  var lbl = labels(r.world);
+  var chunks = lbl.filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length;
+  var meta = lbl.indexOf('r6r7_freeze_paste_meta') >= 0;
+  var withheld = lbl.filter(function (n) { return n === 'r6r7_freeze_paste_withheld'; }).length;
+  eq([r.res.verdict, chunks, meta, withheld, r.res.freeze_paste_block],
+    ['STOP', 0, false, 1, null],
+    'P6.' + (i + 1) + ' ' + c[0] + ' → STOP, zero chunks, no meta, exactly one withheld line, nothing to paste');
+  ok(failed(r.res).indexOf(c[2]) >= 0,
+    'P6.' + (i + 1) + 'a and the reasons name ' + c[2], failed(r.res).slice(0, 5));
+});
+
+// ---- P7  CLASS A AND THE PIN ARE UNTOUCHED BY ALL OF IT. -----------------------------------------------
+var P7 = manifest();
+eq([P7.res.verdict, failed(P7.res), P7.res.no_action_classification.classification],
+  ['READY_TO_AUTHORIZE', [], 'VALID_ZERO_RECOMMENDATION'],
+  'P7  VALID_ZERO_RECOMMENDATION remains green — not one of the fifteen is asserted against it');
+eq(P7.res.no_action_classification.checks.map(function (c) { return c.predicate; })
+  .filter(function (n) { return /^fully_covered_/.test(n); }), [],
+  'P7a with no class-B condition in its ledger at all');
+ok(labels(P7.world).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length > 0,
+  'P7b and a READY still emits its freeze chunks — the locks gate on the verdict, not on the class');
+eq(extractVar(CENSUS, 'R6R7_ACTIVATION_BUILD_').match(/'([^']+)'/)[1],
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
+  'P7c the deployment build pin is still R5-R1 — no production runtime file changed this round');
+eq(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')
+  .match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
+  'P7d and the release it follows has not moved either');
 
 // ================================================================================================================
 section('N — mutants');
@@ -1558,11 +1790,12 @@ mut('N26 the exclusion-style state check is restored — exactly the shape that 
     + "        && CENSUS_str_(pp.recommendation_state) !== ''" + NLF
     + "        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');");
   var probe = ppB({ recommendation_state: 'VALID_ZERO_RECOMMENDATION' });
+  var NM = 'fully_covered_recommendation_state_is_exactly_nonzero_recommendation';
   var cleanR = CLASSIFY(probe, GOOD_WINS);
   var w2 = W(live()); vm.runInContext(m, w2.ctx);
   var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
     + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
-  return cleanR.ok === false && badR.ok === true;
+  return cleanR.checks_failed.indexOf(NM) >= 0 && badR.checks_failed.indexOf(NM) === -1;
 });
 
 mut('N27 the exclusion is restored with the list CORRECTED — still open to every unknown state', function () {
@@ -1575,11 +1808,12 @@ mut('N27 the exclusion is restored with the list CORRECTED — still open to eve
     + "        && CENSUS_str_(pp.recommendation_state) !== ''" + NLF
     + "        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');");
   var probe = ppB({ recommendation_state: 'BOGUS_STATE' });
+  var NM = 'fully_covered_recommendation_state_is_exactly_nonzero_recommendation';
   var cleanR = CLASSIFY(probe, GOOD_WINS);
   var w2 = W(live()); vm.runInContext(m, w2.ctx);
   var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
     + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
-  return cleanR.ok === false && badR.ok === true;
+  return cleanR.checks_failed.indexOf(NM) >= 0 && badR.checks_failed.indexOf(NM) === -1;
 });
 
 var CANCEL_NEG = [{ key: 'A', recommended_qty: 160, qualifying_planned_qty: 660, residual_qty: 0,
@@ -1646,6 +1880,88 @@ function () {
     && cleanR.checks_failed.indexOf('fully_covered_over_planned_equals_planned_minus_recommended') >= 0
     && badR.over_planned_qty_expected === 0
     && badR.checks_failed.indexOf('fully_covered_over_planned_equals_planned_minus_recommended') === -1;
+});
+
+// ---- N35-N39  THE ROW-LEVEL CONTRACT. ------------------------------------------------------------------
+
+var WRONG_SITE = [{ key: 'ResUS|US|Walmart|CO1100-R', marketplace: 'Walmart', sku: 'CO1100-R',
+  recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 360 }];
+var TWO_ROWS = [{ key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+  recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 360 },
+  { key: 'ResUS|US|Amazon|CO1200-R', marketplace: 'Amazon', sku: 'CO1200-R', recommended_qty: 0,
+    qualifying_planned_qty: 0, residual_qty: 0, over_planned_qty: 0 }];
+var FALSE_ROW = [{ key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+  recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 400 }];
+
+[['N35 the one row no longer has to be the frozen scope — any site\'s evidence would do',
+  "    C('fully_covered_per_scope_row_is_exactly_the_frozen_scope',",
+  "    if (false) C('fully_covered_per_scope_row_is_exactly_the_frozen_scope',",
+  ppB({ per_scope: WRONG_SITE }), 'fully_covered_per_scope_row_is_exactly_the_frozen_scope'],
+ ['N36 the identity is checked on the SKU alone, so a different marketplace passes',
+  "      if (CENSUS_str_(idn.marketplace) !== R6R7_SCOPE_.marketplace) idn.mismatched.push('marketplace');",
+  '      // marketplace no longer compared',
+  ppB({ per_scope: WRONG_SITE }), 'fully_covered_per_scope_row_is_exactly_the_frozen_scope'],
+ ['N37 any number of rows is accepted again, so an unauthorized scope rides along',
+  "    C('fully_covered_per_scope_has_exactly_one_row', 1, out.per_scope_count, out.per_scope_count === 1);",
+  "    C('fully_covered_per_scope_has_exactly_one_row', 1, out.per_scope_count, out.per_scope_count >= 1);",
+  ppB({ per_scope: TWO_ROWS }), 'fully_covered_per_scope_has_exactly_one_row'],
+ ['N38 the row\'s own arithmetic is no longer checked, only the aggregate',
+  "    C('fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended',",
+  "    if (false) C('fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended',",
+  ppB({ per_scope: FALSE_ROW }),
+  'fully_covered_scope_over_planned_equals_its_own_planned_minus_recommended'],
+ ['N39 the row\'s own recommendation may be zero, so a zero-need scope poses as fully covered',
+  "    C('fully_covered_scope_recommended_qty_is_finite_and_positive', 'a finite number > 0',",
+  "    if (false) C('fully_covered_scope_recommended_qty_is_finite_and_positive', 'a finite number > 0',",
+  ppB({ per_scope: [{ key: 'ResUS|US|Amazon|CO1100-R', marketplace: 'Amazon', sku: 'CO1100-R',
+    recommended_qty: 0, qualifying_planned_qty: 520, residual_qty: 0, over_planned_qty: 520 }] }),
+  'fully_covered_scope_recommended_qty_is_finite_and_positive']
+].forEach(function (c) {
+  mut(c[0], function () {
+    var m = swap(CENSUS, c[1], c[2]);
+    var cleanR = CLASSIFY(c[3], GOOD_WINS);
+    var w2 = W(live()); vm.runInContext(m, w2.ctx);
+    var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(c[3]) + ', '
+      + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+    return cleanR.ok === false && cleanR.checks_failed.indexOf(c[4]) >= 0
+      && badR.checks_failed.indexOf(c[4]) === -1;
+  });
+});
+
+mut('N40 the key is REBUILT from the frozen scope instead of read out of production\'s own key',
+function () {
+  // The census would then be comparing its own construction of the key against its own construction of the
+  // key: a wrong site whose key contradicts its sku fields would sail through, because the key under
+  // comparison is no longer the one production wrote.
+  var m = swap(CENSUS, '    var parts = CENSUS_str_(row0.key).split(\'|\');',
+    "    var parts = [R6R7_SCOPE_.company, R6R7_SCOPE_.country, R6R7_SCOPE_.marketplace," + NLF
+    + '      CENSUS_str_(row0.sku)];');
+  var probe = ppB({ per_scope: [{ key: 'ResEU|CA|Walmart|CO1100-R', marketplace: 'Amazon',
+    sku: 'CO1100-R', recommended_qty: 160, qualifying_planned_qty: 520, residual_qty: 0,
+    over_planned_qty: 360 }] });
+  var NM = 'fully_covered_per_scope_row_is_exactly_the_frozen_scope';
+  var cleanR = CLASSIFY(probe, GOOD_WINS);
+  var w2 = W(live()); vm.runInContext(m, w2.ctx);
+  var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(probe) + ', '
+    + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+  return cleanR.checks_failed.indexOf(NM) >= 0 && badR.checks_failed.indexOf(NM) === -1;
+});
+
+mut('N41 a STOP from one of the NEW row conditions still hands over a freeze block', function () {
+  var m = swap(CENSUS, "  if (out.verdict !== 'READY_TO_AUTHORIZE' && out.freeze_paste_block) {",
+    '  if (false) {');
+  m = swap(m, "  if (out.freeze_paste_block && out.verdict === 'READY_TO_AUTHORIZE') {",
+    '  if (out.freeze_paste_block) {');
+  var bend = 'weeklyAiPlanNoActionDecision_ = (function (orig) { return function (recState, planned) {' + NLF
+    + '  var d = orig.apply(null, arguments);' + NLF
+    + "  if (d && d.reason === 'FULLY_COVERED_BY_ACTIVE_PLAN') { d.per_scope[0].over_planned_qty = 400; }" + NLF
+    + '  return d; }; })(weeklyAiPlanNoActionDecision_);';
+  var clean = manifest(live(FULLY_COVERED), { after: bend });
+  var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST', live(FULLY_COVERED),
+    { after: bend });
+  function chunks(w) { return labels(w).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length; }
+  return clean.res.verdict === 'STOP' && chunks(clean.world) === 0
+    && bad.res.verdict === 'STOP' && chunks(bad.world) > 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
