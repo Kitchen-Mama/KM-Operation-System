@@ -39,6 +39,11 @@ eval(DBSRC.match(/var KM_CANONICAL_CODES = \[[\s\S]*?\];/)[0]);   // C2-D2A-UI: 
 // F1-7N-FB-3A §C — it now also classifies a missing DEPLOYED action (DEPLOYMENT_CONTRACT_MISMATCH) before the
 // business classifier can flatten it, so those two helpers and the pattern list join the set as well.
 var KM_READ_TIMEOUT_MS_ = 45000, KM_WRITE_TIMEOUT_MS_ = 90000, KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 3;
+// R6-R7-R4 - _kmTimeoutMs_ now consults a PER-ACTION write table, so that table is a dependency of the
+// function under test. It is lifted from the shipped source rather than mirrored as a literal: a copy here
+// would let the suite pass against a bound the product does not have. Without it the lift throws a
+// ReferenceError inside shipped code - a harness gap, not a product defect.
+eval(DBSRC.match(/var KM_ACTION_WRITE_TIMEOUT_MS_ = \{[\s\S]*?\};/)[0]);
 eval(DBSRC.match(/var KM_UNKNOWN_ACTION_PATTERNS_ = \[[\s\S]*?\];/)[0]);
 // F1-7N-FB-4E — the runner now classifies through the shared evidence helpers, so they join the extraction
 // list. This ADDS to what the suite executes; every assertion below is unchanged, and A3/A4/A7 still pin the

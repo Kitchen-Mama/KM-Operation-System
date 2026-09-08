@@ -10569,16 +10569,24 @@ function _irPersistedManualRouteSkus_() {
 // wrapper had already pre-empted it with a verdict of its own. Any page bound below the transport's bound
 // converts the transport's careful answer into a guess, whatever number it is set to.
 //
-// THE RULE, not the number: this MUST exceed KM_WRITE_TIMEOUT_MS_ in assets/js/api/operation-system-db-api.js,
-// so the transport's own bounded answer is what surfaces and this wrapper is only a backstop for a promise
-// that never settles at all. The relation is asserted by the R6-R7-R3 suite against both files, the same way
-// ROS_CLIENT_WRITE_TIMEOUT_MS_ is held equal to it in 66_.
+// THE RULE, not the number: this MUST exceed the bound the TRANSPORT will actually apply to
+// `weeklyAiPlan.generate` in assets/js/api/operation-system-db-api.js, so the transport's own bounded answer is
+// what surfaces and this wrapper is only a backstop for a promise that never settles at all. The relation is
+// asserted against both files, the same way ROS_CLIENT_WRITE_TIMEOUT_MS_ is held equal to it in 66_.
+//
+// R6-R7-R4 §B — THE BOUND IT HAS TO CLEAR MOVED, so this one moves with it. A second controlled Generate ran
+// 90 002 ms and was cut off by the transport's shared 90 s write bound with
+// REQUEST_TIMEOUT_WRITE_INDETERMINATE, while the database readback proved nothing had been written. The
+// transport now gives that ONE action its own 180 000 ms bound (KM_ACTION_WRITE_TIMEOUT_MS_), leaving the
+// shared write bound — and 66_'s slice budget, which is derived from it — untouched. 120 000 ms here would now
+// be BELOW the transport's effective bound, which is the same inversion R6-R7-R3 fixed at 60 000: the page
+// would once again pre-empt an answer the transport was still legitimately waiting for.
 //
 // RAISING IT INTRODUCES NO RETRY. Nothing here retries, `_kmWeeklyCommand_` does not retry a timed-out write
 // by contract, and the re-entry guard (_irAiPlanIsRunning_) still refuses a second click. A longer bound
 // changes only how long the browser is willing to WAIT for the one request it sent.
 // ==============================================================================================================
-var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = 120000;   // > KM_WRITE_TIMEOUT_MS_ (90 000); asserted, not assumed
+var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = 210000;   // > the transport's effective bound for this action (180 000)
 try { if (typeof window !== 'undefined') window.IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = IR_AI_PLAN_CLIENT_TIMEOUT_MS_; } catch (eT) {}
 // §D.15 — a request that never answers is its own outcome. Note what this does NOT claim: a timeout
 // after the POST left the browser is UNKNOWN, not failed, so it terminates as RECONCILING and the readback is

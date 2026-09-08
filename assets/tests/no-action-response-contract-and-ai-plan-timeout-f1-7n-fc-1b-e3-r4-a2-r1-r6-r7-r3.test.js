@@ -188,7 +188,16 @@ var PAGE_MS = Number((PAGE.match(/var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = (\d+);/) |
 var WRITE_MS = Number((API.match(/var KM_WRITE_TIMEOUT_MS_ = (\d+);/) || [])[1]);
 ok(PAGE_MS > 0, 'C1  the page declares a named AI Plan client bound');
 ok(WRITE_MS > 0, 'C1a and the transport declares its write bound');
-eq([PAGE_MS, WRITE_MS], [120000, 90000], 'C2  120 000 ms against a 90 000 ms transport bound');
+// R6-R7-R4 - RE-AIMED. R6-R7-R4 gives weeklyAiPlan.generate its OWN transport bound, because a controlled
+// run took 90 002 ms and the shared 90 s write bound cut it off while the database proved nothing was
+// written. So the number the page has to clear is no longer KM_WRITE_TIMEOUT_MS_ - it is the bound the
+// transport will ACTUALLY apply to this action. The pair equality is replaced by the relation it stood for,
+// which is the thing that must hold in every later round too.
+var ACTION_MS = Number((API.match(/'weeklyAiPlan\.generate': (\d+)/) || [])[1]) || WRITE_MS;
+ok(ACTION_MS >= WRITE_MS,
+  'C2  the per-action write bound is at least the shared one - a per-action entry may only WIDEN');
+ok(PAGE_MS > ACTION_MS,
+  'C2-r  and the page bound exceeds the bound the transport will actually apply to this action');
 ok(PAGE_MS >= 120000, 'C2a at least the 120 000 ms the task asks for');
 ok(PAGE_MS > WRITE_MS,
   'C3  THE RULE, not the number: the page bound EXCEEDS the transport bound, so the transport\'s own'
@@ -380,7 +389,9 @@ settle()
   })
   .then(function () {
     eq(statusLine(), 'TIMEOUT', 'E2  at the bound it declares TIMEOUT');
-    ok(/TIMED OUT after 120s/.test(notice()), 'E2a naming the bound it actually waited');
+    // R6-R7-R4 - read from the page rather than restated, so raising the bound cannot make this stale.
+    ok(new RegExp('TIMED OUT after ' + Math.round(PAGE_MS / 1000) + 's').test(notice()),
+      'E2a naming the bound it actually waited');
     eq(genCalls.n, 1, 'E3  and it does NOT retry');
     // The safety wording the task requires: do not press again, read back first.
     ok(/DO NOT PRESS GENERATE AGAIN/.test(notice()), 'E4  the message forbids a second press in as many words');
@@ -502,17 +513,23 @@ settle()
     var sysRel = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
     var sysB = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1];
     var cen = (CENSUS.match(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/) || [])[1];
-    eq(wap, STAMP, 'I1  61_ moved, because 61_ changed');
-    eq(sysRel, STAMP, 'I2  the RELEASE moved: a backend file changed, so a new Web App version is required');
-    eq(sysB, STAMP, 'I3  63_ moved too, because its manifest row moved');
-    eq(cen, STAMP, 'I4  and the census moved, because its capture snippet changed');
+    // R6-R7-R4 - FLOORS, not equalities. THIS round moved these four; a later round moves them again, and
+    // an equality against this round's build can only hold until it does. What survives is that none of them
+    // is BEHIND the round this suite covers. The 61_-to-63_ manifest parity below stays exact, because that
+    // is the equality a mixed deployment is actually detected by.
+    ok(RO.stampAtOrAfter(wap, STAMP), 'I1  61_ moved, because 61_ changed, and is not behind this round');
+    ok(RO.stampAtOrAfter(sysRel, STAMP),
+      'I2  the RELEASE moved: a backend file changed, so a new Web App version is required');
+    ok(RO.stampAtOrAfter(sysB, STAMP), 'I3  63_ moved too, because its manifest row moved');
+    ok(RO.stampAtOrAfter(cen, STAMP), 'I4  and the census moved, because its capture snippet changed');
     // The parity a mixed deployment is actually detected by — exact, both rows.
     ok(new RegExp("symbol: 'WAP_BUILD_VERSION_', expected: '" + wap + "'").test(G63),
       'I5  63_\'s manifest expects precisely the build 61_ carries');
     ok(new RegExp("file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERSION_', expected: '" + sysB + "'").test(G63),
       'I5a including its own self-referential row');
     ok(RO.OWNER_STAMPS.indexOf(STAMP) !== -1, 'I6  this round is registered in the release order');
-    eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP, 'I6a as the newest entry');
+    ok(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
+      'I6a with nothing older registered after it');
     // 00_config did NOT change, so its row must NOT have been marched forward.
     var cfg = (G00.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
     ok(new RegExp("symbol: 'CONFIG_BUILD_VERSION_', expected: '" + cfg + "'").test(G63),
@@ -549,11 +566,14 @@ settle()
         && !/IR_AI_PLAN_CLIENT_TIMEOUT_MS_\)/.test(f);
     });
     // N2: the client bound dropped BELOW the transport bound — still 60s+, still wrong for the stated reason.
-    mut('N2 a client bound below the transport write bound', function () {
-      var m = swap(PAGE, 'var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = 120000;', 'var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = 61000;');
+    // R6-R7-R4 - the mutant reads the SHIPPED value rather than a literal, so raising the bound cannot
+    // silently disarm it, and it is measured against the bound the transport will ACTUALLY apply.
+    mut('N2 a client bound below the transport bound for this action', function () {
+      var m = swap(PAGE, 'var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = ' + PAGE_MS + ';',
+        'var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = ' + (ACTION_MS - 1000) + ';');
       var ms = Number((m.match(/var IR_AI_PLAN_CLIENT_TIMEOUT_MS_ = (\d+);/) || [])[1]);
-      // Accepts the measured answer, and STILL pre-empts the transport: the rule is the relation, not 60 990.
-      return ms > MEASURED_RESOLVE_MS && !(ms > WRITE_MS);
+      // Still accepts the 60 990 ms answer, and still pre-empts the transport: the rule is the RELATION.
+      return PAGE_MS > ACTION_MS && ms > MEASURED_RESOLVE_MS && !(ms > ACTION_MS);
     });
     // N3: `reservations` removed from the backend contract — the one genuinely missing counter. Run through
     // the REAL decision path on a mutated 61_, so this measures the envelope a browser would receive rather

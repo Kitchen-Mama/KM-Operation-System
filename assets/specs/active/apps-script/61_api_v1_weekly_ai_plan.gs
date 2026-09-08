@@ -120,6 +120,34 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
       marketplace: requestedMarketplace }, expectedBySite);
     if (!h.ok) return jsonResponse_({ success: false, errors: h.errors || [weeklyAiPlanErr_('HARVEST_FAILED', 'fact harvest failed')] });
 
+    // ==========================================================================================================
+    // R6-R7-R4 §C — THE NO_ACTION GATE, BEFORE THE MAPPER.
+    //
+    // The harvest resolves the no-action decision from the canonical row and the qualifying plan. When that
+    // decision is affirmative there is nothing for the mapper to map: no receiver was built, no allocation will
+    // be sized, and no row will be written. Running `KMWHA.mapWeeklyHarvestToBatchRequest` first only delayed
+    // the answer — and it delayed it on a request the browser was already timing.
+    //
+    // WHY IT MOVED rather than being duplicated. The old code reached NO_ACTION only from inside
+    // `if (!mapped.ready)`, so a correct finish was expressed as a special case of the mapper failing. That is
+    // the wrong shape twice over: it costs a full mapper run to reach, and it means a mapper answering
+    // `ready: true` for a zero recommendation would fall through to `weeklyAiPlanGenerateK2_` and the write
+    // path. The decision is authoritative on its own, so it is asked on its own, first.
+    //
+    // Nothing downstream was deleted. The `!mapped.ready` branch keeps its own `weeklyAiPlanK2NoAction_` call,
+    // and so do both sites inside `weeklyAiPlanGenerateK2_`: they answer shapes this gate does not reach, and a
+    // faster path is not a reason to remove a slower net.
+    // ==========================================================================================================
+    var _naFast = weeklyAiPlanK2NoAction_(h);
+    if (_naFast.noAction) {
+      return jsonResponse_(weeklyAiPlanNoActionResponse_(_naFast, {
+        planning_cycle: planningCycle,
+        scope: { company: company, country: country, marketplace: weeklyAiPlanStr_(body.currentMarketplace) },
+        mode: mode, site_count: h.site_count == null ? null : h.site_count,
+        source_data_as_of: weeklyAiPlanStr_(h.sourceDataAsOf) || null,
+        recommendation_authority: h.recommendationState || null }));
+    }
+
     // ---- MAP → (company,country) batch request (PURE, Node-verified) ---------------------------------------
     var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
       planningCycle: planningCycle,
@@ -234,7 +262,11 @@ function handleGenerateWeeklyAiPlanDraft_(body) {
 // R6-R7-R3 — moved because THIS FILE changed again: the NO_ACTION success envelope now states `reservations`
 // as an explicit 0. It was the only counter on the controlled activation's proof list that this contract did
 // not carry, so it was the only one the browser could not report as a number.
-var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
+// R6-R7-R4 - moved because THIS FILE changed again, and this time the change is a PATH not a field: a
+// valid-zero scope now returns before weeklyAiPlanBuildKmafReceivers_, KMAF.projectAllocationFacts and the
+// batch mapper instead of after all three. A deployment still answering the old 61_ spends the browser's
+// whole write budget arriving at the same answer.
+var WAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
 
 // F1-7N-FA-3C-R6F2 — K2 route-group generation (reached ONLY when INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true).
 // per-source lines (KMWRB.buildWeeklySourceLines) → route derivation + K2 partition (KMWRR, per marketplace) →
@@ -1866,6 +1898,54 @@ function weeklyAiPlanHarvest_(ss, scope, expectedBySite) {
     accepted_snapshot_date: canonical.acceptedDate || null, gap_schedule: canonical.schedule || null,
     gap_job_state: canonical.jobState || null, snapshot_distinct_dates: canonical.distinctDates || [],
     snapshot_date_normalization: canonical.dateNormalization || null };
+
+  // ==============================================================================================================
+  // R6-R7-R4 §C — THE ANSWER IS ALREADY KNOWN HERE, AND THE OLD CODE SPENT NINETY SECONDS NOT SAYING IT.
+  //
+  // MEASURED: a controlled `weeklyAiPlan.generate` for ResUS/US/Amazon/CO1100-R ran 90 002 ms and was cut off by
+  // the client's write bound with REQUEST_TIMEOUT_WRITE_INDETERMINATE. The database readback then proved the
+  // server had written nothing: 0 new rows, 0 changed fields, db_writes 0, both manual routes byte-identical
+  // across all 67 columns. So the request was not slow because it was writing. It was slow because a scope whose
+  // correct answer is "do nothing" was made to pay for the whole generation pipeline before it was allowed to
+  // say so.
+  //
+  // `_noAction` is decided six lines above, from `_recState` and `_planned`. Everything between that line and
+  // the NO_ACTION response is work the answer does not depend on:
+  //
+  //     weeklyAiPlanBuildKmafReceivers_   reads fc_regular_forecast, builds a forecast read context, and
+  //                                       loops every site resolving forecast months and share quantities
+  //     KMAF.projectAllocationFacts       the allocation projection engine, over receivers and warehouses
+  //     horizonsByDemandRef               a join-back map for allocations that will not be made
+  //     KMWHA.mapWeeklyHarvestToBatchRequest   (in the handler) the full mapper, so that `!mapped.ready`
+  //                                       could then reach the no-action branch it was hiding in
+  //
+  // The proof that none of it is needed is already in this file: `weeklyAiPlanControlledDecision_` answers the
+  // same question from `weeklyAiPlanCanonicalDemand_` + `weeklyAiPlanQualifyingPlannedQty_` and two pure
+  // functions — two sheet reads, no forecast, no KMAF, no receivers — which is why the POST_ACTIVATION preflight
+  // returns promptly while the production request did not.
+  //
+  // THIS RETURN IS NOT A NEW ANSWER. It carries exactly the fields the zero-site return directly above carries,
+  // for the same reason it carries them: a zero-demand answer must have the same lineage a full one does. The
+  // three existing NO_ACTION return sites downstream are LEFT IN PLACE — they answer shapes this one does not
+  // reach, and removing a safety net because a faster path was added is how the net stops being there.
+  //
+  // AND IT CLOSES A LATENT FALL-THROUGH. Downstream, NO_ACTION was reachable only from inside
+  // `if (!mapped.ready)`. A mapper that ever answered `ready: true` for a zero recommendation would have carried
+  // this scope into `weeklyAiPlanGenerateK2_` — the write path. The decision is authoritative; it now gates
+  // before the mapper rather than inside the mapper's failure branch.
+  // ==============================================================================================================
+  if (_noAction && _noAction.noAction === true) {
+    return { ok: true, errors: errors, site_count: sites.length,
+      no_action_short_circuit: true,
+      kmaf: { ready: true, receiverFacts: [], planningFacts: [] }, horizonsByDemandRef: {},
+      poolsBySku: weeklyAiPlanPoolsBySku_(poolFacts, scope), warehousesById: warehousesById,
+      recommendationState: _recState, qualifyingPlanned: _planned, residual: _residual, noActionDecision: _noAction,
+      sourceDataAsOf: asOf.date, sourceDataAsOfAuthority: { run_id: asOf.run_id, date: asOf.date, source: 'GAP_INV_RUN_LINEAGE' },
+      gapLineage: asOf.lineage, isolation: isolation, snapshot_freshness: canonical.freshness || null,
+      accepted_snapshot_date: canonical.acceptedDate || null, gap_schedule: canonical.schedule || null,
+      gap_job_state: canonical.jobState || null, snapshot_distinct_dates: canonical.distinctDates || [],
+      snapshot_date_normalization: canonical.dateNormalization || null };
+  }
 
   // Build ONE multi-site KMAF receiver set (FORECAST_DRIVEN; §7 forecastShareQty basis) so demandWeight normalizes
   // ONCE across the whole (company,country) universe. demandRef encodes (marketplace|sku|destination) for join-back.

@@ -301,7 +301,14 @@ ok(/method: 'GET'/.test(gapRead) && /method: 'POST'/.test(gapRead),
   'D4. and it chooses its verb explicitly — GET for an allowlisted read, POST for everything else');
 ok(/netErr && netErr\.kmTimeout/.test(gapRead), 'D4. and classifies an expiry distinctly from a network error');
 var cmd = extractFn(API, '_kmWeeklyCommand_');
-ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'write'\)/.test(cmd), 'D5. the canonical COMMAND runner is bounded');
+// R6-R7-R4 - RE-AIMED, and TIGHTENED. The command runner now passes its ACTION to the bounded fetch so
+// weeklyAiPlan.generate can carry its own write bound, which the old pattern (a literal `'write')` at the
+// end) rejected. The property is still that the runner is bounded - and it is now also that the action
+// reaches the resolver, because a bound the runner cannot select is a bound that never applies.
+ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'write'(?:, command)?\)/.test(cmd),
+  'D5. the canonical COMMAND runner is bounded');
+ok(/_kmFetchBounded_\(url, \{[\s\S]*\}, 'write', command\)/.test(cmd),
+  'D5a. and it passes the action, so a per-action bound is selectable');
 ok(/REQUEST_TIMEOUT_WRITE_INDETERMINATE|_kmTimeoutError_\(command, 'write'/.test(cmd), 'D5. as an indeterminate write');
 var bounded = extractFn(API, '_kmFetchBounded_');
 ok(/ctl\.abort\(\)/.test(bounded), 'D6. an expired request is ABORTED so the socket is released');

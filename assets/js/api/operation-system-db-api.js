@@ -3673,6 +3673,35 @@ window.KM.DB.createShippingPlansBatch = async function(payload) {
 var KM_READ_TIMEOUT_MS_ = 45000;    // a bounded scoped read
 var KM_WRITE_TIMEOUT_MS_ = 90000;   // a locked DB write; Apps Script cold start + lock wait is legitimately slow
 // ============================================================================================================
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4 §B — A PER-ACTION WRITE BOUND, because ONE action outgrew the shared one.
+//
+// MEASURED: `weeklyAiPlan.generate` for one scope ran 90 002 ms and was cut off here with
+// REQUEST_TIMEOUT_WRITE_INDETERMINATE. The database readback then proved nothing had been written — so the
+// action's legitimate execution time genuinely exceeds the shared 90 s write bound, and a bound that expires
+// before a legitimate execution finishes manufactures an indeterminate outcome out of a correct one.
+//
+// WHY NOT RAISE KM_WRITE_TIMEOUT_MS_. It is not just this file's number. `66_api_v1_request_order_send.gs`
+// pins ROS_CLIENT_WRITE_TIMEOUT_MS_ = 90000 to EQUAL it (two suites assert that equality), and derives
+// ROS_SLICE_BUDGET_MS_ = 90000 - 35000 - 12000 = 43000 from it. Raising the shared constant would silently
+// re-budget Request-Order-Send's slicing — a production behaviour change in a module this round has measured
+// nothing about, made as a side effect of fixing a different action. So the shared bound does not move, and
+// the coupling in 66_ stays exactly as it is.
+//
+// WHAT THE NUMBER IS FOR, and what it is not. 180 000 ms is not a claim that the action takes 180 s; it is a
+// bound placed between the ONE duration the evidence rules out (90 002 ms was not enough) and the platform's
+// own web-app execution ceiling, which is the real backstop — a client bound above that ceiling could never
+// fire before the server died anyway. R6-R7-R4 also removes the reason this action was slow (§C: the NO_ACTION
+// answer no longer pays for the KMAF pipeline), so the expected duration drops sharply; this bound covers the
+// genuine WRITE path, which the evidence does not bound, and it is deliberately generous there.
+//
+// RAISING A BOUND ADDS NO RETRY. A timed-out write is still ACK_UNKNOWN / INDETERMINATE and is still never
+// auto-retried; the only thing that changes is how long the browser is willing to WAIT for the one request it
+// sent. `_kmTimeoutError_` below is untouched.
+// ============================================================================================================
+var KM_ACTION_WRITE_TIMEOUT_MS_ = {
+    'weeklyAiPlan.generate': 180000
+};
+// ============================================================================================================
 // F1-7N-FB-4E §A/§C — CAPTURE THE EVIDENCE, THEN CLASSIFY. ONE PLACE.
 // ------------------------------------------------------------------------------------------------------------
 // THE DEFECT THIS CLOSES. Both shared runners answered a non-2xx with `'API HTTP ' + resp.status` and then
@@ -3843,18 +3872,30 @@ function _kmTypedTransportMessage_(action, cls) {
     if (t.code === 'TRANSPORT_NON_JSON_RESPONSE') return 'The API answered with a body that is not JSON (HTTP ' + w.httpStatus + ', ' + (w.contentType || 'unknown type') + '). Nothing was read.';
     return 'API HTTP ' + w.httpStatus;
 }
-function _kmTimeoutMs_(kind) {
+// R6-R7-R4 §B — `action` is optional and only ever WIDENS the bound. Resolution order, most specific first:
+//   1. an explicit operator override for the KIND (window.KM_REQUEST_TIMEOUT_MS) — unchanged, still wins
+//   2. this action's own bound, when it is LARGER than the shared one for its kind
+//   3. the shared bound for the kind
+// Step 2 refuses to shrink: a per-action entry below the shared bound would be a way to tighten one action's
+// timeout by editing a table far from the call site, and a tighter client bound is exactly what manufactures a
+// false indeterminate. A caller that passes no action gets the previous behaviour byte for byte.
+function _kmTimeoutMs_(kind, action) {
     try {
         var o = (typeof window !== 'undefined' && window.KM_REQUEST_TIMEOUT_MS) || null;
         if (o && typeof o === 'object' && o[kind] > 0) return Number(o[kind]);   // explicit operator override
     } catch (e) {}
-    return kind === 'write' ? KM_WRITE_TIMEOUT_MS_ : KM_READ_TIMEOUT_MS_;
+    var base = kind === 'write' ? KM_WRITE_TIMEOUT_MS_ : KM_READ_TIMEOUT_MS_;
+    if (kind === 'write' && action) {
+        var per = KM_ACTION_WRITE_TIMEOUT_MS_[String(action)];
+        if (per > 0 && per > base) return Number(per);
+    }
+    return base;
 }
 // fetch with an upper bound. Aborts the in-flight request (so the browser stops holding the socket) and throws
 // a typed error the runners classify. `AbortController` is assumed present in every supported browser; when it
 // is genuinely absent we still bound the WAIT via a rejecting race, so the caller is released either way.
-async function _kmFetchBounded_(url, init, kind) {
-    var ms = _kmTimeoutMs_(kind);
+async function _kmFetchBounded_(url, init, kind, action) {
+    var ms = _kmTimeoutMs_(kind, action);
     var timedOut = false;
     var ctl = null;
     try { ctl = (typeof AbortController === 'function') ? new AbortController() : null; } catch (e) { ctl = null; }
@@ -4500,8 +4541,9 @@ async function _kmWeeklyCommand_(command, payload) {
     try {
         // F1-7N-FB-3 §D — bounded. An expired WRITE is INDETERMINATE, never "nothing was written": the server
         // may have committed after we stopped listening, so it is reported as such and never auto-retried.
+        // R6-R7-R4 - the ACTION reaches the bound resolver, so weeklyAiPlan.generate gets its own.
         resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(Object.assign({ action: command }, payload || {})) }, 'write');
+            body: JSON.stringify(Object.assign({ action: command }, payload || {})) }, 'write', command);
     } catch (netErr) {
         if (netErr && netErr.kmTimeout) {
             var te = _kmTimeoutError_(command, 'write', netErr.timeoutMs);
@@ -4519,7 +4561,7 @@ async function _kmWeeklyCommand_(command, payload) {
             _wOut('ACK_UNKNOWN')); } catch (e) {}
         return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr),
             { command: command, elapsed_ms: Date.now() - _tw0, http_status: null, raw_present: false,
-              response_is_json: false, timeout_ms: _kmTimeoutMs_('write') });
+              response_is_json: false, timeout_ms: _kmTimeoutMs_('write', command) });
     }
     var text = '';
     try { text = await resp.text(); } catch (e) { text = ''; }
@@ -4861,7 +4903,8 @@ window.KM.DB.getAllocationDraftIdentityDiagnostic = function (payload) { return 
 // The slice budget the SERVER is expected to respect, restated for the continuation loop so the page can report
 // a nonsensical server duration instead of silently absorbing it. Kept as a derived read, never a second
 // authority: the server owns the budget and reports it back on every PARTIAL_RESUMABLE answer.
-window.KM.DB.getWriteTimeoutMs = function () { return _kmTimeoutMs_('write'); };
+// R6-R7-R4 - optional action, so a caller can ask for the bound that will actually apply to IT.
+window.KM.DB.getWriteTimeoutMs = function (action) { return _kmTimeoutMs_('write', action); };
 // Fetch the effective backend flags ONCE and apply them through the ONE KM.api apply path. On ANY transport/business
 // failure it applies the documented FAIL-SAFE defaults (flat V2 = true / FLAT_V2, site confirm = true, inventory
 // generation = false) so the posture is deterministic and never silently selects legacy against the 53-col table.

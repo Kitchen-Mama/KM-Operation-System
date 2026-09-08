@@ -69,7 +69,8 @@
 // at A2-R1, so a log could not be matched to the code that produced it. It moves with the file now.
 // R6-R7-R3 — moves again: the capture snippet was reading the mutation counters out of a nested sub-object
 // the response contract does not have, so it recorded seven measured zeros as nulls.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
+// R6-R7-R4 - moves with the file: the census now records the NO_ACTION short-circuit.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7467,7 +7468,12 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // asserts this pin against 63_'s SYS_DEPLOYMENT_RELEASE_ in the repository, which is a source-level check and
 // NOT a runtime self-comparison: it makes the pin unable to lag a release, while leaving it unable to adopt
 // whatever a deployment happens to claim.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3';
+// R6-R7-R4 - MOVED, AND THE EVIDENCE GENUINELY DOES NOT TRANSFER THIS TIME. R6-R7-R3 changed a response
+// FIELD; R6-R7-R4 changes the PATH that produces the answer - a valid-zero scope now returns before the
+// KMAF pipeline instead of after it. The R3 activation's preflight timings were taken on a system that no
+// longer exists, so the preflight and the manifest must be re-run on the R4 deployment. The frozen ROW
+// baseline is unaffected: rows are rows, and none of them moved.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the
