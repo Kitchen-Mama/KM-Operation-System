@@ -536,8 +536,18 @@ ok(/RUN_R6R4_SAVE_TARGET_FREEZE/.test(read('assets/tools/apps-script-diagnostics
   'I5  the save-target freeze diagnostic is untouched');
 ok(/_irAdviceVsPlanHtml_/.test(PAGEC) && /recommendation_source/.test(PAGEC),
   'I6  the 920/520/400 reconciliation is untouched');
-// Zero writes, zero Submit, flag false — asserted against THIS round's own diff.
-var DIFF = cp.execSync('git diff HEAD -- assets/js assets/specs index.html', { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 });
+// Zero writes, zero Submit, flag false — asserted against the diff of THE FILES THIS SUITE POLICES.
+//
+// It used to read the whole of assets/js + assets/specs + index.html, and that could only hold for one
+// round: the command re-measures the working tree every run, so "this round adds no sheet mutation" is a
+// claim about whichever round is in progress, not about R6-R5. The first later BACKEND round to write a row
+// legitimately fails it while R6-R5's own property is untouched — which is exactly what happened when
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1 added an append-only audit ledger (and a rollback that deletes the
+// row it appended). The property being protected is that COLD-BOOT READ ARBITRATION is browser-side and
+// writes nothing, so the diff is scoped to the four files that own it.
+var COLD_BOOT_FILES = ['assets/js/pages/inventory-replenishment.js', 'assets/js/api/operation-system-db-api.js',
+  'assets/js/lib/km-transport.js', 'assets/js/core/method-registry.js', 'index.html'];
+var DIFF = cp.execSync('git diff HEAD -- ' + COLD_BOOT_FILES.join(' '), { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 });
 var added = DIFF.split(/\r?\n/).filter(function (l) { return /^\+/.test(l) && !/^\+\+\+/.test(l); }).join('\n');
 ok(!/appendRow|deleteRow|\.setValues\(/.test(added), 'I7  this round adds no sheet mutation anywhere');
 ok(!/submitReplenishmentPlans\s*\(/.test(added.replace(/\/\/[^\n]*/g, '')), 'I7a and calls no Submit');

@@ -38,7 +38,19 @@ function mut(label, f) {
 
 var ROOT = path.join(__dirname, '..', '..');
 var GS_DIR = path.join(ROOT, 'assets/specs/active/apps-script');
-function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+// LF-NORMALISED AT THE BOUNDARY, and this is a repair rather than a preference.
+//
+// `core.autocrlf=true` here: the committed blobs are LF and a fresh checkout is CRLF, while a file that has
+// been rewritten in place by a tool can stay LF in the working tree — and `git diff` shows nothing either
+// way, because both normalise to the same blob. Every multi-line mutation anchor in this file was written
+// with an escaped newline, so whether a probe found its target depended on how the local
+// copy happened to be written.
+//
+// That is not a cosmetic problem. A mutation whose target is absent CHANGES NOTHING, so the probe either
+// throws (which is what happened: L16 and N13 reported PROBE ERROR on a fresh checkout) or, worse, silently
+// 'passes' an assertion that was never challenged. Normalising once, here, makes the probes mean the same
+// thing on every machine.
+function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n'); }
 function code(src) { return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 '); }
 var NL = String.fromCharCode(10);
 

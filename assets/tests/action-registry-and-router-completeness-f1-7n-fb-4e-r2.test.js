@@ -638,6 +638,14 @@ ok(_r2g11.indexOf('allocation_draft_id') === -1 ||
 // 17_carrier_handlers.gs (the frozen Weekly Shipping Plan carrier-comparison boundary), so it joins the owned
 // set WITH THE REASON it was touched, exactly as 69_ did above. An unexpected file still fails.
 GS_OWNED_SINCE_R1['17_carrier_handlers.gs'] = 'FC-1B-E3-R4-A2-R1-R5 freezes the Weekly Shipping Plan carrier-comparison boundary so carrier selection cannot drift back into the AI Plan';
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1 — 71_ joins the owned set, and the reason is the one this list exists
+// to record. R5 shipped the guard seam describing its override-audit ledger as "created additively on first
+// write"; the helper it named is prodRequireSheet_, which THROWS on an absent sheet, and the throw was
+// absorbed into `auditRows = -1` while the transition continued — a plan reaching Pending Approval with an
+// accepted overage that no record justified. R5-R1 makes the ledger a REQUIREMENT with a named refusal and
+// makes the whole transition one journalled, read-back-verified transaction. An unexpected file still fails.
+GS_OWNED_SINCE_R1['71_api_v1_factory_stock_guard.gs'] = 'FC-1B-E3-R4-A2-R1-R6-R7-R5-R1 the override-audit ledger is required rather than lazily created, plus the verified journal rollback the plan transition unwinds through';
+gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

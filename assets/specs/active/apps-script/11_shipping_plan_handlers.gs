@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -1015,7 +1015,30 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
 
   var curStatus = col('status') !== -1 ? String(rowVals[col('status')]).trim() : '';
   var now = shippingPlanTimestamp_();
-  function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
+  // ============================================================================================================
+  // R6-R7-R5-R1 §B — EVERY CELL THIS FUNCTION WRITES IS JOURNALLED, SO IT CAN BE PUT BACK.
+  //
+  // "The recheck and the write are in the same ScriptLock" is an ISOLATION property. It says no other writer
+  // interleaves. It says nothing whatsoever about what is left behind when the third write of five throws, and
+  // R5 left something behind: the status cell moved, the audit append threw SCHEMA_NOT_PROVISIONED, the throw
+  // was swallowed into `auditRows = -1`, and the plan sat in Pending Approval with an accepted overage that no
+  // record justified. A lock cannot fix that. Only a journal can.
+  //
+  // The journal entry shape is `{ kind, sheet, row, col, prev }` — the SAME entries factoryStockRollbackJournal_
+  // (21_) already replays for 12_ and 13_, so a plan transition unwinds through the vocabulary this codebase
+  // already has rather than a second one invented here. The replay is fsgRollbackVerified_, which additionally
+  // READS EVERY CELL BACK: 21_'s replay swallows its own errors, which is honest only when the caller reports
+  // failure regardless, and this caller has to distinguish 'rolled back' from 'could not be rolled back'.
+  //
+  // A repeated setCell on the same column is safe. Replay runs newest-first, so the OLDEST recorded prev is
+  // written last and the cell ends up with the value it had before this function ran.
+  // ============================================================================================================
+  var spTxn = [];
+  function setCell(name, value) {
+    var c = col(name); if (c === -1) return;
+    spTxn.push({ kind: 'cell', sheet: sheet, row: targetRow, col: c, prev: rowVals[c] });
+    sheet.getRange(targetRow, c + 1).setValue(value);
+  }
 
   // Combined-Plan guard: a CHILD (parent_shipping_plan_id points at a Combined Parent) can NOT be submitted /
   // approved / cancelled independently — the Combined Parent owns those actions (§七). transfer is likewise
@@ -1058,107 +1081,168 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
     if (!fsgGate.proceed) return fsgGate.response;
   }
 
-  if (transition === 'submit') {
-    if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft plan can be submitted (current: ' + curStatus + ')' });
-    // Resubmit after a prior rejection bumps the decision revision and clears the rejection marker.
-    var wasRejected = col('rejected_at') !== -1 && String(rowVals[col('rejected_at')]).trim() !== '';
-    if (wasRejected) {
-      var curVer = col('plan_version') !== -1 ? (parseFloat(rowVals[col('plan_version')]) || 1) : 1;
-      setCell('plan_version', curVer + 1);
-      setCell('rejected_by', ''); setCell('rejected_at', ''); setCell('rejected_reason', '');
-    }
-    setCell('status', 'pending_approval');
-    setCell('submitted_by', submittedBy);
-    setCell('submitted_at', now);
-  } else if (transition === 'approve') {
-    // F1-7N-FC-1A §D.6 A SECOND APPROVE CLICK IS AN IDEMPOTENT READBACK, NOT A FAILURE.
-    //
-    // An already-approved plan previously answered "Only a Pending Approval plan can be approved (current:
-    // approved)", which reads to the operator as though the approval did not happen. The dangerous version of
-    // that confusion is the one this round exists to fix: approval committed, shipment creation failed, and the
-    // operator clicks Approve again looking for the missing shipment. The truthful answer is the CURRENT state
-    // computed from the authoritative rows, so a re-click can never duplicate the approval and can never
-    // duplicate the shipment either. Nothing is written on this path.
-    if (curStatus === 'approved') {
-      var existingShipmentId = (typeof shipmentFindForPlan_ === 'function') ? shipmentFindForPlan_(ss, planId) : '';
-      return jsonResponse_({
-        success: true,
-        data: {
-          shipping_plan_id: planId, transition: 'approve', already_approved: true, approval_committed: true,
-          shipment: existingShipmentId ? { created: false, reason: 'already_exists', shipment_id: existingShipmentId } : null,
-          execution_commit: existingShipmentId ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING',
-          recovery: existingShipmentId ? null : spApprovalRecoveryState_(planId, null),
-          note: 'This plan was already approved. Nothing was written; the state above is the current truth.'
-        }
-      });
-    }
-    if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be approved (current: ' + curStatus + ')' });
-    setCell('status', 'approved');
-    setCell('approved_by', approvedBy);
-    setCell('approved_at', now);
-  } else if (transition === 'reject') {
-    if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be rejected (current: ' + curStatus + ')' });
-    var verForNote = col('plan_version') !== -1 ? (parseFloat(rowVals[col('plan_version')]) || 1) : 1;
-    setCell('rejected_by', rejectedBy);
-    setCell('rejected_at', now);
-    setCell('rejected_reason', reason);
-    // Append the reason to the note history (preserve existing notes).
-    if (col('note') !== -1) {
-      var existingNote = String(rowVals[col('note')] || '').trim();
-      var appended = '[REJECTED v' + verForNote + ' @' + now + '] ' + reason;
-      setCell('note', existingNote ? (existingNote + '\n' + appended) : appended);
-    }
-    setCell('status', 'draft'); // returns to Draft (editable again); resubmit will bump plan_version
-  } else if (transition === 'cancel') {
-    // SOFT cancel: allowed from Draft or Pending Approval; row + lines are NEVER deleted.
-    if (curStatus !== 'draft' && curStatus !== 'pending_approval') {
-      return jsonResponse_({ success: false, error: 'Only a Draft or Pending Approval plan can be cancelled (current: ' + curStatus + ')' });
-    }
-    setCell('status', 'cancelled');
-    setCell('cancelled_by', cancelledBy);
-    setCell('cancelled_at', now);
-  }
-
-  setCell('updated_by', updatedBy);
-  setCell('updated_at', now);
-
-  // R6-R7-R5 §4.6 — THE OVERRIDE AUDIT, in the same lock as the status it justifies.
+  // ============================================================================================================
+  // R6-R7-R5-R1 §B — THE TRANSACTION BOUNDARY.
   //
-  // Written only when an overage was actually CONFIRMED: `fsgGate.audit` is present only on that path, so a plan
-  // that simply fitted can never acquire `inventory_override = true`. Two records, deliberately: the append-only
-  // ledger is the audit, and the one line on the plan's own note is what makes it findable by someone who does
-  // not know the ledger exists.
+  // Everything from the first status cell to the verified audit read-back is ONE unit. If any part of it
+  // throws — a status cell, the note, the ledger append, or the read-back that proves they landed — the
+  // journal is replayed and VERIFIED, and the caller is told which of the two things happened:
+  //
+  //   rollback verified      -> OVERRIDE_COMMIT_FAILED_ROLLED_BACK, zero_write: true. Nothing changed.
+  //   rollback NOT verified  -> OVERRIDE_COMMIT_INDETERMINATE, zero_write: false, indeterminate: true, and
+  //                             the exact cells it could not restore. This is deliberately NOT reported as a
+  //                             failure with nothing written, because that would be a claim nobody checked.
+  //
+  // The Shipment Draft creation is OUTSIDE this boundary and stays outside it. That is a frozen decision (§D):
+  // an approval is committed and KEPT even when the shipment cannot be built, and the typed recovery answer
+  // below is how that is reported. Rolling an approval back because a downstream draft failed would undo a
+  // human decision on account of a machine one.
+  // ============================================================================================================
+  var spExpectedStatus = transition === 'submit' ? 'pending_approval'
+    : (transition === 'approve' ? 'approved' : (transition === 'reject' ? 'draft' : 'cancelled'));
   var overrideAudit = null;
-  if (fsgGate && fsgGate.audit) {
-    var auditRows = 0;
-    try {
-      auditRows = fsgAppendOverrideAudit_(ss, 'shipping_plan', planId, transition,
+  try {
+    if (transition === 'submit') {
+      if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft plan can be submitted (current: ' + curStatus + ')' });
+      // Resubmit after a prior rejection bumps the decision revision and clears the rejection marker.
+      var wasRejected = col('rejected_at') !== -1 && String(rowVals[col('rejected_at')]).trim() !== '';
+      if (wasRejected) {
+        var curVer = col('plan_version') !== -1 ? (parseFloat(rowVals[col('plan_version')]) || 1) : 1;
+        setCell('plan_version', curVer + 1);
+        setCell('rejected_by', ''); setCell('rejected_at', ''); setCell('rejected_reason', '');
+      }
+      setCell('status', 'pending_approval');
+      setCell('submitted_by', submittedBy);
+      setCell('submitted_at', now);
+    } else if (transition === 'approve') {
+      // F1-7N-FC-1A §D.6 A SECOND APPROVE CLICK IS AN IDEMPOTENT READBACK, NOT A FAILURE.
+      //
+      // An already-approved plan previously answered "Only a Pending Approval plan can be approved (current:
+      // approved)", which reads to the operator as though the approval did not happen. The dangerous version of
+      // that confusion is the one this round exists to fix: approval committed, shipment creation failed, and the
+      // operator clicks Approve again looking for the missing shipment. The truthful answer is the CURRENT state
+      // computed from the authoritative rows, so a re-click can never duplicate the approval and can never
+      // duplicate the shipment either. Nothing is written on this path.
+      if (curStatus === 'approved') {
+        var existingShipmentId = (typeof shipmentFindForPlan_ === 'function') ? shipmentFindForPlan_(ss, planId) : '';
+        return jsonResponse_({
+          success: true,
+          data: {
+            shipping_plan_id: planId, transition: 'approve', already_approved: true, approval_committed: true,
+            shipment: existingShipmentId ? { created: false, reason: 'already_exists', shipment_id: existingShipmentId } : null,
+            execution_commit: existingShipmentId ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING',
+            recovery: existingShipmentId ? null : spApprovalRecoveryState_(planId, null),
+            note: 'This plan was already approved. Nothing was written; the state above is the current truth.'
+          }
+        });
+      }
+      if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be approved (current: ' + curStatus + ')' });
+      setCell('status', 'approved');
+      setCell('approved_by', approvedBy);
+      setCell('approved_at', now);
+    } else if (transition === 'reject') {
+      if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be rejected (current: ' + curStatus + ')' });
+      var verForNote = col('plan_version') !== -1 ? (parseFloat(rowVals[col('plan_version')]) || 1) : 1;
+      setCell('rejected_by', rejectedBy);
+      setCell('rejected_at', now);
+      setCell('rejected_reason', reason);
+      // Append the reason to the note history (preserve existing notes).
+      if (col('note') !== -1) {
+        var existingNote = String(rowVals[col('note')] || '').trim();
+        var appended = '[REJECTED v' + verForNote + ' @' + now + '] ' + reason;
+        setCell('note', existingNote ? (existingNote + '\n' + appended) : appended);
+      }
+      setCell('status', 'draft'); // returns to Draft (editable again); resubmit will bump plan_version
+    } else if (transition === 'cancel') {
+      // SOFT cancel: allowed from Draft or Pending Approval; row + lines are NEVER deleted.
+      if (curStatus !== 'draft' && curStatus !== 'pending_approval') {
+        return jsonResponse_({ success: false, error: 'Only a Draft or Pending Approval plan can be cancelled (current: ' + curStatus + ')' });
+      }
+      setCell('status', 'cancelled');
+      setCell('cancelled_by', cancelledBy);
+      setCell('cancelled_at', now);
+    }
+
+    setCell('updated_by', updatedBy);
+    setCell('updated_at', now);
+
+    // R6-R7-R5-R1 §4.6/§B — THE OVERRIDE AUDIT, IN THE SAME TRANSACTION AS THE STATUS IT JUSTIFIES.
+    //
+    // Not merely "in the same lock": in the same JOURNAL. The append is handed spTxn, so its rows are entries
+    // that a rollback deletes, and its failure is a THROW that reaches the catch below instead of a -1 nobody
+    // acts on. The append is also idempotent by row identity, so a replayed confirmation cannot double-write.
+    //
+    // Two records, deliberately: the append-only ledger is the audit, and the one line on the plan's own note is
+    // what makes it findable by someone who does not know the ledger exists. Both are journalled.
+    if (fsgGate && fsgGate.audit) {
+      if (typeof fsgAppendOverrideAudit_ !== 'function' || typeof fsgRollbackVerified_ !== 'function') {
+        throw new Error('FACTORY_STOCK_GUARD_SEAM_MISSING — the override audit writer is not present');
+      }
+      var ap = fsgAppendOverrideAudit_(ss, 'shipping_plan', planId, transition,
         { company: col('company') !== -1 ? rowVals[col('company')] : '',
           country: col('country') !== -1 ? rowVals[col('country')] : '',
           marketplace: col('marketplace') !== -1 ? rowVals[col('marketplace')] : '' },
         fsgGate.audit,
         { confirmation_token: (fsgGate.confirmation && fsgGate.confirmation.evaluation)
-            ? fsgGate.confirmation.evaluation.confirmation_token : '' });
-    } catch (eAu) { auditRows = -1; }
-    if (col('note') !== -1) {
-      var noteLine = fsgOverrideNoteLine_(fsgGate.audit);
-      if (noteLine) {
-        var prevNote = String(rowVals[col('note')] || '').trim();
-        var stamped = '[' + noteLine + ' @' + now + ']';
-        setCell('note', prevNote ? (prevNote + '\n' + stamped) : stamped);
+            ? fsgGate.confirmation.evaluation.confirmation_token : '',
+          journal: spTxn });
+      // A refusal is NOT absorbed. The gate already required the ledger before it honoured the confirmation, so
+      // reaching here with !ok means the schema moved under the lock — and that is a failed transaction, not a
+      // transition with a missing footnote.
+      if (!ap.ok) throw new Error(String(ap.code || 'OVERRIDE_AUDIT_APPEND_REFUSED'));
+      if (col('note') !== -1) {
+        var noteLine = fsgOverrideNoteLine_(fsgGate.audit);
+        if (noteLine) {
+          var prevNote = String(rowVals[col('note')] || '').trim();
+          var stamped = '[' + noteLine + ' @' + now + ']';
+          setCell('note', prevNote ? (prevNote + '\n' + stamped) : stamped);
+        }
       }
+      // ---- READ IT BACK. A write the API accepted and the sheet does not carry is the failure mode a writer
+      // that only watches for exceptions cannot see, and it is the one this project has met more than once.
+      var vr = fsgVerifyOverrideCommit_(ss, sheet, targetRow, col('status') + 1, spExpectedStatus,
+        planId, transition, fsgGate.audit);
+      if (!vr.ok) throw new Error('OVERRIDE_COMMIT_READBACK_FAILED:' + String(vr.code || '') + ' '
+        + JSON.stringify({ status_read_back: vr.status_read_back, missing_rows: vr.missing_rows }));
+      overrideAudit = { inventory_override: true,
+        audit_rows_appended: ap.appended, audit_rows_already_present: ap.skipped_existing,
+        audit_rows_expected: ap.expected,
+        override_reason: fsgGate.audit.override_reason, override_by: fsgGate.audit.override_by,
+        override_at: fsgGate.audit.override_at, total_overage_qty: fsgGate.audit.total_overage_qty,
+        inventory_snapshot_fingerprint: fsgGate.audit.inventory_snapshot_fingerprint,
+        pools: fsgGate.audit.pools,
+        // No longer a guess and no longer -1: the rows were SEARCHED FOR by their own identity after the write.
+        audit_persisted: true, audit_readback_verified: true,
+        transaction: { journal_entries: spTxn.length, rolled_back: false } };
     }
-    overrideAudit = { inventory_override: true, audit_rows_appended: auditRows,
-      override_reason: fsgGate.audit.override_reason, override_by: fsgGate.audit.override_by,
-      override_at: fsgGate.audit.override_at, total_overage_qty: fsgGate.audit.total_overage_qty,
-      inventory_snapshot_fingerprint: fsgGate.audit.inventory_snapshot_fingerprint,
-      pools: fsgGate.audit.pools,
-      // -1 means the ledger could not be appended. The override is REPORTED as unrecorded rather than
-      // silently presented as audited; the plan moved, and an operator must be able to see that the trail
-      // did not.
-      audit_persisted: auditRows > 0 };
+  } catch (eTxn) {
+    // ONE unwind path for every participant. `fsgRollbackVerified_` restores each journalled cell, deletes each
+    // appended row, and then READS EVERY ONE OF THEM BACK; `unverified` is what it could not prove.
+    var spRb = (typeof fsgRollbackVerified_ === 'function')
+      ? fsgRollbackVerified_(spTxn)
+      : { ok: false, entries: spTxn.length, restored: 0, deleted: 0,
+          unverified: [{ error: 'ROLLBACK_UNAVAILABLE — 71_api_v1_factory_stock_guard.gs is not deployed' }] };
+    var spCause = String((eTxn && eTxn.message) ? eTxn.message : eTxn);
+    if (spRb.ok) {
+      return jsonResponse_({ success: false, zero_write: true, stage: 'transition_transaction',
+        code: 'OVERRIDE_COMMIT_FAILED_ROLLED_BACK',
+        error: 'OVERRIDE_COMMIT_FAILED_ROLLED_BACK — the transition could not be completed and every write it '
+          + 'had made was put back and verified. The plan is exactly as it was. Cause: ' + spCause,
+        data: { shipping_plan_id: planId, transition: transition, cause: spCause, rollback: spRb,
+          status_unchanged: curStatus, retry_safe: true } });
+    }
+    // INDETERMINATE. Not a success, and not a clean refusal either — saying zero_write here would be exactly
+    // the false claim this round was opened to remove.
+    return jsonResponse_({ success: false, zero_write: false, indeterminate: true,
+      stage: 'transition_transaction', code: 'OVERRIDE_COMMIT_INDETERMINATE_ROLLBACK_UNVERIFIED',
+      error: 'OVERRIDE_COMMIT_INDETERMINATE_ROLLBACK_UNVERIFIED — the transition failed AND the rollback could '
+        + 'not be verified. The plan may carry part of a transition. Do NOT retry blindly: read the plan and '
+        + 'the override audit ledger, then decide. Cause: ' + spCause,
+      data: { shipping_plan_id: planId, transition: transition, cause: spCause, rollback: spRb,
+        unverified: spRb.unverified, status_before: curStatus, retry_safe: false,
+        next_action: 'Inspect shipping_plans.' + planId + ' and factory_stock_override_audit for entity_id '
+          + planId + ' before any further action.' } });
   }
-
   // EXECUTION COMMIT: approving a plan creates its Shipment Draft (shipments + shipment_lines),
   // copying the Decision Snapshot into the Execution Snapshot (SHIPMENT_CENTER_SPEC §15 step 10;
   // ARCHITECTURE §3A/§4A). Idempotent. A failure here does NOT roll back the approval — the
@@ -1205,7 +1289,10 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
         ? (fsgGate.overage.inventory_snapshot_fingerprint || null) : null,
       recheck: (fsgGate && fsgGate.recheck) ? { snapshot_unchanged: fsgGate.recheck.snapshot_unchanged,
         silent: fsgGate.recheck.silent, code: fsgGate.recheck.code } : null,
-      override: overrideAudit
+      override: overrideAudit,
+      // §B — the transaction that carried this transition, stated on every guarded success.
+      transaction: { journalled: true, rolled_back: false,
+        readback_verified: !!(overrideAudit && overrideAudit.audit_readback_verified) }
     } : null
   } });
 }

@@ -93,13 +93,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // R6-R7-R4 - THE RELEASE MOVES AGAIN: 61_ changed, so a new Web App deployment version is required. A
 // deployment still on R3 answers NO_ACTION only after the full KMAF pipeline, which is the 90-second
 // request this round exists to end.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
 // R6-R7-R3 — moved because 61_'s manifest row moved with 61_ itself, which is a change to THIS FILE.
 // R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -311,7 +311,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -329,7 +329,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
   // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than
   // running it unguarded — but only a deployment that can be ASKED which files it has can tell an operator why.
-  { file: '71_api_v1_factory_stock_guard.gs', symbol: 'FSG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate and the append-only override audit' },
+  { file: '71_api_v1_factory_stock_guard.gs', symbol: 'FSG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', owns: 'the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate, the REQUIRED (never lazily created) override audit ledger, and the journalled verified rollback the plan transition unwinds through' },
   { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
   // F1-7N-FB-4E-R2: 68_ changed because its duplicate diagnostic became REACHABLE for the first time and
   // needed a scope guard on the routed path. A deployment carrying the R2 router but a FB-4D copy of 68_ would
@@ -354,7 +354,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // R6-R7-R5 §4 — 11_ now also owns the shared factory stock overage gate on submit/approve. A project running
   // the previous copy of it routes the same action, accepts the same payload and applies NO guard, so this row
   // is the only thing that can tell an operator why a plan that should have been challenged went through.
-  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer + the shared factory stock overage gate on submit/approve and the approval recheck' },
+  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer + the shared factory stock overage gate on submit/approve, the approval recheck, and the one journalled transaction the status cells / note / override audit are committed and rolled back as' },
   // F1-7N-FC-1A §J — THE FOUR OWNERS OF THE RESERVATION MODEL. Each answers every one of its actions
   // when a round behind, so no resolvable action list and no handler probe can see a partial sync of them.
   // What each one does differently is the point:
@@ -398,6 +398,19 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // deployment made "remove the TEMP file" break the deployment contract — the same shape that took the
   // Execution Plan down through the diagnostics file. Absent is fine; PRESENT-BUT-STALE is still a fault.
   { file: 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', symbol: 'TEMP_AIMIG_BUILD_VERSION_', expected: 'F1-7N-FB-4C-ADDENDUM-MIGRATION', owns: 'AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)', optional: true },
+  // R6-R7-R5-R1 §A — THE OVERRIDE-AUDIT PROVISIONING TOOL IS DELIBERATELY *NOT* IN THIS MANIFEST.
+  //
+  // I put a row here first, reasoning from the row above. That analogy was wrong, and three suites said so
+  // in one step: every manifest reader resolves `assets/specs/active/apps-script/<file>` and only that,
+  // because this manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME. The lifecycle migration above
+  // has a row because it lives in that folder — the precedent is the folder, not being a migration.
+  //
+  // The override-audit provisioning tool lives in assets/tools/apps-script-migrations/, beside the allocation
+  // two-column append migration — which has no row either, and whose own suite asserts that its filename
+  // appears NOWHERE in this manifest. (That is why the sibling is described here and not named: the rule is
+  // tested as a substring, and it is right to be.) Discovery is handled where an operator actually meets the
+  // problem instead: the runtime's FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING refusal carries the file name
+  // and both functions to run, so whoever hits the wall is told the way through it.
 ];
 
 function sysGlobalValue_(name) {

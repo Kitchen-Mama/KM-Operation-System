@@ -85,7 +85,11 @@ var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
 // R6-R7-R4 - the observed build moves to R4, because 61_ changed and the release moved with it. This
 // literal is what a healthy production deployment reports; BP3 holds it against the census pin and 63_'s
 // release, and all three are independent - which is how the R3 drift was caught in the first place.
-var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+// R6-R7-R5-R1 — and it moves again, for the same reason: 71_ and 11_ changed, the release moved with them,
+// and the census pin followed. This literal is a DOUBLE of what a healthy deployment REPORTS, not a record
+// of what production currently serves — production is still on the previous release until the user syncs
+// and publishes, and the activation evidence must be RE-RUN there rather than restamped here.
+var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
 var ACTIVATION_PIN = (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] || null;
 
 // The deployment contract is 63_'s to report and 63_ is not in this world. A DOUBLE stands in for it, and it
@@ -385,7 +389,7 @@ eq((CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '[^']+';/g) || []).length, 1,
 eq((CENSUS.match(/R6R7_ACTIVATION_BUILD_/g) || []).length, 3,
   'BP1a and it is referenced exactly twice besides its declaration: the expected value and the comparison');
 ok(ACTIVATION_PIN !== null, 'BP2  the pin is readable from the census');
-eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', 'BP2a and it is this round: R6-R7-R5');
+eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', 'BP2a and it is this round: R6-R7-R5-R1');
 eq(ACTIVATION_PIN, RELEASE_P3,
   'BP3  the pin equals 63_\'s SYS_DEPLOYMENT_RELEASE_ — a pin that lags a release refuses a healthy deployment');
 eq(ACTIVATION_PIN, CENSUS_STAMP_P3,
@@ -907,8 +911,8 @@ mut('N12 the manifest proof dropping the frozen fingerprints', function () {
 // R6-R7-R3-P3 — THE REGRESSION THAT ACTUALLY HAPPENED, as a mutant. The pin left behind at R2 while the
 // release moved to R3: the live manifest STOPs on a healthy deployment, and the old suite saw nothing.
 mut('N13 the activation build pin left behind a release while the release moved on', function () {
-  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';",
-    "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';");
+  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';",
+    "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';");
   var stalePin = (m.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1];
   var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST');
   // Caught three ways, and all three have to hold — the source parity, the live verdict, and the named

@@ -34,13 +34,29 @@
 // ============================================================
 
 // The build stamp of THIS module. Moves only when this file changes (per-module stamp, not the release).
-var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
 
-// The append-only override audit ledger. NEW, code-owned, created on first write by the SAME additive
-// `fcWriteEnsureSheet_` pattern that created `factory_stock_movements` (21_) — no live header is modified, no
-// existing table is migrated, and nothing is ever renamed or dropped. §8 of this round forbids running a
-// production migration, and this needs none: an absent table is created the first time an override is actually
-// accepted, and until then nothing has been overridden so there is nothing to record.
+// ==============================================================================================================
+// THE APPEND-ONLY OVERRIDE AUDIT LEDGER — PROVISIONED BY MIGRATION, NEVER BY THE RUNTIME.
+//
+// R5 described this table as "created additively by fcWriteEnsureSheet_ the first time an override is actually
+// accepted". That sentence was wrong in BOTH of its halves, and the second half is the one that mattered.
+//
+//   1. `fcWriteEnsureSheet_` DOES NOT CREATE ANYTHING. It is `prodRequireSheet_` (29_), which THROWS
+//      SCHEMA_NOT_PROVISIONED on an absent sheet — Production Safety RULE S0-3 moved creation out of the
+//      runtime and behind an authorized migration DTO, and a suite already asserts that no ensure-helper
+//      contains insertSheet. So no lazy create was ever going to happen.
+//   2. WHAT ACTUALLY HAPPENED WAS WORSE THAN A LAZY CREATE. The throw landed in the caller's try/catch, which
+//      recorded `auditRows = -1` and CARRIED ON: the plan moved to Pending Approval with an accepted overage
+//      and no audit row anywhere. An override whose justification was never written is exactly the thing the
+//      ledger exists to make impossible.
+//
+// So the runtime now REQUIRES the table, with all 25 columns in order, BEFORE it accepts a confirmation — and
+// refuses the transition with FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING and zero writes when it cannot be
+// satisfied. The first real submit of an operator's week must not also be a schema migration. Provisioning is
+// TEMP_migrate_factory_stock_override_audit_r5.gs, which is DRY RUN by default and writes only under an
+// explicit execute + reviewed checksum.
+// ==============================================================================================================
 var FSG_OVERRIDE_AUDIT_TABLE_ = 'factory_stock_override_audit';
 var FSG_OVERRIDE_AUDIT_HEADERS_ = [
   'override_audit_id', 'created_at', 'entity_type', 'entity_id', 'transition',
@@ -51,6 +67,9 @@ var FSG_OVERRIDE_AUDIT_HEADERS_ = [
   'available_qty_at_check', 'already_allocated_qty', 'requested_plan_qty', 'projected_total_qty', 'overage_qty',
   'inventory_snapshot_fingerprint', 'confirmation_token', 'guard_contract'
 ];
+
+// The one refusal code a runtime that cannot RECORD an override must give instead of recording nothing.
+var FSG_AUDIT_SCHEMA_REFUSAL_ = 'FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING';
 
 function fsgStr_(v) { return String(v == null ? '' : v).trim(); }
 function fsgNum_(v) { var n = Number(v); return isFinite(n) ? n : null; }
@@ -406,7 +425,27 @@ function fsgGatePlanTransition_(ss, planId, transition, plan, body) {
     return { proceed: false, response: jsonResponse_({ success: false, zero_write: true,
       error: fsgStr_(res.code), code: fsgStr_(res.code), stage: 'inventory_guard', data: res }) };
   }
-  return { proceed: true, overage: ev, audit: res.audit, confirmation: res };
+  // ============================================================================================================
+  // THE LEDGER IS REQUIRED BEFORE THE CONFIRMATION IS HONOURED, NOT AFTER.
+  //
+  // This check is here and not next to the append for one reason: at this point NOTHING has been written, so
+  // a missing ledger is a clean refusal with the plan still in Draft. Discovering it after the status cell has
+  // moved leaves a plan in Pending Approval carrying an accepted overage that no record justifies — which is
+  // what R5 actually did, because the throw was swallowed into `auditRows = -1` and the transition continued.
+  // ============================================================================================================
+  var auditReq = fsgRequireOverrideAuditSheet_(ss);
+  if (!auditReq.ok) {
+    return { proceed: false, response: jsonResponse_({ success: false, zero_write: true,
+      error: FSG_AUDIT_SCHEMA_REFUSAL_ + ' — an overage was confirmed, but the append-only override audit '
+        + 'ledger `' + FSG_OVERRIDE_AUDIT_TABLE_ + '` is ' + fsgStr_(auditReq.reason).toLowerCase().split('_').join(' ')
+        + '. The transition is refused with zero writes: an override that cannot be recorded must not be '
+        + 'granted. Provision the table with TEMP_migrate_factory_stock_override_audit_r5.gs (DRY RUN first).',
+      code: FSG_AUDIT_SCHEMA_REFUSAL_, stage: 'inventory_guard',
+      data: { shipping_plan_id: planId, transition: transition, schema: auditReq,
+        overage_confirmed_but_unrecordable: true,
+        next_action: 'Run TEMP_FSOA_R5_MIGRATE_DRY_RUN(), review, then TEMP_FSOA_R5_MIGRATE_COMMIT().' } }) };
+  }
+  return { proceed: true, overage: ev, audit: res.audit, confirmation: res, audit_schema: auditReq.reason };
 }
 
 /**
@@ -416,23 +455,161 @@ function fsgGatePlanTransition_(ss, planId, transition, plan, body) {
  * Called by the caller INSIDE the same lock, immediately after the status cells are written, so the two cannot
  * be separated by another writer. Returns the number of audit rows appended.
  */
+function fsgRequireOverrideAuditSheet_(ss) {
+  var out = { ok: false, code: FSG_AUDIT_SCHEMA_REFUSAL_, table: FSG_OVERRIDE_AUDIT_TABLE_,
+    expected_headers: FSG_OVERRIDE_AUDIT_HEADERS_.slice(), expected_column_count: FSG_OVERRIDE_AUDIT_HEADERS_.length,
+    exists: false, live_headers: null, missing_headers: [], extra_headers: [], order_matches: null,
+    sheet: null, reason: null };
+  var sh = null;
+  try { sh = ss.getSheetByName(FSG_OVERRIDE_AUDIT_TABLE_); } catch (e) { sh = null; }
+  if (!sh) { out.reason = 'TABLE_ABSENT'; return out; }
+  out.exists = true;
+  var lastCol = 0;
+  try { lastCol = sh.getLastColumn(); } catch (e2) { lastCol = 0; }
+  if (!lastCol) { out.reason = 'HEADER_ROW_EMPTY'; return out; }
+  var live;
+  try { live = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return fsgStr_(h); }); }
+  catch (e3) { out.reason = 'HEADER_ROW_UNREADABLE'; return out; }
+  out.live_headers = live;
+  var want = FSG_OVERRIDE_AUDIT_HEADERS_;
+  want.forEach(function (h) { if (live.indexOf(h) === -1) out.missing_headers.push(h); });
+  live.forEach(function (h) { if (h && want.indexOf(h) === -1) out.extra_headers.push(h); });
+  // EXACT AND POSITIONAL for the 25 leading columns. A column present but in the wrong place is not a
+  // cosmetic difference here: the row is written BY POSITION from the live header row, so a reordered
+  // header writes an override_reason into an override_by cell and the ledger becomes evidence of nothing.
+  out.order_matches = live.slice(0, want.length).join('|') === want.join('|');
+  if (out.missing_headers.length) { out.reason = 'MISSING_COLUMNS'; return out; }
+  if (!out.order_matches) { out.reason = 'COLUMN_ORDER_MISMATCH'; return out; }
+  out.ok = true; out.code = null; out.reason = 'READY'; out.sheet = sh;
+  return out;
+}
+
+/**
+ * §B — THE JOURNAL, IN THE SHAPE THIS PROJECT ALREADY USES.
+ *
+ * `{ kind: 'cell', sheet, row, col, prev }` and `{ kind: 'row', sheet, row, verify_key }` are exactly the
+ * entries `factoryStockRollbackJournal_` (21_) replays for 12_ and 13_, so a plan transition rolls back through
+ * the same vocabulary as a reservation. What is added here is VERIFICATION: 21_'s replay swallows every error
+ * and returns nothing, which is fine when its caller reports COMMIT_FAILED regardless, and NOT fine when the
+ * question being asked is "did the rollback actually happen". A rollback nobody checked is a claim, and this
+ * round exists because a claim was printed where a check belonged.
+ */
+function fsgJournalSetCell_(journal, sheet, row, col1, prev, value) {
+  // The journal entry is pushed BEFORE the write. If setValue throws, the entry is already there and the
+  // rollback restores a cell that may or may not have changed — which is harmless, and the opposite ordering
+  // loses the only record of a write that DID land.
+  if (journal) journal.push({ kind: 'cell', sheet: sheet, row: row, col: col1 - 1, prev: prev });
+  sheet.getRange(row, col1).setValue(value);
+}
+
+/**
+ * REPLAY IN REVERSE, THEN PROVE IT. Returns { ok, entries, restored, deleted, unverified[] }.
+ *
+ * ok:false is an INDETERMINATE state and must never be reported as a success or as a clean refusal. The caller
+ * says so in those words, names the cells it could not restore, and stops.
+ */
+function fsgRollbackVerified_(journal) {
+  var out = { ok: false, entries: (journal || []).length, restored: 0, deleted: 0, unverified: [] };
+  var rows = [];
+  for (var i = (journal || []).length - 1; i >= 0; i--) {
+    var j = journal[i];
+    try {
+      if (j.kind === 'cell') { j.sheet.getRange(j.row, j.col + 1).setValue(j.prev); out.restored++; }
+      else if (j.kind === 'row') rows.push(j);
+    } catch (e) {
+      out.unverified.push({ kind: j.kind, row: j.row, col: j.col == null ? null : j.col,
+        error: String(e && e.message ? e.message : e) });
+    }
+  }
+  // Appended rows are deleted highest-first so an earlier deletion cannot shift a later row number.
+  rows.sort(function (a, b) { return b.row - a.row; });
+  rows.forEach(function (j) {
+    try { j.sheet.deleteRow(j.row); out.deleted++; }
+    catch (e2) { out.unverified.push({ kind: 'row', row: j.row, error: String(e2 && e2.message ? e2.message : e2) }); }
+  });
+  try { if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush(); } catch (e3) {}
+  // ---- VERIFY. Every restored cell is READ BACK, and every deleted row's identity is searched for.
+  for (var k = 0; k < (journal || []).length; k++) {
+    var e0 = journal[k];
+    try {
+      if (e0.kind === 'cell') {
+        var now = e0.sheet.getRange(e0.row, e0.col + 1).getValue();
+        // Compared as strings: a sheet hands back 3 for '3' and '' for a blank, and a rollback that restored
+        // the value is not a failure because the cell's type round-tripped.
+        if (fsgStr_(now) !== fsgStr_(e0.prev)) {
+          out.unverified.push({ kind: 'cell', row: e0.row, col: e0.col, expected: e0.prev, actual: now,
+            error: 'CELL_NOT_RESTORED' });
+        }
+      } else if (e0.kind === 'row' && e0.verify_key) {
+        if (fsgFindRowByColumnValue_(e0.sheet, e0.verify_key.column, e0.verify_key.value) !== -1) {
+          out.unverified.push({ kind: 'row', row: e0.row, key: e0.verify_key, error: 'APPENDED_ROW_STILL_PRESENT' });
+        }
+      }
+    } catch (e4) {
+      out.unverified.push({ kind: e0.kind, row: e0.row, error: 'VERIFY_READ_FAILED: '
+        + String(e4 && e4.message ? e4.message : e4) });
+    }
+  }
+  out.ok = out.unverified.length === 0;
+  return out;
+}
+
+// Row index (1-based) of the first row whose `column` equals `value`, or -1. Used to make an append idempotent
+// and to prove a rollback deletion.
+function fsgFindRowByColumnValue_(sheet, column, value) {
+  var data;
+  try { data = sheet.getDataRange().getValues(); } catch (e) { return -1; }
+  if (!data || data.length < 2) return -1;
+  var H = data[0].map(function (h) { return fsgStr_(h).toLowerCase(); });
+  var c = H.indexOf(fsgStr_(column).toLowerCase());
+  if (c === -1) return -1;
+  var want = fsgStr_(value);
+  for (var r = 1; r < data.length; r++) { if (fsgStr_(data[r][c]) === want) return r + 1; }
+  return -1;
+}
+
+// The deterministic identity of ONE audit row. Same confirmation, same pools, same id — which is what makes a
+// replayed confirmation unable to write a second row rather than merely unlikely to.
+function fsgOverrideAuditRowId_(entityId, transition, fingerprint, warehouseId, sku, index) {
+  return 'FSOA-' + KMFSG.fnv1a([entityId, transition, fingerprint, warehouseId, sku, index].join('|')).toUpperCase();
+}
+
+/**
+ * §4.6 — WRITE THE AUDIT. Append-only, one row per affected pool, INSIDE THE CALLER'S JOURNAL.
+ *
+ * The schema is REQUIRED, not ensured: an absent or mismatched ledger is a typed refusal that the caller turns
+ * into a refused transition, and this function creates nothing.
+ *
+ * Returns { ok, code, appended, skipped_existing, expected, rows, schema } — a typed result rather than a
+ * count, because "0 rows appended" was previously the same value for "nothing needed writing" and "the ledger
+ * does not exist", and those two must never again be the same answer.
+ */
 function fsgAppendOverrideAudit_(ss, entityType, entityId, transition, scope, audit, extra) {
-  if (!audit || audit.inventory_override !== true) return 0;
   extra = extra || {};
-  var sheet = (typeof fcWriteEnsureSheet_ === 'function')
-    ? fcWriteEnsureSheet_(ss, FSG_OVERRIDE_AUDIT_TABLE_, FSG_OVERRIDE_AUDIT_HEADERS_) : null;
-  if (!sheet) return 0;
-  if (typeof fcWriteEnsureColumns_ === 'function') fcWriteEnsureColumns_(sheet, FSG_OVERRIDE_AUDIT_HEADERS_);
-  var H = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(function (h) { return fsgStr_(h).toLowerCase(); });
+  var out = { ok: false, code: null, appended: 0, skipped_existing: 0, expected: 0, rows: [], schema: null };
+  if (!audit || audit.inventory_override !== true) { out.code = 'NO_OVERRIDE_TO_RECORD'; out.ok = true; return out; }
+  var req = fsgRequireOverrideAuditSheet_(ss);
+  out.schema = { exists: req.exists, reason: req.reason, missing_headers: req.missing_headers,
+    extra_headers: req.extra_headers, order_matches: req.order_matches };
+  if (!req.ok) { out.code = req.code; return out; }
+  var sheet = req.sheet;
+  var H = req.live_headers.map(function (h) { return fsgStr_(h).toLowerCase(); });
+  var journal = extra.journal || null;
   var now = fsgTimestamp_();
-  var rows = (audit.pools || []);
-  var appended = 0;
-  for (var i = 0; i < rows.length; i++) {
-    var p = rows[i];
+  var pools = (audit.pools || []);
+  out.expected = pools.length;
+  for (var i = 0; i < pools.length; i++) {
+    var p = pools[i];
+    var rowId = fsgOverrideAuditRowId_(entityId, transition, audit.inventory_snapshot_fingerprint,
+      p.source_warehouse_id, p.sku, i);
+    // IDEMPOTENT BY IDENTITY. A replayed confirmation carries the same fingerprint and the same pools, so it
+    // computes the same row id — and a row that is already there is not written twice.
+    if (fsgFindRowByColumnValue_(sheet, 'override_audit_id', rowId) !== -1) {
+      out.skipped_existing++; out.rows.push({ override_audit_id: rowId, written: false, reason: 'ALREADY_PRESENT' });
+      continue;
+    }
     var rec = {
-      override_audit_id: 'FSOA-' + KMFSG.fnv1a([entityId, transition, audit.inventory_snapshot_fingerprint,
-        p.source_warehouse_id, p.sku, i].join('|')).toUpperCase(),
+      override_audit_id: rowId,
       created_at: now, entity_type: entityType, entity_id: entityId, transition: transition,
       company: fsgStr_(scope && scope.company), country: fsgStr_(scope && scope.country),
       marketplace: fsgStr_(scope && scope.marketplace),
@@ -451,9 +628,44 @@ function fsgAppendOverrideAudit_(ss, entityType, entityId, transition, scope, au
     var line = [];
     for (var c = 0; c < H.length; c++) line.push(rec[H[c]] === undefined ? '' : rec[H[c]]);
     sheet.appendRow(line);
-    appended++;
+    // Journalled AFTER the append, because the row number is only knowable once it exists. The verify_key is
+    // the row's own identity rather than its position, so a rollback proves the ROW is gone and not merely
+    // that the sheet got shorter.
+    if (journal) journal.push({ kind: 'row', sheet: sheet, row: sheet.getLastRow(),
+      verify_key: { column: 'override_audit_id', value: rowId } });
+    out.appended++;
+    out.rows.push({ override_audit_id: rowId, written: true });
   }
-  return appended;
+  out.ok = true;
+  return out;
+}
+
+/**
+ * §B — READ THE COMMIT BACK. The status cell and every audit row this confirmation should have written.
+ *
+ * A write that was accepted by the API and is not in the sheet is the failure mode this project has been
+ * bitten by more than once, and it is invisible to a writer that only checks for thrown exceptions.
+ */
+function fsgVerifyOverrideCommit_(ss, planSheet, row, statusCol1, expectedStatus, entityId, transition, audit) {
+  var out = { ok: false, code: null, status_read_back: null,
+    audit_rows_expected: (audit && audit.pools ? audit.pools.length : 0), audit_rows_found: 0, missing_rows: [] };
+  if (statusCol1 > 0) {
+    try { out.status_read_back = fsgStr_(planSheet.getRange(row, statusCol1).getValue()); }
+    catch (e) { out.code = 'STATUS_READBACK_FAILED'; out.detail = String(e && e.message ? e.message : e); return out; }
+    if (out.status_read_back !== fsgStr_(expectedStatus)) { out.code = 'STATUS_READBACK_MISMATCH'; return out; }
+  }
+  var req = fsgRequireOverrideAuditSheet_(ss);
+  if (!req.ok) { out.code = req.code; return out; }
+  var pools = (audit && audit.pools) || [];
+  for (var i = 0; i < pools.length; i++) {
+    var rowId = fsgOverrideAuditRowId_(entityId, transition, audit.inventory_snapshot_fingerprint,
+      pools[i].source_warehouse_id, pools[i].sku, i);
+    if (fsgFindRowByColumnValue_(req.sheet, 'override_audit_id', rowId) === -1) out.missing_rows.push(rowId);
+    else out.audit_rows_found++;
+  }
+  if (out.missing_rows.length) { out.code = 'AUDIT_ROWS_NOT_READ_BACK'; return out; }
+  out.ok = true;
+  return out;
 }
 
 /**
@@ -538,12 +750,16 @@ function fsgValidateOverrideAuditSchema_(ss) {
   var sh = null;
   try { sh = ss.getSheetByName(FSG_OVERRIDE_AUDIT_TABLE_); } catch (e) { sh = null; }
   if (!sh) {
-    out.verdict = 'ABSENT_WILL_BE_CREATED_ON_FIRST_OVERRIDE';
-    out.note = 'The table does not exist. It is created additively by fcWriteEnsureSheet_ the first time an '
-      + 'overage is actually confirmed — the same pattern that created factory_stock_movements. Until then no '
-      + 'override has been accepted, so there is nothing unrecorded.';
+    out.verdict = 'ABSENT_MIGRATION_REQUIRED';
+    out.missing_headers = FSG_OVERRIDE_AUDIT_HEADERS_.slice();
+    out.order_matches = false;
+    out.note = 'The table does not exist and the RUNTIME WILL NOT CREATE IT. Until it is provisioned, a '
+      + 'confirmed overage is REFUSED with ' + FSG_AUDIT_SCHEMA_REFUSAL_ + ' and zero writes — the plan stays '
+      + 'in Draft. Provision it with TEMP_migrate_factory_stock_override_audit_r5.gs: '
+      + 'TEMP_FSOA_R5_MIGRATE_DRY_RUN() first, then TEMP_FSOA_R5_MIGRATE_COMMIT() after review.';
     out.rollback = 'Delete the (empty) tab. No other table is touched by this round, so there is nothing else '
-      + 'to undo.';
+      + 'to undo, and the runtime returns to refusing overage confirmations rather than to writing unrecorded '
+      + 'ones.';
     return out;
   }
   out.exists = true;
@@ -555,6 +771,9 @@ function fsgValidateOverrideAuditSchema_(ss) {
   out.order_matches = live.slice(0, want.length).join('|') === want.join('|');
   out.row_count = Math.max(0, sh.getLastRow() - 1);
   out.verdict = (!out.missing_headers.length && out.order_matches) ? 'READY' : 'HEADER_MISMATCH';
+  // The SAME predicate the runtime uses, run here so the validator's verdict and the gate's decision cannot
+  // disagree. An extra trailing column is allowed on both sides; a missing or reordered one is not.
+  out.runtime_would_accept = fsgRequireOverrideAuditSheet_(ss).ok;
   out.rollback = 'This table is append-only and referenced by nothing. Removing the tab removes the audit trail '
     + 'and nothing else; no existing table has been altered by this round.';
   return out;

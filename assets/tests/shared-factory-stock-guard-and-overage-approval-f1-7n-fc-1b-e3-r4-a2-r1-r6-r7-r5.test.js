@@ -137,6 +137,14 @@ function extractFn(src, name) {
   throw new Error('unterminated: ' + name);
 }
 
+// The 25 columns the runtime REQUIRES, read from the shipped authority. A fixture carrying its own copy is a
+// fixture that can pass against a schema production refuses.
+var FSG_AUDIT_HEADERS = (function () {
+  var m = /var FSG_OVERRIDE_AUDIT_HEADERS_ = \[([\s\S]*?)\];/.exec(G71);
+  if (!m) throw new Error('FSG_OVERRIDE_AUDIT_HEADERS_ not found in 71_');
+  return m[1].split(',').map(function (t) { return t.replace(/[\s'"]/g, ''); }).filter(Boolean);
+})();
+
 // Build a world: factory stock, warehouses, allocation drafts + lines, shipping plans + lines, marketplaces.
 // `spec` supplies rows; anything omitted is an empty (but PRESENT) table, because an absent table is a
 // different fact from an empty one and this guard reports them differently.
@@ -164,7 +172,14 @@ function World(spec) {
   sheet('shipping_plan_lines', ['shipping_plan_line_id', 'shipping_plan_id', 'sku', 'requested_qty', 'approved_qty'],
     spec.plan_lines || []);
   sheet('marketplaces', ['company', 'country', 'marketplace', 'allocation_priority'], spec.marketplaces || []);
-  if (spec.audit) sheet('factory_stock_override_audit', spec.audit_headers || [], spec.audit);
+  // R6-R7-R5-R1 §A — THE LEDGER IS PROVISIONED BY DEFAULT, and that is a change of fixture because it is a
+  // change of contract: the runtime used to be described as creating this table on first write (it never
+  // could — fcWriteEnsureSheet_ is prodRequireSheet_, which THROWS), and it now REQUIRES it and refuses a
+  // confirmation it cannot record. `audit_table_absent: true` builds the un-provisioned world on purpose;
+  // the P2 suite is where that world is tested.
+  if (spec.audit_table_absent !== true) {
+    sheet('factory_stock_override_audit', spec.audit_headers || FSG_AUDIT_HEADERS, spec.audit || []);
+  }
   this.S = S;
   this.ss = {
     getSheetByName: function (n) { return S[n] || null; },
@@ -219,9 +234,14 @@ function seam(world, opts) {
   vm.runInContext('function jsonResponse_(o) { return o; }', ctx);
   // The two sheet helpers 71_ uses to create the append-only audit ledger additively, exactly as 21_ does.
   vm.runInContext([
-    'function fcWriteEnsureSheet_(ss, name, headers) {',
+    // PRODUCTION SEMANTICS, not a convenience. fcWriteEnsureSheet_ IS prodRequireSheet_ (29_): it validates
+    // and it THROWS SCHEMA_NOT_PROVISIONED on an absent sheet. RULE S0-3 moved every create behind an
+    // authorized migration DTO, and a standing suite asserts no ensure-helper contains insertSheet. The
+    // previous stub in this file CREATED the sheet, which is how R5 came to describe a lazy create that
+    // could never have happened.
+    'function fcWriteEnsureSheet_(ss, name) {',
     '  var sh = ss.getSheetByName(name);',
-    '  if (!sh) { sh = ss.insertSheet(name); sh.rows[0] = headers.slice(); }',
+    '  if (!sh) throw new Error("SCHEMA_NOT_PROVISIONED: " + name);',
     '  return sh;',
     '}',
     'function fcWriteEnsureColumns_() {}',
@@ -589,6 +609,7 @@ function planWorld(currentQty, otherQty, stock, opts) {
       { shipping_plan_line_id: 'PL-OT', shipping_plan_id: 'SP-OTHER', sku: 'SKU1', requested_qty: otherQty }]
   };
   if (opts.audit) { spec.audit = opts.audit; spec.audit_headers = opts.audit_headers; }
+  if (opts.audit_table_absent) spec.audit_table_absent = true;
   var w = new World(spec);
   return { w: w, s: seam(w, opts) };
 }
@@ -812,8 +833,19 @@ var spB = (G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var wapB = (G61.match(/var WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var rtrB = (G01.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var sysRel = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
-eq([fsgB, spB, wapB, rtrB, sysRel], [STAMP, STAMP, STAMP, STAMP, STAMP],
-  'F1  71_, 11_, 61_, 01_ and the RELEASE all declare this round — every one of them changed');
+[['71_ FSG', fsgB], ['11_ SP', spB], ['61_ WAP', wapB], ['01_ RTR', rtrB], ['63_ RELEASE', sysRel]]
+  .forEach(function (pair, i) {
+    ok(RO.stampAtOrAfter(pair[1], STAMP),
+      'F1.' + (i + 1) + ' ' + pair[0] + ' is at or after the round that introduced the guard', pair[1]);
+  });
+// A FLOOR, not an equality, and the reason is a fact about how this series works: a per-module stamp records
+// the round the FILE last changed, and marching it to the release is the confusion 63_'s own header warns
+// about. R5-R1 changed 71_, 11_ and 63_ and did not change 61_ or 01_, so an exact equality would have to be
+// wrong about two of the five. What must still hold exactly is that the RELEASE is at or after every module
+// it carries — a deployment cannot be older than its parts.
+ok(RO.stampAtOrAfter(sysRel, fsgB) && RO.stampAtOrAfter(sysRel, spB)
+  && RO.stampAtOrAfter(sysRel, wapB) && RO.stampAtOrAfter(sysRel, rtrB),
+  'F1a and the RELEASE is at or after every module stamp it ships');
 [['71_api_v1_factory_stock_guard.gs', 'FSG_BUILD_VERSION_', fsgB],
  ['11_shipping_plan_handlers.gs', 'SP_BUILD_VERSION_', spB],
  ['61_api_v1_weekly_ai_plan.gs', 'WAP_BUILD_VERSION_', wapB],
@@ -867,8 +899,17 @@ section('G. §8/§10 — SCHEMA BOUNDARY AND THE SAFETY INVARIANTS');
 // §8 — exactly ONE schema addition, and it is a NEW append-only table. No live header is touched.
 eq((G71.match(/var FSG_OVERRIDE_AUDIT_TABLE_ = '([^']+)'/) || [])[1], 'factory_stock_override_audit',
   'G1  §8 the only new table is factory_stock_override_audit');
-ok(/fcWriteEnsureSheet_\(ss, FSG_OVERRIDE_AUDIT_TABLE_, FSG_OVERRIDE_AUDIT_HEADERS_\)/.test(G71),
-  'G1a created additively by the same helper that created factory_stock_movements');
+// R6-R7-R5-R1 §A — THE RUNTIME PROVISIONS NOTHING. The table is created by an authorized migration
+// (TEMP_migrate_factory_stock_override_audit_r5.gs) and the runtime REQUIRES it. R5 asserted the opposite
+// here and the assertion passed, because it measured a call to a helper whose name says 'ensure' — while
+// that helper is prodRequireSheet_, which throws. The assertion was true and meant nothing.
+// Comment-stripped: 71_'s header NAMES fcWriteEnsureSheet_ precisely in order to record that it creates
+// nothing and is no longer called, and a prose mention must not read as a call.
+ok(!/fcWriteEnsureSheet_|fcWriteEnsureColumns_|insertSheet/.test(codeOnly(G71)),
+  'G1a  §A the runtime seam contains NO ensure-sheet and NO insertSheet path at all');
+ok(/function fsgRequireOverrideAuditSheet_/.test(G71)
+  && /FSG_AUDIT_SCHEMA_REFUSAL_ = 'FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING'/.test(G71),
+  'G1a1 it REQUIRES the ledger instead, with one named refusal');
 var G71schema = extractFn(G71, 'fsgValidateOverrideAuditSchema_');
 ok(/dry_run: true, writes: 0/.test(G71schema),
   'G1b with a DRY-RUN validator that writes nothing');
@@ -924,8 +965,13 @@ ok(!/setValue|appendRow|setValues|insertSheet|LockService/.test(readOnly),
   'G5  every read path in the seam is free of setValue / appendRow / insertSheet / LockService');
 ok(/appendRow/.test(extractFn(G71, 'fsgAppendOverrideAudit_')),
   'G5a and the ONLY writer in 71_ is the audit append');
-ok(/if \(!audit \|\| audit\.inventory_override !== true\) return 0;/.test(extractFn(G71, 'fsgAppendOverrideAudit_')),
-  'G5b which refuses to write unless an override was actually confirmed');
+ok(/if \(!audit \|\| audit\.inventory_override !== true\) \{ out\.code = 'NO_OVERRIDE_TO_RECORD'/
+  .test(extractFn(G71, 'fsgAppendOverrideAudit_')),
+  'G5b which refuses to write unless an override was actually confirmed …');
+// … and says WHICH of the two it was. `return 0` meant both 'nothing needed writing' and 'the ledger does
+// not exist', and those two answers being the same value is what let an unrecordable override through.
+ok(/out\.code = req\.code; return out;/.test(extractFn(G71, 'fsgAppendOverrideAudit_')),
+  'G5c and a MISSING ledger is a distinct typed refusal, not the same 0');
 // The pure module cannot write anything at all.
 ok(!/SpreadsheetApp|getRange|appendRow|setValue|LockService|Utilities/.test(CORE),
   'G6  the pure authority touches no spreadsheet API — it is executable and auditable in Node');
