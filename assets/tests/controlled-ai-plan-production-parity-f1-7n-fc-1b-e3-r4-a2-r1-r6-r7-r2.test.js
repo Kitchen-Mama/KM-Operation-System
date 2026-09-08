@@ -110,6 +110,22 @@ function projection(ctx, over) {
   vm.runInContext('RUN_E3_CENSUS_RESUS_US_AMAZON_CO1100R = function () { return '
     + JSON.stringify(d) + '; };', ctx);
 }
+// ---- THE CLOCK, PINNED TO A STATED HOUR. See the note in the S1 round: the freshness resolver is a state
+// machine over the Taipei hour (accepting before 17:45, REFRESH_OVERDUE after it), so any assertion about a
+// yesterday-only snapshot is an equality with now unless the hour is stated. Today's DATE is kept, because
+// the gap fixtures derive their dates from the same clock; only the time of day is fixed. Injected through
+// gapCalcNowMs_ (43_: 'the ONLY clock read (server-side)'), so no production file needs a test seam.
+function pinTaipeiHourSrc_(hour) {
+  var d = new Date();
+  var t = new Date(d.getTime() + 8 * 3600 * 1000);   // Taipei wall clock
+  var ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), hour - 8, 0, 0);
+  return 'gapCalcNowMs_ = function () { return ' + ms + '; };';
+}
+// Past the completion window: a snapshot dated yesterday is genuinely overdue and must be refused.
+var PIN_AFTER_WINDOW_ = 20;
+// Inside the refresh window: yesterday's complete snapshot is still the authority. This is the hour at which
+// F1-7N-FC-1B-E3-R4-A2-R1 §4 removed the date-vs-today comparison, and the one that must never regress.
+var PIN_DURING_REFRESH_ = 15;
 function preflight(over, projOver) {
   var w = new World(over || {});
   projection(w.ctx, projOver);
@@ -130,6 +146,7 @@ function exported(w) {
 // The decision object, from 61_'s own functions inside a live world.
 function decide(over, g61) {
   var w = new World(over || {}, undefined, g61);
+  vm.runInContext(pinTaipeiHourSrc_(PIN_AFTER_WINDOW_), w.ctx);
   var cyc = vm.runInContext('gapCalcResolveContext_().planningCycle', w.ctx);
   var js = JSON.stringify({ company: 'ResUS', country: 'US', marketplace: 'Amazon', planningCycle: cyc });
   var o = vm.runInContext('weeklyAiPlanControlledDecision_(SpreadsheetApp.openById("x"), '
@@ -399,7 +416,10 @@ var OTHER = [{ sku: 'OTHER-SKU', d18_suggested_qty: 0, d30_suggested_qty: 0, d45
  ['NONE',               { gap: { calculation_status: 'NONE' }, extraGap: OTHER }],
  ['a missing row',      { dropGap: true, extraGap: OTHER }],
  ['a blank window',     { gap: { calculation_status: 'READY', d90_suggested_qty: '' }, extraGap: OTHER }],
- ['a stale snapshot',   { gap: { calculation_date: GAP_YESTERDAY } }],
+ // At the pinned hour (20:00 Taipei, past 17:45) a yesterday-only snapshot IS overdue. Before 17:45 it
+ // is CURRENT_DURING_REFRESH and this row would be WRONG — which is exactly what it used to be for
+ // half of every day.
+ ['a snapshot overdue past the completion window', { gap: { calculation_date: GAP_YESTERDAY } }],
  ['a duplicate row',    { extraGap: [{ d18_suggested_qty: 5 }] }]].forEach(function (c, i) {
   var d = decide(c[1]);
   eq([d.outcome, d.recommendation_state, d.recommended_qty, d.residual_qty],

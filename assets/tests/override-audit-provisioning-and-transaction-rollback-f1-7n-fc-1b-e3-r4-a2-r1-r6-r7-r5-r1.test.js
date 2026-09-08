@@ -717,13 +717,28 @@ if (changed === null) {
   // FIVE files, and the fifth is the one a remembered list would have dropped: the activation census's
   // pin must follow SYS_DEPLOYMENT_RELEASE_ or the live manifest STOPs on a healthy deployment. Two stamps
   // in it move and nothing captured is touched.
-  eq(gsChanged, [
+  // RE-AIMED. `eq` over the WHOLE set was an equality with the working tree's future: the baseline is derived
+  // by walking commits that touched 63_, so the range keeps growing until 63_ moves again, and the next round
+  // that adds any .gs file breaks an assertion about a round that already shipped. Batch S1 added a read-only
+  // diagnostic and did exactly that.
+  //
+  // TWO CLAIMS INSTEAD, and both survive later rounds:
+  //   (1) the five files this round shipped are ALL present — a dropped one would mean an unsynced file;
+  //   (2) NO PRODUCTION RUNTIME FILE outside those five has changed. That is the safety property. A later
+  //       round may add diagnostics or migrations under assets/tools without touching what is deployed, and
+  //       a production file appearing here is a sync-list omission whichever round introduced it.
+  var R5R1_SYNC_SET = [
     'assets/specs/active/apps-script/11_shipping_plan_handlers.gs',
     'assets/specs/active/apps-script/63_api_v1_system_health.gs',
     'assets/specs/active/apps-script/71_api_v1_factory_stock_guard.gs',
     'assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs',
     'assets/tools/apps-script-migrations/TEMP_migrate_factory_stock_override_audit_r5.gs'
-  ], 'C1  §C the Apps Script set that changed this round is 71_, 11_, 63_, the census pin and the new TEMP migration');
+  ];
+  eq(R5R1_SYNC_SET.filter(function (f) { return gsChanged.indexOf(f) === -1; }), [],
+    'C1  §C every file in the R5-R1 Apps Script sync set is present in the measured change set');
+  eq(gsChanged.filter(function (f) {
+    return /^assets\/specs\/active\/apps-script\//.test(f) && R5R1_SYNC_SET.indexOf(f) === -1;
+  }), [], 'C1-0 and NO production runtime file outside that set has changed since the baseline');
   // AND NOT ONE BYTE OF CAPTURED ACTIVATION EVIDENCE, which is the property rather than a line count.
   //
   // These four constants are what a PERSON pasted in from a live run: the frozen before-state, the frozen

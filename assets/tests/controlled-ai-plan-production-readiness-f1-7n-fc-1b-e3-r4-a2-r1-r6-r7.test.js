@@ -978,8 +978,26 @@ section('H — §B/§C/§E the production state contract and the residual rule')
 // ================================================================================================================
 // Everything below calls 61_'s OWN functions, loaded into the world beside the census. A second copy of the
 // rules in this file would agree with itself and prove nothing about what production does.
+// ---- THE CLOCK, PINNED TO A STATED HOUR. See the note in the S1 round: the freshness resolver is a state
+// machine over the Taipei hour (accepting before 17:45, REFRESH_OVERDUE after it), so any assertion about a
+// yesterday-only snapshot is an equality with now unless the hour is stated. Today's DATE is kept, because
+// the gap fixtures derive their dates from the same clock; only the time of day is fixed. Injected through
+// gapCalcNowMs_ (43_: 'the ONLY clock read (server-side)'), so no production file needs a test seam.
+function pinTaipeiHourSrc_(hour) {
+  var d = new Date();
+  var t = new Date(d.getTime() + 8 * 3600 * 1000);   // Taipei wall clock
+  var ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), hour - 8, 0, 0);
+  return 'gapCalcNowMs_ = function () { return ' + ms + '; };';
+}
+// Past the completion window: a snapshot dated yesterday is genuinely overdue and must be refused.
+var PIN_AFTER_WINDOW_ = 20;
+// Inside the refresh window: yesterday's complete snapshot is still the authority. This is the hour at which
+// F1-7N-FC-1B-E3-R4-A2-R1 §4 removed the date-vs-today comparison, and the one that must never regress.
+var PIN_DURING_REFRESH_ = 15;
+
 function P61(over) {
   var w = new World(over || {});
+  vm.runInContext(pinTaipeiHourSrc_(PIN_AFTER_WINDOW_), w.ctx);
   var cyc = vm.runInContext('gapCalcResolveContext_().planningCycle', w.ctx);
   var scope = { company: 'ResUS', country: 'US', marketplace: 'Amazon', planningCycle: cyc };
   var js = JSON.stringify(scope);
@@ -1053,9 +1071,22 @@ var H2cc = P61({ dropGap: true, extraGap: [{ sku: 'OTHER-SKU', d18_suggested_qty
 eq(H2cc.canonical_ok, true, 'H2h the snapshot is usable,');
 eq(H2cc.state.per_scope[0].reason, 'NO_ROW_AT_THE_ACCEPTED_DATE', 'H2h1 and the missing key is named');
 eq(H2cc.decision.noAction, false, 'H2h2 a SKU nobody materialized is not a SKU that needs nothing');
+// At the pinned hour this snapshot is past the completion window, so it is genuinely stale. The hour is part
+// of the claim: before 17:45 Taipei the same row is CURRENT_DURING_REFRESH and MUST NOT be called missing.
 var H2d = P61({ gap: { calculation_date: GAP_YESTERDAY } });
-eq(H2d.state.state, 'MISSING_RECOMMENDATION', 'H2i a STALE snapshot is MISSING, not a zero');
+eq(H2d.state.state, 'MISSING_RECOMMENDATION',
+  'H2i a snapshot overdue past the completion window is MISSING, not a zero');
 eq(H2d.decision.noAction, false, 'H2i1 and never a no-action');
+// AND THE OTHER SIDE OF THE SAME BOUNDARY, so neither half can be reintroduced as the whole rule.
+var H2dW = (function () {
+  var w = new World({ gap: { calculation_date: GAP_YESTERDAY } });
+  vm.runInContext(pinTaipeiHourSrc_(PIN_DURING_REFRESH_), w.ctx);
+  var cyc = vm.runInContext('gapCalcResolveContext_().planningCycle', w.ctx);
+  var js = JSON.stringify({ company: 'ResUS', country: 'US', marketplace: 'Amazon', planningCycle: cyc });
+  return vm.runInContext('weeklyAiPlanCanonicalDemand_(SpreadsheetApp.openById("x"), ' + js + ', null)', w.ctx);
+})();
+eq(H2dW.ok, true,
+  'H2i2 while INSIDE the refresh window the same yesterday snapshot is accepted — R4-A2-R1 §4 stays fixed');
 var H2e = P61({ extraGap: [{ d18_suggested_qty: 5 }] });
 eq(H2e.state.state, 'MISSING_RECOMMENDATION', 'H2j and a duplicate row for one key settles nothing');
 

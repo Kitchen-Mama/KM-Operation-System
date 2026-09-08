@@ -184,6 +184,22 @@ function snippet(name) {
 
 // FREEZING, THE WAY A PERSON DOES IT: run the manifest, take its frozen_before, paste it into the constant.
 // Modelled exactly — the readback is then run in a world whose constant carries those values.
+// ---- THE CLOCK, PINNED TO A STATED HOUR. See the note in the S1 round: the freshness resolver is a state
+// machine over the Taipei hour (accepting before 17:45, REFRESH_OVERDUE after it), so any assertion about a
+// yesterday-only snapshot is an equality with now unless the hour is stated. Today's DATE is kept, because
+// the gap fixtures derive their dates from the same clock; only the time of day is fixed. Injected through
+// gapCalcNowMs_ (43_: 'the ONLY clock read (server-side)'), so no production file needs a test seam.
+function pinTaipeiHourSrc_(hour) {
+  var d = new Date();
+  var t = new Date(d.getTime() + 8 * 3600 * 1000);   // Taipei wall clock
+  var ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), hour - 8, 0, 0);
+  return 'gapCalcNowMs_ = function () { return ' + ms + '; };';
+}
+// Past the completion window: a snapshot dated yesterday is genuinely overdue and must be refused.
+var PIN_AFTER_WINDOW_ = 20;
+// Inside the refresh window: yesterday's complete snapshot is still the authority. This is the hour at which
+// F1-7N-FC-1B-E3-R4-A2-R1 §4 removed the date-vs-today comparison, and the one that must never regress.
+var PIN_DURING_REFRESH_ = 15;
 function freezeFrom(over, opts) {
   var m = manifest(over, opts);
   var b = m.res.frozen_before;
@@ -970,10 +986,19 @@ ok(LA2.ok === false && LA2.checks_failed.indexOf('every_window_is_a_stored_finit
 // FIRST, the thing that must NOT be called stale. A yesterday-only snapshot before today's 13:30 run is
 // due is CURRENT_DURING_REFRESH, and R4-A2-R1 §4 exists because calling it stale refused the newest data
 // that had ever existed. Asserted here so this round cannot quietly reintroduce that.
-var LFresh = manifest(live(fcGap({ calculation_date: GAP_YESTERDAY })));
+// THE HOUR IS PART OF THE CLAIM, and it was not stated when I wrote this. Measured on a clean tree: this
+// assertion passed at 10:41 and failed at 18:07 the same day, because 17:45 Taipei is where the resolver
+// stops accepting a yesterday-only snapshot. Pinned inside the refresh window, which is the situation
+// R4-A2-R1 §4 exists for; the overdue side is asserted separately below.
+var LFresh = manifest(live(fcGap({ calculation_date: GAP_YESTERDAY })),
+  { after: pinTaipeiHourSrc_(PIN_DURING_REFRESH_) });
 eq([LFresh.res.verdict, LFresh.res.frozen_before.freshness_state],
   ['READY_TO_AUTHORIZE', 'CURRENT_DURING_REFRESH'],
-  'L9  a yesterday-only snapshot is CURRENT_DURING_REFRESH, not stale — the R4 defect stays fixed');
+  'L9  INSIDE the refresh window a yesterday-only snapshot is CURRENT_DURING_REFRESH — R4 stays fixed');
+var LOver = manifest(live(fcGap({ calculation_date: GAP_YESTERDAY })),
+  { after: pinTaipeiHourSrc_(PIN_AFTER_WINDOW_) });
+eq(LOver.res.verdict, 'STOP',
+  'L9-0 while PAST the completion window the same snapshot STOPS — both sides of one boundary');
 // AND NOW A GENUINELY STALE ONE: another SKU materialized TODAY makes today the accepted run, so this
 // scope's yesterday row belongs to a run that is no longer the current one.
 var STALE_LINEAGE = fcGap({ calculation_date: GAP_YESTERDAY });
