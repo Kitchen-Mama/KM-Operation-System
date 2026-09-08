@@ -6177,6 +6177,150 @@ function RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT() {
  * Read-only, and it constructs no writer: the decision reads through 61_'s own canonical reader and pure
  * classifiers, and nothing on that path can reach PASS 2.
  */
+// ================================================================================================================
+// R6-R7-R5-R1 — A CORRECT NO-ACTION HAS TWO SHAPES, AND THE MANIFEST ONLY KNEW ONE.
+//
+// 61_ has classified them apart since R6-R7-R2, in `weeklyAiPlanNoActionDecision_`, and it reports them as
+// different reasons on purpose because an operator acts on them differently:
+//
+//   VALID_ZERO_RECOMMENDATION    nothing is short. Nothing to do, and nothing planned that needs review.
+//   FULLY_COVERED_BY_ACTIVE_PLAN something IS short and the operator has ALREADY planned all of it. The AI
+//                               has nothing to ADD, and must not reduce, cancel or duplicate what is there.
+//
+// The manifest required `recommended_qty === 0` and four stored zeros, so it recognised only the first. The
+// live run that exposed this is the second: D18/D30/D45 = 0, D90 = 160, recommended 160, already-planned 520,
+// residual 0, over-planned 360 — production answered AI_PLAN_NO_ACTION / NO_REPLENISHMENT_REQUIRED /
+// FULLY_COVERED_BY_ACTIVE_PLAN, would_write false, writer never reached, db_writes 0. Every one of those is
+// the shape an activation wants to see, and the manifest STOPped on it while naming two predicates that
+// describe the OTHER class.
+//
+// WHY THIS IS NOT A WEAKENING. Class A keeps exactly the conditions it had. Class B is not class A with a
+// test removed — it is a different and LONGER list: the recommendation must be finite and positive, the
+// qualifying plan must be finite and cover it, the residual must be numerically zero, the over-planned
+// surplus must equal planned minus recommended, every required window must be stored / finite /
+// nonnegative, AND the furthest cumulative window must equal the recommendation. Two conditions become
+// seven. And the CLASS ITSELF is read from production's own `reason`, so this file cannot decide that a run
+// belongs to the more permissive branch — 61_ decides, and a reason that is neither is unclassifiable.
+//
+// `over_planned_qty` IS NOT A TOP-LEVEL PRODUCTION FIELD. 61_ emits it PER SCOPE, so the total is summed
+// across `per_scope` and reported as a sum. Inventing a top-level field here and then comparing against it
+// would be this file agreeing with itself.
+// ================================================================================================================
+var R6R7_NO_ACTION_CLASSES_ = ['VALID_ZERO_RECOMMENDATION', 'FULLY_COVERED_BY_ACTIVE_PLAN'];
+
+function CENSUS_r6r7ClassifyNoAction_(pp, wins) {
+  pp = pp || {};
+  var W = CENSUS_r6r7Windows_();
+  var out = { contract: 'R6-R7-R5-R1 no-action classification', classes: R6R7_NO_ACTION_CLASSES_.slice(),
+    classification: null, classified_from: 'production no_action_reason', unclassifiable_reason: null,
+    required_windows: W.slice(), stored_windows: {}, windows_missing: [], windows_non_finite: [],
+    windows_negative: [], furthest_window: null, furthest_window_qty: null,
+    recommended_qty: null, qualifying_active_planned_qty: null, residual_qty: null,
+    over_planned_qty_reported: null, over_planned_qty_expected: null,
+    over_planned_source: 'sum of production per_scope[].over_planned_qty',
+    checks: [] };
+  function C(name, expected, observed, pass) {
+    out.checks.push({ predicate: name, expected: expected, observed: observed, pass: !!pass });
+  }
+  function fin(v) { return typeof v === 'number' && isFinite(v); }
+
+  // ---- THE WINDOWS, read through the MISSING-IS-NOT-ZERO reader that produced them. A blank cell has no
+  //      number in it, and a census that read one as 0 would report a covered horizon where the truth is
+  //      that nothing was calculated.
+  var byName = {};
+  (wins || []).forEach(function (w) { byName[CENSUS_str_(w.window)] = w; });
+  W.forEach(function (name) {
+    var w = byName[name];
+    if (!w) { out.windows_missing.push(name); return; }
+    var q = w.suggested_qty;
+    out.stored_windows[name] = q === undefined ? null : q;
+    if (q === null || q === undefined || !isFinite(Number(q))) { out.windows_non_finite.push(name); return; }
+    if (Number(q) < 0) { out.windows_negative.push(name); return; }
+  });
+  // THE FURTHEST CUMULATIVE CHECKPOINT is the LAST entry of the frozen window order, not a name spelled
+  // here. D18/D30/D45/D90 are cumulative, so the furthest one is the standing authority's reading.
+  var last = W[W.length - 1];
+  out.furthest_window = last;
+  var lastW = byName[last];
+  var lastQ = lastW ? lastW.suggested_qty : null;
+  out.furthest_window_qty = (lastQ === null || lastQ === undefined || !isFinite(Number(lastQ)))
+    ? null : Number(lastQ);
+
+  var rq = pp.recommended_qty === undefined ? null : pp.recommended_qty;
+  var qp = pp.qualifying_active_planned_qty === undefined ? null : pp.qualifying_active_planned_qty;
+  var rs = pp.residual_qty === undefined ? null : pp.residual_qty;
+  out.recommended_qty = rq; out.qualifying_active_planned_qty = qp; out.residual_qty = rs;
+  if (Object.prototype.toString.call(pp.per_scope) === '[object Array]' && pp.per_scope.length) {
+    var sum = 0, allNum = true;
+    pp.per_scope.forEach(function (sc) {
+      var v = Number(sc && sc.over_planned_qty);
+      if (!isFinite(v)) { allNum = false; return; }
+      sum += v;
+    });
+    out.over_planned_qty_reported = allNum ? sum : null;
+  }
+  out.over_planned_qty_expected = (fin(qp) && fin(rq)) ? Math.max(0, qp - rq) : null;
+
+  // ---- THE FLOOR BOTH CLASSES STAND ON. Not one of these is relaxed by either branch.
+  C('no_action_outcome_is_exactly_ai_plan_no_action', 'AI_PLAN_NO_ACTION', pp.outcome,
+    CENSUS_str_(pp.outcome) === 'AI_PLAN_NO_ACTION');
+  C('no_action_code_is_exactly_no_replenishment_required', 'NO_REPLENISHMENT_REQUIRED', pp.code,
+    CENSUS_str_(pp.code) === 'NO_REPLENISHMENT_REQUIRED');
+  C('no_action_production_would_not_write', false, pp.would_write, pp.would_write === false);
+  C('no_action_writer_was_not_reached', false, pp.writer_reached, pp.writer_reached === false);
+  C('no_action_db_writes_is_zero', 0, pp.db_writes, (CENSUS_num_(pp.db_writes) || 0) === 0);
+  C('no_action_residual_qty_is_numerically_zero', 0, rs, fin(rs) && rs === 0);
+  C('every_required_window_is_stored_finite_and_nonnegative', W,
+    { stored: out.stored_windows, missing: out.windows_missing, non_finite: out.windows_non_finite,
+      negative: out.windows_negative },
+    out.windows_missing.length === 0 && out.windows_non_finite.length === 0
+      && out.windows_negative.length === 0);
+
+  // ---- THE CLASS, TAKEN FROM PRODUCTION. This file does not get to choose which branch a run is judged on.
+  var reason = CENSUS_str_(pp.reason);
+  if (R6R7_NO_ACTION_CLASSES_.indexOf(reason) !== -1) out.classification = reason;
+  else out.unclassifiable_reason = reason ? ('UNRECOGNISED_NO_ACTION_REASON: ' + reason)
+    : 'PRODUCTION_REPORTED_NO_NO_ACTION_REASON';
+  C('no_action_reason_is_one_of_the_two_proven_classes', R6R7_NO_ACTION_CLASSES_,
+    reason || out.unclassifiable_reason, out.classification !== null);
+
+  // ---- CLASS A — UNCHANGED. `recommended_qty_is_zero` keeps its exact name, because a predicate name is
+  //      part of what a STOP reports and renaming one silently changes what an operator reads.
+  if (out.classification === 'VALID_ZERO_RECOMMENDATION') {
+    C('recommended_qty_is_zero', 0, rq, rq === 0);
+    var allZero = out.windows_missing.length === 0 && out.windows_non_finite.length === 0
+      && W.every(function (name) { return Number(out.stored_windows[name]) === 0; });
+    C('every_window_is_a_stored_finite_zero', 'four finite zeros', out.stored_windows, allZero);
+  }
+
+  // ---- CLASS B — SEVEN CONDITIONS WHERE CLASS A HAS TWO.
+  if (out.classification === 'FULLY_COVERED_BY_ACTIVE_PLAN') {
+    C('fully_covered_recommended_qty_is_finite_and_positive', 'a finite number > 0', rq, fin(rq) && rq > 0);
+    C('fully_covered_qualifying_planned_qty_is_finite', 'a finite number', qp, fin(qp));
+    C('fully_covered_active_plan_covers_the_whole_recommendation',
+      'qualifying_active_planned_qty >= recommended_qty', { planned: qp, recommended: rq },
+      fin(qp) && fin(rq) && qp >= rq);
+    C('fully_covered_over_planned_equals_planned_minus_recommended', out.over_planned_qty_expected,
+      out.over_planned_qty_reported,
+      out.over_planned_qty_reported !== null && out.over_planned_qty_expected !== null
+        && out.over_planned_qty_reported === out.over_planned_qty_expected);
+    // The furthest cumulative checkpoint IS the standing authority's reading, so a recommendation that does
+    // not equal it is a recommendation this census cannot account for — whatever else is true of it.
+    C('fully_covered_furthest_window_equals_the_recommendation',
+      { window: last, qty: rq }, { window: last, qty: out.furthest_window_qty },
+      fin(rq) && out.furthest_window_qty !== null && out.furthest_window_qty === rq);
+    C('fully_covered_recommendation_state_is_not_a_zero_state', 'a non-zero recommendation state',
+      pp.recommendation_state, CENSUS_str_(pp.recommendation_state) !== 'VALID_ZERO'
+        && CENSUS_str_(pp.recommendation_state) !== ''
+        && CENSUS_str_(pp.recommendation_state) !== 'MISSING_RECOMMENDATION');
+  }
+
+  out.checks_failed = out.checks.filter(function (c) { return !c.pass; })
+    .map(function (c) { return c.predicate; });
+  out.ok = out.classification !== null && out.checks_failed.length === 0;
+  return out;
+}
+
 function CENSUS_r6r7ProductionPath_() {
   var out = { available: false, unavailable_reason: null,
     entry_point: null,   // copied from the production decision; never spelled here
@@ -7164,7 +7308,12 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
     deployment: null, flag: null, allowlist: null,
     schema_authority: null, live_schema: null, normalizers: null,
     identity_universe: null, reservation_observation: null,
-    frozen_before: null, freeze_paste_block: null,
+    frozen_before: null, freeze_paste_block: null, freeze_withheld_reason: null,
+    // R6-R7-R5-R1 — WHICH of the two proven no-action classes this run is, and the conditions that class
+    // carries. Deliberately NOT folded into frozen_before: the readback compares the frozen constant key
+    // by key, and quietly adding a key to a person's pasted baseline is how a comparison starts failing
+    // for a reason nobody changed.
+    no_action_classification: null,
     production_path: null, parity: null,
     activation_steps: null, rollback: null, browser_audit: null,
     proof_complete: false, proof_missing: ['NOT_EVALUATED'],
@@ -7220,8 +7369,13 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
     pp.code === 'NO_REPLENISHMENT_REQUIRED');
   P('production_would_not_write', false, pp.would_write, pp.would_write === false);
   P('writer_would_not_be_reached', false, pp.writer_reached, pp.writer_reached === false);
-  P('recommended_qty_is_zero', 0, pp.recommended_qty, pp.recommended_qty === 0);
+  // `recommended_qty_is_zero` is NOT asserted here any more: it is true of class A and false of class B, and
+  // asserting it unconditionally is precisely what refused a correct FULLY_COVERED_BY_ACTIVE_PLAN run. It
+  // moves, under its own name, into the class-A branch of CENSUS_r6r7ClassifyNoAction_ — which runs below,
+  // where the windows have been read. `residual_qty_is_zero` stays: it is required by BOTH classes.
   P('residual_qty_is_zero', 0, pp.residual_qty, pp.residual_qty === 0);
+  P('production_reason_is_a_proven_no_action_class', R6R7_NO_ACTION_CLASSES_, pp.reason,
+    R6R7_NO_ACTION_CLASSES_.indexOf(CENSUS_str_(pp.reason)) !== -1);
   P('qualifying_active_planned_qty_is_520', R6R7_SET_BEFORE_.current_plan_total,
     pp.qualifying_active_planned_qty,
     pp.qualifying_active_planned_qty === R6R7_SET_BEFORE_.current_plan_total);
@@ -7252,10 +7406,20 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
   var byWin = {};
   wins.forEach(function (w) { byWin[CENSUS_str_(w.window)] = w.suggested_qty; });
   P('recommendation_is_ready', 'READY', cr.calculation_status, CENSUS_str_(cr.calculation_status) === 'READY');
-  P('every_window_is_a_stored_finite_zero', 'four finite zeros', byWin,
-    wins.length > 0 && wins.every(function (w) { return w.suggested_qty === 0; }));
   P('freshness_is_current', 'a current snapshot', fr.freshness_state,
     CENSUS_str_(fr.freshness_state).indexOf('CURRENT') === 0);
+
+  // ---- 6b. R6-R7-R5-R1 — WHICH OF THE TWO PROVEN NO-ACTION CLASSES THIS RUN IS, AND ITS OWN CONDITIONS.
+  //
+  // The classifier is handed the production decision and the windows it has just re-read, and it returns a
+  // list of named checks. They are REPLAYED through P so a STOP still names itself in stop_reason and still
+  // lands in the same predicate ledger — one place for the logic, one ledger for the verdict.
+  out.no_action_classification = CENSUS_r6r7ClassifyNoAction_(pp, wins);
+  out.no_action_classification.checks.forEach(function (c) {
+    P(c.predicate, c.expected, c.observed, c.pass);
+  });
+  P('no_action_classification_is_internally_consistent', true, out.no_action_classification.ok,
+    out.no_action_classification.ok === true);
 
   // ---- 7. THE ROUTES AND THE COUNTS, RE-READ AND FINGERPRINTED. ---------------------------------------------
   var prov = CENSUS_quiet_('RUN_R6R2_ROUTE_PROVENANCE', function () { return RUN_R6R2_ROUTE_PROVENANCE(); });
@@ -7446,6 +7610,31 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
     out.stop_reason = out.predicates_failed + ' condition(s) not met: '
       + out.predicates.filter(function (p) { return !p.pass; }).map(function (p) { return p.predicate; }).join(', ')
       + '. Nothing may be authorized while any of these is false.';
+  }
+
+  // ============================================================================================================
+  // R6-R7-R5-R1 SAFETY REPAIR — A STOP MUST NOT HAND OVER A USABLE FREEZE BLOCK.
+  //
+  // The freeze block is the thing an operator COPIES OUT and pastes into R6R7_NO_ACTION_BEFORE_ before
+  // pressing Generate. Until now it was emitted whenever it had been built — which is on every run,
+  // including a refused one. Measured, not supposed: a STOP emitted three usable chunks plus the meta line
+  // telling the reader where to paste them.
+  //
+  // That is the worst shape a diagnostic can take. The refusal scrolls past, the numbered chunks are the
+  // thing that LOOKS like the output, and an operator who pastes them has frozen a baseline the manifest
+  // declined to authorize — after which the readback compares the write against a baseline that was never
+  // signed off, and reports CONFIRMED.
+  //
+  // TWO INDEPENDENT LOCKS, because either alone can be bypassed by a later edit. This one nulls the block
+  // on a STOP so there is nothing to emit; CENSUS_r6r7Finish_ additionally refuses to emit unless the FINAL
+  // verdict is READY_TO_AUTHORIZE — and the final verdict is only known there, because the proof guard can
+  // downgrade a READY after this point.
+  // ============================================================================================================
+  if (out.verdict !== 'READY_TO_AUTHORIZE' && out.freeze_paste_block) {
+    out.freeze_withheld_reason = 'WITHHELD_BECAUSE_VERDICT_IS_' + out.verdict
+      + ' — a freeze block is an authorization to proceed, and this run did not give one. Fix the failed'
+      + ' condition(s), run this manifest again, and freeze from the run that says READY_TO_AUTHORIZE.';
+    out.freeze_paste_block = null;
   }
   return CENSUS_r6r7Finish_(out);
 }
@@ -8783,12 +8972,25 @@ function CENSUS_r6r7Finish_(out) {
   // It carries the full-row field maps, so it is far too long for one Logger line — and it is the one thing
   // the operator has to copy out of this run. Numbered chunks make a truncated paste visible: chunk 3 of 4
   // missing is a gap somebody can see, where a single cut line is not.
-  if (out.freeze_paste_block) {
+  // R6-R7-R5-R1 — AND ONLY ON A READY_TO_AUTHORIZE. This is the SECOND of the two locks described at the
+  // end of the manifest; it lives here because this is the only place the FINAL verdict is known — the proof
+  // guard above can downgrade a READY that the manifest had already decided.
+  //
+  // A withheld block is REPORTED, not silently dropped. An operator who was expecting numbered chunks and
+  // sees nothing would reasonably wonder whether the log was truncated, and 'the output is missing' is a
+  // different problem from 'the output was refused'.
+  if (out.freeze_paste_block && out.verdict === 'READY_TO_AUTHORIZE') {
     var chunks = CENSUS_r6r7EmitChunked_('r6r7_freeze_paste_block', out.freeze_paste_block,
       R6R7_CHUNK_MAX_BYTES_);
     CENSUS_log_('r6r7_freeze_paste_meta', JSON.stringify({ chunks: chunks,
       bytes: out.freeze_paste_block.length, chunk_max_bytes: R6R7_CHUNK_MAX_BYTES_,
       paste_into: 'R6R7_NO_ACTION_BEFORE_' }));
+  } else if (out.freeze_paste_block || out.freeze_withheld_reason) {
+    CENSUS_log_('r6r7_freeze_paste_withheld', JSON.stringify({ verdict: out.verdict,
+      reason: out.freeze_withheld_reason || ('WITHHELD_BECAUSE_VERDICT_IS_' + out.verdict),
+      chunks: 0, paste_into: null,
+      note: 'No freeze block was emitted. Nothing from this run may be pasted into R6R7_NO_ACTION_BEFORE_.' }));
+    out.freeze_paste_block = null;
   }
 
   var payload = {

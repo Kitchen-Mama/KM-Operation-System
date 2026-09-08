@@ -58,12 +58,14 @@ var RUNCENSUS = R2_SRC.slice(R2_SRC.indexOf('function runCensus('), R2_SRC.index
 var SHARED = (new Function('require', '__dirname', '__filename', 'module', 'exports', 'console',
   R2_SRC.slice(0, CUT) + '\n' + RUNCENSUS
   + '\nreturn { World: World, failed: failed, swap: swap, extractFn: extractFn, extractVar: extractVar,'
-  + ' CENSUS: CENSUS, G61: G61, live: live, projection: projection, NLF: NLF, SQ: SQ };'
+  + ' CENSUS: CENSUS, G61: G61, live: live, projection: projection, NLF: NLF, SQ: SQ,'
+  + ' GAP_YESTERDAY: GAP_YESTERDAY };'
 ))(require, __dirname, __filename, module, exports, console);
 var World = SHARED.World, failed = SHARED.failed, swap = SHARED.swap;
 var extractFn = SHARED.extractFn, extractVar = SHARED.extractVar;
 var CENSUS = SHARED.CENSUS, G61 = SHARED.G61, live = SHARED.live, projection = SHARED.projection;
 var NLF = SHARED.NLF;
+var GAP_YESTERDAY = SHARED.GAP_YESTERDAY;
 // THE ROUND THIS SUITE WAS WRITTEN AGAINST. It is a FLOOR for the stamp assertions in §H and nothing else.
 var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
 
@@ -744,6 +746,303 @@ ok(extractFn(CENSUS, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST').indexO
   'H4  and the manifest says so on its own record');
 
 // ================================================================================================================
+section('L — R6-R7-R5-R1: the SECOND proven no-action class, and a STOP that hands over nothing');
+// ================================================================================================================
+// WHAT WENT WRONG, from the live run rather than from a hypothesis. A production generation answered
+// AI_PLAN_NO_ACTION / NO_REPLENISHMENT_REQUIRED / FULLY_COVERED_BY_ACTIVE_PLAN on gap run
+// GAP-INV-20260908T132343-0001: D18/D30/D45 = 0, D90 = 160, recommended 160, already-planned 520,
+// residual 0, over-planned 360, would_write false, writer_reached false, db_writes 0. Every one of those is
+// the shape an activation wants to see — and the manifest STOPped, naming `recommended_qty_is_zero` and
+// `every_window_is_a_stored_finite_zero`, two predicates that describe the OTHER class.
+//
+// 61_ has told these two apart since R6-R7-R2 (`weeklyAiPlanNoActionDecision_` reports them as different
+// reasons on purpose). Only the manifest had one shape.
+//
+// AND IT STILL EMITTED THE FREEZE BLOCK. Measured: the STOP printed three usable numbered chunks plus the
+// meta line saying where to paste them. That is the worst shape a diagnostic can take — the refusal scrolls
+// past, the chunks look like the output, and a baseline the manifest DECLINED to authorize gets frozen.
+
+// The live world: three zero windows and a positive furthest one, against the same untouched 520 plan.
+var FC_GAP = { d18_gap_qty: 0, d18_suggested_qty: 0, d30_gap_qty: 0, d30_suggested_qty: 0,
+  d45_gap_qty: 0, d45_suggested_qty: 0, d90_gap_qty: 160, d90_suggested_qty: 160 };
+function fcGap(over) {
+  var g = {};
+  Object.keys(FC_GAP).forEach(function (k) { g[k] = FC_GAP[k]; });
+  Object.keys(over || {}).forEach(function (k) { g[k] = over[k]; });
+  return { gap: g };
+}
+var FULLY_COVERED = fcGap();
+
+// ---- L1  CLASS B IS RECOGNISED, and the production decision it rests on is production's own. --------------
+var LB = manifest(live(FULLY_COVERED));
+var lbp = LB.res.production_path || {};
+eq([lbp.outcome, lbp.code, lbp.reason],
+  ['AI_PLAN_NO_ACTION', 'NO_REPLENISHMENT_REQUIRED', 'FULLY_COVERED_BY_ACTIVE_PLAN'],
+  'L1  production answers the three exact strings the live run reported');
+eq([lbp.recommended_qty, lbp.qualifying_active_planned_qty, lbp.residual_qty], [160, 520, 0],
+  'L1a recommended 160 / already planned 520 / residual 0');
+eq([lbp.would_write, lbp.writer_reached, lbp.db_writes], [false, false, 0],
+  'L1b and it would not write, never reaches the writer, and counts zero');
+eq(LB.res.verdict, 'READY_TO_AUTHORIZE', 'L2  §B the manifest now recognises it …');
+eq(failed(LB.res), [], 'L2a … with no condition unmet');
+eq(LB.res.no_action_classification.classification, 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  'L2b and it names the class it accepted');
+eq(LB.res.no_action_classification.classified_from, 'production no_action_reason',
+  'L2c taken from PRODUCTION\'s reason — this file does not choose which branch judges a run');
+
+// The seven class-B conditions are in the ledger by name, so a STOP on any one of them says which.
+var LBnames = LB.res.predicates.map(function (x) { return x.predicate; });
+['no_action_outcome_is_exactly_ai_plan_no_action', 'no_action_code_is_exactly_no_replenishment_required',
+ 'no_action_production_would_not_write', 'no_action_writer_was_not_reached', 'no_action_db_writes_is_zero',
+ 'no_action_residual_qty_is_numerically_zero', 'every_required_window_is_stored_finite_and_nonnegative',
+ 'no_action_reason_is_one_of_the_two_proven_classes',
+ 'fully_covered_recommended_qty_is_finite_and_positive', 'fully_covered_qualifying_planned_qty_is_finite',
+ 'fully_covered_active_plan_covers_the_whole_recommendation',
+ 'fully_covered_over_planned_equals_planned_minus_recommended',
+ 'fully_covered_furthest_window_equals_the_recommendation',
+ 'fully_covered_recommendation_state_is_not_a_zero_state'].forEach(function (nm, i) {
+  ok(LBnames.indexOf(nm) >= 0, 'L3.' + (i + 1) + ' the ledger carries ' + nm);
+});
+// TWO CONDITIONS BECOME FOURTEEN. Class B is not class A with a test removed.
+ok(LBnames.filter(function (n) { return /^fully_covered_/.test(n); }).length === 6,
+  'L3a six of them are specific to class B');
+eq(LBnames.filter(function (n) {
+  return n === 'recommended_qty_is_zero' || n === 'every_window_is_a_stored_finite_zero';
+}), [], 'L3b and the two class-A predicates are NOT asserted against a class-B run');
+
+var lbc = LB.res.no_action_classification;
+eq([lbc.recommended_qty, lbc.qualifying_active_planned_qty, lbc.residual_qty], [160, 520, 0],
+  'L4  the classification carries the three quantities');
+eq([lbc.over_planned_qty_reported, lbc.over_planned_qty_expected], [360, 360],
+  'L4a and the over-planned surplus, REPORTED beside what the arithmetic requires');
+eq(lbc.over_planned_source, 'sum of production per_scope[].over_planned_qty',
+  'L4b summed from production per_scope, because there is no top-level field to read');
+eq([lbc.furthest_window, lbc.furthest_window_qty], ['D90', 160],
+  'L4c the furthest cumulative checkpoint is D90 and it equals the recommendation');
+eq(lbc.stored_windows, { D18: 0, D30: 0, D45: 0, D90: 160 },
+  'L4d every required window is stored, and three of them are legitimately zero');
+eq([lbc.windows_missing, lbc.windows_non_finite, lbc.windows_negative], [[], [], []],
+  'L4e none missing, none non-finite, none negative');
+eq(LB.res.frozen_before.windows, { D18: 0, D30: 0, D45: 0, D90: 160 },
+  'L4f and the freeze records the windows as they actually are');
+
+// ---- L5  CLASS A IS UNTOUCHED. Same world, same verdict, same two predicate names. -----------------------
+var LA = manifest();
+eq(LA.res.verdict, 'READY_TO_AUTHORIZE', 'L5  §A a valid zero is still READY_TO_AUTHORIZE');
+eq(failed(LA.res), [], 'L5a with no condition unmet');
+eq(LA.res.no_action_classification.classification, 'VALID_ZERO_RECOMMENDATION', 'L5b classified as class A');
+var LAnames = LA.res.predicates.map(function (x) { return x.predicate; });
+ok(LAnames.indexOf('recommended_qty_is_zero') >= 0,
+  'L5c and `recommended_qty_is_zero` keeps its EXACT name — a predicate name is what a STOP reports');
+ok(LAnames.indexOf('every_window_is_a_stored_finite_zero') >= 0, 'L5d as does the four-zeros condition');
+eq(LAnames.filter(function (n) { return /^fully_covered_/.test(n); }), [],
+  'L5e while no class-B condition is asserted against a class-A run');
+
+// ---- L6  NO GATE WAS WEAKENED. Every unrelated gate is still in the ledger, in both classes. -------------
+['scope_is_the_one_frozen_sku', 'deployment_contract_is_readable', 'deployment_build_is_the_measured_one',
+ 'deployment_is_not_mixed', 'no_stale_modules', 'flag_is_still_false',
+ 'allowlist_is_exactly_the_one_frozen_scope', 'no_wildcard_or_partial_allowlist_entry',
+ 'residual_qty_is_zero', 'qualifying_active_planned_qty_is_520', 'recommendation_is_ready',
+ 'freshness_is_current', 'wrapper_and_production_agree', 'parity_says_production_would_not_write',
+ 'header_column_names_match_the_authority_byte_for_byte',
+ 'line_column_names_match_the_authority_byte_for_byte', 'identity_universe_is_freezable',
+ 'no_active_ai_header_exists_in_the_universe', 'reservation_observation_state_is_named',
+ 'reservation_table_is_not_present_but_unreadable', 'no_active_ai_row_exists_yet',
+ 'route_A_is_manual', 'route_B_is_manual', 'db_writes_is_zero', 'writer_not_constructed',
+ 'no_generation_called_by_this_file'].forEach(function (nm, i) {
+  ok(LAnames.indexOf(nm) >= 0 && LBnames.indexOf(nm) >= 0,
+    'L6.' + (i + 1) + ' ' + nm + ' still gates BOTH classes');
+});
+ok(LBnames.length > LAnames.length,
+  'L6a and class B carries MORE conditions than class A, not fewer', [LAnames.length, LBnames.length]);
+
+// ---- L7  THE NEGATIVES, asked of the classifier DIRECTLY. -------------------------------------------------
+// Every one of these is a state 61_ would never produce, which is exactly why they are put to the classifier
+// as crafted decisions rather than built as worlds: a negative test that cannot be constructed is a negative
+// test nobody has run. The classifier is the shipped one, evaluated out of the census source.
+var CLASSIFY = (function () {
+  var w = W(live());
+  return function (pp, wins) {
+    return vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(pp) + ', '
+      + JSON.stringify(wins) + ')', w.ctx);
+  };
+})();
+function winsFor(map) {
+  return ['D18', 'D30', 'D45', 'D90'].map(function (n) {
+    return { window: n, gap_qty: map[n], suggested_qty: map[n] };
+  });
+}
+// A window array with one of the four required names simply ABSENT — a different fact from a blank one.
+function winsOmitting(drop) {
+  return winsFor({ D18: 0, D30: 0, D45: 0, D90: 160 }).filter(function (w) { return w.window !== drop; });
+}
+var GOOD_WINS = winsFor({ D18: 0, D30: 0, D45: 0, D90: 160 });
+function ppB(over) {
+  var d = { outcome: 'AI_PLAN_NO_ACTION', code: 'NO_REPLENISHMENT_REQUIRED',
+    reason: 'FULLY_COVERED_BY_ACTIVE_PLAN', recommendation_state: 'NONZERO_RECOMMENDATION',
+    recommended_qty: 160, qualifying_active_planned_qty: 520, residual_qty: 0,
+    would_write: false, writer_reached: false, db_writes: 0,
+    per_scope: [{ key: 'ResUS|US|Amazon|CO1100-R', recommended_qty: 160, qualifying_planned_qty: 520,
+      residual_qty: 0, over_planned_qty: 360 }] };
+  Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
+  return d;
+}
+// The control: the crafted class-B decision the live run actually produced is ACCEPTED.
+var LC0 = CLASSIFY(ppB(), GOOD_WINS);
+eq([LC0.ok, LC0.classification, LC0.checks_failed],
+  [true, 'FULLY_COVERED_BY_ACTIVE_PLAN', []], 'L7  the live class-B decision classifies clean');
+
+[['qualifying planned BELOW the recommendation',
+  ppB({ qualifying_active_planned_qty: 100, per_scope: [{ over_planned_qty: 0 }] }), GOOD_WINS,
+  'fully_covered_active_plan_covers_the_whole_recommendation'],
+ ['residual greater than zero', ppB({ residual_qty: 40 }), GOOD_WINS,
+  'no_action_residual_qty_is_numerically_zero'],
+ ['a residual that is not a number at all', ppB({ residual_qty: null }), GOOD_WINS,
+  'no_action_residual_qty_is_numerically_zero'],
+ ['the wrong outcome', ppB({ outcome: 'WOULD_GENERATE' }), GOOD_WINS,
+  'no_action_outcome_is_exactly_ai_plan_no_action'],
+ ['the wrong code', ppB({ code: 'REPLENISHMENT_REQUIRED' }), GOOD_WINS,
+  'no_action_code_is_exactly_no_replenishment_required'],
+ ['a reason that is neither class', ppB({ reason: 'RESIDUAL_REMAINS' }), GOOD_WINS,
+  'no_action_reason_is_one_of_the_two_proven_classes'],
+ ['no reason at all', ppB({ reason: '' }), GOOD_WINS,
+  'no_action_reason_is_one_of_the_two_proven_classes'],
+ ['would_write true', ppB({ would_write: true }), GOOD_WINS, 'no_action_production_would_not_write'],
+ ['writer_reached true', ppB({ writer_reached: true }), GOOD_WINS, 'no_action_writer_was_not_reached'],
+ ['db_writes above zero', ppB({ db_writes: 1 }), GOOD_WINS, 'no_action_db_writes_is_zero'],
+ ['a MISSING window', ppB(), winsOmitting('D45'),
+  'every_required_window_is_stored_finite_and_nonnegative'],
+ ['a BLANK (non-finite) window', ppB(), winsFor({ D18: 0, D30: 0, D45: null, D90: 160 }),
+  'every_required_window_is_stored_finite_and_nonnegative'],
+ ['a NEGATIVE window', ppB(), winsFor({ D18: 0, D30: -5, D45: 0, D90: 160 }),
+  'every_required_window_is_stored_finite_and_nonnegative'],
+ ['the furthest window not equal to the recommendation', ppB(),
+  winsFor({ D18: 0, D30: 0, D45: 0, D90: 200 }),
+  'fully_covered_furthest_window_equals_the_recommendation'],
+ ['over-planned arithmetic that does not add up',
+  ppB({ per_scope: [{ over_planned_qty: 999 }] }), GOOD_WINS,
+  'fully_covered_over_planned_equals_planned_minus_recommended'],
+ ['a recommendation that is not finite', ppB({ recommended_qty: null }), GOOD_WINS,
+  'fully_covered_recommended_qty_is_finite_and_positive'],
+ ['a class-B run whose recommendation is zero', ppB({ recommended_qty: 0 }),
+  winsFor({ D18: 0, D30: 0, D45: 0, D90: 0 }),
+  'fully_covered_recommended_qty_is_finite_and_positive']
+].forEach(function (c, i) {
+  var r = CLASSIFY(c[1], c[2]);
+  ok(r.ok === false && r.checks_failed.indexOf(c[3]) >= 0,
+    'L7.' + (i + 1) + ' ' + c[0] + ' → refused, naming ' + c[3],
+    [r.ok, r.checks_failed]);
+});
+
+// And class A is refused by its OWN conditions, not by class B's.
+function ppA(over) {
+  var d = { outcome: 'AI_PLAN_NO_ACTION', code: 'NO_REPLENISHMENT_REQUIRED',
+    reason: 'VALID_ZERO_RECOMMENDATION', recommendation_state: 'VALID_ZERO',
+    recommended_qty: 0, qualifying_active_planned_qty: 520, residual_qty: 0,
+    would_write: false, writer_reached: false, db_writes: 0, per_scope: [{ over_planned_qty: 520 }] };
+  Object.keys(over || {}).forEach(function (k) { d[k] = over[k]; });
+  return d;
+}
+var ZERO_WINS = winsFor({ D18: 0, D30: 0, D45: 0, D90: 0 });
+var LA0 = CLASSIFY(ppA(), ZERO_WINS);
+eq([LA0.ok, LA0.classification, LA0.checks_failed], [true, 'VALID_ZERO_RECOMMENDATION', []],
+  'L8  the class-A decision still classifies clean');
+var LA1 = CLASSIFY(ppA({ recommended_qty: 5 }), ZERO_WINS);
+ok(LA1.ok === false && LA1.checks_failed.indexOf('recommended_qty_is_zero') >= 0,
+  'L8a a class-A run with a positive recommendation is still refused by recommended_qty_is_zero');
+var LA2 = CLASSIFY(ppA(), winsFor({ D18: 0, D30: 0, D45: 0, D90: 7 }));
+ok(LA2.ok === false && LA2.checks_failed.indexOf('every_window_is_a_stored_finite_zero') >= 0,
+  'L8b and a non-zero window is still refused by the four-zeros condition');
+
+// ---- L9  A STALE SNAPSHOT STILL STOPS, in the new class as well as the old. ------------------------------
+// FIRST, the thing that must NOT be called stale. A yesterday-only snapshot before today's 13:30 run is
+// due is CURRENT_DURING_REFRESH, and R4-A2-R1 §4 exists because calling it stale refused the newest data
+// that had ever existed. Asserted here so this round cannot quietly reintroduce that.
+var LFresh = manifest(live(fcGap({ calculation_date: GAP_YESTERDAY })));
+eq([LFresh.res.verdict, LFresh.res.frozen_before.freshness_state],
+  ['READY_TO_AUTHORIZE', 'CURRENT_DURING_REFRESH'],
+  'L9  a yesterday-only snapshot is CURRENT_DURING_REFRESH, not stale — the R4 defect stays fixed');
+// AND NOW A GENUINELY STALE ONE: another SKU materialized TODAY makes today the accepted run, so this
+// scope's yesterday row belongs to a run that is no longer the current one.
+var STALE_LINEAGE = fcGap({ calculation_date: GAP_YESTERDAY });
+STALE_LINEAGE.extraGap = [{ sku: 'OTHER-SKU', d18_suggested_qty: 0, d30_suggested_qty: 0,
+  d45_suggested_qty: 0, d90_suggested_qty: 0 }];
+var LS = manifest(live(STALE_LINEAGE));
+eq(LS.res.verdict, 'STOP', 'L9a a snapshot from a superseded run STOPS a class-B run …');
+eq(LS.res.production_path.outcome, 'REFUSAL',
+  'L9b … because production REFUSES it rather than calling it a no-action');
+ok(failed(LS.res).indexOf('production_reason_is_a_proven_no_action_class') >= 0,
+  'L9c and the new class gate is among the reasons, so it cannot be reached by a refusal');
+eq(LS.res.no_action_classification.classification, null,
+  'L9d with no classification at all — a refusal belongs to neither class');
+
+// ---- L10 THE SAFETY REPAIR. A STOP HANDS OVER NOTHING. ---------------------------------------------------
+function freezeChunks(w) {
+  return labels(w).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length;
+}
+function freezeMeta(w) { return labels(w).indexOf('r6r7_freeze_paste_meta') >= 0; }
+function freezeWithheld(w) { return labels(w).indexOf('r6r7_freeze_paste_withheld') >= 0; }
+// The READY runs still hand over exactly what an operator needs, in numbered chunks.
+ok(freezeChunks(LA.world) > 0 && freezeMeta(LA.world) && !freezeWithheld(LA.world),
+  'L10 a READY class-A run still emits the numbered freeze chunks and the meta line');
+ok(freezeChunks(LB.world) > 0 && freezeMeta(LB.world) && !freezeWithheld(LB.world),
+  'L10a and so does a READY class-B run');
+ok(typeof LB.res.freeze_paste_block === 'string' && LB.res.freeze_paste_block.length > 100,
+  'L10b with the block itself present on the result');
+// Every STOP shape: no chunks, no meta, a NAMED withholding, and nothing left on the result to paste.
+[['a residual that remains', NONZERO],
+ ['a blocked recommendation', BLOCKED],
+ ['a snapshot from a superseded run', STALE_LINEAGE],
+ ['a negative window', fcGap({ d30_suggested_qty: -5 })]
+].forEach(function (c, i) {
+  var r = manifest(live(c[1]));
+  eq([r.res.verdict, freezeChunks(r.world), freezeMeta(r.world), r.res.freeze_paste_block],
+    ['STOP', 0, false, null],
+    'L11.' + (i + 1) + ' ' + c[0] + ' → STOP, ZERO freeze chunks, no meta, nothing on the result');
+  ok(freezeWithheld(r.world), 'L11.' + (i + 1) + 'a and the withholding is REPORTED, not silent');
+  ok(/WITHHELD_BECAUSE_VERDICT_IS_STOP/.test(String(r.res.freeze_withheld_reason)),
+    'L11.' + (i + 1) + 'b naming why');
+});
+// A withheld run must not leave a paste target in the log either — a reader who copies the withheld line
+// must find no instruction in it.
+var LW = manifest(live(NONZERO));
+var lwLine = lineOf(LW.world, 'r6r7_freeze_paste_withheld');
+ok(!!lwLine && JSON.parse(lwLine).paste_into === null && JSON.parse(lwLine).chunks === 0,
+  'L12 the withheld notice carries chunks 0 and NO paste target');
+
+// ---- L13 BOTH LOCKS EXIST, and the second one is defence in depth rather than theatre. -------------------
+var LM = extractFn(CENSUS, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST');
+var LF = extractFn(CENSUS, 'CENSUS_r6r7Finish_');
+ok(/out\.verdict !== 'READY_TO_AUTHORIZE' && out\.freeze_paste_block/.test(LM),
+  'L13 lock one: the manifest nulls the block whenever its own verdict is not READY_TO_AUTHORIZE');
+ok(/out\.freeze_paste_block && out\.verdict === 'READY_TO_AUTHORIZE'/.test(LF),
+  'L13a lock two: the emitter refuses unless the FINAL verdict is READY_TO_AUTHORIZE');
+// STATED PLAINLY, because it would be easy to imply more: every Finish_-time downgrade in the current
+// predicate set ALSO fails a manifest predicate, so lock two is not independently observable today. It is
+// there for the downgrade that is added later — the proof guard can turn a READY into a STOP after lock one
+// has already run, and on that day lock one is looking at the wrong verdict.
+ok(/proof_complete/.test(LF) && /out\.verdict = 'STOP'/.test(LF),
+  'L13b and Finish_ really can downgrade a verdict after lock one has run, which is why lock two exists');
+
+// ---- L14 THE PIN STAYS INDEPENDENT. Nothing added this round reads the expected build from the observed.
+ok(!/R6R7_ACTIVATION_BUILD_\s*=\s*(out\.deployment|.*deployment_build)/.test(CENSUS),
+  'L14 the census still never assigns the activation pin FROM the deployment it is examining');
+ok(!/deployment/.test(extractFn(CENSUS, 'CENSUS_r6r7ClassifyNoAction_')),
+  'L14a and the classifier does not read the deployment at all');
+eq(ACTIVATION_PIN, OBSERVED_BUILD,
+  'L14b the pin is still the actually-deployed R5-R1 build, unmoved by this round');
+
+// ---- L15 THIS ROUND WROTE NOTHING. ------------------------------------------------------------------
+eq([LB.res.db_writes, LB.res.writer_constructed, LB.res.writer_calls, LB.res.submit_calls,
+  LB.res.route_save_calls, LB.res.reservation_writes], [0, false, 0, 0, 0, 0],
+  'L15 the class-B manifest run wrote nothing, by six counters');
+eq(LB.world.dbWrites(), 0, 'L15a measured on the sheets, not reported');
+eq([LB.res.flag_flipped_this_round, LB.res.generation_called_this_round], [false, false],
+  'L15b and it neither flipped the flag nor called a generation');
+ok(!/setValue|appendRow|deleteRow|setValues|LockService/
+  .test(extractFn(CENSUS, 'CENSUS_r6r7ClassifyNoAction_')),
+  'L15c the classifier itself contains no write API at all');
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -939,6 +1238,89 @@ mut('N14 the pin adopting the observed deployment build instead of being pinned'
     && failed(bad.res).indexOf('deployment_build_is_the_measured_one') === -1;
 });
 
+
+mut('N15 a STOP emits usable freeze blocks — the state an operator could paste from a refusal', function () {
+  // BOTH locks removed, because either alone still withholds. That is the point of having two, and it also
+  // means neither can be probed on its own through behaviour.
+  var m = swap(CENSUS, "  if (out.verdict !== 'READY_TO_AUTHORIZE' && out.freeze_paste_block) {",
+    '  if (false) {');
+  m = swap(m, "  if (out.freeze_paste_block && out.verdict === 'READY_TO_AUTHORIZE') {",
+    '  if (out.freeze_paste_block) {');
+  var clean = manifest(live(NONZERO));
+  var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST', live(NONZERO));
+  function chunks(w) { return labels(w).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length; }
+  return clean.res.verdict === 'STOP' && chunks(clean.world) === 0
+    && bad.res.verdict === 'STOP' && chunks(bad.world) > 0;
+});
+
+mut('N16 the classification is inferred by the census instead of taken from production', function () {
+  // An expected value taken from the observed one cannot fail. Here the failure mode is subtler: if the
+  // census decides the class from the NUMBERS it is judging, a run whose reason is RESIDUAL_REMAINS — or
+  // anything else — gets judged on the branch its own quantities happen to fit.
+  var m = swap(CENSUS,
+    "  if (R6R7_NO_ACTION_CLASSES_.indexOf(reason) !== -1) out.classification = reason;",
+    "  if (R6R7_NO_ACTION_CLASSES_.indexOf(reason) !== -1) out.classification = reason;" + NLF
+    + "  else if (fin(rq) && rq > 0) out.classification = 'FULLY_COVERED_BY_ACTIVE_PLAN';");
+  var wrong = ppB({ reason: 'RESIDUAL_REMAINS' });
+  var cleanR = CLASSIFY(wrong, GOOD_WINS);
+  var w2 = W(live()); vm.runInContext(m, w2.ctx);
+  var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(wrong) + ', '
+    + JSON.stringify(GOOD_WINS) + ')', w2.ctx);
+  return cleanR.classification === null
+    && cleanR.checks_failed.indexOf('no_action_reason_is_one_of_the_two_proven_classes') >= 0
+    && badR.classification === 'FULLY_COVERED_BY_ACTIVE_PLAN';
+});
+
+[['N17 class B stops requiring the plan to cover the whole recommendation',
+  "    C('fully_covered_active_plan_covers_the_whole_recommendation',",
+  "    if (false) C('fully_covered_active_plan_covers_the_whole_recommendation',",
+  ppB({ qualifying_active_planned_qty: 100, per_scope: [{ over_planned_qty: 0 }] }),
+  'fully_covered_active_plan_covers_the_whole_recommendation'],
+ ['N18 the residual stops having to be numerically zero',
+  "  C('no_action_residual_qty_is_numerically_zero', 0, rs, fin(rs) && rs === 0);",
+  "  C('no_action_residual_qty_is_numerically_zero', 0, rs, true);",
+  ppB({ residual_qty: 40 }), 'no_action_residual_qty_is_numerically_zero'],
+ ['N19 the over-planned arithmetic is no longer checked',
+  "    C('fully_covered_over_planned_equals_planned_minus_recommended', out.over_planned_qty_expected,",
+  "    if (false) C('fully_covered_over_planned_equals_planned_minus_recommended', out.over_planned_qty_expected,",
+  ppB({ per_scope: [{ over_planned_qty: 999 }] }),
+  'fully_covered_over_planned_equals_planned_minus_recommended'],
+ ['N20 the furthest window no longer has to equal the recommendation',
+  "    C('fully_covered_furthest_window_equals_the_recommendation',",
+  "    if (false) C('fully_covered_furthest_window_equals_the_recommendation',",
+  ppB(), 'fully_covered_furthest_window_equals_the_recommendation', winsFor({ D18: 0, D30: 0, D45: 0, D90: 200 })],
+ ['N21 a blank or negative window passes as a stored zero',
+  "  C('every_required_window_is_stored_finite_and_nonnegative', W,",
+  "  if (false) C('every_required_window_is_stored_finite_and_nonnegative', W,",
+  ppB(), 'every_required_window_is_stored_finite_and_nonnegative', winsFor({ D18: 0, D30: -5, D45: 0, D90: 160 })],
+ ['N22 would_write true is accepted',
+  "  C('no_action_production_would_not_write', false, pp.would_write, pp.would_write === false);",
+  "  C('no_action_production_would_not_write', false, pp.would_write, true);",
+  ppB({ would_write: true }), 'no_action_production_would_not_write'],
+ ['N23 the writer being reached is accepted',
+  "  C('no_action_writer_was_not_reached', false, pp.writer_reached, pp.writer_reached === false);",
+  "  C('no_action_writer_was_not_reached', false, pp.writer_reached, true);",
+  ppB({ writer_reached: true }), 'no_action_writer_was_not_reached'],
+ ['N24 a non-zero db_writes is accepted',
+  "  C('no_action_db_writes_is_zero', 0, pp.db_writes, (CENSUS_num_(pp.db_writes) || 0) === 0);",
+  "  C('no_action_db_writes_is_zero', 0, pp.db_writes, true);",
+  ppB({ db_writes: 3 }), 'no_action_db_writes_is_zero'],
+ ['N25 class A stops requiring a zero recommendation',
+  "    C('recommended_qty_is_zero', 0, rq, rq === 0);",
+  "    C('recommended_qty_is_zero', 0, rq, true);",
+  ppA({ recommended_qty: 5 }), 'recommended_qty_is_zero', ZERO_WINS]
+].forEach(function (c) {
+  mut(c[0], function () {
+    var m = swap(CENSUS, c[1], c[2]);
+    var wins = c[5] || GOOD_WINS;
+    var cleanR = CLASSIFY(c[3], wins);
+    var w2 = W(live()); vm.runInContext(m, w2.ctx);
+    var badR = vm.runInContext('CENSUS_r6r7ClassifyNoAction_(' + JSON.stringify(c[3]) + ', '
+      + JSON.stringify(wins) + ')', w2.ctx);
+    return cleanR.ok === false && cleanR.checks_failed.indexOf(c[4]) >= 0
+      && badR.checks_failed.indexOf(c[4]) === -1;
+  });
+});
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);

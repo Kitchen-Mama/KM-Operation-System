@@ -724,11 +724,41 @@ if (changed === null) {
     'assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs',
     'assets/tools/apps-script-migrations/TEMP_migrate_factory_stock_override_audit_r5.gs'
   ], 'C1  §C the Apps Script set that changed this round is 71_, 11_, 63_, the census pin and the new TEMP migration');
-  // And what changed in the census is TWO STAMPS. Not the captured activation evidence.
-  var censusDiff = String(git('diff --numstat ' + BASE
-    + ' -- assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs')).trim().split(/\s+/);
-  eq([censusDiff[0], censusDiff[1]], ['2', '2'],
-    'C1a and the census changed by exactly two lines — the two build pins, not one byte of captured evidence');
+  // AND NOT ONE BYTE OF CAPTURED ACTIVATION EVIDENCE, which is the property rather than a line count.
+  //
+  // These four constants are what a PERSON pasted in from a live run: the frozen before-state, the frozen
+  // row baseline, the two manual routes, and the browser response actually observed. A diagnostic may grow
+  // new logic beside them; it may never quietly restate what was measured. Compared byte for byte against
+  // the round baseline, extracted by the same brace-aware scanner the census's own suite uses.
+  var CENSUS_REL = 'assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs';
+  function stmt(src, name) {
+    var m = new RegExp('var ' + name + '\\s*=').exec(src);
+    if (!m) return null;
+    var i = src.indexOf('=', m.index) + 1, d = 0, q = null;
+    for (; i < src.length; i++) {
+      var ch = src[i], nx = src[i + 1];
+      if (q) { if (ch === '\\') { i++; continue; } if (ch === q) q = null; continue; }
+      if (ch === '/' && nx === '/') { var e = src.indexOf('\n', i); if (e < 0) break; i = e; continue; }
+      if (ch === '/' && nx === '*') { var b = src.indexOf('*/', i); if (b < 0) break; i = b + 1; continue; }
+      if (ch === "'" || ch === '"') { q = ch; continue; }
+      if (ch === '(' || ch === '[' || ch === '{') d++;
+      else if (ch === ')' || ch === ']' || ch === '}') d--;
+      else if (ch === ';' && d === 0) return src.slice(m.index, i + 1);
+    }
+    return null;
+  }
+  var censusNow = read(CENSUS_REL).replace(/\r\n/g, '\n');
+  var censusBase = String(git('show ' + BASE + ':' + CENSUS_REL)).replace(/\r\n/g, '\n');
+  ['R6R7_NO_ACTION_BEFORE_', 'R6R7_SET_BEFORE_', 'R6R7_MANUAL_ROUTES_', 'R6R7_ACTUAL_BROWSER_RESPONSE_']
+    .forEach(function (nm, i) {
+      var a = stmt(censusNow, nm), b = stmt(censusBase, nm);
+      ok(a !== null && b !== null, 'C1a.' + (i + 1) + ' ' + nm + ' is extractable from both trees');
+      eq(a, b, 'C1a.' + (i + 1) + 'a ' + nm + ' is BYTE-IDENTICAL to the round baseline');
+    });
+  // The activation pin follows the RELEASE by that suite's own rule, so it is expected to have moved — and
+  // it must equal the release exactly, not merely be close to it.
+  eq((censusNow.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1], STAMP,
+    'C1b the activation pin is the deployed build, unchanged by any later round in this series');
   ok(all.indexOf('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs') === -1,
     'C2  §C 90_ did NOT change — no pure module moved, so BUNDLE_REBUILD is NOT required this round');
   ok(all.indexOf('assets/specs/active/apps-script/00_config.gs') === -1,
