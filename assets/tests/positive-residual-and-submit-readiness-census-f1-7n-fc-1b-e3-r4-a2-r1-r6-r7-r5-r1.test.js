@@ -1004,6 +1004,324 @@ ok(String(R12.note).indexOf('SUMMARY ONLY') === 0,
   'R12a and it says so, naming what it caused', R12.note);
 
 // ================================================================================================================
+section('S — S1-R2: the row grain, and a discovery layer that finds candidates and can execute none');
+// ================================================================================================================
+//
+// PRODUCTION RAN CLEAN AND ANSWERED THE WRONG QUESTION, AND IT WAS THIS FILE'S FAULT.
+//
+//   verdict = NO_POSITIVE_RESIDUAL_CANDIDATE   predicates_failed = 0   scopes_examined = 118   candidates = 0
+//   recommendation_state: NONZERO_RECOMMENDATION = 100, MISSING_RECOMMENDATION = 18
+//   calculation_status:   READY = 1, null = 117
+//   and: identities whose residual_qty was NULL printed FULLY_COVERED_BY_ACTIVE_PLAN beside it.
+//
+// TWO DEFECTS, ONE CAUSE: A CENSUS WRITING AGGREGATE ANSWERS INTO ROW-GRAIN FIELDS.
+//
+// (1) `weeklyAiPlanRecommendationState_().state` and `weeklyAiPlanNoActionDecision_().reason` describe the WHOLE
+//     authorized TARGET SET. The census asked once, with the allowlist's target set — one scope in production —
+//     and stamped that one answer onto all 118 identities of the pair. So 100 identities the authority had never
+//     evaluated claimed NONZERO_RECOMMENDATION and FULLY_COVERED_BY_ACTIVE_PLAN with a null residual in the same
+//     row. `READY = 1, null = 117` is the same defect seen from the other side: only the allowlisted identity
+//     had a per_scope entry, so only it could report a status. That statistic was never a fact about the data.
+//
+// (2) The census could only ever answer for the exact four-axis allowlist, and its verdict did not say so.
+//     `NO_POSITIVE_RESIDUAL_CANDIDATE` read as a statement about ResUS|US when it was a statement about one SKU.
+//
+// AND THE BOOTSTRAP RUNS IN THE OTHER ORDER. A person has to SEE which identity is worth a first controlled run
+// before anybody moves the allowlist to it. That question is now a separate entry point with its own boundary:
+// it lists, it ranks, and there is no value of any field it returns that means "go".
+
+var OTHER2 = 'CO2200-X';
+// The PRODUCTION SHAPE: the one allowlisted identity fully covered (160 against 520 already planned), and a
+// second identity in the SAME pair and marketplace that no allowlist entry names, short by 700.
+var PSHAPE = pos({
+  gap: { d18_gap_qty: 0, d18_suggested_qty: 0, d30_suggested_qty: 0, d45_suggested_qty: 0,
+    d90_gap_qty: 160, d90_suggested_qty: 160 },
+  extraGap: [{ sku: OTHER2, calculation_status: 'READY',
+    d18_gap_qty: 700, d18_suggested_qty: 700, d30_suggested_qty: 700, d45_suggested_qty: 700,
+    d90_gap_qty: 700, d90_suggested_qty: 700 }],
+  factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 100 },
+    { warehouse_id: WHF, sku: OTHER2, fac_current_stock: 900, fac_reserved_stock: 0 }]
+});
+
+function proposal(spec) {
+  var w = S1World(spec);
+  var out, threw = null;
+  try { out = vm.runInContext('RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS()', w.ctx); }
+  catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w };
+}
+function propOf(p, sku) {
+  var hit = null;
+  ((p.res.proposals) || []).forEach(function (r) { if (r.scope && r.scope.sku === sku) hit = r; });
+  return hit;
+}
+function rejIdx(p, sku) {
+  var hit = null;
+  ((p.res.rejection_index) || []).forEach(function (r) {
+    if (String(r.scope_key).split('|')[3] === sku) hit = r;
+  });
+  return hit;
+}
+function cls(w, state, r, q, d) {
+  return vm.runInContext('S1_rowNoActionClass_(' + JSON.stringify(state) + ',' + JSON.stringify(r)
+    + ',' + JSON.stringify(q) + ',' + JSON.stringify(d) + ')', w.ctx);
+}
+
+// ---- S1 — THE ONE THE PRODUCTION PAYLOAD SHOWED. A NULL RESIDUAL IS NOT A COVERED ONE. -------------------
+var CW = S1World(pos());
+var S1a = cls(CW, 'NONZERO_RECOMMENDATION', 160, 520, null);
+ok(S1a.class !== 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  'S1  a NULL residual is never FULLY_COVERED_BY_ACTIVE_PLAN', S1a.class);
+eq([S1a.class, S1a.refusal], ['UNKNOWN', 'RESIDUAL_QTY_IS_NOT_A_FINITE_NUMBER'],
+  'S1a it is UNKNOWN, and the refusal names the input that was absent');
+eq(cls(CW, 'NONZERO_RECOMMENDATION', 160, 520, '').refusal, 'RESIDUAL_QTY_IS_NOT_A_FINITE_NUMBER',
+  'S1b a BLANK residual is refused the same way — a blank is never a zero');
+eq(cls(CW, 'NONZERO_RECOMMENDATION', null, 520, 0).refusal, 'RECOMMENDED_QTY_IS_NOT_A_FINITE_NUMBER',
+  'S1c a null recommended_qty is refused, and named separately');
+eq(cls(CW, 'NONZERO_RECOMMENDATION', 160, null, 0).refusal, 'QUALIFYING_PLANNED_QTY_IS_NOT_A_FINITE_NUMBER',
+  'S1d a null qualifying qty is refused, and named separately');
+// Only all three finite AND a zero residual may say FULLY_COVERED — the exact shape R5-R1 proved.
+eq(cls(CW, 'NONZERO_RECOMMENDATION', 160, 520, 0).class, 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  'S1e the proved 160 / 520 / 0 shape IS FULLY_COVERED_BY_ACTIVE_PLAN');
+eq(cls(CW, 'VALID_ZERO_RECOMMENDATION', 0, 520, 0).class, 'VALID_ZERO_RECOMMENDATION',
+  'S1f and a valid zero keeps its own class — the split follows the STATE, as 61_ does it');
+eq(cls(CW, 'NONZERO_RECOMMENDATION', 900, 520, 380).class, 'RESIDUAL_REMAINS',
+  'S1g a positive residual is RESIDUAL_REMAINS, which is not a no-action at all');
+eq(cls(CW, 'MISSING_RECOMMENDATION', null, null, null).class, 'MISSING_RECOMMENDATION',
+  'S1h a MISSING recommendation stays MISSING');
+// A state nobody has seen yet must STOP rather than fall into the coverage branch.
+ok(cls(CW, 'BOGUS_STATE', 160, 520, 0).class === 'UNKNOWN'
+  && String(cls(CW, 'BOGUS_STATE', 160, 520, 0).refusal)
+    .indexOf('RECOMMENDATION_STATE_IS_NOT_ONE_THIS_CENSUS_RECOGNISES: BOGUS_STATE') === 0,
+  'S1i an unrecognised state is UNKNOWN — a future enum value cannot be absorbed into coverage',
+  cls(CW, 'BOGUS_STATE', 160, 520, 0));
+eq(cls(CW, '', 160, 520, 0).refusal, 'THE_RECOMMENDATION_AUTHORITY_RETURNED_NO_STATE_FOR_THIS_SCOPE',
+  'S1j a blank state is a named refusal, not an empty pass');
+// The pinned enum must still be the production one. A check that read its expectation from the thing it
+// checks could not fail, so the pin lives here and the comparison lives in the suite.
+eq(vm.runInContext('S1_RECOMMENDATION_STATES_.slice().sort()', CW.ctx).join(','),
+  vm.runInContext('[WAP_RECOMMENDATION_STATES_.VALID_ZERO, WAP_RECOMMENDATION_STATES_.NONZERO,'
+    + ' WAP_RECOMMENDATION_STATES_.MISSING].slice().sort()', CW.ctx).join(','),
+  'S1k the pinned state vocabulary is exactly 61_\'s WAP_RECOMMENDATION_STATES_ values');
+
+// ---- S2 — THE VERDICT NAMES ITS OWN SCOPE. ---------------------------------------------------------------
+var S2 = census(PSHAPE);
+eq(S2.res.verdict, 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST',
+  'S2  the no-candidate verdict says WHICH universe it examined');
+eq(failed(S2.res), [], 'S2a and it is a clean run, not a refusal', failed(S2.res));
+eq(S2.res.scope_of_this_verdict.boundary, 'ACTIVATION_READINESS', 'S2b it declares its boundary');
+ok(String(S2.res.scope_of_this_verdict.does_not_answer).indexOf('PROPOSAL_CENSUS') > 0,
+  'S2c and names the entry point that answers the wider question',
+  S2.res.scope_of_this_verdict.does_not_answer);
+eq(S2.res.scope_of_this_verdict.allowlisted_identity_count, 1,
+  'S2d exactly one examined identity was inside the allowlist');
+eq(S2.res.activation_ready_count, 0, 'S2e and nothing is activation_ready');
+
+// ---- S3 — THE ROW GRAIN. Every number is this identity's own. ---------------------------------------------
+var S3in = scopeOf(S2, SKU), S3out = scopeOf(S2, OTHER2);
+eq([S3in.recommended_qty, S3in.qualifying_manual_planned_qty, S3in.residual_qty], [160, 520, 0],
+  'S3  the allowlisted identity is measured at 160 / 520 / 0 …');
+eq(S3in.no_action_reason, 'FULLY_COVERED_BY_ACTIVE_PLAN', 'S3a … and is the proved no-action class');
+eq(S3in.currently_allowlisted, true, 'S3b it is currently allowlisted');
+// THE ROW THAT USED TO INHERIT. Same pair, same marketplace, a different SKU, short by 700.
+eq([S3out.recommended_qty, S3out.qualifying_manual_planned_qty, S3out.residual_qty], [700, 0, 700],
+  'S3c the NON-allowlisted identity is measured at its OWN 700 / 0 / 700 …');
+eq(S3out.no_action_reason, 'RESIDUAL_REMAINS',
+  'S3d … and its class is RESIDUAL_REMAINS, not the neighbour\'s FULLY_COVERED_BY_ACTIVE_PLAN');
+ok(S3out.no_action_reason !== 'FULLY_COVERED_BY_ACTIVE_PLAN' && S3out.residual_qty !== null,
+  'S3e neither a null residual nor an inherited class — the exact production defect',
+  [S3out.no_action_reason, S3out.residual_qty]);
+eq(S3out.recommendation_state_grain,
+  'a single-scope ask of weeklyAiPlanRecommendationState_ about this identity alone',
+  'S3f the state is named as this identity\'s own, and says how it was obtained');
+// THE AGGREGATE IS STILL REPORTED — under a name that cannot be read as the row's. In this exact world it
+// still says FULLY_COVERED_BY_ACTIVE_PLAN, which is TRUE of the allowlisted target set and false of this row.
+eq(S3out.target_set.no_action_reason, 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  'S3g the target set\'s aggregate answer is preserved …');
+ok(String(S3out.target_set.grain).indexOf('NOT THIS ROW') > 0,
+  'S3h … and labelled as being about the whole scope set', S3out.target_set.grain);
+eq(S3out.target_set.scope_count, 1, 'S3i the authorized set really does hold one scope');
+
+// ---- S4 — AND IT IS STILL REFUSED, BY NAME. --------------------------------------------------------------
+eq(S3out.is_candidate, false, 'S4  a non-allowlisted identity is not a readiness candidate …');
+eq(S3out.activation_ready, false, 'S4a … and is not activation_ready …');
+eq((S3out.refusal_reasons || [])[0], 'the_scope_is_in_the_current_activation_allowlist',
+  'S4b … and the FIRST reason is the allowlist, not a story about readiness', S3out.refusal_reasons);
+ok(!!proofOf(S3out, 'the_scope_is_in_the_current_activation_allowlist'),
+  'S4c the gate is a named condition on the row');
+eq(proofOf(S3in, 'the_scope_is_in_the_current_activation_allowlist').pass, true,
+  'S4d and it passes for the identity that is in the allowlist');
+
+// ---- S5 — THE DISCOVERY CENSUS FINDS IT. -----------------------------------------------------------------
+var S5 = proposal(PSHAPE);
+eq(S5.threw, null, 'S5  the proposal census runs', S5.threw && String(S5.threw.message));
+eq(S5.res.verdict, 'PROPOSALS_FOUND_AUTHORIZATION_REQUIRED', 'S5a and finds the candidate the pair holds');
+eq(failed(S5.res), [], 'S5b with no failed predicate', failed(S5.res));
+eq(S5.res.boundary, 'PROPOSAL_DISCOVERY', 'S5c declaring the discovery boundary');
+var S5p = propOf(S5, OTHER2);
+ok(!!S5p, 'S5d the non-allowlisted positive-residual scope IS listed');
+eq([S5p.recommended_qty, S5p.qualifying_manual_planned_qty, S5p.qualifying_ai_planned_qty, S5p.residual_qty],
+  [700, 0, 0, 700], 'S5e with its own four quantities');
+eq([S5p.source_factory_warehouse_id, S5p.pool.available_to_allocate, S5p.proposed_ai_allocation_qty,
+  S5p.would_clamp], [WHF, 900, 700, false],
+  'S5f and its pool, availability and proposed quantity = min(residual, available)');
+eq(S5p.calculation_run_id, 'GAP-INV-20260905-0300',
+  'S5g carrying the run id from the lineage authority, not from the gap row');
+// The identity that is fully covered is REJECTED and still accounted for.
+eq(propOf(S5, SKU), null, 'S5h the fully-covered identity is not a proposal …');
+eq(rejIdx(S5, SKU).first_reason, 'residual_qty_is_finite_and_greater_than_zero',
+  'S5i … and appears in the rejection index with the reason that actually applies to it');
+eq(S5.res.identities_examined, 2, 'S5j both identities in the pair were examined');
+
+// ---- S6 — AND IT AUTHORIZES NOTHING. ---------------------------------------------------------------------
+eq(S5.res.selected, null, 'S6  nothing is selected …');
+eq(S5.res.proposal_only, true, 'S6a … the whole census is proposal_only …');
+eq([S5p.activation_ready, S5p.currently_allowlisted, S5p.authorization_required, S5p.proposal_only],
+  [false, false, true, true],
+  'S6b … and the listed row is not allowlisted, not activation ready, and requires authorization');
+eq(S5.res.activation_ready_count, 0, 'S6c no proposal is activation_ready');
+eq(S5.res.not_currently_allowlisted, ['ResUS|US|Amazon|' + OTHER2],
+  'S6d the rows a person would have to move the allowlist for are named');
+ok(failed(S5.res).indexOf('no_proposal_outside_the_allowlist_is_marked_activation_ready') < 0
+  && S5.res.predicates.filter(function (p) {
+    return p.predicate === 'no_proposal_outside_the_allowlist_is_marked_activation_ready'; }).length === 1,
+  'S6e the boundary is a stated condition, not a comment');
+// THE GATE IS PROVED STILL SHUT, by asking production's own scope authority about the listed row.
+var S6g = S5.res.predicates.filter(function (p) {
+  return p.predicate === 'the_production_scope_gate_still_refuses_every_non_allowlisted_proposal'; })[0];
+ok(!!S6g && S6g.pass === true && String(JSON.stringify(S6g.observed)) === '[]',
+  'S6f weeklyAiPlanTargetScopes_ still refuses every listed non-allowlisted scope', S6g);
+ok(String(S5.res.next_action).indexOf('separate, explicit authorization') > 0
+  || String(S5.res.next_action).indexOf('its own explicit authorization') > 0,
+  'S6g and the next action says the allowlist move is its own authorization', S5.res.next_action);
+
+// ---- S7 — THE DISCOVERY RANGE IS THE ALLOWLIST'S PAIRS, AND NOTHING WIDENS IT. ---------------------------
+eq(S5.res.eligible_universe.eligible_pairs, ['ResUS|US'],
+  'S7  the discovery range is the allowlist\'s distinct (company, country)');
+// A pair no allowlist entry names is not examined AT ALL — not as a candidate, not as a rejection.
+var FOREIGN2 = { company: 'ResEU', country: 'DE', marketplace: 'Amazon', sku: 'EU-SKU',
+  calculation_status: 'READY', d18_suggested_qty: 4000, d30_suggested_qty: 4000,
+  d45_suggested_qty: 4000, d90_suggested_qty: 4000 };
+var S7 = proposal(pos({ extraGap: [FOREIGN2],
+  factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 100 },
+    { warehouse_id: WHF, sku: 'EU-SKU', fac_current_stock: 9000, fac_reserved_stock: 0 }] }));
+eq(propOf(S7, 'EU-SKU'), null, 'S7a a scope outside the eligible pairs is never a proposal …');
+eq(rejIdx(S7, 'EU-SKU'), null, 'S7b … and is not examined at all, rather than examined and refused');
+eq(S7.res.eligible_universe.eligible_pairs, ['ResUS|US'], 'S7c the range did not widen to reach it');
+// AN EMPTY, ALL or WILDCARD ALLOWLIST YIELDS NOTHING. A discovery range that widens when the guard goes
+// missing is the opposite of a guard.
+var S7d = proposal(pos({ allowlist: [] }));
+eq(S7d.res.verdict, 'STOP', 'S7d an empty allowlist STOPS the proposal census');
+ok(failed(S7d.res).indexOf('the_discovery_range_is_derived_from_the_activation_allowlist') >= 0,
+  'S7e naming the range as the thing that failed', failed(S7d.res));
+eq(S7d.res.identities_examined, 0, 'S7f and it examines nothing — it never falls back to the gap table');
+var S7g = proposal(pos({ allowlist: [{ company: 'ResUS', country: 'US', marketplace: 'ALL_SITES', sku: 'ALL' }] }));
+eq(S7g.res.verdict, 'STOP', 'S7g an ALL/wildcard entry cannot open the range either');
+eq(S7g.res.identities_examined, 0, 'S7h because the gate is re-asked per entry, exactly as 61_ re-asks it');
+
+// ---- S8 — READ-ONLY, MEASURED. ---------------------------------------------------------------------------
+eq(S5.world.allWrites(), 0, 'S8  the proposal census wrote nothing, counted on every sheet');
+eq([S5.res.writes, S5.res.writer_calls], [0, 0], 'S8a and reports both as zero');
+eq([S5.res.generate_called, S5.res.submit_called, S5.res.migration_called, S5.res.gap_job_called],
+  [false, false, false, false], 'S8b Generate, Submit, migration and the Gap Job were none of them called');
+eq([S5.res.allowlist_modified, S5.res.flag_modified, S5.res.script_properties_modified],
+  [false, false, false], 'S8c and neither the allowlist, the flag nor a script property was modified');
+eq(S5.res.environment.flag_value, false, 'S8d the generation flag was false throughout');
+// The allowlist object itself is unchanged AFTER the run — a monkey-patch would show here.
+eq(vm.runInContext('JSON.stringify(inventoryAiPlanActivationAllowlist_())', S5.world.ctx),
+  vm.runInContext('JSON.stringify(INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_)', S5.world.ctx),
+  'S8e and the allowlist authority still returns the config value it started with');
+eq(vm.runInContext('inventoryAiPlanActivationAllowlist_().length', S5.world.ctx), 1,
+  'S8f still exactly one entry');
+// The proposal census is in the SAME zero-write source scan the rest of the file is under.
+ok(S1_BARE.indexOf('RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS') > 0
+  && S1_BARE.indexOf('setValues') < 0 && S1_BARE.indexOf('appendRow') < 0,
+  'S8g and the file carrying it still contains no write API at all');
+
+// ---- S9 — THE SEGMENTED OUTPUT. §8's five names, and no 189-line payload. --------------------------------
+var S9tags = logTags(S5.world);
+eq(S9tags, ['s1_proposal_summary', 's1_proposal_candidate_1_of_1', 's1_proposal_rejection_counts',
+  's1_proposal_verdict'], 'S9  exactly the named segments, in order, and no payload dump', S9tags);
+ok(S9tags.indexOf('s1_proposal_failed') < 0,
+  'S9a with no failure line when nothing failed — an empty one is noise');
+var S9max = (S5.world.log || []).reduce(function (m, l) { return Math.max(m, String(l).length); }, 0);
+ok(S9max < 3000, 'S9b every entry is under the chunk bound', S9max);
+eq((S5.world.log || []).filter(function (l) { return /s1_payload/.test(String(l)); }).length, 0,
+  'S9c and the whole payload is not logged at all');
+// The failure line appears when there IS one, and only then.
+ok(logTags(S7d.world).indexOf('s1_proposal_failed') >= 0,
+  'S9d a failing run DOES emit s1_proposal_failed', logTags(S7d.world));
+// The rejections are COUNTS plus a bounded sample — never 118 objects.
+var S9r = (S5.world.log || []).filter(function (l) { return /s1_proposal_rejection_counts/.test(String(l)); })[0];
+ok(String(S9r).indexOf('by_first_reason') > 0 && String(S9r).length < 3000,
+  'S9e the rejections are logged as classified counts', String(S9r).length);
+eq(S5.res.rejection_index.length, 1,
+  'S9f while the complete per-identity list stays on the RETURN VALUE, so nothing disappears');
+// The candidate census got the same treatment: a summary, a line per candidate, the counts.
+var S9c = logTags(S2.world);
+ok(S9c.indexOf('s1_candidate_summary') >= 0 && S9c.indexOf('s1_rejection_counts') >= 0,
+  'S9g the readiness census emits the same shape of segments', S9c);
+eq(S2.res.rejection_counts['the_scope_is_in_the_current_activation_allowlist'], 1,
+  'S9h and its refusal counts are keyed by the first failed condition');
+
+// ---- S10 — THE CHUNK COUNT IS BOUNDED, WHICH IS WHAT 189 PAYLOAD LINES WERE. -----------------------------
+var S10w = S1World(pos());
+var S10n = vm.runInContext('S1_emitChunked_("s1_payload", new Array(60000).join("x"))', S10w.ctx);
+eq(S10n, 0, 'S10  a payload over the bound emits no chunks at all');
+var S10last = String((S10w.log || [])[(S10w.log || []).length - 1]);
+ok(S10last.indexOf('s1_payload_withheld') > 0 && S10last.indexOf('"would_be_chunks":20') > 0,
+  'S10a it says it was withheld and how many lines it would have been', S10last.slice(0, 160));
+ok(S10last.indexOf('NOT TRUNCATED') > 0,
+  'S10b and distinguishes withheld from truncated — a cut value is a wrong value');
+eq(vm.runInContext('S1_emitChunked_("s1_small", new Array(2000).join("y"))', S10w.ctx), 1,
+  'S10c a payload under the bound is still emitted whole');
+
+// ---- S11 — THE SIX CONDITIONS THAT WERE IMPLIED AND ARE NOW STATED. -------------------------------------
+['the_identity_carries_all_four_axes', 'every_schema_fingerprint_this_row_depends_on_is_present',
+ 'recommended_qty_is_a_finite_number', 'qualifying_manual_planned_qty_is_a_finite_number',
+ 'qualifying_ai_exposure_qty_is_a_finite_number', 'the_proposed_quantity_is_finite_and_greater_than_zero'
+].forEach(function (n, i) {
+  ok(!!proofOf(S3in, n), 'S11.' + (i + 1) + ' the row proves ' + n);
+});
+// A blank furthest window now names the RECOMMENDATION as absent rather than only the residual.
+var S11f = scopeOf(census(pos({ gap: { d90_suggested_qty: '' } })), SKU);
+ok(S11f.refusal_reasons.indexOf('recommended_qty_is_a_finite_number') >= 0,
+  'S11a a blank window refuses the recommendation by name', S11f.refusal_reasons);
+eq(S11f.no_action_reason, 'MISSING_RECOMMENDATION',
+  'S11b and its class is MISSING_RECOMMENDATION — never a coverage claim');
+// A proposal that would write nothing is not a proposal.
+var S11g = scopeOf(census(pos({ factory_stock: [{ warehouse_id: WHF, sku: SKU,
+  fac_current_stock: 520, fac_reserved_stock: 0 }] })), SKU);
+ok(S11g.refusal_reasons.indexOf('the_proposed_quantity_is_finite_and_greater_than_zero') >= 0,
+  'S11c a proposed quantity of zero is refused by name',
+  [S11g.proposed_ai_allocation_qty, S11g.refusal_reasons]);
+
+// ---- S12 — THE TWO CENSUSES MEASURE THE SAME IDENTITY THROUGH THE SAME CODE. -----------------------------
+// They must agree. Two readiness answers for one scope is the failure mode a readiness package cannot have.
+var S12a = scopeOf(S2, OTHER2), S12b = propOf(S5, OTHER2);
+eq([S12b.recommended_qty, S12b.qualifying_manual_planned_qty, S12b.residual_qty,
+  S12b.proposed_ai_allocation_qty, S12b.recommendation_state, S12b.no_action_reason],
+  [S12a.recommended_qty, S12a.qualifying_manual_planned_qty, S12a.residual_qty,
+    S12a.proposed_ai_allocation_qty, S12a.recommendation_state, S12a.no_action_reason],
+  'S12  both censuses measure the identity identically');
+eq([S12a.boundary, S12b.boundary], ['ACTIVATION_READINESS', 'PROPOSAL_DISCOVERY'],
+  'S12a differing only in the boundary each declares');
+eq([S12a.is_candidate, S12b.is_candidate], [false, true],
+  'S12b and in whether the allowlist gate is one of the conditions');
+eq([S12a.activation_ready, S12b.activation_ready], [false, false],
+  'S12c while NEITHER calls it activation ready — that needs the gate, in both');
+
+// ---- S13 — THE PLAN AUTHORITY IS ASKED ONCE PER PAIR, NOT ONCE PER IDENTITY. -----------------------------
+// 118 identities meant 236 reads of the same two tables for the same answer. The cache is keyed on
+// (company, country) because weeklyAiPlanQualifyingPlannedQty_ filters on exactly those two.
+var S13 = proposal(PSHAPE);
+eq(S13.res.identities_examined, 2, 'S13  two identities examined …');
+eq(propOf(S13, OTHER2).qualifying_manual_planned_qty, 0,
+  'S13a … with the per-identity plan quantity still exact from the shared read');
+eq(scopeOf(S2, SKU).qualifying_manual_planned_qty, 520,
+  'S13b and the allowlisted identity still reads its own 520 from the same one call');
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -1023,15 +1341,15 @@ function swapS1(a, b) {
 }
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
-  var m = swapS1('        prop = Math.min(row.residual_qty, a);',
-    '        prop = Math.min(row.recommended_qty, a);');
+  var m = swapS1('    prop = Math.min(row.residual_qty, a);',
+    '    prop = Math.min(row.recommended_qty, a);');
   var clean = scopeOf(census(pos()), SKU);
   var bad = scopeOf(withS1(m, pos()), SKU);
   return clean.proposed_ai_allocation_qty === 380 && bad.proposed_ai_allocation_qty === 900;
 });
 
 mut('N2 the proposal ignores available_to_allocate, so a clamp is never reported', function () {
-  var m = swapS1('        prop = Math.min(row.residual_qty, a);', '        prop = row.residual_qty;');
+  var m = swapS1('    prop = Math.min(row.residual_qty, a);', '    prop = row.residual_qty;');
   var spec = pos({ factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 700, fac_reserved_stock: 0 }] });
   var clean = scopeOf(census(spec), SKU), bad = scopeOf(withS1(m, spec), SKU);
   return clean.proposed_ai_allocation_qty === 180 && clean.would_clamp === true
@@ -1041,9 +1359,9 @@ mut('N2 the proposal ignores available_to_allocate, so a clamp is never reported
 
 mut('N3 an unknown pool is coerced to a zero-availability pool instead of refusing', function () {
   // The exact fail-open this class of census must never have: `null` becoming a number.
-  var m = swapS1('      if (row.residual_qty !== null && pool && S1_qty_(pool.available_to_allocate) !== null) {',
-    '      if (row.residual_qty !== null) {' + NL
-    + '        if (!pool) pool = { available_to_allocate: 0, pool_row_found: false };');
+  var m = swapS1('  if (row.residual_qty !== null && pool && S1_qty_(pool.available_to_allocate) !== null) {',
+    '  if (row.residual_qty !== null) {' + NL
+    + '    if (!pool) pool = { available_to_allocate: 0, pool_row_found: false };');
   var spec = pos({ factory_stock: [] });
   var clean = scopeOf(census(spec), SKU), bad = scopeOf(withS1(m, spec), SKU);
   return clean.proposed_ai_allocation_qty === null && bad.proposed_ai_allocation_qty === 0;
@@ -1052,10 +1370,10 @@ mut('N3 an unknown pool is coerced to a zero-availability pool instead of refusi
 mut('N4 the residual is netted by the AI quantity as well as the manual one', function () {
   // Netting a run against its own previous output is the defect that makes regeneration impossible for ever.
   // The census must report the AI quantity WITHOUT subtracting it.
-  var m = swapS1('      row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;',
-    '      row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;' + NL
-    + '      if (row.residual_qty !== null) row.residual_qty = Math.max(0, row.residual_qty'
-    + '        - ((aiPlanned.byKey[key] === undefined) ? 0 : aiPlanned.byKey[key]));');
+  var m = swapS1('  row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;',
+    '  row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;' + NL
+    + '  if (row.residual_qty !== null) row.residual_qty = Math.max(0, row.residual_qty'
+    + '    - ((aiPlanned.byKey[key] === undefined) ? 0 : aiPlanned.byKey[key]));');
   var spec = pos({ extraHeaders: [AI_HDR], extraLines: [AI_LN] });
   var clean = scopeOf(census(spec), SKU), bad = scopeOf(withS1(m, spec), SKU);
   return clean.residual_qty === 380 && bad.residual_qty === 280;
@@ -1077,9 +1395,9 @@ function () {
   // `the_row_belongs_to_the_accepted_run` is deliberately NOT mutated here: bySite only ever holds rows at
   // the accepted date, so that proof cannot be made to fail through any world this harness can build. It is
   // defence in depth against that set widening, and it is asserted to EXIST (F3d) rather than probed.
-  var m = swapS1("      C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty,",
-    "      C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty," + NL
-    + '        true ||');
+  var m = swapS1("  C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty,",
+    "  C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty," + NL
+    + '    true ||');
   // The proved R6-R7-R5-R1 world: recommended 160 against 520 already planned. Residual zero.
   var spec = pos({ gap: { d18_gap_qty: 0, d18_suggested_qty: 0, d30_suggested_qty: 0,
     d45_suggested_qty: 0, d90_gap_qty: 160, d90_suggested_qty: 160 } });
@@ -1093,9 +1411,9 @@ function () {
 mut('N7b the pool is filtered to the requesting company, partitioning a shared factory', function () {
   // The single defect KMFSG exists to prevent, injected into the CENSUS's pool lookup: only pools whose
   // warehouse belongs to this company are considered. Two companies then each plan the same cartons.
-  var m = swapS1('        if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()) poolCandidates.push(p);',
-    '        if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()' + NL
-    + '          && S1_str_(p.warehouse_id).indexOf("FW-XX") === 0) poolCandidates.push(p);');
+  var m = swapS1('    if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()) poolCandidates.push(p);',
+    '    if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()' + NL
+    + '      && S1_str_(p.warehouse_id).indexOf("FW-XX") === 0) poolCandidates.push(p);');
   var spec = pos({ factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 100 }] });
   var clean = scopeOf(census(spec), SKU), bad = scopeOf(withS1(m, spec), SKU);
   // The clean run finds the pool by the recommendation's named warehouse; the mutant loses the candidate
@@ -1246,10 +1564,171 @@ mut('N19 a DATA_NOT_READY eligible pair is misreported as this census\'s own def
 });
 
 mut('N20 the run id is read off the gap row again, so a resolvable one reports null', function () {
-  var m = swapS1("      row.calculation_run_id = (out.accepted_run.lineage && out.accepted_run.lineage.run_id) || null;",
-    '      row.calculation_run_id = mine ? (S1_str_(mine.calculation_run_id) || null) : null;');
+  var m = swapS1("  row.calculation_run_id = (out.accepted_run.lineage && out.accepted_run.lineage.run_id) || null;",
+    '  row.calculation_run_id = mine ? (S1_str_(mine.calculation_run_id) || null) : null;');
   var clean = scopeOf(census(pos()), SKU), bad = scopeOf(withS1(m, pos()), SKU);
   return clean.calculation_run_id === 'GAP-INV-20260905-0300' && bad.calculation_run_id === null;
+});
+
+
+function withS1P(src, spec) {
+  var s = {};
+  Object.keys(spec || {}).forEach(function (k) { s[k] = spec[k]; });
+  s.s1 = src;
+  var w = S1World(s);
+  var out = null, threw = null;
+  try { out = vm.runInContext('RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS()', w.ctx); }
+  catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w };
+}
+
+mut('N21 the row class is taken from the target set again — the exact production misclassification', function () {
+  // Restore the defect: `decision.reason` copied straight into the row. In the production shape it makes an
+  // identity with residual 700 report FULLY_COVERED_BY_ACTIVE_PLAN, because the ALLOWLISTED scope is covered.
+  // NOTE: restoring `decision.reason` would change nothing now — `decision` is the SINGLE-SCOPE ask, so
+  // it is already this row's own answer. The defect was the TARGET SET's decision, and that is what gets
+  // restored here: the aggregate over the allowlist's scopes, printed onto a row it does not describe.
+  var m = swapS1('  row.no_action_reason = cls.class;',
+    '  row.no_action_reason = setDecision ? (setDecision.reason || null) : null;');
+  var clean = scopeOf(census(PSHAPE), OTHER2), bad = scopeOf(withS1(m, PSHAPE), OTHER2);
+  return clean.no_action_reason === 'RESIDUAL_REMAINS'
+    && bad.no_action_reason === 'FULLY_COVERED_BY_ACTIVE_PLAN'
+    && bad.residual_qty === 700;
+});
+
+mut('N22 a null residual is admitted to the coverage branch', function () {
+  // The single most dangerous fail-open in the classifier: MISSING read as zero.
+  var m = swapS1('  if (d === null) { out.refusal = \'RESIDUAL_QTY_IS_NOT_A_FINITE_NUMBER\'; return out; }',
+    '  if (d === null) { d = 0; }');
+  var w = S1World(pos()), wb = S1World((function () { var s = pos(); s.s1 = m; return s; })());
+  function cl(ctx) {
+    return vm.runInContext('S1_rowNoActionClass_("NONZERO_RECOMMENDATION",160,520,null).class', ctx);
+  }
+  return cl(w.ctx) === 'UNKNOWN' && cl(wb.ctx) === 'FULLY_COVERED_BY_ACTIVE_PLAN';
+});
+
+mut('N23 an unrecognised recommendation state falls through into coverage', function () {
+  var m = swapS1('  if (S1_RECOMMENDATION_STATES_.indexOf(st) === -1) {',
+    '  if (false && S1_RECOMMENDATION_STATES_.indexOf(st) === -1) {');
+  var w = S1World(pos()), wb = S1World((function () { var s = pos(); s.s1 = m; return s; })());
+  function cl(ctx) { return vm.runInContext('S1_rowNoActionClass_("BOGUS_STATE",160,520,0).class', ctx); }
+  return cl(w.ctx) === 'UNKNOWN' && cl(wb.ctx) === 'FULLY_COVERED_BY_ACTIVE_PLAN';
+});
+
+mut('N24 the row state is taken from the target set instead of the single-scope ask', function () {
+  // The other half of the grain defect: the STATE, rather than the reason. An identity the authority never
+  // evaluated then claims NONZERO_RECOMMENDATION because a DIFFERENT scope in the set is nonzero.
+  var m = swapS1('  row.recommendation_state = recState ? recState.state : null;\n'
+    + '  row.recommendation_state_grain =',
+    '  row.recommendation_state = setState ? setState.state : null;\n'
+    + '  row.recommendation_state_grain =');
+  // A world where the allowlisted scope is NONZERO and the other identity is NOT READY, so its own state is
+  // MISSING and the set's is not.
+  var spec = pos({ extraGap: [{ sku: OTHER2, calculation_status: 'PENDING' }],
+    factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 100 }] });
+  var clean = scopeOf(census(spec), OTHER2), bad = scopeOf(withS1(m, spec), OTHER2);
+  return clean.recommendation_state === 'MISSING_RECOMMENDATION'
+    && bad.recommendation_state === 'NONZERO_RECOMMENDATION';
+});
+
+mut('N25 the readiness census drops the allowlist condition, so any identity in the pair becomes a candidate',
+function () {
+  var m = swapS1('      row.currently_allowlisted, row.currently_allowlisted === true);',
+    '      row.currently_allowlisted, true);');
+  var clean = scopeOf(census(PSHAPE), OTHER2), bad = scopeOf(withS1(m, PSHAPE), OTHER2);
+  var NM = 'the_scope_is_in_the_current_activation_allowlist';
+  return clean.is_candidate === false && clean.refusal_reasons.indexOf(NM) >= 0
+    && bad.is_candidate === true && bad.refusal_reasons.indexOf(NM) === -1;
+});
+
+mut('N26 activation_ready stops requiring the allowlist, so a proposal looks executable', function () {
+  var m = swapS1('  row.activation_ready = row.is_candidate === true && row.currently_allowlisted === true;',
+    '  row.activation_ready = row.is_candidate === true;');
+  var clean = withS1P(S1, PSHAPE), bad = withS1P(m, PSHAPE);
+  var NM = 'no_proposal_outside_the_allowlist_is_marked_activation_ready';
+  function p(r) { return (r.res.proposals || [])[0] || {}; }
+  return p(clean).activation_ready === false && clean.res.activation_ready_count === 0
+    && failed(clean.res).indexOf(NM) < 0
+    && p(bad).activation_ready === true
+    && failed(bad.res).indexOf(NM) >= 0 && bad.res.verdict === 'STOP';
+});
+
+mut('N27 the proposal census falls back to the whole gap table when the allowlist is empty', function () {
+  // A discovery range that widens when the guard goes missing is the opposite of a guard.
+  var m = swapS1('    if (!elig.ok) {\n'
+    + "      out.stop_reason = 'the discovery range is empty: ' + (elig.reason || 'AI_PLAN_SCOPE_NOT_ENABLED');",
+    '    if (false && !elig.ok) {\n'
+    + "      out.stop_reason = 'the discovery range is empty: ' + (elig.reason || 'AI_PLAN_SCOPE_NOT_ENABLED');");
+  var spec = pos({ allowlist: [], extraGap: [FOREIGN2] });
+  var clean = withS1P(S1, spec), bad = withS1P(m, spec);
+  var NM = 'the_discovery_range_is_derived_from_the_activation_allowlist';
+  return clean.res.verdict === 'STOP' && clean.res.identities_examined === 0
+    && failed(clean.res).indexOf(NM) >= 0
+    // The mutant proceeds past the empty range; the predicate still fails, and that is the point: the STOP
+    // must not depend on the early return alone.
+    && failed(bad.res).indexOf(NM) >= 0 && bad.res.verdict === 'STOP';
+});
+
+mut('N28 the proposal census examines pairs outside the allowlist', function () {
+  // The range is widened to every (company, country) the gap TABLE holds — the R1 defect, moved into the
+  // discovery census. It is a different code path from N27: the allowlist here is non-empty and correct.
+  var m = swapS1('    var canByPair = {}, dates = {}, unreadable = [];',
+    '    (gapReadObjects_(ss, "inventory_replenishment_gap") || []).forEach(function (gr) {\n'
+    + '      var pk = S1_str_(gr.company) + "|" + S1_str_(gr.country);\n'
+    + '      if (!S1_str_(gr.company) || !S1_str_(gr.country) || elig.pairs.indexOf(pk) !== -1) return;\n'
+    + '      elig.pairs.push(pk);\n'
+    + '      elig.pair_index[pk] = { company: S1_str_(gr.company), country: S1_str_(gr.country) };\n'
+    + '    });\n'
+    + '    var canByPair = {}, dates = {}, unreadable = [];');
+  // The foreign pair's rows are in the same table. The clean run never reaches them.
+  var spec = pos({ extraGap: [FOREIGN2] });
+  var clean = withS1P(S1, spec), bad = withS1P(m, spec);
+  function has(r) {
+    return (r.res.rejection_index || []).concat((r.res.proposals || []).map(function (x) {
+      return { scope_key: x.scope_key }; })).filter(function (x) {
+      return String(x.scope_key).indexOf('ResEU') === 0; }).length > 0;
+  }
+  return has(clean) === false && clean.res.identities_examined >= 1 && has(bad) === true;
+});
+
+mut('N29 the rejection roll-up logs the whole refusal set instead of counts', function () {
+  var m = swapS1("    S1_log_('s1_proposal_rejection_counts', JSON.stringify({ total: out.rejection_index.length,\n"
+    + '      by_first_reason: out.rejection_counts, samples: out.rejection_samples.slice(0, 3) }));',
+    "    S1_log_('s1_proposal_rejection_counts', JSON.stringify({ total: out.rejection_index.length,\n"
+    + '      by_first_reason: out.rejection_counts, samples: out.rejection_samples,\n'
+    + '      every_rejection: out.rejection_index }));');
+  // 40 refused identities in the eligible pair: a count stays one short line, the full set does not.
+  var many = [];
+  for (var i = 0; i < 40; i++) {
+    many.push({ sku: 'BULK-' + i, calculation_status: 'READY', d18_suggested_qty: 0,
+      d30_suggested_qty: 0, d45_suggested_qty: 0, d90_suggested_qty: 0 });
+  }
+  var spec = pos({ extraGap: many });
+  function sizeOf(r) {
+    var l = (r.world.log || []).filter(function (x) { return /s1_proposal_rejection_counts/.test(String(x)); })[0];
+    return String(l || '').length;
+  }
+  var clean = withS1P(S1, spec), bad = withS1P(m, spec);
+  return clean.res.rejection_index.length >= 40 && sizeOf(clean) < 3000 && sizeOf(bad) > 3000;
+});
+
+mut('N30 the chunk-count bound is removed, so the payload floods the log again', function () {
+  var m = swapS1('  if (n > S1_LOG_MAX_CHUNKS_) {', '  if (false) {');
+  function chunks(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.s1 = src;
+    var w = S1World(s);
+    return vm.runInContext('S1_emitChunked_("s1_payload", new Array(60000).join("x"))', w.ctx);
+  }
+  return chunks(S1) === 0 && chunks(m) === 20;
+});
+
+mut('N31 the no-candidate verdict goes back to sounding like a statement about the whole pair', function () {
+  var m = swapS1("      : (L.failed.length ? 'STOP' : 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST');",
+    "      : (L.failed.length ? 'STOP' : 'NO_POSITIVE_RESIDUAL_CANDIDATE');");
+  var clean = census(PSHAPE), bad = withS1(m, PSHAPE);
+  return clean.res.verdict === 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST'
+    && bad.res.verdict === 'NO_POSITIVE_RESIDUAL_CANDIDATE';
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

@@ -38,6 +38,32 @@
  * different events and only the second may precede a write.
  *
  * ----------------------------------------------------------------------------------------------------------------
+ * S1-R2 — TWO SAFETY BOUNDARIES, TWO ENTRY POINTS, AND THEY ANSWER DIFFERENT QUESTIONS.
+ *
+ *   ACTIVATION READINESS   RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS. The exact four-axis activation
+ *                          allowlist gate is one of the row CONDITIONS, so only an already-allowlisted
+ *                          identity can be a candidate or be activation_ready. Its no-candidate verdict is
+ *                          NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST, because the old name read as
+ *                          a statement about the whole (company, country) pair and never was one.
+ *
+ *   PROPOSAL DISCOVERY     RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS. Completely read only, and it
+ *                          authorizes nothing. The bootstrap runs in the order a person actually works in:
+ *                          SEE which identity is worth a first controlled run, choose it, and only then move
+ *                          the allowlist to that single scope — which is its own separate authorization.
+ *                          Its range is still the allowlist pairs; inside such a pair every marketplace and
+ *                          sku is MEASURED, because being outside the SKU allowlist is a reason a scope may
+ *                          not be GENERATED and never a reason its recommendation should read as null.
+ *
+ * NEITHER RELAXES THE PRODUCTION GENERATE GATE. weeklyAiPlanTargetScopes_ and inventoryAiPlanScopeEnabled_
+ * are untouched, are asked per row, and are reported per row; the discovery census additionally PROVES the
+ * gate still refuses every non-allowlisted scope it lists. Nothing here modifies the flag, the allowlist, a
+ * Script Property, a production global or a spreadsheet value — not temporarily, not by monkey-patch.
+ *
+ * FOUR WORDS THAT ARE NOT SYNONYMS, and every row carries all four: proposal candidate (the measurable
+ * conditions hold), currently_allowlisted (the real gate admits it today), activation_ready (both), and
+ * authorization_required (always true — no field returned here has a value that means "go").
+ *
+ * ----------------------------------------------------------------------------------------------------------------
  * TWO MANIFESTS, TWO AUTHORIZATIONS. MANIFEST P authorizes a controlled positive-residual Generate. MANIFEST S
  * authorizes a controlled Submit of the draft that Generate produced. They are separate because they have
  * different blast radii, different rollbacks and different owners of the failure: P creates allocation drafts
@@ -76,8 +102,21 @@ function S1_qty_(v) {
 function S1_log_(tag, payload) {
   try { Logger.log('[S1] ' + tag + ' ' + payload); } catch (e) {}
 }
+// S1-R2 — AND A BOUND ON HOW MANY CHUNKS. R1 fixed the chunk SIZE and left the chunk COUNT unbounded, so the
+// candidate census — whose payload carries a row per identity in the pair — emitted 189 payload lines in
+// production. 189 lines of 3000 bytes is not more readable than one line of 45000; the evidence is equally
+// lost, just differently. Above the bound the payload is WITHHELD AND SAID SO: never silently truncated, and
+// never the thing a reader has to scroll past to reach the verdict. The full object is the RETURN VALUE.
+var S1_LOG_MAX_CHUNKS_ = 12;
 function S1_emitChunked_(tag, text) {
   var s = String(text == null ? '' : text), n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;
+  if (n > S1_LOG_MAX_CHUNKS_) {
+    S1_log_(tag + '_withheld', JSON.stringify({ withheld: true, bytes: s.length, would_be_chunks: n,
+      chunk_max_bytes: S1_CHUNK_MAX_BYTES_, max_chunks: S1_LOG_MAX_CHUNKS_,
+      note: 'DELIBERATELY NOT LOGGED, NOT TRUNCATED. The segmented lines emitted above carry the evidence'
+        + ' at the grain a reader needs it; the complete object is this function\'s return value.' }));
+    return 0;
+  }
   for (var i = 0; i < n; i++) {
     S1_log_(tag + '_' + (i + 1) + '_of_' + n, s.slice(i * S1_CHUNK_MAX_BYTES_, (i + 1) * S1_CHUNK_MAX_BYTES_));
   }
@@ -87,6 +126,69 @@ function S1_scopeKey_(company, country, marketplace, sku) {
   return S1_str_(company) + '|' + S1_str_(country) + '|' + S1_str_(marketplace) + '|' + S1_str_(sku);
 }
 function S1_poolKey_(warehouseId, sku) { return S1_str_(warehouseId) + '||' + S1_str_(sku); }
+
+/**
+ * ================================================================================================================
+ * S1-R2 §5 — THE NO-ACTION CLASS OF ONE SCOPE, AND IT REFUSES BEFORE IT GUESSES.
+ * ================================================================================================================
+ *
+ * Production reported scopes whose `residual_qty` was null sitting beside `FULLY_COVERED_BY_ACTIVE_PLAN`. A
+ * null residual and a residual of zero are not the same fact and must never print the same word: the first
+ * says nobody measured this scope, the second says somebody measured it and the operator has already planned
+ * all of it. Reading the first as the second is how a scope that needs attention comes to be reported as
+ * finished.
+ *
+ * SO ALL THREE QUANTITIES MUST BE FINITE BEFORE ANY CLASS IS NAMED. The VALID_ZERO / FULLY_COVERED split then
+ * keys off the recommendation STATE exactly as weeklyAiPlanNoActionDecision_ does, because a state this file
+ * classified differently from the runtime would be a second opinion — and an unrecognised state is a refusal,
+ * so a future enum value cannot be quietly absorbed into the coverage branch.
+ */
+var S1_NO_ACTION_CLASSES_ = {
+  VALID_ZERO: 'VALID_ZERO_RECOMMENDATION',
+  FULLY_COVERED: 'FULLY_COVERED_BY_ACTIVE_PLAN',
+  RESIDUAL_REMAINS: 'RESIDUAL_REMAINS',
+  MISSING: 'MISSING_RECOMMENDATION',
+  UNKNOWN: 'UNKNOWN'
+};
+/** The three recommendation states, PINNED. Compared against the production enum by the suite rather than
+ *  read from it, because a check that takes its expectation from the thing it checks cannot fail. */
+var S1_RECOMMENDATION_STATES_ = ['VALID_ZERO_RECOMMENDATION', 'NONZERO_RECOMMENDATION', 'MISSING_RECOMMENDATION'];
+function S1_rowNoActionClass_(state, recommendedQty, qualifyingQty, residualQty) {
+  var out = { class: S1_NO_ACTION_CLASSES_.UNKNOWN, refusal: null,
+    grain: 'THIS EXACT (company, country, marketplace, sku) — never the target set\'s aggregate',
+    inputs: { recommendation_state: (state === undefined || state === null) ? null : S1_str_(state),
+      recommended_qty: recommendedQty === undefined ? null : recommendedQty,
+      qualifying_planned_qty: qualifyingQty === undefined ? null : qualifyingQty,
+      residual_qty: residualQty === undefined ? null : residualQty } };
+  var st = S1_str_(state);
+  if (st === '') {
+    out.class = S1_NO_ACTION_CLASSES_.MISSING;
+    out.refusal = 'THE_RECOMMENDATION_AUTHORITY_RETURNED_NO_STATE_FOR_THIS_SCOPE';
+    return out;
+  }
+  if (S1_RECOMMENDATION_STATES_.indexOf(st) === -1) {
+    out.refusal = 'RECOMMENDATION_STATE_IS_NOT_ONE_THIS_CENSUS_RECOGNISES: ' + S1_cap_(st, 60);
+    return out;
+  }
+  if (st === S1_NO_ACTION_CLASSES_.MISSING) {
+    out.class = S1_NO_ACTION_CLASSES_.MISSING;
+    out.refusal = 'THE_RECOMMENDATION_AUTHORITY_COULD_NOT_READ_THIS_SCOPE';
+    return out;
+  }
+  // MISSING IS NOT ZERO — the whole reason this function exists. Each input is named separately so a refusal
+  // says WHICH number was absent, not that something was.
+  var r = S1_qty_(recommendedQty), q = S1_qty_(qualifyingQty), d = S1_qty_(residualQty);
+  if (r === null) { out.refusal = 'RECOMMENDED_QTY_IS_NOT_A_FINITE_NUMBER'; return out; }
+  if (q === null) { out.refusal = 'QUALIFYING_PLANNED_QTY_IS_NOT_A_FINITE_NUMBER'; return out; }
+  if (d === null) { out.refusal = 'RESIDUAL_QTY_IS_NOT_A_FINITE_NUMBER'; return out; }
+  if (r < 0) { out.refusal = 'RECOMMENDED_QTY_IS_NEGATIVE'; return out; }
+  if (q < 0) { out.refusal = 'QUALIFYING_PLANNED_QTY_IS_NEGATIVE'; return out; }
+  if (d < 0) { out.refusal = 'RESIDUAL_QTY_IS_NEGATIVE'; return out; }
+  if (d > 0) { out.class = S1_NO_ACTION_CLASSES_.RESIDUAL_REMAINS; return out; }
+  out.class = (st === S1_NO_ACTION_CLASSES_.VALID_ZERO)
+    ? S1_NO_ACTION_CLASSES_.VALID_ZERO : S1_NO_ACTION_CLASSES_.FULLY_COVERED;
+  return out;
+}
 
 /**
  * The predicate ledger. Every claim this file makes is a named entry with what it EXPECTED and what it
@@ -319,6 +421,330 @@ function S1_manualIdentitiesByScope_(facts) {
 }
 
 /**
+ * The qualifying MANUAL plan, ASKED ONCE PER (company, country). weeklyAiPlanQualifyingPlannedQty_ filters
+ * headers on company and country only, and its `byKey` is already keyed by the header own marketplace and
+ * the line own sku, so ONE call answers for every identity in the pair. The old census asked it once per
+ * identity: 118 identities meant 236 reads of the same two tables for the same answer.
+ */
+function S1_qualifyingFor_(E, company, country) {
+  var ck = S1_str_(company) + '|' + S1_str_(country);
+  if (Object.prototype.hasOwnProperty.call(E.plannedCache, ck)) return E.plannedCache[ck];
+  var p = null;
+  try {
+    p = weeklyAiPlanQualifyingPlannedQty_(E.ss, { company: company, country: country,
+      marketplace: '', planningCycle: E.cycle });
+  } catch (e) { p = null; }
+  E.plannedCache[ck] = p;
+  return p;
+}
+
+/**
+ * ================================================================================================================
+ * S1-R2 §1/§5 — ONE IDENTITY, MEASURED AT ROW GRAIN, BY BOTH CENSUSES THROUGH THE SAME CODE.
+ * ================================================================================================================
+ *
+ * WHAT WENT WRONG, AND IT WAS THIS FILE FAULT AGAIN. `weeklyAiPlanRecommendationState_().state` and
+ * `weeklyAiPlanNoActionDecision_().reason` are properties of the WHOLE authorized TARGET SET. This census
+ * asked the authority ONCE — with the allowlist target set, which in production holds exactly one scope —
+ * and then printed that single answer onto all 118 identities of the pair. So 100 identities the authority
+ * had never evaluated came back carrying NONZERO_RECOMMENDATION and FULLY_COVERED_BY_ACTIVE_PLAN, with
+ * their own residual_qty sitting at null in the same row. A claim at the wrong grain is indistinguishable
+ * from a false one, and this one said FULLY COVERED about scopes nobody had looked at.
+ *
+ * EVERY NUMBER BELOW IS THEREFORE THIS IDENTITY OWN, obtained by asking the SAME authority about a
+ * SINGLE-SCOPE target set so that its aggregate and its per-scope entry are the same grain. The target set
+ * aggregate is still reported, under `target_set`, where it cannot be read as this row answer.
+ *
+ * THE TWO MODES DIFFER IN ONE THING ONLY: whether the exact four-axis allowlist gate is a CONDITION.
+ *   ALLOWLIST  the candidate census. The gate is one of the PROOFS, so a scope outside it can never be a
+ *              candidate and never be activation_ready.
+ *   PROPOSAL   the discovery census. The gate is still asked and still reported per row, but it does not
+ *              decide whether the row is LISTED — listing is what discovery is for.
+ *
+ * NOTHING HERE WIDENS A GATE. No flag, allowlist, script property, production global or spreadsheet value
+ * is modified, monkey-patched or shadowed; no writer, capability, Generate or Submit is reached. The only
+ * thing that differs between the modes is which identities get measured.
+ */
+function S1_identityRow_(E, ident, mode) {
+  var ss = E.ss, cycle = E.cycle, can = E.can, canForKey = E.canForKey || {},
+    facts = E.facts, aiPlanned = E.aiPlanned, manualIdent = E.manualIdent,
+    draftHeaders = E.draftHeaders || [];
+  // A two-key shim, so the extracted body reads the schema and the accepted run exactly as it did inside
+  // the census and cannot reach anything else on the census object.
+  var out = { schema: E.schema, accepted_run: E.acceptedRun };
+  var parts = [S1_str_(ident.company), S1_str_(ident.country), S1_str_(ident.marketplace), S1_str_(ident.sku)];
+  var key = ident.scope_key || S1_scopeKey_(parts[0], parts[1], parts[2], parts[3]);
+  var scope = { company: parts[0], country: parts[1], marketplace: parts[2], planningCycle: cycle };
+  var sku = parts[3];
+  var C = S1_ledger_();
+  var row = { scope: { company: parts[0], country: parts[1], marketplace: parts[2], sku: sku },
+    scope_key: key, scope_axes: S1_SCOPE_AXES_.slice(),
+    boundary: mode === 'PROPOSAL' ? 'PROPOSAL_DISCOVERY' : 'ACTIVATION_READINESS',
+    measurement_grain: 'one exact four-axis identity; the aggregate over the authorized target set is'
+      + ' reported separately under target_set and is never this row' };
+
+  // (a) the recommendation, from the one authority, for this exact scope.
+  var canHere = canForKey[key] || can;
+  // THE PRODUCTION GATE, ASKED EXACTLY AS PRODUCTION ASKS IT, IN BOTH MODES. In ALLOWLIST mode its scope
+  // set is what a real generation would be permitted to write. In PROPOSAL mode it is asked anyway,
+  // because whether the real gate admits this identity is the most important fact a proposal row carries.
+  var targets = null;
+  try { targets = weeklyAiPlanTargetScopes_(scope, parts[2]); } catch (e1) { targets = null; }
+  row.currently_allowlisted = false;
+  if (typeof inventoryAiPlanScopeEnabled_ === 'function') {
+    try { row.currently_allowlisted = inventoryAiPlanScopeEnabled_(parts[0], parts[1], parts[2], sku) === true; }
+    catch (eG) { row.currently_allowlisted = false; }
+  }
+  row.allowlist_gate_authority = 'inventoryAiPlanScopeEnabled_ (00_), exact and case-sensitive on all four'
+    + ' axes, asked directly rather than inferred from whether the authority returned a quantity';
+  // THE TARGET SET AGGREGATE, KEPT WHERE IT CANNOT BE READ AS THIS ROW. This is the value that used to BE
+  // row.recommendation_state, and printing it at row grain is what made 100 identities the authority had
+  // never evaluated claim NONZERO_RECOMMENDATION and FULLY_COVERED_BY_ACTIVE_PLAN.
+  var setState = null;
+  try { setState = (targets && canHere) ? weeklyAiPlanRecommendationState_(canHere, targets) : null; } catch (e2) { setState = null; }
+  var setPlanned = S1_qualifyingFor_(E, parts[0], parts[1]);
+  var setDecision = null;
+  try { setDecision = (setState && setPlanned) ? weeklyAiPlanNoActionDecision_(setState, setPlanned) : null; }
+  catch (e2b) { setDecision = null; }
+  row.target_set = { authority: 'weeklyAiPlanTargetScopes_ (61_), the allowlist-derived scope set',
+    ok: targets ? targets.ok === true : null, reason: targets ? (targets.reason || null) : null,
+    scope_count: targets ? ((targets.scopes || []).length) : null,
+    recommendation_state: setState ? setState.state : null,
+    no_action_reason: setDecision ? (setDecision.reason || null) : null,
+    grain: 'THE WHOLE AUTHORIZED SCOPE SET, NOT THIS ROW. Reported so the two grains can be compared,'
+      + ' never as this identity own answer' };
+  // ---- THIS IDENTITY OWN ANSWER, from the same authority, asked about ONE scope. --------------------
+  // A single-scope target set makes the authority aggregate and its per-scope entry the SAME grain, so no
+  // state, quantity or residual has to be re-derived here. The scope set is the only thing that differs,
+  // and it is an argument to a pure read-only mapping from snapshot to quantities: it is not a gate, it
+  // reaches no writer, and it cannot widen what a generation may write.
+  var oneTarget = { ok: true, reason: null,
+    scopes: [{ company: parts[0], country: parts[1], marketplace: parts[2], sku: sku }],
+    requested_marketplace: parts[2], synthesized_read_only: true };
+  var recState = null;
+  try { recState = canHere ? weeklyAiPlanRecommendationState_(canHere, oneTarget) : null; } catch (e2c) { recState = null; }
+  var mine = null;
+  if (recState && Object.prototype.toString.call(recState.per_scope) === '[object Array]') {
+    recState.per_scope.forEach(function (s) { if (S1_str_(s.key) === key) mine = s; });
+  }
+  row.recommendation_state = recState ? recState.state : null;
+  row.recommendation_state_grain = 'a single-scope ask of weeklyAiPlanRecommendationState_ about this'
+    + ' identity alone';
+  row.not_evaluated_reason = mine ? (mine.reason || null) : 'NOT_RETURNED_BY_THE_RECOMMENDATION_AUTHORITY';
+  row.recommendation_authority = recState ? recState.authority_rule : null;
+  row.windows = mine ? (mine.windows || null) : null;
+  row.recommended_qty = mine ? S1_qty_(mine.recommended_qty) : null;
+  // FROM THE LINEAGE AUTHORITY. The gap row has no such column (43_ INV_GAP_HEADERS_), so reading it off
+  // the row reported null for everything and made a resolvable run id look unknown.
+  row.calculation_run_id = (out.accepted_run.lineage && out.accepted_run.lineage.run_id) || null;
+  row.calculation_date = mine ? (S1_str_(mine.calculation_date) || null) : null;
+  row.calculation_status = mine ? (S1_str_(mine.calculation_status) || null) : null;
+  row.freshness_state = out.accepted_run.freshness_state;
+  row.accepted_date = out.accepted_run.accepted_date;
+
+  // (b) the qualifying MANUAL plan and the residual, from the one authority.
+  var planned = setPlanned, decision = null;
+  try { decision = (recState && planned) ? weeklyAiPlanNoActionDecision_(recState, planned) : null; } catch (e4) { decision = null; }
+  row.qualifying_manual_planned_qty = planned ? S1_qty_((planned.byKey || {})[key]) : null;
+  if (row.qualifying_manual_planned_qty === null && planned && planned.ok) row.qualifying_manual_planned_qty = 0;
+  row.qualifying_ai_planned_qty = (aiPlanned.byKey[key] === undefined) ? 0 : aiPlanned.byKey[key];
+  row.qualifying_ai_planned_authority = aiPlanned.authority;
+  var dScope = null;
+  if (decision && Object.prototype.toString.call(decision.per_scope) === '[object Array]') {
+    decision.per_scope.forEach(function (s) { if (S1_str_(s.key) === key) dScope = s; });
+  }
+  row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;
+  // S1-R2 §5 — THE CLASS IS COMPUTED FROM THIS ROW OWN THREE NUMBERS, AND IT REFUSES BEFORE IT GUESSES.
+  // `decision.reason` used to be copied straight in. At the target set grain that is a true statement
+  // about a different thing, and printed beside a null residual it read as FULLY_COVERED_BY_ACTIVE_PLAN:
+  // the census reported a scope as finished that it had not measured.
+  var cls = S1_rowNoActionClass_(row.recommendation_state, row.recommended_qty,
+    row.qualifying_manual_planned_qty, row.residual_qty);
+  row.no_action_reason = cls.class;
+  row.no_action_reason_refusal = cls.refusal;
+  row.no_action_reason_inputs = cls.inputs;
+  row.no_action_reason_grain = cls.grain;
+  // The authority own answer AT THIS GRAIN (the single-scope ask), reported for comparison. Where the two
+  // differ this census reports the STRICTER one and names the input that forced it: the decision authority
+  // reads an unreadable plan table as a planned zero, which is right for a runtime that must still answer
+  // and wrong for a readiness claim that may refuse.
+  row.authority_no_action_reason = decision ? (decision.reason || null) : null;
+  row.no_action_reason_stricter_than_authority =
+    !!(row.authority_no_action_reason && row.no_action_reason !== row.authority_no_action_reason);
+  row.production_would_no_action = decision ? decision.noAction === true : null;
+
+  // (c) the pool. A recommendation with no factory pool is not a candidate, and it is not a zero either.
+  var srcWh = mine ? (S1_str_(mine.source_warehouse_id) || S1_str_(mine.recommended_source_warehouse_id)) : '';
+  // The census does not GUESS a source warehouse. When the recommendation does not name one, every factory
+  // pool holding this SKU is reported and the candidate is refused for ambiguity — inventing a warehouse
+  // here is how a plan comes to be sized against stock at a factory that cannot ship it.
+  var poolCandidates = [];
+  var avail = (facts.available && facts.available.byPool) || {};
+  Object.keys(avail).forEach(function (pk) {
+    var p = avail[pk];
+    if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()) poolCandidates.push(p);
+  });
+  var pool = null;
+  if (srcWh) {
+    pool = avail[S1_poolKey_(srcWh, sku)] || null;
+    if (!pool) { poolCandidates.forEach(function (p) { if (S1_str_(p.warehouse_id) === srcWh) pool = p; }); }
+  } else if (poolCandidates.length === 1) {
+    pool = poolCandidates[0];
+  }
+  row.source_factory_warehouse_id = srcWh || (pool ? S1_str_(pool.warehouse_id) : null);
+  row.source_warehouse_named_by_recommendation = !!srcWh;
+  row.pool_candidates = poolCandidates.map(function (p) { return { pool_key: p.pool_key, warehouse_id: p.warehouse_id, available_to_allocate: p.available_to_allocate }; });
+  row.pool = pool ? {
+    pool_key: pool.pool_key, warehouse_id: pool.warehouse_id, sku: pool.sku,
+    pool_row_found: pool.pool_row_found,
+    factory_current_stock: pool.factory_current_stock,
+    factory_reserved_stock: pool.factory_reserved_stock,
+    factory_available_stock: pool.factory_available_stock,
+    active_allocation_draft_qty: pool.active_allocation_draft_qty,
+    active_allocation_draft_manual_qty: pool.active_allocation_draft_manual_qty,
+    active_allocation_draft_ai_qty: pool.active_allocation_draft_ai_qty,
+    active_shipping_plan_qty: pool.active_shipping_plan_qty,
+    already_allocated_qty: pool.already_allocated_qty,
+    available_to_allocate: pool.available_to_allocate,
+    exposure_stages: pool.exposure_stages
+  } : null;
+  // The shipment stage is the RESERVED side of the balance, by the model's own dedup rule. Reported so the
+  // third stage is visible rather than inferred from its absence.
+  row.shipment_reservation_exposure = pool ? {
+    counted_as: 'factory_reserved_stock',
+    qty: pool.factory_reserved_stock,
+    note: 'a plan transferred to a shipment stops counting as plan exposure; its units are inside'
+      + ' factory_reserved_stock and are already subtracted by (current - reserved)'
+  } : null;
+
+  // (d) the proposed allocation. min(residual, available), never more, and NEVER invented when either
+  //     input is unknown.
+  var prop = null, wouldClamp = null;
+  if (row.residual_qty !== null && pool && S1_qty_(pool.available_to_allocate) !== null) {
+    var a = Number(pool.available_to_allocate);
+    prop = Math.min(row.residual_qty, a);
+    if (prop < 0) prop = 0;
+    wouldClamp = prop < row.residual_qty;
+  }
+  row.proposed_ai_allocation_qty = prop;
+  row.would_clamp = wouldClamp;
+  row.would_write = (prop !== null && prop > 0);
+  row.clamp_authority = 'KMFSG evaluateAiGuard applies the real clamp at generation time; this is the '
+    + 'same min(residual, available_to_allocate) the guard computes, reported in advance and never applied';
+
+  // (e) the identities. What a run would supersede, and what it must never touch.
+  var aiAffected = [];
+  if (typeof aiplExpirationCandidates_ === 'function') {
+    try {
+      var cand = aiplExpirationCandidates_(draftHeaders, {
+        company: parts[0], country: parts[1], marketplace: parts[2], planning_cycle: cycle,
+        source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : '',
+        generation_run_id: 'S1-CENSUS-NOT-A-RUN', committed_ids: [] });
+      (cand.expire || []).forEach(function (e) {
+        aiAffected.push({ allocation_draft_id: e.allocation_draft_id, previous_status: e.previous_status,
+          generation_run_id: e.generation_run_id });
+      });
+    } catch (e5) { aiAffected = null; }
+  } else { aiAffected = null; }
+  row.existing_affected_ai_identities = aiAffected;
+  row.protected_manual_identities = manualIdent[key] || [];
+  row.ai_exposure_rows = aiPlanned.rows.filter(function (r) { return S1_scopeKey_(r.company, r.country, r.marketplace, r.sku) === key; });
+
+  row.schema_fingerprints = {
+    inventory_replenishment_gap: out.schema.tables['inventory_replenishment_gap'].fingerprint,
+    shipping_allocation_drafts: out.schema.tables['shipping_allocation_drafts'].fingerprint,
+    shipping_allocation_draft_lines: out.schema.tables['shipping_allocation_draft_lines'].fingerprint,
+    factory_stock: out.schema.tables['factory_stock'].fingerprint
+  };
+
+  // ---- THE PROOFS. Each one separately, each one named. -----------------------------------------------
+  // S1-R2 §7 — the four-axis identity and the schema first: a quantity measured against an unknown schema,
+  // or attached to an identity missing an axis, is not evidence about anything.
+  var axesPresent = parts.filter(function (p) { return S1_str_(p) !== ''; }).length;
+  C.P('the_identity_carries_all_four_axes', 4, axesPresent, axesPresent === 4);
+  var fpMissing = ['inventory_replenishment_gap', 'shipping_allocation_drafts',
+    'shipping_allocation_draft_lines', 'factory_stock'].filter(function (t) {
+    return !(row.schema_fingerprints && row.schema_fingerprints[t]);
+  });
+  C.P('every_schema_fingerprint_this_row_depends_on_is_present', [], fpMissing, fpMissing.length === 0);
+  // S1-R2 §5/§7 — EACH QUANTITY SEPARATELY FINITE. These were reachable only through the residual proof,
+  // so an absent recommendation and an absent plan produced the same sentence about the residual. They are
+  // different facts: one says the run did not measure this scope, the other says the plan table did not
+  // read. Neither is a zero.
+  C.P('recommended_qty_is_a_finite_number', 'a finite number', row.recommended_qty,
+    S1_qty_(row.recommended_qty) !== null);
+  C.P('qualifying_manual_planned_qty_is_a_finite_number', 'a finite number',
+    row.qualifying_manual_planned_qty, S1_qty_(row.qualifying_manual_planned_qty) !== null);
+  C.P('qualifying_ai_exposure_qty_is_a_finite_number', 'a finite number',
+    row.qualifying_ai_planned_qty, S1_qty_(row.qualifying_ai_planned_qty) !== null);
+  C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty,
+    row.residual_qty !== null && row.residual_qty > 0);
+  C.P('the_recommendation_is_current_and_ready',
+    { state: 'NONZERO_RECOMMENDATION', calculation_status: 'READY' },
+    { state: row.recommendation_state, calculation_status: row.calculation_status,
+      freshness_state: row.freshness_state },
+    row.recommendation_state === 'NONZERO_RECOMMENDATION'
+      && S1_str_(row.calculation_status).toUpperCase() === 'READY');
+  C.P('the_row_belongs_to_the_accepted_run',
+    out.accepted_run.accepted_date, row.calculation_date,
+    !!row.calculation_date && row.calculation_date === out.accepted_run.accepted_date);
+  C.P('a_factory_pool_exists_for_this_exact_warehouse_and_sku',
+    'one pool row', row.pool ? row.pool.pool_key : null,
+    !!(row.pool && row.pool.pool_row_found === true));
+  C.P('the_source_factory_warehouse_is_unambiguous',
+    'named by the recommendation, or exactly one factory pool holds this SKU',
+    { named: row.source_warehouse_named_by_recommendation, pool_candidates: row.pool_candidates.length },
+    row.source_warehouse_named_by_recommendation === true || row.pool_candidates.length === 1);
+  C.P('available_to_allocate_is_finite_and_greater_than_zero', 'a finite number > 0',
+    row.pool ? row.pool.available_to_allocate : null,
+    !!(row.pool && S1_qty_(row.pool.available_to_allocate) !== null && row.pool.available_to_allocate > 0));
+  C.P('the_proposed_quantity_does_not_exceed_the_residual',
+    { at_most: row.residual_qty }, row.proposed_ai_allocation_qty,
+    prop !== null && row.residual_qty !== null && prop <= row.residual_qty);
+  C.P('the_proposed_quantity_does_not_exceed_available_to_allocate',
+    { at_most: row.pool ? row.pool.available_to_allocate : null }, row.proposed_ai_allocation_qty,
+    prop !== null && !!row.pool && S1_qty_(row.pool.available_to_allocate) !== null
+      && prop <= Number(row.pool.available_to_allocate));
+  // A proposal of zero is not a proposal. min(residual, available) can land on zero with both inputs
+  // finite and positive-looking, and a row that would write nothing must never be offered as one that
+  // would write something.
+  C.P('the_proposed_quantity_is_finite_and_greater_than_zero', 'a finite number > 0',
+    row.proposed_ai_allocation_qty, S1_qty_(row.proposed_ai_allocation_qty) !== null
+      && row.proposed_ai_allocation_qty > 0);
+  C.P('no_manual_identity_would_be_overwritten',
+    'a generation suppresses its own write when an active manual draft holds the identity; the manual rows'
+      + ' are listed so the claim is checkable',
+    { protected_manual_identities: row.protected_manual_identities.length },
+    Object.prototype.toString.call(row.protected_manual_identities) === '[object Array]');
+  C.P('the_affected_ai_identities_are_known',
+    'a list, possibly empty', aiAffected === null ? 'UNAVAILABLE' : aiAffected.length,
+    Object.prototype.toString.call(aiAffected) === '[object Array]');
+  C.P('the_rollback_and_readback_strategy_is_complete',
+    'atomic header+line write, verified readback, expiry only inside the exact release set',
+    S1_rollbackStrategy_().generate.complete, S1_rollbackStrategy_().generate.complete === true);
+
+  // S1-R2 §9 — THE BOUNDARY, AS A NAMED CONDITION RATHER THAN AN ACCIDENT.
+  // Before this round a non-allowlisted identity was refused only because the authority had not returned a
+  // quantity for it, which surfaced as 'the recommendation is not current and ready' — a true sentence
+  // about the wrong thing. The exact four-axis gate is now its own condition, so a scope outside the
+  // allowlist is refused for being outside the allowlist, by name, and can never be activation_ready.
+  if (mode !== 'PROPOSAL') {
+    C.P('the_scope_is_in_the_current_activation_allowlist',
+      'inventoryAiPlanScopeEnabled_ admits this exact company, country, marketplace and sku',
+      row.currently_allowlisted, row.currently_allowlisted === true);
+  }
+  row.proofs = C.entries;
+  row.refusal_reasons = C.failed;
+  row.is_candidate = C.failed.length === 0;
+  // ACTIVATION READY IS CANDIDACY *AND* THE REAL GATE. In PROPOSAL mode candidacy alone is never enough:
+  // moving the allowlist to the chosen scope is a separate, explicit authorization a person has to give.
+  row.activation_ready = row.is_candidate === true && row.currently_allowlisted === true;
+  row.authorization_required = true;
+  row.proposal_only = mode === 'PROPOSAL';
+  return row;
+}
+
+/**
  * ================================================================================================================
  * GATE D §1-§5 — THE CANDIDATE CENSUS.
  * ================================================================================================================
@@ -535,183 +961,18 @@ function RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS() {
     var draftHeaders = [];
     try { draftHeaders = (typeof gapReadObjects_ === 'function') ? (gapReadObjects_(ss, 'shipping_allocation_drafts') || []) : []; } catch (eH) { draftHeaders = []; }
 
+    // ---- EVERY IDENTITY, MEASURED AT ITS OWN GRAIN, THROUGH THE SHARED MEASUREMENT. -------------------
+    var E = { ss: ss, cycle: cycle, can: can, canForKey: canForKey, facts: facts,
+      aiPlanned: aiPlanned, manualIdent: manualIdent, plannedCache: {}, schema: out.schema,
+      acceptedRun: out.accepted_run, draftHeaders: draftHeaders };
     keys.forEach(function (key) {
       var parts = String(key).split('|');
       if (parts.length !== 4) {
         out.rejected.push({ scope_key: key, reasons: ['CANONICAL_KEY_DOES_NOT_SPLIT_INTO_FOUR_AXES'] });
         return;
       }
-      var scope = { company: parts[0], country: parts[1], marketplace: parts[2], planningCycle: cycle };
-      var sku = parts[3];
-      var C = S1_ledger_();
-      var row = { scope: { company: parts[0], country: parts[1], marketplace: parts[2], sku: sku },
-        scope_key: key, scope_axes: S1_SCOPE_AXES_.slice() };
-
-      // (a) the recommendation, from the one authority, for this exact scope.
-      var canHere = canForKey[key] || can;
-      var targets = null, recState = null;
-      try { targets = weeklyAiPlanTargetScopes_(scope, parts[2]); } catch (e1) { targets = null; }
-      try { recState = (targets && canHere) ? weeklyAiPlanRecommendationState_(canHere, targets) : null; } catch (e2) { recState = null; }
-      var mine = null;
-      if (recState && Object.prototype.toString.call(recState.per_scope) === '[object Array]') {
-        recState.per_scope.forEach(function (s) { if (S1_str_(s.sku) === sku && S1_str_(s.marketplace) === parts[2]) mine = s; });
-      }
-      row.recommendation_state = recState ? recState.state : null;
-      row.recommendation_authority = recState ? recState.authority_rule : null;
-      row.windows = mine ? (mine.windows || null) : null;
-      row.recommended_qty = mine ? S1_qty_(mine.recommended_qty) : null;
-      // FROM THE LINEAGE AUTHORITY. The gap row has no such column (43_ INV_GAP_HEADERS_), so reading it off
-      // the row reported null for everything and made a resolvable run id look unknown.
-      row.calculation_run_id = (out.accepted_run.lineage && out.accepted_run.lineage.run_id) || null;
-      row.calculation_date = mine ? (S1_str_(mine.calculation_date) || null) : null;
-      row.calculation_status = mine ? (S1_str_(mine.calculation_status) || null) : null;
-      row.freshness_state = out.accepted_run.freshness_state;
-      row.accepted_date = out.accepted_run.accepted_date;
-
-      // (b) the qualifying MANUAL plan and the residual, from the one authority.
-      var planned = null, decision = null;
-      try { planned = weeklyAiPlanQualifyingPlannedQty_(ss, scope); } catch (e3) { planned = null; }
-      try { decision = (recState && planned) ? weeklyAiPlanNoActionDecision_(recState, planned) : null; } catch (e4) { decision = null; }
-      row.qualifying_manual_planned_qty = planned ? S1_qty_((planned.byKey || {})[key]) : null;
-      if (row.qualifying_manual_planned_qty === null && planned && planned.ok) row.qualifying_manual_planned_qty = 0;
-      row.qualifying_ai_planned_qty = (aiPlanned.byKey[key] === undefined) ? 0 : aiPlanned.byKey[key];
-      row.qualifying_ai_planned_authority = aiPlanned.authority;
-      var dScope = null;
-      if (decision && Object.prototype.toString.call(decision.per_scope) === '[object Array]') {
-        decision.per_scope.forEach(function (s) { if (S1_str_(s.key) === key) dScope = s; });
-      }
-      row.residual_qty = dScope ? S1_qty_(dScope.residual_qty) : null;
-      row.no_action_reason = decision ? (decision.reason || null) : null;
-      row.production_would_no_action = decision ? decision.noAction === true : null;
-
-      // (c) the pool. A recommendation with no factory pool is not a candidate, and it is not a zero either.
-      var srcWh = mine ? (S1_str_(mine.source_warehouse_id) || S1_str_(mine.recommended_source_warehouse_id)) : '';
-      // The census does not GUESS a source warehouse. When the recommendation does not name one, every factory
-      // pool holding this SKU is reported and the candidate is refused for ambiguity — inventing a warehouse
-      // here is how a plan comes to be sized against stock at a factory that cannot ship it.
-      var poolCandidates = [];
-      var avail = (facts.available && facts.available.byPool) || {};
-      Object.keys(avail).forEach(function (pk) {
-        var p = avail[pk];
-        if (S1_str_(p.sku).toUpperCase() === sku.toUpperCase()) poolCandidates.push(p);
-      });
-      var pool = null;
-      if (srcWh) {
-        pool = avail[S1_poolKey_(srcWh, sku)] || null;
-        if (!pool) { poolCandidates.forEach(function (p) { if (S1_str_(p.warehouse_id) === srcWh) pool = p; }); }
-      } else if (poolCandidates.length === 1) {
-        pool = poolCandidates[0];
-      }
-      row.source_factory_warehouse_id = srcWh || (pool ? S1_str_(pool.warehouse_id) : null);
-      row.source_warehouse_named_by_recommendation = !!srcWh;
-      row.pool_candidates = poolCandidates.map(function (p) { return { pool_key: p.pool_key, warehouse_id: p.warehouse_id, available_to_allocate: p.available_to_allocate }; });
-      row.pool = pool ? {
-        pool_key: pool.pool_key, warehouse_id: pool.warehouse_id, sku: pool.sku,
-        pool_row_found: pool.pool_row_found,
-        factory_current_stock: pool.factory_current_stock,
-        factory_reserved_stock: pool.factory_reserved_stock,
-        factory_available_stock: pool.factory_available_stock,
-        active_allocation_draft_qty: pool.active_allocation_draft_qty,
-        active_allocation_draft_manual_qty: pool.active_allocation_draft_manual_qty,
-        active_allocation_draft_ai_qty: pool.active_allocation_draft_ai_qty,
-        active_shipping_plan_qty: pool.active_shipping_plan_qty,
-        already_allocated_qty: pool.already_allocated_qty,
-        available_to_allocate: pool.available_to_allocate,
-        exposure_stages: pool.exposure_stages
-      } : null;
-      // The shipment stage is the RESERVED side of the balance, by the model's own dedup rule. Reported so the
-      // third stage is visible rather than inferred from its absence.
-      row.shipment_reservation_exposure = pool ? {
-        counted_as: 'factory_reserved_stock',
-        qty: pool.factory_reserved_stock,
-        note: 'a plan transferred to a shipment stops counting as plan exposure; its units are inside'
-          + ' factory_reserved_stock and are already subtracted by (current - reserved)'
-      } : null;
-
-      // (d) the proposed allocation. min(residual, available), never more, and NEVER invented when either
-      //     input is unknown.
-      var prop = null, wouldClamp = null;
-      if (row.residual_qty !== null && pool && S1_qty_(pool.available_to_allocate) !== null) {
-        var a = Number(pool.available_to_allocate);
-        prop = Math.min(row.residual_qty, a);
-        if (prop < 0) prop = 0;
-        wouldClamp = prop < row.residual_qty;
-      }
-      row.proposed_ai_allocation_qty = prop;
-      row.would_clamp = wouldClamp;
-      row.would_write = (prop !== null && prop > 0);
-      row.clamp_authority = 'KMFSG evaluateAiGuard applies the real clamp at generation time; this is the '
-        + 'same min(residual, available_to_allocate) the guard computes, reported in advance and never applied';
-
-      // (e) the identities. What a run would supersede, and what it must never touch.
-      var aiAffected = [];
-      if (typeof aiplExpirationCandidates_ === 'function') {
-        try {
-          var cand = aiplExpirationCandidates_(draftHeaders, {
-            company: parts[0], country: parts[1], marketplace: parts[2], planning_cycle: cycle,
-            source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined') ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : '',
-            generation_run_id: 'S1-CENSUS-NOT-A-RUN', committed_ids: [] });
-          (cand.expire || []).forEach(function (e) {
-            aiAffected.push({ allocation_draft_id: e.allocation_draft_id, previous_status: e.previous_status,
-              generation_run_id: e.generation_run_id });
-          });
-        } catch (e5) { aiAffected = null; }
-      } else { aiAffected = null; }
-      row.existing_affected_ai_identities = aiAffected;
-      row.protected_manual_identities = manualIdent[key] || [];
-      row.ai_exposure_rows = aiPlanned.rows.filter(function (r) { return S1_scopeKey_(r.company, r.country, r.marketplace, r.sku) === key; });
-
-      row.schema_fingerprints = {
-        inventory_replenishment_gap: out.schema.tables['inventory_replenishment_gap'].fingerprint,
-        shipping_allocation_drafts: out.schema.tables['shipping_allocation_drafts'].fingerprint,
-        shipping_allocation_draft_lines: out.schema.tables['shipping_allocation_draft_lines'].fingerprint,
-        factory_stock: out.schema.tables['factory_stock'].fingerprint
-      };
-
-      // ---- THE TEN PROOFS. Each one separately, each one named. ------------------------------------------
-      C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty,
-        row.residual_qty !== null && row.residual_qty > 0);
-      C.P('the_recommendation_is_current_and_ready',
-        { state: 'NONZERO_RECOMMENDATION', calculation_status: 'READY' },
-        { state: row.recommendation_state, calculation_status: row.calculation_status,
-          freshness_state: row.freshness_state },
-        row.recommendation_state === 'NONZERO_RECOMMENDATION'
-          && S1_str_(row.calculation_status).toUpperCase() === 'READY');
-      C.P('the_row_belongs_to_the_accepted_run',
-        out.accepted_run.accepted_date, row.calculation_date,
-        !!row.calculation_date && row.calculation_date === out.accepted_run.accepted_date);
-      C.P('a_factory_pool_exists_for_this_exact_warehouse_and_sku',
-        'one pool row', row.pool ? row.pool.pool_key : null,
-        !!(row.pool && row.pool.pool_row_found === true));
-      C.P('the_source_factory_warehouse_is_unambiguous',
-        'named by the recommendation, or exactly one factory pool holds this SKU',
-        { named: row.source_warehouse_named_by_recommendation, pool_candidates: row.pool_candidates.length },
-        row.source_warehouse_named_by_recommendation === true || row.pool_candidates.length === 1);
-      C.P('available_to_allocate_is_finite_and_greater_than_zero', 'a finite number > 0',
-        row.pool ? row.pool.available_to_allocate : null,
-        !!(row.pool && S1_qty_(row.pool.available_to_allocate) !== null && row.pool.available_to_allocate > 0));
-      C.P('the_proposed_quantity_does_not_exceed_the_residual',
-        { at_most: row.residual_qty }, row.proposed_ai_allocation_qty,
-        prop !== null && row.residual_qty !== null && prop <= row.residual_qty);
-      C.P('the_proposed_quantity_does_not_exceed_available_to_allocate',
-        { at_most: row.pool ? row.pool.available_to_allocate : null }, row.proposed_ai_allocation_qty,
-        prop !== null && !!row.pool && S1_qty_(row.pool.available_to_allocate) !== null
-          && prop <= Number(row.pool.available_to_allocate));
-      C.P('no_manual_identity_would_be_overwritten',
-        'a generation suppresses its own write when an active manual draft holds the identity; the manual rows'
-          + ' are listed so the claim is checkable',
-        { protected_manual_identities: row.protected_manual_identities.length },
-        Object.prototype.toString.call(row.protected_manual_identities) === '[object Array]');
-      C.P('the_affected_ai_identities_are_known',
-        'a list, possibly empty', aiAffected === null ? 'UNAVAILABLE' : aiAffected.length,
-        Object.prototype.toString.call(aiAffected) === '[object Array]');
-      C.P('the_rollback_and_readback_strategy_is_complete',
-        'atomic header+line write, verified readback, expiry only inside the exact release set',
-        S1_rollbackStrategy_().generate.complete, S1_rollbackStrategy_().generate.complete === true);
-
-      row.proofs = C.entries;
-      row.refusal_reasons = C.failed;
-      row.is_candidate = C.failed.length === 0;
+      var row = S1_identityRow_(E, { company: parts[0], country: parts[1], marketplace: parts[2],
+        sku: parts[3], scope_key: key }, 'ALLOWLIST');
       if (row.is_candidate) out.candidates.push(row); else out.rejected.push(row);
     });
 
@@ -777,15 +1038,418 @@ function RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS() {
       [out.generate_called, out.submit_called],
       out.generate_called === false && out.submit_called === false);
 
+    // S1-R2 §6 — THE VERDICT NAMES ITS OWN SCOPE. `NO_POSITIVE_RESIDUAL_CANDIDATE` read as a statement
+    // about the whole (company, country) pair. It never was one: this census can only answer for the
+    // identities the EXACT four-axis allowlist admits, which in production is one SKU. The wider question
+    // has its own entry point, RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS, and its own boundary.
+    out.scope_of_this_verdict = { boundary: 'ACTIVATION_READINESS',
+      answers: 'whether an identity INSIDE the current exact four-axis activation allowlist is a'
+        + ' positive-residual candidate',
+      does_not_answer: 'whether some other identity in the same (company, country) pair is one. That is'
+        + ' RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS, which lists proposals and authorizes nothing.',
+      allowlisted_identity_count: out.candidates.concat(out.rejected).filter(function (r) {
+        return r && r.currently_allowlisted === true; }).length };
+    out.activation_ready_count = out.candidates.filter(function (r) { return r.activation_ready === true; }).length;
     out.verdict = out.candidates.length
       ? (L.failed.length ? 'STOP' : 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED')
-      : (L.failed.length ? 'STOP' : 'NO_POSITIVE_RESIDUAL_CANDIDATE');
+      : (L.failed.length ? 'STOP' : 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST');
     if (L.failed.length) out.stop_reason = L.failed.join(', ');
+    S1_emitCensusSegments_(out);
     return S1_finish_(out, L);
   } catch (e) {
     L.P('the_census_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
     out.stop_reason = 'S1_CENSUS_THREW: ' + String(e && e.message ? e.message : e);
     return S1_finish_(out, L);
+  }
+}
+
+/**
+ * S1-R2 §8 — THE ROLL-UP OF WHY THINGS WERE REFUSED, keyed by the FIRST failed condition. The proofs run in a
+ * fixed order, so the first failure is deterministic and is the one an operator would act on. The complete
+ * per-identity list is kept on the returned object; only the COUNTS are logged.
+ */
+function S1_rejectionRollup_(rows, sampleMax) {
+  var out = { by_first_reason: {}, reason_count: 0, total: 0, index: [], samples: [] };
+  (rows || []).forEach(function (r) {
+    out.total++;
+    var why = (r && r.refusal_reasons && r.refusal_reasons.length) ? r.refusal_reasons[0]
+      : ((r && r.reasons && r.reasons.length) ? r.reasons[0] : 'NO_REASON_RECORDED');
+    if (!Object.prototype.hasOwnProperty.call(out.by_first_reason, why)) { out.by_first_reason[why] = 0; out.reason_count++; }
+    out.by_first_reason[why]++;
+    // ONE LINE PER IDENTITY, so nothing disappears, and small enough that 118 of them are still a return
+    // value rather than a log flood.
+    out.index.push({ scope_key: r && r.scope_key, first_reason: why,
+      allowlisted: r ? r.currently_allowlisted === true : null,
+      state: r ? (r.recommendation_state || null) : null,
+      residual_qty: r ? (r.residual_qty === undefined ? null : r.residual_qty) : null });
+    if (out.samples.length < (sampleMax || 8)) {
+      out.samples.push({ scope_key: r && r.scope_key, first_reason: why,
+        all_reasons: (r && r.refusal_reasons ? r.refusal_reasons.slice(0, 6) : null),
+        allowlisted: r ? r.currently_allowlisted === true : null,
+        recommendation_state: r ? (r.recommendation_state || null) : null,
+        not_evaluated_reason: r ? (r.not_evaluated_reason || null) : null,
+        no_action_reason: r ? (r.no_action_reason || null) : null,
+        no_action_reason_refusal: r ? (r.no_action_reason_refusal || null) : null,
+        recommended_qty: r ? (r.recommended_qty === undefined ? null : r.recommended_qty) : null,
+        qualifying_manual_planned_qty: r ? (r.qualifying_manual_planned_qty === undefined ? null : r.qualifying_manual_planned_qty) : null,
+        residual_qty: r ? (r.residual_qty === undefined ? null : r.residual_qty) : null });
+    }
+  });
+  return out;
+}
+
+/** One compact line per candidate. The full row stays on the returned object. */
+function S1_candidateLine_(r) {
+  return { scope: r.scope, scope_key: r.scope_key,
+    currently_allowlisted: r.currently_allowlisted === true,
+    activation_ready: r.activation_ready === true,
+    authorization_required: true, proposal_only: r.proposal_only === true,
+    recommendation_state: r.recommendation_state || null,
+    no_action_reason: r.no_action_reason || null,
+    recommended_qty: r.recommended_qty, qualifying_manual_planned_qty: r.qualifying_manual_planned_qty,
+    qualifying_ai_planned_qty: r.qualifying_ai_planned_qty, residual_qty: r.residual_qty,
+    available_to_allocate: r.pool ? r.pool.available_to_allocate : null,
+    source_factory_warehouse_id: r.source_factory_warehouse_id || null,
+    proposed_ai_allocation_qty: r.proposed_ai_allocation_qty, would_clamp: r.would_clamp,
+    affected_ai_identities: (r.existing_affected_ai_identities || []).length,
+    protected_manual_identities: (r.protected_manual_identities || []).length,
+    calculation_status: r.calculation_status || null, calculation_date: r.calculation_date || null,
+    calculation_run_id: r.calculation_run_id || null };
+}
+
+/** The candidate census, in lines a reader can reach: a summary, one line per candidate, the refusal
+ *  COUNTS, and nothing else. The 118-row payload is what produced 189 log lines in production. */
+function S1_emitCensusSegments_(out) {
+  var roll = S1_rejectionRollup_(out.rejected, 6);
+  out.rejection_counts = roll.by_first_reason;
+  out.rejection_index = roll.index;
+  out.rejection_samples = roll.samples;
+  S1_log_('s1_candidate_summary', JSON.stringify({ census: out.census, build: out.build,
+    boundary: 'ACTIVATION_READINESS', dry_run: out.dry_run, writes: out.writes,
+    writer_calls: out.writer_calls, verdict: out.verdict,
+    eligible_pairs: out.eligible_universe ? out.eligible_universe.eligible_pairs : null,
+    eligible_scope_count: out.eligible_universe ? out.eligible_universe.eligible_scope_count : null,
+    scopes_examined: out.scopes_examined, candidates: out.candidates.length,
+    activation_ready: out.activation_ready_count == null ? null : out.activation_ready_count,
+    rejected: out.rejected.length, distinct_rejection_reasons: roll.reason_count,
+    accepted_date: out.accepted_run ? out.accepted_run.accepted_date : null,
+    freshness_state: out.accepted_run ? out.accepted_run.freshness_state : null }));
+  var M = out.candidates.length;
+  out.candidates.forEach(function (r, i) {
+    S1_log_('s1_candidate_' + (i + 1) + '_of_' + M, JSON.stringify(S1_candidateLine_(r)));
+  });
+  S1_log_('s1_rejection_counts', JSON.stringify({ total: roll.total,
+    by_first_reason: roll.by_first_reason, samples: roll.samples.slice(0, 3) }));
+}
+
+/**
+ * ================================================================================================================
+ * S1-R2 §1/§2/§9 — PROPOSAL DISCOVERY. READ ONLY. IT AUTHORIZES NOTHING, AND IT CANNOT.
+ * ================================================================================================================
+ *
+ * THE TWO BOUNDARIES ARE DIFFERENT AND THIS FILE NOW HAS ONE ENTRY POINT FOR EACH.
+ *
+ *   ACTIVATION READINESS  RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS. The exact four-axis allowlist gate is a
+ *                         CONDITION. Only an already-allowlisted identity can be a candidate, and its verdict
+ *                         says so in its own name. Nothing about the production Generate gate is relaxed.
+ *
+ *   PROPOSAL DISCOVERY    this census. It exists because the bootstrap runs in the other order: a person has
+ *                         to SEE which identity is worth a first controlled run before anybody moves the
+ *                         allowlist to it. Answering that with a census that can only look inside the current
+ *                         allowlist is answering a different question, and reporting the answer as
+ *                         NO_POSITIVE_RESIDUAL_CANDIDATE made it sound like the pair had nothing in it.
+ *
+ * THE DISCOVERY RANGE IS STILL DERIVED FROM THE ALLOWLIST, and this is the part that must not be misread. The
+ * (company, country) PAIRS come from `inventoryAiPlanActivationAllowlist_`, re-gated per entry, exactly as
+ * S1_eligiblePairs_ derives them for the readiness census — in production that is the single pair ResUS|US.
+ * Inside such a pair every (marketplace, sku) the accepted run holds is MEASURED, because a scope being
+ * outside the current SKU allowlist is a reason it may not be GENERATED and never a reason its recommendation
+ * should read as null. A pair no allowlist entry names is not examined at all.
+ *
+ * WHAT THIS CENSUS IS INCAPABLE OF. It assigns no capability and mints no token; it never calls Generate,
+ * Submit, a writer, a migration or the Gap Job; it does not touch
+ * INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_, INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, any Script Property, any
+ * production global or any spreadsheet value — not temporarily, not by monkey-patch, not by shadowing.
+ * `selected` is ALWAYS null and `proposal_only` is ALWAYS true, and every row states whether the real gate
+ * currently admits it. A proposal is a thing to read, and then a person decides.
+ *
+ * FOUR WORDS THAT ARE NOT SYNONYMS, and every row carries all four:
+ *   proposal_candidate       the ten-odd measurable conditions hold for this identity.
+ *   currently_allowlisted    inventoryAiPlanScopeEnabled_ admits it TODAY, on all four axes.
+ *   activation_ready         both of the above. Anything else is false, and false is the default.
+ *   authorization_required   always true. There is no value of this field that means "go".
+ */
+function RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS() {
+  var out = { census: 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS', contract: S1_CONTRACT_, build: S1_BUILD_,
+    boundary: 'PROPOSAL_DISCOVERY',
+    boundary_note: 'READ ONLY, AND IT AUTHORIZES NOTHING. A listed proposal is a thing to read. Moving the'
+      + ' activation allowlist to a chosen scope is a separate, explicit authorization, and until it is'
+      + ' given every row here has activation_ready false.',
+    dry_run: true, writes: 0, writer_calls: 0, generate_called: false, submit_called: false,
+    migration_called: false, gap_job_called: false,
+    allowlist_modified: false, flag_modified: false, script_properties_modified: false,
+    verdict: 'STOP', stop_reason: null,
+    environment: null, eligible_universe: null, discovery_universe: null, accepted_run: null, schema: null,
+    identities_examined: 0, proposals: [], proposal_count: 0, activation_ready_count: 0,
+    rejection_counts: {}, rejection_samples: [], rejection_index: [],
+    selected: null, proposal_only: true,
+    predicates: [], predicates_failed: 0, failed_predicates: [] };
+  var L = S1_ledger_();
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    out.proposal_count = out.proposals.length;
+    // ---- SEGMENT 1: the summary. Counts and one-line facts only.
+    S1_log_('s1_proposal_summary', JSON.stringify({ census: out.census, build: out.build,
+      boundary: out.boundary, dry_run: out.dry_run, writes: out.writes, writer_calls: out.writer_calls,
+      generate_called: out.generate_called, submit_called: out.submit_called,
+      allowlist_modified: out.allowlist_modified, flag_modified: out.flag_modified,
+      selected: out.selected, proposal_only: out.proposal_only,
+      eligible_pairs: out.eligible_universe ? out.eligible_universe.eligible_pairs : null,
+      allowlist_entry_count: out.eligible_universe ? out.eligible_universe.allowlist_entry_count : null,
+      accepted_date: out.accepted_run ? out.accepted_run.accepted_date : null,
+      freshness_state: out.accepted_run ? out.accepted_run.freshness_state : null,
+      calculation_run_id: (out.accepted_run && out.accepted_run.lineage) ? out.accepted_run.lineage.run_id : null,
+      identities_examined: out.identities_examined, proposals: out.proposals.length,
+      activation_ready: out.activation_ready_count,
+      rejected: out.rejection_index.length }));
+    // ---- SEGMENT 2: one line PER PROPOSAL. This is the list a person chooses from.
+    var M = out.proposals.length;
+    out.proposals.forEach(function (r, i) {
+      S1_log_('s1_proposal_candidate_' + (i + 1) + '_of_' + M, JSON.stringify(S1_candidateLine_(r)));
+    });
+    // ---- SEGMENT 3: the refusals as CLASSIFIED COUNTS plus a bounded sample. Never 118 objects: that is
+    //      what filled the log last time, and a count is what a reader actually needs from a refusal set.
+    S1_log_('s1_proposal_rejection_counts', JSON.stringify({ total: out.rejection_index.length,
+      by_first_reason: out.rejection_counts, samples: out.rejection_samples.slice(0, 3) }));
+    // ---- SEGMENT 4: the verdict, and what a person may do with it.
+    S1_log_('s1_proposal_verdict', JSON.stringify({ verdict: out.verdict,
+      stop_reason: S1_cap_(out.stop_reason, 300),
+      selected: out.selected, proposal_only: out.proposal_only,
+      activation_ready: out.activation_ready_count,
+      next_action: S1_cap_(out.next_action, 400) }));
+    // ---- SEGMENT 5: only when something failed. An empty failure line is noise.
+    if (L.failed.length) {
+      S1_log_('s1_proposal_failed', JSON.stringify({ failed: L.failed.slice(0, 20), count: L.failed.length }));
+    }
+    return out;
+  }
+
+  try {
+    out.environment = S1_environment_();
+    L.P('deployment_authorities_are_all_present', [], out.environment.missing_authorities,
+      out.environment.missing_authorities.length === 0);
+    // THE FLAG MUST BE FALSE EVEN FOR A PROPOSAL. A discovery run against a project where generation is
+    // already armed is not read-only in any sense that matters: the next click writes.
+    L.P('the_generation_flag_is_false', false, out.environment.flag_value,
+      out.environment.flag_value === false);
+    L.P('the_activation_allowlist_authority_is_present', true, out.environment.allowlist_present,
+      out.environment.allowlist_present === true);
+    L.P('the_factory_stock_guard_module_is_present', true, !!out.environment.factory_guard_module,
+      !!out.environment.factory_guard_module);
+    if (L.failed.length) {
+      out.stop_reason = 'the environment cannot support a proposal census: ' + L.failed.join(', ');
+      out.next_action = 'Resolve the environment. A proposal read against an armed or unknown deployment is'
+        + ' not evidence.';
+      return fin();
+    }
+
+    var db = S1_openDb_();
+    L.P('the_expected_database_opened', true, db.ok ? 'ok' : db.reason, db.ok === true);
+    if (!db.ok) { out.stop_reason = db.reason; return fin(); }
+    var ss = db.ss;
+
+    out.schema = S1_schemaFingerprints_(ss);
+    L.P('every_table_the_census_reads_is_present_and_readable', [], out.schema.unreadable,
+      out.schema.unreadable.length === 0);
+    if (L.failed.length) { out.stop_reason = 'schema not readable: ' + out.schema.unreadable.join(', '); return fin(); }
+
+    var cycle = null;
+    try { var ctx = (typeof gapCalcResolveContext_ === 'function') ? gapCalcResolveContext_('INVENTORY') : null;
+      if (ctx && ctx.ok) cycle = ctx.planningCycle; } catch (eC) {}
+    L.P('the_canonical_planning_cycle_resolved', 'a cycle', cycle, !!cycle);
+    if (!cycle) { out.stop_reason = 'the canonical planning cycle is unresolved'; return fin(); }
+
+    // ---- THE DISCOVERY RANGE. The SAME authority the readiness census uses, and no wider. ---------------
+    var elig = S1_eligiblePairs_();
+    out.eligible_universe = { ok: elig.ok, reason: elig.reason, authority: elig.authority,
+      allowlist_entry_count: elig.allowlist_entry_count,
+      eligible_pairs: elig.pairs.slice(), eligible_scope_count: elig.scopes.length,
+      allowlisted_scopes: elig.scopes.slice(0, 20),
+      note: 'THE PAIRS ARE THE ALLOWLIST PAIRS. An empty or unreadable allowlist yields NO pairs and this'
+        + ' census examines nothing; it never falls back to the gap table, because a discovery range that'
+        + ' widens when the guard goes missing is the opposite of a guard.' };
+    L.P('the_discovery_range_is_derived_from_the_activation_allowlist',
+      'at least one allowlisted scope, re-gated through inventoryAiPlanScopeEnabled_',
+      { ok: elig.ok, reason: elig.reason, pairs: elig.pairs, scopes: elig.scopes.length },
+      elig.ok === true);
+    if (!elig.ok) {
+      out.stop_reason = 'the discovery range is empty: ' + (elig.reason || 'AI_PLAN_SCOPE_NOT_ENABLED');
+      out.next_action = 'There is no allowlisted (company, country) to explore. This census does not choose'
+        + ' one, and an absent guard is never read as permission to look everywhere.';
+      return fin();
+    }
+
+    // ---- THE ACCEPTED RUN, PER ELIGIBLE PAIR. Same authority, same freshness rule, same fail-closed. ----
+    var canByPair = {}, dates = {}, unreadable = [];
+    elig.pairs.forEach(function (pk) {
+      var pr = elig.pair_index[pk], c = null;
+      try { c = weeklyAiPlanCanonicalDemand_(ss, { company: pr.company, country: pr.country,
+        marketplace: '', planningCycle: cycle }, null); }
+      catch (eD) { c = { ok: false, reason: 'CANONICAL_DEMAND_THREW: ' + String(eD && eD.message) }; }
+      canByPair[pk] = c;
+      if (c && c.acceptedDate) dates[S1_str_(c.acceptedDate)] = 1;
+      if (!(c && c.ok === true)) unreadable.push({ pair: pk, reason: (c && c.reason) || null,
+        freshness_state: (c && c.freshnessState) || null });
+    });
+    var dateList = Object.keys(dates).sort();
+    var firstOk = null;
+    elig.pairs.forEach(function (pk) { if (!firstOk && canByPair[pk] && canByPair[pk].ok) firstOk = canByPair[pk]; });
+    var can = firstOk || canByPair[elig.pairs[0]] || null;
+    out.accepted_run = can ? { ok: can.ok === true, reason: can.reason || null,
+      accepted_date: can.acceptedDate || null, freshness_state: can.freshnessState || null,
+      freshness: can.freshness || null, schedule: can.schedule || null, job_state: can.jobState || null,
+      distinct_dates: (can.distinctDates || []).slice(0, 20),
+      row_count: can.rowCount == null ? null : can.rowCount,
+      planning_cycle: cycle, eligible_pairs_examined: elig.pairs.length,
+      eligible_pairs_unreadable: unreadable,
+      accepted_dates_across_eligible_pairs: dateList,
+      lineage: S1_gapLineage_(cycle) } : null;
+    L.P('the_accepted_inventory_gap_run_is_readable_for_every_eligible_pair', [], unreadable,
+      !!(out.accepted_run && out.accepted_run.ok) && unreadable.length === 0);
+    L.P('every_eligible_pair_agrees_on_the_accepted_snapshot_date', 'exactly one date', dateList,
+      dateList.length === 1);
+    var acceptingStates = (typeof KMGSF !== 'undefined' && KMGSF && KMGSF.ACCEPTING) ? KMGSF.ACCEPTING : null;
+    var fState = out.accepted_run && out.accepted_run.freshness_state;
+    L.P('the_accepted_run_freshness_is_in_the_accepting_set',
+      acceptingStates ? Object.keys(acceptingStates) : 'the freshness authority ACCEPTING set',
+      fState, !!(fState && (acceptingStates ? acceptingStates[fState] === 1 : /^CURRENT/.test(String(fState)))));
+    if (L.failed.length) {
+      out.stop_reason = 'the accepted run is not usable: ' + L.failed.join(', ');
+      out.next_action = 'Run RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC() and read its root_cause_class'
+        + ' before asking the proposal question again.';
+      return fin();
+    }
+
+    // ---- THE FACTORY FACTS, ONCE, read-only, releaseSet EMPTY for the same reason as the readiness census.
+    var facts = null;
+    try { facts = fsgReadInventoryFacts_(ss, { releaseSet: {} }); }
+    catch (eF) { facts = { ok: false, reason: 'FACTORY_FACTS_THREW: ' + String(eF && eF.message) }; }
+    L.P('the_factory_exposure_facts_are_readable', true, facts && facts.ok, !!(facts && facts.ok));
+    if (!facts || !facts.ok) { out.stop_reason = 'factory facts unreadable: ' + (facts && facts.reason); return fin(); }
+    var aiPlanned = S1_aiPlannedByScope_(facts), manualIdent = S1_manualIdentitiesByScope_(facts);
+    var draftHeaders = [];
+    try { draftHeaders = (typeof gapReadObjects_ === 'function') ? (gapReadObjects_(ss, 'shipping_allocation_drafts') || []) : []; }
+    catch (eH) { draftHeaders = []; }
+
+    // ---- EVERY IDENTITY THE ACCEPTED RUN HOLDS FOR AN ELIGIBLE PAIR. ------------------------------------
+    var keys = [], canForKey = {};
+    elig.pairs.forEach(function (pk) {
+      var c = canByPair[pk];
+      Object.keys((c && c.bySite) || {}).forEach(function (k) {
+        if (canForKey[k]) return;
+        canForKey[k] = c; keys.push(k);
+      });
+    });
+    keys.sort();
+    out.discovery_universe = { source: 'the accepted run snapshot for the eligible (company, country)'
+      + ' pairs — every marketplace and sku it holds',
+      identity_count: keys.length, pairs: elig.pairs.slice(),
+      note: 'A scope being outside the current SKU allowlist is a reason it may not be GENERATED. It is'
+        + ' never a reason its recommendation should read as null, which is what the readiness census'
+        + ' reported for it.' };
+
+    var E = { ss: ss, cycle: cycle, can: can, canForKey: canForKey, facts: facts,
+      aiPlanned: aiPlanned, manualIdent: manualIdent, plannedCache: {}, schema: out.schema,
+      acceptedRun: out.accepted_run, draftHeaders: draftHeaders };
+    var rejected = [];
+    keys.forEach(function (key) {
+      var parts = String(key).split('|');
+      if (parts.length !== 4) { rejected.push({ scope_key: key, reasons: ['CANONICAL_KEY_DOES_NOT_SPLIT_INTO_FOUR_AXES'] }); return; }
+      var row = S1_identityRow_(E, { company: parts[0], country: parts[1], marketplace: parts[2],
+        sku: parts[3], scope_key: key }, 'PROPOSAL');
+      if (row.is_candidate) out.proposals.push(row); else rejected.push(row);
+    });
+    out.identities_examined = out.proposals.length + rejected.length;
+
+    // ---- THE ORDER IS EVIDENCE FOR A CHOICE, NOT A CHOICE. Least risky first: already allowlisted, then
+    //      unclamped, then fewest identities disturbed, then smallest quantity, then the key.
+    out.proposals.sort(function (a, b) {
+      var aw = a.currently_allowlisted === true ? 0 : 1, bw = b.currently_allowlisted === true ? 0 : 1;
+      if (aw !== bw) return aw - bw;
+      var ac = a.would_clamp === true ? 1 : 0, bc = b.would_clamp === true ? 1 : 0;
+      if (ac !== bc) return ac - bc;
+      var aa = (a.existing_affected_ai_identities || []).length, ba = (b.existing_affected_ai_identities || []).length;
+      if (aa !== ba) return aa - ba;
+      var am = (a.protected_manual_identities || []).length, bm = (b.protected_manual_identities || []).length;
+      if (am !== bm) return am - bm;
+      if (a.proposed_ai_allocation_qty !== b.proposed_ai_allocation_qty) return a.proposed_ai_allocation_qty - b.proposed_ai_allocation_qty;
+      return a.scope_key < b.scope_key ? -1 : (a.scope_key > b.scope_key ? 1 : 0);
+    });
+    out.proposals.forEach(function (r, i) { r.proposal_rank = i + 1; });
+    out.activation_ready_count = out.proposals.filter(function (r) { return r.activation_ready === true; }).length;
+    out.not_currently_allowlisted = out.proposals.filter(function (r) { return r.currently_allowlisted !== true; })
+      .map(function (r) { return r.scope_key; });
+
+    var roll = S1_rejectionRollup_(rejected, 8);
+    out.rejection_counts = roll.by_first_reason;
+    out.rejection_index = roll.index;
+    out.rejection_samples = roll.samples;
+
+    // ---- THE BOUNDARY, RE-STATED AS CONDITIONS RATHER THAN PROSE. --------------------------------------
+    L.P('no_proposal_was_silently_selected', null, out.selected, out.selected === null);
+    L.P('every_row_is_marked_proposal_only', true,
+      out.proposals.filter(function (r) { return r.proposal_only !== true; }).length, 
+      out.proposals.filter(function (r) { return r.proposal_only !== true; }).length === 0);
+    // THE ONE THAT MATTERS: a proposal outside the allowlist may be LISTED and may NEVER be activation_ready.
+    var readyButNotAllowlisted = out.proposals.filter(function (r) {
+      return r.activation_ready === true && r.currently_allowlisted !== true; });
+    L.P('no_proposal_outside_the_allowlist_is_marked_activation_ready', [],
+      readyButNotAllowlisted.map(function (r) { return r.scope_key; }), readyButNotAllowlisted.length === 0);
+    // AND THE GATE IS PROVED STILL SHUT, by asking production own scope authority about each listed row
+    // that is not allowlisted. If weeklyAiPlanTargetScopes_ ever returned one of these, the gate would have
+    // moved and this census would be describing a world it did not measure.
+    var leaked = [];
+    out.proposals.forEach(function (r) {
+      if (r.currently_allowlisted === true) return;
+      var t = null;
+      try { t = weeklyAiPlanTargetScopes_({ company: r.scope.company, country: r.scope.country,
+        marketplace: r.scope.marketplace, planningCycle: cycle }, r.scope.marketplace); } catch (eT) { t = null; }
+      var admits = !!(t && t.ok && (t.scopes || []).filter(function (x) {
+        return S1_scopeKey_(x.company, x.country, x.marketplace, x.sku) === r.scope_key; }).length);
+      if (admits) leaked.push(r.scope_key);
+    });
+    L.P('the_production_scope_gate_still_refuses_every_non_allowlisted_proposal', [], leaked, leaked.length === 0);
+    L.P('this_census_wrote_nothing', 0, out.writes, out.writes === 0);
+    L.P('this_census_called_no_writer', 0, out.writer_calls, out.writer_calls === 0);
+    L.P('this_census_called_neither_generate_nor_submit', [false, false],
+      [out.generate_called, out.submit_called],
+      out.generate_called === false && out.submit_called === false);
+    L.P('this_census_changed_neither_the_flag_nor_the_allowlist', [false, false],
+      [out.flag_modified, out.allowlist_modified],
+      out.flag_modified === false && out.allowlist_modified === false);
+
+    out.verdict = L.failed.length ? 'STOP'
+      : (out.proposals.length ? 'PROPOSALS_FOUND_AUTHORIZATION_REQUIRED'
+        : 'NO_PROPOSAL_CANDIDATE_IN_ELIGIBLE_PAIRS');
+    if (L.failed.length) out.stop_reason = L.failed.join(', ');
+    out.next_action = out.proposals.length
+      ? ('Read s1_proposal_candidate_* and CHOOSE one. Nothing here is authorized. A chosen scope that is'
+        + ' not currently_allowlisted needs its own explicit authorization to move'
+        + ' INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ to that single scope; only then can'
+        + ' RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS report it activation_ready, and only then does'
+        + ' MANIFEST P become answerable.')
+      : ('No identity in the eligible pairs meets the conditions. Read s1_proposal_rejection_counts: the'
+        + ' first reason is the one to act on, and it names which of data readiness, factory headroom or'
+        + ' an already-covered plan is the cause.');
+    return fin();
+  } catch (e) {
+    L.P('the_census_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    out.stop_reason = 'S1_PROPOSAL_CENSUS_THREW: ' + String(e && e.message ? e.message : e);
+    out.next_action = 'The exception is the finding. No proposal may be read out of a run that threw.';
+    return fin();
   }
 }
 
