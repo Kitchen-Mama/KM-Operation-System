@@ -4377,6 +4377,907 @@ eq([AA23.proposed, AA23.frozen_before, AA23.authorization_wording], [null, null,
 aaNoWrite(AA23, AA23w, 'AA23f');
 
 // ================================================================================================================
+section('AB — S1-R4F: where row 2 came from, asked of everything except row 2');
+// ================================================================================================================
+//
+// R4E proved the row cannot be repaired by writing one cell and named why. That refusal is also the end of
+// what ONE TABLE can settle: movement_type is blank so the row does not say what it was, related_entity_id is
+// blank so it does not say what it came from, and no shipped writer leaves either blank - so the table holds
+// no record of its own provenance. This section drives the census that asks the rest of the database.
+//
+// THE PIN. The census re-confirms a frozen live state before it will publish anything, and the frozen state
+// includes the live table's combined fingerprint - which no fixture can reproduce, because it is a hash over
+// 95 real primary keys. So these worlds pass their own measured state in as `opts.expect`, and the census
+// REPORTS that the expectation was caller-supplied. The safety property itself is tested separately and
+// against the DEFAULT: AB20 runs with no argument and gets STOP, which is what a live run against a drifted
+// sheet would get.
+//
+// This is not the self-comparison this file keeps finding. The pin is what the census is asked to hold the
+// world to; the assertions below are about the provenance reasoning, none of which reads the pin.
+
+function abBlank() {
+  return { factory_stock_movement_id: '', movement_date: '', sku: SKU, warehouse_id: WHF,
+    movement_type: '', qty: '', related_entity_type: '', related_entity_id: '',
+    before_current_stock: '', after_current_stock: '', before_reserved_stock: '',
+    after_reserved_stock: '', note: '', created_by: '', created_at: '' };
+}
+/** The LIVE row 2, at the shape the operator froze: six non-blank named fields, nine blank. */
+function abLive(over) {
+  var r = abBlank();
+  r.qty = 12000; r.before_current_stock = 1000; r.after_current_stock = 12000;
+  r.created_at = '2026-06-12';
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+/** A row every shipped writer would recognise: all fifteen columns populated, and its own qty reconciles. */
+function abFull(over) {
+  var r = { factory_stock_movement_id: 'FSMV-000000A1', movement_date: '2026-06-20',
+    sku: SKU, warehouse_id: WHF, movement_type: 'manual_adjustment', qty: 500,
+    related_entity_type: 'inventory_adjustment', related_entity_id: 'ADJ-20260620-0001',
+    before_current_stock: 12000, after_current_stock: 12500,
+    before_reserved_stock: 0, after_reserved_stock: 0,
+    note: 'stock count correction', created_by: 'operation-system',
+    created_at: '2026-06-20T00:00:00Z' };
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+/** A row from the target's own batch that someone LATER keyed and typed: the same blanks everywhere else. */
+function abSibling(over) {
+  var r = abBlank();
+  r.factory_stock_movement_id = 'FSMV-000000B2';
+  r.movement_type = 'manual_adjustment';
+  r.qty = 4000; r.before_current_stock = 1000; r.after_current_stock = 5000;
+  r.created_at = '2026-06-12';
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+var AB_POOL_ = [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 12500, fac_reserved_stock: 0 }];
+function abWorld(rows, extra, mutate) {
+  var sp = {};
+  Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+  sp.movements = rows;
+  sp.factory_stock = AB_POOL_;
+  Object.keys(extra || {}).forEach(function (k) { sp[k] = extra[k]; });
+  var w = S1World(sp);
+  if (mutate) mutate(w);
+  return w;
+}
+/** The world's own measured state, read through the SHIPPED read-only id census, as the pin. */
+function abPin(w, over) {
+  var c = vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  var f = (c.faults || [])[0] || {};
+  var e = { build: c.build, header_fingerprint: c.header_fingerprint,
+    table_combined_fingerprint: c.table_combined_fingerprint,
+    row_count: c.row_count, valid_id_count: c.valid_id_count, blank_id_count: c.blank_id_count,
+    duplicate_id_count: c.duplicate_id_count, wrong_type_id_count: c.wrong_type_id_count,
+    outside_named_column_row_count: c.outside_named_column_row_count,
+    target_row_number: f.one_based_sheet_row_number, target_row_fingerprint: f.full_named_row_fingerprint,
+    target_movement_type_is_blank: true, pool_warehouse_id: WHF, pool_sku: SKU,
+    authority: 'the suite\'s own measurement of the world it built' };
+  Object.keys(over || {}).forEach(function (k) { e[k] = over[k]; });
+  return e;
+}
+function abProv(w, opts) {
+  vm.runInContext('var __AB_ARG = ' + JSON.stringify(opts || {}) + ';', w.ctx);
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS(__AB_ARG)', w.ctx);
+}
+/** Build a world, pin it to itself, run the census. */
+function abRun(rows, pinOver, extra, mutate, optsOver) {
+  var w = abWorld(rows, extra, mutate);
+  var o = { expect: abPin(w, pinOver) };
+  Object.keys(optsOver || {}).forEach(function (k) { o[k] = optsOver[k]; });
+  var r = abProv(w, o);
+  r.world = w;
+  return r;
+}
+/** Every read-only claim, asserted together. §6 asks for all of these by name. */
+function abZeroWrite(r, label) {
+  eq([r.dry_run, r.read_only], [true, true], label + ' declares dry_run and read_only');
+  eq([r.writes, r.writer_calls, r.cells_written, r.ids_minted, r.ids_backfilled],
+    [0, 0, 0, 0, 0], label + ' zero writes, writer calls, cells, ids minted and ids backfilled');
+  eq([r.rows_modified, r.rows_added, r.rows_removed, r.rows_reordered],
+    [0, 0, 0, false], label + ' no row modified, added, removed or reordered');
+  eq([r.jobs_triggered, r.tables_created, r.submit_calls], [0, 0, 0],
+    label + ' no job triggered, no table created, no submit');
+  eq([r.generate_called, r.submit_called, r.migration_called, r.gap_job_called,
+    r.factory_writer_called], [false, false, false, false, false],
+    label + ' no Generate, Submit, migration, Gap Job or Factory Stock writer');
+  eq([r.has_execute_path, r.proposes_authorized_repair], [false, false],
+    label + ' no execute path and no authorized repair proposed');
+  eq(r.world.allWrites(), 0, label + ' and zero writes MEASURED on every sheet in the world');
+  eq(r.world.writesByTable(), {}, label + ' with no table written at all');
+}
+
+// ---- AB1 — THE LIVE ROW, AND WHAT THE WRITERS' OWN CONTRACTS SAY ABOUT IT. --------------------------
+// The one line of evidence that needs no other table: each shipped writer populates certain columns
+// unconditionally, so a row blank in any of them cannot have come from it. This ELIMINATES rather than
+// guesses, and for the live row it eliminates all three.
+var AB1 = abRun([abLive(), abFull()]);
+eq(AB1.verdict === 'STOP', false, 'AB1 the census reaches a provenance verdict on the live-shaped row',
+  AB1.stop_reasons);
+eq(AB1.classification, 'LEGACY_ROW_CLASSIFICATION_REQUIRED',
+  'AB1a R4E\'s classification is unchanged and is carried forward, not re-litigated');
+eq(AB1.target_row.required_blank, ['factory_stock_movement_id', 'movement_type'],
+  'AB1b two required fields blank, and the second decides the ledger axis');
+eq(AB1.target_row.named_nonblank_field_count, 6,
+  'AB1c six non-blank named fields, exactly the frozen live count');
+eq(AB1.writer_elimination.eliminated_count, 3,
+  'AB1d all three shipped writers are eliminated', AB1.writer_elimination.per_writer);
+eq(AB1.writer_elimination.writers_that_could_have_written_this_row, [],
+  'AB1e so no shipped writer could have produced this row');
+eq(AB1.writer_elimination.no_shipped_writer_could_have_produced_this_row, true,
+  'AB1f which is stated as its own fact rather than left to be inferred');
+AB1.writer_elimination.per_writer.forEach(function (p, i) {
+  ok(p.because.length > 0, 'AB1g.' + (i + 1) + ' ' + p.writer + ' says WHY it is eliminated',
+    p.because);
+});
+ok(AB1.writer_elimination.per_writer[0].because.join('|')
+  .indexOf('THIS_WRITER_ALWAYS_WRITES_movement_type=manual_adjustment') >= 0,
+  'AB1h and a constant mismatch is named as a constant mismatch',
+  AB1.writer_elimination.per_writer[0].because);
+ok(AB1.writer_elimination.per_writer[2].because.join('|')
+  .indexOf('THIS_WRITER_WRITES_QTY_AS_AFTER_MINUS_BEFORE_WHICH_WOULD_BE:11000') >= 0,
+  'AB1i and the import writer is eliminated on the ledger invariant too: 11000, not 12000',
+  AB1.writer_elimination.per_writer[2].because);
+// A BLANK IS NOT A ZERO, and this is where that distinction does real work: every writer stores a NUMBER in
+// both reserved columns, and 0 canonicalizes to N:0. Blank reserved cells therefore eliminate all three.
+ok(AB1.writer_elimination.per_writer[1].because.join('|')
+  .indexOf('THIS_WRITER_NEVER_LEAVES_IT_BLANK:before_reserved_stock') >= 0,
+  'AB1j a blank reserved cell eliminates a writer that would have stored a zero there',
+  AB1.writer_elimination.per_writer[1].because);
+abZeroWrite(AB1, 'AB1k:');
+
+// ---- AB2 — THE CHEAP INNOCENT EXPLANATION, MEASURED AND REFUSED. -----------------------------------
+// A row full of blanks is usually a row that predates some appended columns - fcWriteEnsureColumns_ appends
+// additively, so this happens. But a widening can only leave a CONTIGUOUS TAIL of blanks, and this row's
+// blanks start at position 1. Decidable from the positions alone, and worth deciding: if it held, the row
+// would be a normal old record.
+eq(AB2_(AB1).supported, false, 'AB2 the column-append explanation does not hold for this row');
+function AB2_(r) { return r.column_append_hypothesis; }
+eq(AB1.column_append_hypothesis.blanks_form_a_contiguous_trailing_block, false,
+  'AB2a because the blanks are not a trailing block');
+eq(AB1.column_append_hypothesis.blank_positions_1based, [1, 2, 5, 7, 8, 11, 12, 13, 14],
+  'AB2b they are interleaved with filled cells at these nine positions');
+eq(AB1.column_append_hypothesis.filled_positions_1based, [3, 4, 6, 9, 10, 15],
+  'AB2c and the six filled ones sit among them');
+ok(String(AB1.column_append_hypothesis.why).indexOf('INTERLEAVED') >= 0,
+  'AB2d and the reason names interleaving rather than only saying no',
+  AB1.column_append_hypothesis.why);
+
+// ---- AB3 — THE CHRONOLOGY KEEPS THE SHEET ROW, AND SAYS WHICH COLUMN ORDERED IT. --------------------
+// R4C's lesson applied to a sorted list: a position in an ordering is not a fact about the data, so the
+// 1-based sheet row travels with every entry. And the ordering AUTHORITY is published, because a chronology
+// built by silently preferring one of two time columns is a chronology nobody can check.
+var AB3 = abRun([abLive(), abFull()]);
+eq(AB3.chronology.entry_count, 2, 'AB3 both rows of the pool are in the chronology');
+eq(AB3.chronology.target_position, 1, 'AB3a the target sorts first, on 2026-06-12');
+eq(AB3.chronology.entries.map(function (e) { return e.one_based_sheet_row_number; }), [2, 3],
+  'AB3b and every entry carries its 1-based sheet row');
+eq(AB3.chronology.entries[0].time_source, 'created_at',
+  'AB3c ordered by created_at, which the schema doc marks Required');
+ok(String(AB3.chronology.ordering_authority).indexOf('sheet row') > 0,
+  'AB3d and ties are broken by sheet row, stated', AB3.chronology.ordering_authority);
+eq(AB3.chronology.rows_without_a_usable_time, 0, 'AB3e no row here lacks a usable time');
+eq(AB3.chronology.ordering_is_unambiguous, true, 'AB3f so the ordering is unambiguous, and says so');
+
+// ---- AB4 — A ROW WITH NO USABLE TIME SORTS LAST AND IS COUNTED, NOT GIVEN ONE. ----------------------
+// "I do not know when this happened" is the single most important thing to say about a legacy row, so a
+// blank time is neither filled with now(), nor given position zero, nor dropped.
+var AB4 = abRun([abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000C3',
+  movement_date: '', created_at: '', before_current_stock: 12500, after_current_stock: 12600, qty: 100 })]);
+eq(AB4.chronology.rows_without_a_usable_time, 1, 'AB4 the timeless row is counted');
+eq(AB4.chronology.entries[AB4.chronology.entries.length - 1].one_based_sheet_row_number, 4,
+  'AB4a and it sorts LAST rather than first');
+eq(AB4.chronology.entries[AB4.chronology.entries.length - 1].time_source, 'NONE',
+  'AB4b with its time source reported as NONE rather than invented');
+eq(AB4.chronology.ordering_is_unambiguous, false,
+  'AB4c and the ordering no longer claims to be unambiguous');
+
+// ---- AB5 — THE DISCRIMINATOR: THE NEXT ROW'S `before` = 12000. -------------------------------------
+// §1.4. This is the whole point of asking another row: every writer records before/after, so the next
+// movement's opening balance is an INDEPENDENT statement of what this row's closing balance was.
+var AB5 = abRun([abLive(), abFull()]);
+eq(AB5.next_same_pool_movement.one_based_sheet_row_number, 3,
+  'AB5 the next classifiable movement in the pool is located');
+eq(AB5.next_same_pool_movement.movement_type, 'manual_adjustment',
+  'AB5a with its type');
+eq([AB5.next_same_pool_movement.before_current_stock, AB5.next_same_pool_movement.after_current_stock],
+  [12000, 12500], 'AB5b and both of its current-axis cells');
+eq(AB5.next_same_pool_movement.movement_id, 'FSMV-000000A1', 'AB5c and its primary key');
+ok(AB5.next_same_pool_movement.full_named_row_fingerprint !== null,
+  'AB5d and its own full-row fingerprint, so it can be re-found');
+var AB5ev = AB5.evidence.filter(function (e) { return e.source === 'LEDGER_CHAIN_OVERLAP'; });
+ok(AB5ev.length >= 1, 'AB5e the overlap produces evidence', AB5.evidence);
+ok(AB5ev[0].supports.indexOf('CURRENT_DELTA_FROM_BEFORE_AFTER') >= 0
+  && AB5ev[0].contradicts.indexOf('CURRENT_DELTA_FROM_QTY') >= 0,
+  'AB5f which confirms after_current_stock and contradicts the qty reading', AB5ev[0]);
+eq(AB5ev[0].independent, true,
+  'AB5g and it is INDEPENDENT: a different call, at a different time, in a different row');
+
+// ---- AB6 — THE NEXT ROW'S `before` IS NOT 12000: IT IS before+qty. ---------------------------------
+// Then the ledger points the other way - qty is the reliable cell and after_current_stock is the wrong one.
+// The same measurement, a different answer, which is what makes it a discriminator rather than a formality.
+var AB6 = abRun([abLive(), abFull({ before_current_stock: 13000, after_current_stock: 13500 })]);
+var AB6ev = AB6.evidence.filter(function (e) { return e.source === 'LEDGER_CHAIN_OVERLAP'; });
+ok(AB6ev[0].supports.indexOf('CURRENT_DELTA_FROM_QTY') >= 0,
+  'AB6 with the next row opening at 13000 the chain supports the qty reading', AB6ev[0]);
+ok(AB6ev[0].contradicts.indexOf('CURRENT_DELTA_FROM_BEFORE_AFTER') >= 0
+  && AB6ev[0].contradicts.indexOf('INITIAL_BALANCE_SET') >= 0,
+  'AB6a and contradicts both readings that keep after_current_stock', AB6ev[0]);
+// AND THE BALANCE DOES NOT RESCUE IT. factory_stock agreeing with the ledger's LAST row says the chain
+// reconciles downstream; it says nothing about which of the target's own cells is wrong. Measured, and the
+// honest consequence is that this world does NOT reach READY on one source.
+eq(AB6.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AB6b one independent source is not a classification, even when it is unambiguous', AB6.verdict_detail);
+
+// ---- AB7 — THE NEXT ROW OPENS WHERE THIS ONE OPENED: THE BALANCE NEVER MOVED. -----------------------
+var AB7 = abRun([abLive(), abFull({ before_current_stock: 1000, after_current_stock: 1500 })]);
+var AB7ev = AB7.evidence.filter(function (e) { return e.source === 'LEDGER_CHAIN_OVERLAP'; });
+ok(AB7ev[0].supports.indexOf('INVALID_NON_LEDGER_ROW') >= 0,
+  'AB7 a next row opening at the target\'s own before means the row took no effect', AB7ev[0]);
+eq(AB7ev[0].contradicts.length, 3,
+  'AB7a and it contradicts all three readings that treat the row as a movement');
+
+// ---- AB8 — A CHAIN GAP THAT MATCHES NOTHING. THE CHAIN DECLINES TO CHOOSE. --------------------------
+// The important behaviour: it does not pick the nearest number. Evidence with no `supports` and no
+// `contradicts` is still published, because "the chain cannot settle this" is a finding.
+var AB8 = abRun([abLive(), abFull({ before_current_stock: 9999, after_current_stock: 10500 })]);
+var AB8ev = AB8.evidence.filter(function (e) { return e.source === 'LEDGER_CHAIN_OVERLAP'; });
+eq([AB8ev[0].supports, AB8ev[0].contradicts], [[], []],
+  'AB8 a next row matching none of the three candidates supports and contradicts nothing', AB8ev[0]);
+ok(String(AB8ev[0].statement).indexOf('matches none of') > 0,
+  'AB8a and says so in the statement', AB8ev[0].statement);
+eq(AB8.chain_continuity.current_axis.disagree, 1,
+  'AB8b while the continuity check records the break');
+eq(AB8.chain_continuity.chain_is_continuous_on_the_current_axis, false,
+  'AB8c so the chain is not continuous');
+eq(AB8.chain_continuity.first_break_at_position, 2,
+  'AB8d and the first break is located by position');
+eq(AB8.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AB8e and nothing is classified');
+
+// ---- AB9 — A CONTINUOUS CHAIN, AND A LINK NOBODY RECORDED IS UNEVALUABLE RATHER THAN BROKEN. --------
+// The target's reserved pair is blank, so the reserved link cannot be checked. Calling that a broken chain
+// would blame the row for a fact nobody wrote down - the same rule that keeps an absent table's count null.
+var AB9 = abRun([abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000D4',
+  before_current_stock: 12500, after_current_stock: 12800, qty: 300,
+  created_at: '2026-06-25T00:00:00Z', movement_date: '2026-06-25' })]);
+eq(AB9.chain_continuity.links_examined, 2, 'AB9 two links across three pool rows');
+eq(AB9.chain_continuity.current_axis, { checked: 2, agree: 2, disagree: 0, unevaluable: 0 },
+  'AB9a and the current axis joins up on both');
+eq(AB9.chain_continuity.chain_is_continuous_on_the_current_axis, true,
+  'AB9b so the current chain is continuous');
+eq(AB9.chain_continuity.reserved_axis,
+  { checked: 2, agree: 1, disagree: 0, unevaluable: 1 },
+  'AB9c while the reserved link touching the blank pair is UNEVALUABLE, not broken');
+eq(AB9.chain_continuity.links[0].reserved.state, 'UNEVALUABLE',
+  'AB9d named per link');
+ok(String(AB9.chain_continuity.links[0].reserved.why).indexOf('blank is not a quantity') > 0,
+  'AB9e with the reason spelled out', AB9.chain_continuity.links[0].reserved.why);
+eq(AB9.chain_continuity.chain_is_continuous_on_the_reserved_axis, false,
+  'AB9f and a chain of one agreement and one unreadable link is NOT called continuous');
+// MEASURED, AND IT CHANGED THE CODE. The first definition of continuity was 'every EVALUABLE link agreed',
+// which reported this chain as continuous on the reserved axis while one of its two links had never been
+// read. Both facts are now published under names that mean what they say.
+eq(AB9.chain_continuity.every_readable_link_agrees_on_the_reserved_axis, true,
+  'AB9g while the weaker reading - every link that COULD be read agreed - is true, and keeps its own name');
+eq(AB9.chain_continuity.every_readable_link_agrees_on_the_current_axis, true,
+  'AB9h and on the current axis, where every link was readable, the two readings agree');
+
+// ---- AB10 — factory_stock RECONCILES, AND THE INDEPENDENCE IS CHECKED RATHER THAN ASSUMED. ----------
+var AB10 = abRun([abLive(), abFull()]);
+eq([AB10.balance_reconcile.factory_stock_current, AB10.balance_reconcile.ledger_last_after_current],
+  [12500, 12500], 'AB10 the pool balance and the ledger\'s last after agree');
+eq(AB10.balance_reconcile.current_agrees, true, 'AB10a so the reconcile passes');
+eq(AB10.balance_reconcile.independent_of_the_target_row, true,
+  'AB10b and it is independent: the last row in the chain is not the target');
+eq(AB10.balance_reconcile.ledger_last_sheet_row, 3, 'AB10c named by sheet row');
+
+// ---- AB11 — factory_stock DISAGREES. REPORTED, AND IT SUPPORTS NOTHING. ----------------------------
+// A ledger that already disagrees with its balance is not evidence for any reading of the target row: it is
+// a second problem, and saying so is more useful than folding it into a score.
+var AB11 = abRun([abLive(), abFull()], null,
+  { factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 999, fac_reserved_stock: 0 }] });
+eq(AB11.balance_reconcile.current_agrees, false, 'AB11 the mismatch is measured');
+var AB11ev = AB11.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; });
+eq([AB11ev[0].supports, AB11ev[0].contradicts], [[], []],
+  'AB11a and it supports no candidate and contradicts none', AB11ev[0]);
+ok(String(AB11ev[0].statement).indexOf('already disagree') > 0,
+  'AB11b saying the ledger and the balance already disagree', AB11ev[0].statement);
+AB11.candidates.forEach(function (c) {
+  eq(c.current_factory_stock_compatibility, 'THE_LEDGER_AND_THE_LIVE_BALANCE_ALREADY_DISAGREE',
+    'AB11c.' + c.number + ' every candidate carries that reading: ' + c.candidate);
+});
+eq(AB11.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED', 'AB11d and nothing is classified');
+
+// ---- AB12 — THE BALANCE IS NOT INDEPENDENT WHEN THE TARGET IS THE LAST ROW. -------------------------
+// R4B's defect, one table over: an expectation taken from the thing being checked passes by construction.
+// If the target is last in the chain, comparing factory_stock to "the ledger's last after" compares the
+// cell under question with itself.
+var AB12 = abRun([abLive({ created_at: '2026-12-31' }), abFull()], null,
+  { factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 12000, fac_reserved_stock: 0 }] });
+eq(AB12.balance_reconcile.independent_of_the_target_row, false,
+  'AB12 the target is last, so the balance reading is not independent');
+ok(String(AB12.balance_reconcile.why_not_independent).indexOf('CELL_UNDER_QUESTION') > 0,
+  'AB12a and it says why', AB12.balance_reconcile.why_not_independent);
+eq(AB12.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; }).length, 0,
+  'AB12b so it produces NO evidence at all, rather than agreeable-looking evidence');
+AB12.candidates.forEach(function (c) {
+  ok(String(c.current_factory_stock_compatibility).indexOf('NOT_INDEPENDENT') === 0,
+    'AB12c.' + c.number + ' and every candidate reports it as not independent: ' + c.candidate,
+    c.current_factory_stock_compatibility);
+});
+
+// ---- AB13 — TWO INDEPENDENT SOURCES AGREE. THE ONLY WAY TO READY. ----------------------------------
+// The chain says after_current_stock is right; the balance says the chain reconciles. Two distinct
+// independent sources on CURRENT_DELTA_FROM_BEFORE_AFTER, and the balance reading is contradicted for
+// INITIAL_BALANCE_SET by the writer contract (an import that creates a pool passes beforeCurrent = 0), so
+// exactly one candidate qualifies.
+var AB13 = abRun([abLive(), abFull()]);
+eq(AB13.verdict, 'READY_FOR_LEGACY_ROW_REPAIR_DECISION',
+  'AB13 two independent sources agreeing and nothing contradicting reaches READY', AB13.verdict_detail);
+eq(AB13.selected_candidate, 'CURRENT_DELTA_FROM_BEFORE_AFTER',
+  'AB13a on the candidate they both point at');
+eq(AB13.verdict_detail.qualifying, ['CURRENT_DELTA_FROM_BEFORE_AFTER'],
+  'AB13b and it is the only one that qualifies');
+var AB13c2 = AB13.candidates[1];
+eq(AB13c2.independent_supporting_sources.sort(),
+  ['FACTORY_STOCK_BALANCE', 'LEDGER_CHAIN_OVERLAP'],
+  'AB13c two DISTINCT independent sources, named');
+eq(AB13c2.contradicting_sources, [], 'AB13d and nothing authoritative contradicts it');
+eq(AB13c2.computed_delta, 11000, 'AB13e the delta the pair implies is 11000');
+eq(AB13c2.subsequent_chain_compatibility, 'CONSISTENT_WITH_THE_NEXT_MOVEMENT', 'AB13f chain-consistent');
+eq(AB13c2.current_factory_stock_compatibility, 'THE_LEDGER_RECONCILES_TO_THE_LIVE_BALANCE',
+  'AB13g and balance-consistent');
+// INITIAL_BALANCE_SET is blocked, not merely out-scored, and the block is recorded with its reason.
+eq(AB13.verdict_detail.blocked_by_contradiction,
+  [{ candidate: 'INITIAL_BALANCE_SET', contradicted_by: ['WRITER_CONTRACT'] }],
+  'AB13h while INITIAL_BALANCE_SET is BLOCKED by an authoritative contradiction, and it is named');
+ok(AB13.candidates[0].contradicting_evidence.length >= 1
+  && String(AB13.candidates[0].contradicting_evidence[0].statement).indexOf('beforeCurrent = 0') > 0,
+  'AB13i because an import that creates the pool passes beforeCurrent = 0, and before is 1000',
+  AB13.candidates[0].contradicting_evidence);
+// AND READY IS STILL NOT A REPAIR ROUTE.
+eq(AB13.proposed_repair_fields.candidate, 'CURRENT_DELTA_FROM_BEFORE_AFTER',
+  'AB13j READY publishes PROPOSED fields');
+eq(AB13.proposed_repair_fields.implies_wrong_cell, 'qty (it would have to become 11000)',
+  'AB13k naming the exact cell and the exact value the decision implies');
+ok(String(AB13.proposed_repair_fields.status).indexOf('not authorized, not frozen, not executable') > 0,
+  'AB13l and marked not authorized, not frozen, not executable', AB13.proposed_repair_fields.status);
+eq([AB13.has_execute_path, AB13.proposes_authorized_repair], [false, false],
+  'AB13m with no execute path even on READY');
+eq(AB13.operator_questions, null, 'AB13n and no operator questions, because none are needed');
+abZeroWrite(AB13, 'AB13o:');
+
+// ---- AB14 — ONE SOURCE ONLY. NEVER READY. ----------------------------------------------------------
+// §1.7 and §5.A as an enforced rule rather than a stated one: remove the pool row and the balance source
+// disappears, leaving the chain alone. The chain still says exactly what it said in AB13.
+var AB14 = abRun([abLive(), abFull()], null, { factory_stock: [] });
+eq(AB14.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AB14 one independent source cannot classify, however unambiguous it is', AB14.verdict_detail);
+eq(AB14.verdict_detail.why, 'NO_CANDIDATE_HAS_TWO_INDEPENDENT_SUPPORTING_SOURCES',
+  'AB14a and the rule is named');
+eq(AB14.candidates[1].independent_supporting_sources, ['LEDGER_CHAIN_OVERLAP'],
+  'AB14b the chain still points where it pointed');
+ok(String(AB14.candidates[1].confidence_basis).indexOf('ONE INDEPENDENT SOURCE ONLY') === 0,
+  'AB14c and the confidence basis says a single agreement is not a classification',
+  AB14.candidates[1].confidence_basis);
+ok(AB14.candidates[1].missing_evidence
+  .indexOf('A_SECOND_INDEPENDENT_SOURCE_POINTING_AT_THIS_SAME_READING') >= 0,
+  'AB14d with the missing evidence named', AB14.candidates[1].missing_evidence);
+eq(AB14.selected_candidate, null, 'AB14e nothing is selected');
+eq(AB14.proposed_repair_fields, null, 'AB14f and nothing is proposed');
+
+// ---- AB15 — THE ROW'S OWN ARITHMETIC IS A SOURCE, AND NEVER AN INDEPENDENT ONE. --------------------
+// qty (12000) equals after_current_stock (12000) exactly, which reads like a hand-entered ending balance -
+// and is also exactly what a delta typed into the wrong cell looks like. That single agreement must not be
+// allowed to conclude anything, so it is recorded with independent:false.
+var AB15ev = AB1.evidence.filter(function (e) { return e.source === 'ROW_SELF_ARITHMETIC'; });
+ok(AB15ev.length >= 1, 'AB15 the row\'s own arithmetic is published as evidence', AB1.evidence);
+AB15ev.forEach(function (e, i) {
+  eq(e.independent, false, 'AB15a.' + (i + 1) + ' and it is NOT independent: it is the thing being explained');
+});
+ok(String(AB15ev[0].statement).indexOf('also exactly what a delta typed into the wrong cell looks like') > 0,
+  'AB15b and the statement names both readings of the same coincidence', AB15ev[0].statement);
+eq(AB1.evidence.filter(function (e) { return e.source === 'ROW_SELF_ARITHMETIC' && e.independent; }).length,
+  0, 'AB15c so no self-evidence is ever counted as independent');
+
+// ---- AB16 — A SIBLING FROM THE SAME BATCH, AND WHAT IT CAN HONESTLY TESTIFY TO. ---------------------
+// The exact-shape search could never find this: the target's blank-shape INCLUDES movement_type, so a row
+// matching it exactly is by definition also unclassified. The near shape ignores the key and the type -
+// exactly the two cells a later hand would have filled - and nothing else.
+// The sibling is in a DIFFERENT POOL on purpose, and that is what a batch looks like: a hand-made import or
+// an initialization spans SKUs at one warehouse. Measured why it has to be: with the sibling in the target's
+// own pool and dated the same day, it became the NEXT MOVEMENT in the chronology as well, its
+// before_current_stock of 1000 made the chain say 'the balance never moved', and the world was testing
+// something other than the sibling.
+var AB16 = abRun([abLive(), abSibling({ sku: 'OTHER-SKU' }), abFull()]);
+eq(AB16.siblings.near_shape_match_count, 1, 'AB16 the batch sibling is found on the near shape');
+eq(AB16.siblings.exact_shape_match_count, 0,
+  'AB16a and NOT on the exact shape, which could never have matched a classified row');
+eq(AB16.siblings.ignored_in_the_near_shape, ['factory_stock_movement_id', 'movement_type'],
+  'AB16b the relaxation is exactly those two columns, published');
+eq(AB16.siblings.classified_sibling_available_as_a_template, true, 'AB16c and it is classified');
+var AB16d = AB16.siblings.per_column_diff_against_the_first_classified_sibling;
+eq(AB16d.sibling_sheet_row, 3, 'AB16d located by sheet row');
+eq(AB16d.sibling_movement_type, 'manual_adjustment', 'AB16e with its type');
+// ITS EVIDENCE IS ITS CONVENTION, NOT ITS TYPE NAME. 21_'s import writer stores a DELTA in qty even for
+// inventory_import, so a type-name mapping would have been wrong. What the sibling can testify to is how its
+// OWN qty relates to its OWN pair: 4000 = 5000 - 1000, a delta.
+eq(AB16d.sibling_convention, 'QTY_IS_A_DELTA',
+  'AB16f and the convention is measured on the sibling\'s own three cells');
+var AB16ev = AB16.evidence.filter(function (e) { return e.source === 'SIBLING_SHAPE_BATCH'; });
+ok(AB16ev[0].supports.indexOf('CURRENT_DELTA_FROM_BEFORE_AFTER') >= 0,
+  'AB16g so it supports the delta reading', AB16ev[0]);
+ok(AB16ev[0].contradicts.indexOf('INITIAL_BALANCE_SET') >= 0,
+  'AB16h and contradicts the balance reading');
+eq(AB16.siblings.per_column_diff_against_the_first_classified_sibling.columns.length, 15,
+  'AB16i the per-column diff covers all fifteen columns');
+ok(String(AB16.siblings.template_use).indexOf('PROVENANCE_EVIDENCE_ONLY') === 0,
+  'AB16j and the sibling is evidence only - never a source of values', AB16.siblings.template_use);
+// A sibling agreeing with the chain and the balance is a THIRD source, and READY still needs no more.
+eq(AB16.verdict, 'READY_FOR_LEGACY_ROW_REPAIR_DECISION', 'AB16k three agreeing sources still reach READY');
+eq(AB16.candidates[1].independent_supporting_sources.sort(),
+  ['FACTORY_STOCK_BALANCE', 'LEDGER_CHAIN_OVERLAP', 'SIBLING_SHAPE_BATCH'],
+  'AB16l with all three named');
+
+// ---- AB17 — THE SIBLING CONTRADICTS THE NUMBERS. NOBODY WINS. --------------------------------------
+// A sibling whose own qty equals its own after is testifying that the batch wrote BALANCES, which points at
+// INITIAL_BALANCE_SET and away from the delta reading the chain supports. Two sources against two: the
+// census must refuse rather than prefer one.
+var AB17 = abRun([abLive(), abSibling({ sku: 'OTHER-SKU', qty: 5000, before_current_stock: 1000,
+  after_current_stock: 5000 }), abFull()]);
+eq(AB17.siblings.per_column_diff_against_the_first_classified_sibling.sibling_convention,
+  'QTY_IS_A_BALANCE', 'AB17 the sibling testifies that the batch wrote balances');
+var AB17ev = AB17.evidence.filter(function (e) { return e.source === 'SIBLING_SHAPE_BATCH'; });
+ok(AB17ev[0].supports.indexOf('INITIAL_BALANCE_SET') >= 0
+  && AB17ev[0].contradicts.indexOf('CURRENT_DELTA_FROM_BEFORE_AFTER') >= 0,
+  'AB17a so it points at the balance reading and away from the delta one', AB17ev[0]);
+eq(AB17.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AB17b and the delta reading is no longer uncontradicted, so READY is withdrawn', AB17.verdict_detail);
+eq(AB17.verdict_detail.blocked_by_contradiction.length, 2,
+  'AB17c both candidates with two sources are BLOCKED by contradiction',
+  AB17.verdict_detail.blocked_by_contradiction);
+eq(AB17.verdict_detail.qualifying, [], 'AB17d so none qualifies');
+eq(AB17.selected_candidate, null, 'AB17e and nothing is selected');
+
+// ---- AB18 — A SIBLING WHOSE OWN BEFORE IS ZERO CANNOT DISTINGUISH WHAT IT IS BEING ASKED TO. -------
+// When before is 0 a delta and a balance are the same number, so the sibling's convention is unreadable
+// and it testifies to nothing. Reported as AMBIGUOUS rather than resolved either way.
+var AB18 = abRun([abLive(), abSibling({ sku: 'OTHER-SKU', qty: 5000, before_current_stock: 0,
+  after_current_stock: 5000 }), abFull()]);
+eq(AB18.siblings.per_column_diff_against_the_first_classified_sibling.sibling_convention,
+  'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO', 'AB18 the sibling\'s own convention is unreadable');
+var AB18ev = AB18.evidence.filter(function (e) { return e.source === 'SIBLING_SHAPE_BATCH'; });
+eq([AB18ev[0].supports, AB18ev[0].contradicts], [[], []],
+  'AB18a so it supports and contradicts nothing', AB18ev[0]);
+
+// ---- AB19 — AMBIGUITY THAT IS REAL: before = 0 MAKES A SET AND A DELTA THE SAME ROW. ---------------
+// With before_current_stock = 0, qty = after - before AND qty = after are both true, and the writer-contract
+// contradiction against INITIAL_BALANCE_SET disappears. Two candidates genuinely qualify, and two qualifying
+// candidates is ambiguity rather than a choice.
+var AB19 = abRun([abLive({ before_current_stock: 0 }),
+  abFull({ before_current_stock: 12000, after_current_stock: 12500 })]);
+eq(AB19.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AB19 two qualifying candidates is ambiguity, not a choice', AB19.verdict_detail);
+eq(AB19.verdict_detail.qualifying.sort(),
+  ['CURRENT_DELTA_FROM_BEFORE_AFTER', 'INITIAL_BALANCE_SET'],
+  'AB19a and both are named');
+ok(String(AB19.verdict_detail.why).indexOf('MORE_THAN_ONE_CANDIDATE_QUALIFIES') === 0,
+  'AB19b with the reason distinguishing this from having too little evidence', AB19.verdict_detail.why);
+eq(AB19.selected_candidate, null, 'AB19c nothing selected');
+ok(AB19.operator_questions.question_count >= 3,
+  'AB19d and the operator questions are published instead', AB19.operator_questions.question_count);
+
+// ---- AB20 — THE DEFAULT EXPECTATION IS THE FROZEN ONE, AND A FIXTURE IS NOT THE LIVE SHEET. --------
+// The safety property, tested against the DEFAULT rather than a caller-supplied pin. No argument at all:
+// the census holds the world to the frozen R4E state and STOPs, which is exactly what a live run against a
+// drifted sheet would do.
+var AB20w = abWorld([abLive(), abFull()]);
+var AB20 = abProv(AB20w, {});
+AB20.world = AB20w;
+eq(AB20.verdict, 'STOP', 'AB20 with no argument the census pins itself to the frozen live state and STOPs');
+eq(AB20.expectation_source, 'THE_FROZEN_S1_R4E_AUTHORIZATION',
+  'AB20a naming the frozen authorization as the expectation source');
+eq(AB20.expected.table_combined_fingerprint, 'E3E783BF',
+  'AB20b which carries the operator\'s frozen table fingerprint');
+ok(AB20.stop_reasons.filter(function (r) {
+  return String(r).indexOf('LIVE_STATE_DRIFTED:') === 0; }).length >= 1,
+  'AB20c and the STOP names which frozen facts drifted', AB20.stop_reasons);
+// A STOP PUBLISHES NO CONCLUSION. Not a classification, not a candidate, not a proposal, and not a set of
+// operator questions dressed up as one - the same lock LOCK FIVE enforces one table over.
+eq([AB20.selected_candidate, AB20.proposed_repair_fields, AB20.operator_questions],
+  [null, null, null], 'AB20d and it publishes no candidate, no proposal and no questions');
+eq(AB20.live_state_confirmed, false, 'AB20e with the confirmation recorded as failed');
+abZeroWrite(AB20, 'AB20f:');
+// AND THE CALLER-SUPPLIED PIN IS LABELLED SO IT CANNOT BE MISTAKEN FOR A MEASUREMENT.
+ok(String(AB1.expectation_source).indexOf('CALLER_SUPPLIED') === 0,
+  'AB20g while a caller-supplied expectation says so, loudly', AB1.expectation_source);
+ok(String(AB1.expectation_source).indexOf('never be mistaken for a live measurement') > 0,
+  'AB20h and says why that matters', AB1.expectation_source);
+
+// ---- AB21 — DRIFT, ONE FROZEN FACT AT A TIME. -------------------------------------------------------
+// Each of these is a live-state fact the operator froze. A run that proceeds past any of them would be
+// gathering provenance evidence about a table nobody authorized.
+[['header_fingerprint', 'DEADBEEF'], ['table_combined_fingerprint', 'DEADBEEF'],
+  ['row_count', 4242], ['blank_id_count', 7], ['duplicate_id_count', 3],
+  ['wrong_type_id_count', 2], ['outside_named_column_row_count', 5], ['valid_id_count', 4242],
+  ['target_row_fingerprint', 'DEADBEEF'], ['pool_warehouse_id', 'WH-SOMEWHERE-ELSE'],
+  ['pool_sku', 'NOT-THIS-SKU']].forEach(function (d, i) {
+  var over = {};
+  over[d[0]] = d[1];
+  var r = abRun([abLive(), abFull()], over);
+  eq(r.verdict, 'STOP', 'AB21.' + (i + 1) + ' drift in ' + d[0] + ' is a STOP');
+  ok(r.stop_reasons.indexOf('LIVE_STATE_DRIFTED:' + d[0]) >= 0,
+    'AB21.' + (i + 1) + 'a and it is named: LIVE_STATE_DRIFTED:' + d[0], r.stop_reasons);
+  eq([r.selected_candidate, r.proposed_repair_fields, r.operator_questions], [null, null, null],
+    'AB21.' + (i + 1) + 'b publishing no conclusion');
+  eq(r.world.allWrites(), 0, 'AB21.' + (i + 1) + 'c and writing nothing');
+});
+// AND THE BUILD, which is checked before anything else is even read.
+var AB21b = abRun([abLive(), abFull()], { build: 'SOME-OTHER-BUILD' });
+eq(AB21b.verdict, 'STOP', 'AB21b a build mismatch is a STOP');
+eq(AB21b.stop_reasons, ['BUILD_DRIFTED'], 'AB21c named BUILD_DRIFTED');
+eq(AB21b.live_state_confirmation, null,
+  'AB21d and it refuses before it even reads the table, so there is no confirmation to report');
+
+// ---- AB22 — THE TARGET ROW MOVED. ------------------------------------------------------------------
+// The blank-key row is at sheet row 3 while the freeze names row 2. Row 2 exists, so the census does not
+// crash on a missing row - it reads the row that IS at 2, finds a different fingerprint, and refuses.
+var AB22 = abRun([abFull(), abLive({ created_at: '2026-06-12' })], { target_row_number: 2 });
+eq(AB22.verdict, 'STOP', 'AB22 a moved target row is a STOP');
+ok(AB22.stop_reasons.indexOf('LIVE_STATE_DRIFTED:target_row_fingerprint') >= 0,
+  'AB22a on the row fingerprint of whatever is at the frozen row number now', AB22.stop_reasons);
+ok(failed(AB22).indexOf('the_one_fault_is_still_a_blank_primary_key_on_the_frozen_row') >= 0,
+  'AB22b and the fault-location predicate fails by name', failed(AB22));
+// AND THE ROW GENUINELY ABSENT, which is a different stop.
+var AB22c = abRun([abLive(), abFull()], { target_row_number: 99 });
+eq(AB22c.verdict, 'STOP', 'AB22c a frozen row number that no longer exists is a STOP');
+ok(AB22c.stop_reasons.indexOf('TARGET_ROW_MISSING') >= 0,
+  'AB22d named TARGET_ROW_MISSING rather than reported as a fingerprint mismatch', AB22c.stop_reasons);
+
+// ---- AB23 — A SECOND BLANK KEY APPEARS. ------------------------------------------------------------
+// The freeze says exactly one fault. Two means the table changed in a way the evidence does not cover, and
+// which of the two blanks is "the target" is no longer a question this census may answer.
+var AB23 = abRun([abLive(), abLive({ qty: 7, before_current_stock: 1, after_current_stock: 8,
+  created_at: '2026-06-13' }), abFull()], { blank_id_count: 1 });
+eq(AB23.verdict, 'STOP', 'AB23 a second blank primary key is a STOP');
+ok(AB23.stop_reasons.indexOf('LIVE_STATE_DRIFTED:blank_id_count') >= 0
+  && AB23.stop_reasons.indexOf('THE_FAULT_COUNT_IS_NO_LONGER_ONE') >= 0,
+  'AB23a named on both the count and the fault total', AB23.stop_reasons);
+eq([AB23.selected_candidate, AB23.operator_questions], [null, null],
+  'AB23b and no conclusion is published');
+
+// ---- AB24 — THE MOVEMENT TYPE IS NO LONGER BLANK. --------------------------------------------------
+// Somebody typed a movement_type between R4E and now. That is the single most important fact about this row
+// and the freeze pins it, so the census must not carry on reasoning about a row that has been changed.
+var AB24 = abRun([abLive({ movement_type: 'manual_adjustment' }), abFull()],
+  { target_movement_type_is_blank: true });
+eq(AB24.verdict, 'STOP', 'AB24 a movement_type that is no longer blank is a STOP');
+ok(AB24.stop_reasons.indexOf('LIVE_STATE_DRIFTED:target_movement_type_is_blank') >= 0,
+  'AB24a named on the movement_type itself', AB24.stop_reasons);
+
+// ---- AB25 — THE READ FAILS. "I COULD NOT LOOK" IS NOT "I LOOKED AND FOUND NOTHING". ----------------
+var AB25 = abRun([abLive(), abFull()], null, null, function (w) {
+  w.sheets['factory_stock_movements'].getDataRange = function () {
+    throw new Error('transient sheet read failure'); };
+});
+eq(AB25.verdict, 'STOP', 'AB25 an unreadable movement table is a STOP');
+ok(AB25.stop_reasons.indexOf('SHEET_PRESENT_BUT_UNREADABLE') >= 0,
+  'AB25a named as present-but-unreadable rather than as an empty table', AB25.stop_reasons);
+eq([AB25.chronology, AB25.candidates.length, AB25.operator_questions], [null, 0, null],
+  'AB25b with no chronology, no candidates and no questions');
+abZeroWrite(AB25, 'AB25c:');
+// AND THE SHEET ABSENT ALTOGETHER.
+var AB25d = abRun([abLive(), abFull()], null, { movements: null });
+eq(AB25d.verdict, 'STOP', 'AB25d an absent movement table is a STOP');
+ok(AB25d.stop_reasons.indexOf('SHEET_ABSENT') >= 0, 'AB25e named SHEET_ABSENT', AB25d.stop_reasons);
+
+// ---- AB26 — THE CROSS-TABLE READ: PRESENT, ABSENT AND UNREADABLE ARE THREE ANSWERS. ----------------
+// "There is no import-audit table" and "the import-audit table has no matching row" are different answers to
+// the provenance question and only one of them is evidence. An absent table is reported absent - never
+// created, never filled, never inferred to be empty, and no job is triggered to produce it.
+var AB26 = abRun([abLive(), abFull()], null,
+  { overseas: [{ warehouse_id: WHF, sku: SKU, wh_available_stock: 12000 }] });
+ok(AB26.cross_table.tables_examined >= 13,
+  'AB26 every candidate provenance table is examined', AB26.cross_table.tables_examined);
+ok(AB26.cross_table.tables_absent.indexOf('purchase_orders') >= 0
+  && AB26.cross_table.tables_absent.indexOf('shipments') >= 0
+  && AB26.cross_table.tables_absent.indexOf('reservations') >= 0,
+  'AB26a and the ones that do not exist are reported ABSENT', AB26.cross_table.tables_absent);
+eq(AB26.tables_created, 0, 'AB26b nothing was created to fill them');
+eq(AB26.jobs_triggered, 0, 'AB26c and no job was triggered');
+ok(String(AB26.cross_table.read_rule).indexOf('never') > 0,
+  'AB26d with the rule stated in the output', AB26.cross_table.read_rule);
+ok(AB26.cross_table.tables_with_a_hit.indexOf('overseas_inventory_snapshot') >= 0,
+  'AB26e the seeded same-sku snapshot row is found', AB26.cross_table.tables_with_a_hit);
+ok(AB26.cross_table.markers.indexOf(String(SKU).toLowerCase()) >= 0
+  && AB26.cross_table.markers.indexOf(String(WHF).toLowerCase()) >= 0
+  && AB26.cross_table.markers.indexOf('12000') >= 0
+  && AB26.cross_table.markers.indexOf('1000') >= 0
+  && AB26.cross_table.markers.indexOf('2026-06-12') >= 0,
+  'AB26f searched on the sku, the warehouse, both quantities and the date',
+  AB26.cross_table.markers);
+var AB26g = AB26.cross_table.per_table.filter(function (e) {
+  return e.table === 'overseas_inventory_snapshot'; })[0];
+ok(AB26g.hits[0].one_based_sheet_row_number === 2
+  && AB26g.columns_that_matched.length >= 2,
+  'AB26g and a hit carries its sheet row and the columns that matched', AB26g);
+// A CROSS-TABLE HIT IS PROVENANCE, NOT A CLASSIFICATION. It names where to look; it does not vote.
+var AB26ev = AB26.evidence.filter(function (e) { return e.source === 'CROSS_TABLE_EVENT'; });
+eq([AB26ev[0].supports, AB26ev[0].contradicts], [[], []],
+  'AB26h a marker hit supports no candidate on its own', AB26ev[0]);
+
+// ---- AB27 — NO CROSS-TABLE SOURCE AT ALL. ----------------------------------------------------------
+var AB27 = abRun([abLive(), abFull()], null, { overrideAudit: null });
+ok(AB27.cross_table.tables_absent.indexOf('factory_stock_override_audit') >= 0,
+  'AB27 an absent audit table is listed absent', AB27.cross_table.tables_absent);
+AB27.candidates.forEach(function (c) {
+  ok(c.missing_evidence.length > 0,
+    'AB27a.' + c.number + ' and every candidate names what it is missing: ' + c.candidate,
+    c.missing_evidence);
+});
+
+// ---- AB28 — THE FOUR CANDIDATES, ALL OF THEM, EVERY TIME. ------------------------------------------
+// Not "the plausible ones". A candidate with nothing supporting it is still measured and published, because
+// an operator needs to see that it was considered and what it would have taken.
+eq(AB1.candidates.map(function (c) { return c.candidate; }),
+  ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER', 'CURRENT_DELTA_FROM_QTY',
+    'INVALID_NON_LEDGER_ROW'], 'AB28 all four candidates, in a stable order');
+eq(AB1.candidates.map(function (c) { return c.number; }), [1, 2, 3, 4], 'AB28a numbered 1 to 4');
+eq(AB1.computed, { delta_from_the_before_after_pair: 11000, after_implied_by_qty: 13000,
+  qty: 12000, before_current_stock: 1000, after_current_stock: 12000 },
+  'AB28b and the three arithmetics the task named: 12000, 11000 and 13000');
+eq(AB1.candidates[0].authoritative_ending_balance, 12000,
+  'AB28c candidate 1 states the authoritative ending balance');
+eq(AB1.candidates[1].computed_delta, 11000, 'AB28d candidate 2 states 12000 - 1000 = 11000');
+eq(AB1.candidates[2].expected_after, 13000, 'AB28e candidate 3 states 1000 + 12000 = 13000');
+eq(AB1.candidates[2].implies_wrong_cell, 'after_current_stock (it would have to become 13000)',
+  'AB28f and names the cell each reading would make wrong');
+AB1.candidates.forEach(function (c) {
+  ok(S1has(c, 'supporting_evidence') && S1has(c, 'contradicting_evidence')
+    && S1has(c, 'downstream_balance_impact') && S1has(c, 'subsequent_chain_compatibility')
+    && S1has(c, 'current_factory_stock_compatibility') && S1has(c, 'confidence_basis')
+    && S1has(c, 'missing_evidence'),
+    'AB28g.' + c.number + ' ' + c.candidate + ' carries all seven required readings',
+    Object.keys(c));
+});
+function S1has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+ok(String(AB1.candidates[3].downstream_balance_impact).indexOf('unknown_type row') > 0,
+  'AB28h and candidate 4 states what the reconciliation already does with this row',
+  AB1.candidates[3].downstream_balance_impact);
+
+// ---- AB29 — DOES THE LEDGER NEED THIS ROW AT ALL? --------------------------------------------------
+// §4.4 as a measurement: remove the target from the chronology and re-check the overlaps. If the rows either
+// side join up directly, the target carries no part of the balance.
+var AB29 = abRun([abLive(), abFull({ factory_stock_movement_id: 'FSMV-000000E5',
+  created_at: '2026-06-01T00:00:00Z', movement_date: '2026-06-01',
+  before_current_stock: 800, after_current_stock: 1000, qty: 200 }),
+  abFull({ before_current_stock: 1000, after_current_stock: 1500, qty: 500 })]);
+eq(AB29.chain_without_the_target.neighbours_overlap_each_other_directly, true,
+  'AB29 the rows either side of the target overlap each other directly');
+var AB29ev = AB29.evidence.filter(function (e) {
+  return e.source === 'LEDGER_CHAIN_OVERLAP'
+    && e.supports.indexOf('INVALID_NON_LEDGER_ROW') >= 0; });
+ok(AB29ev.length >= 1, 'AB29a which is evidence that it is not a ledger row', AB29.evidence);
+// AND THE OPPOSITE: a load-bearing row cannot be dismissed.
+var AB29b = abRun([abLive(), abFull()]);
+eq(AB29b.chain_without_the_target.removing_it_breaks_a_link, false,
+  'AB29b a two-row chain has no link to break');
+eq(AB29b.chain_without_the_target.neighbours_overlap_each_other_directly, null,
+  'AB29c and with the target first there is nothing to bridge, which stays null rather than false');
+// AND THIS IS A WORLD THAT REACHES READY ON "NOT A LEDGER ROW". The chain says the row took no effect and
+// the writer contract says no shipped writer produced it: two independent sources, nothing contradicting.
+// Worth asserting, because it is the one candidate whose repair is not a cell edit at all.
+eq(AB29.verdict, 'READY_FOR_LEGACY_ROW_REPAIR_DECISION',
+  'AB29d a row the ledger does not need, that no writer could have written, reaches READY',
+  AB29.verdict_detail);
+eq(AB29.selected_candidate, 'INVALID_NON_LEDGER_ROW', 'AB29e on candidate 4');
+eq(AB29.candidates[3].independent_supporting_sources.sort(),
+  ['LEDGER_CHAIN_OVERLAP', 'WRITER_CONTRACT'], 'AB29f named by both sources');
+eq(AB29.proposed_repair_fields.implies_wrong_cell, 'none - the row itself is the error',
+  'AB29g and the proposal names no cell, because this reading edits none');
+ok(String(AB29.candidates[3].downstream_balance_impact).indexOf('neither adds nor drops') > 0,
+  'AB29h while stating what the reconciliation already does with it today',
+  AB29.candidates[3].downstream_balance_impact);
+
+// ---- AB34 - THE BOUND HOLDS ON A DELIBERATELY LARGE WORLD, AND NOTHING IS WITHHELD. ----------------
+// R1's lesson and R2's: the line budget exists because the logger truncates, and an unbounded CHUNK COUNT
+// is no more readable than one oversized line. Every section here is bounded by construction - the
+// chronology is reported as counts, the sibling and cross-table lists are sliced - so the test is that a
+// world big enough to break a naive emitter changes nothing about the log.
+var AB34rows = [abLive()];
+for (var ab34 = 1; ab34 <= 40; ab34++) {
+  AB34rows.push(abFull({ factory_stock_movement_id: 'FSMV-' + ('0000000' + ab34).slice(-8),
+    before_current_stock: 12000 + ab34 * 10, after_current_stock: 12010 + ab34 * 10, qty: 10,
+    created_at: '2026-07-' + ('0' + ((ab34 % 28) + 1)).slice(-2) + 'T00:00:00Z',
+    movement_date: '2026-07-' + ('0' + ((ab34 % 28) + 1)).slice(-2),
+    note: 'a note long enough to matter when forty of them are in one payload ' + ab34 }));
+}
+for (var ab34b = 1; ab34b <= 30; ab34b++) {
+  AB34rows.push(abSibling({ sku: 'BATCH-SKU-' + ab34b,
+    factory_stock_movement_id: 'FSMV-B' + ('000000' + ab34b).slice(-7) }));
+}
+var AB34over = [];
+for (var ab34c = 1; ab34c <= 25; ab34c++) {
+  AB34over.push({ warehouse_id: WHF, sku: SKU, wh_available_stock: 12000 });
+}
+var AB34 = abRun(AB34rows, null, { overseas: AB34over });
+eq(AB34.verdict === 'STOP', false, 'AB34 the census completes on a 71-row table', AB34.stop_reasons);
+ok(maxLogBytes(AB34.world) <= 3000,
+  'AB34a and every emitted line is still inside the 3000-byte bound', maxLogBytes(AB34.world));
+function abProvTags(w) {
+  return abTags(w).filter(function (g) { return g.indexOf('s1_provenance') === 0; });
+}
+eq(abProvTags(AB34.world).filter(function (g) { return g.indexOf('_withheld') > 0; }), [],
+  'AB34b with no provenance section withheld for being oversized');
+eq(abProvTags(AB34.world).filter(function (g) { return /_\d+_of_\d+$/.test(g)
+  && g.indexOf('operator_questions') === -1; }), [],
+  'AB34c and none needed segmenting, because each one is bounded by construction');
+// A CAPPED VALUE AND A TRUNCATED LINE ARE NOT THE SAME THING, and my first assertion here conflated them.
+// A line the logger cuts is a wrong value nobody was told about; a value S1_cap_ shortens carries the
+// marker and the byte count it dropped, which is an honest summary. Six of those on this world, and the
+// requirement is that every one of them is MARKED - not that none exists.
+var AB34d = (AB34.world.log || []).filter(function (l) {
+  return String(l).indexOf('[S1] s1_provenance') === 0 && String(l).indexOf('…[+') >= 0; });
+ok(AB34d.length > 0, 'AB34d long values are capped on a world this size', AB34d.length);
+AB34d.forEach(function (l, i) {
+  ok(/…\[\+\d+\]/.test(String(l)),
+    'AB34d.' + (i + 1) + ' and every capped value carries the marker and the dropped byte count');
+});
+// THE HIT AND CANDIDATE LISTS ARE CAPPED AND SAY SO, rather than being cut silently.
+var AB34e = abPayload(AB34.world, 's1_provenance_cross_table_evidence');
+var AB34f = AB34e.per_table.filter(function (e) {
+  return e.table === 'overseas_inventory_snapshot'; })[0];
+ok(AB34f && AB34f.hits_total === 25 && AB34f.hits_shown === 6 && AB34f.hits_withheld === 19,
+  'AB34e a capped hit list reports the total, the shown and the withheld', AB34f);
+var AB34g = abPayload(AB34.world, 's1_provenance_sibling_shape_summary');
+ok(AB34g && AB34g.near_shape_match_count === 30 && AB34g.rows.length === 12,
+  'AB34f and the sibling summary counts all thirty while listing twelve', AB34g);
+abZeroWrite(AB34, 'AB34g:');
+
+// ---- AB30 — THE OPERATOR QUESTIONS, AND WHAT EACH ANSWER COSTS IN CELLS. ---------------------------
+// "This needs a human" is not a finding. A question answerable from the operator's own records, with the
+// consequence of each answer stated in cells, is.
+var AB30 = AB14.operator_questions;
+ok(AB30 !== null && AB30.question_count === 3,
+  'AB30 a refusal publishes the exact questions', AB30 && AB30.question_count);
+eq(AB30.questions.map(function (q) { return q.question_id; }), ['Q1', 'Q2', 'Q3'],
+  'AB30a identified so an answer can be given against one');
+AB30.questions.forEach(function (q, i) {
+  ok(q.options.length >= 2, 'AB30b.' + (i + 1) + ' ' + q.question_id + ' offers options', q.options.length);
+  q.options.forEach(function (o, j) {
+    ok(String(o.data_impact).length > 40,
+      'AB30c.' + (i + 1) + '.' + (j + 1) + ' and every option states its data impact', o.data_impact);
+  });
+  ok(String(q.why_only_you_can_answer).length > 40,
+    'AB30d.' + (i + 1) + ' and says why the database cannot answer it', q.why_only_you_can_answer);
+});
+ok(String(AB30.questions[0].question).indexOf('CO1100-R') > 0
+  && String(AB30.questions[0].question).indexOf('12000') > 0
+  && String(AB30.questions[0].question).indexOf('1000') > 0,
+  'AB30e Q1 carries the actual measured values, not placeholders', AB30.questions[0].question);
+ok(String(AB30.questions[1].options[0].data_impact).indexOf('balance does not move') > 0,
+  'AB30f Q2 says which answer moves the balance and which does not');
+ok(String(AB30.questions[2].why_only_you_can_answer).indexOf('SILENCES') > 0,
+  'AB30g and Q3 names the silencing hazard of keying the row before classifying it',
+  AB30.questions[2].why_only_you_can_answer);
+ok(String(AB30.note).indexOf('questions, not proposals') > 0,
+  'AB30h with the whole block marked questions rather than proposals', AB30.note);
+// NO PLACEHOLDERS ANYWHERE. R4C's rule, applied to this census's own prose.
+var AB30i = JSON.stringify(AB30);
+eq(/<[a-z_]+>/.test(AB30i), false, 'AB30i and no <...> placeholder survives into the questions');
+
+// ---- AB31 — THE LOG: THE NAMED LINES, EACH BOUNDED, AND THE DETAIL IS IN THEM. ---------------------
+// §7. The detail must not be left only in the return value, and it must not arrive as one giant payload
+// either - a reader looking for the chain reading should not scroll past the chronology to reach it.
+function abTags(w) {
+  return (w.log || []).map(function (l) {
+    var m = String(l).match(/^\[S1\] (\S+)/); return m ? m[1] : null; }).filter(Boolean);
+}
+var AB31 = AB13, AB31t = abTags(AB31.world);
+['s1_provenance_summary', 's1_provenance_target_row', 's1_provenance_next_same_pool_movement',
+  's1_provenance_chain_continuity', 's1_provenance_sibling_shape_summary',
+  's1_provenance_cross_table_evidence', 's1_provenance_candidate_1', 's1_provenance_candidate_2',
+  's1_provenance_candidate_3', 's1_provenance_candidate_4', 's1_provenance_verdict']
+  .forEach(function (t) {
+    ok(AB31t.indexOf(t) >= 0, 'AB31 the log carries ' + t, AB31t);
+  });
+ok(maxLogBytes(AB31.world) <= 3000,
+  'AB31a and every emitted line is inside the 3000-byte bound', maxLogBytes(AB31.world));
+ok(AB31.log_bytes_max <= 3000 && AB31.log_bytes_max > 0,
+  'AB31b which the census measures and reports about itself', AB31.log_bytes_max);
+eq(AB31t.filter(function (t) { return t.indexOf('s1_provenance_operator_questions') === 0; }).length, 0,
+  'AB31c a READY run emits NO operator-question lines');
+// AND A REFUSAL EMITS THEM, one line per question, numbered.
+var AB31d = abTags(AB14.world).filter(function (t) {
+  return t.indexOf('s1_provenance_operator_questions') === 0; });
+eq(AB31d, ['s1_provenance_operator_questions_1_of_3', 's1_provenance_operator_questions_2_of_3',
+  's1_provenance_operator_questions_3_of_3'],
+  'AB31d while a refusal emits one numbered line per question');
+ok(maxLogBytes(AB14.world) <= 3000,
+  'AB31e also inside the bound', maxLogBytes(AB14.world));
+// THE DETAIL IS ACTUALLY IN THE LINES. Not a summary that points at the return value.
+function abPayload(w, tag) {
+  var pre = '[S1] ' + tag + ' ';
+  var hit = (w.log || []).filter(function (l) { return String(l).indexOf(pre) === 0; });
+  return hit.length ? JSON.parse(String(hit[0]).slice(pre.length)) : null;
+}
+var AB31f = abPayload(AB13.world, 's1_provenance_chain_continuity');
+ok(AB31f && AB31f.current && AB31f.current.agree === 1 && AB31f.balance
+  && AB31f.balance.factory_stock_current === 12500,
+  'AB31f the chain line carries the per-axis counts and the balance, not a pointer to them', AB31f);
+var AB31g = abPayload(AB13.world, 's1_provenance_candidate_2');
+ok(AB31g && AB31g.computed_delta === 11000 && AB31g.supporting.length === 3
+  && AB31g.supporting.filter(function (x) { return x.independent; }).length === 2
+  && AB31g.independent_supporting_sources.length === 2 && AB31g.missing_evidence,
+  'AB31g and each candidate line carries its arithmetic, its evidence and its gaps', AB31g);
+var AB31h = abPayload(AB13.world, 's1_provenance_next_same_pool_movement');
+ok(AB31h && AB31h.row === 3 && AB31h.movement_id === 'FSMV-000000A1'
+  && AB31h.its_before_equals_the_targets_after === true,
+  'AB31h and the next-movement line answers §1.4 directly', AB31h);
+var AB31i = abPayload(AB20.world, 's1_provenance_verdict');
+ok(AB31i && AB31i.verdict === 'STOP' && AB31i.stop_reasons.length > 0
+  && AB31i.proposed_repair_fields === null,
+  'AB31i a STOP verdict line carries the reasons and no proposal', AB31i);
+// THE OVERSIZED CASE IS SEGMENTED, NOT TRUNCATED. Driven by shrinking the bound rather than by inventing
+// a pathological world: a 50-row pool would put the whole chronology in one line otherwise.
+var AB31j = abRun([abLive(), abFull()], null, null, null, null);
+eq(typeof AB31j.lines_emitted, 'number', 'AB31j the census counts the lines it emitted');
+ok(AB31j.lines_emitted >= 11, 'AB31k at least one per named section', AB31j.lines_emitted);
+
+// ---- AB32 — THERE IS NO EXECUTABLE REPAIR ROUTE, AND THAT IS CHECKED ON THE SOURCE. ---------------
+// The task's hard boundary. Asserted structurally rather than by absence of evidence: the census's own
+// source is read and every write API is looked for in it.
+var AB32src = S1_BARE.split(NL + 'function RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS')[1];
+AB32src = AB32src ? AB32src.split(NL + 'function RUN_S1_MANIFEST_S')[0] : '';
+ok(AB32src.length > 2000, 'AB32 the provenance census source was located for inspection', AB32src.length);
+['setValue', 'setValues', 'appendRow', 'deleteRow', 'insertSheet', 'deleteSheet', 'removeSheet',
+  'setFormula', 'setName', 'getRange', 'LockService'].forEach(function (api) {
+  eq(AB32src.indexOf(api), -1, 'AB32a.' + api + ' the provenance census source contains no ' + api);
+});
+// The whole FILE still has exactly two, both from R4E's authorized backfill, neither in this round's code.
+eq((S1_BARE.match(/setValue\(/g) || []).length, 2,
+  'AB32b and the file still has exactly two setValue sites, both R4E\'s');
+eq(AB32src.indexOf('S1_movProposedId_'), -1,
+  'AB32c the census never mints or proposes a primary key');
+['authorization_wording', 'freeze_paste_block', 'frozen_before'].forEach(function (k) {
+  eq(AB32src.indexOf(k), -1, 'AB32d.' + k + ' and it writes no ' + k + ': there is nothing to sign');
+});
+eq(AB13.repair_route.indexOf('NONE'), 0, 'AB32e the output states the repair route is NONE');
+ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool may act') > 0,
+  'AB32f and what READY means, in words', AB13.repair_route);
+// AND THE ENTRY POINT COUNT IS NOW TEN, none of them new writers.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 10,
+  'AB32g ten public entry points, one more than R4E and read-only');
+
+// ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
+// A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
+eq(AB1.field_audit.contract_column_count, 15, 'AB33 the census judges against R4E\'s fifteen-column contract');
+eq(AB1.field_audit.required_blank, ['factory_stock_movement_id', 'movement_type'],
+  'AB33a and reaches R4E\'s answer about which required fields are blank');
+eq(AB1.field_audit.writer_populated_blank,
+  ['movement_date', 'related_entity_type', 'related_entity_id', 'before_reserved_stock',
+    'after_reserved_stock', 'note', 'created_by'],
+  'AB33b plus the seven writer-populated columns that are blank');
+eq(AB1.axis_audit.axis, 'UNKNOWN_BECAUSE_MOVEMENT_TYPE_IS_BLANK',
+  'AB33c the axis is unknown because the selector is blank');
+eq(AB1.axis_audit.readings.if_current_axis,
+  { expected_qty: 11000, observed_qty: 12000, agrees: false },
+  'AB33d the current reading is computed and disagrees');
+eq(AB1.axis_audit.readings.if_reserved_axis, null,
+  'AB33e and the reserved reading is unevaluable, which is null rather than false');
+eq(AB1.axis_audit.vocabulary_authority_available, true,
+  'AB33f with 21_\'s vocabulary actually loaded, so an absent authority is not mistaken for a bad value');
+// The writer-signature table is read off the shipped source, and these two facts anchor it there.
+ok(G21V.indexOf("movement_type: 'manual_adjustment'") > 0,
+  'AB33g 21_ really does write movement_type as that literal in the adjust path');
+ok(G21V.indexOf("qty: afterCurrent - beforeCurrent") > 0,
+  'AB33h and really does write qty as afterCurrent - beforeCurrent in the import path');
+ok(G21V.indexOf("if (!note) return jsonResponse_({ success: false, error: 'Note is required' })") > 0,
+  'AB33i and really does validate note as required, which is why blank note eliminates that writer');
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -6034,6 +6935,278 @@ mut('N92 an absent vocabulary authority is reported as an invalid movement_type'
     // the mutant blames the data for what the deployment cannot check
     && bad.classification_reasons.indexOf(ABSENT) === -1
     && bad.classification_reasons.indexOf(INVALID) >= 0;
+});
+
+// ---- S1-R4F — the provenance census. -----------------------------------------------------------------
+// The pin is derived from a world built on the CLEAN source, then handed to the mutated one. Deriving it
+// from the mutant would let a mutant that breaks fingerprinting move the expectation along with it, which
+// is the self-comparison this whole family of diagnostics exists to refuse.
+function swapIn(src, a, b) {
+  var n = src.split(a).length - 1;
+  if (n !== 1) throw new Error('swapIn anchor count ' + n + ' :: ' + a.slice(0, 90));
+  return src.split(a).join(b);
+}
+function abMut(src, rows, pinOver, extra) {
+  var sp = {};
+  Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+  sp.movements = rows;
+  sp.factory_stock = AB_POOL_;
+  Object.keys(extra || {}).forEach(function (k) { sp[k] = extra[k]; });
+  var pin = abPin(S1World(sp), pinOver);
+  if (src) sp.s1 = src;
+  var w = S1World(sp);
+  var r = abProv(w, { expect: pin });
+  r.world = w;
+  return r;
+}
+
+mut('N93 the independence rule counts sources instead of INDEPENDENT sources', function () {
+  var m = swapS1(
+    '      if (x.independent && c.independent_supporting_sources.indexOf(x.source) === -1) {',
+    '      if (c.independent_supporting_sources.indexOf(x.source) === -1) {');
+  // A THREE-ROW CHAIN, AND THE MIDDLE ROW IS THE TARGET. The first version of this mutant used a two-row
+  // world and SURVIVED, for a reason worth keeping: with the target first in the chain, removing it breaks
+  // nothing, so INVALID_NON_LEDGER_ROW went uncontradicted and reached two sources under the mutation too -
+  // two qualifying candidates, and the census refused for the right reason by accident. Here removing the
+  // target breaks an overlap that currently holds, so that candidate is blocked and the mutation has exactly
+  // one way to express itself.
+  //
+  // No pool row either, so the only independent source is the chain. The row's OWN arithmetic must not be
+  // allowed to make up the second one: an interpretation supported only by the row it interprets has a
+  // sample size of one, and this file has already found one live case of a fingerprint compared with itself.
+  var rows = [abLive(),
+    abFull({ factory_stock_movement_id: 'FSMV-000000F6', created_at: '2026-06-01T00:00:00Z',
+      movement_date: '2026-06-01', before_current_stock: 800, after_current_stock: 1000, qty: 200 }),
+    abFull({ before_current_stock: 12000, after_current_stock: 12500, qty: 500 })];
+  var clean = abMut(null, rows, null, { factory_stock: [] });
+  var bad = abMut(m, rows, null, { factory_stock: [] });
+  return clean.verdict === 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED'
+    && clean.candidates[1].independent_supporting_sources.length === 1
+    && bad.verdict === 'READY_FOR_LEGACY_ROW_REPAIR_DECISION'
+    && bad.candidates[1].independent_supporting_sources.indexOf('ROW_SELF_ARITHMETIC') >= 0;
+});
+
+// The anchor is the whole if/else: replacing only the `if` leaves a dangling `else` and the probe throws
+// rather than measuring anything, which is a broken mutant and not a caught one.
+var L94a = ["      if (c.contradicting_sources.length === 0) o.qualifying.push(c.candidate);",
+  '      else o.blocked_by_contradiction.push({ candidate: c.candidate,',
+  '        contradicted_by: c.contradicting_sources.slice() });'].join(NL);
+var L94b = '      o.qualifying.push(c.candidate);';
+mut('N94 a candidate with two sources qualifies even when something authoritative contradicts it',
+  function () {
+    var m = swapS1(L94a, L94b);
+    var rows = [abLive(), abSibling({ sku: 'OTHER-SKU', qty: 5000, before_current_stock: 1000,
+      after_current_stock: 5000 }), abFull()];
+    var clean = abMut(null, rows), bad = abMut(m, rows);
+    // The sibling says the batch wrote BALANCES and the chain says the pair is right. Both readings have
+    // two independent sources and both are contradicted, so the honest answer is that nobody wins.
+    return clean.verdict === 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED'
+      && clean.verdict_detail.blocked_by_contradiction.length === 2
+      && clean.verdict_detail.qualifying.length === 0
+      && bad.verdict_detail.qualifying.length === 2
+      && bad.verdict === 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED'
+      // It still refuses - on ambiguity rather than on contradiction - and the DIFFERENCE is that the
+      // blocked list is empty, so an operator is told two readings are equally supported when in fact
+      // each one has authoritative evidence against it. Same verdict, opposite meaning.
+      && bad.verdict_detail.blocked_by_contradiction.length === 0;
+  });
+
+mut('N95 two qualifying candidates picks the first instead of refusing', function () {
+  var m = swapS1('  if (o.qualifying.length === 1) {', '  if (o.qualifying.length >= 1) {');
+  // before = 0 makes a SET and a delta the SAME row: qty === after - before AND qty === after are both
+  // true, and no evidence in the database can separate them. Ambiguity is not a choice.
+  var rows = [abLive({ before_current_stock: 0 }), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  return clean.verdict === 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED'
+    && clean.verdict_detail.qualifying.length === 2 && clean.selected_candidate === null
+    && bad.verdict === 'READY_FOR_LEGACY_ROW_REPAIR_DECISION'
+    && bad.selected_candidate !== null;
+});
+
+mut('N96 a drifted live state is reported and then reasoned past anyway', function () {
+  var m = swapS1("      if (!okv) stop('LIVE_STATE_DRIFTED:' + name);", '');
+  var rows = [abLive(), abFull()];
+  var over = { table_combined_fingerprint: 'DEADBEEF' };
+  var clean = abMut(null, rows, over), bad = abMut(m, rows, over);
+  // RE-AIMED BY THE MEASUREMENT. Both runs STOP, and that is right: every frozen fact is ALSO a ledger
+  // predicate, and `fin()` makes any failed predicate a STOP. Defence in depth working, and worth recording
+  // as such rather than asserting around.
+  //
+  // What the mutant destroys is the NAMED REASON. The operator gets STOP with an empty stop_reasons list
+  // and has to go and diff two fingerprints by eye to find out which of eleven frozen facts moved - which
+  // is the same defect R4D was called in to repair, one level up: a refusal that will not say what it saw.
+  return clean.verdict === 'STOP'
+    && clean.stop_reasons.indexOf('LIVE_STATE_DRIFTED:table_combined_fingerprint') >= 0
+    && bad.verdict === 'STOP' && bad.stop_reasons.length === 0
+    && bad.live_state_confirmed === false;
+});
+
+mut('N97 a STOP still hands over the operator questions it was refused the right to ask', function () {
+  // TWO STAGES, AND THE FIRST ONE IS WHAT MAKES THE LOCK OBSERVABLE. Measured: on a FROZEN-STATE drift the
+  // run returns before the questions are ever built, so removing the lock changes nothing and the mutant
+  // survives - exactly the shape of R4E's N91 finding. The lock earns its keep on the other path: a LEDGER
+  // PREDICATE that fails LATE, after the candidates and the questions have been assembled. There `fin()`
+  // turns the verdict to STOP with a decision framework already sitting in the output.
+  //
+  // So the mutant first breaks a late predicate - which the CLEAN source survives correctly, withholding the
+  // questions - and then removes the lock on top of that.
+  var LATE = ['      out.chronology.target_position !== null,'
+    + ' out.chronology.target_position !== null);'].join(NL);
+  var withLate = swapS1(LATE,
+    '      out.chronology.target_position !== null, false);');
+  var m = swapIn(withLate,
+    "    if (out.verdict === 'STOP') out.operator_questions = null;", '');
+  // AND THE WORLD HAS TO BE ONE THAT REFUSES ON THE EVIDENCE. Measured: with the pool row present this is
+  // the READY world, so `operator_questions` is never assigned and the lock is unobservable again - the
+  // same trap, one level in. No pool row means one independent source, which means
+  // OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED, which means the questions exist by the time `fin()` runs.
+  var rows = [abLive(), abFull()];
+  var noPool = { factory_stock: [] };
+  var clean = abMut(withLate, rows, null, noPool), bad = abMut(m, rows, null, noPool);
+  // A refused run that still publishes a decision framework is a decision framework about a table nobody
+  // confirmed. Same lock as LOCK FIVE one table over: the refusal owns what it withholds.
+  return clean.verdict === 'STOP' && clean.operator_questions === null
+    && clean.candidates.length === 4
+    && bad.verdict === 'STOP' && bad.operator_questions !== null
+    && bad.operator_questions.question_count === 3;
+});
+
+mut('N98 a blank cell is treated as matching a writer constant', function () {
+  var m = swapS1('      if (got !== sg.always_constant[c]) {',
+    "      if (got !== '' && got !== sg.always_constant[c]) {");
+  var rows = [abLive(), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  function why(r) { return r.writer_elimination.per_writer[0].because.join('|'); }
+  // A BLANK DIFFERS FROM EVERY CONSTANT. Reading it as a wildcard is how a row nothing wrote comes to look
+  // like a row this writer wrote, and the elimination stops eliminating.
+  return why(clean).indexOf('THIS_WRITER_ALWAYS_WRITES_movement_type=manual_adjustment') >= 0
+    && why(bad).indexOf('THIS_WRITER_ALWAYS_WRITES_movement_type') === -1;
+});
+
+mut('N99 a row with no usable time is placed at the head of the chronology', function () {
+  // RE-AIMED. My first attempt injected a now() fallback into S1_movTimeKey_ and SURVIVED, because the
+  // per-column loop returns on a blank cell before it ever reaches the parse - the guard the fallback was
+  // meant to defeat is upstream of it. The behaviour that actually matters is where the row is PUT: a
+  // timeless row sorting first becomes 'the earliest event in this pool', which is a confident and wrong
+  // statement about the one thing nobody recorded.
+  var m = swapS1(
+    ['    if (a.tk.ms === null) return 1;                       '
+      + '// unknown time goes last, never first',
+      '    if (b.tk.ms === null) return -1;'].join(NL),
+    ['    if (a.tk.ms === null) return -1;',
+      '    if (b.tk.ms === null) return 1;'].join(NL));
+  var rows = [abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000C3',
+    movement_date: '', created_at: '', before_current_stock: 12500, after_current_stock: 12600, qty: 100 })];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  function first(r) { return r.chronology.entries[0].one_based_sheet_row_number; }
+  function last(r) {
+    return r.chronology.entries[r.chronology.entries.length - 1].one_based_sheet_row_number;
+  }
+  return clean.chronology.rows_without_a_usable_time === 1 && last(clean) === 4 && first(clean) === 2
+    && bad.chronology.rows_without_a_usable_time === 1 && first(bad) === 4;
+});
+
+mut('N106 the ordering claims to be unambiguous with a row whose time nobody recorded', function () {
+  var m = swapS1(
+    '  o.ordering_is_unambiguous = o.tied_time_groups === 0 && o.rows_without_a_usable_time === 0;',
+    '  o.ordering_is_unambiguous = o.tied_time_groups === 0;');
+  var rows = [abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000C3',
+    movement_date: '', created_at: '', before_current_stock: 12500,
+    after_current_stock: 12600, qty: 100 })];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  // A chronology with a timeless row in it has an unknown ordering, and every reading built on that
+  // ordering - which next movement follows the target, which links overlap - inherits the uncertainty. The
+  // count is still reported either way; the mutant is that the ordering stops admitting what it costs.
+  return clean.chronology.rows_without_a_usable_time === 1
+    && clean.chronology.ordering_is_unambiguous === false
+    && bad.chronology.rows_without_a_usable_time === 1
+    && bad.chronology.ordering_is_unambiguous === true;
+});
+
+mut('N100 a chain link nobody recorded is counted as a link that agreed', function () {
+  var m = swapS1('        bucket.unevaluable++;', '        bucket.agree++;');
+  var rows = [abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000D4',
+    before_current_stock: 12500, after_current_stock: 12800, qty: 300,
+    created_at: '2026-06-25T00:00:00Z', movement_date: '2026-06-25' })];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  // The target's reserved pair is blank, so that link was never read. Counting it as an agreement reports a
+  // continuous reserved chain across a hole - and the reserved axis is exactly where the missing evidence is.
+  return clean.chain_continuity.reserved_axis.unevaluable === 1
+    && clean.chain_continuity.chain_is_continuous_on_the_reserved_axis === false
+    && bad.chain_continuity.reserved_axis.unevaluable === 0
+    && bad.chain_continuity.chain_is_continuous_on_the_reserved_axis === true;
+});
+
+mut('N101 the sibling testifies by its type NAME instead of by its own cells', function () {
+  var m = swapS1(
+    "        : (sb2 === 0 ? 'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO'",
+    "        : (false ? 'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO'");
+  var rows = [abLive(), abSibling({ sku: 'OTHER-SKU', qty: 5000, before_current_stock: 0,
+    after_current_stock: 5000 }), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  function conv(r) {
+    var d = r.siblings.per_column_diff_against_the_first_classified_sibling;
+    return d ? d.sibling_convention : null;
+  }
+  // When the sibling's own before is 0 a delta and a balance are the SAME number, so it cannot distinguish
+  // what the target row is being asked to distinguish. The mutant makes it testify anyway.
+  return conv(clean) === 'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO'
+    && clean.evidence.filter(function (e) {
+      return e.source === 'SIBLING_SHAPE_BATCH' && e.supports.length; }).length === 0
+    && conv(bad) !== 'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO'
+    && bad.evidence.filter(function (e) {
+      return e.source === 'SIBLING_SHAPE_BATCH' && e.supports.length; }).length === 1;
+});
+
+mut('N102 the batch sibling is looked for on the exact blank-shape, which can never match', function () {
+  var m = swapS1("    if (nearShape && mt !== '' && firstClassified === null) firstClassified = r;",
+    "    if (sameShape && mt !== '' && firstClassified === null) firstClassified = r;");
+  var rows = [abLive(), abSibling({ sku: 'OTHER-SKU' }), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  // The target's blank-shape INCLUDES movement_type, so a row matching it exactly is by definition also
+  // unclassified. An exact-shape template search can only ever return more of the same problem - it does
+  // not find fewer templates, it finds none, and the batch becomes invisible.
+  return clean.siblings.classified_sibling_available_as_a_template === true
+    && bad.siblings.classified_sibling_available_as_a_template === false
+    && bad.siblings.per_column_diff_against_the_first_classified_sibling === null;
+});
+
+mut('N103 the balance is used as evidence even when it is the target row echoing itself', function () {
+  var m = swapS1('  if (bal && bal.independent_of_the_target_row && bal.current_agrees === true) {',
+    '  if (bal && bal.current_agrees === true) {');
+  var rows = [abLive({ created_at: '2026-12-31' }), abFull()];
+  var extra = { factory_stock: [{ warehouse_id: WHF, sku: SKU,
+    fac_current_stock: 12000, fac_reserved_stock: 0 }] };
+  var clean = abMut(null, rows, null, extra), bad = abMut(m, rows, null, extra);
+  // R4B's defect, one table over. With the target last in the chain, "factory_stock agrees with the ledger's
+  // last after_current_stock" is after_current_stock agreeing with itself.
+  return clean.balance_reconcile.independent_of_the_target_row === false
+    && clean.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; }).length === 0
+    && bad.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; }).length === 1;
+});
+
+mut('N104 a provenance table that does not exist is reported as one that had nothing in it', function () {
+  var m = swapS1("    if (!t.present) { o.tables_absent.push(spec.table); o.per_table.push(e); return; }",
+    "    if (!t.present) { e.present = true; e.readable = true; e.row_count = 0;"
+    + ' o.per_table.push(e); return; }');
+  var rows = [abLive(), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  // "There is no import-audit table" and "the import-audit table has no matching row" are different answers
+  // to the provenance question, and only one of them is evidence.
+  return clean.cross_table.tables_absent.indexOf('purchase_orders') >= 0
+    && bad.cross_table.tables_absent.indexOf('purchase_orders') === -1
+    && bad.cross_table.per_table.filter(function (e) {
+      return e.table === 'purchase_orders'; })[0].row_count === 0;
+});
+
+mut('N105 a caller-supplied expectation is presented as the frozen authorization', function () {
+  var m = swapS1('  out.expectation_source = opts.expect', '  out.expectation_source = false');
+  var rows = [abLive(), abFull()];
+  var clean = abMut(null, rows), bad = abMut(m, rows);
+  // The pin is what the census holds the world to. A run pinned to something the caller handed it is not a
+  // measurement of the live sheet, and a reader who cannot tell the two apart cannot use either.
+  return String(clean.expectation_source).indexOf('CALLER_SUPPLIED') === 0
+    && bad.expectation_source === 'THE_FROZEN_S1_R4E_AUTHORIZATION';
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

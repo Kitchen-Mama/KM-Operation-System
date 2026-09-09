@@ -5957,6 +5957,1488 @@ function S1_movRollback_(sheet, fz, col, why) {
   return o;
 }
 
+// ================================================================================================================
+// S1-R4F — WHERE DID ROW 2 COME FROM? THE TABLE CANNOT SAY, SO EVERYTHING ELSE IS ASKED.
+//
+// R4D located the row. R4E proved it cannot be repaired by writing one cell, and named the reason: it is
+// missing TWO required fields and the second of them decides which ledger axis its qty moved. That refusal is
+// correct and it is also the end of what ONE TABLE can settle. `movement_type` is blank, so the row does not
+// say what it was; `related_entity_id` is blank, so it does not say what it came from; and no shipped writer
+// leaves either blank, so the row's own table holds no record of its own provenance.
+//
+// THIS CENSUS ASKS THE REST OF THE DATABASE. Five independent lines of evidence, each of which can answer
+// without the target row's cooperation:
+//
+//   §1 THE LEDGER'S OWN CONTINUITY. Every writer records before/after on BOTH axes, so the row after this one
+//      in the same pool carries an independent statement of what the balance was when it ran. If the next
+//      row's `before_current_stock` is 12000 then something other than row 2 says 12000 was the balance -
+//      and that is evidence about `after_current_stock` that did not come from `after_current_stock`.
+//
+//   §2 THE SHAPE OF ITS SIBLINGS. A row is not only its values; it is also WHICH CELLS ARE EMPTY. If other
+//      rows share the exact blank-shape and one of them is classified, the classified one is evidence about
+//      how this batch was produced. It is NEVER a source of values to copy: a sibling's movement_type is a
+//      fact about the sibling.
+//
+//   §3 THE OTHER TABLES. factory_stock holds the balance the ledger is supposed to add up to. The PO,
+//      shipment, plan and reservation tables hold the events a movement would have been written for. A
+//      2026-06-12 event for CO1100-R at this factory, found anywhere else, is provenance.
+//
+//   §4 THE WRITERS THEMSELVES, as a contract rather than as history. Each shipped writer populates certain
+//      columns unconditionally - a constant, an `||` default, or a computed number - and a row blank in any
+//      of those columns CANNOT have come from it. This eliminates rather than guesses, and it is the one
+//      line of evidence that needs no other table at all.
+//
+//   §5 THE ARITHMETIC OF EACH CANDIDATE, with its supporting AND contradicting evidence side by side.
+//
+// AND THE RULE THAT MAKES IT USABLE: two INDEPENDENT sources must point at the same candidate, and no
+// authoritative evidence may contradict it. One equality is a coincidence with a sample size of one. The
+// live row's `qty` equals its own `after_current_stock` exactly, which reads like a SET balance and is also
+// exactly what a mistyped delta looks like - so that single agreement is recorded as ONE source and is not
+// permitted to conclude anything on its own.
+//
+// NOTHING HERE REPAIRS ANYTHING. There is no execute path, no id is proposed, no cell is named for writing,
+// and a verdict of READY_FOR_LEGACY_ROW_REPAIR_DECISION means a PERSON can now decide - not that a tool may.
+// ================================================================================================================
+
+/**
+ * The live state R4E measured and the operator froze in the R4F authorization. Re-checked on every run,
+ * because provenance evidence gathered against a sheet that has since moved is evidence about a different
+ * sheet. A mismatch is a STOP: the old numbers are not re-used and no classification is published.
+ */
+var S1_MOV_LIVE_FROZEN_ = {
+  build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6',
+  header_fingerprint: 'FDC8D1DB',
+  table_combined_fingerprint: 'E3E783BF',
+  row_count: 96,
+  valid_id_count: 95,
+  blank_id_count: 1,
+  duplicate_id_count: 0,
+  wrong_type_id_count: 0,
+  outside_named_column_row_count: 0,
+  target_row_number: 2,
+  target_row_fingerprint: '2CA4D4BE',
+  target_movement_type_is_blank: true,
+  pool_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+  pool_sku: 'CO1100-R',
+  authority: 'S1-R4E measurement, frozen by the operator in the S1-R4F authorization'
+};
+
+/**
+ * WHAT EACH SHIPPED WRITER CANNOT LEAVE BLANK, AND WHAT IT ALWAYS WRITES THE SAME.
+ *
+ * This is a contract read off the source, not a history read off the data, and that is what makes it able to
+ * ELIMINATE. `never_blank` lists only columns that are structurally unblankable: a literal constant, a value
+ * behind an `||` default, a validated-required input, or a computed number (0 is a number and canonicalizes
+ * to N:0, so a zero is NOT a blank - a distinction that does real work here, because both reserved columns
+ * of the live row are blank rather than zero).
+ *
+ * `always_constant` is stronger still: a row whose value differs from the constant cannot be that writer's,
+ * and a BLANK differs from every constant.
+ */
+var S1_MOV_WRITER_SIGNATURES_ = [
+  { writer: '21_ handleAdjustFactoryInventory_',
+    source: '21_factory_inventory_handlers.gs, the movObj it appends',
+    always_constant: { movement_type: 'manual_adjustment', related_entity_type: 'inventory_adjustment' },
+    never_blank: ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id', 'movement_type',
+      'related_entity_type', 'before_current_stock', 'after_current_stock',
+      'before_reserved_stock', 'after_reserved_stock', 'note', 'created_by', 'created_at'],
+    never_blank_because: 'id is minted; movement_date and created_at are `now`; movement_type and'
+      + ' related_entity_type are literals; the four before/after cells are numbers; note is validated'
+      + ' ("Note is required"); created_by is String(body.created_by || \'operation-system\')',
+    invariant: 'qty === after_current_stock - before_current_stock' },
+  { writer: '21_ factoryStockApplyDeltaTx_ (the shared path 12_, 13_ and 22_ delegate to)',
+    source: '21_factory_inventory_handlers.gs, the fcWriteAppendByHeader_ call',
+    always_constant: {},
+    never_blank: ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id',
+      'before_current_stock', 'after_current_stock', 'before_reserved_stock', 'after_reserved_stock',
+      'created_by', 'created_at'],
+    never_blank_because: 'id is minted; movement_date is (p.movementDate || now); created_by is'
+      + ' (p.createdBy || \'operation-system\'); created_at is now; the four before/after cells are numbers.'
+      + ' movement_type is caller-supplied and note is (p.note || \'\'), so neither is claimed here.',
+    invariant: 'qty === the delta of the axis movement_type names' },
+  { writer: '21_ factoryImportMovObj_ (factoryInventory.import.commit)',
+    source: '21_factory_inventory_handlers.gs, factoryImportMovObj_',
+    always_constant: { movement_type: 'inventory_import',
+      related_entity_type: 'factory_inventory_import' },
+    never_blank: ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id', 'movement_type',
+      'related_entity_type', 'related_entity_id', 'before_current_stock', 'after_current_stock',
+      'before_reserved_stock', 'after_reserved_stock', 'created_by', 'created_at'],
+    never_blank_because: 'id is minted; movement_date is a ternary over effectiveDate/now;'
+      + ' movement_type and related_entity_type are literals; related_entity_id is the batch id;'
+      + ' before/after_reserved are both beforeReserved (a number); created_by is defaulted; created_at is now',
+    invariant: 'qty === after_current_stock - before_current_stock (written as exactly that expression)' }
+];
+
+/**
+ * COULD ANY SHIPPED WRITER HAVE PRODUCED THIS ROW?
+ *
+ * Per writer, every reason it could not, named. A row that no writer could have produced was written before
+ * the writers existed or written by hand - and either way its intent is not recoverable from this table,
+ * which is a finding rather than a gap.
+ */
+function S1_movWriterElimination_(rec, liveColumns) {
+  var o = { writers_examined: S1_MOV_WRITER_SIGNATURES_.length, per_writer: [],
+    writers_that_could_have_written_this_row: [], eliminated_count: 0,
+    authority: 'the shipped writers themselves - a contract off the source, not a pattern off the data' };
+  if (!rec) { o.per_writer = []; return o; }
+  var ax = S1_movAxisAudit_(rec);
+  S1_MOV_WRITER_SIGNATURES_.forEach(function (sg) {
+    var e = { writer: sg.writer, source: sg.source, could_have_written: true, because: [],
+      never_blank_because: sg.never_blank_because, invariant: sg.invariant };
+    sg.never_blank.forEach(function (c) {
+      if ((liveColumns || []).indexOf(c) === -1) return;      // a column the sheet lacks is a schema question
+      if (S1_canonCell_(S1_cellOf_(rec, c)) === '~') {
+        e.could_have_written = false;
+        e.because.push('THIS_WRITER_NEVER_LEAVES_IT_BLANK:' + c);
+      }
+    });
+    Object.keys(sg.always_constant).forEach(function (c) {
+      if ((liveColumns || []).indexOf(c) === -1) return;
+      var got = S1_str_(S1_cellOf_(rec, c));
+      if (got !== sg.always_constant[c]) {
+        e.could_have_written = false;
+        e.because.push('THIS_WRITER_ALWAYS_WRITES_' + c + '=' + sg.always_constant[c]
+          + '_BUT_THE_ROW_HAS:' + (got === '' ? '<blank>' : got));
+      }
+    });
+    // The invariant is only checkable on the current axis, and only when both cells are numbers. Where it
+    // is checkable and fails, it is a further independent reason - where it is not, nothing is claimed.
+    if (ax.readings.if_current_axis && ax.readings.if_current_axis.agrees === false
+        && sg.invariant.indexOf('after_current_stock - before_current_stock') >= 0) {
+      e.could_have_written = false;
+      e.because.push('THIS_WRITER_WRITES_QTY_AS_AFTER_MINUS_BEFORE_WHICH_WOULD_BE:'
+        + ax.readings.if_current_axis.expected_qty + '_BUT_THE_ROW_CARRIES:'
+        + ax.readings.if_current_axis.observed_qty);
+    }
+    if (e.could_have_written) o.writers_that_could_have_written_this_row.push(sg.writer);
+    else o.eliminated_count++;
+    o.per_writer.push(e);
+  });
+  o.no_shipped_writer_could_have_produced_this_row =
+    o.writers_that_could_have_written_this_row.length === 0;
+  return o;
+}
+
+/**
+ * WAS THIS ROW LEFT BEHIND BY A SCHEMA WIDENING?
+ *
+ * The cheapest innocent explanation for a row full of blanks is that the table used to be narrower and the
+ * columns were appended later - `fcWriteEnsureColumns_` does exactly that, additively. But a widening can
+ * only ever leave a CONTIGUOUS TAIL of blanks, because the appended columns are at the end. So the question
+ * is decidable from the blank POSITIONS alone, and it is worth deciding: if the answer were yes, the row
+ * would be a normal old record and the missing cells would be missing for a known and harmless reason.
+ */
+function S1_movColumnAppendHypothesis_(rec, liveColumns) {
+  var cols = liveColumns || [];
+  var o = { hypothesis: 'the blank cells are appended columns this row predates',
+    mechanism: '21_/12_ fcWriteEnsureColumns_ appends missing canonical columns to the right',
+    blank_positions_1based: [], filled_positions_1based: [],
+    blanks_form_a_contiguous_trailing_block: null, first_blank_position: null,
+    last_filled_position: null, supported: null, why: null };
+  if (!rec) return o;
+  cols.forEach(function (c, i) {
+    if (c === '') return;
+    (S1_canonCell_(rec.__values[i]) === '~' ? o.blank_positions_1based : o.filled_positions_1based)
+      .push(i + 1);
+  });
+  if (!o.blank_positions_1based.length) {
+    o.blanks_form_a_contiguous_trailing_block = false;
+    o.supported = false;
+    o.why = 'THE_ROW_HAS_NO_BLANK_NAMED_CELLS';
+    return o;
+  }
+  o.first_blank_position = o.blank_positions_1based[0];
+  o.last_filled_position = o.filled_positions_1based.length
+    ? o.filled_positions_1based[o.filled_positions_1based.length - 1] : null;
+  // A trailing block: every blank is to the right of every filled cell.
+  o.blanks_form_a_contiguous_trailing_block =
+    o.last_filled_position === null || o.first_blank_position > o.last_filled_position;
+  o.supported = o.blanks_form_a_contiguous_trailing_block === true;
+  o.why = o.supported
+    ? 'THE_BLANKS_ARE_A_TRAILING_BLOCK_SO_A_SCHEMA_WIDENING_COULD_EXPLAIN_THEM'
+    : 'THE_BLANKS_ARE_INTERLEAVED_WITH_FILLED_CELLS_AT_POSITIONS_'
+      + o.blank_positions_1based.join(',') + '_SO_NO_COLUMN_APPEND_CAN_EXPLAIN_THEM';
+  return o;
+}
+
+/**
+ * THE TIME A ROW HAPPENED, AND WHICH COLUMN SAID SO.
+ *
+ * Two columns carry a time and they are not interchangeable: `created_at` is Required by the schema doc and
+ * is when the ROW was written; `movement_date` is a 21_-era column and is when the MOVE is dated. A
+ * chronology built by silently preferring one would be a chronology whose ordering authority is invisible,
+ * so the column used is returned alongside the value and reported per row.
+ *
+ * A row with no parseable time gets `ms: null`. It is NOT given today's date, NOT given position zero, and
+ * NOT dropped: it sorts last, keeps its sheet order among its equals, and is counted and reported - because
+ * "I do not know when this happened" is the single most important thing to say about a legacy row.
+ */
+function S1_movTimeKey_(rec) {
+  var o = { source: 'NONE', raw: null, ms: null, iso: null,
+    authority: 'created_at (Required by SHIPMENT_DATABASE_SCHEMA.md) preferred over movement_date'
+      + ' (a 21_-era column); neither is invented when both are blank' };
+  ['created_at', 'movement_date'].forEach(function (c) {
+    if (o.ms !== null) return;
+    var v = S1_cellOf_(rec, c);
+    if (S1_canonCell_(v) === '~') return;
+    var ms = null;
+    if (Object.prototype.toString.call(v) === '[object Date]') {
+      var t = v.getTime();
+      if (!isNaN(t)) ms = t;
+    } else {
+      var s = S1_str_(v);
+      // Only ISO-ish shapes are accepted. A locale string parsed by Date() is a guess about the calendar.
+      if (/^\d{4}-\d{2}-\d{2}([T ]|$)/.test(s)) {
+        var p = Date.parse(s.length === 10 ? (s + 'T00:00:00Z') : s.replace(' ', 'T'));
+        if (!isNaN(p)) ms = p;
+      }
+    }
+    if (ms !== null) {
+      o.source = c; o.raw = S1_canonCell_(v); o.ms = ms;
+      try { o.iso = new Date(ms).toISOString(); } catch (e) { o.iso = null; }
+    }
+  });
+  return o;
+}
+
+/**
+ * The BLANK-SHAPE of a row: which named columns are empty, as a stable ordered list plus a fingerprint.
+ * Two rows produced by the same process have the same shape even when every value differs, which is what
+ * makes this able to find a batch.
+ *
+ * AND A SECOND FINGERPRINT THAT IGNORES THE KEY AND THE TYPE, because the first one alone could never find
+ * what it is looking for. The target row's blank-shape INCLUDES movement_type, so a row matching it exactly
+ * is by definition also unclassified - the exact-shape search can only ever return more of the same problem.
+ * The interesting sibling is the row produced by the same process that someone LATER keyed and typed: same
+ * blanks everywhere else, those two cells filled. Ignoring exactly those two columns is what makes that row
+ * findable, and it is the only relaxation - every other blank still has to match.
+ */
+var S1_MOV_SHAPE_IGNORED_ = ['factory_stock_movement_id', 'movement_type'];
+function S1_movShape_(rec, liveColumns) {
+  var blanks = [], filled = [], near = [];
+  (liveColumns || []).forEach(function (c, i) {
+    if (c === '') return;
+    var isBlank = S1_canonCell_(rec.__values[i]) === '~';
+    (isBlank ? blanks : filled).push(c);
+    if (S1_MOV_SHAPE_IGNORED_.indexOf(c) === -1 && isBlank) near.push(c);
+  });
+  return { blank_columns: blanks, filled_columns: filled,
+    blank_count: blanks.length, filled_count: filled.length,
+    ignored_in_the_near_shape: S1_MOV_SHAPE_IGNORED_.slice(),
+    shape_fingerprint: S1_fingerprint_(blanks.map(function (c) { return 'BLANK:' + c; })),
+    near_shape_fingerprint: S1_fingerprint_(near.map(function (c) { return 'BLANK:' + c; })) };
+}
+
+/** The date part of a row's time, for same-day sibling matching. Null when the row has no usable time. */
+function S1_movDayOf_(tk) {
+  return (tk && tk.iso) ? String(tk.iso).slice(0, 10) : null;
+}
+
+/**
+ * §1 — THE SAME-POOL CHRONOLOGY, WITH THE SHEET ROW KEPT.
+ *
+ * Sorted by time, but the original sheet row travels with every entry, because the sheet row is what an
+ * operator opens and a position in a sorted list is not a fact about the data - R4C's finding, and the
+ * reason `ids[0] = ""` was uninterpretable.
+ *
+ * Ties and unknowns are handled explicitly rather than left to the engine: entries are decorated with their
+ * sheet order and the comparator falls back to it, so the ordering is deterministic without depending on
+ * whether this runtime's sort is stable. Rows with no usable time sort LAST and are counted.
+ */
+function S1_movPoolChronology_(t, warehouseId, sku) {
+  var o = { pool_key: S1_poolKey_(warehouseId, sku), warehouse_id: S1_str_(warehouseId),
+    sku: S1_str_(sku), entries: [], entry_count: 0,
+    rows_without_a_usable_time: 0, time_sources_used: {},
+    ordering_authority: 'time ascending, ties and unknowns broken by 1-based sheet row',
+    ordering_is_unambiguous: null, tied_time_groups: 0 };
+  var dec = [];
+  (t.rows || []).forEach(function (r, i) {
+    if (S1_poolKey_(S1_cellOf_(r, 'warehouse_id'), S1_cellOf_(r, 'sku'))
+        !== S1_poolKey_(warehouseId, sku)) return;
+    var tk = S1_movTimeKey_(r);
+    if (tk.ms === null) o.rows_without_a_usable_time++;
+    o.time_sources_used[tk.source] = (o.time_sources_used[tk.source] || 0) + 1;
+    dec.push({ rec: r, tk: tk, sheet_order: i });
+  });
+  dec.sort(function (a, b) {
+    if (a.tk.ms === null && b.tk.ms === null) return a.sheet_order - b.sheet_order;
+    if (a.tk.ms === null) return 1;                       // unknown time goes last, never first
+    if (b.tk.ms === null) return -1;
+    if (a.tk.ms !== b.tk.ms) return a.tk.ms - b.tk.ms;
+    return a.sheet_order - b.sheet_order;
+  });
+  var byMs = {};
+  dec.forEach(function (d, pos) {
+    var rec = d.rec;
+    if (d.tk.ms !== null) byMs[d.tk.ms] = (byMs[d.tk.ms] || 0) + 1;
+    o.entries.push({
+      position_in_chronology_1based: pos + 1,
+      one_based_sheet_row_number: rec.row_number,
+      movement_id: S1_str_(S1_cellOf_(rec, 'factory_stock_movement_id')) || null,
+      movement_type: S1_str_(S1_cellOf_(rec, 'movement_type')) || null,
+      created_at: S1_canonCell_(S1_cellOf_(rec, 'created_at')),
+      movement_date: S1_canonCell_(S1_cellOf_(rec, 'movement_date')),
+      time_source: d.tk.source, time_iso: d.tk.iso,
+      qty: S1_qty_(S1_cellOf_(rec, 'qty')),
+      before_current_stock: S1_qty_(S1_cellOf_(rec, 'before_current_stock')),
+      after_current_stock: S1_qty_(S1_cellOf_(rec, 'after_current_stock')),
+      before_reserved_stock: S1_qty_(S1_cellOf_(rec, 'before_reserved_stock')),
+      after_reserved_stock: S1_qty_(S1_cellOf_(rec, 'after_reserved_stock')),
+      related_entity_type: S1_str_(S1_cellOf_(rec, 'related_entity_type')) || null,
+      related_entity_id: S1_str_(S1_cellOf_(rec, 'related_entity_id')) || null,
+      note: S1_cap_(S1_cellOf_(rec, 'note'), 60) || null,
+      created_by: S1_str_(S1_cellOf_(rec, 'created_by')) || null,
+      full_named_row_fingerprint: rec.fingerprint,
+      classifiable: S1_str_(S1_cellOf_(rec, 'movement_type')) !== ''
+    });
+  });
+  o.entry_count = o.entries.length;
+  Object.keys(byMs).forEach(function (k) { if (byMs[k] > 1) o.tied_time_groups++; });
+  o.ordering_is_unambiguous = o.tied_time_groups === 0 && o.rows_without_a_usable_time === 0;
+  return o;
+}
+
+/**
+ * §1.4/§1.5 — DOES THE CHAIN JOIN UP?
+ *
+ * Every writer records the before/after of BOTH axes on every row, so consecutive rows in one pool overlap:
+ * the later row's `before` is an independent statement of the earlier row's `after`. Each link is checked on
+ * both axes and reported separately, and a link where either side is blank is UNEVALUABLE rather than broken -
+ * a distinction that matters here, because the target row's reserved pair is blank and calling that a broken
+ * chain would blame the row for a fact nobody recorded.
+ */
+function S1_movChainContinuity_(chron) {
+  var o = { links_examined: 0, links: [], current_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0 },
+    reserved_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0 },
+    first_break_at_position: null, chain_is_continuous_on_the_current_axis: null,
+    chain_is_continuous_on_the_reserved_axis: null,
+    every_readable_link_agrees_on_the_current_axis: null,
+    every_readable_link_agrees_on_the_reserved_axis: null,
+    rule: 'the later row\'s before_* is an independent statement of the earlier row\'s after_*;'
+      + ' a link with a blank on either side is UNEVALUABLE, never broken' };
+  var e = chron.entries || [];
+  for (var i = 0; i + 1 < e.length; i++) {
+    var a = e[i], b = e[i + 1];
+    var link = { from_position: a.position_in_chronology_1based, to_position: b.position_in_chronology_1based,
+      from_sheet_row: a.one_based_sheet_row_number, to_sheet_row: b.one_based_sheet_row_number,
+      current: null, reserved: null };
+    [['current', 'after_current_stock', 'before_current_stock'],
+      ['reserved', 'after_reserved_stock', 'before_reserved_stock']].forEach(function (ax) {
+      var prev = a[ax[1]], next = b[ax[2]];
+      var bucket = ax[0] === 'current' ? o.current_axis : o.reserved_axis;
+      bucket.checked++;
+      if (prev === null || next === null) {
+        link[ax[0]] = { earlier_after: prev, later_before: next, state: 'UNEVALUABLE',
+          why: 'one side of the overlap is blank, and a blank is not a quantity' };
+        bucket.unevaluable++;
+        return;
+      }
+      var agrees = prev === next;
+      link[ax[0]] = { earlier_after: prev, later_before: next,
+        state: agrees ? 'AGREES' : 'DISAGREES', gap: agrees ? 0 : (next - prev) };
+      if (agrees) bucket.agree++; else {
+        bucket.disagree++;
+        if (o.first_break_at_position === null) o.first_break_at_position = b.position_in_chronology_1based;
+      }
+    });
+    o.links.push(link);
+    o.links_examined++;
+  }
+  // MEASURED, AND IT CORRECTED THE FIRST DEFINITION. This began as 'every EVALUABLE link agreed and at
+  // least one was evaluable', which reported the live-shaped chain as CONTINUOUS on the reserved axis while
+  // the link touching the target row's blank reserved pair had not been read at all. That is precisely the
+  // mistake this file keeps finding: a name answering a narrower question than it asks. A chain with a hole
+  // in it is not continuous, however well the readable parts join up.
+  //
+  // So both facts are published and neither borrows the other's name. CONTINUOUS requires every link to
+  // have been read AND to have agreed; the weaker reading keeps its own longer name, which is what a person
+  // needs when the only thing wrong with a link is that nobody recorded one side of it.
+  o.chain_is_continuous_on_the_current_axis =
+    o.current_axis.checked > 0 && o.current_axis.agree === o.current_axis.checked;
+  o.chain_is_continuous_on_the_reserved_axis =
+    o.reserved_axis.checked > 0 && o.reserved_axis.agree === o.reserved_axis.checked;
+  o.every_readable_link_agrees_on_the_current_axis =
+    o.current_axis.agree > 0 && o.current_axis.disagree === 0;
+  o.every_readable_link_agrees_on_the_reserved_axis =
+    o.reserved_axis.agree > 0 && o.reserved_axis.disagree === 0;
+  return o;
+}
+
+/**
+ * §1.6 — WHAT THE LEDGER'S LAST WORD IS, AND WHAT factory_stock ACTUALLY HOLDS.
+ *
+ * The two are supposed to be equal. An agreement here is INDEPENDENT of the target row only when the target
+ * is not the last row in the chain - if it were, the balance would be echoing the very cell under question,
+ * which is the self-comparison this whole family of diagnostics exists to refuse. So independence is
+ * computed and reported, not assumed.
+ */
+function S1_movBalanceReconcile_(chron, pool, targetRowNumber) {
+  var e = chron.entries || [];
+  var last = e.length ? e[e.length - 1] : null;
+  var o = { ledger_last_position: last ? last.position_in_chronology_1based : null,
+    ledger_last_sheet_row: last ? last.one_based_sheet_row_number : null,
+    ledger_last_after_current: last ? last.after_current_stock : null,
+    ledger_last_after_reserved: last ? last.after_reserved_stock : null,
+    factory_stock_present: pool ? pool.pool_row_found === true : false,
+    factory_stock_current: pool ? pool.fac_current_stock : null,
+    factory_stock_reserved: pool ? pool.fac_reserved_stock : null,
+    current_agrees: null, reserved_agrees: null,
+    independent_of_the_target_row: null, why_not_independent: null };
+  o.independent_of_the_target_row = !!(last && last.one_based_sheet_row_number !== targetRowNumber);
+  if (!o.independent_of_the_target_row) {
+    o.why_not_independent = 'THE_TARGET_ROW_IS_THE_LAST_IN_THE_CHAIN_SO_THE_BALANCE_WOULD_BE_COMPARED'
+      + '_AGAINST_THE_CELL_UNDER_QUESTION';
+  }
+  if (o.factory_stock_current !== null && o.ledger_last_after_current !== null) {
+    o.current_agrees = o.factory_stock_current === o.ledger_last_after_current;
+  }
+  if (o.factory_stock_reserved !== null && o.ledger_last_after_reserved !== null) {
+    o.reserved_agrees = o.factory_stock_reserved === o.ledger_last_after_reserved;
+  }
+  return o;
+}
+
+/**
+ * §2 — THE SIBLINGS. Rows produced by whatever produced the target row.
+ *
+ * Matched on the BLANK-SHAPE first, because the shape is what a producing process leaves behind and the
+ * values are what the business put in. Same-day and same-warehouse are reported alongside as separate,
+ * weaker signals rather than folded into one score.
+ *
+ * A sibling that IS classified is the interesting case, and it is interesting as EVIDENCE ABOUT THE BATCH -
+ * never as a source of values. Copying a sibling's movement_type into the target would be inventing the one
+ * fact this whole census exists because nobody recorded.
+ */
+function S1_movSiblings_(t, targetRec, liveColumns) {
+  var tShape = S1_movShape_(targetRec, liveColumns);
+  var tTk = S1_movTimeKey_(targetRec);
+  var tDay = S1_movDayOf_(tTk);
+  var tWh = S1_str_(S1_cellOf_(targetRec, 'warehouse_id'));
+  var o = { target_shape_fingerprint: tShape.shape_fingerprint,
+    target_near_shape_fingerprint: tShape.near_shape_fingerprint,
+    target_blank_columns: tShape.blank_columns,
+    ignored_in_the_near_shape: tShape.ignored_in_the_near_shape, target_day: tDay,
+    exact_shape_match_count: 0, near_shape_match_count: 0,
+    same_day_count: 0, same_warehouse_count: 0,
+    same_qty_pattern_count: 0, candidates: [], candidate_count: 0,
+    movement_type_distribution: {}, with_an_id: 0, without_an_id: 0,
+    classified_sibling_available_as_a_template: false,
+    template_use: 'PROVENANCE_EVIDENCE_ONLY - a sibling\'s values are facts about the sibling and are'
+      + ' never copied into the target row',
+    per_column_diff_against_the_first_classified_sibling: null,
+    match_rule: 'blank-shape match, exact or ignoring only the primary key and movement_type; same-day,'
+      + ' same-warehouse and same qty/before/after pattern are reported separately as weaker signals' };
+  var tQty = S1_qty_(S1_cellOf_(targetRec, 'qty'));
+  var tBef = S1_qty_(S1_cellOf_(targetRec, 'before_current_stock'));
+  var tAft = S1_qty_(S1_cellOf_(targetRec, 'after_current_stock'));
+  var firstClassified = null;
+  (t.rows || []).forEach(function (r) {
+    if (r.row_number === targetRec.row_number) return;
+    var sh = S1_movShape_(r, liveColumns);
+    var tk = S1_movTimeKey_(r);
+    var day = S1_movDayOf_(tk);
+    var sameShape = sh.shape_fingerprint !== null
+      && sh.shape_fingerprint === tShape.shape_fingerprint;
+    var nearShape = sh.near_shape_fingerprint !== null
+      && sh.near_shape_fingerprint === tShape.near_shape_fingerprint;
+    var sameDay = tDay !== null && day === tDay;
+    var sameWh = tWh !== '' && S1_str_(S1_cellOf_(r, 'warehouse_id')) === tWh;
+    var sameQtyPattern = tQty !== null
+      && S1_qty_(S1_cellOf_(r, 'qty')) === tQty
+      && S1_qty_(S1_cellOf_(r, 'before_current_stock')) === tBef
+      && S1_qty_(S1_cellOf_(r, 'after_current_stock')) === tAft;
+    if (sameShape) o.exact_shape_match_count++;
+    if (nearShape) o.near_shape_match_count++;
+    if (sameDay) o.same_day_count++;
+    if (sameWh) o.same_warehouse_count++;
+    if (sameQtyPattern) o.same_qty_pattern_count++;
+    if (!nearShape && !sameDay && !sameQtyPattern) return;   // same warehouse alone is 95 rows, not a batch
+    var mt = S1_str_(S1_cellOf_(r, 'movement_type'));
+    var id = S1_str_(S1_cellOf_(r, 'factory_stock_movement_id'));
+    if (id === '') o.without_an_id++; else o.with_an_id++;
+    o.movement_type_distribution[mt === '' ? '<blank>' : mt] =
+      (o.movement_type_distribution[mt === '' ? '<blank>' : mt] || 0) + 1;
+    var c = { one_based_sheet_row_number: r.row_number,
+      matched_on: [].concat(sameShape ? ['EXACT_BLANK_SHAPE'] : [],
+        (nearShape && !sameShape) ? ['BLANK_SHAPE_IGNORING_THE_KEY_AND_THE_TYPE'] : [],
+        sameDay ? ['SAME_DAY'] : [],
+        sameWh ? ['SAME_WAREHOUSE'] : [], sameQtyPattern ? ['SAME_QTY_BEFORE_AFTER_PATTERN'] : []),
+      movement_id: id || null, movement_type: mt || null,
+      shape_fingerprint: sh.shape_fingerprint,
+      near_shape_fingerprint: sh.near_shape_fingerprint, blank_count: sh.blank_count,
+      time_iso: tk.iso, time_source: tk.source,
+      qty: S1_qty_(S1_cellOf_(r, 'qty')),
+      before_current_stock: S1_qty_(S1_cellOf_(r, 'before_current_stock')),
+      after_current_stock: S1_qty_(S1_cellOf_(r, 'after_current_stock')),
+      related_entity_type: S1_str_(S1_cellOf_(r, 'related_entity_type')) || null,
+      created_by: S1_str_(S1_cellOf_(r, 'created_by')) || null,
+      full_named_row_fingerprint: r.fingerprint };
+    if (nearShape && mt !== '' && firstClassified === null) firstClassified = r;
+    o.candidates.push(c);
+  });
+  o.candidate_count = o.candidates.length;
+  o.classified_sibling_available_as_a_template = firstClassified !== null;
+  if (firstClassified) {
+    var sq = S1_qty_(S1_cellOf_(firstClassified, 'qty'));
+    var sb2 = S1_qty_(S1_cellOf_(firstClassified, 'before_current_stock'));
+    var sa = S1_qty_(S1_cellOf_(firstClassified, 'after_current_stock'));
+    o.per_column_diff_against_the_first_classified_sibling = {
+      sibling_sheet_row: firstClassified.row_number,
+      sibling_movement_id: S1_str_(S1_cellOf_(firstClassified, 'factory_stock_movement_id')) || null,
+      sibling_movement_type: S1_str_(S1_cellOf_(firstClassified, 'movement_type')) || null,
+      sibling_qty: sq, sibling_before_current_stock: sb2, sibling_after_current_stock: sa,
+      // Measured on the sibling's own three cells. UNREADABLE when a cell is blank and AMBIGUOUS when
+      // before is 0, because then a delta and a balance are the same number and the sibling cannot
+      // distinguish what the target row is being asked to distinguish.
+      sibling_convention: (sq === null || sb2 === null || sa === null) ? 'UNREADABLE'
+        : (sb2 === 0 ? 'AMBIGUOUS_BECAUSE_ITS_OWN_BEFORE_IS_ZERO'
+          : (sq === sa - sb2 ? 'QTY_IS_A_DELTA' : (sq === sa ? 'QTY_IS_A_BALANCE' : 'NEITHER'))),
+      columns: (liveColumns || []).filter(function (c) { return c !== ''; }).map(function (c) {
+        var mine = S1_canonCell_(S1_cellOf_(targetRec, c));
+        var theirs = S1_canonCell_(S1_cellOf_(firstClassified, c));
+        return { column: c, target: mine, sibling: theirs, same: mine === theirs };
+      }) };
+  }
+  return o;
+}
+
+/**
+ * §3 — THE OTHER TABLES, READ ONLY, AND ONLY THE ONES THAT ARE ALREADY THERE.
+ *
+ * An absent table is reported ABSENT. It is not created, it is not treated as empty, and no job is triggered
+ * to fill it: "there is no import-audit table" and "the import-audit table has no matching row" are
+ * different answers to the provenance question and only one of them is evidence.
+ *
+ * Matching is by marker rather than by schema, because these tables do not share a key with a movement row -
+ * that is the whole problem. A hit is a cell whose value equals one of the markers, reported with its table,
+ * row and column so a person can go and read it.
+ */
+var S1_MOV_PROVENANCE_TABLES_ = [
+  { table: 'factory_stock', why: 'the balance the ledger is supposed to add up to' },
+  { table: 'factory_stock_override_audit', why: 'the override/guard audit trail for this factory' },
+  { table: 'overseas_inventory_movements', why: 'where a shipment_receipt lands instead of factory stock' },
+  { table: 'overseas_inventory_snapshot', why: 'a same-day overseas snapshot for this sku' },
+  { table: 'purchase_orders', why: 'a po_receipt movement would name one of these' },
+  { table: 'purchase_order_lines', why: 'the received quantity a po_receipt would carry' },
+  { table: 'shipments', why: 'a shipment_out movement would name one of these' },
+  { table: 'shipment_lines', why: 'the shipped quantity a shipment_out would carry' },
+  { table: 'shipping_plans', why: 'a reservation_acquire is written against a plan' },
+  { table: 'shipping_plan_lines', why: 'the reserved quantity a plan line would carry' },
+  { table: 'reservations', why: 'the reserved-axis owner ledger' },
+  { table: 'request_orders', why: 'an upstream request that could have caused an initialization' },
+  { table: 'request_order_lines', why: 'the requested quantity of that request' }
+];
+
+function S1_movCrossTableScan_(ss, markers, maxHitsPerTable) {
+  var cap = maxHitsPerTable === undefined ? 6 : maxHitsPerTable;
+  var o = { markers: markers.slice(), tables_examined: 0, tables_present: 0, tables_absent: [],
+    tables_unreadable: [], per_table: [], total_hits: 0, tables_with_a_hit: [],
+    read_rule: 'only tables that already exist are read; an absent table is reported absent and is never'
+      + ' created, filled or inferred to be empty. No job is triggered.' };
+  var mset = {};
+  markers.forEach(function (m) { mset[S1_str_(m).toLowerCase()] = true; });
+  S1_MOV_PROVENANCE_TABLES_.forEach(function (spec) {
+    o.tables_examined++;
+    var e = { table: spec.table, why_it_could_carry_provenance: spec.why,
+      present: false, readable: false, row_count: null, hits_total: 0, hits_shown: 0, hits: [],
+      columns_that_matched: [] };
+    var t = S1_fullRowTable_(ss, spec.table, null, []);
+    e.present = t.present;
+    if (!t.present) { o.tables_absent.push(spec.table); o.per_table.push(e); return; }
+    o.tables_present++;
+    e.readable = t.readable;
+    if (!t.readable) { o.tables_unreadable.push(spec.table); o.per_table.push(e); return; }
+    e.row_count = t.row_count;
+    var cols = t.live_columns || [];
+    (t.rows || []).forEach(function (r) {
+      var matched = [];
+      cols.forEach(function (c, i) {
+        if (c === '') return;
+        var raw = r.__values[i];
+        var s = S1_canonCell_(raw);
+        if (s === '~') return;
+        // A date cell matches on its date part; every other cell on its trimmed text. Both are compared
+        // case-insensitively, because a sku typed by hand is not reliably the same case as an imported one.
+        var probe = s.indexOf('D:') === 0 ? S1_str_(s).slice(2, 12) : S1_str_(raw).toLowerCase();
+        if (mset[probe] === true) matched.push({ column: c, value: S1_cap_(probe, 40) });
+      });
+      if (!matched.length) return;
+      e.hits_total++;
+      matched.forEach(function (m) {
+        if (e.columns_that_matched.indexOf(m.column) === -1) e.columns_that_matched.push(m.column);
+      });
+      if (e.hits.length < cap) {
+        e.hits.push({ one_based_sheet_row_number: r.row_number, matched: matched,
+          full_row_fingerprint: r.fingerprint,
+          note: S1_cap_(S1_cellOf_(r, 'note'), 60) || null,
+          created_by: S1_str_(S1_cellOf_(r, 'created_by')) || null,
+          created_at: S1_canonCell_(S1_cellOf_(r, 'created_at')) });
+      }
+    });
+    e.hits_shown = e.hits.length;
+    e.hits_withheld = Math.max(0, e.hits_total - e.hits_shown);
+    o.total_hits += e.hits_total;
+    if (e.hits_total > 0) o.tables_with_a_hit.push(spec.table);
+    o.per_table.push(e);
+  });
+  return o;
+}
+
+/**
+ * §4 CANDIDATE 4's OWN MEASUREMENT — DOES THE LEDGER STAND UP WITHOUT THIS ROW?
+ *
+ * If the rows either side of the target overlap each other directly, the target is not carrying any part of
+ * the balance and removing it costs the chain nothing. That is real support for "this is not a ledger row".
+ * If removing it BREAKS an overlap that currently holds, the opposite: the row is load-bearing.
+ */
+function S1_movChainWithoutTarget_(chron, targetRowNumber) {
+  var kept = { entries: (chron.entries || []).filter(function (e) {
+    return e.one_based_sheet_row_number !== targetRowNumber; }) };
+  var without = S1_movChainContinuity_(kept);
+  var withAll = S1_movChainContinuity_(chron);
+  return { with_the_target_row: { current_agree: withAll.current_axis.agree,
+      current_disagree: withAll.current_axis.disagree,
+      current_unevaluable: withAll.current_axis.unevaluable,
+      reserved_unevaluable: withAll.reserved_axis.unevaluable },
+    without_the_target_row: { current_agree: without.current_axis.agree,
+      current_disagree: without.current_axis.disagree,
+      current_unevaluable: without.current_axis.unevaluable,
+      reserved_unevaluable: without.reserved_axis.unevaluable },
+    removing_it_repairs_a_break: withAll.current_axis.disagree > 0
+      && without.current_axis.disagree < withAll.current_axis.disagree,
+    removing_it_breaks_a_link: without.current_axis.disagree > withAll.current_axis.disagree,
+    neighbours_overlap_each_other_directly: (function () {
+      var e = chron.entries || [];
+      for (var i = 0; i + 2 < e.length; i++) {
+        if (e[i + 1].one_based_sheet_row_number !== targetRowNumber) continue;
+        if (e[i].after_current_stock === null || e[i + 2].before_current_stock === null) return null;
+        return e[i].after_current_stock === e[i + 2].before_current_stock;
+      }
+      return null;                                   // the target is first or last: nothing to bridge
+    })(),
+    rule: 'a row the chain does not need is a candidate for not being a ledger row; a row whose removal'
+      + ' breaks an overlap is load-bearing and cannot be dismissed' };
+}
+
+/**
+ * §4 — THE FOUR CANDIDATES, EACH WITH WHAT SUPPORTS IT AND WHAT CONTRADICTS IT.
+ *
+ * No number is corrected anywhere in here. Each candidate is an interpretation of the cells as they stand,
+ * and the arithmetic each one implies is stated so a person can see which cell it would make wrong.
+ *
+ * EVIDENCE CARRIES ITS SOURCE, and the source is what the independence rule counts. `ROW_SELF_ARITHMETIC` is
+ * a source but never an independent one: an interpretation supported only by the row it interprets has a
+ * sample size of one, and this file has already found one live case of a fingerprint compared with itself.
+ */
+var S1_MOV_PROV_SOURCES_ = {
+  LEDGER_CHAIN_OVERLAP: { independent: true,
+    what: 'another movement row\'s before/after pair, written by a different call at a different time' },
+  FACTORY_STOCK_BALANCE: { independent: true,
+    what: 'the factory_stock pool row - a different table, maintained by the same transactions' },
+  SIBLING_SHAPE_BATCH: { independent: true,
+    what: 'a classified row sharing the target\'s exact blank-shape, i.e. its production batch' },
+  CROSS_TABLE_EVENT: { independent: true,
+    what: 'a matching event in a table that is not the movement ledger' },
+  WRITER_CONTRACT: { independent: true,
+    what: 'what the shipped writers unconditionally populate - a contract, not a history' },
+  ROW_SELF_ARITHMETIC: { independent: false,
+    what: 'the target row\'s own cells. NEVER independent: it is the thing being explained' }
+};
+
+function S1_movProvEvidence_(source, statement, supports, contradicts) {
+  return { source: source,
+    independent: !!(S1_MOV_PROV_SOURCES_[source] && S1_MOV_PROV_SOURCES_[source].independent),
+    statement: statement, supports: (supports || []).slice(), contradicts: (contradicts || []).slice() };
+}
+
+var S1_MOV_CAND_ = ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
+  'CURRENT_DELTA_FROM_QTY', 'INVALID_NON_LEDGER_ROW'];
+
+function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, targetRowNumber) {
+  var qty = ax.qty, bef = ax.before_current, aft = ax.after_current;
+  var deltaFromPair = (aft === null || bef === null) ? null : (aft - bef);
+  var afterFromQty = (bef === null || qty === null) ? null : (bef + qty);
+  var ev = [];
+
+  // ---- the row's own arithmetic. One source, and not an independent one. ----
+  if (qty !== null && aft !== null && qty === aft) {
+    ev.push(S1_movProvEvidence_('ROW_SELF_ARITHMETIC',
+      'qty (' + qty + ') equals after_current_stock (' + aft + '), which is what a hand-entered ENDING'
+      + ' BALANCE looks like - and also exactly what a delta typed into the wrong cell looks like',
+      ['INITIAL_BALANCE_SET'], []));
+  }
+  if (deltaFromPair !== null && qty !== null && qty !== deltaFromPair) {
+    ev.push(S1_movProvEvidence_('ROW_SELF_ARITHMETIC',
+      'the before/after pair implies a delta of ' + deltaFromPair + ' and qty carries ' + qty
+      + ', so exactly one of the two readings must be wrong',
+      ['CURRENT_DELTA_FROM_BEFORE_AFTER', 'CURRENT_DELTA_FROM_QTY', 'INVALID_NON_LEDGER_ROW'], []));
+  }
+  if (bef !== null && bef !== 0) {
+    ev.push(S1_movProvEvidence_('WRITER_CONTRACT',
+      'before_current_stock is ' + bef + ' and not 0. factoryImportMovObj_ passes beforeCurrent = 0 when the'
+      + ' import CREATES the pool row, so an initialization of this pool would carry 0 here',
+      [], ['INITIAL_BALANCE_SET']));
+  }
+
+  // ---- the writer contract, as elimination. ----
+  if (elim && elim.no_shipped_writer_could_have_produced_this_row) {
+    ev.push(S1_movProvEvidence_('WRITER_CONTRACT',
+      'no shipped writer could have produced this row (' + elim.eliminated_count + ' of '
+      + elim.writers_examined + ' eliminated on columns they never leave blank), so its movement_type was'
+      + ' never recorded by any code path and cannot be recovered from this table',
+      ['INVALID_NON_LEDGER_ROW'], []));
+  }
+
+  // ---- §1.4 the discriminator: the next row's `before` is an independent statement about `after`. ----
+  var nxt = null;
+  var e = chron.entries || [];
+  for (var i = 0; i < e.length; i++) {
+    if (e[i].one_based_sheet_row_number === targetRowNumber) {
+      for (var j = i + 1; j < e.length; j++) { if (e[j].classifiable) { nxt = e[j]; break; } }
+      break;
+    }
+  }
+  if (nxt && nxt.before_current_stock !== null && aft !== null) {
+    if (nxt.before_current_stock === aft) {
+      ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+        'the next classifiable movement in this pool (sheet row ' + nxt.one_based_sheet_row_number
+        + ', ' + nxt.movement_type + ') opens at before_current_stock = ' + nxt.before_current_stock
+        + ', which independently confirms after_current_stock = ' + aft,
+        ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER'], ['CURRENT_DELTA_FROM_QTY']));
+    } else if (afterFromQty !== null && nxt.before_current_stock === afterFromQty) {
+      ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+        'the next classifiable movement opens at ' + nxt.before_current_stock + ', which is'
+        + ' before_current_stock + qty (' + bef + ' + ' + qty + '), so qty is the reliable cell and'
+        + ' after_current_stock is the wrong one',
+        ['CURRENT_DELTA_FROM_QTY'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER']));
+    } else if (bef !== null && nxt.before_current_stock === bef) {
+      ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+        'the next classifiable movement opens at ' + nxt.before_current_stock + ', the target row\'s own'
+        + ' before_current_stock, so the balance never moved and this row took no effect',
+        ['INVALID_NON_LEDGER_ROW'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
+          'CURRENT_DELTA_FROM_QTY']));
+    } else {
+      ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+        'the next classifiable movement opens at ' + nxt.before_current_stock + ', which matches none of'
+        + ' after_current_stock (' + aft + '), before+qty (' + afterFromQty + ') or before ('
+        + bef + '), so the chain does not choose between the candidates either',
+        [], []));
+    }
+  }
+
+  // ---- §1.6 the balance, when it is independent of the row under question. ----
+  if (bal && bal.independent_of_the_target_row && bal.current_agrees === true) {
+    ev.push(S1_movProvEvidence_('FACTORY_STOCK_BALANCE',
+      'factory_stock holds fac_current_stock = ' + bal.factory_stock_current + ' and the ledger\'s last'
+      + ' after_current_stock agrees, so the chain as it stands reconciles to the live balance',
+      ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER'], []));
+  } else if (bal && bal.independent_of_the_target_row && bal.current_agrees === false) {
+    ev.push(S1_movProvEvidence_('FACTORY_STOCK_BALANCE',
+      'factory_stock holds fac_current_stock = ' + bal.factory_stock_current + ' and the ledger\'s last'
+      + ' after_current_stock is ' + bal.ledger_last_after_current + ', so the ledger and the balance'
+      + ' already disagree and this row is not the only thing to settle',
+      [], []));
+  }
+
+  // ---- §2 the batch, when a classified sibling shares the exact shape. ----
+  // THE SIBLING'S EVIDENCE IS ITS CONVENTION, NOT ITS TYPE NAME. Mapping `inventory_import` to
+  // INITIAL_BALANCE_SET would be a guess about what that type means in a hand-made batch - and 21_'s own
+  // import writer stores a DELTA in qty for inventory_import rows, so the mapping would have been wrong.
+  // What the sibling can actually testify to is how ITS OWN qty relates to ITS OWN before/after pair, which
+  // is a measurement of the batch's convention and is checkable on the sibling alone.
+  if (sib && sib.classified_sibling_available_as_a_template
+      && sib.per_column_diff_against_the_first_classified_sibling) {
+    var d = sib.per_column_diff_against_the_first_classified_sibling;
+    var conv = d.sibling_convention;
+    if (conv === 'QTY_IS_A_DELTA' || conv === 'QTY_IS_A_BALANCE') {
+      ev.push(S1_movProvEvidence_('SIBLING_SHAPE_BATCH',
+        'sheet row ' + d.sibling_sheet_row + ' shares this row\'s blank-shape apart from the key and the'
+        + ' type, IS classified as ' + d.sibling_movement_type + ', and on its own cells '
+        + (conv === 'QTY_IS_A_DELTA' ? 'qty equals after minus before' : 'qty equals after')
+        + ' - so the batch that produced this row wrote qty as '
+        + (conv === 'QTY_IS_A_DELTA' ? 'a delta' : 'a balance')
+        + '. Evidence about the batch, never a value to copy.',
+        [conv === 'QTY_IS_A_BALANCE' ? 'INITIAL_BALANCE_SET' : 'CURRENT_DELTA_FROM_BEFORE_AFTER'],
+        [conv === 'QTY_IS_A_BALANCE' ? 'CURRENT_DELTA_FROM_BEFORE_AFTER' : 'INITIAL_BALANCE_SET']));
+    } else {
+      ev.push(S1_movProvEvidence_('SIBLING_SHAPE_BATCH',
+        'sheet row ' + d.sibling_sheet_row + ' shares this row\'s blank-shape apart from the key and the'
+        + ' type and IS classified as ' + d.sibling_movement_type + ', but its own qty matches neither a'
+        + ' delta nor a balance (' + conv + '), so the batch has no readable convention to testify to',
+        [], []));
+    }
+  }
+
+  // ---- §3 an event in another table. ----
+  if (cross && cross.total_hits > 0 && cross.tables_with_a_hit.length) {
+    ev.push(S1_movProvEvidence_('CROSS_TABLE_EVENT',
+      cross.total_hits + ' marker hit(s) outside the movement ledger, in: '
+      + cross.tables_with_a_hit.join(','), [], []));
+  }
+
+  // ---- §4.4 whether the ledger needs this row at all. ----
+  if (noTarget && noTarget.neighbours_overlap_each_other_directly === true) {
+    ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+      'the rows either side of the target overlap each other directly, so the target carries no part of the'
+      + ' balance and the chain is complete without it',
+      ['INVALID_NON_LEDGER_ROW'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
+        'CURRENT_DELTA_FROM_QTY']));
+  } else if (noTarget && noTarget.removing_it_breaks_a_link === true) {
+    ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+      'removing the target row breaks an overlap that currently holds, so it is load-bearing in the chain',
+      [], ['INVALID_NON_LEDGER_ROW']));
+  }
+
+  // ---- assemble the four candidates from that one evidence list. ----
+  var cands = [
+    { candidate: 'INITIAL_BALANCE_SET', number: 1,
+      reading: 'this row records an opening/imported BALANCE and qty carries that balance rather than a delta',
+      authoritative_ending_balance: aft,
+      qty_is: qty !== null && aft !== null && qty === aft ? 'A_BALANCE_EQUAL_TO_after_current_stock'
+        : 'NOT_EQUAL_TO_after_current_stock_SO_NOT_A_BALANCE_UNDER_THIS_READING',
+      implies_wrong_cell: 'none - but no shipped writer stores a balance in qty: factoryImportMovObj_ writes'
+        + ' qty = afterCurrent - beforeCurrent even for SET-semantics imports',
+      downstream_balance_impact: 'none. No reader sums qty for the current balance; factory_stock is the'
+        + ' balance authority and this reading leaves it untouched.' },
+    { candidate: 'CURRENT_DELTA_FROM_BEFORE_AFTER', number: 2,
+      reading: 'this is a current-axis delta and the before/after pair is right, so qty should be '
+        + (deltaFromPair === null ? 'unknown' : deltaFromPair),
+      computed_delta: deltaFromPair,
+      implies_wrong_cell: 'qty (it would have to become ' + deltaFromPair + ')',
+      downstream_balance_impact: 'none to the balance; qty is summed by factoryStockOwnerReservedTx_ only'
+        + ' for reservation types, and this row is not one.' },
+    { candidate: 'CURRENT_DELTA_FROM_QTY', number: 3,
+      reading: 'qty is the true delta and the after cell is wrong, so after_current_stock should be '
+        + (afterFromQty === null ? 'unknown' : afterFromQty),
+      expected_after: afterFromQty,
+      implies_wrong_cell: 'after_current_stock (it would have to become ' + afterFromQty + ')',
+      downstream_balance_impact: 'this reading moves the ledger\'s statement of the balance by '
+        + (afterFromQty === null || aft === null ? 'an unknown amount' : (afterFromQty - aft))
+        + ' and would have to be reconciled against factory_stock.' },
+    { candidate: 'INVALID_NON_LEDGER_ROW', number: 4,
+      reading: 'this row is not a movement at all - a placeholder, a paste or an aborted entry - and must'
+        + ' not be treated as one',
+      ledger_stands_without_it: noTarget ? noTarget.neighbours_overlap_each_other_directly : null,
+      implies_wrong_cell: 'none - the row itself is the error',
+      downstream_balance_impact: 'none today: factoryStockReconcileReservations_ already counts it as an'
+        + ' unknown_type row and deliberately neither adds nor drops it.' }
+  ];
+  cands.forEach(function (c) {
+    c.supporting_evidence = ev.filter(function (x) { return x.supports.indexOf(c.candidate) >= 0; });
+    c.contradicting_evidence = ev.filter(function (x) { return x.contradicts.indexOf(c.candidate) >= 0; });
+    c.supporting_sources = [];
+    c.independent_supporting_sources = [];
+    c.contradicting_sources = [];
+    c.supporting_evidence.forEach(function (x) {
+      if (c.supporting_sources.indexOf(x.source) === -1) c.supporting_sources.push(x.source);
+      if (x.independent && c.independent_supporting_sources.indexOf(x.source) === -1) {
+        c.independent_supporting_sources.push(x.source);
+      }
+    });
+    c.contradicting_evidence.forEach(function (x) {
+      if (c.contradicting_sources.indexOf(x.source) === -1) c.contradicting_sources.push(x.source);
+    });
+    c.independent_supporting_source_count = c.independent_supporting_sources.length;
+    c.subsequent_chain_compatibility = (function () {
+      var hit = c.supporting_evidence.concat(c.contradicting_evidence).filter(function (x) {
+        return x.source === 'LEDGER_CHAIN_OVERLAP'; });
+      if (!hit.length) return 'NOT_MEASURABLE - no classifiable movement follows this one in this pool';
+      return c.contradicting_sources.indexOf('LEDGER_CHAIN_OVERLAP') >= 0
+        ? 'CONTRADICTED_BY_THE_NEXT_MOVEMENT' : 'CONSISTENT_WITH_THE_NEXT_MOVEMENT';
+    })();
+    c.current_factory_stock_compatibility = (!bal || bal.current_agrees === null)
+      ? 'NOT_MEASURABLE - the pool row or one of the quantities is absent'
+      : (bal.independent_of_the_target_row
+        ? (bal.current_agrees ? 'THE_LEDGER_RECONCILES_TO_THE_LIVE_BALANCE'
+          : 'THE_LEDGER_AND_THE_LIVE_BALANCE_ALREADY_DISAGREE')
+        : 'NOT_INDEPENDENT - the target row is the last in the chain, so this would compare the cell under'
+          + ' question with itself');
+    c.confidence_basis = c.independent_supporting_source_count === 0
+      ? 'NONE - nothing outside the row itself points here'
+      : (c.independent_supporting_source_count === 1
+        ? 'ONE INDEPENDENT SOURCE ONLY (' + c.independent_supporting_sources.join(',')
+          + ') - a single agreement is not a classification'
+        : c.independent_supporting_source_count + ' INDEPENDENT SOURCES ('
+          + c.independent_supporting_sources.join(',') + ')');
+    c.missing_evidence = [];
+    if (c.subsequent_chain_compatibility.indexOf('NOT_MEASURABLE') === 0) {
+      c.missing_evidence.push('A_LATER_CLASSIFIABLE_MOVEMENT_IN_THE_SAME_POOL');
+    }
+    if (c.current_factory_stock_compatibility.indexOf('NOT_MEASURABLE') === 0
+        || c.current_factory_stock_compatibility.indexOf('NOT_INDEPENDENT') === 0) {
+      c.missing_evidence.push('A_BALANCE_STATEMENT_INDEPENDENT_OF_THE_TARGET_ROW');
+    }
+    if (!sib || !sib.classified_sibling_available_as_a_template) {
+      c.missing_evidence.push('A_CLASSIFIED_ROW_FROM_THE_SAME_PRODUCTION_BATCH');
+    }
+    if (!cross || cross.total_hits === 0) {
+      c.missing_evidence.push('AN_EVENT_IN_ANOTHER_TABLE_DATED_TO_THIS_ROW');
+    }
+    if (c.independent_supporting_source_count < 2) {
+      c.missing_evidence.push('A_SECOND_INDEPENDENT_SOURCE_POINTING_AT_THIS_SAME_READING');
+    }
+  });
+  return { candidates: cands, evidence: ev, evidence_count: ev.length,
+    source_catalogue: S1_MOV_PROV_SOURCES_,
+    computed: { delta_from_the_before_after_pair: deltaFromPair, after_implied_by_qty: afterFromQty,
+      qty: qty, before_current_stock: bef, after_current_stock: aft },
+    next_same_pool_movement: nxt,
+    independence_rule: 'a classification needs TWO DISTINCT INDEPENDENT sources agreeing and no'
+      + ' authoritative contradiction. One equality is a coincidence with a sample size of one.' };
+}
+
+/** §5 — WHICH VERDICT THE EVIDENCE EARNS. Decided in one place, from the candidate table alone. */
+function S1_movProvVerdict_(cs) {
+  var o = { qualifying: [], blocked_by_contradiction: [], verdict: null, selected_candidate: null,
+    rule: 'READY needs exactly one candidate with >= 2 distinct INDEPENDENT supporting sources and zero'
+      + ' contradicting sources. Two qualifying candidates is ambiguity, not a choice.' };
+  (cs.candidates || []).forEach(function (c) {
+    if (c.independent_supporting_source_count >= 2) {
+      if (c.contradicting_sources.length === 0) o.qualifying.push(c.candidate);
+      else o.blocked_by_contradiction.push({ candidate: c.candidate,
+        contradicted_by: c.contradicting_sources.slice() });
+    }
+  });
+  if (o.qualifying.length === 1) {
+    o.verdict = 'READY_FOR_LEGACY_ROW_REPAIR_DECISION';
+    o.selected_candidate = o.qualifying[0];
+  } else {
+    o.verdict = 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED';
+    o.why = o.qualifying.length === 0
+      ? 'NO_CANDIDATE_HAS_TWO_INDEPENDENT_SUPPORTING_SOURCES'
+      : 'MORE_THAN_ONE_CANDIDATE_QUALIFIES:' + o.qualifying.join(',');
+  }
+  return o;
+}
+
+/**
+ * §5.B — THE QUESTIONS, AND WHAT EACH ANSWER WOULD DO TO THE DATA.
+ *
+ * "This needs a human" is not a finding. A question a person can answer from their own records, with the
+ * consequence of each answer stated in cells, is. Every option names the exact cell it would change and the
+ * exact value it would take - and none of them is applied, proposed as authorized, or defaulted to.
+ */
+function S1_movOperatorQuestions_(ax, cs, targetRowNumber, tableName, poolWarehouseId, poolSku) {
+  var c = cs.computed;
+  var qs = [];
+  qs.push({ question_id: 'Q1',
+    question: 'What business event does ' + tableName + ' sheet row ' + targetRowNumber + ' record?'
+      + ' It carries sku=' + S1_str_(poolSku) + ', warehouse_id=' + S1_str_(poolWarehouseId)
+      + ', qty=' + c.qty + ', before_current_stock=' + c.before_current_stock
+      + ', after_current_stock=' + c.after_current_stock + ' and no movement_type.',
+    why_only_you_can_answer: 'movement_type is the LEDGER AXIS SELECTOR and it is blank, so the row does'
+      + ' not say which axis its qty moved; related_entity_id is blank, so it does not say what it came'
+      + ' from; and no shipped writer leaves either blank, so no code path recorded the answer.',
+    options: [
+      { answer: 'An opening/imported balance (INITIAL_BALANCE_SET)',
+        data_impact: 'movement_type would become inventory_import and qty would be re-read as a BALANCE.'
+          + ' Note that no shipped writer stores a balance in qty, so this reading makes the row unlike'
+          + ' every other row in the table and before_current_stock=' + c.before_current_stock
+          + ' would still need explaining (an import that creates a pool passes beforeCurrent = 0).' },
+      { answer: 'A current-stock delta, and the before/after pair is right (CURRENT_DELTA_FROM_BEFORE_AFTER)',
+        data_impact: 'qty would change from ' + c.qty + ' to ' + c.delta_from_the_before_after_pair
+          + ' and movement_type would have to be named. The balance is unaffected; the ledger becomes'
+          + ' internally consistent.' },
+      { answer: 'A current-stock delta, and qty is right (CURRENT_DELTA_FROM_QTY)',
+        data_impact: 'after_current_stock would change from ' + c.after_current_stock + ' to '
+          + c.after_implied_by_qty + ', which moves the ledger\'s statement of the balance and must then be'
+          + ' reconciled against factory_stock and against every later row in this pool.' },
+      { answer: 'Not a real movement (INVALID_NON_LEDGER_ROW)',
+        data_impact: 'the row would be quarantined or removed by a separate authorized decision. Removal is'
+          + ' a row deletion, which is outside every repair path this package has built and needs its own'
+          + ' authorization.' },
+      { answer: 'Something else, evidenced outside this database',
+        data_impact: 'bring the evidence (an import file, a PO, a stock count sheet) and the classification'
+          + ' becomes a measurement rather than a decision.' }
+    ] });
+  qs.push({ question_id: 'Q2',
+    question: 'Which single cell of row ' + targetRowNumber + ' do you believe is WRONG: qty ('
+      + c.qty + '), after_current_stock (' + c.after_current_stock + '), or neither?',
+    why_only_you_can_answer: 'the two cells disagree by '
+      + (c.qty === null || c.delta_from_the_before_after_pair === null ? 'an unknown amount'
+        : (c.qty - c.delta_from_the_before_after_pair))
+      + ' and the database contains no third statement that settles which one to keep.',
+    options: [
+      { answer: 'qty', data_impact: 'one cell changes; the balance does not move.' },
+      { answer: 'after_current_stock',
+        data_impact: 'one cell changes; the ledger\'s balance statement moves by '
+          + (c.after_implied_by_qty === null || c.after_current_stock === null ? 'an unknown amount'
+            : (c.after_implied_by_qty - c.after_current_stock)) + '.' },
+      { answer: 'neither - the row should not be read as a delta at all',
+        data_impact: 'no quantity cell changes; the row needs a type and a lineage, or quarantine.' }
+    ] });
+  qs.push({ question_id: 'Q3',
+    question: 'Is a primary key wanted for this row at all, before its business meaning is settled?',
+    why_only_you_can_answer: 'writing the key is arithmetically inert - no reader keys stock math or'
+      + ' idempotency on the movement primary key - but it takes blank_id_count to 0 and turns the id'
+      + ' census from STOP to CLEAN, which SILENCES the only detector currently refusing this row.',
+    options: [
+      { answer: 'No - settle the business meaning first (this package\'s reading of the evidence)',
+        data_impact: 'nothing is written. The census keeps refusing, which is the behaviour that surfaced'
+          + ' the row in the first place.' },
+      { answer: 'Yes - key it now and track the classification separately',
+        data_impact: 'one cell written; the id census goes CLEAN while movement_type stays blank, so the'
+          + ' row becomes invisible to the id census and visible only to'
+          + ' factoryStockReconcileReservations_ as an unknown_type row.' }
+    ] });
+  return { question_count: qs.length, questions: qs,
+    note: 'These are questions, not proposals. Nothing in this census writes, proposes an authorized'
+      + ' repair, or defaults to any of the answers above.' };
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS — READ ONLY, AND THERE IS NO REPAIR ENTRY POINT.
+ *
+ * Reconstructs where sheet row 2 of factory_stock_movements came from, using the rest of the database and the
+ * shipped writers' own contracts. Re-confirms the frozen live state first and STOPS on any drift, because
+ * provenance evidence gathered against a sheet that has moved is evidence about a different sheet.
+ *
+ * `opts.expect` replaces the frozen expectation and is REPORTED as caller-supplied, which is how the suite
+ * drives worlds that are not the live sheet. `opts.maxHitsPerTable` bounds the cross-table hit lists.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS(opts) {
+  opts = opts || {};
+  var out = {
+    census: 'S1 FACTORY MOVEMENT LEGACY PROVENANCE - read-only reconstruction, no repair route',
+    build: S1_BUILD_, dry_run: true, read_only: true,
+    // Every claim this function makes about itself, declared rather than inferred from silence.
+    writes: 0, writer_calls: 0, cells_written: 0, ids_minted: 0, ids_backfilled: 0,
+    rows_modified: 0, rows_added: 0, rows_removed: 0, rows_reordered: false,
+    jobs_triggered: 0, tables_created: 0, submit_calls: 0,
+    generate_called: false, submit_called: false, migration_called: false, gap_job_called: false,
+    factory_writer_called: false,
+    has_execute_path: false, proposes_authorized_repair: false,
+    repair_route: 'NONE - this census has no execute function, no authorization wording and no frozen'
+      + ' baseline. A verdict of READY means a PERSON may now decide, never that a tool may act.',
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    expectation_source: null, expected: null,
+    live_state_confirmation: null, live_state_confirmed: null,
+    target_row: null, target_row_number: null,
+    field_audit: null, axis_audit: null, classification: null, classification_reasons: [],
+    writer_elimination: null, column_append_hypothesis: null,
+    chronology: null, chain_continuity: null, chain_without_the_target: null,
+    balance_reconcile: null, siblings: null, cross_table: null,
+    candidates: [], evidence: [], evidence_count: 0, computed: null,
+    next_same_pool_movement: null,
+    verdict: 'STOP', selected_candidate: null, verdict_detail: null, stop_reasons: [],
+    operator_questions: null,
+    proposed_repair_fields: null,
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
+    lines_emitted: 0, log_bytes_max: 0,
+    verdict_meanings: {
+      READY_FOR_LEGACY_ROW_REPAIR_DECISION: 'two or more INDEPENDENT authoritative sources point at the'
+        + ' same classification and nothing authoritative contradicts it, so a person can decide',
+      OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED: 'the database does not contain the answer; the exact'
+        + ' questions and the data impact of each answer are published instead',
+      STOP: 'the schema, a fingerprint, the row, the table, the build, the production target or the read'
+        + ' authority did not match the frozen state, so no provenance conclusion is published at all' } };
+  var L = S1_ledger_();
+  function stop(r) { if (out.stop_reasons.indexOf(r) === -1) out.stop_reasons.push(r); }
+
+  var EXP = opts.expect ? opts.expect : S1_MOV_LIVE_FROZEN_;
+  out.expectation_source = opts.expect
+    ? 'CALLER_SUPPLIED - NOT the frozen S1-R4E authorization. This run is pinned to an expectation the'
+      + ' caller provided, which is stated here so it can never be mistaken for a live measurement.'
+    : 'THE_FROZEN_S1_R4E_AUTHORIZATION';
+  out.expected = EXP;
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    // STOP WINS, AND IT WINS FROM ONE PLACE. 'I could not confirm the state I was told to expect' must
+    // never be published as a provenance conclusion, which is the same rule that keeps an absent table's
+    // row count null rather than zero.
+    if (out.stop_reasons.length || L.failed.length) {
+      out.verdict = 'STOP';
+      out.selected_candidate = null;
+      out.proposed_repair_fields = null;
+    }
+    // LOCK: a STOP publishes no classification decision and no operator questions dressed as one.
+    if (out.verdict === 'STOP') out.operator_questions = null;
+    S1_movProvEmit_(out);
+    return out;
+  }
+
+  try {
+    // ---- §6.1 THE BUILD. An expectation frozen against another build is not this build's evidence. ----
+    L.P('the_build_matches_the_frozen_authorization', EXP.build, S1_BUILD_, S1_BUILD_ === EXP.build);
+    if (S1_BUILD_ !== EXP.build) { stop('BUILD_DRIFTED'); return fin(); }
+
+    // ---- §6.2 THE READ, THROUGH THE SAME AUTHORITY THE MANIFEST AND THE BACKFILL USE. ----
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_was_read_through_the_shared_read_authority', true,
+      R.ok ? true : R.stop_reasons.join(','), R.ok === true);
+    if (!R.ok) { R.stop_reasons.forEach(stop); return fin(); }
+    var liveCols = R.live_columns;
+
+    // ---- §6.3 THE FROZEN LIVE STATE, ITEM BY ITEM. ----
+    var target = null;
+    (R.t.rows || []).forEach(function (r) {
+      if (r.row_number === EXP.target_row_number) target = r; });
+    var conf = [];
+    function confirm(name, expected, observed) {
+      var okv = S1_str_(expected) === S1_str_(observed);
+      conf.push({ what: name, expected: expected, observed: observed, confirmed: okv });
+      L.P('the_live_state_still_matches_the_frozen_' + name, expected, observed, okv);
+      if (!okv) stop('LIVE_STATE_DRIFTED:' + name);
+      return okv;
+    }
+    confirm('header_fingerprint', EXP.header_fingerprint, R.header_fingerprint);
+    confirm('table_combined_fingerprint', EXP.table_combined_fingerprint, R.table_combined_fingerprint);
+    confirm('row_count', EXP.row_count, R.integrity.row_count);
+    confirm('blank_id_count', EXP.blank_id_count, R.integrity.blank_id_count);
+    confirm('duplicate_id_count', EXP.duplicate_id_count, R.integrity.duplicate_id_count);
+    confirm('wrong_type_id_count', EXP.wrong_type_id_count, R.integrity.wrong_type_id_count);
+    confirm('outside_named_column_row_count', EXP.outside_named_column_row_count,
+      R.integrity.outside_named_columns_count);
+    confirm('valid_id_count', EXP.valid_id_count,
+      R.integrity.ok_count - R.integrity.duplicate_id_count - R.integrity.wrong_type_id_count);
+    // THE FAULT MUST BE THE ONE THE FREEZE NAMES, AND IT MUST BE THE ONLY ONE.
+    L.P('the_table_still_holds_exactly_one_id_fault', 1, R.faults.length, R.faults.length === 1);
+    if (R.faults.length !== 1) stop('THE_FAULT_COUNT_IS_NO_LONGER_ONE');
+    L.P('the_one_fault_is_still_a_blank_primary_key_on_the_frozen_row',
+      { row: EXP.target_row_number, code: 'FACTORY_MOVEMENT_ID_BLANK' },
+      R.faults.length === 1
+        ? { row: R.faults[0].one_based_sheet_row_number, code: R.faults[0].fault_code } : null,
+      R.faults.length === 1 && R.faults[0].one_based_sheet_row_number === EXP.target_row_number
+        && R.faults[0].fault_code === 'FACTORY_MOVEMENT_ID_BLANK');
+    L.P('the_frozen_target_row_is_still_present_at_its_frozen_row_number', EXP.target_row_number,
+      target ? target.row_number : null, target !== null);
+    if (!target) { stop('TARGET_ROW_MISSING'); return fin(); }
+    confirm('target_row_fingerprint', EXP.target_row_fingerprint, target.fingerprint);
+    var mtBlank = S1_canonCell_(S1_cellOf_(target, 'movement_type')) === '~';
+    conf.push({ what: 'target_movement_type_is_blank', expected: EXP.target_movement_type_is_blank,
+      observed: mtBlank, confirmed: mtBlank === EXP.target_movement_type_is_blank });
+    L.P('the_target_rows_movement_type_is_still_in_its_frozen_state',
+      EXP.target_movement_type_is_blank, mtBlank, mtBlank === EXP.target_movement_type_is_blank);
+    if (mtBlank !== EXP.target_movement_type_is_blank) {
+      stop('LIVE_STATE_DRIFTED:target_movement_type_is_blank');
+    }
+    var pWh = S1_str_(S1_cellOf_(target, 'warehouse_id')), pSku = S1_str_(S1_cellOf_(target, 'sku'));
+    confirm('pool_warehouse_id', EXP.pool_warehouse_id, pWh);
+    confirm('pool_sku', EXP.pool_sku, pSku);
+    out.live_state_confirmation = conf;
+    out.live_state_confirmed = conf.filter(function (c) { return !c.confirmed; }).length === 0;
+    out.target_row_number = target.row_number;
+    // §6 - THE EVIDENCE IS NOT GATHERED AGAINST A DRIFTED SHEET. Everything below reads the live rows, so
+    // running it after a drift would produce a provenance report about a table nobody authorized.
+    if (out.stop_reasons.length) return fin();
+
+    // ---- §0 THE TARGET ROW ITSELF, AT THE GRAIN R4E ESTABLISHED. ----
+    var fa = S1_movFieldAudit_(target, liveCols);
+    var ax = S1_movAxisAudit_(target);
+    var cls = S1_movClassifyRow_(target, liveCols);
+    out.field_audit = fa;
+    out.axis_audit = ax;
+    out.classification = cls.classification;
+    out.classification_reasons = cls.reasons.slice();
+    out.target_row = { one_based_sheet_row_number: target.row_number,
+      full_named_row_fingerprint: target.fingerprint,
+      pool_key: S1_poolKey_(pWh, pSku), warehouse_id: pWh, sku: pSku,
+      movement_id: S1_str_(S1_cellOf_(target, 'factory_stock_movement_id')) || null,
+      movement_type: S1_str_(S1_cellOf_(target, 'movement_type')) || null,
+      qty: ax.qty, before_current_stock: ax.before_current, after_current_stock: ax.after_current,
+      before_reserved_stock: ax.before_reserved, after_reserved_stock: ax.after_reserved,
+      time: S1_movTimeKey_(target),
+      shape: S1_movShape_(target, liveCols),
+      required_blank: fa.required_blank.slice(), writer_populated_blank: fa.writer_populated_blank.slice(),
+      named_nonblank_field_count: fa.present_count,
+      cells: S1_movRowCells_(target, liveCols) };
+
+    // ---- §4 THE WRITER CONTRACT, AND THE CHEAP INNOCENT EXPLANATION. ----
+    out.writer_elimination = S1_movWriterElimination_(target, liveCols);
+    out.column_append_hypothesis = S1_movColumnAppendHypothesis_(target, liveCols);
+    L.P('every_shipped_writer_was_tested_against_this_row', S1_MOV_WRITER_SIGNATURES_.length,
+      out.writer_elimination.per_writer.length,
+      out.writer_elimination.per_writer.length === S1_MOV_WRITER_SIGNATURES_.length);
+    L.P('each_eliminated_writer_says_why_rather_than_only_that', [],
+      out.writer_elimination.per_writer.filter(function (w) {
+        return w.could_have_written === false && w.because.length === 0; }),
+      out.writer_elimination.per_writer.filter(function (w) {
+        return w.could_have_written === false && w.because.length === 0; }).length === 0);
+
+    // ---- §1 THE CHRONOLOGY, THE CHAIN AND THE BALANCE. ----
+    var chron = S1_movPoolChronology_(R.t, pWh, pSku);
+    out.chronology = { pool_key: chron.pool_key, entry_count: chron.entry_count,
+      rows_without_a_usable_time: chron.rows_without_a_usable_time,
+      time_sources_used: chron.time_sources_used, tied_time_groups: chron.tied_time_groups,
+      ordering_authority: chron.ordering_authority,
+      ordering_is_unambiguous: chron.ordering_is_unambiguous,
+      target_position: (function () {
+        var p = null;
+        chron.entries.forEach(function (e) {
+          if (e.one_based_sheet_row_number === target.row_number) {
+            p = e.position_in_chronology_1based; } });
+        return p;
+      })(),
+      entries: chron.entries };
+    L.P('the_target_row_is_in_its_own_pool_chronology', true,
+      out.chronology.target_position !== null, out.chronology.target_position !== null);
+    out.chain_continuity = S1_movChainContinuity_(chron);
+    out.chain_without_the_target = S1_movChainWithoutTarget_(chron, target.row_number);
+    var surf = S1_factorySurfaces_(R.ss, pWh, pSku);
+    out.balance_reconcile = S1_movBalanceReconcile_(chron, surf.pool, target.row_number);
+
+    // ---- §2 THE SIBLINGS. ----
+    out.siblings = S1_movSiblings_(R.t, target, liveCols);
+    L.P('a_sibling_is_used_as_provenance_evidence_and_never_as_a_source_of_values',
+      'PROVENANCE_EVIDENCE_ONLY', S1_str_(out.siblings.template_use).slice(0, 24),
+      S1_str_(out.siblings.template_use).indexOf('PROVENANCE_EVIDENCE_ONLY') === 0);
+
+    // ---- §3 THE OTHER TABLES. ----
+    var markers = [];
+    [pSku, pWh].forEach(function (m) { if (S1_str_(m) !== '') markers.push(S1_str_(m).toLowerCase()); });
+    var day = S1_movDayOf_(out.target_row.time);
+    if (day) markers.push(day);
+    [ax.qty, ax.before_current, ax.after_current].forEach(function (n) {
+      if (n !== null && markers.indexOf(String(n)) === -1) markers.push(String(n)); });
+    var relId = S1_str_(S1_cellOf_(target, 'related_entity_id'));
+    if (relId !== '') markers.push(relId.toLowerCase());
+    out.cross_table = S1_movCrossTableScan_(R.ss, markers,
+      opts.maxHitsPerTable === undefined ? 6 : opts.maxHitsPerTable);
+    L.P('no_table_was_created_and_no_job_was_triggered_by_the_cross_table_read',
+      { tables_created: 0, jobs_triggered: 0 },
+      { tables_created: out.tables_created, jobs_triggered: out.jobs_triggered },
+      out.tables_created === 0 && out.jobs_triggered === 0);
+
+    // ---- §4 THE FOUR CANDIDATES. ----
+    var cs = S1_movCandidates_(ax, chron, out.chain_continuity, out.balance_reconcile,
+      out.siblings, out.cross_table, out.writer_elimination, out.chain_without_the_target,
+      target.row_number);
+    out.candidates = cs.candidates;
+    out.evidence = cs.evidence;
+    out.evidence_count = cs.evidence_count;
+    out.computed = cs.computed;
+    out.next_same_pool_movement = cs.next_same_pool_movement;
+    L.P('all_four_candidates_were_measured', S1_MOV_CAND_, out.candidates.map(function (c) {
+      return c.candidate; }), S1_str_(S1_MOV_CAND_.join(',')) === S1_str_(out.candidates.map(
+        function (c) { return c.candidate; }).join(',')));
+    var thin = out.candidates.filter(function (c) {
+      return S1_str_(c.confidence_basis) === '' || !c.missing_evidence
+        || S1_str_(c.subsequent_chain_compatibility) === ''
+        || S1_str_(c.current_factory_stock_compatibility) === '';
+    });
+    L.P('every_candidate_carries_a_confidence_basis_a_chain_reading_a_balance_reading_and_its_gaps',
+      [], thin, thin.length === 0);
+    // §1.7 - ONE EQUALITY IS NOT A CLASSIFICATION, AND THE RULE IS ENFORCED RATHER THAN STATED.
+    var oneSource = out.candidates.filter(function (c) {
+      return c.independent_supporting_source_count === 1; });
+    L.P('no_candidate_with_a_single_independent_source_is_treated_as_settled', [],
+      oneSource.filter(function (c) {
+        return S1_str_(c.confidence_basis).indexOf('ONE INDEPENDENT SOURCE ONLY') !== 0; }),
+      oneSource.filter(function (c) {
+        return S1_str_(c.confidence_basis).indexOf('ONE INDEPENDENT SOURCE ONLY') !== 0; }).length === 0);
+
+    // ---- §5 THE VERDICT. ----
+    var vd = S1_movProvVerdict_(cs);
+    out.verdict = vd.verdict;
+    out.selected_candidate = vd.selected_candidate;
+    out.verdict_detail = vd;
+    if (out.verdict === 'READY_FOR_LEGACY_ROW_REPAIR_DECISION') {
+      var sel = null;
+      out.candidates.forEach(function (c) { if (c.candidate === vd.selected_candidate) sel = c; });
+      // PROPOSED FIELDS ONLY, AND THE WORD PROPOSED IS LOAD-BEARING: no id is minted, no baseline is
+      // frozen, no authorization sentence is written, and there is no function in this file that could
+      // consume this object.
+      out.proposed_repair_fields = { candidate: vd.selected_candidate,
+        one_based_sheet_row_number: target.row_number, table: S1_FACTORY_MOVEMENT_TABLE_,
+        implies_wrong_cell: sel ? sel.implies_wrong_cell : null,
+        supported_by: sel ? sel.independent_supporting_sources.slice() : [],
+        status: 'PROPOSED_FOR_A_HUMAN_DECISION - not authorized, not frozen, not executable. This census'
+          + ' has no execute path and mints nothing.',
+        next_step: 'a separate authorized round would freeze a BEFORE and write the decided cells' };
+    } else {
+      out.operator_questions = S1_movOperatorQuestions_(ax, cs, target.row_number,
+        S1_FACTORY_MOVEMENT_TABLE_, pWh, pSku);
+    }
+    return fin();
+  } catch (e) {
+    L.P('the_provenance_census_ran_to_completion', true,
+      'threw: ' + String(e && e.message ? e.message : e), false);
+    stop('CENSUS_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
+    return fin();
+  }
+}
+
+/**
+ * §7 — THE LOG. THE NAMED LINES, EACH BOUNDED, AND THE DETAIL IS NOT LEFT ONLY IN THE RETURN VALUE.
+ *
+ * One line per named section rather than one giant payload: a reader looking for the chain reading should not
+ * have to scroll past the chronology to reach it. Anything that would exceed the line budget is SEGMENTED by
+ * the shared emitter - never silently truncated - and the meta line says how many lines each section cost.
+ */
+function S1_movProvEmit_(out) {
+  var emitted = 0, maxBytes = 0;
+  function line(tag, obj) {
+    var s = JSON.stringify(obj);
+    var budget = S1_chunkBudget_(tag);
+    if (s.length <= budget) {
+      S1_log_(tag, s);
+      emitted++;
+      maxBytes = Math.max(maxBytes, '[S1] '.length + tag.length + 1 + s.length);
+      return 1;
+    }
+    var n = S1_emitChunked_(tag, s);
+    emitted += n;
+    maxBytes = Math.max(maxBytes, n ? S1_CHUNK_MAX_BYTES_ : 0);
+    return n;
+  }
+  var tr = out.target_row;
+  line('s1_provenance_summary', {
+    build: out.build, table: out.table, dry_run: out.dry_run, read_only: out.read_only,
+    writes: out.writes, writer_calls: out.writer_calls, cells_written: out.cells_written,
+    ids_minted: out.ids_minted, jobs_triggered: out.jobs_triggered, tables_created: out.tables_created,
+    has_execute_path: out.has_execute_path,
+    expectation_source: S1_cap_(out.expectation_source, 90),
+    live_state_confirmed: out.live_state_confirmed,
+    drifted: (out.live_state_confirmation || []).filter(function (c) { return !c.confirmed; })
+      .map(function (c) { return c.what; }),
+    classification: out.classification,
+    classification_reasons: (out.classification_reasons || []).slice(0, 8),
+    no_shipped_writer_could_have_produced_this_row: out.writer_elimination
+      ? out.writer_elimination.no_shipped_writer_could_have_produced_this_row : null,
+    column_append_hypothesis_supported: out.column_append_hypothesis
+      ? out.column_append_hypothesis.supported : null,
+    evidence_count: out.evidence_count,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed });
+  line('s1_provenance_target_row', tr === null ? { target_row: null,
+    why: 'the frozen target row was not present, so there is nothing to describe' } : {
+    row: tr.one_based_sheet_row_number, fingerprint: tr.full_named_row_fingerprint,
+    pool_key: tr.pool_key, movement_id: tr.movement_id, movement_type: tr.movement_type,
+    qty: tr.qty, before_current_stock: tr.before_current_stock,
+    after_current_stock: tr.after_current_stock, before_reserved_stock: tr.before_reserved_stock,
+    after_reserved_stock: tr.after_reserved_stock,
+    time_source: tr.time ? tr.time.source : null, time_iso: tr.time ? tr.time.iso : null,
+    required_blank: tr.required_blank, writer_populated_blank: tr.writer_populated_blank,
+    named_nonblank_field_count: tr.named_nonblank_field_count,
+    blank_columns: tr.shape ? tr.shape.blank_columns : null,
+    shape_fingerprint: tr.shape ? tr.shape.shape_fingerprint : null,
+    axis: out.axis_audit ? out.axis_audit.axis : null,
+    readings: out.axis_audit ? out.axis_audit.readings : null });
+  var nx = out.next_same_pool_movement;
+  line('s1_provenance_next_same_pool_movement', nx === null || nx === undefined
+    ? { next: null, why: 'no classifiable movement follows the target row in this pool, so the chain'
+        + ' cannot speak to the balance after it' }
+    : { row: nx.one_based_sheet_row_number, position: nx.position_in_chronology_1based,
+        movement_id: nx.movement_id, movement_type: nx.movement_type,
+        created_at: nx.created_at, movement_date: nx.movement_date,
+        time_source: nx.time_source, time_iso: nx.time_iso, qty: nx.qty,
+        before_current_stock: nx.before_current_stock, after_current_stock: nx.after_current_stock,
+        before_reserved_stock: nx.before_reserved_stock, after_reserved_stock: nx.after_reserved_stock,
+        related_entity_type: nx.related_entity_type, related_entity_id: nx.related_entity_id,
+        fingerprint: nx.full_named_row_fingerprint,
+        its_before_equals_the_targets_after: (tr && nx.before_current_stock !== null
+          && tr.after_current_stock !== null)
+          ? (nx.before_current_stock === tr.after_current_stock) : null });
+  var ch = out.chain_continuity, wo = out.chain_without_the_target, ba = out.balance_reconcile;
+  line('s1_provenance_chain_continuity', {
+    pool_entries: out.chronology ? out.chronology.entry_count : null,
+    target_position: out.chronology ? out.chronology.target_position : null,
+    ordering_is_unambiguous: out.chronology ? out.chronology.ordering_is_unambiguous : null,
+    rows_without_a_usable_time: out.chronology ? out.chronology.rows_without_a_usable_time : null,
+    links: ch ? ch.links_examined : null,
+    current: ch ? ch.current_axis : null, reserved: ch ? ch.reserved_axis : null,
+    continuous_current: ch ? ch.chain_is_continuous_on_the_current_axis : null,
+    continuous_reserved: ch ? ch.chain_is_continuous_on_the_reserved_axis : null,
+    every_readable_link_agrees_current: ch ? ch.every_readable_link_agrees_on_the_current_axis : null,
+    every_readable_link_agrees_reserved: ch ? ch.every_readable_link_agrees_on_the_reserved_axis : null,
+    first_break_at_position: ch ? ch.first_break_at_position : null,
+    without_the_target: wo ? { neighbours_overlap_each_other_directly:
+      wo.neighbours_overlap_each_other_directly, removing_it_repairs_a_break: wo.removing_it_repairs_a_break,
+      removing_it_breaks_a_link: wo.removing_it_breaks_a_link } : null,
+    balance: ba ? { factory_stock_current: ba.factory_stock_current,
+      factory_stock_reserved: ba.factory_stock_reserved,
+      ledger_last_after_current: ba.ledger_last_after_current,
+      current_agrees: ba.current_agrees, reserved_agrees: ba.reserved_agrees,
+      independent_of_the_target_row: ba.independent_of_the_target_row } : null });
+  var sb = out.siblings;
+  line('s1_provenance_sibling_shape_summary', sb === null ? { siblings: null } : {
+    target_shape_fingerprint: sb.target_shape_fingerprint,
+    target_near_shape_fingerprint: sb.target_near_shape_fingerprint,
+    target_blank_columns: sb.target_blank_columns,
+    ignored_in_the_near_shape: sb.ignored_in_the_near_shape,
+    exact_shape_match_count: sb.exact_shape_match_count,
+    near_shape_match_count: sb.near_shape_match_count, same_day_count: sb.same_day_count,
+    same_warehouse_count: sb.same_warehouse_count, same_qty_pattern_count: sb.same_qty_pattern_count,
+    candidate_count: sb.candidate_count, with_an_id: sb.with_an_id, without_an_id: sb.without_an_id,
+    movement_type_distribution: sb.movement_type_distribution,
+    classified_sibling_available_as_a_template: sb.classified_sibling_available_as_a_template,
+    template_sheet_row: sb.per_column_diff_against_the_first_classified_sibling
+      ? sb.per_column_diff_against_the_first_classified_sibling.sibling_sheet_row : null,
+    template_movement_type: sb.per_column_diff_against_the_first_classified_sibling
+      ? sb.per_column_diff_against_the_first_classified_sibling.sibling_movement_type : null,
+    template_convention: sb.per_column_diff_against_the_first_classified_sibling
+      ? sb.per_column_diff_against_the_first_classified_sibling.sibling_convention : null,
+    differing_columns: sb.per_column_diff_against_the_first_classified_sibling
+      ? sb.per_column_diff_against_the_first_classified_sibling.columns
+        .filter(function (c) { return !c.same; }).map(function (c) { return c.column; }) : null,
+    rows: sb.candidates.slice(0, 12).map(function (c) { return c.one_based_sheet_row_number; }),
+    template_use: S1_cap_(sb.template_use, 110) });
+  var ct = out.cross_table;
+  line('s1_provenance_cross_table_evidence', ct === null ? { cross_table: null } : {
+    markers: ct.markers, tables_examined: ct.tables_examined, tables_present: ct.tables_present,
+    tables_absent: ct.tables_absent, tables_unreadable: ct.tables_unreadable,
+    total_hits: ct.total_hits, tables_with_a_hit: ct.tables_with_a_hit,
+    per_table: ct.per_table.filter(function (e) { return e.hits_total > 0; })
+      .slice(0, 8).map(function (e) {
+        return { table: e.table, row_count: e.row_count, hits_total: e.hits_total,
+          hits_shown: e.hits_shown, hits_withheld: e.hits_withheld,
+          columns_that_matched: e.columns_that_matched,
+          rows: e.hits.map(function (h) { return h.one_based_sheet_row_number; }) }; }),
+    read_rule: S1_cap_(ct.read_rule, 150) });
+  (out.candidates || []).forEach(function (c) {
+    line('s1_provenance_candidate_' + c.number, {
+      candidate: c.candidate, reading: S1_cap_(c.reading, 200),
+      authoritative_ending_balance: c.authoritative_ending_balance,
+      computed_delta: c.computed_delta, expected_after: c.expected_after,
+      ledger_stands_without_it: c.ledger_stands_without_it,
+      implies_wrong_cell: S1_cap_(c.implies_wrong_cell, 160),
+      supporting: c.supporting_evidence.map(function (x) {
+        return { source: x.source, independent: x.independent, statement: S1_cap_(x.statement, 190) }; }),
+      contradicting: c.contradicting_evidence.map(function (x) {
+        return { source: x.source, independent: x.independent, statement: S1_cap_(x.statement, 190) }; }),
+      independent_supporting_sources: c.independent_supporting_sources,
+      contradicting_sources: c.contradicting_sources,
+      subsequent_chain_compatibility: S1_cap_(c.subsequent_chain_compatibility, 120),
+      current_factory_stock_compatibility: S1_cap_(c.current_factory_stock_compatibility, 140),
+      downstream_balance_impact: S1_cap_(c.downstream_balance_impact, 200),
+      confidence_basis: S1_cap_(c.confidence_basis, 160),
+      missing_evidence: c.missing_evidence });
+  });
+  line('s1_provenance_verdict', {
+    verdict: out.verdict, selected_candidate: out.selected_candidate,
+    qualifying: out.verdict_detail ? out.verdict_detail.qualifying : null,
+    blocked_by_contradiction: out.verdict_detail ? out.verdict_detail.blocked_by_contradiction : null,
+    why: out.verdict_detail ? (out.verdict_detail.why || null) : null,
+    rule: out.verdict_detail ? S1_cap_(out.verdict_detail.rule, 200) : null,
+    stop_reasons: out.stop_reasons.slice(0, 10),
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 8),
+    proposed_repair_fields: out.proposed_repair_fields
+      ? { candidate: out.proposed_repair_fields.candidate,
+          status: S1_cap_(out.proposed_repair_fields.status, 150) } : null,
+    writes: out.writes, cells_written: out.cells_written, ids_minted: out.ids_minted,
+    has_execute_path: out.has_execute_path,
+    repair_route: S1_cap_(out.repair_route, 190) });
+  if (out.operator_questions) {
+    (out.operator_questions.questions || []).forEach(function (q, i) {
+      line('s1_provenance_operator_questions_' + (i + 1) + '_of_'
+        + out.operator_questions.questions.length, {
+        question_id: q.question_id, question: S1_cap_(q.question, 320),
+        why_only_you_can_answer: S1_cap_(q.why_only_you_can_answer, 320),
+        options: q.options.map(function (o) {
+          return { answer: S1_cap_(o.answer, 90), data_impact: S1_cap_(o.data_impact, 300) }; }) });
+    });
+  }
+  out.lines_emitted = emitted;
+  out.log_bytes_max = maxBytes;
+  return emitted;
+}
+
 function RUN_S1_MANIFEST_S() {
   var out = { manifest: 'MANIFEST S — controlled Submit-to-Weekly-Shipping-Plan activation',
     build: S1_BUILD_, dry_run: true, writes: 0,
