@@ -91,15 +91,89 @@ var FACTORY_TABLES_ = {
   shipping_plans: ['shipping_plan_id', 'parent_shipping_plan_id', 'company', 'country', 'marketplace',
     'source_warehouse_id', 'status', 'plan_version', 'transferred_to_shipment_at', 'transferred_shipment_id'],
   shipping_plan_lines: ['shipping_plan_line_id', 'shipping_plan_id', 'sku', 'requested_qty', 'approved_qty'],
-  marketplaces: ['company', 'country', 'marketplace', 'allocation_priority']
+  marketplaces: ['company', 'country', 'marketplace', 'allocation_priority'],
+  // S1-R4A — 43_'s pool reader reads this table too. Present and EMPTY by default: the positive-residual
+  // world sources from the factory, and an absent sheet would fail the pool read for a reason that has
+  // nothing to do with what is being tested.
+  overseas_inventory_snapshot: ['warehouse_id', 'sku', 'wh_available_stock'],
+  // S1-R4A — BOTH carrier tables, because a routable lane needs both: the rate card prices it and
+  // carrier_lead_times supplies the transit days. With the card alone the route resolves to
+  // ROUTE_METHOD_UNRESOLVED / NO_TRANSIT_AUTHORITY_FOR_LANE and no K2 group is ever proposed — measured.
+  carrier_rate_cards: ['rate_card_id', 'carrier_id', 'origin_country', 'destination_country', 'marketplace',
+    'shipping_method', 'shipping_method_label', 'last_mile_delivery', 'currency', 'unit_rate', 'min_charge',
+    'charge_type', 'charge_unit', 'status', 'effective_from', 'effective_to', 'note'],
+  carrier_lead_times: ['lead_time_id', 'carrier_id', 'origin_country', 'destination_country',
+    'shipping_method', 'last_mile_delivery', 'min_days', 'max_days', 'avg_days'],
+  // S1-R4A §B.4 — the two surfaces a factory stock move is RECORDED on. Freezing the pool quantities alone
+  // would miss a movement row written beside an unchanged total, so both are counted, id-listed and
+  // full-row fingerprinted.
+  // THE REAL PRODUCTION COLUMN NAMES, not convenient short ones. `factory_stock_movement_id` is how 21_
+  // MOV_HEADERS spells it and `override_audit_id` is FSG_OVERRIDE_AUDIT_HEADERS_[0] in 71_. The first
+  // version of this fixture invented `movement_id` / `audit_id` and the diagnostic invented them too, so the
+  // tests agreed with the mistake while a live sheet would have frozen a list of blank ids.
+  factory_stock_movements: ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id',
+    'movement_type', 'qty', 'related_entity_type', 'related_entity_id', 'note', 'created_by', 'created_at'],
+  factory_stock_override_audit: ['override_audit_id', 'created_at', 'entity_type', 'entity_id',
+    'transition', 'company', 'country', 'marketplace', 'sku', 'source_warehouse_id', 'override_reason']
 };
+// The lane the positive-residual world ships on: CN (the factory) -> US (the marketplace). SEA and AIR both
+// priced and both with transit days, so the route resolves and the auto-ranking has more than one option.
+var DEFAULT_RATE_CARDS_ = [
+  { rate_card_id: 'RC-SEA', carrier_id: 'CAR-1', origin_country: 'CN', destination_country: 'US',
+    marketplace: '', shipping_method: 'SEA', shipping_method_label: 'Sea Freight', last_mile_delivery: 'UPS',
+    currency: 'USD', unit_rate: 1.2, min_charge: 100, charge_type: 'per_unit', charge_unit: 'unit',
+    status: 'ACTIVE', effective_from: '2026-01-01', effective_to: '2027-12-31' },
+  { rate_card_id: 'RC-AIR', carrier_id: 'CAR-1', origin_country: 'CN', destination_country: 'US',
+    marketplace: '', shipping_method: 'AIR', shipping_method_label: 'Air Freight', last_mile_delivery: 'UPS',
+    currency: 'USD', unit_rate: 4.5, min_charge: 200, charge_type: 'per_unit', charge_unit: 'unit',
+    status: 'ACTIVE', effective_from: '2026-01-01', effective_to: '2027-12-31' }
+];
+var DEFAULT_LEAD_TIMES_ = [
+  { lead_time_id: 'LT-SEA', carrier_id: 'CAR-1', origin_country: 'CN', destination_country: 'US',
+    shipping_method: 'SEA', last_mile_delivery: 'UPS', min_days: 30, max_days: 45, avg_days: 38 },
+  { lead_time_id: 'LT-AIR', carrier_id: 'CAR-1', origin_country: 'CN', destination_country: 'US',
+    shipping_method: 'AIR', last_mile_delivery: 'UPS', min_days: 7, max_days: 12, avg_days: 9 }
+];
 // The factory warehouse the readiness fixture's own drafts already source from. Inventing an id here would
 // build a pool that no fixture row belongs to, and the exposure would read zero for the wrong reason —
 // which is exactly what the first run of this suite measured.
 var WHF = 'WH-TW-CN-FACTORY-YOUXIN';
+// The sku the default demand seam declares. Spelled here because S1World is defined above `SKU`, and it is the
+// SAME string — asserted below, so the two cannot drift into describing different worlds.
+var SKU_FOR_DEMAND_ = 'CO1100-R';
+var DEMAND_REF_ = 'ResUS|US|Amazon|' + SKU_FOR_DEMAND_ + '|Amazon';
+/**
+ * The demand the seam carries, at a stated per-window quantity. See the long note in S1World: these are
+ * NETTED windows, because weeklyAiPlanNetSitesByResidual_ runs inside the real harvest and subtracts the
+ * qualifying manual plan before the receivers are built. So a world that changes the manual plan changes
+ * this number too, and a world that forgets to is REFUSED by the manifest rather than quietly over-planned.
+ */
+function demandWith_(perWindow, over) {
+  var o = over || {};
+  var h = {};
+  h[DEMAND_REF_] = { cumulativeGapByWindow: { D18: perWindow, D30: perWindow, D45: perWindow, D90: perWindow },
+    requiredByByWindow: { D18: '2026-10-01', D30: '2026-10-15', D45: '2026-11-01', D90: '2026-12-01' } };
+  return {
+    receiverFacts: o.receiverFacts || [{ demandRef: DEMAND_REF_, marketplace: 'Amazon',
+      destinationWarehouseId: 'Amazon', fulfillmentModel: 'platform_fulfilled', dailyDemand: 10,
+      allocationPriority: 1, demandWeight: 1,
+      // eligiblePoolTypes governs the OVERSEAS lane only (POOL_TYPES_OVERSEAS = THREE_PL | FBA); 'FACTORY'
+      // is not a token there and the real validator refuses it. The factory pool reaches the allocator
+      // through poolsBySku.factoryPools instead, which is what makes this world's need factory-sourced.
+      eligiblePoolTypes: ['FBA'] }],
+    planningFacts: o.planningFacts || [{ demandRef: DEMAND_REF_, sku: SKU_FOR_DEMAND_,
+      siteSku: SKU_FOR_DEMAND_ + '-US', unitsPerCarton: 10 }],
+    horizonsByDemandRef: o.horizonsByDemandRef || h
+  };
+}
 var DEFAULT_WAREHOUSES_ = [
   { warehouse_id: WHF, warehouse_type: 'FACTORY', company: 'ResUS', country: 'CN', is_active: true, is_factory_warehouse: true },
   { warehouse_id: 'FW-TW', warehouse_type: 'FACTORY', company: 'ResUS', country: 'TW', is_active: true, is_factory_warehouse: true },
+  // S1-R4A — the SECOND factory id WEEKLY_AI_PLAN_FACTORY_IDENTITY_ names. The real weekly input assembler
+  // refuses with FACTORY_WAREHOUSE_MISSING when either configured factory is absent from `warehouses`, so
+  // without this row the write-set prediction cannot run at all. It carries NO factory_stock row, so it
+  // creates no pool and cannot change any existing pool-ambiguity or availability measurement.
+  { warehouse_id: 'WH-TW-TW-FACTORY-RES', warehouse_type: 'FACTORY', company: 'ResUS', country: 'TW', is_active: true, is_factory_warehouse: true },
   { warehouse_id: 'WH-3PL', warehouse_type: '3PL', company: 'ResUS', country: 'US', is_active: true, is_factory_warehouse: false }
 ];
 
@@ -112,7 +186,8 @@ function S1World(spec) {
   spec = spec || {};
   var over = {};
   Object.keys(spec).forEach(function (k) {
-    if (['warehouses', 'factory_stock', 'plans', 'plan_lines', 'marketplaces', 'pinHour', 'after'].indexOf(k) === -1) over[k] = spec[k];
+    if (['warehouses', 'factory_stock', 'plans', 'plan_lines', 'marketplaces', 'pinHour', 'after',
+      'overseas', 'rateCards', 'leadTimes', 'demand', 'movements', 'overrideAudit'].indexOf(k) === -1) over[k] = spec[k];
   });
   var w = new World(over);
   function add(name, rows) {
@@ -127,7 +202,30 @@ function S1World(spec) {
   add('factory_stock', spec.factory_stock || []);
   add('shipping_plans', spec.plans || []);
   add('shipping_plan_lines', spec.plan_lines || []);
-  add('marketplaces', spec.marketplaces || []);
+  add('marketplaces', spec.marketplaces === undefined
+    // The pool reader keys allocation priority by company||country||marketplace, and the harvest enumerates
+    // sites from this table. The default is the ONE station the positive-residual world is about.
+    ? [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', allocation_priority: 1 }]
+    : spec.marketplaces);
+  add('overseas_inventory_snapshot', spec.overseas || []);
+  // Present by default with ONE row each, so "a row was added" is a measurable delta rather than the
+  // difference between an empty table and a table. `null` removes the sheet, which is how SHEET_ABSENT is
+  // driven — and SHEET_ABSENT must stay row_count null, never 0.
+  if (spec.movements !== null) {
+    add('factory_stock_movements', spec.movements === undefined
+      ? [{ factory_stock_movement_id: 'MV-1', movement_date: '2026-09-01', sku: SKU_FOR_DEMAND_,
+          warehouse_id: WHF, movement_type: 'IN', qty: 2000, created_at: '2026-09-01T00:00:00Z' }]
+      : spec.movements);
+  }
+  if (spec.overrideAudit !== null) {
+    add('factory_stock_override_audit', spec.overrideAudit === undefined
+      ? [{ override_audit_id: 'AU-1', created_at: '2026-09-01T00:00:00Z', entity_type: 'shipping_plan',
+          entity_id: 'SP-SEED', transition: 'seed', company: 'ResUS', country: 'US',
+          marketplace: 'Amazon', sku: SKU_FOR_DEMAND_, source_warehouse_id: WHF }]
+      : spec.overrideAudit);
+  }
+  add('carrier_rate_cards', spec.rateCards === undefined ? DEFAULT_RATE_CARDS_ : spec.rateCards);
+  add('carrier_lead_times', spec.leadTimes === undefined ? DEFAULT_LEAD_TIMES_ : spec.leadTimes);
 
   // The two normalizers 71_ reaches for, and the shipped 71_ seam itself.
   vm.runInContext([
@@ -135,6 +233,105 @@ function S1World(spec) {
     'function gapCanonCountry_(c) { return String(c == null ? "" : c).trim().toUpperCase(); }'
   ].join(NL), w.ctx);
   vm.runInContext(G71, w.ctx, { filename: '71_' });
+  // ================================================================================================================
+  // S1-R4A — THE PRODUCTION WRITE-SET CHAIN, LOADED FROM REAL SOURCE.
+  //
+  // MANIFEST P now predicts the exact K2 identities a Generate would create or update, and it does that by
+  // calling the authorities that would produce them. Those authorities have to be REAL here or the test proves
+  // nothing: a stubbed allocator would let the suite agree with a prediction the production code never makes.
+  // So each one is extracted from its shipped file — 61_ for the harvest and the allocator, 16_ for the K2
+  // identity and the CREATE/REUSE resolver. KMWRR / KMWHA / KMWRB / KMAF already come from the 90_ bundle the
+  // shared world loads.
+  //
+  // WHAT IS DELIBERATELY NOT DONE: nothing here is stubbed to return a write set. Section M's assertions about
+  // the predicted identities are assertions about what 16_ and 90_ compute from the fixture's own rows.
+  // ================================================================================================================
+  // 43_'s supply-pool reader, which the harvest builds its factory/overseas pools from. Real source: the pool
+  // it produces is the one the allocator spends, so a stub here would let the prediction allocate stock that
+  // production would refuse.
+  var G43X = read(GS + '43_api_v1_gap_materialization.gs');
+  vm.runInContext([
+    extractFn(G43X, 'gapStr_'), extractFn(G43X, 'gapNum_'),
+    extractFn(G43X, 'gapReadObjects_'), extractFn(G43X, 'gapOpReadSupplyPoolFacts_')
+  ].join(NL), w.ctx, { filename: '43_pools' });
+  var G61X = read(GS + '61_api_v1_weekly_ai_plan.gs');
+  vm.runInContext([
+    // The two 61_ module constants the chain reads. Taken from the shipped source, not spelled here: the
+    // factory identity map decides which warehouse ids the assembler treats as factories, and a copy of it
+    // in a test would be a second opinion about the source of the plan.
+    extractVar(G61X, 'WEEKLY_AI_PLAN_FACTORY_IDENTITY_'),
+    extractVar(G61X, 'WEEKLY_AI_PLAN_SOURCE_PAGE_'),
+    extractFn(G61X, 'weeklyAiPlanTargetKeySet_'),
+    extractFn(G61X, 'weeklyAiPlanWhActive_'),
+    extractFn(G61X, 'weeklyAiPlanCanonicalDemandRef_'),
+    extractFn(G61X, 'weeklyAiPlanAcceptCanonicalDemand_'),
+    extractFn(G61X, 'weeklyAiPlanForecastReadContext_'),
+    extractFn(G61X, 'weeklyAiPlanSplitBySource_'),
+    extractFn(G61X, 'weeklyAiPlanWarehousesById_'),
+    extractFn(G61X, 'weeklyAiPlanPoolsBySku_'),
+    extractFn(G61X, 'weeklyAiPlanSourceDataAsOfAuthority_'),
+    extractFn(G61X, 'weeklyAiPlanCollapseCanonicalDemand_'),
+    extractFn(G61X, 'weeklyAiPlanEnumerateSites_'),
+    extractFn(G61X, 'weeklyAiPlanIsolateSites_'),
+    extractFn(G61X, 'weeklyAiPlanBuildKmafReceivers_'),
+    extractFn(G61X, 'weeklyAiPlanHarvest_'),
+    extractFn(G61X, 'weeklyAiPlanClassifyDestination_'),
+    extractFn(G61X, 'weeklyAiPlanWarehouseRole_'),
+    extractFn(G61X, 'weeklyAiPlanK2AllocatedLines_'),
+    extractFn(G61X, 'weeklyAiPlanReadCarrierAuthorities_'),
+    extractFn(G61X, 'weeklyAiPlanShipDate_')
+  ].join(NL), w.ctx, { filename: '61_writeset' });
+  // ================================================================================================================
+  // THE ONE SEAM THIS FIXTURE SUPPLIES, AND WHY IT IS THE RIGHT ONE.
+  //
+  // weeklyAiPlanEnumerateSites_ reads the RECOMMENDATION WORKSPACE (42_ handleRecommendationWorkspaceGet_), which
+  // is a read chain over the forecast import, the inventory snapshots and the lead-time tables. None of that is
+  // in this world, and none of it decides a single field of the write set — it decides what the DEMAND is, which
+  // is what a fixture exists to declare. So the harvest is wrapped and handed the demand directly, in exactly
+  // the shape KMWHA documents (receiverFacts + planningFacts + horizonsByDemandRef).
+  //
+  // EVERYTHING THAT DECIDES THE WRITE SET STAYS REAL, and that is the whole point of the seam being here rather
+  // than one layer lower:
+  //     KMWRB.buildWeeklySourceLines        real (90_)
+  //     weeklyAiPlanK2AllocatedLines_       real (61_)  <- the allocator, quantities and per-source splits
+  //     KMWRR.buildK2GenerationPlan         real (90_)  <- route grouping
+  //     sadK2GroupKey_ / DeterministicHeaderId_ / DeterministicLineId_   real (16_)
+  //     sadK2ResolveActiveDraft_            real (16_)  <- CREATE vs UPDATE
+  //     aiplExpirationCandidates_           real (69_)
+  // The identities section M asserts are therefore computed by shipped production code from this world's own
+  // rows. A stub anywhere below this line would let the suite agree with a prediction production never makes.
+  //
+  // The real harvest still RUNS: freshness, the accepted snapshot, the gap lineage, the recommendation state,
+  // the pools and warehousesById all come from it, so the manifest's other measurements are unaffected.
+  // ================================================================================================================
+  // 380 = the fixture's gross recommendation 900 minus its two manual drafts totalling 520. Spelled through
+  // demandWith_ rather than derived from the residual: the census reaches 380 down a separate path, so the
+  // manifest's `the_predicted_lines_do_not_exceed_the_proposed_quantity` compares two independent numbers
+  // instead of comparing one with itself.
+  var demand = spec.demand === undefined ? demandWith_(380) : spec.demand;
+  vm.runInContext('var __S1_DEMAND = ' + JSON.stringify(demand) + ';', w.ctx);
+  vm.runInContext([
+    // AN ASSIGNMENT, NOT A DECLARATION. `function weeklyAiPlanHarvest_(){}` here would be HOISTED over the
+    // capture on the line above, so __s1RealHarvest would hold the wrapper and the wrapper would call itself:
+    // measured as "Maximum call stack size exceeded" reported as an unmeasurable write set.
+    'var __s1RealHarvest = weeklyAiPlanHarvest_;',
+    'weeklyAiPlanHarvest_ = function (ss, scope, expectedBySite) {',
+    '  var h = __s1RealHarvest(ss, scope, expectedBySite);',
+    '  if (h && h.ok === true && __S1_DEMAND) {',
+    '    h.kmaf = { ready: true, issues: [], receiverFacts: __S1_DEMAND.receiverFacts,',
+    '      planningFacts: __S1_DEMAND.planningFacts };',
+    '    h.horizonsByDemandRef = __S1_DEMAND.horizonsByDemandRef;',
+    '    h.site_count = (__S1_DEMAND.receiverFacts || []).length;',
+    '  }',
+    '  return h;',
+    '};'
+  ].join(NL), w.ctx, { filename: 'demand_seam' });
+  vm.runInContext([
+    extractFn(G16, 'sadK2ResolveActiveDraft_'),
+    extractFn(G16, 'sadK2PayloadFingerprint_'),
+    extractFn(G16, 'sadK2LineNaturalKey_'),
+    extractFn(G16, 'sadK2PartitionLinesIntoGroups_')
+  ].join(NL), w.ctx, { filename: '16_writeset' });
   // 69_'s real expiration selector — the SAME one a generation uses to expire, so the set the census reports
   // and the set a run would expire cannot differ.
   vm.runInContext([extractFn(G69, 'aiplStr_'), extractFn(G69, 'aiplLo_'),
@@ -1282,8 +1479,18 @@ var S10w = S1World(pos());
 var S10n = vm.runInContext('S1_emitChunked_("s1_payload", new Array(60000).join("x"))', S10w.ctx);
 eq(S10n, 0, 'S10  a payload over the bound emits no chunks at all');
 var S10last = String((S10w.log || [])[(S10w.log || []).length - 1]);
-ok(S10last.indexOf('s1_payload_withheld') > 0 && S10last.indexOf('"would_be_chunks":20') > 0,
-  'S10a it says it was withheld and how many lines it would have been', S10last.slice(0, 160));
+// S1-R4A — 21, NOT 20, AND THE EXTRA CHUNK IS THE POINT. The per-chunk budget is now the LINE budget: the
+// tag and the '[S1] ' prefix come out of S1_CHUNK_MAX_BYTES_ instead of sitting on top of it, so the same
+// 59,999-byte payload needs one more slice. Asserted as the DERIVED number rather than a fresh literal, so
+// the claim stays "the count it reports is the count its own budget implies".
+var S10budget = vm.runInContext('S1_chunkBudget_("s1_payload")', S10w.ctx);
+ok(S10budget > 0 && S10budget < 3000, 'S10a0 the chunk budget is the line budget, not the payload budget',
+  S10budget);
+eq(S10last.indexOf('s1_payload_withheld') > 0, true,
+  'S10a it says it was withheld', S10last.slice(0, 160));
+ok(S10last.indexOf('"would_be_chunks":' + Math.ceil(59999 / S10budget)) > 0,
+  'S10a1 and how many lines it would have been, at its own budget',
+  [S10budget, Math.ceil(59999 / S10budget), S10last.slice(0, 160)]);
 ok(S10last.indexOf('NOT TRUNCATED') > 0,
   'S10b and distinguishes withheld from truncated — a cut value is a wrong value');
 eq(vm.runInContext('S1_emitChunked_("s1_small", new Array(2000).join("y"))', S10w.ctx), 1,
@@ -1429,8 +1636,32 @@ eq([FB.manual_header_ids.length, FB.manual_line_ids.length, FB.manual_planned_to
   [2, 2, 520], 'M5b with the existing manual identities enumerated and totalled');
 ok(FB.manual_identity_fingerprint !== null,
   'M5c and fingerprinted, so a column moving inside a row is detectable', FB.manual_identity_fingerprint);
-eq([FB.expected_ai_identities, FB.expected_ai_identity_count], [[], 0],
-  'M5d the AI identities a run would supersede — here none');
+// S1-R4A — THIS ASSERTION HELD THE DEFECT IN PLACE. It read `FB.expected_ai_identities` and
+// `FB.expected_ai_identity_count`, and the value behind both was `existing_affected_ai_identities` — the AI
+// rows that ALREADY EXIST. In this world there are none, so the pair was [[], 0] and the suite agreed that a
+// run which would create a header and a line was "expected" to touch nothing. The three sets are now three
+// fields with three names, and the assertion is that they are DIFFERENT here rather than equal.
+ok(FB.expected_ai_identities === undefined && FB.expected_ai_identity_count === undefined,
+  'M5d the conflated field is GONE from the baseline, not merely documented',
+  [FB.expected_ai_identities, FB.expected_ai_identity_count]);
+eq([FB.existing_active_ai_identities, FB.existing_active_ai_identity_count], [[], 0],
+  'M5d1 existing active AI identities — genuinely none in this world');
+eq([FB.ai_expiration_candidates, FB.ai_expiration_candidate_count], [[], 0],
+  'M5d2 and nothing for a run to expire, which is a DIFFERENT fact');
+// THE ONE THE OLD FIELD COULD NEVER STATE: what a Generate would actually write.
+eq([FB.expected_create_header_count, FB.expected_create_line_count,
+  FB.expected_update_header_count, FB.expected_update_line_count], [1, 1, 0, 0],
+  'M5d3 while the run is predicted to CREATE one header and one line, and update nothing');
+ok(FB.expected_header_ids.length === 1 && /^SADH-K2-[0-9A-F]+$/.test(FB.expected_header_ids[0]),
+  'M5d4 named by its deterministic K2 header id', FB.expected_header_ids);
+ok(FB.expected_line_ids.length === 1 && /^SADL-K2-[0-9A-F]+$/.test(FB.expected_line_ids[0]),
+  'M5d5 and its deterministic K2 line id', FB.expected_line_ids);
+eq(FB.expected_k2_group_keys.length, 1, 'M5d6 across one route group, keyed canonically',
+  FB.expected_k2_group_keys);
+// AND THE FOURTH SET, WHICH IS A DERIVATION: nothing existed, nothing expires, one is written.
+eq(FB.expected_post_generation_active_ai_identities, FB.expected_header_ids,
+  'M5d7 so the post-generation AI set is exactly the one written identity');
+eq(FB.writeset_measurable, true, 'M5d8 measured, not approximated', FB.writeset_stage);
 ok(FB.identity_universe_count >= 1 && FB.identity_universe_fingerprint !== null,
   'M5e the whole identity universe, by count and fingerprint',
   [FB.identity_universe_count, FB.identity_universe_fingerprint]);
@@ -1606,15 +1837,41 @@ var AI_L = { allocation_draft_line_id: 'AI-OLD-9-L1', allocation_draft_id: 'AI-O
   planned_qty: '60', line_status: 'draft' };
 var M11 = manifestP(pos({ extraHeaders: [AI_H], extraLines: [AI_L] }));
 eq(M11.res.verdict, 'READY_TO_AUTHORIZE', 'M11 an existing AI draft is still a READY world', failed(M11.res));
-ok(M11.res.frozen_before.expected_ai_identity_count >= 1,
-  'M11a and the baseline now names an AI identity a run would supersede',
-  M11.res.frozen_before.expected_ai_identities);
+// S1-R4A — THE THREE SETS, IN THE ONE WORLD THAT CAN TELL THEM APART. There is an existing AI draft here,
+// so `existing` is 1; it is a `draft` in scope for the same cycle, so the lifecycle authority names it as an
+// EXPIRATION candidate; and the run would still CREATE its own new header. The old single field could only
+// ever report one of those three numbers, and it reported the first while being named for the third.
+var FB11 = M11.res.frozen_before;
+eq(FB11.existing_active_ai_identity_count, 1,
+  'M11a one AI identity is active in this scope before the run', FB11.existing_active_ai_identities);
+eq(FB11.ai_expiration_candidates, ['AI-OLD-9'],
+  'M11a1 and the lifecycle authority names exactly it as the row a run would expire');
+eq([FB11.expected_create_header_count, FB11.expected_create_line_count], [1, 1],
+  'M11a2 while the run would CREATE a header and a line of its own');
+ok(FB11.expected_header_ids.indexOf('AI-OLD-9') === -1,
+  'M11a3 so the expired identity and the written identity are not the same row',
+  [FB11.expected_header_ids, FB11.ai_expiration_candidates]);
+eq(FB11.expected_post_generation_active_ai_identities, FB11.expected_header_ids,
+  'M11a4 and after the run only the new identity is active: expired out, created in');
 eq(M11.res.frozen_before.qualifying_ai_planned_qty, 60,
   'M11b with the AI exposure counted separately from the manual plan');
 eq(M11.res.frozen_before.qualifying_manual_planned_qty, 520,
   'M11c which is unchanged — an AI draft is not an operator commitment');
 // A CHANGED MANUAL IDENTITY CHANGES THE FINGERPRINT. Same count, different content.
-var M11d = manifestP(pos({ aLine: { planned_qty: '321' } }));
+// A manual quantity moving by one unit moves the RESIDUAL by one unit too (900 - 521 = 379), so the demand
+// crossing the seam has to move with it — the netting that produces it happens upstream of the seam. Leaving
+// the seam at 380 makes the prediction exceed the proposal by exactly one unit, which the manifest refuses:
+// measured as a STOP on `the_predicted_lines_do_not_exceed_the_proposed_quantity`. That refusal is the guard
+// doing its job, and it is asserted on its own below (M11d0) rather than tuned away.
+var M11d0 = manifestP(pos({ aLine: { planned_qty: '321' } }));
+eq(M11d0.res.verdict, 'STOP',
+  'M11d0 a prediction one unit larger than the residual it is netted from is refused, not rounded',
+  failed(M11d0.res));
+ok(failed(M11d0.res).indexOf('the_predicted_lines_do_not_exceed_the_proposed_quantity') >= 0,
+  'M11d0a and the named condition is the quantity cross-check', failed(M11d0.res));
+eq(mpChunks(M11d0.world), 0, 'M11d0b with no freeze chunk emitted');
+var M11d = manifestP(pos({ aLine: { planned_qty: '321' },
+  demand: demandWith_(379) }));
 ok(M11d.res.frozen_before
   && M11d.res.frozen_before.manual_identity_fingerprint !== FB.manual_identity_fingerprint,
   'M11d one manual quantity changing moves the manual fingerprint',
@@ -1646,6 +1903,441 @@ ok(String(MP1.res.boundary_note).indexOf('does NOT authorize MANIFEST S') > 0,
   'M12b the boundary note is unchanged');
 eq(MP1.res.rollback.complete, true, 'M12c and the rollback is still declared complete');
 
+
+
+// ================================================================================================================
+section('W — S1-R4A: the exact write set, and a freeze that covers every column');
+// ================================================================================================================
+// THE CLAIM UNDER TEST. MANIFEST P must name the exact K2 header and line identities a production Generate
+// would create or update, and it must freeze enough of the current content that an AFTER readback can catch a
+// row edited in place. W4's baseline could do neither: `expected_ai_identities` held the rows that already
+// existed, and the fingerprints covered ids only.
+//
+// WHAT IS REAL HERE. Everything that decides the write set: KMWRB.buildWeeklySourceLines,
+// weeklyAiPlanK2AllocatedLines_ (the allocator), KMWRR.buildK2GenerationPlan (route grouping), sadK2GroupKey_,
+// sadK2DeterministicHeaderId_, sadK2DeterministicLineId_, sadK2ResolveActiveDraft_ (CREATE vs UPDATE) and
+// aiplExpirationCandidates_ are all loaded from their shipped files. See the note in S1World for the one seam
+// this fixture supplies and why it sits where it does.
+var WG0 = MP1.res.predicted_write_set.route_groups[0];
+var PRED_H = WG0.allocation_draft_id, PRED_L = WG0.line_ids[0];
+
+// ---- W1 — THE IDENTITIES ARE PRODUCED BY THE PRODUCTION AUTHORITIES, NOT BY THIS FILE. -------------------
+// Recomputed here by calling the SAME shipped functions with the SAME header the manifest reported, so the
+// claim is "the manifest used the authority", not "the manifest produced a plausible-looking string".
+var W1hdr = { planning_cycle: GAP_CYCLE, company: 'ResUS', country: 'US', marketplace: 'Amazon',
+  source_page: 'inventory_replenishment',
+  recommended_source_warehouse_id: WG0.source_warehouse_id,
+  recommended_destination_warehouse_id: WG0.destination_warehouse_id,
+  recommended_shipping_method: WG0.shipping_method,
+  recommended_last_mile_delivery: WG0.last_mile_delivery,
+  recommendation_group_no: WG0.recommendation_group_no };
+var W1key = vm.runInContext('sadK2GroupKey_(' + JSON.stringify(W1hdr) + ')', MP1.world.ctx);
+var W1id = vm.runInContext('sadK2DeterministicHeaderId_(' + JSON.stringify(W1hdr) + ')', MP1.world.ctx);
+eq(WG0.k2_group_key, W1key, 'W1  the reported K2 group key is sadK2GroupKey_ of the reported header');
+eq(PRED_H, W1id, 'W1a and the header id is sadK2DeterministicHeaderId_ of that same header');
+ok(/^SADH-K2-[0-9A-F]{8}$/.test(PRED_H), 'W1b in the deterministic K2 header form', PRED_H);
+ok(/^SADL-K2-[0-9A-F]{8}$/.test(PRED_L), 'W1c and the line in the deterministic K2 line form', PRED_L);
+// EVERY AUTHORITY NAMED AND PRESENT, so a half-synced deployment is a refusal rather than an approximation.
+var W1auth = MP1.res.predicted_write_set.authorities;
+ok(W1auth.length >= 13 && W1auth.every(function (a) { return a.present === true; }),
+  'W1d every write-set authority is present and named', W1auth.length);
+['weeklyAiPlanK2AllocatedLines_', 'KMWRR.buildK2GenerationPlan', 'sadK2ResolveActiveDraft_',
+  'sadK2DeterministicHeaderId_', 'sadK2DeterministicLineId_', 'aiplExpirationCandidates_'
+].forEach(function (n, i) {
+  ok(W1auth.some(function (a) { return a.authority === n; }),
+    'W1e.' + (i + 1) + ' including ' + n);
+});
+// AND NO SECOND IMPLEMENTATION IN THIS FILE. The diagnostic must not carry its own id or grouping algorithm.
+ok(S1_BARE.indexOf("'SADH-K2-'") === -1 && S1_BARE.indexOf('"SADH-K2-"') === -1,
+  'W1f the diagnostic never mints a K2 header id itself');
+ok(S1_BARE.indexOf("'SADL-K2-'") === -1 && S1_BARE.indexOf('"SADL-K2-"') === -1,
+  'W1g nor a K2 line id');
+eq((S1_BARE.match(/function S1_[A-Za-z0-9_]*[Gg]roup[A-Za-z0-9_]*\(/g) || []), [],
+  'W1h and defines no grouping function of its own');
+
+// ---- W2 — MULTI ROUTE GROUP: every K2 identity predicted, none merged. ----------------------------------
+// Two receivers for the same sku with DIFFERENT destinations. The destination is a K2 group dimension, so
+// route grouping must produce TWO headers — and 190 + 190 = 380 keeps the total inside the residual, because
+// a prediction that exceeds the proposal is refused (see M11d0).
+var W2demand = demandWith_(190, {
+  receiverFacts: [
+    { demandRef: DEMAND_REF_, marketplace: 'Amazon', destinationWarehouseId: 'Amazon',
+      fulfillmentModel: 'platform_fulfilled', dailyDemand: 10, allocationPriority: 1, demandWeight: 0.5,
+      eligiblePoolTypes: ['FBA'] },
+    { demandRef: DEMAND_REF_ + '|W', marketplace: 'Amazon', destinationWarehouseId: 'WH-3PL',
+      fulfillmentModel: 'self_fulfilled', dailyDemand: 10, allocationPriority: 1, demandWeight: 0.5,
+      eligiblePoolTypes: ['THREE_PL'] }
+  ],
+  planningFacts: [
+    { demandRef: DEMAND_REF_, sku: SKU_FOR_DEMAND_, siteSku: SKU_FOR_DEMAND_ + '-US', unitsPerCarton: 10 },
+    { demandRef: DEMAND_REF_ + '|W', sku: SKU_FOR_DEMAND_, siteSku: SKU_FOR_DEMAND_ + '-W', unitsPerCarton: 10 }
+  ],
+  horizonsByDemandRef: (function () {
+    var o = {}, w = { D18: 190, D30: 190, D45: 190, D90: 190 },
+      rq = { D18: '2026-10-01', D30: '2026-10-15', D45: '2026-11-01', D90: '2026-12-01' };
+    o[DEMAND_REF_] = { cumulativeGapByWindow: w, requiredByByWindow: rq };
+    o[DEMAND_REF_ + '|W'] = { cumulativeGapByWindow: w, requiredByByWindow: rq };
+    return o;
+  })()
+});
+var W2 = manifestP(pos({ demand: W2demand }));
+var W2ws = W2.res.predicted_write_set;
+ok(W2ws.measurable === true && (W2ws.route_groups || []).length >= 2,
+  'W2  two destinations produce two route groups, never one merged header',
+  [(W2ws.route_groups || []).length, W2ws.stage]);
+eq(W2ws.expected_header_ids.length, (W2ws.route_groups || []).length,
+  'W2a with one predicted header id per group', W2ws.expected_header_ids);
+ok(W2ws.expected_header_ids.every(function (id) { return /^SADH-K2-[0-9A-F]{8}$/.test(id); }),
+  'W2b every one of them deterministic', W2ws.expected_header_ids);
+eq(W2ws.duplicate_header_ids, [], 'W2c and no two groups minting the same id');
+eq(W2ws.expected_k2_group_keys.length, (W2ws.route_groups || []).length,
+  'W2d one canonical group key per group');
+ok(new Set(W2ws.expected_k2_group_keys).size === W2ws.expected_k2_group_keys.length,
+  'W2e all distinct — the destination dimension separated them', W2ws.expected_k2_group_keys);
+ok(W2ws.expected_line_ids.length >= 2, 'W2f every line predicted across both groups',
+  W2ws.expected_line_ids);
+eq(W2ws.expected_line_ids.length,
+  W2ws.route_groups.reduce(function (a, g) { return a + g.line_count; }, 0),
+  'W2g and the line ids account for every group line');
+eq(W2.world.allWrites(), 0, 'W2h measured: zero writes');
+
+// ---- W3 — CREATE vs UPDATE, classified by the production resolver. --------------------------------------
+// An ACTIVE AI draft seeded on the EXACT group key the CREATE path predicted. sadK2ResolveActiveDraft_ must
+// return REUSE, so the same world that was a CREATE becomes an UPDATE, with no change to the identity.
+var W3hdr = {
+  allocation_draft_id: PRED_H, planning_cycle: GAP_CYCLE, source_page: 'inventory_replenishment',
+  company: 'ResUS', country: 'US', marketplace: 'Amazon', status: 'draft',
+  generation_type: 'system_generated', generation_run_id: 'RUN-EARLIER',
+  recommended_source_warehouse_id: WG0.source_warehouse_id,
+  recommended_destination_warehouse_id: WG0.destination_warehouse_id,
+  recommended_shipping_method: WG0.shipping_method,
+  recommended_last_mile_delivery: WG0.last_mile_delivery,
+  recommendation_group_no: WG0.recommendation_group_no };
+var W3 = manifestP(pos({ extraHeaders: [W3hdr],
+  extraLines: [{ allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU,
+    planned_qty: '380', line_status: 'draft' }] }));
+var W3ws = W3.res.predicted_write_set;
+eq(W3ws.route_groups[0].classification, 'UPDATE',
+  'W3  an active draft on the predicted group key makes it an UPDATE', W3ws.route_groups[0]);
+eq(W3ws.route_groups[0].resolve_status, 'REUSE',
+  'W3a and the classification came from sadK2ResolveActiveDraft_ saying REUSE');
+eq([W3ws.expected_create_header_count, W3ws.expected_update_header_count], [0, 1],
+  'W3b counted as an update, not a create');
+eq([W3ws.expected_create_line_count, W3ws.expected_update_line_count], [0, 1],
+  'W3c and the line too, because its deterministic id already exists');
+eq(W3ws.expected_header_ids, [PRED_H],
+  'W3d the identity is unchanged — the same row, updated in place');
+// THE SAME WORLD WITHOUT THE SEEDED ROW IS A CREATE. Both halves, so the classifier is shown to discriminate.
+eq([MP1.res.predicted_write_set.expected_create_header_count,
+  MP1.res.predicted_write_set.expected_update_header_count], [1, 0],
+  'W3e while the unseeded world is a CREATE');
+// AND THE RUN'S OWN ROW IS NOT A ROW IT SUPERSEDES. Without committed_ids the UPDATE target appeared in the
+// expire set too, and the manifest refused it — correctly, on a wrong input.
+ok((W3.res.ai_identity_sets.ai_expiration_candidates || []).indexOf(PRED_H) === -1,
+  'W3f the row being updated is NOT listed as one the run would expire',
+  W3.res.ai_identity_sets.ai_expiration_candidates);
+eq(W3.res.verdict, 'READY_TO_AUTHORIZE', 'W3g and the world is READY', failed(W3.res));
+eq(W3.world.allWrites(), 0, 'W3h measured: zero writes');
+
+// ---- W4 — THE THREE SETS ARE NEVER THE SAME LIST. -------------------------------------------------------
+// One world holding all three at once: an unrelated AI draft that WILL expire, a seeded row that WILL be
+// updated, and the run's own predicted identity.
+var W4 = manifestP(pos({
+  extraHeaders: [W3hdr, { allocation_draft_id: 'AI-STALE-1', planning_cycle: GAP_CYCLE,
+    source_page: 'inventory_replenishment', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+    status: 'draft', generation_type: 'system_generated', generation_run_id: 'RUN-OLDER',
+    recommended_source_warehouse_id: WHF, recommended_destination_warehouse_id: 'WH-3PL',
+    recommended_shipping_method: 'SEA', recommended_last_mile_delivery: 'UPS',
+    recommendation_group_no: '9' }],
+  extraLines: [
+    { allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU, planned_qty: '380',
+      line_status: 'draft' },
+    { allocation_draft_line_id: 'AI-STALE-1-L1', allocation_draft_id: 'AI-STALE-1', sku: SKU,
+      planned_qty: '40', line_status: 'draft' }] }));
+var W4ids = W4.res.ai_identity_sets;
+ok((W4ids.existing_active_ai_identities || []).length === 2,
+  'W4  two AI identities exist in this scope', W4ids.existing_active_ai_identities);
+eq(W4ids.ai_expiration_candidates, ['AI-STALE-1'],
+  'W4a exactly one of them is what a run would EXPIRE');
+eq(W4ids.expected_generation_writes.expected_header_ids, [PRED_H],
+  'W4b a different one is what it would WRITE');
+eq(W4ids.ai_identities_that_will_expire, ['AI-STALE-1'], 'W4c named as the expiring set');
+eq(W4ids.ai_identities_that_will_update, [PRED_H], 'W4d and as the updating set');
+eq(W4ids.ai_identities_that_must_stay_unchanged, [],
+  'W4e with nothing left over that must not move');
+eq(W4ids.expected_post_generation_active_ai_identities, [PRED_H],
+  'W4f so after the run exactly one AI identity is active: the stale one expired, the written one kept');
+ok(W4ids.expected_post_generation_derivation.indexOf('DERIVATION') > 0,
+  'W4g and the fourth set says it is a derivation, not a measurement');
+eq(W4.world.allWrites(), 0, 'W4h measured: zero writes');
+
+// ---- W5 — A NOTE-ONLY CHANGE ON A MANUAL ROW IS VISIBLE. ------------------------------------------------
+// The exact drift W4's baseline could not see: same ids, same quantities, one text column different.
+var W5base = manifestP(pos()).res.frozen_before;
+var W5 = manifestP(pos({ aLine: { note: 'operator added a note' } }));
+ok(W5.res.frozen_before !== null, 'W5  a note-only edit is still a READY world', failed(W5.res));
+ok(W5.res.frozen_before.target_manual_combined_fingerprint
+  !== W5base.target_manual_combined_fingerprint,
+  'W5a and it MOVES the manual full-row fingerprint',
+  [W5base.target_manual_combined_fingerprint,
+    W5.res.frozen_before.target_manual_combined_fingerprint]);
+eq(W5.res.frozen_before.target_manual_line_ids, W5base.target_manual_line_ids,
+  'W5b with every id unchanged — which is why an id fingerprint could not have caught it');
+eq(W5.res.frozen_before.target_manual_planned_total, W5base.target_manual_planned_total,
+  'W5c and every quantity unchanged too');
+// AND THE OLD ID-ONLY FINGERPRINT PROVES THE POINT: it cannot tell these two worlds apart.
+eq(W5.res.frozen_before.identity_universe_fingerprint, W5base.identity_universe_fingerprint,
+  'W5d the identity-universe fingerprint is blind to it, which is the defect this replaces');
+
+// ---- W6 — AN updated_at-ONLY CHANGE IS VISIBLE. --------------------------------------------------------
+// The column that moves whenever something wrote, and the one most likely to be the ONLY evidence.
+var W6 = manifestP(pos({ aLine: { updated_at: '2099-01-01T00:00:00Z' } }));
+ok(W6.res.frozen_before !== null, 'W6  an updated_at-only edit is still a READY world', failed(W6.res));
+ok(W6.res.frozen_before.target_manual_combined_fingerprint
+  !== W5base.target_manual_combined_fingerprint,
+  'W6a and it MOVES the manual full-row fingerprint',
+  [W5base.target_manual_combined_fingerprint,
+    W6.res.frozen_before.target_manual_combined_fingerprint]);
+eq(W6.res.frozen_before.target_manual_planned_total, W5base.target_manual_planned_total,
+  'W6b with no quantity having changed');
+// A TIMESTAMP IS NOT ROUNDED INTO EQUALITY. One second apart must not fingerprint alike.
+var W6c = manifestP(pos({ aLine: { updated_at: '2099-01-01T00:00:01Z' } }));
+ok(W6c.res.frozen_before.target_manual_combined_fingerprint
+  !== W6.res.frozen_before.target_manual_combined_fingerprint,
+  'W6c and one second of difference is still a difference');
+// EVERY LIVE COLUMN IS COVERED, asserted on the measurement rather than on the intention.
+eq([W5base.draft_header_excluded_fields, W5base.draft_line_excluded_fields], [[], []],
+  'W6d nothing is excluded from either full-row fingerprint');
+eq([W5base.draft_header_live_column_count, W5base.draft_line_live_column_count], [36, 31],
+  'W6e over all 36 header columns and all 31 line columns',
+  [W5base.draft_header_live_column_count, W5base.draft_line_live_column_count]);
+
+// ---- W7 — AN OTHER-SCOPE ROW CHANGING CONTENT, WITH ITS ID UNCHANGED. -----------------------------------
+function otherScopeWorld(note) {
+  return manifestP(pos({
+    extraHeaders: [{ allocation_draft_id: 'OTHER-H-1', planning_cycle: GAP_CYCLE,
+      source_page: 'inventory_replenishment', company: 'OtherCo', country: 'US', marketplace: 'Walmart',
+      status: 'draft', generation_type: 'user_created', note: note }],
+    extraLines: [{ allocation_draft_line_id: 'OTHER-H-1-L1', allocation_draft_id: 'OTHER-H-1',
+      sku: 'OTHER-SKU', planned_qty: '77', line_status: 'draft' }] }));
+}
+var W7a = otherScopeWorld('before'), W7b = otherScopeWorld('after');
+eq([W7a.res.verdict, W7b.res.verdict], ['READY_TO_AUTHORIZE', 'READY_TO_AUTHORIZE'],
+  'W7  another scope holding a draft does not stop this activation',
+  [failed(W7a.res), failed(W7b.res)]);
+eq([W7a.res.frozen_before.other_scope_header_count, W7a.res.frozen_before.other_scope_line_count], [1, 1],
+  'W7a the other scope is counted');
+ok(W7a.res.frozen_before.other_scope_combined_fingerprint
+  !== W7b.res.frozen_before.other_scope_combined_fingerprint,
+  'W7b and a single changed CONTENT column moves its fingerprint, with the id unchanged',
+  [W7a.res.frozen_before.other_scope_combined_fingerprint,
+    W7b.res.frozen_before.other_scope_combined_fingerprint]);
+ok(String(W7a.res.frozen_before.other_scope_row_signatures.join(',')).indexOf('OTHER-H-1') >= 0,
+  'W7c the signatures are id~fingerprint pairs, so the changed row is nameable',
+  W7a.res.frozen_before.other_scope_row_signatures);
+eq(W7a.res.frozen_before.other_scope_row_signatures.length,
+  W7b.res.frozen_before.other_scope_row_signatures.length,
+  'W7d same number of rows — this is a content drift, not an identity drift');
+// AND THE OTHER SCOPE IS NOT IN THE TARGET BUCKETS. Three buckets, three permissions.
+ok(W7a.res.frozen_before.target_manual_header_ids.indexOf('OTHER-H-1') === -1
+  && (W7a.res.ai_identity_sets.existing_active_ai_identities || []).indexOf('OTHER-H-1') === -1,
+  'W7e and it is in neither target bucket');
+
+// ---- W8 — A FACTORY MOVEMENT OR AUDIT ROW APPEARING IS VISIBLE. ----------------------------------------
+var W8base = manifestP(pos()).res.frozen_before;
+eq([W8base.factory_stock_movement_count, W8base.factory_override_audit_count], [1, 1],
+  'W8  the factory write surfaces are counted');
+eq([W8base.factory_stock_movement_state, W8base.factory_override_audit_state],
+  ['SHEET_PRESENT_AND_READABLE', 'SHEET_PRESENT_AND_READABLE'], 'W8a and observed, not assumed');
+var W8m = manifestP(pos({ movements: [
+  { factory_stock_movement_id: 'MV-1', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+    movement_type: 'IN', qty: 2000, created_at: '2026-09-01T00:00:00Z' },
+  { factory_stock_movement_id: 'MV-2', movement_date: '2026-09-09', sku: SKU, warehouse_id: WHF,
+    movement_type: 'OUT', qty: 380, created_at: '2026-09-09T00:00:00Z' }] }));
+eq(W8m.res.frozen_before.factory_stock_movement_count, 2,
+  'W8b one more movement row is counted');
+ok(W8m.res.frozen_before.factory_stock_movement_fingerprint
+  !== W8base.factory_stock_movement_fingerprint,
+  'W8c and moves the movement fingerprint');
+ok(W8m.res.frozen_before.factory_stock_movement_ids.indexOf('MV-2') >= 0,
+  'W8d with the new id nameable', W8m.res.frozen_before.factory_stock_movement_ids);
+var W8a = manifestP(pos({ overrideAudit: [
+  { override_audit_id: 'AU-1', created_at: '2026-09-01T00:00:00Z', entity_type: 'shipping_plan',
+    entity_id: 'SP-SEED', transition: 'seed', company: 'ResUS', country: 'US', marketplace: 'Amazon',
+    sku: SKU, source_warehouse_id: WHF },
+  { override_audit_id: 'AU-2', created_at: '2026-09-09T00:00:00Z', entity_type: 'shipping_plan',
+    entity_id: 'SP-NEW', transition: 'confirm_overage', company: 'ResUS', country: 'US',
+    marketplace: 'Amazon', sku: SKU, source_warehouse_id: WHF }] }));
+eq(W8a.res.frozen_before.factory_override_audit_count, 2,
+  'W8e one more override-audit row is counted');
+ok(W8a.res.frozen_before.factory_override_audit_fingerprint
+  !== W8base.factory_override_audit_fingerprint,
+  'W8f and moves the audit fingerprint');
+// A CONTENT-ONLY CHANGE, SAME COUNT, SAME IDS.
+var W8g = manifestP(pos({ movements: [
+  { factory_stock_movement_id: 'MV-1', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+    movement_type: 'IN', qty: 1999, created_at: '2026-09-01T00:00:00Z' }] }));
+ok(W8g.res.frozen_before.factory_stock_movement_fingerprint
+  !== W8base.factory_stock_movement_fingerprint
+  && W8g.res.frozen_before.factory_stock_movement_count === 1,
+  'W8g a movement row edited in place moves the fingerprint at an unchanged count');
+// AND AN ABSENT TABLE IS NEVER ZERO ROWS.
+var W8h = manifestP(pos({ movements: null }));
+eq([W8h.res.frozen_before.factory_stock_movement_state,
+  W8h.res.frozen_before.factory_stock_movement_count], ['SHEET_ABSENT', null],
+  'W8h an absent movement table freezes as SHEET_ABSENT with a NULL count, never 0');
+// ---- THE ID COLUMNS ARE THE PRODUCTION ONES. --------------------------------------------------------
+// This was measured wrong first: the diagnostic and this fixture both invented `movement_id` / `audit_id`,
+// so the suite agreed with the mistake while a live sheet would have frozen a list of blank ids. The names
+// are now checked against the shipped declarations rather than against each other.
+var W8surf = manifestP(pos()).res.factory_surfaces.surfaces;
+eq(W8surf['factory_stock_movements'].id_column, 'factory_stock_movement_id',
+  'W8k the movement id column is the one 21_ MOV_HEADERS declares');
+var G21 = read(GS + '21_factory_inventory_handlers.gs');
+ok(G21.indexOf("'factory_stock_movement_id', 'movement_date'") > 0,
+  'W8k1 and that is still how 21_ spells it — read from the shipped file');
+var G71AUD = extractVar(G71, 'FSG_OVERRIDE_AUDIT_HEADERS_');
+var R8audId = vm.runInNewContext(G71AUD + ' FSG_OVERRIDE_AUDIT_HEADERS_[0]', {});
+eq(W8surf['factory_stock_override_audit'].id_column, R8audId,
+  'W8l the audit id column comes from 71_ FSG_OVERRIDE_AUDIT_HEADERS_[0]', R8audId);
+eq([W8surf['factory_stock_movements'].id_column_resolved,
+  W8surf['factory_stock_override_audit'].id_column_resolved], [true, true],
+  'W8m1 and both resolve against the live header row');
+// A PRESENT TABLE WHOSE ID COLUMN IS ABSENT IS NOT A TABLE OF BLANK IDS.
+var W8n = manifestP(pos({ movements: [{ movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+  movement_type: 'IN', qty: 1 }] }));
+var W8nw = S1World(pos());
+W8nw.sheets['factory_stock_movements'].rows[0][0] = 'renamed_id_column';
+var W8nres = vm.runInContext('RUN_S1_MANIFEST_P()', W8nw.ctx);
+var W8nsurf = W8nres.factory_surfaces.surfaces['factory_stock_movements'];
+eq([W8nsurf.observation_state, W8nsurf.id_column_resolved, W8nsurf.ids],
+  ['ID_COLUMN_UNRESOLVED', false, null],
+  'W8n a renamed id column is reported as UNRESOLVED with a NULL id list, never blanks');
+eq(W8nres.verdict, 'STOP', 'W8n1 and the manifest STOPs', failed(W8nres));
+ok(failed(W8nres).indexOf('every_factory_write_surface_is_either_readable_or_honestly_absent') >= 0,
+  'W8n2 on the factory-surface readability condition', failed(W8nres));
+eq([W8nres.freeze_paste_block, W8nres.operator_authorization_wording], [null, null],
+  'W8n3 with nothing pasteable and nothing to sign');
+eq(W8nw.allWrites(), 0, 'W8n4 and zero writes');
+
+// THE POOL ROW ITSELF, FULL-ROW.
+ok(W8base.factory_pool_row_fingerprint !== null,
+  'W8i the factory pool row is frozen as a full row', W8base.factory_pool_row_fingerprint);
+var W8j = manifestP(pos({ factory_stock: [
+  { warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 101 }] }));
+ok(W8j.res.frozen_before
+  && W8j.res.frozen_before.factory_pool_row_fingerprint !== W8base.factory_pool_row_fingerprint,
+  'W8j and one unit of reserved stock moving changes it');
+
+// ---- W9 — AN UNMEASURABLE WRITE SET IS A NAMED STOP THAT LEAKS NOTHING. ---------------------------------
+// Each link removed on its own, because "the write set could not be measured" must name WHICH authority is
+// absent — an operator told only that it failed has nowhere to look.
+[['sadK2ResolveActiveDraft_', 'sadK2ResolveActiveDraft_ = null;'],
+  ['sadK2DeterministicLineId_', 'sadK2DeterministicLineId_ = null;'],
+  ['weeklyAiPlanK2AllocatedLines_', 'weeklyAiPlanK2AllocatedLines_ = null;']
+].forEach(function (pair, i) {
+  var R = manifestP(pos({ after: pair[1] }));
+  var n = 'W9.' + (i + 1) + ' ' + pair[0] + ' absent: ';
+  eq(R.res.verdict, 'STOP', n + 'the manifest STOPs', failed(R.res));
+  eq(R.res.writeset_stop_code, 'EXACT_PRODUCTION_WRITESET_NOT_MEASURABLE',
+    n + 'with the named code');
+  ok((R.res.predicted_write_set.missing_authorities || []).indexOf(pair[0]) >= 0,
+    n + 'naming the absent authority', R.res.predicted_write_set.missing_authorities);
+  ok(String(R.res.stop_reason).indexOf('EXACT_PRODUCTION_WRITESET_NOT_MEASURABLE') === 0,
+    n + 'and leading the stop reason with it', String(R.res.stop_reason).slice(0, 90));
+  // NOTHING PASTEABLE, NOTHING TO SIGN.
+  eq(R.res.frozen_before, null, n + 'no baseline');
+  eq(R.res.freeze_paste_block, null, n + 'no paste block');
+  eq(mpChunks(R.world), 0, n + 'no freeze chunk');
+  eq(R.res.operator_authorization_wording, null, n + 'no authorization wording');
+  eq([R.world.allWrites(), R.res.writes, R.res.writer_calls], [0, 0, 0], n + 'and zero writes');
+});
+// AND IT IS NEVER SUBSTITUTED BY AN EMPTY LIST OR BY THE EXISTING ROWS.
+var W9x = manifestP(pos({ after: 'sadK2ResolveActiveDraft_ = null;' }));
+ok(W9x.res.predicted_write_set.expected_header_ids.length === 0
+  && W9x.res.predicted_write_set.measurable === false,
+  'W9a an unmeasurable write set is not reported as an empty one — measurable says false',
+  [W9x.res.predicted_write_set.expected_header_ids, W9x.res.predicted_write_set.measurable]);
+ok(failed(W9x.res).indexOf('the_exact_production_write_set_is_measurable') >= 0,
+  'W9b and the failing condition is the measurability one', failed(W9x.res));
+
+// ---- W10 — A BLOCKED ROUTE IS NOT AN EMPTY WRITE SET EITHER. -------------------------------------------
+// No lead times: the lane prices but has no transit authority, so KMWRR blocks every line and proposes no
+// group. Measured, and it must be a STOP rather than "zero rows expected".
+var W10 = manifestP(pos({ leadTimes: [] }));
+eq(W10.res.verdict, 'STOP', 'W10 a lane with no transit authority stops the manifest', failed(W10.res));
+ok(W10.res.predicted_write_set.measurable === true
+  && (W10.res.predicted_write_set.blocked_lines || []).length >= 1,
+  'W10a the authorities were reachable — the ROUTE is what failed',
+  W10.res.predicted_write_set.blocked_lines);
+ok(failed(W10.res).indexOf('no_line_the_generation_would_write_is_blocked_on_a_route') >= 0,
+  'W10b named as a blocked route, not as a missing authority', failed(W10.res));
+eq([W10.res.freeze_paste_block, W10.res.operator_authorization_wording], [null, null],
+  'W10c with nothing pasteable and nothing to sign');
+eq(mpChunks(W10.world), 0, 'W10d and no freeze chunk');
+
+// ---- W11 — AN UNEXPECTED LIVE COLUMN IS A STOP. -------------------------------------------------------
+// A column the schema authority does not know is either a half-applied migration or something writing to a
+// table this manifest is about to declare frozen. Either way the freeze would not cover it.
+var W11w = S1World(pos());
+W11w.sheets['shipping_allocation_drafts'].rows[0].push('surprise_column');
+var W11res = vm.runInContext('RUN_S1_MANIFEST_P()', W11w.ctx);
+eq(W11res.verdict, 'STOP', 'W11 an unknown draft-header column stops the manifest', failed(W11res));
+eq(W11res.row_content.header_table.unexpected_columns, ['surprise_column'],
+  'W11a naming the column it does not recognise');
+ok(failed(W11res).indexOf('no_unexpected_column_exists_on_the_draft_header_table') >= 0,
+  'W11b on its own named condition', failed(W11res));
+eq([W11res.frozen_before, W11res.freeze_paste_block, W11res.operator_authorization_wording],
+  [null, null, null], 'W11c with nothing pasteable and nothing to sign');
+eq(W11w.allWrites(), 0, 'W11d and zero writes');
+// The SAME check on the line table, so one is not protected while the other is open.
+var W11e = S1World(pos());
+W11e.sheets['shipping_allocation_draft_lines'].rows[0].push('surprise_line_column');
+var W11eres = vm.runInContext('RUN_S1_MANIFEST_P()', W11e.ctx);
+eq(W11eres.row_content.line_table.unexpected_columns, ['surprise_line_column'],
+  'W11e an unknown draft-LINE column is caught the same way');
+ok(failed(W11eres).indexOf('no_unexpected_column_exists_on_the_draft_line_table') >= 0,
+  'W11f on its own named condition too', failed(W11eres));
+
+// ---- W12 — THE AUTHORIZATION WORDING STATES THE WRITE. ------------------------------------------------
+var W12 = MP1.res.operator_authorization_wording;
+eq((String(W12).match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [],
+  'W12 still no placeholder anywhere in the sentence');
+[['CREATE 1 allocation draft header(s) and 1 line(s)', 'the creates, as counts'],
+  ['UPDATE 0 existing header(s) and 0 existing line(s)', 'the updates, separately'],
+  ['EXPIRE 0 existing AI identity/identities', 'the expiries, separately again'],
+  ['AT MOST 380', 'the maximum units'],
+  [PRED_H, 'the exact predicted header identity'],
+  [PRED_L, 'the exact predicted line identity'],
+  ['FULL-ROW IDENTICAL', 'and that the protected rows must not change in any column']
+].forEach(function (p, i) {
+  ok(String(W12).indexOf(p[0]) > 0, 'W12.' + (i + 1) + ' it states ' + p[1], p[0]);
+});
+// THE SENTENCE THIS ROUND EXISTS TO DELETE.
+ok(String(W12).indexOf('across 0 superseded AI identities') === -1,
+  'W12a and never describes a create as "across 0 superseded AI identities"');
+ok(String(W12).indexOf('manual header(s)') > 0 && String(W12).indexOf('every other scope') > 0,
+  'W12b naming the manual rows and the other scopes that must stay identical');
+// A WORLD WITH NO MEASURABLE WRITE SET HAS NO SENTENCE AT ALL, even if everything else measured.
+eq(vm.runInContext('S1_authWordingP_({}, {}, {}, { measurable: false }, {}, {})', MP1.world.ctx), null,
+  'W12c the builder refuses to write a sentence without a measured write set');
+
+// ---- W13 — EVERY R-SECTION WORLD WROTE NOTHING AND REACHED NO WRITER. ---------------------------------
+[['W2', W2], ['W3', W3], ['W4', W4], ['W5', W5], ['W6', W6], ['W7a', W7a], ['W8m', W8m], ['W9x', W9x],
+  ['W10', W10]
+].forEach(function (p, i) {
+  var r = p[1].res, w = p[1].world;
+  eq([w.allWrites(), r.writes, r.writer_calls, r.writer_constructed, r.submit_calls,
+    r.route_save_calls], [0, 0, 0, false, 0, 0],
+    'W13.' + (i + 1) + ' ' + p[0] + ' wrote nothing and constructed no writer');
+  eq([r.dry_run_proof.generate_called, r.dry_run_proof.submit_called,
+    r.dry_run_proof.migration_called, r.dry_run_proof.gap_job_called],
+    [false, false, false, false],
+    'W13.' + (i + 1) + 'a ' + p[0] + ' called neither Generate, Submit, migration nor the Gap Job');
+  eq([r.dry_run_proof.flag_modified, r.dry_run_proof.allowlist_modified,
+    r.dry_run_proof.script_properties_modified], [false, false, false],
+    'W13.' + (i + 1) + 'b ' + p[0] + ' changed neither flag, allowlist nor a script property');
+});
 
 // ================================================================================================================
 section('N — mutants');
@@ -1724,7 +2416,7 @@ function () {
   var m = swapS1("  C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty,",
     "  C.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', row.residual_qty," + NL
     + '    true ||');
-  // The proved R6-R7-R5-R1 world: recommended 160 against 520 already planned. Residual zero.
+  // The proved W6-W7-W5-W1 world: recommended 160 against 520 already planned. Residual zero.
   var spec = pos({ gap: { d18_gap_qty: 0, d18_suggested_qty: 0, d30_suggested_qty: 0,
     d45_suggested_qty: 0, d90_gap_qty: 160, d90_suggested_qty: 160 } });
   var clean = scopeOf(census(spec), SKU), bad = scopeOf(withS1(m, spec), SKU);
@@ -1804,7 +2496,7 @@ mut('N12 the exposure delta is declared non-zero, so Submit would look like it c
     && bad.expected_shipping_plan.before_after_exposure.delta_total_exposure !== 0;
 });
 
-// ---- N13-N18  S1-R1: the universe, the fail-closed half, and the log. ----------------------------------
+// ---- N13-N18  S1-W1: the universe, the fail-closed half, and the log. ----------------------------------
 
 function gapDiagWith(src, spec) {
   var sp = {}; Object.keys(spec || {}).forEach(function (k) { sp[k] = spec[k]; });
@@ -1996,7 +2688,7 @@ mut('N27 the proposal census falls back to the whole gap table when the allowlis
 });
 
 mut('N28 the proposal census examines pairs outside the allowlist', function () {
-  // The range is widened to every (company, country) the gap TABLE holds — the R1 defect, moved into the
+  // The range is widened to every (company, country) the gap TABLE holds — the W1 defect, moved into the
   // discovery census. It is a different code path from N27: the allowlist here is non-empty and correct.
   var m = swapS1('    var canByPair = {}, dates = {}, unreadable = [];',
     '    (gapReadObjects_(ss, "inventory_replenishment_gap") || []).forEach(function (gr) {\n'
@@ -2039,17 +2731,26 @@ mut('N29 the rejection roll-up logs the whole refusal set instead of counts', fu
 });
 
 mut('N30 the chunk-count bound is removed, so the payload floods the log again', function () {
-  // S1-R4 — DISAMBIGUATED. A second, separate bound now guards the FREEZE block, so the bare line
+  // S1-W4 — DISAMBIGUATED. A second, separate bound now guards the FREEZE block, so the bare line
   // appears twice. This mutant is about the PAYLOAD bound; the freeze bound has its own.
-  var m = swapS1('n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;'+NL+'  if (n > S1_LOG_MAX_CHUNKS_) {',
-    'n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;'+NL+'  if (false) {');
+  // S1-R4A — RE-ANCHORED. The divisor is now the per-tag LINE budget rather than S1_CHUNK_MAX_BYTES_, so the
+  // old anchor matched nothing and the probe reported a PROBE ERROR instead of a caught mutant.
+  var m = swapS1('var s = String(text == null ? \'\' : text), n = Math.ceil(s.length / budget) || 1;'+NL
+    + '  if (n > S1_LOG_MAX_CHUNKS_) {',
+    'var s = String(text == null ? \'\' : text), n = Math.ceil(s.length / budget) || 1;'+NL
+    + '  if (false) {');
   function chunks(src) {
     var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
     s.s1 = src;
     var w = S1World(s);
     return vm.runInContext('S1_emitChunked_("s1_payload", new Array(60000).join("x"))', w.ctx);
   }
-  return chunks(S1) === 0 && chunks(m) === 20;
+  // The expected count is DERIVED from the budget, not spelled: a literal here would have to be edited every
+  // time the framing changes, and the claim is "over the bound emits nothing", not "emits exactly 20".
+  var probeCtx = S1World(pos()).ctx;
+  var want = Math.ceil(59999 / vm.runInContext('S1_chunkBudget_("s1_payload")', probeCtx));
+  return chunks(S1) === 0 && chunks(m) === want
+    && want > vm.runInContext('S1_LOG_MAX_CHUNKS_', probeCtx);
 });
 
 mut('N31 the no-candidate verdict goes back to sounding like a statement about the whole pair', function () {
@@ -2113,8 +2814,11 @@ mut('N34 LOCK TWO is removed, so the emitter no longer checks the verdict it was
 
 mut('N35 LOCK THREE is removed, so a placeholder sentence reads as an authorization', function () {
   // The defect this round repaired, injected as a wording builder that returns the old template.
-  var m = swapS1("function S1_authWordingP_(cand, acceptedRun, scope) {\n  if (!cand || !scope) return null;",
-    "function S1_authWordingP_(cand, acceptedRun, scope) {\n"
+  // S1-R4A — the builder now takes the write set and the identity sets too, so the anchor carries the new
+  // signature. Same mutant: the wording goes back to a template with nothing measured in it.
+  var m = swapS1("function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {\n"
+    + "  if (!cand || !scope) return null;",
+    "function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {\n"
     + "  return 'I authorize ONE controlled generation for <company> / <country> / <marketplace> / <sku>"
     + " against run <calculation_run_id> with residual <residual_qty>. IT DOES NOT AUTHORIZE SUBMIT.';\n"
     + "  // eslint-disable-next-line no-unreachable\n"
@@ -2222,13 +2926,204 @@ mut('N42 the deployment-build gate takes its expectation from the deployment it 
     + "      dep ? dep.deployment_build : null,\n"
     + "      dep ? dep.deployment_build : null, !!dep);");
   var OTHER = 'function sysModuleBuildStamps_() { return { available: true, verdict: "UNIFORM",'
-    + ' deployment_build: "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9", modules: [], stale_modules: [],'
+    + ' deployment_build: "F1-7N-FC-1B-E3-W4-A2-W1-W6-W7-W9", modules: [], stale_modules: [],'
     + ' absent_modules: [], mixed_deployment: false }; }';
   var spec = pos({ after: OTHER });
   var clean = manifestP(spec), bad = withMP(m, spec);
   var NM = 'the_deployment_build_is_the_one_this_manifest_was_written_against';
   return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
     && failed(bad.res).indexOf(NM) === -1;
+});
+
+
+mut('N54 the factory-surface id column is guessed instead of taken from the authority', function () {
+  // The defect that shipped in the first version of this round: invented column names. Against a real sheet
+  // the ids resolve to nothing, so the baseline lists blanks while appearing to list identities.
+  var m = swapS1("      id_authority: '21_ MOV_HEADERS[0] (spelled — no module constant to read)' },",
+    "      id_authority: 'guessed' },").split("id: 'factory_stock_movement_id',").join("id: 'movement_id',");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  var NM = 'every_factory_write_surface_is_either_readable_or_honestly_absent';
+  var cs = clean.res.factory_surfaces.surfaces['factory_stock_movements'];
+  var bs = bad.res.factory_surfaces.surfaces['factory_stock_movements'];
+  return clean.res.verdict === 'READY_TO_AUTHORIZE' && cs.id_column_resolved === true
+    && cs.ids.length === 1 && cs.ids[0] === 'MV-1'
+    // The mutant cannot resolve its guessed column, and that is REPORTED rather than filled with blanks.
+    && bs.id_column_resolved === false && bs.ids === null
+    && bad.res.verdict === 'STOP' && failed(bad.res).indexOf(NM) >= 0
+    && bad.res.freeze_paste_block === null && mpChunks(bad.world) === 0;
+});
+
+mut('N43 the write set falls back to the EXISTING AI identities — the exact W4 defect', function () {
+  // The shape this round repaired, injected: `expected` is fed the rows that already exist. On the READY
+  // world that is [] and 0, so the manifest would report a create of nothing and the sentence would say
+  // "across 0 superseded AI identities" about a run that writes a header and a line.
+  var m = swapS1('    expected_header_ids: (ws.expected_header_ids || []).slice().sort(),'+NL
+    + '        expected_line_ids: (ws.expected_line_ids || []).slice().sort(),',
+    '    expected_header_ids: (ids.existing_active_ai_identities || []).slice().sort(),'+NL
+    + '        expected_line_ids: (ids.existing_active_ai_identities || []).slice().sort(),');
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  // WHAT CAUGHT IT, AFTER IT FIRST SURVIVED. Presence of the field was checked; AGREEMENT with the
+  // measurement was not, so a baseline carrying `[]` satisfied every condition and stayed READY. The
+  // survival is the finding: `the_frozen_write_set_is_the_one_that_was_measured` exists because of it.
+  var NM = 'the_frozen_write_set_is_the_one_that_was_measured';
+  return clean.res.verdict === 'READY_TO_AUTHORIZE'
+    && clean.res.frozen_before.expected_header_ids.length === 1
+    && failed(clean.res).indexOf(NM) === -1
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf(NM) >= 0
+    && bad.res.freeze_paste_block === null
+    && bad.res.operator_authorization_wording === null
+    && mpChunks(bad.world) === 0;
+});
+
+mut('N44 an unmeasurable write set is reported as an empty one instead of a refusal', function () {
+  var m = swapS1("    L.P('the_exact_production_write_set_is_measurable', true, ws.measurable,"+NL
+    + '      ws.measurable === true);',
+    "    L.P('the_exact_production_write_set_is_measurable', true, ws.measurable, true);");
+  var spec = pos({ after: 'sadK2ResolveActiveDraft_ = null;' });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'the_exact_production_write_set_is_measurable';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N45 the deterministic line id is minted here instead of by the K2 authority', function () {
+  // A second implementation is the thing §A forbids. It produces ids the writer would never mint, and a
+  // readback comparing against them would pass a world where the wrong rows appeared.
+  var m = swapS1("          var lid = S1_str_(sadK2DeterministicLineId_(hid, l));",
+    "          var lid = 'SADL-K2-' + S1_str_(l.sku).toUpperCase();");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  return /^SADL-K2-[0-9A-F]{8}$/.test(clean.res.predicted_write_set.expected_line_ids[0])
+    && bad.res.predicted_write_set.expected_line_ids[0] !== clean.res.predicted_write_set.expected_line_ids[0];
+});
+
+mut('N46 CREATE and UPDATE collapse into one classification', function () {
+  var m = swapS1("        var cls = (r && r.status === 'CREATE') ? 'CREATE'"+NL
+    + "          : ((r && r.status === 'REUSE') ? 'UPDATE' : 'BLOCKED_CONFLICT');",
+    "        var cls = 'CREATE';");
+  var seeded = pos({ extraHeaders: [W3hdr],
+    extraLines: [{ allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU,
+      planned_qty: '380', line_status: 'draft' }] });
+  var clean = manifestP(seeded), bad = withMP(m, seeded);
+  // The clean world calls it an UPDATE of an existing row; the mutant calls the same row a CREATE, which is
+  // the difference between "one header changed" and "a second header appeared" in any readback.
+  return clean.res.predicted_write_set.expected_update_header_count === 1
+    && clean.res.predicted_write_set.expected_create_header_count === 0
+    && bad.res.predicted_write_set.expected_create_header_count === 1;
+});
+
+mut('N47 the row fingerprint covers the ids only, so an in-place edit is invisible', function () {
+  var m = swapS1('  var parts = [];'+NL
+    + '  for (var i = 0; i < headers.length; i++) {'+NL
+    + "    parts.push(S1_str_(headers[i]) + '=' + S1_canonCell_(row[i]));"+NL
+    + '  }',
+    '  var parts = [];'+NL
+    + '  for (var i = 0; i < headers.length; i++) {'+NL
+    + "    if (String(headers[i]).indexOf('_id') >= 0) parts.push(S1_str_(headers[i]) + '=' + S1_canonCell_(row[i]));"+NL
+    + '  }');
+  var noteWorld = pos({ aLine: { note: 'operator added a note' } });
+  var cleanA = manifestP(pos()), cleanB = manifestP(noteWorld);
+  var badA = withMP(m, pos()), badB = withMP(m, noteWorld);
+  // Clean: the note moves the fingerprint. Mutant: the two worlds fingerprint alike, which is the W4 hole.
+  return cleanA.res.frozen_before.target_manual_combined_fingerprint
+      !== cleanB.res.frozen_before.target_manual_combined_fingerprint
+    && badA.res.frozen_before.target_manual_combined_fingerprint
+      === badB.res.frozen_before.target_manual_combined_fingerprint;
+});
+
+mut('N48 an unexpected live column is recorded but not refused', function () {
+  var m = swapS1("    L.P('no_unexpected_column_exists_on_the_draft_header_table', [],"+NL
+    + '      part.header_table.unexpected_columns, (part.header_table.unexpected_columns || []).length === 0);',
+    "    L.P('no_unexpected_column_exists_on_the_draft_header_table', [],"+NL
+    + '      part.header_table.unexpected_columns, true);');
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    w.sheets['shipping_allocation_drafts'].rows[0].push('surprise_column');
+    var o = null; try { o = vm.runInContext('RUN_S1_MANIFEST_P()', w.ctx); } catch (e) { o = {}; }
+    return { res: o || {}, world: w };
+  }
+  var clean = run(null), bad = run(m);
+  var NM = 'no_unexpected_column_exists_on_the_draft_header_table';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N49 the other-scope bucket is frozen by id count instead of by content', function () {
+  var m = swapS1("        other_scope_row_signatures: part.other_scope.header_sigs.concat(part.other_scope.line_sigs),"+NL
+    + '        other_scope_combined_fingerprint: part.other_scope.combined_fingerprint,',
+    "        other_scope_row_signatures: part.other_scope.header_sigs.concat(part.other_scope.line_sigs),"+NL
+    + '        other_scope_combined_fingerprint: S1_fingerprint_([String(part.other_scope.header_count)]),');
+  function world(note, src) {
+    var s = pos({
+      extraHeaders: [{ allocation_draft_id: 'OTHER-H-1', planning_cycle: GAP_CYCLE,
+        source_page: 'inventory_replenishment', company: 'OtherCo', country: 'US', marketplace: 'Walmart',
+        status: 'draft', generation_type: 'user_created', note: note }],
+      extraLines: [{ allocation_draft_line_id: 'OTHER-H-1-L1', allocation_draft_id: 'OTHER-H-1',
+        sku: 'OTHER-SKU', planned_qty: '77', line_status: 'draft' }] });
+    return src ? withMP(src, s) : manifestP(s);
+  }
+  var cA = world('before', null), cB = world('after', null);
+  var bA = world('before', m), bB = world('after', m);
+  return cA.res.frozen_before.other_scope_combined_fingerprint
+      !== cB.res.frozen_before.other_scope_combined_fingerprint
+    && bA.res.frozen_before.other_scope_combined_fingerprint
+      === bB.res.frozen_before.other_scope_combined_fingerprint;
+});
+
+mut('N50 the factory movement table being absent is frozen as zero rows', function () {
+  var m = swapS1("      row_count: t.present && t.readable ? t.row_count : null,",
+    "      row_count: t.present && t.readable ? t.row_count : 0,");
+  var spec = pos({ movements: null });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  return clean.res.frozen_before.factory_stock_movement_count === null
+    && clean.res.frozen_before.factory_stock_movement_state === 'SHEET_ABSENT'
+    && bad.res.frozen_before.factory_stock_movement_count === 0;
+});
+
+mut('N51 the run\'s own predicted rows are also reported as rows it would expire', function () {
+  // The defect measured while building W3: with committed_ids dropped, a REUSE target appears in the expire
+  // set as well, so the manifest claims it retires a row it is updating.
+  var m = swapS1("        committed_ids: (writeSet && writeSet.expected_header_ids) ? writeSet.expected_header_ids : [] }) || {};",
+    '        committed_ids: [] }) || {};');
+  var seeded = pos({ extraHeaders: [W3hdr],
+    extraLines: [{ allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU,
+      planned_qty: '380', line_status: 'draft' }] });
+  var clean = manifestP(seeded), bad = withMP(m, seeded);
+  var NM = 'no_identity_is_both_expired_and_written_by_the_same_run';
+  return clean.res.verdict === 'READY_TO_AUTHORIZE'
+    && (clean.res.ai_identity_sets.ai_expiration_candidates || []).indexOf(PRED_H) === -1
+    && bad.res.verdict === 'STOP' && failed(bad.res).indexOf(NM) >= 0;
+});
+
+mut('N52 the predicted quantity is no longer checked against the proposal', function () {
+  var m = swapS1("    L.P('the_predicted_lines_do_not_exceed_the_proposed_quantity',"+NL
+    + "      'planned total <= ' + S1_str_(prop), ws.expected_line_planned_total,"+NL
+    + '      prop !== null && ws.expected_line_planned_total !== null'+NL
+    + '        && ws.expected_line_planned_total <= prop);',
+    "    L.P('the_predicted_lines_do_not_exceed_the_proposed_quantity',"+NL
+    + "      'planned total <= ' + S1_str_(prop), ws.expected_line_planned_total, true);");
+  // The one-unit-over world: manual 521 makes the residual 379 while the seam still carries 380.
+  var spec = pos({ aLine: { planned_qty: '321' } });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'the_predicted_lines_do_not_exceed_the_proposed_quantity';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N53 the chunk budget ignores the tag, so an emitted line can exceed the bound', function () {
+  var m = swapS1("  var framing = '[S1] '.length + String(tag).length + '_99_of_99'.length + 1;",
+    '  var framing = 0;');
+  function longest(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    vm.runInContext('S1_emitChunked_("s1_probe_tag", new Array(9000).join("z"))', w.ctx);
+    return (w.log || []).reduce(function (mx, l) { return Math.max(mx, String(l).length); }, 0);
+  }
+  var c = longest(null), b = longest(m);
+  return c <= 3000 && b > 3000;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

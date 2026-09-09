@@ -108,10 +108,33 @@ var S1_FREEZE_REQUIRED_ = [
   'source_factory_warehouse_id', 'pool_key', 'factory_current_stock', 'factory_reserved_stock',
   'active_allocation_draft_qty', 'active_shipping_plan_qty', 'available_to_allocate',
   'manual_header_ids', 'manual_line_ids', 'manual_planned_total', 'manual_identity_fingerprint',
-  'expected_ai_identities', 'expected_ai_identity_count',
   'identity_universe_count', 'identity_universe_fingerprint', 'other_scope_identity_count',
   'schema_fingerprints', 'reservation_observation_state', 'reservation_row_count',
-  'expected_max_units_written', 'expected_clamp'
+  'expected_max_units_written', 'expected_clamp',
+  // S1-R4A §A — THE THREE AI IDENTITY SETS, SEPARATELY NAMED. `expected_ai_identities` used to be here and
+  // was assigned the EXISTING rows; it is gone, because a name that answered a different question than it
+  // asked is not repaired by documenting it.
+  'writeset_measurable', 'writeset_stage',
+  'expected_header_ids', 'expected_line_ids', 'expected_k2_group_keys',
+  'expected_create_header_count', 'expected_update_header_count',
+  'expected_create_line_count', 'expected_update_line_count',
+  'existing_active_ai_identities', 'existing_active_ai_identity_count',
+  'ai_expiration_candidates', 'ai_expiration_candidate_count',
+  'expected_post_generation_active_ai_identities',
+  // S1-R4A §B — FULL-ROW CONTENT, so an in-place edit that leaves every id intact is still visible.
+  'target_manual_header_ids', 'target_manual_line_ids', 'target_manual_planned_total',
+  'target_manual_row_signatures', 'target_manual_combined_fingerprint',
+  'target_ai_row_signatures', 'target_ai_combined_fingerprint',
+  'other_scope_header_count', 'other_scope_line_count',
+  'other_scope_row_signatures', 'other_scope_combined_fingerprint',
+  'draft_header_live_column_count', 'draft_line_live_column_count',
+  'draft_header_excluded_fields', 'draft_line_excluded_fields',
+  // S1-R4A §B.4 — the surfaces a factory move would be recorded on.
+  'factory_pool_row_fingerprint',
+  'factory_stock_movement_state', 'factory_stock_movement_count', 'factory_stock_movement_ids',
+  'factory_stock_movement_fingerprint',
+  'factory_override_audit_state', 'factory_override_audit_count', 'factory_override_audit_ids',
+  'factory_override_audit_fingerprint'
 ];
 
 /** A stable fingerprint over a SORTED list of identity strings. Sorted, because enumeration order is not
@@ -155,8 +178,26 @@ function S1_log_(tag, payload) {
 // lost, just differently. Above the bound the payload is WITHHELD AND SAID SO: never silently truncated, and
 // never the thing a reader has to scroll past to reach the verdict. The full object is the RETURN VALUE.
 var S1_LOG_MAX_CHUNKS_ = 12;
+/**
+ * S1-R4A — THE BOUND THAT MATTERS IS THE EMITTED LINE'S, NOT THE PAYLOAD'S.
+ *
+ * S1_log_ writes '[S1] ' + tag + ' ' + payload, so slicing the payload at S1_CHUNK_MAX_BYTES_ produced a LINE
+ * of 3000 + 45 bytes. Measured at 3045 on the first freeze chunk as soon as the baseline grew past one chunk.
+ * The chunk limit exists because the logger truncates the line, so the framing has to come out of the budget
+ * rather than sit on top of it — a payload that just fits and a line that gets cut are the same failure.
+ *
+ * The suffix is priced at its widest (`_99_of_99`) so the budget does not depend on the chunk count that the
+ * budget is being used to compute.
+ */
+function S1_chunkBudget_(tag) {
+  var framing = '[S1] '.length + String(tag).length + '_99_of_99'.length + 1;
+  var b = S1_CHUNK_MAX_BYTES_ - framing;
+  // A tag long enough to eat the whole budget is a naming mistake, not a reason to emit one byte per line.
+  return b < 500 ? 500 : b;
+}
 function S1_emitChunked_(tag, text) {
-  var s = String(text == null ? '' : text), n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;
+  var budget = S1_chunkBudget_(tag);
+  var s = String(text == null ? '' : text), n = Math.ceil(s.length / budget) || 1;
   if (n > S1_LOG_MAX_CHUNKS_) {
     S1_log_(tag + '_withheld', JSON.stringify({ withheld: true, bytes: s.length, would_be_chunks: n,
       chunk_max_bytes: S1_CHUNK_MAX_BYTES_, max_chunks: S1_LOG_MAX_CHUNKS_,
@@ -165,7 +206,7 @@ function S1_emitChunked_(tag, text) {
     return 0;
   }
   for (var i = 0; i < n; i++) {
-    S1_log_(tag + '_' + (i + 1) + '_of_' + n, s.slice(i * S1_CHUNK_MAX_BYTES_, (i + 1) * S1_CHUNK_MAX_BYTES_));
+    S1_log_(tag + '_' + (i + 1) + '_of_' + n, s.slice(i * budget, (i + 1) * budget));
   }
   return n;
 }
@@ -869,6 +910,685 @@ function S1_reservationObservation_(ss) {
  * AND THE LOG BOUND IS A REFUSAL, NOT A TRUNCATION. A baseline that does not fit is not shortened — a cut
  * baseline is a wrong baseline, and a readback against one would compare the write to a fiction.
  */
+
+// ================================================================================================================
+// S1-R4A §A — THE EXACT WRITE SET, PREDICTED BY THE PRODUCTION AUTHORITIES THAT WOULD PRODUCE IT.
+//
+// WHAT R4 GOT WRONG, AND WHY IT WAS WORSE THAN A NAMING SLIP. The baseline carried `expected_ai_identities`,
+// and the value assigned to it was `cand.existing_affected_ai_identities` — the AI rows that ALREADY EXIST and
+// would be superseded. Three different things were wearing one name:
+//
+//   1. what is there now          (existing active AI identities)
+//   2. what a run would retire    (the expiration candidates)
+//   3. what a run would WRITE     (never measured at all)
+//
+// On the live scope there are no existing AI rows, so the field read `[]` and the count read 0 — and the
+// authorization sentence said "across 0 superseded AI identities". Every word of that is true and it answers a
+// question nobody asked. The operator was being asked to authorize a write whose identities had never been
+// computed, so an AFTER readback had nothing to compare a created row against: any new header would be equally
+// consistent with the baseline. A baseline that cannot be contradicted is not evidence.
+//
+// SO THE PREDICTION IS TAKEN FROM PRODUCTION, NOT REBUILT HERE. 61_'s generation splits at a documented seam:
+// "PASS 1 computes every group and writes nothing; the gate then runs on the complete set of proposed
+// identities; PASS 2 writes only what survived." Everything needed to name the write set exists on the PASS 1
+// side of that seam, and every piece of it is pure:
+//
+//   weeklyAiPlanHarvest_                      the read the generation itself starts from
+//   KMWHA.mapWeeklyHarvestToBatchRequest      harvest -> batch request
+//   KMWRB.buildWeeklySourceLines              the source lines
+//   weeklyAiPlanK2AllocatedLines_             THE ALLOCATOR. Never re-implemented here.
+//   inventoryAiPlanScopeEnabled_              the same allowlist guard PASS 1 applies, per marketplace bucket
+//   weeklyAiPlanReadCarrierAuthorities_ / weeklyAiPlanShipDate_
+//   KMWRR.buildK2GenerationPlan               route grouping — "pure ... Deterministic + no clock/random"
+//   sadK2GroupKey_ / sadK2DeterministicHeaderId_ / sadK2DeterministicLineId_    the K2 identity authority
+//   sadK2ResolveActiveDraft_                  CREATE vs REUSE — 16_: "Pure; no sheet access"
+//   aiplExpirationCandidates_                 the SAME selector that will actually expire them
+//
+// There is precedent for reaching them read-only: TEMP_migrate_request_order_draft_v2's LIVE DRY ASSEMBLY runs
+// this identical chain and "NEVER calls the atomic write endpoint".
+//
+// AND IF ANY LINK IS ABSENT, THE ANSWER IS A REFUSAL WITH A NAME. A half-synced project would let a diagnostic
+// approximate the write set from what it can still reach, and an approximate write set is the one thing this
+// baseline must never contain: it would be indistinguishable from a measured one and wrong. Every authority is
+// probed by name first, and a single absence is EXACT_PRODUCTION_WRITESET_NOT_MEASURABLE.
+// ================================================================================================================
+
+var S1_WRITESET_STOP_ = 'EXACT_PRODUCTION_WRITESET_NOT_MEASURABLE';
+var S1_DRAFT_HEADER_TABLE_ = 'shipping_allocation_drafts';
+var S1_DRAFT_LINE_TABLE_ = 'shipping_allocation_draft_lines';
+
+/** Named one by one rather than looked up from a list of strings, because `typeof` over a computed name needs
+ *  eval and a diagnostic that evals its own authority names can be made to probe the wrong thing. */
+function S1_writeSetAuthorityReport_() {
+  var A = [];
+  function rec(name, present, kind) { A.push({ authority: name, present: present === true, provides: kind }); }
+  rec('weeklyAiPlanHarvest_', typeof weeklyAiPlanHarvest_ === 'function', 'the live harvest the generation starts from');
+  rec('KMWHA.mapWeeklyHarvestToBatchRequest',
+    typeof KMWHA !== 'undefined' && !!KMWHA && typeof KMWHA.mapWeeklyHarvestToBatchRequest === 'function',
+    'harvest -> batch request');
+  rec('KMWRB.buildWeeklySourceLines',
+    typeof KMWRB !== 'undefined' && !!KMWRB && typeof KMWRB.buildWeeklySourceLines === 'function',
+    'the weekly source lines');
+  rec('weeklyAiPlanK2AllocatedLines_', typeof weeklyAiPlanK2AllocatedLines_ === 'function',
+    'THE ALLOCATOR — one allocated line per source');
+  rec('inventoryAiPlanScopeEnabled_', typeof inventoryAiPlanScopeEnabled_ === 'function',
+    'the activation allowlist guard PASS 1 applies');
+  rec('weeklyAiPlanReadCarrierAuthorities_', typeof weeklyAiPlanReadCarrierAuthorities_ === 'function',
+    'rate cards + lead times');
+  rec('weeklyAiPlanShipDate_', typeof weeklyAiPlanShipDate_ === 'function', 'the ship date');
+  rec('KMWRR.buildK2GenerationPlan',
+    typeof KMWRR !== 'undefined' && !!KMWRR && typeof KMWRR.buildK2GenerationPlan === 'function',
+    'PASS 1 route grouping — pure, deterministic');
+  rec('sadK2GroupKey_', typeof sadK2GroupKey_ === 'function', 'the canonical K2 group key');
+  rec('sadK2DeterministicHeaderId_', typeof sadK2DeterministicHeaderId_ === 'function',
+    'the deterministic K2 header id');
+  rec('sadK2DeterministicLineId_', typeof sadK2DeterministicLineId_ === 'function',
+    'the deterministic K2 line id');
+  rec('sadK2ResolveActiveDraft_', typeof sadK2ResolveActiveDraft_ === 'function',
+    'CREATE vs REUSE over the active headers');
+  rec('aiplExpirationCandidates_', typeof aiplExpirationCandidates_ === 'function',
+    'the set a run would expire — the same selector the run uses');
+  var missing = A.filter(function (x) { return !x.present; }).map(function (x) { return x.authority; });
+  return { authorities: A, missing: missing, ok: missing.length === 0 };
+}
+
+/**
+ * The exact write set for ONE allowlisted scope. Read-only: every call below is on the PASS 1 side of 61_'s
+ * documented seam, and none of them touches a writer.
+ *
+ * Returns { measurable, stop_code, stage, route_groups, expected_header_ids, expected_line_ids,
+ *           expected_k2_group_keys, create/update counts, blocked_lines, conflicts, ... }.
+ */
+function S1_predictedWriteSet_(ss, scope, cycle, headerRows, existingLineIds) {
+  var out = { measurable: false, stop_code: null, stage: null, stage_detail: null,
+    authorities: null, missing_authorities: [],
+    route_groups: [], expected_header_ids: [], expected_line_ids: [], expected_k2_group_keys: [],
+    expected_create_header_count: 0, expected_update_header_count: 0,
+    expected_create_line_count: 0, expected_update_line_count: 0,
+    expected_line_planned_total: 0, expected_line_recommended_total: 0,
+    blocked_lines: [], conflicts: [], duplicate_header_ids: [],
+    allocated_line_count: null, kept_line_count: null, excluded_line_count: null,
+    conserved: null, ship_date: null,
+    authority_note: 'Every identity here was produced by the production authorities named in `authorities`.'
+      + ' Nothing in this object is a local re-implementation of the allocator, the route grouping or the'
+      + ' K2 identity, and nothing is carried over from a previous run.' };
+
+  var rep = S1_writeSetAuthorityReport_();
+  out.authorities = rep.authorities;
+  out.missing_authorities = rep.missing;
+  if (!rep.ok) {
+    out.stop_code = S1_WRITESET_STOP_;
+    out.stage = 'AUTHORITY_PRESENCE';
+    out.stage_detail = 'absent in this deployment: ' + rep.missing.join(', ');
+    return out;
+  }
+  if (!ss || !scope) {
+    out.stop_code = S1_WRITESET_STOP_;
+    out.stage = !ss ? 'SPREADSHEET_NOT_OPENED' : 'SCOPE_NOT_MEASURED';
+    return out;
+  }
+
+  var mk = S1_str_(scope.marketplace);
+  try {
+    // ---- the live harvest. The generation's own first read. ----
+    var h = weeklyAiPlanHarvest_(ss, { company: scope.company, country: scope.country, planningCycle: cycle });
+    if (!h || h.ok !== true) {
+      out.stop_code = S1_WRITESET_STOP_; out.stage = 'HARVEST';
+      out.stage_detail = h ? S1_cap_(JSON.stringify(h.reason || h.error || h), 300) : 'harvest returned nothing';
+      return out;
+    }
+    var sourcePage = (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined')
+      ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment';
+    var mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
+      planningCycle: cycle,
+      businessScope: { company: scope.company, country: scope.country, marketplace: mk, source_page: sourcePage },
+      // MANUAL_REGENERATE is the mode a controlled activation runs in. It is the mode being PREDICTED, not
+      // performed: this call builds a request object and hands it to a pure builder.
+      mode: 'MANUAL_REGENERATE', actor: 'S1_MANIFEST_P_READ_ONLY_PREDICTION',
+      now: (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : null,
+      sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
+      factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined')
+        ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null,
+      warehousesById: h.warehousesById, kmaf: h.kmaf,
+      horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+    if (!mapped || mapped.ready !== true) {
+      out.stop_code = S1_WRITESET_STOP_; out.stage = 'HARVEST_MAPPING';
+      out.stage_detail = mapped ? S1_cap_(JSON.stringify(mapped.issues || mapped.reason || ''), 300) : 'no mapping';
+      return out;
+    }
+    var src = KMWRB.buildWeeklySourceLines(mapped.request);
+    if (!src || src.ok !== true) {
+      out.stop_code = S1_WRITESET_STOP_; out.stage = 'SOURCE_LINES';
+      out.stage_detail = src ? S1_cap_(S1_str_(src.reason || src.status), 300) : 'no source lines';
+      return out;
+    }
+    // ---- THE ALLOCATOR. Called, never copied. ----
+    var allocated = weeklyAiPlanK2AllocatedLines_(src.lines, h) || [];
+    out.allocated_line_count = allocated.length;
+
+    // ---- marketplace buckets, then the SAME allowlist guard PASS 1 applies to each bucket. ----
+    var byMkt = {};
+    allocated.forEach(function (a) {
+      var m = S1_str_(a && a.marketplace);
+      (byMkt[m] = byMkt[m] || []).push(a);
+    });
+    if (mk) {
+      var only = {};
+      if (byMkt[mk]) only[mk] = byMkt[mk];
+      byMkt = only;                       // a controlled run generates exactly one marketplace, never fans out
+    }
+    var kept = {}, keptCount = 0, excluded = 0;
+    Object.keys(byMkt).forEach(function (m) {
+      var inn = byMkt[m].filter(function (a) {
+        var okScope = inventoryAiPlanScopeEnabled_(scope.company, scope.country, m, a && a.sku);
+        if (!okScope) excluded++;
+        return okScope;
+      });
+      if (inn.length) { kept[m] = inn; keptCount += inn.length; }
+    });
+    out.kept_line_count = keptCount;
+    out.excluded_line_count = excluded;
+    if (!keptCount) {
+      // NOT a measurement failure: the authorities were all reachable and the answer is "this scope allocates
+      // nothing". A candidate with a positive residual that allocates no line is a contradiction the manifest
+      // must refuse, and it is refused by the predicate on the counts — not by pretending the set is unknown.
+      out.measurable = true;
+      out.stage = 'NO_LINE_SURVIVED_THE_ALLOWLIST_GUARD';
+      return out;
+    }
+
+    var carriers = weeklyAiPlanReadCarrierAuthorities_(ss);
+    var shipDate = weeklyAiPlanShipDate_(h);
+    out.ship_date = shipDate || null;
+
+    var seenHid = {}, conserved = true;
+    var existingLine = existingLineIds || {};
+    Object.keys(kept).sort().forEach(function (M) {
+      var plan = KMWRR.buildK2GenerationPlan({
+        scope: { planning_cycle: cycle, company: scope.company, country: scope.country,
+          marketplace: M, source_page: sourcePage },
+        allocatedLines: kept[M], warehousesById: h.warehousesById,
+        rateCards: carriers.rateCards, leadTimes: carriers.leadTimes, shipDate: shipDate,
+        authorizedBySkuWindow: (function () {
+          var a = {};
+          kept[M].forEach(function (x) {
+            var k = S1_str_(x.sku).toLowerCase() + '|' + S1_str_(x.window_code).toLowerCase();
+            a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0);
+          });
+          return a;
+        })(),
+        sourceCeilingById: {} });
+      if (plan && plan.conservation && plan.conservation.conserved === false) conserved = false;
+      (plan && plan.blocked ? plan.blocked : []).forEach(function (b) {
+        if (out.blocked_lines.length < 30) {
+          out.blocked_lines.push({ marketplace: M, block: b.block,
+            reason: b.method_unresolved_reason || b.auto_ranking_insufficient_reason || null,
+            sku: S1_str_(b.line && b.line.sku) });
+        }
+      });
+      (plan && plan.groups ? plan.groups : []).forEach(function (g) {
+        // THE HEADER IS STAMPED THE WAY PASS 1 STAMPS IT, because two of the stamped fields are K2 GROUP
+        // DIMENSIONS and the deterministic id is computed from them. Predicting the id from an unstamped
+        // header would produce an id the writer never mints. These four are lineage/provenance only; no
+        // quantity and no route field is touched here.
+        g.header.generation_type = 'system_generated';
+        var wantKey = sadK2GroupKey_(g.header);
+        var r = sadK2ResolveActiveDraft_(headerRows || [], g.header);
+        var hid = S1_str_(r && r.allocation_draft_id);
+        var cls = (r && r.status === 'CREATE') ? 'CREATE'
+          : ((r && r.status === 'REUSE') ? 'UPDATE' : 'BLOCKED_CONFLICT');
+        if (cls === 'BLOCKED_CONFLICT') {
+          out.conflicts.push({ marketplace: M, k2_group_key: wantKey,
+            conflicting_ids: (r && r.conflictIds) || [] });
+        }
+        if (hid) {
+          if (seenHid[hid]) out.duplicate_header_ids.push(hid);
+          else seenHid[hid] = 1;
+        }
+        var lineIds = [], createL = 0, updateL = 0, plannedTotal = 0, recTotal = 0;
+        (g.lines || []).forEach(function (l) {
+          var lid = S1_str_(sadK2DeterministicLineId_(hid, l));
+          lineIds.push(lid);
+          if (existingLine[lid]) updateL++; else createL++;
+          var pq = S1_qty_(l.planned_qty); if (pq !== null) plannedTotal += pq;
+          var rq = S1_qty_(l.recommended_qty); if (rq !== null) recTotal += rq;
+        });
+        if (cls === 'CREATE') out.expected_create_header_count++;
+        else if (cls === 'UPDATE') out.expected_update_header_count++;
+        out.expected_create_line_count += createL;
+        out.expected_update_line_count += updateL;
+        out.expected_line_planned_total += plannedTotal;
+        out.expected_line_recommended_total += recTotal;
+        if (hid && out.expected_header_ids.indexOf(hid) === -1) out.expected_header_ids.push(hid);
+        out.expected_k2_group_keys.push(wantKey);
+        lineIds.forEach(function (lid) {
+          if (lid && out.expected_line_ids.indexOf(lid) === -1) out.expected_line_ids.push(lid);
+        });
+        out.route_groups.push({ marketplace: M, group_no: g.groupNo,
+          k2_group_key: wantKey, allocation_draft_id: hid, classification: cls,
+          resolve_status: r ? r.status : null,
+          source_warehouse_id: S1_str_(g.header.recommended_source_warehouse_id),
+          destination_warehouse_id: S1_str_(g.header.recommended_destination_warehouse_id),
+          destination_marketplace: S1_str_(g.header.destination_marketplace),
+          shipping_method: S1_str_(g.header.recommended_shipping_method),
+          last_mile_delivery: S1_str_(g.header.recommended_last_mile_delivery),
+          recommendation_group_no: S1_str_(g.header.recommendation_group_no),
+          line_count: (g.lines || []).length, line_ids: lineIds,
+          create_line_count: createL, update_line_count: updateL,
+          planned_qty_total: plannedTotal, recommended_qty_total: recTotal });
+      });
+    });
+    out.conserved = conserved;
+    out.measurable = true;
+    out.stage = 'COMPLETE';
+    return out;
+  } catch (e) {
+    // An exception is not an empty write set. It is a measurement that did not happen, and it is named as one.
+    out.measurable = false;
+    out.stop_code = S1_WRITESET_STOP_;
+    out.stage = out.stage || 'THREW';
+    out.stage_detail = 'threw: ' + S1_cap_(String(e && e.message ? e.message : e), 300);
+    return out;
+  }
+}
+
+// ================================================================================================================
+// S1-R4A §B — FULL-ROW CONTENT FREEZING.
+//
+// WHY THE ID FINGERPRINT WAS NOT ENOUGH. R4 froze `identity_universe_fingerprint` over the sorted SCOPE KEYS and
+// `manual_identity_fingerprint` over seven hand-picked fields. Both detect an identity appearing or disappearing
+// and NEITHER detects a row being edited in place: change a `note`, a `planned_qty`, a `line_status`, an
+// `updated_at`, and every id is still present and every fingerprint still matches. The readback would report a
+// clean world. "No manual row changed" was being asserted from evidence that could not have shown otherwise.
+//
+// SO EVERY LIVE COLUMN IS IN THE FINGERPRINT — which is why `excluded_fields` is [] by construction rather than
+// by promise. Note what is deliberately NOT reused here: SAD_K2_HEADER_FP_ / SAD_K2_LINE_FP_ are the REUSE
+// fingerprints, and they EXCLUDE ids, audit columns and draft_version on purpose, because a REUSE decision must
+// ignore them. A freeze must not: `updated_at` moving is exactly the evidence that something wrote.
+// ================================================================================================================
+
+/** One cell, canonically. The TYPE PREFIX matters: a blank cell, the number 0 and the string '0' are three
+ *  different states of a sheet and a fingerprint that maps them together cannot tell a cleared cell from a
+ *  zeroed one. Dates go to full ISO precision — a timestamp is often the only thing an in-place edit moves. */
+function S1_canonCell_(v) {
+  if (v === null || v === undefined) return '~';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    var t = v.getTime();
+    return isNaN(t) ? 'D:INVALID' : ('D:' + v.toISOString());
+  }
+  if (typeof v === 'number') return isFinite(v) ? ('N:' + String(v)) : 'N:NONFINITE';
+  if (typeof v === 'boolean') return 'B:' + (v === true ? '1' : '0');
+  var s = String(v).trim();
+  return s === '' ? '~' : ('S:' + s);
+}
+
+/** A full-row fingerprint over EVERY live column, named and in live order. Names are included so that a column
+ *  append cannot leave two different shapes hashing alike. */
+function S1_rowFingerprint_(headers, row) {
+  var parts = [];
+  for (var i = 0; i < headers.length; i++) {
+    parts.push(S1_str_(headers[i]) + '=' + S1_canonCell_(row[i]));
+  }
+  var joined = parts.join('|');
+  if (typeof KMFSG !== 'undefined' && KMFSG && typeof KMFSG.fnv1a === 'function') {
+    return String(KMFSG.fnv1a(joined)).toUpperCase();
+  }
+  return null;
+}
+
+/**
+ * Read one table as full rows with per-row fingerprints. `authorityColumns` is the canonical column authority
+ * from 16_; a live column NOT in it is UNEXPECTED and reported, because an unknown column is either a
+ * half-applied migration or something writing to a table this manifest is about to declare frozen.
+ */
+function S1_fullRowTable_(ss, table, authorityColumns, idColumns) {
+  var o = { table: table, present: false, readable: false, live_column_count: null, live_columns: [],
+    authority_column_count: (authorityColumns || []).length,
+    unexpected_columns: [], missing_columns: [], excluded_fields: [],
+    row_count: null, rows: [], combined_fingerprint: null, hash_available: null, error: null,
+    note: 'Every live column is in each row fingerprint, which is why excluded_fields is [] by construction.' };
+  var sh = null;
+  try { sh = ss ? ss.getSheetByName(table) : null; } catch (e) { sh = null; }
+  if (!sh) return o;
+  o.present = true;
+  var vals = null;
+  try { vals = (sh.getLastRow() > 0) ? sh.getDataRange().getValues() : []; }
+  catch (e2) { o.error = String(e2 && e2.message ? e2.message : e2); return o; }
+  o.readable = true;
+  var hdrs = (vals && vals.length) ? vals[0].map(function (x) { return S1_str_(x); }) : [];
+  while (hdrs.length && hdrs[hdrs.length - 1] === '') hdrs.pop();
+  o.live_columns = hdrs;
+  o.live_column_count = hdrs.length;
+  (authorityColumns || []).forEach(function (c) { if (hdrs.indexOf(c) === -1) o.missing_columns.push(c); });
+  hdrs.forEach(function (c) {
+    if (c !== '' && (authorityColumns || []).indexOf(c) === -1) o.unexpected_columns.push(c);
+  });
+  var idx = {};
+  hdrs.forEach(function (c, i) { if (c !== '' && idx[c] === undefined) idx[c] = i; });
+  var rows = [], sig = [];
+  for (var r = 1; r < (vals || []).length; r++) {
+    var row = vals[r];
+    var blank = true;
+    for (var c = 0; c < hdrs.length; c++) { if (S1_canonCell_(row[c]) !== '~') { blank = false; break; } }
+    if (blank) continue;                                  // a trailing empty sheet row is not a record
+    var fp = S1_rowFingerprint_(hdrs, row);
+    var rec = { row_number: r + 1, fingerprint: fp };
+    (idColumns || []).forEach(function (c) { rec[c] = idx[c] === undefined ? null : S1_str_(row[idx[c]]); });
+    rec.__values = row;
+    rec.__index = idx;
+    rows.push(rec);
+    sig.push(S1_str_(rec[(idColumns || [])[0]]) + '~' + S1_str_(fp));
+  }
+  o.rows = rows;
+  o.row_count = rows.length;
+  o.hash_available = rows.length === 0 ? null : (rows[0].fingerprint !== null);
+  o.combined_fingerprint = S1_fingerprint_(sig);
+  return o;
+}
+
+/** Read a full-row record's column by name, using the index the read already built. */
+function S1_cellOf_(rec, name) {
+  if (!rec || !rec.__index || rec.__index[name] === undefined) return null;
+  return rec.__values[rec.__index[name]];
+}
+
+/** A row-shaped plain object, for handing to the production authorities (aiplIsAiGenerated_,
+ *  sadK2ResolveActiveDraft_, aiplExpirationCandidates_) which all take header-shaped objects. */
+function S1_recToObject_(rec) {
+  var o = {};
+  if (!rec || !rec.__index) return o;
+  Object.keys(rec.__index).forEach(function (c) { o[c] = rec.__values[rec.__index[c]]; });
+  o.__row = rec.row_number;
+  return o;
+}
+
+// ================================================================================================================
+// §B.4 — THE FACTORY WRITE SURFACES. A controlled generation must not move factory stock, and the two audit
+// tables are where a move would be recorded. Freezing the pool numbers alone would miss a movement row written
+// beside an unchanged total, so the count, the ids and a sorted full-content fingerprint are frozen for each.
+// A table that is ABSENT stays absent: row_count null, never 0. Reading "I could not look" as "there was
+// nothing there" is precisely how a readback confirms that nothing happened during a run that did something.
+// ================================================================================================================
+// THE ID COLUMN NAMES ARE THE PRODUCTION ONES, AND THE FIRST VERSION OF THIS GUESSED THEM.
+//
+// It used `movement_id` and `audit_id`. The real columns are `factory_stock_movement_id` (21_ MOV_HEADERS)
+// and `override_audit_id` (71_ FSG_OVERRIDE_AUDIT_HEADERS_[0]). Against a live sheet the guessed names
+// resolve to nothing, so every id in the frozen list would have been the empty string — a baseline that
+// lists no identities while appearing to list them, which is worse than one that admits it cannot look.
+// The fixture used the same invented names, so the tests agreed with the mistake.
+//
+// The audit id is taken from 71_'s own header authority when that module is present, so it cannot drift from
+// the table 71_ writes. The movement id is spelled, because 21_ declares MOV_HEADERS as a local inside its
+// handlers and there is no module constant to read — and an UNRESOLVED id column is reported and refused
+// below rather than filled with blanks.
+function S1_factorySurfaceSpecs_() {
+  var auditId = 'override_audit_id';
+  if (typeof FSG_OVERRIDE_AUDIT_HEADERS_ !== 'undefined' && FSG_OVERRIDE_AUDIT_HEADERS_
+      && FSG_OVERRIDE_AUDIT_HEADERS_.length) {
+    auditId = S1_str_(FSG_OVERRIDE_AUDIT_HEADERS_[0]) || auditId;
+  }
+  return [
+    { table: 'factory_stock_movements', id: 'factory_stock_movement_id',
+      id_authority: '21_ MOV_HEADERS[0] (spelled — no module constant to read)' },
+    { table: 'factory_stock_override_audit', id: auditId,
+      id_authority: (typeof FSG_OVERRIDE_AUDIT_HEADERS_ !== 'undefined')
+        ? '71_ FSG_OVERRIDE_AUDIT_HEADERS_[0]' : 'spelled fallback — 71_ not present' }
+  ];
+}
+
+function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
+  var out = { pool: null, surfaces: {}, acceptable: true, unreadable: [] };
+  // factory_stock: the authoritative quantity columns for THIS pool row, full-row fingerprinted.
+  var fs = S1_fullRowTable_(ss, 'factory_stock', null, ['warehouse_id', 'sku']);
+  var poolRec = null;
+  (fs.rows || []).forEach(function (r) {
+    if (S1_str_(r.warehouse_id) === S1_str_(poolWarehouseId) && S1_str_(r.sku) === S1_str_(poolSku)) poolRec = r;
+  });
+  out.pool = { table: 'factory_stock', present: fs.present, readable: fs.readable,
+    pool_row_found: poolRec !== null,
+    warehouse_id: S1_str_(poolWarehouseId), sku: S1_str_(poolSku),
+    fac_current_stock: poolRec ? S1_qty_(S1_cellOf_(poolRec, 'fac_current_stock')) : null,
+    fac_reserved_stock: poolRec ? S1_qty_(S1_cellOf_(poolRec, 'fac_reserved_stock')) : null,
+    row_fingerprint: poolRec ? poolRec.fingerprint : null,
+    table_row_count: fs.row_count, table_combined_fingerprint: fs.combined_fingerprint };
+  if (!fs.present || !fs.readable) { out.acceptable = false; out.unreadable.push('factory_stock'); }
+
+  S1_factorySurfaceSpecs_().forEach(function (spec) {
+    var idKey = spec.id;
+    var t = S1_fullRowTable_(ss, spec.table, null, [idKey]);
+    // AN ID COLUMN THAT IS NOT THERE IS NOT AN EMPTY ID. A present, readable table whose id column cannot be
+    // found would otherwise freeze a list of blank strings, and a readback comparing blanks to blanks passes.
+    var idResolved = !t.present || !t.readable
+      ? null : ((t.live_columns || []).indexOf(idKey) >= 0);
+    var s = { table: spec.table, present: t.present, readable: t.readable,
+      id_column: idKey, id_authority: spec.id_authority, id_column_resolved: idResolved,
+      observation_state: !t.present ? 'SHEET_ABSENT'
+        : (t.readable ? (idResolved === true ? 'SHEET_PRESENT_AND_READABLE' : 'ID_COLUMN_UNRESOLVED')
+          : 'SHEET_PRESENT_BUT_UNREADABLE'),
+      // ABSENT KEEPS NULL. Not zero.
+      row_count: t.present && t.readable ? t.row_count : null,
+      ids: (t.present && t.readable && idResolved === true)
+        ? (t.rows || []).map(function (r) { return S1_str_(r[idKey]); }).sort() : null,
+      combined_fingerprint: t.present && t.readable ? t.combined_fingerprint : null,
+      live_column_count: t.live_column_count, live_columns: t.live_columns, error: t.error || null };
+    if (t.present && !t.readable) { out.acceptable = false; out.unreadable.push(spec.table); }
+    if (idResolved === false) { out.acceptable = false; out.unreadable.push(spec.table + '#' + idKey); }
+    out.surfaces[spec.table] = s;
+  });
+  return out;
+}
+
+
+// ================================================================================================================
+// §B.1/§B.2/§B.3 — THE WHOLE DRAFT TABLE, PARTITIONED INTO WHAT MAY CHANGE AND WHAT MAY NOT.
+//
+// Three buckets, and the reason they are three: a controlled generation is authorized to touch AI rows in the
+// target scope and nothing else. So "target manual", "target AI" and "every other scope" have different
+// permissions, and collapsing them into one universe fingerprint would make a change in the protected part
+// indistinguishable from the change that was authorized.
+//
+// Provenance comes from 69_'s aiplIsAiGenerated_ — the SAME classifier the generation and the lifecycle use.
+// A local "does the id start with AI-" rule would be a second opinion, and the first thing it would get wrong
+// is the row this repository already mislabelled once: rows STORED with generation_type `user_created` that
+// the classifier reads as manual.
+// ================================================================================================================
+
+function S1_draftPartition_(ss, scope) {
+  var hAuth = (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ !== 'undefined')
+    ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ : null;
+  var lAuth = (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ !== 'undefined')
+    ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_ : null;
+  var out = {
+    header_table: S1_fullRowTable_(ss, S1_DRAFT_HEADER_TABLE_, hAuth, ['allocation_draft_id']),
+    line_table: S1_fullRowTable_(ss, S1_DRAFT_LINE_TABLE_, lAuth,
+      ['allocation_draft_line_id', 'allocation_draft_id', 'sku']),
+    column_authority_available: !!hAuth && !!lAuth,
+    target_manual: { header_ids: [], line_ids: [], header_sigs: [], line_sigs: [],
+      combined_fingerprint: null, planned_total: 0, unreadable_qty_rows: 0 },
+    target_ai: { header_ids: [], line_ids: [], header_sigs: [], line_sigs: [],
+      combined_fingerprint: null, planned_total: 0 },
+    other_scope: { header_count: 0, line_count: 0, header_sigs: [], line_sigs: [],
+      combined_fingerprint: null },
+    provenance_authority: (typeof aiplIsAiGenerated_ === 'function')
+      ? '69_ aiplIsAiGenerated_' : 'UNAVAILABLE',
+    unclassified_headers: 0, header_objects: [], active_header_objects: [], existing_line_ids: {},
+    terminal_statuses: null };
+
+  if (!out.header_table.readable || !out.line_table.readable) return out;
+
+  var TERM = (typeof SAD_TERMINAL_STATUSES_ !== 'undefined')
+    ? SAD_TERMINAL_STATUSES_ : { submitted: 1, cancelled: 1, expired: 1 };
+  out.terminal_statuses = Object.keys(TERM).sort();
+
+  // lines grouped by their parent header, so a header's scope membership can be decided by the skus it carries
+  var linesByHeader = {};
+  (out.line_table.rows || []).forEach(function (lr) {
+    var hid = S1_str_(lr.allocation_draft_id);
+    (linesByHeader[hid] = linesByHeader[hid] || []).push(lr);
+    var lid = S1_str_(lr.allocation_draft_line_id);
+    if (lid) out.existing_line_ids[lid] = 1;
+  });
+
+  var sku = S1_str_(scope && scope.sku);
+  (out.header_table.rows || []).forEach(function (hr) {
+    var obj = S1_recToObject_(hr);
+    out.header_objects.push(obj);
+    var st = S1_str_(obj.status).toLowerCase();
+    if (!TERM[st]) out.active_header_objects.push(obj);
+
+    var hid = S1_str_(hr.allocation_draft_id);
+    var kids = linesByHeader[hid] || [];
+    // The header's OWN three axes, trimmed and compared exactly — the same shape the production scope gate
+    // uses. The fourth axis lives on the line, so a header is in the target scope when its three match AND it
+    // carries a line for the target sku.
+    var axesMatch = S1_str_(obj.company) === S1_str_(scope && scope.company)
+      && S1_str_(obj.country) === S1_str_(scope && scope.country)
+      && S1_str_(obj.marketplace) === S1_str_(scope && scope.marketplace);
+    var carriesSku = false;
+    kids.forEach(function (lr) { if (S1_str_(lr.sku) === sku) carriesSku = true; });
+    var inTarget = axesMatch && carriesSku;
+
+    var isAi = null;
+    if (typeof aiplIsAiGenerated_ === 'function') {
+      try { isAi = aiplIsAiGenerated_(obj) === true; } catch (e) { isAi = null; }
+    }
+    if (isAi === null) out.unclassified_headers++;
+
+    var bucket = !inTarget ? out.other_scope : (isAi === true ? out.target_ai : out.target_manual);
+    if (bucket === out.other_scope) {
+      out.other_scope.header_count++;
+      out.other_scope.header_sigs.push(hid + '~' + S1_str_(hr.fingerprint));
+      kids.forEach(function (lr) {
+        out.other_scope.line_count++;
+        out.other_scope.line_sigs.push(S1_str_(lr.allocation_draft_line_id) + '~' + S1_str_(lr.fingerprint));
+      });
+      return;
+    }
+    bucket.header_ids.push(hid);
+    bucket.header_sigs.push(hid + '~' + S1_str_(hr.fingerprint));
+    kids.forEach(function (lr) {
+      var lid = S1_str_(lr.allocation_draft_line_id);
+      bucket.line_ids.push(lid);
+      bucket.line_sigs.push(lid + '~' + S1_str_(lr.fingerprint));
+      var q = S1_qty_(S1_cellOf_(lr, 'planned_qty'));
+      if (q === null) { if (bucket === out.target_manual) out.target_manual.unreadable_qty_rows++; }
+      else bucket.planned_total += q;
+    });
+  });
+
+  [out.target_manual, out.target_ai, out.other_scope].forEach(function (b) {
+    b.header_sigs.sort(); b.line_sigs.sort();
+    b.combined_fingerprint = S1_fingerprint_(b.header_sigs.concat(b.line_sigs));
+  });
+  return out;
+}
+
+// ================================================================================================================
+// §A — THE THREE AI IDENTITY SETS, AND THE FOURTH THAT FOLLOWS FROM THEM.
+//
+//   existing_active_ai_identities                  what is there now
+//   ai_expiration_candidates                       what a run would retire (aiplExpirationCandidates_)
+//   expected_generation_writes                     what a run would create or update (the predicted write set)
+//   expected_post_generation_active_ai_identities  (existing - expired) + written
+//
+// The fourth is derived, not measured, and is labelled as a derivation. It is what an AFTER readback should
+// find, and stating it here is what makes the readback able to disagree.
+// ================================================================================================================
+
+function S1_aiIdentitySets_(part, writeSet, scope, cycle) {
+  var out = {
+    existing_active_ai_identities: [], existing_active_ai_identity_count: 0,
+    ai_expiration_candidates: [], ai_expiration_candidate_count: 0,
+    expiration_authority: (typeof aiplExpirationCandidates_ === 'function')
+      ? '69_ aiplExpirationCandidates_ — the same selector a run uses to expire' : 'UNAVAILABLE',
+    expected_generation_writes: null,
+    expected_post_generation_active_ai_identities: [],
+    expected_post_generation_derivation: '(existing active AI - expiration candidates) + expected written'
+      + ' header ids. A DERIVATION, stated so a readback can contradict it.',
+    ai_identities_that_will_update: [], ai_identities_that_will_expire: [],
+    ai_identities_that_must_stay_unchanged: [] };
+
+  out.existing_active_ai_identities = (part && part.target_ai ? part.target_ai.header_ids : []).slice().sort();
+  out.existing_active_ai_identity_count = out.existing_active_ai_identities.length;
+
+  if (typeof aiplExpirationCandidates_ === 'function') {
+    try {
+      // THE CTX IS THE ONE 61_ PASSES, field for field. aiplSameScope_ reads source_page, company, country,
+      // marketplace and planning_cycle, so a ctx missing source_page would silently preserve every row for
+      // being "out of scope" and the expire set would read empty for the wrong reason.
+      //
+      // THE RUN'S OWN ROWS ARE NOT ROWS IT SUPERSEDES, AND THAT HAS TO BE TRANSLATED, NOT DROPPED.
+      //
+      // 61_ calls this with `generation_run_id: generationRunId, committed_ids: []`, and its own freshly
+      // written rows are excluded by SAME_GENERATION_RUN because they carry that run id. A prediction has no
+      // run id to match on, so the faithful equivalent is to name the rows this run WOULD own: the predicted
+      // header ids, passed as `committed_ids`, which is the other exclusion the same authority offers
+      // (CURRENT_RUN_OUTPUT).
+      //
+      // Passing neither — which the first version of this did — makes a REUSE target appear in BOTH sets: the
+      // manifest would report that it expires a row it is in fact updating. Measured on a world seeded with
+      // an active draft on the predicted group key, and refused by
+      // `no_identity_is_both_expired_and_written_by_the_same_run`. That refusal was correct and the input was
+      // wrong.
+      var dec = aiplExpirationCandidates_(part.active_header_objects || [], {
+        company: scope && scope.company, country: scope && scope.country,
+        marketplace: scope && scope.marketplace, planning_cycle: cycle,
+        source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined')
+          ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment',
+        generation_run_id: '',
+        committed_ids: (writeSet && writeSet.expected_header_ids) ? writeSet.expected_header_ids : [] }) || {};
+      var ids = {};
+      (dec.expire || []).forEach(function (c) {
+        var id = S1_str_(c && c.allocation_draft_id);
+        if (id) ids[id] = 1;
+      });
+      out.ai_expiration_candidates = Object.keys(ids).sort();
+      out.ai_expiration_preserved_count = (dec.preserved || []).length;
+      out.ai_expiration_detail = (dec.expire || []).slice(0, 30);
+    } catch (e) {
+      out.ai_expiration_candidates = null;
+      out.expiration_authority += ' — THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 160);
+    }
+  } else {
+    out.ai_expiration_candidates = null;
+  }
+  out.ai_expiration_candidate_count = out.ai_expiration_candidates === null
+    ? null : out.ai_expiration_candidates.length;
+
+  out.expected_generation_writes = writeSet ? {
+    measurable: writeSet.measurable === true,
+    expected_header_ids: (writeSet.expected_header_ids || []).slice().sort(),
+    expected_line_ids: (writeSet.expected_line_ids || []).slice().sort(),
+    expected_k2_group_keys: (writeSet.expected_k2_group_keys || []).slice().sort(),
+    create_header_count: writeSet.expected_create_header_count,
+    update_header_count: writeSet.expected_update_header_count,
+    create_line_count: writeSet.expected_create_line_count,
+    update_line_count: writeSet.expected_update_line_count,
+    route_group_count: (writeSet.route_groups || []).length
+  } : null;
+
+  var expired = {};
+  (out.ai_expiration_candidates || []).forEach(function (id) { expired[id] = 1; });
+  var written = {};
+  ((writeSet && writeSet.expected_header_ids) || []).forEach(function (id) { written[id] = 1; });
+
+  var post = {};
+  out.existing_active_ai_identities.forEach(function (id) { if (!expired[id]) post[id] = 1; });
+  Object.keys(written).forEach(function (id) { post[id] = 1; });
+  out.expected_post_generation_active_ai_identities = Object.keys(post).sort();
+
+  out.ai_identities_that_will_expire = Object.keys(expired).sort();
+  out.ai_identities_that_will_update = out.existing_active_ai_identities.filter(function (id) {
+    return written[id] === 1;
+  });
+  // Everything protected: every manual identity in the target scope, plus every AI identity that is neither
+  // written nor expired. "Must stay unchanged" is a list, because it is the claim the readback checks.
+  out.ai_identities_that_must_stay_unchanged = out.existing_active_ai_identities.filter(function (id) {
+    return !written[id] && !expired[id];
+  });
+  return out;
+}
+
 function S1_emitFreeze_(tag, text, verdict, withheldReason) {
   var ready = verdict === 'READY_TO_AUTHORIZE';
   if (!ready || !text) {
@@ -880,7 +1600,9 @@ function S1_emitFreeze_(tag, text, verdict, withheldReason) {
         + ' READY_TO_AUTHORIZE.' }));
     return 0;
   }
-  var n = Math.ceil(String(text).length / S1_CHUNK_MAX_BYTES_) || 1;
+  // S1-R4A — the same line-length budget the chunker uses. See S1_chunkBudget_.
+  var budget = S1_chunkBudget_(tag + '_freeze_paste_block');
+  var n = Math.ceil(String(text).length / budget) || 1;
   if (n > S1_LOG_MAX_CHUNKS_) {
     S1_log_(tag + '_freeze_withheld', JSON.stringify({ verdict: verdict, chunks: 0, paste_into: null,
       bytes: String(text).length, would_be_chunks: n, max_chunks: S1_LOG_MAX_CHUNKS_,
@@ -890,10 +1612,11 @@ function S1_emitFreeze_(tag, text, verdict, withheldReason) {
   }
   for (var i = 0; i < n; i++) {
     S1_log_(tag + '_freeze_paste_block_' + (i + 1) + '_of_' + n,
-      String(text).slice(i * S1_CHUNK_MAX_BYTES_, (i + 1) * S1_CHUNK_MAX_BYTES_));
+      String(text).slice(i * budget, (i + 1) * budget));
   }
   S1_log_(tag + '_freeze_paste_meta', JSON.stringify({ chunks: n, bytes: String(text).length,
-    chunk_max_bytes: S1_CHUNK_MAX_BYTES_, paste_into: 'S1_MANIFEST_P_BEFORE_',
+    chunk_max_bytes: S1_CHUNK_MAX_BYTES_, chunk_payload_budget: budget,
+    paste_into: 'S1_MANIFEST_P_BEFORE_',
     note: 'Concatenate the chunks IN ORDER, paste the result into S1_MANIFEST_P_BEFORE_ in this file, and'
       + ' save BEFORE pressing Generate.' }));
   return n;
@@ -1925,7 +2648,12 @@ function RUN_S1_MANIFEST_P() {
     ],
     expected_outcome: {
       outcome: 'AI_PLAN_GENERATED (rows written)',
-      created_or_updated: 'exactly the AI identities the census named, for exactly the one scope',
+      // S1-R4A — this used to be the whole claim, and it is a description of an intention rather than a
+      // prediction: "the AI identities the census named" were the ones that already existed. The measured
+      // fields below (expected_header_ids / expected_line_ids / the four create-update counts) replace it,
+      // and this line now only says which of them is authoritative.
+      created_or_updated: 'exactly the identities in expected_header_ids and expected_line_ids below,'
+        + ' predicted by the production PASS 1 + K2 identity authorities, for exactly the one scope',
       quantity: 'min(residual_qty, available_to_allocate) — clamped by KMFSG if smaller than the residual',
       reservations: 0,
       factory_stock_change: 0,
@@ -1947,6 +2675,11 @@ function RUN_S1_MANIFEST_P() {
     census: null, environment: null, deployment: null, allowlist: null, scope: null,
     accepted_run: null, lineage: null, schema: null, factory: null, candidate: null,
     identities: null, reservation_observation: null, evidence_gaps: null,
+    // S1-R4A — declared at the top level so a condition can compare against them on a world where nothing
+    // was reached. R4 shipped `writer_calls` undeclared and its own read-only gate failed by comparing
+    // `undefined` to 0; a gate that fails because its field does not exist is not a gate.
+    predicted_write_set: null, ai_identity_sets: null, row_content: null, factory_surfaces: null,
+    writeset_stop_code: null,
     live_evidence_summary: null,
     frozen_before: null, freeze_paste_block: null, freeze_withheld_reason: null,
     predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
@@ -1969,7 +2702,21 @@ function RUN_S1_MANIFEST_P() {
       }
       out.freeze_paste_block = null;
       if (!out.stop_reason) {
-        out.stop_reason = L.failed.length
+        // S1-R4A — WHEN THE WRITE SET COULD NOT BE MEASURED, THAT IS THE HEADLINE. It is the one refusal
+        // whose remedy is not "fix the data" but "this deployment cannot produce the evidence", and burying
+        // it inside a list of condition names would leave an operator looking for a data problem.
+        out.stop_reason = out.writeset_stop_code
+          ? (out.writeset_stop_code + ' — the exact set of K2 identities a Generate would create or update'
+            + ' could not be produced by the production authorities'
+            + ((out.predicted_write_set && out.predicted_write_set.stage)
+                ? (' (stage: ' + out.predicted_write_set.stage
+                  + (out.predicted_write_set.stage_detail
+                      ? '; ' + out.predicted_write_set.stage_detail : '') + ')') : '')
+            + ((out.predicted_write_set && (out.predicted_write_set.missing_authorities || []).length)
+                ? ('; absent: ' + out.predicted_write_set.missing_authorities.join(', ')) : '')
+            + '. An approximate write set may not be substituted, and neither may a count of the rows that'
+            + ' already exist. ' + L.failed.length + ' condition(s) not met: ' + L.failed.join(', '))
+          : L.failed.length
           ? (L.failed.length + ' condition(s) not met: ' + L.failed.join(', ')
             + '. Nothing may be authorized while any of these is false.')
           : 'no BEFORE baseline could be frozen, so there is nothing an AFTER readback could compare'
@@ -1979,7 +2726,8 @@ function RUN_S1_MANIFEST_P() {
     // The wording is only ever built from MEASURED values, and only on a READY. A sentence with a
     // placeholder in it, or one built from a refused run, is not an authorization.
     out.operator_authorization_wording = (out.verdict === 'READY_TO_AUTHORIZE')
-      ? S1_authWordingP_(out.candidate, out.accepted_run, out.scope)
+      ? S1_authWordingP_(out.candidate, out.accepted_run, out.scope,
+          out.predicted_write_set, out.ai_identity_sets, out.row_content)
       : null;
     // LOCK THREE — A READY WITH NOTHING TO SIGN IS NOT A READY, and neither is one whose sentence still
     // carries a placeholder. This is the exact shape the round was called to repair: a manifest that
@@ -2038,7 +2786,23 @@ function RUN_S1_MANIFEST_P() {
       deployment: 'sysModuleBuildStamps_ (63_)',
       schema: 'live sheet headers, fingerprinted with KMFSG.fnv1a',
       reservations: 'direct observation, with 61_ weeklyAiPlanActivationManifest_ as the structural claim',
-      note: 'NOTHING here is a stored value from a previous run.' };
+      // S1-R4A §A — the write-set prediction chain, named module by module. Each of these is on the PASS 1
+      // side of 61_'s documented "computes every group and writes nothing" seam.
+      predicted_write_set: 'weeklyAiPlanHarvest_ -> KMWHA.mapWeeklyHarvestToBatchRequest ->'
+        + ' KMWRB.buildWeeklySourceLines -> weeklyAiPlanK2AllocatedLines_ (THE ALLOCATOR) ->'
+        + ' inventoryAiPlanScopeEnabled_ per marketplace bucket -> KMWRR.buildK2GenerationPlan (PASS 1'
+        + ' route grouping, pure) (61_/90_)',
+      k2_identity: 'sadK2GroupKey_ + sadK2DeterministicHeaderId_ + sadK2DeterministicLineId_ (16_)',
+      create_vs_update: 'sadK2ResolveActiveDraft_ (16_) — pure, no sheet access',
+      row_content: 'live full rows of shipping_allocation_drafts / _draft_lines against'
+        + ' SHIPPING_ALLOCATION_DRAFTS_HEADERS_FULL_ and SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_FULL_'
+        + ' (16_), every live column fingerprinted with KMFSG.fnv1a',
+      row_provenance: 'aiplIsAiGenerated_ (69_)',
+      factory_write_surfaces: 'direct full-row observation of factory_stock, factory_stock_movements and'
+        + ' factory_stock_override_audit',
+      note: 'NOTHING here is a stored value from a previous run. No allocator, route-grouping or K2'
+        + ' identity algorithm is re-implemented in this file; every identity below was produced by the'
+        + ' production authority that would produce it during a real generation.' };
 
     // ---- 1. THE CENSUS, RUN LIVE. The manifest does not measure independently of it. ------------------
     var cen = RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS({ quiet: true });
@@ -2296,6 +3060,191 @@ function RUN_S1_MANIFEST_P() {
         + ' disappearing; carrying every key into the paste block would put the baseline over the log'
         + ' bound, and a truncated baseline is a wrong baseline.' };
 
+    // ---- 10b. S1-R4A §B — THE WHOLE DRAFT TABLE AS FULL ROWS, IN THREE BUCKETS. ---------------------
+    //
+    // The scope-key fingerprints above answer "did an identity appear or disappear". They cannot answer
+    // "was a row edited in place", and that is the question a freeze exists to answer. Every live column of
+    // every draft header and line is fingerprinted here, so a changed note, a changed planned_qty and a
+    // moved updated_at are each visible with no id having changed at all.
+    var dbP = S1_openDb_();
+    var part = S1_draftPartition_(dbP.ok ? dbP.ss : null, out.scope);
+    out.row_content = {
+      header_table: { present: part.header_table.present, readable: part.header_table.readable,
+        live_column_count: part.header_table.live_column_count,
+        authority_column_count: part.header_table.authority_column_count,
+        unexpected_columns: part.header_table.unexpected_columns,
+        missing_columns: part.header_table.missing_columns,
+        excluded_fields: part.header_table.excluded_fields,
+        row_count: part.header_table.row_count,
+        combined_fingerprint: part.header_table.combined_fingerprint },
+      line_table: { present: part.line_table.present, readable: part.line_table.readable,
+        live_column_count: part.line_table.live_column_count,
+        authority_column_count: part.line_table.authority_column_count,
+        unexpected_columns: part.line_table.unexpected_columns,
+        missing_columns: part.line_table.missing_columns,
+        excluded_fields: part.line_table.excluded_fields,
+        row_count: part.line_table.row_count,
+        combined_fingerprint: part.line_table.combined_fingerprint },
+      target_manual: { header_ids: part.target_manual.header_ids, line_ids: part.target_manual.line_ids,
+        planned_total: part.target_manual.planned_total,
+        combined_fingerprint: part.target_manual.combined_fingerprint },
+      target_ai: { header_ids: part.target_ai.header_ids, line_ids: part.target_ai.line_ids,
+        planned_total: part.target_ai.planned_total,
+        combined_fingerprint: part.target_ai.combined_fingerprint },
+      other_scope: { header_count: part.other_scope.header_count,
+        line_count: part.other_scope.line_count,
+        combined_fingerprint: part.other_scope.combined_fingerprint },
+      provenance_authority: part.provenance_authority,
+      terminal_statuses: part.terminal_statuses,
+      column_authority_available: part.column_authority_available,
+      note: 'Three buckets because a controlled generation may touch AI rows in the target scope and'
+        + ' nothing else. One universe fingerprint would make a change in the protected part'
+        + ' indistinguishable from the change that was authorized.' };
+
+    L.P('both_draft_tables_are_present_and_readable', [true, true],
+      [part.header_table.readable, part.line_table.readable],
+      part.header_table.readable === true && part.line_table.readable === true);
+    L.P('the_draft_column_authority_is_available_in_this_deployment', true,
+      part.column_authority_available, part.column_authority_available === true);
+    // AN UNKNOWN LIVE COLUMN IS A STOP. It is either a half-applied migration or something writing to a
+    // table this manifest is about to declare frozen; either way the freeze would not cover it.
+    L.P('no_unexpected_column_exists_on_the_draft_header_table', [],
+      part.header_table.unexpected_columns, (part.header_table.unexpected_columns || []).length === 0);
+    L.P('no_unexpected_column_exists_on_the_draft_line_table', [],
+      part.line_table.unexpected_columns, (part.line_table.unexpected_columns || []).length === 0);
+    // EVERY LIVE COLUMN IS IN THE FINGERPRINT. Asserted on the measurement, not on the intention.
+    L.P('no_field_is_excluded_from_the_full_row_fingerprints', [[], []],
+      [part.header_table.excluded_fields, part.line_table.excluded_fields],
+      (part.header_table.excluded_fields || []).length === 0
+        && (part.line_table.excluded_fields || []).length === 0);
+    L.P('every_full_row_fingerprint_was_computed_by_the_hash_authority', 'a fingerprint per bucket',
+      { target_manual: part.target_manual.combined_fingerprint,
+        target_ai: part.target_ai.combined_fingerprint,
+        other_scope: part.other_scope.combined_fingerprint },
+      part.target_manual.combined_fingerprint !== null
+        && part.target_ai.combined_fingerprint !== null
+        && part.other_scope.combined_fingerprint !== null);
+    L.P('every_draft_header_was_classified_as_manual_or_ai_generated', 0, part.unclassified_headers,
+      part.unclassified_headers === 0);
+    // TWO READS OF THE MANUAL ROWS MUST NOT DISAGREE. The exposure view (what the quantity arithmetic used)
+    // is line-grain and scope-filtered; the full-row view reads the whole table. The full-row view is a
+    // superset by construction, so CONTAINMENT is the checkable claim — and a line the arithmetic counted
+    // that the freeze does not cover would be a row protected by nothing.
+    var fullManualSet = {};
+    (part.target_manual.line_ids || []).forEach(function (id) { fullManualSet[S1_str_(id)] = 1; });
+    var uncovered = manualLineIds.filter(function (id) {
+      return S1_str_(id) !== '' && !fullManualSet[S1_str_(id)];
+    });
+    L.P('every_manual_line_the_arithmetic_counted_is_covered_by_the_full_row_freeze', [], uncovered,
+      uncovered.length === 0);
+
+    // ---- 10c. S1-R4A §A — THE EXACT WRITE SET, FROM THE PRODUCTION AUTHORITIES. ---------------------
+    var ws = S1_predictedWriteSet_(dbP.ok ? dbP.ss : null, out.scope,
+      out.accepted_run ? out.accepted_run.planning_cycle : null,
+      part.active_header_objects, part.existing_line_ids);
+    out.predicted_write_set = ws;
+    var ids = S1_aiIdentitySets_(part, ws, out.scope,
+      out.accepted_run ? out.accepted_run.planning_cycle : null);
+    out.ai_identity_sets = ids;
+
+    // THE NAMED REFUSAL §A ASKS FOR. If the production authorities cannot produce the exact write set, this
+    // is a STOP with its own code — never an empty array, never the candidate scope standing in for the
+    // identities, and never a count of the rows that already exist.
+    L.P('the_exact_production_write_set_is_measurable', true, ws.measurable,
+      ws.measurable === true);
+    if (ws.measurable !== true) {
+      out.writeset_stop_code = ws.stop_code || S1_WRITESET_STOP_;
+      L.P('the_write_set_measurement_named_no_missing_authority', [], ws.missing_authorities,
+        (ws.missing_authorities || []).length === 0);
+    }
+    L.P('the_predicted_write_set_names_at_least_one_header_and_one_line',
+      'header_ids >= 1 and line_ids >= 1',
+      { headers: (ws.expected_header_ids || []).length, lines: (ws.expected_line_ids || []).length },
+      (ws.expected_header_ids || []).length >= 1 && (ws.expected_line_ids || []).length >= 1);
+    L.P('every_predicted_header_carries_a_deterministic_k2_identity',
+      'every id non-blank and K2-prefixed', (ws.expected_header_ids || []).slice(0, 20),
+      (ws.expected_header_ids || []).length > 0 && (ws.expected_header_ids || []).every(function (id) {
+        return S1_str_(id).indexOf('SADH-K2-') === 0;
+      }));
+    L.P('every_predicted_line_carries_a_deterministic_k2_identity',
+      'every id non-blank and K2-prefixed', (ws.expected_line_ids || []).slice(0, 20),
+      (ws.expected_line_ids || []).length > 0 && (ws.expected_line_ids || []).every(function (id) {
+        return S1_str_(id).indexOf('SADL-K2-') === 0;
+      }));
+    L.P('every_predicted_route_group_is_classified_as_a_create_or_an_update',
+      'CREATE or UPDATE for every group',
+      (ws.route_groups || []).map(function (g) { return g.classification; }),
+      (ws.route_groups || []).length > 0 && (ws.route_groups || []).every(function (g) {
+        return g.classification === 'CREATE' || g.classification === 'UPDATE';
+      }));
+    L.P('the_create_and_update_counts_account_for_every_predicted_route_group',
+      (ws.route_groups || []).length,
+      (ws.expected_create_header_count || 0) + (ws.expected_update_header_count || 0),
+      (ws.route_groups || []).length
+        === (ws.expected_create_header_count || 0) + (ws.expected_update_header_count || 0));
+    L.P('the_create_and_update_line_counts_account_for_every_predicted_line',
+      (ws.expected_line_ids || []).length,
+      (ws.expected_create_line_count || 0) + (ws.expected_update_line_count || 0),
+      (ws.expected_line_ids || []).length
+        === (ws.expected_create_line_count || 0) + (ws.expected_update_line_count || 0));
+    L.P('no_predicted_route_group_collides_with_two_active_drafts', [], ws.conflicts,
+      (ws.conflicts || []).length === 0);
+    L.P('no_two_predicted_route_groups_mint_the_same_header_id', [], ws.duplicate_header_ids,
+      (ws.duplicate_header_ids || []).length === 0);
+    L.P('no_line_the_generation_would_write_is_blocked_on_a_route', [],
+      (ws.blocked_lines || []).map(function (b) { return b.block; }),
+      (ws.blocked_lines || []).length === 0);
+    L.P('the_predicted_plan_conserves_the_allocated_quantity', true, ws.conserved,
+      ws.conserved === true);
+    // THE PREDICTION AND THE ARITHMETIC MUST BE ABOUT THE SAME UNITS. The residual said how much is
+    // missing; the write set says how much would be written. If the predicted lines total more than the
+    // proposed quantity, one of the two is wrong and neither may be authorized.
+    L.P('the_predicted_lines_do_not_exceed_the_proposed_quantity',
+      'planned total <= ' + S1_str_(prop), ws.expected_line_planned_total,
+      prop !== null && ws.expected_line_planned_total !== null
+        && ws.expected_line_planned_total <= prop);
+    // THE THREE SETS ARE THREE. An expiration candidate is not a write, and an existing row is not a
+    // prediction; asserting they are disjoint in the ways they must be is what keeps the names honest.
+    L.P('the_expiration_candidate_set_was_produced_by_the_lifecycle_authority',
+      'an array from aiplExpirationCandidates_', ids.ai_expiration_candidates,
+      Object.prototype.toString.call(ids.ai_expiration_candidates) === '[object Array]');
+    L.P('no_identity_is_both_expired_and_written_by_the_same_run', [],
+      (ids.ai_expiration_candidates || []).filter(function (id) {
+        return (ws.expected_header_ids || []).indexOf(id) >= 0;
+      }),
+      (ids.ai_expiration_candidates || []).filter(function (id) {
+        return (ws.expected_header_ids || []).indexOf(id) >= 0;
+      }).length === 0);
+    L.P('no_predicted_write_touches_a_manual_identity', [],
+      (ws.expected_header_ids || []).filter(function (id) {
+        return (part.target_manual.header_ids || []).indexOf(id) >= 0;
+      }),
+      (ws.expected_header_ids || []).filter(function (id) {
+        return (part.target_manual.header_ids || []).indexOf(id) >= 0;
+      }).length === 0);
+    L.P('the_post_generation_ai_identity_set_was_derived', 'a derived array',
+      ids.expected_post_generation_active_ai_identities,
+      Object.prototype.toString.call(ids.expected_post_generation_active_ai_identities) === '[object Array]'
+        && ids.expected_post_generation_active_ai_identities.length >= 1);
+
+    // ---- 10d. S1-R4A §B.4 — THE FACTORY WRITE SURFACES. --------------------------------------------
+    var surf = S1_factorySurfaces_(dbP.ok ? dbP.ss : null,
+      cand ? cand.source_factory_warehouse_id : null, out.scope ? out.scope.sku : null);
+    out.factory_surfaces = surf;
+    L.P('the_factory_pool_row_was_read_as_a_full_row', 'a row fingerprint',
+      surf.pool ? surf.pool.row_fingerprint : null,
+      !!surf.pool && surf.pool.pool_row_found === true && surf.pool.row_fingerprint !== null);
+    L.P('the_frozen_pool_quantities_match_the_ones_the_arithmetic_used',
+      { current: pool ? S1_qty_(pool.factory_current_stock) : null,
+        reserved: pool ? S1_qty_(pool.factory_reserved_stock) : null },
+      { current: surf.pool ? surf.pool.fac_current_stock : null,
+        reserved: surf.pool ? surf.pool.fac_reserved_stock : null },
+      !!pool && !!surf.pool
+        && S1_qty_(pool.factory_current_stock) === surf.pool.fac_current_stock
+        && S1_qty_(pool.factory_reserved_stock) === surf.pool.fac_reserved_stock);
+    L.P('every_factory_write_surface_is_either_readable_or_honestly_absent', [], surf.unreadable,
+      surf.acceptable === true && (surf.unreadable || []).length === 0);
+
     // ---- 11. RESERVATIONS. Observed, with ABSENT never read as ZERO. ---------------------------------
     var db = S1_openDb_();
     out.reservation_observation = S1_reservationObservation_(db.ok ? db.ss : null);
@@ -2331,7 +3280,19 @@ function RUN_S1_MANIFEST_P() {
       available_to_allocate: avail,
       identity_universe_fingerprint: uniFp,
       deployment_build: dep ? dep.deployment_build : null,
-      measured_at: out.measured_at
+      measured_at: out.measured_at,
+      // S1-R4A — the prediction and the content freeze are REQUIRED evidence, not extras. A baseline missing
+      // any of these cannot refuse the drift it exists to refuse, so an absence here is a STOP.
+      expected_header_ids: (ws.expected_header_ids || []).length ? ws.expected_header_ids.join(',') : null,
+      expected_line_ids: (ws.expected_line_ids || []).length ? ws.expected_line_ids.join(',') : null,
+      expected_k2_group_keys: (ws.expected_k2_group_keys || []).length
+        ? ws.expected_k2_group_keys.join(',') : null,
+      target_manual_combined_fingerprint: part.target_manual.combined_fingerprint,
+      target_ai_combined_fingerprint: part.target_ai.combined_fingerprint,
+      other_scope_combined_fingerprint: part.other_scope.combined_fingerprint,
+      draft_header_live_column_count: part.header_table.live_column_count,
+      draft_line_live_column_count: part.line_table.live_column_count,
+      factory_pool_row_fingerprint: surf.pool ? surf.pool.row_fingerprint : null
     };
     var gaps = Object.keys(required).filter(function (k) {
       var v = required[k];
@@ -2384,7 +3345,27 @@ function RUN_S1_MANIFEST_P() {
       proposed_ai_allocation_qty: prop, would_clamp: cand ? cand.would_clamp : null,
       source_factory_warehouse_id: required.source_factory_warehouse_id, pool_key: required.pool_key,
       manual_identity_count: (manualRows || []).length, manual_planned_total: manualTotal,
-      expected_ai_identity_count: (aiAffected || []).length,
+      // S1-R4A — THE THREE SETS, SEPARATELY. `expected_ai_identity_count` used to sit here holding the
+      // count of rows that already existed, which is how the wording came to say "across 0 superseded AI
+      // identities" about a run whose predicted writes had never been computed.
+      existing_active_ai_identity_count: ids.existing_active_ai_identity_count,
+      ai_expiration_candidate_count: ids.ai_expiration_candidate_count,
+      expected_create_header_count: ws.expected_create_header_count,
+      expected_update_header_count: ws.expected_update_header_count,
+      expected_create_line_count: ws.expected_create_line_count,
+      expected_update_line_count: ws.expected_update_line_count,
+      expected_header_ids: ws.expected_header_ids,
+      expected_line_ids: ws.expected_line_ids,
+      writeset_measurable: ws.measurable, writeset_stage: ws.stage,
+      target_manual_combined_fingerprint: part.target_manual.combined_fingerprint,
+      target_ai_combined_fingerprint: part.target_ai.combined_fingerprint,
+      other_scope_combined_fingerprint: part.other_scope.combined_fingerprint,
+      other_scope_header_count: part.other_scope.header_count,
+      other_scope_line_count: part.other_scope.line_count,
+      factory_stock_movement_count: surf.surfaces['factory_stock_movements']
+        ? surf.surfaces['factory_stock_movements'].row_count : null,
+      factory_override_audit_count: surf.surfaces['factory_stock_override_audit']
+        ? surf.surfaces['factory_stock_override_audit'].row_count : null,
       identity_universe_count: uniKeys.length,
       reservation_observation_state: out.reservation_observation.observation_state,
       reservation_row_count: out.reservation_observation.row_count,
@@ -2394,10 +3375,30 @@ function RUN_S1_MANIFEST_P() {
     // ---- 15. THE EXPECTED WRITE, IN NUMBERS A READBACK CAN DISAGREE WITH. ----------------------------
     out.expected_outcome.expected_max_units_written = prop;
     out.expected_outcome.expected_clamp = cand ? cand.would_clamp : null;
-    out.expected_outcome.expected_superseded_ai_identities = (aiAffected || []).length;
+    out.expected_outcome.expected_superseded_ai_identities = ids.ai_expiration_candidate_count;
     out.expected_outcome.expected_manual_identities_unchanged = (manualRows || []).length;
     out.expected_outcome.expected_identity_universe_count_after = uniKeys.length;
     out.expected_outcome.expected_reservation_row_count_after = out.reservation_observation.row_count;
+    // S1-R4A — the numbers a readback counts rows against, stated as CREATE and UPDATE rather than as one
+    // total. A run that updates one header and a run that creates one are the same delta and not the same
+    // event, and only one of them is what was authorized.
+    out.expected_outcome.expected_created_headers = ws.expected_create_header_count;
+    out.expected_outcome.expected_updated_headers = ws.expected_update_header_count;
+    out.expected_outcome.expected_created_lines = ws.expected_create_line_count;
+    out.expected_outcome.expected_updated_lines = ws.expected_update_line_count;
+    out.expected_outcome.expected_header_ids = ws.expected_header_ids;
+    out.expected_outcome.expected_line_ids = ws.expected_line_ids;
+    out.expected_outcome.expected_k2_group_keys = ws.expected_k2_group_keys;
+    out.expected_outcome.expected_expired_ai_identities = ids.ai_expiration_candidates;
+    out.expected_outcome.expected_post_generation_active_ai_identities =
+      ids.expected_post_generation_active_ai_identities;
+    out.expected_outcome.expected_manual_rows_full_row_identical = true;
+    out.expected_outcome.expected_other_scope_rows_full_row_identical = true;
+    out.expected_outcome.expected_factory_movement_count_after = surf.surfaces['factory_stock_movements']
+      ? surf.surfaces['factory_stock_movements'].row_count : null;
+    out.expected_outcome.expected_factory_override_audit_count_after =
+      surf.surfaces['factory_stock_override_audit']
+        ? surf.surfaces['factory_stock_override_audit'].row_count : null;
 
     // ---- 16. THE BEFORE BASELINE. Built only from measured values, and only when nothing failed. -----
     if (L.failed.length === 0) {
@@ -2423,8 +3424,57 @@ function RUN_S1_MANIFEST_P() {
         available_to_allocate: avail,
         manual_header_ids: manualHeaderIds, manual_line_ids: manualLineIds,
         manual_planned_total: manualTotal, manual_identity_fingerprint: manualFp,
-        expected_ai_identities: (aiAffected || []).map(function (x) { return x.allocation_draft_id; }),
-        expected_ai_identity_count: (aiAffected || []).length,
+        // ---- S1-R4A §A — THE EXACT WRITE SET. What this run predicts a Generate would create or update. ----
+        writeset_measurable: ws.measurable, writeset_stage: ws.stage,
+        expected_header_ids: (ws.expected_header_ids || []).slice().sort(),
+        expected_line_ids: (ws.expected_line_ids || []).slice().sort(),
+        expected_k2_group_keys: (ws.expected_k2_group_keys || []).slice().sort(),
+        expected_create_header_count: ws.expected_create_header_count,
+        expected_update_header_count: ws.expected_update_header_count,
+        expected_create_line_count: ws.expected_create_line_count,
+        expected_update_line_count: ws.expected_update_line_count,
+        // ---- the other two AI sets, which are NOT the write set ----
+        existing_active_ai_identities: ids.existing_active_ai_identities,
+        existing_active_ai_identity_count: ids.existing_active_ai_identity_count,
+        ai_expiration_candidates: ids.ai_expiration_candidates,
+        ai_expiration_candidate_count: ids.ai_expiration_candidate_count,
+        expected_post_generation_active_ai_identities:
+          ids.expected_post_generation_active_ai_identities,
+        // ---- S1-R4A §B — FULL-ROW CONTENT. id~fingerprint per row, sorted, plus a combined fingerprint. ----
+        target_manual_header_ids: part.target_manual.header_ids,
+        target_manual_line_ids: part.target_manual.line_ids,
+        target_manual_planned_total: part.target_manual.planned_total,
+        target_manual_row_signatures: part.target_manual.header_sigs
+          .concat(part.target_manual.line_sigs),
+        target_manual_combined_fingerprint: part.target_manual.combined_fingerprint,
+        target_ai_row_signatures: part.target_ai.header_sigs.concat(part.target_ai.line_sigs),
+        target_ai_combined_fingerprint: part.target_ai.combined_fingerprint,
+        other_scope_header_count: part.other_scope.header_count,
+        other_scope_line_count: part.other_scope.line_count,
+        other_scope_row_signatures: part.other_scope.header_sigs.concat(part.other_scope.line_sigs),
+        other_scope_combined_fingerprint: part.other_scope.combined_fingerprint,
+        draft_header_live_column_count: part.header_table.live_column_count,
+        draft_line_live_column_count: part.line_table.live_column_count,
+        draft_header_excluded_fields: part.header_table.excluded_fields,
+        draft_line_excluded_fields: part.line_table.excluded_fields,
+        // ---- S1-R4A §B.4 — the factory write surfaces ----
+        factory_pool_row_fingerprint: surf.pool ? surf.pool.row_fingerprint : null,
+        factory_stock_movement_state: surf.surfaces['factory_stock_movements']
+          ? surf.surfaces['factory_stock_movements'].observation_state : null,
+        factory_stock_movement_count: surf.surfaces['factory_stock_movements']
+          ? surf.surfaces['factory_stock_movements'].row_count : null,
+        factory_stock_movement_ids: surf.surfaces['factory_stock_movements']
+          ? surf.surfaces['factory_stock_movements'].ids : null,
+        factory_stock_movement_fingerprint: surf.surfaces['factory_stock_movements']
+          ? surf.surfaces['factory_stock_movements'].combined_fingerprint : null,
+        factory_override_audit_state: surf.surfaces['factory_stock_override_audit']
+          ? surf.surfaces['factory_stock_override_audit'].observation_state : null,
+        factory_override_audit_count: surf.surfaces['factory_stock_override_audit']
+          ? surf.surfaces['factory_stock_override_audit'].row_count : null,
+        factory_override_audit_ids: surf.surfaces['factory_stock_override_audit']
+          ? surf.surfaces['factory_stock_override_audit'].ids : null,
+        factory_override_audit_fingerprint: surf.surfaces['factory_stock_override_audit']
+          ? surf.surfaces['factory_stock_override_audit'].combined_fingerprint : null,
         identity_universe_count: uniKeys.length, identity_universe_fingerprint: uniFp,
         other_scope_identity_count: out.identities.other_scope_identity_count,
         schema_fingerprints: fps,
@@ -2439,6 +3489,46 @@ function RUN_S1_MANIFEST_P() {
         return !Object.prototype.hasOwnProperty.call(freeze, k) || freeze[k] === undefined;
       });
       L.P('the_frozen_baseline_carries_every_required_field', [], missing, missing.length === 0);
+      // S1-R4A — AND WHAT IT CARRIES MUST BE WHAT WAS MEASURED.
+      //
+      // Presence is not agreement. The declared-field check above passes on a baseline whose
+      // `expected_header_ids` is an empty array, because [] is present — so a freeze could be built from the
+      // EXISTING rows (the exact R4 defect) or from nothing at all and still satisfy every other condition.
+      // Caught by a mutant that fed the freeze `ids.existing_active_ai_identities` and survived every check.
+      //
+      // A baseline that disagrees with the measurement is worse than no baseline: it is a wrong before-value
+      // that a readback will compare against and pass.
+      var fzHdr = (freeze.expected_header_ids || []).slice().sort().join(',');
+      var fzLine = (freeze.expected_line_ids || []).slice().sort().join(',');
+      var wsHdr = (ws.expected_header_ids || []).slice().sort().join(',');
+      var wsLine = (ws.expected_line_ids || []).slice().sort().join(',');
+      L.P('the_frozen_write_set_is_the_one_that_was_measured',
+        { header_ids: wsHdr, line_ids: wsLine, creates: [ws.expected_create_header_count,
+          ws.expected_create_line_count], updates: [ws.expected_update_header_count,
+          ws.expected_update_line_count] },
+        { header_ids: fzHdr, line_ids: fzLine, creates: [freeze.expected_create_header_count,
+          freeze.expected_create_line_count], updates: [freeze.expected_update_header_count,
+          freeze.expected_update_line_count] },
+        fzHdr === wsHdr && fzLine === wsLine
+          && freeze.expected_create_header_count === ws.expected_create_header_count
+          && freeze.expected_create_line_count === ws.expected_create_line_count
+          && freeze.expected_update_header_count === ws.expected_update_header_count
+          && freeze.expected_update_line_count === ws.expected_update_line_count);
+      // AND IT MUST NAME AT LEAST ONE IDENTITY. An empty write set reaching the freeze means either the
+      // prediction found nothing (already refused above) or something dropped it on the way here.
+      L.P('the_frozen_baseline_names_at_least_one_identity_to_be_written',
+        'a non-empty header id list and line id list',
+        [(freeze.expected_header_ids || []).length, (freeze.expected_line_ids || []).length],
+        (freeze.expected_header_ids || []).length >= 1 && (freeze.expected_line_ids || []).length >= 1);
+      // The full-row fingerprints have to be real hashes too: a null one is a bucket the readback cannot
+      // compare, and three nulls would make "nothing else changed" unfalsifiable.
+      L.P('every_frozen_content_fingerprint_is_a_real_hash',
+        'a fingerprint for each of the three buckets',
+        [freeze.target_manual_combined_fingerprint, freeze.target_ai_combined_fingerprint,
+          freeze.other_scope_combined_fingerprint],
+        freeze.target_manual_combined_fingerprint !== null
+          && freeze.target_ai_combined_fingerprint !== null
+          && freeze.other_scope_combined_fingerprint !== null);
       if (missing.length === 0) {
         out.frozen_before = freeze;
         out.freeze_paste_block = 'Paste this into S1_MANIFEST_P_BEFORE_ in this file BEFORE pressing'
@@ -2519,8 +3609,16 @@ function RUN_S1_MANIFEST_S() {
  * candidate it returns null rather than a template. A sentence that still contained a placeholder would be
  * the defect back again, so the suite asserts there is no `<` in it at all.
  */
-function S1_authWordingP_(cand, acceptedRun, scope) {
+function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {
   if (!cand || !scope) return null;
+  // S1-R4A §C — A SENTENCE THAT DOES NOT NAME THE WRITE CANNOT AUTHORIZE IT. Without the predicted write
+  // set there is nothing to sign for, so the sentence is REFUSED rather than written with the numbers that
+  // happen to be available. This is what LOCK THREE then catches: a null wording downgrades a READY.
+  if (!ws || ws.measurable !== true || !ids) return null;
+  var nCreateH = ws.expected_create_header_count, nUpdateH = ws.expected_update_header_count;
+  var nCreateL = ws.expected_create_line_count, nUpdateL = ws.expected_update_line_count;
+  var hIds = (ws.expected_header_ids || []).slice().sort();
+  var lIds = (ws.expected_line_ids || []).slice().sort();
   var lineage = (acceptedRun && acceptedRun.lineage) || {};
   var pool = cand.pool || {};
   return 'I authorize ONE controlled Inventory AI Plan generation for the single scope '
@@ -2535,12 +3633,39 @@ function S1_authWordingP_(cand, acceptedRun, scope) {
     + ' against available_to_allocate ' + S1_str_(pool.available_to_allocate)
     + ' at factory warehouse ' + S1_str_(cand.source_factory_warehouse_id)
     + ', expecting AT MOST ' + S1_str_(cand.proposed_ai_allocation_qty)
-    + ' units to be written (clamp ' + (cand.would_clamp === true ? 'YES' : 'NO') + ') across '
-    + S1_str_((cand.existing_affected_ai_identities || []).length)
-    + ' superseded AI identities, with ' + S1_str_((cand.protected_manual_identities || []).length)
-    + ' manual identities that must not change. The activation allowlist must contain exactly this one'
-    + ' scope. No manual row may change, no other scope may change, no reservation may be created, no'
-    + ' factory stock may change, and no Weekly Shipping Plan or Shipment may be created or altered. A'
+    + ' units to be written (clamp ' + (cand.would_clamp === true ? 'YES' : 'NO') + ').'
+    // ---- S1-R4A §C — WHAT WOULD BE WRITTEN, AS FOUR SEPARATE COUNTS. The old sentence said "across 0
+    // superseded AI identities" and that number was the count of rows that ALREADY EXISTED, so a run that
+    // would create a header and five lines was described as touching nothing.
+    + ' This generation is predicted to CREATE ' + S1_str_(nCreateH) + ' allocation draft header(s) and '
+    + S1_str_(nCreateL) + ' line(s), and to UPDATE ' + S1_str_(nUpdateH) + ' existing header(s) and '
+    + S1_str_(nUpdateL) + ' existing line(s), across ' + S1_str_((ws.route_groups || []).length)
+    + ' route group(s). It is predicted to EXPIRE ' + S1_str_(ids.ai_expiration_candidate_count)
+    + ' existing AI identity/identities'
+    + ((ids.ai_expiration_candidates || []).length
+        ? ' (' + (ids.ai_expiration_candidates || []).join(', ') + ')' : '')
+    + ', against ' + S1_str_(ids.existing_active_ai_identity_count)
+    + ' AI identity/identities active in this scope before the run.'
+    + ' The EXACT K2 identities it may write are header(s) ' + (hIds.length ? hIds.join(', ') : '(none)')
+    + ' and line(s) ' + (lIds.length ? lIds.join(', ') : '(none)')
+    + '; K2 group key(s) ' + ((ws.expected_k2_group_keys || []).join(', ') || '(none)')
+    + '. No other identity may be created or altered.'
+    // ---- and what must be BYTE-FOR-BYTE UNCHANGED, which is now a checkable claim rather than a hope ----
+    + ' The ' + S1_str_(((content && content.target_manual) || {}).header_ids
+        ? (content.target_manual.header_ids || []).length : 0)
+    + ' manual header(s) and ' + S1_str_(((content && content.target_manual) || {}).line_ids
+        ? (content.target_manual.line_ids || []).length : 0)
+    + ' manual line(s) in this scope must remain FULL-ROW IDENTICAL (combined fingerprint '
+    + S1_str_(((content && content.target_manual) || {}).combined_fingerprint) + '), and so must all '
+    + S1_str_(((content && content.other_scope) || {}).header_count)
+    + ' header(s) and ' + S1_str_(((content && content.other_scope) || {}).line_count)
+    + ' line(s) belonging to every other scope (combined fingerprint '
+    + S1_str_(((content && content.other_scope) || {}).combined_fingerprint)
+    + ') — every column, not only the ids.'
+    + ' The activation allowlist must contain exactly this one'
+    + ' scope. No reservation may be created, no'
+    + ' factory stock may change, no factory movement or override-audit row may be added, and no Weekly'
+    + ' Shipping Plan or Shipment may be created or altered. A'
     + ' factory-guard STOP or a clamp with zero rows is an acceptable outcome. This authorization covers'
     + ' ONE generation and expires when it completes or refuses. IT DOES NOT AUTHORIZE SUBMIT.';
 }
