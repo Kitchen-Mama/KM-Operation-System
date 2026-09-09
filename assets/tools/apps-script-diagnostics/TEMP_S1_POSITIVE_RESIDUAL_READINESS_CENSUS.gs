@@ -4612,6 +4612,281 @@ function RUN_S1_MANIFEST_P() {
  * the next decision; it does not take it, prepare it or stage it.
  * ================================================================================================================
  */
+// ================================================================================================================
+// S1-R4E §1 - THE WHOLE COLUMN CONTRACT, NOT ONLY THE PRIMARY KEY.
+//
+// R4D located the row. This asks whether it can be repaired, and the first thing that requires is knowing
+// what every column owes - because a row missing its primary key AND a required business field is not a
+// row with one problem.
+//
+// TWO AUTHORITIES, AND THEY DO NOT AGREE ON SHAPE. That divergence is recorded rather than resolved here:
+//
+//   SHIPMENT_DATABASE_SCHEMA.md   twelve columns, and it is the only place that says REQUIRED or not.
+//                                 It names `factory_name`, `before_qty` and `after_qty`.
+//   21_ MOV_HEADERS               fifteen columns, and it is what the live sheet actually has (measured:
+//                                 live_column_count 15, header fingerprint FDC8D1DB). It names
+//                                 `warehouse_id`, `before_current_stock` / `after_current_stock`, and adds
+//                                 `movement_date`, `before_reserved_stock`, `after_reserved_stock`.
+//
+// So the required-ness comes from the md and the NAMES come from 21_, mapped column by column below. Where
+// the md has no opinion (the three 21_-era columns) the contract records `NOT_IN_SCHEMA_DOC` rather than
+// inventing a requirement - and separately records that every shipped writer populates it, which is a
+// weaker signal and is reported as one.
+//
+// WHY movement_type IS THE ONE THAT DECIDES EVERYTHING. 21_ §G makes it the LEDGER AXIS SELECTOR: it is what
+// says whether this row's `qty` moved current stock or reserved stock. With it blank the row belongs to
+// neither axis, which is why factoryStockReconcileReservations_ counts it as `unknown_type_rows` and
+// deliberately neither adds nor drops it: 'silently ignoring a row is how a ledger and a balance drift apart
+// without anybody being told'.
+// ================================================================================================================
+
+var S1_MOV_ID_PREFIX_ = 'FSMV-';
+
+/**
+ * One entry per live column, in 21_ MOV_HEADERS order.
+ *   required            true only where SHIPMENT_DATABASE_SCHEMA.md says Required = Yes
+ *   doc_column          the md's name for it, or null where the md has no entry
+ *   every_writer_sets   true where all three 21_ writers populate it (12_/13_/22_ delegate to one of them)
+ */
+var S1_MOV_FIELD_CONTRACT_ = [
+  { column: 'factory_stock_movement_id', required: true, doc_column: 'factory_stock_movement_id',
+    doc_note: 'Yes | PK', every_writer_sets: true, role: 'PRIMARY_KEY' },
+  { column: 'movement_date', required: false, doc_column: null,
+    doc_note: 'NOT_IN_SCHEMA_DOC - a 21_-era column', every_writer_sets: true, role: 'WHEN' },
+  { column: 'sku', required: true, doc_column: 'sku', doc_note: 'Yes',
+    every_writer_sets: true, role: 'WHAT' },
+  { column: 'warehouse_id', required: true, doc_column: 'factory_name',
+    doc_note: 'Yes - the doc names the factory, 21_ names the warehouse; same requirement, live name',
+    every_writer_sets: true, role: 'WHERE' },
+  { column: 'movement_type', required: true, doc_column: 'movement_type',
+    doc_note: 'Yes | enum', every_writer_sets: true, role: 'LEDGER_AXIS_SELECTOR',
+    enum_authority: '21_ FSTX_MOVEMENT_TYPES_ (the canonical seven)' },
+  { column: 'qty', required: true, doc_column: 'qty', doc_note: 'Yes',
+    every_writer_sets: true, role: 'HOW_MUCH' },
+  { column: 'related_entity_type', required: false, doc_column: 'related_entity_type',
+    doc_note: 'optional | enum', every_writer_sets: true, role: 'LINEAGE' },
+  { column: 'related_entity_id', required: false, doc_column: 'related_entity_id',
+    doc_note: 'optional', every_writer_sets: true, role: 'LINEAGE' },
+  { column: 'before_current_stock', required: false, doc_column: 'before_qty',
+    doc_note: 'optional', every_writer_sets: true, role: 'CURRENT_AUDIT' },
+  { column: 'after_current_stock', required: false, doc_column: 'after_qty',
+    doc_note: 'optional', every_writer_sets: true, role: 'CURRENT_AUDIT' },
+  { column: 'before_reserved_stock', required: false, doc_column: null,
+    doc_note: 'NOT_IN_SCHEMA_DOC - a 21_-era column', every_writer_sets: true,
+    role: 'RESERVED_AUDIT' },
+  { column: 'after_reserved_stock', required: false, doc_column: null,
+    doc_note: 'NOT_IN_SCHEMA_DOC - a 21_-era column', every_writer_sets: true,
+    role: 'RESERVED_AUDIT' },
+  { column: 'note', required: false, doc_column: 'note', doc_note: 'optional',
+    every_writer_sets: true, role: 'FREE_TEXT' },
+  { column: 'created_by', required: false, doc_column: 'created_by', doc_note: 'optional',
+    every_writer_sets: true, role: 'WHO' },
+  { column: 'created_at', required: true, doc_column: 'created_at', doc_note: 'Yes | datetime',
+    every_writer_sets: true, role: 'WHEN' }
+];
+
+/** Which contract columns this row has, which required ones it is missing, and which writer-populated ones.
+ *  The id column is judged like any other: it is required, and it is one of several. */
+function S1_movFieldAudit_(rec, liveColumns) {
+  var o = { contract_column_count: S1_MOV_FIELD_CONTRACT_.length,
+    columns_absent_from_the_live_header: [], present: [], blank: [],
+    required_present: [], required_blank: [],
+    writer_populated_blank: [], optional_blank: [] };
+  S1_MOV_FIELD_CONTRACT_.forEach(function (f) {
+    if ((liveColumns || []).indexOf(f.column) === -1) {
+      o.columns_absent_from_the_live_header.push(f.column);
+      return;                                    // a column the sheet does not have is a schema question
+    }
+    var raw = S1_cellOf_(rec, f.column);
+    var filled = S1_canonCell_(raw) !== '~';
+    (filled ? o.present : o.blank).push(f.column);
+    if (f.required) { (filled ? o.required_present : o.required_blank).push(f.column); }
+    else if (!filled) {
+      o.optional_blank.push(f.column);
+      if (f.every_writer_sets) o.writer_populated_blank.push(f.column);
+    }
+  });
+  o.present_count = o.present.length;
+  o.blank_count = o.blank.length;
+  return o;
+}
+
+/**
+ * WHICH AXIS DID THIS ROW MOVE, AND DO ITS OWN NUMBERS AGREE?
+ *
+ * Every writer sets `qty` to the delta of the axis its movement_type names: factoryStockApplyDeltaTx_ writes
+ * `afterCurrent = beforeCurrent + delta` with `movementQty = delta`, and factoryImportMovObj_ writes
+ * `qty: afterCurrent - beforeCurrent` outright. So for a current-axis row `qty === after - before` is the
+ * ledger's own invariant, and for a reserved-axis row the same holds on the reserved pair.
+ *
+ * With movement_type blank NEITHER reading can be evaluated, and that is the finding rather than a gap: the
+ * row cannot be checked against the invariant it was written under, because nothing says which one that was.
+ * Both readings are computed anyway and reported as evidence, so a person can see what each would imply.
+ */
+function S1_movAxisAudit_(rec) {
+  var t = S1_str_(S1_cellOf_(rec, 'movement_type'));
+  var o = { movement_type: t, movement_type_is_blank: t === '',
+    vocabulary_authority: '21_ FSTX_MOVEMENT_TYPES_ / factoryStockIsKnownMovementType_',
+    is_known_type: null, vocabulary_authority_available: null,
+    axis: 'UNKNOWN', invariant: null, invariant_holds: null,
+    qty: S1_qty_(S1_cellOf_(rec, 'qty')),
+    before_current: S1_qty_(S1_cellOf_(rec, 'before_current_stock')),
+    after_current: S1_qty_(S1_cellOf_(rec, 'after_current_stock')),
+    before_reserved: S1_qty_(S1_cellOf_(rec, 'before_reserved_stock')),
+    after_reserved: S1_qty_(S1_cellOf_(rec, 'after_reserved_stock')),
+    readings: {} };
+  // Both readings, always, so the evidence does not depend on which axis turns out to be the right one.
+  o.readings.if_current_axis = (o.after_current === null || o.before_current === null) ? null
+    : { expected_qty: o.after_current - o.before_current, observed_qty: o.qty,
+        agrees: o.qty !== null && o.qty === o.after_current - o.before_current };
+  o.readings.if_reserved_axis = (o.after_reserved === null || o.before_reserved === null) ? null
+    : { expected_qty: o.after_reserved - o.before_reserved, observed_qty: o.qty,
+        agrees: o.qty !== null && o.qty === o.after_reserved - o.before_reserved };
+  // AN ABSENT AUTHORITY IS NOT AN INVALID VALUE, and the first version of this conflated them: with 21_ not
+  // loaded, `manual_adjustment` - a member of the canonical seven - was reported as 'not in the vocabulary'.
+  // Measured on a world where the vocabulary was simply not present. Both still refuse, because a row whose
+  // type cannot be checked must not be classified as repairable; what changes is that the operator is told
+  // which of the two it is, and only one of them is a data problem.
+  o.vocabulary_authority_available = typeof factoryStockIsKnownMovementType_ === 'function';
+  if (o.vocabulary_authority_available) {
+    try { o.is_known_type = factoryStockIsKnownMovementType_(t) === true; } catch (e) { o.is_known_type = null; }
+  }
+  if (t === '') { o.axis = 'UNKNOWN_BECAUSE_MOVEMENT_TYPE_IS_BLANK'; return o; }
+  if (!o.vocabulary_authority_available) {
+    o.axis = 'UNCHECKABLE_BECAUSE_THE_VOCABULARY_AUTHORITY_IS_ABSENT';
+    return o;
+  }
+  if (o.is_known_type !== true) { o.axis = 'UNKNOWN_BECAUSE_MOVEMENT_TYPE_IS_NOT_IN_THE_VOCABULARY'; return o; }
+  if (typeof factoryStockIsCurrentMovement_ === 'function'
+      && factoryStockIsCurrentMovement_(t) === true) {
+    o.axis = 'CURRENT';
+    o.invariant = 'qty === after_current_stock - before_current_stock';
+    o.invariant_holds = !!(o.readings.if_current_axis && o.readings.if_current_axis.agrees);
+    return o;
+  }
+  if (typeof factoryStockIsReservationMovement_ === 'function'
+      && factoryStockIsReservationMovement_(t) === true) {
+    o.axis = 'RESERVED';
+    o.invariant = 'qty === after_reserved_stock - before_reserved_stock';
+    o.invariant_holds = !!(o.readings.if_reserved_axis && o.readings.if_reserved_axis.agrees);
+    return o;
+  }
+  // shipment_receipt moves neither factory axis (21_ §G lists it so the set reads closed).
+  o.axis = 'NEITHER_FACTORY_AXIS';
+  o.invariant = 'none - this type moves no factory quantity';
+  o.invariant_holds = true;
+  return o;
+}
+
+var S1_MOV_CLASS_ID_ONLY_ = 'ID_ONLY_MISSING';
+var S1_MOV_CLASS_UNRESOLVED_ = 'LEGACY_ROW_CLASSIFICATION_REQUIRED';
+
+/**
+ * CAN THIS ROW BE REPAIRED BY WRITING ONE CELL?
+ *
+ * Only when the primary key is the ONLY thing wrong. That is a conjunction of separately checkable facts,
+ * each of which is named when it fails - because 'this needs a human' is not a finding and 'movement_type is
+ * blank, so the row has no ledger axis' is.
+ *
+ * There is no permissive default anywhere in here. An unmeasurable input classifies as UNRESOLVED, never as
+ * repairable, for the same reason an absent table's row count stays null.
+ */
+function S1_movClassifyRow_(rec, liveColumns) {
+  var o = { classification: S1_MOV_CLASS_UNRESOLVED_, id_only: false, reasons: [],
+    field_audit: null, axis_audit: null,
+    repairable_by_writing_one_cell: false,
+    classification_authority: 'SHIPMENT_DATABASE_SCHEMA.md required-ness + 21_ MOV_HEADERS names +'
+      + ' 21_ FSTX_MOVEMENT_TYPES_ vocabulary + the ledger invariant every writer writes under' };
+  if (!rec) { o.reasons.push('ROW_NOT_READABLE'); return o; }
+  var fa = S1_movFieldAudit_(rec, liveColumns);
+  var aa = S1_movAxisAudit_(rec);
+  o.field_audit = fa;
+  o.axis_audit = aa;
+
+  if (fa.columns_absent_from_the_live_header.length) {
+    o.reasons.push('LIVE_HEADER_IS_MISSING_CONTRACT_COLUMNS:'
+      + fa.columns_absent_from_the_live_header.join(','));
+  }
+  // THE PRIMARY KEY MUST BE THE MISSING THING. If it is present this is not a backfill at all.
+  if (fa.required_blank.indexOf('factory_stock_movement_id') === -1) {
+    o.reasons.push('THE_PRIMARY_KEY_IS_NOT_BLANK_SO_THERE_IS_NOTHING_TO_BACKFILL');
+  }
+  // AND IT MUST BE THE ONLY MISSING REQUIRED FIELD.
+  fa.required_blank.forEach(function (c) {
+    if (c !== 'factory_stock_movement_id') o.reasons.push('REQUIRED_FIELD_IS_BLANK:' + c);
+  });
+  // movement_type gets its own named reason even though the line above already covers it, because it is not
+  // one required field among several: it is what decides which axis the row's qty moved, and a row without
+  // it cannot be reconciled against any invariant at all.
+  if (aa.movement_type_is_blank) {
+    o.reasons.push('MOVEMENT_TYPE_IS_BLANK_SO_THE_ROW_HAS_NO_LEDGER_AXIS');
+  } else if (aa.vocabulary_authority_available !== true) {
+    // Not a data fault. This deployment cannot answer the question, which is its own finding and has its
+    // own remedy - and reporting it as a bad value would send a person to fix a row that is fine.
+    o.reasons.push('MOVEMENT_TYPE_VOCABULARY_AUTHORITY_IS_UNAVAILABLE_IN_THIS_DEPLOYMENT');
+  } else if (aa.is_known_type !== true) {
+    o.reasons.push('MOVEMENT_TYPE_IS_NOT_IN_THE_CANONICAL_VOCABULARY:' + aa.movement_type);
+  } else if (aa.invariant_holds !== true) {
+    o.reasons.push('QTY_DOES_NOT_RECONCILE_WITH_THE_BEFORE_AFTER_PAIR_ON_THE_'
+      + aa.axis + '_AXIS');
+  }
+  // The 21_-era columns are not required by the doc, so a blank one is NOT on its own a refusal - but every
+  // shipped writer populates them, so a row missing them was not written by any current writer. Reported,
+  // and it is what makes the classification a legacy question rather than a formatting one.
+  if (fa.writer_populated_blank.length) {
+    o.reasons.push('FIELDS_EVERY_SHIPPED_WRITER_POPULATES_ARE_BLANK:'
+      + fa.writer_populated_blank.join(','));
+  }
+  o.id_only = o.reasons.length === 0;
+  o.classification = o.id_only ? S1_MOV_CLASS_ID_ONLY_ : S1_MOV_CLASS_UNRESOLVED_;
+  o.repairable_by_writing_one_cell = o.id_only;
+  return o;
+}
+
+/**
+ * THE PROPOSED PRIMARY KEY, AND WHY IT IS NOT MINTED THE WAY A NEW ROW'S IS.
+ *
+ * 21_ mints `'FSMV-' + Utilities.getUuid().replace(/-/g,'').substring(0,8)` in all three of its writers, and
+ * randomness is correct there: a NEW row has no prior identity, and nothing can retry into the same row.
+ *
+ * A BACKFILL CAN BE RETRIED, and a random id would mint a second one on the second attempt - two ids for one
+ * row, which is the one thing a primary key repair must never do. So this derives the id from the row it is
+ * repairing, through the same hash authority the rest of this file and 71_ already use: 71_ mints its
+ * override-audit id as `'FSOA-' + KMFSG.fnv1a(<natural key>).toUpperCase()`, so a deterministic id from a
+ * natural key is a shipped pattern in this very area rather than a local invention.
+ *
+ * THE FORMAT IS 21_'s, EXACTLY. fnv1a returns ('00000000' + h.toString(16)).slice(-8) - always eight hex
+ * characters, zero-padded - so `FSMV-` + that is byte-identical in shape to what 21_ produces.
+ *
+ * The natural key includes the row's full-row fingerprint, which binds the proposal to the exact row state
+ * that was measured. If any cell changes, the proposal changes AND the frozen fingerprint stops matching, so
+ * a drifted row cannot be repaired with an id authorized for a different state of it.
+ */
+function S1_movProposedId_(table, rowNumber, rowFingerprint) {
+  var natural = 'FSMV|' + S1_str_(table) + '|row=' + S1_str_(rowNumber)
+    + '|fp=' + S1_str_(rowFingerprint);
+  var o = { proposed_id: null, natural_key: natural,
+    format: S1_MOV_ID_PREFIX_ + '<8 uppercase hex>',
+    format_authority: '21_ MOV writers: FSMV- + 8 hex',
+    derivation_authority: 'KMFSG.fnv1a over the natural key - the same authority 71_ uses for FSOA- ids,'
+      + ' chosen over Utilities.getUuid because a backfill must be retry-stable',
+    deterministic: true, hash_available: false };
+  if (typeof KMFSG === 'undefined' || !KMFSG || typeof KMFSG.fnv1a !== 'function') {
+    o.derivation_authority = 'UNAVAILABLE - KMFSG.fnv1a is not present in this deployment';
+    return o;
+  }
+  o.hash_available = true;
+  var hex = String(KMFSG.fnv1a(natural)).toUpperCase();
+  o.hex = hex;
+  o.proposed_id = S1_MOV_ID_PREFIX_ + hex;
+  return o;
+}
+
+/** The shape a proposed id must have, checked rather than assumed. */
+function S1_movIdWellFormed_(id) {
+  return /^FSMV-[0-9A-F]{8}$/.test(S1_str_(id));
+}
+
 function RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS() {
   var out = {
     census: 'S1 FACTORY MOVEMENT ID INTEGRITY - one table, read-only, no repair',
@@ -4856,6 +5131,832 @@ function RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS() {
   }
 }
 
+// ================================================================================================================
+// S1-R4E §2 - THE CONTROLLED BACKFILL PACKAGE. TWO ENTRY POINTS, AND THE READ-ONLY ONE OWNS THE EVIDENCE.
+//
+// The split is the whole safety property. The MANIFEST measures and freezes; the BACKFILL verifies the frozen
+// evidence against a fresh measurement and refuses on any disagreement. Nothing in the backfill computes its
+// own expectation, because a check whose expectation comes from the thing being checked passes by
+// construction - the defect S1-R4B was called in to repair, one table over.
+//
+// DEFAULT IS DRY RUN. `execute` must be exactly `true`; anything else, including absent, is a dry run.
+// ================================================================================================================
+
+/** The freeze the MANIFEST hands over and the BACKFILL consumes. A missing field is a refusal, not a gap. */
+var S1_MOV_FREEZE_REQUIRED_ = [
+  'frozen_at', 'build', 'table', 'sheet_name',
+  'live_column_count', 'named_column_count', 'live_columns', 'header_fingerprint',
+  'table_combined_fingerprint', 'row_count',
+  'non_blank_id_count', 'valid_id_count', 'blank_id_count', 'duplicate_id_count',
+  'wrong_type_id_count', 'outside_named_column_row_count',
+  'target_row_number', 'target_id_column', 'target_id_column_index_1based',
+  'target_row_fingerprint', 'target_row_cells',
+  'existing_id_count', 'existing_id_universe_fingerprint',
+  'classification', 'classification_reasons',
+  'proposed_id', 'proposed_id_natural_key',
+  'expected_after_row_fingerprint', 'expected_after',
+  'authorization_wording'
+];
+
+/** Read one table's canonical cell values for a row, in live column order. Strings, so the freeze survives a
+ *  JSON round-trip: a Date pasted back as an ISO string would not re-hash to the same value. */
+function S1_movRowCells_(rec, liveColumns) {
+  var out = [];
+  (liveColumns || []).forEach(function (c, i) {
+    out.push({ column: c, index_1based: i + 1, canonical: S1_canonCell_(rec.__values[i]) });
+  });
+  return out;
+}
+
+/** The fingerprint the row WILL have once the one cell carries the proposed id. Computed at manifest time
+ *  from the live raw values with only that cell substituted, and then FROZEN - so the backfill compares a
+ *  fresh measurement against an expectation it did not produce. */
+function S1_movExpectedAfterFingerprint_(rec, liveColumns, idColumn, newId) {
+  var vals = (rec.__values || []).slice();
+  var at = (liveColumns || []).indexOf(idColumn);
+  if (at === -1) return null;
+  vals[at] = newId;
+  return S1_rowFingerprint_(liveColumns, vals);
+}
+
+/** Every id currently in the table, as a set plus a fingerprint, so a collision is checkable and a change to
+ *  the id universe between manifest and execute is detectable. */
+function S1_movIdUniverse_(t, idKey) {
+  var ids = [];
+  (t.rows || []).forEach(function (r) {
+    var v = S1_str_(S1_cellOf_(r, idKey));
+    if (v !== '') ids.push(v);
+  });
+  return { ids: ids, count: ids.length, fingerprint: S1_fingerprint_(ids) };
+}
+
+/**
+ * Read the movement table and everything the package needs to decide. Shared by both entry points so the
+ * MANIFEST and the BACKFILL cannot disagree about what they read.
+ */
+function S1_movReadForRepair_() {
+  var o = { ok: false, stop_reasons: [], ss: null, sheet: null, table: S1_FACTORY_MOVEMENT_TABLE_,
+    id_column: null, id_authority: null, authoritative_id_contract:
+      S1_FACTORY_ID_AUTHORITY_[S1_FACTORY_MOVEMENT_TABLE_] || null,
+    t: null, integrity: null, faults: [], universe: null,
+    live_columns: [], live_column_count: null, named_column_count: null,
+    header_fingerprint: null, table_combined_fingerprint: null };
+  function stop(r) { if (o.stop_reasons.indexOf(r) === -1) o.stop_reasons.push(r); return o; }
+
+  var spec = null;
+  S1_factorySurfaceSpecs_().forEach(function (sp) {
+    if (sp.table === S1_FACTORY_MOVEMENT_TABLE_) spec = sp;
+  });
+  if (!spec || S1_str_(spec.id) === '') return stop('ID_COLUMN_AUTHORITY_MISSING');
+  o.id_column = spec.id;
+  o.id_authority = spec.id_authority;
+  if (!o.authoritative_id_contract) return stop('ID_CONTRACT_MISSING');
+
+  var db = S1_openDb_();
+  if (!db.ok) return stop('DB_NOT_OPENED_' + db.reason);
+  o.ss = db.ss;
+  try { o.sheet = db.ss.getSheetByName(S1_FACTORY_MOVEMENT_TABLE_); } catch (e) { o.sheet = null; }
+  if (!o.sheet) return stop('SHEET_ABSENT');
+
+  var t = S1_fullRowTable_(db.ss, S1_FACTORY_MOVEMENT_TABLE_, null, [spec.id]);
+  o.t = t;
+  if (!t.present) return stop('SHEET_ABSENT');
+  if (!t.readable) return stop('SHEET_PRESENT_BUT_UNREADABLE');
+  o.live_columns = t.live_columns || [];
+  o.live_column_count = t.live_column_count;
+  o.named_column_count = o.live_columns.filter(function (c) { return c !== ''; }).length;
+  if (o.named_column_count === 0) return stop('HEADER_ROW_UNREADABLE');
+  if (o.live_columns.indexOf(spec.id) === -1) return stop('ID_COLUMN_UNRESOLVED');
+  o.header_fingerprint = S1_headerFingerprint_(o.live_columns);
+  o.table_combined_fingerprint = t.combined_fingerprint;
+  if (o.header_fingerprint === null || o.table_combined_fingerprint === null) {
+    return stop('HASH_AUTHORITY_UNAVAILABLE');
+  }
+  var integ = S1_idIntegrity_(t, spec.id);
+  if (integ.checked !== true) return stop('ID_INTEGRITY_NOT_CHECKED');
+  o.integrity = integ;
+  o.faults = S1_idFaultRows_(t, integ, S1_FACTORY_MOVEMENT_TABLE_, o.authoritative_id_contract);
+  o.universe = S1_movIdUniverse_(t, spec.id);
+  o.ok = true;
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST - READ ONLY.
+ *
+ * Re-measures, classifies the one fault, proposes a deterministic id, freezes an exact BEFORE, states the
+ * exact AFTER a repair would produce, and writes the authorization sentence a person signs. Writes nothing.
+ *
+ * On a row that is NOT repairable by writing one cell it returns LEGACY_ROW_CLASSIFICATION_REQUIRED, freezes
+ * NOTHING, proposes NOTHING and emits no authorization - so the backfill has nothing to consume and the
+ * execute path is unreachable for that row by construction rather than by promise.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST() {
+  var out = {
+    manifest: 'S1 FACTORY MOVEMENT ID BACKFILL - read-only measurement, classification and freeze',
+    build: S1_BUILD_, dry_run: true, read_only: true,
+    writes: 0, writer_calls: 0, cells_written: 0, ids_minted: 0, ids_backfilled: 0,
+    rows_modified: 0, rows_added: 0, rows_removed: 0, rows_reordered: false,
+    generate_called: false, submit_called: false, migration_called: false, gap_job_called: false,
+    factory_writer_called: false, tables_touched: [],
+    measured_at: null,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    field_contract: S1_MOV_FIELD_CONTRACT_,
+    field_contract_authority: 'required-ness from SHIPMENT_DATABASE_SCHEMA.md; column NAMES from'
+      + ' 21_ MOV_HEADERS, which is what the live sheet has; the two disagree on shape and the'
+      + ' divergence is recorded per column rather than resolved here',
+    live_column_count: null, named_column_count: null, live_columns: [],
+    header_fingerprint: null, table_combined_fingerprint: null,
+    row_count: null, non_blank_id_count: null, valid_id_count: null,
+    blank_id_count: null, duplicate_id_count: null, wrong_type_id_count: null,
+    outside_named_column_row_count: null,
+    fault_count: null, faults: [],
+    target: null, classification: null, classification_reasons: [],
+    proposed: null, frozen_before: null, expected_after: null,
+    authorization_wording: null, next_decision: null,
+    verdict: 'STOP', stop_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
+  var L = S1_ledger_();
+  function stop(r) { if (out.stop_reasons.indexOf(r) === -1) out.stop_reasons.push(r); }
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    if (out.stop_reasons.length || L.failed.length) out.verdict = 'STOP';
+    // A REFUSED MANIFEST FREEZES NOTHING AND SIGNS NOTHING. Same lock as MANIFEST P's LOCK FIVE: the
+    // baseline and the sentence are the same authorization by two routes, so both go.
+    if (out.verdict !== 'READY_TO_AUTHORIZE_BACKFILL') {
+      out.frozen_before = null;
+      out.authorization_wording = null;
+      if (out.verdict === 'LEGACY_ROW_CLASSIFICATION_REQUIRED' && !out.next_decision) {
+        out.next_decision = 'A DATA GOVERNANCE DECISION IS REQUIRED BEFORE ANY REPAIR. This row cannot be'
+          + ' repaired by writing one cell, so no repair is proposed and none is authorized.';
+      }
+    }
+    S1_log_('s1_mov_backfill_manifest_verdict', JSON.stringify({
+      build: out.build, verdict: out.verdict, table: out.table,
+      classification: out.classification, classification_reasons: out.classification_reasons,
+      row_count: out.row_count, blank_id_count: out.blank_id_count,
+      valid_id_count: out.valid_id_count, fault_count: out.fault_count,
+      header_fingerprint: out.header_fingerprint,
+      table_combined_fingerprint: out.table_combined_fingerprint,
+      target_row: out.target ? out.target.one_based_sheet_row_number : null,
+      proposed_id: out.proposed ? out.proposed.proposed_id : null,
+      frozen: !!out.frozen_before, authorization_present: !!out.authorization_wording,
+      writes: out.writes, cells_written: out.cells_written, ids_minted: out.ids_minted,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12), stop_reasons: out.stop_reasons.slice(0, 12),
+      next_decision: S1_cap_(out.next_decision, 300) }));
+    if (out.classification_reasons && out.classification_reasons.length) {
+      S1_emitChunked_('s1_mov_backfill_manifest_classification',
+        JSON.stringify({ classification: out.classification,
+          reasons: out.classification_reasons,
+          field_audit: out.target ? out.target.field_audit : null,
+          axis_audit: out.target ? out.target.axis_audit : null }));
+    }
+    if (out.verdict === 'READY_TO_AUTHORIZE_BACKFILL' && out.frozen_before) {
+      S1_emitChunked_('s1_mov_backfill_manifest_freeze', JSON.stringify(out.frozen_before));
+      S1_emitChunked_('s1_mov_backfill_manifest_authorization', out.authorization_wording);
+    } else {
+      S1_log_('s1_mov_backfill_manifest_freeze_withheld', JSON.stringify({
+        verdict: out.verdict, chunks: 0, frozen: false, authorization_present: false,
+        reason: 'NOTHING_MAY_BE_AUTHORIZED_ON_A_' + out.verdict,
+        note: 'No baseline and no authorization were produced, so the backfill has nothing to consume.' }));
+    }
+    return out;
+  }
+
+  try {
+    out.measured_at = (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : null;
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_was_read_through_the_shared_authorities', [], R.stop_reasons,
+      R.ok === true && R.stop_reasons.length === 0);
+    if (!R.ok) { R.stop_reasons.forEach(stop); return fin(); }
+    out.tables_touched = [S1_FACTORY_MOVEMENT_TABLE_];
+    out.live_columns = R.live_columns;
+    out.live_column_count = R.live_column_count;
+    out.named_column_count = R.named_column_count;
+    out.header_fingerprint = R.header_fingerprint;
+    out.table_combined_fingerprint = R.table_combined_fingerprint;
+    out.row_count = R.integrity.row_count;
+    out.non_blank_id_count = R.integrity.ok_count;
+    out.blank_id_count = R.integrity.blank_id_count;
+    out.duplicate_id_count = R.integrity.duplicate_id_count;
+    out.wrong_type_id_count = R.integrity.wrong_type_id_count;
+    out.outside_named_column_row_count = R.integrity.outside_named_columns_count;
+    out.valid_id_count = R.integrity.ok_count - R.integrity.duplicate_id_count
+      - R.integrity.wrong_type_id_count;
+    out.faults = R.faults;
+    out.fault_count = R.faults.length;
+
+    // ---- EXACTLY ONE FAULT, AND IT IS A BLANK PRIMARY KEY. -------------------------------------
+    L.P('the_table_has_exactly_one_id_integrity_fault', 1, out.fault_count, out.fault_count === 1);
+    if (out.fault_count !== 1) {
+      stop(out.fault_count === 0 ? 'NO_FAULT_TO_REPAIR' : 'MORE_THAN_ONE_FAULT_IS_NOT_A_SINGLE_CELL_REPAIR');
+      return fin();
+    }
+    var f = R.faults[0];
+    L.P('the_one_fault_is_a_blank_primary_key', 'FACTORY_MOVEMENT_ID_BLANK', f.fault_code,
+      f.fault_code === 'FACTORY_MOVEMENT_ID_BLANK');
+    if (f.fault_code !== 'FACTORY_MOVEMENT_ID_BLANK') {
+      stop('THE_FAULT_IS_NOT_A_BLANK_PRIMARY_KEY:' + f.fault_code); return fin();
+    }
+    var rec = null;
+    (R.t.rows || []).forEach(function (r) {
+      if (r.row_number === f.one_based_sheet_row_number) rec = r;
+    });
+    L.P('the_target_row_is_readable', true, rec !== null, rec !== null);
+    if (!rec) { stop('TARGET_ROW_NOT_READABLE'); return fin(); }
+
+    // ---- §1 CLASSIFICATION. THE WHOLE COLUMN CONTRACT, NOT ONLY THE KEY. -----------------------
+    var cls = S1_movClassifyRow_(rec, R.live_columns);
+    out.classification = cls.classification;
+    out.classification_reasons = cls.reasons;
+    out.target = {
+      one_based_sheet_row_number: f.one_based_sheet_row_number,
+      id_column: R.id_column,
+      id_column_index_1based: R.live_columns.indexOf(R.id_column) + 1,
+      row_fingerprint: rec.fingerprint,
+      observed_id_value: f.observed_id_value, observed_id_type: f.observed_id_type,
+      named_nonblank_fields: f.named_nonblank_fields,
+      named_nonblank_field_count: f.named_nonblank_field_count,
+      field_audit: cls.field_audit, axis_audit: cls.axis_audit,
+      classification: cls.classification, classification_reasons: cls.reasons };
+    L.P('the_target_row_is_classified_by_the_whole_column_contract',
+      'ID_ONLY_MISSING or LEGACY_ROW_CLASSIFICATION_REQUIRED, from a measured field and axis audit',
+      { classification: cls.classification, reasons: cls.reasons },
+      cls.classification === S1_MOV_CLASS_ID_ONLY_
+        || cls.classification === S1_MOV_CLASS_UNRESOLVED_);
+
+    // THE GATE. A row that is not repairable by one cell gets no proposal, no freeze and no sentence.
+    if (cls.classification !== S1_MOV_CLASS_ID_ONLY_) {
+      out.verdict = S1_MOV_CLASS_UNRESOLVED_;
+      out.next_decision = 'LEGACY_ROW_CLASSIFICATION_REQUIRED. Sheet row '
+        + f.one_based_sheet_row_number + ' of ' + S1_FACTORY_MOVEMENT_TABLE_ + ' is missing '
+        + cls.field_audit.required_blank.length + ' REQUIRED field(s) ('
+        + cls.field_audit.required_blank.join(', ') + ') and '
+        + cls.field_audit.writer_populated_blank.length
+        + ' field(s) every shipped writer populates ('
+        + cls.field_audit.writer_populated_blank.join(', ') + '). Ledger axis: '
+        + cls.axis_audit.axis + '. Because movement_type decides which axis this row\'s qty moved,'
+        + ' writing only the primary key would leave the row unclassifiable while SILENCING the id'
+        + ' census that currently refuses it - the reconciliation would still count it as an'
+        + ' unknown_type row. The next decision is a data governance one: establish what this row'
+        + ' recorded, from evidence outside this table, before any cell is written.';
+      // NO PROPOSAL IS EVEN COMPUTED. A frozen id for a row nobody can classify is an authorization
+      // waiting to be misused.
+      out.proposed = null;
+      out.expected_after = null;
+      return fin();
+    }
+
+    // ---- §3 THE PROPOSED KEY. Deterministic, well formed, and not already in use. ----------------
+    var prop = S1_movProposedId_(S1_FACTORY_MOVEMENT_TABLE_, f.one_based_sheet_row_number,
+      rec.fingerprint);
+    out.proposed = prop;
+    L.P('the_hash_authority_that_derives_the_proposed_id_is_available', true, prop.hash_available,
+      prop.hash_available === true);
+    L.P('the_proposed_id_is_well_formed', 'FSMV- plus 8 uppercase hex', prop.proposed_id,
+      S1_movIdWellFormed_(prop.proposed_id));
+    L.P('the_proposed_id_is_deterministic_so_a_retry_cannot_mint_a_second_one',
+      prop.proposed_id,
+      S1_movProposedId_(S1_FACTORY_MOVEMENT_TABLE_, f.one_based_sheet_row_number,
+        rec.fingerprint).proposed_id,
+      prop.proposed_id !== null
+        && S1_movProposedId_(S1_FACTORY_MOVEMENT_TABLE_, f.one_based_sheet_row_number,
+          rec.fingerprint).proposed_id === prop.proposed_id);
+    L.P('the_proposed_id_collides_with_no_existing_id', -1,
+      R.universe.ids.indexOf(S1_str_(prop.proposed_id)),
+      prop.proposed_id !== null && R.universe.ids.indexOf(S1_str_(prop.proposed_id)) === -1);
+
+    // ---- THE EXACT BEFORE, AND THE EXACT AFTER. -------------------------------------------------
+    var cells = S1_movRowCells_(rec, R.live_columns);
+    var afterFp = S1_movExpectedAfterFingerprint_(rec, R.live_columns, R.id_column, prop.proposed_id);
+    L.P('the_expected_after_row_fingerprint_was_computed_and_differs_from_the_before_one',
+      'a fingerprint that is not the BEFORE one', { before: rec.fingerprint, after: afterFp },
+      afterFp !== null && afterFp !== rec.fingerprint);
+    out.expected_after = {
+      row_count: out.row_count,
+      non_blank_id_count: out.non_blank_id_count + 1,
+      valid_id_count: out.valid_id_count + 1,
+      blank_id_count: 0, duplicate_id_count: 0, wrong_type_id_count: 0,
+      outside_named_column_row_count: out.outside_named_column_row_count,
+      header_fingerprint: out.header_fingerprint,
+      target_row_id: prop.proposed_id,
+      target_row_fingerprint: afterFp,
+      other_columns_unchanged: out.named_column_count - 1,
+      table_combined_fingerprint_changes: true,
+      table_combined_fingerprint_before: out.table_combined_fingerprint,
+      note: 'The TABLE fingerprint MUST change - one cell changed. What must NOT change is every other'
+        + ' cell of the target row and every other row, which is why the check is the exact expected'
+        + ' ROW fingerprint plus a column-by-column comparison against the frozen BEFORE cells rather'
+        + ' than a table-level equality.' };
+
+    var frozen = {
+      frozen_at: out.measured_at, build: out.build,
+      table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+      live_column_count: out.live_column_count, named_column_count: out.named_column_count,
+      live_columns: out.live_columns, header_fingerprint: out.header_fingerprint,
+      table_combined_fingerprint: out.table_combined_fingerprint, row_count: out.row_count,
+      non_blank_id_count: out.non_blank_id_count, valid_id_count: out.valid_id_count,
+      blank_id_count: out.blank_id_count, duplicate_id_count: out.duplicate_id_count,
+      wrong_type_id_count: out.wrong_type_id_count,
+      outside_named_column_row_count: out.outside_named_column_row_count,
+      target_row_number: f.one_based_sheet_row_number,
+      target_id_column: R.id_column,
+      target_id_column_index_1based: R.live_columns.indexOf(R.id_column) + 1,
+      target_row_fingerprint: rec.fingerprint,
+      target_row_cells: cells,
+      existing_id_count: R.universe.count,
+      existing_id_universe_fingerprint: R.universe.fingerprint,
+      classification: cls.classification, classification_reasons: cls.reasons,
+      proposed_id: prop.proposed_id, proposed_id_natural_key: prop.natural_key,
+      expected_after_row_fingerprint: afterFp,
+      expected_after: out.expected_after,
+      authorization_wording: null };
+
+    frozen.authorization_wording = S1_movAuthWording_(frozen, cls);
+    out.authorization_wording = frozen.authorization_wording;
+    var missing = S1_MOV_FREEZE_REQUIRED_.filter(function (k) {
+      return !Object.prototype.hasOwnProperty.call(frozen, k) || frozen[k] === undefined
+        || frozen[k] === null;
+    });
+    L.P('the_frozen_baseline_carries_every_required_field', [], missing, missing.length === 0);
+    var ph = (String(frozen.authorization_wording || '').match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []);
+    L.P('the_authorization_wording_carries_no_placeholder', [], ph, ph.length === 0);
+    var wa = S1_movWordingAudit_(frozen.authorization_wording, frozen);
+    out.wording_audit = wa;
+    L.P('the_authorization_wording_names_every_fact_a_person_must_check', [], wa.missing,
+      wa.missing.length === 0);
+    if (missing.length === 0 && ph.length === 0 && wa.missing.length === 0 && L.failed.length === 0) {
+      out.frozen_before = frozen;
+      out.verdict = 'READY_TO_AUTHORIZE_BACKFILL';
+      out.next_decision = 'A person may now run RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL with this frozen'
+        + ' baseline and this exact authorization sentence. It defaults to a DRY RUN.';
+    }
+    return fin();
+  } catch (e) {
+    L.P('the_manifest_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    stop('MANIFEST_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
+    return fin();
+  }
+}
+
+/** The sentence a person signs. Built only from frozen, measured values. */
+function S1_movAuthWording_(fz, cls) {
+  if (!fz || !cls) return null;
+  return 'I authorize ONE controlled single-cell repair of table ' + fz.table
+    + ', sheet row ' + fz.target_row_number + ', column ' + fz.target_id_column
+    + ' (column index ' + fz.target_id_column_index_1based + ').'
+    + ' That cell is currently BLANK and will be set to the frozen deterministic identifier '
+    + fz.proposed_id + ', derived from natural key ' + fz.proposed_id_natural_key + '.'
+    + ' The row is classified ' + fz.classification
+    + ': the primary key is the only thing missing from it, measured against the whole column'
+    + ' contract, and its ledger axis is ' + cls.axis_audit.axis
+    + ' with invariant ' + S1_str_(cls.axis_audit.invariant) + ' holding.'
+    + ' BEFORE, frozen: the table has ' + fz.row_count + ' record(s), '
+    + fz.non_blank_id_count + ' with a non-blank id, ' + fz.valid_id_count + ' valid, '
+    + fz.blank_id_count + ' blank, ' + fz.duplicate_id_count + ' duplicated, '
+    + fz.wrong_type_id_count + ' wrong-typed and ' + fz.outside_named_column_row_count
+    + ' outside the named columns; header fingerprint ' + fz.header_fingerprint
+    + ', table fingerprint ' + fz.table_combined_fingerprint
+    + ', target row fingerprint ' + fz.target_row_fingerprint
+    + ', and ' + fz.existing_id_count + ' existing id(s) with universe fingerprint '
+    + fz.existing_id_universe_fingerprint + '.'
+    + ' AFTER, expected exactly: ' + fz.expected_after.row_count + ' record(s), '
+    + fz.expected_after.valid_id_count + ' valid id(s), ' + fz.expected_after.blank_id_count
+    + ' blank, ' + fz.expected_after.duplicate_id_count + ' duplicated, '
+    + fz.expected_after.wrong_type_id_count + ' wrong-typed, target row fingerprint '
+    + fz.expected_after_row_fingerprint + ', and all '
+    + fz.expected_after.other_columns_unchanged
+    + ' other column(s) of that row byte-for-byte identical to the frozen BEFORE.'
+    + ' EXACTLY ONE CELL MAY BE WRITTEN. No other cell, no other row, no other table: not factory_stock,'
+    + ' not reservations, not an allocation draft, not a shipping plan, not a shipment and not an audit'
+    + ' ledger. No row may be added, removed, reordered or moved. No other field of this row may be'
+    + ' derived, defaulted or filled in. A retry must reuse this same frozen identifier and must not mint'
+    + ' a second one. If the write or the readback fails, the same one cell must be restored to BLANK and'
+    + ' the row fingerprint must return to ' + fz.target_row_fingerprint + '.'
+    + ' THIS AUTHORIZES ONE CELL AND NOTHING ELSE. IT DOES NOT AUTHORIZE A MIGRATION, A BULK BACKFILL,'
+    + ' GENERATE, SUBMIT OR ANY OTHER REPAIR.';
+}
+
+/** Every fact the sentence must carry, looked for by a needle built from the FROZEN value. */
+function S1_movWordingAudit_(w, fz) {
+  var o = { built: !!w, bytes: w ? String(w).length : 0, fingerprint: null,
+    required_items: [], missing: [], present_count: 0, required_item_count: 0, ok: false };
+  if (!w || !fz) { o.missing.push('THE_WORDING_ITSELF'); return o; }
+  var text = String(w);
+  o.fingerprint = S1_fingerprint_([text]);
+  var req = [];
+  function need(n, v) { req.push({ item: n, needle: S1_str_(v) }); }
+  need('table', fz.table);
+  need('target_row_number', 'sheet row ' + fz.target_row_number);
+  need('target_id_column', fz.target_id_column);
+  need('target_column_index', 'column index ' + fz.target_id_column_index_1based);
+  need('proposed_id', fz.proposed_id);
+  need('proposed_id_natural_key', fz.proposed_id_natural_key);
+  need('classification', fz.classification);
+  need('before_row_count', fz.row_count + ' record(s)');
+  need('before_valid_id_count', fz.valid_id_count + ' valid');
+  need('before_blank_id_count', fz.blank_id_count + ' blank');
+  need('header_fingerprint', fz.header_fingerprint);
+  need('table_fingerprint', fz.table_combined_fingerprint);
+  need('target_row_fingerprint', fz.target_row_fingerprint);
+  need('existing_id_universe_fingerprint', fz.existing_id_universe_fingerprint);
+  need('expected_after_row_fingerprint', fz.expected_after_row_fingerprint);
+  need('expected_after_valid_id_count', fz.expected_after.valid_id_count + ' valid id(s)');
+  need('other_columns_unchanged', fz.expected_after.other_columns_unchanged + ' other column(s)');
+  need('exactly_one_cell', 'EXACTLY ONE CELL MAY BE WRITTEN');
+  need('no_other_table', 'not factory_stock');
+  need('no_row_movement', 'reordered or moved');
+  need('retry_reuses_the_same_id', 'must not mint');
+  need('rollback_to_blank', 'restored to BLANK');
+  need('scope_boundary', 'THIS AUTHORIZES ONE CELL AND NOTHING ELSE');
+  req.forEach(function (r) {
+    r.present = S1_needleFound_(text, r.needle);
+    if (r.present) o.present_count++; else o.missing.push(r.item);
+  });
+  o.required_items = req.map(function (r) { return { item: r.item, present: r.present }; });
+  o.required_item_count = req.length;
+  o.ok = o.missing.length === 0;
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL({ execute, frozen, authorization })
+ *
+ * DEFAULT IS A DRY RUN. `execute` must be exactly `true`; absent, false, 'true', 1 and anything else are all
+ * dry runs. A dry run performs every check and writes nothing.
+ *
+ * IT COMPUTES NO EXPECTATION OF ITS OWN. Every BEFORE value and the expected AFTER row fingerprint come from
+ * the frozen manifest; this function re-measures the sheet and compares. A check whose expectation is
+ * derived from the thing being checked passes by construction, which is the defect R4B was called in to
+ * repair - so the two halves are deliberately kept in different functions with the evidence passed between
+ * them.
+ *
+ * ONE CELL. There is exactly one setValue site for the repair and exactly one for the rollback, both at
+ * (frozen.target_row_number, frozen.target_id_column_index_1based), and the column index is re-resolved from
+ * the live header and required to equal the frozen one - so a reordered column refuses rather than writing
+ * into whatever now sits at that position.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL(opts) {
+  opts = opts || {};
+  var out = {
+    tool: 'S1 FACTORY MOVEMENT ID BACKFILL - single cell, frozen evidence, dry run by default',
+    build: S1_BUILD_,
+    // `execute` MUST be exactly true. Anything else is a dry run, including the string 'true' - a truthy
+    // check here would turn a typo into a production write.
+    execute_requested: opts.execute === true,
+    dry_run: opts.execute !== true,
+    writes: 0, cells_written: 0, cells_rolled_back: 0, ids_minted: 0,
+    rows_added: 0, rows_removed: 0, rows_reordered: false, other_tables_touched: [],
+    generate_called: false, submit_called: false, migration_called: false, gap_job_called: false,
+    factory_writer_called: false,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    target_row_number: null, target_id_column: null, target_cell_a1: null,
+    frozen_supplied: false, frozen_complete: false, authorization_supplied: false,
+    authorization_matches_frozen: false,
+    verification: {}, id_check: {}, readback: null, rollback: null,
+    already_applied: false,
+    verdict: 'REFUSED', refusal_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
+  var L = S1_ledger_();
+  function refuse(r) { if (out.refusal_reasons.indexOf(r) === -1) out.refusal_reasons.push(r); }
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    if (out.verdict === 'REFUSED' && !out.refusal_reasons.length && L.failed.length) {
+      out.refusal_reasons.push(L.failed.length + ' condition(s) not met: ' + L.failed.join(', '));
+    }
+    S1_log_('s1_mov_backfill_verdict', JSON.stringify({
+      build: out.build, verdict: out.verdict,
+      execute_requested: out.execute_requested, dry_run: out.dry_run,
+      table: out.table, target_cell: out.target_cell_a1,
+      writes: out.writes, cells_written: out.cells_written,
+      cells_rolled_back: out.cells_rolled_back, ids_minted: out.ids_minted,
+      already_applied: out.already_applied,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12),
+      refusal_reasons: out.refusal_reasons.slice(0, 12),
+      readback_ok: out.readback ? out.readback.ok : null,
+      rollback: out.rollback ? out.rollback.outcome : null,
+      note: 'A REFUSED or DRY_RUN verdict wrote nothing. Only EXECUTED_OK means one cell changed.' }));
+    return out;
+  }
+
+  try {
+    // ---- §10 THE FROZEN EVIDENCE IS THE INPUT, AND IT MUST BE WHOLE. ---------------------------
+    var fz = opts.frozen || null;
+    out.frozen_supplied = !!fz;
+    L.P('a_frozen_baseline_from_the_manifest_was_supplied', true, out.frozen_supplied,
+      out.frozen_supplied === true);
+    if (!fz) { refuse('NO_FROZEN_BASELINE - run the MANIFEST first and pass its frozen_before'); return fin(); }
+    var fzMissing = S1_MOV_FREEZE_REQUIRED_.filter(function (k) {
+      return !Object.prototype.hasOwnProperty.call(fz, k) || fz[k] === undefined || fz[k] === null;
+    });
+    out.frozen_complete = fzMissing.length === 0;
+    L.P('the_frozen_baseline_carries_every_required_field', [], fzMissing, fzMissing.length === 0);
+    if (fzMissing.length) { refuse('FROZEN_BASELINE_INCOMPLETE:' + fzMissing.join(',')); return fin(); }
+    out.target_row_number = fz.target_row_number;
+    out.target_id_column = fz.target_id_column;
+    out.target_cell_a1 = fz.sheet_name + '!row ' + fz.target_row_number
+      + ', col ' + fz.target_id_column_index_1based + ' (' + fz.target_id_column + ')';
+
+    // ---- THE AUTHORIZATION MUST BE THE EXACT SENTENCE THE MANIFEST FROZE. ----------------------
+    var auth = S1_str_(opts.authorization);
+    out.authorization_supplied = auth !== '';
+    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);
+    L.P('an_authorization_sentence_was_supplied', true, out.authorization_supplied,
+      out.authorization_supplied === true);
+    L.P('the_authorization_is_byte_identical_to_the_one_the_manifest_froze', true,
+      out.authorization_matches_frozen, out.authorization_matches_frozen === true);
+    if (!out.authorization_matches_frozen) {
+      refuse(auth === '' ? 'NO_AUTHORIZATION_SUPPLIED'
+        : 'AUTHORIZATION_DOES_NOT_MATCH_THE_FROZEN_SENTENCE');
+      return fin();
+    }
+    L.P('the_frozen_baseline_was_taken_against_this_build', S1_BUILD_, fz.build,
+      S1_str_(fz.build) === S1_BUILD_);
+    L.P('the_frozen_baseline_targets_the_movement_table', S1_FACTORY_MOVEMENT_TABLE_, fz.table,
+      S1_str_(fz.table) === S1_FACTORY_MOVEMENT_TABLE_);
+    L.P('the_frozen_classification_is_that_only_the_primary_key_is_missing',
+      S1_MOV_CLASS_ID_ONLY_, fz.classification, fz.classification === S1_MOV_CLASS_ID_ONLY_);
+    if (fz.classification !== S1_MOV_CLASS_ID_ONLY_) {
+      refuse('FROZEN_CLASSIFICATION_IS_NOT_ID_ONLY:' + S1_str_(fz.classification)); return fin();
+    }
+
+    // ---- §2 RE-MEASURE, AND EVERY FROZEN FACT MUST STILL HOLD. ---------------------------------
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_is_readable_now', [], R.stop_reasons,
+      R.ok === true && R.stop_reasons.length === 0);
+    if (!R.ok) { refuse('TABLE_NOT_READABLE:' + R.stop_reasons.join(',')); return fin(); }
+    out.other_tables_touched = [];
+
+    // ---- §3 IDEMPOTENCY IS ASKED FIRST, BECAUSE A RETRY IS A DIFFERENT QUESTION. ---------------
+    //
+    // MEASURED WRONG FIRST. This check used to sit after the pre-repair verification, and on a retry of a
+    // COMPLETED repair every one of those conditions is legitimately false: the row fingerprint is now the
+    // AFTER one, the blank count is 0 and the fault list is empty - so the run indexed R.faults[0] on an
+    // empty array and threw, reporting TOOL_THREW for a repair that had already succeeded.
+    //
+    // Those conditions exist to protect a repair that is ABOUT to happen. They are the wrong questions to
+    // ask about one that already did, so the retry is detected before any of them is recorded - and it is
+    // CONFIRMED by readback against the frozen expected AFTER rather than merely shrugged at.
+    var rec0 = null;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec0 = r; });
+    if (rec0 && S1_str_(S1_cellOf_(rec0, fz.target_id_column)) === S1_str_(fz.proposed_id)) {
+      out.already_applied = true;
+      out.readback = S1_movReadback_(fz);
+      L.P('a_retry_of_a_completed_repair_writes_nothing', [0, 0],
+        [out.writes, out.cells_written], out.writes === 0 && out.cells_written === 0);
+      L.P('a_retry_minted_no_second_id', 0, out.ids_minted, out.ids_minted === 0);
+      L.P('a_retry_confirms_the_completed_repair_against_the_frozen_expected_after', [],
+        out.readback.mismatches, out.readback.ok === true);
+      out.verdict = out.readback.ok === true ? 'ALREADY_APPLIED'
+        : 'ALREADY_APPLIED_BUT_READBACK_MISMATCH';
+      if (out.readback.ok !== true) {
+        refuse('THE_CELL_HOLDS_THE_FROZEN_ID_BUT_THE_ROW_NO_LONGER_MATCHES_THE_EXPECTED_AFTER');
+      }
+      return fin();
+    }
+
+    var v = out.verification;
+    v.header_fingerprint = { frozen: fz.header_fingerprint, now: R.header_fingerprint };
+    v.live_column_count = { frozen: fz.live_column_count, now: R.live_column_count };
+    v.row_count = { frozen: fz.row_count, now: R.integrity.row_count };
+    v.table_combined_fingerprint = { frozen: fz.table_combined_fingerprint,
+      now: R.table_combined_fingerprint };
+    v.blank_id_count = { frozen: fz.blank_id_count, now: R.integrity.blank_id_count };
+    v.existing_id_universe_fingerprint = { frozen: fz.existing_id_universe_fingerprint,
+      now: R.universe.fingerprint };
+    L.P('the_header_fingerprint_is_the_one_that_was_frozen', fz.header_fingerprint,
+      R.header_fingerprint, S1_str_(fz.header_fingerprint) === S1_str_(R.header_fingerprint));
+    L.P('the_live_column_count_is_the_one_that_was_frozen', fz.live_column_count,
+      R.live_column_count, fz.live_column_count === R.live_column_count);
+    L.P('the_id_column_still_sits_where_it_was_frozen', fz.target_id_column_index_1based,
+      R.live_columns.indexOf(fz.target_id_column) + 1,
+      R.live_columns.indexOf(fz.target_id_column) + 1 === fz.target_id_column_index_1based);
+    L.P('the_row_count_is_the_one_that_was_frozen', fz.row_count, R.integrity.row_count,
+      fz.row_count === R.integrity.row_count);
+    L.P('the_table_fingerprint_is_the_one_that_was_frozen', fz.table_combined_fingerprint,
+      R.table_combined_fingerprint,
+      S1_str_(fz.table_combined_fingerprint) === S1_str_(R.table_combined_fingerprint));
+    L.P('the_id_universe_is_the_one_that_was_frozen', fz.existing_id_universe_fingerprint,
+      R.universe.fingerprint,
+      S1_str_(fz.existing_id_universe_fingerprint) === S1_str_(R.universe.fingerprint));
+    L.P('the_table_still_has_exactly_one_id_integrity_fault', 1, R.faults.length,
+      R.faults.length === 1);
+    L.P('the_table_still_has_exactly_one_blank_id_and_no_other_class_of_fault',
+      { blank: 1, duplicate: 0, wrong_type: 0, outside_named: fz.outside_named_column_row_count },
+      { blank: R.integrity.blank_id_count, duplicate: R.integrity.duplicate_id_count,
+        wrong_type: R.integrity.wrong_type_id_count,
+        outside_named: R.integrity.outside_named_columns_count },
+      R.integrity.blank_id_count === 1 && R.integrity.duplicate_id_count === 0
+        && R.integrity.wrong_type_id_count === 0
+        && R.integrity.outside_named_columns_count === fz.outside_named_column_row_count);
+
+    // ---- THE TARGET ROW IS STILL WHERE IT WAS, AND STILL WHAT IT WAS. -------------------------
+    var rec = null;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec = r; });
+    L.P('the_target_sheet_row_is_still_readable', true, rec !== null, rec !== null);
+    if (!rec) { refuse('TARGET_ROW_NOT_FOUND_AT_THE_FROZEN_ROW_NUMBER'); return fin(); }
+    L.P('the_target_row_fingerprint_is_the_one_that_was_frozen', fz.target_row_fingerprint,
+      rec.fingerprint, S1_str_(fz.target_row_fingerprint) === S1_str_(rec.fingerprint));
+    // AND THE ONE BLANK IS STILL THIS ROW. A fault that moved is a different repair.
+    // AN EMPTY FAULT LIST IS A STATE, NOT AN EXCEPTION. Indexing it directly is what turned a retry into a
+    // TOOL_THREW; a condition that crashes instead of failing is not a condition.
+    var f0 = R.faults.length ? R.faults[0] : null;
+    L.P('the_one_blank_id_is_still_this_row', fz.target_row_number,
+      f0 ? { row: f0.one_based_sheet_row_number, code: f0.fault_code } : 'no fault found',
+      !!f0 && f0.one_based_sheet_row_number === fz.target_row_number
+        && f0.fault_code === 'FACTORY_MOVEMENT_ID_BLANK');
+    var liveId = S1_str_(S1_cellOf_(rec, fz.target_id_column));
+    L.P('the_target_cell_is_still_blank', '', liveId, liveId === '');
+    if (liveId !== '') { refuse('TARGET_CELL_IS_NO_LONGER_BLANK:' + S1_cap_(liveId, 40)); return fin(); }
+
+    // ---- §1 THE ROW STILL CLASSIFIES AS ID-ONLY, MEASURED NOW. --------------------------------
+    var cls = S1_movClassifyRow_(rec, R.live_columns);
+    L.P('the_row_still_classifies_as_only_the_primary_key_missing', S1_MOV_CLASS_ID_ONLY_,
+      { classification: cls.classification, reasons: cls.reasons },
+      cls.classification === S1_MOV_CLASS_ID_ONLY_);
+    if (cls.classification !== S1_MOV_CLASS_ID_ONLY_) {
+      refuse(S1_MOV_CLASS_UNRESOLVED_ + ':' + cls.reasons.join(';')); return fin();
+    }
+
+    // ---- §3 THE ID IS THE FROZEN ONE, RE-DERIVED, WELL FORMED AND UNUSED. --------------------
+    var rederived = S1_movProposedId_(S1_FACTORY_MOVEMENT_TABLE_, fz.target_row_number,
+      rec.fingerprint);
+    out.id_check = { frozen: fz.proposed_id, rederived: rederived.proposed_id,
+      natural_key_frozen: fz.proposed_id_natural_key, natural_key_now: rederived.natural_key,
+      well_formed: S1_movIdWellFormed_(fz.proposed_id),
+      collides: R.universe.ids.indexOf(S1_str_(fz.proposed_id)) >= 0 };
+    L.P('the_frozen_id_is_well_formed', 'FSMV- plus 8 uppercase hex', fz.proposed_id,
+      out.id_check.well_formed === true);
+    // NOT SELF-COMPARISON: the frozen id came from the manifest and the re-derivation comes from the sheet
+    // as it is now. They agree only if the row is the row the id was authorized for.
+    L.P('the_frozen_id_is_what_this_row_still_derives_to', fz.proposed_id, rederived.proposed_id,
+      rederived.proposed_id !== null && S1_str_(rederived.proposed_id) === S1_str_(fz.proposed_id));
+    L.P('the_natural_key_is_the_one_that_was_frozen', fz.proposed_id_natural_key,
+      rederived.natural_key, S1_str_(rederived.natural_key) === S1_str_(fz.proposed_id_natural_key));
+    L.P('the_frozen_id_collides_with_no_existing_id', false, out.id_check.collides,
+      out.id_check.collides === false);
+    L.P('this_tool_minted_no_id_of_its_own', 0, out.ids_minted, out.ids_minted === 0);
+
+    // ---- §4 THE TARGET IS ONE CELL, NAMED. --------------------------------------------------
+    var col = R.live_columns.indexOf(fz.target_id_column) + 1;
+    L.P('the_write_target_is_exactly_one_named_cell',
+      { row: fz.target_row_number, col: fz.target_id_column_index_1based },
+      { row: fz.target_row_number, col: col },
+      col === fz.target_id_column_index_1based && col >= 1);
+
+    if (L.failed.length) { return fin(); }
+
+    // ---- §DEFAULT: A DRY RUN STOPS HERE, HAVING WRITTEN NOTHING. ----------------------------
+    if (opts.execute !== true) {
+      out.verdict = 'DRY_RUN_OK';
+      L.P('a_dry_run_wrote_nothing', [0, 0], [out.writes, out.cells_written],
+        out.writes === 0 && out.cells_written === 0);
+      return fin();
+    }
+
+    // ---- §4 THE WRITE. ONE CELL. ONE CALL. -------------------------------------------------
+    var wrote = false;
+    try {
+      R.sheet.getRange(fz.target_row_number, col).setValue(fz.proposed_id);
+      wrote = true;
+      out.writes = 1;
+      out.cells_written = 1;
+    } catch (wErr) {
+      out.verdict = 'WRITE_FAILED';
+      refuse('WRITE_THREW: ' + S1_cap_(String(wErr && wErr.message ? wErr.message : wErr), 200));
+      L.P('the_single_cell_write_succeeded', true, 'threw', false);
+      out.rollback = S1_movRollback_(R.sheet, fz, col, 'WRITE_THREW');
+      out.cells_rolled_back = out.rollback.cells_rolled_back;
+      if (out.rollback.outcome !== 'RESTORED') out.verdict = 'ROLLBACK_FAILED';
+      return fin();
+    }
+
+    // ---- §8 READBACK, AGAINST THE FROZEN EXPECTATION. -------------------------------------
+    out.readback = S1_movReadback_(fz);
+    L.P('the_readback_matched_the_frozen_expected_after', [], out.readback.mismatches,
+      out.readback.ok === true);
+    if (out.readback.ok !== true) {
+      out.verdict = 'READBACK_FAILED';
+      refuse('READBACK_MISMATCH:' + out.readback.mismatches.map(function (m) {
+        return m.what; }).join(','));
+      out.rollback = S1_movRollback_(R.sheet, fz, col, 'READBACK_MISMATCH');
+      out.cells_rolled_back = out.rollback.cells_rolled_back;
+      out.verdict = out.rollback.outcome === 'RESTORED' ? 'EXECUTED_AND_ROLLED_BACK' : 'ROLLBACK_FAILED';
+      return fin();
+    }
+    out.verdict = 'EXECUTED_OK';
+    L.P('exactly_one_cell_was_written', 1, out.cells_written, out.cells_written === 1);
+    L.P('no_row_was_added_removed_or_reordered', [0, 0, false],
+      [out.rows_added, out.rows_removed, out.rows_reordered],
+      out.rows_added === 0 && out.rows_removed === 0 && out.rows_reordered === false);
+    return fin();
+  } catch (e) {
+    L.P('the_tool_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    refuse('TOOL_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
+    return fin();
+  }
+}
+
+/**
+ * §8 - Re-read and compare against the FROZEN expectation, column by column. The table fingerprint is
+ * expected to CHANGE (a cell changed); what must not change is every other cell, and that is checked as an
+ * exact row fingerprint plus a per-column comparison rather than as a table-level equality.
+ */
+function S1_movReadback_(fz) {
+  var o = { ok: false, mismatches: [], measured: {}, columns_compared: 0, columns_identical: 0 };
+  var R = S1_movReadForRepair_();
+  if (!R.ok) {
+    o.mismatches.push({ what: 'TABLE_NOT_READABLE_ON_READBACK', detail: R.stop_reasons });
+    return o;
+  }
+  function cmp(what, expected, actual) {
+    o.measured[what] = actual;
+    if (String(expected) !== String(actual)) {
+      o.mismatches.push({ what: what, expected: expected, actual: actual });
+    }
+  }
+  cmp('row_count', fz.expected_after.row_count, R.integrity.row_count);
+  cmp('non_blank_id_count', fz.expected_after.non_blank_id_count, R.integrity.ok_count);
+  cmp('valid_id_count', fz.expected_after.valid_id_count,
+    R.integrity.ok_count - R.integrity.duplicate_id_count - R.integrity.wrong_type_id_count);
+  cmp('blank_id_count', fz.expected_after.blank_id_count, R.integrity.blank_id_count);
+  cmp('duplicate_id_count', fz.expected_after.duplicate_id_count, R.integrity.duplicate_id_count);
+  cmp('wrong_type_id_count', fz.expected_after.wrong_type_id_count, R.integrity.wrong_type_id_count);
+  cmp('outside_named_column_row_count', fz.expected_after.outside_named_column_row_count,
+    R.integrity.outside_named_columns_count);
+  cmp('header_fingerprint', fz.expected_after.header_fingerprint, R.header_fingerprint);
+  cmp('live_column_count', fz.live_column_count, R.live_column_count);
+  var rec = null;
+  (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec = r; });
+  if (!rec) {
+    o.mismatches.push({ what: 'TARGET_ROW_MISSING_ON_READBACK', expected: fz.target_row_number,
+      actual: null });
+    return o;
+  }
+  cmp('target_row_fingerprint', fz.expected_after_row_fingerprint, rec.fingerprint);
+  cmp('target_row_id', fz.expected_after.target_row_id, S1_str_(S1_cellOf_(rec, fz.target_id_column)));
+  // EVERY OTHER COLUMN, ONE AT A TIME, AGAINST THE FROZEN BEFORE. A single row fingerprint would already
+  // catch any change, but it would not say WHICH cell moved - and on a failed repair that is the first
+  // thing a person needs.
+  (fz.target_row_cells || []).forEach(function (c) {
+    if (c.column === fz.target_id_column) return;
+    o.columns_compared++;
+    var now = S1_canonCell_(S1_cellOf_(rec, c.column));
+    if (now === c.canonical) { o.columns_identical++; return; }
+    o.mismatches.push({ what: 'COLUMN_CHANGED:' + c.column, expected: c.canonical, actual: now });
+  });
+  o.ok = o.mismatches.length === 0
+    && o.columns_identical === fz.expected_after.other_columns_unchanged;
+  if (!o.ok && o.columns_identical !== fz.expected_after.other_columns_unchanged) {
+    o.mismatches.push({ what: 'OTHER_COLUMN_COUNT',
+      expected: fz.expected_after.other_columns_unchanged, actual: o.columns_identical });
+  }
+  return o;
+}
+
+/**
+ * §9 - The rollback restores THE SAME ONE CELL to blank and then proves it, by re-reading the row and
+ * requiring its fingerprint to be the frozen BEFORE value. A rollback that is not verified is a hope.
+ */
+function S1_movRollback_(sheet, fz, col, why) {
+  var o = { attempted: true, why: why, outcome: 'FAILED', cells_rolled_back: 0,
+    restored_row_fingerprint: null, expected_row_fingerprint: fz.target_row_fingerprint,
+    error: null };
+  try {
+    sheet.getRange(fz.target_row_number, col).setValue('');
+    o.cells_rolled_back = 1;
+  } catch (e) {
+    o.error = 'ROLLBACK_WRITE_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 160);
+    return o;
+  }
+  var R = S1_movReadForRepair_();
+  if (!R.ok) { o.error = 'ROLLBACK_READBACK_UNREADABLE:' + R.stop_reasons.join(','); return o; }
+  var rec = null;
+  (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec = r; });
+  if (!rec) { o.error = 'ROLLBACK_READBACK_ROW_MISSING'; return o; }
+  o.restored_row_fingerprint = rec.fingerprint;
+  o.outcome = S1_str_(rec.fingerprint) === S1_str_(fz.target_row_fingerprint) ? 'RESTORED'
+    : 'FAILED';
+  if (o.outcome !== 'RESTORED') {
+    o.error = 'THE_ROW_DID_NOT_RETURN_TO_ITS_FROZEN_BEFORE_FINGERPRINT';
+  }
+  return o;
+}
+
 function RUN_S1_MANIFEST_S() {
   var out = { manifest: 'MANIFEST S — controlled Submit-to-Weekly-Shipping-Plan activation',
     build: S1_BUILD_, dry_run: true, writes: 0,
@@ -5009,6 +6110,18 @@ function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content, surf, resv
  * agreeing with itself, and if a future edit drops the K2 identities from the text the run refuses.
  * ================================================================================================================
  */
+/**
+ * S1-R4E - THE EMPTY-NEEDLE RULE, IN ONE PLACE.
+ *
+ * `indexOf('')` is 0 on every string, so a required fact whose measured value came back empty would be
+ * 'found' in any sentence at all. R4C established that rule for MANIFEST P's wording; this round added a
+ * second wording audit for the backfill authorization and, with it, a second copy of the same line - which
+ * is how two audits come to disagree about what counts as present. One rule, one function, both callers.
+ */
+function S1_needleFound_(text, needle) {
+  return S1_str_(needle) !== '' && String(text).indexOf(needle) >= 0;
+}
+
 function S1_wordingAudit_(w, scope, acceptedRun, cand, ws, ids, content, surf, resv) {
   var o = { built: !!w, bytes: w ? String(w).length : 0, fingerprint: null,
     placeholders: [], required_items: [], missing: [], present_count: 0, ok: false };
@@ -5091,7 +6204,7 @@ function S1_wordingAudit_(w, scope, acceptedRun, cand, ws, ids, content, surf, r
     // A NEEDLE THAT IS ITSELF EMPTY WOULD MATCH ANYTHING. An unmeasured fact cannot be found in a sentence,
     // so it counts as missing rather than as trivially satisfied - which is how a null slips through a
     // substring check and takes the whole audit with it.
-    r.present = r.needle !== '' && text.indexOf(r.needle) >= 0;
+    r.present = S1_needleFound_(text, r.needle);
     if (r.present) o.present_count++; else o.missing.push(r.item);
   });
   o.required_items = req.map(function (r) { return { item: r.item, present: r.present }; });

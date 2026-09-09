@@ -70,6 +70,8 @@ var GS = 'assets/specs/active/apps-script/';
 var G71 = read(GS + '71_api_v1_factory_stock_guard.gs');
 var G16 = read(GS + '16_shipping_allocation_handlers.gs');
 var G69 = read(GS + '69_api_v1_ai_plan_lifecycle.gs');
+// 21_ is read here as well as at its assertion sites: R4E EXECUTES its movement vocabulary in the world.
+var G21V = read(GS + '21_factory_inventory_handlers.gs');
 var S1_REL = 'assets/tools/apps-script-diagnostics/TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs';
 var S1 = read(S1_REL).split(String.fromCharCode(13) + String.fromCharCode(10)).join(NL);
 
@@ -303,6 +305,29 @@ function S1World(spec) {
   ].join(NL), w.ctx);
   vm.runInContext(G71, w.ctx, { filename: '71_' });
   // ================================================================================================================
+  // S1-R4E - 21_'s MOVEMENT VOCABULARY, EXECUTED RATHER THAN READ AS PROSE.
+  //
+  // This suite already read 21_ as TEXT to check column names and the three FSMV- mint sites. R4E classifies
+  // a legacy row against `movement_type`, and 21_ §G is the authority that says which seven values exist and
+  // which ledger axis each one moves - so the classification has to run against the real predicates.
+  //
+  // Measured why it matters: with these absent, `manual_adjustment` (a member of the canonical seven) was
+  // classified as 'not in the canonical vocabulary'. The diagnostic now separates an ABSENT authority from
+  // an INVALID value, and this makes the suite exercise the present-authority path instead of only the
+  // absent one.
+  // ================================================================================================================
+  vm.runInContext([
+    extractVar(G21V, 'FSTX_MOV_INVENTORY_IMPORT_'), extractVar(G21V, 'FSTX_MOV_MANUAL_ADJUSTMENT_'),
+    extractVar(G21V, 'FSTX_MOV_PO_RECEIPT_'), extractVar(G21V, 'FSTX_MOV_SHIPMENT_OUT_'),
+    extractVar(G21V, 'FSTX_MOV_SHIPMENT_RECEIPT_'), extractVar(G21V, 'FSTX_MOV_RESERVE_ACQUIRE_'),
+    extractVar(G21V, 'FSTX_MOV_RESERVE_RELEASE_'),
+    extractVar(G21V, 'FSTX_MOVEMENT_TYPES_'), extractVar(G21V, 'FSTX_RESERVED_AXIS_TYPES_'),
+    extractVar(G21V, 'FSTX_CURRENT_AXIS_TYPES_'),
+    extractFn(G21V, 'factoryStockIsKnownMovementType_'),
+    extractFn(G21V, 'factoryStockIsReservationMovement_'),
+    extractFn(G21V, 'factoryStockIsCurrentMovement_')
+  ].join(NL), w.ctx, { filename: '21_vocabulary' });
+  // ================================================================================================================
   // S1-R4A — THE PRODUCTION WRITE-SET CHAIN, LOADED FROM REAL SOURCE.
   //
   // MANIFEST P now predicts the exact K2 identities a Generate would create or update, and it does that by
@@ -445,10 +470,25 @@ function S1World(spec) {
   vm.runInContext(pinTaipeiHourSrc_(spec.pinHour === undefined ? PIN_HOUR_ : spec.pinHour), w.ctx);
   if (spec.after) vm.runInContext(spec.after, w.ctx);
   vm.runInContext(spec.s1 || S1, w.ctx, { filename: 'S1' });
+  // S1-R4E - WRITES ARE ALREADY COUNTED, AND I CHECKED THE WRONG FakeSheet BEFORE BELIEVING OTHERWISE.
+  // The base harness this suite borrows (controlled-ai-plan-production-readiness) increments `writes` on
+  // setValue, setValues and appendRow; the near-identical FakeSheet in the k2-route-intent suite does not,
+  // and that is the one I read. A wrapper added here on that premise DOUBLE-COUNTED, which the R4E execute
+  // path exposed immediately: cells_written 1 against allWrites() 2. Removed. What is genuinely missing is
+  // not a count but a BREAKDOWN - a total cannot say that a repair authorized on one table touched no other.
   w.allWrites = function () {
     var n = 0;
     Object.keys(w.sheets).forEach(function (k) { n += (w.sheets[k].writes || 0); });
     return n;
+  };
+  // Which sheets were written, not just how many writes there were: a repair authorized on one table must
+  // be shown not to have touched another, and a total cannot say that.
+  w.writesByTable = function () {
+    var m = {};
+    Object.keys(w.sheets).forEach(function (k) {
+      if ((w.sheets[k].writes || 0) > 0) m[k] = w.sheets[k].writes;
+    });
+    return m;
   };
   return w;
 }
@@ -532,10 +572,38 @@ function bareCode(src) {
   return noLine.replace(/'(\\.|[^'\\])*'/g, "''").replace(/"(\\.|[^"\\])*"/g, '""');
 }
 var S1_BARE = bareCode(S1);
-['setValue', 'setValues', 'appendRow', 'deleteRow', 'insertSheet', 'deleteSheet', 'setFormula',
+// S1-R4E - NARROWED, AND THEREFORE STRONGER.
+//
+// Through R4D this file could not write at all, and a file-wide 'contains no setValue' said so in one line.
+// R4E adds an AUTHORIZED single-cell repair, so that line is now false - and deleting it would trade a
+// checkable claim for nothing. It is replaced by a claim that says WHERE a write may live: every other write
+// API stays banned file-wide, `setValue` is allowed at exactly two sites, both of them are inside the two
+// backfill functions, and every read-only entry point is checked on its OWN source.
+['setValues', 'appendRow', 'deleteRow', 'insertSheet', 'deleteSheet', 'setFormula',
  'removeSheet', 'setName', 'LockService'].forEach(function (api, i) {
   ok(S1_BARE.indexOf(api) === -1,
     'A7.' + (i + 1) + ' the census source contains no ' + api + ' (comments and string literals stripped)');
+});
+// setValue: exactly two sites - the repair and its rollback - and nowhere else.
+eq((S1_BARE.match(/setValue\(/g) || []).length, 2,
+  'A7.10 setValue appears exactly TWICE in the whole file: the one repair and its one rollback');
+var A7write = extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL');
+var A7roll = extractFn(S1, 'S1_movRollback_');
+eq((bareCode(A7write).match(/setValue\(/g) || []).length, 1,
+  'A7.11 one of them is in the backfill tool');
+eq((bareCode(A7roll).match(/setValue\(/g) || []).length, 1,
+  'A7.12 and the other is in its rollback');
+// EVERY READ-ONLY ENTRY POINT, ON ITS OWN SOURCE. A file-wide claim could not have said this once one
+// function was allowed to write; this can, and it is the claim that actually matters.
+['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
+ 'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
+ 'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
+ 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST'].forEach(function (fn, i) {
+  var src = bareCode(extractFn(S1, fn));
+  ok(src.length > 0, 'A7.13.' + (i + 1) + 'a ' + fn + ' is extractable');
+  ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
+    && src.indexOf('getRange') === -1,
+    'A7.13.' + (i + 1) + 'b ' + fn + ' reaches no write API and no getRange at all');
 });
 ok(S1_BARE.indexOf('inventoryAiPlanDbGenerationEnabled_') > 0,
   'A7a it READS the flag …');
@@ -3758,6 +3826,557 @@ ok(maxLogBytes(Z15.world) <= 3000,
 fmZeroWrite(Z15, 'Z15o:');
 
 // ================================================================================================================
+section('AA — S1-R4E: the legacy row, the whole column contract, and a repair that is one cell or nothing');
+// ================================================================================================================
+//
+// R4D located the row. This asks whether it can be repaired, and the answer for the LIVE row is no - not
+// because a repair is risky but for three measured reasons: it is missing TWO required fields rather than
+// one, the second of them (movement_type) is the ledger AXIS SELECTOR, and its own quantities do not
+// reconcile under either axis. Writing only the primary key would leave the row unclassifiable while
+// SILENCING the census that currently refuses it.
+//
+// The machinery is built and tested anyway, on a synthetic row where the key genuinely is the only thing
+// missing - so the execute path exists, is proven, and is unreachable for the live row by construction.
+
+// ---- the LIVE row 2, at the frozen live shape: six non-blank named fields, nine blank. ----
+var AAlive2 = { sku: SKU, warehouse_id: WHF, qty: 12000,
+  before_current_stock: 1000, after_current_stock: 12000, created_at: '2026-06-12' };
+// ---- a row where the PRIMARY KEY genuinely is the only thing missing. ----
+function aaIdOnly(over) {
+  var r = { movement_date: '2026-07-01', sku: SKU, warehouse_id: WHF,
+    movement_type: 'manual_adjustment', qty: 500,
+    related_entity_type: 'inventory_adjustment', related_entity_id: 'ADJ-20260701-AB12',
+    before_current_stock: 1000, after_current_stock: 1500,
+    before_reserved_stock: 100, after_reserved_stock: 100,
+    note: 'stock count correction', created_by: 'operation-system',
+    created_at: '2026-07-01T03:00:00Z' };
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+function aaGood(n) {
+  return aaIdOnly({ factory_stock_movement_id: 'FSMV-' + ('0000000' + (n * 7919).toString(16).toUpperCase()).slice(-8),
+    qty: 10 + n, before_current_stock: 100, after_current_stock: 110 + n });
+}
+function aaRows(first, count) {
+  var rows = [first];
+  for (var i = 1; i <= (count === undefined ? 95 : count); i++) rows.push(aaGood(i));
+  return rows;
+}
+function aaWorld(rows, mutate, extra) {
+  var sp = {};
+  Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+  sp.movements = rows;
+  Object.keys(extra || {}).forEach(function (k) { sp[k] = extra[k]; });
+  var w = S1World(sp);
+  if (mutate) mutate(w);
+  return w;
+}
+function aaMan(w) {
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST()', w.ctx);
+}
+function aaFill(w, arg) {
+  vm.runInContext('var __AA_ARG = ' + JSON.stringify(arg || {}) + ';', w.ctx);
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL(__AA_ARG)', w.ctx);
+}
+/** Every refusal owes the same things: no write anywhere, nothing minted, no other table touched. */
+function aaNoWrite(r, w, label) {
+  eq([r.writes, r.cells_written, r.ids_minted], [0, 0, 0],
+    label + ' zero writes, zero cells, zero ids minted');
+  eq(w.allWrites(), 0, label + ' and zero writes MEASURED on every sheet in the world');
+  eq(w.writesByTable(), {}, label + ' with no table written at all');
+  eq([r.generate_called, r.submit_called, r.migration_called, r.gap_job_called,
+    r.factory_writer_called], [false, false, false, false, false],
+    label + ' no Generate, Submit, migration, Gap Job or Factory Stock writer');
+}
+
+// ---- AA1 — THE LIVE ROW. TWO REQUIRED FIELDS MISSING, NOT ONE. --------------------------------------
+var AA1w = aaWorld(aaRows(AAlive2));
+var AA1 = aaMan(AA1w);
+eq(AA1.verdict, 'LEGACY_ROW_CLASSIFICATION_REQUIRED',
+  'AA1 the live row cannot be repaired by writing one cell', AA1.classification_reasons);
+eq([AA1.row_count, AA1.non_blank_id_count, AA1.valid_id_count, AA1.blank_id_count],
+  [96, 95, 95, 1], 'AA1a at the frozen live counts: 96 / 95 / 95 / 1');
+eq([AA1.live_column_count, AA1.named_column_count], [15, 15], 'AA1b on fifteen live columns');
+eq(AA1.header_fingerprint, 'FDC8D1DB',
+  'AA1c and the live header fingerprint the operator froze', AA1.header_fingerprint);
+eq(AA1.target.one_based_sheet_row_number, 2, 'AA1d the target is sheet row 2');
+eq(AA1.target.named_nonblank_field_count, 6,
+  'AA1e with six non-blank named fields, exactly as measured live');
+// THE DECISIVE FACT: the primary key is not the only required field missing.
+eq(AA1.target.field_audit.required_blank, ['factory_stock_movement_id', 'movement_type'],
+  'AA1f TWO required fields are blank, and the second is movement_type');
+ok(AA1.classification_reasons.indexOf('REQUIRED_FIELD_IS_BLANK:movement_type') >= 0,
+  'AA1g named as a required-field refusal', AA1.classification_reasons);
+ok(AA1.classification_reasons.indexOf('MOVEMENT_TYPE_IS_BLANK_SO_THE_ROW_HAS_NO_LEDGER_AXIS') >= 0,
+  'AA1h and separately as the loss of the LEDGER AXIS, which is what movement_type decides');
+eq(AA1.target.axis_audit.axis, 'UNKNOWN_BECAUSE_MOVEMENT_TYPE_IS_BLANK',
+  'AA1i so the row belongs to neither the current nor the reserved axis');
+// AND ITS OWN NUMBERS DO NOT RECONCILE UNDER THE ONLY AXIS THAT COULD BE EVALUATED.
+eq([AA1.target.axis_audit.readings.if_current_axis.expected_qty,
+  AA1.target.axis_audit.readings.if_current_axis.observed_qty,
+  AA1.target.axis_audit.readings.if_current_axis.agrees], [11000, 12000, false],
+  'AA1j read as a current-axis move, qty should be 12000-1000 = 11000 and it is 12000');
+eq(AA1.target.axis_audit.readings.if_reserved_axis, null,
+  'AA1k and the reserved reading cannot be evaluated at all, both reserved columns being blank');
+eq(AA1.target.field_audit.writer_populated_blank,
+  ['movement_date', 'related_entity_type', 'related_entity_id', 'before_reserved_stock',
+    'after_reserved_stock', 'note', 'created_by'],
+  'AA1l plus seven fields every shipped writer populates — so no current writer produced this row');
+// NOTHING IS PROPOSED, FROZEN OR SIGNED. The execute path has nothing to consume.
+eq([AA1.proposed, AA1.frozen_before, AA1.authorization_wording, AA1.expected_after],
+  [null, null, null, null],
+  'AA1m no id is proposed, no baseline frozen, no sentence written, no AFTER stated');
+ok(String(AA1.next_decision).indexOf('data governance') > 0
+  && String(AA1.next_decision).indexOf('SILENCING') > 0,
+  'AA1n and the next decision names the governance question and the silencing hazard',
+  AA1.next_decision);
+aaNoWrite(AA1, AA1w, 'AA1o');
+// AND THE BACKFILL CANNOT BE RUN FROM IT.
+var AA1f = aaFill(AA1w, { execute: true, frozen: AA1.frozen_before,
+  authorization: AA1.authorization_wording });
+eq(AA1f.verdict, 'REFUSED', 'AA1p the backfill refuses with no frozen baseline to consume');
+ok(String(AA1f.refusal_reasons[0]).indexOf('NO_FROZEN_BASELINE') === 0,
+  'AA1q under that named reason', AA1f.refusal_reasons);
+aaNoWrite(AA1f, AA1w, 'AA1r');
+
+// ---- AA2 — THE ID-ONLY ROW: MANIFEST, DRY RUN, EXECUTE, RETRY. -------------------------------------
+var AA2w = aaWorld(aaRows(aaIdOnly({})));
+var AA2 = aaMan(AA2w);
+eq(AA2.verdict, 'READY_TO_AUTHORIZE_BACKFILL',
+  'AA2 a row missing only its primary key is repairable', AA2.classification_reasons);
+eq(AA2.classification, 'ID_ONLY_MISSING', 'AA2a classified ID_ONLY_MISSING');
+eq(AA2.classification_reasons, [], 'AA2b with no refusal reason');
+eq(AA2.target.field_audit.required_blank, ['factory_stock_movement_id'],
+  'AA2c the primary key is the ONLY required field blank');
+eq(AA2.target.field_audit.writer_populated_blank, [],
+  'AA2d and no writer-populated field is blank either');
+eq([AA2.target.axis_audit.axis, AA2.target.axis_audit.invariant_holds], ['CURRENT', true],
+  'AA2e its ledger axis is known and its own numbers reconcile');
+// §3 THE PROPOSED KEY.
+ok(/^FSMV-[0-9A-F]{8}$/.test(AA2.proposed.proposed_id),
+  'AA2f the proposed id is FSMV- plus eight uppercase hex', AA2.proposed.proposed_id);
+eq(AA2.proposed.deterministic, true, 'AA2g and it is deterministic');
+ok(String(AA2.proposed.derivation_authority).indexOf('KMFSG.fnv1a') === 0,
+  'AA2h derived through the same hash authority 71_ uses for its FSOA- ids',
+  AA2.proposed.derivation_authority);
+ok(String(AA2.proposed.derivation_authority).indexOf('getUuid') > 0,
+  'AA2i and it says why NOT Utilities.getUuid: a backfill must be retry-stable');
+eq(AA2.proposed.natural_key,
+  'FSMV|factory_stock_movements|row=2|fp=' + AA2.frozen_before.target_row_fingerprint,
+  'AA2j the natural key binds the id to the exact row state that was measured');
+// The FORMAT authority is 21_'s, checked against 21_'s own text rather than asserted.
+ok(G21V.indexOf("'FSMV-' + Utilities.getUuid()") > 0,
+  'AA2k 21_ does mint FSMV- ids, which is the format this aligns to');
+ok(G71.indexOf("'FSOA-' + KMFSG.fnv1a(") > 0,
+  'AA2l and 71_ does mint a deterministic id from a natural key through KMFSG.fnv1a — shipped precedent');
+// §10 THE FROZEN BEFORE AND THE EXACT AFTER.
+var AAfz = AA2.frozen_before;
+eq(AAfz.target_row_number, 2, 'AA2m the freeze names the row');
+eq(AAfz.target_id_column_index_1based, 1, 'AA2n and the column index');
+eq(AAfz.target_row_cells.length, 15, 'AA2o with all fifteen BEFORE cell values, canonically');
+ok(AAfz.expected_after_row_fingerprint !== AAfz.target_row_fingerprint,
+  'AA2p the expected AFTER row fingerprint differs from the BEFORE one',
+  [AAfz.target_row_fingerprint, AAfz.expected_after_row_fingerprint]);
+eq(AAfz.expected_after.other_columns_unchanged, 14,
+  'AA2q and fourteen other columns must be byte-for-byte identical');
+eq([AAfz.expected_after.blank_id_count, AAfz.expected_after.valid_id_count,
+  AAfz.expected_after.duplicate_id_count, AAfz.expected_after.wrong_type_id_count],
+  [0, 96, 0, 0], 'AA2r the AFTER is 96 valid, 0 blank, 0 duplicated, 0 wrong-typed');
+eq(AAfz.expected_after.table_combined_fingerprint_changes, true,
+  'AA2s and the TABLE fingerprint is expected to CHANGE — one cell changed, so equality would be wrong');
+eq(AA2.wording_audit.missing, [], 'AA2t the authorization names every fact a person must check',
+  AA2.wording_audit.missing);
+ok(AA2.wording_audit.required_item_count >= 20,
+  'AA2u and there are enough of them to mean something', AA2.wording_audit.required_item_count);
+eq((String(AA2.authorization_wording).match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [],
+  'AA2v with no placeholder in it');
+aaNoWrite(AA2, AA2w, 'AA2w');
+// §DEFAULT — execute:false.
+var AA2dry = aaFill(AA2w, { frozen: AAfz, authorization: AA2.authorization_wording });
+eq(AA2dry.verdict, 'DRY_RUN_OK', 'AA2x the default is a DRY RUN and every check passes',
+  AA2dry.failed_predicates);
+eq([AA2dry.execute_requested, AA2dry.dry_run], [false, true], 'AA2y reported as such');
+aaNoWrite(AA2dry, AA2w, 'AA2z');
+// EXECUTE — one cell.
+var AA2ex = aaFill(AA2w, { execute: true, frozen: AAfz, authorization: AA2.authorization_wording });
+eq(AA2ex.verdict, 'EXECUTED_OK', 'AA3 the execute path writes and the readback confirms it',
+  [AA2ex.failed_predicates, AA2ex.refusal_reasons]);
+eq([AA2ex.writes, AA2ex.cells_written], [1, 1], 'AA3a exactly one cell was written');
+eq(AA2w.allWrites(), 1, 'AA3b measured on the sheets: one write in the whole world');
+eq(AA2w.writesByTable(), { factory_stock_movements: 1 },
+  'AA3c and it landed on the movement table and no other');
+eq([AA2ex.readback.ok, AA2ex.readback.columns_compared, AA2ex.readback.columns_identical],
+  [true, 14, 14], 'AA3d with all fourteen other columns byte-for-byte identical');
+eq(AA2ex.readback.mismatches, [], 'AA3e and nothing mismatched');
+eq(AA2ex.readback.measured.target_row_id, AAfz.proposed_id,
+  'AA3f the cell now holds the frozen id');
+eq(AA2ex.readback.measured.target_row_fingerprint, AAfz.expected_after_row_fingerprint,
+  'AA3g and the row hashes to the FROZEN expected AFTER — an expectation it did not compute itself');
+eq([AA2ex.rows_added, AA2ex.rows_removed, AA2ex.rows_reordered], [0, 0, false],
+  'AA3h no row was added, removed or reordered');
+eq([AA2ex.ids_minted, AA2ex.rollback], [0, null],
+  'AA3i the tool minted nothing of its own and had nothing to roll back');
+// §3 RETRY.
+var AA2re = aaFill(AA2w, { execute: true, frozen: AAfz, authorization: AA2.authorization_wording });
+eq(AA2re.verdict, 'ALREADY_APPLIED', 'AA4 a retry of a completed repair reports ALREADY_APPLIED',
+  [AA2re.failed_predicates, AA2re.refusal_reasons]);
+eq([AA2re.already_applied, AA2re.writes, AA2re.cells_written, AA2re.ids_minted],
+  [true, 0, 0, 0], 'AA4a writing nothing and minting no second id');
+eq(AA2w.allWrites(), 1, 'AA4b the world still has exactly ONE write in it');
+eq(AA2re.readback.ok, true,
+  'AA4c and the retry CONFIRMS the completed repair against the frozen expected AFTER');
+
+// ---- AA5 — EVERY DRIFT REFUSES, EACH UNDER ITS OWN NAME. ------------------------------------------
+// One table, because "it refuses on drift" has to hold for every kind of drift and not only the one being
+// worked on. Each case takes the SAME frozen baseline and mutates the world under it.
+function aaDrift(label, mutate, expectFailed, extra) {
+  var w = aaWorld(aaRows(aaIdOnly({})), null, extra);
+  var m = aaMan(w);
+  ok(m.verdict === 'READY_TO_AUTHORIZE_BACKFILL', label + '0 the world starts repairable',
+    m.classification_reasons);
+  if (mutate) mutate(w, m);
+  var r = aaFill(w, { execute: true, frozen: m.frozen_before,
+    authorization: m.authorization_wording });
+  ok(r.verdict === 'REFUSED', label + ' it refuses', [r.verdict, r.failed_predicates]);
+  if (expectFailed) {
+    ok(r.failed_predicates.indexOf(expectFailed) >= 0 || r.refusal_reasons.join('|').indexOf(expectFailed) >= 0,
+      label + 'a on ' + expectFailed, [r.failed_predicates, r.refusal_reasons]);
+  }
+  aaNoWrite(r, w, label + 'b');
+  return r;
+}
+// fingerprint drift — a cell of the target row changed after the freeze
+aaDrift('AA5 fingerprint drift', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[1][sh.rows[0].indexOf('note')] = 'edited after the freeze';
+}, 'the_target_row_fingerprint_is_the_one_that_was_frozen');
+// header / schema drift — a column renamed
+aaDrift('AA6 header drift', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[0][sh.rows[0].indexOf('note')] = 'remark';
+}, 'the_header_fingerprint_is_the_one_that_was_frozen');
+// table count drift — a row appeared
+aaDrift('AA7 row count drift', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows.push(sh.rows[2].slice());
+}, 'the_row_count_is_the_one_that_was_frozen');
+// the row MOVED — same content, different sheet position
+aaDrift('AA8 the target row moved', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  var moved = sh.rows.splice(1, 1)[0];
+  sh.rows.push(moved);
+}, 'the_target_row_fingerprint_is_the_one_that_was_frozen');
+// the id is no longer blank — somebody else filled it
+aaDrift('AA9 the id is no longer blank', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[1][0] = 'FSMV-DEADBEEF';
+}, 'the_target_row_fingerprint_is_the_one_that_was_frozen');
+// a SECOND blank id appeared — the repair is no longer a single-cell one
+aaDrift('AA10 a second blank id appeared', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[3][0] = '';
+}, 'the_table_still_has_exactly_one_id_integrity_fault');
+// a duplicate appeared
+aaDrift('AA11 a duplicate id appeared', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[3][0] = String(sh.rows[2][0]);
+}, 'the_table_still_has_exactly_one_blank_id_and_no_other_class_of_fault');
+// a wrong-typed id appeared
+aaDrift('AA12 a wrong-typed id appeared', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[3][0] = 20260901;
+}, 'the_table_still_has_exactly_one_blank_id_and_no_other_class_of_fault');
+// the proposed id turns up in use elsewhere
+aaDrift('AA13 the proposed id collides', function (w, m) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[3][0] = m.frozen_before.proposed_id;
+}, 'the_frozen_id_collides_with_no_existing_id');
+// the row stops classifying as id-only
+aaDrift('AA14 the row stops classifying as id-only', function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[1][sh.rows[0].indexOf('movement_type')] = '';
+}, 'the_target_row_fingerprint_is_the_one_that_was_frozen');
+// THE PRODUCTION TARGET ASSERTION. Not run through aaDrift: breaking the target from the start would break
+// the MANIFEST too, and then there would be no frozen baseline to refuse against. The freeze is taken
+// against the real target first, and the assertion is broken underneath it - which is the case that
+// matters, a baseline that was valid when it was taken and a database that is no longer the right one.
+aaDrift('AA15 the production target assertion fails', function (w) {
+  vm.runInContext('prodAssertDbTarget_ = function () {'
+    + ' throw new Error("WRONG_SPREADSHEET"); };', w.ctx);
+}, 'DB_NOT_OPENED');
+
+// ---- AA16 — NO EXECUTION WITHOUT THE EXACT AUTHORIZATION, AND NONE WITHOUT A FREEZE. ---------------
+var AA16w = aaWorld(aaRows(aaIdOnly({})));
+var AA16 = aaMan(AA16w);
+[['AA16 no options at all', {}],
+  ['AA16b execute with no freeze', { execute: true }],
+  ['AA16c a freeze with no authorization', { execute: true, frozen: AA16.frozen_before }],
+  ['AA16d a freeze with the wrong authorization',
+    { execute: true, frozen: AA16.frozen_before, authorization: 'I authorize the repair.' }],
+  ['AA16e the sentence with one character changed',
+    { execute: true, frozen: AA16.frozen_before,
+      authorization: String(AA16.authorization_wording).replace('ONE controlled', 'one controlled') }],
+  ['AA16f an incomplete freeze', { execute: true,
+    frozen: (function () { var c = JSON.parse(JSON.stringify(AA16.frozen_before));
+      delete c.expected_after_row_fingerprint; return c; })(),
+    authorization: AA16.authorization_wording }],
+  ['AA16g a freeze whose classification is not id-only', { execute: true,
+    frozen: (function () { var c = JSON.parse(JSON.stringify(AA16.frozen_before));
+      c.classification = 'LEGACY_ROW_CLASSIFICATION_REQUIRED'; return c; })(),
+    authorization: AA16.authorization_wording }],
+  ['AA16h a freeze taken against another build', { execute: true,
+    frozen: (function () { var c = JSON.parse(JSON.stringify(AA16.frozen_before));
+      c.build = 'F1-SOMETHING-ELSE'; return c; })(),
+    authorization: AA16.authorization_wording }]].forEach(function (p) {
+  var r = aaFill(AA16w, p[1]);
+  eq(r.verdict, 'REFUSED', p[0] + ' refuses');
+  aaNoWrite(r, AA16w, p[0] + ':');
+});
+// AND execute must be EXACTLY true. A truthy value is a typo, not an authorization.
+[['AA17 execute:"true" (a string)', 'true'], ['AA17b execute:1', 1],
+  ['AA17c execute:{}', {}]].forEach(function (p) {
+  var r = aaFill(AA16w, { execute: p[1], frozen: AA16.frozen_before,
+    authorization: AA16.authorization_wording });
+  eq([r.verdict, r.dry_run, r.execute_requested], ['DRY_RUN_OK', true, false],
+    p[0] + ' is a DRY RUN, not an execution');
+  aaNoWrite(r, AA16w, p[0] + ':');
+});
+
+// ---- AA18 — WRITE FAILURE, READBACK FAILURE, AND THE ROLLBACK. -----------------------------------
+// WRITE THROWS: nothing was written, so the rollback finds the row already at its frozen BEFORE.
+var AA18w = aaWorld(aaRows(aaIdOnly({})));
+var AA18m = aaMan(AA18w);
+(function () {
+  var sh = AA18w.sheets['factory_stock_movements'];
+  var orig = sh.getRange;
+  var first = true;
+  sh.getRange = function (r, c, nr, nc) {
+    var rg = orig.call(sh, r, c, nr, nc);
+    var sv = rg.setValue;
+    rg.setValue = function (v) {
+      if (first) { first = false; throw new Error('SHEET_WRITE_REFUSED_BY_THE_BACKEND'); }
+      return sv.call(rg, v);
+    };
+    return rg;
+  };
+})();
+var AA18 = aaFill(AA18w, { execute: true, frozen: AA18m.frozen_before,
+  authorization: AA18m.authorization_wording });
+eq(AA18.verdict, 'WRITE_FAILED', 'AA18 a write that throws is reported as WRITE_FAILED',
+  [AA18.verdict, AA18.refusal_reasons]);
+ok(String(AA18.refusal_reasons.join('|')).indexOf('WRITE_THREW') >= 0,
+  'AA18a naming the throw', AA18.refusal_reasons);
+eq([AA18.cells_written, AA18.writes], [0, 0], 'AA18b with no cell recorded as written');
+eq(AA18.rollback.outcome, 'RESTORED',
+  'AA18c and the rollback verifies the row is at its frozen BEFORE fingerprint', AA18.rollback);
+eq(AA18.rollback.restored_row_fingerprint, AA18m.frozen_before.target_row_fingerprint,
+  'AA18d proven by fingerprint, not by assumption');
+// READBACK MISMATCH: the write lands a DIFFERENT value, so the row cannot hash to the expected AFTER.
+var AA19w = aaWorld(aaRows(aaIdOnly({})));
+var AA19m = aaMan(AA19w);
+(function () {
+  var sh = AA19w.sheets['factory_stock_movements'];
+  var orig = sh.getRange;
+  var n = 0;
+  sh.getRange = function (r, c, nr, nc) {
+    var rg = orig.call(sh, r, c, nr, nc);
+    var sv = rg.setValue;
+    rg.setValue = function (v) {
+      n++;
+      return sv.call(rg, (n === 1 && String(v).indexOf('FSMV-') === 0) ? 'FSMV-WRONG001' : v);
+    };
+    return rg;
+  };
+})();
+var AA19 = aaFill(AA19w, { execute: true, frozen: AA19m.frozen_before,
+  authorization: AA19m.authorization_wording });
+eq(AA19.verdict, 'EXECUTED_AND_ROLLED_BACK',
+  'AA19 a readback that does not match the frozen AFTER is rolled back',
+  [AA19.verdict, AA19.refusal_reasons]);
+eq(AA19.readback.ok, false, 'AA19a the readback failed');
+ok(AA19.readback.mismatches.length >= 1, 'AA19b naming what did not match',
+  AA19.readback.mismatches.map(function (m) { return m.what; }));
+eq(AA19.rollback.outcome, 'RESTORED', 'AA19c and the rollback restored the cell to blank');
+eq(AA19.rollback.restored_row_fingerprint, AA19m.frozen_before.target_row_fingerprint,
+  'AA19d verified against the frozen BEFORE fingerprint');
+eq(AA19.cells_rolled_back, 1, 'AA19e exactly one cell was rolled back');
+// ROLLBACK FAILURE: the restore itself lands a non-blank value, so the fingerprint cannot return.
+var AA20w = aaWorld(aaRows(aaIdOnly({})));
+var AA20m = aaMan(AA20w);
+(function () {
+  var sh = AA20w.sheets['factory_stock_movements'];
+  var orig = sh.getRange;
+  var n = 0;
+  sh.getRange = function (r, c, nr, nc) {
+    var rg = orig.call(sh, r, c, nr, nc);
+    var sv = rg.setValue;
+    rg.setValue = function (v) {
+      n++;
+      if (n === 1) return sv.call(rg, 'FSMV-WRONG002');
+      if (n === 2) return sv.call(rg, 'STILL-NOT-BLANK');
+      return sv.call(rg, v);
+    };
+    return rg;
+  };
+})();
+var AA20 = aaFill(AA20w, { execute: true, frozen: AA20m.frozen_before,
+  authorization: AA20m.authorization_wording });
+eq(AA20.verdict, 'ROLLBACK_FAILED',
+  'AA20 a rollback that does not restore the frozen fingerprint is reported as FAILED',
+  [AA20.verdict, AA20.rollback]);
+eq(AA20.rollback.outcome, 'FAILED', 'AA20a and it says so');
+ok(String(AA20.rollback.error).indexOf('DID_NOT_RETURN_TO_ITS_FROZEN_BEFORE_FINGERPRINT') >= 0,
+  'AA20b under a named reason rather than a silent pass', AA20.rollback.error);
+ok(AA20.rollback.restored_row_fingerprint !== AA20m.frozen_before.target_row_fingerprint,
+  'AA20c with both fingerprints reported so a person can see the gap',
+  [AA20m.frozen_before.target_row_fingerprint, AA20.rollback.restored_row_fingerprint]);
+
+// ---- AA21 — ONE CELL, AND NOTHING ELSE IN THE WORLD. ---------------------------------------------
+// §4-§7 as a measurement rather than a promise: after a successful execute, every OTHER row of the
+// movement table and every OTHER table in the world is byte-for-byte what it was.
+var AA21w = aaWorld(aaRows(aaIdOnly({})));
+var AA21snapshot = JSON.stringify(Object.keys(AA21w.sheets).sort().map(function (k) {
+  return { table: k, rows: AA21w.sheets[k].rows };
+}));
+var AA21m = aaMan(AA21w);
+var AA21 = aaFill(AA21w, { execute: true, frozen: AA21m.frozen_before,
+  authorization: AA21m.authorization_wording });
+eq(AA21.verdict, 'EXECUTED_OK', 'AA21 the repair succeeded', AA21.failed_predicates);
+var AA21after = JSON.parse(JSON.stringify(Object.keys(AA21w.sheets).sort().map(function (k) {
+  return { table: k, rows: AA21w.sheets[k].rows };
+})));
+var AA21before = JSON.parse(AA21snapshot);
+var AA21diff = [];
+AA21before.forEach(function (t, ti) {
+  var now = AA21after[ti];
+  if (t.rows.length !== now.rows.length) {
+    AA21diff.push({ table: t.table, what: 'ROW_COUNT', before: t.rows.length, after: now.rows.length });
+    return;
+  }
+  t.rows.forEach(function (row, ri) {
+    row.forEach(function (cell, ci) {
+      if (String(cell) !== String(now.rows[ri][ci])) {
+        AA21diff.push({ table: t.table, row: ri + 1, col: ci + 1,
+          before: String(cell), after: String(now.rows[ri][ci]) });
+      }
+    });
+  });
+});
+eq(AA21diff.length, 1, 'AA21a EXACTLY ONE cell in the entire world differs', AA21diff);
+eq([AA21diff[0].table, AA21diff[0].row, AA21diff[0].col],
+  ['factory_stock_movements', 2, 1], 'AA21b and it is the one named in the authorization');
+eq([AA21diff[0].before, AA21diff[0].after], ['', AA21m.frozen_before.proposed_id],
+  'AA21c blank before, the frozen id after');
+eq(AA21w.writesByTable(), { factory_stock_movements: 1 },
+  'AA21d no other table was written');
+eq([AA21.rows_added, AA21.rows_removed, AA21.rows_reordered], [0, 0, false],
+  'AA21e and no row was added, removed or reordered');
+
+// ---- AA24 - A REPAIR THAT TOUCHED TWO CELLS IS NOT RECOVERABLE, AND THE TOOL SAYS SO. --------------
+//
+// Found while writing this round's mutants and worth stating as a limitation rather than discovering later.
+// The rollback restores THE ONE authorized cell. If something outside the authorization also moved - a
+// concurrent edit, a backend that wrote more than it was asked to - the row can never hash back to its
+// frozen BEFORE, so the rollback reports FAILED instead of claiming a clean restore. That is the honest
+// outcome: a partially-applied change needs a person, and a tool that said RESTORED would have hidden it.
+var AA24w = aaWorld(aaRows(aaIdOnly({})));
+var AA24m = aaMan(AA24w);
+(function () {
+  var sh = AA24w.sheets['factory_stock_movements'];
+  var orig = sh.getRange;
+  var n = 0;
+  sh.getRange = function (r, c, nr, nc) {
+    var rg = orig.call(sh, r, c, nr, nc);
+    var sv = rg.setValue;
+    rg.setValue = function (v) {
+      n++;
+      if (n === 1) { sh.rows[1][sh.rows[0].indexOf('note')] = 'a concurrent edit'; }
+      return sv.call(rg, v);
+    };
+    return rg;
+  };
+})();
+var AA24 = aaFill(AA24w, { execute: true, frozen: AA24m.frozen_before,
+  authorization: AA24m.authorization_wording });
+eq(AA24.verdict, 'ROLLBACK_FAILED',
+  'AA24 a second cell moving under the repair is reported as an unrecoverable rollback',
+  [AA24.verdict, AA24.rollback]);
+eq(AA24.readback.ok, false, 'AA24a the readback refuses');
+ok(AA24.readback.mismatches.filter(function (m) {
+  return m.what === 'COLUMN_CHANGED:note'; }).length === 1,
+  'AA24b naming the column that moved outside the authorization',
+  AA24.readback.mismatches.map(function (m) { return m.what; }));
+eq(AA24.rollback.outcome, 'FAILED',
+  'AA24c and the rollback says FAILED rather than claiming a clean restore');
+ok(AA24.rollback.restored_row_fingerprint !== AA24m.frozen_before.target_row_fingerprint,
+  'AA24d because the row cannot return to its frozen BEFORE while another cell is still changed');
+eq(AA24.cells_rolled_back, 1,
+  'AA24e exactly one cell was rolled back — the tool restores what it was authorized to write, and no more');
+
+// ---- AA22 — THE FIELD CONTRACT ITSELF, AGAINST BOTH AUTHORITIES. ---------------------------------
+var AA22 = AA2.field_contract;
+eq(AA22.length, 15, 'AA22 the contract has one entry per live column');
+eq(AA22.map(function (f) { return f.column; }), Z0decl,
+  'AA22a in 21_ MOV_HEADERS order, matching the live header exactly');
+eq(AA22.filter(function (f) { return f.required; }).map(function (f) { return f.column; }),
+  ['factory_stock_movement_id', 'sku', 'warehouse_id', 'movement_type', 'qty', 'created_at'],
+  'AA22b six columns are REQUIRED, and required-ness comes from the schema doc');
+// The doc says so, checked against the doc rather than asserted.
+var AA22doc = read('assets/specs/active/pages/shipping/SHIPMENT_DATABASE_SCHEMA.md');
+var AA22sec = AA22doc.slice(AA22doc.indexOf('| factory_stock_movement_id | string | Yes | PK'),
+  AA22doc.indexOf('| created_at | datetime | Yes | 異動時間'));
+ok(AA22sec.indexOf('| movement_type | enum | Yes |') > 0,
+  'AA22c SHIPMENT_DATABASE_SCHEMA.md marks movement_type Required = Yes');
+ok(AA22sec.indexOf('| related_entity_type | enum |  |') > 0
+  || /\| related_entity_type \| enum \|\s*\|/.test(AA22sec),
+  'AA22d and related_entity_type optional — so the two are not the same finding');
+// The three 21_-era columns the doc has no entry for are recorded as such, not invented as required.
+eq(AA22.filter(function (f) { return f.doc_column === null; }).map(function (f) { return f.column; }),
+  ['movement_date', 'before_reserved_stock', 'after_reserved_stock'],
+  'AA22e three live columns have no schema-doc entry at all');
+ok(AA22.filter(function (f) { return f.doc_column === null; })
+  .every(function (f) { return f.required === false && f.every_writer_sets === true; }),
+  'AA22f and they are recorded as NOT required but writer-populated, rather than given a requirement');
+eq(AA22.filter(function (f) { return f.every_writer_sets; }).length, 15,
+  'AA22g every one of the fifteen is populated by every shipped writer');
+eq(AA22.filter(function (f) { return f.role === 'LEDGER_AXIS_SELECTOR'; })
+  .map(function (f) { return f.column; }), ['movement_type'],
+  'AA22h and exactly one column is the ledger axis selector');
+// THE VOCABULARY IS 21_'s, EXECUTED.
+var AA22w = S1World(pos());
+eq(vm.runInContext('FSTX_MOVEMENT_TYPES_.length', AA22w.ctx), 7,
+  'AA22i 21_ declares seven movement types and the world runs them');
+eq(vm.runInContext('factoryStockIsKnownMovementType_("manual_adjustment")', AA22w.ctx), true,
+  'AA22j so a canonical value is recognised as canonical');
+eq(vm.runInContext('factoryStockIsKnownMovementType_("")', AA22w.ctx), false,
+  'AA22k and a blank one is not');
+
+// ---- AA23 — AN ABSENT VOCABULARY IS NOT AN INVALID VALUE. ---------------------------------------
+// This round's own first mistake, kept as a case: with 21_ not loaded, `manual_adjustment` was reported
+// as "not in the canonical vocabulary". Both still refuse — you must not classify a row whose type cannot
+// be checked — but only one of the two is a data problem, and the operator has to be told which.
+var AA23w = aaWorld(aaRows(aaIdOnly({})), null,
+  { after: 'factoryStockIsKnownMovementType_ = undefined;'
+    + ' factoryStockIsCurrentMovement_ = undefined;'
+    + ' factoryStockIsReservationMovement_ = undefined;' });
+var AA23 = aaMan(AA23w);
+eq(AA23.verdict, 'LEGACY_ROW_CLASSIFICATION_REQUIRED',
+  'AA23 with the vocabulary authority absent the row is not classified as repairable');
+ok(AA23.classification_reasons
+  .indexOf('MOVEMENT_TYPE_VOCABULARY_AUTHORITY_IS_UNAVAILABLE_IN_THIS_DEPLOYMENT') >= 0,
+  'AA23a under a reason that names the ABSENT AUTHORITY', AA23.classification_reasons);
+ok(AA23.classification_reasons.join('|').indexOf('NOT_IN_THE_CANONICAL_VOCABULARY') === -1,
+  'AA23b and NOT as an invalid value — the row is fine, the deployment cannot check it',
+  AA23.classification_reasons);
+eq(AA23.target.axis_audit.axis, 'UNCHECKABLE_BECAUSE_THE_VOCABULARY_AUTHORITY_IS_ABSENT',
+  'AA23c with the axis reported as uncheckable rather than unknown');
+eq(AA23.target.axis_audit.vocabulary_authority_available, false,
+  'AA23d and the availability recorded as the fact it is');
+eq([AA23.proposed, AA23.frozen_before, AA23.authorization_wording], [null, null, null],
+  'AA23e nothing is proposed, frozen or signed');
+aaNoWrite(AA23, AA23w, 'AA23f');
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -4777,10 +5396,15 @@ mut('N66 the wording audit accepts an empty needle, so an unmeasured fact reads 
   // Two edits, because the rule is only observable when some required value IS empty: the first makes one
   // (the factory pool row fingerprint), the second removes the guard.
   var EMPTY = "  need('factory_pool_row_fingerprint', ((surf && surf.pool) || {}).row_fingerprint);";
-  var GUARD = "    r.present = r.needle !== '' && text.indexOf(r.needle) >= 0;";
+  // S1-R4E - RE-ANCHORED onto the ONE place the rule now lives. R4E added a second wording audit (the
+  // backfill authorization) and with it a second copy of this line, so the anchor stopped being unique -
+  // which is the same duplication that lets two audits disagree about what counts as present. Extracted to
+  // S1_needleFound_, so this single mutant now covers both callers.
+  var GUARD = "  return S1_str_(needle) !== '' && String(text).indexOf(needle) >= 0;";
   var withEmpty = swapS1(EMPTY, "  need('factory_pool_row_fingerprint', null);");
   var clean = withMP(withEmpty, pos());
-  var bad = withMP(swap2_(withEmpty, GUARD, '    r.present = text.indexOf(r.needle) >= 0;'), pos());
+  var bad = withMP(swap2_(withEmpty, GUARD,
+    '  return String(text).indexOf(needle) >= 0;'), pos());
   var NM = 'AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE';
   return clean.res.verdict === 'STOP' && String(clean.res.stop_reason).indexOf(NM) === 0
     && clean.res.wording_audit.missing.indexOf('factory_pool_row_fingerprint') >= 0
@@ -5121,6 +5745,295 @@ mut('N82 an over-wide fault line is cut instead of narrowed', function () {
     && String(clean.parsed.detail_withheld_reason).indexOf('return value') > 0
     // mutant: a cut line no reader can parse at all
     && bad.parsed === null;
+});
+
+// ---- S1-R4E mutants ------------------------------------------------------------------------------------
+
+/** A repairable world plus its freeze, built through a mutated source. */
+function aaMut(src, rowsOver) {
+  var sp = {};
+  Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+  sp.movements = rowsOver || aaRows(aaIdOnly({}));
+  if (src) sp.s1 = src;
+  var w = S1World(sp);
+  var m = vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST()', w.ctx);
+  return { world: w, man: m };
+}
+function aaRun(w, arg) {
+  vm.runInContext('var __AAM_ARG = ' + JSON.stringify(arg || {}) + ';', w.ctx);
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL(__AAM_ARG)', w.ctx);
+}
+/** Make the write land on a SECOND cell as well as the authorized one. */
+function aaSecondCellWriter(w) {
+  var sh = w.sheets['factory_stock_movements'];
+  var orig = sh.getRange;
+  var n = 0;
+  sh.getRange = function (r, c, nr, nc) {
+    var rg = orig.call(sh, r, c, nr, nc);
+    var sv = rg.setValue;
+    rg.setValue = function (v) {
+      n++;
+      if (n === 1) { sh.rows[1][sh.rows[0].indexOf('note')] = 'and this cell too'; }
+      return sv.call(rg, v);
+    };
+    return rg;
+  };
+}
+
+mut('N83 the repair also touches a second cell', function () {
+  // §4/§5. The readback is what makes "one cell" a measurement: the row must hash to the frozen expected
+  // AFTER and every other column must be byte-identical. Drop the column comparison and the second cell
+  // still moves the row fingerprint, so this mutant is aimed at the thing that says WHICH cell moved -
+  // which on a failed repair is the first thing a person needs.
+  var m = swapS1("  (fz.target_row_cells || []).forEach(function (c) {\n"
+    + '    if (c.column === fz.target_id_column) return;',
+    '  (fz.target_row_cells || []).forEach(function (c) {\n'
+    + '    if (true) return;');
+  var clean = aaMut(null), bad = aaMut(m);
+  aaSecondCellWriter(clean.world);
+  aaSecondCellWriter(bad.world);
+  var cr = aaRun(clean.world, { execute: true, frozen: clean.man.frozen_before,
+    authorization: clean.man.authorization_wording });
+  var br = aaRun(bad.world, { execute: true, frozen: bad.man.frozen_before,
+    authorization: bad.man.authorization_wording });
+  var named = function (r) {
+    return (r.readback ? r.readback.mismatches : []).map(function (x) { return x.what; })
+      .filter(function (x) { return String(x).indexOf('COLUMN_CHANGED:note') === 0; }).length;
+  };
+  // MEASURED, AND IT CORRECTED MY EXPECTATION. Both runs end in ROLLBACK_FAILED, not
+  // EXECUTED_AND_ROLLED_BACK - and that is right: the rollback restores the ONE authorized cell, so a stray
+  // write to a second cell cannot be undone and the row can never hash back to its frozen BEFORE. A repair
+  // that touched two cells is therefore not recoverable by this tool, and it says so instead of claiming a
+  // clean restore.
+  //
+  // What the mutant loses is the NAME of the cell that moved. Both refuse; only one can tell an operator
+  // which column to look at, and on a half-applied repair that is the whole of what they need.
+  return cr.verdict === 'ROLLBACK_FAILED' && named(cr) === 1
+    && cr.readback.columns_compared === 14
+    && cr.rollback.outcome === 'FAILED'
+    && br.verdict === 'ROLLBACK_FAILED' && named(br) === 0
+    && br.readback.columns_compared === 0;
+});
+
+mut('N84 execute becomes a truthy check, so a typo writes to production', function () {
+  // `execute` must be exactly true. A truthy test turns the string 'false', 'no' and 1 into an execution,
+  // and the default-dry-run property is the whole reason this tool is safe to hand over.
+  var m = swapS1("    if (opts.execute !== true) {\n"
+    + "      out.verdict = 'DRY_RUN_OK';", '    if (!opts.execute) {\n'
+    + "      out.verdict = 'DRY_RUN_OK';");
+  var clean = aaMut(null), bad = aaMut(m);
+  var cr = aaRun(clean.world, { execute: 'false', frozen: clean.man.frozen_before,
+    authorization: clean.man.authorization_wording });
+  var br = aaRun(bad.world, { execute: 'false', frozen: bad.man.frozen_before,
+    authorization: bad.man.authorization_wording });
+  return cr.verdict === 'DRY_RUN_OK' && cr.cells_written === 0 && clean.world.allWrites() === 0
+    && br.verdict === 'EXECUTED_OK' && br.cells_written === 1 && bad.world.allWrites() === 1;
+});
+
+mut('N85 the classifier looks at the primary key and nothing else', function () {
+  // THE CORE DEFECT THIS ROUND EXISTS TO PREVENT. With only the key checked, the LIVE row - missing
+  // movement_type, with no ledger axis and quantities that do not reconcile - becomes "repairable", and a
+  // one-cell write would SILENCE the census that currently refuses it while leaving the row unclassifiable.
+  var m = swapS1("  fa.required_blank.forEach(function (c) {\n"
+    + "    if (c !== 'factory_stock_movement_id') o.reasons.push('REQUIRED_FIELD_IS_BLANK:' + c);\n"
+    + '  });',
+    '  fa.required_blank.forEach(function (c) { if (false) o.reasons.push(c); });');
+  var live = aaRows(AAlive2);
+  var clean = aaMut(null, live), bad = aaMut(m, live);
+  return clean.man.verdict === 'LEGACY_ROW_CLASSIFICATION_REQUIRED'
+    && clean.man.frozen_before === null && clean.man.proposed === null
+    && clean.man.target.field_audit.required_blank.length === 2
+    // the mutant proposes an id and freezes a baseline for a row nobody can classify
+    && bad.man.classification_reasons.indexOf('REQUIRED_FIELD_IS_BLANK:movement_type') === -1;
+});
+
+mut('N86 the ledger invariant is not checked, so a row whose numbers disagree reads as clean', function () {
+  // Every writer sets qty to the delta of the axis its movement_type names. A row where that does not hold
+  // was not written under the model the ledger is read under, and repairing its key would make it look sound.
+  var m = swapS1("  } else if (aa.invariant_holds !== true) {\n"
+    + "    o.reasons.push('QTY_DOES_NOT_RECONCILE_WITH_THE_BEFORE_AFTER_PAIR_ON_THE_'\n"
+    + "      + aa.axis + '_AXIS');",
+    '  } else if (false) {\n'
+    + "    o.reasons.push('QTY_DOES_NOT_RECONCILE');");
+  // A row missing ONLY its key, but whose qty does not match its own before/after pair.
+  var rows = aaRows(aaIdOnly({ qty: 9999 }));
+  var clean = aaMut(null, rows), bad = aaMut(m, rows);
+  var NM = 'QTY_DOES_NOT_RECONCILE_WITH_THE_BEFORE_AFTER_PAIR_ON_THE_CURRENT_AXIS';
+  return clean.man.verdict === 'LEGACY_ROW_CLASSIFICATION_REQUIRED'
+    && clean.man.classification_reasons.indexOf(NM) >= 0
+    && clean.man.frozen_before === null
+    && bad.man.verdict === 'READY_TO_AUTHORIZE_BACKFILL' && bad.man.frozen_before !== null;
+});
+
+mut('N87 the proposed id stops being deterministic, so a retry would mint a second one', function () {
+  // 21_ mints with Utilities.getUuid and that is right for a NEW row. A BACKFILL can be retried, and two
+  // ids for one row is the one thing a primary key repair must never do.
+  var m = swapS1("  var natural = 'FSMV|' + S1_str_(table) + '|row=' + S1_str_(rowNumber)\n"
+    + "    + '|fp=' + S1_str_(rowFingerprint);",
+    "  if (typeof S1__NONCE_ === 'undefined') { S1__NONCE_ = 0; }\n"
+    + '  S1__NONCE_++;\n'
+    + "  var natural = 'FSMV|' + S1_str_(table) + '|row=' + S1_str_(rowNumber)\n"
+    + "    + '|fp=' + S1_str_(rowFingerprint) + '|n=' + S1__NONCE_;");
+  var clean = aaMut(null), bad = aaMut(m);
+  var NM = 'the_proposed_id_is_deterministic_so_a_retry_cannot_mint_a_second_one';
+  return clean.man.verdict === 'READY_TO_AUTHORIZE_BACKFILL'
+    && failed(clean.man).indexOf(NM) === -1
+    && bad.man.verdict === 'STOP' && failed(bad.man).indexOf(NM) >= 0
+    && bad.man.frozen_before === null && bad.man.authorization_wording === null;
+});
+
+mut('N88 the readback takes its expectation from the row it is checking', function () {
+  // R4B's defect, one table over: a check whose expectation comes from the thing being checked passes by
+  // construction. Here it means a write that landed the WRONG value reads back as a success.
+  var m = swapS1("  cmp('target_row_fingerprint', fz.expected_after_row_fingerprint, rec.fingerprint);",
+    "  cmp('target_row_fingerprint', rec.fingerprint, rec.fingerprint);");
+  function wrongWriter(w) {
+    var sh = w.sheets['factory_stock_movements'];
+    var orig = sh.getRange;
+    var n = 0;
+    sh.getRange = function (r, c, nr, nc) {
+      var rg = orig.call(sh, r, c, nr, nc);
+      var sv = rg.setValue;
+      rg.setValue = function (v) {
+        n++;
+        return sv.call(rg, (n === 1 && String(v).indexOf('FSMV-') === 0) ? 'FSMV-0BADBAD0' : v);
+      };
+      return rg;
+    };
+  }
+  var clean = aaMut(null), bad = aaMut(m);
+  wrongWriter(clean.world); wrongWriter(bad.world);
+  var cr = aaRun(clean.world, { execute: true, frozen: clean.man.frozen_before,
+    authorization: clean.man.authorization_wording });
+  var br = aaRun(bad.world, { execute: true, frozen: bad.man.frozen_before,
+    authorization: bad.man.authorization_wording });
+  // RE-AIMED BY THE MEASUREMENT. The readback compares the cell's VALUE against the frozen expected id as
+  // well as the row's fingerprint, so the wrong value is still caught and the mutant survived my first
+  // assertion. That is defence in depth working, and worth recording as such.
+  //
+  // What the mutant destroys is the FINGERPRINT check - the only one that covers the whole row rather than
+  // one cell of it. Without it a repair that landed the right id and disturbed something else would read
+  // back clean, which is exactly the self-comparison R4B was called in to repair.
+  var fpNamed = function (r) {
+    return (r.readback ? r.readback.mismatches : [])
+      .filter(function (x) { return x.what === 'target_row_fingerprint'; }).length;
+  };
+  return cr.readback.ok === false && fpNamed(cr) === 1
+    && cr.rollback.outcome === 'RESTORED'
+    && br.readback.ok === false && fpNamed(br) === 0;
+});
+
+mut('N89 the rollback is not verified, so a failed restore reads as a success', function () {
+  // §9. A rollback that is not proven is a hope: the cell is set and nobody looks. Verified by requiring the
+  // row to hash back to the FROZEN BEFORE, which is the only value that means "as it was".
+  var m = swapS1("  o.outcome = S1_str_(rec.fingerprint) === S1_str_(fz.target_row_fingerprint) ? 'RESTORED'\n"
+    + "    : 'FAILED';", "  o.outcome = 'RESTORED';");
+  function badRollback(w) {
+    var sh = w.sheets['factory_stock_movements'];
+    var orig = sh.getRange;
+    var n = 0;
+    sh.getRange = function (r, c, nr, nc) {
+      var rg = orig.call(sh, r, c, nr, nc);
+      var sv = rg.setValue;
+      rg.setValue = function (v) {
+        n++;
+        if (n === 1) return sv.call(rg, 'FSMV-0BADBAD1');
+        if (n === 2) return sv.call(rg, 'STILL-NOT-BLANK');
+        return sv.call(rg, v);
+      };
+      return rg;
+    };
+  }
+  var clean = aaMut(null), bad = aaMut(m);
+  badRollback(clean.world); badRollback(bad.world);
+  var cr = aaRun(clean.world, { execute: true, frozen: clean.man.frozen_before,
+    authorization: clean.man.authorization_wording });
+  var br = aaRun(bad.world, { execute: true, frozen: bad.man.frozen_before,
+    authorization: bad.man.authorization_wording });
+  return cr.verdict === 'ROLLBACK_FAILED' && cr.rollback.outcome === 'FAILED'
+    && br.verdict === 'EXECUTED_AND_ROLLED_BACK' && br.rollback.outcome === 'RESTORED';
+});
+
+mut('N90 the authorization check becomes a presence check', function () {
+  // The sentence is the authorization. Accepting any non-empty string accepts one that describes a different
+  // repair - a different row, a different id, a different table.
+  var m = swapS1("    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);",
+    "    out.authorization_matches_frozen = auth !== '';");
+  var clean = aaMut(null), bad = aaMut(m);
+  var cr = aaRun(clean.world, { execute: true, frozen: clean.man.frozen_before,
+    authorization: 'I authorize something else entirely.' });
+  var br = aaRun(bad.world, { execute: true, frozen: bad.man.frozen_before,
+    authorization: 'I authorize something else entirely.' });
+  return cr.verdict === 'REFUSED' && clean.world.allWrites() === 0
+    && br.verdict === 'EXECUTED_OK' && bad.world.allWrites() === 1;
+});
+
+mut('N91 a refused manifest keeps its freeze and its sentence', function () {
+  // MANIFEST P's LOCK FIVE, applied here: the baseline and the sentence are the same authorization by two
+  // routes, so a refusal must take both. A frozen id for a row nobody can classify is an authorization
+  // waiting to be misused.
+  var m = swapS1("    if (out.verdict !== 'READY_TO_AUTHORIZE_BACKFILL') {\n"
+    + '      out.frozen_before = null;\n'
+    + '      out.authorization_wording = null;',
+    "    if (false) {\n"
+    + '      out.frozen_before = null;\n'
+    + '      out.authorization_wording = null;');
+  // A world that measures cleanly and is then refused on the DETERMINISM predicate, which fires after the
+  // freeze has been built - the only path where one exists at the moment of refusal.
+  var nonce = "  if (typeof S1__NONCE2_ === 'undefined') { S1__NONCE2_ = 0; }\n"
+    + '  S1__NONCE2_++;\n'
+    + "  var natural = 'FSMV|' + S1_str_(table) + '|row=' + S1_str_(rowNumber)\n"
+    + "    + '|fp=' + S1_str_(rowFingerprint) + '|n=' + S1__NONCE2_;";
+  var ANCHOR = "  var natural = 'FSMV|' + S1_str_(table) + '|row=' + S1_str_(rowNumber)\n"
+    + "    + '|fp=' + S1_str_(rowFingerprint);";
+  var cleanSrc = swapS1(ANCHOR, nonce);
+  var badSrc = swap2_(cleanSrc, "    if (out.verdict !== 'READY_TO_AUTHORIZE_BACKFILL') {\n"
+    + '      out.frozen_before = null;\n'
+    + '      out.authorization_wording = null;',
+    "    if (false) {\n"
+    + '      out.frozen_before = null;\n'
+    + '      out.authorization_wording = null;');
+  var clean = aaMut(cleanSrc), bad = aaMut(badSrc);
+  // RE-AIMED BY THE MEASUREMENT. `out.frozen_before` is only ASSIGNED when nothing has failed, so the
+  // baseline never leaks even without the lock - the same structure MANIFEST P has. The SENTENCE is
+  // different: it is built and assigned before that check, so it is the half the lock actually withholds.
+  // A refused run that still hands over a signable sentence is an authorization waiting to be misused.
+  return clean.man.verdict === 'STOP'
+    && clean.man.frozen_before === null && clean.man.authorization_wording === null
+    && bad.man.verdict === 'STOP'
+    && bad.man.frozen_before === null
+    && bad.man.authorization_wording !== null
+    && String(bad.man.authorization_wording).indexOf('I authorize ONE controlled') === 0;
+});
+
+mut('N92 an absent vocabulary authority is reported as an invalid movement_type', function () {
+  // THIS ROUND'S OWN FIRST MISTAKE, KEPT AS A MUTANT. With 21_ not loaded, `manual_adjustment` - one of the
+  // canonical seven - was classified as "not in the canonical vocabulary". Both states refuse, correctly;
+  // the difference is that one of them is a data problem and the other is a deployment one, and telling an
+  // operator the wrong one sends them to repair a row that is fine.
+  var m = swapS1('  } else if (aa.vocabulary_authority_available !== true) {',
+    '  } else if (false) {');
+  var kill = 'factoryStockIsKnownMovementType_ = undefined;'
+    + ' factoryStockIsCurrentMovement_ = undefined;'
+    + ' factoryStockIsReservationMovement_ = undefined;';
+  function run(src) {
+    var sp = {};
+    Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+    sp.movements = aaRows(aaIdOnly({}));
+    sp.after = kill;
+    if (src) sp.s1 = src;
+    var w = S1World(sp);
+    return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST()', w.ctx);
+  }
+  var clean = run(null), bad = run(m);
+  var ABSENT = 'MOVEMENT_TYPE_VOCABULARY_AUTHORITY_IS_UNAVAILABLE_IN_THIS_DEPLOYMENT';
+  var INVALID = 'MOVEMENT_TYPE_IS_NOT_IN_THE_CANONICAL_VOCABULARY:manual_adjustment';
+  return clean.verdict === 'LEGACY_ROW_CLASSIFICATION_REQUIRED'
+    && clean.classification_reasons.indexOf(ABSENT) >= 0
+    && clean.classification_reasons.indexOf(INVALID) === -1
+    // the mutant blames the data for what the deployment cannot check
+    && bad.classification_reasons.indexOf(ABSENT) === -1
+    && bad.classification_reasons.indexOf(INVALID) >= 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
